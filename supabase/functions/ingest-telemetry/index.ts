@@ -79,17 +79,24 @@ serve(async (req) => {
     // ── Telemetry → analytics_events (anonymized, aggregated) ──
     let evtCount = 0;
     if (Array.isArray(body.events) && body.events.length) {
+      // The app version rides on EVERY analytics row (meta.v), not just
+      // error_log. Without it there is no way to tell whether a device is
+      // running the build you just shipped, and on 2026-09-03 that turned a
+      // day of debugging into guesswork: no liveact_* events were arriving
+      // and nothing could distinguish "the fix is not on the phone yet" from
+      // "the fix is on the phone and the code path never runs". meta is an
+      // existing jsonb column, so this needs no migration.
       const ch = await chash(uid);
       const agg: Record<string, { event: string; ctx: string | null; n: number }> = {};
       const out: Record<string, unknown>[] = [];
       for (const ev of (body.events as any[]).slice(0, 500)) {
         const event = String(ev?.event || "event").slice(0, 40);
         const ctx = ev?.ctx != null ? String(ev.ctx).slice(0, 80) : null;
-        if (typeof ev?.value === "number") { out.push({ contractor_hash: ch, session_id: sid, event, ctx, value: ev.value, meta: null }); continue; }
+        if (typeof ev?.value === "number") { out.push({ contractor_hash: ch, session_id: sid, event, ctx, value: ev.value, meta: ver ? { v: ver } : null }); continue; }
         const k = event + "|" + (ctx || "");
         (agg[k] ||= { event, ctx, n: 0 }).n++;
       }
-      for (const k of Object.keys(agg)) out.push({ contractor_hash: ch, session_id: sid, event: agg[k].event, ctx: agg[k].ctx, value: agg[k].n, meta: null });
+      for (const k of Object.keys(agg)) out.push({ contractor_hash: ch, session_id: sid, event: agg[k].event, ctx: agg[k].ctx, value: agg[k].n, meta: ver ? { v: ver } : null });
       if (out.length) { const { error } = await svc.from("analytics_events").insert(out); if (!error) evtCount = out.length; }
     }
 

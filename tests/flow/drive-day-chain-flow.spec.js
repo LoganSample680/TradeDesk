@@ -48,6 +48,9 @@ const JOB_C  = { lat: B_LAT + 0.1200, lon: B_LON - 0.1200 };
 const SHOP   = { lat: B_LAT + 0.1500, lon: B_LON - 0.1500 };
 // Between waypoints, so the machine sees a real departure before each arrival.
 const BETWEEN = { lat: B_LAT + 0.4000, lon: B_LON - 0.4000 };
+// An unnamed kerb: inside nobody's fence, and far enough from BETWEEN that a
+// stop anchor formed here is never confused with the in-transit waypoint.
+const STOPPIN = { lat: B_LAT + 0.2500, lon: B_LON - 0.2500 };
 
 test.describe('Full day of automatic drives: home office → job → supply → job → job → shop', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
@@ -221,6 +224,233 @@ test.describe('Full day of automatic drives: home office → job → supply → 
           inShop: !!_geoWasInShop,
         }));
         const ok = !out.driveOpen && !out.jobOpen && out.inShop;
+        return { ok, got: JSON.stringify(out) };
+      },
+    });
+
+
+    // ── 4. THE COLD START: a stop is never the origin while a fence is known ─
+    // Owner's own account, 2026-08-27 onward: 60 mileage rows named their
+    // origin, then every row began reading "Stop -> somewhere". The engine had
+    // not stopped knowing where drives began; a settled anonymous stop was
+    // recording itself as the origin with no way back, and it only did that
+    // when the leg opened with no live fence state, which is what a restored
+    // snapshot and a cold boot both look like.
+    //
+    // The chain is the only place this can be proved end to end, because the
+    // damage is cumulative: one stranded stop poisons every later row, so a
+    // single-leg test sees a plausible row and a day sees a broken log.
+    await step(page, {
+      label: 'cold start, park at an unnamed kerb, then finish the leg', page: 'geo', role: 'contractor',
+      suspect: 'geo-track.js _geoSettleStopLeg prevOrigin + _geoCollapseDetours',
+      ruleText: 'a leg that opens with no live origin must still measure from the last fence the truck was actually inside, never from an anonymous stop',
+      expected: 'the surviving row reads shop → job A; no row anywhere names "Stop" as its origin',
+      act: async (p) => {
+        await p.evaluate(async (d) => {
+          window.__origJobs2 = jobs.slice();
+          const today = todayKey();
+          jobs.length = 0;
+          jobs.push({ id: d.jobA, client_id: null, name: 'E2E Chain Job A', eventType: 'job',
+                      status: 'upcoming', start: today, days: 1, lat: d.JOB_A.lat, lon: d.JOB_A.lon, _e2e: 'chain' });
+          // Exactly what _geoRestoreOpen leaves behind for the owner's shape: the
+          // fence the truck was last inside survives, the live leg origin does
+          // not. Set here rather than by killing the page because the point of
+          // the step is the STATE, and reproducing it directly is the honest way
+          // to pin a bug that took three weeks of real driving to surface.
+          _geoLegOrigin = null;
+          _geoLastFenceLoc = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
+          _geoLastFenceAt = new Date(Date.now() - 40 * 60000).toISOString();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoStopAnchor = null; _geoLegAtShop = false; _geoCurrentClient = null;
+          // A drive ALREADY RUNNING is the whole point and the step is hollow
+          // without it: the settle at the kerb only fires while a leg is open,
+          // and it is the settle that used to strand the origin. This pair,
+          // an open drive clock with no live origin beside a remembered fence,
+          // is exactly what _geoRestoreOpen hands back when the snapshot
+          // predates legOrigin being persisted, which is the owner's own
+          // 2026-08-27 shape.
+          _geoDriveStartedAt = new Date(Date.now() - 25 * 60000).toISOString();
+          saveAll();
+        }, { SHOP, JOB_A, jobA });
+
+        // Park at a kerb that is inside nobody's fence. The first ping builds
+        // the anchor, back-dating it clears the 5-minute stop floor (the same
+        // clock compression the rest of this spec uses), and the next ping is
+        // the one that settles the leg.
+        await ping(p, STOPPIN);   await p.waitForTimeout(200);
+        await p.evaluate(() => {
+          if (_geoStopAnchor) _geoStopAnchor.at = new Date(Date.now() - 12 * 60000).toISOString();
+        });
+        await ping(p, STOPPIN);   await p.waitForTimeout(400);   // settles the stop leg
+        // Pull away and finish the journey at job A.
+        await ping(p, BETWEEN);   await p.waitForTimeout(200);
+        await p.evaluate(() => {
+          if (_geoDriveStartedAt) _geoDriveStartedAt = new Date(Date.now() - 16 * 60000).toISOString();
+        });
+        await ping(p, JOB_A);     await p.waitForTimeout(1500);
+        await p.evaluate(() => { if (window.__origJobs2) { jobs.length = 0; window.__origJobs2.forEach(j => jobs.push(j)); } });
+        // ZERO, for the same reason every other step here is zero: the
+        // contractor did not tap anything. A ping is not an interaction.
+        return 0;
+      },
+      rule: async (p) => {
+        const out = await p.evaluate((d) => {
+          const mine = (typeof mileage !== 'undefined' ? mileage : [])
+            .filter(m => m && m.gps && (m.loggedAt || '') >= d.runStart);
+          return {
+            stranded: mine.filter(m => (m.from_name || m.from || '') === 'Stop').length,
+            intoJobA: mine.filter(m => m.toCoord &&
+              Math.abs(m.toCoord.lat - d.JOB_A.lat) < 1e-4 && Math.abs(m.toCoord.lng - d.JOB_A.lon) < 1e-4)
+              .map(m => ({ from: m.from_name || m.from || '', crumb: !!(m.passedThrough && m.passedThrough.stop) })),
+            originKind: _geoLegOrigin && _geoLegOrigin.kind,
+          };
+        }, { runStart, JOB_A });
+        // Three halves of one rule, and the third is what stops this step being
+        // hollow. No row may name an anonymous pin as where a drive began, the
+        // row that survives has to name the real endpoint (a log with the
+        // "Stop" rows merely deleted would pass the first test and still have
+        // lost the day), AND the surviving row must carry the breadcrumb
+        // proving a stop was actually parked at and folded out. Without that
+        // last check a run where the stop never settled at all reads green
+        // while exercising none of the bug.
+        const named = out.intoJobA.filter(r => r.from && r.from !== 'Stop');
+        const ok = out.stranded === 0 && named.length >= 1
+                   && /shop/i.test(named[named.length - 1].from)
+                   && out.intoJobA.some(r => r.crumb);
+        return { ok, got: JSON.stringify(out) };
+      },
+    });
+
+    // ── 5. THE TAPE SETS THE CLOCK ──────────────────────────────────────────
+    // A geofence cannot fire until a line several hundred feet away has been
+    // crossed, but driving starts at the parking space. Measured on the owner's
+    // account, the fix taken at the fence sat a mile from where the drive began
+    // on five of ten real departures. CoreMotion knew at the parking space, so
+    // a held foot -> automotive edge is what opens the leg.
+    await step(page, {
+      label: 'the leg opens at the moment the motion tape saw, not the fence', page: 'geo', role: 'contractor',
+      suspect: 'geo-track.js _geoTdEvent motion branch + the drive-open site',
+      ruleText: 'a recent held foot → automotive edge must become the drive start, so the clock reads from the parking space rather than from the fence line',
+      expected: 'the leg opens ~7 minutes before the fence exit, not at the exit',
+      act: async (p) => {
+        await p.evaluate(async (d) => {
+          _geoLegOrigin = null; _geoDriveStartedAt = null; _geoDrivePendingAt = null;
+          _geoStopAnchor = null; _geoCurrentJob = null; _geoArrivedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null;
+          _geoLastFenceLoc = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
+          _geoLastFenceAt = new Date(Date.now() - 30 * 60000).toISOString();
+          // PARKED AT THE SHOP, or nothing here happens. The drive-open site
+          // only runs on a fence EXIT, so the state has to say we are inside
+          // one; a step that starts nowhere never opens a leg and would assert
+          // against a null clock. The shop is also the one fence whose exit
+          // needs no second confirming ping (that gate covers job/place/client
+          // only), which is why the departure below is a single ping.
+          _geoWasInShop = true; _geoLegAtShop = true;
+          _geoShopArrivedAt = new Date(Date.now() - 30 * 60000).toISOString();
+          _geoLastMotionKind = 'walking';
+          // The real plugin event, through the real entry point. ts is a float
+          // ms exactly as the Swift side sends it, because rounding it the same
+          // way on both sides is what stops the phone and the server minting
+          // two different leg keys for one departure.
+          await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
+                              ts: Date.now() - 7 * 60000 + 0.4 });
+        }, { SHOP });
+        await p.waitForTimeout(150);
+        await ping(p, BETWEEN);   await p.waitForTimeout(500);
+        return 0;   // a motion transition is the phone noticing, not the person tapping
+      },
+      rule: async (p) => {
+        const out = await p.evaluate(() => ({
+          // Both read inside one evaluate: the page's clock and the runner's
+          // clock are two different clocks and comparing across them is
+          // meaningless (CLAUDE.md §5.2.1).
+          now: Date.now(),
+          startedAt: _geoDriveStartedAt,
+          pendingCleared: _geoDrivePendingAt === null,
+        }));
+        const ageSec = out.startedAt ? Math.round((out.now - Date.parse(out.startedAt)) / 1000) : -1;
+        // 7 minutes back, with slack for the waits above. The lower bound is the
+        // load-bearing half: at 0 the tape was ignored and the fence set the
+        // clock, which is the whole bug. The upper bound stops a stale mark from
+        // backdating a leg into last week.
+        const ok = ageSec >= 360 && ageSec <= 480 && out.pendingCleared;
+        return { ok, got: JSON.stringify({ ...out, ageSec }) };
+      },
+    });
+
+    // ── 6. AND REFUSES TO SET IT WHEN IT SHOULDN'T ─────────────────────────
+    // The negative half, and it is the half that keeps the feature honest. A
+    // phone in a pocket reads automotive from a ride in somebody else's truck,
+    // and the same edge fires pulling forward ten feet in a yard. So the mark
+    // is held, never spent on its own, and it expires: older than the cap,
+    // stamped in the future, or cancelled outright the moment they come to rest.
+    // Without this step the ratchet only ever proves the clock can move
+    // backwards, which is exactly how a backdating bug ships looking correct.
+    let staleOpen = null, futHeld = null, futOpen = null, restHeld = null, restOpen = null;
+    await step(page, {
+      label: 'a stale, future or cancelled motion mark never backdates a leg', page: 'geo', role: 'contractor',
+      suspect: 'geo-track.js _GEO_DRIVE_PENDING_MAX_MS + the rest-cancels branch',
+      ruleText: 'a held departure older than the cap, stamped in the future, or followed by coming to rest, must not set the drive clock',
+      expected: 'all three refuse the tape and open the leg at the fence instead',
+      act: async (p) => {
+        const arm = (offsetMs, thenRest) => p.evaluate(async (o) => {
+          _geoLegOrigin = null; _geoDriveStartedAt = null; _geoDrivePendingAt = null;
+          _geoStopAnchor = null; _geoCurrentJob = null; _geoArrivedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null;
+          _geoLastFenceLoc = { lat: o.lat, lng: o.lon, name: 'Shop', kind: 'shop' };
+          _geoLastFenceAt = new Date(Date.now() - 30 * 60000).toISOString();
+          // Parked at the shop for the same reason as the step above: a leg
+          // only opens on a fence exit, so each of the three cases has to start
+          // from inside one to have a clock to be wrong about.
+          _geoWasInShop = true; _geoLegAtShop = true;
+          _geoShopArrivedAt = new Date(Date.now() - 30 * 60000).toISOString();
+          _geoLastMotionKind = 'walking';
+          await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
+                              ts: Date.now() + o.offsetMs });
+          if (o.thenRest) {
+            await _geoTdEvent({ type: 'motion', kind: 'walking', prevKind: 'automotive', ts: Date.now() });
+          }
+          return { pending: _geoDrivePendingAt };
+        }, { lat: SHOP.lat, lon: SHOP.lon, offsetMs, thenRest });
+        // now and startedAt out of ONE evaluate: the page's clock and the
+        // runner's clock are two different clocks and an assertion that
+        // straddles them is meaningless (CLAUDE.md §5.2.2).
+        const opened = () => p.evaluate(() => ({ now: Date.now(), startedAt: _geoDriveStartedAt }));
+
+        // Stale: 40 minutes old, well past the 15-minute cap.
+        await arm(-40 * 60000, false);
+        await ping(p, BETWEEN); await p.waitForTimeout(400);
+        staleOpen = await opened();
+
+        // Future: clock skew on a replayed buffer must never reach forward.
+        futHeld = await arm(5 * 60000, false);
+        await ping(p, BETWEEN); await p.waitForTimeout(400);
+        futOpen = await opened();
+
+        // Rest: they got out and walked. Whatever that edge was about, it is
+        // not the departure a fence exit ten minutes from now describes.
+        restHeld = await arm(-6 * 60000, true);
+        await ping(p, BETWEEN); await p.waitForTimeout(400);
+        restOpen = await opened();
+        return 0;
+      },
+      rule: async () => {
+        const age = (o) => (o && o.startedAt) ? Math.round((o.now - Date.parse(o.startedAt)) / 1000) : -1;
+        const out = {
+          staleSec: age(staleOpen),
+          futureHeld: !!futHeld && futHeld.pending === null,
+          futureSec: age(futOpen),
+          restCleared: !!restHeld && restHeld.pending === null,
+          restSec: age(restOpen),
+        };
+        // Every one of these must open at the FENCE, which means a leg seconds
+        // old rather than minutes. 90s of slack covers the waits above; the
+        // failures they guard against are 6 to 40 minutes wide, so the margin
+        // can be generous without the test losing its teeth.
+        const ok = out.staleSec >= 0 && out.staleSec < 90
+                && out.futureHeld && out.futureSec >= 0 && out.futureSec < 90
+                && out.restCleared && out.restSec >= 0 && out.restSec < 90;
         return { ok, got: JSON.stringify(out) };
       },
     });

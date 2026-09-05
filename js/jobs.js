@@ -449,6 +449,11 @@ function clockIn(jobId,scopeId,scopeLabel){
   if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
   renderJobsPage&&renderJobsPage();
   renderDash&&renderDash();
+  // Where the tap happened (owner 2026-09-04). Fire and forget, after the row
+  // and the banner: a clock never waits on location and never fails because of
+  // it. See _geoClockPing (js/geo-track.js) for what the ping is and, just as
+  // importantly, what it deliberately is not.
+  if(typeof _geoClockPing==='function')_geoClockPing('in');
   showToast('Clocked in · '+(scopeLabel||jobName),'⏱');
 }
 
@@ -490,6 +495,10 @@ function clockOut(saveEntry,silent){
   }
   _activeTimer=null;
   hideClockBanner();
+  // Only when the time was actually kept. A discarded session (saveEntry
+  // false, a switch between jobs) is not a clock-out anybody made and must
+  // not leave a mark where it happened.
+  if(saveEntry!==false&&typeof _geoClockPing==='function')_geoClockPing('out');
   renderJobsPage&&renderJobsPage();
   renderDash&&setTimeout(renderDash,300);
 }
@@ -504,18 +513,94 @@ function clockOut(saveEntry,silent){
 function _rehydrateActiveTimer(){
   if(_activeTimer||!timeEntries||!timeEntries.length)return;
   const{loggedByUid}=_tlLoggedByInfo();
-  const mine=timeEntries.find(e=>e.open&&(e.logged_by_uid||null)===loggedByUid);
+  const mine=timeEntries.find(e=>e&&e.open&&(e.logged_by_uid||null)===loggedByUid);
   if(!mine)return;
-  const j=jobs.find(x=>x.id===mine.job_id);if(!j)return;
-  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-  _activeTimer={jobId:j.id,jobName:j.name,clientName:c?c.name:j.name,scopeId:mine.scope_id||null,scopeLabel:mine.scope_label||null,startTime:new Date(mine.start_time).getTime(),timerInterval:null,entryId:mine.id};
-  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  if(!_adoptOpenEntry(mine))return;
   showClockBanner();
+  // Paint the real elapsed time immediately instead of showing 0:00 for a
+  // second: this clock has been running since before the reload, and a resumed
+  // shift that starts again from zero reads as the time having been lost.
+  updateClockTimer();
   // A reload mid-shift restores the lock-screen card too, or the contractor
   // reopens the app to find the clock running in-app and gone from the lock
   // screen, which reads as the tracking having stopped.
   if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
+}
+
+// Build the live timer state from a persisted open row. Split out because TWO
+// paths need it and they must agree: the boot rehydrate above, and
+// clockOutEntry() below when the Clock out button is pressed on a device that
+// never held this timer in memory.
+//
+// Owner report 2026-08-31 ("Jack just said its not letting him clock out").
+// This used to be inline in _rehydrateActiveTimer and read
+// `const j=jobs.find(x=>x.id===mine.job_id); if(!j)return;`, so a clock-in
+// with NO job on it could never be resumed. That is not a corner case:
+// clockIn(null,...) is a supported button, js/jobs.js:98, and it names the
+// session "General time". Jack clocked in general at 7:55am, the app reloaded,
+// _activeTimer (a `let`) was gone, this bailed on the null job_id, and from
+// then on there was no banner and no working way to stop the clock. His row
+// was still open fourteen hours later.
+//
+// String() on both sides for the same reason _tlJobClientInfo does it: a row
+// that came back from Supabase carries a string job_id while jobs[].id is a
+// local number, so a strict === silently misses and turns a real job into a
+// general one on every reload.
+function _adoptOpenEntry(row){
+  if(!row||!row.open)return false;
+  const startMs=new Date(row.start_time).getTime();
+  if(!(startMs>0))return false;   // a malformed row must not start a clock counting from 1970
+  const _jl=Array.isArray(jobs)?jobs:[];
+  const _bl=Array.isArray(bids)?bids:[];
+  const j=row.job_id!=null?(_jl.find(x=>x&&String(x.id)===String(row.job_id))||null):null;
+  const bid=(j&&j.bid_id)?(_bl.find(b=>b&&b.id===j.bid_id)||null):null;
+  const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
+  // The same words clockIn() uses for a job-less clock, so a reload never
+  // renames somebody's shift.
+  const jobName=j?j.name:'General time';
+  _activeTimer={
+    // Keep the row's own job_id even when the job itself is missing (deleted,
+    // or not synced onto this device yet). Dropping it here would quietly
+    // detach a real job's time; clockOut's `jobs.find` simply won't match and
+    // skips crediting hours, which is correct when there is no job to credit.
+    jobId:j?j.id:(row.job_id!=null?row.job_id:null),
+    jobName,clientName:c?c.name:jobName,
+    scopeId:row.scope_id||null,scopeLabel:row.scope_label||null,
+    startTime:startMs,timerInterval:null,entryId:row.id
+  };
+  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  return true;
+}
+
+// Close one specific still-open row that belongs to YOU, from the Time Log
+// card, whether or not this device is the one that started it.
+//
+// The card's own-row button used to call clockOut() directly, whose first line
+// is `if(!_activeTimer)return;`. After a reload, or when the open row arrives
+// from the cloud after boot, _activeTimer is null and that button did nothing
+// at all: no toast, no error, no movement. A dead button in the exact
+// Â§13.1 sense, and the reason Jack ended up tapping Clock IN instead and
+// starting a second entry he immediately stopped (7 seconds, 12:43pm).
+//
+// It adopts the row and then hands off to the real clockOut(), rather than
+// closing the row itself: every side effect (haptic, live-activity end, job
+// hours, toast, saveAll, re-renders) then happens exactly once, in one place
+// (Â§7.3). It is NOT forceClockOutEntry: that one audit-tags who force-closed
+// somebody else's clock, and stamping your own name on your own clock-out
+// would be a lie in the record.
+function clockOutEntry(entryId){
+  const e=(Array.isArray(timeEntries)?timeEntries:[]).find(x=>x&&x.id===entryId&&x.open);
+  if(!e){
+    // The row is already gone or already closed (another device got there
+    // first). Still tidy up this device if it is somehow running something.
+    if(_activeTimer)clockOut();
+    return;
+  }
+  // This device is running a DIFFERENT entry: bank that one first rather than
+  // abandoning it open, then take over this row.
+  if(_activeTimer&&_activeTimer.entryId!==e.id)clockOut(true,true);
+  if(!_activeTimer&&!_adoptOpenEntry(e))return;
+  clockOut();
 }
 
 // Owner request 2026-07-11 ("bulletproof", matches Jobber's #1 timesheet
@@ -549,6 +634,18 @@ function forceClockOutEntry(entryId){
 function deleteTimeEntry(entryId){
   const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
   if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  // Deleting the row a live timer is holding leaves _activeTimer pointing at
+  // nothing: the banner keeps ticking, the lock-screen card keeps saying
+  // CLOCKED IN, and the next clock-out writes its minutes into a defensive
+  // fallback row nobody asked for. The edit modal refuses open rows so its
+  // new Delete button cannot reach this, but the long-press path
+  // (js/cloud.js _lpStart) always could. Stop the clock with the record.
+  if(_activeTimer&&_activeTimer.entryId===entryId){
+    clearInterval(_activeTimer.timerInterval);
+    _activeTimer=null;
+    if(typeof hideClockBanner==='function')hideClockBanner();
+    if(typeof _liveActClockOut==='function')_liveActClockOut();
+  }
   timeEntries=timeEntries.filter(x=>x.id!==entryId);
   saveAll();
   typeof renderTimeLog==='function'&&renderTimeLog();
@@ -571,9 +668,46 @@ function _openEditTimeEntry(entryId){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
       '<button onclick="_saveEditedTimeEntry('+entryId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>'+
+    // Owner 2026-08-31: "add a delete button to the edit button on manual
+    // clock out things". deleteTimeEntry() has existed since the 2026-07-11
+    // bulletproof work but the only way to reach it was a long-press
+    // (js/cloud.js _lpStart), which nobody discovers. Editing an entry is
+    // exactly where somebody realises it should not exist at all.
+    //
+    // On its OWN row, below the pair, with a rule above it. Never a third
+    // column beside Save: the two are one thumb-width apart on a phone and
+    // one of them destroys a payroll record. Ghost styling for the same
+    // reason, so the green Save stays the only thing that reads as the
+    // primary action on this screen (15.1).
+    '<div style="border-top:1px solid var(--border2);margin-top:14px;padding-top:12px">'+
+      '<button onclick="_deleteTimeEntryFromModal('+entryId+')" style="width:100%;padding:11px;border-radius:var(--r);border:1px solid var(--c-red-edge,#E3B7B7);background:transparent;color:#A32D2D;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">'+svgIcon('🗑',{size:14})+' Delete this entry</button>'+
     '</div>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
+}
+// Delete from inside the edit modal. Confirms first, through the app's own
+// zConfirm rather than a hand-rolled sheet (7.3), and names the entry being
+// destroyed: "delete this entry" with nothing after it is how somebody deletes
+// the wrong day. The work itself is deleteTimeEntry(), unchanged, so the
+// permission gate and the sync path stay in one place.
+function _deleteTimeEntryFromModal(entryId){
+  const e=(Array.isArray(timeEntries)?timeEntries:[]).find(x=>x&&x.id===entryId);
+  if(!e)return;
+  // Same gate deleteTimeEntry applies. Checked here too so the confirm never
+  // even opens on a row this person could not delete: a prompt that asks and
+  // then silently does nothing is worse than no button.
+  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  const when=(typeof _tlFmtTime==='function'&&e.start_time)
+    ? _tlFmtTime(e.start_time)+(e.end_time?' to '+_tlFmtTime(e.end_time):'')
+    : '';
+  const much=(e.minutes&&typeof _fmtMin==='function')?_fmtMin(e.minutes):'';
+  const what=[when,much].filter(Boolean).join(' · ');
+  zConfirm('This removes '+(what?escHtml(what):'this entry')+' from the time log for good. It cannot be undone.',()=>{
+    deleteTimeEntry(entryId);
+    document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+    if(typeof showToast==='function')showToast('Entry deleted','🗑');
+  },{title:'Delete time entry',yes:'Delete',danger:true});
 }
 function _saveEditedTimeEntry(entryId){
   const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
@@ -602,14 +736,21 @@ function _saveEditedTimeEntry(entryId){
   typeof renderTimeLog==='function'&&renderTimeLog();
 }
 
-function updateClockTimer(){
-  if(!_activeTimer)return;
-  const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+// "0:07", "12:34", "3h 04:09". One formatter, because the running clock is now
+// painted in two places at once: the app-wide clock banner and the Time Log's
+// "Currently clocked in" card (js/timelog.js _tlTickOpenElapsed). Two hand-rolled
+// versions of this would drift the moment either was touched (Â§7.3).
+function _clockElapsedStr(ms){
+  const elapsed=Math.max(0,Math.floor((Number(ms)||0)/1000));
   const h=Math.floor(elapsed/3600);
   const m=Math.floor((elapsed%3600)/60);
   const s=elapsed%60;
-  const timeStr=m+':'+(s<10?'0':'')+s;
-  const full=(h?h+'h ':'')+timeStr;
+  return (h?h+'h ':'')+m+':'+(s<10?'0':'')+s;
+}
+function updateClockTimer(){
+  if(!_activeTimer)return;
+  const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+  const full=_clockElapsedStr(Date.now()-_activeTimer.startTime);
   const el=document.getElementById('clock-banner-time');
   if(el)el.textContent=(_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+full;
   // Live time-on-site counter on the dashboard on-site card (minute granularity).
@@ -1817,7 +1958,12 @@ function _doExtendJob(jobId,addDays,btn){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   j.days=(parseInt(j.days)||1)+addDays;
   saveAll();
-  if(typeof renderCal==='function')renderCal();
+  // renderCalendar, not renderCal. renderCal has never existed, so the typeof
+  // guard was always false and extending a job saved the new duration while
+  // the calendar block kept its old width until the page was re-entered.
+  // js/jobs.js's own sibling call site (renderClientDetail();renderCalendar();)
+  // is the convention this should have followed.
+  if(typeof renderCalendar==='function')renderCalendar();
   btn.closest('.zmodal-overlay').remove();
   if(typeof showToast==='function')showToast('Job extended by '+addDays+' day'+(addDays!==1?'s':''),'📅');
 }

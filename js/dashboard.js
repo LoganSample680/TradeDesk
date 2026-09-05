@@ -288,12 +288,13 @@ function _renderDashSetupTodo(){
 function _renderDashSupplyHold(){
   const el=document.getElementById('dash-supply-hold');
   if(!el)return;
-  if(typeof pendingSupplyStores!=='function'){el.style.display='none';el.innerHTML='';return;}
+  if(typeof pendingSupplyStores!=='function'){el.style.display='none';el.innerHTML='';el.dataset.n='0';_dashHoldSync();return;}
   if(typeof _supplyRunSweep==='function')_supplyRunSweep();
   const stores=pendingSupplyStores();
   const totalRuns=stores.reduce((s,st)=>s+st.count,0);
-  if(!stores.length){el.style.display='none';el.innerHTML='';return;}
+  if(!stores.length){el.style.display='none';el.innerHTML='';el.dataset.n='0';_dashHoldSync();return;}
   el.style.display='block';
+  el.dataset.n=String(totalRuns);
   const when=(run)=>{
     let w=run.date;
     try{
@@ -308,16 +309,14 @@ function _renderDashSupplyHold(){
     }
     return w;
   };
+  // A SECTION of the one Needs-an-answer card (#dash-hold), not a card of
+  // its own (owner 2026-09-05: "Combine them"). The shell owns the title and
+  // the count; this owns the store accordions and their three doors.
   el.innerHTML=
-    '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)">'+
-      '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)">'+
-        '<div style="display:flex;align-items:center;gap:8px">'+
-          '<span style="font-size:15px">'+svgIcon('🧾',{size:15})+'</span>'+
-          '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Store runs need an answer</span>'+
-          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)">'+totalRuns+' held</span>'+
-        '</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:6px">Mileage stays out of your deduction until you answer. Scan the receipt and the miles and the expense are both done in one shot.</div>'+
-      '</div>'+
+    '<div class="td-hold-sec">'+
+      '<div class="td-hold-sec-t">'+svgIcon('🧾',{size:13})+'<span>Store runs</span></div>'+
+      '<div class="td-hold-sec-s">Mileage stays out of your deduction until you answer. Scan the receipt and the miles and the expense are both done in one shot.</div>'+
+    '</div>'+
       stores.map((store,idx)=>{
         const openClass=idx===0?' open':'';
         return '<div class="td-supply-store'+openClass+'">'+
@@ -340,8 +339,118 @@ function _renderDashSupplyHold(){
             }).join('')+
           '</div>'+
         '</div>';
-      }).join('')+
-    '</div>';
+      }).join('');
+  _dashHoldSync();
+}
+// The one card both holds live in (index.html #dash-hold). Each section
+// paints itself and reports its count in data-n; this shows the shell only
+// while something is inside and puts the total in its corner. Idempotent,
+// called by both painters, never calls back into renderDash.
+function _dashHoldSync(){
+  const shell=document.getElementById('dash-hold');
+  if(!shell)return 0;
+  const n=['dash-supply-hold','dash-visit-hold','dash-ts-hold'].reduce((sum,id)=>{
+    const e=document.getElementById(id);
+    return sum+((e&&e.style.display!=='none')?(Number(e.dataset.n)||0):0);
+  },0);
+  const c=document.getElementById('dash-hold-count');
+  if(c)c.textContent=n?(n+' held'):'';
+  shell.style.display=n?'block':'none';
+  return n;
+}
+// ── Visits that need an answer (rule 13, js/geo-derive.js) ─────────────────
+// The receipt card's sibling, same shape and same posture (owner 2026-09-05:
+// "can we tie the family popup rule in with the receipt by places thing").
+// A stop at a customer's address the day could not vouch for is HELD: on the
+// Time Log as a question, in no total, and asked here. Working makes it a
+// real row; Personal dismisses it. Both answers are written by
+// geo_answer_visit and stick through every rebuild.
+//
+// The rows live on the server (job_time_entries, source 'client-held'), so
+// the card paints from a small cache and refreshes it in the background:
+// the dashboard renders on every paint and an awaited fetch here would be the
+// show-then-hide flash the Stripe cache above exists to prevent.
+let _visitHoldCache={at:0,rows:[],uid:null};
+const _VISIT_HOLD_TTL=60000;
+async function _visitHoldFetch(){
+  try{
+    if(!window._supa||!window._supaUser)return [];
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,minutes,dest_place,job_id,client_key').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).eq('source','client-held')
+      .order('arrived_at',{ascending:false}).limit(20);
+    if(error||!Array.isArray(data))return [];
+    return data;
+  }catch(_e){return [];}
+}
+function _renderDashVisitHold(){
+  const el=document.getElementById('dash-visit-hold');
+  if(!el)return;
+  const me=window._supaUser&&_supaUser.id;
+  if(!me){el.style.display='none';el.innerHTML='';return;}
+  if(_visitHoldCache.uid!==me||Date.now()-_visitHoldCache.at>_VISIT_HOLD_TTL){
+    const uid=me;
+    _visitHoldFetch().then(rows=>{
+      _visitHoldCache={at:Date.now(),rows,uid};
+      // Repaint this card only: never back into renderDash mid-paint.
+      _paintDashVisitHold(el,rows);
+    });
+  }
+  _paintDashVisitHold(el,_visitHoldCache.uid===me?_visitHoldCache.rows:[]);
+}
+function _paintDashVisitHold(el,rows){
+  if(!el)return;
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&r.id&&r.arrived_at);
+  if(!list.length){el.style.display='none';el.innerHTML='';el.dataset.n='0';_dashHoldSync();return;}
+  el.style.display='block';
+  el.dataset.n=String(list.length);
+  const when=r=>{
+    let w='';
+    try{const d=new Date(r.arrived_at);if(isFinite(d))w=d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(_e){}
+    try{const t=bizTime(r.arrived_at).replace(/\s/g,'').replace('AM','a').replace('PM','p');if(t)w+=' · '+t;}catch(_e){}
+    return w;
+  };
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const name=r=>{
+    try{const info=(typeof _tlJobClientInfo==='function')?_tlJobClientInfo(r.job_id):null;
+      if(info&&info.clientName&&info.clientName!=='-')return info.clientName;}catch(_e){}
+    return r.dest_place||'A saved address';
+  };
+  // The other section of #dash-hold (see _renderDashSupplyHold).
+  el.innerHTML=
+    '<div class="td-hold-sec">'+
+      '<div class="td-hold-sec-t">'+svgIcon('📍',{size:13})+'<span>Visits</span></div>'+
+      '<div class="td-hold-sec-s">Outside work hours at a family address, with nothing scheduled. It counts toward nothing until you answer.</div>'+
+    '</div>'+
+      list.map(r=>
+        '<div class="td-supply-visit td-hold-visit">'+
+          '<div style="font-size:13px;font-weight:800;color:var(--text)">'+escHtml(name(r))+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(when(r))+(r.minutes?' · '+escHtml(fm(Number(r.minutes)||0)):'')+'</div>'+
+          '<div style="display:flex;gap:8px;margin-top:8px">'+
+            '<button onclick="_visitHoldAnswer(\''+escHtml(String(r.id))+'\',\'personal\')" class="btn btn-sm" style="flex:1">Personal</button>'+
+            '<button onclick="_visitHoldAnswer(\''+escHtml(String(r.id))+'\',\'working\')" class="btn btn-sm btn-p" style="flex:1">Working</button>'+
+          '</div>'+
+        '</div>').join('');
+  _dashHoldSync();
+}
+async function _visitHoldAnswer(id,mode){
+  const m=(mode==='working')?'working':'personal';
+  const row=(_visitHoldCache.rows||[]).find(r=>r&&String(r.id)===String(id))||null;
+  // Off the card at once; the server answer is what makes it stick.
+  _visitHoldCache={at:Date.now(),rows:(_visitHoldCache.rows||[]).filter(r=>String(r.id)!==String(id)),uid:_visitHoldCache.uid};
+  const el=document.getElementById('dash-visit-hold');
+  if(el)_paintDashVisitHold(el,_visitHoldCache.rows);
+  try{
+    if(window._supa){const{error}=await _supa.rpc('geo_answer_visit',{p_id:String(id),p_mode:m});
+      if(error)throw error;}
+    if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🏠');
+    try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered(row&&row.client_key);}catch(_e){}
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+  }catch(_e){
+    _visitHoldCache={at:0,rows:[],uid:null};
+    if(typeof showToast==='function')showToast('Could not save that answer, try again');
+    if(el)_renderDashVisitHold();
+  }
 }
 // Store accordion toggle. Takes the clicked header, not an id: a store's
 // name can contain characters that would need escaping into an id/selector,
@@ -1051,6 +1160,8 @@ function renderDash(){
   renderTodayFeed();
   _renderDashSetupTodo();
   _renderDashSupplyHold();
+  _renderDashVisitHold();
+  try{if(typeof _renderDashTsHold==='function')_renderDashTsHold();}catch(_e){}
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):
@@ -1099,6 +1210,11 @@ function renderDash(){
     // ask 2026-08-07). Reads the fence machine's own drive state, never
     // re-derived: an open drive leg with recent driving speed.
     const _driving=!_onClock&&(typeof _geoDriving==='function')&&_geoDriving();
+    // STANDING IN A FENCE, off the clock (owner 2026-09-02: "show how long
+    // I've been here down to the minute on the on-site banner"). The deriver
+    // reports the open dwell (js/geo-track.js _geoOpenDwellPublish); this
+    // card shows it with the arrival stamp and a figure that ticks.
+    const _openDwell=(!_onClock&&!_driving&&window._geoOpenDwell&&window._geoOpenDwell.sinceTs>0)?window._geoOpenDwell:null;
     // Styles hoisted OUT of the live branch: the optimistic snapshot card
     // below needs the same keyframes before any live state exists.
     if(!document.getElementById('_td-nearby-anim-style')){
@@ -1171,7 +1287,29 @@ function renderDash(){
             (extra||'')+
           '</div>'+
         '</div>';
-      if(_onClock){
+      const _dayEndP=(typeof _dayEndPending==='function')?_dayEndPending():null;
+      if(_dayEndP){
+        // YOUR DAY: the phone proposes, the person confirms (js/day-end.js,
+        // owner 2026-09-02: "tap to confirm then that tap clocks him out at
+        // 7:40"). Sits where the clock card would, until answered.
+        const _dt=_dayEndCardText(_dayEndP);
+        const _svgClk=(c)=>'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="'+c+'" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+        const _deHead='<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
+          '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+            '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite"></span>'+
+            '<span style="position:relative;z-index:2;width:34px;height:34px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#0E6B39);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(14,107,57,.5)">'+_svgPin('#fff',17)+'</span>'+
+          '</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<span style="display:inline-flex;align-items:center;gap:6px;background:#1B1612;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px">'+escHtml(_dt.badge)+'</span>'+
+            '<div style="font-size:17px;font-weight:800;letter-spacing:-.02em;line-height:1.2;color:#1B1612">'+escHtml(_dt.title)+'</div>'+
+            '<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:600;margin-top:3px"><span style="flex-shrink:0">'+_svgClk('#0E6B39')+'</span><span style="min-width:0;line-height:1.3">'+escHtml(_dt.sub)+'</span></div>'+
+          '</div>'+
+        '</div>';
+        // "Still working" on the left, the clock-out on the right (owner 2026-09-03).
+        const _deBtns='<button id="dash-dayend-no" onclick="_dayEndDismiss()" style="flex:0 0 auto;border-radius:12px;padding:13px 14px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center">'+escHtml(_dt.no)+'</button>'+
+          '<button id="dash-dayend-yes" onclick="_dayEndConfirm()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px">'+escHtml(_dt.yes)+'</button>';
+        _nearbyEl.innerHTML=_cardShell(_deHead+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_deBtns+'</div>');
+      } else if(_onClock){
         // ON THE CLOCK: live time-on-site (updateClockTimer ticks #dash-onsite-time every 1s).
         const _aj=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===_onClock.jobId):null;
         const _cAddr=(_aj&&_aj.addr)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).addr||''):'')||'';
@@ -1184,6 +1322,26 @@ function renderDash(){
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
         if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
+      } else if(_openDwell){
+        const _od=_openDwell,_f=_od.fence||{};
+        const _kindLabel=_od.kind==='shop'?'At the shop':_od.kind==='home_office'?'At the home office':_od.kind==='supply'?'At the supply house':_od.kind==='job'?'On the job':'On site';
+        const _odExtra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_od.sinceIso)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span data-onsite-since="'+_od.sinceTs+'">'+_fmtDur(_od.sinceTs)+'</span> on site</div>';
+        // NO Clock in button here (owner 2026-09-03: "since we have auto
+        // tracking now we dont need the click in button since it already
+        // shows when I arrived and how long im on site for"). The arrival
+        // stamp and the running duration above ARE the clock: the deriver
+        // already owns this dwell and will write the time row for it
+        // (CLAUDE.md 17), so a manual clock on top of it is a second
+        // observer of the same physical event and the exact overlap the
+        // one-deriver rule exists to prevent. Manual clock-in still lives
+        // on the pre-arrival geofence card and the job sheet, for time
+        // the deriver cannot see.
+        const _odBtns=[];
+        if(_f.clientId!=null)_odBtns.push('<button onclick="_nearbyStartWork('+Number(_f.clientId)+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
+        // No buttons at all (a dwell with no client, e.g. the shop) closes
+        // the card at the head rather than leaving an empty padded strip.
+        const _odBtnRow=_odBtns.length?'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_odBtns.join('')+'</div>':'<div style="height:14px"></div>';
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_od.name||_kindLabel,(_f.addr||_kindLabel),_odExtra)+_odBtnRow);
       } else if(_driving){
         // DRIVING: the blue sibling of the green ON SITE card, same shell
         // conventions (badge, title, stat tiles), recolored because "in
@@ -1403,12 +1561,12 @@ function _dashApplySkeletons(){
   // removable .td-boot-skel card appended and a class that hides its real
   // children (CSS rule next to .td-skel in index.html). The greeting bar is
   // included: EVERYTHING shimmers until the sync settles (owner 2026-08-10).
-  // dash-setup-todo/dash-supply-hold/dash-geo-perm are siblings of #dash-widget-root
+  // dash-setup-todo/dash-hold/dash-geo-perm are siblings of #dash-widget-root
   // (their own display:none/block toggle controls whether they exist at all, unlike
   // the always-present .td-dw widgets), so without them here they get zero shimmer
   // coverage: whatever they compute on their first paint (Stripe/QR caches included)
   // renders as final, bare content even while the rest of the dashboard is shimmering.
-  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-supply-hold,#dash-geo-perm')];
+  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-hold,#dash-geo-perm')];
   targets.forEach(el=>{
     if(el.querySelector(':scope>.td-boot-skel'))return;
     const tbar=el.classList.contains('tbar');

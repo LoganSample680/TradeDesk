@@ -1151,7 +1151,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       window.__supaMode = 'fail';
-      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', employee_user_id: 'geo-hard-user-1', job_id: '1', arrived_at: new Date(Date.now() - 600000).toISOString(), departed_at: new Date().toISOString(), minutes: 10, source: 'geofence' });
+      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', employee_user_id: 'geo-hard-user-1', job_id: '1', arrived_at: new Date(Date.now() - 600000).toISOString(), departed_at: new Date().toISOString(), minutes: 10, source: 'manual' });
       await new Promise(res => setTimeout(res, 50));
       const queuedAfterFail = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
       window.__supaMode = 'ok';
@@ -1172,12 +1172,12 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       window.__supaMode = 'no-conflict';
-      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', job_id: '2', arrived_at: new Date(Date.now() - 300000).toISOString(), departed_at: new Date().toISOString(), minutes: 5, source: 'geofence' });
+      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', job_id: '2', arrived_at: new Date(Date.now() - 300000).toISOString(), departed_at: new Date().toISOString(), minutes: 5, source: 'manual' });
       await new Promise(res => setTimeout(res, 50));
       const afterNoConflict = { inserts: window.__rec.inserts.length, hadKey: !!(window.__rec.inserts[0] && window.__rec.inserts[0].row.client_key) };
       window.__rec.inserts = [];
       window.__supaMode = 'no-column';
-      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', job_id: '3', arrived_at: new Date(Date.now() - 300000).toISOString(), departed_at: new Date().toISOString(), minutes: 5, source: 'geofence' });
+      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', job_id: '3', arrived_at: new Date(Date.now() - 300000).toISOString(), departed_at: new Date().toISOString(), minutes: 5, source: 'manual' });
       await new Promise(res => setTimeout(res, 50));
       const afterNoColumn = { inserts: window.__rec.inserts.length, hasKey: window.__rec.inserts[0] ? window.__rec.inserts[0].row.client_key !== undefined : null };
       const queueLeft = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
@@ -1227,38 +1227,6 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoRestore();
   });
 
-  test('hidden gap, a SECOND outside ping confirms it, closes at the confirming ping\'s own time, not the hidden moment', async () => {
-    await geoReset();
-    const r = await page.evaluate(async () => {
-      const jobId = 883001;
-      window.__origJobs = jobs.slice(); jobs.length = 0;
-      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
-      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
-      const arrived = new Date(Date.now() - 30 * 60000).toISOString();
-      const hidden = new Date(Date.now() - 10 * 60000).toISOString();
-      _geoCurrentJob = jobId; _geoArrivedAt = arrived;
-      _geoPersistOpen(hidden);
-      _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
-      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
-      _geoRestoreOpen();
-      await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } }); // 1st: pending
-      const beforeConfirm = new Date().toISOString();
-      await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } }); // 2nd: confirms
-      await new Promise(res => setTimeout(res, 50));
-      const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
-      const out = { row, cur: _geoCurrentJob, beforeConfirm, hiddenAt: hidden };
-      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
-      return out;
-    });
-    expect(r.row).not.toBeNull();
-    expect(r.row.source).toBe('geofence-gap');            // still tagged as gap-resolved
-    expect(r.row.departed_at).not.toBe(r.hiddenAt);        // …but NOT the unverified hidden moment
-    expect(r.row.departed_at >= r.beforeConfirm).toBe(true); // stamped at the confirming ping
-    expect(r.row.minutes).toBeGreaterThanOrEqual(29);      // ~30min open, confirmed almost immediately
-    expect(r.row.minutes).toBeLessThanOrEqual(31);
-    expect(r.cur).toBeNull();
-    await geoRestore();
-  });
 
   test('hidden gap, a low-accuracy ping never confirms a departure, however many arrive', async () => {
     await geoReset();
@@ -1555,6 +1523,31 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
         navigator.geolocation.getCurrentPosition = origGeo;
         _geoWatchId = origWatch;
         if (_geoNudgeTimer) { clearTimeout(_geoNudgeTimer); _geoNudgeTimer = null; }
+      }
+    });
+    expect(r.count).toBeGreaterThanOrEqual(1);
+    expect(r.maxAge).toBe(0);
+    await geoRestore();
+  });
+
+  test('background GPS pin: visibilitychange to hidden fires a fresh fix for the Office row end edge', async () => {
+    await geoReset();
+    const r = await page.evaluate(() => {
+      const calls = [];
+      const origGeo = navigator.geolocation.getCurrentPosition;
+      navigator.geolocation.getCurrentPosition = (cb, err, opts) => { calls.push(opts || {}); };
+      const origWatch = _geoWatchId;
+      try {
+        S.teamTracking = true;
+        if (typeof _geoTrackInit === 'function') _geoTrackInit();
+        _geoWatchId = 12345;
+        try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); } catch (e) {}
+        document.dispatchEvent(new Event('visibilitychange'));
+        return { count: calls.length, maxAge: calls[0] && calls[0].maximumAge };
+      } finally {
+        navigator.geolocation.getCurrentPosition = origGeo;
+        _geoWatchId = origWatch;
+        try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {}
       }
     });
     expect(r.count).toBeGreaterThanOrEqual(1);

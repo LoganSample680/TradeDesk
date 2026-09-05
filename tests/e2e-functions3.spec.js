@@ -3499,6 +3499,342 @@ test.describe('Client form and import functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // The test above calls _doImport with an EMPTY list, so it returns on its
+  // first line and never runs a single statement of the body, and its own
+  // try/catch would have swallowed the throw regardless. That is exactly how a
+  // ReferenceError on line 1303 survived to a real user (owner, 2026-09-01:
+  // imported 141 contacts from a vCard, got "Can't find variable:
+  // renderClients", modal stuck open, no toast, contacts actually saved).
+  // These run the body for real and do NOT catch.
+  test('_doImport with real contacts: adds them AND finishes its whole tail', async () => {
+    const r = await page.evaluate(() => {
+      const before = clients.length;
+      const openBefore = document.getElementById('import-modal');
+      if (openBefore) openBefore.style.display = 'block';
+      _importContacts = [
+        { name: 'Sweep One', phone: '5551110001', email: 'one@x.com', addr: '1 Main St', city: 'Austin', state: 'TX', zip: '78701' },
+        { name: 'Sweep Two', phone: '5551110002', email: '', addr: '', city: '', state: '', zip: '' },
+      ];
+      // Deliberately NOT wrapped in try/catch: an unresolved reference must
+      // fail this test, which is the whole point of it existing.
+      _doImport();
+      const mine = clients.filter(c => /^Sweep (One|Two)$/.test(c.name || ''));
+      const modal = document.getElementById('import-modal');
+      return {
+        grew: clients.length - before,
+        found: mine.length,
+        source: mine[0] && mine[0].source,
+        addr: (mine.find(c => c.name === 'Sweep One') || {}).addr,
+        tokens: mine.every(c => typeof c.clientToken === 'string'),
+        modalHidden: !modal || modal.style.display === 'none',
+        cleared: _importContacts.length,
+      };
+    });
+    expect(r.grew).toBe(2);
+    expect(r.found).toBe(2);
+    expect(r.source).toBe('Existing Contact');
+    expect(r.addr).toBe('1 Main St, Austin, TX 78701');
+    expect(r.tokens).toBe(true);
+    // Everything below the crash line. These are what actually regressed.
+    expect(r.modalHidden).toBe(true);
+    expect(r.cleared).toBe(0);
+  });
+
+  // The class guard, not just this one bug. Pulls every bare identifier
+  // _doImport calls out of its own source and asserts each one resolves, so
+  // the NEXT typo of this shape fails here instead of on somebody's phone.
+  // Resolved with `new Function('return typeof '+n)` rather than window[n],
+  // because a top-level const like todayKey is a real global binding but never
+  // a window property.
+  test('every function _doImport calls actually exists', async () => {
+    const r = await page.evaluate(() => {
+      const src = _doImport.toString()
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+        .replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""').replace(/`[^`]*`/g, '``');
+      const names = [...new Set([...src.matchAll(/(?:^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]))]
+        .filter(n => !['if', 'for', 'while', 'switch', 'catch', 'return', 'function', 'typeof', 'new'].includes(n));
+      const unresolved = names.filter(n => {
+        try { return new Function('return typeof ' + n)() === 'undefined'; } catch (_e) { return true; }
+      });
+      return { names, unresolved };
+    });
+    expect(r.names.length).toBeGreaterThan(3);
+    expect(r.unresolved, 'these are called by _doImport and do not exist').toEqual([]);
+  });
+
+  // The toast is the contractor's ONLY confirmation that the import worked, and
+  // it is the last statement of the tail, so it is the first thing lost to any
+  // throw above it. The owner's actual complaint was not the red error, it was
+  // that 141 contacts went in and nothing said so.
+  test('_doImport: the success toast fires, with the right count', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelectorAll('.toast').forEach(t => t.remove());
+      _importContacts = [
+        { name: 'Sweep Toast', phone: '5551110003', email: '', addr: '', city: '', state: '', zip: '' },
+      ];
+      _doImport();
+      const toasts = [...document.querySelectorAll('.toast')].map(t => t.textContent);
+      return { toasts, cleared: _importContacts.length };
+    });
+    expect(r.toasts.length, 'exactly one toast per import').toBe(1);
+    expect(r.toasts[0], 'singular when one contact came in').toContain('1 contact imported');
+    expect(r.cleared).toBe(0);
+  });
+
+  // The class guard above proves every name _doImport calls RESOLVES. This one
+  // names the specific bad reference, so re-introducing a renderClients stub to
+  // satisfy the guard cannot pass, and covers the two sibling typos the same
+  // sweep turned up: both sat behind a typeof guard, so instead of throwing they
+  // silently did nothing. An extended job kept its old width on the calendar,
+  // and a finished room scan never landed the user on the client.
+  test('sweep: every repaired call site names a function that exists', async () => {
+    const r = await page.evaluate(() => ({
+      renderClients: typeof renderClients,
+      renderClientList: typeof renderClientList,
+      renderCal: typeof renderCal,
+      renderCalendar: typeof renderCalendar,
+      openClient: typeof openClient,
+      openClientDetail: typeof openClientDetail,
+      importSrc: String(_doImport),
+      extendSrc: typeof _doExtendJob === 'function' ? String(_doExtendJob) : '',
+      scanSrc: typeof _scanToEstimate === 'function' ? String(_scanToEstimate) : '',
+    }));
+    expect(r.renderClients, 'renderClients has never existed; nothing may call it again').toBe('undefined');
+    expect(r.renderClientList, 'renderClientList is the real client-list repaint').toBe('function');
+    expect(r.renderCal, 'renderCal has never existed').toBe('undefined');
+    expect(r.renderCalendar).toBe('function');
+    expect(r.openClient, 'openClient has never existed').toBe('undefined');
+    expect(r.openClientDetail).toBe('function');
+    // Source-level, so a guarded call to the dead name cannot creep back in
+    // without the typeof check quietly hiding it again.
+    expect(r.importSrc).toContain('renderClientList()');
+    expect(r.extendSrc, '_doExtendJob repaints via renderCalendar').toContain('renderCalendar');
+    expect(r.extendSrc.includes('renderCal(')).toBe(false);
+    expect(r.scanSrc, '_scanToEstimate lands the user on the client').toContain('openClientDetail(');
+  });
+
+  // Every import test below pushes real rows into the shared `clients` array,
+  // and _showImportPreview DEDUPES against it by name. So without this, the
+  // preview test saw its own contact already imported by an earlier test and
+  // counted zero. Scoped to these exact fixture names so it cannot touch
+  // anything else in this file.
+  const TEST_NAMES = /^(Jonas Vcardsen|Three Props|Sweep One|Sweep Two|Jack Schonfeldt|Long Street|Escaped|Empty Adr|Baby|Wrapped|Leads Repaint|Clients Repaint)$/;
+  test.afterEach(async () => {
+    await page.evaluate((src) => {
+      const re = new RegExp(src);
+      clients = clients.filter(c => !re.test((c && c.name) || ''));
+      if (typeof _importContacts !== 'undefined') _importContacts = [];
+    }, TEST_NAMES.source);
+  });
+
+  // Owner 2026-09-01: "the test here is that first name last name comes over
+  // along with addresses especially multiple properties."
+  test.describe('vCard: names and multiple properties', () => {
+    const CARD = [
+      'BEGIN:VCARD', 'VERSION:3.0',
+      'N:Vcardsen;Jonas;;;', 'FN:Jonas Vcardsen',
+      'TEL;TYPE=CELL:+17855551234',
+      'EMAIL;TYPE=INTERNET:john@example.com',
+      'ADR;TYPE=HOME:;;2950 SW McClure Rd;Topeka;KS;66614;USA',
+      'ADR;TYPE=WORK:;;2015 SW Randolph Ave;Topeka;KS;66604;USA',
+      'END:VCARD',
+    ].join('\r\n');
+
+    test('every ADR comes over: the first is the address, the rest are properties', async () => {
+      const r = await page.evaluate((t) => _parseVCard(t)[0], CARD);
+      expect(r.name).toBe('Jonas Vcardsen');
+      expect(r.addr).toBe('2950 SW McClure Rd');
+      expect(r.city).toBe('Topeka');
+      expect(r.state).toBe('KS');
+      expect(r.zip).toBe('66614');
+      // The half that was silently dropped before: match() without /g returns
+      // one hit, so the second property never existed.
+      expect(r.extras).toHaveLength(1);
+      expect(r.extras[0].label).toBe('Work');
+      expect(r.extras[0].addr).toBe('2015 SW Randolph Ave, Topeka, KS 66604');
+    });
+
+    test('no FN: the structured N gives first name then last name', async () => {
+      const r = await page.evaluate(() => _parseVCard(
+        'BEGIN:VCARD\r\nVERSION:3.0\r\nN:Schonfeldt;Jack;;;\r\nTEL:7855550000\r\nEND:VCARD')[0]);
+      expect(r.name).toBe('Jack Schonfeldt');   // given then family, not "Schonfeldt Jack"
+    });
+
+    test('a folded long address is not truncated at the fold', async () => {
+      // Apple Contacts wraps every line past 75 octets and marks the
+      // continuation with one leading space. The old regex stopped at the
+      // newline and cut the street in half.
+      const r = await page.evaluate(() => _parseVCard(
+        'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Long Street\r\nTEL:7855550001\r\n' +
+        'ADR;TYPE=HOME:;;12345 Northwest Countryside Estates Boulevard Suite\r\n  1400;Topeka;KS;66610;\r\nEND:VCARD')[0]);
+      expect(r.addr).toBe('12345 Northwest Countryside Estates Boulevard Suite 1400');
+    });
+
+    test('vCard escaping is undone, so a comma in a street survives', async () => {
+      const r = await page.evaluate(() => _parseVCard(
+        'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Escaped\r\nTEL:7855550002\r\n' +
+        'ADR:;;Unit 3\\, Bldg C;Topeka;KS;66604;\r\nEND:VCARD')[0]);
+      expect(r.addr).toBe('Unit 3, Bldg C');
+    });
+
+    test('an empty ADR line is not counted as a property', async () => {
+      const r = await page.evaluate(() => _parseVCard(
+        'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Empty Adr\r\nTEL:7855550003\r\n' +
+        'ADR;TYPE=HOME:;;;;;;\r\nADR;TYPE=WORK:;;1 Real St;Topeka;KS;66604;\r\nEND:VCARD')[0]);
+      expect(r.addr).toBe('1 Real St');     // the real one is promoted to primary
+      expect(r.extras).toHaveLength(0);
+    });
+
+    test('three properties: two land in extraAddresses through the real import', async () => {
+      const r = await page.evaluate((t) => {
+        const parsed = _parseVCard(t + '\r\n' + [
+          'BEGIN:VCARD', 'VERSION:3.0', 'FN:Three Props', 'TEL:7855559999',
+          'ADR;TYPE=HOME:;;1 First St;Topeka;KS;66604;',
+          'ADR;TYPE=WORK:;;2 Second St;Topeka;KS;66605;',
+          'ADR:;;3 Third St;Topeka;KS;66606;',
+          'END:VCARD',
+        ].join('\r\n'));
+        _importContacts = parsed.filter(c => /Three Props|Jonas Vcardsen/.test(c.name));
+        const before = clients.length;
+        _doImport();
+        const three = clients.find(c => c.name === 'Three Props');
+        const john = clients.find(c => c.name === 'Jonas Vcardsen');
+        return {
+          grew: clients.length - before,
+          threeExtras: (three && three.extraAddresses) || null,
+          johnExtras: (john && john.extraAddresses) || null,
+          johnAddr: john && john.addr,
+        };
+      }, CARD);
+      expect(r.grew).toBe(2);
+      // Carried all the way to the stored client, which is where it was being
+      // dropped even after the parser found them (extraAddresses was []).
+      expect(r.threeExtras).toHaveLength(2);
+      expect(r.threeExtras[0].addr).toBe('2 Second St, Topeka, KS 66605');
+      expect(r.threeExtras[1].addr).toBe('3 Third St, Topeka, KS 66606');
+      expect(r.threeExtras[1].label).toBe('Property 2');   // no TYPE, so numbered
+      expect(r.johnExtras).toHaveLength(1);
+      expect(r.johnAddr).toBe('2950 SW McClure Rd, Topeka, KS 66614');
+    });
+
+    // THE REAL SHAPE. An Apple Contacts export writes any labelled property as
+    // part of a group, "item1.ADR", with the human label on its own
+    // "item1.X-ABLabel" line. Anchoring on ^ADR matched none of it, which is
+    // why the owner's 141-contact import landed 3 addresses. This is his
+    // actual "Baby" contact's shape.
+    const APPLE_CARD = [
+      'BEGIN:VCARD', 'VERSION:3.0',
+      'N:;Baby;;;', 'FN:Baby',
+      'TEL;type=CELL;type=VOICE;type=pref:+17852155250',
+      'item1.ADR;type=HOME;type=pref:;;2015 SW Randolph Ave;Topeka;KS;66604;USA',
+      'item1.X-ABADR:us',
+      'item2.ADR;type=HOME:;;1565 SW Lakeside Dr;Topeka;KS;66604;USA',
+      'item2.X-ABADR:us',
+      'item2.X-ABLabel:Lake house',
+      'END:VCARD',
+    ].join('\r\n');
+
+    test('Apple grouped properties: item1.ADR is an address, not invisible', async () => {
+      const r = await page.evaluate((t) => _parseVCard(t)[0], APPLE_CARD);
+      expect(r.name).toBe('Baby');
+      expect(r.phone).toBe('+17852155250');
+      // Every one of these was empty on the owner's real import.
+      expect(r.addr).toBe('2015 SW Randolph Ave');
+      expect(r.city).toBe('Topeka');
+      expect(r.zip).toBe('66604');
+      expect(r.extras).toHaveLength(1);
+      expect(r.extras[0].addr).toBe('1565 SW Lakeside Dr, Topeka, KS 66604');
+      // His own word for the place, off X-ABLabel, not the generic TYPE=HOME.
+      expect(r.extras[0].label).toBe('Lake house');
+    });
+
+    test("Apple's built-in labels are unwrapped from their _$!<...>!$_ casing", async () => {
+      const r = await page.evaluate(() => _parseVCard([
+        'BEGIN:VCARD', 'VERSION:3.0', 'FN:Wrapped', 'TEL:7855550004',
+        'item1.ADR:;;1 A St;Topeka;KS;66604;',
+        'item2.ADR:;;2 B St;Topeka;KS;66604;',
+        'item2.X-ABLabel:_$!<Work>!$_',
+        'END:VCARD',
+      ].join('\r\n'))[0]);
+      expect(r.extras[0].label).toBe('Work');
+    });
+
+    test('a second tap on Import cannot double-import the same list', async () => {
+      const r = await page.evaluate((t) => {
+        _importContacts = _parseVCard(t);
+        const before = clients.length;
+        _doImport();
+        const afterFirst = clients.length - before;
+        _doImport();                      // the owner's second tap
+        return { afterFirst, afterSecond: clients.length - before, left: _importContacts.length };
+      }, APPLE_CARD);
+      expect(r.afterFirst).toBe(1);
+      // 141 became 281 because the crash skipped the line that clears the
+      // list. Now it is taken before anything can throw.
+      expect(r.afterSecond).toBe(1);
+      expect(r.left).toBe(0);
+    });
+
+    // Owner 2026-09-01: "when I imported them they didn't hit in real time,
+    // had to click the leads button to get them to pull." He imported from the
+    // Leads page; _doImport only ever repainted the Clients list.
+    test('importing from the Leads page repaints Leads, not just Clients', async () => {
+      const r = await page.evaluate(() => {
+        const prev = document.querySelector('.pg.active')?.id || null;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-leads')?.classList.add('active');
+        const calls = [];
+        const savedLeads = window.renderLeadsPage, savedList = window.renderClientList;
+        window.renderLeadsPage = () => { calls.push('leads'); };
+        window.renderClientList = () => { calls.push('clients'); };
+        _importContacts = [{ name: 'Leads Repaint', phone: '5557770001', email: '', addr: '', city: '', state: '', zip: '' }];
+        _doImport();
+        window.renderLeadsPage = savedLeads; window.renderClientList = savedList;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        if (prev) document.getElementById(prev)?.classList.add('active');
+        return { calls };
+      });
+      // Both: the client list and its selectors still refresh app-wide, AND
+      // the page he is looking at redraws.
+      expect(r.calls).toContain('clients');
+      expect(r.calls).toContain('leads');
+    });
+
+    test('importing from the Clients page does not double-render it', async () => {
+      const r = await page.evaluate(() => {
+        const prev = document.querySelector('.pg.active')?.id || null;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-clients')?.classList.add('active');
+        let n = 0;
+        const savedList = window.renderClientList;
+        window.renderClientList = () => { n++; };
+        _importContacts = [{ name: 'Clients Repaint', phone: '5557770002', email: '', addr: '', city: '', state: '', zip: '' }];
+        _doImport();
+        window.renderClientList = savedList;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        if (prev) document.getElementById(prev)?.classList.add('active');
+        return { n };
+      });
+      expect(r.n).toBe(1);
+    });
+
+    test('CSV first + last columns still join into one name', async () => {
+      const r = await page.evaluate(() => _parseCSV(
+        'First Name,Last Name,Phone,Address,City,State,Zip\nJack,Schonfeldt,7855551111,9 Elm St,Topeka,KS,66604'));
+      expect(r).toHaveLength(1);
+      expect(r[0].name).toBe('Jack Schonfeldt');
+      expect(r[0].addr).toBe('9 Elm St');
+    });
+
+    test('the preview counts the extra properties before you tap Import', async () => {
+      const r = await page.evaluate((t) => {
+        _showImportPreview(_parseVCard(t));
+        return document.getElementById('import-preview-summary').textContent;
+      }, CARD);
+      expect(r).toContain('1 extra property');
+    });
+  });
+
   test('no console errors during client form/import tests', async () => {
     assertNoErrors(page, 'client form/import');
   });
@@ -6495,6 +6831,33 @@ test.describe('Finance tracker, export, and calendar functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  // The test above cannot catch a regression here: it wraps the call in a
+  // catch that returns ok:true, so a throw reads as a pass. That is how a
+  // start-less job shipped a crash that took the whole cloud load down
+  // (CI shard 4, 2026-08-28). This one lets the throw land.
+  test('renderCalUpcoming: a job with no start date cannot crash the calendar', async () => {
+    const r = await page.evaluate(() => {
+      const saved = jobs.slice();
+      try {
+        jobs.length = 0;
+        // The exact shape a malformed sync response produces: no start at
+        // all. addDays(undefined,...) returns the string 'NaN-NaN-NaN' and
+        // 'NaN-NaN-NaN' >= todayKey() is TRUE, so this row used to reach a
+        // sort that assumes start is a string.
+        jobs.push({ id: 90001, name: 'No start', days: 1, color: '#185FA5' });
+        jobs.push({ id: 90002, name: 'Null start', start: null, days: 1, color: '#185FA5' });
+        jobs.push({ id: 90003, name: 'Real', start: todayKey(), days: 1, color: '#185FA5' });
+        let threw = null;
+        try { renderCalUpcoming(); } catch (e) { threw = e.message; }
+        const html = document.getElementById('cal-upcoming')?.innerHTML || '';
+        return { threw, showsReal: html.includes('Real'), showsNoStart: html.includes('No start') };
+      } finally { jobs.length = 0; saved.forEach(j => jobs.push(j)); }
+    });
+    expect(r.threw, 'a dateless job must not throw').toBe(null);
+    expect(r.showsReal, 'the good job still renders').toBe(true);
+    expect(r.showsNoStart, 'a job with no date has nothing to show on a calendar').toBe(false);
   });
 
   test('pullClient: calls without throwing', async () => {
@@ -9813,6 +10176,25 @@ test.describe('Version consistency', () => {
     });
     expect(result.appVersion).toBeTruthy();
     expect(result.version).toBe(result.appVersion);
+  });
+
+  // The sw.js CACHE string is the THIRD copy of the version and the only one
+  // nothing guarded. It drifted on 2026-09-04: a rebase conflict took origin's
+  // version.json + sw.js (.1) and ours for cloud.js (.21), so every foreground
+  // poll saw a mismatch and reloaded the app on a 15s loop. Two long
+  // page.evaluate blocks died with "execution context was destroyed" in CI,
+  // which is how it was found, and the owner's phone would have reloaded
+  // forever. bump-version.js writes all three together; this proves they
+  // stayed together.
+  test('sw.js CACHE carries the same version as version.json', async () => {
+    const result = await page.evaluate(async () => {
+      const v = await (await fetch('/version.json?_=' + Date.now(), { cache: 'no-store' })).json();
+      const sw = await (await fetch('/sw.js?_=' + Date.now(), { cache: 'no-store' })).text();
+      const m = sw.match(/const CACHE\s*=\s*'tradedesk-([^']+)'/);
+      return { version: v.version, cache: m ? m[1] : null };
+    });
+    expect(result.cache).toBeTruthy();
+    expect(result.cache).toBe(result.version);
   });
 
   test('APP_VERSION format is MM.DD.YY.NN', async () => {

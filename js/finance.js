@@ -1030,11 +1030,6 @@ async function expSave(){
       // Only stamp an edit if it was never stamped. Re-stamping would move the
       // pin to wherever they happened to be doing paperwork days later.
       if(typeof _stampGeo==='function'&&expenses[idx]&&expenses[idx].lat==null)_stampGeo(expenses[idx]);
-      // A receipt is the only thing that can tell a crew lunch run from a
-      // personal one, and it rarely arrives while they are still in the car
-      // park. If this one belongs to a stop that was passed through as a
-      // detour, that day gets rebuilt now (mileage.js reviewDetourReceipts).
-      if(typeof reviewDetourReceipts==='function')reviewDetourReceipts();
       showToast('Expense updated, '+vendor+' '+fmt(amount),'✓');
       closeExpenseFlow();
       setTimeout(()=>{if(typeof renderExpenses==='function')renderExpenses();},0);
@@ -1100,8 +1095,6 @@ async function expSave(){
   // Where it was logged. Fire-and-forget: this never blocks or delays the save,
   // and silently does nothing if location was never granted.
   if(typeof _stampGeo==='function')_stampGeo(expenses.find(e=>e.id===expId));
-  // Same rebuild on a fresh receipt: see the edit path above.
-  if(typeof reviewDetourReceipts==='function')reviewDetourReceipts();
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved: '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
   if(cat==='tools'&&amount>=500)setTimeout(()=>showToast(svgIcon('💡')+' Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction, flag for your CPA','📋'),900);
   closeExpenseFlow();
@@ -1566,7 +1559,17 @@ function renderCalConflicts(){
   if(el)el.innerHTML=conflicts.map(c=>'<div class="tip tip-d" style="margin-bottom:6px">Scheduling conflict: '+c+'</div>').join('');
 }
 function renderCalWeek(){const t=new Date(),dow=t.getDay(),DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],tk=todayKey();const days=[];for(let i=0;i<7;i++){const d=new Date(t);d.setDate(t.getDate()-dow+i);days.push(d);}document.getElementById('cal-week').innerHTML=days.map((d,i)=>{const key=dateKey(d),dj=getJobsOnDay(key).filter(x=>!x.isBuf),isToday=key===tk;return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)"><div style="width:30px;text-align:center;flex-shrink:0"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:${isToday?'var(--blue)':'var(--text3)'}">${DNAMES[i]}</div><div style="font-size:13px;font-weight:${isToday?'700':'400'};color:${isToday?'var(--blue)':'var(--text2)'}">${d.getDate()}</div></div><div style="flex:1;min-width:0">${dj.length?dj.map(({job})=>`<div style="font-size:10px;padding:2px 5px;border-radius:3px;background:${job.color};color:#fff;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(job.name)}</div>`).join(''):'<div style="font-size:11px;color:var(--text3)">Open</div>'}</div></div>`;}).join('');}
-function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
+// A job with no usable start date used to CRASH this, taking the whole
+// calendar render and its caller with it (live console error, CI shard 4
+// 2026-08-28: "Cannot read properties of undefined (reading 'localeCompare')"
+// thrown out of supaLoadFromCloud, so a malformed sync response aborted the
+// cloud load itself). The filter looked like it excluded such a row and did
+// the opposite: addDays(undefined,...) returns the STRING 'NaN-NaN-NaN', and
+// 'NaN-NaN-NaN' >= '2026-08-28' is true, because 'N' sorts after '2'. Every
+// start-less job therefore reached a sort that assumes a string. Rejecting
+// them up front is the fix; a job with no date has nothing to show on a
+// calendar anyway, and dropping one row must never cost the whole page.
+function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>j&&typeof j.start==='string'&&j.start&&addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
 
 function populateSchedSelect(){
   const cSel=document.getElementById('s-client-sel');
@@ -3024,20 +3027,40 @@ async function _openJobProfit(){
 }
 
 // ── Crew labor cost, per-employee rollup + dashboard tile ────────────────────
-function _ctDateStr(d){
-  try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
+// THE BUSINESS'S OWN CLOCK, not Central (owner 2026-08-30: "so it should be
+// synced to business location timezone?"). It should, and the app already
+// knew how: bizTz() (js/utils.js) resolves S.bizTz, else derives the zone
+// from the shop place's coordinates and state, else the device.
+//
+// These three used to hardcode America/Chicago while the Time Log RENDERED
+// its times through bizTz(). For a Central contractor the two agree exactly,
+// which is why nothing ever looked wrong; for one in Arizona a row logged
+// after ~10pm local was FILED under tomorrow while the log drew it as today,
+// so the day total and the day rail disagreed with the clock on the wall.
+// A day boundary decides which day gets paid, so that is a payroll bug, not
+// a cosmetic one.
+//
+// Named _biz*, not _ct*, because the old names now say the wrong thing: the
+// next person to read "ct" would reasonably assume Central and be wrong
+// everywhere outside it.
+function _bizTzName(){
+  try{if(typeof bizTz==='function')return bizTz()||'America/Chicago';}catch(_e){}
+  return 'America/Chicago';
+}
+function _bizDateStr(d){
+  try{return new Intl.DateTimeFormat('en-CA',{timeZone:_bizTzName(),year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
   catch(_e){return dateKey(d);}
 }
-// Central-time clock stamps, same purpose as _ctDateStr just above (owner
+// Business-clock stamps, same purpose as _bizDateStr just above (owner
 // ask 2026-08-23: the on-device location diagnostics panel, js/geo-track.js
 // _geoDiagPanel, showed raw UTC event times, confusing to read against a
-// phone that's on Central time). America/Chicago carries CDT/CST itself, so
-// this stays correct across the DST boundary without a hand-maintained
+// phone that's on the business's own time). A named IANA zone carries its
+// own DST rules, so this stays correct across the boundary without a hand-maintained
 // offset. 'MM-DDTHH:MM:SS' is the same compact shape the diagnostics log
 // already used, just in the right timezone now.
-function _ctStamp(d){
+function _bizStamp(d){
   try{
-    const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(d);
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:_bizTzName(),month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(d);
     const g=t=>(parts.find(p=>p.type===t)||{}).value||'';
     let hh=g('hour');if(hh==='24')hh='00'; // some engines return '24' at midnight under hour12:false
     return g('month')+'-'+g('day')+'T'+hh+':'+g('minute')+':'+g('second');
@@ -3046,9 +3069,9 @@ function _ctStamp(d){
 // HH:MM only, for a window's END clock (the reconciler's own recon-win tags
 // show a full start stamp, then just the time on the other side of the
 // arrow when it's the same day, see _wTag in _geoReconcileFromMileage).
-function _ctHM(d){
+function _bizHM(d){
   try{
-    const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:_bizTzName(),hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
     const g=t=>(parts.find(p=>p.type===t)||{}).value||'';
     let hh=g('hour');if(hh==='24')hh='00';
     return hh+':'+g('minute');
@@ -3129,32 +3152,15 @@ async function _openCrewCost(){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   _crewCostRender('week');
 }
-// The motion history covering every shop session in the range, or null when
-// there is none. Mirrors _tlShopTape (js/timelog.js) deliberately: Crew Cost
-// and the Time Log must never disagree about a paid minute, so both read the
-// same tape and both hand it to the one function that owns the rule.
-async function _ccShopTape(byUid){
-  try{
-    if(typeof _geoMotionTape!=='function')return null;
-    let lo=0,hi=0;
-    Object.keys(byUid||{}).forEach(uid=>(byUid[uid]||[]).forEach(e=>{
-      const a=Date.parse((e&&e.arrived_at)||'')||0,b=Date.parse((e&&e.departed_at)||'')||0;
-      if(a>0&&(!lo||a<lo))lo=a;
-      if(b>hi)hi=b;
-    }));
-    if(!(lo>0&&hi>lo))return null;
-    return await _geoMotionTape(lo,hi);
-  }catch(_e){return null;}
-}
 async function _crewCostRender(range){
   const body=document.getElementById('_crew-cost-body');if(!body)return;
   ['today','week','month','quarter','ytd'].forEach(r=>{const b=document.getElementById('_cc-'+r);if(b){const on=r===range;b.style.background=on?'var(--blue)':'var(--bg2)';b.style.color=on?'#fff':'var(--text)';b.style.borderColor=on?'var(--blue)':'var(--border2)';}});
   body.innerHTML=_tdSkelRows(5,12);
-  const todayStr=_ctDateStr(new Date());
+  const todayStr=_bizDateStr(new Date());
   const [yr,mo]=todayStr.split('-').map(Number);
   let sinceStr,label;
   if(range==='today'){sinceStr=todayStr;label='today';}
-  else if(range==='week'){sinceStr=_ctDateStr(new Date(Date.now()-6*86400000));label='this week';}
+  else if(range==='week'){sinceStr=_bizDateStr(new Date(Date.now()-6*86400000));label='this week';}
   else if(range==='month'){sinceStr=yr+'-'+String(mo).padStart(2,'0')+'-01';label='this month';}
   else if(range==='quarter'){const qm=Math.floor((mo-1)/3)*3+1;sinceStr=yr+'-'+String(qm).padStart(2,'0')+'-01';label='this quarter';}
   else{sinceStr=yr+'-01-01';label='this year';}
@@ -3167,10 +3173,10 @@ async function _crewCostRender(range){
   // null logged_by_uid means the owner; _fetchCrewLabor already resolves the
   // owner's rate/name under cid.
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(_supaUser&&_supaUser.id);
-  const manualEnts=timeEntries.filter(e=>e.start_time&&_ctDateStr(new Date(e.start_time))>=sinceStr)
+  const manualEnts=timeEntries.filter(e=>e.start_time&&_bizDateStr(new Date(e.start_time))>=sinceStr)
     .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,departed_at:e.end_time,source:'manual'}));
-  const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
-  const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
+  const ents=data.entries.filter(en=>en.arrived_at&&_bizDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
+  const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_bizDateStr(new Date(en.arrived_at))>=sinceStr);
   if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
   // Nominal work day for the unaccounted-time estimate. This used to derive from
   // the configurable tracking window; that window is gone (tracking no longer
@@ -3201,19 +3207,13 @@ async function _crewCostRender(range){
   });
   const _ccOverlapMs=(aStart,aEnd,windows)=>windows.reduce((sum,[bStart,bEnd])=>
     sum+Math.max(0,Math.min(aEnd,bEnd)-Math.max(aStart,bStart)),0);
-  // Computed before anything is aggregated: both the drive filter just below
-  // and the shop spans further down need the day's workday window.
-  const shopCut=(typeof _geoShopCutoffs==='function')?_geoShopCutoffs(ents):{};
+  // Rows arrive AS THE DAY WAS (owner 2026-09-02, js/geo-derive.js): a
+  // drive is between two saved addresses or it was never written, a dwell is
+  // bounded by an arrival and a departure, and nothing overlaps. Crew Cost
+  // reads the same rows the Time Log draws and applies no grading of its own,
+  // which is the only way the two screens can agree about a paid minute.
   ents.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
-    // Same workday bound the Time Log applies: a drive leg outside the day's
-    // first and last real job/supply activity is a personal trip the tracker
-    // caught, never paid labor (js/geo-track.js _geoRowInWorkday). Applied
-    // here too so Crew Cost and the Time Log cannot disagree about a day.
-    if(_geoIsDriveSource(en.source)&&typeof _geoRowInWorkday==='function'&&en.arrived_at){
-      const dd=_ctDateStr(new Date(en.arrived_at));
-      if(!_geoRowInWorkday(en.arrived_at,en.departed_at,((shopCut[uid]||{})[dd])||null))return;
-    }
     const e=_emp(uid);let m=en.minutes||0;
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
     // e.min, which drives loaded cost and wage, and out of dayMins, which drives
@@ -3237,50 +3237,26 @@ async function _crewCostRender(range){
       const key=bidId!=null?String(bidId):'unknown';
       e.jobs[key]=(e.jobs[key]||0)+m;
     }
-    const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
+    const day=_bizDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
-  // The day auto clocks out at its last real work event, so yard dwell after
-  // the last job or supply run (and yard dwell on a day with no work fence at
-  // all) is worth zero paid minutes: js/geo-track.js _geoShopCutoffs carries
-  // the full rule. Applied HERE as well as on the Time Log on purpose, Crew
-  // Cost is where those minutes turn into money, and two screens disagreeing
-  // about what a day paid is worse than either answer alone.
-  // Per person, in order: the clock-out bound AND the no-minute-paid-twice
-  // clip between overlapping sessions both live in _geoShopPaidSpans
-  // (js/geo-track.js), so this screen and the Time Log cannot drift apart.
-  const shopByUid={};
+  // Shop rows, as stored, trimmed only by a manual clock that covers them
+  // (picking up material FOR a job and clocking that job is one span of
+  // work, not two).
   shopEnts.forEach(en=>{
     if(!en||!en.employee_user_id||!en.arrived_at)return;
+    const uid=en.employee_user_id;
     const a=Date.parse(en.arrived_at);
     const b=en.departed_at?Date.parse(en.departed_at):a+(en.minutes||0)*60000;
-    (shopByUid[en.employee_user_id]=shopByUid[en.employee_user_id]||[])
-      .push({arrived_at:en.arrived_at,departed_at:new Date(b).toISOString()});
+    if(!(a>0&&b>a))return;
+    const raw=Number(en.minutes)>0?Math.round(Number(en.minutes)):Math.round((b-a)/60000);
+    const overlapMin=Math.round(_ccOverlapMs(a,b,manualWindows[uid]||[])/60000);
+    const m=Math.max(0,raw-Math.min(raw,overlapMin));
+    if(m<1)return;
+    const e=_emp(uid);
+    const day=_bizDateStr(new Date(a));
+    e.min+=m;e.shopMin+=m;
+    e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
-  // Same tape the Time Log reads, for the same reason: at a home shop the
-  // paid span is the walking part (js/geo-track.js _geoActiveTrim). Crew Cost
-  // and the Time Log must never disagree about a number, so both fetch it and
-  // both hand it to the one function that owns the rule.
-  const shopTape=await _ccShopTape(shopByUid);
-  for(const uid of Object.keys(shopByUid)){
-    const mine=ents.filter(x=>x&&String(x.employee_user_id)===String(uid));
-    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(shopByUid[uid],shopCut[uid]||{},mine,shopTape):[];
-    shopByUid[uid].forEach((en,i)=>{
-      const sp=spans[i];if(!sp)return;
-      const bounded=sp.minutes||0;
-      // Overlap is measured against the BOUNDED window, not the raw one: a
-      // manual clock outside the workday would otherwise be subtracted from
-      // minutes the clock-out already removed, double-docking the same time.
-      const overlapMin=Math.round(_ccOverlapMs(sp.startMs,sp.endMs,manualWindows[uid]||[])/60000);
-      const m=Math.max(0,bounded-Math.min(bounded,overlapMin));   // never below 0, never over the bounded span
-      // Bucket created only once the session actually pays something, otherwise
-      // a person whose whole week was after-hours yard dwell renders as a 0.0h row.
-      if(m<1)return;
-      const e=_emp(uid);
-      const day=_ctDateStr(new Date(sp.startMs));
-      e.min+=m;e.shopMin+=m;
-      e.dayMins[day]=(e.dayMins[day]||0)+m;
-    });
-  }
   // Revenue attribution + overtime per employee
   Object.keys(byEmp).forEach(uid=>{
     const bidsSeen=new Set(Object.keys(byEmp[uid].jobs).filter(k=>k!=='unknown'));
@@ -3647,15 +3623,22 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
     const dr=byDay[day];
     const dayTotal=dr.reduce((s,r)=>s+sumFn(r),0);
     const safe=day.replace(/[^0-9]/g,'')||'x';
-    return '<div class="bk-day open" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
+    // opts.closed is ADDITIVE and defaults to the old always-open behaviour,
+    // so Income, Expenses, the client timeline and Time at Places are all
+    // untouched. The Time Log is the one caller that wants it: a week for one
+    // person is a dozen rows and a week for a crew is fifty, and research on
+    // what contractors actually scan for (2026-08-29) says the detail is
+    // evidence you open, not the headline you read.
+    const dayOpen=opts.closed?'':' open';
+    return '<div class="bk-day'+dayOpen+'" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
       '<button class="bk-day-hd" onclick="_bkTogDay(\''+tab+'\',\''+mo+'\',\''+safe+'\')">'+
         '<span class="bk-day-title">'+_bkDayLabel(day)+'</span>'+
         '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+(opts.metaFn?opts.metaFn(dr):(dr.length+' · '+fmtFn(dayTotal)))+'</span>'+
         '<span class="bk-day-chev">▾</span>'+
       '</button>'+
-      '<div class="bk-day-body">'+
+      '<div class="bk-day-body"'+(opts.closed?' style="display:none"':'')+'>'+
         (opts.bodyFn?opts.bodyFn(dr):
-        '<div class="bk-tbl-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl bk-tbl" style="min-width:'+minWidth+'px"><thead><tr>'+
+        '<div class="bk-tbl-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl bk-tbl'+(opts.tblClass?' '+opts.tblClass:'')+'" style="min-width:'+minWidth+'px"><thead><tr>'+
           headers.map(h=>'<th>'+h+'</th>').join('')+((tab==='exp'||tab==='tl')?'<th></th>':'')+'</tr></thead><tbody>'+
           dr.map(rowFn).join('')+
         '</tbody></table></div>')+

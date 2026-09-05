@@ -30,11 +30,21 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       window.__install = (mine, benchRows) => {
         window.__lcMine = mine; window.__lcBench = benchRows;
         if (window.__supaSave === undefined) window.__supaSave = window._supa;
+        // Answer ONLY the two calls this card makes, and hand everything else
+        // back to the real shim. The app keeps pulling in the background (the
+        // foreground refresh, a realtime trailing load), and a stub that
+        // answered every table with a two-link chain made those pulls throw
+        // TypeError, which the app reports as a cloud-load error and an
+        // unrelated assertNoErrors then fails on.
+        const save = window.__supaSave;
         window._supa = {
-          rpc: async () => ({ data: window.__lcMine, error: null }),
-          from: () => ({
-            select: () => ({ order: () => ({ limit: async () => ({ data: window.__lcBench, error: null }) }) }),
-          }),
+          ...save,
+          rpc: (name, args) => (name === 'lifecycle_funnel'
+            ? Promise.resolve({ data: window.__lcMine, error: null })
+            : save.rpc(name, args)),
+          from: (table) => (table === 'analytics_metrics_daily'
+            ? { select: () => ({ order: () => ({ limit: async () => ({ data: window.__lcBench, error: null }) }) }) }
+            : save.from(table)),
         };
       };
     });

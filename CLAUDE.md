@@ -47,6 +47,25 @@ Talk to the owner like a person, not a compiler. Every reply:
 
 This rule is mandatory and applies to every response, not just summaries.
 
+### Answer length: short by default (owner mandate 2026-08-29)
+
+Owner: "don't care to read through all this shit, need clear answers to my
+question, short action items."
+
+- **Answer the question first, in one or two sentences.** Then stop. Add detail
+  only if it changes what the owner does next.
+- **Hard default: 6 lines.** A findings report or a design proposal may go
+  longer; nothing else may.
+- **Brainstorming = answer + numbered action items.** No essays, no research
+  dumps, no competitor tables unless asked.
+- **Building = one line per thing changed, one line for what's next.**
+- **Never re-state open items** the owner has already been told. Say them once.
+- **No tallies, no scorekeeping, no narrating your own process.** He does not
+  need to know how many bugs were found or how hard it was.
+- **No status noise on webhooks** (§1.2 already says this): silence, not a
+  paragraph about why silence.
+- Tables only when comparing three or more things. Otherwise prose or a list.
+
 ---
 
 ## 0. The Loop (plain English: read this first)
@@ -1078,6 +1097,62 @@ hat) and in the employee sign-out menu (crew hat). Tests: `tests/e2e-dual-hat.sp
   refactor, architect with owner (§16) in slices: (1) switcher + data wall,
   (2) tracking-follows-the-hat, (3) sign-up growth loop.
 
+### 9.11 What Counts Toward Totals (owner rule, 2026-08-30)
+
+**This is a RULE, not a backlog item.** It governs every paid-minute number on
+the time log: the day rail, the week bars, the split bar, the weekly running
+total and the OT calc. The second half of it is not enforced yet; that part is
+the backlog piece.
+
+Owner, verbatim: *"for totals, shop time always counts, home office time only
+counts when the app is open."*
+
+| Kind | Rule | Status |
+|---|---|---|
+| **Shop / yard** (`source:'shop'`) | Always counts. No extra condition on top of the workday itself. | Enforced today |
+| **Home office** (`rawSource:'place-office'`) | Counts **only for the stretches the app was actually open.** Presence at a desk is not, by itself, work. | **NOT enforced.** Office dwell currently lands in the Supply/other bucket and counts in full |
+
+**Why the office half cannot be built yet:** nothing records when the app was
+open. `document.visibilityState` drives sync and the version watchdog
+(js/cloud.js) but is never persisted, and `S.devices[].lastSeen` is a single
+stamp, not a log of intervals. Enforcing this needs a **foreground-interval
+log** written on every `visibilitychange` and intersected with the office dwell
+at read time, the same read-time-derivation shape `_geoShopWrapMs` already uses
+(§ shop auto clock-out, js/geo-track.js), so history re-grades itself instead
+of needing a sweep to rewrite rows. Design with the owner (§16) before building.
+
+**The one place this rule can collide with an older one, flagged rather than
+silently resolved:** the shop auto clock-out (owner rule 2026-08-24,
+`_geoShopWrapMs` in js/geo-track.js) already trims yard dwell to the day's last
+verified work event plus `S.shopWrapMin`, because the phone sits at the yard
+after hours (one session ran to 11:48pm and would have added 19h38m to a single
+week). "Shop time always counts" is read as **"shop time needs no condition
+beyond the workday,"** NOT as "pay yard dwell past the last run," which the
+owner rejected by name with those numbers. If he ever means the wider reading,
+the 2026-08-24 rule is what has to change, and he has to say so.
+
+### 9.11 Same-Truck Detection: Who Rode With Whom (parked 2026-09-02, owner: "wait on it")
+
+Owner asked whether iOS can tell that two people are in the same vehicle. It
+cannot directly (no such API). The workable answer is correlation of what the
+deriver already has: two people's CoreMotion tapes flip to automotive within
+seconds of each other and their GPS breadcrumbs sit on top of each other for
+the whole drive. Two phones cannot do that unless they share the truck.
+
+- **Rule for the deriver (js/geo-derive.js):** two journeys on the same
+  contractor account whose automotive spans overlap by most of their length
+  AND whose fixes stay within a fence radius of each other for the span are
+  ONE shared journey: one driver (the truck's assigned driver, else the
+  owner, else whoever the truck record names) and N riders. Riders get a
+  `drive-rider` time row and no mileage leg (the vehicle rows already shape
+  this: `_geoDeriveVehicleRows`). No native change, no iOS build.
+- **Not the answer:** vehicle Bluetooth (proves the paired driver only),
+  Nearby Interaction / UWB (foreground only, both apps open), phone-to-phone
+  Bluetooth proximity (lunch table looks like a truck cab).
+- **Parked on purpose:** the owner has larger plans for mileage and time log
+  intelligence and wants this designed inside that, not as a one-off rule.
+  Do not build until he brings it back.
+
 ---
 
 ## 10. Patch-Chain Prohibition: No House-of-Cards Fixing
@@ -1797,3 +1872,46 @@ small-to-mid trade contractor) and full-lifecycle scope:
 **Also worth a scan:** FieldEdge, Workiz, Service Fusion, ServiceM8, Kickserv, Tradify,
 simPRO (acquired by ServiceTitan in 2024, verify current product relationship before
 citing as independent), mHelpDesk, Sera Systems.
+
+---
+
+## 17. Time and Mileage: One Deriver, One Writer (owner rule 2026-09-02)
+
+Three weeks of Time Log patches never converged because three independent
+observers (the phone's strict fence, its park resolver, and the server's
+region ingest) each wrote rows for the same physical event, about twenty
+sweeps then reconciled them on boot and on every Time Log open, and the reader
+corrected the result on screen. Nothing anywhere stated what a row was
+supposed to be. That design is gone. The rule now:
+
+- **`js/geo-derive.js` is the only thing that decides what a drive or a dwell
+  is.** `geoDeriveDay(tape, fixes, fences)` is pure: the CoreMotion tape and
+  the GPS fixes in, dwells and legs out, same input same output same ids. The
+  owner's spec is quoted in its header. One journey id per automotive flip.
+  Both ends saved or no leg. A personal stop collapses to the direct route.
+  Same fence both ends is a round trip. Unresolved by midnight writes nothing;
+  the manual clock covers it. A dwell is a row only between an arrival and a
+  departure, with one exception: app-open minutes inside a home-office fence
+  are an Office row (rule 10, owner 2026-09-02) ONLY outside the working
+  day: before the first drive, after the last real work, or on a day with
+  no drive at all ("never office time unless it's outside of business hours
+  and we're home actively with the app open"). Inside the working day the
+  house is whatever the dwell says (the shop, a stop), never Office. Carved
+  out of any surrounding home dwell and proven by fixes inside the fence.
+- **`geo_replace_day` (Supabase RPC) is the only writer of automatic rows.**
+  It replaces one person's automatic rows for one day in one transaction,
+  refuses any set with an overlap, preserves manual clocks and hand-fixed
+  rows, and carries hand-set attributes across a re-derived mileage leg.
+- **The phone derives; the screens read.** Live: the automotive -> foot flip
+  and the 30-minute push-ping re-derive today. Boot: the tape's seven-day
+  window is re-derived once. `_geoEnqueue` is gated so no engine closer can
+  write an automatic row again; manual and `fixed-*` rows still land.
+- **The Time Log and Crew Cost read rows as stored.** The reader keeps
+  exactly two passes: `_tlBlendManual` (the clock is the bracket, automatic
+  rows overlay it, the remainder is Manual time) and `_tlFillUnaccounted` (a
+  hole between rows is a question). Nothing else.
+- **Never add a sweep, a reconciler, a dedup, or a reader-side correction.**
+  If the day is wrong, the deriver is wrong: fix the rule there, add the case
+  to `tests/e2e-geo-derive.spec.js`, and the boot rebuild repairs history.
+  `tests/e2e-geo-derive-gone.spec.js` fails CI if any of the deleted names
+  come back.

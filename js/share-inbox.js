@@ -49,10 +49,50 @@ async function _shareInRead(path){
     }
   }catch(_e){return null;}
   if(!parts.length)return null;
-  const type=/\.(png)$/i.test(path)?'image/png':(/\.pdf$/i.test(path)?'application/pdf':'image/jpeg');
+  // A shared CONTACT arrives as .vcf and is text, not an image. Typing it
+  // image/jpeg was harmless for Blob.text() but made it invisible to any
+  // branch that routes on type, which is exactly the branch added below.
+  const type=/\.vcf$/i.test(path)?'text/vcard'
+    :(/\.(png)$/i.test(path)?'image/png'
+    :(/\.pdf$/i.test(path)?'application/pdf':'image/jpeg'));
   return new Blob(parts,{type});
 }
 
+// A CONTACT shared from the iOS Contacts app (owner 2026-08-28: "lead import
+// can also throw in existing contact import"). Every downstream piece already
+// existed and none of it was reachable from a phone: _parseVCard has parsed
+// the ADR line into street/city/state/zip since the vCard-upload route was
+// built, and _showImportPreview/_doImport already dedupe against the roster
+// and write the address onto the client.
+//
+// This matters because the OTHER contacts route is dead on iOS. The "from
+// your phone contacts" button uses the Web Contact Picker API, which has
+// never shipped in Safari or WKWebView, so js/clients.js feature-detects it
+// and hides the button. An iPhone contractor had no way to import a contact
+// at all short of exporting a file to a laptop. The share sheet is the way in.
+async function _shareInAsContacts(items){
+  try{
+    if(typeof _parseVCard!=='function'||typeof _showImportPreview!=='function')return 0;
+    const all=[];
+    for(const it of items){
+      const b=await _shareInRead(it.path);
+      if(!b)continue;
+      let text='';
+      try{text=await b.text();}catch(_e){continue;}
+      if(!/BEGIN:VCARD/i.test(text))continue;
+      // One share can carry several cards, and one .vcf can hold several
+      // contacts; both flatten into the same list the preview expects.
+      _parseVCard(text).forEach(c=>all.push(c));
+    }
+    if(!all.length)return 0;
+    // Cleared only after the preview is up: a parse that produced nothing
+    // must leave the file in the inbox to try again, same rule the receipt
+    // fork follows.
+    _showImportPreview(all);
+    await _shareInClear(items.map(i=>i.path));
+    return all.length;
+  }catch(_e){return 0;}
+}
 async function _shareInClear(paths){
   const P=_shareInPlugin();
   if(!P||typeof P.clear!=='function')return;
@@ -73,6 +113,18 @@ async function checkSharedInbox(opts){
     if(document.querySelector('.zmodal-overlay'))return 0;   // never stack on another popup
   }
   _shareInAsking=true;
+  // A share that is NOTHING BUT contact cards is not a question, so do not ask
+  // one. A .vcf can only ever be a contact, and the import preview it opens is
+  // itself the confirm step, so the sheet in between was a tap that bought
+  // nothing. Straight through.
+  if(items.every(i=>/\.vcf$/i.test((i&&i.path)||''))){
+    let found=0;
+    try{found=await _shareInAsContacts(items);}catch(_e){}
+    if(found){_shareInAsking=false;return items.length;}
+    // Nothing parsed out of it. Fall through to the sheet rather than toasting
+    // the same failure on every launch: the sheet is the only place with a
+    // Discard button, so it is the only way out of an unreadable card.
+  }
   try{_shareInPrompt(items);}catch(_e){_shareInAsking=false;}
   return items.length;
 }
@@ -152,21 +204,66 @@ function _shareInPrompt(items){
   const ov=document.createElement('div');ov.id='_sharein-ov';ov.className='zmodal-overlay';
   const m=document.createElement('div');m.className='zmodal';m.style.maxWidth='420px';
   const n=items.length;
-  // Today's and recent jobs first: a shared photo is almost always about work
-  // happening right now, and a 400-job list is not a picker.
+  // Does this share actually contain a contact card? Decides whether the
+  // contact fork is offered at all.
+  const hasVcf=items.some(i=>/\.vcf$/i.test((i&&i.path)||''));
+  // A share that is NOTHING BUT contact cards is a different question, not the
+  // same question with an extra button. "Reads the total off it" is nonsense
+  // for a vCard, and filing a .vcf into a job's photo gallery buries it where
+  // nobody will look, so neither fork is offered: the sheet asks the one thing
+  // that can actually happen (15.1, a control whose value is not wired must
+  // not ship).
+  const allVcf=n>0&&items.every(i=>/\.vcf$/i.test((i&&i.path)||''));
+  // A shared photo belongs to a CLIENT, not to a job. That is where the owner
+  // goes looking for it: the client hub renders every photo carrying a
+  // client_id, job-linked or not (client.html "Other photos"), so this is the
+  // one question that always has an answer. Under the old job picker a photo
+  // taken before the job existed had nowhere to go at all.
+  //
+  // Clients with work on today float to the top for the same reason the job
+  // list used to: a photo shared at 2pm is almost always about the truck that
+  // is parked somewhere right now.
   const tk=(typeof todayKey==='function')?todayKey():'';
-  const all=(typeof jobs!=='undefined'&&Array.isArray(jobs))?jobs:[];
-  const live=all.filter(j=>j&&j.status!=='canceled');
-  const today=live.filter(j=>String(j.start||'').slice(0,10)===tk);
-  const rest=live.filter(j=>today.indexOf(j)<0).slice(-8).reverse();
-  const pick=today.concat(rest).slice(0,12);
-  const row=j=>{
-    const c=(j.client_id!=null&&typeof getClientById==='function')?getClientById(j.client_id):null;
-    const sub=[c&&c.name,j.addr].filter(Boolean).join(' · ');
-    return '<button data-job="'+j.id+'" class="_si-job" style="display:block;width:100%;text-align:left;padding:11px 14px;border:none;border-bottom:1px solid var(--border);background:none;font-family:inherit;cursor:pointer">'+
-      '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+escHtml(j.name||(c&&c.name)||'Job')+'</span>'+
-      (sub?'<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</span>':'')+
-    '</button>';
+  const allJobs=(typeof jobs!=='undefined'&&Array.isArray(jobs))?jobs:[];
+  const hot=new Set(allJobs.filter(j=>j&&j.status!=='canceled'&&String(j.start||'').slice(0,10)===tk)
+                           .map(j=>String(j.client_id)));
+  const allC=(typeof clients!=='undefined'&&Array.isArray(clients))?clients.filter(Boolean):[];
+  // Ids are minted from Date.now(), so descending id IS newest-first without
+  // depending on a created stamp every record is not guaranteed to carry.
+  const byNew=allC.slice().sort((a,b)=>(Number(b.id)||0)-(Number(a.id)||0));
+  const onToday=byNew.filter(c=>hot.has(String(c.id)));
+  // The FULL ordered set, not a slice. Twelve rows with no way to reach the
+  // rest is unusable at the 141 clients the owner actually has: the cap now
+  // applies only to what is DRAWN, and search reaches everything behind it.
+  const ranked=onToday.concat(byNew.filter(c=>!hot.has(String(c.id))));
+  const SHOWN=12;
+  const pick=ranked.slice(0,SHOWN);
+  // Matched against the same two strings the row displays, name then address,
+  // so typing a street still finds them and no result can look like it came
+  // from nowhere.
+  const matches=q=>{
+    const t=String(q||'').trim().toLowerCase();
+    if(!t)return ranked.slice(0,SHOWN);
+    return ranked.filter(c=>(String(c.name||'')+' '+String(c.addr||c.street||''))
+      .toLowerCase().indexOf(t)>-1).slice(0,SHOWN);
+  };
+  // Named once. The header and the discard confirmation both say it, and a
+  // confirmation that calls them "files" when the sheet called them "contacts"
+  // is a confirmation people stop reading.
+  const noun=allVcf?'contact':'file';
+  const ic=(e,tone)=>'<span class="si-ic'+(tone?' si-ic-'+tone:'')+'">'+
+    (typeof svgIcon==='function'?svgIcon(e,{size:17}):e)+'</span>';
+  const opt=(id,tone,emoji,title,sub)=>
+    '<button id="'+id+'" class="si-opt">'+ic(emoji,tone)+
+      '<span class="si-txt"><span class="si-t">'+title+'</span>'+
+      '<span class="si-s">'+sub+'</span></span><span class="si-chev">\u203a</span></button>';
+  const row=c=>{
+    const sub=[hot.has(String(c.id))?'On the schedule today':'',c.addr||c.street||''].filter(Boolean).join(' · ');
+    return '<button data-client="'+c.id+'" class="si-opt _si-client">'+
+      ic('\ud83d\udc64')+
+      '<span class="si-txt"><span class="si-t si-1">'+escHtml(c.name||'Unnamed client')+'</span>'+
+      (sub?'<span class="si-s si-1">'+escHtml(sub)+'</span>':'')+
+      '</span><span class="si-chev">\u203a</span></button>';
   };
   // TWO things arrive through the share sheet and they are not the same job:
   // a jobsite photo, and a receipt. Forcing a Home Depot receipt to become a
@@ -174,24 +271,35 @@ function _shareInPrompt(items){
   // re-entry this feature exists to kill. Same fork-in-two-paths shape the
   // setup checklist already uses (7.3): name both, commit to neither.
   //
-  // Receipt is FIRST and primary. A photo shared from the Camera app is the
-  // habit; a receipt shared from the Home Depot app is the thing somebody went
-  // out of their way to do, and it is the one with money attached.
+  // Receipt is first. A photo shared from the Camera app is the habit; a
+  // receipt shared from the Home Depot app is the thing somebody went out of
+  // their way to do, and it is the one with money attached.
+  const forks=
+    (allVcf?'':opt('_si-receipt','d','\ud83e\uddfe',(n===1?'A receipt':'Pages of one receipt'),
+      'Reads the total and opens an expense'))+
+    // Only when a contact is actually in the share. Offering "add as a lead"
+    // for a photo of a water heater is noise, and 15.1 is explicit that a
+    // control whose value is not wired must not ship.
+    (hasVcf?opt('_si-contact',(allVcf?'d':''),'\ud83d\udc64',(n===1?'Add as a lead':'Add as leads'),
+      'Name, phone and address off the card'):'');
   m.innerHTML=
-    '<div class="zmodal-title">'+n+' file'+(n===1?'':'s')+' shared to TradeDesk</div>'+
-    '<div style="font-size:13px;color:var(--text2);margin:6px 0 12px">What '+(n===1?'is it':'are they')+'?</div>'+
-    // display:block and height:auto override .btn's inline-flex + fixed 36px
-    // height + white-space:nowrap, which force two stacked lines onto one row
-    // and push it straight off the edge (15.1: nothing bleeds).
-    '<button id="_si-receipt" class="btn btn-p" style="display:block;box-sizing:border-box;width:100%;height:auto;padding:13px;margin-bottom:8px;text-align:left;white-space:normal">'+
-      '<span style="display:block;font-size:14px;font-weight:800">'+(n===1?'A receipt':'Pages of one receipt')+'</span>'+
-      '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Reads the total off it and opens a filled-in expense</span>'+
-    '</button>'+
-    '<div style="font-size:12px;color:var(--text3);margin:12px 0 6px;font-weight:700">Or attach to a job</div>'+
-    (pick.length?'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)">'+pick.map(row).join('')+'</div>'
-                :'<div class="tip tip-w" style="font-size:13px">No open jobs to attach to. Create the job first, then share again.</div>')+
-    '<button id="_si-later" class="btn" style="width:100%;margin-top:10px;padding:12px">Not now</button>'+
-    '<button id="_si-discard" class="btn" style="width:100%;margin-top:8px;padding:11px;font-size:13px;color:var(--text3)">Discard '+(n===1?'it':'them')+'</button>';
+    '<div class="zmodal-title">'+n+' '+noun+(n===1?'':'s')+' shared to TradeDesk</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin:6px 0 13px">'+
+      (allVcf?'Where should '+(n===1?'it':'they')+' go?':('What '+(n===1?'is it':'are they')+'?'))+'</div>'+
+    (forks?'<div class="si-list">'+forks+'</div>':'')+
+    (allVcf?'':
+      '<div class="si-lbl">Or add to a client\'s photos</div>'+
+      // Only once the list is long enough to hunt through. A search box over
+      // four clients is a control that buys nothing (15.1).
+      (ranked.length>SHOWN?'<input id="_si-csearch" class="si-search" type="search" '+
+        'placeholder="Search '+ranked.length+' clients" autocomplete="off" '+
+        'autocapitalize="off" autocorrect="off" spellcheck="false">':'')+
+      (pick.length?'<div id="_si-clist" class="si-list si-scroll">'+pick.map(row).join('')+'</div>'
+                  :'<div class="si-empty">No clients yet. Add the client first, then share again.</div>'))+
+    '<div class="si-foot">'+
+      '<button id="_si-later" class="si-fbtn">Not now</button>'+
+      '<button id="_si-discard" class="si-fbtn si-fbtn-x">Discard</button>'+
+    '</div>';
   ov.appendChild(m);document.body.appendChild(ov);
   const close=()=>{ov.remove();_shareInAsking=false;};
   ov.addEventListener('click',e=>{if(e.target===ov)close();});
@@ -209,52 +317,126 @@ function _shareInPrompt(items){
       else showToast('Could not read the shared file','⚠️');
     }
   };
-  document.getElementById('_si-discard').onclick=async()=>{
-    await _shareInClear(items.map(i=>i.path));
+  const ctBtn=document.getElementById('_si-contact');
+  if(ctBtn)ctBtn.onclick=async()=>{
+    ctBtn.disabled=true;ctBtn.style.opacity='.5';
+    // Closed first: _showImportPreview raises its own modal, and stacking two
+    // overlays on a phone is how you end up unable to dismiss either (7.3).
     close();
-    if(typeof showToast==='function')showToast('Shared files discarded','🗑');
+    const found=await _shareInAsContacts(items.filter(i=>/\.vcf$/i.test(i.path||'')));
+    if(typeof showToast==='function'&&!found)showToast('No contact details in that file','⚠️');
   };
-  m.querySelectorAll('._si-job').forEach(btn=>{
-    btn.onclick=async()=>{
-      const jobId=btn.getAttribute('data-job');
+  // Discarding is the one IRREVERSIBLE thing on this sheet, and it sat behind a
+  // button styled identically to the harmless one beside it. iOS never offers a
+  // shared file a second time, which is the hazard this file's own header opens
+  // with: a mis-tap loses a receipt, or a jobsite photo the crew has already
+  // driven away from. So it now reads as destructive AND it asks first.
+  document.getElementById('_si-discard').onclick=()=>{
+    const go=async()=>{
+      await _shareInClear(items.map(i=>i.path));
+      close();
+      if(typeof showToast==='function')showToast('Shared '+noun+(n===1?'':'s')+' discarded','🗑');
+    };
+    if(typeof zConfirm!=='function'){go();return;}
+    // Stacked deliberately OVER the sheet rather than replacing it: this is a
+    // sub-decision, so backing out has to land the owner exactly where they
+    // were. The forks that open their own modal close the sheet first; this
+    // one must not.
+    zConfirm(
+      'iOS will not offer '+(n===1?'it':'them')+' again, so '+(n===1?'it is':'they are')+' gone for good.',
+      go,
+      {title:'Discard '+n+' shared '+noun+(n===1?'':'s')+'?',
+       yes:'Discard', no:'Keep '+(n===1?'it':'them')}
+    );
+  };
+  const clist=document.getElementById('_si-clist');
+  const csearch=document.getElementById('_si-csearch');
+  if(csearch&&clist)csearch.oninput=()=>{
+    const found=matches(csearch.value);
+    clist.innerHTML=found.length?found.map(row).join('')
+      :'<div class="si-empty" style="padding:13px">No client matches that.</div>';
+  };
+  // DELEGATED, not bound per button. Search redraws these rows on every
+  // keystroke, so handlers living on the buttons themselves would be thrown
+  // away the first time the owner types a letter and the list would go dead.
+  if(clist)clist.addEventListener('click',async e=>{
+    const btn=e.target&&e.target.closest?e.target.closest('._si-client'):null;
+    if(!btn||btn.disabled)return;
+    {
+      const clientId=btn.getAttribute('data-client');
       btn.disabled=true;btn.style.opacity='.5';
-      const done=await _shareInFileTo(items,jobId);
+      const r=await _shareInFileToClient(items,clientId);
       close();
       if(typeof showToast==='function'){
-        if(done)showToast(done+' file'+(done===1?'':'s')+' added to the job','✓');
-        else showToast('Could not read the shared files','⚠️');
+        if(r.done)showToast(r.done+' photo'+(r.done===1?'':'s')+' added to '+(r.name||'the client'),'\u2713');
+        // Offline is NOT a failure here and must not read like one: the files
+        // are still sitting in the share inbox and the app re-offers them the
+        // next time it opens, so say what actually happens next.
+        else if(r.offline)showToast('No connection. They stay shared and land next time you open the app','\ud83d\udcf6');
+        else showToast('Could not read the shared files','\u26a0\ufe0f');
       }
-    };
+    }
   });
 }
 
-// Attach to the job through the SAME path the in-app camera uses (§7.3), so
-// shared photos compress, thumbnail, sync, and appear exactly like any other
-// job photo instead of through a second parallel pipeline.
-async function _shareInFileTo(items,jobId){
-  const j=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(x=>String(x.id)===String(jobId)):null;
-  if(!j)return 0;
-  let done=0;
-  const filed=[];
+// A shared photo lands on a CLIENT, through the SAME pipeline the in-app
+// camera uses (addJobPhoto, js/jobs.js): compress, upload to the gallery
+// bucket, thumbnail, push one record onto the global photos[] array, refresh
+// the client hub. Not a parallel path (7.3): photos[] is what td_photos syncs
+// and what client.html reads, so a shared photo behaves like every other photo
+// everywhere downstream. job_id stays null, and the hub renders exactly those
+// under "Other photos".
+//
+// This replaced an attach-to-a-JOB fork whose upload branch called
+// _jobAttachBlob, a function that has never existed in this codebase, so every
+// shared photo silently took the offline fallback and sat as base64 inside the
+// job record until some later drain happened to run.
+async function _shareInFileToClient(items,clientId){
+  const c=(typeof clients!=='undefined'&&clients.find)?clients.find(x=>String(x.id)===String(clientId)):null;
+  if(!c)return{done:0};
+  // No backend, no upload, and the bytes are NOT lost: they stay in the share
+  // inbox on the device, which is already a durable queue. Re-offering them on
+  // the next launch beats parking multi-megabyte base64 inside a synced table
+  // the way the job path does.
+  const online=typeof supaEnabled==='function'&&supaEnabled()&&
+               typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa;
+  if(!online)return{done:0,offline:true,name:c.name||''};
+  let done=0;const filed=[];
   for(const it of items){
     const blob=await _shareInRead(it.path);
     if(!blob)continue;
     try{
-      if(typeof _jobAttachBlob==='function'){await _jobAttachBlob(j,blob,'shared');}
-      else{
-        // Fallback: the queue the offline camera path already drains.
-        const b64=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(blob);});
-        j.photos=j.photos||[];
-        j.photos.push({type:'shared',data:b64,pendingUpload:true,_uploadMime:blob.type,addedAt:new Date().toISOString()});
-      }
+      // Guarded by name, every one of them. jobs.js is a separate file and a
+      // missing global here throws mid-loop and strands the rest of the batch,
+      // which is precisely how _jobAttachBlob went unnoticed for so long.
+      const _cp=(typeof _compressPhoto==='function')?await _compressPhoto(blob):null;
+      const ext=_cp?_cp.ext:((String(it.path||'').split('.').pop()||'jpg').toLowerCase());
+      // Foldered by client, mirroring the job path's user/job/ layout so the
+      // bucket stays browsable by hand.
+      const path=_supaUser.id+'/client-'+c.id+'/shared-'+Date.now()+'-'+Math.floor(Math.random()*1e4)+'.'+ext;
+      const opts={contentType:_cp?_cp.mime:(blob.type||'image/jpeg'),upsert:false};
+      if(typeof _PHOTO_CACHE!=='undefined')opts.cacheControl=_PHOTO_CACHE;
+      const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:blob,opts);
+      if(error)continue;
+      const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+      const publicUrl=(urlData&&urlData.publicUrl)||'';
+      if(!publicUrl)continue;
+      const th=(typeof _uploadPhotoThumb==='function')
+        ?await _uploadPhotoThumb(_cp?_cp.thumb:null,path):{thumbUrl:'',thumbPath:''};
+      if(typeof photos==='undefined')continue;
+      photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,
+        thumbUrl:th.thumbUrl,thumbPath:th.thumbPath,type:'shared',caption:'',
+        client_id:c.id,client_name:c.name||'',job_id:null,job_name:'',
+        uploadedAt:new Date().toISOString()});
       done++;filed.push(it.path);
     }catch(_e){}
   }
   if(done){
     if(typeof saveAll==='function')saveAll();
-    if(typeof _drainPhotoQueue==='function')try{_drainPhotoQueue();}catch(_e){}
-    // ONLY now: the bytes are on the job and saved.
+    if(typeof _uploadClientHub==='function')_uploadClientHub(c.id).catch(()=>{});
+    // ONLY now: the bytes are in the bucket and the record is saved. A file
+    // that did not upload keeps its place in the inbox for another try.
     await _shareInClear(filed);
   }
-  return done;
+  return{done,name:c.name||''};
 }

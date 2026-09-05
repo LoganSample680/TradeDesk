@@ -272,7 +272,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, not 15 (2026-09-02): the heaviest shard runs 12 minutes of tests,
+    # and on a slow Azure package mirror the browser dependency install alone
+    # took 15. Two shards were cancelled before their first test that day.
+    timeout-minutes: 25
 
     strategy:
       fail-fast: false   # let all shards finish so we see ALL failures

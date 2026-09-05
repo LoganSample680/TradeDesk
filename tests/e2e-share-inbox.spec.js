@@ -46,9 +46,14 @@ test.describe('Share inbox', () => {
     expect(r.ov).toBe(false);
   });
 
-  test('picks the job, files every file, and clears ONLY what landed', async () => {
+  test('picks the client, files every file, and clears ONLY what landed', async () => {
+    // The destination changed from a job to a client (owner, 2026-09-01:
+    // "images go to the client hub where images land where they are supposed
+    // to"). A photo now lands in the global photos[] array carrying a
+    // client_id and a null job_id, which is exactly what client.html renders
+    // under "Other photos".
     const r = await page.evaluate(async (items) => {
-      const realCap = window.Capacitor, savedJobs = jobs.slice();
+      const realCap = window.Capacitor, savedClients = clients.slice(), savedPhotos = photos.slice();
       window.__reads = []; window.__cleared = [];
       try {
         window.Capacitor = {
@@ -59,41 +64,51 @@ test.describe('Share inbox', () => {
             clear: (o) => { window.__cleared = window.__cleared.concat(o && o.paths ? o.paths : ['*ALL*']); return Promise.resolve(); },
           } : null,
         };
-        jobs.length = 0;
-        jobs.push({ id: 6001, name: 'Shared Job', client_id: null, status: 'upcoming', start: todayKey(), days: 1 });
+        clients.length = 0;
+        clients.push({ id: 7001, name: 'Shared Client', addr: '1 Main St' });
+        photos.length = 0;
         const n = await checkSharedInbox({ force: true });
         const shown = !!document.getElementById('_sharein-ov');
-        const rows = document.querySelectorAll('#_sharein-ov ._si-job').length;
-        document.querySelector('#_sharein-ov ._si-job').click();
-        // The filing pipeline is genuinely async per file (read, attach,
-        // compress). The overlay CLOSING is its completion signal; a fixed
-        // sleep raced it and lost on a loaded webkit runner (2026-08-11).
+        const rows = document.querySelectorAll('#_sharein-ov ._si-client').length;
+        document.querySelector('#_sharein-ov ._si-client').click();
+        // The filing pipeline is genuinely async per file (read, compress,
+        // upload, thumbnail). The overlay CLOSING is its completion signal; a
+        // fixed sleep raced it and lost on a loaded webkit runner (2026-08-11).
         for (let w = 0; w < 80 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
-        const j = jobs.find(x => x.id === 6001);
+        const landed = photos.filter(p => String(p.client_id) === '7001');
         return {
           n, shown, rows,
-          photos: (j.photos || []).length,
+          landed: landed.length,
+          jobIds: landed.map(p => p.job_id),
+          named: landed.every(p => p.client_name === 'Shared Client'),
+          urls: landed.every(p => !!p.url && !!p.storagePath),
           reads: window.__reads.length,
           cleared: window.__cleared.slice(),
           gone: !document.getElementById('_sharein-ov'),
         };
       } finally {
-        window.Capacitor = realCap; jobs.length = 0; savedJobs.forEach(x => jobs.push(x));
+        window.Capacitor = realCap;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        photos.length = 0; savedPhotos.forEach(x => photos.push(x));
         document.getElementById('_sharein-ov')?.remove();
       }
     }, ITEMS);
     expect(r.n, 'both shared files are offered').toBe(2);
     expect(r.shown).toBe(true);
-    expect(r.rows, "today's job is pickable").toBeGreaterThanOrEqual(1);
+    expect(r.rows, 'the client is pickable').toBeGreaterThanOrEqual(1);
     expect(r.reads, 'each file is read back through the bridge').toBe(2);
-    expect(r.photos, 'and lands on the job').toBe(2);
+    expect(r.landed, 'and lands in the gallery the client hub reads').toBe(2);
+    expect(r.jobIds, 'a client photo carries no job, that is what puts it in the hub')
+      .toEqual([null, null]);
+    expect(r.named, 'the client name rides along so the hub can label it').toBe(true);
+    expect(r.urls, 'a record with no url is a broken thumbnail forever').toBe(true);
     expect(r.cleared.sort(), 'ONLY the files that landed are removed').toEqual(['/g/td_share_1.jpg', '/g/td_share_2.jpg']);
     expect(r.gone).toBe(true);
   });
 
   test('a file that will not read is never deleted', async () => {
     const r = await page.evaluate(async (items) => {
-      const realCap = window.Capacitor, savedJobs = jobs.slice();
+      const realCap = window.Capacitor, savedClients = clients.slice(), savedPhotos = photos.slice();
       window.__cleared = [];
       try {
         window.Capacitor = {
@@ -107,23 +122,68 @@ test.describe('Share inbox', () => {
             clear: (o) => { window.__cleared = window.__cleared.concat(o.paths || []); return Promise.resolve(); },
           }),
         };
-        jobs.length = 0;
-        jobs.push({ id: 6002, name: 'Partial Job', status: 'upcoming', start: todayKey(), days: 1 });
+        clients.length = 0;
+        clients.push({ id: 7002, name: 'Partial Client' });
+        photos.length = 0;
         await checkSharedInbox({ force: true });
-        document.querySelector('#_sharein-ov ._si-job').click();
+        document.querySelector('#_sharein-ov ._si-client').click();
         for (let w = 0; w < 80 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
-        const j = jobs.find(x => x.id === 6002);
-        return { photos: (j.photos || []).length, cleared: window.__cleared.slice() };
+        return { landed: photos.filter(p => String(p.client_id) === '7002').length, cleared: window.__cleared.slice() };
       } finally {
-        window.Capacitor = realCap; jobs.length = 0; savedJobs.forEach(x => jobs.push(x));
+        window.Capacitor = realCap;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        photos.length = 0; savedPhotos.forEach(x => photos.push(x));
         document.getElementById('_sharein-ov')?.remove();
       }
     }, ITEMS);
-    expect(r.photos, 'the readable one still lands').toBe(1);
+    expect(r.landed, 'the readable one still lands').toBe(1);
     expect(r.cleared, 'the unreadable one stays for another try').toEqual(['/g/td_share_1.jpg']);
   });
 
-  test('discard clears everything, Not now keeps it all', async () => {
+  test('offline, a shared photo is never lost and never falsely confirmed', async () => {
+    // There is no client-side pending-photo queue on purpose: the file is
+    // already sitting in the App Group container, which IS a durable queue, so
+    // a failed upload must leave it there rather than park megabytes of base64
+    // in a synced table. The failure mode this guards is the ugly one: telling
+    // the contractor the photo landed, clearing the inbox, and losing it.
+    const r = await page.evaluate(async (items) => {
+      const realCap = window.Capacitor, realSupa = window._supa;
+      const savedClients = clients.slice(), savedPhotos = photos.slice();
+      window.__cleared = [];
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({
+            inbox: () => Promise.resolve({ items }),
+            read: () => Promise.resolve({ b64: btoa('hi'), size: 2 }),
+            clear: (o) => { window.__cleared = window.__cleared.concat(o.paths || []); return Promise.resolve(); },
+          }),
+        };
+        clients.length = 0;
+        clients.push({ id: 7003, name: 'Offline Client' });
+        photos.length = 0;
+        window._supa = null;                       // the backend is simply gone
+        await checkSharedInbox({ force: true });
+        document.querySelector('#_sharein-ov ._si-client').click();
+        for (let w = 0; w < 80 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
+        return { landed: photos.length, cleared: window.__cleared.slice() };
+      } finally {
+        window.Capacitor = realCap; window._supa = realSupa;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        photos.length = 0; savedPhotos.forEach(x => photos.push(x));
+        document.getElementById('_sharein-ov')?.remove();
+      }
+    }, ITEMS);
+    expect(r.cleared, 'nothing may be deleted when nothing was uploaded').toEqual([]);
+    expect(r.landed, 'and no phantom record is written').toBe(0);
+  });
+
+  test('discard asks first, and only then clears; Not now keeps it all', async () => {
+    // Discard is the one irreversible control on this sheet: iOS never offers a
+    // shared file a second time (this file's opening comment), so a mis-tap
+    // loses a receipt or a jobsite photo the crew has already driven away from.
+    // It used to fire on the first tap, styled identically to the harmless
+    // button beside it (owner, 2026-09-01).
     const r = await page.evaluate(async (items) => {
       const realCap = window.Capacitor;
       window.__cleared = [];
@@ -136,17 +196,64 @@ test.describe('Share inbox', () => {
             clear: (o) => { window.__cleared = window.__cleared.concat(o.paths || ['*ALL*']); return Promise.resolve(); },
           }),
         };
+        const seen = {};
+
         await checkSharedInbox({ force: true });
         document.getElementById('_si-later').click();
-        const afterLater = window.__cleared.length;
+        seen.afterLater = window.__cleared.length;
+
+        // Discard, then BACK OUT. Nothing may be deleted.
+        _shareInAsking = false;
         await checkSharedInbox({ force: true });
         document.getElementById('_si-discard').click();
+        const confirm1 = Array.from(document.querySelectorAll('.zmodal-overlay')).pop();
+        seen.asked = !!(confirm1 && confirm1.querySelector('#zmodal-yes'));
+        seen.sheetStillUp = !!document.getElementById('_sharein-ov');
+        seen.title = confirm1 ? confirm1.querySelector('.zmodal-title').textContent : '';
+        confirm1.querySelector('.zmodal-cancel').click();
+        await new Promise(res => setTimeout(res, 60));
+        seen.afterCancel = window.__cleared.length;
+        seen.sheetSurvivedCancel = !!document.getElementById('_sharein-ov');
+
+        // Discard, and confirm it this time.
+        document.getElementById('_si-discard').click();
+        const confirm2 = Array.from(document.querySelectorAll('.zmodal-overlay')).pop();
+        confirm2.querySelector('#zmodal-yes').click();
         for (let w = 0; w < 40 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
-        return { afterLater, afterDiscard: window.__cleared.length };
-      } finally { window.Capacitor = realCap; document.getElementById('_sharein-ov')?.remove(); }
+        seen.afterConfirm = window.__cleared.length;
+        return seen;
+      } finally {
+        window.Capacitor = realCap;
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+      }
     }, ITEMS);
     expect(r.afterLater, 'Not now must never delete anything').toBe(0);
-    expect(r.afterDiscard, 'discard removes them on purpose').toBe(2);
+    expect(r.asked, 'discard must ask before it deletes').toBe(true);
+    expect(r.title, 'the question must name what is about to go').toContain('Discard 2 shared files');
+    expect(r.sheetStillUp, 'the sheet stays behind the question, it is a sub-decision').toBe(true);
+    expect(r.afterCancel, 'backing out of the question must delete NOTHING').toBe(0);
+    expect(r.sheetSurvivedCancel, 'and must land you back where you were').toBe(true);
+    expect(r.afterConfirm, 'confirming removes them on purpose').toBe(2);
+  });
+
+  test('the discard button does not look like the harmless one next to it', async () => {
+    // Two identical outline buttons where one is destructive is the defect the
+    // owner reported. They must not resolve to the same colour.
+    const r = await page.evaluate(() => {
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      _shareInPrompt([{ path: '/x/a.jpg' }]);
+      const later = getComputedStyle(document.getElementById('_si-later'));
+      const disc = getComputedStyle(document.getElementById('_si-discard'));
+      const out = { sameColor: later.color === disc.color, sameBorder: later.borderTopColor === disc.borderTopColor };
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      return out;
+    });
+    expect(r.sameColor, 'the destructive button needs its own text colour').toBe(false);
+    expect(r.sameBorder, 'and its own border').toBe(false);
   });
 
   test('never interrupts mid-task: only on the dashboard, never over another popup', async () => {
@@ -188,7 +295,7 @@ test.describe('Share inbox', () => {
   // job. Forcing a receipt to become a job photo buries the money in a gallery,
   // which is the manual re-entry this whole feature exists to kill.
 
-  test('the prompt offers the receipt path before the job list', async () => {
+  test('the prompt offers the receipt path before the client list', async () => {
     const r = await page.evaluate(() => {
       // Jobs must exist or there IS no job list to be ahead of: the empty
       // state renders a tip instead of rows, indexOf returns -1, and the
@@ -202,7 +309,7 @@ test.describe('Share inbox', () => {
         const ov = document.getElementById('_sharein-ov');
         const html = ov ? ov.innerHTML : '';
         const btn = document.getElementById('_si-receipt');
-        const jobIdx = html.indexOf('_si-job');
+        const jobIdx = html.indexOf('_si-client');
         const rcIdx = html.indexOf('_si-receipt');
         return { has: !!btn, rcIdx, jobIdx,
                  text: btn ? btn.textContent : '' };
@@ -360,6 +467,273 @@ test.describe('Share inbox', () => {
     });
     expect(r.threw).toBe(false);
     expect(r.n).toBe(0);
+  });
+
+  // ── A contact shared from iOS Contacts (owner 2026-08-28) ─────────────────
+  // The other contacts route is dead on iOS: the Web Contact Picker API has
+  // never shipped in Safari or WKWebView, so js/clients.js hides that button
+  // and an iPhone contractor had no way to import a contact at all. The share
+  // sheet is the way in, and _parseVCard already read the address.
+  // Real newlines, not escaped ones: _parseVCard anchors on ^FN / ^ADR with
+  // the multiline flag, so a fixture carrying literal backslash-n parses as
+  // one long line and silently matches nothing.
+  const VCF = [
+    'BEGIN:VCARD', 'VERSION:3.0', 'FN:Dana Reyes', 'TEL:785-555-0142',
+    'EMAIL:dana@example.com', 'ADR;TYPE=HOME:;;418 SW Oakley Ave;Topeka;KS;66606;USA',
+    'END:VCARD',
+  ].join('\n');
+
+  test('a shared .vcf becomes a client WITH the address off the contact card', async () => {
+    const r = await page.evaluate(async (vcf) => {
+      const realCap = window.Capacitor, realPrev = window._showImportPreview;
+      let seen = null;
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => n === 'TdShare' ? {
+          inbox: () => Promise.resolve({ items: [{ path: '/x/td_share_1_a.vcf' }] }),
+          read: () => Promise.resolve({ b64: btoa(vcf), size: vcf.length }),
+          clear: (o) => { window.__cleared = (o && o.paths) || []; return Promise.resolve(); },
+        } : null };
+        window._showImportPreview = (parsed) => { seen = parsed; };
+        const n = await _shareInAsContacts([{ path: '/x/td_share_1_a.vcf' }]);
+        return { n, seen, cleared: window.__cleared || [] };
+      } finally { window.Capacitor = realCap; window._showImportPreview = realPrev; delete window.__cleared; }
+    }, VCF);
+    expect(r.n).toBe(1);
+    expect(r.seen[0].name).toBe('Dana Reyes');
+    expect(r.seen[0].phone).toContain('555-0142');
+    expect(r.seen[0].addr, 'the whole point: the street off the contact').toBe('418 SW Oakley Ave');
+    expect(r.seen[0].city).toBe('Topeka');
+    expect(r.seen[0].state).toBe('KS');
+    expect(r.seen[0].zip).toBe('66606');
+    expect(r.cleared, 'a successful import clears the inbox').toContain('/x/td_share_1_a.vcf');
+  });
+
+  test('a file with no contact in it is NEVER cleared: it stays to try again', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor, realPrev = window._showImportPreview;
+      let called = 0;
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => n === 'TdShare' ? {
+          inbox: () => Promise.resolve({ items: [] }),
+          read: () => Promise.resolve({ b64: btoa('not a contact at all'), size: 20 }),
+          clear: (o) => { window.__cleared = (o && o.paths) || []; return Promise.resolve(); },
+        } : null };
+        window._showImportPreview = () => { called++; };
+        const n = await _shareInAsContacts([{ path: '/x/td_share_2_b.vcf' }]);
+        return { n, called, cleared: window.__cleared };
+      } finally { window.Capacitor = realCap; window._showImportPreview = realPrev; delete window.__cleared; }
+    });
+    expect(r.n).toBe(0);
+    expect(r.called, 'nothing parsed means no preview').toBe(0);
+    expect(r.cleared, 'the file must survive for a retry').toBeUndefined();
+  });
+
+  test('a shared .vcf is typed as a contact, not as a JPEG', async () => {
+    const t = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => n === 'TdShare' ? {
+          read: () => Promise.resolve({ b64: btoa('BEGIN:VCARD'), size: 11 }),
+        } : null };
+        const b = await _shareInRead('/x/td_share_3_c.vcf');
+        return b && b.type;
+      } finally { window.Capacitor = realCap; }
+    });
+    expect(t).toBe('text/vcard');
+  });
+
+  test('the contact fork is offered ONLY when a contact is actually shared', async () => {
+    const r = await page.evaluate(() => {
+      const out = {};
+      for (const [k, items] of [['vcf', [{ path: '/x/a.vcf' }]], ['photo', [{ path: '/x/a.jpg' }]]]) {
+        document.getElementById('_si-ov')?.remove();
+        _shareInAsking = false;
+        _shareInPrompt(items);
+        out[k] = !!document.getElementById('_si-contact');
+        document.getElementById('_si-ov')?.remove();
+        _shareInAsking = false;
+      }
+      return out;
+    });
+    expect(r.vcf, 'a shared contact must offer the client import').toBe(true);
+    expect(r.photo, 'a photo must not offer "add as a client"').toBe(false);
+  });
+
+  test('a contact-only share asks the contact question and nothing else', async () => {
+    // Leading with "A receipt / Reads the total off it" for a vCard is a
+    // control whose value is not wired (15.1), and filing a .vcf into a job's
+    // photo gallery buries the card where nobody looks. When every shared item
+    // is a contact, the sheet asks the one thing that can actually happen.
+    const r = await page.evaluate(() => {
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      _shareInPrompt([{ path: '/x/a.vcf' }]);
+      const ov = document.getElementById('_sharein-ov');
+      const out = {
+        contact: !!document.getElementById('_si-contact'),
+        receipt: !!document.getElementById('_si-receipt'),
+        jobs: ov ? ov.querySelectorAll('._si-client').length : -1,
+        attachHdr: ov ? /Or add to a client/.test(ov.innerHTML) : true,
+        title: ov ? (ov.querySelector('.zmodal-title') || {}).textContent : '',
+        // Nothing may bleed off the edge of a phone (15.1).
+        wide: document.documentElement.scrollWidth > window.innerWidth + 1,
+      };
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      return out;
+    });
+    expect(r.contact, 'the only real action must still be offered').toBe(true);
+    expect(r.receipt, 'a vCard has no total to read off it').toBe(false);
+    expect(r.jobs, 'a contact card must not be offered as a job photo').toBe(0);
+    expect(r.attachHdr, 'the attach-to-a-job header must go with its list').toBe(false);
+    // The point is that the title names what was actually shared. Copy was
+    // "1 contact card shared" and is now "1 contact shared" (it wrapped tight
+    // against the modal edge at 390px); what must never come back is "1 file".
+    expect(r.title).toContain('contact');
+    expect(r.title, 'a contact is not a "file" to the person sharing it').not.toContain('file');
+    expect(r.wide, 'the contact sheet must not bleed off a phone').toBe(false);
+  });
+
+  test('a mixed share still offers both forks', async () => {
+    // The narrowing above keys off EVERY item being a contact. A receipt shared
+    // alongside a contact is still a receipt, and must not lose its fork.
+    const r = await page.evaluate(() => {
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      _shareInPrompt([{ path: '/x/a.vcf' }, { path: '/x/b.jpg' }]);
+      const ov = document.getElementById('_sharein-ov');
+      const out = {
+        contact: !!document.getElementById('_si-contact'),
+        receipt: !!document.getElementById('_si-receipt'),
+        attachHdr: ov ? /Or add to a client/.test(ov.innerHTML) : false,
+      };
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      return out;
+    });
+    expect(r.contact).toBe(true);
+    expect(r.receipt, 'a photo in the same share still needs the receipt fork').toBe(true);
+    expect(r.attachHdr).toBe(true);
+  });
+
+  test('a contact-only share never shows the sheet, it goes straight to the import', async () => {
+    // Owner, 2026-09-01: make it smart about what was shared. A .vcf can only
+    // ever be a contact, and the import preview it opens is itself the confirm
+    // step, so asking "what is it?" in between was a tap that bought nothing.
+    const r = await page.evaluate(async (vcf) => {
+      const realCap = window.Capacitor, savedClients = clients.slice();
+      const savedPreview = window._showImportPreview;
+      window.__cleared = []; window.__preview = 0;
+      try {
+        window._showImportPreview = (list) => { window.__preview = list.length; };
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({
+            inbox: () => Promise.resolve({ items: [{ path: '/x/td_share_c1.vcf' }] }),
+            read: () => Promise.resolve({ b64: btoa(vcf), size: vcf.length }),
+            clear: (o) => { window.__cleared = window.__cleared.concat(o.paths || []); return Promise.resolve(); },
+          }),
+        };
+        _shareInAsking = false;
+        const n = await checkSharedInbox({ force: true });
+        return {
+          n, preview: window.__preview,
+          sheet: !!document.getElementById('_sharein-ov'),
+          cleared: window.__cleared.slice(),
+          asking: _shareInAsking,
+        };
+      } finally {
+        window.Capacitor = realCap; window._showImportPreview = savedPreview;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+      }
+    }, VCF);
+    expect(r.sheet, 'no "what is it?" for something that can only be one thing').toBe(false);
+    expect(r.preview, 'the import list opens directly').toBe(1);
+    expect(r.cleared, 'and the card leaves the inbox once it is safely in the list')
+      .toEqual(['/x/td_share_c1.vcf']);
+    expect(r.asking, 'the guard must not stay latched or the next share is swallowed').toBe(false);
+  });
+
+  test('an UNREADABLE contact card still falls through to the sheet', async () => {
+    // The only place with a Discard button is the sheet. Skipping straight to
+    // the import for a card nothing can be parsed out of would toast the same
+    // failure on every launch with no way to get rid of the file.
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({
+            inbox: () => Promise.resolve({ items: [{ path: '/x/td_share_bad.vcf' }] }),
+            read: () => Promise.resolve({ b64: btoa('this is not a vcard at all'), size: 26 }),
+            clear: () => Promise.resolve(),
+          }),
+        };
+        _shareInAsking = false;
+        await checkSharedInbox({ force: true });
+        return {
+          sheet: !!document.getElementById('_sharein-ov'),
+          discard: !!document.getElementById('_si-discard'),
+        };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+      }
+    });
+    expect(r.sheet, 'an unparseable card must still reach a screen').toBe(true);
+    expect(r.discard, 'and that screen must offer the way out').toBe(true);
+  });
+
+  test('the client list is searchable, and still works after a search redraws it', async () => {
+    // Twelve rows and no way to reach the rest is unusable at the 141 clients
+    // the owner actually has. The redraw half matters just as much: handlers
+    // bound to the buttons themselves would be destroyed by the first
+    // keystroke, so the rows are wired by delegation and this proves it.
+    const r = await page.evaluate(async () => {
+      const savedClients = clients.slice(), realCap = window.Capacitor;
+      try {
+        clients.length = 0;
+        for (let i = 0; i < 40; i++) clients.push({ id: 1750000000000 + i, name: 'Client ' + i, addr: i + ' Elm St' });
+        clients.push({ id: 1760000000999, name: 'Zelda Nakamura', addr: '77 Kettle Ln' });
+        window.__picked = null;
+        window._shareInFileToClient = (items, id) => { window.__picked = String(id); return Promise.resolve({ done: 1, name: 'x' }); };
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+        _shareInPrompt([{ path: '/x/a.jpg' }]);
+        const before = document.querySelectorAll('#_si-clist ._si-client').length;
+        const box = document.getElementById('_si-csearch');
+        box.value = 'Zelda';
+        box.dispatchEvent(new Event('input'));
+        const after = Array.from(document.querySelectorAll('#_si-clist ._si-client'));
+        const names = after.map(b => b.querySelector('.si-t').textContent);
+        after[0].click();
+        for (let w = 0; w < 60 && !window.__picked; w++) await new Promise(res => setTimeout(res, 20));
+        // And a search that matches an address, not a name.
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+        _shareInPrompt([{ path: '/x/a.jpg' }]);
+        const b2 = document.getElementById('_si-csearch');
+        b2.value = 'Kettle';
+        b2.dispatchEvent(new Event('input'));
+        const byAddr = Array.from(document.querySelectorAll('#_si-clist ._si-client'))
+          .map(b => b.querySelector('.si-t').textContent);
+        return { before, count: after.length, names, picked: window.__picked, byAddr };
+      } finally {
+        window.Capacitor = realCap;
+        delete window._shareInFileToClient;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+      }
+    });
+    expect(r.before, 'the list still draws a capped page, not all 41 rows').toBe(12);
+    expect(r.count, 'search narrows it').toBe(1);
+    expect(r.names[0]).toBe('Zelda Nakamura');
+    expect(r.picked, 'a row drawn BY the search must still be clickable').toBe('1760000000999');
+    expect(r.byAddr, 'searching an address finds them too').toEqual(['Zelda Nakamura']);
   });
 
   test('no console errors during share inbox tests', async () => {

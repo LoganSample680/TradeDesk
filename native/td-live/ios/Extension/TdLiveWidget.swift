@@ -617,11 +617,24 @@ struct TdLiveWidget: Widget {
                     // Activities do the same in this exact spot.
                     .dynamicTypeSize(.large)
             } compactTrailing: {
-                // Compact has room for one clock, not two: the overall "on
-                // site" number is the one that matters at a glance here, the
-                // per-step breakdown is what the expanded island is for.
-                Readout(state: context.state, size: 13)
-                    .dynamicTypeSize(.large) // see compactLeading's note
+                // NOTHING HERE, on purpose (owner 2026-09-03: "can we make
+                // these Dynamic Island go away and just do the lock screen?").
+                //
+                // We cannot. iOS binds the two presentations: a Live Activity
+                // must supply both, and while one is running on a Dynamic
+                // Island phone the island shows it. There is no flag for lock
+                // screen only. The nearest thing the OS allows is to give the
+                // island as little as possible, which is this: the compact
+                // pill collapses to the brand mark and its status dot, close
+                // to the bare sensor housing, while the lock screen and the
+                // expanded island (tap and hold) keep the full readout.
+                //
+                // This also removes the width problem at its source rather
+                // than capping it. Text(timerInterval:) reserves room for the
+                // WIDEST string that timer could ever render, so a shift
+                // running over ten hours stretched the pill across most of the
+                // top of the phone. No text, no reservation.
+                EmptyView()
             } minimal: {
                 // Minimal is a ~16pt circle shared with whatever else is live, so
                 // it gets the dot only. A truncated clock here reads as garbage.

@@ -514,38 +514,113 @@ function tdMapRenderKit(o){
   // every render leaks the old one's tile requests and DOM.
   let host=document.getElementById(hostId);
   if(!host||st.host!==host){
-    body.innerHTML='<div id="'+hostId+'" style="height:'+height+'px;border-radius:var(--r);overflow:hidden;border:1px solid var(--border)"></div>'+
-      (o.hint?'<div style="font-size:10px;color:var(--text3);line-height:1.6;margin-top:8px">'+o.hint+'</div>':'');
+    body.innerHTML='<div id="'+hostId+'" style="height:'+height+'px;'+
+      (o.dark?'':'border-radius:var(--r);border:1px solid var(--border);')+'overflow:hidden"></div>'+
+      (o.hint?'<div style="font-size:10px;color:'+(o.dark?'#8B94A3':'var(--text3)')+';line-height:1.6;margin-top:8px">'+o.hint+'</div>':'');
     host=document.getElementById(hostId);
     tdMapDestroy(st);
     try{
-      st.obj=new mapkit.Map(host,{
+      const _mkOpts={
         showsCompass:mapkit.FeatureVisibility.Hidden,
         showsScale:mapkit.FeatureVisibility.Adaptive,
         showsMapTypeControl:false,
         showsZoomControl:true,
         showsUserLocationControl:true,
-      });
+      };
+      // DARK, on request only (owner 2026-09-05, the Dispatch crew map): a dark
+      // map reads as operations rather than as a consumer locator, and it is
+      // what makes coloured avatar pins pop. Every other caller is unchanged.
+      if(o.dark&&mapkit.Map&&mapkit.Map.ColorSchemes){
+        _mkOpts.colorScheme=mapkit.Map.ColorSchemes.Dark;
+      }
+      // Apple's own points of interest compete with ours. A dispatch map wants
+      // the crew and the work, not every coffee shop between them.
+      if(o.hidePOI){
+        try{
+          if(typeof mapkit.PointOfInterestFilter!=='undefined'&&
+             typeof mapkit.PointOfInterestFilter.excludingAllCategories!=='undefined'){
+            _mkOpts.pointOfInterestFilter=mapkit.PointOfInterestFilter.excludingAllCategories;
+          }
+        }catch(_ep){}
+      }
+      st.obj=new mapkit.Map(host,_mkOpts);
       st.host=host;
     }catch(_e){tdMapDestroy(st);tdMapRenderFallback(o);return;}
   }
   try{
     st.obj.removeAnnotations(st.obj.annotations||[]);
+    // ── THE ROUTE OVERLAY (owner ask 2026-09-01) ────────────────────────────
+    // `path` is [[lat,lng,ms],...] straight off a mileage row. Drawn through
+    // the SAME renderer every other map in the app uses rather than a second
+    // mapping surface (§7.3): one MapKit instance, one fallback, one licence
+    // gate. Removed and redrawn with the annotations so a re-render (a filter
+    // toggle, a locate) never stacks overlays.
+    try{st.obj.removeOverlays(st.obj.overlays||[]);}catch(_e2){}
+    // MANY paths, each with its own colour and opacity: the crew map draws one
+    // trail per journey and fades the older stretches, so direction and
+    // recency read without any animation (owner 2026-09-05). `path` stays the
+    // single-route case every other caller passes.
+    if(Array.isArray(o.paths)&&typeof mapkit.PolylineOverlay==='function'){
+      o.paths.forEach(seg=>{
+        const pts2=(seg&&Array.isArray(seg.path))?seg.path.filter(q=>Array.isArray(q)&&isFinite(q[0])&&isFinite(q[1])):null;
+        if(!pts2||pts2.length<2)return;
+        try{
+          st.obj.addOverlay(new mapkit.PolylineOverlay(pts2.map(q=>new mapkit.Coordinate(q[0],q[1])),{
+            style:new mapkit.Style({lineWidth:(+seg.width||4),lineJoin:'round',lineCap:'round',
+              strokeColor:(seg.color||'#2D5DA8'),strokeOpacity:(seg.opacity==null?0.85:+seg.opacity)}),
+          }));
+        }catch(_es){}
+      });
+    }
+    const path=Array.isArray(o.path)?o.path:null;
+    if(path&&path.length>=2&&typeof mapkit.PolylineOverlay==='function'){
+      const coords=path.map(q=>new mapkit.Coordinate(q[0],q[1]));
+      const line=new mapkit.PolylineOverlay(coords,{
+        style:new mapkit.Style({lineWidth:4,lineJoin:'round',lineCap:'round',
+                                strokeColor:(o.pathColor||'#2D5DA8'),strokeOpacity:.85}),
+      });
+      st.obj.addOverlay(line);
+    }
     const anns=pts.map(p=>{
       const stl=(o.style&&o.style[p.type])||{c:'#666',glyph:''};
-      const a=new mapkit.MarkerAnnotation(new mapkit.Coordinate(p.lat,p.lon),{
-        color:stl.c,
-        glyphText:stl.glyph||'',
-        title:p.label||p.type,
-        subtitle:p.date||'',
-      });
+      let a;
+      // A CUSTOM MARKER, when the caller has one. MarkerAnnotation is a pin
+      // with a colour and a letter; an avatar with a progress ring, a heading
+      // arrow and a battery pip is none of those. The factory returns the
+      // element and mapkit anchors it, so the SAME html renders here and in the
+      // fallback plot below and the two screens cannot drift (7.3).
+      const html=(typeof o.marker==='function')?o.marker(p):null;
+      if(html&&typeof mapkit.Annotation==='function'){
+        a=new mapkit.Annotation(new mapkit.Coordinate(p.lat,p.lon),()=>{
+          const el=document.createElement('div');
+          el.className='td-mk';
+          el.innerHTML=html;
+          return el;
+        },{title:p.label||p.type,subtitle:p.date||'',anchorOffset:new DOMPoint(0,0)});
+      }else{
+        a=new mapkit.MarkerAnnotation(new mapkit.Coordinate(p.lat,p.lon),{
+          color:stl.c,
+          glyphText:stl.glyph||'',
+          title:p.label||p.type,
+          subtitle:p.date||'',
+        });
+      }
       if(typeof o.onSelect==='function')a.addEventListener('select',()=>o.onSelect(p));
       return a;
     });
     st.obj.addAnnotations(anns);
     // Frame everything with a little breathing room rather than hard-cropping to
     // the outermost pins.
-    if(anns.length)st.obj.showItems(anns,{animate:false,padding:new mapkit.Padding(40,24,40,24)});
+    // Frame the OVERLAY as well when there is one: showItems on the pins alone
+    // crops a route that loops outside its own endpoints, which is exactly the
+    // detour a drawn route exists to show.
+    const _items=anns.slice();
+    try{if(st.obj.overlays&&st.obj.overlays.length)_items.push(...st.obj.overlays);}catch(_e3){}
+    // padBottom reserves the room a floating sheet takes, so framing puts every
+    // pin in the part of the map you can actually SEE. Without it the crew map
+    // centres on pins that are behind the crew list (owner render 2026-09-05).
+    const _pb=Math.max(40,+o.padBottom||40);
+    if(_items.length)st.obj.showItems(_items,{animate:false,padding:new mapkit.Padding(40,24,_pb,24)});
   }catch(_e){tdMapDestroy(st);tdMapRenderFallback(o);}
 }
 
@@ -565,18 +640,70 @@ function _geoPinSvg(color){
 }
 function tdMapRenderFallback(o){
   const body=o.body,pts=o.pts,style=o.style||{};
-  const lats=pts.map(p=>p.lat),lons=pts.map(p=>p.lon);
+  // The route is part of the extent, not decoration on top of it: a plot
+  // framed on two endpoints crops the detour in the middle, which is the one
+  // thing a drawn route is for.
+  const path=(Array.isArray(o.path)&&o.path.length>=2)
+    ?o.path.filter(q=>Array.isArray(q)&&isFinite(q[0])&&isFinite(q[1])):null;
+  const lats=pts.map(p=>p.lat).concat(path?path.map(q=>q[0]):[]);
+  const lons=pts.map(p=>p.lon).concat(path?path.map(q=>q[1]):[]);
   const minLat=Math.min(...lats),maxLat=Math.max(...lats);
   const minLon=Math.min(...lons),maxLon=Math.max(...lons);
   // A single point, or a perfectly straight line of them, would divide by zero.
   const spanLat=Math.max(maxLat-minLat,1e-4),spanLon=Math.max(maxLon-minLon,1e-4);
   // Draw north-first so southern pins overlap the ones behind them, the way a
   // real map stacks. Sorting a copy leaves the caller's feed order alone.
+  // Drawn as one SVG polyline under the pins, in the same percentage space the
+  // pins use, so tiles or no tiles the line and the markers always agree.
+  let routeSvg='';
+  // Multi-path trails, the same option the tile path honours, so the crew map
+  // looks the same with or without Apple's tiles.
+  if(Array.isArray(o.paths)&&o.paths.length){
+    const segs=o.paths.map(seg=>{
+      const q2=(seg&&Array.isArray(seg.path))?seg.path.filter(q=>Array.isArray(q)&&isFinite(q[0])&&isFinite(q[1])):null;
+      if(!q2||q2.length<2)return '';
+      const poly=q2.map(q=>{
+        const x=((q[1]-minLon)/spanLon)*100;
+        const y=100-((q[0]-minLat)/spanLat)*100;
+        return x.toFixed(2)+','+y.toFixed(2);
+      }).join(' ');
+      return '<polyline points="'+poly+'" fill="none" stroke="'+(seg.color||'#2D5DA8')+'" '+
+        'stroke-width="'+(+seg.width||4)+'" stroke-linejoin="round" stroke-linecap="round" '+
+        'vector-effect="non-scaling-stroke" opacity="'+(seg.opacity==null?0.85:+seg.opacity)+'"/>';
+    }).join('');
+    if(segs)routeSvg+='<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" '+
+      'style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">'+segs+'</svg>';
+  }
+  if(path){
+    const poly=path.map(q=>{
+      const x=((q[1]-minLon)/spanLon)*100;
+      const y=100-((q[0]-minLat)/spanLat)*100;
+      return x.toFixed(2)+','+y.toFixed(2);
+    }).join(' ');
+    routeSvg='<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" '+
+      'style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">'+
+      '<polyline points="'+poly+'" fill="none" stroke="'+(o.pathColor||'#2D5DA8')+'" '+
+      'stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" opacity=".9"/>'+
+    '</svg>';
+  }
   const dots=pts.slice().sort((a,b)=>b.lat-a.lat).map(p=>{
     const x=((p.lon-minLon)/spanLon)*100;
     const y=100-((p.lat-minLat)/spanLat)*100;   // north at the top
     const st=style[p.type]||{c:'var(--text3)'};
     const title=escHtml((p.label||p.type)+(p.date?' · '+p.date:''));
+    // Same factory the tile path uses, so one definition of what a pin looks
+    // like serves both. Centred on the coordinate rather than hung above it:
+    // an avatar IS the point, it has no needle.
+    const html=(typeof o.marker==='function')?o.marker(p):null;
+    if(html){
+      // STILL A LINK. A custom marker changes what a pin looks like, never what
+      // it does: tapping one opens Maps for directions, which on this screen is
+      // half the point of the pin. The first cut returned a bare div and
+      // silently dropped that, and e2e-day-map caught it by counting the links.
+      return '<a href="https://www.google.com/maps?q='+p.lat+','+p.lon+'" target="_blank" rel="noopener" '+
+        'class="td-mk" title="'+title+'" style="position:absolute;left:'+x.toFixed(2)+'%;top:'+y.toFixed(2)+
+        '%;transform:translate(-50%,-50%);text-decoration:none;color:inherit">'+html+'</a>';
+    }
     // margin pulls the pin up its full height and left half its width, so the
     // POINT lands on the coordinate rather than the middle of the head.
     return '<a href="https://www.google.com/maps?q='+p.lat+','+p.lon+'" target="_blank" rel="noopener" title="'+title+'" '+
@@ -585,16 +712,32 @@ function tdMapRenderFallback(o){
   }).join('');
   let widthMi=0;
   try{widthMi=_haversineMiles({lat:minLat,lng:minLon},{lat:minLat,lng:maxLon});}catch(_e){}
+  // The dark plot is the same drawing with the roads and the ground inverted,
+  // so a caller asking for a dark map gets one whether or not Apple's tiles are
+  // available, and the pins that were designed against dark still read.
+  const _h=(+o.height>0)?+o.height:280;
+  const _ground=o.dark
+    ? 'background:#12161C'
+    : 'background:linear-gradient(0deg,var(--bg2) 0%,var(--bg) 100%)';
+  const _grid=o.dark
+    ? 'background-image:linear-gradient(#1D242E 1px,transparent 1px),linear-gradient(90deg,#1D242E 1px,transparent 1px);background-size:25% 25%;opacity:.9'
+    : 'background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:25% 25%;opacity:.4';
+  const _hint=o.dark?'color:#8B94A3':'color:var(--text3)';
   body.innerHTML=
-    '<div style="position:relative;height:280px;border:1px solid var(--border);border-radius:var(--r);background:'+
-      'linear-gradient(0deg,var(--bg2) 0%,var(--bg) 100%);overflow:hidden;margin-bottom:10px">'+
-      '<div style="position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:25% 25%;opacity:.4"></div>'+
-      '<div style="position:absolute;top:'+(_GEO_PIN_H+2)+'px;left:14px;right:14px;bottom:14px">'+dots+'</div>'+
+    // NO id here, deliberately. hostId is the tile host, and both this screen
+    // and the Places map use its presence to mean "Apple tiles are live" (the
+    // licence test in e2e-day-map does exactly that). Reusing it on the plot
+    // would make the fallback claim to be tiles.
+    '<div style="position:relative;height:'+_h+'px;'+
+      (o.dark?'':'border:1px solid var(--border);')+'border-radius:'+(o.dark?'0':'var(--r)')+';'+_ground+';overflow:hidden;'+
+      (o.dark?'':'margin-bottom:10px')+'">'+
+      '<div style="position:absolute;inset:0;'+_grid+'"></div>'+
+      '<div style="position:absolute;top:'+(_GEO_PIN_H+2)+'px;left:14px;right:14px;bottom:14px">'+routeSvg+dots+'</div>'+
     '</div>'+
-    '<div style="font-size:10px;color:var(--text3);line-height:1.6">'+
+    (o.hideHint?'':'<div style="font-size:10px;'+_hint+';line-height:1.6">'+
       (widthMi>0.1?'Area shown: about '+(widthMi<10?widthMi.toFixed(1):Math.round(widthMi))+' miles across. ':'')+
       'Tap any pin to open it in Maps.'+
-    '</div>';
+    '</div>');
 }
 
 // ── The Places screen (Books → Places) ────────────────────────────────────
@@ -837,6 +980,11 @@ function _ptrPaint(el,yr,data){
 function _placeKindChanged(kind){
   const note=document.getElementById('place-ho-note');
   if(note)note.style.display=(kind==='home_office')?'block':'none';
+  // The picker opens on a greyed placeholder, so it paints muted until a real
+  // type is chosen and normal text once one is. Same --text3 the hints beside
+  // it use, never a hardcoded grey.
+  const sel=document.getElementById('place-kind');
+  if(sel)sel.style.color=kind?'var(--text)':'var(--text3)';
 }
 // Add / edit. lat+lon are passed when promoting a suggestion, since that stop
 // already has coordinates and asking for an address would be absurd.
@@ -847,8 +995,18 @@ function openPlaceModal(id,lat,lon){
   const ov=document.createElement('div');
   ov.id='place-modal';ov.className='zmodal-overlay';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  const kindOpts=Object.keys(PLACE_KINDS).map(k=>
-    '<option value="'+k+'"'+((pl&&pl.kind===k)||(!pl&&k==='supply')?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');
+  // Nothing is pre-picked (owner 2026-08-31: "dont want to pre fill things in").
+  // Type used to open ON Supply house, so a shop, a home office and a supplier
+  // all saved as a supply house unless the contractor noticed the picker and
+  // changed it. A wrong kind is not cosmetic: it decides how that stop's trips
+  // deduct and which bucket the mileage report puts them in (_autoTripPurpose).
+  // It opens on a greyed placeholder instead, and Save refuses until a real
+  // type is chosen (_savePlaceFromModal). An EDIT still opens on the saved
+  // kind, the placeholder is only ever the state of a place with no type yet.
+  const _plKind=(pl&&PLACE_KINDS[pl.kind])?pl.kind:'';
+  const kindOpts='<option value="" disabled'+(_plKind?'':' selected')+'>Choose a type</option>'+
+    Object.keys(PLACE_KINDS).map(k=>
+      '<option value="'+k+'"'+(_plKind===k?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');
   // Centred on the shared .zmodal chrome, like every other prompt in this flow
   // (owner call 2026-08-01). It was the last bottom sheet left in Places, so
   // naming a location slid up from the bottom while the truck and vehicle
@@ -871,12 +1029,12 @@ function openPlaceModal(id,lat,lon){
     '<div class="zmodal-title" style="text-align:center">'+(pl?'Edit location':'Add a location')+'</div>'+
     (_lat==null?searchFieldHtml:nameFieldHtml)+
     '<div class="f" style="margin-bottom:12px"><label>Type</label>'+
-      '<select id="place-kind" onchange="_placeKindChanged(this.value)" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+kindOpts+'</select></div>'+
+      '<select id="place-kind" onchange="_placeKindChanged(this.value)" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:'+(_plKind?'var(--text)':'var(--text3)')+';width:100%;box-sizing:border-box">'+kindOpts+'</select></div>'+
     // A home office changes whether the first trip of the day is deductible, so
     // it is stated plainly rather than buried as a dropdown value, but only
     // when that is actually the type picked: every other kind got a home-
     // office tax disclaimer nobody asked for.
-    '<div id="place-ho-note" style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px;display:'+((pl?pl.kind:'supply')==='home_office'?'block':'none')+'">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
+    '<div id="place-ho-note" style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px;display:'+(_plKind==='home_office'?'block':'none')+'">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
     '<input type="hidden" id="place-lat" value="'+(_lat!=null?_lat:'')+'"><input type="hidden" id="place-lon" value="'+(_lon!=null?_lon:'')+'">'+
     (_lat!=null
       // Raw lat/lon means nothing to a contractor, the address (when there is
@@ -902,8 +1060,11 @@ function openPlaceModal(id,lat,lon){
       const n=document.getElementById('place-name');
       if(!n||n.value.trim())return;
       n.value=poi.name;
-      const k=document.getElementById('place-kind');
-      if(k&&typeof _poiPlaceKind==='function')k.value=_poiPlaceKind(poi.category);
+      // The name only. This used to stamp the Type too, via _poiPlaceKind,
+      // which returns 'supply' for everything that is not a restaurant, so
+      // promoting a repeat stop pre-filled Supply house exactly the way the
+      // static default did. A category guess is not the contractor telling us
+      // what a place is, and that is the one thing this picker asks for.
     }).catch(()=>{});
   }
 }
@@ -958,11 +1119,12 @@ function _placePickAddr(i){
 }
 function _savePlaceFromModal(id){
   const name=(document.getElementById('place-name')?.value||'').trim();
-  const kind=document.getElementById('place-kind')?.value||'supply';
+  const kind=document.getElementById('place-kind')?.value||'';
   const lat=parseFloat(document.getElementById('place-lat')?.value);
   const lon=parseFloat(document.getElementById('place-lon')?.value);
   const addr=(document.getElementById('place-addr')?.value||'').trim();
   if(!name){showToast('Give it a name','⚠️');return;}
+  if(!kind){showToast('Pick a type','⚠️');return;}
   if(!isFinite(lat)||!isFinite(lon)){showToast('Search the address to drop the pin first','⚠️');return;}
   savePlace({id:id||undefined,name,kind,lat,lon,addr:addr||undefined,confirmedBy:id?undefined:'manual'});
   if(typeof dismissPlaceSuggestion==='function')dismissPlaceSuggestion(lat,lon);

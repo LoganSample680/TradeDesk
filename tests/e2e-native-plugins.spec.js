@@ -149,3 +149,133 @@ test.describe('Share extension script targets the real Xcode paths', () => {
     expect(wf).toContain('cat > ' + scriptPath);
   });
 });
+
+test.describe('A build can never quietly ship without a component', () => {
+  const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/ios-beta.yml'), 'utf8');
+
+  test('the skip flag is job-level, so something other than the step can read it', () => {
+    // It used to live on the share-extension step alone. Nothing else in the
+    // build could see it, so nothing could check it, and build 49 (the monthly
+    // keep-alive, run from main while main still had it at '1') shipped a
+    // TestFlight build with no share extension and no output saying so.
+    const job = wf.indexOf('build-upload:');
+    const firstStep = wf.indexOf('steps:', job);
+    expect(job).toBeGreaterThan(-1);
+    expect(wf.slice(job, firstStep), 'the flag must be declared on the job, above steps:')
+      .toContain("SKIP_SHARE_EXT: '0'");
+    // And exactly one place sets it, or the guard grades a different value
+    // than the build uses.
+    expect((wf.match(/^\s*SKIP_SHARE_EXT:/gm) || []).length,
+      'one source of truth for the flag').toBe(1);
+  });
+
+  test('a component in the tree cannot be skipped', () => {
+    // The rule: source in the tree means the component is in the build. A skip
+    // flag may only cover a component that does not exist yet, never one that
+    // already shipped.
+    const g = wf.indexOf('Every native component in the tree must be in the build');
+    expect(g, 'the guard step must exist').toBeGreaterThan(-1);
+    const step = wf.slice(g, g + 1200);
+    expect(step, 'it has to test the source directory, not just the flag').toContain('-d td-share');
+    expect(step).toContain('SKIP_SHARE_EXT');
+    expect(step, 'and it must FAIL the run, not warn').toContain('::error::');
+    expect(step).toContain('exit $MISSING');
+  });
+
+  test('the guard runs long before the archive', () => {
+    // The whole point is that a stripped build costs seconds, not a
+    // fifteen-minute macOS run and a bad install on somebody's phone.
+    const g = wf.indexOf('Every native component in the tree must be in the build');
+    const share = wf.indexOf('COMPONENT share-extension: build the target');
+    const archive = wf.indexOf('name: Archive (ad-hoc signed');
+    expect(g).toBeLessThan(share);
+    expect(g).toBeLessThan(archive);
+  });
+
+  test('nothing still advises setting the flag back to 1', () => {
+    // The failure-analytics step used to say "set SKIP_SHARE_EXT back to '1'
+    // and re-run", which the guard now refuses. Advice that contradicts a hard
+    // gate sends the next person in a circle.
+    expect(wf).not.toContain("set SKIP_SHARE_EXT back to '1'");
+  });
+});
+
+test.describe('Share extension accepts a contact card', () => {
+  const PLIST = path.join(ROOT, 'native/td-share/ios/Extension/Info.plist');
+  const SWIFT = path.join(ROOT, 'native/td-share/ios/Extension/ShareViewController.swift');
+  const plist = fs.existsSync(PLIST) ? fs.readFileSync(PLIST, 'utf8') : '';
+  const swift = fs.existsSync(SWIFT) ? fs.readFileSync(SWIFT, 'utf8') : '';
+
+  // Pull the activation rule out of the plist without a plist parser: the value
+  // is whatever follows the NSExtensionActivationRule key.
+  const ruleM = plist.match(/<key>NSExtensionActivationRule<\/key>\s*([\s\S]*?)(?=\n\s*<key>|\n\s*<\/dict>)/);
+
+  test('the rule is a predicate, not the convenience dictionary', () => {
+    // Build 47 shipped the dictionary form, and Contacts never offered
+    // TradeDesk. NSExtensionActivationSupportsFileWithMaxCount means "anything
+    // that is NOT an image, movie, URL, or text"; a vCard conforms to
+    // public.text, so it matched no supported class at all. Only a predicate
+    // can name public.vcard.
+    expect(ruleM, 'no NSExtensionActivationRule in the extension Info.plist').toBeTruthy();
+    expect(ruleM[1].trim().startsWith('<string>'),
+      'the rule must be a <string> predicate, a <dict> cannot express public.vcard').toBe(true);
+    // Scoped to the rule VALUE on purpose: the comment above the key names the
+    // old dictionary keys to explain why they are gone, and a whole-file scan
+    // would fail on that comment.
+    expect(ruleM[1]).not.toContain('NSExtensionActivationSupports');
+  });
+
+  test('the predicate names public.vcard', () => {
+    expect(ruleM[1]).toContain('public.vcard');
+  });
+
+  test('the predicate still accepts the paths that already worked', () => {
+    // Photos and file shares activated the extension before this change and
+    // must keep doing so: narrowing the rule to fix Contacts would be a
+    // regression that only shows up on a device.
+    for (const uti of ['public.image', 'com.adobe.pdf', 'public.file-url', 'public.url']) {
+      expect(ruleM[1], uti + ' dropped out of the activation rule').toContain(uti);
+    }
+  });
+
+  test('the predicate does not blanket-accept text or data', () => {
+    // Both public.text and public.data are ancestors of public.vcard, so either
+    // one would fix Contacts by accident AND put TradeDesk in the share sheet
+    // for every text selection in Notes and Safari. Accepting the contact is
+    // the goal; becoming share-sheet noise is not.
+    expect(ruleM[1]).not.toContain('"public.text"');
+    expect(ruleM[1]).not.toContain('"public.data"');
+  });
+
+  test('the rule escapes its comparisons so the plist still parses', () => {
+    // A raw >= in XML text is a parse error, and a plist that will not parse is
+    // an extension iOS refuses to load, discovered on the runner at minute nine.
+    expect(ruleM[1]).not.toMatch(/>=(?!;)/);
+    expect(ruleM[1]).toContain('&gt;=');
+  });
+
+  test('the handler asks for the vCard type before the generic ones', () => {
+    // A vCard conforms to public.data, so whichever type is requested FIRST
+    // decides what the bytes get called. Ask for .data first and a contact
+    // lands as td_share_*.dat, which share-inbox.js cannot recognise.
+    const m = swift.match(/let types:\s*\[UTType\]\s*=\s*\[([^\]]+)\]/);
+    expect(m, 'could not find the UTType preference list').toBeTruthy();
+    const order = m[1].split(',').map(s => s.trim());
+    expect(order[0]).toBe('.vCard');
+    expect(order.indexOf('.vCard')).toBeLessThan(order.indexOf('.data'));
+  });
+
+  test('a vCard arriving as raw bytes is still named .vcf', () => {
+    // The app types a shared file by its extension, so an unnamed item has to
+    // be given the right one rather than the catch-all .dat the old code used.
+    expect(swift).toMatch(/case \.vCard:\s*return "vcf"/);
+    expect(swift, 'the raw-bytes branch must use the per-type fallback, not a literal .dat')
+      .not.toMatch(/as\? Data \{[\s\S]{0,200}\)\.dat"/);
+  });
+
+  test('share-inbox types a .vcf as a contact card', () => {
+    // The native half is pointless if the JS half files it as an unknown blob.
+    const si = fs.readFileSync(path.join(ROOT, 'js/share-inbox.js'), 'utf8');
+    expect(si).toMatch(/vcf[\s\S]{0,80}vcard/i);
+  });
+});

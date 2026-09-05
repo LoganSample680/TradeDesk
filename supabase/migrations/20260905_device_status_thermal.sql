@@ -1,0 +1,34 @@
+-- ════════════════════════════════════════════════════════════════════════
+-- How hot the phone is, on the crew roster (owner ask 2026-09-01, after a
+-- six-minute drive left his phone hot and 3% down: "do we surface iOS device
+-- temp?").
+--
+-- iOS has no temperature API and never has. ProcessInfo.thermalState is what
+-- Apple exposes, and it is the better number anyway because it is the one the
+-- OS ACTS on: at 'serious' iOS is already throttling the CPU and dimming the
+-- screen, and at 'critical' it starts shutting features down. A phone reading
+-- serious mid-shift is reporting a problem no battery percentage can show,
+-- because the percentage looks fine right up until the throttling starts
+-- costing fixes.
+--
+-- It sits beside battery_level for the same reason battery_level sits beside
+-- the permission axes: a phone that stops reporting looks identical whether it
+-- is out of battery, has location switched off, or is so hot iOS has parked
+-- the app, and the owner chases those three completely differently.
+--
+-- Free to read: no permission, no polling, one property off ProcessInfo,
+-- collected on the stats() call the battery already rides on.
+--
+-- Text, not an enum: the four states are Apple's and Apple can add a fifth.
+-- The plugin maps the enum to a word and passes 'unknown' through for anything
+-- it does not recognise, which a check constraint would turn into a write
+-- failure on a future iOS rather than a row that says what it saw. Same reason
+-- location_status is free text.
+--
+-- Additive and nullable: a browser, an Android, or a shell too old to answer
+-- must read as 'not reported' rather than claim 'nominal'. Not knowing and
+-- being cool are different answers, the same rule battery_level and
+-- location_services_enabled already follow.
+-- ════════════════════════════════════════════════════════════════════════
+
+alter table device_status add column if not exists thermal_state text;

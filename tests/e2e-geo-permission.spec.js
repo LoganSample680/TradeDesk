@@ -254,6 +254,76 @@ test.describe('Crew location permission', () => {
     expect(out.label).toContain('No recent activity');
   });
 
+  // ── Reachability: location perfect, server still cannot wake the phone ────
+  // Owner 2026-08-27. Every device_tokens row on the project was missing and
+  // the roster showed solid green the whole time. A state nobody can see is a
+  // state that stays broken.
+  test('an unreachable phone reads amber even with Always + Precise', async () => {
+    const out = await page.evaluate(() => {
+      S.teamTracking = true;
+      const now = new Date().toISOString();
+      _teamGeo = { 'a@b.co': { status: 'granted', checkedAt: now, ackAt: now, lastPing: null, reachable: false,
+        ios: { location_status: 'always', location_accuracy: 'full', checked_at: now, device_label: 'iPhone' } } };
+      return _geoRosterStatus('a@b.co');
+    });
+    expect(out.dot).toBe('🟠');
+    expect(out.label).toContain('can’t wake this phone');
+    expect(out.fix).toContain('allow notifications');
+  });
+
+  test('a reachable phone is plain green, no extra line', async () => {
+    const out = await page.evaluate(() => {
+      S.teamTracking = true;
+      const now = new Date().toISOString();
+      _teamGeo = { 'a@b.co': { status: 'granted', checkedAt: now, ackAt: now, lastPing: null, reachable: true,
+        ios: { location_status: 'always', location_accuracy: 'full', checked_at: now, device_label: 'iPhone' } } };
+      return _geoRosterStatus('a@b.co');
+    });
+    expect(out.dot).toBe('🟢');
+    expect(out.label).not.toContain('wake');
+  });
+
+  test('unknown reachability never invents a warning', async () => {
+    // undefined is not false. A roster loaded before the token fetch resolved,
+    // or a manager whose query returned nothing, must not paint every phone
+    // amber on the strength of a missing field.
+    const out = await page.evaluate(() => {
+      S.teamTracking = true;
+      const now = new Date().toISOString();
+      _teamGeo = { 'a@b.co': { status: 'granted', checkedAt: now, ackAt: now, lastPing: null,
+        ios: { location_status: 'always', location_accuracy: 'full', checked_at: now, device_label: 'iPhone' } } };
+      return _geoRosterStatus('a@b.co');
+    });
+    expect(out.dot).toBe('🟢');
+  });
+
+  test('a broken phone keeps its LOUDER problem, reachability never buries it', async () => {
+    const out = await page.evaluate(() => {
+      S.teamTracking = true;
+      const now = new Date().toISOString();
+      _teamGeo = { 'a@b.co': { status: 'denied', checkedAt: now, ackAt: now, lastPing: null, reachable: false,
+        ios: { location_status: 'denied', checked_at: now, device_label: 'iPhone' } } };
+      return _geoRosterStatus('a@b.co');
+    });
+    expect(out.dot).toBe('🔴');
+    expect(out.label).toContain('Location off');
+  });
+
+  test('a NEW user granting location also registers for push (source guarantee)', async () => {
+    // _pushResume covers a phone that already granted notifications, on every
+    // boot. This covers the other half, the new user answering the location
+    // prompt for the first time, whose only other route to a token is a
+    // checklist row they may never tap.
+    const fs = require('fs'); const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+    const i = src.indexOf("_geoParkNote('watcher-on'");
+    expect(i).toBeGreaterThan(-1);
+    const after = src.slice(i, i + 3000);
+    expect(after.includes('motionSince'), 'the motion ask must still be chained').toBe(true);
+    expect(after.includes('pushEnable'), 'push registration must ride the same chain').toBe(true);
+    expect(after.indexOf('motionSince')).toBeLessThan(after.indexOf('pushEnable'));
+  });
+
   test('denied shows red', async () => {
     const out = await page.evaluate(() => {
       S.teamTracking = true;
@@ -519,6 +589,76 @@ test.describe('Crew location permission', () => {
     // ourselves is ever trusted as markup.
     expect(out.device).toBe('<img src=x onerror=alert(1)>');
     expect(out.battBar).not.toContain('onerror');
+  });
+
+  // ── How hot the phone is (owner ask 2026-09-01) ───────────────────────────
+  //
+  // "I just had a big spike where my phone got hot after a drive and killed 3
+  // percent, can't have that ... do we surface iOS device temp?"
+  //
+  // Same principle as the battery bar, and for the same reason: a phone iOS is
+  // throttling reports a perfectly healthy percentage right up until the fixes
+  // start going missing. Serious and critical are the two states where that is
+  // happening; nominal and fair are a phone doing its job, and a roster that
+  // labels nine cool phones is a roster nobody reads.
+  test('a phone iOS is throttling says so, in words a person can act on', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', thermal_state: 'serious',
+      checked_at: NOW() });
+    expect(out.battBar).toContain('Phone running hot');
+    expect(out.battBar, 'serious is a warning, not an emergency').toContain('#D97706');
+  });
+
+  test('critical reads harder than serious, because iOS is shutting things off', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, thermal_state: 'critical', checked_at: NOW() });
+    expect(out.battBar).toContain('Phone too hot');
+    expect(out.battBar).toContain('#DC2626');
+  });
+
+  test('a cool phone says nothing at all', async () => {
+    for (const t of ['nominal', 'fair']) {
+      const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+        location_services_enabled: true, thermal_state: t, checked_at: NOW() });
+      expect(out.battBar, t + ': a phone doing its job is not news').toBe('');
+    }
+  });
+
+  test('a shell that cannot answer draws nothing, never a guess at nominal', async () => {
+    // Not knowing and being cool are different answers, the same rule the
+    // battery bar and location_services_enabled already follow.
+    for (const t of [null, undefined, '', 'unknown', 'Serious', 42, {}]) {
+      const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+        location_services_enabled: true, thermal_state: t, checked_at: NOW() });
+      expect(out.battBar, JSON.stringify(t) + ': never a guess').toBe('');
+    }
+  });
+
+  test('a hot phone on a healthy battery still shows the heat, and vice versa', async () => {
+    // THE WHOLE POINT. These two signals are independent: the phone that got
+    // hot on the owner's drive was at 60%, so a roster that only ever draws one
+    // chip would have shown nothing at all on the one row that mattered.
+    const hotOnly = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, battery_level: 0.60, thermal_state: 'serious',
+      checked_at: NOW() });
+    expect(hotOnly.battBar).toContain('Phone running hot');
+    expect(hotOnly.battBar, 'a healthy battery draws no bar').not.toContain('60%');
+    const both = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, battery_level: 0.09, thermal_state: 'critical',
+      checked_at: NOW() });
+    expect(both.battBar).toContain('9%');
+    expect(both.battBar).toContain('Phone too hot');
+  });
+
+  test('the heat chip rides every permission state, not just the healthy one', async () => {
+    // Eight branches build this row and each one used to carry battBar by
+    // hand. A signal added to one and missed on the others makes the roster
+    // tell a different story depending on which permission state a phone is in.
+    for (const st of ['always', 'wheninuse', 'denied', 'restricted', 'notdetermined']) {
+      const out = await rosterIos({ location_status: st, location_accuracy: 'full',
+        location_services_enabled: st !== 'denied', thermal_state: 'critical', checked_at: NOW() });
+      expect(out.battBar, st + ': a hot phone is hot in every state').toContain('Phone too hot');
+    }
   });
 
   test('last ping shows on a BROKEN row, which is where it matters most', async () => {
@@ -1058,6 +1198,49 @@ test.describe('Crew location permission', () => {
     expect(pe, 'pushEnable must be in the notify branch').toBeGreaterThan(-1);
     expect(pe < na || na === -1,
       'pushEnable is tried FIRST; _notifyAsk is only the browser fallback').toBe(true);
+  });
+
+  // ── Boot token refresh (owner's phone found tokenless 2026-08-27) ─────────
+  // The notify checklist item reads as done the moment iOS permission is
+  // granted, and its tap was the ONLY path to a device_tokens row. A phone
+  // that granted notifications before token registration existed was
+  // permanently unreachable: permission granted, zero rows, every server
+  // push and every 30-minute silent ping sent to nobody. _pushResume closes
+  // it: on boot, permission already granted -> silent re-register (Apple's
+  // own register-every-launch rule); anything else -> strictly nothing, the
+  // one prompt iOS grants is never spent on boot.
+  test('_pushResume registers when permission is granted and does nothing otherwise', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { st: window.pushStatus, en: window.pushEnable };
+      const calls = { enable: 0 };
+      try {
+        window.pushEnable = async () => { calls.enable++; return true; };
+        window.pushStatus = async () => 'granted';
+        await _pushResume();
+        const afterGranted = calls.enable;
+        window.pushStatus = async () => 'ask';
+        await _pushResume();
+        const afterAsk = calls.enable;
+        window.pushStatus = async () => 'denied';
+        await _pushResume();
+        const afterDenied = calls.enable;
+        window.pushStatus = async () => { throw new Error('boom'); };
+        let threw = false;
+        try { await _pushResume(); } catch (e) { threw = true; }
+        return { afterGranted, afterAsk, afterDenied, threw };
+      } finally { window.pushStatus = saved.st; window.pushEnable = saved.en; }
+    });
+    expect(r.afterGranted, 'granted must silently re-register').toBe(1);
+    expect(r.afterAsk, 'ask must never spend the one iOS prompt on boot').toBe(1);
+    expect(r.afterDenied, 'denied is terminal, never re-asked').toBe(1);
+    expect(r.threw, 'a pushStatus failure must never break boot').toBe(false);
+  });
+
+  test('the boot path actually calls _pushResume (source guarantee)', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    expect(src.includes('_pushResume'),
+      'without a boot call site the fix is dead code and tokenless phones stay unreachable').toBe(true);
   });
 
   // ── The owner's own row (owner ask 2026-08-26) ────────────────────────────
@@ -2247,6 +2430,158 @@ test.describe('Crew location permission', () => {
         if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
         return text;
       }, nat);
+
+      // ── Push, the half the lab was missing (owner 2026-08-27) ───────────
+      // Location read perfect on every row while device_tokens was empty
+      // account-wide and nothing on any screen could say why.
+      test('the lab reports the notification grant and the device token', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, st: window.pushStatus };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          window.pushStatus = async () => 'granted';
+          localStorage.setItem('zp3_push_token', 'abcdef0123456789');
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          localStorage.removeItem('zp3_push_token');
+          window.Capacitor = saved.cap; window.pushStatus = saved.st;
+          return text;
+        });
+        expect(t).toContain('Notifications');
+        expect(t).toContain('granted');
+        expect(t).toContain('Device token');
+        expect(t).toContain('abcdef01');
+      });
+
+      test('no token on the phone says so plainly, never a blank', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, st: window.pushStatus };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          window.pushStatus = async () => 'granted';
+          localStorage.removeItem('zp3_push_token');
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          window.Capacitor = saved.cap; window.pushStatus = saved.st;
+          return text;
+        });
+        expect(t).toContain('none on this phone');
+        expect(t).toContain('Apple never issued one');
+      });
+
+      test("Apple's rejection reason is kept and shown, not just logged", async () => {
+        // The whole point: the reason a token never arrives lives in a console
+        // on a phone nobody can attach a debugger to.
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, st: window.pushStatus };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          window.pushStatus = async () => 'granted';
+          localStorage.setItem('zp3_push_err', JSON.stringify({ at: new Date().toISOString(), msg: 'no valid aps-environment entitlement' }));
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          localStorage.removeItem('zp3_push_err');
+          window.Capacitor = saved.cap; window.pushStatus = saved.st;
+          return text;
+        });
+        expect(t).toContain('Last APNs error');
+        expect(t).toContain('aps-environment');
+      });
+
+      test('a token that never reached the server is called out as such', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, st: window.pushStatus, supa: _supa, user: _supaUser };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          window.pushStatus = async () => 'granted';
+          localStorage.setItem('zp3_push_token', 'deadbeefcafe');
+          _supaUser = _supaUser || { id: 'owner-test' };
+          const q = { _d: { data: [], error: null } };
+          q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
+          q.eq = () => q; q.is = () => q; q.limit = () => q; q.select = () => q;
+          _supa = { from: () => q };
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 200));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          localStorage.removeItem('zp3_push_token');
+          window.Capacitor = saved.cap; window.pushStatus = saved.st;
+          _supa = saved.supa; _supaUser = saved.user;
+          return text;
+        });
+        expect(t).toContain('NOT saved to the server');
+      });
+
+      // ── Which handset (owner 2026-08-27) ───────────────────────────────
+      // Two phones behaved differently on the same build and both reported as
+      // the string "iPhone", so the server could not tell them apart.
+      test('the lab names the handset and its iOS version', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, devs: S.devices ? S.devices.slice() : [] };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          const id = (typeof _initDeviceId === 'function') ? _initDeviceId() : null;
+          S.devices = [{ id, label: 'iPhone', hwId: 'iPhone17,2', osVersion: '18.6' }];
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          window.Capacitor = saved.cap; S.devices = saved.devs;
+          return text;
+        });
+        expect(t).toContain('Handset');
+        expect(t).toContain('iPhone 16 Pro Max');   // mapped marketing name
+        expect(t).toContain('iPhone17,2');          // raw id kept alongside
+        expect(t).toContain('iOS 18.6');
+      });
+
+      test('an unmapped identifier still shows, never blank or a guess', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, devs: S.devices ? S.devices.slice() : [] };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          const id = (typeof _initDeviceId === 'function') ? _initDeviceId() : null;
+          S.devices = [{ id, label: 'iPhone', hwId: 'iPhone99,9', osVersion: '26.0' }];
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          window.Capacitor = saved.cap; S.devices = saved.devs;
+          return text;
+        });
+        expect(t).toContain('iPhone99,9');
+        expect(t).toContain('iOS 26.0');
+      });
+
+      test('_tdModelName maps only confirmed pairs and never guesses', async () => {
+        const r = await page.evaluate(() => ({
+          proMax16: _tdModelName('iPhone17,2'),
+          proMax17: _tdModelName('iPhone18,2'),   // NOT iPhone17,x: the trap
+          unknown: _tdModelName('iPhone99,9'),
+          empty: _tdModelName(''),
+          nul: _tdModelName(null),
+          undef: _tdModelName(undefined),
+        }));
+        expect(r.proMax16).toBe('iPhone 16 Pro Max');
+        expect(r.proMax17).toBe('iPhone 17 Pro Max');
+        expect(r.unknown, 'an unknown id must never be given a made-up name').toBe('');
+        expect(r.empty).toBe('');
+        expect(r.nul).toBe('');
+        expect(r.undef).toBe('');
+      });
+
+      test('the lab offers a Register for push action', async () => {
+        const t = await open({ status: 'always', accuracy: 'full', servicesEnabled: true });
+        expect(t).toContain('Register for push');
+        const fn = await page.evaluate(() => typeof _geoPermLabPushReg);
+        expect(fn).toBe('function');
+      });
 
       test('it shows all three iOS axes and labels what is ours', async () => {
         const t = await open({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true });

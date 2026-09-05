@@ -4125,9 +4125,9 @@ test.describe('Workforce time intelligence', () => {
       // the hour the runner happens to start can never decide the result.
       let T0 = Date.now() - 3 * 3600000;
       {
-        const today = _ctDateStr(new Date());
+        const today = _bizDateStr(new Date());
         let mid = Date.now();
-        while (_ctDateStr(new Date(mid - 900000)) === today) mid -= 900000;
+        while (_bizDateStr(new Date(mid - 900000)) === today) mid -= 900000;
         if (T0 < mid) T0 = mid + 60000;
       }
       const EMP = 'emp-shopoverlap-1';
@@ -4187,76 +4187,15 @@ test.describe('Workforce time intelligence', () => {
       // paying. The 1h double-pay guard this test exists for is untouched and
       // still proves itself: without the overlap subtraction it reads 2.0h.
       // The companion test below pays that hour back with the allowances.
-      expect(r.hours).toBeCloseTo(1.0, 1);
+      // And back to 2.0h on 2026-09-02: the workday window was reader-side
+      // grading and is gone with the rest of it (CLAUDE.md 17). Rows arrive
+      // as stored; the only thing Crew Cost still does to a shop row is
+      // subtract a manual clock that covers it, which is the guard this test
+      // exists for: 120m shop - 60m overlap = 60m shop + 60m manual = 2.0h.
+      expect(r.hours).toBeCloseTo(2.0, 1);
     }
   });
 
-  // The other half of that rule: the two allowances (S.shopPrepMin for load-up
-  // before the first move, S.shopWrapMin for unload after the last) are how a
-  // contractor pays the ends of the day instead of losing them. Same fixture,
-  // 30 minutes on each side, proving the knobs actually reach Crew Cost and
-  // are not display-only.
-  //
-  // 1.5h, not the 2.0h this asserted before the departure rule landed
-  // (js/geo-track.js, owner 2026-08-24). Nothing in this fixture follows the
-  // dwell, so nobody was ever observed leaving the yard, and a session like
-  // that is credited the wrap-up allowance and no more: 30 minutes of dwell
-  // plus the 60-minute manual clock. That is the allowance doing exactly its
-  // job. The double-pay guard the sibling test exists for is untouched.
-  test('crew cost: the prep and wrap-up allowances pay the ends of the day', async () => {
-    const r = await page.evaluate(async () => {
-      if (typeof _crewCostRender !== 'function') return null;
-      // Bare bindings, same reason as the sibling test above.
-      const orig = { timeEntries, supa: _supa, supaEnabled: window.supaEnabled, supaUser: _supaUser, wrap: S.shopWrapMin, prep: S.shopPrepMin };
-      // Same CT-date clamp as the sibling test above.
-      let T0 = Date.now() - 3 * 3600000;
-      {
-        const today = _ctDateStr(new Date());
-        let mid = Date.now();
-        while (_ctDateStr(new Date(mid - 900000)) === today) mid -= 900000;
-        if (T0 < mid) T0 = mid + 60000;
-      }
-      const EMP = 'emp-shopwrap-1';
-      const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
-      timeEntries = timeEntries.filter(e => e.id !== 8970098);
-      timeEntries.push({
-        id: 8970098, job_id: 1, date: dateKey(new Date(T0)),
-        start_time: new Date(T0 + 30 * 60000).toISOString(), end_time: new Date(T0 + 90 * 60000).toISOString(),
-        minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
-      });
-      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
-      _supa = {
-        from: (tbl) => {
-          if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
-          if (tbl === 'shop_time_entries') return makeQ([shopRow]);
-          return makeQ([]);
-        },
-      };
-      window.supaEnabled = () => true;
-      // BARE bindings, not window.*. js/cloud.js:638 declares these as
-      // `let _supa=null,_supaUser=null`, and a top-level let lives in the
-      // global LEXICAL environment, so `window._supa = x` creates an unrelated
-      // property while _fetchCrewLabor keeps reading the real binding. The
-      // boot already signs a _supaUser in, so that line is only a safety net,
-      // but the _supa stub above is load-bearing and must be assigned bare.
-      _supaUser = _supaUser || { id: 'owner-test' };
-      S.shopWrapMin = 30; S.shopPrepMin = 30;
-      document.getElementById('_crew-cost-ov')?.remove();
-      let html = '';
-      try {
-        _openCrewCost(); await _crewCostRender('today');
-        html = document.getElementById('_crew-cost-body')?.innerHTML || '';
-      } catch (e) { return { error: e.message }; }
-      document.getElementById('_crew-cost-ov')?.remove();
-      timeEntries = orig.timeEntries; _supa = orig.supa; window.supaEnabled = orig.supaEnabled; _supaUser = orig.supaUser; S.shopWrapMin = orig.wrap; S.shopPrepMin = orig.prep;
-      const hoursMatch = html.match(/(\d+(?:\.\d+)?)h/);
-      return { html, hours: hoursMatch ? parseFloat(hoursMatch[1]) : null };
-    });
-    if (r && !r.error) {
-      expect(r.hours, 'rendered hours, html=' + r.html).not.toBeNull();
-      expect(r.hours, 'the allowance pays the unload on a session nobody left').toBeCloseTo(1.5, 1);
-    }
-  });
 
   // ── Job Profit: source filter excludes drive minutes from labor cost ─────
   test('_openJobProfit is a function', async () => {

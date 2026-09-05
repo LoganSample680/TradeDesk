@@ -32,6 +32,7 @@
      Pinned 2.112.3; bump deliberately, never floating. -->
 <script src="js/vendor/supabase-js-2.112.3.min.js" async id="supabase-sdk"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin defer onload="_initMapKit()"></script>
+<link rel="stylesheet" href="css/timelog.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 button{touch-action:manipulation}
@@ -285,7 +286,97 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    each dashboard widget hides its real children behind an appended
    .td-boot-skel shimmer card (js/dashboard.js _dashApplySkeletons), removed in
    one swap when the sync settles. Non-destructive: the real markup stays. */
-#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-supply-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
+#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
+/* ── The Dispatch crew map (js/day-map.js) ──────────────────────────────────
+   Owner 2026-09-05: "like Life360 but better." Dark, full-bleed, with the crew
+   sheet floating over it. Deliberately a single dark world rather than a
+   themed surface: a map reads as operations in dark and as a consumer locator
+   in light, and the pins were designed against the dark ground.
+   GLASS, and the reason it is only on the chrome: blur alone is frosted
+   plastic, so every glass surface here is blur PLUS a saturation boost pulling
+   colour through from behind, a hairline light border, and a 1px inner
+   highlight where light would catch. It sits on the floating pieces and on the
+   sheet's header, never on a big panel over flat dark ground, which goes grey
+   and dead (measured against a light-glass build of the same screen). */
+.dm-wrap{position:relative;margin:0 -14px -12px}
+.dm-map{position:relative;background:#12161C;overflow:hidden}
+.dm-empty{padding:26px 20px;font-size:13px;color:#8B94A3;line-height:1.6}
+.dm-sheet{position:absolute;left:0;right:0;bottom:0;border-radius:20px 20px 0 0;overflow:hidden;
+  box-shadow:0 -10px 40px rgba(0,0,0,.45);max-height:46%;display:flex;flex-direction:column}
+.dm-sheet-top{background:rgba(16,21,28,.60);-webkit-backdrop-filter:blur(28px) saturate(190%);
+  backdrop-filter:blur(28px) saturate(190%);border-bottom:1px solid rgba(255,255,255,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16);padding:8px 0 9px;flex-shrink:0}
+.dm-grab{width:36px;height:4px;border-radius:99px;background:rgba(255,255,255,.32);margin:0 auto 9px}
+.dm-shd{display:flex;align-items:center;justify-content:space-between;padding:0 16px}
+.dm-t{font-size:15.5px;font-weight:800;letter-spacing:-.015em;color:#F4F7FA}
+.dm-live{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:#5FD69A}
+.dm-dot{width:7px;height:7px;border-radius:50%;background:#16A35C;box-shadow:0 0 0 3px rgba(22,163,92,.22)}
+.dm-sheet-body{background:var(--bg2);overflow-y:auto;overscroll-behavior:contain;
+  padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+.dm-none{padding:16px;font-size:12.5px;color:var(--text3);line-height:1.6}
+.dm-row{display:flex;align-items:flex-start;gap:11px;padding:8px 14px 9px}
+.dm-row+.dm-row{border-top:1px solid var(--border)}
+.dm-ra{width:38px;height:38px;border-radius:50%;background:#2D5DA8;color:#fff;font-size:13px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;cursor:pointer}
+.dm-ra.drive{background:#E08A1E}.dm-ra.shop{background:#59616D}
+.dm-rb{flex:1;min-width:0;cursor:pointer}
+.dm-n{display:flex;align-items:center;gap:6px;min-width:0}
+.dm-n b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-n b{font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+.dm-chip{font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;flex-shrink:0;white-space:nowrap}
+.dm-chip.site{color:#0B5430;background:#D4ECDC}
+.dm-chip.drive{color:#704000;background:#FBE2BB}
+.dm-chip.shop{color:var(--text2);background:var(--bg3)}
+.dm-sub{font-size:12px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-rail{position:relative;height:5px;border-radius:99px;margin-top:7px;background:var(--bg3);overflow:hidden}
+.dm-rail i{position:absolute;top:0;bottom:0;display:block}
+.dm-rail i.dr{background:#E08A1E}.dm-rail i.st{background:#16A35C}.dm-rail i.sh{background:#8A929E}
+.dm-rc{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;margin-top:2px;max-width:96px}
+.dm-age{font-size:10.5px;font-weight:800;color:var(--text3);text-align:right;line-height:1.3}
+.dm-age.old{color:#704000}
+.dm-b{display:flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;color:var(--text3)}
+.dm-b.low{color:var(--c-red)}
+.dm-bx{width:17px;height:9px;border:1.4px solid currentColor;border-radius:2.5px;position:relative}
+.dm-bx::after{content:'';position:absolute;right:-3px;top:2px;width:1.6px;height:3px;background:currentColor;border-radius:0 1px 1px 0}
+.dm-bf{position:absolute;left:1px;top:1px;bottom:1px;background:currentColor;border-radius:1px}
+.dm-fine{font-size:10.5px;color:var(--text3);line-height:1.6;padding:10px 16px 2px}
+.dm-loc{font-size:11px;font-weight:800;border:1px solid var(--border2);background:var(--bg);border-radius:8px;
+  padding:5px 10px;color:var(--text);font-family:inherit;cursor:pointer}
+/* ── Pins ─────────────────────────────────────────────────────────────────── */
+.dm-pin,.dm-job{display:flex;flex-direction:column;align-items:center;gap:4px;line-height:1}
+/* The glide. A pin easing to its new position is what makes the map feel
+   alive; at the 220ms entrance cap (§8.4) it reads as a jump, so this is a
+   deliberate documented exception, and it is movement rather than an
+   entrance. transform only, never `all`. */
+.td-mk{transition:transform .5s cubic-bezier(.22,1,.36,1)}
+@media (prefers-reduced-motion:reduce){
+  .td-mk{transition:none}
+  .dm-pulse{animation:none}
+}
+.dm-avw{position:relative;width:46px;height:46px}
+.dm-av{position:absolute;inset:4px;border-radius:50%;background:#2D5DA8;color:#fff;font-size:13.5px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;border:2.5px solid #fff;box-shadow:0 6px 18px rgba(0,0,0,.55)}
+.dm-av.drive{background:#E08A1E}.dm-av.shop{background:#59616D}
+.dm-stale .dm-av{opacity:.55}
+.dm-prog{position:absolute;inset:0;transform:rotate(-90deg)}
+.dm-head{position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:0;height:0;
+  border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:9px solid #fff;
+  filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+.dm-batt{position:absolute;right:-2px;bottom:0;width:14px;height:14px;border-radius:50%;
+  background:var(--c-red);border:2px solid #12161C}
+.dm-tag{font-size:10px;font-weight:800;border-radius:7px;padding:3px 8px;white-space:nowrap;color:#F2F5F9;
+  background:rgba(20,25,33,.58);-webkit-backdrop-filter:blur(18px) saturate(180%);
+  backdrop-filter:blur(18px) saturate(180%);border:1px solid rgba(255,255,255,.20);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 14px rgba(0,0,0,.4)}
+.dm-jw{position:relative;display:block;width:15px;height:15px}
+.dm-jd{display:block;width:15px;height:15px;border-radius:5px;border:2px solid rgba(255,255,255,.9);
+  box-shadow:0 3px 9px rgba(0,0,0,.5)}
+.dm-jd.dm-round{border-radius:50%}
+/* The one judgement on the screen, so the one thing that moves. */
+@keyframes dm-pulse{0%{transform:scale(.7);opacity:.55}70%{opacity:0}100%{transform:scale(1.5);opacity:0}}
+.dm-pulse{position:absolute;display:block;width:44px;height:44px;border-radius:50%;border:2px solid #E08A1E;
+  top:-15px;left:-15px;animation:dm-pulse 2.4s ease-out infinite}
+.dm-jt{font-size:9.5px;font-weight:800;color:#DCE2EA;text-shadow:0 1px 6px rgba(0,0,0,.9);white-space:nowrap}
 .met:hover{box-shadow:var(--shadow-hover)}
 .met-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .met-v{font-family:var(--font-display);font-size:22px;font-weight:900;line-height:1;letter-spacing:-.7px;color:var(--text);overflow:hidden;white-space:nowrap}
@@ -453,6 +544,41 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .td-supply-store.open .td-supply-store-body{max-height:900px;opacity:1}
 .td-supply-visit{padding:2px 16px 14px}
 .td-supply-visit+.td-supply-visit{border-top:1px dashed var(--border);padding-top:12px}
+/* The one Needs-an-answer card: an amber shell, a title row, then a section
+   per kind of hold. A section is a small uppercase label plus its one-line
+   why, then its rows; the second section gets a rule above it. */
+.td-hold-card{padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)}
+.td-hold-hd{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)}
+.td-hold-title{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em}
+.td-hold-count{margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)}
+.td-hold-sec{padding:12px 16px 4px}
+.td-hold-sec-t{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text2)}
+.td-hold-sec-s{font-size:11px;color:var(--text3);margin-top:4px}
+#dash-supply-hold[style*="block"]+#dash-visit-hold,#dash-visit-hold[style*="block"]+#dash-ts-hold,#dash-supply-hold[style*="block"]+#dash-visit-hold[style*="none"]+#dash-ts-hold{border-top:1px solid var(--border)}
+/* The timesheet review sheet (js/timesheet.js): a .zmodal with the week's
+   days as doors, the total, and one dark Submit. */
+.ts-sheet{padding:18px 18px 14px}
+.ts-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text3)}
+.ts-sub{font-size:12.5px;line-height:1.45;color:var(--text2);margin-bottom:12px}
+.ts-note{font-size:12px;font-weight:700;color:var(--amber);background:var(--amber-lt);border-radius:8px;padding:8px 10px;margin-bottom:10px}
+.ts-days{display:flex;flex-direction:column;gap:6px}
+.ts-day{display:flex;align-items:center;gap:10px;width:100%;height:48px;padding:0 12px 0 14px;border-radius:12px;border:1.5px solid var(--line-2);background:var(--bg-card);font-family:inherit;text-align:left;cursor:pointer}
+.ts-day.blocked{border-color:var(--amber)}
+.ts-day-l{flex:1;min-width:0;font-size:13.5px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ts-day-flag{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--amber);background:var(--amber-lt);border-radius:6px;padding:2px 6px}
+.ts-day-h{font-size:13.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
+.ts-day-chev{font-size:14px;color:var(--text3)}
+.ts-total{display:flex;align-items:baseline;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.ts-total span{flex:1;font-size:12px;font-weight:700;color:var(--text2)}
+.ts-total b{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+.ts-split{font-size:11px;color:var(--text3);margin-top:2px}
+.ts-btns{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.ts-btns .btn{height:46px;font-size:14.5px;font-weight:800;border-radius:12px;width:100%}
+.ts-btns .btn[disabled]{opacity:.45;cursor:default}
+.ts-why{text-align:center;font-size:11px;color:var(--amber);font-weight:700;margin-top:-2px}
+.ts-btns .ts-cancel{border:none;background:none;color:var(--text3);height:36px;font-size:13px;font-weight:700}
+.td-hold-visit{padding:10px 16px 12px}
+.td-hold-visit+.td-hold-visit{border-top:1px dashed var(--border)}
 /* Feed-card content (evidence-aligned): client NAME is the anchor, the dollar
    AMOUNT is a strong secondary beside it, one muted locator line below. On sent
    quotes the AGE/urgency line is the loud, color-coded element (the #1 unmet
@@ -532,6 +658,62 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
      wrapped column. Stack label above value instead, full width. */
   .bk-tbl td[data-label="Job site"]{display:block;text-align:left}
   .bk-tbl td[data-label="Job site"]::before{display:block;margin-bottom:4px}
+  /* TIME LOG: two lines, never six (owner 2026-08-29, "how can we make that
+     part look more streamlined"). The generic stacking above turns every cell
+     into its own labelled line, which is right for a money table of four
+     fields and wrong for a time entry of six: it printed PERSON (redundant
+     inside that person's own card), a blank WEEK TOTAL, and CLOCK IN and
+     CLOCK OUT on separate rows. List guidance is the most distinguishing
+     content left, the metric right, and no more than three lines.
+     So: where on the left, duration on the right, the time range under it,
+     and the two dead fields gone. Scoped to .tl-tbl so the money tables keep
+     the card treatment they were designed for. */
+  /* FIXED time columns, not auto. Auto sizes each row to its own content, so
+     "9:46 AM" and "12:14 PM" started at different x positions and the whole
+     right edge looked scattered down the day (owner 2026-08-29: "need to have
+     fixed in line times so they don't look random"). Widths are set for the
+     widest real value (12:00 AM) and tabular figures stop a 1 from being
+     narrower than a 7, so every row lines up on the same two columns. */
+  .bk-tbl.tl-tbl tr{display:grid;grid-template-columns:minmax(0,1fr) 5.5em 4.4em;align-items:baseline;column-gap:0;row-gap:2px;padding:9px 12px}
+  /* A notch smaller than the body text buys the address back most of a word
+     per line, and the range is supporting detail rather than the headline. */
+  .bk-tbl.tl-tbl td[data-label="Clock In"],
+  .bk-tbl.tl-tbl td[data-label="Clock Out"]{font-size:11.5px}
+  .bk-tbl.tl-tbl td{display:block;border-bottom:none;padding:0;text-align:right;font-size:12px}
+  .bk-tbl.tl-tbl td::before{content:none}
+  /* Person and Week total carry nothing here: one is the card you are already
+     inside, the other is a running figure the card header already shows. */
+  .bk-tbl.tl-tbl td[data-label="Person"],
+  .bk-tbl.tl-tbl td[data-label="Week total"]{display:none}
+  .bk-tbl.tl-tbl td[data-label="Job site"]{grid-column:1;grid-row:1/span 2;text-align:left;align-self:center;min-width:0;overflow:hidden}
+  /* NOTHING IS CUT OFF (owner 2026-08-29: "how do we stop the things being
+     cutoff"). The clamp bounded the row but ate the end of the address, and
+     on a drive the part it ate was the destination, which is the half that
+     says where he went. Wrapping instead keeps every character; overflow-wrap
+     is what stops a long unbroken token pushing the row sideways, so §15.1
+     still holds (proven: 390px content in a 390px viewport on an address of
+     100 characters). A long address costs a line of height, which is the
+     right trade against losing the information entirely. */
+  .bk-tbl.tl-tbl td[data-label="Job site"]>div:first-child{overflow-wrap:anywhere}
+  /* The badge stays on the client's line rather than wrapping to a third:
+     nowrap plus an ellipsis on the name is bounded either way, and a
+     three-line row is what this whole change was undoing. */
+  /* Same rule for the client line: it wraps rather than clipping, and the
+     badge follows it down instead of being pushed off the edge. */
+  .bk-tbl.tl-tbl td[data-label="Job site"]>div:last-child{min-width:0;overflow-wrap:anywhere}
+  .bk-tbl.tl-tbl td[data-label="Duration"]{grid-column:2/span 2;grid-row:1;font-size:14px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+  /* The range reads as ONE value, so the two cells sit side by side on the
+     second line with an en dash between them rather than each claiming a row. */
+  /* Start time RIGHT-aligned so the dash lands on the same x every row, end
+     time LEFT-aligned so it starts on the same x every row. Two right-aligned
+     columns floated the dash and the gap around independently, which is what
+     made the column read as scattered. */
+  .bk-tbl.tl-tbl td[data-label="Clock In"]{grid-column:2;grid-row:2;color:var(--text-3);white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
+  .bk-tbl.tl-tbl td[data-label="Clock In"]::after{content:" – "}
+  .bk-tbl.tl-tbl td[data-label="Clock Out"]{grid-column:3;grid-row:2;color:var(--text-3);white-space:nowrap;font-variant-numeric:tabular-nums;text-align:left}
+  /* The action button, when there is one, sits under the range. */
+  .bk-tbl.tl-tbl td[data-label=""]{grid-column:2/span 2;grid-row:3;padding-top:6px}
+  .bk-tbl.tl-tbl td[data-label=""]:empty{display:none}
 }
 .row-bb{padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}
 .row-bb:last-child{border:none}
@@ -854,6 +1036,35 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;margin:auto;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
+/* Shared-to-TradeDesk sheet. One list, one visual language: the two big solid
+   slabs it used to stack read as two competing primary buttons and pushed the
+   real content (the client list) below the fold on a phone. Rows in a bordered
+   list are the same shape the client picker below them already uses, so the
+   whole sheet scans as one question instead of three. */
+.si-list{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--bg-card)}
+.si-scroll{max-height:186px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.si-opt{display:grid;grid-template-columns:34px minmax(0,1fr) 10px;align-items:center;gap:11px;width:100%;box-sizing:border-box;padding:12px 13px;background:none;border:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer;transition:background .12s ease}
+.si-opt:last-child{border-bottom:none}
+.si-opt:active{background:var(--bg2)}
+.si-opt[disabled]{opacity:.5}
+.si-ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--bg2);color:var(--text2);flex-shrink:0}
+.si-ic-d{background:var(--denim-soft);color:var(--denim-deep)}
+.si-txt{min-width:0}
+.si-t{display:block;font-size:14px;font-weight:800;color:var(--text);line-height:1.25}
+.si-s{display:block;font-size:11.5px;font-weight:500;color:var(--text3);margin-top:2px;line-height:1.32}
+.si-1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.si-chev{color:var(--text3);font-size:15px;line-height:1;font-weight:700}
+.si-lbl{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text3);margin:15px 0 7px}
+.si-empty{font-size:12.5px;color:var(--text3);line-height:1.4;margin:2px 0 0}
+.si-search{width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:14px;-webkit-appearance:none}
+.si-search:focus{outline:none;border-color:var(--denim);box-shadow:0 0 0 3px var(--denim-glow)}
+.si-search::placeholder{color:var(--text3)}
+.si-foot{display:flex;gap:8px;margin-top:16px}
+.si-fbtn{flex:1;padding:11px;border:1px solid var(--border);border-radius:var(--r);background:none;font-family:inherit;font-size:13px;font-weight:700;color:var(--text2);cursor:pointer}
+/* The destructive one must never look like the safe one sitting next to it.
+   Same red edge the delete-time-entry row uses, not a new colour. */
+.si-fbtn-x{color:var(--c-red);border-color:var(--c-red-edge);font-weight:700}
+
 .zmodal-msg{font-size:14px;color:var(--text-2);line-height:1.5;margin-bottom:18px}
 .zmodal-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .overdue-banner{background:var(--c-red-soft);border:1px solid var(--c-red-edge);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
@@ -1137,35 +1348,14 @@ body.dark .cal-cell.other{background:var(--cream)}
 .bk-week-chev{font-size:11px;color:var(--text-3);width:14px;text-align:center;transition:transform .15s;flex-shrink:0}
 .bk-week:not(.open) .bk-week-chev{transform:rotate(-90deg)}
 .bk-week-body{border-top:1px solid var(--line);overflow:hidden;display:none;padding:2px 8px 10px 14px}
+/* An open card's body is TINTED (owner 2026-08-30). Two jobs: a white chart
+   card needs something to sit on, and the body needs to read as the content of
+   the header above it rather than as a third row in the list. */
+.bk-week.open > .bk-week-body{background:var(--bg2)}
 .bk-week.open .bk-week-body{display:block}
-/* Time Log: Me/Team toggle + the per-week day picker (owner: "need the day
-   picker to change what day we're looking at") + Team-scope employee rows. */
-.tl-scope-toggle{display:flex;gap:6px;background:var(--bg-card);border:1px solid var(--line-2);border-radius:11px;padding:4px;margin-bottom:10px}
-.tl-scope-btn{flex:1;height:34px;border:none;border-radius:8px;background:transparent;font-family:inherit;font-size:12.5px;font-weight:800;color:var(--text3);cursor:pointer}
-.tl-scope-btn.active{background:var(--ink);color:#fff}
-.tl-picker{display:flex;gap:5px;padding:10px 0}
-.tl-chip{flex:1;height:32px;border-radius:9px;border:1.5px solid var(--line-2);background:var(--bg-card);font-family:inherit;font-size:11px;font-weight:800;color:var(--text2);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
-.tl-chip.wk{flex:1.6}
-.tl-chip .tl-dot{position:absolute;left:50%;top:auto;bottom:4px;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--blue)}
-.tl-chip.active{background:var(--ink);border-color:var(--ink);color:#fff}
-.tl-chip.active .tl-dot{background:#fff}
-.tl-scope-hd{display:flex;justify-content:space-between;align-items:center;padding:0 2px 4px}
-.tl-scope-ttl{font-size:12.5px;font-weight:800;color:var(--text)}
-.tl-scope-amt{font-size:14px;font-weight:900;font-variant-numeric:tabular-nums;color:var(--text)}
-.tl-emp-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line)}
-.tl-emp-row:last-child{border-bottom:none}
-.tl-emp-row.ot{background:linear-gradient(90deg,var(--c-amber-soft),transparent 45%);margin:0 -4px;padding-left:8px;border-radius:8px}
-.tl-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0}
-.tl-emp-mid{flex:1;min-width:0}
-.tl-emp-name-row{display:flex;align-items:center;gap:6px}
-.tl-emp-name{font-size:13px;font-weight:700;color:var(--text)}
-.tl-ot-badge{font-size:9px;font-weight:800;color:var(--c-amber-deep);background:var(--bg-card);border:1px solid var(--c-amber);padding:1px 5px;border-radius:4px}
-.tl-split{margin-top:4px}
-.tl-split-bar{display:flex;height:4px;border-radius:2px;overflow:hidden;background:var(--line-2);margin-bottom:3px}
-.tl-split-bar span{display:block;height:100%}
-.tl-split-legend{font-size:10px;color:var(--text3)}
-.tl-emp-total{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;flex-shrink:0;color:var(--text)}
-.tl-empty{padding:18px 4px;text-align:center;color:var(--text3);font-size:12px}
+/* The Time Log / Timesheet rail, drill and bars live in css/timelog.css: the
+   public timesheet page draws the same chart, so the rules are shared, not
+   copied (CLAUDE.md 7.3). Loaded from <head> above. */
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .mil-day-trip:last-child{border-bottom:none}
@@ -1188,6 +1378,9 @@ body.dark .cal-cell.other{background:var(--cream)}
 .mil-trip-mi{font-size:13px;font-weight:800;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .mil-trip-meta{font-size:11px;font-weight:600;color:var(--text3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .mil-trip-edit{position:absolute;top:0;right:0;font-size:11px;font-weight:600;background:var(--cream);border:1px solid var(--line-2);border-radius:var(--r);padding:4px 10px;cursor:pointer;color:var(--text-2);white-space:nowrap}
+/* Route: in the stats stack, not pinned like Edit, so it sits with the numbers
+   it belongs to and only appears on a leg that actually has a track. */
+.mil-trip-route{font-size:10px;font-weight:700;background:none;border:1px solid var(--line-2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text3);white-space:nowrap;font-family:inherit;display:inline-flex;align-items:center;gap:4px;max-width:100%}
 /* ── Mileage: purpose breakdown strip ── */
 .mil-purp-row{display:flex;flex-direction:column;gap:0;border-bottom:1px solid var(--line)}
 .mil-purp-chip{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line-2);font-size:13px;font-weight:600;color:var(--text)}
@@ -1433,7 +1626,23 @@ body.dark .cal-cell.other{background:var(--cream)}
   <!-- Held supply runs: pinned above the money tiles exactly like the setup
        checklist (owner 2026-08-17: "first thing they see, clear it out and
        it's gone"). Renders only while a store run is unanswered. -->
-  <div id="dash-supply-hold" style="display:none"></div>
+  <!-- ONE card for everything that needs an answer (owner 2026-09-05:
+       "Combine them"): a held store run (js/mileage.js) and a held client
+       visit (rule 13) share the title and the count, each keeps its own
+       doors. The two bodies keep their ids: the painters, the skeleton and
+       the tests all address the same elements. The shell shows only while a
+       section has something in it (js/dashboard.js _dashHoldSync). -->
+  <div id="dash-hold" style="display:none">
+    <div class="card td-hold-card">
+      <div class="td-hold-hd">
+        <span class="td-hold-title">Needs an answer</span>
+        <span id="dash-hold-count" class="td-hold-count"></span>
+      </div>
+      <div id="dash-supply-hold" style="display:none"></div>
+      <div id="dash-visit-hold" style="display:none"></div>
+      <div id="dash-ts-hold" style="display:none"></div>
+    </div>
+  </div>
   <div id="dash-geo-perm" style="display:none"></div>
   <div id="dash-widget-root">
     <!-- Every REAL card is its own widget (data-dw) so it can be held-and-moved
@@ -2412,9 +2621,16 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <div class="pg" id="pg-timelog">
-  <div class="tbar">
-    <div class="tbar-title">Time Log</div>
-    <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3)"></div>
+  <div class="tbar" style="flex-direction:column;align-items:stretch;gap:6px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div class="tbar-title">Timesheet</div>
+      <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3);flex-shrink:0"></div>
+    </div>
+    <!-- Says what the page IS, in the same slot Books uses for the same job
+         (owner asked for one, 2026-08-30). Describes what the tracker did,
+         not what the contractor has to do, and names the one thing on the
+         page that needs a person: the hours nobody has accounted for. -->
+    <div class="tbar-sub">Every hour your phone recorded, sorted into driving, on site, shop and loading. Anything it could not place is flagged for you to answer.</div>
   </div>
   <div id="tl-scope-toggle" class="tl-scope-toggle" style="display:none"></div>
   <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Year</div>
@@ -2895,6 +3111,19 @@ body.dark .cal-cell.other{background:var(--cream)}
               <select id="set-owner-pay-type"><option value="hourly">Hourly</option><option value="salary">Salary</option></select>
               <div style="display:flex;align-items:center;gap:6px"><span style="font-size:13px;color:var(--text2);font-weight:600">$</span><input type="number" id="set-owner-pay-rate" min="0" step="0.5" placeholder="0" style="flex:1"></div>
             </div>
+          </div>
+        </div>
+        <!-- Rule 13 (js/geo-derive.js): a stop at a customer's address outside
+             these hours, with nothing scheduled and no clock running, is a
+             question on the Home screen instead of hours on the books. -->
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Work hours</div><div class="set-form-hint">A stop at a customer's address outside these hours, with nothing on the calendar and no clock running, gets asked about on Home instead of counted. Family visits stay off the books.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <input type="time" id="set-wh-start" aria-label="Work hours start">
+              <input type="time" id="set-wh-end" aria-label="Work hours end">
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);font-weight:600"><input type="checkbox" id="set-wh-sat" checked> Saturdays count as work days</label>
           </div>
         </div>
       </div>
@@ -3714,7 +3943,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <button class="nb" id="nb-timelog" onclick="goPg('pg-timelog')">
     <div class="bx"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-    <span>Time Log</span>
+    <span>Timesheet</span>
   </button>
 
   <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
@@ -3817,7 +4046,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Contracts
     </button>
     <button class="mmi" id="mmi-timelog" onclick="mobileNavTo('pg-timelog')">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Time Log
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Timesheet
     </button>
     <button class="mmi" id="mmi-settings" onclick="mobileNavTo('pg-settings')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
@@ -3857,6 +4086,8 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/bids.js"></script>
 <script src="js/jobs.js"></script>
 <script src="js/mileage.js"></script>
+<!-- The day deriver: pure, loads before the engine that calls it. -->
+<script src="js/geo-derive.js"></script>
 <script src="js/geo-track.js"></script>
 <script src="js/geo-shadow.js"></script>
 <script src="js/crew-locate.js"></script>
@@ -3871,6 +4102,13 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
      jobs.js and geo-track.js own, so it loads after both. -->
 <script src="js/push.js"></script>
 <script src="js/live-activity.js"></script>
+<script src="js/day-end.js"></script>
+<!-- hold-nudge.js reads day-end's proposal and mileage's held runs, so it
+     loads after both. -->
+<script src="js/hold-nudge.js"></script>
+<!-- timesheet.js: the week's review, submit and send, and the state on the
+     chart. Reads timelog.js's rows and dashboard.js's card shell. -->
+<script src="js/timesheet.js"></script>
 <script src="js/handoff.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/equipment.js"></script>

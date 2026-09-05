@@ -546,7 +546,7 @@ async function _devLoadUserAccount(key){
     const{t,set}=_TD_TABLES[i];
     const rows=(tableResults[i].data||[]).map(r=>r.data);
     set(rows);
-    _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
+    _lastKnownIds[t]=new Set((tableResults[i].data||[]).filter(r=>!_sweepGuarded(t,r)).map(r=>String(r.id)));
     // DELTA: rebuild the synced-hash from the TARGET account's rows so the dev's own
     // row hashes can't linger and suppress a target-account upload (cross-account bleed).
     _syncedHash[t]=new Map((tableResults[i].data||[]).map(r=>[String(r.id),_hashPayload(r.data)]));
@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.27.26.4';
+const APP_VERSION='09.05.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -714,6 +714,21 @@ let _lastKnownIds={
 // authoritative source of "what the server has"); an offline/cache boot leaves it empty
 // → safe full upload on reconnect.
 let _syncedHash={};
+// IS THIS ROW ACTUALLY IN THE CLOUD?
+//
+// _syncedHash holds one hash per id for every row the cloud is known to have:
+// seeded on a full load, restored from the delta meta on a delta load, and
+// written after each successful upsert batch. So membership answers "has this
+// been persisted" honestly and without a round trip, which is what a caller
+// about to DELETE something on the strength of another row needs to know.
+//
+// Deliberately conservative: an id it has never seen reads as not-in-cloud. A
+// false "no" costs a deferral; a false "yes" costs data.
+function _cloudHasRow(tbl,id){
+  try{const m=_syncedHash&&_syncedHash[tbl];return !!(m&&m.has(String(id)));}
+  catch(_e){return false;}
+}
+window._cloudHasRow=_cloudHasRow;
 // PENDING-EDIT GATE for the Phase-3 per-field merge: _rowSyncedAt[tbl] = Map(id → client-ms
 // of the last moment this row was KNOWN IN SYNC with the cloud (uploaded by us, loaded from
 // the cloud, or taken whole from a realtime event). _opApplyIncoming only protects a local
@@ -1414,6 +1429,17 @@ _locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
 // replacement: existing Sets keep their identity for anything holding a ref, and
 // specs that reset _lastKnownIds={} still work via the defensive ||new Set() sites.
 _TD_TABLES.forEach(({t})=>{if(!_lastKnownIds[t])_lastKnownIds[t]=new Set();});
+// A GPS mileage leg is written by the day deriver through geo_replace_day
+// (owner 2026-09-02, js/geo-derive.js) and is owned by the server. The
+// account-wide sweep in supaSaveToCloud retires any known id missing from
+// THIS device's array (9.8), which on a device that has not reloaded since
+// another phone's rebuild would retire legs that are perfectly real. Such
+// rows are never sweep-eligible: not known here means not deletable here.
+function _sweepGuarded(t,r){
+  if(t!=='td_mileage'||!r)return false;
+  const d=(r.data&&typeof r.data==='object')?r.data:r;
+  return !!(d&&d.gps===true);
+}
 // Dev-time guard: reports if _TD_TABLES ever gains a table this object
 // doesn't cover (the exact defect above), a silent multi-week data-loss bug
 // turned into an immediate, loud console error instead. Self-checking since
@@ -1562,7 +1588,7 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
     // real users. Time Log rows are the one exception, the gesture there
     // calls deleteTimeEntry(), a real soft-delete that already re-checks
     // ownership/permission itself (js/jobs.js) and is only rendered onto rows
-    // _tlCanEdit() already approved (js/timelog.js _tlRow), so it's safe to
+    // _tlCanEdit() already approved (js/timelog.js _tlRailRow), so it's safe to
     // let regular contractors/employees use it, not just dev mode.
     const devOk=typeof _canDelete==='function'&&_canDelete();
     const timelogOk=row.dataset.lpType==='timelog';
@@ -1870,21 +1896,14 @@ function _bootSyncSettled(){
   // logged before the dedup existed, or by another device, heal here too.
   // heal=true: boot is the one moment the wider overlapping-clocks twin rule
   // is safe, the live sweep stays strict (see _mileSameLeg).
-  try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
-  // Same idea for job_time_entries (js/geo-track.js _geoTimeEntriesSettleChain:
   // dedup, owner rule 2026-08-21, then same-place merge and gap-absorption,
   // owner rule 2026-08-23): a duplicate visit collapses to the longest here
   // too, whatever wrote it and whenever, chained so each step sees the last
   // one's writes rather than firing in parallel against a stale snapshot.
-  try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
-  // And drive-time hygiene (js/geo-track.js _geoSyncDriveTimeEntries, owner
   // rule 2026-08-22): the dedup just above ran (heal=true, sync), so any
   // duplicate mileage leg it merged away has already lost its legKey by the
   // time this runs, and the matching paid drive-time row drops with it.
-  try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
-  // And shop_time_entries duplicates (js/geo-track.js _geoDedupShopTimeEntries,
   // owner audit 2026-08-23): no other sweep touches that table at all.
-  try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -1947,6 +1966,10 @@ function _removeBootOverlay(immediate){
     // automatically: kicked shortly after boot so it never competes with
     // the boot render. No-op for accounts with no links.
     setTimeout(()=>{if(typeof _ingestPipeInbox==='function')_ingestPipeInbox(true);},1800);
+    // Push token refresh: silent when permission is already granted, a no-op
+    // otherwise (js/push.js _pushResume). After the save-token listener has a
+    // signed-in _supaUser to attribute the row to, which is true here.
+    setTimeout(()=>{if(typeof _pushResume==='function')_pushResume();},2500);
     // Restore any unsaved form fields that were open when auto-update fired
     try{
       const raw=localStorage.getItem('_form_snap');
@@ -2342,7 +2365,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;window._mileWorkdaySweepRan=false;window._mileFlightSweepRan=false;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
@@ -2585,6 +2608,28 @@ function _resolveIOSScreenClass(sig){
   if(!sig)return null;
   const hit=_IOS_SCREEN_CLASSES.find(c=>c.w===sig.w&&c.h===sig.h&&Math.abs(c.dpr-sig.dpr)<0.05);
   return hit?hit.label:null;
+}
+// Apple's hardware identifiers do NOT track the marketing generation (the
+// iPhone 17 Pro Max is iPhone18,2, not iPhone17,x), so this is a lookup of
+// CONFIRMED pairs only, never a pattern. An id that is not in the table
+// returns '' and every caller falls back to showing the raw identifier,
+// which is honest and still reportable. Lives in JS on purpose (§3.2): new
+// hardware ships every year and this must never cost an iOS build to extend.
+const _TD_MODEL_NAMES={
+  'iPhone14,4':'iPhone 13 mini','iPhone14,5':'iPhone 13',
+  'iPhone14,2':'iPhone 13 Pro','iPhone14,3':'iPhone 13 Pro Max',
+  'iPhone14,7':'iPhone 14','iPhone14,8':'iPhone 14 Plus',
+  'iPhone15,2':'iPhone 14 Pro','iPhone15,3':'iPhone 14 Pro Max',
+  'iPhone15,4':'iPhone 15','iPhone15,5':'iPhone 15 Plus',
+  'iPhone16,1':'iPhone 15 Pro','iPhone16,2':'iPhone 15 Pro Max',
+  'iPhone17,3':'iPhone 16','iPhone17,4':'iPhone 16 Plus',
+  'iPhone17,1':'iPhone 16 Pro','iPhone17,2':'iPhone 16 Pro Max',
+  'iPhone17,5':'iPhone 16e',
+  'iPhone18,3':'iPhone 17','iPhone18,1':'iPhone 17 Pro','iPhone18,2':'iPhone 17 Pro Max',
+  'iPhone14,6':'iPhone SE (3rd gen)',
+};
+function _tdModelName(hwId){
+  try{return _TD_MODEL_NAMES[String(hwId||'')]||'';}catch(_e){return '';}
 }
 // Lazy-resolves the native TdDevice plugin exactly like _tdHapticNative()
 // (js/utils.js): cached on window so a real "no native shell here" answer
@@ -4158,6 +4203,26 @@ async function _loadTeamGeo(){
         if(k&&next[k]&&byUser[uid])next[k].lastPing=byUser[uid];
       });
     }catch(_e){}
+    // CAN THE SERVER REACH THIS PHONE AT ALL (owner 2026-08-27). A device
+    // token is what lets the 30-minute nudge, dispatch pushes and every other
+    // server-sent message land; without one the phone is write-only, it
+    // reports when iOS happens to wake it and can never be asked anything.
+    // That gap was invisible until it was queried by hand, and it was
+    // account-wide: every device_tokens row on the project was missing while
+    // the roster showed green. A state nobody can see is a state that stays
+    // broken, so it gets a line on the row like every other one.
+    try{
+      const uids=Object.keys(byUid);
+      if(uids.length){
+        const{data:toks}=await _supa.from('device_tokens')
+          .select('user_id').eq('contractor_user_id',cid).is('invalid_at',null).in('user_id',uids);
+        const reach=new Set((toks||[]).map(r=>String(r.user_id)));
+        Object.keys(byUid).forEach(uid=>{
+          const k=byUid[uid];
+          if(k&&next[k])next[k].reachable=reach.has(String(uid));
+        });
+      }
+    }catch(_e){}
     // iOS's OWN word, per handset, from device_status (owner ask 2026-08-26:
     // "the location permissions based on team member can read from these iOS
     // values in actual plain English").
@@ -4175,7 +4240,7 @@ async function _loadTeamGeo(){
       const uids=Object.keys(byUid);
       if(uids.length){
         const{data:devs}=await _supa.from('device_status')
-          .select('user_id,device_id,device_label,location_status,location_accuracy,location_services_enabled,derived,checked_at,battery_level,battery_charging')
+          .select('user_id,device_id,device_label,hw_id,os_version,location_status,location_accuracy,location_services_enabled,derived,checked_at,battery_level,battery_charging,thermal_state')
           .eq('contractor_user_id',cid).in('user_id',uids);
         // A FLEET handset: one device_id that more than one person has signed
         // into (owner ask 2026-08-26: "if using fleet iPads"). A personal
@@ -4265,6 +4330,28 @@ function _geoBattBar(io_){
       '<span style="color:'+tone+';font-weight:700">'+pct+'%'+(io_.battery_charging?' charging':'')+'</span>'+
     '</span>';
 }
+// How hot the phone is, and shown on exactly the same principle as the battery
+// bar: only when it MATTERS. Apple's four states are nominal, fair, serious and
+// critical, and the first two are a phone doing its job. Serious is where iOS
+// has already started throttling the CPU and dimming the screen, and critical
+// is where it begins shutting features down, which is the point at which a
+// missing afternoon has a physical explanation the battery percentage cannot
+// give: the phone reads 80% and is still dropping fixes.
+//
+// A word, not a number, because iOS has no temperature API and inventing a
+// degrees figure from a four-state enum would be a made-up number on a screen
+// people make payroll decisions from.
+function _geoThermChip(io_){
+  const t=String((io_&&io_.thermal_state)||'');
+  if(t!=='serious'&&t!=='critical')return '';
+  const crit=t==='critical';
+  const tone=crit?'#DC2626':'#D97706';
+  return '<span style="display:inline-flex;align-items:center;gap:4px;vertical-align:middle;'+
+      'margin-left:6px;color:'+tone+';font-weight:700">'+
+      (typeof svgIcon==='function'?svgIcon('🌡',{size:11}):'')+
+      escHtml(crit?'Phone too hot':'Phone running hot')+
+    '</span>';
+}
 // Returns {dot,label,device,ping,fix,tone} or null when crew tracking is off.
 function _geoRosterStatus(email){
   if(!S.teamTracking)return null;
@@ -4313,12 +4400,20 @@ function _geoRosterStatus(email){
     // MARKUP. Keeping them apart is what stops a device someone named
     // "<b>Shop</b>" from injecting anything, while still letting the bar be a
     // real element rather than an escaped string of angle brackets.
-    const dev=io_.device_label
+    // The real handset when the row carries one: "iPhone" describes every
+    // iPhone ever made and told a manager nothing about whose phone is
+    // misbehaving or what it is running.
+    const _hw=(typeof _tdModelName==='function'&&io_.hw_id)?(_tdModelName(io_.hw_id)||io_.hw_id):'';
+    const _base=_hw||io_.device_label;
+    const dev=_base
       ? (io_.shared
-          ? io_.device_label+' (shared) · they last used it '+_timeAgo(io_.checked_at)
-          : io_.device_label)
+          ? _base+' (shared) · they last used it '+_timeAgo(io_.checked_at)
+          : _base+(io_.os_version?' · iOS '+io_.os_version:''))
       : null;
-    const battBar=_geoBattBar(io_);
+    // Both chips ride ONE field, so a new signal never means editing the eight
+    // branches below and missing one (which is how the roster ends up telling
+    // a different story depending on which permission state a phone is in).
+    const battBar=_geoBattBar(io_)+_geoThermChip(io_);
     if(io_.location_services_enabled===false)
       return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',device:dev,ping:_ping,tone:'#DC2626',battBar};
     if(st==='denied')
@@ -4331,10 +4426,20 @@ function _geoRosterStatus(email){
       return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',device:dev,ping:_ping,tone:'#D97706',battBar};
     if(st==='always'&&String(io_.location_accuracy||'')==='reduced')
       return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',device:dev,ping:_ping,tone:'#D97706',battBar};
-    if(st==='always')
+    if(st==='always'){
+      // Location is perfect and the server still cannot reach it. Amber, not
+      // red: what it HAS is working, tracking logs and drives record. What it
+      // cannot do is be woken, so the 30-minute nudge never arrives and the
+      // day has holes wherever iOS did not volunteer a wake. Only ever shown
+      // on an otherwise-healthy row, because a phone with location off has a
+      // louder problem and a second line would bury it.
+      if(g.reachable===false)
+        return{dot:'🟠',label:'Tracking, but the server can’t wake this phone',
+               fix:'Open TradeDesk and allow notifications',device:dev,ping:_ping,tone:'#D97706',battBar};
       return fresh
         ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),device:dev,tone:'var(--green-mid,#16a34a)',battBar}
         : {dot:'🟢',label:'Tracking, all set',device:dev,ping:_ping,tone:'var(--green-mid,#16a34a)',battBar};
+    }
   }
   // A ping inside the window is proof, regardless of what the permission API said.
   if(fresh)
@@ -5362,6 +5467,13 @@ async function _ingestPipeInbox(force){
       if(typeof supaSaveToCloud==='function')supaSaveToCloud();
       try{
         const pg=document.querySelector('.pg.active')?.id;
+        // DELIBERATELY narrower than _refreshActivePage() (js/navigation.js),
+        // which is the shared repaint used on foreground (§7.3, so this is the
+        // divergence being stated rather than a shortcut). This runs 1.8s after
+        // boot, on the boot path, and the wide version would fire the time
+        // log's three Supabase queries into the middle of the boot render. The
+        // three pages below are the ones a piped-in job or payment can actually
+        // change.
         // pg-dash is the common case: it's the FIRST page shown at boot, and
         // this ingest runs 1.8s after boot on purpose (never compete with the
         // boot render), so Today already painted before a job/payment landed.
@@ -8006,7 +8118,7 @@ async function supaLoadFromCloud({silent=false}={}){
           // Restore known-cloud hashes so an unsaved local edit still re-uploads, and
           // seed _lastKnownIds from the painted cache so the delete-sweep stays correct.
           _syncedHash={};for(const[k,v]of Object.entries(_deltaMeta.syncedHash||{}))_syncedHash[k]=new Map(v);
-          for(const{t,get}of _TD_TABLES)_lastKnownIds[t]=new Set((get()||[]).map(r=>String(r.id)));
+          for(const{t,get}of _TD_TABLES)_lastKnownIds[t]=new Set((get()||[]).filter(r=>!_sweepGuarded(t,r)).map(r=>String(r.id)));
         }
       }
     }else if(silent&&!_devSupportMode&&_supaCloudLoaded&&_deltaCursor&&_deltaCursor<new Date(Date.now()+60000).toISOString()&&_loadedDataOwner===uid){
@@ -8118,7 +8230,7 @@ async function supaLoadFromCloud({silent=false}={}){
             if(_mg!==r.data)_keptLocalInLoad=true; // union kept, schedule the upload after the merge
             byId.set(id,_mg);
             (_syncedHash[t]||(_syncedHash[t]=new Map())).set(id,_hashPayload(r.data));
-            (_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);
+            if(!_sweepGuarded(t,r))(_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);
             (_rowSyncedAt[t]||(_rowSyncedAt[t]=new Map())).set(id,_ldTs);
             if(r.updated_at){try{(_rowServerTs[t]||(_rowServerTs[t]=new Map())).set(id,new Date(r.updated_at).getTime());}catch(_e){}}
           }
@@ -8148,7 +8260,7 @@ async function supaLoadFromCloud({silent=false}={}){
           if(!_cloudIds.has(_lid)&&_pendC.has(_lid)&&!(_locallyDeletedIds[t]&&_locallyDeletedIds[t].has(_lid))){_merged.push(_lr);_keptLocalInLoad=true;}
         }
         set(_merged);
-        _lastKnownIds[t]=new Set(data.map(r=>String(r.id)));
+        _lastKnownIds[t]=new Set(data.filter(r=>!_sweepGuarded(t,r)).map(r=>String(r.id)));
         _syncedHash[t]=new Map(data.map(r=>[String(r.id),_hashPayload(r.data)]));
         const _ldTs=Date.now();
         _rowSyncedAt[t]=new Map(data.map(r=>[String(r.id),_ldTs])); // loaded from cloud → in sync now; edits older than this load are not "pending"
@@ -8217,12 +8329,10 @@ async function supaLoadFromCloud({silent=false}={}){
     // merged the cloud's copies straight back in and nothing re-collapsed
     // them. Healing here re-collapses any resurrection the moment it arrives;
     // the saveAll inside the sweep then propagates the deletes for real.
-    try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
     // Same reconnect-triggered heal for job_time_entries duplicates, same
     // reasoning: a delete that never reached the cloud (offline heal) comes
     // back the moment the cloud's copy merges in, so this re-collapses it
     // for real, this time with a live connection to make the delete stick.
-    try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
     // Restore _geoLastFenceLoc/_geoLastFenceAt from the persisted open-entry
     // record BEFORE the mileage sweeps below run, not after. This used to
     // only happen ~2.4s later via _geoTrackInit's own deliberate boot delay
@@ -8236,38 +8346,58 @@ async function supaLoadFromCloud({silent=false}={}){
     // holds ~a week of history, so a leg that over-paid an errand's detour
     // before the walk check existed corrects itself here (once per session,
     // reductions only, js/mileage.js).
-    try{if(typeof _mileMotionHealSweep==='function')_mileMotionHealSweep();}catch(_e){}
+    // The tape itself goes up (js/geo-track.js _geoTapeSync), so the week of
+    // onFoot/still/driving the coprocessor holds stops being handset-only, and
+    // then any home-office visit that closed before the load-out rule existed
+    // and both no-op without a tape, same as the mileage sweep above.
+    try{if(typeof _geoTapeSync==='function')_geoTapeSync();}catch(_e){}
+    // And the seven-day re-derive from the same tape (owner 2026-08-29). It
+    // runs for everyone automatically, after the home regrade so the two
+    // never fight over the same row on the same boot, and it needs no iOS
+    // build: motionSince has shipped since 08-11.
+    // Duplicates first among equals is tempting but wrong: the regrade above
+    // re-stamps boundaries, and doing that to a row that is about to be
+    // deleted as a duplicate wastes a write. It runs after, on the survivors.
+    // And the dwells that were closed by whatever arrived next instead of by
+    // the departure. Last of the three on purpose: it reads the drive rows as
+    // the fence's testimony, so it wants them deduped and re-stamped first.
+    // Loading up, last: it walks the drives that survived everything above,
+    // so running it earlier would hang a load-out off a drive about to be
+    // removed as a duplicate or truncated with its day.
+    // Re-time BEFORE the load-out sweep: that one hangs a load in front of a
+    // drive's start, so it has to see the drive's real start rather than the
+    // fence's late one.
+    // The reconciler proper: drives the tape shows and no row carries, with
+    // the arrival-side fence row as the confirmation. AFTER retime so the
+    // rows it measures overlap against sit on their true boundaries, BEFORE
+    // the load sweep so a filled drive can grow its load-out the same boot.
+    // LAST, deliberately: it trims the person's gap answers against the
+    // derived rows, so it has to see those rows in their settled state. Run
+    // earlier it would measure a half-corrected day and cut the wrong minutes.
+    // And the customer visits already on record that were written as supply
+    // And a drive row is paid only for the part the tape says was driving
+    // re-grade reads, pointed at the rows either side of it.
     // Promote server-provisional mileage rows (real-time geofence ingest):
     // route the real distance, apply the commute rule, drop redundant twins.
     // Same once-per-session settle point as the sweeps around it.
-    try{if(typeof _mileServerRefine==='function')_mileServerRefine();}catch(_e){}
     // And re-judge named personal stops (the Casey's loop): the live decision
     // runs once when Apple names the stop, so a day the app died through, or
     // a day judged under an older rule, never gets a second look without this.
-    try{if(typeof _milePersonalStopSweep==='function')_milePersonalStopSweep();}catch(_e){}
     // Same reductions-only, once-per-session shape as its sibling above, but
     // judged against the day's WORKDAY WINDOW rather than the destination
-    // (js/mileage.js _mileWorkdaySweep): a leg driven outside the day's first
     // and last real job or supply activity is a personal trip the tracker
     // happened to catch, and it has no business in an IRS log. Ordered after
     // the personal-stop sweep so a leg that one already collapsed is never
     // re-judged here.
-    try{if(typeof _mileWorkdaySweep==='function')_mileWorkdaySweep();}catch(_e){}
     // And clear anything already logged that a vehicle could not have driven
-    // (js/mileage.js _mileFlightSweep, owner report 2026-08-24: a flight was
     // booking itself as several hundred deductible miles). Runs before the
     // drive-time pass below on purpose, so the flight's paid wheel time goes
     // with it in the same settle.
-    try{if(typeof _mileFlightSweep==='function')_mileFlightSweep();}catch(_e){}
     // Drive-time hygiene last, after every mileage sweep above has had its
     // turn: a leg the personal-stop sweep just collapsed away, or the motion
     // heal just corrected, is exactly the kind of change whose paid
     // drive-time counterpart needs re-checking (js/geo-track.js
-    // _geoSyncDriveTimeEntries, owner rule 2026-08-22).
-    try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
     // Same reconnect-triggered heal for shop_time_entries duplicates
-    // (js/geo-track.js _geoDedupShopTimeEntries, owner audit 2026-08-23).
-    try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
 
     // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
     // MUST run here, after the load: only now do we know whether this account
@@ -8317,10 +8447,6 @@ async function supaLoadFromCloud({silent=false}={}){
         // Here as well as on the expense save because the receipt may have been
         // entered on another device, and this is the first moment those rows
         // exist on this one.
-        if(typeof reviewDetourReceipts==='function'){
-          const _d=reviewDetourReceipts();
-          if(_d>0)_logSave('detours-restored',{count:_d});
-        }
       }catch(_e){}
     }
 
@@ -8493,6 +8619,45 @@ async function supaLoadFromCloud({silent=false}={}){
       // One tiny cursor read; reload ONLY when it's ahead of what we've applied, the
       // free no-op on the caught-up path. Shared by the heartbeat tick and the
       // return-to-foreground pull so both converge by the same rule.
+      // ── EVERY OPEN IS A REFRESH (owner 2026-08-31) ────────────────────────
+      // "data is cached and looks old ... every time you open, it needs to
+      // refresh all metrics."
+      //
+      // The cursor check above is necessary and not sufficient, because it can
+      // only see zj_data. The geo pipeline's rows are written server-side by
+      // ingest-geo directly into job_time_entries, shop_time_entries and
+      // td_mileage, and none of those touch zj_data. So a drive could complete
+      // in full while the phone was in a pocket, the cursor would sit exactly
+      // where it was, and the app would conclude nothing had happened. That is
+      // the "chain was made automatic but the screen still looks old" report:
+      // the chain ran, the screen was simply never told.
+      //
+      // Two things happen here, in this order, on purpose:
+      //   1. Repaint IMMEDIATELY, before any network. Everything derived from
+      //      the clock (today's total, a running visit, the week bars) is
+      //      correct from data already in memory, so it must not wait on a
+      //      round trip that may not come back on a bad signal.
+      //   2. Pull, then repaint again once it lands. Unconditional, not
+      //      cursor-gated, for the reason above.
+      //
+      // Throttled on the PULL only. App-switching to the camera and back three
+      // times in ten seconds should not fire three full loads, but it should
+      // still repaint every single time, which costs nothing.
+      const _FG_PULL_MIN_GAP_MS=8000;
+      let _lastFgPullAt=0;
+      const _refreshOnForeground=()=>{
+        try{if(typeof _refreshActivePage==='function')_refreshActivePage();}catch(_e){}
+        if(!_supaUser||_loadInProgress)return;
+        if(Date.now()-_lastFgPullAt<_FG_PULL_MIN_GAP_MS)return;
+        // A save this device just made is already on screen; pulling on top of
+        // it is the read-skew window supaLoadFromCloud's cursor discipline
+        // exists to avoid. Same 3s floor _cursorCheckReconcile uses (§7.3).
+        if(Date.now()-_lastLocalSaveAt<3000)return;
+        _lastFgPullAt=Date.now();
+        Promise.resolve(supaLoadFromCloud({silent:true}))
+          .then(()=>{try{if(typeof _refreshActivePage==='function')_refreshActivePage();}catch(_e){}})
+          .catch(()=>{});
+      };
       window._cursorCheckReconcile=async()=>{
         if(!_supaUser||_loadInProgress||_reconcileTimer)return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
@@ -8551,6 +8716,7 @@ async function supaLoadFromCloud({silent=false}={}){
         // (the old 60s-gated full reload missed anything a teammate did in the last
         // minute: exactly the crew scenario). Delta-sized when it does fire.
         window._cursorCheckReconcile&&window._cursorCheckReconcile();
+        _refreshOnForeground();
       }});
       // Cross-tab signal: sign.html writes zp3_sig_notify after a successful cash/check save.
       // This fires immediately in the contractor's open TradeDesk tab, no polling delay.
@@ -8785,16 +8951,6 @@ function _initRealtimeSubscriptions(uid){
       .on('postgres_changes',{event:'*',schema:'public',table:'proposal_views',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
       .on('postgres_changes',{event:'*',schema:'public',table:'job_time_entries',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{
         _fetchProposalViews();
-        // A peer's own offline dedup can leave a delete stranded locally (it
-        // never reached the cloud), so its duplicate rides back in over
-        // realtime the moment that peer reconnects. Re-collapse shortly
-        // after the burst settles, same debounce shape as td_mileage above.
-        clearTimeout(window._rtTimeDedupTimer);
-        window._rtTimeDedupTimer=setTimeout(()=>{
-          try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
-          try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
-          try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
-        },1500);
       })
       .subscribe(_sigFeedStatus);
   }catch(_sf){}
@@ -8906,17 +9062,6 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // A mileage row arriving over realtime can be a peer resurrecting a healed
   // duplicate (its own offline heal never propagated). Re-collapse shortly
   // after the burst settles; the heal is a no-op when nothing matches.
-  if(tbl==='td_mileage'){
-    clearTimeout(window._rtMileHealTimer);
-    window._rtMileHealTimer=setTimeout(()=>{
-      try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
-      // A peer's mileage collapse/dedup just landed here too: whatever legKey
-      // it dropped needs its paid drive-time counterpart re-checked (owner
-      // rule 2026-08-22, js/geo-track.js _geoSyncDriveTimeEntries).
-      try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
-      try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
-    },1500);
-  }
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
   if(fromRealtime){
     // BURST-COALESCED render for realtime events: a peer save that touches N rows
@@ -9458,6 +9603,17 @@ function _showUpdateOverlay(){
 }
 let _reloadPending=false;
 let _deferredReload=false; // a version/SW reload asked to fire mid cold-load, held until the load settles
+// ── Staged updates (owner 2026-08-27: "served without a load") ──────────────
+// A UAT roll used to be felt: the next foreground fetched version.json, saw a
+// mismatch, PURGED every service-worker cache and reloaded, so the user sat
+// through 50 files coming down the wire behind an overlay. Classic scripts
+// cannot be hot-swapped, so a reload is unavoidable; what IS avoidable is the
+// user ever seeing one. The new build is fetched into the cache while they
+// keep working, and the swap happens while the app is out of sight, off warm
+// caches, in milliseconds. They come back to the new version having watched
+// nothing.
+let _updateStagedVer=null;   // version whose assets are warmed and ready
+let _updateStaging=false;    // one warm at a time
 function _snapshotForms(){
   // Capture all visible form inputs so unsaved data (client form, expense
   // modal, log-trip modal, etc.) survives the auto-update reload.
@@ -9520,8 +9676,11 @@ async function _autoSaveAndReload(){
   // leaving the app pinned to the old version forever. Deleting the caches here
   // forces every subresource on the next load to miss and fetch fresh from the
   // network, so the new code actually takes effect.
+  // ...UNLESS a staged update already overwrote those entries with the NEW
+  // build's bytes. Purging then would throw the warm copy away and force
+  // exactly the slow network reload staging exists to prevent.
   try{
-    if(window.caches){
+    if(window.caches&&!_updateStagedVer){
       const keys=await caches.keys();
       await Promise.all(keys.map(k=>caches.delete(k)));
     }
@@ -9579,14 +9738,96 @@ document.addEventListener('visibilitychange',()=>{
 // browser HTTP cache) and compares the live server version to the running
 // APP_VERSION. version.json is the single source of truth, APP_VERSION lives in
 // js/cloud.js, not in index.html, so grepping the HTML never worked.
+// Pull the new build into the cache the running app will read on its next
+// load. Every fetch carries a one-off ?_stage= so the service worker's
+// cache-first branch MISSES and goes to the network (asking for the clean URL
+// would just hand back the stale copy it already has); the fresh bytes are
+// then written back under the clean URL, which is what index.html will
+// actually request after the reload.
+async function _stageUpdate(ver){
+  if(_updateStagedVer===ver)return true;
+  if(_updateStaging||!window.caches)return false;
+  _updateStaging=true;
+  try{
+    const bust='?_stage='+encodeURIComponent(ver);
+    const r=await fetch('/index.html'+bust,{cache:'reload'});
+    if(!r.ok)return false;
+    const html=await r.text();
+    // Same-origin js/css only. A CDN script is not ours to warm, and an
+    // opaque cross-origin response written into the cache would serve an
+    // unreadable body to the next load.
+    const urls=new Set();
+    const re=/(?:src|href)\s*=\s*"((?!https?:|\/\/|data:)[^"?#]+\.(?:js|css))"/gi;
+    let m;while((m=re.exec(html)))urls.add(m[1].replace(/^\.?\//,''));
+    if(!urls.size)return false;
+    const keys=await caches.keys();
+    const name=keys.find(k=>k.indexOf('tradedesk-')===0)||('tradedesk-staged-'+ver);
+    const c=await caches.open(name);
+    let ok=0;
+    await Promise.all([...urls].map(async u=>{
+      try{
+        const rr=await fetch(u+bust,{cache:'reload'});
+        if(!rr.ok)return;
+        await c.put(u,new Response(await rr.blob(),{status:200,headers:rr.headers}));
+        ok++;
+      }catch(_e){}
+    }));
+    // ALL or nothing. A half-warmed cache is worse than none: the reload
+    // would mix new files with old ones, which is how you get a build that
+    // boots into a broken hybrid nobody can reproduce.
+    if(ok!==urls.size)return false;
+    await c.put('/index.html',new Response(html,{status:200,headers:{'Content-Type':'text/html'}}));
+    _updateStagedVer=ver;
+    return true;
+  }catch(_e){return false;}
+  finally{_updateStaging=false;}
+}
+// ── A NEW BUILD LANDS THE MOMENT IT EXISTS (owner decision 2026-09-01) ─────
+//
+// "had to background and reopen to get the update, thats a problem."
+//
+// This used to warm and wait: while the app was open the poll only pulled the
+// new build into cache, and the actual swap was wired to the app going out of
+// sight. That was itself a fix, for the opposite complaint (2026-08-27, three
+// quick visual fixes in a row meaning three forced reloads on the device he
+// was holding mid-review), and it worked exactly as designed. It also meant a
+// roll could not reach a phone somebody was actively looking at, which is the
+// phone that most needs it while he is testing.
+//
+// He was given the choice and picked immediate, with the mid-tap risk stated
+// and accepted. So: stage FIRST, then reload, always. Staging is still what
+// makes this cheap, the reload comes off warm cache in milliseconds instead of
+// pulling fifty files down behind an overlay, and _autoSaveAndReload already
+// snapshots open forms and flushes pending saves before it goes, so a reload
+// landing mid-form costs the typing nothing.
 async function _checkVersionOnResume(){
   try{
     const r=await fetch('version.json?_='+Date.now(),{cache:'no-store'});
     if(!r.ok)return;
     const d=await r.json();
-    if(d&&d.version&&d.version!==APP_VERSION)await _autoSaveAndReload();
+    if(!d||!d.version||d.version===APP_VERSION)return;
+    // Not awaited for its ANSWER, only for its timing: a failed warm still
+    // reloads, it just costs the old slow path. Never skipping the reload on
+    // a warm failure is the whole point of the change.
+    await _stageUpdate(d.version);
+    await _autoSaveAndReload();
   }catch(e){}
 }
-// Fires on foreground resume, SW navigate handler covers fresh opens
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkVersionOnResume();});
+// 15 seconds, not 60. At a minute a roll could sit unseen for most of a minute
+// on the phone doing the testing, which is indistinguishable from it not
+// working. version.json is a static file on Pages, not a Function, so this
+// never touches the /api budget (14.2).
+setInterval(()=>{if(!document.hidden)_checkVersionOnResume();},15000);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    // KEPT, as the backstop it now is rather than the main event. The poll
+    // above reloads the moment it sees a new version, so a build is normally
+    // long gone by the time the app is put down. This still covers the one
+    // case the poll cannot: a version staged by a warm that landed just as
+    // the app went out of sight, with the reload not yet fired.
+    if(_updateStagedVer&&!_reloadPending)_autoSaveAndReload();
+    return;
+  }
+  _checkVersionOnResume();
+});
 

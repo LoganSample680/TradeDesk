@@ -10,9 +10,12 @@
 # workflow run after it reported success. Nothing on the CI board could have
 # told us, because the board only ever knew about the upload.
 #
-# Read-only, deliberately. Every call is a GET. This never uploads, expires,
-# distributes, or edits anything, and it must stay that way: the same .p8 that
-# authenticates it can ship to the App Store.
+# Read-only by default, and the one exception is opt-in per run. Every call is
+# a GET unless enable_auto_distribute is literally "yes", which turns on a
+# group's automatic distribution and nothing else: it never uploads, expires,
+# submits, distributes a specific build, or edits the app. The same .p8 that
+# authenticates it can ship to the App Store, so the write path is one
+# attribute wide and impossible to trip by accident.
 #
 # Runs on ubuntu, not macOS: it is plain HTTPS, so it costs a tenth of what a
 # macOS minute does and nothing here needs Xcode.
@@ -25,6 +28,13 @@ on:
         description: How many recent builds to report
         required: false
         default: '10'
+      enable_auto_distribute:
+        description: >-
+          Type yes to turn ON automatic distribution for any tester group that
+          has it off. The only write this workflow can make, and the exact
+          string is the guard: anything else leaves it read-only.
+        required: false
+        default: 'no'
 
 jobs:
   status:
@@ -46,4 +56,5 @@ jobs:
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           TD_BUNDLE_ID: app.tradedesk.beta
           TD_BUILD_LIMIT: ${{ github.event.inputs.limit || '10' }}
+          TD_ENABLE_AUTO_DISTRIBUTE: ${{ github.event.inputs.enable_auto_distribute || 'no' }}
         run: python3 scripts/testflight-status.py | tee "$GITHUB_STEP_SUMMARY"

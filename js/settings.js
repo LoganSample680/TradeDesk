@@ -803,6 +803,9 @@ function loadSettingsForm(){
   const powEl=document.getElementById('set-powered-by');if(powEl)powEl.checked=S.poweredBy!==false;
   sf('set-labor-burden',Math.round(((S.laborBurden||1.3)-1)*100));
   const _optEl=document.getElementById('set-owner-pay-type');if(_optEl)_optEl.value=S.ownerPayType||'hourly';sf('set-owner-pay-rate',S.ownerPayRate||'');
+  // Working hours (rule 13, js/geo-derive.js). Defaults are the deriver's own.
+  {const w=S.workHours||{};sf('set-wh-start',w.start||'06:00');sf('set-wh-end',w.end||'20:00');
+   const sat=document.getElementById('set-wh-sat');if(sat)sat.checked=!(Array.isArray(w.days)&&w.days.length)||w.days.indexOf(6)>=0;}
   const ctEl=document.getElementById('set-custom-terms');if(ctEl)ctEl.value=S.customTerms||'';
   const coEl=document.getElementById('set-co-terms');if(coEl)coEl.value=S.coTerms||'';
   const _smsDefaults=_getSmsDefaults();
@@ -854,6 +857,8 @@ function saveSettings(){
     laborBurden:1+((parseFloat(v('set-labor-burden'))||0)/100),
     ownerPayType:gs('set-owner-pay-type')||'hourly',
     ownerPayRate:gf('set-owner-pay-rate')||0,
+    workHours:(()=>{const ok=v=>/^\d{1,2}:\d{2}$/.test(String(v||''));const st=gs('set-wh-start'),en=gs('set-wh-end');
+      const sat=document.getElementById('set-wh-sat');return {start:ok(st)?st:'06:00',end:ok(en)?en:'20:00',days:(!sat||sat.checked)?[1,2,3,4,5,6]:[1,2,3,4,5]};})(),
     customTerms:gs('set-custom-terms')||'',coTerms:gs('set-co-terms')||'',
     acceptCash:document.getElementById('set-accept-cash')?document.getElementById('set-accept-cash').checked:(S.acceptCash!==false),
     acceptCheck:document.getElementById('set-accept-check')?document.getElementById('set-accept-check').checked:(S.acceptCheck!==false),

@@ -512,21 +512,36 @@ test.describe('sub referral invite, exhaustive coverage', () => {
       _supaUser = { id: 'sub-test-uid' };
       _pipeIngestLast = 0; // clear the 60s debounce from earlier tests
       const HOSTILE = '<img src=x onerror="window.__pipeXss=1">';
+      // ONE-SHOT, LIKE THE SERVER. The real query is
+      // .update({status:'received'}).eq('sub_user_id',..).eq('status','pending')
+      // .select(), so a row comes back EXACTLY ONCE: the update flips it out of
+      // 'pending' and the next call matches nothing. A stub that ignores the
+      // filters hands the same row back forever, and a second forced ingest
+      // (js/cloud.js:1968 fires one 1.8s after boot) re-lands it. That is what
+      // failed shard 3 on webkit, 2026-09-04: jobs.length came back 2.
+      //
+      // Each stub is built ONCE, outside _supa.from, so its served flag
+      // survives across calls. Built inside, it resets on every lookup and the
+      // one-shot does nothing at all.
       function stubTable(result) {
-        const chain = { eq: () => chain, select: () => Promise.resolve(result) };
+        let served = false;
+        const chain = { eq: () => chain,
+          select: () => { const r = served ? { data: [], error: result.error } : result; served = true; return Promise.resolve(r); } };
         return { update: () => chain };
       }
+      const asgStub = stubTable({
+        data: [{ id: 601, gc_user_id: 'gc-evil', sub_user_id: 'sub-test-uid',
+          job_addr: HOSTILE, start_date: '2026-08-01', gc_business_name: HOSTILE, status: 'received' }],
+        error: null,
+      });
+      const payStub = stubTable({
+        data: [{ id: 602, gc_user_id: 'gc-evil', sub_user_id: 'sub-test-uid',
+          amount: 500, paid_date: '2026-08-01', job_addr: '', gc_business_name: HOSTILE, status: 'accepted' }],
+        error: null,
+      });
       _supa.from = (table) => {
-        if (table === 'job_assignments') return stubTable({
-          data: [{ id: 601, gc_user_id: 'gc-evil', sub_user_id: 'sub-test-uid',
-            job_addr: HOSTILE, start_date: '2026-08-01', gc_business_name: HOSTILE, status: 'received' }],
-          error: null,
-        });
-        if (table === 'payment_offers') return stubTable({
-          data: [{ id: 602, gc_user_id: 'gc-evil', sub_user_id: 'sub-test-uid',
-            amount: 500, paid_date: '2026-08-01', job_addr: '', gc_business_name: HOSTILE, status: 'accepted' }],
-          error: null,
-        });
+        if (table === 'job_assignments') return asgStub;
+        if (table === 'payment_offers') return payStub;
         return savedFrom(table);
       };
       await _ingestPipeInbox(true);
@@ -663,15 +678,30 @@ test.describe('sub referral invite, exhaustive coverage', () => {
       await _redeemSubInviteGrantForExisting();
 
       // ── 2. The live pipe then delivers a NEW job + a NEW payment ────────────
+      // ONE-SHOT, LIKE THE SERVER. The real query is
+      // .update({status:'received'}).eq('sub_user_id',..).eq('status','pending')
+      // .select(), so a row comes back EXACTLY ONCE: the update flips it out of
+      // 'pending' and the next call matches nothing. A stub that ignores the
+      // filters hands the same row back forever, and a second forced ingest
+      // (js/cloud.js:1968 fires one 1.8s after boot) re-lands it. That is what
+      // failed shard 3 on webkit, 2026-09-04: jobs.length came back 2.
+      //
+      // Each stub is built ONCE, outside _supa.from, so its served flag
+      // survives across calls. Built inside, it resets on every lookup and the
+      // one-shot does nothing at all.
       function stubTable(rows) {
-        const chain = { eq: () => chain, select: () => Promise.resolve({ data: rows, error: null }) };
+        let served = false;
+        const chain = { eq: () => chain,
+          select: () => { const d = served ? [] : rows; served = true; return Promise.resolve({ data: d, error: null }); } };
         return { update: () => chain };
       }
+      const asgStub = stubTable([{ id: 9101, gc_user_id: 'gc-existing', sub_user_id: 'existing-sub-uid',
+        job_addr: '9 Newpipe Way', start_date: '2026-08-02', gc_business_name: 'Torres Electric', status: 'received' }]);
+      const payStub = stubTable([{ id: 9102, gc_user_id: 'gc-existing', sub_user_id: 'existing-sub-uid',
+        amount: 777, paid_date: '2026-08-02', job_addr: '9 Newpipe Way', gc_business_name: 'Torres Electric', status: 'accepted' }]);
       _supa.from = (table) => {
-        if (table === 'job_assignments') return stubTable([{ id: 9101, gc_user_id: 'gc-existing', sub_user_id: 'existing-sub-uid',
-          job_addr: '9 Newpipe Way', start_date: '2026-08-02', gc_business_name: 'Torres Electric', status: 'received' }]);
-        if (table === 'payment_offers') return stubTable([{ id: 9102, gc_user_id: 'gc-existing', sub_user_id: 'existing-sub-uid',
-          amount: 777, paid_date: '2026-08-02', job_addr: '9 Newpipe Way', gc_business_name: 'Torres Electric', status: 'accepted' }]);
+        if (table === 'job_assignments') return asgStub;
+        if (table === 'payment_offers') return payStub;
         return savedFrom(table);
       };
       // Clear the ingest guard + debounce a prior test in this shared-state block
@@ -965,19 +995,32 @@ test.describe('sub referral invite, exhaustive coverage', () => {
       // returns ONE claimed row, payment_offers stays empty (isolates the
       // assertion to the job-landing path). A tiny chainable stub, matches
       // the real call shape: .update(...).eq(...).eq(...).select().
+      // ONE-SHOT, LIKE THE SERVER. The real query is
+      // .update({status:'received'}).eq('sub_user_id',..).eq('status','pending')
+      // .select(), so a row comes back EXACTLY ONCE: the update flips it out of
+      // 'pending' and the next call matches nothing. A stub that ignores the
+      // filters hands the same row back forever, and a second forced ingest
+      // (js/cloud.js:1968 fires one 1.8s after boot) re-lands it. That is what
+      // failed shard 3 on webkit, 2026-09-04: jobs.length came back 2.
+      //
+      // Each stub is built ONCE, outside _supa.from, so its served flag
+      // survives across calls. Built inside, it resets on every lookup and the
+      // one-shot does nothing at all.
       function stubTable(result) {
-        const chain = { eq: () => chain, select: () => Promise.resolve(result) };
+        let served = false;
+        const chain = { eq: () => chain,
+          select: () => { const r = served ? { data: [], error: result.error } : result; served = true; return Promise.resolve(r); } };
         return { update: () => chain };
       }
+      const asgStub = stubTable({
+        data: [{ id: 501, gc_user_id: 'gc-uid', sub_user_id: 'sub-test-uid',
+          job_addr: '44 Lot Way', start_date: today, gc_business_name: 'BuildRight Homes', status: 'received' }],
+        error: null,
+      });
+      const payStub = stubTable({ data: [], error: null });
       _supa.from = (table) => {
-        if (table === 'job_assignments') {
-          return stubTable({
-            data: [{ id: 501, gc_user_id: 'gc-uid', sub_user_id: 'sub-test-uid',
-              job_addr: '44 Lot Way', start_date: today, gc_business_name: 'BuildRight Homes', status: 'received' }],
-            error: null,
-          });
-        }
-        if (table === 'payment_offers') return stubTable({ data: [], error: null });
+        if (table === 'job_assignments') return asgStub;
+        if (table === 'payment_offers') return payStub;
         return savedFrom(table);
       };
       if (typeof goPg === 'function') goPg('pg-dash');

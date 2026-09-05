@@ -29,6 +29,12 @@ test.describe('Wake region set for the dead app', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Name the business zone: every midnight below is a business midnight now
+    // that the day-key helpers follow the business address rather than a
+    // hardcoded Central (owner 2026-08-30). Left unset it comes from the
+    // runner, UTC in CI and Central on a Kansas laptop, which is the machine
+    // deciding the result (CLAUDE.md 5.2.2).
+    await page.evaluate(() => { S.bizTz = 'America/Chicago'; });
     await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
   test.afterAll(async () => { await page.context().close(); });
@@ -177,10 +183,54 @@ test.describe('Wake region set for the dead app', () => {
     // And they beat the FARTHEST places specifically: the tail of the far
     // list must be what fell off the cap, not the nearby homes.
     expect(out.ids).not.toContain('place-far19');
-    // Order inside the pool is nearest-first: the kerb fence leads, then the
-    // three homes before any 7-mile place.
+    // Order changed deliberately (owner 2026-08-27, the parts run). This
+    // fixture's 20 far places are all kind:'supply', so six of them now arm
+    // in the reserved supply tier AHEAD of the pool. Old behavior: the kerb
+    // fence then the three homes, because nothing outranked distance. New
+    // behavior: the kerb fence, six nearest supply houses, then the pool
+    // nearest-first. Both rules still hold and that is the point of the
+    // reservation being six rather than unlimited: every near client keeps
+    // its fence (asserted above) AND a parts run is catchable.
     expect(out.ids[0]).toBe('fence');
-    expect(out.ids.slice(1, 4).sort()).toEqual(['client-901', 'client-902', 'client-903']);
+    expect(out.ids.slice(1, 7).every((id) => /^place-far/.test(id)),
+      'the reserved supply tier arms directly after the kerb: ' + out.ids.join(',')).toBe(true);
+    // Immediately after the reservation, the pool resumes nearest-first, so
+    // the three homes still beat every remaining 7-mile place.
+    expect(out.ids.slice(7, 10).sort()).toEqual(['client-901', 'client-902', 'client-903']);
+  });
+
+  test('the supply tier is reserved, never unlimited: near clients are not starved', async () => {
+    // The failure mode the reservation exists to prevent. Twenty suppliers
+    // with an unbounded tier would take all 18 slots and the client two
+    // blocks away would lose its fence, re-creating the exact bug the pooled
+    // tier was written to fix.
+    const out = await page.evaluate(() => {
+      const savedPlaces = places.slice(), savedClients = clients.slice(), savedJobs = jobs.slice();
+      const savedCache = window._nearbyGeoCache;
+      const savedLat = S.officeLat, savedLon = S.officeLon;
+      try {
+        S.officeLat = null; S.officeLon = null;
+        jobs.length = 0;
+        places.length = 0;
+        for (let i = 0; i < 20; i++) places.push({ id: 'sup' + i, kind: 'supply', lat: 39.1 + i * 0.01, lon: -94.5 });
+        clients.length = 0;
+        clients.push({ id: 911, name: 'Two blocks', addr: '1 Close St' });
+        window._nearbyGeoCache = () => ({ 911: { addr: '1 Close St', lat: 39.001, lon: -94.001 } });
+        const regs = _geoParkRegions({ lat: 39.0, lng: -94.0 }, 200);
+        const ids = regs.map(r => r.id);
+        return { ids, supplyCount: ids.filter(i => /^place-sup/.test(i)).length };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j));
+        window._nearbyGeoCache = savedCache;
+        S.officeLat = savedLat; S.officeLon = savedLon;
+      }
+    });
+    expect(out.ids, 'the nearby client must keep its fence').toContain('client-911');
+    // Six reserved, and the rest only via the pool: the tier itself cannot
+    // grow past its reservation.
+    expect(out.ids.slice(1, 7).every((id) => /^place-sup/.test(id))).toBe(true);
   });
 
   test('junk input cannot break the builder', async () => {
@@ -221,6 +271,26 @@ test.describe('Wake region set for the dead app', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
     expect(src.includes('override public func load()'), 'no launch hook means a force-quit wake evaporates').toBe(true);
     expect(src.includes('td_geo_armed'), 'the armed state must persist for the relaunch to restore').toBe(true);
+  });
+
+  test('a relaunch re-arms the MOTION stream too, not just the fences', async () => {
+    // startMotionStream was called only from startParked and startEvents,
+    // both of which run when JS asks. load() re-armed significant-change,
+    // visits and the heartbeat and never this, so after a force-quit wake the
+    // phone resumed fences and pings but stayed deaf to motion until somebody
+    // opened the app. Every boundary the day is measured on was missed for
+    // exactly the stretch the app was dead.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
+    const i = src.indexOf('override public func load()');
+    expect(i).toBeGreaterThan(-1);
+    // The body of load(), up to the next top-level MARK.
+    const rest = src.slice(i);
+    const end = rest.indexOf('// MARK:');
+    const body = end > -1 ? rest.slice(0, end) : rest;
+    expect(body.includes('startMonitoringSignificantLocationChanges'),
+      'a relaunch must re-arm significant-change').toBe(true);
+    expect(body.includes('startMotionStream'),
+      'a relaunch must re-arm the motion stream, or the phone wakes deaf to every boundary').toBe(true);
   });
 
   // ── The heartbeat arms at shift start, not only at park ────────────────────
@@ -273,6 +343,56 @@ test.describe('Wake region set for the dead app', () => {
     expect(r.threw, r.msg || '').toBe(false);
   });
 
+  // ── ONE ADDRESS, ONE REGION ──────────────────────────────────────────────
+  // Owner, 2026-08-31: "why do we need two separate events laid out when we
+  // only want one?" His house is saved twice, once as a home_office place and
+  // once as a shop place, three metres apart. The old dedupe keyed on
+  // toFixed(4), about eleven metres, and -95.71127 vs -95.71121 round to
+  // DIFFERENT keys on the fourth decimal. Both armed, so every crossing fired
+  // twice, three milliseconds apart, and whichever landed first decided the
+  // row. 'fence' and 'shop' both render as anonymous names, which is how a
+  // drive out of his own driveway came to read "Stop".
+  test('two saved places at one address arm ONE region, and the named one wins', async () => {
+    const r = await page.evaluate(() => {
+      const savedPlaces = (typeof places !== 'undefined') ? places.slice() : [];
+      const savedOffice = [S.officeLat, S.officeLon];
+      try {
+        // His real coordinates, to the digit.
+        S.officeLat = 39.03071; S.officeLon = -95.71121;
+        places.length = 0;
+        places.push({ id: 'p-shop', name: 'TradeDesk shop', kind: 'shop', lat: 39.0307066, lon: -95.7112082 });
+        places.push({ id: 'p-ho', name: '2015 SW Randolph Ave', kind: 'home_office', lat: 39.0307378, lon: -95.7112674 });
+        const out = _geoParkRegions({ lat: 39.03072, lng: -95.71124 }, 180);
+        return { ids: out.map(x => x.id), n: out.length };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        S.officeLat = savedOffice[0]; S.officeLon = savedOffice[1];
+      }
+    });
+    // One region for the address, not three. The kerb spot, the business
+    // address and both saved places are all inside 250 ft of each other.
+    const atHouse = r.ids.filter(id => id === 'fence' || id === 'shop' || /^place-p-/.test(id));
+    expect(atHouse.length, 'one address, one region: ' + JSON.stringify(r.ids)).toBe(1);
+    // ...and it is the one that can NAME the place, never 'fence' or 'shop'.
+    expect(atHouse[0]).toMatch(/^place-p-/);
+  });
+
+  test('a genuinely different address still gets its own region', async () => {
+    // The merge must not swallow real places. 250 ft is "the same address",
+    // not "the same neighbourhood".
+    const r = await page.evaluate(() => {
+      const savedPlaces = (typeof places !== 'undefined') ? places.slice() : [];
+      try {
+        places.length = 0;
+        places.push({ id: 'p-a', name: 'Yard', kind: 'supply', lat: 39.0400, lon: -95.7500 });
+        places.push({ id: 'p-b', name: 'Depot', kind: 'supply', lat: 39.0450, lon: -95.7550 });
+        return _geoParkRegions(null, 180).map(x => x.id);
+      } finally { places.length = 0; savedPlaces.forEach(p => places.push(p)); }
+    });
+    expect(r).toContain('place-p-a');
+    expect(r).toContain('place-p-b');
+  });
+
   test('the heartbeat is wired at all three shift moments (source guarantee)', async () => {
     const src = readJs('geo-track.js');
     // 1. Tracking start: alongside the force-close net in the watcher-on path.
@@ -281,9 +401,26 @@ test.describe('Wake region set for the dead app', () => {
     expect(src.slice(w, w + 1500).includes('_geoHeartbeatSync(null)'),
       'the watcher-on path must arm the heartbeat').toBe(true);
     // 2. Drive open.
-    const d = src.indexOf('_geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;');
+    // The anchor used to be `_geoDriveStartedAt=nowIso;...`. The leg no longer
+    // always opens at now: a pending foot->automotive edge from the motion
+    // tape opens it at the moment the truck actually pulled out (2026-08-31),
+    // so the assignment is a ternary. Still the one line in the file that
+    // opens a drive, which is what this guarantee is about, and deliberately
+    // NOT anchored on `_geoLegOrigin=_geoLastFenceLoc;`: that string appears
+    // at two sites and indexOf would silently grade the wrong one.
+    const d = src.indexOf('_geoDriveStartedAt=_useTape?');
     expect(d).toBeGreaterThan(-1);
-    expect(src.slice(d, d + 400).includes('_geoHeartbeatSync(null)'),
+    // ANCHORED ON THE BLOCK, NOT ON A CHARACTER COUNT (2026-09-01).
+    // This was `d + 1100`, and the note above it admitted the number "keeps
+    // growing because this site keeps earning comments": 737, then 1100, then
+    // it broke again the moment the route-seed fix documented itself there.
+    // A magic width fails on a comment and passes on a real regression of the
+    // same size, which is the worst of both. The guarantee was only ever that
+    // the heartbeat is armed INSIDE the drive-open block, so the window now
+    // ends where the block does. Nothing to bump next time.
+    const dEnd = src.indexOf('This exit was JUST confirmed', d);
+    expect(dEnd, 'the drive-open block must still end where it says it does').toBeGreaterThan(d);
+    expect(src.slice(d, dEnd).includes('_geoHeartbeatSync(null)'),
       'a drive opening must arm the heartbeat').toBe(true);
     // 3. Park arm, with the park spot so home can turn it off.
     expect(src.includes('_geoHeartbeatSync(_at)'),
@@ -306,6 +443,57 @@ test.describe('Wake region set for the dead app', () => {
     expect(r.pings).toBe(0);
   });
 
+  // The parts run (owner 2026-08-27). It happens WHILE parked, with live GPS
+  // shut down, so a fence at the counter is the only thing that can catch it.
+  test('a far-off supply house still gets a wake fence, ahead of nearer places', async () => {
+    const out = await page.evaluate(() => {
+      const savedPlaces = places.slice(), savedClients = clients.slice(), savedJobs = jobs.slice();
+      try {
+        places.length = 0; clients.length = 0; jobs.length = 0;
+        // 20 ordinary places right on top of the park spot: more than the
+        // 18-region cap, so without its own tier the supply house 30 miles
+        // away loses every slot and the parts run logs nothing.
+        for (let i = 0; i < 20; i++) {
+          places.push({ id: 'near-' + i, kind: 'other', lat: 39.0 + i * 0.0001, lon: -95.7 });
+        }
+        places.push({ id: 'sup-far', kind: 'supply', lat: 39.5, lon: -95.7 });
+        const regs = _geoParkRegions({ lat: 39.0, lng: -95.7 });
+        return {
+          ids: regs.map(r => r.id),
+          hasSupply: regs.some(r => r.id === 'place-sup-far'),
+          count: regs.length,
+        };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j));
+      }
+    });
+    expect(out.hasSupply, 'a saved supply house must always get a fence: ' + out.ids.join(',')).toBe(true);
+    expect(out.count, 'the region cap still holds').toBeLessThanOrEqual(18);
+  });
+
+  test('many supply houses arm nearest-first, and none is ever duplicated', async () => {
+    const out = await page.evaluate(() => {
+      const savedPlaces = places.slice(), savedClients = clients.slice(), savedJobs = jobs.slice();
+      try {
+        places.length = 0; clients.length = 0; jobs.length = 0;
+        places.push({ id: 'sup-far', kind: 'supply', lat: 39.9, lon: -95.7 });
+        places.push({ id: 'sup-near', kind: 'supply', lat: 39.01, lon: -95.7 });
+        places.push({ id: 'sup-mid', kind: 'supply', lat: 39.2, lon: -95.7 });
+        const regs = _geoParkRegions({ lat: 39.0, lng: -95.7 });
+        const sup = regs.map(r => r.id).filter(id => id.startsWith('place-sup'));
+        return { sup, uniq: new Set(regs.map(r => r.id)).size === regs.length };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j));
+      }
+    });
+    expect(out.sup).toEqual(['place-sup-near', 'place-sup-mid', 'place-sup-far']);
+    expect(out.uniq, 'the supply tier must not re-add what the pool already armed').toBe(true);
+  });
+
   test('lifecycle and push-ping events never reach the fence machine', async () => {
     // Same rule as the heartbeat above: liveness bookkeeping must not carry
     // position authority. An app-background row has no fix, and a push-ping
@@ -324,6 +512,84 @@ test.describe('Wake region set for the dead app', () => {
       } finally { window._geoOnPing = saved.ping; }
     });
     expect(r.pings).toBe(0);
+  });
+
+  // ── The update rides the wake (owner 2026-08-28) ──────────────────────────
+  // New web code used to reach a phone only when somebody opened the app, so
+  // a backgrounded phone sat on old JS and then reloaded in the owner's hand.
+  const bgUpd = (opts) => page.evaluate(async (o) => {
+    const saved = { fetch: window.fetch, reload: window._autoSaveAndReload, hidden: Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') };
+    let reloads = 0, fetches = 0;
+    try {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => o.hidden });
+      window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: o.serverVersion }) }; };
+      window._autoSaveAndReload = async () => { reloads++; };
+      _geoBgUpdAt = 0;
+      await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
+      await new Promise(r => setTimeout(r, 60));
+      return { reloads, fetches, running: APP_VERSION };
+    } finally {
+      window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload;
+      delete document.hidden;
+      if (saved.hidden) Object.defineProperty(Document.prototype, 'hidden', saved.hidden);
+      _geoBgUpdAt = 0;
+    }
+  }, opts);
+
+  test('a backgrounded phone on an old version reloads on the push wake', async () => {
+    const r = await bgUpd({ hidden: true, serverVersion: '99.99.99.9' });
+    expect(r.fetches, 'the wake must check the live version').toBe(1);
+    expect(r.reloads, 'a version that moved must reload while nobody is looking').toBe(1);
+  });
+
+  test('a backgrounded phone already current never reloads', async () => {
+    const cur = await page.evaluate(() => APP_VERSION);
+    const r = await bgUpd({ hidden: true, serverVersion: cur });
+    expect(r.fetches).toBe(1);
+    expect(r.reloads, 'same version, nothing to do').toBe(0);
+  });
+
+  test('a VISIBLE app is never reloaded from the wake: the foreground path owns that', async () => {
+    const r = await bgUpd({ hidden: false, serverVersion: '99.99.99.9' });
+    expect(r.fetches, 'a visible app must not even probe').toBe(0);
+    expect(r.reloads, 'reloading in the user\'s face is the thing this avoids').toBe(0);
+  });
+
+  test('several buffered events in one wake cost ONE probe, not one each', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch, reload: window._autoSaveAndReload };
+      let fetches = 0;
+      try {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        const cur = APP_VERSION;
+        window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: cur }) }; };
+        window._autoSaveAndReload = async () => {};
+        _geoBgUpdAt = 0;
+        for (let i = 0; i < 5; i++) await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
+        await new Promise(r => setTimeout(r, 60));
+        return { fetches };
+      } finally {
+        window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload;
+        delete document.hidden; _geoBgUpdAt = 0;
+      }
+    });
+    expect(r.fetches).toBe(1);
+  });
+
+  test('a REPLAYED buffer never triggers an update: those events are history', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch };
+      let fetches = 0;
+      try {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: '99.99.99.9' }) }; };
+        _geoBgUpdAt = 0;
+        await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 }, true);
+        await new Promise(r => setTimeout(r, 60));
+        return { fetches };
+      } finally { window.fetch = saved.fetch; delete document.hidden; _geoBgUpdAt = 0; }
+    });
+    expect(r.fetches).toBe(0);
   });
 
   test('the geo-ping cron chain is wired end to end (source guarantee)', async () => {
@@ -381,5 +647,220 @@ test.describe('Wake region set for the dead app', () => {
     expect(r.unparked).toBe(1);
   });
 
+
+
+  // ── The chain breaks, and the rest of the day goes with it ────────────────
+  test.describe('_geoTruncateDayAfter and loading up', () => {
+    test('_geoLoadBeforeDrive finds his six morning minutes, cycling included', async () => {
+      const r = await page.evaluate(() => {
+        // His real 08-27 morning, CT: 06:56 onFoot, 06:56 still, 07:43:54
+        // "cycling" (CoreMotion reading a walk round the truck), 07:44:23
+        // still, 07:49:43 driving.
+        const T = (h, m, s2) => Date.UTC(2026, 7, 27, h + 5, m, s2 || 0);
+        const tape = [
+          { ts: T(6, 56, 7), kind: 'onFoot' }, { ts: T(6, 56, 35), kind: 'still' },
+          { ts: T(7, 43, 54), kind: 'cycling' }, { ts: T(7, 44, 23), kind: 'still' },
+        ];
+        const w = _geoLoadBeforeDrive(tape, T(7, 49, 43));
+        return { mins: w ? Math.round((w[1] - w[0]) / 60000) : null,
+                 startsAt: w ? new Date(w[0]).toISOString() : null };
+      });
+      expect(r.mins, '07:43:54 to 07:49:43').toBe(6);
+      expect(r.startsAt).toBe('2026-08-27T12:43:54.000Z');
+    });
+
+    test('_geoLoadBeforeDrive refuses the shapes that are not a load-out', async () => {
+      const r = await page.evaluate(() => {
+        const T = (h, m, s2) => Date.UTC(2026, 7, 27, h + 5, m, s2 || 0);
+        const at = (h, m, s2, kind) => ({ ts: T(h, m, s2), kind });
+        return {
+          // Sitting still right up to the drive is getting in the cab.
+          none: _geoLoadBeforeDrive([at(7, 20, 0, 'still')], T(7, 49, 43)),
+          // A walk that ended two hours earlier was some other errand.
+          stale: _geoLoadBeforeDrive([at(5, 30, 0, 'onFoot')], T(7, 49, 43)),
+          // Thirty seconds is not loading.
+          tiny: _geoLoadBeforeDrive([at(7, 49, 13, 'onFoot')], T(7, 49, 43)),
+          empty: _geoLoadBeforeDrive([], T(7, 49, 43)),
+          nulls: _geoLoadBeforeDrive(null, 0),
+        };
+      });
+      expect(r.none).toBeNull();
+      expect(r.stale).toBeNull();
+      expect(r.tiny).toBeNull();
+      expect(r.empty).toBeNull();
+      expect(r.nulls).toBeNull();
+    });
+
+
+  });
+
+
+  // ── Park state survives a reload, so the off-switch stays reachable ───────
+  //
+  // Measured on the owner's own phone 2026-09-05: 118 fixes in one hour from
+  // five locations, gaps of exactly 30.0s, for four and a half hours. The iOS
+  // 17 wake stream doing its job while armed, with nothing able to disarm it.
+  // The ON is durable (UserDefaults, re-armed by the plugin on relaunch); the
+  // OFF was a plain JS `let` that a reload wiped.
+  test.describe('the park off-switch is as durable as the on-switch', () => {
+    const boot = (setup) => page.evaluate(({ setup }) => {
+      const saved = { td: _geoTdPlugin, park: _geoParkModeOn, spot: _geoParkSpot,
+                      user: window._supaUser, restored: window._geoParkRestored };
+      window.__wake = [];
+      _geoTdPlugin = () => ({ setWakeOnMove: async (a) => { window.__wake.push(a); return a; } });
+      window._supaUser = { id: 'owner-uid' };
+      _geoParkModeOn = false; _geoParkSpot = null;
+      window._geoParkRestored = false;
+      localStorage.removeItem('zp3_geo_park');
+      // Built INSIDE the page: the page clock is pinned and the runner's is not,
+      // so an absolute stamp from the test side would be hours off (5.2.2).
+      if (setup.store) {
+        localStorage.setItem('zp3_geo_park', JSON.stringify({
+          spot: { lat: 41.5, lng: -88.1, name: setup.name || '' },
+          at: Date.now() - (setup.ageMs || 0),
+          uid: setup.uid || 'owner-uid',
+        }));
+      }
+      const ok = _geoParkRestore();
+      const out = { ok, park: _geoParkModeOn, spot: _geoParkSpot,
+                    wake: window.__wake.slice(), left: localStorage.getItem('zp3_geo_park') };
+      _geoTdPlugin = saved.td; _geoParkModeOn = saved.park; _geoParkSpot = saved.spot;
+      window._supaUser = saved.user; window._geoParkRestored = saved.restored;
+      localStorage.removeItem('zp3_geo_park');
+      return out;
+    }, { setup });
+
+    test('a park written down comes back, and nothing is disarmed', async () => {
+      const r = await boot({ store: true, ageMs: 60000, name: 'TradeDesk shop' });
+      expect(r.ok).toBe(true);
+      expect(r.park, 'JS believes it is parked again, so park-exit can run').toBe(true);
+      expect(r.spot.name).toBe('TradeDesk shop');
+      expect(r.wake.length, 'a real park must never be disarmed on boot').toBe(0);
+    });
+
+    test('no park stored: the plugin is told to drop the stream', async () => {
+      const r = await boot({});
+      expect(r.ok).toBe(false);
+      expect(r.park).toBe(false);
+      expect(r.wake, 'the phone must not hold a stream this session knows nothing about')
+        .toEqual([{ on: false }]);
+    });
+
+    test('a park older than the shift is not a park', async () => {
+      const r = await boot({ store: true, ageMs: 13 * 3600000 });
+      expect(r.ok, 'a weekend at the shop must not restore on Monday').toBe(false);
+      expect(r.wake).toEqual([{ on: false }]);
+      expect(r.left, 'and the stale record is cleared').toBe(null);
+    });
+
+    test("another login's park is not mine", async () => {
+      const r = await boot({ store: true, ageMs: 60000, uid: 'somebody-else' });
+      expect(r.ok).toBe(false);
+      expect(r.wake).toEqual([{ on: false }]);
+    });
+
+    test('junk in storage disarms rather than throwing or restoring', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { td: _geoTdPlugin, park: _geoParkModeOn, restored: window._geoParkRestored, user: window._supaUser };
+        window._supaUser = { id: 'owner-uid' };
+        const out = [];
+        for (const junk of ['{BROKEN{{', 'null', '[]', '{"at":"nope"}', '{}']) {
+          window.__wake = [];
+          _geoTdPlugin = () => ({ setWakeOnMove: async (a) => { window.__wake.push(a); return a; } });
+          _geoParkModeOn = false; window._geoParkRestored = false;
+          localStorage.setItem('zp3_geo_park', junk);
+          let threw = false;
+          try { out.push({ ok: _geoParkRestore(), wake: window.__wake.length }); } catch (e) { threw = true; }
+          if (threw) { out.push('THREW'); break; }
+        }
+        localStorage.removeItem('zp3_geo_park');
+        _geoTdPlugin = saved.td; _geoParkModeOn = saved.park;
+        window._geoParkRestored = saved.restored; window._supaUser = saved.user;
+        return out;
+      });
+      expect(r).not.toContain('THREW');
+      expect(r.every(x => x.ok === false && x.wake === 1), 'every junk shape ends with the stream dropped').toBe(true);
+    });
+
+    test('it runs at most once per page load', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { td: _geoTdPlugin, park: _geoParkModeOn, restored: window._geoParkRestored, user: window._supaUser };
+        window._supaUser = { id: 'owner-uid' };
+        window.__wake = [];
+        _geoTdPlugin = () => ({ setWakeOnMove: async (a) => { window.__wake.push(a); return a; } });
+        _geoParkModeOn = false; window._geoParkRestored = false;
+        localStorage.removeItem('zp3_geo_park');
+        const a = _geoParkRestore(), b = _geoParkRestore(), c = _geoParkRestore();
+        const n = window.__wake.length;
+        _geoTdPlugin = saved.td; _geoParkModeOn = saved.park;
+        window._geoParkRestored = saved.restored; window._supaUser = saved.user;
+        return { a, b, c, n };
+      });
+      expect(r.b).toBe(false);
+      expect(r.c).toBe(false);
+      expect(r.n, 'one disarm, not one per caller').toBe(1);
+    });
+
+    test('entering park writes it down, exiting park forgets it', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { park: _geoParkModeOn, user: window._supaUser, td: _geoTdPlugin };
+        window._supaUser = { id: 'owner-uid' };
+        _geoTdPlugin = () => ({ stopAll: async () => {} });
+        localStorage.removeItem('zp3_geo_park');
+        _geoParkPersist({ lat: 41.5, lng: -88.1, name: 'shop' });
+        const wrote = JSON.parse(localStorage.getItem('zp3_geo_park') || 'null');
+        _geoParkModeOn = true;
+        _geoExitParkMode();
+        const after = localStorage.getItem('zp3_geo_park');
+        _geoParkModeOn = saved.park; window._supaUser = saved.user; _geoTdPlugin = saved.td;
+        return { wrote: !!(wrote && wrote.spot && wrote.spot.name === 'shop'), after };
+      });
+      expect(r.wrote).toBe(true);
+      expect(r.after, 'a park that ended must not restore on the next boot').toBe(null);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
+
+
+  // The 30-row cap that cut a day in half (found 2026-08-30 against live data).
+  test.describe('_geoWholeDays: a day is never half swept', () => {
+    test('stops at a day boundary, never mid-day, even past the row cap', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [];
+        // Newest first: 29 rows on the 29th, then 9 on the 27th, exactly the
+        // shape that put 08/27 at positions 24..32 behind a cap of 30.
+        for (let i = 0; i < 29; i++) rows.push({ id: 'a' + i, arrived_at: '2026-08-29T' + String(23 - (i % 23)).padStart(2, '0') + ':00:00.000Z' });
+        for (let i = 0; i < 9; i++) rows.push({ id: 'b' + i, arrived_at: '2026-08-27T' + String(20 - i).padStart(2, '0') + ':00:00.000Z' });
+        const out = _geoWholeDays(rows, 'arrived_at', 7, 30);
+        const ids = out.map(x => x.id);
+        return {
+          n: out.length,
+          allNine: ids.filter(x => x[0] === 'b').length,
+          none: _geoWholeDays([], 'arrived_at', 7, 30).length,
+          junk: _geoWholeDays([null, { arrived_at: 'nope' }, undefined], 'arrived_at', 7, 30).length,
+          nullArr: _geoWholeDays([], 'arrived_at', 0, 0).length,
+        };
+      });
+      // The cap is exceeded rather than splitting 08/27: all nine or none.
+      expect(r.allNine, 'the day that broke this must arrive whole').toBe(9);
+      expect(r.n).toBe(38);
+      expect(r.none).toBe(0);
+      expect(r.junk, 'unparseable timestamps are skipped, never thrown on').toBe(0);
+      expect(r.nullArr).toBe(0);
+    });
+
+    test('the day limit counts days, not rows', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [];
+        ['29', '28', '27', '26'].forEach(d => {
+          for (let i = 0; i < 5; i++) rows.push({ id: d + i, arrived_at: '2026-08-' + d + 'T1' + i + ':00:00.000Z' });
+        });
+        const two = _geoWholeDays(rows, 'arrived_at', 2, 999);
+        return { n: two.length, days: [...new Set(two.map(x => x.id.slice(0, 2)))] };
+      });
+      expect(r.n).toBe(10);
+      expect(r.days.sort()).toEqual(['28', '29']);
+    });
+  });
 });

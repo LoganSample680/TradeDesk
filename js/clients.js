@@ -1150,13 +1150,24 @@ function closeImportModal(){
 
 async function _importPhoneContacts(){
   try{
-    const raw=await navigator.contacts.select(['name','tel','email'],{multiple:true});
+    // 'address' was never requested, so this route dropped it even where the
+    // API supports it (owner 2026-08-28). Requested separately and tolerantly:
+    // the property is optional in the spec and a picker that does not offer it
+    // REJECTS the whole call rather than returning the rest, which would take
+    // the entire import down to gain one field.
+    let raw=null;
+    try{raw=await navigator.contacts.select(['name','tel','email','address'],{multiple:true});}
+    catch(_e){raw=await navigator.contacts.select(['name','tel','email'],{multiple:true});}
     if(!raw||!raw.length){showToast('No contacts selected','ℹ️');return;}
     const parsed=raw.map(c=>({
       name:(c.name&&c.name[0])||'',
       phone:(c.tel&&c.tel[0])||'',
       email:(c.email&&c.email[0])||'',
-      addr:'',city:'',state:'',zip:''
+      // ContactAddress, when the picker gave one: its own shape, not ours.
+      addr:((c.address&&c.address[0]&&(c.address[0].addressLine||[])[0])||''),
+      city:((c.address&&c.address[0]&&c.address[0].city)||''),
+      state:((c.address&&c.address[0]&&c.address[0].region)||''),
+      zip:((c.address&&c.address[0]&&c.address[0].postalCode)||'')
     })).filter(c=>c.name&&c.phone);
     _showImportPreview(parsed);
   }catch(e){showToast('Contact access denied','⚠️');}
@@ -1222,22 +1233,94 @@ function _csvRow(line){
   return cols;
 }
 
+// A vCard line longer than 75 octets is CONTINUED on the next line, marked by
+// a single leading space or tab (RFC 6350 folding). Apple Contacts folds every
+// export, so a street address long enough to wrap was being cut off at the
+// fold by a regex that stops at the newline. Unfold before parsing anything.
+function _vcardUnfold(text){
+  return String(text||'').replace(/\r\n/g,'\n').replace(/\n[ \t]/g,'');
+}
+// vCard escapes the characters that would otherwise be structure. A street
+// like "Unit 3, Bldg C" arrives as "Unit 3\, Bldg C".
+function _vcardUnesc(v){
+  return String(v||'').replace(/\\n/gi,' ').replace(/\\([,;\\])/g,'$1').trim();
+}
+// ADR is positional: PO box; extended; street; city; region; postcode; country.
+function _vcardAdrParts(raw){
+  const p=String(raw||'').split(';');
+  return{
+    addr:_vcardUnesc(p[2]),city:_vcardUnesc(p[3]),
+    state:_vcardUnesc(p[4]),zip:_vcardUnesc(p[5])
+  };
+}
+// Apple writes the human label as a SEPARATE line tied to the property by a
+// group prefix:
+//     item1.ADR;type=HOME;type=pref:;;2015 SW Randolph Ave;Topeka;KS;66604;
+//     item1.X-ABLabel:Home
+// so the contractor's own word for the place ("Lake house", "Mom's") is in
+// X-ABLabel, not in TYPE. Prefer it, fall back to TYPE, then to a number.
+function _vcardAdrLabel(card,group,paramStr,used){
+  if(group){
+    const m=String(card||'').match(new RegExp('^'+group.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\.X-ABLabel:(.+)$','mi'));
+    if(m){
+      // Apple wraps its own built-ins in _$!<...>!$_ ; a custom label is bare.
+      const raw=_vcardUnesc(m[1]).replace(/^_\$!<(.*)>!\$_$/,'$1').trim();
+      if(raw)return raw;
+    }
+  }
+  const t=(String(paramStr||'').match(/TYPE="?([A-Za-z]+)/i)||[])[1];
+  const k=t?t.toLowerCase():'';
+  if(k==='home')return 'Home';
+  if(k==='work')return 'Work';
+  return 'Property '+(used+1);
+}
 function _parseVCard(text){
   const contacts=[];
-  const cards=text.split(/BEGIN:VCARD/i).slice(1);
+  const cards=_vcardUnfold(text).split(/BEGIN:VCARD/i).slice(1);
   cards.forEach(card=>{
+    // (?:[A-Za-z0-9-]+\.)? is the whole reason this file changed twice.
+    // Apple Contacts writes any property carrying a custom label as part of a
+    // GROUP: "item1.ADR;type=HOME:..." with "item1.X-ABLabel:Home" beside it.
+    // Anchoring on ^ADR therefore matched nothing on a real Apple export, and
+    // an import of 141 contacts landed 3 addresses (owner's own data,
+    // 2026-08-31). TEL and EMAIL are usually ungrouped, which is exactly why
+    // phone numbers came over fine and hid the problem.
     const get=re=>{const m=card.match(re);return m?(m[1]||'').trim():'';};
-    let name=get(/^FN[^:\r\n]*:(.+)$/m);
+    let name=get(/^(?:[A-Za-z0-9-]+\.)?FN[^:\r\n]*:(.+)$/m);
     if(!name){
-      const n=get(/^N[^:\r\n]*:(.+)$/m);
-      if(n){const p=n.split(';');name=[p[1],p[0]].filter(Boolean).join(' ');}
+      const n=get(/^(?:[A-Za-z0-9-]+\.)?N[^:\r\n]*:(.+)$/m);
+      // N is Family;Given;Middle;Prefix;Suffix, so given goes first to read
+      // as a person's name rather than a filing-cabinet entry.
+      if(n){const p=n.split(';');name=[_vcardUnesc(p[1]),_vcardUnesc(p[0])].filter(Boolean).join(' ');}
     }
-    const phone=get(/^TEL[^:\r\n]*:(.+)$/m);
-    const email=get(/^EMAIL[^:\r\n]*:(.+)$/m);
-    const adr=get(/^ADR[^:\r\n]*:(.+)$/m);
-    let addr='',city='',state='',zip='';
-    if(adr){const p=adr.split(';');addr=(p[2]||'').trim();city=(p[3]||'').trim();state=(p[4]||'').trim();zip=(p[5]||'').trim();}
-    if(name&&phone)contacts.push({name,phone,email,addr,city,state,zip});
+    name=_vcardUnesc(name);
+    const phone=get(/^(?:[A-Za-z0-9-]+\.)?TEL[^:\r\n]*:(.+)$/m);
+    const email=get(/^(?:[A-Za-z0-9-]+\.)?EMAIL[^:\r\n]*:(.+)$/m);
+    // EVERY address, not just the first (owner 2026-09-01: "addresses
+    // especially multiple properties"). card.match with a non-global regex
+    // returns only the first hit, so a client with a home and a rental
+    // silently arrived with one address and the other was dropped on the
+    // floor. The first ADR that carries a street becomes the primary; the
+    // rest become extraAddresses, which is the shape the client detail page
+    // already renders (_renderClientAddresses) and the manual "Additional
+    // property" button already writes.
+    const extras=[];
+    let addr='',city='',state='',zip='',primaryTaken=false;
+    const adrRe=/^([A-Za-z0-9-]+\.)?ADR([^:\r\n]*):(.+)$/gm;
+    let m;
+    while((m=adrRe.exec(card))!==null){
+      const group=m[1]?m[1].slice(0,-1):'';     // "item1." -> "item1"
+      const parts=_vcardAdrParts(m[3]);
+      const oneLine=[parts.addr,parts.city,[parts.state,parts.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      if(!oneLine)continue;                     // an empty ADR line is noise, not a property
+      if(!primaryTaken){
+        addr=parts.addr;city=parts.city;state=parts.state;zip=parts.zip;
+        primaryTaken=true;
+      }else{
+        extras.push({label:_vcardAdrLabel(card,group,m[2],extras.length),addr:oneLine});
+      }
+    }
+    if(name&&phone)contacts.push({name,phone,email,addr,city,state,zip,extras});
   });
   return contacts;
 }
@@ -1258,9 +1341,14 @@ function _showImportPreview(parsed){
   if(!preview)return;
   const hasEmail=toImport.some(c=>c.email);
   const hasAddr=toImport.some(c=>c.addr||c.city);
+  const extraCount=toImport.reduce((n,c)=>n+((c.extras||[]).length),0);
   summary.innerHTML='<strong>'+toImport.length+' contacts ready to import</strong>'+
     (hasEmail?' <span style="color:var(--green-mid)">· Email '+svgIcon('✓')+'</span>':'')+
     (hasAddr?' <span style="color:var(--green-mid)">· Address '+svgIcon('✓')+'</span>':'')+
+    // Named on the preview because a silently-dropped second property is
+    // exactly the failure this fix is about: if the count is wrong, it is
+    // wrong BEFORE the import rather than discovered weeks later.
+    (extraCount?' <span style="color:var(--green-mid)">· '+extraCount+' extra propert'+(extraCount===1?'y':'ies')+' '+svgIcon('✓')+'</span>':'')+
     (skipped?' <span style="color:var(--text3)">· '+skipped+' skipped (already in list)</span>':'');
   list.innerHTML=toImport.slice(0,25).map(c=>
     '<div style="padding:7px 10px;border-bottom:1px solid var(--border2)">'+
@@ -1275,24 +1363,58 @@ function _showImportPreview(parsed){
 
 function _doImport(){
   if(!_importContacts.length)return;
+  // Take the list FIRST. The renderClients crash proved the tail is not
+  // guaranteed to run: it threw before `_importContacts=[]` at the bottom, so
+  // the list stayed loaded, the modal stayed open with no toast, and the
+  // owner tapped Import again. 141 contacts became 281 (his own data,
+  // 2026-08-31 19:04:42 and 19:04:54). Clearing up front means a second tap
+  // has nothing to import no matter what happens below.
+  const batch=_importContacts;
+  _importContacts=[];
   const today=todayKey();
   let added=0;
-  _importContacts.forEach((c,i)=>{
+  batch.forEach((c,i)=>{
     const id=Date.now()+i;
     const addr=[c.addr,c.city,[c.state,c.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
     const nc={id,name:c.name,phone:c.phone,email:c.email||'',
       addr,street:c.addr||'',city:c.city||'',state:c.state||'',zip:c.zip||'',
       source:'Existing Contact',ref:'',notes:'',created:today,ptype:'',
-      extraAddresses:[],clientToken:'',clientHubKey:''};
+      // Carried, not discarded. This was hardcoded to [], so even once the
+      // parser found a second property the import threw it away.
+      extraAddresses:Array.isArray(c.extras)?c.extras.slice():[],
+      clientToken:'',clientHubKey:''};
     clients.push(nc);
     _ensureClientToken(nc.id);
     added++;
   });
   saveAll();
-  renderClients();
+  // renderClientList, not renderClients: the latter has never existed anywhere
+  // in this codebase, so importing a vCard saved every contact and then threw
+  // a ReferenceError on this line, killing the whole tail. The modal stayed
+  // open and no toast fired, so the contractor saw a red error and no
+  // confirmation for an import that had actually worked (owner report,
+  // 2026-09-01, 141 contacts).
+  //
+  // No test caught it because everything after the first line of _doImport is
+  // unreachable with an empty _importContacts, and the only coverage called it
+  // empty, inside a try/catch that would have swallowed the throw anyway.
+  renderClientList();
+  // ...and the page the contractor is actually standing on. Import lives on
+  // BOTH pg-clients (index.html:1923) and pg-leads (index.html:3852), and an
+  // imported contact is a LEAD until it signs something (renderClientList's
+  // CLIENT_STAGES gate), so importing from the Leads page repainted the one
+  // list that by design cannot show the thing just imported. The owner had to
+  // tap the Leads nav button to see 141 contacts the toast had already told
+  // him were in.
+  //
+  // _refreshActivePage (js/navigation.js) is the shared "repaint what is on
+  // screen, navigate nothing" dispatch added for the foreground refresh, so
+  // this covers every entry point rather than hard-coding the second one
+  // (7.3). Skipped on pg-clients because renderClientList above already IS
+  // that page's repaint.
+  if(document.querySelector('.pg.active')?.id!=='pg-clients'&&typeof _refreshActivePage==='function')_refreshActivePage();
   closeImportModal();
   showToast(added+' contact'+(added!==1?'s':'')+' imported','✅');
-  _importContacts=[];
 }
 
 function setCDTab(tab,btn){

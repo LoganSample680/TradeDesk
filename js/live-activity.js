@@ -73,12 +73,17 @@ async function _liveActReady(){
 //
 // Lives in JS on purpose (§3.2): the Swift layer takes the tint off the payload
 // rather than owning a palette, so this is a UAT roll and never an iOS build.
-const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C'};
+const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C',onsite:'#F2A93B'};
 
 // Track what was last sent per channel so an unchanged ping is never spent.
 // ActivityKit budgets updates, and the geo engine pings far more often than the
 // card actually changes (every fix, versus every tenth of a mile).
 const _liveLast={};
+
+// Payloads iOS refused to START because the app was backgrounded, held until
+// it is on screen again. Keyed by channel, so a newer state simply replaces an
+// older one rather than queueing a stale card.
+const _liveWant={};
 
 // Which channels ask ActivityKit for an APNs push token, so the SERVER can
 // change or end the card with the app closed (update-live-activity). The clock
@@ -88,8 +93,35 @@ const _liveLast={};
 // server-side knows more about a drive than the phone in the truck does.
 const _LIVE_PUSH_CHANNELS={clock:true};
 
+// Report a Live Activity outcome to telemetry (analytics_events via
+// ingest-telemetry). console.warn is NOT captured by js/observability.js, only
+// console.error is, so every diagnostic added to this file so far has been
+// invisible to anyone not holding the phone: three rounds of "still nothing on
+// my island" with no evidence to work from. A tracked event lands server-side
+// where it can actually be read, and unlike console.error it does not trip
+// assertNoErrors in the offline suite.
+function _liveActReport(event, ctx){
+  try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('liveact_'+event,String(ctx||'').slice(0,60));}catch(_e){}
+}
+
 async function _liveActSet(channel,state){
-  if(!(await _liveActReady()))return false;
+  if(!(await _liveActReady())){
+    // No plugin at all is the ordinary web case, not a fault: every desktop
+    // and mobile browser, and the whole offline test suite, has no Capacitor.
+    // Saying anything here would pop a toast on every arrival for every web
+    // user, and it put a floating element over the Home card mid-measurement
+    // in CI. Stay silent unless we are ON a device and the device said no,
+    // which is the only case a person can actually act on (turn Live
+    // Activities back on in Settings).
+    const P2=_liveActPlugin();
+    if(!P2)return false;
+    try{
+      const diag=await P2.isSupported().catch(()=>({err:'call failed'}));
+      _liveActReport('notready',channel+':'+(diag&&diag.supported?'disabled':'unsupported'));
+      if(typeof _toast==='function')_toast('Live Activity: '+((diag&&diag.supported)?'disabled in Settings':'not supported on this phone'));
+    }catch(_e){_liveActReport('notready',channel+':threw');}
+    return false;
+  }
   const P=_liveActPlugin();
   if(!P)return false;
   _liveActWireTokens();
@@ -154,14 +186,45 @@ async function _liveActSet(channel,state){
     const started=_liveLast[channel]!=null;
     const fn=started?P.update:P.start;
     if(typeof fn!=='function')return false;
-    const r=await fn.call(P,payload);
+    let r=await fn.call(P,payload);
     // update() returns ok:false when the card is already gone (the user swiped
     // it away, or iOS reclaimed it). Start it again rather than going silent
     // for the rest of the shift.
-    if(started&&r&&r.ok===false&&typeof P.start==='function')await P.start(payload);
+    if(started&&r&&r.ok===false&&typeof P.start==='function')r=await P.start(payload);
+    // A FAILED start must not be remembered (owner 2026-09-03: nothing on the
+    // island all day, on drive, arrival or departure). The plugin RESOLVES
+    // {ok:false, reason} rather than throwing: ActivityKit refused, the card
+    // was started from the background, Live Activities are off. Caching the
+    // signature anyway made that one failure permanent, because every later
+    // call with the same state hit the dedup above and returned without ever
+    // retrying. The geo engine re-asserts each state on a timer, so leaving
+    // the signature unset is all a retry needs.
+    if(r&&r.ok===false){
+      const why=(r&&r.reason)?String(r.reason):'unknown';
+      _liveActReport('refused',channel+':'+why);
+      // "Target is not foreground" is iOS refusing to START a card from a
+      // backgrounded app. It is not a fault in the payload and it is not
+      // permanent: the same request succeeds the next time the app is on
+      // screen. UPDATES are allowed from the background, so once a card is up
+      // it keeps ticking; only the birth is gated.
+      //
+      // This is why the on-site card never appeared once (owner, all of
+      // 2026-09-03): a dwell is published by the geo engine with the phone in
+      // a pocket, so every single request to start it was refused, while the
+      // drive card flashed up for a second at 16:09 purely because he had the
+      // app open at that instant. Hold the payload and start it the moment we
+      // are foreground again.
+      if(/not\s*foreground|background/i.test(why))_liveWant[channel]=payload;
+      else try{if(typeof _toast==='function')_toast('Live Activity ('+channel+'): '+why);}catch(_e){}
+      return false;
+    }
+    // The card is up. Reported too, because "it started and you still see
+    // nothing" and "it never started" are different bugs with different
+    // fixes, and from a chat message they look identical.
+    _liveActReport(started?'updated':'started',channel);
     _liveLast[channel]=sig;
     return true;
-  }catch(_e){return false;}
+  }catch(_e){_liveActReport('threw',channel+':'+((_e&&_e.message)||'?'));return false;}
 }
 
 async function _liveActEnd(channel){
@@ -323,6 +386,9 @@ function _liveActClockIn(t){
   const{loggedByUid}=(typeof _tlLoggedByInfo==='function')?_tlLoggedByInfo():{loggedByUid:null};
   const contractorUserId=(typeof _effectiveUid==='function'&&_effectiveUid())||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';
   const nextInfo=_liveActNextScopeInfo(t.jobId,t.scopeId);
+  // One timer for one spot: the clock card carries the site clock, so the
+  // on-site card steps aside (it comes back on clock-out, see below).
+  if(_liveLast.onsite!=null)_liveActEnd('onsite');
   _liveActSet('clock',{
     kind:'CLOCKED IN',
     title:who,
@@ -344,7 +410,12 @@ function _liveActClockIn(t){
     scopeQueue:nextInfo.scopeQueue
   });
 }
-function _liveActClockOut(){_liveActEnd('clock');}
+async function _liveActClockOut(){
+  await _liveActEnd('clock');
+  // The clock card yielded the island; if they are still on a site the
+  // deriver knows about, the on-site card takes the spot back.
+  try{if(typeof window!=='undefined'&&window._geoOpenDwell)_liveActOnSite(window._geoOpenDwell);}catch(_e){}
+}
 
 // ── The drive card ───────────────────────────────────────────────────────────
 // Driven by the same state the dashboard's DRIVING banner reads, so the lock
@@ -354,6 +425,10 @@ function _liveActClockOut(){_liveActEnd('clock');}
 function _liveActDrive(){
   let driving=false;
   try{driving=(typeof _geoDriving==='function')&&_geoDriving();}catch(_e){driving=false;}
+  // The drive window IS the drive now (owner 2026-09-01): the card goes up
+  // the moment the flip and the ping pair, before the tally has moved, and
+  // comes down when the window closes, not two minutes of banner-fade later.
+  try{if(!driving&&typeof _geoDriveWindowOn==='function'&&_geoDriveWindowOn())driving=true;}catch(_e){}
   if(!driving){
     if(_liveLast.drive!=null)_liveActEnd('drive');
     return;
@@ -380,3 +455,104 @@ function _liveActDrive(){
     tint:_LIVE_TINT.drive
   });
 }
+
+// ── The on-site card (owner 2026-09-02) ─────────────────────────────────────
+// "A popup on the dynamic island and lock screen when we arrive with a
+// running timer of how long we're there ... it says this is where I am."
+// Driven by the deriver's open dwell (_geoOpenDwellPublish, js/geo-track.js):
+// the same fact the dashboard card and the Time Log's live row read, so the
+// lock screen can never name a different place than the app. Started once
+// at the arrival instant and left to tick; ended when the dwell closes.
+// A person CLOCKED IN already has the green clock card with the site clock
+// on it, and the island shows two cards at most, so the on-site card yields
+// to the clock card rather than stacking a second timer for the same spot.
+function _liveActOnSite(dwell){
+  const d=dwell||null;
+  // HOME IS NOT A CARD (owner 2026-09-03: "I need it to go away or be very
+  // small, right now it's wasted space running when I'm home and done
+  // working"). The lock screen and the island are for work in progress. Being
+  // at your own house is the one dwell nobody needs told about, and it is also
+  // the longest one of the day, so it is exactly the card that would sit there
+  // all evening earning nothing.
+  //
+  // The deriver decides this, not this file: a home office and a shop at the
+  // same address are two fences and the shop outranks the home office, so the
+  // dwell at the owner's own house arrives here as kind 'shop'. atHome is the
+  // deriver's answer to "is this the house", from the same test rule 11 uses.
+  //
+  // Deliberately not a size tweak: a smaller card at home is still a card
+  // about nothing. A clock-in at home still shows, because that is the person
+  // saying they ARE working, and it comes through the clock channel.
+  if(d&&d.atHome){
+    if(_liveLast.onsite!=null)_liveActEnd('onsite');
+    return false;
+  }
+  if(!d||!(Number(d.sinceTs)>0)||_liveLast.clock!=null){
+    if(_liveLast.onsite!=null)_liveActEnd('onsite');
+    return false;
+  }
+  const kind=String(d.kind||'');
+  const where=String(d.name||'')||(kind==='shop'?'The shop':'On site');
+  const addr=(d.fence&&d.fence.addr)?String(d.fence.addr):'';
+  let arrived='';
+  try{arrived=new Date(Number(d.sinceTs)).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){arrived='';}
+  const detail=(addr&&addr!==where)?addr:(arrived?('Arrived '+arrived):'');
+  _liveActSet('onsite',{
+    kind:kind==='shop'?'AT THE SHOP':'ON SITE',
+    title:where,
+    detail,
+    timer:true,
+    startedAt:Math.floor(Number(d.sinceTs)/1000),
+    tint:_LIVE_TINT.onsite
+  });
+  return true;
+}
+
+// ── The foreground is the only place a card can be BORN ──────────────────────
+// ActivityKit refuses Activity.request() from a backgrounded app ("Target is
+// not foreground"). Updates are fine from anywhere, so a card that is already
+// up keeps ticking with the phone in a pocket; it is only the start that has
+// to happen on screen.
+//
+// Everything that wants a card is driven by the geo engine, which by design
+// runs while the app is backgrounded, so without this every on-site card was
+// requested at exactly the moment iOS would not grant it. The owner watched a
+// drive card flash up for one second on 2026-09-03 (it started only because
+// the app happened to be open) and never once saw an on-site card all day.
+//
+// So on every return to the foreground: replay anything iOS refused, then
+// re-assert the live state, which is idempotent because _liveActSet dedups on
+// a signature and an unchanged card costs nothing.
+async function _liveActForeground(){
+  try{
+    if(!(await _liveActReady()))return;
+    const P=_liveActPlugin();
+    if(!P||typeof P.start!=='function')return;
+    for(const ch of Object.keys(_liveWant)){
+      const payload=_liveWant[ch];
+      delete _liveWant[ch];
+      if(!payload)continue;
+      try{
+        const r=await P.start(payload);
+        if(r&&r.ok===false){_liveActReport('refused',ch+':'+((r&&r.reason)||'unknown'));continue;}
+        _liveActReport('started',ch);
+        // Rebuild the signature the same way _liveActSet does, so the next
+        // unchanged assert is deduped instead of spending another update.
+        _liveLast[ch]=[payload.kind,payload.title,payload.detail,payload.timer?'T':payload.value,
+          payload.tint,payload.dualTimer?'D':'',payload.nextScopeId,payload.isLastScope?'L':''].join('|');
+      }catch(_e){}
+    }
+    // Re-assert from the live state too: a dwell that was published while the
+    // app was closed never got as far as a refusal to remember.
+    try{if(typeof window!=='undefined'&&window._geoOpenDwell&&typeof _liveActOnSite==='function')_liveActOnSite(window._geoOpenDwell);}catch(_e){}
+    try{if(typeof _liveActDrive==='function')_liveActDrive();}catch(_e){}
+  }catch(_e){}
+}
+
+try{
+  if(typeof document!=='undefined'&&document.addEventListener){
+    document.addEventListener('visibilitychange',function(){
+      try{if(document.visibilityState==='visible')_liveActForeground();}catch(_e){}
+    });
+  }
+}catch(_e){}

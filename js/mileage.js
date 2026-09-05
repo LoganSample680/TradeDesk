@@ -349,7 +349,8 @@ function saveEndDriveModal(){
   // to be SURE, and every uncertainty resolves toward keeping what they typed.
   const _sameDrive=(m)=>{
     if(!m||!m.gps||!m.legKey||!m.loggedAt)return false;
-    const end=Date.parse(m.loggedAt),start=Date.parse(m.startedIso||m.loggedAt);
+    // A derived leg is logged when it began; its end is endedIso.
+    const end=Date.parse(m.endedIso||m.loggedAt),start=Date.parse(m.startedIso||m.loggedAt);
     if(!end||!start)return false;
     if(!(end>=gps.startTime&&start<=Date.now()))return false;   // windows must overlap
     // WHOSE drive. A leg attributed to another crew member is never this one.
@@ -579,283 +580,45 @@ function _mileStopIsBusiness(coord,name,day,opts){
     return false;
   }catch(_e){return false;}
 }
-async function _milePersonalStopSweep(){
-  try{
-    if(window._milePersonalSweepRan)return 0;
-    if(typeof mileage==='undefined'||!Array.isArray(mileage)||!mileage.length)return 0;
-    const weekAgo=Date.now()-14*86400000;
-    const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
-      _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
-    // Chronological, so "the leg out of P" is the row right after "the leg in".
-    const rows=mileage.filter(m=>m&&m.gps&&m.legKey&&m.toCoord&&m.fromCoord&&
-      (Date.parse(m.endedIso||m.loggedAt||'')||0)>=weekAgo)
-      .sort((a,b)=>String(a.startedIso||a.loggedAt||'').localeCompare(String(b.startedIso||b.loggedAt||'')));
-    if(rows.length<2)return 0;   // nothing to pair yet: try again next load
-    // The trail that makes the next 'it did not collapse' a diagnosis instead
-    // of a guess: how many rows were even eligible to pair.
-    try{if(typeof _geoParkNote==='function')_geoParkNote('stop-sweep','rows='+rows.length);}catch(_e){}
-    window._milePersonalSweepRan=true;
-
-    // The SAME "is this actually business" test for both passes below: a
-    // client, a job site, a client's own address, a saved BUSINESS place, or
-    // a same-day receipt at the pin. Anything the app only GUESSED (a
-    // purpose label, an unsaved place) does not count.
-    //
-    // A CLIENT or JOB SITE is a business destination by definition, and
-    // placeAt knows nothing about either: the first version of this sweep
-    // collapsed John Doe's job site straight out of the day and merged the
-    // legs around it, which is the worst possible failure for a sweep whose
-    // whole job is removing rows. Anything the app can recognise as work is
-    // refused before the personal test is even asked.
-    //
-    // NOT the row's purpose. That label is the app's own inference, and
-    // _poiPlaceKind stamps 'supply' on ANY non-food business, so a gas
-    // station became a "Supply run" the moment a fuel receipt made it look
-    // business, and that label then protected the row from ever being
-    // re-judged (owner 2026-08-14: "Casey's loop is still in it"). Only
-    // facts the CONTRACTOR established count as business here: a client
-    // link, a real job site, a place they saved, or money they spent that
-    // qualifies. Anything the app guessed is exactly what this sweep exists
-    // to second-guess.
-    //
-    // Only a saved place with a BUSINESS kind protects the stop, exactly the
-    // test the live path uses (savedIsBusiness in _autoNameStopTrip). 'Any
-    // saved place' was too broad: a gas station saved for navigation, or
-    // auto-suggested by the repeat-stop finder, became permanently
-    // untouchable and the loop never collapsed (owner 2026-08-15).
-    // The place half of this question now lives in _mileStopIsBusiness below,
-    // because the mileage RECOVERY tool has to ask the identical question and
-    // an approximation of it written from memory is exactly the parallel
-    // pattern §7.3 exists to stop. The receipt half stays inline: only this
-    // caller leaves the 'stop-keep' trail, and that trail is what told the
-    // owner WHY a Casey's stop survived (2026-08-14).
-    const isPersonalStop=(inb,name)=>{
-      if(inb.client_id!=null)return false;
-      const day=inb.date||todayKey();
-      if(_mileStopIsBusiness(inb.toCoord,name,day,{skipReceipt:true}))return false;
-      if(_bizReceiptForStop({lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,day})){
-        try{if(typeof _geoParkNote==='function')_geoParkNote('stop-keep',name+' receipt');}catch(_e){}
-        return false;
-      }
-      return true;
-    };
-
-    let fixed=0;
-    for(let i=0;i<rows.length-1&&fixed<10;i++){
-      const inb=rows[i],out=rows[i+1];
-      if(!mileage.includes(inb)||!mileage.includes(out))continue;
-      if(!near(inb.toCoord,out.fromCoord))continue;            // not the same waypoint
-      if((inb.logged_by_id||null)!==(out.logged_by_id||null))continue;
-      // 'Stop' (or blank) used to be skipped outright here on the theory that
-      // an unnamed waypoint is "the fence layer's job" (_geoCollapseDetours,
-      // js/geo-track.js), which collapses it live while the trip is still in
-      // memory. That theory has a hole: _geoCollapseDetours only works while
-      // its origin chain survives intact between the stop and the return to
-      // a business fence, and a real personal errand risks an app
-      // suspend/kill in between, which resets that chain. When that happens
-      // the live collapse silently never runs, and this durable sweep was
-      // the ONLY other thing that ever re-examines a closed pair of rows, so
-      // skipping unnamed ones left them orphaned in the log forever. Not
-      // double judging: whenever the live collapse DID run, the split rows
-      // never existed separately to begin with, there's nothing left here to
-      // re-examine. A genuinely blank name (not even the 'Stop' placeholder)
-      // still bails, there is nothing to test or show for a truly empty label.
-      const name=String(inb.to_name||'').trim();
-      if(!name)continue;
-      if(!isPersonalStop(inb,name))continue;
-      // P is personal. Collapse.
-      const crumb={stop:{lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,addr:inb.to||'',kind:'stop'},
-                   day:inb.date||todayKey(),leg:Object.assign({},inb),origin:{lat:inb.fromCoord.lat,lng:inb.fromCoord.lng,name:inb.from_name||''}};
-      const idx=mileage.indexOf(inb);
-      if(idx>=0)mileage.splice(idx,1);
-      if(near(inb.fromCoord,out.toCoord)){
-        // Left a business point, wandered, came back to it: no business miles
-        // exist to claim (the round-trip rule, applied after the fact).
-        const oi=mileage.indexOf(out);
-        if(oi>=0)mileage.splice(oi,1);
-      }else{
-        out.from_name=inb.from_name||out.from_name;
-        out.from=inb.from||out.from;
-        out.fromCoord=inb.fromCoord;
-        out.passedThrough=crumb;
-        const r=await _routeDistance(out.fromCoord,out.toCoord).catch(()=>null);
-        if(r&&r.miles>0){out.miles=Math.round(r.miles*10)/10;out.calc_method='auto_route';}
-      }
-      fixed++;
-    }
-
-    // SECOND PASS: a leg into an unnamed Stop with no matching leg back OUT
-    // of it anywhere in the log, not even an undecided one. That is not a
-    // gap in the pairing loop above, it is the CORRECT, deliberate result of
-    // the live sameSpot guard in _geoDriveEntry (js/geo-track.js): when the
-    // return drive lands back at the exact fence this leg left from,
-    // sameSpot suppresses THAT leg's mileage row on purpose (a round trip
-    // claims no miles), so the outbound leg this sweep exists to remove
-    // never gets a partner row to pair against, not now, not ever. Confirmed
-    // against the owner's own live report (2026-08-22): a Shop -> Stop leg,
-    // one row, no return row, still sitting in the log.
-    //
-    // _geoLastFenceLoc/_geoLastFenceAt (js/geo-track.js) are the durable
-    // proof a genuine return happened: they update on every real fence
-    // arrival and survive an app restart (_geoPersistOpen/_geoRestoreOpen),
-    // so a fence arrival timestamped AFTER this leg ended, at the SAME place
-    // the leg left from, is exactly the "left, wandered, came back with
-    // nothing business in between" evidence the paired branch above already
-    // acts on. Requiring the arrival to be strictly after this leg's own end
-    // time is what keeps this from firing on someone who has not left the
-    // stop yet: a fence position from BEFORE they departed can never satisfy
-    // it, because nothing has moved it since.
-    if(fixed<10&&typeof _geoLastFenceLoc!=='undefined'&&_geoLastFenceLoc&&
-       typeof _geoLastFenceAt!=='undefined'&&_geoLastFenceAt){
-      const lastFenceAtMs=Date.parse(_geoLastFenceAt)||0;
-      for(const inb of rows){
-        if(fixed>=10)break;
-        if(!mileage.includes(inb))continue;
-        // Already has a leg out of it somewhere in the log: the paired pass
-        // above owns this one, whatever it decided.
-        if(rows.some(r=>r!==inb&&near(inb.toCoord,r.fromCoord)))continue;
-        const endedMs=Date.parse(inb.endedIso||inb.loggedAt||'')||0;
-        if(!endedMs||lastFenceAtMs<=endedMs)continue;
-        if(!near(_geoLastFenceLoc,inb.fromCoord))continue;   // back somewhere ELSE proves nothing here
-        const name=String(inb.to_name||'').trim();
-        if(!name)continue;
-        if(!isPersonalStop(inb,name))continue;
-        const idx=mileage.indexOf(inb);
-        if(idx>=0){mileage.splice(idx,1);fixed++;}
-      }
-    }
-
-    // Saving and repainting are REPORTING, not the work, and they must not sit
-    // inside the try that guards the work. They did, and the rows are already
-    // spliced out by the time they run, so any throw from saveAll, a repaint
-    // or the toast sent this function into its catch and returned 0 for a
-    // cleanup that had actually happened. The caller then cannot tell the
-    // difference between "nothing to do" and "done, then something unrelated
-    // blew up on the way out", which is exactly how this looked from CI: the
-    // leg gone from the log and the sweep reporting zero, two facts that
-    // could not both be true (traced 2026-08-24 by watching mileage.splice).
-    // A repaint depends on whatever is on screen, so this is a live hazard on
-    // a real device too, not just under test.
-    if(fixed){
-      try{
-        saveAll();
-        if(document.getElementById('mil-table'))renderAllMileage();
-        if(typeof renderDash==='function')renderDash();
-        if(typeof showToast==='function')showToast(fixed+' personal stop'+(fixed===1?'':'s')+' taken off the deduction','🧾');
-      }catch(_e){
-        try{if(typeof _geoParkNote==='function')_geoParkNote('stop-sweep-ui',(_e&&_e.message)||String(_e));}catch(_e2){}
-      }
-    }
-    return fixed;
+// ── THE TRACE IS THE MEASUREMENT (owner 2026-09-01) ────────────────────────
+//
+// "my mileage is correct but my time log is not" ... and on Jack's: "his
+// mileage should have his trip from home office to 1200 sw oakley shop in the
+// morning and thats really it."
+//
+// It had that trip. It said 1.8 miles. The row carries a 229-point GPS trace
+// that sums to 5.65, and the app threw that away: _mileServerRefine below routes
+// fromCoord to toCoord and overwrites `miles` with the answer, stamping
+// 'auto_route'. Nothing compared the guess against the evidence already in the
+// same record, so a leg whose endpoints resolved badly (his read "Stop" and
+// "KS") got a distance for a journey he never took.
+//
+// A routed guess is for a leg with NOTHING else: a hand-typed row, or one
+// whose breadcrumbs never landed. Where there is a trace, the trace is what
+// happened. This returns the miles the recorded path actually covers.
+//
+// The same haversine the fence machine measures everything else with, so the
+// number here and the line drawn on the map can never disagree (7.3).
+function _milePathMiles(m){
+  const p=m&&m.path;
+  if(!Array.isArray(p)||p.length<2)return 0;
+  let ft=0;
+  for(let i=1;i<p.length;i++){
+    const a=p[i-1],b=p[i];
+    if(!Array.isArray(a)||!Array.isArray(b))continue;
+    const alat=+a[0],alon=+a[1],blat=+b[0],blon=+b[1];
+    if(!isFinite(alat)||!isFinite(alon)||!isFinite(blat)||!isFinite(blon))continue;
+    ft+=_geoDistFt({lat:alat,lng:alon},{lat:blat,lng:blon});
   }
-  // Reached only when the WORK itself failed. Leaves a trail rather than
-  // returning a bare zero, same reason _geoMergeAdjacentVisits now does.
-  catch(_e){
-    try{if(typeof _geoParkNote==='function')_geoParkNote('stop-sweep-err',(_e&&_e.message)||String(_e));}catch(_e2){}
-    return 0;
-  }
+  return ft>0?ft/5280:0;
 }
-async function _mileMotionHealSweep(){
-  try{
-    if(window._mileMotionHealRan)return 0;
-    if(typeof mileage==='undefined'||!Array.isArray(mileage)||!mileage.length)return 0;
-    window._mileMotionHealRan=true;
-    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
-    if(!Td||typeof Td.motionSince!=='function')return 0;
-    const weekAgo=Date.now()-7*86400000;
-    const cands=mileage.filter(m=>m&&m.gps&&m.legKey&&!m.pausedLeg&&
-      m.calc_method==='auto_route'&&m.gpsMiles>0&&m.miles>0&&
-      Math.abs(m.miles-Math.round(m.gpsMiles*10)/10)<0.05&&
-      m.startedIso&&m.endedIso&&(Date.parse(m.endedIso)||0)>=weekAgo&&
-      m.fromCoord&&m.toCoord);
-    let fixed=0;
-    for(const m of cands.slice(0,20)){
-      const walked=await _mileTapeHadPause(m.startedIso,m.endedIso);
-      // The verdict trail is what turns the next "didn't correct" report
-      // into a diagnosis instead of a guess: true/false/null per row, in the
-      // same diag notes the geo engine already keeps.
-      try{if(typeof _geoParkNote==='function')_geoParkNote('walk-check',String(m.id)+' '+String(walked));}catch(_e){}
-      if(walked!==true)continue;
-      const{miles}=await _routeDistance(m.fromCoord,m.toCoord);
-      if(!(miles>0)||miles>=m.miles)continue;   // only ever reduce
-      m.miles=Math.round(miles*10)/10;m.pausedLeg=true;fixed++;
-    }
-    try{if(typeof _geoParkNote==='function')_geoParkNote('walk-sweep','cands='+cands.length+' fixed='+fixed);}catch(_e){}
-    if(fixed){
-      saveAll();
-      if(document.getElementById('mil-table'))renderAllMileage();
-      if(typeof renderDash==='function')renderDash();
-      // Corrections announce themselves: silent rewrites of money records
-      // read as data loss when the owner spots the changed number later.
-      try{if(typeof showToast==='function')showToast(fixed+' trip'+(fixed===1?'':'s')+' corrected to direct miles (errand detected)','🚗');}catch(_e){}
-    }
-    return fixed;
-  }catch(_e){return 0;}
-}
-
-// ── Server-provisional refine (real-time geofence ingest, 2026-08-27) ───────
-// The ingest-geo edge function writes a mileage row within seconds of a fence
-// crossing, app force-closed or not, so the log is LIVE. But the server has
-// no router, no motion tape, and no home knowledge, so its rows are marked
-// data.provisional and this sweep, once per session at the same settle point
-// as its siblings above, turns each one into a first-class row:
-//   1. If the client engine ALSO derived the leg (same legKey, its own row),
-//      the server row is redundant: locally-deleted, which the sweep
-//      propagates as a soft delete. The client row is always the richer one.
-//   2. A leg out of the likely-home pin is a commute, and a commute is not
-//      deductible unless the declared home office makes it so (Rev. Rul.
-//      99-7, same rule autoLogDriveTrip applies live): deleted.
-//   3. Everything else gets the real routed distance in place of the
-//      straight-line estimate, the walk check (an errand inside the leg),
-//      and the provisional flag comes off. From then on it is
-//      indistinguishable from a live-derived row.
-// Idempotent by construction: refined rows lose the flag, deleted rows are
-// recorded via _recordLocalDelete, so a second session finds nothing to do.
-async function _mileServerRefine(){
-  try{
-    if(window._mileServerRefineRan)return 0;
-    if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
-    window._mileServerRefineRan=true;
-    const cands=mileage.filter(m=>m&&m.provisional&&m.legKey&&m.fromCoord&&m.toCoord);
-    if(!cands.length)return 0;
-    let refined=0,dropped=0;
-    const kill=(m,why)=>{
-      const i=mileage.indexOf(m);
-      if(i>=0)mileage.splice(i,1);
-      if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
-      dropped++;
-      try{if(typeof _geoParkNote==='function')_geoParkNote('srv-refine',String(m.id)+' dropped: '+why);}catch(_e){}
-    };
-    for(const m of cands.slice(0,20)){
-      // 1. The client engine already owns this leg.
-      if(mileage.some(x=>x&&x!==m&&x.legKey===m.legKey&&!x.provisional)){kill(m,'client row exists');continue;}
-      // 2. Commute out of home, exactly the live rule: only the OWNER with a
-      // declared home office keeps a leg that starts at the likely-home pin.
-      const likelyHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:m.fromCoord.lat,lng:m.fromCoord.lng},0);
-      if(likelyHome&&!(S.homeOffice&&(typeof _isEmployee==='undefined'||!_isEmployee))){kill(m,'home commute');continue;}
-      // 3. Route the real distance and promote the row.
-      try{
-        const{miles}=await _routeDistance(m.fromCoord,m.toCoord);
-        if(miles>0){m.miles=Math.round(miles*10)/10;m.calc_method='auto_route';}
-      }catch(_e){}
-      try{
-        const walked=await _mileTapeHadPause(m.startedIso,m.endedIso);
-        if(walked===true)m.pausedLeg=true;
-      }catch(_e){}
-      delete m.provisional;
-      refined++;
-    }
-    try{if(typeof _geoParkNote==='function')_geoParkNote('srv-refine','cands='+cands.length+' refined='+refined+' dropped='+dropped);}catch(_e){}
-    if(refined||dropped){
-      saveAll();
-      if(document.getElementById('mil-table'))renderAllMileage();
-      if(typeof renderDash==='function')renderDash();
-    }
-    return refined+dropped;
-  }catch(_e){
-    try{if(typeof _geoParkNote==='function')_geoParkNote('srv-refine-err',(_e&&_e.message)||String(_e));}catch(_e2){}
-    return 0;
-  }
+// What this leg is OBSERVED to have covered, from whichever record of the
+// drive it has. gpsMiles is the live odometer's own tally; the path is the
+// same drive written down. Either is evidence; a routed guess is not.
+function _mileObservedMiles(m){
+  const g=+(m&&m.gpsMiles);
+  const p=_milePathMiles(m);
+  return Math.max(isFinite(g)&&g>0?g:0,p);
 }
 function _mileFixLegClock(rec,routeMins){
   if(!rec||!(routeMins>0)||!rec.endedIso)return;
@@ -909,10 +672,14 @@ async function _retryPendingTrips(){
       // walk check disqualifies it (an errand is an errand however late the
       // measurement lands).
       let best=miles;
-      if(auto&&rec.gpsMiles>0&&rec.gpsMiles>miles&&rec.gpsMiles<=miles*4){
+      // _mileObservedMiles, not rec.gpsMiles: a server-derived row carries the
+      // recorded PATH and no odometer tally, and reading only gpsMiles left
+      // every one of those with nothing to defend itself against the route.
+      const _obs=_mileObservedMiles(rec);
+      if(auto&&_obs>0&&_obs>miles&&_obs<=miles*4){
         const walked=await _mileTapeHadPause(rec.startedIso,rec.endedIso);
         if(walked===true)rec.pausedLeg=true;
-        else best=rec.gpsMiles;
+        else best=_obs;
       }
       rec.miles=Math.round(best*10)/10;rec.calc_method=auto?'auto_route':'address';
       if(auto)_mileFixLegClock(rec,routeMins);
@@ -924,9 +691,6 @@ async function _retryPendingTrips(){
     }catch(e){}
   }
   if(!filled)return;   // nothing changed, do not churn a save or a re-render
-  // Freshly measured rows can now settle their duplicates (the journey dedup
-  // defers any pair where a number is still missing, so this is its retry).
-  _mileDedupTrips();
   saveAll();
   if(document.getElementById('mil-table'))renderAllMileage();
   renderDash();
@@ -979,89 +743,6 @@ function _mileNamedEnd(n){
   return !!t&&t!=='?'&&!/^stop$/i.test(t);
 }
 const _MILE_WORKDAY_CAP=25;
-async function _mileWorkdaySweep(){
-  try{
-    if(window._mileWorkdaySweepRan)return 0;
-    if(typeof mileage==='undefined'||!Array.isArray(mileage)||!mileage.length)return 0;
-    if(typeof _geoShopCutoffs!=='function'||typeof _supa==='undefined'||!_supa||!_supaUser)return 0;
-    const cutoff=new Date(Date.now()-14*86400000).toISOString();
-    const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
-    let ents=[];
-    try{
-      const{data,error}=await _supa.from('job_time_entries')
-        .select('employee_user_id,arrived_at,departed_at,source').is('deleted_at',null)
-        .eq('contractor_user_id',cid).gte('arrived_at',cutoff);
-      if(error||!Array.isArray(data))return 0;   // no evidence, no deletions
-      ents=data;
-    }catch(_e){return 0;}
-    if(!ents.length)return 0;
-    window._mileWorkdaySweepRan=true;
-    const wins=_geoShopCutoffs(ents);
-    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
-    // Owner rows carry logged_by_id null and their time entries carry the
-    // contractor id, the same null convention the reconciler uses.
-    const winFor=(m,ms)=>{
-      const uid=String(m.logged_by_id||cid);
-      return ((wins[uid]||{})[dstr(new Date(ms))])||null;
-    };
-    const drop=[];
-    for(const m of mileage){
-      if(drop.length>=_MILE_WORKDAY_CAP)break;
-      if(!m||!m.gps||!m.startedIso||!m.endedIso)continue;
-      if(m.client_id!=null)continue;
-      const a=Date.parse(m.startedIso)||0,b=Date.parse(m.endedIso)||0;
-      if(!(a>0&&b>=a))continue;
-      if(Date.parse(cutoff)>a)continue;             // outside the window we fetched evidence for
-      const win=winFor(m,a);
-      // A day with a window: only legs entirely outside it.
-      if(win&&Math.min(b,win.outMs)>=Math.max(a,win.inMs))continue;
-      // A day with NO window used to mean "every leg on it is personal", and
-      // that rule destroyed real deductible mileage (owner's live log,
-      // 2026-08-25 18:39: two 3.2-mile "John Doe to Shop" legs from 08-18 and
-      // 08-19 deleted as mile-offday). The cascade: a bad reconciler trim
-      // removed those days' on-site rows, the day then had no work event, so
-      // the window collapsed, so every drive on it was judged personal, so the
-      // deduction went with it. Absence of a time entry is not evidence of a
-      // personal trip; it is evidence the TIME side failed, and the same
-      // principle applies here as to the ping tape: silence must never delete.
-      //
-      // The owner's rule still stands, because his own example survives it: a
-      // Saturday "Shop to Stop" is dropped, since an anonymous Stop is exactly
-      // what an errand looks like. A leg with a real business name at BOTH
-      // ends is a business drive by its own endpoints, whatever the time log
-      // did or did not record, so it stays.
-      if(!win||!(win.outMs>0)){
-        if(_mileNamedEnd(m.from_name)&&_mileNamedEnd(m.to_name))continue;
-      }
-      const day=m.date||dstr(new Date(a));
-      const ends=[m.toCoord,m.fromCoord].filter(c=>c&&c.lat!=null);
-      if(typeof _bizReceiptForStop==='function'&&
-         ends.some(c=>_bizReceiptForStop({lat:c.lat,lng:c.lng,name:m.to_name||'',day})))continue;
-      drop.push(m);
-    }
-    if(!drop.length)return 0;
-    for(const m of drop){
-      const i=mileage.indexOf(m);if(i<0)continue;
-      mileage.splice(i,1);
-      try{if(typeof _geoParkNote==='function')_geoParkNote('mile-offday',
-        (m.from_name||'?')+' to '+(m.to_name||'?')+' '+(m.miles||0)+'mi '+(m.startedIso||''));}catch(_e){}
-      if(m.id!=null){
-        if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
-        try{
-          const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
-          if(window._supa&&uid)_tdSoftDelete('td_mileage',m.id,{userCol:'user_id',userVal:uid});
-        }catch(_e){}
-      }
-    }
-    if(typeof saveAll==='function')saveAll();
-    if(document.getElementById('mil-table')&&typeof renderAllMileage==='function')renderAllMileage();
-    if(typeof renderDash==='function')renderDash();
-    return drop.length;
-  }catch(_e){
-    try{if(typeof _geoParkNote==='function')_geoParkNote('mile-offday-err',(_e&&_e.message)||String(_e));}catch(_e2){}
-    return 0;
-  }
-}
 // ── Clear the flights already in the log (owner ask 2026-08-24, mid-air) ────
 // The ceiling in geo-track.js (_GEO_MAX_DRIVE_MPH) stops the NEXT flight from
 // booking itself as a drive. This clears the ones already logged, using the
@@ -1075,61 +756,6 @@ async function _mileWorkdaySweep(){
 // row is also what clears the flight's paid wheel time: _geoSyncDriveTimeEntries
 // drops any drive entry whose legKey no longer has a mileage row.
 const _MILE_FLIGHT_CAP=25;
-async function _mileFlightSweep(){
-  try{
-    if(window._mileFlightSweepRan)return 0;
-    if(typeof mileage==='undefined'||!Array.isArray(mileage)||!mileage.length)return 0;
-    if(typeof _geoLegIsImpossible!=='function')return 0;
-    window._mileFlightSweepRan=true;
-    const drop=[];
-    for(const m of mileage){
-      if(drop.length>=_MILE_FLIGHT_CAP)break;
-      if(!m||!m.gps)continue;
-      if(m.client_id!=null)continue;
-      const f=m.fromCoord,t=m.toCoord;
-      if(!f||!t||f.lat==null||t.lat==null)continue;
-      // The row's own wheel time, or the clock span it was logged across.
-      let mins=Number(m.mins)||0;
-      if(!(mins>0)){
-        const a=Date.parse(m.startedIso||'')||0,b=Date.parse(m.endedIso||'')||0;
-        if(a>0&&b>a)mins=(b-a)/60000;
-      }
-      if(!(mins>0))continue;                       // nothing to judge, leave it
-      if(!_geoLegIsImpossible({lat:f.lat,lng:f.lng},{lat:t.lat,lng:t.lng},mins))continue;
-      const day=m.date||((typeof _ctDateStr==='function')?_ctDateStr(new Date(Date.parse(m.startedIso||'')||Date.now())):todayKey());
-      const ends=[t,f].filter(c=>c&&c.lat!=null);
-      if(typeof _bizReceiptForStop==='function'&&
-         ends.some(c=>_bizReceiptForStop({lat:c.lat,lng:c.lng,name:m.to_name||'',day})))continue;
-      drop.push(m);
-    }
-    if(!drop.length)return 0;
-    for(const m of drop){
-      const i=mileage.indexOf(m);if(i<0)continue;
-      mileage.splice(i,1);
-      try{if(typeof _geoParkNote==='function')_geoParkNote('mile-not-a-drive',
-        (m.from_name||'?')+' to '+(m.to_name||'?')+' '+(m.miles||0)+'mi '+(m.startedIso||''));}catch(_e){}
-      if(m.id!=null){
-        if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
-        try{
-          const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
-          if(window._supa&&uid)_tdSoftDelete('td_mileage',m.id,{userCol:'user_id',userVal:uid});
-        }catch(_e){}
-      }
-    }
-    // Reporting is deliberately OUTSIDE the try that guards the decision, the
-    // same split _milePersonalStopSweep needed: a repaint that throws must not
-    // turn a completed cleanup into a reported zero.
-    try{
-      if(typeof saveAll==='function')saveAll();
-      if(document.getElementById('mil-table')&&typeof renderAllMileage==='function')renderAllMileage();
-      if(typeof renderDash==='function')renderDash();
-    }catch(_e){}
-    return drop.length;
-  }catch(_e){
-    try{if(typeof _geoParkNote==='function')_geoParkNote('mile-not-a-drive-err',(_e&&_e.message)||String(_e));}catch(_e2){}
-    return 0;
-  }
-}
 // ══ RECOVERING MILEAGE A SWEEP SHOULD NEVER HAVE TAKEN ══════════════════════
 // Every sweep above removes rows, and every one of them can be wrong: the
 // 2026-08-25 cascade (a bad reconciler trim collapsed the workday window, so
@@ -1407,321 +1033,16 @@ function _mileRestorePanel(){
 }
 window._mileRestorePanel=_mileRestorePanel;
 const _MILE_DEDUP_DEST_FT=1500;         // fence radius + GPS scatter
+// How much of the shorter drive has to sit inside the longer one before they
+// are the same journey. High on purpose: two writers describing one drive
+// agree almost exactly (the owner's 17:28 pair overlap 0.992), while a
+// there-and-back that shares a boundary minute overlaps by almost nothing.
+const _MILE_SAME_DRIVE_OVERLAP=0.5;
 const _MILE_DEDUP_SLACK_MS=10*60000;    // manual rows only: loggedAt is a tap, not a clock
 function _mileTripWindow(m){
   const end=Date.parse(m.endedIso||m.loggedAt||'')||0;
   const start=Date.parse(m.startedIso||m.loggedAt||'')||end;
   return {start:Math.min(start,end)||end,end:Math.max(start,end)};
-}
-function _mileSameJourney(a,b){
-  if(!a||!b||a===b)return false;
-  // Another crew member's leg is never this one, however the clocks line up.
-  // Rows with no logged_by_id are the owner's; strict equality keeps an
-  // employee's drive from ever swallowing the owner's or vice versa.
-  if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
-  // Journey-level dedup exists for the HAND-TYPED half of a double log: a
-  // manual drive tapped mid-journey against the automatic leg that lands
-  // later. Two automatic rows are only ever duplicates as twins of one leg
-  // (_mileSameLeg): the fence machine writes distinct legs for distinct
-  // drives, and collapsing them by time-and-destination would eat a crew's
-  // genuinely repeated runs.
-  if(a.legKey&&b.legKey)return false;
-  // A trip FILED for a different day is a different journey whatever the
-  // clocks say: the bite this closes is typing in yesterday's forgotten trip
-  // minutes after arriving at the same client today, where the entry's
-  // created-timestamp lands inside today's leg window and the names match.
-  if(a.date&&b.date&&a.date!==b.date)return false;
-  const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
-  if(!wa.end||!wb.end)return false;
-  // A manual row's only timestamp may be the End Drive tap a few minutes
-  // after arrival, so the overlap gets slack.
-  const slack=_MILE_DEDUP_SLACK_MS;
-  if(!(wa.end+slack>=wb.start&&wb.end+slack>=wa.start))return false;
-  // Same destination: by coordinates when both ends are known, by client
-  // otherwise (a manual row carries no toCoord, only who it was for).
-  const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
-    _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
-  if(near(a.toCoord,b.toCoord))return true;
-  if(a.client_id!=null&&b.client_id!=null&&String(a.client_id)===String(b.client_id))return true;
-  // A "Log a trip" row can carry NO client link and NO coordinates, only the
-  // destination's name (the owner's 2026-08-11 mid-drive trip did). The name
-  // plus an overlapping window for the same person is still one journey.
-  const names=m=>[m.to_name,m.client_name].map(s=>String(s||'').trim().toLowerCase()).filter(s=>s.length>2);
-  const na=names(a),nb=names(b);
-  if(na.length&&nb.length&&na.some(n=>nb.indexOf(n)>=0))return true;
-  return false;
-}
-// The same LEG closed twice. A re-delivered close carries the IDENTICAL
-// stored leg start (the same _geoDriveStartedAt value goes into both rows),
-// so exact equality is the discriminator, not a time window: two real legs
-// minutes apart to the same place must never read as one, and a window wide
-// enough to matter starts eating a crew's genuinely repeated runs. These are
-// duplicates even before either has measured, because identical endpoints can
-// only ever measure identical.
-function _mileSameLeg(a,b,heal){
-  if(!a||!b||!a.legKey||!b.legKey)return false;
-  // Two crew members can leave the same shop for the same job in the same
-  // minute: identical endpoints, identical clocks, two REAL drives.
-  if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
-  // Same deterministic key = same leg, however the rows arrived (two devices
-  // syncing the same drive land here).
-  if(a.legKey===b.legKey)return true;
-  const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
-    _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
-  if(!near(a.fromCoord,b.fromCoord)||!near(a.toCoord,b.toCoord))return false;
-  const sa=Date.parse(a.startedIso||''),sb=Date.parse(b.startedIso||'');
-  if(!sa||!sb)return false;
-  if(sa===sb)return true;
-  // HEAL (boot only): same endpoints and OVERLAPPING clocks are one drive,
-  // because nobody can start the same journey again while still finishing it.
-  // The owner's replay pair carried starts seconds apart (the two closes read
-  // the leg start from different state variables), so exact equality alone
-  // left them standing. This stays out of the live sweep because CI fixtures
-  // fabricate overlapping clocks for legs that are deliberately distinct;
-  // boot-time in a test runs before any fixture exists.
-  if(heal){
-    const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
-    if(wa.end&&wb.end&&wa.end>=wb.start&&wb.end>=wa.start)return true;
-  }
-  return false;
-}
-// Which of two same-journey rows survives. The AUTOMATIC row is the source
-// of truth whenever one exists (owner rule 2026-08-11: "the background
-// running one should always be the source of truth"): it ran geocode to
-// geocode over the whole journey and Apple measured it, while a manual entry
-// is a number typed from memory, so distance never arbitrates BETWEEN kinds.
-// Within the same kind: longest measured wins, then the EARLIEST close, since
-// a re-delivered leg is stamped with the replay's clock and the earlier row
-// is the contemporaneous one.
-function _mileTripWinner(a,b){
-  if(!!a.legKey!==!!b.legKey)return a.legKey?a:b;
-  // A CORRECTED row beats the orphan it replaced, before distance is ever
-  // compared (owner 2026-08-14: the library leg survived as "Stop" while its
-  // own replacement was deleted). When a personal stop collapses, the app
-  // writes a new row measured from the last real endpoint and carrying the
-  // breadcrumb; the original inbound row is the stale half of that same
-  // journey. "Longest wins" is exactly backwards there, because the orphan is
-  // longer BY the detour: keeping it re-inflates the miles the collapse just
-  // removed. Breadcrumb first, then a named destination over a bare "Stop",
-  // and only then the distance rule for the cases those cannot separate.
-  const ap=!!(a.passedThrough&&a.passedThrough.stop),bp=!!(b.passedThrough&&b.passedThrough.stop);
-  if(ap!==bp)return ap?a:b;
-  const aStop=String(a.to_name||'').trim()==='Stop',bStop=String(b.to_name||'').trim()==='Stop';
-  if(aStop!==bStop)return aStop?b:a;
-  const am=a.miles>0,bm=b.miles>0;
-  if(am&&bm&&Math.abs(a.miles-b.miles)>0.05)return a.miles>b.miles?a:b;
-  if(am!==bm)return am?a:b;
-  return (Date.parse(a.loggedAt||'')||0)<=(Date.parse(b.loggedAt||'')||0)?a:b;
-}
-function _mileDedupTrips(heal){
-  if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
-  const drop=new Set();
-  for(let i=0;i<mileage.length;i++){
-    const a=mileage[i];if(!a||drop.has(a))continue;
-    for(let j=i+1;j<mileage.length;j++){
-      const b=mileage[j];if(!b||drop.has(b))continue;
-      const twin=_mileSameLeg(a,b,heal);
-      if(!twin&&!_mileSameJourney(a,b))continue;
-      // A row still awaiting its measurement is only ever dropped as a twin of
-      // another auto row (identical endpoints, identical eventual answer).
-      // Journey-level dedup waits until both have numbers: the sweep runs
-      // again after every fill, so nothing is decided on a zero.
-      //
-      // ONE-WAY exception (day-simulator fuzzer find, 2026-08-13): a MEASURED
-      // automatic row absorbs an UNMEASURED manual one of the same journey
-      // now rather than never. A manual trip whose From was left blank (the
-      // realistic mid-drive tap) can never be measured, there is no origin to
-      // route from, so waiting for its number left it as a permanent 0-mile
-      // duplicate. Deleting it early loses nothing: the winner rule hands the
-      // journey to the automatic row whatever the numbers say. The reverse
-      // stays deferred, a pending AUTO row must prove it can measure before
-      // it may eat the only real number in the pair.
-      if(!twin&&!(a.miles>0&&b.miles>0)){
-        const autoMeasured=(a.legKey&&a.miles>0&&!b.legKey)||(b.legKey&&b.miles>0&&!a.legKey);
-        if(!autoMeasured)continue;
-      }
-      const loser=_mileTripWinner(a,b)===a?b:a;
-      drop.add(loser);
-      if(loser===a)break;   // a is gone, stop comparing against it
-    }
-  }
-  if(!drop.size)return 0;
-  for(const m of drop){
-    const i=mileage.indexOf(m);if(i>=0)mileage.splice(i,1);
-    // The splice alone never outlives the next cloud reload: the twin comes
-    // back from the server before any save sweeps it away, so on a device
-    // that loads more often than it saves, the pair resurrects forever
-    // (owner audit 2026-08-24: the 8/21 morning leg pair still live in the
-    // cloud days after every boot's heal pass "removed" it locally).
-    // Register the drop as a REAL deletion, the same tombstone + direct
-    // cloud delete every explicit delete path uses (_devHardPurge, §7.3).
-    if(m&&m.id!=null){
-      if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
-      try{
-        const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
-        if(window._supa&&uid)_tdSoftDelete('td_mileage',m.id,{userCol:'user_id',userVal:uid});
-      }catch(_e){}
-    }
-  }
-  if(typeof saveAll==='function')saveAll();
-  if(document.getElementById('mil-table'))renderAllMileage();
-  if(typeof renderDash==='function')renderDash();
-  return drop.size;
-}
-
-// ── Automatic trip, written by the geofence when a drive leg closes ──────────
-// Called from _geoAutoMileage (js/geo-track.js), which owns the decision of
-// WHETHER to log (the vehicle rule, the commute guard). This owns only HOW.
-//
-// Both endpoints arrive as geocodes, so the distance question is just "what does
-// MapKit say between these two points" (owner call 2026-08-01). Per IRS Pub 463
-// a per-trip odometer reading is not required; a timestamped, automatically
-// produced GPS log is accepted, and in practice is stronger evidence than paper
-// because it is contemporaneous by construction.
-//
-// Saves at zero miles FIRST and measures after. Arriving somewhere with no
-// signal is the normal case on a rural site, and the trip has to survive it.
-function autoLogDriveTrip(opts){
-  opts=opts||{};
-  const {from,to,legKey,startedIso}=opts;
-  // Validated HERE, not left to the caller. _geoAutoMileage checks the same
-  // thing, but this is a global entry point and a trip with no endpoints would
-  // still write a row and then hand undefined coordinates to the router: either
-  // a thrown error or, worse, a distance nobody can reproduce. No endpoints, no
-  // trip, whoever is calling.
-  if(!from||!to||!legKey)return null;
-  if(from.lat==null||from.lng==null||to.lat==null||to.lng==null)return null;
-  // Idempotent on the leg key: the drive leg and this trip carry the same one,
-  // so a retried or replayed leg can never bill the same miles twice.
-  if(mileage.some(m=>m.legKey===legKey))return null;
-  // ONE DRIVE, ONE ROW, and the AUTOMATIC one is the row worth keeping. It runs
-  // geocode to geocode over the whole journey and Apple measures it; a manual
-  // entry is a number typed from memory over however much of the drive they
-  // remembered to tap through. So this always writes, and End Drive is where the
-  // duplicate is resolved (saveEndDriveModal), because that is the only moment
-  // both rows exist however the tap was timed.
-  //
-  // This used to suppress the automatic row whenever a manual drive was running,
-  // which was backwards for the case the owner asked about (2026-08-02): tapping
-  // Drive MID-drive would have thrown away the longer, measured record and kept
-  // the partial hand-typed one.
-  const veh=_autoTripVehicle();
-  // dateKey, not a slice of the ISO string. An ISO timestamp is UTC, so a 7pm
-  // supply run in Central time slices to TOMORROW and lands the deduction in the
-  // wrong day, and at New Year the wrong TAX YEAR.
-  const date=startedIso?dateKey(new Date(startedIso)):todayKey();
-  const rec={
-    id:_newId(),date,loggedAt:new Date().toISOString(),
-    vehicle:veh?(veh.name||''):'',vehicleId:veh?veh.id:undefined,
-    from:from.addr||from.name||'',from_name:from.name||'',
-    to:to.addr||to.name||'',to_name:to.name||'',
-    fromCoord:{lat:from.lat,lng:from.lng},toCoord:{lat:to.lat,lng:to.lng},
-    start:0,end:0,miles:0,
-    purpose:_autoTripPurpose(to),
-    client_id:to.clientId||null,
-    client_name:to.clientId&&typeof getClientById==='function'?((getClientById(to.clientId)||{}).name||''):'',
-    notes:'',gps:true,legKey,
-    // Wheel time for the leg (owner ask 2026-08-07: the log should say how
-    // long the drive took, not just how far). Absent on stale legs, where no
-    // duration was observed, and on manual rows, where none was measured.
-    mins:(opts.mins>0?Math.round(opts.mins):undefined),
-    // Straight-line GPS tally for the leg, the floor the route measurement
-    // must beat: a forced detour drives real miles MapKit's ideal route never
-    // sees. Absent on stale legs and collapsed-detour legs (geo-track.js owns
-    // that judgment).
-    gpsMiles:(opts.observedMiles>0?opts.observedMiles:undefined),
-    // The trip's real clock: startedIso already exists below (End Drive needs
-    // it), endedIso is the verified arrival. Both absent on stale legs.
-    endedIso:opts.endedIso||undefined,
-    // The employee's own car. Owed to THEM, never the owner's deduction, and
-    // deductibleTrips is what enforces that everywhere it matters.
-    reimbursable:(opts.reimbursable?true:undefined),
-    // Nobody said what they were in. Kept off BOTH money totals until they do.
-    vehicleUnknown:(opts.vehicleUnknown?true:undefined),
-    // WHEN THE LEG BEGAN, not just when it was written. loggedAt is the arrival,
-    // so on its own it cannot say whether this journey was already under way
-    // when somebody tapped Drive, which is exactly what End Drive has to know.
-    startedIso:startedIso||undefined,
-    // Carried from the origin descriptor: this leg replaced a personal stop that
-    // was passed through, and this is what it takes to put that stop back if a
-    // receipt turns up for it later.
-    passedThrough:(from.passedThrough||undefined),
-    created_at:new Date().toISOString(),calc_method:'pending_auto'
-  };
-  if(_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser){
-    rec.logged_by_id=_supaUser.id;
-    rec.logged_by_name=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||_supaUser.email;
-  }
-  // RECEIPT-GATED SUPPLY RUNS (owner design 2026-08-17). The destination used
-  // to be proof enough: any leg touching a 'supply' place logged as business
-  // unconditionally, which is exactly how a Sunday personal Home Depot run
-  // became two business legs in the IRS log. Now the RECEIPT is the proof:
-  // legs touching a supply place are written HELD (pendingReceipt), excluded
-  // from every deduction total (deductibleTrips), until the dashboard card
-  // resolves the run. A scanned receipt commits mileage and expense in one
-  // motion; Personal keeps the rows but off the books (the odometer story
-  // stays unbroken, which is what a CPA wants); business-without-receipt
-  // commits with a noReceipt flag after the honest disclaimer. Unanswered
-  // runs go personal after 7 days (_supplyRunSweep): the log can never carry
-  // an unproven store run.
-  const _supplyStop=(to&&to.kind==='supply')?to:((from&&from.kind==='supply')?from:null);
-  if(_supplyStop){
-    rec.pendingReceipt=true;
-    rec.supplyRunKey=date+'|'+String(_supplyStop.name||_supplyStop.addr||'store');
-  }
-  mileage.unshift(rec);
-  saveAll();
-  // The endpoints THIS measurement is for, captured before the await. The row can
-  // be re-origined while the route call is in flight (_autoNameStopTrip restores
-  // a passed-through stop's true origin and re-measures from it), and identity on
-  // the coordinate objects is what tells us that happened: _reoriginTrip assigns
-  // a NEW fromCoord object, so a changed reference means this result is stale.
-  const _fc=rec.fromCoord,_tc=rec.toCoord;
-  (async()=>{
-    try{
-      const{miles,mins:routeMins}=await _routeDistance(_fc,_tc);
-      const saved=mileage.find(m=>m.id===rec.id);
-      if(!saved)return;
-      // Stale: something re-pointed this leg while we were measuring. Writing now
-      // would stamp the distance from the WRONG origin as auto_route, and the
-      // correcting call would then bail on seeing a settled row, so the wrong
-      // number would win. Whoever re-pointed it owns the answer.
-      if(saved.fromCoord!==_fc||saved.toCoord!==_tc)return;
-      // A router that answers with null/NaN/0 has not measured anything. Writing
-      // it stamps the row 'auto_route', which takes it out of the sweep's reach
-      // FOREVER: a silent zero-mile trip that still prints on a tax export as a
-      // real one. Staying pending is the honest state and the recoverable one.
-      if(!(miles>0))return;
-      // The route is the answer UNLESS the wheels observably covered more (a
-      // forced detour): then the observed tally wins, capped at 4x the route
-      // so a GPS blowup can never invent a day of driving (owner rule
-      // 2026-08-11). The tally undercounts curves, so this only ever recovers
-      // miles that were provably driven.
-      //
-      // Before the floor collects, the motion coprocessor gets the last word:
-      // a walk inside the leg means an errand the time-dwell rule missed (a
-      // pickup faster than 2.5 minutes), and an errand's extra driving is
-      // never a forced detour, so the direct route saves. Walking can only
-      // ever DISQUALIFY the floor, absence never widens it: a drive-thru
-      // errand shows no walk and stays whatever the time rule said.
-      let best=miles;
-      if(saved.gpsMiles>0&&saved.gpsMiles>miles&&saved.gpsMiles<=miles*4){
-        const walked=await _mileTapeHadPause(saved.startedIso,saved.endedIso);
-        if(walked===true)saved.pausedLeg=true;
-        else best=saved.gpsMiles;
-      }
-      saved.miles=Math.round(best*10)/10;saved.calc_method='auto_route';
-      _mileFixLegClock(saved,routeMins);
-      // Now that this trip has its number, settle any same-journey duplicates.
-      _mileDedupTrips();
-      saveAll();
-      if(document.getElementById('mil-table'))renderAllMileage();
-      if(typeof renderDash==='function')renderDash();
-    }catch(_e){}   // stays pending_auto, _retryPendingTrips sweeps it later
-  })();
-  // A leg that ended nowhere the app recognises is only anonymous until we ask.
-  if(to.kind==='stop')_autoNameStopTrip(rec,to);
-  return rec;
 }
 // ── Who were they actually parked at ─────────────────────────────────────────
 // A leg ending at an unrecognised stop writes "Stop" for the destination, and a
@@ -1765,195 +1086,6 @@ function _bizReceiptForStop(o){
     }
     return e;
   }catch(_e){return null;}
-}
-async function _autoNameStopTrip(rec,to){
-  try{
-    if(typeof _poiAt!=='function')return;
-    // A stop the geofence already recognised as the declared home office keeps
-    // that name. Asking Apple who is at a residential pin gets the business
-    // across the street, and "Home Office" is the answer that makes the first
-    // and last legs of the day deductible in the first place.
-    if(to.likelyHome)return;
-    const poi=await _poiAt({lat:to.lat,lng:to.lng});
-    if(!poi||(!poi.name&&!poi.addr))return;
-    // Stamp the DESCRIPTOR first, not just this row. The very same object is the
-    // ORIGIN of the leg out of this stop (geo-track.js _geoCloseStop assigns it
-    // to _geoLegOrigin), so answering once names both ends of the pair. Naming
-    // only the arrival left the log reading "... -> The Home Depot" followed by
-    // "Stop -> ...", which is the same stop described two ways.
-    if(poi.name)to.name=poi.name;
-    if(poi.addr)to.addr=poi.addr;
-    // A restaurant is only personal when nobody bought anything for the business
-    // there. Buying the crew lunch is a work errand and the drive counts in full
-    // (owner's CPA, 2026-08-02), and the receipt that proves it is one the
-    // contractor already has to keep, so this costs them no extra taps. No
-    // receipt at that pin today, it was their own lunch.
-    // The LEG's date, not today's. A stop entered at 11:50pm and left at 12:05am
-    // closes on the following calendar day, so asking for today's receipts
-    // missed one dated to the drive. The later sweep already used the trip's own
-    // date and would have healed it on the next load; this makes the first
-    // answer right instead of the second.
-    const legDay=(rec&&rec.date)||todayKey();
-    // ── WHAT MAKES AN UNSCHEDULED STOP BUSINESS ──────────────────────────────
-    // Exactly two things, and neither of them is a guess about what the shop
-    // sells (owner 2026-08-10: "the only places that could return as a business
-    // expense is if that place is explicitly listed under their places as a
-    // supply house"):
-    //
-    //   1. It is one of THEIR OWN saved places, with a kind that is business
-    //      (shop, supply house, home office, business meeting). placeAt matches
-    //      on the pin, inside that place's own fence.
-    //   2. There is a receipt at that pin on the leg's day. The contractor
-    //      spending money there IS the claim, and it is evidence they already
-    //      have to keep.
-    //
-    // Everything else comes off the log. This replaced a name-matching guess at
-    // which shops are supply houses, which was mine and was wrong: whether a
-    // Target run is a supply run is the contractor's call, not a regex's. An
-    // unsaved stop is offered as a place to save (js/places.js repeat-stop
-    // suggestions), and saving it as a supply house makes every future stop
-    // there count.
-    //
-    // Still only NAMED stops: an unnamed one is the geofence layer's business
-    // (_geoCollapseDetours), and this must not judge it twice.
-    const savedPlace=(typeof placeAt==='function')?placeAt({lat:to.lat,lon:to.lng}):null;
-    const savedIsBusiness=!!(savedPlace&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind]);
-    const hasReceipt=!!_bizReceiptForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay});
-    const personal=!!poi.name&&!savedIsBusiness&&!hasReceipt;
-    // And patch a leg out of here that was ALREADY written. Which of the two
-    // landed first depends on how long Apple took against how long they were
-    // parked, and a record must not depend on that race.
-    mileage.forEach(m=>{
-      if(!m.gps||!m.fromCoord||m.from_name!=='Stop')return;
-      if(Math.abs(m.fromCoord.lat-to.lat)>1e-5||Math.abs(m.fromCoord.lng-to.lng)>1e-5)return;
-      if(poi.name)m.from_name=poi.name;
-      if(poi.addr)m.from=poi.addr;
-    });
-    const saved=mileage.find(m=>m.id===rec.id);
-    if(!saved){saveAll();return;}
-    if(personal){
-      // A detour, not a destination. The leg IN comes back out of the log, and
-      // the leg OUT is measured from where they were before they stopped, so
-      // one supply-house-to-job-site trip stays one trip at its direct distance
-      // instead of becoming two legs whose total depends on where they chose to
-      // eat. Their own Topeka day: the restaurant sat four doors from the job,
-      // so the two-leg version billed 0.7 miles for a 6.5 mile trip.
-      const i=mileage.indexOf(saved);
-      const dropped=i>=0?mileage.splice(i,1)[0]:null;
-      const back=to.prevOrigin;
-      // Nothing to pass through to (the day began at this stop): it stays the
-      // origin, because a leg with no start is worse than one starting at lunch.
-      if(back&&back.lat!=null){
-        // The breadcrumb that makes this reversible. Receipts do not get done at
-        // the counter, they get done in the truck at 5pm or at the kitchen table
-        // on Sunday, and by then this trip is already recorded as a detour. The
-        // dropped leg rides along on whatever row replaces it, so the day can be
-        // rebuilt exactly when the receipt finally lands (owner, 2026-08-02).
-        const crumb={stop:{lat:to.lat,lng:to.lng,name:poi.name,addr:poi.addr||'',kind:'stop'},
-                     day:(dropped&&dropped.date)||legDay,leg:dropped,origin:back};
-        back.passedThrough=crumb;
-        const restored=(typeof _geoPassThroughStop==='function')&&_geoPassThroughStop(to);
-        // Not restored means they already reached the next fence and that leg
-        // was measured from here, so it is that row that needs re-pointing.
-        if(!restored)mileage.forEach(m=>{
-          if(!m.gps||!m.fromCoord)return;
-          if(Math.abs(m.fromCoord.lat-to.lat)>1e-5||Math.abs(m.fromCoord.lng-to.lng)>1e-5)return;
-          m.passedThrough=crumb;
-          _reoriginTrip(m,back);
-        });
-      }
-    }else if(!poi.name){
-      // Apple knows the address but not a tenant. The stop stays "Stop", which
-      // is honest, and the row gains the street address, which is what makes it
-      // readable a year later.
-      saved.to=poi.addr;
-    }else{
-      // Name and address both, the shape an IRS log wants: WHO they went to,
-      // and WHERE that is. `to_name` is what reads on the row, `to` is the
-      // address column the manual log already uses for the same thing.
-      saved.to_name=poi.name;
-      saved.to=poi.addr||poi.name;
-      // The saved place's own kind is the truth; the category guess is only the
-      // fallback for the receipt-without-a-saved-place case.
-      saved.purpose=_autoTripPurpose({kind:(savedPlace&&savedPlace.kind)||_poiPlaceKind(poi.category)});
-    }
-    saveAll();
-    if(document.getElementById('mil-table'))renderAllMileage();
-    if(typeof renderDash==='function')renderDash();
-  }catch(_e){}
-}
-// ── The receipt that turns up later ──────────────────────────────────────────
-// A stop is judged the moment the truck pulls out, because that is when the leg
-// has to be written. But receipts are not done at the counter. They are done in
-// the truck at the end of the day, or at the kitchen table on Sunday, and by
-// then the trip is already on the log as a detour with the crew's lunch run
-// billed as a personal errand (owner, 2026-08-02).
-//
-// So every pass-through leaves the dropped leg attached to the row that replaced
-// it, and this puts the day back the moment the receipt appears. Idempotent: the
-// restored leg carries its original leg key, which autoLogDriveTrip refuses to
-// duplicate, and the crumb is cleared once it is spent.
-//
-// Runs on every expense save and once on load, because the receipt may have been
-// entered on a different device.
-function reviewDetourReceipts(){
-  if(typeof mileage==='undefined'||typeof expenseForStop!=='function')return 0;
-  let n=0;
-  mileage.filter(m=>m&&m.passedThrough&&m.passedThrough.stop).forEach(m=>{
-    const c=m.passedThrough,s=c.stop;
-    // Same rule as the collapse itself: a fuel or service receipt on a
-    // mileage-method vehicle never resurrects a detour, or the gallon would
-    // deduct twice.
-    if(!_bizReceiptForStop({lat:s.lat,lng:s.lng,name:s.name,day:c.day}))return;
-    // It WAS for the business after all. The leg in goes back, exactly as it was
-    // written, and this leg goes back to starting at the stop.
-    if(c.leg&&!mileage.some(x=>x.legKey===c.leg.legKey)){
-      const back=Object.assign({},c.leg);
-      back.to_name=s.name;back.to=s.addr||s.name;
-      back.purpose=_autoTripPurpose({kind:'supply'});
-      mileage.unshift(back);
-      _reoriginTrip(back,c.origin);
-    }
-    delete m.passedThrough;
-    _reoriginTrip(m,s);
-    n++;
-  });
-  if(!n)return 0;
-  saveAll();
-  if(document.getElementById('mil-table'))renderAllMileage();
-  if(typeof renderDash==='function')renderDash();
-  return n;
-}
-// Re-point a trip that was already written from the wrong end, and re-measure
-// it. Only ever used to undo a personal stop: the row was measured from the
-// restaurant and has to be measured from the business point before it instead.
-// Written back to pending first, so a sweep that races this cannot publish the
-// old distance against the new origin.
-function _reoriginTrip(m,from){
-  if(!m||!from||from.lat==null)return;
-  m.from=from.addr||from.name||'';
-  m.from_name=from.name||'';
-  // A re-pointed leg spans a journey the GPS tally never watched as one piece
-  // (and may include a personal stop's driving): the observed-miles floor no
-  // longer applies, only the direct route does.
-  delete m.gpsMiles;
-  const fc=m.fromCoord={lat:from.lat,lng:from.lng};
-  const tc=m.toCoord;
-  m.miles=0;m.calc_method='pending_auto';
-  (async()=>{
-    try{
-      const{miles}=await _routeDistance(fc,tc);
-      if(m.calc_method!=='pending_auto')return;   // something else settled it
-      // A LATER correction re-pointed this leg again while we measured. Same rule
-      // as everywhere else that measures: the most recent origin owns the answer.
-      if(m.fromCoord!==fc||m.toCoord!==tc)return;
-      if(!(miles>0))return;     // not a measurement: leave it pending for the sweep
-      m.miles=Math.round(miles*10)/10;m.calc_method='auto_route';
-      saveAll();
-      if(document.getElementById('mil-table'))renderAllMileage();
-      if(typeof renderDash==='function')renderDash();
-    }catch(_e){}
-  })();
 }
 // ── Two pots of money, and they must never touch ─────────────────────────────
 // The owner's standard-mileage deduction is miles driven in the OWNER'S
@@ -2021,21 +1153,24 @@ function pendingSupplyStores(){
     return {name,visits,count:visits.length,latestAt};
   }).sort((a,b)=>(b.latestAt||'').localeCompare(a.latestAt||''));
 }
-// The shared delete path for held rows (owner 2026-08-17: Personal clears
-// the trip from the log entirely, it never really belonged in the business
-// account, so unlike No receipt/Scan receipt it is not kept-but-marked).
-// Routed through _userDelete so every removed id is recorded as an EXPLICIT
-// delete (js/cloud.js), which is what lets the sweep remove it on every
-// other device instead of the sync engine resurrecting it.
-function _supplyRunDeleteByKeys(keys){
+// The shared "off the books" path for held rows. AMENDED 2026-09-05: it used
+// to DELETE (owner 2026-08-17, "Personal clears the trip from the log
+// entirely"), and that was right when the engine wrote the leg once. A held
+// leg is a DERIVED leg now, and the deriver owns it: the next rebuild of that
+// day re-derives the same journey id, geo_replace_day clears the tombstone
+// and re-inserts it, and the run is held again as if nobody ever answered.
+// A delete is not a stable answer to a row the deriver will write again.
+// personal:true is. deductibleTrips/reimbursableTrips already keep personal
+// rows out of every total (the "unbroken odometer story" note above), the
+// carry-across in js/geo-track.js and geo_replace_day both preserve the mark
+// and drop the hold, so the answer sticks through every rebuild on every
+// device. The toast still says "kept off the books", which is what happens.
+function _supplyRunSettleByKeys(keys){
   let n=0;
-  const del=()=>{
-    mileage=mileage.filter(m=>{
-      if(m&&m.pendingReceipt&&m.supplyRunKey&&keys.has(m.supplyRunKey)){n++;return false;}
-      return true;
-    });
-  };
-  if(typeof _userDelete==='function')_userDelete(del);else del();
+  (mileage||[]).forEach(m=>{
+    if(!m||!m.pendingReceipt||!m.supplyRunKey||!keys.has(m.supplyRunKey))return;
+    delete m.pendingReceipt;m.personal=true;n++;
+  });
   return n;
 }
 // The three doors. 'personal' deletes the held rows outright. 'noreceipt'
@@ -2044,8 +1179,8 @@ function _supplyRunDeleteByKeys(keys){
 // proved it.
 function resolveSupplyRun(key,mode,expenseId){
   if(mode==='personal'){
-    const n=_supplyRunDeleteByKeys(new Set([key]));
-    if(n){saveAll();typeof renderDash==='function'&&renderDash();}
+    const n=_supplyRunSettleByKeys(new Set([key]));
+    if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}typeof renderDash==='function'&&renderDash();}
     return n;
   }
   let n=0;
@@ -2055,11 +1190,11 @@ function resolveSupplyRun(key,mode,expenseId){
     if(mode==='noreceipt'){m.noReceipt=true;}
     else if(mode==='receipt'&&expenseId!=null){m.receiptExpenseId=expenseId;}
   });
-  if(n){saveAll();typeof renderDash==='function'&&renderDash();}
+  if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}typeof renderDash==='function'&&renderDash();}
   return n;
 }
-// Unanswered for a week: it disappears (owner 2026-08-17), same delete path
-// as tapping Personal by hand. No renderDash here on purpose, the sweep runs
+// Unanswered for a week: off the books (owner 2026-08-17), same path as
+// tapping Personal by hand. No renderDash here on purpose, the sweep runs
 // INSIDE the dashboard's own render pass (_renderDashSupplyHold), and calling
 // back into renderDash from there would re-enter it mid-paint.
 function _supplyRunSweep(){
@@ -2070,8 +1205,8 @@ function _supplyRunSweep(){
     const t=Date.parse((m.date||'')+'T12:00:00');
     if(isFinite(t)&&t<cutoff)keys.add(m.supplyRunKey);
   });
-  const n=_supplyRunDeleteByKeys(keys);
-  if(n)saveAll();
+  const n=_supplyRunSettleByKeys(keys);
+  if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}}
   return n;
 }
 function _supplyRunPersonal(k){
@@ -2395,33 +1530,41 @@ function _poiPlaceKind(category){
   if(/Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(c))return 'other';
   return 'supply';
 }
-async function _routeDistance(fromCoords,toCoords){
-  // MapKit Directions, primary
+// via: optional waypoints ({lat,lng}) the route must pass through, in order.
+// The deriver hands it the breadcrumbs of a thin trace so the router
+// measures the road the truck took, not the fastest one it would suggest.
+async function _routeDistance(fromCoords,toCoords,via){
+  const stops=[fromCoords].concat(Array.isArray(via)?via.filter(v=>v&&isFinite(v.lat)&&isFinite(v.lng)):[],[toCoords]);
+  // MapKit Directions, primary. MapKit JS routes one origin to one
+  // destination, so a route with waypoints is the sum of its segments.
   if(_mapkitReady){
     try{
-      return await new Promise((resolve,reject)=>{
+      const seg=(a,b)=>new Promise((resolve,reject)=>{
         const d=new mapkit.Directions();
         d.route({
-          origin:new mapkit.Coordinate(fromCoords.lat,fromCoords.lng),
-          destination:new mapkit.Coordinate(toCoords.lat,toCoords.lng),
+          origin:new mapkit.Coordinate(a.lat,a.lng),
+          destination:new mapkit.Coordinate(b.lat,b.lng),
           transportType:mapkit.Directions.Transport.Automobile,
           requestsAlternateRoutes:false
         },(err,data)=>{
           if(err||!data?.routes?.[0]){reject(new Error('mapkit'));return;}
           const r=data.routes[0];
-          resolve({miles:Math.round(r.distance/1609.344*10)/10,mins:Math.round(r.expectedTravelTime/60)});
+          resolve({m:Number(r.distance)||0,s:Number(r.expectedTravelTime)||0});
         });
       });
+      const parts=await Promise.all(stops.slice(1).map((b,i)=>seg(stops[i],b)));
+      const m=parts.reduce((t,p)=>t+p.m,0),s=parts.reduce((t,p)=>t+p.s,0);
+      return {miles:Math.round(m/1609.344*10)/10,mins:Math.round(s/60)};
     }catch(e){}
   }
   // Fallback: Valhalla + OSRM in parallel
-  const body={locations:[{lon:fromCoords.lng,lat:fromCoords.lat},{lon:toCoords.lng,lat:toCoords.lat}],costing:'auto',directions_options:{units:'miles'}};
+  const body={locations:stops.map((c,i)=>(i===0||i===stops.length-1)?{lon:c.lng,lat:c.lat}:{lon:c.lng,lat:c.lat,type:'through'}),costing:'auto',directions_options:{units:'miles'}};
   const valhallaP=fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)})
     .then(r=>r.json()).then(d=>{
       if(d?.trip)return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
       throw new Error('valhalla');
     });
-  const osrmP=fetch(`https://router.project-osrm.org/route/v1/driving/${fromCoords.lng},${fromCoords.lat};${toCoords.lng},${toCoords.lat}?overview=false`,{signal:AbortSignal.timeout(10000)})
+  const osrmP=fetch(`https://router.project-osrm.org/route/v1/driving/${stops.map(c=>c.lng+','+c.lat).join(';')}?overview=false`,{signal:AbortSignal.timeout(10000)})
     .then(r=>r.json()).then(d=>{
       if(d?.code==='Ok'&&d.routes?.[0])return{miles:Math.round(d.routes[0].distance/1609.344*10)/10,mins:Math.round(d.routes[0].duration/60)};
       throw new Error('osrm');
@@ -3411,7 +2554,7 @@ function _milRenderClassifyCard(unclassified){
       '</div>'+
       '<div class="mil-classify-actions">'+
         '<button class="mil-class-btn" onclick="_milSkipClassify('+next.id+')">Skip</button>'+
-        '<button class="mil-class-btn mil-class-business" onclick="openMileageEdit('+next.id+')">'+svgIcon('💼',{size:12})+' Add purpose →</button>'+
+        '<button class="mil-class-btn mil-class-business" onclick="openMileageEdit('+_milIdArg(next.id)+')">'+svgIcon('💼',{size:12})+' Add purpose →</button>'+
       '</div>'+
     '</div>';
 }
@@ -3423,6 +2566,11 @@ function _milSkipClassify(id){
   renderAllMileage();
 }
 
+// A row id inside an inline handler. Ids were numbers once; a derived leg's id
+// is its journey id (j-<uid8>-<base36>), and an unquoted one is a syntax error
+// the moment the button is tapped (owner 2026-09-02: "route is throwing this
+// error"). Quoted, and stripped to the characters an id can contain.
+function _milIdArg(id){return "'"+String(id==null?'':id).replace(/[^A-Za-z0-9_.-]/g,'')+"'";}
 function _milRenderTripList(shown,yr){
   const el=document.getElementById('mil-table');
   if(!el)return;
@@ -3509,11 +2657,11 @@ function _milRenderTripList(shown,yr){
       const metaTxt=[durTxt,clockLine].filter(Boolean).join(' · ');
       // Supply-run state, one small line under the numbers: held rows are
       // waiting on the dashboard receipt card; a no-receipt row shows how it
-      // resolved so the log reads honestly at a glance. Personal has no badge
-      // here because Personal deletes the row (owner 2026-08-17): it never
-      // reaches this list.
+      // resolved so the log reads honestly at a glance; a personal row stays
+      // in the log (2026-09-05, see _supplyRunSettleByKeys) and says so.
       const stateBadge=r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
-        :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>':'');
+        :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'
+        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>':''));
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
@@ -3536,10 +2684,16 @@ function _milRenderTripList(shown,yr){
           // group that centers independently on the card's Y axis via
           // .mil-trip-side's justify-content:center, unaffected by where
           // Edit sits (owner call, 2026-08-07).
-          '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
+          '<button class="mil-trip-edit" onclick="openMileageEdit('+_milIdArg(r.id)+')">Edit</button>'+
           '<div class="mil-trip-stats">'+
             (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
             (metaTxt?'<div class="mil-trip-meta">'+metaTxt+'</div>':'')+
+            // Only on a leg that actually has a track. A "Route" affordance on
+            // a row with nothing to draw is the dead button js/observability.js
+            // exists to catch (§13.1).
+            (Array.isArray(r.path)&&r.path.length>=2
+              ?'<button class="mil-trip-route" onclick="openMileageRoute('+_milIdArg(r.id)+')">'+svgIcon('🗺️',{size:10})+' Route</button>'
+              :'')+
             stateBadge+
           '</div>'+
         '</div>'+
@@ -3644,9 +2798,71 @@ function _togMileTrip(id){
 function toggleMileAddr(id){_togMileTrip(id);}// legacy alias
 function delMileage(id){_userDelete(()=>{mileage=mileage.filter(x=>x.id!==id);saveAll();_flushSaveNow();});if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
 function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();_flushSaveNow();}
+// ── THE ROUTE, ON A MAP (owner ask 2026-09-01) ──────────────────────────────
+// "then overlay that on a map and you get you're true mileage down to the
+// exact route." Built on the app's ONE map renderer (tdMapRender, js/places.js,
+// the same one the day map and the Places territory map go through, §7.3) in
+// the app's ONE modal shell (.zmodal-overlay / .zmodal), so this screen
+// inherits the MapKit instance, the licence gate, and the no-tiles fallback
+// plot for free rather than growing a second mapping approach.
+//
+// Fleet-shaped, so allowKit rides tdAppleHardware(): Apple's licence forbids
+// MapKit JS for asset tracking on non-Apple hardware, and a drawn crew route
+// is squarely that. On an Android phone or a Windows desktop the fallback plot
+// draws instead, which uses none of Apple's data.
+function openMileageRoute(id){
+  const r=(typeof mileage!=='undefined'?mileage:[]).find(x=>String(x.id)===String(id));
+  if(!r||!Array.isArray(r.path)||r.path.length<2)return;
+  document.getElementById('_mil-route-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_mil-route-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='520px';
+  const pts=[];
+  if(r.fromCoord&&r.fromCoord.lat!=null)pts.push({lat:+r.fromCoord.lat,lon:+r.fromCoord.lng,type:'start',label:r.from_name||r.from||'Start'});
+  if(r.toCoord&&r.toCoord.lat!=null)pts.push({lat:+r.toCoord.lat,lon:+r.toCoord.lng,type:'end',label:r.to_name||r.to||'End'});
+  // A row whose endpoints were never geocoded still has its track, and the
+  // track's own ends are the honest stand-in.
+  if(!pts.length){
+    pts.push({lat:+r.path[0][0],lon:+r.path[0][1],type:'start',label:'Start'});
+    pts.push({lat:+r.path[r.path.length-1][0],lon:+r.path[r.path.length-1][1],type:'end',label:'End'});
+  }
+  const _mi=(+r.miles||0).toFixed(1);
+  // Said plainly, because it is the difference between a picture and a claim:
+  // the drawn line is what the phone watched, the logged number is what the
+  // row carries, and where they differ the row's number is the one on the
+  // books. Nothing here rewrites it.
+  // "Traced", not "Watched" (owner 2026-09-01), and no point count: the number
+  // of GPS samples is how the line was built, not a fact about the drive, and
+  // it invited the wrong question. What matters is that the traced figure is a
+  // chain of straight lines between fixes and so always reads at or under the
+  // routed distance; the ONE thing worth acting on is when it reads OVER,
+  // which is the case _mileBestMiles already promotes.
+  const gps=(r.gpsMiles>0)?('Traced '+(+r.gpsMiles).toFixed(1)+' mi · '):'';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;line-height:1.25;margin-bottom:2px">Route driven</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+
+      escHtml((r.from_name||r.from||'Start'))+' → '+escHtml((r.to_name||r.to||'End'))+'</div>'+
+    '<div id="_mil-route-body" style="margin-bottom:10px"></div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:12px">'+
+      gps+'Logged '+_mi+' mi</div>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  try{
+    tdMapRender({
+      body:document.getElementById('_mil-route-body'),
+      pts,
+      path:r.path,
+      style:{start:{c:'#0E6B39',label:'Start',glyph:'A'},end:{c:'#dc2626',label:'End',glyph:'B'}},
+      st:tdMapState(),hostId:'_mil-route-canvas',height:300,
+      allowKit:(typeof tdAppleHardware==='function')?tdAppleHardware():false,
+    });
+  }catch(_e){}
+}
 function openMileageEdit(id){
-  const r=mileage.find(x=>x.id===id);if(!r)return;
-  openLogTripModal({editId:id,fromAddress:r.from||'',toAddress:r.to||'',purpose:r.purpose||'',clientId:r.client_id,clientName:r.client_name||'',vehicle:r.vehicle||'',date:r.date||'',notes:r.notes||'',miles:r.miles||0});
+  // Ids arrive quoted from the inline handler (_milIdArg); a numeric id still
+  // matches, and the row's own id (its real type) is what the edit carries.
+  const r=mileage.find(x=>String(x.id)===String(id));if(!r)return;
+  openLogTripModal({editId:r.id,fromAddress:r.from||'',toAddress:r.to||'',purpose:r.purpose||'',clientId:r.client_id,clientName:r.client_name||'',vehicle:r.vehicle||'',date:r.date||'',notes:r.notes||'',miles:r.miles||0});
 }
 function updateLoggedTrip(id){
   const r=mileage.find(x=>x.id===id);if(!r)return;

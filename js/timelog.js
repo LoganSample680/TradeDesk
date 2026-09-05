@@ -73,10 +73,45 @@ function _tlJobClientInfo(jobId){
 function _tlSourceLabel(source){
   const s=String(source||'');
   if(/^geofence/.test(s))return '';
-  if(/^drive/.test(s))return 'Driving'+(s.indexOf('rider')>=0?' (rider)':s.indexOf('personal')>=0?' (personal vehicle)':'');
+  // Rule 13's question, said as a question. Answered on the Home screen.
+  if(s==='client-held')return 'Working here? Answer on Home';
+  // "Drive time", "Shop time", "Loading time" (owner 2026-08-29): every badge
+  // on this table names a BLOCK OF TIME, so they all end in the same word. A
+  // bare gerund reads as a status the app is currently in ("Driving...") when
+  // the row is a finished, countable thing.
+  if(/^drive/.test(s))return 'Drive time'+(s.indexOf('rider')>=0?' (rider)':s.indexOf('personal')>=0?' (personal vehicle)':'');
+  // A home office is TWO different kinds of work and the log now says which.
+  // The words are the ones contractors actually use: Jobber ships "Office"
+  // for desk time, and loading the truck is how the trade forums and the
+  // prevailing-wage agreements name that block (nobody in the trades says
+  // "load-out", that is mining and logistics). Deliberately NOT "Shop": the
+  // Shop badge already means the yard on this same table.
+  // A client visit needs no word: the row already carries the person's name,
+  // which is more use than the label 'client' would be.
+  if(s==='client')return '';
+  // "Loading time", not "Loading" (owner 2026-08-29). The bare word means a
+  // spinner in every app anybody has ever used, so on a finished row it reads
+  // as the page still working rather than as the minutes he spent putting
+  // tools in the truck.
+  if(s==='place-load')return 'Loading time';
+  if(s==='place-office')return 'Office';
+  // Somebody's own address, so the rail stops calling a house a job site
+  // (owner 2026-09-03, on Jack's rail: "why is his own address showing as on
+  // site?"). It used to arrive as a bare 'place', the same bucket a supply
+  // house lands in, and the row had nothing left to say otherwise.
+  if(s==='place-home')return 'Home';
   if(s==='place')return '';
+  // A stop between two drives that no fence could name. The label states the
+  // fact and nothing more: the app knows he got out of the truck and knows
+  // for how long, and it does not know where.
+  if(s==='unsaved')return 'Address not saved';
   if(s==='manual')return 'GPS clock';
-  if(s==='stop')return 'Unpaid';
+  // "Unaccounted", not "Unpaid" (owner, 2026-09-01: "skip the paid versus
+  // unpaid stuff out"). The app does not know whether this gets paid and is
+  // not the thing that decides. It knows the time is not accounted for yet;
+  // lunch, a break and a business trip all start here and leave once somebody
+  // classifies them.
+  if(s==='stop')return 'Unaccounted';
   return s;
 }
 // Still-running entries, clocked in, never closed. Separate from the history
@@ -88,57 +123,22 @@ function _tlOpenEntries(){
   timeEntries.forEach(e=>{
     if(!e.open)return;
     const info=_tlJobClientInfo(e.job_id);
-    const elapsedMin=Math.max(0,Math.round((Date.now()-new Date(e.start_time).getTime())/60000));
+    const startMs=new Date(e.start_time).getTime();
+    const elapsedMin=Math.max(0,Math.round((Date.now()-startMs)/60000));
+    // clockIn(null,...) is a real button ("General time", js/jobs.js:98) and
+    // _tlJobClientInfo answers '-' for a job it cannot resolve. On this card
+    // that rendered as a lone dash where the client name goes, which reads as
+    // a broken row rather than as a clock with no job on it.
+    const general=e.job_id==null;
     rows.push({
       rawId:e.id,personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
-      personUid:e.logged_by_uid||null,clientName:info.clientName,addr:info.addr,jobName:info.jobName,
-      detail:e.scope_label||'',startTime:e.start_time,elapsedMin
+      personUid:e.logged_by_uid||null,
+      clientName:general?'General time':info.clientName,
+      addr:general?'':info.addr,jobName:general?'':info.jobName,
+      detail:e.scope_label||'',startTime:e.start_time,startMs:startMs>0?startMs:0,elapsedMin
     });
   });
   return rows.sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
-}
-// An unpaid stop only exists BETWEEN work (owner rule 2026-08-24): it earns a
-// line on the log only when the same person has a real location event, a job
-// or client geofence (live, gap, or reconciled), a saved place/supply house,
-// a manual clock record, or a shop session, both BEFORE it and AFTER it on
-// the same Central-time calendar day, AND at least one of those sides is a
-// job/place/manual event, never shop-to-shop alone. The owner's exact spec:
-// "at least two geofence events, one from shop, one at a job site or supply
-// house and back." Shop out, stop, shop back is an errand from the yard on a
-// day with no work in it, not a leg of a work trip (owner report 2026-08-24:
-// a no-work Saturday still showed an unpaid stop bracketed by two shop
-// sessions). A stop floating on its own, before the first fence of the day,
-// after the last one, or spanning midnight, is an overnight park or tracker
-// noise, and rendering those is what filled the log with random unpaid
-// lines (and, stretched by the disabled gap-absorb sweep, impossible 24h+
-// days). Display-level on purpose: nothing here mutates data, a
-// non-qualifying row simply never renders, so a later fence event landing
-// from another device can still promote it back into view on the next open.
-function _tlStopAnchored(arrMs,depMs,anchors){
-  if(!(arrMs>0&&depMs>=arrMs)||!Array.isArray(anchors))return false;
-  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
-  const day=dstr(new Date(arrMs));
-  if(day!==dstr(new Date(depMs)))return false;   // spans midnight: never shown
-  const SLACK=2*60000;   // kerb-edge timestamp rounding, same floor the merge gap used
-  // Overlap veto first, against EVERY anchor: one covering more than the
-  // edge slack of the stop means the person was provably on site (or at the
-  // shop) during it, so the "unpaid" row is a stretched artifact, not time
-  // between fences, whatever its edges look like.
-  for(const a of anchors){
-    if(a&&Math.min(a.dep,depMs)-Math.max(a.arr,arrMs)>SLACK)return false;
-  }
-  let before=false,after=false,workSide=false;
-  for(const a of anchors){
-    if(!a)continue;
-    const bOk=a.dep<=arrMs+SLACK&&dstr(new Date(a.dep))===day;
-    const aOk=a.arr>=depMs-SLACK&&dstr(new Date(a.arr))===day;
-    if(bOk)before=true;
-    if(aOk)after=true;
-    // a.shop marks a shop session; anything else (job fence, place, manual
-    // clock) is work, and at least one qualifying side must be work.
-    if((bOk||aOk)&&!a.shop)workSide=true;
-  }
-  return before&&after&&workSide;
 }
 // A day should read as one continuous span, not a list of islands (owner
 // report 2026-08-24, Fri 8/21: on site until 11:37, unpaid lunch starting
@@ -162,47 +162,417 @@ function _tlStopAnchored(arrMs,depMs,anchors){
 // (that is exactly how days grew past 24 hours). Anything bigger is left
 // visible. Display-only, nothing here writes.
 const _TL_GAP_ABSORB_MAX_MS=30*60000;
-// The motion history covering every shop session on screen, or null when
-// there is none to read. One query for the whole range rather than one per
-// session: the coprocessor keeps about a week and the answer is the same
-// tape either way.
-async function _tlShopTape(byUid){
-  try{
-    if(typeof _geoMotionTape!=='function')return null;
-    let lo=0,hi=0;
-    Object.keys(byUid||{}).forEach(uid=>(byUid[uid]||[]).forEach(e=>{
-      const a=Date.parse((e&&e.arrived_at)||'')||0,b=Date.parse((e&&e.departed_at)||'')||0;
-      if(a>0&&(!lo||a<lo))lo=a;
-      if(b>hi)hi=b;
-    }));
-    if(!(lo>0&&hi>lo))return null;
-    return await _geoMotionTape(lo,hi);
-  }catch(_e){return null;}
+// ── The day must be continuous (owner 2026-08-29) ──────────────────────────
+// "just want time in order from motion to drive, jacks house to Laurie's,
+// then show unaccounted for time in between, then arrival at Laurie's,
+// unaccounted for time in between, arrival at Laurie's then drive time home,
+// that ends the day."
+//
+// Nothing is merged and nothing is invented. What changes is that a hole
+// stops being INVISIBLE. Jack's 8/28 had 104 minutes between leaving Laurie's
+// at 12:14 and coming back at 13:58 that produced no row of any kind, so the
+// Time Log jumped straight from one visit to the next and the day silently
+// failed to add up. A reader could not tell that from a day with nothing in
+// between, which is the whole problem: a gap you cannot see is a gap nobody
+// questions.
+//
+// So every remaining hole between two rows becomes a row that says so. These
+// are DISPLAY rows: no id, never paid, never editable, never written back to
+// the server. They exist so the column adds up to the day.
+//
+// Small gaps are already absorbed into the unpaid row beside them
+// (_tlAbsorbGaps above, 30-minute ceiling) and never reach here. The floor
+// below is for what survives that: a two-minute seam between a drive and an
+// arrival is rounding, not a hole worth a line of its own.
+const _TL_UNACCOUNTED_MIN_MS=5*60000;
+// A sliver of clock between two tracked rows is rounding, not a job site.
+const _TL_SITE_MIN_MIN=5;
+// ONE PERSON, ONE BUCKET (owner 2026-08-30: "when I marked it as break unpaid
+// it kept adding a row").
+//
+// He was not double-tapping. His manual answers carry logged_by_uid null, the
+// way every owner-logged entry does, while his GPS rows carry his contractor
+// uid. Keyed on the raw value those are two different people, so the answer
+// landed in the 'owner' bucket, the hole was recomputed from the GPS bucket
+// alone, and it came back untouched every render. Tap, row written, hole
+// still there, tap again. Forever, and the same reason his original Add from
+// 08/29 never closed its own gap either.
+//
+// _tlEmpWeekAgg already had the rule (`r.personUid||cid`); this walk did not.
+// Same fold here, so a null-uid owner row and a contractor-uid GPS row are the
+// one person they actually are.
+// ── A hole is only a question inside a workday, and only for a while ───────
+//
+// Owner 2026-09-05: "how do we prevent unaccounted for time outright?" The
+// deriver closes what the tape can vouch for (js/geo-derive.js). The rules
+// here decide what is left worth ASKING about: the window, the age, and the
+// end of the day's real work.
+//
+// THE WINDOW. Time nobody claimed is not a question. A stretch at nine at
+// night, on a day whose work ended at five, is his evening: asking about it
+// is the app pretending the day never finished. So a hole is clipped to the
+// working day and only what survives is asked about.
+//
+// The window is the work hours on the account: the same setting rule 13
+// reads, so there is one answer in the app to "when is this person working."
+//
+// A CLOCK NEEDS NO HELP FROM THIS. A clock that covers a stretch leaves no
+// gap to find at all (the walk below is a high-water mark, and the clock is
+// one of the rows it walks), and after the clock is out _clockEnd already
+// refuses to ask. Widening the window by the clock was in the first cut of
+// this and was removed once it turned out never to change an answer.
+//
+// So the setting is what matters, and it is the honest place for it: a crew
+// on nights sets their hours once and their holes are asked about like
+// anybody else's. A day of the week nobody works has no window at all, and
+// asks nothing.
+const _TL_HOLE_ASK_DAYS=7;
+function _tlWorkWindow(dayRows){
+  const day=(Array.isArray(dayRows)?dayRows:[]).filter(r=>r&&r.startTime);
+  if(!day.length)return null;
+  const base=Date.parse(String(day[0].date||'')+'T00:00:00');
+  let a=null,b=null;
+  if(isFinite(base)){
+    const w=(typeof _geoWorkHours==='function')?_geoWorkHours():{start:'06:00',end:'20:00',days:[1,2,3,4,5,6]};
+    const hm=v=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(v||''));return m?(Number(m[1])*60+Number(m[2]))*60000:NaN;};
+    const s=hm(w.start),e=hm(w.end);
+    const dow=new Date(base).getDay();
+    const works=!Array.isArray(w.days)||w.days.indexOf(dow)>=0;
+    if(works&&isFinite(s)&&isFinite(e)&&e>s){a=base+s;b=base+e;}
+  }
+  return (a!=null&&b!=null&&b>a)?[a,b]:null;
 }
-function _tlAbsorbGaps(rows){
-  if(!Array.isArray(rows))return rows;
+function _tlFillUnaccounted(rows,cid){
+  if(!Array.isArray(rows)||!rows.length)return rows;
+  const who=r=>String((r&&r.personUid)||cid||'owner');
   const byDay={};
   rows.forEach(r=>{
     if(!r||!r.startTime||!r.endTime||!r.date)return;
     const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
-    if(!(a>0&&b>=a))return;
-    ((byDay[(r.personUid||'owner')+'|'+r.date])=byDay[(r.personUid||'owner')+'|'+r.date]||[]).push(r);
+    if(!(a>0&&b>a))return;
+    const k=who(r)+'|'+r.date;
+    (byDay[k]=byDay[k]||[]).push(r);
   });
+  const out=rows.slice();
   Object.keys(byDay).forEach(k=>{
     const day=byDay[k].sort((x,y)=>Date.parse(x.startTime)-Date.parse(y.startTime));
+    // NO QUESTIONS AFTER HE CLOCKED OUT (owner 2026-09-04, on his 31 August
+    // rail: two "What was this time?" rows sitting at 3:45pm and 5:10pm, after
+    // a 3:45 clock-out). The gap row exists to ask about time the day has a
+    // claim on. Once the clock is out the day has no claim, so there is
+    // nothing to ask: the evening is his. A day with no clock at all keeps
+    // every gap, because then nothing said the day was over.
+    const _clockEnd=day.reduce((mx,r)=>(r&&r.source==='manual'&&r.endTime)
+      ? Math.max(mx,Date.parse(r.endTime)||0) : mx,0);
+    // The workday this day's holes are clipped to, and whether anyone is
+    // still going to answer one. A hole older than a week is nobody's memory
+    // any more: it already pays nothing, so leaving it on the rail forever is
+    // noise and nothing else. It stops being asked; no row is written and
+    // nothing is decided on anybody's behalf.
+    // AND NOTHING AFTER THE LAST REAL WORK (owner 2026-09-05, on his own
+    // Thursday rail: a 10-minute question sitting between a drive that ended
+    // at the shop at 4:21 and a one-minute Office row at 4:32). The drive was
+    // the last work of that day. What came after it was him at his desk with
+    // the app open, and the house dwell around it is deleted on purpose
+    // (rule 12, js/geo-derive.js), so the hole the reader found was a hole
+    // the deriver made by design. The day already ended; asking about its
+    // tail is the same mistake the window rule fixes, one row further in.
+    //
+    // Real work is a drive, a visit, a shop, a clock: anything the day has a
+    // claim on. Office is not (a desk is not a job), and neither is time
+    // already taken off the day as personal. A day with no real work at all
+    // clips nothing, so a day of pure Office rows behaves exactly as before.
+    const _isWork=r=>!!r&&r.source!=='unaccounted'&&r.rawSource!=='place-office'
+      &&!r.dismissed&&!r.personal;
+    const _workEnd=day.reduce((mx,r)=>_isWork(r)?Math.max(mx,Date.parse(r.endTime)||0):mx,0);
+    const _win=_tlWorkWindow(day);
+    const _stale=(()=>{
+      const t=Date.parse(String(day[0].date||'')+'T12:00:00');
+      return isFinite(t)&&(Date.now()-t)>_TL_HOLE_ASK_DAYS*86400000;
+    })();
+    // Walk a high-water mark, not just the previous row: two rows that
+    // overlap (a drive and the visit it lands in) must not manufacture a
+    // negative gap, and a short row nested inside a long one must not split
+    // the long one's remainder into two phantom holes.
+    let mark=Date.parse(day[0].endTime);
+    let markRow=day[0];
     for(let i=1;i<day.length;i++){
-      const prev=day[i-1],next=day[i];
-      const pEnd=Date.parse(prev.endTime),nStart=Date.parse(next.startTime);
-      const gap=nStart-pEnd;
-      if(!(gap>0)||gap>_TL_GAP_ABSORB_MAX_MS)continue;
-      // The later row wins when both could take it: the travel that ends at a
-      // stop belongs to that stop, and a gap in front of a paid row is only
-      // ever absorbed by the unpaid row behind it.
-      const taker=next.unpaid?next:(prev.unpaid?prev:null);
-      if(!taker)continue;
-      if(taker===next)taker.startTime=prev.endTime;else taker.endTime=next.startTime;
-      taker.minutes=Math.max(0,Math.round((Date.parse(taker.endTime)-Date.parse(taker.startTime))/60000));
+      const r=day[i];
+      const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
+      // Two Office rows back to back (js/geo-derive.js _gdOffice): each one is
+      // bounded by an app-open flip and an app-background flip (owner
+      // 2026-09-03, "time should start when app flips open and stop and
+      // write when app flips to background"). The gap between them IS the
+      // app being closed, proven by those same flips, not a mystery: "No
+      // location or motion on record" would be a lie about a fact we have.
+      const _bothOffice=markRow.rawSource==='place-office'&&r.rawSource==='place-office';
+      // Trimmed at the clock-out, or dropped entirely when it starts after it.
+      const _end=(_clockEnd>0&&_clockEnd<a)?_clockEnd:a;
+      // Clipped to the working day: what falls outside it was never claimed
+      // and is not a question. No window at all (a day nobody works, with no
+      // clock on it) asks nothing.
+      const _stop=_workEnd>0?Math.min(_end,_workEnd):_end;
+      const _from=_win?Math.max(mark,_win[0]):mark;
+      const _to=_win?Math.min(_stop,_win[1]):_stop;
+      const _gap=_to-_from;
+      if(_gap>=_TL_UNACCOUNTED_MIN_MS&&!_bothOffice&&_win&&!_stale){
+        out.push({
+          id:'u'+k+'_'+_from,rawId:null,source:'unaccounted',rawSource:'unaccounted',
+          date:r.date,minutes:Math.round(_gap/60000),
+          personName:r.personName,personUid:r.personUid||null,
+          clientName:'Unaccounted for',addr:'',jobName:'',clientKey:null,
+          unpaid:true,detail:'No location or motion on record',
+          startTime:new Date(_from).toISOString(),endTime:new Date(_to).toISOString()
+        });
+      }
+      if(b>mark){mark=b;markRow=r;}
     }
+  });
+  return out;
+}
+function _tlBlendManual(rows){
+  if(!Array.isArray(rows))return rows;
+  const fm=(typeof _fmtMin==='function')?_fmtMin:(m=>m+'m');
+  // ONE IDENTITY RULE, AND IT IS THE ONE THE REST OF THE FILE ALREADY USES.
+  //
+  // The owner's own manual clock carries personUid NULL (logged_by_uid is only
+  // stamped on employee rows) while the GPS rows for that same person carry
+  // their real employee_user_id. Keying on `personUid||'owner'` therefore put
+  // the owner's clock and the owner's own fences in two different buckets and
+  // the blend never fired on the one day it matters most, his. Caught on the
+  // very first render of Jack's real day, 2026-09-01: 13h14m, with the clock
+  // sitting at its full 7h18m beside the fences it was supposed to absorb.
+  //
+  // Every blend test written alongside the feature had passed, because each
+  // one stamped a matching logged_by_uid on the clock. A fixture that agrees
+  // with the code instead of testing it is worse than no fixture, so the
+  // regression below seeds the null exactly as _timeLogRows produces it.
+  //
+  // _tlRowUid folds a null personUid under the contractor id for exactly this
+  // reason (_tlEmpWeekAgg and _tlEmpAccHtml follow the same rule); it reads
+  // _tlLastCid, which is only set at render time, so this resolves the same
+  // fact from the session instead. Same rule, one place earlier (7.3).
+  const _me=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)?String(_supaUser.id):'owner';
+  const byPerson={};
+  rows.forEach(r=>{
+    if(!r||!r.startTime||!r.endTime)return;
+    const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
+    if(!(a>0&&b>a))return;
+    const k=String(r.personUid||_me)+'|'+(r.date||'');
+    (byPerson[k]=byPerson[k]||[]).push({r,a,b});
+  });
+  Object.keys(byPerson).forEach(k=>{
+    const list=byPerson[k];
+    // Oldest clock first, so when two clocks overlap the same drive the
+    // earlier one takes it. Any fixed order works as long as it is stable;
+    // this one at least matches how a person reads down a day.
+    const manual=list.filter(x=>x.r.source==='manual'&&!x.r.unpaid).sort((x,y)=>x.a-y.a);
+    if(!manual.length)return;
+
+    // THE CLOCK-OUT IS A HARD CUTOFF (owner 2026-09-04, on Jack's 31 August:
+    // "his day shouldve ended at his clock out of 345 pm, no way a drive can
+    // extend past that ... after 338 pm is a hard cutoff cause he clocked
+    // out").
+    //
+    // He clocked out at 3:45 PM. The drive row ran to 5:24, an hour and a half
+    // past it, because he sat somewhere for 49 minutes on the way and the leg
+    // spans the stop. Whatever the leg is doing, none of it is his dad's time:
+    // once a man is off the clock the day is over, and a row that keeps going
+    // is the app arguing with him about when he stopped working.
+    //
+    // Straddling rows are cut at the cutoff and their minutes prorated by the
+    // span they keep, exactly the way the blend below prorates coverage. A row
+    // that starts after it is gone.
+    //
+    // WHAT GETS CUT, AND WHAT DELIBERATELY DOES NOT. Only DRIVES and unsaved
+    // JOB SITES. Two other rules already stand here and neither is overturned:
+    //
+    //   Rule 10 (js/geo-derive.js) writes Office rows ONLY outside the working
+    //   day, from the app being open at the home office in the evening. They
+    //   are after the clock-out by definition, which is the entire point of
+    //   them, and the owner signed that off on 2026-09-02.
+    //
+    //   "The fences are what happened; the clock adds nothing" (owner
+    //   2026-09-01). A client visit that outlives the clock is work he forgot
+    //   to clock, and the phone watched him do it. Cutting that would be the
+    //   app deleting proven work, which is the opposite of this rule's intent.
+    //
+    // A drive home is neither. It is a commute, it is not his dad's time, and
+    // it is the only thing the owner pointed at.
+    //
+    // AND ONLY A DRIVE HOME (owner 2026-09-04, immediately after: "clock out
+    // could be done for the day but what if we have another automted drive
+    // after, from fence to fence we got more drive time and more time on
+    // site"). He is right and a blanket cut would have deleted it. Clocking
+    // out is not a promise never to work again: a man can knock off, get
+    // called back, and drive shop to client at six. That drive lands at a
+    // saved WORK fence and the visit after it is real work the phone watched,
+    // exactly like the client visit that outlives a clock.
+    //
+    // So the destination decides. Heading to the house, or to nowhere the
+    // business saved, is the commute. Heading anywhere else is going back to
+    // work, and it stands.
+    const _cutoff=Math.max.apply(null,manual.map(m=>m.b));
+    const _homeNames=(typeof places!=='undefined'&&Array.isArray(places))
+      ? places.filter(p=>p&&String(p.kind)==='home_office'&&p.name)
+              .map(p=>String(p.name).trim().toLowerCase())
+      : [];
+    const _headingHome=r=>{
+      // destUnsaved is the RAW fact (js/timelog.js _timeLogRows), not the
+      // label. Testing the label here is what broke this on 2026-09-04: an
+      // unnamed drive stopped reading as empty the moment it was given the
+      // words "Destination not saved", and every one of them stopped being
+      // cuttable.
+      if(r&&r.destUnsaved)return true;         // nowhere saved: not a trip back to work
+      const d=String((r&&r.clientName)||'').trim().toLowerCase();
+      if(!d)return true;
+      return _homeNames.indexOf(d)>=0;
+    };
+    const _cuttable=r=>{
+      if(!r||r.source!=='auto'||!r.rawSource)return false;
+      // A STOP NOBODY SAVED IS CUT TOO (owner 2026-09-04, on his 31 August:
+      // 566 paid against a 470-minute clock). The cutoff was written when
+      // an unsaved stop could only come from INSIDE a running clock, so
+      // trimming drives was enough. The deriver writes them now, straight off
+      // the fences, and his 4:31pm stop sat 46 minutes past a 3:45 clock-out
+      // and was paid. A saved fence still outlives the clock, deliberately
+      // ("the fences are what happened", 2026-09-01): a shop or a client is
+      // evidence of work. An unsaved stop is evidence of nothing but that the
+      // truck was parked, so the clock is the only thing that could have made
+      // it work, and he ended it.
+      if(r.rawSource==='unsaved')return true;
+      if(typeof _geoIsDriveSource!=='function'||!_geoIsDriveSource(r.rawSource))return false;
+      return _headingHome(r);
+    };
+    if(_cutoff>0){
+      for(let i=list.length-1;i>=0;i--){
+        const x=list[i];
+        if(!_cuttable(x.r))continue;
+        if(x.a>=_cutoff){
+          const at=rows.indexOf(x.r);
+          if(at>=0)rows.splice(at,1);
+          list.splice(i,1);
+          continue;
+        }
+        if(x.b>_cutoff){
+          const span=Math.max(1,x.b-x.a);
+          x.r.minutes=Math.max(0,Math.round((x.r.minutes||0)*((_cutoff-x.a)/span)));
+          x.r.endTime=new Date(_cutoff).toISOString();
+          x.b=_cutoff;
+        }
+      }
+    }
+    // WHAT THE CLOCK ALREADY PAID FOR (owner 2026-09-01: "unpaid is wrong, it
+    // was paid"). He is right and the row was arguing with itself: the day
+    // totals the clock, the clock's minutes cover every hour it brackets, and
+    // the rail then tagged the untracked stops inside it "unpaid". The tag is
+    // only meaningful OUTSIDE a clock, where nothing has paid for the time.
+    // These minutes still stay out of the total, because the clock is already
+    // counting them and adding them twice is the bug this whole blend exists
+    // to stop; what changes is that the row stops claiming nobody was paid.
+    list.forEach(x=>{
+      if(!x.r.unpaid)return;
+      if(manual.some(m=>m.a<=x.a&&m.b>=x.b))x.r.clockPaid=true;
+    });
+    const autos=list.filter(x=>x.r.source!=='manual'&&!x.r.unpaid&&(x.r.minutes||0)>0);
+    if(!autos.length)return;
+    const spent=[];
+    manual.forEach(m=>{
+      const base=m.r.minutes||0;
+      if(base<=0)return;
+      let covered=0;
+      autos.forEach(x=>{
+        if(spent.indexOf(x)>=0)return;
+        const ov=Math.min(m.b,x.b)-Math.max(m.a,x.a);
+        if(ov<=0)return;
+        spent.push(x);
+        // Its own minutes, not its span: a drive leg's row brackets the leg
+        // but carries the minutes actually driven, and those are not the same
+        // number. Prorated by how much of the row falls inside the clock.
+        const rowSpan=Math.max(1,x.b-x.a);
+        covered+=(x.r.minutes||0)*Math.min(1,ov/rowSpan);
+      });
+      covered=Math.round(covered);
+      if(covered<=0)return;
+      // FLOORED AT ZERO, never negative. If the fences saw more than the clock
+      // claimed, the fences are what happened and the clock adds nothing; the
+      // day then reads higher than the clock, which is the honest direction.
+      // Inventing time back is the one thing this must never do.
+      m.r.minutes=Math.max(0,base-covered);
+      m.r.blendedMin=covered;
+      // Said out loud on the row. A clock that ran nine hours showing five
+      // with no explanation is the "silently missing chunk" he objected to;
+      // this names where the rest of it went.
+      m.r.detail=fm(covered)+' of this is tracked below';
+    });
+
+    // WHAT IS LEFT OF THE CLOCK IS AN UNSAVED JOB SITE (owner 2026-09-04: "if
+    // we see a manual clock in, and then there's unaccounted for time after,
+    // meaning he's not inside a shop fence and is still clocked in and not
+    // back home at his office, that means that unaccounted for time is a
+    // unsaved job site").
+    //
+    // The remainder above was already PAID and always has been, it just had no
+    // name: Jack's 31 August showed a 470-minute clock as "298m" with "2h 52m
+    // of this is tracked below" and nothing anywhere saying where the other
+    // 298 minutes went. On an account whose customers are yards nobody saved,
+    // that silent remainder IS the working day.
+    //
+    // The clock is his own statement that he was working; no fence says only
+    // that nobody saved the address. So the stretches of the clock no tracked
+    // row covers become rows of their own, and the clock hands them its
+    // minutes rather than keeping them anonymous. The day totals exactly the
+    // same before and after: this names time, it never adds any.
+    //
+    // NOTHING IS INFERRED ABOUT WHERE (owner, same message: "un saved mileage
+    // legs no they cant and I wont do it, we make no inferences here, this app
+    // was built to survive a IRS audit"). No address, no coordinates, no
+    // mileage leg, and the row says "Address not saved" out loud. A deduction
+    // still needs a saved address at both ends.
+    //
+    // The escape hatch is his and needs no new UI: clock OUT and back IN, and
+    // the stretch between the two clocks belongs to neither, so it stays a
+    // real hole for _tlFillUnaccounted to ask about. Lunch is a clock out, not
+    // a guess this code makes.
+    manual.forEach(m=>{
+      if(!(m.r.minutes>0))return;
+      // Spans, not minutes. A tracked row covers the wall-clock stretch it
+      // brackets; how many minutes it claims is a different number and is
+      // already handled above.
+      const busy=list.filter(x=>x.r.source!=='manual'&&(x.r.minutes||0)>0&&x.b>m.a&&x.a<m.b)
+        .map(x=>[Math.max(m.a,x.a),Math.min(m.b,x.b)]).sort((p,q)=>p[0]-q[0]);
+      const merged=[];
+      busy.forEach(sp=>{
+        const last=merged[merged.length-1];
+        if(last&&sp[0]<=last[1])last[1]=Math.max(last[1],sp[1]);else merged.push(sp.slice());
+      });
+      const free=[];
+      let at=m.a;
+      merged.forEach(([a,b])=>{ if(a>at)free.push([at,a]); at=Math.max(at,b); });
+      if(at<m.b)free.push([at,m.b]);
+      let handed=0;
+      free.forEach(([a,b],i)=>{
+        const mins=Math.round((b-a)/60000);
+        if(mins<_TL_SITE_MIN_MIN||handed+mins>m.r.minutes)return;
+        handed+=mins;
+        rows.push({
+          id:'site'+k+'_'+a,rawId:null,source:'site',rawSource:'site',
+          date:m.r.date,minutes:mins,
+          personName:m.r.personName,personUid:m.r.personUid||null,
+          clientName:'Unsaved address',addr:'',jobName:'',clientKey:null,
+          unpaid:false,detail:'Address not saved',
+          startTime:new Date(a).toISOString(),endTime:new Date(b).toISOString()
+        });
+      });
+      if(!handed)return;
+      // The clock hands the minutes over rather than being asked for them
+      // twice. _tlPaidMin sums every row that is not unpaid, so the day total must
+      // come out identical: what the clock loses here, the site rows carry.
+      m.r.minutes=Math.max(0,m.r.minutes-handed);
+      const tracked=Number(m.r.blendedMin)||0;
+      m.r.detail=tracked?fm(tracked+handed)+' of this is tracked below'
+                        :fm(handed)+' of this is tracked below';
+    });
   });
   return rows;
 }
@@ -211,119 +581,98 @@ async function _timeLogRows(sinceISO){
   timeEntries.forEach(e=>{
     if(e.open)return; // still running, shown separately, see _tlOpenEntries
     if(sinceISO&&e.start_time&&e.start_time<sinceISO)return;
+    // A MIS-TAP IS NOT A CLOCK (owner 2026-09-04, on Jack's 31 August: "got
+    // two clock ins at 755 am and 1243 pm, 1243 should go away"). That second
+    // one ran from 17:43:36 to 17:43:43. Seven seconds. His 3 September has a
+    // one-second twin. Nobody clocks in and out again inside a minute, so both
+    // are a thumb landing twice, and each one draws a full CLOCKED IN and
+    // CLOCKED OUT pair on the rail as if it were a shift.
+    // Hidden, never deleted: the row stays in the table untouched, and a clock
+    // of a minute or more is still drawn however short the day thinks it is.
+    // BOTH tests have to agree before anything is hidden. A short SPAN alone is
+    // not proof: plenty of entries carry a placeholder start and end with the
+    // real duration in `minutes`, and dropping those would delete real shifts
+    // off the rail. A mis-tap is the entry that is short by both measures.
+    const _ms=(e.start_time&&e.end_time)?(Date.parse(e.end_time)-Date.parse(e.start_time)):NaN;
+    if(_ms>=0&&_ms<60000&&(e.minutes||0)<=1)return;
     const info=_tlJobClientInfo(e.job_id);
     rows.push({
       id:'m'+e.id,rawId:e.id,source:'manual',date:e.date,minutes:e.minutes||0,
       personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
       personUid:e.logged_by_uid||null,
       clientName:info.clientName,addr:info.addr,jobName:info.jobName,detail:e.scope_label||'',
+      // A manual row was paid by definition until the day rail let somebody
+      // name a hole as an unpaid meal break. Reading the stored flag (absent
+      // on every entry written before this, hence false) is what keeps that
+      // one answer out of the paid totals, through the SAME unpaid path a
+      // geofenced lunch already uses (_tlPaidMin, _tlComputeOT), never a
+      // second kind of not-paid.
+      unpaid:e.unpaid===true,
+      // Answered "Personal": on no rail, in no total, and never asked again.
+      // It stays in the ROWS so _tlFillUnaccounted sees the span covered; the
+      // rail is where it disappears (_tlDayRailHtml).
+      dismissed:_tlIsPersonalGap(e),
       startTime:e.start_time||null,endTime:e.end_time||null
     });
   });
   const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
-  // Anchor windows per person for _tlStopAnchored above: every on-site record
-  // that isn't itself a stop or wheel time, plus shop sessions (their own
-  // table) and the person's manual clock entries.
-  const anchorsByUid={};
-  const _anchorPush=(uid,arrIso,depIso,isShop)=>{
-    const arr=Date.parse(arrIso),dep=Date.parse(depIso);
-    if(!(arr>0&&dep>0))return;
-    (anchorsByUid[uid]=anchorsByUid[uid]||[]).push({arr,dep,shop:!!isShop});
-  };
-  const _anchorSrc=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
-  (crew.entries||[]).forEach(e=>{
-    if(e&&e.arrived_at&&e.departed_at&&_anchorSrc(e.source))_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at);
-  });
+  // WHERE I AM RIGHT NOW (owner 2026-09-02: "continue to update the time
+  // log day rail in real time"). The deriver never writes an open dwell (no
+  // departure yet), so the rail draws it from the live report, running to
+  // this moment; the 30s refresh moves it, the arrival closes it into a real
+  // row on the next derive.
+  try{
+    const od=window._geoOpenDwell;
+    const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+    if(od&&od.sinceTs>0&&me){
+      const today=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):dateKey(new Date());
+      const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(od.sinceTs)):dateKey(new Date(od.sinceTs));
+      const mins=Math.max(0,Math.round((Date.now()-od.sinceTs)/60000));
+      if(day===today&&mins>=1&&!(sinceISO&&od.sinceIso<sinceISO)){
+        const kind=od.kind==='shop'?'shop':od.kind==='job'?'geofence':od.kind==='client'?'client':'place';
+        rows.push({
+          id:'open-'+(od.id||od.sinceTs),rawId:null,source:kind==='shop'?'shop':'auto',rawSource:kind,date:day,minutes:mins,
+          personName:(typeof getOwnerName==='function'&&getOwnerName())||'Me',personUid:me,
+          clientName:od.name||(kind==='shop'?((typeof S!=='undefined'&&S&&S.bname)||'Shop'):'On site'),
+          addr:(od.fence&&od.fence.addr)||'',jobName:'',clientKey:od.id||null,
+          unpaid:false,detail:'On site now',live:true,
+          startTime:od.sinceIso,endTime:new Date().toISOString()
+        });
+      }
+    }
+  }catch(_e){}
+  // Shop rows, AS STORED (owner 2026-09-02). The day deriver
+  // (js/geo-derive.js) already decided what a shop dwell was: bounded by an
+  // arrival and a departure, one row per visit, no overlap with anything
+  // else. There is nothing left for this screen to clip, trim, fold or
+  // re-grade, and the twenty functions that used to do so are gone with the
+  // three-writer design that made them necessary.
   (crew.shopEntries||[]).forEach(e=>{
-    if(e&&e.arrived_at&&e.departed_at)_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at,true);
-  });
-  // Shop/yard dwell as its own row (owner request 2026-08-24, "why are there
-  // gaps between them"): shop time was tracked and already PAID in Crew Cost
-  // (js/finance.js _openCrewCost adds it straight into e.min), but the Time
-  // Log listed only job and drive rows, so every hour at the yard read as a
-  // hole in the day. Overlaying it closed nearly every gap in the owner's
-  // week: Thu 8/20's 45-minute midday hole was the shop 12:33-1:18 exactly.
-  //
-  // PAID now, matching Crew Cost, but only inside the workday: the day auto
-  // clocks out at its last real work event (js/geo-track.js _geoShopCutoffs,
-  // see the rule comment there). Two owner reports on 2026-08-24 drove that,
-  // and one rule answers both: yard dwell AFTER the last job or supply run
-  // ("don't want shop time to calculate after the last job site or supply
-  // run of the day") and yard dwell on a day with NO job or supply fence at
-  // all both credit zero minutes, and a zero-credit session does not render.
-  // Nothing is being hidden, there is no gap to close after the day has
-  // ended, and a Saturday at the yard is not a shift.
-  const _shopCut=(typeof _geoShopCutoffs==='function')
-    ? _geoShopCutoffs((crew.entries||[]).concat(
-        timeEntries.filter(e=>!e.open&&e.start_time&&e.end_time).map(e=>({
-          employee_user_id:e.logged_by_uid||(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,
-          arrived_at:e.start_time,departed_at:e.end_time,source:'manual'
-        }))))
-    : {};
-  // Grouped per person because the paid spans are computed in ORDER for one
-  // person at a time: overlapping sessions clip against each other so no
-  // minute is ever paid twice (js/geo-track.js _geoShopPaidSpans).
-  const _shopByUid={};
-  (crew.shopEntries||[]).forEach(e=>{
-    if(!e||!e.arrived_at||!e.departed_at)return;
-    (_shopByUid[e.employee_user_id]=_shopByUid[e.employee_user_id]||[]).push(e);
-  });
-  // The motion tape for the whole rendered range, fetched ONCE and handed
-  // down: at a shop that is also the house it trims each session to the part
-  // where somebody was actually walking (js/geo-track.js _geoActiveTrim).
-  // Null on every non-iPhone build and whenever the coprocessor has nothing,
-  // and then _geoShopPaidSpans bills the dwell exactly as it did before.
-  const _shopTape=await _tlShopTape(_shopByUid);
-  Object.keys(_shopByUid).forEach(uid=>{
-    const list=_shopByUid[uid];
-    const mine=(crew.entries||[]).filter(x=>x&&String(x.employee_user_id)===String(uid));
-    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(list,_shopCut[uid]||{},mine,_shopTape):[];
-    list.forEach((e,i)=>{
-      const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
-      if(!(arr>0&&dep>arr))return;
-      // Same physical-impossibility bound the rest of the log honors: a dwell
-      // that spans Central midnight is the truck sitting at the yard overnight,
-      // not a shift, and must never land as paid time (owner rule 2026-08-24).
-      const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
-      const day=dstr(new Date(arr));
-      if(day!==dstr(new Date(dep)))return;
-      // (the span builder folds a blip-split visit into its first row, so a
-      // merged-away row simply reports zero minutes below)
-      const sp=spans[i]||{startMs:arr,endMs:dep,minutes:e.minutes||0,clipped:false};
-      // Zero paid minutes means outside the workday window, or folded into an
-      // earlier session that already carries this stretch. Either way there is
-      // no second row to draw.
-      if((sp.minutes||0)<1)return;
-      // Trimmed by the clock-out rather than by the person leaving: show when
-      // the clock actually stopped and say why, so the rule is visible instead
-      // of quietly eating minutes. Exact edges (the common case) read plain.
-      const trimmed=sp.endMs<(sp.rawEndMs||dep)-60000;
-      rows.push({
-        id:'s'+uid+'_'+e.arrived_at,
-        source:'shop',date:day,minutes:sp.minutes,
-        personName:crew.name[uid]||'Crew',personUid:uid,
-        clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
-        addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
-        clientKey:null,unpaid:false,
-        detail:trimmed?'Shop · auto clock-out':'Shop',
-        // Unchanged edges keep the source string exactly: only an edge the
-        // clock-out or the overlap clip actually moved is re-stamped.
-        startTime:sp.clipped?new Date(sp.startMs).toISOString():e.arrived_at,
-        endTime:sp.endMs===dep?e.departed_at:new Date(sp.endMs).toISOString(),
-        mergedCount:sp.mergedCount||1,
-        rawId:null,rawSource:'shop'
-      });
+    if(!e||!e.arrived_at||!e.departed_at||!e.employee_user_id)return;
+    const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
+    if(!(arr>0&&dep>arr))return;
+    const uid=e.employee_user_id;
+    const mins=Number(e.minutes)>0?Math.round(Number(e.minutes)):Math.round((dep-arr)/60000);
+    if(mins<1)return;
+    const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(arr)):dateKey(new Date(arr));
+    rows.push({
+      id:'s'+uid+'_'+e.arrived_at,
+      source:'shop',date:day,minutes:mins,
+      personName:crew.name[uid]||'Crew',personUid:uid,
+      clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
+      addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
+      clientKey:e.client_key||null,unpaid:false,
+      detail:'Shop time',
+      startTime:e.arrived_at,endTime:e.departed_at,
+      mergedCount:1,
+      rawId:e.id!=null?e.id:null,rawSource:'shop'
     });
-  });
-  timeEntries.forEach(e=>{
-    if(e.open||!e.start_time||!e.end_time)return;
-    // null logged_by_uid means the owner, the same convention the geo/dedup
-    // code uses; the owner's crew rows carry the contractor uid.
-    const uid=e.logged_by_uid||(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
-    if(uid)_anchorPush(uid,e.start_time,e.end_time);
   });
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
+    // Rule 13, answered "Personal": the visit never happened as far as the
+    // log is concerned. Not hidden by CSS, not counted, not drawn.
+    if(String(e.source||'')==='dismissed')return;
     // Off-job stops (lunch, an errand) still get a row (owner request
     // 2026-08-23: "needs logged as lunches or unaccounted for time", the day
     // should read complete, not like a chunk is silently missing), but the
@@ -331,41 +680,70 @@ async function _timeLogRows(sinceISO){
     // and _tlComputeOT both skip unpaid minutes, so a lunch break never
     // becomes paid time or pushes someone into overtime they never worked.
     const isUnpaid=typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source);
-    // A drive leg outside the workday window is a personal trip the tracker
-    // happened to catch, not work (owner 2026-08-24, the Tue 8/18 family
-    // pictures run: "it should be dropped"). Only drives can land outside the
-    // window, since job and place visits are what define it, so this can never
-    // hide on-site time. js/geo-track.js _geoRowInWorkday carries the rule.
-    if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(e.source)&&
-       typeof _geoRowInWorkday==='function'){
-      const _dday=(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):dateKey(new Date(e.arrived_at));
-      if(!_geoRowInWorkday(e.arrived_at,e.departed_at,((_shopCut[e.employee_user_id]||{})[_dday])||null))return;
-    }
-    // The anchor rule (owner 2026-08-24, see _tlStopAnchored above): an
-    // unpaid stop with no real location event on both sides of it that same
-    // Central day never renders at all.
-    if(isUnpaid&&!_tlStopAnchored(Date.parse(e.arrived_at),Date.parse(e.departed_at||e.arrived_at),anchorsByUid[e.employee_user_id]||[]))return;
+    // A row that used to be re-graded here (a home-office dwell clamped to
+    // the workday, an overnight park) now arrives from the deriver already
+    // bounded. Nothing to explain away.
+    let _unacctWhy='';
     const info=_tlJobClientInfo(e.job_id);
     // dest_place is the actual name behind a job_id:null row (a supply
     // house, a home office, an unscheduled client visit, or wherever a
     // drive leg ended); without it the row showed a bare '-' with nothing
     // to tell you what it was (owner report: reads as unlabeled noise). A
     // real job always wins when job_id resolved to one.
-    const clientName=(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
+    // An unsaved stop between two drives has no name and never gets one, so
+    // it says exactly that rather than falling through to the bare '-' every
+    // job_id:null row used to draw (owner 2026-09-04: "Unsaved Address").
+    //
+    // A drive that reached nowhere saved gets the same treatment (owner
+    // 2026-09-04: "I like Destination not saved"). It used to fall all the way
+    // through to the rail's last resort, which is the tag's own word, so the
+    // row read "DRIVE TIME / Drive time": the tag repeated as its own title,
+    // and nothing anywhere admitting the far end was never saved. Every
+    // segment of a chain except the last one ends at a stop nobody saved, so
+    // this is most of them.
+    const _es=String(e.source||'');
+    // Rule 13, unanswered: on the rail as a question, in no total, and the
+    // dashboard card is where it gets answered.
+    const _held=_es==='client-held';
+    const _unnamedDrive=/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
+    const clientName=_es==='unsaved'?'Unsaved address'
+      :_unnamedDrive?'Destination not saved'
+      :(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
-      source:'auto',date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
+      source:'auto',date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
-      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid,
-      detail:(typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||''),
+      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid||!!_unacctWhy||_held,
+      // The reason wins when there is one. "Overnight at your own place" tells
+      // the owner why twelve hours are sitting there not counting, which a
+      // bare source label never could.
+      detail:_unacctWhy||((typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||'')),
       startTime:e.arrived_at||null,endTime:e.departed_at||null,
       // The server row id and its raw source, so a wrong GPS clock can be
       // corrected in place (owner rule 2026-08-24). rawSource is the raw
       // column, unlike `detail` which is the friendly label.
-      rawId:e.id!=null?e.id:null,rawSource:e.source||''
+      rawId:e.id!=null?e.id:null,rawSource:e.source||'',
+      // A RAW FACT, NOT THE LABEL. The clock-out cutoff asks "was he heading
+      // home" and used to answer it by looking at clientName, which was empty
+      // on a drive nobody could name. Naming that drive "Destination not
+      // saved" (owner 2026-09-04) silently un-cut every one of them: his 31
+      // August ran 46 minutes past a 3:45pm clock-out. Same class as the 2026
+      // -08-29 split-bar bug, a rule keyed on a friendly label, so the fix is
+      // the same: carry the fact on the row and test that.
+      destUnsaved:_unnamedDrive
     });
   });
-  return _tlAbsorbGaps(rows).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const _cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+  // BLEND FIRST. _tlAbsorbGaps rewrites start/end times to close small holes
+  // and _tlFillUnaccounted invents rows for what is left, and the blend
+  // measures overlap off exactly those times: running it later would have it
+  // judging windows that had already been stretched, and would let a clock's
+  // own hours be counted as a hole somebody has to answer for.
+  // The clock blends over the derived day, and what is left is unaccounted.
+  // No round-trip withdrawal, no gap absorption, no duplicate drop: the
+  // deriver's output has none of those to correct.
+  return _tlFillUnaccounted(_tlBlendManual(rows),_cid)
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function _tlYears(rows){
   const years=[...new Set(rows.map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort((a,b)=>b.localeCompare(a));
@@ -378,6 +756,18 @@ function _tlYears(rows){
 // never wrong to offer.
 function _tlWeekKey(dateStr){
   if(!dateStr)return '';
+  // SHAPE FIRST, then parse. This used to hand anything at all to `new Date`
+  // and trust an Invalid Date to reject it, but parsing a string that is not
+  // ISO-8601 is implementation-defined: WebKit accepts "13T00:00:00" and
+  // Chromium does not, so _tlMonthKey(13) returned '' in one engine and "13"
+  // in the other. Caught by CI on 2026-08-31, and only by CI, because the
+  // local pre-push run is chromium (§5.2.1) and this is exactly the
+  // cross-browser class that run leaves to the shards.
+  //
+  // A real date-only key is the only thing any caller passes, so requiring
+  // that shape rejects junk identically everywhere. '2026-13-40' still fails,
+  // one line down, on being a date that does not exist.
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr)))return '';
   const d=new Date(dateStr+'T00:00:00');
   if(isNaN(d.getTime()))return '';
   d.setDate(d.getDate()-d.getDay());
@@ -448,14 +838,14 @@ function _tlComputeWeeklyRunning(rows){
 // depending on where the person happened to be standing when they opened the
 // app, and the CSV export used the same function, so a payroll record changed
 // with the exporter's location. The DAY grouping was already pinned to Central
-// (_ctDateStr, js/finance.js), so travel also split the log against itself:
+// (_bizDateStr, js/finance.js), so travel also split the log against itself:
 // days in one zone, times in another, and near midnight they disagree outright.
 //
 // Hours are a fact about when work happened, not about where the phone is now.
 // One zone for the whole log: display, the Fix dialog, and the export.
 //
 // Reads S.bizTz so this stops being a Kansas assumption the day a contractor in
-// another state signs up, and falls back to the same Central zone _ctDateStr
+// another state signs up, and falls back to the same Central zone _bizDateStr
 // already hardcodes so the two can never disagree today.
 // Derived from the business ADDRESS, once, and shared with every other screen
 // (bizTz in js/utils.js). This used to hold its own copy of the rule, which is
@@ -545,8 +935,47 @@ function setTimeLogYear(yr){_tlYear=String(yr);renderTimeLog();}
 // payroll permission Job Profit/Crew Cost already gate on. This is a DATA
 // ACCESS rule, independent of the Me/Team display toggle below: a manager can
 // edit anyone's entry whether they're currently looking at Me or Team.
+// "Mine", asked in ONE place. renderTimeLog computed this inline to filter Me
+// scope, and the gap chips need the same question for a different reason (see
+// _tlRailGapBody). Two copies of a permission predicate is how one of them
+// ends up wrong and nobody notices which (§7.3).
+// ── READ ONLY MEANS NO ACTIONS, ANYWHERE (owner 2026-09-05) ────────────────
+// "the person with the link can update logs."
+//
+// timesheet.html loads this file as is and was made read-only by stubbing the
+// two EDIT gates (_tlCanEdit, _tlCanFixAuto). The gap chips are gated by a
+// different question, _tlRowIsMine, and that one answers "mine" for a row with
+// no person on it, which is exactly how an owner's own manual clocks arrive.
+// So on a day of the owner's own clocks the link page offered "What was this
+// time?" with three live buttons, and one tap moved the week from 4h to 7h on
+// screen. It never saved (there is no saveAll and no session there), but a
+// timesheet nobody can trust to hold still while it is being read is not a
+// timesheet, and a screenshot of it is a doctored record.
+//
+// Stubbing predicates one at a time is how the next one gets missed. The page
+// declares itself read-only ONCE and this file asks that before offering
+// anything at all, so an action added later is covered by construction.
+function _tlReadOnly(){return typeof window!=='undefined'&&window._tlViewOnly===true;}
+function _tlRowIsMine(r){
+  if(_tlReadOnly())return false;
+  if(!r||typeof r!=='object')return false;
+  const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||
+            (typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+  const selfUid=isEmp?_supaUser.id:cid;
+  // An owner's own manual rows carry personUid:null, which is why the owner
+  // side of this accepts two values and the employee side accepts one.
+  //
+  // null AND undefined, deliberately. Everywhere else in this file a row folds
+  // under `r.personUid||cid`, so a row that never got the column at all is the
+  // owner's. A strict ===null here was stricter than the rest of the app and
+  // silently dropped the gap chips off hand-built rows that carry no person.
+  const uid=(r.personUid==null)?null:r.personUid;
+  return isEmp?uid===selfUid:(uid===null||uid===selfUid);
+}
 function _tlCanEdit(r){
-  if(r.source!=='manual')return false;
+  if(_tlReadOnly())return false;
+  if(!r||r.source!=='manual')return false;
   if(typeof _canViewComp==='function'&&_canViewComp())return true;
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
   return r.personUid===myUid;
@@ -563,7 +992,8 @@ function _tlCanEdit(r){
 // Payroll permission is required, same gate the Team view already uses:
 // correcting a clock is a money decision, never a field worker's own call.
 function _tlCanFixAuto(r){
-  if(r.source!=='auto'||r.rawId==null||r.unpaid)return false;
+  if(_tlReadOnly())return false;
+  if(!r||r.source!=='auto'||r.rawId==null||r.unpaid)return false;
   const s=String(r.rawSource||'');
   if(!(/^(geofence|place)$/.test(s)||/^(geofence|place)-/.test(s)))return false;
   return !!(typeof _canViewComp==='function'&&_canViewComp());
@@ -592,11 +1022,18 @@ async function _openFixAutoEntry(rowId){
   // Business time, not the phone's: prefilling in the device's zone would hand
   // someone a wrong baseline to "correct" from the moment they left the state.
   const toLocalInput=iso=>_tlBizInputValue(iso);
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Fix clock times</div>'+
+  // Titled and labelled exactly like the manual dialog (js/jobs.js
+  // _openEditTimeEntry) so the two read as one screen. Only the subtitle
+  // differs, and it earns its place: it says where these times came from.
+  // No Delete here, deliberately, and it is not an oversight: a derived row
+  // is rewritten by the next rebuild, so a delete button would look like it
+  // worked and then quietly undo itself. The way to remove one is to correct
+  // the day it came from.
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Edit time entry</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(who)+', tracked by GPS</div>'+
-    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Clock in</label>'+
+    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Start</label>'+
       '<input type="datetime-local" id="tlf-start" value="'+toLocalInput(row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Clock out</label>'+
+    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">End</label>'+
       '<input type="datetime-local" id="tlf-end" value="'+toLocalInput(row.departed_at||row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
     '<div id="tlf-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
@@ -620,14 +1057,26 @@ async function _saveFixedAutoEntry(rowId){
   // create the very thing the flag exists to catch.
   const mins=Math.round((end.getTime()-start.getTime())/60000);
   if(mins>1440)return bad('One entry cannot be longer than 24 hours.');
-  if(typeof _ctDateStr==='function'&&_ctDateStr(start)!==_ctDateStr(end))return bad('An entry has to start and end on the same day.');
+  if(typeof _bizDateStr==='function'&&_bizDateStr(start)!==_bizDateStr(end))return bad('An entry has to start and end on the same day.');
   if(!window._supa||!window._supaUser)return bad('Not connected.');
   try{
-    // client_key moves to a 'fixed-' key: that is what tells every sweep
-    // (dedup, merge) this row is a human clock record now and must never be
-    // widened, trimmed, or folded into a neighbor again.
+    // THE ROW KEEPS ITS IDENTITY (owner 2026-09-04: "we need to merge manual
+    // and automatic and it fits").
+    //
+    // This used to rename client_key to 'fixed-'+rowId. That severed the row
+    // from the derived row it was correcting, so a rebuild could never find it
+    // again and geo_replace_day had to protect it by SPAN instead: it dropped
+    // every derived row overlapping it. Jack's 3 September is the bill. He set
+    // 7:45am to 4:45pm on a home-office row, and sixteen of the seventeen rows
+    // his tape produced that day, every drive, the shop time, every unsaved
+    // stop, were thrown away for overlapping his two-field edit.
+    //
+    // The key stays. fixed_at is the mark, and the rebuild carries these times
+    // across onto the same row (20260909_geo_replace_day_merge.sql), the way
+    // it already carries a hand-set vehicle and purpose across a re-derived
+    // mileage leg. The correction sticks and the evidence still lands.
     const{error}=await _supa.from('job_time_entries')
-      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:mins,client_key:'fixed-'+rowId})
+      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:mins,fixed_at:new Date().toISOString()})
       .eq('id',String(rowId));
     if(error)return bad('Could not save, try again.');
   }catch(_e){return bad('Could not save, try again.');}
@@ -635,85 +1084,1348 @@ async function _saveFixedAutoEntry(rowId){
   if(typeof showToast==='function')showToast('Clock times updated');
   if(typeof renderTimeLog==='function')renderTimeLog();
 }
-function _tlRow(r){
-  const canEdit=_tlCanEdit(r);
-  // Delete isn't a button here, it's the same 3s hold-to-confirm gesture used
-  // everywhere else in the app ([data-lp-id], js/cloud.js). The attributes are
-  // only emitted when canEdit is true, so the gesture is simply absent (does
-  // nothing) on GPS/auto rows and on entries this person isn't allowed to
-  // touch: same visibility rule the Edit button already follows.
-  const lpAttrs=canEdit?' data-lp-id="'+r.rawId+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'"':'';
-  // Driving vs on-site: the owner couldn't tell the entries apart ("don't
-  // understand these many different entries, wish there was a way for it to
-  // say drive and be color coded", 2026-08-21). r.detail is already the
-  // friendly _tlSourceLabel() text ('Driving'/'Driving (rider)'/etc for a
-  // drive-sourced auto row, '' for a geofence/place row), so a driving row
-  // is exactly one that starts with it.
-  const isAutoDrive=r.source==='auto'&&/^Driving/.test(r.detail||'');
-  // Drive rows show FROM and TO locations under Job Site (owner request
-  // 2026-08-23: "Time entry drive times should show from and to locations"),
-  // not just the bare destination every drive row showed before this. The
-  // matching mileage leg is the only place the ORIGIN lives at all,
-  // job_time_entries itself never carried one: _geoDriveEntry (js/geo-track.js)
-  // stamps ONE deterministic legKey on both the mileage row (legKey) and this
-  // row (client_key) the moment the leg closes, so this is a straight lookup,
-  // never a re-derivation, same pairing _geoSyncDriveTimeEntries already
-  // trusts. Falls back to the plain destination name (the old behavior) when
-  // no leg survives locally: mileage not yet loaded for this viewer, or the
-  // leg was swept away by a mileage dedup/personal-stop pass.
-  const driveLeg=isAutoDrive&&r.clientKey&&typeof mileage!=='undefined'&&Array.isArray(mileage)
-    ?mileage.find(m=>m&&m.legKey===r.clientKey):null;
-  const driveFromTo=driveLeg?'From: '+(driveLeg.from_name||'—')+' - To: '+(driveLeg.to_name||r.clientName||'—'):null;
-  // Job address is the primary line (owner request 2026-07-11: "show the day,
-  // job address, person..."): client name/job/task fold into a muted second
-  // line along with the source tag, which used to be its own column. The
-  // driving row's own detail text is dropped here, the amber badge below
-  // already says it, so it is not repeated in plain gray right next to it.
-  // A lunch/off-job stop's own detail text is already the "Unpaid" the badge
-  // says (owner request 2026-08-23), same not-repeated rule the driving row
-  // already follows for its own badge just below.
-  // A plain shop row's detail is the literal word the Shop badge already
-  // shows, so it is dropped for the same not-repeated reason; the clock-out
-  // variant ('Shop · auto clock-out') carries new information and stays.
-  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid||r.detail==='Shop')?null:(r.detail||null)]
-    .filter(Boolean).map(escHtml).join(' · ');
-  // Amber (#9F5B00) is the SAME color drive time already gets in the Team
-  // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented
-  // (§7.3) so "amber" means "driving" consistently everywhere on this page.
-  const sourceTag=r.source==='shop'
-    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:#0E6B6B">'+svgIcon('🔧',{size:9})+' Shop</span>'
-    :r.unpaid
-    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('🍽',{size:9})+' Unpaid</span>'
-    :r.source==='auto'
-      ?(isAutoDrive
-          ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#9F5B0022;color:#9F5B00">'+svgIcon('🚗',{size:9})+' Driving</span>'
-          :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('📍',{size:9})+' On-site</span>')
-      :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('▶',{size:9})+' Manual</span>';
-  // Left-edge accent on the whole row, same amber, so "this one's a drive"
-  // reads at a glance without hunting for the badge text (a colored border
-  // is the other option the ask named alongside a badge; doing both costs
-  // nothing and reads clearer on a fast scroll down a long day). Unpaid gets
-  // a neutral gray accent, same idea, so it never reads as ordinary paid time
-  // on a fast scroll down the day.
-  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':r.source==='shop'?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
-  return '<tr'+lpAttrs+rowAccent+'>'+
-    '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
-    '<td data-label="Job site">'+
-      (r.addr?'<div style="font-weight:700">'+escHtml(r.addr)+'</div>':'')+
-      '<div class="mute" style="font-size:11px;margin-top:'+(r.addr?'2px':'0')+';display:flex;align-items:center;flex-wrap:wrap;gap:5px">'+(jobLine?'<span>'+jobLine+'</span>':'')+sourceTag+'</div>'+
-    '</td>'+
-    '<td data-label="Clock In">'+(_tlFmtTime(r.startTime)||'-')+'</td>'+
-    '<td data-label="Clock Out">'+(_tlFmtTime(r.endTime)||'-')+'</td>'+
-    '<td class="'+(r.unpaid?'mute':'bold')+'" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+
-      (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+', verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
-    '</td>'+
-    '<td data-label="Week total" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.weekRunningMin||0):(r.weekRunningMin||0)+'m')+'</td>'+
-    '<td data-label="">'+(canEdit?
-      '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button>'
-      :_tlCanFixAuto(r)?
-      '<button onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Fix</button>'
-      :'')+'</td>'+
-  '</tr>';
+// _tlRow was DELETED here, not left orphaned (§7). It built one <tr> of the
+// per-person day table in Team, and that table is now the person's weekly
+// bars (see _tlEmpAccHtml). With the table gone it had no caller at all.
+//
+// It carried ONE capability nothing else had: the 3-second hold-to-delete
+// gesture on a time entry. That did not go with it (§7.2). The same
+// data-lp-* attributes, under the same _tlCanEdit gate, are now on the rail
+// row in _tlRailRow, which is where the Edit button already moved for
+// exactly this reason. Everything else it drew (the clock times, the
+// address, the drive from/to, the OT and unpaid flags) the rail row was
+// already drawing better.
+// ── Adding a hole to the day (owner 2026-08-29) ────────────────────────────
+// "unaccounted for time doesn't count to the total unless it's added."
+//
+// The not-counting half needs no code: an unaccounted row is unpaid, and
+// every total on this page already skips unpaid (_tlEmpWeekAgg,
+// _tlComputeWeeklyRunning, _tlComputeOT, the day subtotal). So a hole is
+// visible and free by construction, which is the honest default: the app
+// never bills a stretch it cannot account for.
+//
+// This is the other half. The contractor is the only one who knows what those
+// 104 minutes were, and once he says, it becomes real time like any other
+// manual entry. It writes a MANUAL row through the same array and the same
+// save path clocking out uses (§7.3), never a new kind of record: it must
+// edit, delete, sync and pay exactly like time he keyed in himself, because
+// that is what it is.
+// Does a break of this length get paid? (owner 2026-08-29: "Break would need
+// a toggle if they get paid on it or not right?" Yes, and the honest default
+// is not a coin flip.)
+//
+// The federal rule is shaped by DURATION, not by what anyone calls it: short
+// rest breaks (29 CFR 785.18, roughly 5 to 20 minutes) are compensable and
+// count toward the workweek, while a bona fide meal period (785.19, 30
+// minutes or more with the employee fully relieved of duty) need not be.
+// So 'auto' reads the length and applies that shape. A contractor whose
+// state or handbook says otherwise sets S.breakPaid to 'paid' or 'unpaid'
+// and the length stops mattering.
+//
+// NOT legal advice, and deliberately never silent: the chip in the day rail
+// prints which way this resolved BEFORE it is tapped, so nobody discovers
+// after the fact that 45 minutes went unpaid.
+const _TL_BREAK_PAID_MAX_MIN=20;
+function _tlBreakIsPaid(mins){
+  const pol=(typeof S!=='undefined'&&S&&S.breakPaid)||'auto';
+  if(pol==='paid')return true;
+  if(pol==='unpaid')return false;
+  return (Number(mins)||0)<=_TL_BREAK_PAID_MAX_MIN;
+}
+// kind: 'work' (default, paid job time), 'break' (paid or unpaid per the
+// policy above), 'personal' (never paid). The default preserves the original
+// one-button behavior exactly, so the old Add button keeps working unchanged.
+function _tlAddUnaccounted(startIso,endIso,kind){
+  // Nobody reading a shared timesheet writes on it, however they got here.
+  // The chips are already withheld above; this is the door itself locked.
+  if(_tlReadOnly())return;
+  const a=Date.parse(startIso),b=Date.parse(endIso);
+  if(!(a>0&&b>a))return;
+  if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return;
+  const mins=Math.max(1,Math.round((b-a)/60000));
+  const k=(kind==='break'||kind==='personal')?kind:'work';
+  const unpaid=k==='personal'?true:k==='break'?!_tlBreakIsPaid(mins):false;
+  const label=k==='break'?('Break'+(unpaid?' (unpaid)':' (paid)'))
+             :k==='personal'?'Personal time (unpaid)'
+             :'Added from unaccounted time';
+  const uid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  const name=uid?((typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||'Crew')
+                :((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)');
+  // ONE SPAN, ONE ANSWER, AND THE LATEST ONE WINS (owner 2026-08-30: "tapping
+  // personal set break unpaid, shouldn't it say personal?").
+  //
+  // The first attempt at this refused a second tap outright, which was worse
+  // than the duplicate it prevented: a man who taps Break and then realises it
+  // was Personal has no way to say so, and the row keeps insisting Break. An
+  // answer is a correction, so answering again CORRECTS the row in place
+  // rather than adding a second one or ignoring him.
+  const same=timeEntries.filter(e=>_tlIsGapAnswer(e)&&
+    Date.parse(e.start_time)===a&&Date.parse(e.end_time)===b);
+  if(same.length){
+    // Any earlier duplicates of this same span collapse into the one row he
+    // is now answering, so a stack left by the old behaviour cleans itself up
+    // the moment he touches it.
+    const keep=same[same.length-1];
+    same.slice(0,-1).forEach(e=>{const i=timeEntries.indexOf(e);if(i>=0)timeEntries.splice(i,1);});
+    keep.minutes=mins;keep.unpaid=unpaid;keep.scope_label=label;keep.fromGap=true;
+    // Answering again can turn a Break into a Personal, or back, so the mark
+    // is set from THIS answer every time rather than only added.
+    keep.personal=(k==='personal');
+    if(typeof saveAll==='function')saveAll();
+    if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+    if(typeof showToast==='function')showToast(k==='personal'?'Taken off the day':
+      ('Changed to '+(k==='break'?('break, '+(unpaid?'unpaid':'paid')):'work time')),k==='personal'?'🏠':'⏱');
+    if(typeof renderTimeLog==='function')renderTimeLog();
+    return;
+  }
+  timeEntries.push({
+    id:(typeof _newId==='function')?_newId():Date.now(),
+    job_id:null,
+    // The CT date of the START, the same key every other row on this page is
+    // filed under. A hole that runs past midnight belongs to the day it began.
+    date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(a)):startIso.slice(0,10),
+    start_time:new Date(a).toISOString(),end_time:new Date(b).toISOString(),
+    minutes:mins,scope_id:null,scope_label:label,
+    unpaid,
+    // Personal is a withdrawal, not a claim: the reader drops it off the rail
+    // entirely (_tlIsPersonalGap). Work and Break stay rows.
+    personal:k==='personal',
+    // So the trim sweep can recognise its own rows without pattern-matching a
+    // label that copy changes will eventually move.
+    fromGap:true,
+    logged_by_uid:uid,logged_by_name:name,open:false
+  });
+  if(typeof saveAll==='function')saveAll();
+  if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+  if(typeof showToast==='function')showToast(k==='personal'
+    ? ((typeof _fmtMin==='function'?_fmtMin(mins):mins+'m')+' taken off the day')
+    : ((typeof _fmtMin==='function'?_fmtMin(mins):mins+'m')+' logged as '+
+       (k==='break'?('break, '+(unpaid?'unpaid':'paid')):'work time')),k==='personal'?'🏠':'⏱');
+  // The gap row is derived, so it simply stops existing on the next build:
+  // the span is now covered by a real row and no hole remains to report.
+  if(typeof renderTimeLog==='function')renderTimeLog();
+}
+// ── The day rail (owner-approved design 2026-08-29) ────────────────────────
+// "I like the day rail but what would a compliant day rail look like for ADA
+// compliance?" ... "Why can't the lines be one big line and unaccounted for
+// times being grey."
+//
+// One continuous spine down the day. Every row's spine segment spans that
+// row's FULL height with no margin between rows, so adjacent segments touch
+// and read as a single unbroken line whose colour changes at each boundary.
+// That is only honest because the rows already tile the day: the clock-is-the
+// -tape model closes every segment at the next transition and _tlFillUnaccounted
+// covers whatever is left, so a visible break in the line would be a bug, not
+// a gap in the work.
+//
+// ACCESSIBILITY, the part that shaped the markup rather than decorating it:
+//  - 1.4.1 colour is never the only carrier. Every segment prints an icon AND
+//    a word ("Drive time", "Break"), so the spine colour is reinforcement.
+//  - 1.4.3 / 1.4.11 measured against --bg #FFFFFF: ink 18.15:1, --text3 5.43:1,
+//    --blue 6.48:1, teal 6.59:1, amber 6.62:1, load 8.37:1. Text clears 4.5:1
+//    and the spine clears the 3:1 non-text minimum.
+//  - 1.4.4 / 1.4.10 the grid is minmax(0,...) tracks, never fixed px, so it
+//    reflows to 320px and survives 200% zoom instead of clipping. An earlier
+//    attempt used an `em` media query as the resize lever; `em` in a media
+//    query resolves against the browser's INITIAL font size, not a root we
+//    set, so that lever never fired at all. Tracks do.
+//  - 2.5.8 every chip and button is at least 24px tall (32 here).
+//  - The list is a real <ol> so a screen reader announces position in the day.
+function _tlRailKind(r){
+  if(!r)return 'job';
+  if(r.source==='unaccounted')return 'gap';
+  if(r.source==='shop')return 'shop';
+  if(r.rawSource==='place-load')return 'load';
+  if(r.rawSource==='place-office')return 'office';
+  if(r.rawSource==='place-home')return 'home';
+  if(r.rawSource==='site'||r.rawSource==='unsaved')return 'site';
+  // Same raw-column-first rule as _tlRow, and for the same reason: the
+  // friendly label is not a stable key.
+  if(r.source==='auto'&&((typeof _geoIsDriveSource==='function'&&r.rawSource)
+      ?_geoIsDriveSource(r.rawSource)
+      :/^Driv(ing|e time)/.test(r.detail||'')))return 'drive';
+  if(r.unpaid)return 'off';
+  if(r.source==='manual')return 'manual';
+  return 'job';
+}
+// Colours are REUSED from the split bar and the row badges (§7.3), never
+// invented here, so "amber means driving" holds everywhere on this page.
+const _TL_RAIL_META={
+  job:   {c:'var(--blue)',       icon:'📍', word:'On site'},
+  drive: {c:'#9F5B00',           icon:'🚗', word:'Drive time'},
+  shop:  {c:'#0E6B6B',           icon:'🔧', word:'Shop time'},
+  load:  {c:'#6D28D9',           icon:'📦', word:'Loading time'},
+  office:{c:'#0E6B6B',           icon:'📋', word:'Office'},
+  // A stretch at somebody's own address. It reads as its own thing rather
+  // than as 'On site', which is what a house was drawn as when a home_office
+  // dwell arrived as a bare 'place' (owner 2026-09-03, on Jack's rail). Grey,
+  // like the other buckets that are not asserted work: being home is not a
+  // claim about the day, it is just where the phone was.
+  home:  {c:'var(--text3)',      icon:'🏠', word:'Home'},
+  // NOT 'Break', and not a knife and fork (owner 2026-09-01, on his afternoon:
+  // "that was a untracked address that should have shown grey as manual time").
+  // An anonymous stop between fences is time the app cannot place. Calling it a
+  // break asserts a reason nobody supplied, and on Jack's day it labelled four
+  // untracked client visits as lunch. It reads the same as the grey bucket it
+  // feeds, because it is the same time, and stays whatever it is until somebody
+  // classifies it (his own rule: "doesnt get included in time unless
+  // classified, i.e. lunch, breaks, business trips").
+  off:   {c:'var(--text3)',      icon:'🕐', word:'Manual time'},
+  // A stop at no fence anybody saved. Two things land here and they mean the
+  // same thing: the gap between two driving segments, written by the deriver
+  // (source 'unsaved'), and the remainder of a running manual clock that no
+  // tracked row covered (source 'site').
+  //
+  // ADDRESS, not job site (owner 2026-09-04): "rather than unsaved job site do
+  // we say Unsaved Address." He is right, and it is not only tone. Half of
+  // these are a supply house, a gate, a dump run; calling every one of them a
+  // job site asserts a reason nobody supplied, which is the same mistake
+  // 'Break' made on the grey bucket above. UNSAVED is the load-bearing word:
+  // an audit turns on telling a geofenced client apart from a stretch nothing
+  // could name. The row prints "Address not saved" underneath and no title of
+  // its own, the same way the gap row refuses to repeat its own tag.
+  site:  {c:'var(--blue)',       icon:'📍', word:'Unsaved address'},
+  manual:{c:'var(--text3)',      icon:'▶',  word:'Manual'},
+  gap:   {c:'var(--border2)',    icon:'❓', word:'Unaccounted'}
+};
+function _tlRailMeta(kind){return _TL_RAIL_META[kind]||_TL_RAIL_META.job;}
+// The gap row. It is the reason this rail exists in the shape it does.
+//
+// It used to say "nothing recorded", and the owner killed that wording
+// outright (2026-08-29): "don't want to say nothing recorded since that
+// instills doubt in the tracking, rather that means there was no fence or was
+// break time away from jobs." He is right, and it is not just tone. The
+// tracker did record: it recorded motion and it recorded that none of it
+// happened inside a fence. Saying "nothing" describes the app as broken when
+// what it actually knows is where you were NOT. So the row states that fact
+// and then asks the one question only the person can answer.
+function _tlRailGapBody(r){
+  const mins=r.minutes||0;
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const brk=_tlBreakIsPaid(mins);
+  const a=escHtml(r.startTime||''),b=escHtml(r.endTime||'');
+  const chip=(k,txt)=>'<button type="button" class="tl-rail-chip" data-kind="'+k+'" '+
+    'onclick="_tlAddUnaccounted(\''+a+'\',\''+b+'\',\''+k+'\')">'+escHtml(txt)+'</button>';
+  // ANSWERING A HOLE STAMPS THE ANSWERER, NOT THE PERSON WHOSE HOLE IT IS.
+  // _tlAddUnaccounted builds its row from the CURRENT user (_supaUser / owner),
+  // by design: it was written for a man answering his own day. Now that a crew
+  // member's day rail is reachable from Team, offering these chips there would
+  // let one tap put the owner's own manual hours on somebody else's Thursday,
+  // with nothing on screen saying so and nothing in the row admitting it. So
+  // the question is still ASKED, because an unanswered hole in a crew week is
+  // exactly what payroll needs to see, and only the button to answer it is
+  // withheld.
+  if(!_tlRowIsMine(r)){
+    const who=String(r.personName||'').trim().split(/\s+/)[0];
+    // The hole is still stated on a shared timesheet, because an unanswered
+    // hole is exactly what the person approving hours needs to see. Only the
+    // buttons are withheld.
+    return '<div class="tl-rail-ttl">What was this time?</div>'+
+      '<div class="tl-rail-sub">'+escHtml(_tlReadOnly()?(who?who+' has not answered this yet':'Not answered yet')
+        :who?'Only '+who+' can answer this':'Only the person who logged it can answer this')+'</div>';
+  }
+  // No title line: the tag above already reads "Between jobs" and printing it
+  // twice is the kind of duplication that makes a dense day harder to scan.
+  // Just the question (owner 2026-08-30: "hate this just say what was this
+  // time?"). The explaining sentence went through two rewrites, from geofence
+  // jargon to plain English, and the owner's answer to the plain-English one
+  // was that he does not want a sentence at all. He is right: the tag already
+  // says UNACCOUNTED and the duration is in the right column, so the prose was
+  // narrating what the row had already shown. The question is the only thing
+  // on this row that needs a person.
+  return '<div class="tl-rail-ttl">What was this time?</div>'+
+    '<div class="tl-rail-chips">'+
+      chip('work','Work time')+
+      chip('break','Break · '+(brk?'paid':'unpaid'))+
+      chip('personal','Personal')+
+    '</div>';
+}
+function _tlRailRow(r){
+  if(!r||typeof r!=='object')return '';
+  const kind=_tlRailKind(r);
+  const m=_tlRailMeta(kind);
+  const fm=typeof _fmtMin==='function'?_fmtMin:(mm=>mm+'m');
+  const isGap=kind==='gap';
+  let body;
+  if(isGap){
+    body=_tlRailGapBody(r);
+  }else{
+    const isDrive=kind==='drive';
+    const leg=isDrive&&r.clientKey&&typeof mileage!=='undefined'&&Array.isArray(mileage)
+      ?mileage.find(x=>x&&x.legKey===r.clientKey):null;
+    // A manual clock against no job has nothing to name, and _tlJobClientInfo
+    // returns the bare '-' placeholder for that. A row whose title is a hyphen
+    // tells the reader nothing about the one row on the day they created by
+    // hand, so it says what it is instead.
+    const _bareName=(!r.clientName||r.clientName==='-')?'':r.clientName;
+    // THE NAME COMES FIRST (owner 2026-09-01: "a 2950 sw mcculure rd from 1:25
+    // pm to 3:42 but that last one should say John Doe").
+    //
+    // This read `r.addr || clientName`, so the moment a row resolved a job it
+    // stopped saying who it was for. His 08:03 visit to the same client showed
+    // "John Doe" only because it had no job attached and no address to
+    // resolve; the merged 13:25 row had one, and turned into a street address.
+    // Two rows, one client, two different answers on the same screen.
+    //
+    // A person is who the work is for; an address is where it happened, and it
+    // is already on the row underneath. Falling back to the address is still
+    // right when there is no name at all, which is what a supply run looks
+    // like.
+    // A JOB SITE HAS NO NAME, AND SAYING SO IS THE POINT. The tag already
+    // reads JOB SITE, so repeating it as the title would be the same
+    // duplication the gap row avoids, and it would leave the row with nothing
+    // anywhere admitting the address was never saved. An audit turns on
+    // exactly that distinction: 'On site' over a saved client, this over a
+    // stretch the clock vouched for and no fence could name.
+    const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
+                 :(kind==='site'?''
+                 :(_bareName||r.addr||(r.source==='manual'?'Clocked in':m.word)));
+    // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
+    // put tradedesk shop under the sub title that already says it ... can
+    // just do the start and end time under there").
+    //
+    // It used to also carry the client and job names, which on most rows were
+    // the title again in smaller grey type: three lines to say a place once.
+    // The tag names the kind, the title names the place, the sub gives the
+    // clock. Nothing repeats.
+    // A visit still going has no stop time and no amount yet (owner
+    // 2026-09-02: "that 3:31 pm should just be a - since we haven't left
+    // yet, no time calculated on the right until we leave"). The banner
+    // above the rail carries the running clock; the row states the arrival
+    // and leaves the rest open.
+    const span=r.live?[_tlFmtTime(r.startTime),'-']:[_tlFmtTime(r.startTime),_tlFmtTime(r.endTime)].filter(Boolean);
+    let sub=span.length===2?(span[0]+' to '+span[1]):'';
+    // A BLENDED CLOCK MUST NOT CONTRADICT ITSELF (owner 2026-09-01: "manual is
+    // calcuaintg 742 am to 3:00 pm as 1 hour 40 minutes when thats not true at
+    // all"). He was right and the row was indefensible: the sub-line said a
+    // seven-hour span while the amount beside it said 1h 40m, with nothing
+    // reconciling the two. The AMOUNT is correct, it is what this row still
+    // adds after the fences underneath took their share, but a number is not
+    // an explanation. The row now states all three facts in the order a person
+    // asks them: how long the clock ran, how much of it is itemised below, and
+    // therefore what is left here.
+    const _bl=Number(r.blendedMin)||0;
+    if(_bl>0){
+      const clocked=(r.minutes||0)+_bl;
+      sub=(sub?sub+' · ':'')+fm(clocked)+' clocked, '+fm(_bl)+' tracked below';
+    }
+    // An empty title draws no element. An unsaved job site has no name to
+    // give, and an empty <div> there would leave a blank line hanging off the
+    // spine where a name would sit.
+    body=(ttl?'<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>':'')+
+         (sub?'<div class="tl-rail-sub">'+escHtml(sub)+'</div>':'');
+  }
+  // The word rides with the icon in every case, so the colour is never doing
+  // the work on its own (1.4.1).
+  // The 'unpaid' qualifier is dropped for anything a manual clock brackets:
+  // that time IS paid, by the clock, and saying otherwise on the row while the
+  // day totals the clock is the screen contradicting itself (owner 2026-09-01).
+  const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+escHtml(m.word)+
+    (r.unpaid&&!isGap&&!r.clockPaid?' · unpaid':'')+'</span>';
+  // EDIT LIVES HERE NOW. The entries table was the only place a manual clock
+  // could be fixed, and the owner cut it off the week view as clutter
+  // (2026-08-30). Losing the ability to correct an entry was not part of that
+  // ask, so the control moved to the row it belongs to instead of disappearing
+  // with the table (§7.2: verify the capability survives before removing the
+  // UI that carried it). Same gate and the same modal as the table used, so
+  // there is still exactly one edit experience (§7.3).
+  const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
+    // ONE WORD, NOT TWO (owner 2026-09-04: "for anything marked as a fix can
+    // we remove the fix code and just do edit like we do for manual clock ins
+    // and outs?"). A GPS row lives in job_time_entries and a manual clock in
+    // the local timeEntries array, so the two handlers cannot become one, but
+    // none of that is the person's problem. On the rail they are the same row
+    // with the same control, and calling one of them "Fix" made correcting a
+    // tracked visit read like owning up to a fault rather than editing an
+    // entry. Same word, same dialog title, same field labels.
+    :(typeof _tlCanFixAuto==='function'&&_tlCanFixAuto(r)&&r.rawId!=null)
+    ?'<button type="button" class="tl-rail-edit" onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')">Edit</button>'
+    :'';
+  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+(r.live?'':escHtml(fm(r.minutes||0)))+
+    (edit?'<span class="tl-rail-editwrap">'+edit+'</span>':'')+'</div>';
+  // AND SO DOES DELETE, for the same reason and by the same rule (§7.2). The
+  // 3-second hold lived on the table row _tlRow drew; that table is gone, and
+  // losing the only way to delete a time entry was not part of removing it.
+  // Same attributes, same _tlCanEdit gate, same handler in js/cloud.js, which
+  // re-checks permission again on its own.
+  const lp=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ?' data-lp-id="'+escHtml(String(r.rawId))+'" data-lp-type="timelog"'+
+     ' data-lp-label="'+escHtml(String(r.personName||'')+' · '+
+        String(r.clientName||r.addr||m.word))+'"'
+    :'';
+  return '<li class="tl-rail-row" data-kind="'+kind+'"'+lp+' style="--rail:'+m.c+'">'+
+    '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
+    '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
+    '<div class="tl-rail-body">'+tag+body+'</div>'+
+    dur+
+  '</li>';
+}
+// The day's headline: total, the same split bar the employee card draws, and
+// a legend whose DOT carries the colour so the bar is readable by anyone who
+// cannot separate its segments by hue alone (1.4.1 again: the number and the
+// word are right there beside the dot).
+// Every person in scope folded into ONE set of bucket minutes. The rail draws
+// a day, not a person, and Me scope is one person anyway. Extracted so the day
+// head and the week bars call the same fold over the same aggregator (§7.3):
+// two components computing "how much of this was driving" separately is
+// exactly how the split bar and Crew Cost drifted apart once already.
+function _tlBucketFold(rows){
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object');
+  const agg=_tlEmpWeekAgg(list,'day');
+  const e={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,loadMin:0,ot:false};
+  Object.keys(agg).forEach(u=>{const a=agg[u];
+    e.min+=a.min||0;if(a.weekOT)e.ot=true;
+    _TL_BUCKETS.forEach(b=>{e[b.k]+=a[b.k]||0;});});
+  return e;
+}
+function _tlRailHeadHtml(rows,label,noTotal){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const e=_tlBucketFold(rows);
+  const total=_tlBucketTotal(e)||1;
+  const segs=_TL_BUCKETS.map(b=>'<span style="width:'+((e[b.k]||0)/total*100).toFixed(1)+'%;background:'+b.c+'"></span>').join('');
+  const legend=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>
+    '<span class="tl-rail-leg"><i style="background:'+b.c+'"></i>'+escHtml(b.label)+
+    ' <b>'+escHtml(fm(e[b.k]))+'</b></span>').join('');
+  return '<div class="tl-rail-head">'+
+    (label?'<div class="tl-rail-head-day">'+escHtml(label)+'</div>':'')+
+    // Suppressed inside the drill: the header one line above already prints
+    // this exact number, and the split bar and legend below are the part the
+    // rail head is actually for.
+    (noTotal?'':'<div class="tl-rail-head-total">'+escHtml(fm(e.min))+'</div>')+
+    '<div class="tl-split-bar">'+segs+'</div>'+
+    (legend?'<div class="tl-rail-legend">'+legend+'</div>':'')+
+  '</div>';
+}
+// One day, oldest first. Chronological is not a preference here: a spine that
+// runs down the page is a picture of time passing, and time does not run
+// backwards, so the newest-first ordering the table uses would make the line
+// lie about the day it is drawing.
+// ── THE CLOCK IS THE DAY'S BRACKET, NOT A ROW INSIDE IT ───────────────────
+//
+// Owner, 2026-09-01: "on manual clock in it should grab the start time then
+// the end at the very end, not show the whole day, all the other shit while
+// its duplicates should overlay themselves on the manual bar so manual clock
+// out extends."
+//
+// The first cut drew the clock as one more line item in the middle of the
+// day, holding whatever minutes the fences had not already claimed. The
+// arithmetic was right and the picture was wrong: a seven-hour clock sat in
+// the list competing with the very rows it contains, so the day read as a pile
+// of separate things instead of one shift with detail inside it.
+//
+// A clock in and a clock out are the two ends of the day. They open and close
+// the rail, everything the phone recorded in between rides between them, and
+// the clock's own total sits on the closing cap where a person looks for it.
+// Nothing about the numbers changes: _tlBlendManual still makes the row carry
+// only what the fences did not explain, so the day still totals the clock.
+// This is only where the clock is drawn.
+function _tlClockCapHtml(r,which){
+  const isIn=which==='in';
+  const t=_tlFmtTime(isIn?r.startTime:r.endTime)||'—';
+  // The same edit control the clock row carried, kept on the OPENING cap: a
+  // wrong clock-in is the thing people actually need to fix, and losing the
+  // way to fix it was never part of moving where it is drawn (§7.2).
+  // ON BOTH CAPS (owner 2026-09-04: "clock out also needs a edit button").
+  // A wrong clock-OUT is just as common as a wrong clock-in, and the editor it
+  // opens is the same one for the same entry: it edits the clock, not the end
+  // of it, so there was never a reason for only one end to reach it.
+  const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
+    :'';
+  // NEITHER CAP CARRIES A NUMBER (owner 2026-09-04: "we dont have a time on
+  // clocked in calculated, dont think we should show a clocked out time stamp
+  // either, the day total is at the top under the data").
+  //
+  // The clock-out cap printed the clock's own minutes plus what the blend
+  // handed back, and took a clockedMin argument for it. On his 3 September
+  // that read 8h 53m against a header of 9h 6m: two different totals for one
+  // day, on one screen, and the one on the cap is the one nobody asked for.
+  // The header already states the day and breaks it down by bucket. A cap is a
+  // MARK ON THE SPINE saying when he started and when he stopped, and it needs
+  // no arithmetic of its own. The argument went with the number (§7): both
+  // callers stop computing something nothing reads.
+  // AND SO DOES THE LONG-PRESS DELETE (§7.2). It lived on the manual row this
+  // cap replaces, and moving where a clock is drawn was never a decision to
+  // remove the only way to delete one. Same attributes, same handler, on the
+  // opening cap beside Edit so both controls stay on the end people reach for.
+  const lp=(isIn&&typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ?' data-lp-id="'+escHtml(String(r.rawId))+'" data-lp-type="timelog"'+
+     ' data-lp-label="'+escHtml(String(r.personName||'')+' · Clocked in')+'"'
+    :'';
+  return '<li class="tl-rail-row tl-rail-cap" data-kind="clock-'+which+'"'+lp+' '+
+      'style="--rail:var(--text3)">'+
+    '<div class="tl-rail-time"><span>'+escHtml(t)+'</span></div>'+
+    '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
+    '<div class="tl-rail-body">'+
+      // The same glyph the manual row has always carried. svgIcon falls back to
+      // the raw character for anything not in the set, so inventing a second
+      // one here would put a bare unicode square next to real icons; the WORD
+      // is what distinguishes the two ends anyway (1.4.1).
+      '<span class="tl-rail-tag">'+svgIcon('▶',{size:10})+' '+
+        escHtml(isIn?'Clocked in':'Clocked out')+'</span>'+
+      (edit?'<div class="tl-rail-sub">'+edit+'</div>':'')+
+    '</div>'+
+    '<div class="tl-rail-dur"></div>'+
+  '</li>';
+}
+function _tlDayRailHtml(rows){
+  // A null row is not a segment, and drawing a blank one would hang a phantom
+  // node off the spine at a time nothing happened. Dropped, not rendered.
+  // A withdrawn hole is not a row and not a clock: Personal took the time off
+  // the day, so the day does not draw it (owner 2026-09-05). It is still in
+  // the rows the gap filler saw, which is why the question does not come back.
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object'&&!r.dismissed)
+    .sort((a,b)=>String(a.startTime||'').localeCompare(String(b.startTime||'')));
+  if(!list.length)return '';
+  // Only a clock with both ends can bracket anything. An entry still running,
+  // or one saved without a time, stays an ordinary row: there is no closing
+  // cap to draw and a half-open bracket is worse than no bracket.
+  const clocks=list.filter(r=>r&&r.source==='manual'&&r.startTime&&r.endTime&&
+    Date.parse(r.startTime)>0&&Date.parse(r.endTime)>Date.parse(r.startTime));
+  if(!clocks.length)return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
+  const out=[];
+  const open=[];   // clocks whose closing cap is still owed, newest first
+  const closeDue=(beforeMs)=>{
+    // A clock closes as soon as the rail reaches a row that starts after it
+    // ended, so the cap lands in true chronological order rather than being
+    // swept to the bottom of the day.
+    for(let i=open.length-1;i>=0;i--){
+      const c=open[i];
+      if(beforeMs!=null&&Date.parse(c.endTime)>beforeMs)continue;
+      out.push(_tlClockCapHtml(c,'out'));
+      open.splice(i,1);
+    }
+  };
+  list.forEach(r=>{
+    const st=Date.parse(r.startTime||'')||null;
+    closeDue(st);
+    if(clocks.indexOf(r)>=0){
+      out.push(_tlClockCapHtml(r,'in'));
+      open.push(r);
+      return;   // the clock itself is the bracket; it is never a row too
+    }
+    out.push(_tlRailRow(r));
+  });
+  closeDue(null);
+  return '<ol class="tl-rail">'+out.join('')+'</ol>';
+}
+// ── The week bars: how much, and does anything look wrong ──────────────────
+// Owner, 2026-08-30, on the timeline version that came first: "that's gotta be
+// the ugliest thing I've ever saw, how do other time log apps do these views?"
+//
+// The research answer was that nobody draws a week as a timeline, and it is not
+// an oversight. Two patterns own the category. Jobber, Housecall Pro and
+// ServiceTitan render a payroll GRID (days down, people across, hours in the
+// cell), which is built for a clerk at a desk. Harvest, Toggl and Clockify put
+// ONE BIG NUMBER over SEVEN DAILY TOTALS, which is the same shape as Screen
+// Time and Health and reads in a glance on a phone.
+//
+// A timeline answers "when exactly." Standing at the truck the question is
+// "how much, and which day looks wrong," and only then "show me that day."
+// So: seven bars for the shape, tap one for the day rail. The owner's own
+// words for the model, and they are the spec:
+//
+//   "seeing how the day of that week looked at a glance with the bar and how
+//    time was spent to see if something is wrong then clicking into it gives
+//    you the full daily rail breakdown we already created"
+//
+// Three things carry "something is wrong," and each is readable without hue:
+//   - the 8-hour guide line, so a long day is over a line and not merely taller
+//     than its neighbour (a bar scaled only to its own week makes every week
+//     look normal, which is the failure mode of every "scale to max" chart)
+//   - the amber ? on a day with an unanswered hole
+//   - the OT flag when the week itself crosses 40
+// The bar label, split across TWO LINES instead of squeezed onto one.
+//
+// This went through "11h 54m" (overran its neighbour at 320px), then "11h54m"
+// (still touched it), then "11h54" (fit, but the owner's answer was "don't
+// want hours cutting off"). He is right, and the earlier versions were all the
+// same mistake: making the number smaller to fit a box, when the box was the
+// thing that should have changed. A seven-column grid gives each day about
+// 35px across and as much vertical room as we care to use, so the hours go
+// above the minutes and nothing is abbreviated at all.
+//
+// The text is not decoration. It is what keeps the height comparison readable
+// to someone who cannot judge a height (1.4.1), so shrinking or truncating it
+// was never actually on the table.
+function _tlBarAmtParts(min){
+  // Math.max(0, NaN) is NaN, not 0, so a garbage minutes value printed "NaNm"
+  // under a bar. Guarded, not clamped by accident.
+  const n=Number(min);
+  const t=Number.isFinite(n)?Math.max(0,Math.round(n)):0;
+  const h=Math.floor(t/60),m=t%60;
+  if(!t)return {top:'0m',sub:''};
+  if(!h)return {top:m+'m',sub:''};
+  // A clean hour says one thing, not "8h" over a lonely "0m".
+  return {top:h+'h',sub:m?m+'m':''};
+}
+// 158px (design handoff 2026-09-04), and it lives in THREE places that must
+// move together: this, .tl-wbar-plot and .tl-wbar-plotarea in index.html. If
+// the plotarea and the plot disagree, the guide line stops landing on the
+// bars. tests/e2e-timelog-week-bars.spec.js reads all three.
+const _TL_BAR_H=158;            // px of drawable column, matches .tl-wbar-plot
+const _TL_BAR_GUIDE_MIN=8*60;   // the 8-hour line
+const _TL_BAR_FLOOR=4*60;       // a light week still shows its shape
+// Bar heights need a ceiling to scale against. Scaling to the tallest day alone
+// makes an 11-hour week and a 4-hour week look identical, so the ceiling is the
+// tallest day plus headroom, never below four hours. The guide line is then
+// drawn only when 8 hours actually falls inside the chart.
+function _tlBarCeiling(dayMins,floorMin){
+  const max=Math.max.apply(null,[0].concat(Array.isArray(dayMins)?dayMins:[]));
+  const f=Number(floorMin);
+  // 6% of headroom, not 12%: enough that the tallest bar never looks clipped
+  // against the ceiling, without banding empty space across the whole chart.
+  return Math.max(Math.round(max*1.06),
+    Number.isFinite(f)&&f>0?f:_TL_BAR_FLOOR);
+}
+// ── Making a bar look like something you can open ──────────────────────────
+// Owner, 2026-08-30: "how do we make the bars scream click me for more info
+// without saying that? What's the psychological design aspect that makes
+// somebody click the bar wondering what it will do?"
+//
+// Two different jobs, and they need two different answers.
+//
+// LOOKING tappable is perceived affordance. A flat painted rectangle reads as
+// a PICTURE, and nobody taps a picture. The same rectangle with a lit top edge
+// and a shadow under it reads as an OBJECT sitting on the baseline, and an
+// object invites a hand. That is all in the CSS and costs no space, which is
+// why it is the first thing to reach for.
+//
+// WANTING to tap is a different thing: curiosity is not "there might be more
+// here", it is a SPECIFIC COUNTABLE UNKNOWN (Loewenstein's information gap).
+// "9h 54m" is a closed fact with nothing missing. "9h 54m, and 8 stops" is an
+// open one: you now know exactly how many things are inside and not what they
+// are. That is the itch, and it is information worth having anyway, which is
+// what separates it from bait.
+//
+// It goes INSIDE the bar rather than under it. A fourth line of type under a
+// 46px column is the clutter the owner has cut three times today, and a number
+// printed on the thing it counts reads as a property of that thing.
+//
+// Deliberately NOT done: a "tap for details" label. An explicit instruction is
+// what you write when the affordance failed, which is exactly why he asked for
+// this without saying it.
+function _tlStopCount(rows){
+  // Places you actually stopped. A drive is not a stop, an unanswered hole is
+  // not a stop, and neither is a wheels-turning leg between two of them.
+  // A hole in the array is not a stop either. _tlRailKind(null) answers 'job'
+  // (its callers want a safe default, not a crash), so counting its answer
+  // without checking the row first turned two empty slots into "2 stops": a
+  // number the bar cannot back up when you tap it.
+  return (Array.isArray(rows)?rows:[]).filter(r=>{
+    if(!r||typeof r!=='object')return false;
+    const k=_tlRailKind(r);
+    return k!=='drive'&&k!=='gap'&&k!=='off';
+  }).length;
+}
+// ONE bar chart, two levels (§7.3). A month drawn as weekly bars and a week
+// drawn as daily bars are the same picture with a different bucket on the x
+// axis, so they are the same function: hand it groups, get the chart. Building
+// a second one for the month is exactly how the split bar and Crew Cost ended
+// up disagreeing about what a minute was.
+//
+// groups: [{ label, sub, rows, onclick, aria }]
+// opts:   { guideMin, guideLabel, share }
+// ── The first paint, and only the first ─────────────────────────────────────
+// Owner, 2026-08-30: "make the skeleton shimmer show the bars, make them load
+// themselves in a bit slower, then once loaded we don't show the skeleton
+// shimmer at all, they just load in, only want skeleton shimmer one time."
+//
+// Two faults, one sentence. The placeholder was four generic grey LINES, so
+// what it promised (a list) was not what arrived (a chart), and the swap read
+// as a change of subject rather than a load. And it reprinted on every render,
+// which is every drill tap: by then the rows are already in memory, so the
+// shimmer was measuring nothing and just flashing. It is a first-load thing
+// now, once per session. After that the bars growing out of the baseline ARE
+// the load, which is what he means by "they just load in".
+//
+// The heights are fixed and deliberately uneven. A row of equal bars reads as
+// a real chart of a boring week and you wait to see it change; an uneven one
+// reads as a placeholder. It is not random either, because a placeholder that
+// differs every time it is drawn is noise.
+const _TL_SKEL_H=[54,72,38,88,64,46,30];
+let _tlSkelShown=false;
+function _tlBarsSkelHtml(){
+  const cols=_TL_SKEL_H.map(h=>
+    '<li class="tl-wbar-col"><span class="tl-wbar-plot">'+
+      '<span class="td-skel tl-skel-bar" style="height:'+h+'%"></span></span>'+
+      '<span class="td-skel tl-skel-lbl"></span>'+
+      '<span class="td-skel tl-skel-amt"></span>'+
+    '</li>').join('');
+  // The same header shell and the same chart card the real thing lands in, so
+  // nothing jumps when it does: only the contents are swapped.
+  return '<div class="tl-drill" aria-hidden="true"><div class="tl-monav">'+
+      '<span class="td-skel tl-skel-btn"></span>'+
+      '<div class="tl-monav-mid">'+
+        '<span class="td-skel tl-skel-ttl"></span>'+
+        '<span class="td-skel tl-skel-sub"></span>'+
+      '</div>'+
+      '<span class="td-skel tl-skel-btn"></span>'+
+    '</div></div>'+
+    '<div class="tl-wbar-wrap" aria-hidden="true">'+
+      '<ol class="tl-wbar" style="grid-template-columns:repeat(7,minmax(0,1fr))">'+
+        cols+
+      '</ol>'+
+    '</div>';
+}
+function _tlBarsHtml(groups,opts){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const list=(Array.isArray(groups)?groups:[]).filter(g=>g&&typeof g==='object');
+  if(!list.length)return '';
+  const o=opts||{};
+  const folds=list.map(g=>_tlBucketFold(g.rows));
+  if(!folds.some(f=>f.min>0))return '';
+  const ceil=_tlBarCeiling(folds.map(f=>f.min),o.floorMin);
+  const gMin=Number(o.guideMin)||0;
+  const guide=(gMin>0&&gMin<=ceil)
+    ?'<span class="tl-wbar-guide" style="bottom:'+(gMin/ceil*100).toFixed(2)+'%">'+
+       '<b>'+escHtml(String(o.guideLabel||''))+'</b></span>'
+    :'';
+  // The guide is drawn OVER the bars, not behind them. Behind, it vanished
+  // under every column tall enough to matter, which is precisely the set of
+  // columns it exists to flag.
+  const cols=list.map((g,i)=>{
+    const rows=Array.isArray(g.rows)?g.rows:[];
+    const e=folds[i];
+    const gapMin=rows.filter(r=>_tlRailKind(r)==='gap').reduce((s,r)=>s+(r.minutes||0),0);
+    const h=Math.min(100,e.min/ceil*100);
+    // Bottom-up, in _TL_BUCKETS order, so the same colour sits in the same
+    // place in every column and the stack can be compared across columns.
+    const segs=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>
+      '<i class="tl-wbar-seg" style="flex:'+(e[b.k]||0)+' 0 auto;background:'+b.c+'" '+
+      'title="'+escHtml(b.label+' '+fm(e[b.k]))+'"></i>').reverse().join('');
+    const aria=(g.aria||g.label||'')+', '+
+      (e.min?fm(e.min):'nothing logged')+(gapMin?', '+fm(gapMin)+' unaccounted':'');
+    // The badge rides just above the TOP OF THE BAR, not at the top of the
+    // column: parked at the ceiling it floated in space over a short column
+    // and read as belonging to nothing.
+    const amt=_tlBarAmtParts(e.min);
+    // CLAMPED so it can never leave the plot. Parked at the top of a bar that
+    // nearly reaches the ceiling, the badge floated above the chart and landed
+    // on the guide's own "40h" label (§15.1: nothing overlaps). Past 86% it
+    // rides just inside the bar's top edge instead, where the amber ring keeps
+    // it readable against any segment colour.
+    // 88 at 158px (was 78 at 92px): the badge is drawn ABOVE its anchor, so
+    // the anchor plus its own height has to fit inside the plot. Its 19px is
+    // 12% of 158, so 88 sits it just under the top of a tall bar as intended.
+    let qb=Math.min(h,88);
+    // AND NEVER ON THE GUIDE'S OWN LABEL (§15.1, tests/e2e-timelog-month
+    // "the unanswered badge never leaves the chart"). The label is a pill
+    // riding the guide line now, and a bar that tops out near the guide would
+    // put the badge straight through it. Inside that band the badge drops to
+    // just under the line, in the bar, where the amber ring keeps it legible.
+    // Only the LAST column can reach the pill (it sits at right:0), and the
+    // badge is a band from qb up to qb plus its own ~12%, the pill a band
+    // ~6% either side of the line. Elsewhere the badge stays where the rule
+    // above put it, just over the top of its bar.
+    const gPct=(gMin>0&&gMin<=ceil)?gMin/ceil*100:-1;
+    if(gPct>=0&&i===list.length-1&&qb+12>gPct-6&&qb<gPct+6)qb=Math.max(0,gPct-20);
+    const q=gapMin
+      ?'<i class="tl-wbar-q" style="bottom:calc('+qb.toFixed(2)+'% + 3px)" '+
+        'title="'+escHtml(fm(gapMin)+' unaccounted, tap to answer')+'">?</i>'
+      :'';
+    // The countable unknown, printed on the bar it counts. Only when the bar is
+    // tall enough to hold it: a number crammed into a 12px sliver is noise, and
+    // the short bars are the ones nobody is curious about anyway.
+    const stops=_tlStopCount(rows);
+    const stopTag=(stops>0&&h>=26)
+      ?'<i class="tl-wbar-n" aria-hidden="true">'+stops+'</i>'
+      :'';
+    // OPENABLE means it has minutes and a level below it. Only then does the
+    // column get a click, a chevron and a pointer; an empty column does
+    // nothing at all (no haptic either, it never reaches _tlDrillTo), so the
+    // affordance never lies. The click is prefixed with _tlDrillFrom(this) so
+    // the zoom that follows can grow out of THIS column.
+    const opens=!!(e.min&&g.onclick&&o.level!=='day');
+    const seam=!!(g.key&&_tlSeamKey&&String(g.key)===String(_tlSeamKey));
+    if(seam)_tlDrillX=((i+0.5)/list.length*100);
+    return '<li class="tl-wbar-col'+(e.min?'':' tl-wbar-none')+'">'+
+      '<button type="button" class="tl-wbar-hit'+(seam?' tl-wbar-seam':'')+'" aria-label="'+escHtml(aria+
+          (stops?', '+stops+' stop'+(stops===1?'':'s'):''))+'"'+
+        (opens?' onclick="_tlDrillFrom(this);'+escHtml(String(g.onclick))+'"':' aria-disabled="true"')+'>'+
+        '<span class="tl-wbar-plot">'+q+
+          '<span class="tl-wbar-stack" style="height:'+h.toFixed(2)+'%">'+segs+stopTag+'</span>'+
+        '</span>'+
+        '<span class="tl-wbar-dow">'+escHtml(String(g.label||''))+
+          (opens?'<span class="tl-wbar-go" aria-hidden="true">\u203a</span>':'')+'</span>'+
+        // The hours are TEXT under every column, so the comparison the chart
+        // makes by height is also there in words (1.4.1), and a column that is
+        // simply short is never mistaken for one that failed to record.
+        '<span class="tl-wbar-amt">'+escHtml(e.min?amt.top:'—')+'</span>'+
+        // ALWAYS emitted, empty or not. A conditional span made columns with
+        // no minutes part one row shorter, so the bars stopped sharing a
+        // baseline. Same reason the height is fixed in CSS rather than left to
+        // the line box.
+        '<span class="tl-wbar-sub">'+escHtml(amt.sub)+'</span>'+
+      '</button>'+
+    '</li>';
+  }).join('');
+  // Behind the bars: three gridlines and one shared floor. In front: the guide.
+  const grid='<div class="tl-wbar-grid" aria-hidden="true">'+
+    '<i style="bottom:25%"></i><i style="bottom:50%"></i><i style="bottom:75%"></i><b></b></div>';
+  // The key, only for the buckets actually on screen. Read from _TL_BUCKETS,
+  // never retyped, so a renamed bucket renames here too.
+  const present=_TL_BUCKETS.filter(b=>folds.some(f=>(f[b.k]||0)>0));
+  const key=present.length?'<div class="tl-wbar-key">'+present.map(b=>
+    '<span><i style="background:'+b.c+'"></i>'+escHtml(b.label)+'</span>').join('')+'</div>':'';
+  return '<div class="tl-wbar-wrap'+(o.level?' tl-wbar-'+String(o.level):'')+'">'+
+    grid+
+    '<div class="tl-wbar-plotarea">'+guide+'</div>'+
+    '<ol class="tl-wbar'+(list.length>8?' tl-wbar-dense':'')+'" style="grid-template-columns:repeat('+list.length+',minmax(0,1fr))">'+
+      cols+
+    '</ol>'+
+    key+
+    (o.share||'')+
+  '</div>';
+}
+// ── The zoom comes out of the bar you touched ──────────────────────────────
+// Design handoff 2026-09-04. Transient and presentational, never on _tlDrill:
+// the tapped column's horizontal centre (for --tl-drill-x) and, coming back
+// up, the key of the column being returned to (for the td-seam ring).
+let _tlDrillX=null;
+let _tlSeamKey=null;
+function _tlDrillFrom(el){
+  try{
+    const li=el&&el.closest?el.closest('li'):null;
+    const ol=li&&li.parentElement;
+    if(!ol)return;
+    const kids=[...ol.children];
+    const idx=kids.indexOf(li);
+    if(idx>=0&&kids.length)_tlDrillX=((idx+0.5)/kids.length*100);
+  }catch(_e){}
+}
+// The style attribute the render writes onto .tl-drill-body. Empty when no
+// column anchored this move (an arrow, a first paint), so the origin falls
+// back to the centre.
+function _tlDrillXStyle(){
+  // typeof, not Number(): Number(null) is 0, which would anchor every arrow
+  // step on the left edge instead of falling back to the centre.
+  const x=(typeof _tlDrillX==='number')?_tlDrillX:NaN;
+  return Number.isFinite(x)&&x>=0&&x<=100?' style="--tl-drill-x:'+x.toFixed(2)+'%"':'';
+}
+// A WEEK: seven days, guided at 8 hours.
+function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
+  const list=(Array.isArray(weekRows)?weekRows:[]).filter(r=>r&&typeof r==='object');
+  const dayList=Array.isArray(days)?days:[];
+  if(!list.length||!dayList.length)return '';
+  const byDay={};
+  dayList.forEach(d=>{byDay[d]=[];});
+  list.forEach(r=>{if(byDay[r.date])byDay[r.date].push(r);});
+  // Share sits ON the week it sends, not at the bottom of the page, because
+  // the page-level button has always meant "this calendar week" and this one
+  // means "the week you are looking at." Two different things, so two
+  // controls, both through _tlWeekShareText.
+  // NOT inside a crew member's week. _tlShareWeekAt resolves its rows from
+  // _tlLastRows, which in Team scope is the whole crew, so the button would
+  // send everybody's hours under one person's heading. A per-person send is a
+  // real feature and it needs its own builder, not this one pointed sideways.
+  // The button is the week's timesheet state (js/timesheet.js): Send this
+  // week until it is submitted, then the stamp, then Approved or Sent back.
+  const share=(opts&&opts.share===false)?'':
+    (typeof _tsWeekButtonHtml==='function')?_tsWeekButtonHtml(String(cacheKey)):
+    '<button type="button" class="tl-wbar-share" '+
+    'onclick="_tlShareWeekAt(\''+escHtml(String(cacheKey))+'\')">'+
+    (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this week</button>';
+  return _tlBarsHtml(dayList.map((d,i)=>({
+    key:d,
+    label:(typeof _tlDayShort==='function'?_tlDayShort(d):d).slice(0,1),
+    aria:(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d),
+    rows:byDay[d]||[],
+    onclick:'_tlDrillTo(\'day\',\''+String(d)+'\')'
+  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week'});
+}
+// A MONTH: one bar per week, guided at 40 hours.
+//
+// 40 is the line that matters at this zoom for the same reason 8 is at the
+// week's: it is the number that changes what somebody does next (overtime),
+// and a chart scaled only to its own tallest week would make every month look
+// normal. The weeks read oldest to newest left to right, because that is the
+// direction a month runs and the eye is being asked to see a trend.
+const _TL_MONTH_GUIDE_MIN=40*60;
+// The floor is the guide PLUS headroom, not the guide itself (owner
+// 2026-08-30: "40 hr benchmark looks odd at the top"). Floored at exactly 40h,
+// a month nobody crossed 40 in put the line at 100% of the plot, flush with
+// the top edge, where it read as the chart's border rather than as a mark to
+// be under, and its label had nowhere to sit but outside. 14% of air above it
+// makes it a line in a chart again.
+const _TL_MONTH_FLOOR=Math.round(_TL_MONTH_GUIDE_MIN*1.14);
+function _tlMonthBarsHtml(monthRows,mo,scope,uid){
+  // ME ONLY, the same split the week already makes. Folding a whole crew into
+  // one bar per week hides who did what, which is the single thing the
+  // per-person cards exist to show, so Team keeps the cards and skips the
+  // chart rather than getting a prettier version of a worse answer.
+  // Team's PAGE still has no month chart, and that is still the reason: one
+  // bar per week for a whole crew hides who did what. Handed a uid the rows
+  // are ONE person's, which is not a fold at all, so the same function draws
+  // it (§7.3) rather than a second month chart existing for crew.
+  if(scope==='team'&&!uid)return '';
+  const list=(Array.isArray(monthRows)?monthRows:[]).filter(r=>r&&typeof r==='object');
+  if(!list.length)return '';
+  const byWeek={};
+  list.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
+  const weeks=Object.keys(byWeek).sort();
+  if(!weeks.length)return '';
+  // Same reason the week's is suppressed, plus one more: these charts live in
+  // an accordion, so N open cards would mean N Send buttons on one screen
+  // (§15.1 allows exactly one primary Send per screen).
+  const share=uid?'':'<button type="button" class="tl-wbar-share" '+
+    'onclick="_tlShareMonth(\''+escHtml(String(mo))+'\')">'+
+    (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this month</button>';
+  // Sanitised, not escaped: this string is put INTO an onclick that _tlBarsHtml
+  // escapes once on the way out, so escaping it here too would double-encode
+  // it. Restricting the characters is both safe and idempotent.
+  const su=String(uid||'').replace(/[^0-9a-zA-Z_-]/g,'');
+  return _tlBarsHtml(weeks.map(wk=>({
+    key:wk,
+    // A RANGE, not a start date (design handoff 2026-09-04). A bare "8/23"
+    // under a bar covering seven days read as one day's total; "23–29" is a
+    // span, which is what the bar is. Crossing a month it says both months.
+    label:_tlWeekRangeLabel(wk),
+    aria:(typeof _tlWeekLabel==='function'?_tlWeekLabel(wk):wk),
+    rows:byWeek[wk],
+    onclick:su?('_tlDrillPerson(\''+su+'\',\''+String(wk)+'\')')
+              :('_tlDrillTo(\'week\',\''+String(wk)+'\')')
+    // THE 40-HOUR LINE IS ALWAYS ON SCREEN AT THIS ZOOM, which is what the
+    // floor buys: the ceiling can no longer fall below it, so the guide is
+    // drawn on every month instead of only on months somebody happened to
+    // cross it. Without this a crew member's 23h week was the tallest thing in
+    // its own chart and read as a full one (owner 2026-08-30, on Jose's card).
+    // The cost is deliberate: a light month draws short bars, which is the
+    // true answer, and the hours are printed under every column anyway.
+  })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share,
+      floorMin:_TL_MONTH_FLOOR,level:'month'});
+}
+// "23–29" inside one month, "Aug 30–Sep 5" across a boundary. No spaces round
+// the dash so a six-column month still fits a 320px phone.
+function _tlWeekRangeLabel(wk){
+  const s=new Date(String(wk||'')+'T00:00:00');
+  if(isNaN(s.getTime()))return String(wk||'');
+  const e=new Date(s);e.setDate(e.getDate()+6);
+  if(s.getMonth()===e.getMonth())return s.getDate()+'\u2013'+e.getDate();
+  const f=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return f(s)+'\u2013'+f(e);
+}
+// "8/23" for a weekly column: short enough for six columns on a 320px phone,
+// and unambiguous because the month picker above already names the month.
+function _tlWeekShortLabel(wk){
+  const p=String(wk||'').split('-');
+  if(p.length<3)return String(wk||'');
+  return String(Number(p[1]))+'/'+String(Number(p[2]));
+}
+// ── The month level: pick a month, see its weeks ───────────────────────────
+// Owner, 2026-08-30: "we also need a monthly picker that shows weekly bars and
+// fills the page then a way to pick previous months inside of the year we have
+// open."
+//
+// This REPLACES the month accordion list rather than sitting on top of it. A
+// list of twelve collapsed months and a month picker are two navigations for
+// one job, and every call he has made this session has been to cut the second
+// one. So the year now opens on a month, the month is a chart, and the weeks
+// of that month are the accordions underneath it.
+//
+// The picker is the same .tl-chip row the day picker uses (§7.3), not a new
+// control that happens to look similar. A month with nothing logged is still
+// shown, disabled: which months a year HAS is information, and a gap in the
+// row says "nothing that month" better than a missing chip does.
+// Which way the chart should slide on the next render: set by an arrow tap,
+// cleared by anything else. Declared beside the selection it belongs to and
+// ABOVE setTimeLogMonth, which writes it.
+let _tlMonthDir='';
+// Kept as the public way to jump to a month. It routes through the drill so
+// there is still exactly one path that changes what month is on screen.
+function setTimeLogMonth(mo,dir){
+  if(!/^\d{4}-\d{2}$/.test(String(mo||'')))return;
+  _tlDrillTo('month',mo,dir);
+}
+// _tlOpenWeek, _tlMonthStep and _tlMonthNavHtml were DELETED here, not left
+// orphaned (§7). They were the accordion-and-chip navigation the drill
+// replaced: opening a week in a list below the chart, stepping months through
+// a picker that no longer exists, and a nav bar whose job _tlDrillHeadHtml now
+// does at every level instead of only this one.
+// The month as text, same shape and the same builder family as the week's
+// (§7.3): one line per week, the split, and the total.
+function _tlMonthShareText(rows,mo){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  // FILTERED HERE, not trusted from the caller. A message headed "August 2026"
+  // that carries September hours is a wrong number in somebody's payroll text,
+  // and the only thing that stood between us and that was every caller
+  // remembering to filter first. One of them did; the rule now lives in the
+  // function that prints the heading.
+  const inMonth=/^\d{4}-\d{2}$/.test(String(mo||''))
+    ? (r=>String((r&&r.date)||'').slice(0,7)===mo) : (()=>true);
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object').filter(inMonth);
+  const byWeek={};
+  list.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
+  const lines=Object.keys(byWeek).sort().map(wk=>{
+    const min=_tlPaidMin(byWeek[wk]);
+    if(!min)return '';
+    // No unaccounted here either (owner 2026-09-04, "strip it there to"), for
+    // the same reason as the week share above.
+    return (typeof _tlWeekLabel==='function'?String(_tlWeekLabel(wk)).replace(/^Week of /,'Wk '):wk)+
+      ': '+fm(min);
+  }).filter(Boolean);
+  const e=_tlBucketFold(list);
+  const split=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>b.label+' '+fm(e[b.k])).join(', ');
+  const out=['Hours, '+(typeof _bkMonthLabel==='function'?_bkMonthLabel(mo):String(mo)),''];
+  if(lines.length)out.push(lines.join('\n'),'');
+  out.push('Total: '+(fm(e.min)||'0m'));
+  if(split)out.push(split);
+  return out.join('\n');
+}
+async function _tlShareMonth(mo){
+  const rows=(_tlLastRows||[]).filter(r=>r&&String(r.date||'').slice(0,7)===mo);
+  if(!rows.length){
+    typeof showToast==='function'&&showToast('No hours logged that month yet','📋');return;
+  }
+  const text=_tlMonthShareText(rows,mo);
+  if(typeof pwaShare==='function')await pwaShare({title:'Hours',text});
+  return text;
+}
+// ── ONE drill, one idiom ───────────────────────────────────────────────────
+// Owner, 2026-08-30: "I'm so confused on this, love the bars and what they
+// show but I'm lost on how we drill down cleanly ... year up top, then month
+// which has four week bars, then drill to week then clicking the week lets you
+// drill to days, what's the cleanest way to do this?"
+//
+// He was lost because the page had FOUR navigation idioms stacked on it: a
+// dropdown for the year, an arrow stepper for the month, an accordion LIST for
+// the weeks, and chip tabs for the days. Three of them could reach the same
+// week, two charts could be on screen at once, and none of them agreed on what
+// tapping meant.
+//
+// This is his sentence, built literally, with one rule: ONE LEVEL ON SCREEN,
+// ONE CHART, and exactly three gestures, each meaning one thing.
+//
+//   Year   the selector already at the top of the page, unchanged
+//   Month  weekly bars      tap a bar to go down
+//   Week   daily bars       tap a bar to go down
+//   Day    the rail
+//
+//   ‹ ›    move sideways, to the next sibling that HAS hours
+//   bar    go down a level
+//   back   go up a level, and it names where it goes
+//
+// The week accordion list is gone. It was a second way to do the drill the
+// bars already do, it duplicated every total the chart above it was drawing,
+// and it is the single biggest reason this felt like a maze.
+// uid is WHOSE rows the levels are showing, not a level of its own. In Me
+// scope it is always null. In Team it is set by tapping a week on a crew
+// member's card, rides along week to day, and is dropped on the way back up to
+// month, because the crew list is the one screen that is not about one person.
+let _tlDrill={level:'month',mo:null,wk:null,day:null,uid:null};
+// Which way the chart is about to move, and it is FOUR directions, not two.
+// The arrows move sideways and already said so; going down a level and coming
+// back up said nothing at all, so a tap that changed what the chart MEANS
+// looked exactly like a tap that changed which week it was showing. Ranking
+// the levels is what lets one line tell those apart.
+const _TL_LEVEL_RANK={month:0,week:1,day:2};
+// The month a day belongs to, and '' for anything that is not a real date, so
+// a junk key can never park the drill on a month that does not exist.
+function _tlMonthKey(dateStr){
+  return _tlWeekKey(dateStr)?String(dateStr).slice(0,7):'';
+}
+// Which month a WEEK belongs to, which is a real question because a week
+// straddles two of them five times a year (the week of Aug 30 is also the
+// first five days of September). The month chart is built one month at a
+// time, so a week key alone is not enough to find the week's rows: answer it
+// with the rows themselves, the month actually holding this week's hours, and
+// fall back to the week's own start date only when nothing is logged in it.
+// Getting this wrong is not cosmetic: land on a month whose chart has no such
+// week and the render snaps the week back to that month's last one, which is
+// the dead end all over again.
+function _tlWeekMonth(wk){
+  if(!wk)return '';
+  const seen={};
+  (_tlLastRows||[]).forEach(r=>{
+    if(!r||!r.date||_tlWeekKey(r.date)!==wk)return;
+    if(_tlDrill.uid&&_tlRowUid(r)!==_tlDrill.uid)return;
+    const mo=String(r.date).slice(0,7);seen[mo]=(seen[mo]||0)+1;
+  });
+  const months=Object.keys(seen);
+  if(!months.length)return _tlMonthKey(wk);
+  // Most hours wins a straddled week, ties to the earlier month, so the same
+  // week always resolves to the same side no matter which way you arrived.
+  return months.sort((a,b)=>seen[b]-seen[a]||a.localeCompare(b))[0];
+}
+function _tlDrillTo(level,key,dir){
+  const uid=_tlDrill.uid,was=_tlDrill.level;
+  // Captured BEFORE the reassignment below wipes them: coming back up rings
+  // the column you came out of, and that column's key is the level you left.
+  const wasDay=_tlDrill.day,wasWk=_tlDrill.wk;
+  if(level==='month')_tlDrill={level:'month',mo:key||_tlDrill.mo,wk:null,day:null,uid:null};
+  // The week and month a key sits in are DERIVED from the key, never carried
+  // over from whatever happened to be on screen. Owner, 2026-08-31: "week day
+  // changer only lets you go back to the start of the week but it should be
+  // smart enough to continue to go backwards into previous weeks with the
+  // arrow buttons." The arrows now hand this a day in the PREVIOUS week, and
+  // the render resolves the level against _tlDrill.wk/.mo: leave those
+  // pointing at the week you left and the day is snapped straight back into
+  // it, which IS the dead end. Deriving them is also what makes the
+  // "‹ Week of ..." back link follow the day over the boundary instead of
+  // naming a week that is no longer on screen.
+  else if(level==='week')_tlDrill={level:'week',mo:_tlWeekMonth(key)||_tlDrill.mo,
+    wk:key,day:null,uid:uid};
+  else if(level==='day')_tlDrill={level:'day',mo:_tlMonthKey(key)||_tlDrill.mo,
+    wk:_tlWeekKey(key)||_tlDrill.wk,day:key,uid:uid};
+  else return;
+  const a=_TL_LEVEL_RANK[was],b=_TL_LEVEL_RANK[level];
+  // An explicit arrow direction always wins: stepping sideways is what the
+  // caller asked for even when the level happens to be the same.
+  _tlMonthDir=(dir==='fwd'||dir==='back')?dir
+    :(b>a)?'down':(b<a)?'up':'';
+  // Coming back UP zooms into the column you came out of and rings it. The
+  // key of that column is the level you just left; the render finds it and
+  // sets --tl-drill-x from its index. Down keeps the x _tlDrillFrom already
+  // recorded from the tap; sideways anchors nothing and falls back to centre.
+  if(_tlMonthDir==='up'){_tlSeamKey=(was==='day')?wasDay:(was==='week')?wasWk:null;_tlDrillX=null;}
+  else _tlSeamKey=null;
+  if(_tlMonthDir!=='down'&&_tlMonthDir!=='up')_tlDrillX=null;
+  // The feel lands on the same frame as the zoom (design handoff 2026-09-04),
+  // through the app's one hook: 'tap' for a drill (a control committed),
+  // 'tick' for sideways or up (a small thing happened). A disabled arrow or an
+  // empty column never reaches here, so they stay silent.
+  try{if(typeof _tdHaptic==='function')_tdHaptic(_tlMonthDir==='down'?'tap':'tick');}catch(_e){}
+  // FROM MEMORY, and this is the whole of the second defect. Owner,
+  // 2026-08-31: "like almost 2 seconds to change a day, thats awful." Every
+  // drill tap came back through renderTimeLog, which opens by AWAITING
+  // _timeLogRows: three round trips to Supabase (team_members,
+  // job_time_entries, shop_time_entries via _fetchCrewLabor) plus the
+  // CoreMotion tape _tlShopTape reads off the coprocessor, and only then does
+  // anything on screen move. None of that work can change the answer: a drill
+  // tap picks a different SLICE of rows the page is already holding. So it
+  // paints from the rows it already has, synchronously, in the same task as
+  // the tap, and _tlRevalidateRows checks the server afterwards.
+  renderTimeLog({cached:true});
+}
+// Into one crew member's week. The ONLY way uid is ever set, so there is one
+// door in and _tlDrillTo owns everything after it.
+function _tlDrillPerson(uid,wk){
+  // Falsy BEFORE stringifying: String(0) is '0', which is a perfectly truthy
+  // string and would have set the drill to a person who does not exist. No
+  // real id is falsy, so this costs nothing and closes the whole class.
+  if(!uid)return;
+  _tlDrill.uid=String(uid);
+  _tlDrillTo('week',wk);
+}
+// The identity key a row aggregates under, which is personUid except for the
+// owner's own manual rows: those carry null and fold under the contractor id,
+// the same rule _tlEmpWeekAgg and _tlEmpAccHtml already use. _tlLastCid is set
+// beside _tlLastRows on every render, for the same reason: the arrows are
+// clicked long after the render that drew them.
+let _tlLastCid=null;
+function _tlRowUid(r){return String((r&&r.personUid)||_tlLastCid);}
+function _tlDrillUp(){
+  if(_tlDrill.level==='day')_tlDrillTo('week',_tlDrill.wk);
+  else if(_tlDrill.level==='week')_tlDrillTo('month',_tlDrill.mo);
+}
+// The siblings of whatever is on screen, in calendar order, and ONLY the ones
+// with hours. Stepping onto an empty chart is the thing the arrows exist to
+// prevent.
+function _tlDrillSiblings(rows){
+  // Inside a crew member's drill the arrows step through THEIR weeks and days,
+  // never the whole crew's: stepping from one person's Tuesday to another
+  // person's Wednesday is not a sideways move, it is a different question.
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&r.date&&
+    (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
+  const keys=[];
+  const push=k=>{if(k&&keys.indexOf(k)<0)keys.push(k);};
+  // NOT clipped to the month or the week on screen. Both lists used to be,
+  // and that is exactly what the owner hit on 2026-08-31: the first day of a
+  // week had no previous sibling, so the arrow was drawn disabled and the day
+  // stepper dead-ended at Sunday instead of carrying on into Saturday of the
+  // week before. A week is not the end of the calendar, it is a window on it.
+  // The bounds that are real are kept, and they are the two the list already
+  // had: only siblings that HAVE hours (stepping onto an empty chart is what
+  // the arrows exist to prevent, which also means there is nothing to step
+  // forward onto past today), and only inside the open year, because that is
+  // the whole set _tlLastRows holds and the year selector is its own control.
+  if(_tlDrill.level==='month')list.forEach(r=>push(String(r.date).slice(0,7)));
+  else if(_tlDrill.level==='week')list.forEach(r=>push(_tlWeekKey(r.date)));
+  else if(_tlDrill.level==='day')list.forEach(r=>push(r.date));
+  return keys.sort();
+}
+function _tlDrillStep(delta,rows){
+  const keys=_tlDrillSiblings(rows);
+  const cur=_tlDrill.level==='month'?_tlDrill.mo:_tlDrill.level==='week'?_tlDrill.wk:_tlDrill.day;
+  const i=keys.indexOf(cur);
+  if(i<0)return;
+  const next=keys[i+(delta>0?1:-1)];
+  if(!next)return;
+  _tlDrillTo(_tlDrill.level,next,delta>0?'fwd':'back');
+}
+// ONE header for every level (§7.3). Same stepper, same shape, so moving
+// between levels never changes what the controls mean.
+// THE WEEK AND DAY LEVELS, WRITTEN ONCE (§7.3).
+//
+// Me looking at his own week and an owner looking at Jose's week are the same
+// screen: same chart, same rail, same header, same arrows. The only things
+// that differ are whose rows go in, whose name sits on top, and where the back
+// link says it goes. Those are arguments. Building Team a second copy is how
+// the split bar and Crew Cost ended up disagreeing about what a minute was.
+//
+// Returns null when the drill is at month level, because a month is NOT the
+// same screen in both places: for Me it is a chart, for Team it is the crew
+// list. Each caller renders its own.
+//
+// It also RESOLVES the level, which is why it owns the writes to _tlDrill.wk
+// and .day: a week that vanished under us (arrowed into a new month, data
+// re-synced) falls back to the month's last week rather than drawing nothing.
+function _tlLevelsHtml(moRows,selMo,opts){
+  const o=opts||{};
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const byWeek={};
+  (Array.isArray(moRows)?moRows:[]).forEach(r=>{
+    const wk=r&&_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
+  const weekKeys=Object.keys(byWeek).sort();
+  if(_tlDrill.level!=='month'&&weekKeys.indexOf(_tlDrill.wk)<0)
+    _tlDrill.wk=weekKeys[weekKeys.length-1]||null;
+  if(!_tlDrill.wk&&_tlDrill.level!=='month')_tlDrill.level='month';
+  if(_tlDrill.level==='month')return null;
+  // A WEEK IS NOT A SLICE OF A MONTH (owner 2026-09-01: "the weekly bar graph
+  // isn't rendering my daily time today, nothing shows but the day rail is
+  // perfect"). moRows is the SELECTED MONTH, and the week on screen is
+  // whatever seven days _tlWeekDayDates names, which twelve times a year
+  // crosses a month boundary. Sourcing the chart from the month meant the
+  // straddling week could only ever draw the half that lived on the selected
+  // side, and _tlWeekMonth resolves that side by whichever half has more
+  // hours: so on Sunday the new month's days are blank, and by Thursday the
+  // old month's are. Reproduced 2026-09-01 with 8h/8h on Aug 30-31 and 4h36m
+  // today: the August view drew "8h 8h — — — — —" and hid Tuesday entirely,
+  // while the day rail, reached through a drill whose month followed the day,
+  // was right. Two surfaces, one week, two answers.
+  //
+  // _tlLastRows is the whole scope-filtered year and is already assigned
+  // before this runs, which is the same set _tlDrillSiblings has always read
+  // for exactly this reason (the arrows have always stepped across months).
+  // Only the WEEK LIST above stays month-scoped: that is the fallback for a
+  // week that vanished under us, and it should still land inside the month
+  // the picker is pointing at.
+  const wkRows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===_tlDrill.wk&&
+    (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
+  const days=_tlWeekDayDates(_tlDrill.wk);
+  if(_tlDrill.level==='week')
+    return {head:_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
+              _tlDrill.wk,o.backLabel||_bkMonthLabel(selMo),o.eyebrow),
+            body:_tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
+  const dayKeys=days.filter(d=>wkRows.some(r=>r.date===d));
+  if(dayKeys.indexOf(_tlDrill.day)<0)_tlDrill.day=dayKeys[dayKeys.length-1]||null;
+  const dayRows=wkRows.filter(r=>r.date===_tlDrill.day);
+  return {head:_tlDrillHeadHtml(_tlDayFullLabel(_tlDrill.day),fm(_tlPaidMin(dayRows)),
+            _tlDrill.day,_tlWeekLabel(_tlDrill.wk),o.eyebrow),
+          body:_tlRailHeadHtml(dayRows,'',true)+_tlDayRailHtml(dayRows)};
+}
+// keys is NOT a parameter any more, and that is the other half of the dead
+// end (owner 2026-08-31). Every caller passed the list it happened to be
+// looping over, and at the day level that list was the days of ONE week: on
+// the first of them the back arrow was drawn disabled, so the step the arrows
+// were perfectly capable of making could not even be asked for. One authority
+// on what a sideways step does, and it is the same one that performs it
+// (7.3), so an arrow is live exactly when _tlDrillStep has somewhere to go.
+function _tlDrillHeadHtml(title,total,cur,backLabel,eyebrow){
+  const keys=_tlDrillSiblings(_tlLastRows);
+  const i=keys.indexOf(cur);
+  const prev=i>0,next=i>=0&&i<keys.length-1;
+  const arrow=(dir,on,glyph,word)=>
+    '<button type="button" class="tl-monav-btn"'+(on?'':' disabled aria-disabled="true"')+
+    ' aria-label="'+escHtml(word)+'" onclick="_tlDrillStep('+dir+',_tlLastRows)">'+glyph+'</button>';
+  // The back link NAMES where it goes. "Back" alone makes somebody guess, and
+  // guessing is the thing this whole rebuild is undoing.
+  const back=backLabel
+    ?'<button type="button" class="tl-drill-back" onclick="_tlDrillUp()">'+
+       '\u2039 '+escHtml(backLabel)+'</button>'
+    :'';
+  // Whose. Only Team sets it: on a crew member's week the title says which
+  // week and the total says how much, and without this nothing on the screen
+  // says which of five people you are looking at.
+  const who=eyebrow?'<div class="tl-drill-who">'+escHtml(String(eyebrow))+'</div>':'';
+  return '<div class="tl-drill">'+back+who+
+    '<div class="tl-monav">'+
+      arrow(-1,prev,'\u2039','Previous')+
+      '<div class="tl-monav-mid" aria-live="polite">'+
+        '<div class="tl-monav-lbl">'+escHtml(title)+'</div>'+
+        '<div class="tl-monav-tot">'+escHtml(total)+'</div>'+
+      '</div>'+
+      arrow(1,next,'\u203a','Next')+
+    '</div>'+
+  '</div>';
+}
+// ── A gap answered on Saturday, covered by real rows on Sunday ─────────────
+// Owner, 2026-08-30, looking at a manual row on 08/27: "then saw shop time
+// manual at 12:13 pm what's up with that?"
+//
+// He had tapped Add on what was a genuine hole at the time: a duplicate shop
+// session was clipping the real one down to five minutes, so 12:13 to 12:50
+// read as unaccounted and he answered it honestly. The dedupe sweep later
+// deleted the duplicate, the real 37-minute shop session came back whole, and
+// his 36 manual minutes were left sitting on top of it. The day counted them
+// twice.
+//
+// Nothing was wrong with the answer. What was missing is that an answer is a
+// CLAIM ON A WINDOW, and no code ever re-checked that claim against rows which
+// showed up afterwards. That matters more now than it did: the day rail asks
+// the question on every hole, with three chips, so these rows are about to
+// become common rather than rare.
+//
+// TRIMMED, NOT DELETED, and this is the whole design. If half the window is
+// now covered, the person's answer about the other half is still true and
+// still theirs. Only a claim with nothing left of it is withdrawn. The rule is
+// deliberately one-directional: this sweep can shrink or remove a gap answer,
+// never grow one and never create one, so the worst it can do is under-count
+// time the derived rows already carry.
+const _TL_GAP_LABEL_RE=/^(Added from unaccounted time|Break \(|Personal time)/;
+const _TL_GAP_MIN_KEEP_MS=60000;   // under a minute left is not worth a row
+// Only rows this app wrote from a gap are eligible. `fromGap` is stamped on
+// every new one; the label match is the fallback for the rows written before
+// the flag existed (there are real ones in production, 08/27 among them).
+function _tlIsGapAnswer(e){
+  if(!e||e.open)return false;
+  if(e.fromGap===true)return true;
+  return _TL_GAP_LABEL_RE.test(String(e.scope_label||''));
+}
+// PERSONAL MEANS GONE (owner 2026-09-05: "when I click personal why does it
+// fill a clock in clock out? It shouldn't, that should just make it
+// disappear").
+//
+// All three answers to a hole wrote the same kind of row, and the rail draws
+// every manual row that has both ends as a CLOCK: so saying "that was not
+// work" drew a CLOCKED IN and a CLOCKED OUT around it, which is the opposite
+// of what was said. Work and Break are still rows, because they are still
+// claims about the day. Personal is not a claim, it is a withdrawal.
+//
+// The row is still WRITTEN, and that is the point of keeping it: it is the
+// record of the answer, it syncs to the other devices, and it is what stops
+// _tlFillUnaccounted asking the same question again tomorrow. It just never
+// reaches the rail. Same shape as rule 13's 'dismissed' visit, which the
+// reader already drops the same way, for the same reason (§7.3).
+//
+// The label matters as well as the flag: rows answered before this change
+// carry no flag, and they must stop drawing a clock too.
+function _tlIsPersonalGap(e){
+  if(!e||typeof e!=='object')return false;
+  // A RUNNING CLOCK IS NEVER WITHDRAWN, whatever else the row carries. This
+  // function decides what the rail does not draw, and hiding somebody's open
+  // clock is the one mistake here that costs a day. _tlAddUnaccounted only
+  // ever writes open:false, so this guards the corrupt and the legacy row,
+  // and it is the same first line _tlIsGapAnswer already opens with.
+  if(e.open)return false;
+  if(e.personal===true)return true;
+  return _tlIsGapAnswer(e)&&/^Personal time/.test(String(e.scope_label||''));
+}
+// Subtract every covered stretch from [a,b], returning what is left.
+function _tlSubtractCovered(a,b,covers){
+  let free=[[a,b]];
+  (Array.isArray(covers)?covers:[]).forEach(c=>{
+    if(!c||!(c[1]>c[0]))return;
+    const next=[];
+    free.forEach(([s,e])=>{
+      if(c[1]<=s||c[0]>=e){next.push([s,e]);return;}   // no overlap
+      if(c[0]>s)next.push([s,Math.min(c[0],e)]);
+      if(c[1]<e)next.push([Math.max(c[1],s),e]);
+    });
+    free=next;
+  });
+  return free.filter(([s,e])=>e-s>=_TL_GAP_MIN_KEEP_MS);
 }
 // Still-clocked-in banner, separate from the year/month/day history below,
 // refreshed on its own 30s tick while this page is open so elapsed time keeps
@@ -725,11 +2437,21 @@ function _tlRenderOpenBanner(){
   const open=_tlOpenEntries();
   const canForce=typeof _canViewComp==='function'&&_canViewComp();
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
-  const visible=canForce?open:open.filter(r=>r.personUid===myUid);
+  let visible=canForce?open:open.filter(r=>r.personUid===myUid);
+  // And the fence I am standing in, ticking, with no button: nothing to
+  // clock out of, the departure will close it (owner 2026-09-02).
+  try{
+    const od=window._geoOpenDwell;
+    const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+    if(od&&od.sinceTs>0&&me){
+      visible=visible.concat([{rawId:null,geo:true,personName:(typeof getOwnerName==='function'&&getOwnerName())||'Me',personUid:me,
+        clientName:od.name||'On site',jobName:'',startTime:od.sinceIso,startMs:od.sinceTs,elapsedMin:Math.max(0,Math.round((Date.now()-od.sinceTs)/60000))}]);
+    }
+  }catch(_e){}
   if(!visible.length){el.innerHTML='';el.style.display='none';return;}
   el.style.display='block';
   el.innerHTML='<div class="card" style="margin-bottom:14px;border:1px solid var(--c-green-edge);background:var(--c-green-soft)">'+
-    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--c-green-deep);margin-bottom:6px">'+svgIcon('▶',{size:12})+' Currently clocked in</div>'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--c-green-deep);margin-bottom:6px">'+svgIcon('▶',{size:12})+(visible.some(r=>!r.geo)?' Currently clocked in':' On site now')+'</div>'+
     visible.map(r=>
       // 10+ hrs still open is almost always a forgotten clock-out, not a real
       // shift: flag it so a manager (or the person themselves) notices
@@ -741,25 +2463,112 @@ function _tlRenderOpenBanner(){
           '<div style="font-size:11px;color:var(--text3)">since '+_tlFmtTime(r.startTime)+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
-          '<div style="font-size:13px;font-weight:800'+(r.elapsedMin>600?';color:var(--c-red-deep)':'')+'">'+(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m')+'</div>'+
-          // Own entry: a real clockOut(): matches _activeTimer by construction
-          // (either this device's live session, or restored by
-          // _rehydrateActiveTimer() on boot). Someone else's entry: the
-          // manager-only force-close, which audit-tags who closed it.
-          (r.personUid===myUid?'<button onclick="clockOut();_tlRenderOpenBanner()" class="btn btn-sm" style="font-size:11px">Clock out</button>'
+          // data-tl-open-start carries the clock-in instant so the 1s tick can
+          // repaint just this node (_tlTickOpenElapsed) without re-rendering
+          // the card. Re-rendering every second would rebuild the Clock out
+          // button underneath a thumb that is already on it.
+          '<div'+(r.startMs?' data-tl-open-start="'+r.startMs+'"':'')+' style="font-variant-numeric:tabular-nums;font-size:13px;font-weight:800'+(r.elapsedMin>600?';color:var(--c-red-deep)':'')+'">'+
+            (r.startMs&&typeof _clockElapsedStr==='function'?_clockElapsedStr(Date.now()-r.startMs)
+              :(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m'))+'</div>'+
+          // Own entry: clockOutEntry(id), which adopts this exact row and then
+          // runs the real clockOut(). It used to call clockOut() bare, and
+          // clockOut's first line is `if(!_activeTimer)return;`, so after a
+          // reload (or when the open row lands from the cloud after boot) the
+          // button silently did nothing (owner report 2026-08-31, Jack).
+          // Someone else's entry: the manager-only force-close, which
+          // audit-tags who closed it.
+          (r.geo?'<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:4px;background:var(--c-green-edge);color:var(--c-green-deep)">ON SITE</span>'
+            :r.personUid===myUid?'<button onclick="clockOutEntry('+r.rawId+');_tlRenderOpenBanner()" class="btn btn-sm" style="font-size:11px">Clock out</button>'
             :canForce?'<button onclick="forceClockOutEntry('+r.rawId+')" class="btn btn-sm" style="font-size:11px">Clock out</button>':'')+
         '</div>'+
       '</div>'
     ).join('')+
   '</div>';
 }
-function _tlStopOpenRefresh(){if(_tlOpenRefreshTimer){clearInterval(_tlOpenRefreshTimer);_tlOpenRefreshTimer=null;}}
+// Repaint ONLY the elapsed figures, once a second, straight off the DOM. It
+// reads the clock-in instant back out of data-tl-open-start rather than
+// walking timeEntries, so a ticking card costs one querySelectorAll a second
+// and touches no data at all.
+//
+// Owner 2026-08-31: "keep the counter ticking live in the card". It used to
+// move only on the 30s re-render, in whole minutes, so a clock that had just
+// been started sat on 0m for half a minute and looked stopped. The LONG SHIFT
+// badge and its red still land on the 30s pass: that threshold is ten hours,
+// so it has never needed a per-second check.
+let _tlOpenTickTimer=null;
+function _tlTickOpenElapsed(){
+  const host=document.getElementById('tl-open');
+  if(!host||host.style.display==='none')return;
+  const now=Date.now();
+  host.querySelectorAll('[data-tl-open-start]').forEach(n=>{
+    const t=Number(n.getAttribute('data-tl-open-start'));
+    if(t>0&&typeof _clockElapsedStr==='function')n.textContent=_clockElapsedStr(now-t);
+  });
+}
+// ── THE WEEK TRACKS THE DAY AS IT HAPPENS (owner 2026-09-01) ──────────────
+//
+// "for the week rows, as data feeds, that needs to track in real time."
+//
+// It did not. renderTimeLog ran on opening the page, on a drill tap, and on a
+// manual clock action, and nothing else: a GPS row landing from the truck, or
+// a clock closed on another device, moved nothing on a page already open. The
+// chart was a snapshot of whenever you happened to arrive.
+//
+// Two triggers, one door. The realtime job_time_entries subscription in
+// js/cloud.js already fires the instant a row lands and was only running dedup
+// sweeps with it, so it calls this now for immediacy; and the 30-second open
+// refresh below calls it too, which covers every other way rows change (this
+// device's own engine writing locally, a sweep repairing a row, a peer's
+// td_time_entries arriving over the sync channel) without a hook in each of
+// them, and is the backstop for a realtime channel that has dropped.
+//
+// Cheap by construction: it is a no-op unless the Time Log is the page on
+// screen, coalesced so a flush burst of a dozen rows costs one render, and
+// _tlRevalidateRows still compares a fingerprint and repaints only when the
+// answer actually moved. A drive that changes nothing costs one query.
+let _tlLiveTimer=null;
+const _TL_LIVE_DEBOUNCE_MS=2500;
+function _tlLiveRefresh(){
+  try{
+    if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
+    clearTimeout(_tlLiveTimer);
+    _tlLiveTimer=setTimeout(()=>{
+      // Re-checked on the way out, not just on the way in: the page can be
+      // navigated away from during the debounce, and repainting a hidden page
+      // is three Supabase queries for nothing.
+      if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
+      try{_tlRevalidateRows(_tlLastRows,undefined,true);}catch(_e){}
+    },_TL_LIVE_DEBOUNCE_MS);
+  }catch(_e){}
+}
+function _tlStopOpenRefresh(){
+  if(_tlOpenRefreshTimer){clearInterval(_tlOpenRefreshTimer);_tlOpenRefreshTimer=null;}
+  if(_tlOpenTickTimer){clearInterval(_tlOpenTickTimer);_tlOpenTickTimer=null;}
+}
 function _tlStartOpenRefresh(){
   _tlStopOpenRefresh();
+  // The open row can arrive from the cloud after boot, in which case the boot
+  // rehydrate already ran and found nothing. Opening the Time Log is the next
+  // moment we know the data is here, so the running clock reconnects to the
+  // app-wide banner and the lock-screen card here too. It is a no-op when a
+  // timer is already live (js/jobs.js _rehydrateActiveTimer guards on it).
+  if(typeof _rehydrateActiveTimer==='function')_rehydrateActiveTimer();
   _tlRenderOpenBanner();
+  // Two intervals on purpose, and they do different jobs: this one moves the
+  // numbers, the 30s one below rebuilds the card when the SET of open rows
+  // changes (somebody else clocks in or out).
+  _tlOpenTickTimer=setInterval(()=>{
+    if(!document.getElementById('pg-timelog')?.classList.contains('active')){_tlStopOpenRefresh();return;}
+    _tlTickOpenElapsed();
+  },1000);
   _tlOpenRefreshTimer=setInterval(()=>{
     if(!document.getElementById('pg-timelog')?.classList.contains('active')){_tlStopOpenRefresh();return;}
     _tlRenderOpenBanner();
+    // ...and the CHART, not just the banner. The banner has always ticked
+    // while the page sat open, which made the staleness worse rather than
+    // better: a running clock counting up beside a week chart that had not
+    // moved since you opened it reads as though the chart is the broken one.
+    _tlLiveRefresh();
   },30000);
 }
 // Sunday–Saturday label for a week key ('YYYY-MM-DD' Sunday date), e.g.
@@ -815,16 +2624,39 @@ function _tlEmpWeekAgg(rows,cid){
   rows.forEach(r=>{
     if(r.unpaid)return;
     const uid=r.personUid||cid;
-    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,weekOT:false,name:r.personName});
+    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,loadMin:0,weekOT:false,name:r.personName});
     e.min+=r.minutes||0;
     if(r.weekOT)e.weekOT=true;
     // Shop/yard dwell is its own bucket (owner request 2026-08-24): it is paid
     // like Crew Cost pays it, but it is NOT job-site labor and must never
     // inflate that number on the split bar.
+    // rawSource, NOT detail (fixed 2026-08-29). The comment above has always
+    // said these classify through the same two predicates Crew Cost uses, so
+    // the two reports can never disagree. They did. `detail` is the FRIENDLY
+    // label, so a drive leg arrived here as the string 'Driving' and was
+    // tested against /^drive/, which is case-sensitive and never matched, and
+    // a place visit arrived as '' and was tested against ==='place'. Both
+    // fell through to the else, so every GPS drive leg and every supply-house
+    // visit has been counting as ON-SITE JOB LABOR on the split bar while
+    // Crew Cost, reading the raw column, put them in overhead. rawSource is
+    // the raw column and is already on the row for exactly this reason.
+    const _src=r.rawSource||'';
     if(r.source==='shop')e.shopMin+=r.minutes||0;
-    else if(r.source==='manual')e.onsiteMin+=r.minutes||0;
-    else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(r.detail))e.driveMin+=r.minutes||0;
-    else if(typeof _geoIsPlaceSource==='function'&&_geoIsPlaceSource(r.detail))e.placeMin+=r.minutes||0;
+    // A CLOCK IS NOT A JOB SITE (owner 2026-09-01). A manual entry used to
+    // count as on-site labour, on the reasonable old assumption that clocking
+    // in meant clocking in AT something. Since the blend, a clock carries only
+    // the minutes no fence explained, which is by definition time the app
+    // cannot place, and that is what the grey bucket is for. Left as on-site it
+    // produced Jack's Sept 1 legend: "On site 4h 59m" on a day whose rail holds
+    // no on-site row at all, because every fence he crossed was the shop.
+    else if(r.source==='manual')e.placeMin+=r.minutes||0;
+    else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(_src))e.driveMin+=r.minutes||0;
+    // Loading the truck is carved OUT of the supply/other bucket (owner
+    // 2026-08-30, who wants it named on the day's legend). One aggregator
+    // still, not a second one computed inside the rail: the card and the rail
+    // must never be able to disagree about what a minute was.
+    else if(_src==='place-load')e.loadMin+=r.minutes||0;
+    else if(typeof _geoIsPlaceSource==='function'&&_geoIsPlaceSource(_src))e.placeMin+=r.minutes||0;
     else e.onsiteMin+=r.minutes||0;
     if(!e.name&&r.personName)e.name=r.personName;
   });
@@ -854,156 +2686,175 @@ function _tlAvatarLabel(name){
 // cost still lives in Crew Cost (_crewCostRender); this is purely a time
 // report. Works on any row subset (a whole week or one drilled-down day),
 // the caller decides the scope. selfUid tags the viewer's own row "(you)".
-function _tlWeekOwnerHtml(byEmp,selfUid){
-  const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
+// What on this person's rows actually needs a human (research 2026-08-29:
+// "most timesheets require no intervention, with flags ensuring the ones
+// that do get proper attention. The exception report should be short").
+// So the collapsed card carries a COUNT, not a list, and the count is only
+// ever things somebody has to decide about. A clean week shows nothing.
+// ── One card per person, not one list for everybody (owner 2026-08-29) ─────
+// "don't want everybodies time mixing together, must be structured by day,
+// week, month and year by employee."
+//
+// Month and week were already accordions; the entries under them were one
+// interleaved table, so Team scope was the only place the structure broke
+// down. This is the missing level, and it is built on _bkWeekAcc's own
+// open/close mechanics (§7.3) rather than a fourth accordion style: same
+// chevron, same toggle, same class names, so it looks and behaves like every
+// other collapsible surface in Books.
+//
+// Collapsed shows what the research says a contractor scans for: who, how
+// long, how it split, and whether anything needs them. Open shows their days
+// and their rows, nobody else's.
+function _tlEmpAccHtml(cacheKey,rows,cid,selfUid,mo){
+  const byEmp=_tlEmpWeekAgg(rows,cid);
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
-  return uids.map(uid=>{
-    const e=byEmp[uid];
-    const name=e.name||'Crew';
-    const pal=_tlAvatarPalette(name);
-    const parts=[];
-    if(e.onsiteMin>3)parts.push('On-site '+fm(e.onsiteMin));
-    if(e.driveMin>3)parts.push('Drive '+fm(e.driveMin));
-    if(e.placeMin>3)parts.push('Supply/other '+fm(e.placeMin));
-    if((e.shopMin||0)>3)parts.push('Shop '+fm(e.shopMin));
-    const total=(e.onsiteMin+e.driveMin+e.placeMin+(e.shopMin||0))||1;
-    const pOn=(e.onsiteMin/total*100).toFixed(1),pDr=(e.driveMin/total*100).toFixed(1),pPl=(e.placeMin/total*100).toFixed(1),
-          pSh=((e.shopMin||0)/total*100).toFixed(1);
-    const otBadge=e.weekOT?'<span class="tl-ot-badge" title="'+escHtml(name)+' logged 40+ hrs this week, verify overtime eligibility with your state; not payroll advice">OT</span>':'';
-    const youTag=(selfUid&&String(uid)===String(selfUid))?' <span style="color:var(--text3);font-weight:600;font-size:11px">(you)</span>':'';
-    return '<div class="tl-emp-row'+(e.weekOT?' ot':'')+'">'+
-      '<div class="tl-avatar" style="background:'+pal.bg+';color:'+pal.fg+'">'+escHtml(_tlAvatarLabel(name))+'</div>'+
-      '<div class="tl-emp-mid"><div class="tl-emp-name-row"><span class="tl-emp-name">'+escHtml(name)+'</span>'+youTag+otBadge+'</div>'+
-        '<div class="tl-split"><div class="tl-split-bar"><span style="width:'+pOn+'%;background:var(--blue)"></span><span style="width:'+pDr+'%;background:#9F5B00"></span><span style="width:'+pPl+'%;background:var(--text3)"></span><span style="width:'+pSh+'%;background:var(--c-teal,#0E6B6B)"></span></div>'+
-        '<div class="tl-split-legend">'+parts.join(' · ')+'</div></div></div>'+
-      '<div class="tl-emp-total">'+fm(e.min)+'</div>'+
-    '</div>';
-  }).join('');
-}
-// Me-scope EXTRA, under the shared split-bar row: your own days listed out.
-// Not an alternative to the team component (see _tlRenderWeekBody), an
-// addition, and the one thing Me shows that Team cannot, since a team day
-// mixes several people. Week selections only.
-function _tlWeekMineHtml(rows){
-  const byDay={};
-  rows.forEach(r=>{
-    if(r.unpaid)return;   // off-job time never counts toward a worked day's total
-    const d=r.date||'unknown';
-    const e=byDay[d]||(byDay[d]={min:0,labels:new Set()});
-    e.min+=r.minutes||0;
-    if(r.clientName)e.labels.add(r.clientName);
+  // Unpaid rows carry no paid minutes so they never reach _tlEmpWeekAgg, but
+  // an unaccounted stretch is exactly what the card must flag. Bucket every
+  // row by person here, paid or not.
+  const rowsBy={};
+  rows.forEach(r=>{const uid=String((r&&r.personUid)||cid);(rowsBy[uid]||(rowsBy[uid]=[])).push(r);});
+  const flagged=f=>!!(f.bigDay||f.open||f.gaps||f.ot);
+  // Anything needing a human sorts first, then longest week: the exception
+  // surfaces without hunting, and past that the biggest payroll exposure
+  // leads (research 2026-08-29, exception-based review).
+  const uids=Object.keys(rowsBy).sort((a,b)=>{
+    const sa=flagged(_tlEmpFlags(rowsBy[a]))?1:0,sb=flagged(_tlEmpFlags(rowsBy[b]))?1:0;
+    if(sa!==sb)return sb-sa;
+    return ((byEmp[b]||{}).min||0)-((byEmp[a]||{}).min||0);
   });
-  const days=Object.keys(byDay).sort();
-  return days.map(d=>{
-    const e=byDay[d];const labels=[...e.labels];
-    const label=labels.length===1?labels[0]:(labels.length>1?labels.length+' stops':'');
-    // Owner report 2026-08-23: a reconciliation bug once summed one real
-    // calendar day to 47+ hours, and it rendered as a perfectly normal-
-    // looking number. One person cannot log more than 1440 minutes (24h)
-    // in one day; that is a physical fact, not a business rule, so it is
-    // never a "maybe" and never silently trusted. Flagged, not clamped:
-    // showing the raw wrong number (instead of a guessed-correct one)
-    // is what makes the underlying data bug findable and reportable.
-    const impossible=e.min>1440;
-    const amt=(typeof _fmtMin==='function'?_fmtMin(e.min):e.min+'m');
-    return '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text3);padding:3px 0">'+
-      '<span>'+_tlDayShort(d)+(label?' · '+escHtml(label):'')+'</span>'+
-      (impossible
-        ?'<span style="font-weight:800;color:var(--c-red-deep)" title="'+escHtml(amt)+' in one day is not physically possible, this entry needs review">'+svgIcon('⚠',{size:11})+' Data error</span>'
-        :'<span style="font-weight:700;color:var(--text)">'+amt+'</span>')+
+  const safeMo=String(mo).replace(/[^0-9a-z]/gi,'');
+  return uids.map((uid,i)=>{
+    const empRows=rowsBy[uid];
+    const e=byEmp[uid]||{min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,
+      name:(empRows.find(r=>r&&r.personName)||{}).personName||'Crew'};
+    const card=_tlEmpCardHtml(uid,e,selfUid,_tlFlagChips(_tlEmpFlags(empRows)));
+    // THE CARD OPENS ONTO THAT PERSON'S MONTH, AS BARS (owner 2026-08-30,
+    // asked how the bar affordance carries to Team: "1").
+    //
+    // What was here was a flat table of every day, six columns wide, scrolling
+    // sideways on a phone: the same shape the drill replaced on the Me side
+    // earlier today. Keeping it would have left Team with two navigation
+    // idioms and Me with one, and it answered "which day looks wrong" by
+    // making you read every row.
+    //
+    // Nothing is lost, it is one tap further in (§7.2). The table's columns
+    // were Clock In, Clock Out, Duration and a per-day total, and a bar drills
+    // to that person's week and then to the same day rail the owner already
+    // has for himself, which carries all of it plus where they actually were.
+    // The table's one unique signal, the >24h "Data error" marker, is already
+    // on the card above as a flag chip, so it did not travel down with it.
+    const body='<div class="tl-emp-bars">'+
+      (_tlMonthBarsHtml(empRows,mo,'team',uid)||
+        '<div class="tl-emp-nobars">No paid hours logged this month.</div>')+
+      '</div>';
+    // _bkTogWeek's own DOM contract (id, .bk-week, .bk-week-body), so the
+    // shell opens and closes with the same code every other Books accordion
+    // uses. Built here rather than through _bkWeekAcc because that helper
+    // wraps its label in a title div and prints its own total, and the card
+    // already carries both.
+    const id=safeMo+'-'+i;
+    return '<div id="bk-tlemp-wk-'+id+'" class="bk-week">'+
+      '<button class="bk-week-hd" onclick="_bkTogWeek(\'tlemp\',\''+safeMo+'\',\''+i+'\')" style="align-items:center;gap:6px">'+
+        '<div style="flex:1;min-width:0">'+card+'</div>'+
+        '<div class="bk-week-chev">▸</div>'+
+      '</button>'+
+      '<div class="bk-week-body" style="display:none">'+body+'</div>'+
     '</div>';
   }).join('');
 }
-// Per-week render state. Keyed by "mo|wk" (a week can straddle two calendar
-// months, so mo alone or wk alone can't be trusted as a unique key on their
-// own; see the cache population in renderTimeLog). Populated fresh every
-// renderTimeLog() call; setTimeLogDayPick reads it later, outside that call,
-// to redraw just one week's body without re-rendering the whole page (which
-// would otherwise blow away every other month/week the viewer had opened).
-let _tlWeekCache={};
-// Which chip (day picker) is selected per week, 'week' or a weekday index
-// '0'..'6'. Deliberately NOT reset on scope/year switches: staying on the
-// same weekday when you flip Me/Team, or paging between weeks, reads as
-// continuity, not a bug.
-let _tlPickerSel={};
-function setTimeLogDayPick(cacheKey,sel){
-  const cache=_tlWeekCache[cacheKey];if(!cache)return;
-  _tlPickerSel[cacheKey]=sel;
-  const el=document.getElementById(cache.domId);
-  if(el)el.innerHTML=_tlRenderWeekBody(cacheKey);
+// PAID minutes, which is what every total on this page means (owner rule
+// 2026-08-29: "unaccounted for time doesn't count to the total unless it's
+// added"). The per-employee aggregate, the weekly running total and the OT
+// calc have always skipped unpaid; the month, week, year and scope HEADLINES
+// summed everything, so a week with a two-hour hole in it printed 14h 45m at
+// the top and 12h 26m on the only card underneath. Both were describing the
+// same week. One function now, so the two can never disagree again.
+function _tlPaidMin(rows){
+  return (Array.isArray(rows)?rows:[]).reduce((s,r)=>s+((r&&!r.unpaid)?(r.minutes||0):0),0);
 }
-// Builds one week's inner content: the Week/S/M/T/W/T/F/S picker, the
-// current scope's total, the Team/Me summary for whatever's picked, and the
-// entries table (Edit/Delete on manual rows) scoped to the same picked range.
-function _tlRenderWeekBody(cacheKey){
-  const cache=_tlWeekCache[cacheKey];if(!cache)return '';
-  const{mo,wk,rows:weekRows,scope,cid,selfUid}=cache;
+function _tlEmpFlags(rows){
+  const out={gaps:0,gapMin:0,ot:false,bigDay:false,open:0};
+  if(!Array.isArray(rows))return out;
+  const dayMin={};
+  rows.forEach(r=>{
+    if(!r)return;
+    if(r.source==='unaccounted'){out.gaps++;out.gapMin+=r.minutes||0;}
+    if(r.weekOT)out.ot=true;
+    if(r.startTime&&!r.endTime)out.open++;
+    if(!r.unpaid&&r.date)dayMin[r.date]=(dayMin[r.date]||0)+(r.minutes||0);
+  });
+  // More than 24 hours in one day is not physically possible, the same
+  // impossible-day rule the per-day meta already applies.
+  out.bigDay=Object.keys(dayMin).some(d=>dayMin[d]>1440);
+  return out;
+}
+function _tlFlagChips(f){
+  if(!f)return '';
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
-  const sel=_tlPickerSel[cacheKey]||'week';
-  const days=_tlWeekDayDates(wk);
-  const workedIdx=new Set(weekRows.map(r=>days.indexOf(r.date)).filter(i=>i>=0));
-  const pickerHtml='<div class="tl-picker">'+
-    '<button class="tl-chip wk'+(sel==='week'?' active':'')+'" onclick="setTimeLogDayPick(\''+cacheKey+'\',\'week\')">Week</button>'+
-    ['S','M','T','W','T','F','S'].map((d,i)=>
-      '<button class="tl-chip'+(sel===String(i)?' active':'')+'" onclick="setTimeLogDayPick(\''+cacheKey+'\',\''+i+'\')">'+d+
-        (workedIdx.has(i)?'<span class="tl-dot"></span>':'')+
-      '</button>'
-    ).join('')+
-  '</div>';
-  let scopeRows,scopeLabel;
-  if(sel==='week'){scopeRows=weekRows;scopeLabel=_tlWeekLabel(wk);}
-  else{const d=days[parseInt(sel,10)]||'';scopeRows=weekRows.filter(r=>r.date===d);scopeLabel=_tlDayFullLabel(d);}
-  const scopeMin=scopeRows.reduce((s,r)=>s+(r.minutes||0),0);
-  const scopeHdHtml='<div class="tl-scope-hd"><div class="tl-scope-ttl">'+escHtml(scopeLabel)+'</div><div class="tl-scope-amt">'+fm(scopeMin)+'</div></div>';
-  let summaryHtml;
-  if(!scopeRows.length){
-    summaryHtml='<div class="tl-empty">No hours logged '+(sel==='week'?'this week.':'this day.')+'</div>';
-  }else{
-    // ONE component for both scopes (owner rule 2026-08-26: "everything on the
-    // team should be the exact same thing on me, same code, same constant,
-    // only difference is the fact me is just me and team is everybody").
-    //
-    // Me used to render something else entirely: a plain per-day list with a
-    // total and no split bar, so the one person who most wants to know how
-    // much of their day went to driving was the only person who could not see
-    // it. _tlEmpWeekAgg already works on any row subset, and in Me scope that
-    // subset is one person, so the same call produces a one-row version of the
-    // team view for free. No second layout to keep in step.
-    summaryHtml=_tlWeekOwnerHtml(_tlEmpWeekAgg(scopeRows,cid),selfUid);
-    // The per-day breakdown stays, as an ADDITION rather than an alternative:
-    // it is the one thing Me has that Team cannot (a team day legitimately
-    // mixes several people), and deleting it to force symmetry would lose
-    // information nobody asked to lose. Week selections only; on a single day
-    // the entries table below already lists every row.
-    if(sel==='week')summaryHtml+=_tlWeekMineHtml(scopeRows);
-  }
-  // Entries: the only place a manual clock entry can still be edited or
-  // deleted (Edit button, _tlRow), scoped to whatever the picker currently
-  // shows (a whole week or one day) instead of always the whole week.
-  // Newest entry first within a day, oldest at the bottom (owner request
-  // 2026-08-21). _bkRenderDays groups by day but otherwise renders rows in
-  // whatever order they arrive, so the sort happens here rather than in that
-  // shared helper (Income/Expenses/Client timeline all read it unchanged).
-  const entryRows=scopeRows.slice().sort((a,b)=>(b.startTime||'').localeCompare(a.startTime||''));
-  // Same impossible-day guard as _tlWeekMineHtml, applied to this
-  // accordion's own per-day header (owner report 2026-08-23). Only in Me
-  // scope: a Team-scope day legitimately combines several people's hours
-  // and can exceed 24h with nobody's individual day being wrong, so the
-  // default dr.length+total meta stays untouched there.
-  const entriesHtml=scopeRows.length?
-    '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
-      _bkRenderDays('tl',mo,entryRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,
-        scope==='team'?undefined:{metaFn:dr=>{
-          const min=dr.filter(r=>!r.unpaid).reduce((s,r)=>s+(r.minutes||0),0);
-          const amt=fm(min);
-          return min>1440
-            ?'<span style="font-weight:800;color:var(--c-red-deep)" title="'+escHtml(amt)+' in one day is not physically possible, this entry needs review">'+svgIcon('⚠',{size:11})+' Data error</span>'
-            :dr.length+' · '+amt;
-        }})+
-    '</div>':'';
-  return pickerHtml+scopeHdHtml+'<div style="padding:0 2px 4px">'+summaryHtml+'</div>'+entriesHtml;
+  const chip=(bg,fg,icon,text)=>'<span style="display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;background:'+bg+';color:'+fg+';white-space:nowrap">'+svgIcon(icon,{size:9})+' '+text+'</span>';
+  const out=[];
+  if(f.bigDay)out.push(chip('var(--c-red-soft,#A32D2D22)','var(--c-red-deep,#A32D2D)','⚠','Data error'));
+  if(f.open)out.push(chip('var(--c-green-soft)','var(--c-green-deep,#1B7A43)','▶',f.open+' still in'));
+  if(f.gaps)out.push(chip('var(--bg2)','var(--text3)','❓',fm(f.gapMin)+' unaccounted'));
+  if(f.ot)out.push(chip('var(--c-amber-soft)','var(--c-amber-deep)','⏱','OT'));
+  return out.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">'+out.join('')+'</div>':'';
 }
+// THE employee card. One function, because Me and Team must render the same
+// markup (owner rule 2026-08-26: "everything on the team should be the exact
+// same thing on me, same code, same constant, only difference is the fact me
+// is just me and team is everybody"). Team wraps this in a collapsible shell;
+// Me shows it directly. Neither one has its own copy of the markup, which is
+// what let the two drift apart the first time.
+// THE buckets, in bar order, with the colour each one means on this page.
+// One table, read by the employee card AND the day rail's legend, so the two
+// can never drift into disagreeing about what a minute was or what colour it
+// is. Colours are the ones already in use (§7.3), not new ones.
+const _TL_BUCKETS=[
+  {k:'onsiteMin', label:'On site',      c:'var(--blue)'},
+  {k:'shopMin',   label:'Shop',         c:'var(--c-teal,#0E6B6B)'},
+  {k:'driveMin',  label:'Driving',      c:'#9F5B00'},
+  {k:'loadMin',   label:'Loading',      c:'#6D28D9'},
+  // Grey is what the clock covered and no fence explained (owner 2026-09-01:
+  // "grey time should say Manual Time rather than supply/other"). It was named
+  // for the supply-house visits it used to hold; on a real day it is mostly
+  // the untracked stops between fences, and "Supply/other" describes neither.
+  {k:'placeMin',  label:'Manual time', c:'var(--text3)'}
+];
+function _tlBucketTotal(e){
+  return _TL_BUCKETS.reduce((s,b)=>s+((e&&e[b.k])||0),0);
+}
+function _tlEmpCardHtml(uid,e,selfUid,extraHtml){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const name=e.name||'Crew';
+  const pal=_tlAvatarPalette(name);
+  const total=_tlBucketTotal(e)||1;
+  const parts=_TL_BUCKETS.filter(b=>(e[b.k]||0)>3).map(b=>b.label+' '+fm(e[b.k]));
+  const segs=_TL_BUCKETS.map(b=>'<span style="width:'+((e[b.k]||0)/total*100).toFixed(1)+'%;background:'+b.c+'"></span>').join('');
+  const otBadge=e.weekOT?'<span class="tl-ot-badge" title="'+escHtml(name)+' logged 40+ hrs this week, verify overtime eligibility with your state; not payroll advice">OT</span>':'';
+  const youTag=(selfUid&&String(uid)===String(selfUid))?' <span style="color:var(--text3);font-weight:600;font-size:11px">(you)</span>':'';
+  return '<div class="tl-emp-row'+(e.weekOT?' ot':'')+'">'+
+    '<div class="tl-avatar" style="background:'+pal.bg+';color:'+pal.fg+'">'+escHtml(_tlAvatarLabel(name))+'</div>'+
+    '<div class="tl-emp-mid"><div class="tl-emp-name-row"><span class="tl-emp-name">'+escHtml(name)+'</span>'+youTag+otBadge+'</div>'+
+      '<div class="tl-split"><div class="tl-split-bar">'+segs+'</div>'+
+      '<div class="tl-split-legend">'+parts.join(' · ')+'</div></div>'+(extraHtml||'')+'</div>'+
+    '<div class="tl-emp-total">'+fm(e.min)+'</div>'+
+  '</div>';
+}
+// ── DELETED: the week body, its day-picker chips and their cache (§7) ─────
+// _tlWeekMineHtml, _tlWeekCache, _tlPickerSel, setTimeLogDayPick and
+// _tlRenderWeekBody all lived here. They were the week-inside-an-accordion
+// world: a chip row to pick a day, a per-week render cache so one accordion
+// could redraw without touching the others, and a body that stitched them
+// together.
+//
+// The drill (2026-08-30) replaced every one of those jobs. There is one level
+// on screen, so there is nothing to redraw selectively and no cache to keep;
+// a day is reached by tapping its bar, so there are no chips; and the level's
+// body is built straight in renderTimeLog. Left in place they would have been
+// ~150 lines nothing calls, which is exactly what §7 forbids.
+//
+// _tlWeekOwnerHtml went with them: its only caller was the week body. Team's
+// per-person cards come from _tlEmpAccHtml, which is untouched.
 // Me/Team display toggle, for anyone with payroll/team permission. Owners
 // default to Team, managers default to Me (see renderTimeLog); either can
 // switch any time and the choice sticks for the rest of the session, same
@@ -1013,6 +2864,10 @@ function _tlRenderWeekBody(cacheKey){
 let _tlScope=null;
 function setTimeLogScope(scope){
   if(scope!=='me'&&scope!=='team')return;
+  // A crew member is a Team idea. Carrying one into Me scope leaves the arrows
+  // filtering your own weeks by somebody else's id, which reads as both arrows
+  // simply being dead.
+  _tlDrill.uid=null;
   _tlScope=scope;
   renderTimeLog();
 }
@@ -1020,77 +2875,89 @@ function setTimeLogScope(scope){
 // week, own rows only. _tlLastRows is only ever populated with Me-scoped
 // rows while the Share button is visible (renderTimeLog hides the button
 // entirely in Team scope), so no re-filtering by uid is needed here.
+// ── Sharing a week as plain text ───────────────────────────────────────────
+// Owner, 2026-08-30: "need a great way to export it to share via text."
+//
+// ONE builder, two entry points (§7.3). The old share existed but produced a
+// bare list of day totals, and it was hardwired to the CURRENT calendar week:
+// open the week of the 23rd, tap share, and you got this week's numbers
+// instead of the ones on screen. Both callers now go through here so they can
+// never say different things about the same week.
+//
+// Written for a text message and nothing else: no tabs, no aligned columns, no
+// box drawing. Every one of those survives a desktop terminal and none of them
+// survives an SMS bubble on a phone, which is the only place this is going.
+// Days with nothing logged are left out rather than printed as zeros; a week
+// where the crew worked four days should read as four lines.
+function _tlWeekShareText(rows,wkStart){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object');
+  const days=(typeof _tlWeekDayDates==='function'&&wkStart)?_tlWeekDayDates(wkStart):[];
+  const byDay={};
+  days.forEach(d=>{byDay[d]=[];});
+  list.forEach(r=>{if(byDay[r.date])byDay[r.date].push(r);
+                   else if(!days.length)(byDay[r.date]=byDay[r.date]||[]).push(r);});
+  const order=days.length?days:Object.keys(byDay).sort();
+  const lines=[];
+  order.forEach(d=>{
+    const dayRows=byDay[d]||[];
+    const min=_tlPaidMin(dayRows);
+    if(!min)return;
+    // NO UNACCOUNTED IN THE TEXT (owner 2026-09-04: "we shouldnt show that at
+    // all in the text, just the days worked the day, the hours then the total
+    // at the bottom broken down to on site, shop, drive").
+    //
+    // It used to append "(1h 12m unaccounted)" to a day. That is a question
+    // for the person whose day it is, asked on the rail where they can answer
+    // it; in a text message to somebody else it reads as an apology for the
+    // number it sits next to. The hole is still on the rail and still out of
+    // the total, which is the part that matters.
+    lines.push(_tlDayShort(d)+': '+fm(min));
+  });
+  const e=_tlBucketFold(list);
+  const split=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>b.label+' '+fm(e[b.k])).join(', ');
+  const head='Timesheet, '+(wkStart&&typeof _tlWeekLabel==='function'
+    ?String(_tlWeekLabel(wkStart)).replace(/^Week of /,''):'this week');
+  const out=[head,''];
+  if(lines.length)out.push(lines.join('\n'),'');
+  // _fmtMin(0) is the EMPTY STRING, which on the page is fine (nothing is
+  // drawn) and in a text message is a line reading "Total:" with a blank after
+  // it. A number nobody can read is worse than no message.
+  out.push('Total: '+(fm(e.min)||'0m'));
+  if(split)out.push(split);
+  // 40+ hours is the one number on here that changes what somebody does next,
+  // so it is stated rather than left to be worked out from the total.
+  if(e.ot)out.push('Over 40 hours this week, check overtime.');
+  return out.join('\n');
+}
+async function _tlShareText(rows,wkStart,label){
+  if(!rows||!rows.length){
+    typeof showToast==='function'&&showToast('No hours logged that week yet','📋');return;
+  }
+  const text=_tlWeekShareText(rows,wkStart);
+  if(typeof pwaShare==='function')await pwaShare({title:label||'Hours',text});
+  return text;
+}
+// The week ON SCREEN, from the same cache the bars were drawn from, so what
+// gets sent is what he is looking at.
+// Takes a WEEK KEY now. It used to read _tlWeekCache, which the accordion
+// list populated; the drill does not build that list any more, so the week is
+// resolved from the rows the page is already holding. One source, and it
+// cannot go stale against what is on screen.
+async function _tlShareWeekAt(wk){
+  // The chart's button opens the REVIEW (js/timesheet.js): check each day,
+  // then Submit and send. Nothing goes out unsubmitted (owner 2026-09-05).
+  if(typeof _tsReviewOpen==='function')return _tsReviewOpen(wk);
+  const rows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===wk);
+  return _tlShareText(rows,wk,'Timesheet');
+}
+// The current calendar week, for the button at the bottom of the page.
 async function _tlShareWeek(){
   const wkStart=new Date();wkStart.setHours(0,0,0,0);wkStart.setDate(wkStart.getDate()-wkStart.getDay());
   const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
   const wkStartStr=dateKey(wkStart),wkEndStr=dateKey(wkEnd);
   const rows=_tlLastRows.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr);
-  if(!rows.length){typeof showToast==='function'&&showToast('No hours logged this week yet','📋');return;}
-  const byDay={};
-  rows.forEach(r=>{byDay[r.date]=(byDay[r.date]||0)+(r.minutes||0);});
-  const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
-  const lines=Object.keys(byDay).sort().map(d=>_tlDayShort(d)+': '+(typeof _fmtMin==='function'?_fmtMin(byDay[d]):byDay[d]+'m'));
-  const text='My hours this week ('+_tlWeekLabel(wkStartStr)+')\n'+lines.join('\n')+'\nTotal: '+(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m');
-  if(typeof pwaShare==='function')await pwaShare({title:'This week\'s hours',text});
-}
-// ── The repair pass, moved OFF the critical path (owner report 2026-08-26:
-// "why the slowness on time log where skeleton takes forever") ──────────────
-//
-// All of this used to run BEFORE the first fetch, so the skeleton sat through
-// three reconciler passes with 150ms waits between them, a write-queue drain,
-// and a full cleanup sweep, and only then did the page ask the server for the
-// hours it was there to show. Each of those does its own round trips, so on a
-// truck connection the wait was seconds of shimmer for work the viewer never
-// asked for.
-//
-// It still all runs, and still on every open, for the reasons each block
-// documents. It just runs AFTER the hours are on screen. CLAUDE.md 8.3 is
-// explicit that a slow reveal is never the answer to async data: paint
-// instantly, repaint once when the real thing lands.
-async function _tlRepairPass(){
-    // Catch up any already-closed gap before showing hours. _geoReconcileSoon's
-    // periodic trigger only ever fires from a LIVE GPS watcher (js/geo-track.js:
-    // "if(_geoWatchId==null&&_geoNativeWatcherId==null)return;"), so a gap left
-    // by a drive that already finished never gets backfilled once tracking goes
-    // quiet (owner report 2026-08-21: hours still missing on reopening Time Log
-    // well after the job). Opening this page is an explicit, deliberate look at
-    // hours, not ambient background noise, so it calls the reconciler directly
-    // instead of waiting on a live ping stream that may never come again today.
-    //
-    // An explicit false means the pass was SKIPPED (a GPS ping was mid-flight,
-    // exactly when a phone with live tracking opens this page right after a
-    // drive), not that it ran and found nothing: retry briefly rather than
-    // silently never repairing this visit (owner report 2026-08-21, round two).
-    // Then drain the write queue, so a row the reconciler just enqueued is on
-    // the server BEFORE _timeLogRows fetches: without this the repair raced its
-    // own render and only showed up on the NEXT visit to this page.
-    if(typeof _geoReconcileFromMileage==='function'){
-      try{
-        // 150ms, not 350ms: three attempts at the old backoff held the skeleton
-        // on screen for up to ~1050ms in the worst case (owner report
-        // 2026-08-23: skeleton "way too long" specifically on this page). Still
-        // three tries, same protection against the mid-flight-ping race the
-        // retry exists for, just a shorter wait between them.
-        for(let _i=0;_i<3;_i++){
-          const ran=await _geoReconcileFromMileage();
-          if(ran!==false)break;
-          await new Promise(res=>setTimeout(res,150));
-        }
-        if(typeof _geoDrainQueue==='function')await _geoDrainQueue();
-      }catch(_e){}
-    }
-    // The cleanup sweeps are NOT the reconciler's business (owner report
-    // 2026-08-25: "still not seeing time log clear the shit that doesn't
-    // matter"). The reconciler skips its own tail on three exits that say
-    // nothing about whether there is junk to clear (a ping mid-flight, a pass
-    // already running, or simply no window to repair), and on a phone with
-    // live tracking the ping exit is the common case: the three retries above
-    // can all come back false and the log then renders whatever stale
-    // duplicates and orphaned drive rows were already there. Run the sweeps
-    // here directly, every open. _geoCleanupSweeps carries its own busy flag
-    // and a 10s recency skip, so when the reconciler above DID run to
-    // completion this is a cheap no-op rather than a second round of queries.
-    if(typeof _geoCleanupSweeps==='function'){try{await _geoCleanupSweeps();}catch(_e){}}
+  return _tlShareText(rows,wkStartStr,'This week\'s hours');
 }
 // Cheap enough to run on every open, and the only thing that decides whether
 // the repair earned a repaint. Count plus total minutes catches an added row,
@@ -1125,21 +2992,50 @@ const _TL_REPAIR_MIN_GAP_MS=30000;
 // (caught by CI shard 6, 2026-08-27: the year-filter test read "No time
 // logged in 2026" painted by the PREVIOUS test's leftover repair).
 let _tlRenderGen=0;
-async function _tlRepairAfterPaint(paintedRows,gen){
-  if(_tlRepairRunning)return false;
-  if(_tlRepairAt&&Date.now()-_tlRepairAt<_TL_REPAIR_MIN_GAP_MS)return false;
-  _tlRepairRunning=true;_tlRepairAt=Date.now();
+// ── The rows the screen is currently painted from ─────────────────────────
+// Owner, 2026-08-31: "like almost 2 seconds to change a day, thats awful."
+// _timeLogRows is expensive by nature (three Supabase queries through
+// _fetchCrewLabor, plus the CoreMotion tape) and every drill tap was paying
+// for it before anything on screen moved. The rows do not depend on which
+// month, week or day is open, so a tap that only changes the slice paints
+// from this and never awaits at all. Every path that can actually CHANGE the
+// rows (a manual entry added, edited or deleted, a gap answered, a clock-out
+// fixed, the repair pass, opening the page) calls renderTimeLog with no opts
+// and refills this from the server exactly as before.
+let _tlRowsCache=null;
+let _tlRowsAt=0;
+// Same shape and same reason as _TL_REPAIR_MIN_GAP_MS above (7.3): the check
+// is free to the eye because it happens after the paint, but a contractor
+// holding the arrow down must not fire three queries per tap.
+const _TL_ROWS_REVALIDATE_MIN_GAP_MS=30000;
+let _tlRevalidating=false;
+// The other half of painting from memory: go and look anyway, after the
+// screen is already right, and repaint ONLY if the server disagrees. This is
+// what keeps a rail painted from cache from going stale when the tracker
+// writes a row from the truck or another device syncs one in. Fingerprint and
+// generation guards are the ones _tlRepairAfterPaint already uses, for the
+// same two reasons: an unchanged answer must not close what the viewer opened,
+// and a newer paint always owns the screen.
+async function _tlRevalidateRows(paintedRows,gen,force){
+  if(_tlRevalidating)return false;
+  // The min-gap exists to stop a contractor holding the drill arrow down from
+  // firing three queries per tap. A LIVE nudge is the opposite case: the row
+  // genuinely changed on the server and the screen is currently wrong, so the
+  // throttle would be protecting nothing and hiding the change for half a
+  // minute. The fingerprint below is the real guard against a pointless
+  // repaint, and it still runs on both paths.
+  if(!force&&_tlRowsAt&&Date.now()-_tlRowsAt<_TL_ROWS_REVALIDATE_MIN_GAP_MS)return false;
+  _tlRevalidating=true;
   try{
-    await _tlRepairPass();
-    if(gen!==undefined&&gen!==_tlRenderGen)return false;   // a newer render owns the screen
     const fresh=await _timeLogRows(null);
+    _tlRowsCache=fresh;_tlRowsAt=Date.now();
+    if(gen!==undefined&&gen!==_tlRenderGen)return false;
     if(_tlRowsFingerprint(fresh)===_tlRowsFingerprint(paintedRows))return false;
-    if(gen!==undefined&&gen!==_tlRenderGen)return false;   // re-check across the await
-    // noRepair: the pass just ran. Without it this recurses on every open.
+    // noRepair: this is a revalidate, not an open.
     await renderTimeLog({noRepair:true});
     return true;
   }catch(_e){return false;}
-  finally{_tlRepairRunning=false;}
+  finally{_tlRevalidating=false;}
 }
 async function renderTimeLog(opts){
   const el=document.getElementById('tl-list');if(!el)return;
@@ -1148,10 +3044,21 @@ async function renderTimeLog(opts){
   const totalEl=document.getElementById('tl-total');
   const shareEl=document.getElementById('tl-share');
   const toggleEl=document.getElementById('tl-scope-toggle');
-  el.innerHTML='<div style="padding:6px 2px">'+_tdSkelRows(4,12)+'</div>';
+  // Only the first time. A drill tap re-enters here with the rows already
+  // loaded, so clearing to a placeholder would blank a chart that is about to
+  // be redrawn from memory a few milliseconds later: a flash, not a load.
+  if(!_tlSkelShown)el.innerHTML=_tlBarsSkelHtml();
   let allRows;
-  try{allRows=await _timeLogRows(null);}
-  catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
+  // cached: a drill tap. Nothing is awaited on this path, so the whole render
+  // down to el.innerHTML runs in the same task as the click and the new day
+  // is on screen on the very next frame instead of two seconds later.
+  const _cached=!!(opts&&opts.cached&&_tlRowsCache);
+  if(_cached)allRows=_tlRowsCache;
+  else{
+    try{allRows=await _timeLogRows(null);}
+    catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
+    _tlRowsCache=allRows;_tlRowsAt=Date.now();
+  }
   // Scheduled HERE, not at the end of this function, because the render has
   // several early returns after this point and the empty-hours one is the case
   // that matters most: the reconciler exists to backfill hours that are
@@ -1162,9 +3069,19 @@ async function renderTimeLog(opts){
   //
   // Not awaited, and it opens with an await of its own, so this yields
   // immediately and the synchronous render below still paints first.
-  if(!(opts&&opts.noRepair)){
-    try{_tlRepairAfterPaint(allRows,_gen);}catch(_e){}
-  }
+  //
+  // A drill tap gets the revalidate instead: it is not a new open, so it has
+  // not earned a repair pass (same rule the _tlRepairAt floor above exists
+  // for), but the rows it painted from came out of memory and something on
+  // the server may have moved since.
+  // The Time Log never writes (owner 2026-09-02). It used to run a repair
+  // pass on every open; now it only checks that what it painted is what the
+  // server holds.
+  if(_cached){try{_tlRevalidateRows(allRows,_gen);}catch(_e){}}
+  // Set as soon as the rows are in hand, not at the end: the render has
+  // several early returns after this point and every one of them is still a
+  // completed first load as far as the placeholder is concerned.
+  _tlSkelShown=true;
   const canComp=typeof _canViewComp==='function'&&_canViewComp();
   const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
@@ -1195,7 +3112,11 @@ async function renderTimeLog(opts){
     }
   }
 
-  const isMine=r=>isEmp?r.personUid===selfUid:(r.personUid===null||r.personUid===selfUid);
+  // The arrows and the person drill both ask "whose row is this?" long after
+  // this render finished, so the id they fold under is parked beside the rows
+  // themselves (see _tlRowUid).
+  _tlLastCid=cid;
+  const isMine=_tlRowIsMine;
   const visible=scope==='team'?allRows:allRows.filter(isMine);
   // "This week" is a live indicator, not tied to the year selector, a
   // contractor running payroll cares about the current pay period regardless
@@ -1205,7 +3126,7 @@ async function renderTimeLog(opts){
     const wkStart=new Date();wkStart.setHours(0,0,0,0);wkStart.setDate(wkStart.getDate()-wkStart.getDay());
     const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
     const wkStartStr=dateKey(wkStart),wkEndStr=dateKey(wkEnd);
-    const wkMin=visible.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr).reduce((s,r)=>s+(r.minutes||0),0);
+    const wkMin=_tlPaidMin(visible.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr));
     weekEl.textContent=(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+' This week (Sun–Sat)';
   }
   const years=_tlYears(visible);
@@ -1223,7 +3144,7 @@ async function renderTimeLog(opts){
   _tlComputeWeeklyRunning(rows);
   _tlLastRows=rows;
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
-  const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
+  const totalMin=_tlPaidMin(rows);
   if(totalEl)totalEl.textContent=fm(totalMin)+' total in '+yr;
   const byMonth={};
   rows.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(r);});
@@ -1233,54 +3154,74 @@ async function renderTimeLog(opts){
   const months=Object.keys(byMonth).sort((a,b)=>a.localeCompare(b));
   const curMo=todayKey().slice(0,7);
   const curWk=_tlWeekKey(todayKey());
-  _tlWeekCache={};
-  el.innerHTML='<div class="bk-months">'+months.map(mo=>{
-    const moRows=byMonth[mo];
-    const byWeek={};
-    moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'unknown';(byWeek[wk]||(byWeek[wk]=[])).push(r);});
-    // Newest week first within the month (owner report 2026-08-20: opening a
-    // month buried the current week under every earlier one). This is the
-    // opposite of the month-level sort just above, and deliberately so: that
-    // one is the dated owner exception (January→December); nothing pinned
-    // week order to match it, and newest-first here matches every other
-    // Books accordion's normal convention.
-    const weeks=Object.keys(byWeek).sort((a,b)=>b.localeCompare(a));
-    const moOpen=/^\d{4}-\d{2}$/.test(mo)&&mo>=curMo;
-    const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);
-    let moSub=weeks.length+' week'+(weeks.length!==1?'s':'');
-    if(scope==='team'){
-      const empCount=Object.keys(_tlEmpWeekAgg(moRows,cid)).length;
-      moSub+=' · '+empCount+' employee'+(empCount!==1?'s':'');
-    }
-    const moTotalHtml='<div style="font-size:15px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fm(moMin)+'</div>';
-    const weeksHtml=weeks.map(wk=>{
-      const weekRows=byWeek[wk];
-      const wkId=wk.replace(/[^0-9]/g,'')||'x';
-      const domId='tl-wkbody-'+mo.replace(/[^0-9]/g,'')+'-'+wkId;
-      const cacheKey=mo+'|'+wk;
-      _tlWeekCache[cacheKey]={mo,wk,rows:weekRows,scope,cid,selfUid,domId};
-      const wkOpen=moOpen&&wk===curWk;
-      const wkLabel=_tlWeekLabel(wk);
-      const wkMin=weekRows.reduce((s,r)=>s+(r.minutes||0),0);
-      const wkTotalHtml='<div style="font-size:12.5px;font-weight:800;color:var(--text)">'+fm(wkMin)+'</div>';
-      let wkSub;
-      if(scope==='team'){
-        const empCount=Object.keys(_tlEmpWeekAgg(weekRows,cid)).length;
-        wkSub=empCount+' employee'+(empCount!==1?'s':'');
-      }else{
-        wkSub=weekRows.length+' entr'+(weekRows.length!==1?'ies':'y');
+  // ONE month at a time (owner 2026-08-30). The picker replaced the list of
+  // twelve collapsed month accordions: two navigations for one job, and the
+  // second one was the clutter. Default to the current month when the open
+  // year has it, otherwise the latest month that actually has hours, never a
+  // blank chart on an empty month.
+  // _tlDrill.mo IS the selected month, and the only thing that is. There were
+  // briefly two (_tlMonthSel and _tlDrill.mo); the arrows wrote one and the
+  // render read the other, so stepping to September rendered August and the
+  // arrows looked broken. Two variables for one fact is how that happens, so
+  // there is one.
+  const selMo=(_tlDrill.mo&&byMonth[_tlDrill.mo])?_tlDrill.mo
+    :(byMonth[curMo]?curMo:months[months.length-1]);
+  // STORED, not just computed: _tlDrillStep looks the current month up to find
+  // its neighbours, and an un-stored default left indexOf at -1 with both
+  // arrows dead on a fresh open, which is every open.
+  _tlDrill.mo=selMo;
+  // ── The drill: one level, one chart ────────────────────────────────────
+  // Team keeps its per-person cards, because a team week genuinely is several
+  // people and the cards are the only thing that separates them. Me gets the
+  // drill.
+  if(scope==='team'){
+    const teamRows=byMonth[selMo]||[];
+    // Inside one crew member: the same week and day screens Me gets, on their
+    // rows. Back from the week says "All crew" because that is where it lands,
+    // and _tlDrillTo drops the uid on the way to month so it really does.
+    if(_tlDrill.uid){
+      const pRows=teamRows.filter(r=>_tlRowUid(r)===_tlDrill.uid);
+      const lv=pRows.length?_tlLevelsHtml(pRows,selMo,{
+        eyebrow:(pRows.find(r=>r&&r.personName)||{}).personName||'Crew',
+        backLabel:'All crew',share:false}):null;
+      if(lv){
+        el.innerHTML=lv.head+
+          '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'"'+_tlDrillXStyle()+'>'+lv.body+'</div>';
+        if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
+        return;
       }
-      const bodyHtml='<div id="'+domId+'">'+_tlRenderWeekBody(cacheKey)+'</div>';
-      return _bkWeekAcc('tl',mo,wkId,wkLabel,wkSub,wkTotalHtml,bodyHtml,wkOpen);
-    }).join('');
-    return _bkMonthAcc('tl',mo,_bkMonthLabel(mo),moSub,moTotalHtml,weeksHtml,moOpen);
-  }).join('')+'</div>';
-  if(shareEl){
-    if(scope==='me'){
-      shareEl.style.display='block';
-      shareEl.innerHTML='<button onclick="_tlShareWeek()" class="btn btn-p" style="width:100%;margin-top:16px;height:48px;font-size:14px">'+svgIcon('⬆',{size:14})+' Share this week\'s hours</button>';
-    }else{
-      shareEl.style.display='none';shareEl.innerHTML='';
+      // Nothing of theirs in this month (arrowed to a month they did not work,
+      // or the id in the drill no longer matches any row). The crew list is
+      // always a truthful answer, so fall back to it rather than a blank.
+      _tlDrill.uid=null;_tlDrill.level='month';
     }
+    el.innerHTML=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(teamRows)),
+        selMo,'')+
+      // The crew list moves too. Coming back out of one person's week is an UP
+      // like any other, and arrowing between months is a sideways like any
+      // other: without the class, the one screen you return to was the one
+      // screen that just appeared.
+      '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+
+        '" style="margin-top:8px'+(_tlDrillXStyle()?';'+_tlDrillXStyle().slice(8,-1):'')+'">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo)+'</div>';
+    if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
+    return;
   }
+  // The drill's month follows the month picked above, so the two can never
+  // point at different things.
+  _tlDrill.mo=selMo;
+  const moRows=byMonth[selMo]||[];
+  const lv=_tlLevelsHtml(moRows,selMo,{});
+  const head=lv?lv.head:_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(moRows)),selMo,'');
+  const body=lv?lv.body:_tlMonthBarsHtml(moRows,selMo,scope);
+  // The slide direction rides as a class so the animation is pure CSS and the
+  // JS never touches a style property (§8.5).
+  el.innerHTML=head+
+    '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'"'+_tlDrillXStyle()+'>'+body+'</div>';
+  // The page-level Share button is GONE. It said "this calendar week", which
+  // on a screen that now carries Send this month and Send this week (the one
+  // you are actually looking at) was a third Send button meaning a fourth
+  // thing. _tlShareWeek stays as the function: the CSV export and any future
+  // caller still use it, and it is what the two contextual buttons were built
+  // out of. Only the button left.
+  if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
 }

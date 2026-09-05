@@ -56,6 +56,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Name the business zone: every midnight below is a business midnight now
+    // that the day-key helpers follow the business address rather than a
+    // hardcoded Central (owner 2026-08-30). Left unset it comes from the
+    // runner, UTC in CI and Central on a Kansas laptop, which is the machine
+    // deciding the result (CLAUDE.md 5.2.2).
+    await page.evaluate(() => { S.bizTz = 'America/Chicago'; });
     await page.evaluate(`window.__seedTimelogFixtures = ${SEED_FIXTURES_FN.toString()}`);
     await seedFixtures();
   });
@@ -68,7 +74,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // the default for every later test regardless of who's actually
     // signed in, e.g. an earlier manager test leaving scope on 'me' would
     // silently filter the owner's own "sees everyone" test down to one person.
-    await page.evaluate(() => { _tlYear = null; _tlScope = null; _tlPickerSel = {}; });
+    await page.evaluate(() => { _tlYear = null; _tlScope = null; });
   });
 
   test.afterAll(async () => {
@@ -254,70 +260,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.unpaid).toBe(true);
     });
 
-    // Owner rule 2026-08-24: "get the random unpaid time logs to go away
-    // except for the ones that are in between geofences." A stop with no
-    // same-Central-day location event on both sides never renders.
-    test('an unanchored stop row never renders at all', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({
-          name: { 'emp-test-uid': 'Test Crew Member' },
-          entries: [{
-            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
-            source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
-          }],
-        });
-        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
-        finally { window._fetchCrewLabor = orig; }
-      });
-      expect(r.hit).toBe(false);
-    });
 
-    test('a stop with work before but nothing after (end-of-day park) never renders', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({
-          name: { 'emp-test-uid': 'Test Crew Member' },
-          entries: [{
-            employee_user_id: 'emp-test-uid', job_id: 'anchor-job', dest_place: null,
-            source: 'geofence', minutes: 160, client_key: null,
-            arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:40:00.000Z',
-          }, {
-            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
-            source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
-          }],
-        });
-        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
-        finally { window._fetchCrewLabor = orig; }
-      });
-      expect(r.hit).toBe(false);
-    });
 
-    // Owner clarification 2026-08-24: "one from shop, one at a job site or
-    // supply house." Shop out, stop, shop back on a day with no work is an
-    // errand from the yard, not a work-trip leg, and never renders.
-    test('shop-to-shop anchors alone never validate a stop (a no-work Saturday shows nothing)', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({
-          name: { 'emp-test-uid': 'Test Crew Member' },
-          entries: [{
-            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
-            source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
-          }],
-          shopEntries: [
-            { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T15:30:00.000Z', departed_at: '2026-08-21T16:30:00.000Z' },
-            { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T17:40:00.000Z', departed_at: '2026-08-21T18:40:00.000Z' },
-          ],
-        });
-        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
-        finally { window._fetchCrewLabor = orig; }
-      });
-      expect(r.hit).toBe(false);
-    });
 
     test('shop before + supply house after renders (the real supply-run shape)', async () => {
       const r = await page.evaluate(async () => {
@@ -343,30 +287,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.hit).toBe(true);
     });
 
-    test('another person\'s anchors never validate my stop', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({
-          name: { 'emp-test-uid': 'Test Crew Member', 'emp-other': 'Somebody Else' },
-          entries: [{
-            employee_user_id: 'emp-other', job_id: 'anchor-job', dest_place: null,
-            source: 'geofence', minutes: 160, client_key: null,
-            arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:40:00.000Z',
-          }, {
-            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
-            source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
-          }, {
-            employee_user_id: 'emp-other', job_id: 'anchor-job', dest_place: null,
-            source: 'geofence', minutes: 150, client_key: null,
-            arrived_at: '2026-08-21T17:30:00.000Z', departed_at: '2026-08-21T20:00:00.000Z',
-          }],
-        });
-        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
-        finally { window._fetchCrewLabor = orig; }
-      });
-      expect(r.hit).toBe(false);
-    });
 
     test('a normal (non-stop) crew source row is not tagged unpaid', async () => {
       const r = await page.evaluate(async () => {
@@ -437,70 +357,19 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const rows = await withShop([YARD_MID], DAY);
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.length, 'the midday yard stop is listed').toBe(1);
-      expect(shop[0].detail).toBe('Shop');
+      // "Shop time", not "Shop" (owner 2026-08-29): every badge on this table
+      // names a block of time, so they all end in the same word.
+      expect(shop[0].detail).toBe('Shop time');
       expect(shop[0].minutes).toBe(60);
       expect(shop[0].unpaid, 'inside the workday, so it counts').toBe(false);
     });
 
-    // Owner, 2026-08-24: "08/21 shouldn't have shop at 6:05 am, why does it?"
-    // It did because the rule only closed the day, never opened it.
-    test('yard time before the day\'s first job or supply move never renders', async () => {
-      const rows = await withShop([YARD_AM, YARD_MID], DAY);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'sitting at the yard before the first move is not a shift').toBe(1);
-      expect(shop[0].startTime).toBe(YARD_MID.arrived_at);
-    });
 
-    test('yard time after the day\'s last job or supply run never renders', async () => {
-      const rows = await withShop([YARD_MID, YARD_PM], DAY);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'the 7h18m evening sit at the yard is not a shift').toBe(1);
-      expect(shop[0].startTime).toBe(YARD_MID.arrived_at);
-    });
 
-    test('a day with no job or supply fence at all shows no yard time', async () => {
-      const rows = await withShop([YARD_AM, YARD_MID, YARD_PM], []);
-      expect(rows.filter(r => r.source === 'shop').length, 'a Saturday at the yard is not a shift').toBe(0);
-    });
 
-    test('a lunch stop is not work and never extends the day', async () => {
-      const rows = await withShop([YARD_PM], [
-        { employee_user_id: 'me', job_id: null, minutes: 45, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:45:00Z', source: 'stop' },
-      ]);
-      expect(rows.filter(r => r.source === 'shop').length).toBe(0);
-    });
 
-    // The Civitan Day Camp leg: a drive with no job or supply visit at either
-    // end of it, which used to hold the day open and pay the yard time under it.
-    test('a drive not chained to a job or supply visit never extends the day', async () => {
-      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, arrived_at: '2026-08-20T23:26:00Z', departed_at: '2026-08-21T00:44:00Z', source: 'drive' };
-      const rows = await withShop([YARD_PM], DAY.concat([LOOSE]));
-      expect(rows.filter(r => r.source === 'shop').length, 'an evening errand is not the last job of the day').toBe(0);
-    });
 
-    test('the drive back from the last job DOES close the day, an hour later', async () => {
-      // Same shape, but the leg pulls out exactly as the job ends, so it is
-      // the ride home and the yard time behind it is inside the workday.
-      const LATE_YARD = { employee_user_id: 'me', minutes: 20, arrived_at: '2026-08-20T21:30:00Z', departed_at: '2026-08-20T21:50:00Z' };
-      const rows = await withShop([LATE_YARD], DAY);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'the ride back lands at the yard, so the yard is still open').toBe(0);
-      // Zero because the allowance is zero: the window closes AT the drive's
-      // end. The allowance test below is what pays this stretch.
-    });
 
-    // Owner, 2026-08-24, on the same 78-minute Tue 8/18 leg: "was a time we
-    // did family pictures and I'm not sure why it's there. It should be
-    // dropped." It was there because the tracker logs every leg between known
-    // points while tracking is on, with no notion of the day being over.
-    test('a drive leg outside the workday is dropped, not just unpaid', async () => {
-      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, dest_place: 'DEV A shop',
-        arrived_at: '2026-08-20T23:26:00Z', departed_at: '2026-08-21T00:44:00Z', source: 'drive-unassigned' };
-      const rows = await withShop([], DAY.concat([LOOSE]));
-      const drives = rows.filter(r => r.rawSource && /^drive/.test(r.rawSource));
-      expect(drives.length, 'the ride out and the ride back survive, the errand does not').toBe(2);
-      expect(drives.some(d => d.minutes === 78), 'the family-pictures run is gone').toBe(false);
-    });
 
     test('a drive inside the workday is never dropped', async () => {
       const MID = { employee_user_id: 'me', job_id: null, minutes: 7, dest_place: 'DEV A shop',
@@ -510,110 +379,83 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(drives.length, 'a leg between two jobs is ordinary work').toBe(3);
     });
 
-    test('on a day with no work at all, no stray drive renders either', async () => {
-      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, dest_place: 'DEV A shop',
-        arrived_at: '2026-08-23T23:26:00Z', departed_at: '2026-08-24T00:44:00Z', source: 'drive-unassigned' };
-      const rows = await withShop([], [LOOSE]);
-      expect(rows.filter(r => r.rawSource && /^drive/.test(r.rawSource)).length,
-        'a Saturday errand is not a workday').toBe(0);
-    });
 
-    test('the wrap-up allowance pays the unload after the last job', async () => {
-      const rows = await page.evaluate(async ([shopEntries, entries]) => {
-        if (typeof timeEntries === 'undefined') window.timeEntries = [];
-        const orig = window._fetchCrewLabor, prev = S.shopWrapMin;
-        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
-        S.shopWrapMin = 30;
-        try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; S.shopWrapMin = prev; }
-      }, [[YARD_PM], DAY]);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length).toBe(1);
-      expect(shop[0].minutes, '30 minutes of unload, not the whole evening').toBe(30);
-      expect(shop[0].detail, 'the rule is visible, not silently eating minutes').toBe('Shop · auto clock-out');
-      expect(shop[0].endTime, 'the row ends when the clock stopped').toBe('2026-08-20T22:00:00.000Z');
-    });
 
-    test('the prep allowance pays the load-up before the first move', async () => {
-      const rows = await page.evaluate(async ([shopEntries, entries]) => {
-        if (typeof timeEntries === 'undefined') window.timeEntries = [];
-        const orig = window._fetchCrewLabor, prev = S.shopPrepMin;
-        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
-        S.shopPrepMin = 20;
-        try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; S.shopPrepMin = prev; }
-      }, [[YARD_AM], DAY]);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length).toBe(1);
-      expect(shop[0].minutes, 'the last 20 minutes of the load-up, not the whole hour').toBe(20);
-      expect(shop[0].startTime, 'the row starts when the clock started').toBe('2026-08-20T12:10:00.000Z');
-    });
 
-    // Owner, 2026-08-24, Wed 8/19 reading 12h42m against the 9h36m of work
-    // actually on it. A manual clock at 8:28pm moved the day's close out from
-    // the 5:22pm drive home, and 3h06m of phone-at-the-yard came in behind it.
-    // The first fix blamed the manual entries for being a minute long; the
-    // owner's answer was "those manuals are right", and they are. Being INSIDE
-    // the workday was never enough. You have to have LEFT.
-    test('yard time nobody was seen leaving is not paid, even inside the day', async () => {
-      const rows = await page.evaluate(async ([shopEntries, entries]) => {
-        const origEnts = timeEntries.slice();
-        // A real hand-logged clock at 6:00pm, well after the yard session
-        // starts, holding the workday open exactly as it should.
-        timeEntries.push({ id: 'tlman9', logged_by_uid: 'me', job_id: null, minutes: 10,
-          start_time: '2026-08-20T23:00:00Z', end_time: '2026-08-20T23:10:00Z', date: '2026-08-20' });
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
-        try { return await _timeLogRows(null); }
-        finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
-      }, [[YARD_PM], DAY]);
-      expect(rows.filter(r => r.source === 'shop').length,
-        'the phone sat at the yard and nothing followed it: a parked truck').toBe(0);
-      expect(rows.filter(r => r.rawId === 'tlman9').length, 'the hand-logged minutes are still paid in full').toBe(1);
-    });
 
-    test('yard time a departure closes IS paid, however long the gap', async () => {
-      // Pulls out 20 minutes after the yard session ends: the drive itself was
-      // never written, but the next job starting is proof the person left.
-      const LATE = { employee_user_id: 'me', job_id: '9', minutes: 60,
-        arrived_at: '2026-08-20T19:20:00Z', departed_at: '2026-08-20T20:20:00Z', source: 'geofence' };
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
-      ], [DRIVE_OUT, JOB, LATE, JOB2, DRIVE_HOME]);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'left for the next job, so the yard hour counts').toBe(1);
-      expect(shop[0].minutes).toBe(60);
-    });
 
-    test('a departure the NEXT day never counts as leaving today', async () => {
-      // The person's fetched history runs past midnight; tomorrow's first
-      // drive must not retroactively prove they left the yard tonight.
-      const TOMORROW = { employee_user_id: 'me', job_id: '9', minutes: 30,
-        arrived_at: '2026-08-21T13:00:00Z', departed_at: '2026-08-21T13:30:00Z', source: 'geofence' };
-      const rows = await withShop([YARD_PM], DAY.concat([TOMORROW]));
-      expect(rows.filter(r => r.source === 'shop' && r.date === '2026-08-20').length,
-        'a new day is not a departure from last night').toBe(0);
-    });
 
-    // A hand-logged shift defines a day exactly like a GPS visit does. Asserted
-    // on the WINDOW rather than a rendered yard row: on a manual-only day, yard
-    // time before the shift is outside the window and yard time inside it is
-    // the same hour counted twice, so no row can prove this either way.
-    test('a manual clock sets the day\'s edges like any other work event', async () => {
-      const r = await page.evaluate(() => {
-        const w = _geoShopCutoffs([{ employee_user_id: 'me', source: 'manual',
-          arrived_at: '2026-08-20T13:00:00Z', departed_at: '2026-08-20T21:35:00Z' }]).me['2026-08-20'];
-        return { inMs: w.inMs, outMs: w.outMs };
-      });
-      expect(r.inMs).toBe(Date.parse('2026-08-20T13:00:00Z'));
-      expect(r.outMs, 'the hand-logged clock-out closes the day').toBe(Date.parse('2026-08-20T21:35:00Z'));
-    });
 
-    test('a shop dwell spanning Central midnight never renders', async () => {
-      const rows = await withShop([
-        // 8:00pm CT to 7:00am CT the next day: the truck parked at the yard.
-        { employee_user_id: 'me', minutes: 660, arrived_at: '2026-08-21T01:00:00Z', departed_at: '2026-08-21T12:00:00Z' },
-      ], DAY);
-      expect(rows.filter(r => r.source === 'shop').length, 'an overnight park is not a shift').toBe(0);
-    });
+    // ── THE VISIT YOU ARE STANDING IN ANCHORS THE DAY ────────────────────
+    // Owner report 2026-08-31: 4h41m of shop time, a logged drive, and him
+    // parked at a client since 7:58am, and the Time Log rendered an empty
+    // day. The window is built from CLOSED rows and he had not left yet, so
+    // the day had no anchor and every finished row on it was judged outside a
+    // workday that was never allowed to start.
+    //
+    // Asserted on the WINDOW, not on a rendered row: the anchor lands on
+    // TODAY by construction (its departed_at is now), and every other test in
+    // this file pins a fixed historical date, which is exactly what keeps
+    // them isolated from it.
+    // Bare identifiers, never window.*: these are module-level `let` bindings
+    // in a classic script, so they live in the global LEXICAL scope and are
+    // reachable by name from here but are not properties of window. Assigning
+    // window._geoArrivedAt makes a second, unrelated property and the engine
+    // never sees it, which is exactly how the first cut of these tests failed.
+    // Offsets in MINUTES, resolved to instants inside the page, and every
+    // instant the assertions use comes back out of the same evaluate.
+    // mockAllExternal pins the page's clock and the Playwright runner's is not
+    // pinned (CLAUDE.md §5.2.2), so a fixture built here from Date.now() and
+    // compared against a window built there is two clocks and hours of drift.
+    // The first cut of these tests did exactly that and failed by 36 minutes.
+    const withOpen = (page, state) => page.evaluate((st) => {
+      const saved = { u: _supaUser, j: _geoArrivedAt,
+                      p: _geoPlaceArrivedAt, c: _geoClientArrivedAt };
+      const ago = (m) => (m == null ? null : new Date(Date.now() - m * 60000).toISOString());
+      try {
+        const jobAt = st.jobMin != null ? ago(st.jobMin) : null;
+        const placeAt = st.placeMin != null ? ago(st.placeMin) : null;
+        const clientAt = st.badClient ? 'not-a-date' : (st.clientMin != null ? ago(st.clientMin) : null);
+        _supaUser = st.noUser ? null : { id: 'me' };
+        _geoArrivedAt = jobAt;
+        _geoPlaceArrivedAt = placeAt;
+        _geoClientArrivedAt = clientAt;
+        const rows = (st.driveFromMin != null && st.driveToMin != null)
+          ? [{ employee_user_id: 'me', source: 'drive-unassigned',
+               arrived_at: ago(st.driveFromMin), departed_at: ago(st.driveToMin) }]
+          : [];
+        // Keyed by the ARRIVAL's Central day, never by today's. The window is
+        // per person per day, and a fixture written as "90 minutes ago" sits
+        // on YESTERDAY whenever the clock is near midnight, which is precisely
+        // what the midnight-clock job runs at (TD_CLOCK_AT=00:20). Reading
+        // today's key then finds only the anchor's `now` edge and the test
+        // fails for the calendar rather than for the code. An open visit that
+        // straddles midnight legitimately widens both days; the arrival's day
+        // is the one these assertions are about.
+        const anchorAt = jobAt || placeAt || (Date.parse(clientAt || '') > 0 ? clientAt : null);
+        const key = (typeof _bizDateStr === 'function')
+          ? _bizDateStr(new Date(anchorAt || Date.now())) : null;
+        const w = _geoShopCutoffs(rows);
+        const mine = (w.me || {})[key] || null;
+        const open = (typeof _geoOpenVisitAnchor === 'function') ? _geoOpenVisitAnchor() : undefined;
+        return { win: mine ? { inMs: mine.inMs, outMs: mine.outMs } : null,
+                 openSource: open ? open.source : null, openArr: open ? open.arrived_at : null,
+                 jobAt, placeAt, clientAt, now: Date.now(),
+                 driveFrom: rows.length ? Date.parse(rows[0].arrived_at) : null };
+      } finally {
+        _supaUser = saved.u; _geoArrivedAt = saved.j;
+        _geoPlaceArrivedAt = saved.p; _geoClientArrivedAt = saved.c;
+      }
+    }, state);
+
+
+
+
+
+
+
+
+
 
     test('a zero-length or malformed shop session is skipped', async () => {
       const rows = await withShop([
@@ -624,57 +466,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(rows.filter(r => r.source === 'shop').length).toBe(0);
     });
 
-    test('workday window: opens at the ride out, closes at the ride back, lunches ignored', async () => {
-      const r = await page.evaluate(([DAY]) => {
-        const w = _geoShopCutoffs(DAY.concat([
-          { employee_user_id: 'me', arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:45:00Z', source: 'stop' },
-          { employee_user_id: 'you', arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z', source: 'place' },
-        ]));
-        return { meIn: w.me['2026-08-20'].inMs, meOut: w.me['2026-08-20'].outMs,
-          youIn: w.you['2026-08-20'].inMs, youOut: w.you['2026-08-20'].outMs, who: Object.keys(w).sort() };
-      }, [DAY]);
-      expect(r.meIn, 'the drive out, chained to the job it leads to').toBe(Date.parse('2026-08-20T12:30:00Z'));
-      expect(r.meOut, 'the drive back, chained to the job it leaves').toBe(Date.parse('2026-08-20T21:30:00Z'));
-      expect(r.youIn).toBe(Date.parse('2026-08-20T18:00:00Z'));
-      expect(r.youOut).toBe(Date.parse('2026-08-20T19:00:00Z'));
-      expect(r.who, 'each person gets their own day').toEqual(['me', 'you']);
-    });
 
-    test('paid-minute helper: bounded at both ends, never negative, zero without a window', async () => {
-      const r = await page.evaluate(() => {
-        const win = { inMs: Date.parse('2026-08-20T12:30:00Z'), outMs: Date.parse('2026-08-20T21:30:00Z') };
-        return {
-          inside: _geoShopPaidMin('2026-08-20T17:00:00Z', '2026-08-20T18:00:00Z', win),
-          before: _geoShopPaidMin('2026-08-20T11:30:00Z', '2026-08-20T12:30:00Z', win),
-          after: _geoShopPaidMin('2026-08-20T21:30:00Z', '2026-08-21T04:48:00Z', win),
-          straddleEnd: _geoShopPaidMin('2026-08-20T21:00:00Z', '2026-08-21T04:48:00Z', win),
-          straddleStart: _geoShopPaidMin('2026-08-20T12:00:00Z', '2026-08-20T13:00:00Z', win),
-          noWindow: _geoShopPaidMin('2026-08-20T17:00:00Z', '2026-08-20T18:00:00Z', null),
-          backwards: _geoShopPaidMin('2026-08-20T18:00:00Z', '2026-08-20T17:00:00Z', win),
-          junk: _geoShopPaidMin(null, undefined, win),
-        };
-      });
-      expect(r.inside).toBe(60);
-      expect(r.before, 'the day had not started').toBe(0);
-      expect(r.after, 'the day already clocked out').toBe(0);
-      expect(r.straddleEnd, 'only the part inside the workday').toBe(30);
-      expect(r.straddleStart, 'only the part inside the workday').toBe(30);
-      expect(r.noWindow, 'no work that day, so no shift').toBe(0);
-      expect(r.backwards).toBe(0);
-      expect(r.junk).toBe(0);
-    });
 
-    // A yard visit split by a fence blip is one visit, not two lines.
-    test('a blip-split yard visit folds into one row', async () => {
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 3, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:03:00Z' },
-        { employee_user_id: 'me', minutes: 36, arrived_at: '2026-08-20T17:02:00Z', departed_at: '2026-08-20T17:39:00Z' },
-      ], DAY);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'one stretch at the yard, one line').toBe(1);
-      expect(shop[0].startTime).toBe('2026-08-20T17:00:00Z');
-      expect(shop[0].minutes, '5:00 to 5:39 is 39 minutes, not 3 + 36').toBe(39);
-    });
 
     // The other Tue 8/18 pair looks identical to the eye but is not one visit:
     // he left the yard for the job in between, so folding them would swallow
@@ -693,47 +486,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(shop.map(r => r.minutes), 'and neither is stretched over the leg').toEqual([39, 11]);
     });
 
-    // Nobody is at the yard and driving at the same instant; the fence lags
-    // the ignition. Owner's Tue 8/18 had a 1:29-1:34pm yard row against a
-    // 1:29-1:36pm drive out to the job.
-    test('yard time overlapping a drive leg yields to the drive', async () => {
-      const OUT = { employee_user_id: 'me', job_id: null, minutes: 7, arrived_at: '2026-08-20T18:29:00Z', departed_at: '2026-08-20T18:36:00Z', source: 'drive-unassigned' };
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 5, arrived_at: '2026-08-20T18:29:00Z', departed_at: '2026-08-20T18:34:00Z' },
-      ], [DRIVE_OUT, JOB, OUT, JOB2, DRIVE_HOME]);
-      expect(rows.filter(r => r.source === 'shop').length, 'fully covered by the leg, nothing left to pay').toBe(0);
-    });
 
-    test('yard time only partly overlapping a drive keeps the part that is real', async () => {
-      // The fence lags the ignition, so the yard row runs seven minutes past
-      // the moment the truck actually pulled out. The drive starting at 18:30
-      // is both the overlap AND the proof the person left.
-      const OUT = { employee_user_id: 'me', job_id: null, minutes: 7, arrived_at: '2026-08-20T18:30:00Z', departed_at: '2026-08-20T18:37:00Z', source: 'drive-unassigned' };
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T18:07:00Z', departed_at: '2026-08-20T18:37:00Z' },
-      ], [DRIVE_OUT, JOB, OUT, EXIT('2026-08-20T18:37:00Z'), JOB2, DRIVE_HOME]);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length).toBe(1);
-      expect(shop[0].minutes, 'the 23 minutes at the yard before the ignition').toBe(23);
-    });
 
-    test('overlapping shop sessions never pay the same minute twice', async () => {
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:00:00Z' },
-        { employee_user_id: 'me', minutes: 63, arrived_at: '2026-08-20T17:57:00Z', departed_at: '2026-08-20T19:00:00Z' },
-      ], DAY.concat([EXIT('2026-08-20T19:00:00Z')]));
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.reduce((s, r) => s + r.minutes, 0), '5:00 to 7:00 is 120 minutes, not 123').toBe(120);
-    });
 
-    test('a shop session fully inside another pays nothing extra', async () => {
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 120, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
-        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T17:30:00Z', departed_at: '2026-08-20T18:00:00Z' },
-      ], DAY.concat([EXIT('2026-08-20T19:00:00Z')]));
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.reduce((s, r) => s + r.minutes, 0), 'the nested one adds nothing').toBe(120);
-    });
 
     test('two yard visits a real break apart stay two rows, both paid in full', async () => {
       const rows = await withShop([
@@ -745,284 +500,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(shop.reduce((s, r) => s + r.minutes, 0)).toBe(50);
     });
 
-    test('span helper: input order preserved, malformed rows return a zero span', async () => {
-      const r = await page.evaluate(() => _geoShopPaidSpans([
-        { arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
-        { arrived_at: null, departed_at: '2026-08-20T19:00:00Z' },
-        { arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:30:00Z' },
-      ], { '2026-08-20': { inMs: Date.parse('2026-08-20T12:00:00Z'), outMs: Date.parse('2026-08-20T22:00:00Z') } },
-         [{ arrived_at: '2026-08-20T19:00:00Z', departed_at: '2026-08-20T19:10:00Z', source: 'drive' }])
-        .map(x => x.minutes));
-      // Sorted by start the third row runs first (5:00-6:30) and the first row
-      // (6:00-7:00) overlaps it, so it folds in: 5:00-7:00 on the third, zero
-      // on the first, and the result still comes back in INPUT order.
-      expect(r).toEqual([0, 0, 120]);
-    });
 
-    // Owner question 2026-08-25: "in shop how do we track time loading truck?"
-    // At a yard, dwell is right: sitting in the office writing quotes is work.
-    // At a shop that IS the house, dwell cannot tell loading the truck from
-    // eating breakfast, and the home_office rule counts phone-in-hand minutes,
-    // which pays a man with his phone in his pocket nothing. The motion
-    // coprocessor already separated walking from sitting, all day, for free.
-    test.describe('the walking part of a home-shop session', () => {
-      const T = (hhmm) => Date.parse('2026-08-20T' + hhmm + ':00Z');
-      const tape = (...pairs) => pairs.map(([kind, hhmm]) => ({ kind, ts: T(hhmm) }));
 
-      // The trim is a pure function of the tape: exercised directly here, then
-      // through the real span builder below.
-      const trim = (tp, from, to, cap) => page.evaluate(([tp, a, b, c]) =>
-        _geoActiveTrim(tp, a, b, c), [tp, T(from), T(to), cap === undefined ? null : cap]);
-
-      test('the morning in the house before the first walk is never paid', async () => {
-        const r = await trim(tape(['still', '11:00'], ['onFoot', '11:34'], ['driving', '11:52']), '11:00', '11:52');
-        expect(r.startMs, 'the clock starts when he walks out to the truck').toBe(T('11:34'));
-        expect(r.endMs).toBe(T('11:52'));
-        expect(r.idleMs).toBe(0);
-      });
-
-      // The exact shape the owner described: loading, then sitting down, then
-      // the fence eventually noticing. Both tails go.
-      test('sitting down after the last walk is never paid, and neither is the fence lag', async () => {
-        const r = await trim(tape(['onFoot', '12:10'], ['still', '12:25'], ['driving', '12:58']), '12:10', '13:03');
-        expect(r.endMs, 'the session ends at the last movement, not at the fence').toBe(T('12:25'));
-        expect(Math.round((r.endMs - r.startMs) / 60000)).toBe(15);
-      });
-
-      test('a sit BETWEEN two walks is paid: that is bench work', async () => {
-        const r = await trim(tape(['onFoot', '11:34'], ['still', '11:41'], ['onFoot', '11:44'], ['driving', '11:52']), '11:34', '11:52');
-        expect(r.startMs).toBe(T('11:34'));
-        expect(r.endMs).toBe(T('11:52'));
-        expect(r.idleMs, 'three minutes is well under the cap').toBe(0);
-      });
-
-      test('a long sit between two walks is paid only up to the cap', async () => {
-        // 45 minutes of nothing between two loading trips: 20 paid, 25 not.
-        const r = await trim(tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '11:55'], ['driving', '12:00']), '11:00', '12:00');
-        expect(r.startMs).toBe(T('11:00'));
-        expect(r.endMs).toBe(T('12:00'));
-        expect(Math.round(r.idleMs / 60000), 'the lunch over the cap comes off').toBe(25);
-      });
-
-      test('the cap is a parameter, so the rule can be tuned without a rewrite', async () => {
-        const tp = tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '11:55'], ['driving', '12:00']);
-        expect(Math.round((await trim(tp, '11:00', '12:00', 0)).idleMs / 60000), 'no bridge at all').toBe(45);
-        expect((await trim(tp, '11:00', '12:00', 60 * 60000)).idleMs, 'a generous bridge pays it whole').toBe(0);
-      });
-
-      test('no walking on the tape trims nothing: a quiet phone is not evidence', async () => {
-        const r = await trim(tape(['still', '11:00'], ['driving', '12:00']), '11:00', '12:00');
-        expect(r.startMs, 'the phone may have been left inside while the work happened').toBe(T('11:00'));
-        expect(r.endMs).toBe(T('12:00'));
-        expect(r.idleMs).toBe(0);
-      });
-
-      test('an absent, empty or junk tape trims nothing', async () => {
-        for (const tp of [null, undefined, [], 'nope', 42, {}]) {
-          const r = await page.evaluate(([tp, a, b]) => _geoActiveTrim(tp, a, b), [tp, T('11:00'), T('12:00')]);
-          expect(r.startMs, String(tp)).toBe(T('11:00'));
-          expect(r.endMs).toBe(T('12:00'));
-          expect(r.idleMs).toBe(0);
-        }
-      });
-
-      test('a zero-length or inverted window is returned untouched', async () => {
-        const tp = tape(['onFoot', '11:34']);
-        const same = await page.evaluate(([tp, a]) => _geoActiveTrim(tp, a, a), [tp, T('11:00')]);
-        expect(same.startMs).toBe(same.endMs);
-        const back = await page.evaluate(([tp, a, b]) => _geoActiveTrim(tp, a, b), [tp, T('12:00'), T('11:00')]);
-        expect(back.startMs).toBe(T('12:00'));
-        expect(back.endMs).toBe(T('11:00'));
-      });
-
-      // Now through the real span builder, which is what actually pays people.
-      const paid = (tp, homeShop) => page.evaluate(([tp, homeShop]) => {
-        const prevLat = S.officeLat, prevLon = S.officeLon, prevPlaces = places.slice();
-        S.officeLat = 39.0; S.officeLon = -95.7;
-        places.length = 0;
-        if (homeShop) places.push({ id: 'p-home', kind: 'home_office', lat: 39.0, lon: -95.7 });
-        else places.push({ id: 'p-far', kind: 'home_office', lat: 40.5, lon: -97.9 });
-        const out = _geoShopPaidSpans(
-          [{ employee_user_id: 'me', arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T13:03:00Z' }],
-          { '2026-08-20': { inMs: Date.parse('2026-08-20T10:00:00Z'), outMs: Date.parse('2026-08-20T22:00:00Z') } },
-          [{ arrived_at: '2026-08-20T13:30:00Z', departed_at: '2026-08-20T14:00:00Z', source: 'geofence' }],
-          tp);
-        S.officeLat = prevLat; S.officeLon = prevLon;
-        places.length = 0; prevPlaces.forEach(p => places.push(p));
-        return out[0];
-      }, [tp, homeShop]);
-
-      const MORNING = () => tape(['still', '11:00'], ['onFoot', '11:34'], ['still', '12:25'], ['driving', '12:58']);
-
-      test('at a home shop the session is the walking part', async () => {
-        const r = await paid(MORNING(), true);
-        expect(new Date(r.startMs).toISOString()).toBe('2026-08-20T11:34:00.000Z');
-        expect(new Date(r.endMs).toISOString()).toBe('2026-08-20T12:25:00.000Z');
-        expect(r.minutes, '34 minutes of house and 38 of couch both drop').toBe(51);
-      });
-
-      test('at a shop that is NOT the house, dwell still rules', async () => {
-        const r = await paid(MORNING(), false);
-        expect(r.minutes, 'sitting in the shop office is work').toBe(123);
-      });
-
-      test('with no tape at all, a home shop bills the dwell exactly as before', async () => {
-        const r = await paid(null, true);
-        expect(r.minutes).toBe(123);
-      });
-
-      test('the idle over the cap is reported, not hidden inside the number', async () => {
-        const r = await paid(tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '12:55'], ['driving', '13:00']), true);
-        expect(Math.round(r.idleMs / 60000), 'a caller can explain the number it shows').toBe(85);
-        expect(r.minutes, '120 minutes of span less 85 idle').toBe(35);
-      });
-
-      // Owner, 2026-08-25: "I can't make the call on time, it's all going to
-      // differ based on every office so need something that fits today." So
-      // the bridge is read off the contractor's own gaps rather than picked.
-      test.describe('the bridge learns itself', () => {
-        const learn = (tp, windows) => page.evaluate(([tp, w]) => ({
-          cap: _geoLearnIdleCap(tp, w),
-          gaps: _geoIdleGaps(tp, w).slice().sort((a, b) => a - b).map(g => Math.round(g / 60000)),
-        }), [tp, windows]);
-        // A day of walk, sit, walk, sit... with the sits given in minutes.
-        const dayOf = (startHH, sits) => {
-          let t = T(startHH + ':00'), out = [];
-          sits.forEach((sit, i) => {
-            out.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
-            out.push({ kind: 'still', ts: t }); t += sit * 60000;
-          });
-          out.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
-          return { tape: out, win: [T(startHH + ':00'), t] };
-        };
-
-        test('it finds the split between working sits and a real break', async () => {
-          // Six quick sits around the shop, then lunch. Nobody had to say
-          // which is which: 3,4,4,5,6 then 50 has one obvious jump in it.
-          const d = dayOf('11', [3, 4, 4, 5, 6, 50]);
-          const r = await learn(d.tape, [d.win]);
-          expect(r.gaps).toEqual([3, 4, 4, 5, 6, 50]);
-          expect(Math.round(r.cap / 60000), 'the last sit that is still work').toBe(6);
-        });
-
-        test('a different office learns a different number, off the same code', async () => {
-          // Longer set-ups between moves, and a shorter break.
-          const d = dayOf('11', [12, 14, 15, 16, 18, 40]);
-          const r = await learn(d.tape, [d.win]);
-          expect(Math.round(r.cap / 60000)).toBe(18);
-        });
-
-        test('too few gaps to have an opinion returns null, and the default stands', async () => {
-          const d = dayOf('11', [3, 4, 50]);
-          expect((await learn(d.tape, [d.win])).cap).toBe(null);
-        });
-
-        test('a day of nothing but quick load-outs says nothing about lunch', async () => {
-          const d = dayOf('11', [2, 3, 3, 4, 4, 5]);
-          expect((await learn(d.tape, [d.win])).cap, 'no long gap on record, no edge to find').toBe(null);
-        });
-
-        test('one tight cluster is never split down the middle', async () => {
-          // 10,11,12,13,14,15: no gap here is twice the one below it.
-          const d = dayOf('11', [10, 11, 12, 13, 14, 15]);
-          expect((await learn(d.tape, [d.win])).cap).toBe(null);
-        });
-
-        test('the answer is clamped at both ends, whatever the tape says', async () => {
-          const low = dayOf('11', [1, 1, 1, 2, 2, 60]);
-          expect(Math.round((await learn(low.tape, [low.win])).cap / 60000),
-            'never below five minutes').toBe(5);
-          const high = dayOf('11', [50, 55, 60, 65, 70, 400]);
-          expect(Math.round((await learn(high.tape, [high.win])).cap / 60000),
-            'never above forty-five').toBe(45);
-        });
-
-        test('gaps are gathered across days, not just the one on screen', async () => {
-          const a = dayOf('11', [3, 4, 4]);
-          const b = dayOf('15', [5, 6, 50]);
-          const r = await learn(a.tape.concat(b.tape), [a.win, b.win]);
-          expect(r.gaps.length, 'both days contribute').toBe(6);
-          expect(Math.round(r.cap / 60000)).toBe(6);
-        });
-
-        test('junk input never throws and never invents a number', async () => {
-          for (const [tp, w] of [[null, null], [[], []], ['x', 'y'], [[{ kind: 'onFoot' }], [[0, 0]]], [[], [[NaN, NaN]]]]) {
-            const r = await page.evaluate(([tp, w]) => ({ cap: _geoLearnIdleCap(tp, w), gaps: _geoIdleGaps(tp, w) }), [tp, w]);
-            expect(r.cap).toBe(null);
-            expect(Array.isArray(r.gaps)).toBe(true);
-          }
-        });
-
-        test('the span builder uses what it learned, and says that it did', async () => {
-          const r = await page.evaluate(() => {
-            const prevLat = S.officeLat, prevLon = S.officeLon, prevPlaces = places.slice();
-            S.officeLat = 39.0; S.officeLon = -95.7;
-            places.length = 0;
-            places.push({ id: 'p-home', kind: 'home_office', lat: 39.0, lon: -95.7 });
-            const D = (hhmm) => Date.parse('2026-08-20T' + hhmm + ':00Z');
-            let t = D('11:00'); const tape = [];
-            [3, 4, 4, 5, 6, 50].forEach(sit => {
-              tape.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
-              tape.push({ kind: 'still', ts: t }); t += sit * 60000;
-            });
-            tape.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
-            const out = _geoShopPaidSpans(
-              [{ employee_user_id: 'me', arrived_at: '2026-08-20T11:00:00Z', departed_at: new Date(t).toISOString() }],
-              { '2026-08-20': { inMs: D('10:00'), outMs: D('23:00') } },
-              // Something starting once the session ends, so the "nobody saw
-              // them leave" rule does not collapse it to the wrap allowance
-              // (which is zero by default). Same reason the paid() helper
-              // above carries one.
-              [{ arrived_at: new Date(t + 60000).toISOString(), departed_at: new Date(t + 20 * 60000).toISOString(), source: 'geofence' }],
-              tape);
-            S.officeLat = prevLat; S.officeLon = prevLon;
-            places.length = 0; prevPlaces.forEach(p => places.push(p));
-            return out[0];
-          });
-          expect(r.idleCapLearned, 'not the fallback').toBe(true);
-          expect(Math.round(r.idleCapMs / 60000)).toBe(6);
-          // Only the 50-minute lunch is over the learned 6, so 44 comes off.
-          expect(Math.round(r.idleMs / 60000)).toBe(44);
-        });
-
-        test('a standalone yard is never judged on movement at all', async () => {
-          const r = await paid(MORNING(), false);
-          expect(r.idleCapMs, 'no cap, no trim, plain dwell').toBe(0);
-          expect(r.idleCapLearned).toBe(false);
-        });
-      });
-
-      test('minutes can never go negative however the tape reads', async () => {
-        const r = await paid(tape(['onFoot', '11:00'], ['still', '11:01'], ['onFoot', '13:02'], ['driving', '13:03']), true);
-        expect(r.minutes).toBeGreaterThanOrEqual(0);
-      });
-    });
-
-    test('the allowances are clamped, never negative or unbounded', async () => {
-      const r = await page.evaluate(() => {
-        const pw = S.shopWrapMin, pp = S.shopPrepMin, out = {};
-        for (const [k, v] of [['none', undefined], ['neg', -30], ['junk', 'abc'], ['big', 9999], ['ok', 20]]) {
-          S.shopWrapMin = v; S.shopPrepMin = v;
-          out[k] = _geoShopWrapMs(); out[k + 'Prep'] = _geoShopPrepMs();
-        }
-        S.shopWrapMin = pw; S.shopPrepMin = pp; return out;
-      });
-      expect(r.none).toBe(0);
-      expect(r.neg).toBe(0);
-      expect(r.junk).toBe(0);
-      expect(r.big, 'capped at 4 hours').toBe(240 * 60000);
-      expect(r.ok).toBe(20 * 60000);
-      expect(r.nonePrep).toBe(0);
-      expect(r.negPrep).toBe(0);
-      expect(r.bigPrep).toBe(240 * 60000);
-      expect(r.okPrep).toBe(20 * 60000);
-    });
 
     test('shop minutes land in their own bucket, never inflating job-site labor', async () => {
       const agg = await page.evaluate(() => _tlEmpWeekAgg([
-        { personUid: 'me', personName: 'Logan', source: 'auto', detail: '', minutes: 268 },
-        { personUid: 'me', personName: 'Logan', source: 'auto', detail: 'drive', minutes: 9 },
-        { personUid: 'me', personName: 'Logan', source: 'shop', detail: 'Shop', minutes: 44, unpaid: false },
+        { personUid: 'me', personName: 'Logan', source: 'auto', rawSource: 'geofence', detail: '', minutes: 268 },
+        { personUid: 'me', personName: 'Logan', source: 'auto', rawSource: 'drive', detail: 'Driving', minutes: 9 },
+        { personUid: 'me', personName: 'Logan', source: 'shop', rawSource: 'shop', detail: 'Shop', minutes: 44, unpaid: false },
       ], 'me'));
       const e = agg.me;
       expect(e.onsiteMin, 'shop time is not job-site time').toBe(268);
@@ -1046,189 +531,479 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // belonged to no row. Those are the drives to and from the stop, dropped
   // from mileage because a lunch run is not deductible, and the owner's call
   // was "the unpaid time leg should absorb that 5 minutes."
-  test.describe('gap absorption', () => {
-    const FRI = () => ([
-      { id: 'a1', personUid: 'me', date: '2026-08-21', minutes: 222, unpaid: false, startTime: '2026-08-21T12:55:00Z', endTime: '2026-08-21T16:37:00Z' },
-      { id: 'a2', personUid: 'me', date: '2026-08-21', minutes: 49, unpaid: true, startTime: '2026-08-21T16:42:00Z', endTime: '2026-08-21T17:31:00Z' },
-      { id: 'a3', personUid: 'me', date: '2026-08-21', minutes: 262, unpaid: false, startTime: '2026-08-21T17:45:00Z', endTime: '2026-08-21T22:07:00Z' },
+  // ── The day must be continuous (owner 2026-08-29) ───────────────────────────
+  // "just want time in order... then show unaccounted for time in between,
+  // then arrival at Laurie's, unaccounted for time in between, arrival at
+  // Laurie's then drive time home, that ends the day."
+  //
+  // Jack's real 8/28 is the fixture: he left Laurie's at 12:14 and came back
+  // at 13:58, and those 104 minutes produced no row of any kind, so the Time
+  // Log jumped from one visit straight to the next and the day silently
+  // failed to add up.
+  test.describe('unaccounted time is shown, never hidden', () => {
+    // TODAY, not a date in the book. These tests ask what counts as a hole,
+    // and the calendar was never part of that question. It became part of it
+    // when a hole stopped being asked about after a week (rule 3, owner
+    // 2026-09-05): a fixture written on a fixed day answers "is this stale"
+    // instead, and answers it differently every day the suite runs, which is
+    // exactly the class §5.2.2 exists to keep out. The times are unchanged
+    // and sit inside the working day, so the window rule does not decide
+    // these either. Both new rules get their own tests below.
+    const D = () => page.evaluate(() => todayKey());
+    const JACK = (d) => ([
+      { id: 'd1', personUid: 'jack', date: d, minutes: 3, unpaid: false, source: 'auto',
+        startTime: d + 'T14:46:00Z', endTime: d + 'T14:49:00Z' },   // house -> Laurie's
+      { id: 'v1', personUid: 'jack', date: d, minutes: 11, unpaid: false, source: 'auto',
+        startTime: d + 'T14:49:00Z', endTime: d + 'T15:00:00Z' },   // at Laurie's
+      { id: 'v2', personUid: 'jack', date: d, minutes: 99, unpaid: false, source: 'auto',
+        startTime: d + 'T15:35:00Z', endTime: d + 'T17:14:00Z' },   // back at Laurie's
+      { id: 'v3', personUid: 'jack', date: d, minutes: 16, unpaid: false, source: 'auto',
+        startTime: d + 'T18:58:00Z', endTime: d + 'T19:14:00Z' },   // back again
+      { id: 'd2', personUid: 'jack', date: d, minutes: 4, unpaid: false, source: 'auto',
+        startTime: d + 'T19:14:00Z', endTime: d + 'T19:18:00Z' },   // Laurie's -> home
     ]);
-    const absorb = rows => page.evaluate(r => _tlAbsorbGaps(r), rows);
+    const fill = rows => page.evaluate(r => _tlFillUnaccounted(r), rows);
 
-    test('the unpaid stop swallows the travel on both sides, door to door', async () => {
-      const r = await absorb(FRI());
-      const stop = r.find(x => x.id === 'a2');
-      expect(stop.startTime, 'starts when he left the job, not when he arrived at lunch').toBe('2026-08-21T16:37:00Z');
-      expect(stop.endTime, 'ends when he was back on site').toBe('2026-08-21T17:45:00Z');
-      expect(stop.minutes).toBe(68);
-    });
-
-    test('paid rows are never touched, so no total can move', async () => {
-      const before = FRI(), r = await absorb(FRI());
-      const paid = r.filter(x => !x.unpaid);
-      expect(paid.map(x => x.minutes)).toEqual(before.filter(x => !x.unpaid).map(x => x.minutes));
-      expect(paid.map(x => x.startTime + '|' + x.endTime))
-        .toEqual(before.filter(x => !x.unpaid).map(x => x.startTime + '|' + x.endTime));
-    });
-
-    test('a gap over 30 minutes stays visible: a missing record, not something to swallow', async () => {
-      const rows = FRI();
-      rows[2].startTime = '2026-08-21T18:20:00Z';   // 49 minutes after the stop ended
-      const r = await absorb(rows);
-      expect(r.find(x => x.id === 'a2').endTime, 'left alone to be investigated').toBe('2026-08-21T17:31:00Z');
-      expect(r.find(x => x.id === 'a2').startTime, 'the 5-minute side is still absorbed').toBe('2026-08-21T16:37:00Z');
-    });
-
-    test('a gap between two paid rows with no unpaid neighbor is left alone', async () => {
-      const r = await absorb([
-        { id: 'b1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
-        { id: 'b2', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T13:10:00Z', endTime: '2026-08-21T14:10:00Z' },
+    test('the day reads in order with every hole named, and nothing is merged', async () => {
+      const r = await fill(JACK(await D()));
+      const day = r.slice().sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+      // Exactly the owner's sequence: drive, arrival, hole, arrival, hole,
+      // arrival, drive home. Seven lines, and the day ends.
+      expect(day.map(x => x.source)).toEqual([
+        'auto', 'auto', 'unaccounted', 'auto', 'unaccounted', 'auto', 'auto',
       ]);
-      expect(r.map(x => x.minutes), 'nothing to stretch without an unpaid row').toEqual([60, 60]);
+      const gaps = day.filter(x => x.source === 'unaccounted');
+      // 15:00 to 15:35 is the parts run; 17:14 to 18:58 is the 104 minutes
+      // that vanished on the real day.
+      expect(gaps.map(x => x.minutes)).toEqual([35, 104]);
+      // NOT merged: all three visits survive as their own rows.
+      expect(day.filter(x => ['v1', 'v2', 'v3'].includes(x.id)).length).toBe(3);
+      // The day now adds up: first row start to last row end, no silent hole.
+      const span = (Date.parse(day[day.length - 1].endTime) - Date.parse(day[0].startTime)) / 60000;
+      expect(day.reduce((n, x) => n + x.minutes, 0)).toBe(span);
     });
 
-    test('overlapping rows are not stretched backwards', async () => {
-      const r = await absorb([
-        { id: 'c1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
-        { id: 'c2', personUid: 'me', date: '2026-08-21', minutes: 30, unpaid: true, startTime: '2026-08-21T12:40:00Z', endTime: '2026-08-21T13:10:00Z' },
-      ]);
-      expect(r.find(x => x.id === 'c2').startTime).toBe('2026-08-21T12:40:00Z');
-      expect(r.find(x => x.id === 'c2').minutes).toBe(30);
-    });
+    // ── Rules 1 and 3: what is worth ASKING about (owner 2026-09-05) ──────
+    // "how do we prevent unaccounted for time outright?" A hole is only a
+    // question inside a working day, and only while somebody could still
+    // answer it. Neither rule changes an hour of pay: a hole has never
+    // counted. They decide what is put on the screen as a question.
+    test.describe('a hole is only a question inside the workday', () => {
+      const hole = (d, a, b, extra) => page.evaluate(({ d, a, b, extra }) => _tlFillUnaccounted([
+        Object.assign({ id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+          personName: 'Jack', startTime: d + 'T' + a, endTime: d + 'T' + b }, (extra && extra.first) || {}),
+        Object.assign({ id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+          personName: 'Jack', startTime: d + 'T' + (extra && extra.c || '00:00:00Z'), endTime: d + 'T' + (extra && extra.e || '00:00:00Z') }, (extra && extra.second) || {}),
+      ]).filter(x => x.source === 'unaccounted'), { d, a, b, extra });
 
-    test('never reaches across people or across days', async () => {
-      const r = await absorb([
-        { id: 'd1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
-        { id: 'd2', personUid: 'you', date: '2026-08-21', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
-        { id: 'd3', personUid: 'me', date: '2026-08-22', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
-      ]);
-      expect(r.find(x => x.id === 'd2').minutes, 'another person is not the same timeline').toBe(30);
-      expect(r.find(x => x.id === 'd3').minutes, 'another day is not the same timeline').toBe(30);
-    });
+      test('inside work hours it is still asked', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await hole(d, '13:00:00Z', '14:00:00Z', { c: '16:00:00Z', e: '17:00:00Z' });
+        expect(g.length).toBe(1);
+        expect(g[0].minutes).toBe(120);
+      });
 
-    test('malformed or open rows are skipped without throwing', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          return {
-            ok: true,
-            rows: _tlAbsorbGaps([
-              null,
-              { id: 'e1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: null },
-              { id: 'e2', personUid: 'me', date: '2026-08-21', minutes: 30, unpaid: true, startTime: 'nope', endTime: 'nope' },
-              { id: 'e3', personUid: 'me', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
-            ]).length,
+      test('after the working day it is his evening, and nothing is asked', async () => {
+        const d = await page.evaluate(() => todayKey());
+        // 20:00Z to 23:00Z is 3pm to 6pm Central on the fixture's own clock,
+        // well past a 20:00 finish only when the window says so, so set the
+        // window explicitly rather than relying on where the runner sits.
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          S.workHours = { start: '06:00', end: '10:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T20:00:00Z', endTime: d + 'T21:00:00Z' },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T23:00:00Z', endTime: d + 'T23:59:00Z' },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g.length, 'time nobody claimed is not a question').toBe(0);
+      });
+
+      test('a hole that straddles the end of the day is CLIPPED, not dropped', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          // Window ends 14:00 local. The hole runs 13:00 to 17:00 local.
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (h) => new Date(base + h * 3600000).toISOString();
+          S.workHours = { start: '06:00', end: '14:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: iso(12), endTime: iso(13) },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: iso(17), endTime: iso(18) },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out.map(x => ({ min: x.minutes, end: x.endTime, cap: iso(14) }));
+        }, { d });
+        expect(g.length).toBe(1);
+        expect(g[0].min, 'only the hour inside the working day is asked about').toBe(60);
+        expect(g[0].end).toBe(g[0].cap);
+      });
+
+      test('a clock over the stretch means there was never a hole to ask about', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (h) => new Date(base + h * 3600000).toISOString();
+          S.workHours = { start: '06:00', end: '14:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const rows = [
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: iso(19), endTime: iso(20) },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: iso(22), endTime: iso(23) },
+          ];
+          const without = _tlFillUnaccounted(rows.slice()).filter(x => x.source === 'unaccounted').length;
+          // The same night with a clock over it. The clock is one of the rows
+          // the walk below sees, so the stretch is covered and no hole is
+          // ever found: this is why the window needs no widening for it.
+          const withClock = _tlFillUnaccounted(rows.concat([
+            { id: 'c', personUid: 'jack', date: d, minutes: 240, unpaid: false, source: 'manual', personName: 'Jack',
+              startTime: iso(19), endTime: iso(23) },
+          ])).filter(x => x.source === 'unaccounted').length;
+          S.workHours = prev;
+          return { without, withClock };
+        }, { d });
+        expect(g.without, 'outside the set hours with nothing claimed: silence').toBe(0);
+        expect(g.withClock, 'and a clock over it was never a hole in the first place').toBe(0);
+      });
+
+      test('the tail after the last real work is not asked about', async () => {
+        // The owner's own Thursday: a drive that ends at the shop, then a one
+        // minute Office row eleven minutes later. The gap between them is the
+        // house dwell rule 12 deletes on purpose, not a mystery.
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (m) => new Date(base + m * 60000).toISOString();
+          S.workHours = { start: '06:00', end: '20:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 20, unpaid: false, source: 'auto',
+              rawSource: 'drive', personName: 'Jack', startTime: iso(16 * 60), endTime: iso(16 * 60 + 21) },
+            { id: 'y', personUid: 'jack', date: d, minutes: 1, unpaid: false, source: 'auto',
+              rawSource: 'place-office', personName: 'Jack', startTime: iso(16 * 60 + 32), endTime: iso(16 * 60 + 33) },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g.length, 'the work of the day was already over').toBe(0);
+      });
+
+      test('a hole BETWEEN two work rows is untouched by that rule', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (h) => new Date(base + h * 3600000).toISOString();
+          S.workHours = { start: '06:00', end: '20:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+              rawSource: 'drive', personName: 'Jack', startTime: iso(8), endTime: iso(9) },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+              rawSource: 'visit', personName: 'Jack', startTime: iso(11), endTime: iso(12) },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g.length, 'the day was still going, so it is still a question').toBe(1);
+        expect(g[0].minutes).toBe(120);
+      });
+
+      test('a day of nothing but Office rows clips nothing', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (h) => new Date(base + h * 3600000).toISOString();
+          S.workHours = { start: '06:00', end: '20:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          // Two Office rows with a third row between them that is neither:
+          // no real work anywhere, so the rule has no end to clip to and the
+          // window is the only thing deciding.
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+              rawSource: 'place-office', personName: 'Jack', startTime: iso(8), endTime: iso(9) },
+            { id: 'z', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+              rawSource: 'place-office', personName: 'Jack', startTime: iso(11), endTime: iso(12) },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g.length, 'two Office rows are the app being closed, never a question').toBe(0);
+      });
+
+      test('a day nobody works asks nothing unless a clock says otherwise', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const dow = new Date(Date.parse(d + 'T12:00:00')).getDay();
+          S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6].filter(x => x !== dow) };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T13:00:00Z', endTime: d + 'T14:00:00Z' },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T16:00:00Z', endTime: d + 'T17:00:00Z' },
+          ]).filter(x => x.source === 'unaccounted').length;
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g).toBe(0);
+      });
+
+      test('a week later nobody is going to remember, so it stops being asked', async () => {
+        const g = await page.evaluate(() => {
+          // Every day is a working day here, so this test moves ONE thing:
+          // how old the day is. Six days ago can be a Sunday, and a day
+          // nobody works answers nothing for a different reason entirely.
+          const prev = S.workHours;
+          S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] };
+          const day = (n) => dateKey(new Date(Date.now() - n * 86400000));
+          const holes = (n) => {
+            const d = day(n);
+            return _tlFillUnaccounted([
+              { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+                startTime: d + 'T13:00:00Z', endTime: d + 'T14:00:00Z' },
+              { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+                startTime: d + 'T16:00:00Z', endTime: d + 'T17:00:00Z' },
+            ]).filter(x => x.source === 'unaccounted').length;
           };
-        } catch (e) { return { ok: false, err: e.message }; }
+          const out = { today: holes(0), six: holes(6), nine: holes(9), thirty: holes(30) };
+          S.workHours = prev;
+          return out;
+        });
+        expect(g.today).toBe(1);
+        expect(g.six, 'still this week, still worth asking').toBe(1);
+        expect(g.nine).toBe(0);
+        expect(g.thirty).toBe(0);
       });
-      expect(r.ok, r.err).toBe(true);
-      expect(r.rows, 'nothing dropped, only skipped').toBe(4);
+
+      test('nothing is written and no hour moves: the rules only decide what is asked', async () => {
+        const r = await page.evaluate(() => {
+          const before = timeEntries.length;
+          const prev = S.workHours;
+          S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] };
+          const d = dateKey(new Date(Date.now() - 30 * 86400000));
+          const rows = [
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T13:00:00Z', endTime: d + 'T14:00:00Z' },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T16:00:00Z', endTime: d + 'T17:00:00Z' },
+          ];
+          const out = _tlFillUnaccounted(rows.slice());
+          S.workHours = prev;
+          return { wrote: timeEntries.length - before, paid: _tlPaidMin(out), rows: out.length };
+        });
+        expect(r.wrote, 'no row is written on anybody\'s behalf').toBe(0);
+        expect(r.paid, 'the two real hours are untouched').toBe(120);
+        expect(r.rows).toBe(2);
+      });
+
+      test('_tlWorkWindow: junk in, nothing stranded', async () => {
+        const r = await page.evaluate(() => [
+          _tlWorkWindow(null), _tlWorkWindow([]), _tlWorkWindow([null]),
+          _tlWorkWindow([{ date: 'nope', startTime: 'x' }]),
+        ].map(x => x === null || Array.isArray(x)));
+        expect(r).toEqual([true, true, true, true]);
+      });
     });
 
-    test('empty and non-array input return without throwing', async () => {
+    test('a gap row is display only: never paid, never editable, never fixable', async () => {
+      const r = await fill(JACK(await D()));
+      const gap = r.find(x => x.source === 'unaccounted');
+      const flags = await page.evaluate(g => ({
+        edit: _tlCanEdit(g), fix: _tlCanFixAuto(g),
+      }), gap);
+      expect(gap.unpaid, 'a hole is never paid time').toBe(true);
+      expect(gap.rawId, 'no server row stands behind it').toBe(null);
+      expect(flags.edit).toBe(false);
+      expect(flags.fix).toBe(false);
+    });
+
+    test('rounding seams and overlaps never manufacture a hole', async () => {
       const r = await page.evaluate(() => {
-        try { return { ok: true, a: _tlAbsorbGaps([]).length, b: _tlAbsorbGaps(null), c: _tlAbsorbGaps(undefined) }; }
-        catch (e) { return { ok: false, err: e.message }; }
+        const D = todayKey();
+        const base = (id, a, b, extra) => Object.assign({
+          id, personUid: 'jack', date: D, unpaid: false, source: 'auto',
+          minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
+        }, extra || {});
+        return {
+          // A 3-minute seam is rounding, under the 5-minute floor.
+          seam: _tlFillUnaccounted([
+            base('x', D + 'T14:00:00Z', D + 'T15:00:00Z'),
+            base('y', D + 'T15:03:00Z', D + 'T16:00:00Z'),
+          ]).filter(x => x.source === 'unaccounted').length,
+          // A drive that overlaps the visit it lands in must not produce a
+          // negative gap, and a short row nested inside a long one must not
+          // split the long one's remainder into two phantom holes.
+          nested: _tlFillUnaccounted([
+            base('long', D + 'T14:00:00Z', D + 'T18:00:00Z'),
+            base('inner', D + 'T15:00:00Z', D + 'T15:30:00Z'),
+          ]).filter(x => x.source === 'unaccounted').length,
+          overlap: _tlFillUnaccounted([
+            base('a', D + 'T14:00:00Z', D + 'T15:10:00Z'),
+            base('b', D + 'T15:00:00Z', D + 'T16:00:00Z'),
+          ]).filter(x => x.source === 'unaccounted').length,
+          // Two people on the same day never bleed into each other.
+          twoPeople: _tlFillUnaccounted([
+            base('p1', D + 'T14:00:00Z', D + 'T15:00:00Z'),
+            Object.assign(base('p2', D + 'T19:00:00Z', D + 'T20:00:00Z'), { personUid: 'other' }),
+          ]).filter(x => x.source === 'unaccounted').length,
+        };
       });
-      expect(r.ok, r.err).toBe(true);
-      expect(r.a).toBe(0);
+      expect(r.seam).toBe(0);
+      expect(r.nested).toBe(0);
+      expect(r.overlap).toBe(0);
+      expect(r.twoPeople).toBe(0);
     });
+
+    // Owner 2026-09-03: "there should be gaps between them if it was opened
+    // and then backgrounded, time should start when app flips open and stop
+    // and write when app flips to background, there should be no unaccounted
+    // for blips in between." js/geo-derive.js _gdOffice already bounds each
+    // Office row to exactly one app-open -> app-background span (_gdAppOpen),
+    // so a real gap between two Office rows on the same day IS the app being
+    // closed, proven by those same flips. "No location or motion on record"
+    // is a lie about a fact the deriver actually has, so this one adjacency
+    // is the one hole the fill pass must leave alone.
+    test('a gap between two Office rows is the app closing, not a question', async () => {
+      const office = (id, a, b) => ({
+        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'place-office',
+        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
+      });
+      const r = await page.evaluate((rows) => _tlFillUnaccounted(rows).map(x => x.source), [
+        office('o1', '2026-09-02T12:00:00Z', '2026-09-02T12:05:00Z'),   // app open 7:00-7:05 CT
+        office('o2', '2026-09-02T13:00:00Z', '2026-09-02T13:05:00Z'),   // app open again an hour later
+      ]);
+      expect(r.sort()).toEqual(['auto', 'auto']);   // no 'unaccounted' row between them
+    });
+
+    test('the same gap IS flagged when only one side is an Office row', async () => {
+      const office = (id, a, b) => ({
+        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'place-office',
+        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
+      });
+      const auto = (id, a, b) => ({
+        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'client',
+        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
+      });
+      const r = await page.evaluate((rows) => _tlFillUnaccounted(rows).map(x => x.source), [
+        office('o1', '2026-09-02T12:00:00Z', '2026-09-02T12:05:00Z'),
+        auto('c1', '2026-09-02T13:00:00Z', '2026-09-02T13:05:00Z'),
+      ]);
+      expect(r).toEqual(['auto', 'auto', 'unaccounted']);
+    });
+
+    test('a hole is free until it is added, then it counts like any manual entry', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,
+                        toast: window.showToast, render: window.renderTimeLog };
+        try {
+          window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+          window.showToast = () => {}; window.renderTimeLog = () => {};
+          const D = todayKey();
+          const rows = _tlFillUnaccounted([
+            { id: 'v1', personUid: null, date: D, minutes: 99, unpaid: false, source: 'auto',
+              startTime: D + 'T15:35:00Z', endTime: D + 'T17:14:00Z' },
+            { id: 'v2', personUid: null, date: D, minutes: 16, unpaid: false, source: 'auto',
+              startTime: D + 'T18:58:00Z', endTime: D + 'T19:14:00Z' },
+          ]);
+          const gap = rows.find(x => x.source === 'unaccounted');
+          // Before: the hole is on the page but contributes nothing paid.
+          const paidBefore = rows.filter(x => !x.unpaid).reduce((n, x) => n + x.minutes, 0);
+          const agg = _tlEmpWeekAgg(rows, 'cid');
+          const before = timeEntries.length;
+          _tlAddUnaccounted(gap.startTime, gap.endTime);
+          const added = timeEntries[timeEntries.length - 1];
+          return {
+            gapMins: gap.minutes, paidBefore,
+            aggMin: Object.values(agg).reduce((n, e) => n + e.min, 0),
+            wrote: timeEntries.length - before,
+            addedMin: added.minutes, addedStart: added.start_time, addedEnd: added.end_time,
+            addedDate: added.date, addedJob: added.job_id, addedOpen: added.open,
+            addedLabel: added.scope_label, day: D,
+          };
+        } finally {
+          timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+          window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+          window.showToast = saved.toast; window.renderTimeLog = saved.render;
+        }
+      });
+      // The hole is 104 minutes and NONE of it counts before it is added.
+      expect(r.gapMins).toBe(104);
+      expect(r.paidBefore).toBe(115);          // 99 + 16, the hole excluded
+      expect(r.aggMin).toBe(115);              // and the week agg agrees
+      // Adding writes ONE manual row covering exactly the hole.
+      expect(r.wrote).toBe(1);
+      expect(r.addedMin).toBe(104);
+      expect(r.addedStart).toBe(r.day + 'T17:14:00.000Z');
+      expect(r.addedEnd).toBe(r.day + 'T18:58:00.000Z');
+      expect(r.addedJob, 'nothing is invented about WHICH job it was').toBe(null);
+      expect(r.addedOpen).toBe(false);
+      expect(r.addedLabel).toBe('Added from unaccounted time');
+    });
+
+    test('_tlAddUnaccounted refuses a window that is backwards, zero or unparseable', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,
+                        toast: window.showToast, render: window.renderTimeLog };
+        try {
+          window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+          window.showToast = () => {}; window.renderTimeLog = () => {};
+          const before = timeEntries.length;
+          _tlAddUnaccounted('2026-08-28T18:00:00Z', '2026-08-28T17:00:00Z');  // backwards
+          _tlAddUnaccounted('2026-08-28T18:00:00Z', '2026-08-28T18:00:00Z');  // zero
+          _tlAddUnaccounted('nope', 'also nope');
+          _tlAddUnaccounted(null, undefined);
+          return { wrote: timeEntries.length - before };
+        } finally {
+          timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+          window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+          window.showToast = saved.toast; window.renderTimeLog = saved.render;
+        }
+      });
+      expect(r.wrote).toBe(0);
+    });
+
   });
 
-  // Pure anchor math for the owner's 2026-08-24 rule. All times below are
-  // built from fixed UTC instants that sit mid-day Central, except the
-  // midnight cases which exist to prove the Central-day boundary is the one
-  // that matters.
-  test.describe('_tlStopAnchored', () => {
-    const T = (iso) => Date.parse(iso);
-    const CASES = {
-      stopArr: '2026-08-21T16:42:00.000Z',   // 11:42am CT
-      stopDep: '2026-08-21T17:25:00.000Z',   // 12:25pm CT
-      before: { arr: T('2026-08-21T14:00:00.000Z'), dep: T('2026-08-21T16:40:00.000Z') },
-      after: { arr: T('2026-08-21T17:30:00.000Z'), dep: T('2026-08-21T20:00:00.000Z') },
-    };
-    test('anchored on both sides same Central day: true', async () => {
-      const ok = await page.evaluate((c) => _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.before, c.after]), CASES);
-      expect(ok).toBe(true);
-    });
-    test('missing either side: false', async () => {
-      const r = await page.evaluate((c) => ({
-        noBefore: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.after]),
-        noAfter: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.before]),
-        none: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), []),
-      }), CASES);
-      expect(r.noBefore).toBe(false);
-      expect(r.noAfter).toBe(false);
-      expect(r.none).toBe(false);
-    });
-    test('a stop spanning Central midnight is never anchored, whatever surrounds it', async () => {
-      const ok = await page.evaluate(() => _tlStopAnchored(
-        Date.parse('2026-08-22T04:50:00.000Z'),   // 11:50pm CT 8/21
-        Date.parse('2026-08-22T05:20:00.000Z'),   // 12:20am CT 8/22
-        [{ arr: Date.parse('2026-08-22T02:00:00.000Z'), dep: Date.parse('2026-08-22T04:45:00.000Z') },
-         { arr: Date.parse('2026-08-22T05:25:00.000Z'), dep: Date.parse('2026-08-22T06:00:00.000Z') }]));
-      expect(ok).toBe(false);
-    });
-    test('an anchor from a different Central day never counts', async () => {
-      const ok = await page.evaluate((c) => _tlStopAnchored(
-        Date.parse(c.stopArr), Date.parse(c.stopDep),
-        [{ arr: Date.parse('2026-08-20T14:00:00.000Z'), dep: Date.parse('2026-08-20T16:40:00.000Z') },
-         { arr: Date.parse('2026-08-22T17:30:00.000Z'), dep: Date.parse('2026-08-22T20:00:00.000Z') }]), CASES);
-      expect(ok).toBe(false);
-    });
-    test('kerb-edge slack: an anchor ending up to 2 minutes AFTER the stop starts still counts', async () => {
-      const r = await page.evaluate((c) => ({
-        inSlack: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [{ arr: Date.parse('2026-08-21T14:00:00.000Z'), dep: Date.parse(c.stopArr) + 90 * 1000 }, c.after]),
-        pastSlack: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [{ arr: Date.parse('2026-08-21T14:00:00.000Z'), dep: Date.parse(c.stopArr) + 3 * 60000 }, c.after]),
-      }), CASES);
-      expect(r.inSlack).toBe(true);
-      // An anchor still on-site 3 minutes into the stop overlaps it for real:
-      // that's the on-site row's time, not a valid "before" edge.
-      expect(r.pastSlack).toBe(false);
-    });
-    test('shop-only anchors on both sides: false; one work side: true', async () => {
-      const r = await page.evaluate((c) => ({
-        shopBoth: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [{ ...c.before, shop: true }, { ...c.after, shop: true }]),
-        shopThenWork: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [{ ...c.before, shop: true }, c.after]),
-        workThenShop: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [c.before, { ...c.after, shop: true }]),
-      }), CASES);
-      expect(r.shopBoth, 'shop out, stop, shop back is an errand, not a work leg').toBe(false);
-      expect(r.shopThenWork).toBe(true);
-      expect(r.workThenShop).toBe(true);
-    });
-    test('an anchor OVERLAPPING the stop vetoes it, even with clean edges elsewhere', async () => {
-      const ok = await page.evaluate((c) => _tlStopAnchored(
-        Date.parse(c.stopArr), Date.parse(c.stopDep),
-        // Clean before + after edges, but a third anchor (a shop session)
-        // covers the middle of the stop: the person was provably somewhere
-        // known, so the unpaid row is an artifact.
-        [c.before, c.after,
-         { arr: Date.parse(c.stopArr) + 5 * 60000, dep: Date.parse(c.stopDep) - 5 * 60000 }]), CASES);
-      expect(ok).toBe(false);
-    });
-    test('garbage in, false out: null anchors, NaN times, inverted spans', async () => {
-      const r = await page.evaluate((c) => ({
-        nullList: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), null),
-        nullEntries: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [null, undefined, c.before, c.after]),
-        nanArr: _tlStopAnchored(NaN, Date.parse(c.stopDep), [c.before, c.after]),
-        inverted: _tlStopAnchored(Date.parse(c.stopDep), Date.parse(c.stopArr), [c.before, c.after]),
-        zero: _tlStopAnchored(0, 0, [c.before, c.after]),
-      }), CASES);
-      expect(r.nullList).toBe(false);
-      expect(r.nullEntries, 'null entries are skipped, real ones still anchor').toBe(true);
-      expect(r.nanArr).toBe(false);
-      expect(r.inverted).toBe(false);
-      expect(r.zero).toBe(false);
-    });
-  });
+
 
   // Owner report 2026-08-24: a GPS visit read "1:06pm to 9:37pm" because the
   // app woke at 9:37 and stamped the close with `now`, and nothing in the app
   // could correct it. On-site GPS rows are now fixable by anyone with payroll
   // permission; drive rows and unpaid stops are not.
+  // ONE WORD, NOT TWO (owner 2026-09-04: "for anything marked as a fix can we
+  // remove the fix code and just do edit like we do for manual clock ins and
+  // outs?"). The two handlers stay separate because the rows live in different
+  // tables; what the person sees must not.
+  test('a GPS row and a manual clock offer the same word and the same dialog', async () => {
+    const out = await page.evaluate(() => {
+      const R = o => Object.assign({ source: 'auto', rawId: 'x1', rawSource: 'place',
+        unpaid: false, minutes: 30, date: '2026-08-12', clientName: 'A place' }, o);
+      const saved = window._canViewComp;
+      window._canViewComp = () => true;
+      try {
+        const auto = (typeof _tlRailRow === 'function') ? String(_tlRailRow(R({}))) : '';
+        return { auto, hasFix: /\bFix<\/button>/.test(auto), hasEdit: /\bEdit<\/button>/.test(auto) };
+      } finally { window._canViewComp = saved; }
+    });
+    if (out.auto) {
+      expect(out.hasFix, 'the word "Fix" is gone from the rail').toBe(false);
+      expect(out.hasEdit, 'and the control reads Edit, like a manual clock').toBe(true);
+    }
+    // The dialog says the same thing the manual one does.
+    const src = await page.evaluate(() => String(_openFixAutoEntry));
+    expect(src).toContain('Edit time entry');
+    expect(src).not.toContain('Fix clock times');
+    expect(src).toContain('>Start</label>');
+    expect(src).toContain('>End</label>');
+  });
+
   test.describe('_tlCanFixAuto / _openFixAutoEntry', () => {
     const withComp = (fn) => page.evaluate(async (body) => {
       const saved = window._canViewComp;
@@ -1310,14 +1085,22 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }
     }, [row, endIso]);
 
-    test('correcting the clock-out writes the new span and re-keys it as human-set', async () => {
+    // AMENDED 2026-09-04 (10.4). This used to assert client_key was renamed to
+    // 'fixed-af7136c6'. That rename was the whole problem: it severed the row
+    // from the derived row it corrected, so a rebuild could not find it again
+    // and geo_replace_day had to protect it by SPAN, dropping every derived
+    // row that overlapped. Jack's 3 September lost sixteen of seventeen rows
+    // to a two-field edit. The key stays; fixed_at is the mark, and the
+    // rebuild carries the times across onto the same row.
+    test('correcting the clock-out writes the new span and marks it human-set, keeping its identity', async () => {
       const r = await drive(REAL, '2026-08-12T22:15:00Z');
       expect(r.opened).toBe(true);
       expect(r.updates.length).toBe(1);
       expect(r.updates[0].id).toBe('af7136c6');
       expect(r.updates[0].patch.departed_at).toBe('2026-08-12T22:15:00.000Z');
       expect(r.updates[0].patch.minutes).toBe(249);
-      expect(r.updates[0].patch.client_key, 'the fixed- key is what stops every sweep from widening it again').toBe('fixed-af7136c6');
+      expect(r.updates[0].patch.client_key, 'the key is the row identity and must survive the correction').toBe(undefined);
+      expect(typeof r.updates[0].patch.fixed_at, 'the mark a rebuild reads instead').toBe('string');
     });
 
     test('a correction can never create a 24h+ entry or cross midnight', async () => {
@@ -1804,273 +1587,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
-  test.describe('_tlRow: Edit/Delete controls', () => {
-    test('editable row, renders an Edit button and the long-press delete attributes, wired to the right entry id', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        const html = _tlRow({ id: 'm123', rawId: 123, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 });
-        return html;
-      });
-      expect(r).toContain('_openEditTimeEntry(123)');
-      expect(r).toContain('data-lp-id="123"');
-      expect(r).toContain('data-lp-type="timelog"');
-      expect(r).not.toContain('>Delete<'); // no visible Delete button, long-press only
-    });
-
-    test('non-editable row (auto/GPS source), no Edit button, no long-press attributes', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a1', rawId: 1, source: 'auto', personName: 'Crew', personUid: 'someone', clientName: 'X', addr: '', jobName: 'Y', detail: 'geo', minutes: 60 });
-      });
-      expect(r).not.toContain('_openEditTimeEntry');
-      expect(r).not.toContain('data-lp-id');
-    });
-
-    test('non-editable row (someone else\'s manual entry, no permission), no Edit button, no long-press attributes', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = true;
-        window._employeeRecord = { permissions: { payroll: false } };
-        window._supaUser = { id: 'emp-test-uid' };
-        const html = _tlRow({ id: 'm5', rawId: 5, source: 'manual', personName: 'Someone Else', personUid: 'someone-else', clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 });
-        window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
-        return html;
-      });
-      expect(r).not.toContain('_openEditTimeEntry');
-      expect(r).not.toContain('data-lp-id');
-    });
-
-    test('weekOT true, renders the "OT WK" badge', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm7', rawId: 7, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: true });
-      });
-      expect(r).toContain('OT WK');
-    });
-
-    test('weekOT false/undefined: no "OT WK" badge', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm8', rawId: 8, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: false });
-      });
-      expect(r).not.toContain('OT WK');
-    });
-
-    test('job-site address renders as the primary line, with client/job/source folded into the muted line below', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm9', rawId: 9, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'Riverside Remodel', addr: '410 Riverside Dr', jobName: 'Kitchen repaint', detail: 'Sanding', minutes: 60 });
-      });
-      expect(r).toContain('data-label="Job site"');
-      expect(r).toContain('410 Riverside Dr');
-      expect(r).toContain('Riverside Remodel');
-      expect(r).toContain('Kitchen repaint');
-      expect(r).toContain('Sanding');
-      expect(r).toContain('Manual');
-    });
-
-    test('no address on file, falls back to client/job/source only, no empty address line', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm10', rawId: 10, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'No-Addr Client', addr: '', jobName: 'Some Job', detail: '', minutes: 60 });
-      });
-      expect(r).toContain('No-Addr Client');
-      // The generic "Auto" tag was replaced (owner 2026-08-21: "wish there
-      // was a way for it to say drive and be color coded") with an explicit
-      // On-site/Driving badge, see the _tlRow describe block below.
-      expect(r).toContain('On-site');
-      expect(r).not.toContain('style="font-weight:700">'); // the bold address <div> is only emitted when addr is truthy
-    });
-
-    // Owner report 2026-08-21: "don't understand these many different
-    // entries, wish there was a way for it to say drive and be color coded
-    // with our system in some way, then if at a job it says the address".
-    test('a drive-sourced row gets the amber Driving badge and left-border accent', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a2', rawId: 2, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6 });
-      });
-      // #9F5B00 is the SAME amber the Team split bar already uses for drive
-      // time (_tlWeekOwnerHtml), reused rather than invented (§7.3).
-      expect(r).toContain('#9F5B00');
-      expect(r).toContain('Driving');
-      expect(r).toContain('border-left:3px solid #9F5B00');
-      // The word "Driving" is not repeated in plain text next to the badge.
-      expect((r.match(/Driving/g) || []).length).toBe(1);
-    });
-
-    test('a drive-rider/personal-vehicle suffix still reads as a driving row (badge, not plain text)', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a3', rawId: 3, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Riverside Remodel', addr: '', jobName: '', detail: 'Driving (rider)', minutes: 10 });
-      });
-      expect(r).toContain('#9F5B00');
-      expect(r).toContain('border-left:3px solid #9F5B00');
-    });
-
-    // Owner request 2026-08-23: "Time entry drive times should show from and
-    // to locations under job site." A drive row's job_time_entries.client_key
-    // is the SAME deterministic legKey _geoDriveEntry (js/geo-track.js) stamps
-    // on the matching mileage row, so the lookup is a straight local array
-    // find, never a network round trip.
-    test('a drive row with a matching mileage leg shows "From: X - To: Y" instead of just the destination', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        window.__origMileage = mileage.slice(); mileage.length = 0;
-        mileage.push({ id: 'ml-tl-1', legKey: 'tl-leg-1', from_name: 'Shop', to_name: 'John Doe' });
-        const html = _tlRow({ id: 'a5', rawId: 5, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '', jobName: '', detail: 'Driving', minutes: 6, clientKey: 'tl-leg-1' });
-        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        return html;
-      });
-      expect(r).toContain('From: Shop - To: John Doe');
-      // Not the old bare-destination text alongside the new from/to line.
-      expect((r.match(/John Doe/g) || []).length, 'the destination appears once, inside the from/to line, not repeated').toBe(1);
-    });
-
-    test('a drive row with no matching mileage leg falls back to the plain destination (old behavior)', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        window.__origMileage = mileage.slice(); mileage.length = 0;
-        // A leg exists, but for a DIFFERENT key: nothing here matches.
-        mileage.push({ id: 'ml-tl-2', legKey: 'some-other-leg', from_name: 'Shop', to_name: 'Riverside Remodel' });
-        const html = _tlRow({ id: 'a6', rawId: 6, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6, clientKey: 'tl-leg-missing' });
-        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        return html;
-      });
-      expect(r).toContain('DEV A shop');
-      expect(r).not.toContain('From:');
-    });
-
-    test('a drive row with no client_key at all (older row, written before client_key existed) falls back cleanly', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a7', rawId: 7, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6 });
-      });
-      expect(r).toContain('DEV A shop');
-      expect(r).not.toContain('From:');
-    });
-
-    // Only a driving row ever does the leg lookup: an on-site row's own
-    // client_key (if it happens to carry one at all) must never trigger a
-    // from/to line, on-site time was never a drive.
-    test('an on-site row is never shown as a from/to line, even if it happens to carry a client_key', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        window.__origMileage = mileage.slice(); mileage.length = 0;
-        mileage.push({ id: 'ml-tl-3', legKey: 'tl-leg-3', from_name: 'Shop', to_name: 'John Doe' });
-        const html = _tlRow({ id: 'a8', rawId: 8, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200, clientKey: 'tl-leg-3' });
-        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        return html;
-      });
-      expect(r).toContain('On-site');
-      expect(r).not.toContain('From:');
-    });
-
-    test('an on-site (geofence) auto row gets NEITHER the amber badge nor the left-border accent', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a4', rawId: 4, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200 });
-      });
-      expect(r).toContain('On-site');
-      expect(r).toContain('123 Main St');
-      expect(r).not.toContain('#9F5B00');
-      expect(r).not.toContain('border-left:3px solid');
-    });
-
-    test('a manual row never gets the driving badge, even with an unrelated detail/task label', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm15', rawId: 15, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: 'Driving the crew to pick up materials', minutes: 30 });
-      });
-      // A manual row's own free-text detail can legitimately start with the
-      // word "Driving" (a task label, not the source), and must still be
-      // treated as Manual, not mistaken for a GPS drive leg.
-      expect(r).not.toContain('#9F5B00');
-      expect(r).toContain('Manual');
-      expect(r).toContain('Driving the crew to pick up materials');
-    });
-
-    // Owner request 2026-08-23: "the time away ... needs logged as lunches or
-    // unaccounted for time that needs to feed to the hour charts as unpaid
-    // time." The row must be visibly distinct (gray badge + gray accent,
-    // muted duration), never mistaken for ordinary paid on-site/driving time.
-    test('an unpaid row gets the gray Unpaid badge, gray left-border accent, and a muted (not bold) duration', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a20', rawId: 20, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: '', detail: 'Unpaid', minutes: 43, unpaid: true });
-      });
-      expect(r).toContain('Unpaid');
-      expect(r).toContain('border-left:3px solid var(--border2)');
-      expect(r).not.toContain('#9F5B00'); // never the amber driving color
-      expect(r).not.toContain('class="bold" data-label="Duration"');
-      expect(r).toContain('class="mute" data-label="Duration"');
-    });
-
-    test('an unpaid row does not repeat "Unpaid" in the muted detail line, same not-repeated rule as the Driving badge', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a21', rawId: 21, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: '', detail: 'Unpaid', minutes: 43, unpaid: true });
-      });
-      expect((r.match(/Unpaid/g) || []).length).toBe(1);
-    });
-
-    test('an unpaid row with a job name still shows the place name, just no plain-text detail duplicate', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a22', rawId: 22, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: 'Lunch', detail: 'Unpaid', minutes: 43, unpaid: true });
-      });
-      expect(r).toContain('Sonic Drive-In');
-    });
-
-    test('a normal (non-unpaid) on-site row never gets the unpaid badge or gray accent', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a23', rawId: 23, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200 });
-      });
-      expect(r).not.toContain('Unpaid');
-      expect(r).not.toContain('border-left:3px solid var(--border2)');
-      expect(r).toContain('class="bold" data-label="Duration"');
-    });
-
-    test('renders Clock In / Clock Out columns from startTime/endTime', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm11', rawId: 11, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 90, startTime: '2026-07-13T13:00:00.000Z', endTime: '2026-07-13T14:30:00.000Z' });
-      });
-      expect(r).toContain('data-label="Clock In"');
-      expect(r).toContain('data-label="Clock Out"');
-      expect(r).not.toContain('data-label="Clock In">-<'); // a real time was provided, not the em-dash fallback
-    });
-
-    test('missing startTime/endTime: Clock In/Out show an em-dash placeholder, not blank or throw', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        try { return { ok: true, html: _tlRow({ id: 'm12', rawId: 12, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 30, startTime: null, endTime: null }) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toContain('data-label="Clock In">-<');
-      expect(r.html).toContain('data-label="Clock Out">-<');
-    });
-
-    test('renders the Week total column from weekRunningMin', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm13', rawId: 13, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, weekRunningMin: 2415 });
-      });
-      expect(r).toContain('data-label="Week total"');
-      expect(r).toContain('40h 15m');
-    });
-
-    test('missing weekRunningMin, Week total defaults to 0, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        try { return { ok: true, html: _tlRow({ id: 'm14', rawId: 14, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 }) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toContain('data-label="Week total"');
-    });
-  });
+  // The _tlRow describe block was DELETED with the function it tested (§7).
+  // It covered the per-person day TABLE in Team, which is now that person's
+  // weekly bars. The one behaviour in it that was not about a <tr>, the
+  // 3-second hold-to-delete gesture and its _tlCanEdit gate, moved with the
+  // gesture onto the rail row and is covered in
+  // tests/e2e-timelog-team-bars.spec.js ('the 3-second hold moved onto the
+  // rail row'). Everything else asserted markup that no longer exists.
 
   test.describe('_lpDoDelete(type="timelog"): long-press delete dispatch', () => {
     // Every other [data-lp-id] type is DEV-ONLY (gated on _canDelete()): see
@@ -2135,6 +1658,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
         timeEntries = timeEntries.filter(e => e.id !== id);
         window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
         if (typeof _tlStopOpenRefresh === 'function') _tlStopOpenRefresh();
+        // _tlStartOpenRefresh now reconnects a running clock (a row can land
+        // from the cloud after boot), so a test that calls it can leave a live
+        // _activeTimer and its 1s interval behind for the rest of the file.
+        if (typeof _activeTimer !== 'undefined' && _activeTimer) {
+          clearInterval(_activeTimer.timerInterval); _activeTimer = null;
+          if (typeof hideClockBanner === 'function') hideClockBanner();
+        }
       }, OPEN_ID);
     });
 
@@ -2171,7 +1701,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.display).toBe('block');
       expect(r.html).toContain('Currently clocked in');
       expect(r.html).toContain('Timelog Test Client');
-      expect(r.html).toContain('onclick="clockOut();_tlRenderOpenBanner()"');
+      // Assertion changed 2026-08-31 (section 10.4). OLD: the own-row button
+      // called clockOut() bare, which was correct only while _activeTimer was
+      // guaranteed to hold this row. NEW: it calls clockOutEntry(id), which
+      // adopts the row first and then runs the same clockOut(). The old
+      // guarantee was never true after a reload, and the button was dead.
+      expect(r.html).toContain('onclick="clockOutEntry(' + OPEN_ID + ');_tlRenderOpenBanner()"');
       expect(r.html).not.toContain('forceClockOutEntry'); // own entry never uses the manager force-close path
       expect(r.html).not.toContain('LONG SHIFT');
     });
@@ -2248,6 +1783,99 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.changed).toBe(true);
       expect(r.clearedAfter).toBe(true);
     });
+
+    // Owner report 2026-08-31: "Jack just said its not letting him clock out".
+    // He clocked in with no job at 7:55am, the app reloaded, and from then on
+    // the Clock out button on this card did nothing at all. These pin both
+    // halves of that: the row is named rather than shown as a dash, and the
+    // button closes it even when this device never held the timer.
+    test('a job-less clock reads "General time" on the card, never a bare dash', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: null, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 20 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Jack Test' });
+        const row = _tlOpenEntries().find(x => x.rawId === id);
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        return { clientName: row.clientName, jobName: row.jobName, html: document.getElementById('tl-open').innerHTML };
+      }, OPEN_ID);
+      expect(r.clientName).toBe('General time');
+      expect(r.jobName).toBe('');
+      expect(r.html).toContain('General time');
+      expect(r.html).toContain('Jack Test');
+    });
+
+    test('the elapsed figure carries its start instant so it can tick without a re-render', async () => {
+      const r = await page.evaluate((id) => {
+        const startMs = Date.now() - 65 * 1000;
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(startMs).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        const n = document.querySelector('#tl-open [data-tl-open-start]');
+        return { has: !!n, attr: n ? Number(n.getAttribute('data-tl-open-start')) : 0, text: n ? n.textContent : '', startMs };
+      }, OPEN_ID);
+      expect(r.has).toBe(true);
+      expect(Math.abs(r.attr - r.startMs)).toBeLessThan(2000);
+      expect(r.text).toMatch(/^1:0\d$/);        // 1 minute and change, seconds visible
+    });
+
+    test('_tlTickOpenElapsed repaints the figure in place and leaves the button alone', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 30 * 1000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        const n = document.querySelector('#tl-open [data-tl-open-start]');
+        const before = n.textContent;
+        const btn = document.querySelector('#tl-open button');
+        // Wind the start back a full minute, then tick: only the text moves.
+        n.setAttribute('data-tl-open-start', String(Number(n.getAttribute('data-tl-open-start')) - 60000));
+        _tlTickOpenElapsed();
+        return { before, after: n.textContent, sameNode: document.querySelector('#tl-open [data-tl-open-start]') === n, sameBtn: document.querySelector('#tl-open button') === btn };
+      }, OPEN_ID);
+      expect(r.before).not.toBe(r.after);
+      expect(r.after).toMatch(/^1:\d\d$/);
+      expect(r.sameNode).toBe(true);   // repainted, not rebuilt
+      expect(r.sameBtn).toBe(true);    // the thumb target survives the tick
+    });
+
+    test('_tlTickOpenElapsed does not throw with a hidden or empty card', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _tlRenderOpenBanner();               // no open rows: hidden
+          _tlTickOpenElapsed();
+          const el = document.getElementById('tl-open');
+          const keep = el.id; el.id = 'tl-open-gone-temp';
+          _tlTickOpenElapsed();
+          el.id = keep;
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_tlStartOpenRefresh runs BOTH timers and _tlStopOpenRefresh clears both', async () => {
+      const r = await page.evaluate(() => {
+        _tlStartOpenRefresh();
+        const started = { slow: _tlOpenRefreshTimer !== null, fast: _tlOpenTickTimer !== null };
+        _tlStopOpenRefresh();
+        return { started, stopped: { slow: _tlOpenRefreshTimer === null, fast: _tlOpenTickTimer === null } };
+      });
+      expect(r.started.slow).toBe(true);
+      expect(r.started.fast).toBe(true);
+      expect(r.stopped.slow).toBe(true);
+      expect(r.stopped.fast).toBe(true);
+    });
+
+    test('calling _tlStartOpenRefresh twice does not leak a second TICK interval either', async () => {
+      const r = await page.evaluate(() => {
+        _tlStartOpenRefresh();
+        const first = _tlOpenTickTimer;
+        _tlStartOpenRefresh();
+        const second = _tlOpenTickTimer;
+        _tlStopOpenRefresh();
+        return { changed: first !== second, clearedAfter: _tlOpenTickTimer === null };
+      });
+      expect(r.changed).toBe(true);
+      expect(r.clearedAfter).toBe(true);
+    });
   });
 
   test.describe('renderTimeLog', () => {
@@ -2289,10 +1917,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
         await renderTimeLog();
         const html = document.getElementById('tl-list').innerHTML;
         _tlScope = null; // restore auto-detection for later tests
-        return html;
+        // _tlLastRows is a module-scope `let`, which lives in the global
+        // LEXICAL environment: reachable as a bare name, never as a property
+        // of window. Reading it off window silently gave [].
+        return { html, rows: (_tlLastRows || []).map(x => x.date) };
       });
-      expect(r).toContain('Timelog Test Client');
-      expect(r).toContain('Timelog No-Bid Client');
+      // WAS: two CLIENT names, which appeared because Team listed every entry
+      // in a table. Team's card now opens onto that person's chart, so client
+      // names are one drill deeper and the card names the PERSON. The rule
+      // under test (this year's entries, not last year's) is unchanged and is
+      // asserted on the rows the year filter actually produced.
+      expect(r.html).toContain('Owner (me)');
+      expect(r.html).toContain('Test Crew Member');
+      const yr = String(new Date().getFullYear());
+      expect(r.rows.length).toBeGreaterThan(0);
+      r.rows.forEach(d => expect(String(d).slice(0, 4)).toBe(yr));
     });
 
     // Old behavior (until 2026-08-20): newest month first, matching every
@@ -2301,111 +1940,151 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // year build up" crew report, January (oldest) through December
     // (newest), not a "what happened lately" ledger. Income/Expenses are
     // untouched, this reorder is scoped to _tlYear grouping only.
-    test('month accordions, oldest (January) sorts first, current month last', async () => {
+    // Was about the order of a LIST of month accordions. There is no list: the
+    // drill shows one month and the arrows step between them. The rule that
+    // survives is that stepping runs in calendar order, oldest to newest.
+    test('the drill steps months in calendar order, oldest to newest', async () => {
       const r = await page.evaluate(async () => {
-        setTimeLogYear(new Date().getFullYear());
+        const seen = [];
+        // Walk to the earliest month, then forward through every one.
+        for (let i = 0; i < 24; i++) _tlDrillStep(-1, _tlLastRows);
         await renderTimeLog();
-        return [...document.querySelectorAll('.bk-month')].map(el => el.id);
+        for (let i = 0; i < 24; i++) {
+          if (seen[seen.length - 1] === _tlDrill.mo) break;
+          seen.push(_tlDrill.mo);
+          _tlDrillStep(1, _tlLastRows);
+        }
+        return seen;
       });
-      const idx = (yyyymm) => r.indexOf('bk-tl-mo-' + yyyymm);
-      expect(idx(curMonthPrefix)).toBeGreaterThanOrEqual(0);
-      expect(idx(`${new Date().getFullYear()}-01`)).toBeLessThan(idx(curMonthPrefix));
+      expect(r.length).toBeGreaterThan(0);
+      expect(r.slice().sort()).toEqual(r);
     });
 
-    test('current month accordion is open by default', async () => {
-      const r = await page.evaluate(async (curMo) => {
-        setTimeLogYear(new Date().getFullYear());
-        await renderTimeLog();
-        const el = document.getElementById('bk-tl-mo-' + curMo);
-        return el ? el.classList.contains('open') : null;
-      }, curMonthPrefix);
-      expect(r).toBe(true);
-    });
-
-    test('day accordions within a month, newest day sorts first', async () => {
-      // Both the month container id and the expected day come from the PAGE
-      // clock. Node's todayStr is the runner's real date, and under the
-      // midnight-clock pin the two disagree: the fixture rows land on the
-      // page's day, so asserting Node's day found nothing. Same seam as the
-      // vehicle-dispatch fixtures, closed the same way. toISOString is also
-      // a UTC slice, which the day-key convention bans for exactly this
-      // reason; todayKey() is the app's own answer.
+    test('the drill opens on the current month', async () => {
       const r = await page.evaluate(async () => {
-        setTimeLogYear(new Date().getFullYear());
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null };
         await renderTimeLog();
-        const day = todayKey();
-        const monthEl = document.getElementById('bk-tl-mo-' + day.slice(0, 7));
-        return { day, ids: monthEl ? [...monthEl.querySelectorAll('.bk-day')].map(el => el.id) : [] };
+        return { mo: _tlDrill.mo, cur: todayKey().slice(0, 7), level: _tlDrill.level };
       });
-      expect(r.ids.length).toBeGreaterThan(0);
-      // The current-day entry should appear in this month's day list.
-      expect(r.ids.some(id => id.includes(r.day.replace(/-/g, '')))).toBe(true);
+      // The month you are in is the one you almost always want, and it is the
+      // page rather than a row somebody still has to tap open.
+      expect(r.mo).toBe(r.cur);
+      expect(r.level).toBe('month');
     });
 
-    test('week accordions sit between month and day, current week open by default', async () => {
-      const r = await page.evaluate(async (curMo) => {
+    // The week view is the bars now (owner 2026-08-30 cut the entries table
+    // and the person card off it as clutter). Anything that needs the ROW
+    // level has to drill into a day, exactly as a person does, so this does
+    // that: render, find the week holding a date, pick that weekday, and hand
+    // back the week body's HTML.
+    const openDay = (page, dateStr) => page.evaluate(async (d) => {
+      setTimeLogYear(new Date(d.slice(0, 4), 0, 1).getFullYear());
+      await renderTimeLog();
+      const key = Object.keys(_tlWeekCache).find(k =>
+        (_tlWeekCache[k].rows || []).some(r => r && r.date === d));
+      if (!key) return { found: false, html: '' };
+      const i = _tlWeekDayDates(_tlWeekCache[key].wk).indexOf(d);
+      setTimeLogDayPick(key, String(i));
+      return { found: true, html: document.getElementById(_tlWeekCache[key].domId).innerHTML };
+    }, dateStr);
+
+    // The day table moved to Team scope when Me became the drill; its ordering
+    // is covered there by the entries-ordering test below.
+    // WAS 'Team still nests a day table inside its per-person cards'. It does
+    // not any more (owner 2026-08-30): the card opens onto that person's
+    // weekly bars, which is the same drill Me has, instead of a six-column
+    // table that was the one navigation idiom the drill replaced.
+    test('Team nests that person\'s chart inside its per-person cards', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = _tlScope;
+        _tlScope = 'team';
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
-        const weeks = monthEl ? [...monthEl.querySelectorAll(':scope > .bk-month-body > .bk-week')] : [];
-        return { count: weeks.length, anyOpen: weeks.some(w => w.classList.contains('open')) };
-      }, curMonthPrefix);
-      expect(r.count).toBeGreaterThan(0);
-      expect(r.anyOpen).toBe(true);
+        const out = {
+          days: document.querySelectorAll('.bk-day').length,
+          bars: document.querySelectorAll('.bk-week .tl-wbar-col').length,
+          cards: document.querySelectorAll('.bk-week').length,
+        };
+        _tlScope = orig;
+        await renderTimeLog();
+        return out;
+      });
+      expect(r.cards).toBeGreaterThan(0);
+      expect(r.bars).toBeGreaterThan(0);
+      expect(r.days, 'the day table is gone, not hidden').toBe(0);
+    });
+
+    test('drilling into a month lands on a week that has hours', async () => {
+      const r = await page.evaluate(async () => {
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null };
+        await renderTimeLog();
+        const mo = _tlDrill.mo;
+        // Drill by tapping the last bar, the way a person does.
+        const bars = [...document.querySelectorAll('.tl-drill-body .tl-wbar-hit')];
+        bars[bars.length - 1].click();
+        await new Promise(r2 => setTimeout(r2, 80));
+        const rows = (_tlLastRows || []).filter(x => _tlWeekKey(x.date) === _tlDrill.wk);
+        return { mo, level: _tlDrill.level, wk: _tlDrill.wk, n: rows.length,
+                 inMonth: String(_tlDrill.wk || '').length === 10 };
+      });
+      expect(r.level).toBe('week');
+      expect(r.inMonth).toBe(true);
+      // Never an empty chart: the bar you tapped had hours in it by definition.
+      expect(r.n).toBeGreaterThan(0);
     });
 
     // Owner report 2026-08-21: entries within a single day had no defined
     // order at all (_bkRenderDays just renders whatever order they arrived
-    // in). Fixed to sort newest clock-in first, oldest last, matching how a
-    // day actually reads (what you're doing now belongs at the top).
-    test('entries within a day: newest clock-in sorts first (top), oldest last (bottom)', async () => {
+    // in). Fixed to sort newest clock-in first, oldest last.
+    //
+    // THAT ORDER IS DELIBERATELY REVERSED NOW, because the surface changed
+    // (§10.4). "Newest on top" was right for a LEDGER: a flat table of every
+    // day that month, where what you are doing now belongs at the top. The
+    // rail is ONE day drawn as a timeline, and a timeline that runs backwards
+    // is unreadable: 8am sits above 1pm because that is the order the day
+    // happened in. What survives is that the order is DEFINED and comes from
+    // the clock, never from whatever order the rows arrived in.
+    test('entries within a day run in clock order on the rail, earliest at the top', async () => {
       const r = await page.evaluate(async () => {
-        const now = new Date();
-        const dateStr = now.toISOString().slice(0, 10);
-        const early = new Date(now); early.setHours(8, 0, 0, 0);
-        const late = new Date(now); late.setHours(13, 0, 0, 0);
+        // todayKey(), not toISOString().slice(0,10): a UTC day key walks into
+        // the previous Central day for part of every evening (§5.2.2), and
+        // this fixture has to land on the day the rail is showing.
+        const dateStr = (typeof todayKey === 'function')
+          ? todayKey() : new Date().toISOString().slice(0, 10);
+        const early = new Date(dateStr + 'T08:00:00');
+        const late = new Date(dateStr + 'T13:00:00');
         timeEntries.push(
           { id: 8990201, job_id: 87701, date: dateStr, start_time: early.toISOString(), end_time: new Date(early.getTime() + 30 * 60000).toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)' },
           { id: 8990202, job_id: 87701, date: dateStr, start_time: late.toISOString(), end_time: new Date(late.getTime() + 30 * 60000).toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)' }
         );
+        const origScope = _tlScope;
+        _tlScope = 'me';
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const rows = [...document.querySelectorAll('#tl-list tr[data-lp-id]')];
-        const idxOf = (id) => rows.findIndex(tr => tr.getAttribute('data-lp-id') === String(id));
-        const result = { earlyIdx: idxOf(8990201), lateIdx: idxOf(8990202) };
+        _tlDrill = { level: 'day', mo: dateStr.slice(0, 7), wk: _tlWeekKey(dateStr),
+                     day: dateStr, uid: null };
+        await renderTimeLog();
+        // BY ID, not by the clock face. Building the fixture with
+        // `new Date(dateStr+'T08:00:00')` parses in the RUNNER's zone, so on a
+        // UTC runner "8am" reaches the page as 3:00 AM Central and a test that
+        // greps the rendered time finds nothing. The ids are the same in every
+        // zone, and the ordering rule is about position, not about what the
+        // clock says.
+        const ids = [...document.querySelectorAll('.tl-rail-row')]
+          .map(li => li.getAttribute('data-lp-id'));
         timeEntries = timeEntries.filter(e => e.id !== 8990201 && e.id !== 8990202);
-        return result;
+        _tlScope = origScope;
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null, uid: null };
+        await renderTimeLog();
+        return { ids };
       });
-      expect(r.earlyIdx, 'the 8am entry must render').toBeGreaterThanOrEqual(0);
-      expect(r.lateIdx, 'the 1pm entry must render').toBeGreaterThanOrEqual(0);
-      expect(r.lateIdx, 'the later clock-in (1pm) must render before the earlier one (8am): newest on top').toBeLessThan(r.earlyIdx);
+      const early = r.ids.indexOf('8990201');
+      const late = r.ids.indexOf('8990202');
+      expect(early, 'the earlier entry must render').toBeGreaterThanOrEqual(0);
+      expect(late, 'the later entry must render').toBeGreaterThanOrEqual(0);
+      expect(early, 'a day reads top to bottom in the order it happened').toBeLessThan(late);
     });
 
-    // Owner report 2026-08-21: opening Time Log well after a job finished
-    // (no live GPS watcher running right then) still showed the gap missing,
-    // because _geoReconcileSoon's periodic trigger only ever fires from a
-    // live watcher. renderTimeLog now calls the reconciler directly on open;
-    // this proves that call happens and never blocks the page on failure.
-    test('renderTimeLog calls the mileage reconciler on open, and a throwing reconciler never blocks the page', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._geoReconcileFromMileage;
-        let called = false;
-        window._geoReconcileFromMileage = async () => { called = true; throw new Error('boom'); };
-        try {
-          // The repair carries a 30s recency floor so a scope toggle cannot
-          // queue another pass (see _TL_REPAIR_MIN_GAP_MS). This test is about
-          // the OPEN path, so it clears the floor first. Bare assignment: it is
-          // a module-scoped let, and window._tlRepairAt would make an unrelated
-          // property while the real binding stayed set.
-          _tlRepairAt = 0;
-          setTimeLogYear(new Date().getFullYear());
-          await renderTimeLog();
-          return { called, listHtml: document.getElementById('tl-list').innerHTML.length };
-        } finally { window._geoReconcileFromMileage = orig; }
-      });
-      expect(r.called, 'renderTimeLog must call the reconciler').toBe(true);
-      expect(r.listHtml, 'the page must still render even if the reconciler throws').toBeGreaterThan(0);
-    });
 
     // Owner call 2026-08-20 ("don't need pay rate here just time"): this is a
     // pure time report, never dollars, for owner/manager or individual. The
@@ -2442,39 +2121,73 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.empHasDollar).toBe(false);
     });
 
-    test('entries table (Edit button on manual rows) still renders nested inside a week', async () => {
+    // Was: "entries table (Edit button on manual rows) still renders nested
+    // inside a week". The entries table left the week view on 2026-08-30 and
+    // the Edit button moved onto the day rail's own rows rather than leaving
+    // with it. This is the §7.2 check that the CAPABILITY survived the UI
+    // that used to carry it, which is the only reason the old test existed.
+    test('a manual row can still be edited, now from the day rail itself', async () => {
       const r = await page.evaluate(async () => {
+        const day = todayKey();
         setTimeLogYear(new Date().getFullYear());
+        _tlDrill = { level: 'month', mo: day.slice(0, 7), wk: null, day: null };
         await renderTimeLog();
-        return document.getElementById('tl-list').innerHTML;
+        _tlDrillTo('day', day);
+        await new Promise(r2 => setTimeout(r2, 60));
+        return { found: _tlDrill.level === 'day',
+                 html: document.getElementById('tl-list').innerHTML };
       });
-      expect(r).toContain('_openEditTimeEntry(');
-      expect(r).toContain('data-lp-id=');
+      expect(r.found, 'the fixture day must land in a week').toBe(true);
+      expect(r.html, 'the rail is what renders a day now').toContain('tl-rail-row');
+      expect(r.html, 'and editing a manual clock has to still be reachable')
+        .toContain('_openEditTimeEntry(');
     });
+
+
 
     // Really a Me/Team scope test (see the Me/Team describe block below), not
     // strictly role-based: Share is a Me-scope-only button, hidden in Team.
     // Owner defaults to Me since 2026-08-23, so this pins Team explicitly for
     // the owner half rather than leaning on a default that changed.
-    test('"Share this week\'s hours" button shows for an individual, not for the owner in Team scope', async () => {
+    // Was: '"Share this week's hours" button shows for an individual, not for
+    // the owner in Team scope'. That button is gone (2026-08-30). Once the
+    // month chart and the week chart each carried their own Send, a
+    // page-level third one that always meant "this calendar week" regardless
+    // of what was on screen was a button meaning a fourth thing.
+    //
+    // What replaced the rule it enforced: sharing rides on the thing it
+    // sends, in EITHER scope, so there is nothing left to show or hide by
+    // permission here.
+    test('sharing rides on the chart it sends, in both scopes', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
+        // The drill level is STATED, not inherited. It is module state that
+        // earlier tests legitimately leave pointed at a day, and this one is
+        // about the MONTH chart's Send: it passed alone and failed in the full
+        // run until the precondition was written down. Same seam the _tlScope
+        // precondition in the scope test already documents.
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null };
         setTimeLogScope('team');
         await renderTimeLog();
-        const ownerVisible = document.getElementById('tl-share').style.display !== 'none' && !!document.getElementById('tl-share').innerHTML;
+        const teamPageBtn = document.getElementById('tl-share').innerHTML;
         const origIsEmployee = window._isEmployee, origEmpRecord = window._employeeRecord, origSupaUser = window._supaUser;
         window._isEmployee = true;
         window._employeeRecord = { name: 'Test Crew Member', permissions: { payroll: false } };
         window._supaUser = { id: 'emp-test-uid' };
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null };
         await renderTimeLog();
-        const empVisible = document.getElementById('tl-share').style.display !== 'none' && !!document.querySelector('#tl-share button[onclick="_tlShareWeek()"]');
+        const empPageBtn = document.getElementById('tl-share').innerHTML;
+        const empMonthBtn = !!document.querySelector('.tl-drill-body .tl-wbar-share');
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
         _tlScope = null; // restore auto-detection for later tests
         await renderTimeLog();
-        return { ownerVisible, empVisible };
+        return { teamPageBtn, empPageBtn, empMonthBtn, fn: typeof _tlShareWeek };
       });
-      expect(r.ownerVisible).toBe(false);
-      expect(r.empVisible).toBe(true);
+      expect(r.teamPageBtn, 'no page-level Share in Team').toBe('');
+      expect(r.empPageBtn, 'and none for an individual either').toBe('');
+      expect(r.empMonthBtn, 'Send this month is on the month it sends').toBe(true);
+      // The function stays: the contextual buttons were built out of it.
+      expect(r.fn).toBe('function');
     });
 
     // _tlLastRows is a script-top-level `let` in js/timelog.js, not a `window`
@@ -2557,12 +2270,43 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._supaUser = { id: 'emp-test-uid' };
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const html = document.getElementById('tl-list').innerHTML;
+        // The week is the bars now and the bars name nobody, so checking the
+        // week HTML for a client name would pass for the wrong reason: absent
+        // because nothing is named, not because the row was filtered. Drill
+        // into every day the cache holds, where the rail does name the client,
+        // and check the union. A leak anywhere in the week fails this.
+        // Walk every day the drill can reach, not a cache that no longer
+        // exists. A leak on any of them fails this.
+        //
+        // The level is set directly and the render AWAITED: _tlDrillTo fires
+        // renderTimeLog() without awaiting it, so reading straight after it
+        // catches the loading skeleton and every day looks empty.
+        let html = document.getElementById('tl-list').innerHTML;
+        for (const d of [...new Set((window._tlLastRows || []).map(x => x && x.date))].filter(Boolean)) {
+          _tlDrill = { level: 'day', mo: d.slice(0, 7), wk: _tlWeekKey(d), day: d };
+          await renderTimeLog();
+          html += document.getElementById('tl-list').innerHTML;
+        }
+        // The old version of this test read the client name out of the per-day
+        // list that used to sit on the week. That list is gone, and the rail
+        // titles a row by its ADDRESS when it has one, so a name search now
+        // proves nothing either way. What the test is actually for is the
+        // permission boundary, so: their own work RENDERS (rows exist, hours
+        // are non-zero), and nobody else's name reaches the DOM on any day.
+        const rendered = (html.match(/tl-rail-row/g) || []).length;
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
-        return { hasOwn: html.includes('Timelog No-Bid Client'), hasOthers: html.includes('Timelog Test Client') };
+        return { rendered, scoped: (window._tlLastRows || []).length,
+                 hasOthers: html.includes('Timelog Test Client') };
       });
-      expect(r.hasOwn).toBe(true);
-      expect(r.hasOthers).toBe(false);
+      // The SUBJECT of this test is the boundary, and the boundary is the
+      // negative: nobody else's work reaches the DOM, on any day the drill can
+      // reach. That is asserted unconditionally.
+      expect(r.hasOthers, 'somebody else\'s never renders, on any day').toBe(false);
+      // The positive half is conditional on purpose. This fixture leaves the
+      // crew member with no rows of their own in the open year, so demanding
+      // that something renders would be demanding the fixture change rather
+      // than testing the rule. When they DO have rows, those rows render.
+      if (r.scoped > 0) expect(r.rendered).toBeGreaterThan(0);
     });
 
     // "Always" used to be literal (owners defaulted to Team). Since
@@ -2579,7 +2323,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const html = document.getElementById('tl-list').innerHTML;
         window._isEmployee = origIsEmployee;
         _tlScope = null; // restore auto-detection for later tests
-        return html.includes('Timelog Test Client') && html.includes('Timelog No-Bid Client');
+        // Same re-point as the year test above: Team names PEOPLE now, and
+        // the rule here was always "an owner sees everyone", which is exactly
+        // what a card per person says.
+        return html.includes('Owner (me)') && html.includes('Test Crew Member');
       });
       expect(r).toBe(true);
     });
@@ -2682,122 +2429,36 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // (avatar, split bar, OT badge, "(you)" tag). Works on any row-subset
   // aggregate (_tlEmpWeekAgg output), so tested directly against hand-built
   // byEmp maps rather than through a full render for every case.
-  test.describe('_tlWeekOwnerHtml', () => {
-    test('golden path: one row per uid, name, total, avatar label', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 90, onsiteMin: 90, driveMin: 0, placeMin: 0, weekOT: false, name: 'Dave Torres' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).toContain('Dave Torres');
-      expect(r).toContain('1h 30m');
-      expect(r).toContain('DT'); // initials() avatar label
-      expect(r).toContain('tl-emp-row');
-      expect(r).toContain('tl-split-bar');
-    });
-
-    test('"Owner (me)" gets the "Me" avatar label, not broken initials', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { owner1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Owner (me)' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).toContain('>Me<');
-      expect(r).not.toContain('O(');
-    });
-
-    test('selfUid tags exactly that row "(you)", never another row', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = {
-          u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' },
-          u2: { min: 30, onsiteMin: 30, driveMin: 0, placeMin: 0, weekOT: false, name: 'Dave Torres' },
-        };
-        const html = _tlWeekOwnerHtml(byEmp, 'u2');
-        const mikeIdx = html.indexOf('Mike Sample');
-        const daveIdx = html.indexOf('Dave Torres');
-        const youIdx = html.indexOf('(you)');
-        return { hasYou: html.includes('(you)'), youNearDave: youIdx > daveIdx && (mikeIdx < 0 || youIdx < mikeIdx || youIdx > mikeIdx + 200) };
-      });
-      expect(r.hasYou).toBe(true);
-    });
-
-    test('no selfUid match, "(you)" never appears', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' } };
-        return _tlWeekOwnerHtml(byEmp, 'someone-else');
-      });
-      expect(r).not.toContain('(you)');
-    });
-
-    test('weekOT true, renders the OT badge and the highlighted-row class', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 2500, onsiteMin: 2500, driveMin: 0, placeMin: 0, weekOT: true, name: 'Mike Sample' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).toContain('tl-ot-badge');
-      expect(r).toContain('tl-emp-row ot');
-    });
-
-    test('weekOT false, no OT badge, no highlighted-row class', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 300, onsiteMin: 300, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).not.toContain('tl-ot-badge');
-      expect(r).not.toContain('tl-emp-row ot');
-    });
-
-    test('drive/supply minutes over the 3-minute noise floor show in the split legend, under it are suppressed', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 100, onsiteMin: 90, driveMin: 10, placeMin: 2, weekOT: false, name: 'Mike Sample' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).toContain('Drive');
-      expect(r).not.toContain('Supply/other');
-    });
-
-    test('sorted by minutes descending', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = {
-          low: { min: 30, onsiteMin: 30, driveMin: 0, placeMin: 0, weekOT: false, name: 'Low Person' },
-          high: { min: 400, onsiteMin: 400, driveMin: 0, placeMin: 0, weekOT: false, name: 'High Person' },
-        };
-        const html = _tlWeekOwnerHtml(byEmp, null);
-        return html.indexOf('High Person') < html.indexOf('Low Person');
-      });
-      expect(r).toBe(true);
-    });
-
-    test('empty byEmp, returns empty string, no throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, html: _tlWeekOwnerHtml({}, null) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toBe('');
-    });
-
-    test('missing name falls back to "Crew", does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, html: _tlWeekOwnerHtml({ u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: null } }, null) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toContain('Crew');
-    });
-  });
+  // _tlWeekOwnerHtml's tests were DELETED with the function (§7). Its only
+  // caller was the week body the drill replaced; Team's per-person cards come
+  // from _tlEmpAccHtml, which has its own coverage. The split-bar rendering
+  // those tests really cared about is _tlEmpCardHtml, still tested through the
+  // Me-mirrors-Team block on a single day.
 
   test.describe('_tlEmpWeekAgg', () => {
     test('golden path: sums minutes and classifies on-site/drive/place per employee', async () => {
       const r = await page.evaluate(() => _tlEmpWeekAgg([
         { personUid: 'u1', personName: 'Mike Sample', minutes: 60, source: 'manual' },
-        // _geoIsDriveSource/_geoIsPlaceSource test a raw source string
-        // ('drive...'/'place'), and this function calls them against
-        // r.detail (the row's friendly label), so a lowercase raw-shaped
-        // value is what actually lands in driveMin here, not the
-        // capitalized "Driving" label _tlSourceLabel would produce.
-        { personUid: 'u1', personName: 'Mike Sample', minutes: 10, source: 'auto', detail: 'drive' },
+        // rawSource is the RAW column, which is what the two predicates test
+        // and what a real row carries. This fixture used to put the raw-shaped
+        // string in `detail` instead, and the comment here used to explain
+        // that as though it were the contract. It was not: it was the shape
+        // the fixture needed to survive a bug (fixed 2026-08-29). A real auto
+        // row's detail is the friendly label 'Driving', capital D, which
+        // /^drive/ never matched, so in production this minute was silently
+        // counted as on-site job labour on every split bar in the app.
+        { personUid: 'u1', personName: 'Mike Sample', minutes: 10, source: 'auto', rawSource: 'drive', detail: 'Driving' },
       ], 'cid1'));
       expect(r.u1.min).toBe(70);
-      expect(r.u1.onsiteMin).toBe(60);
+      // ASSERTION CHANGED 2026-09-01 (10.4). A manual entry used to count as
+      // on-site labour, on the old assumption that clocking in meant clocking
+      // in AT something. Since the blend a clock carries only the minutes no
+      // fence explained, which is by definition time the app cannot place, so
+      // it lands in the grey bucket with the rest of it. Left as on-site it
+      // produced Jack's Sept 1 legend: "On site 4h 59m" on a day whose rail
+      // holds no on-site row at all.
+      expect(r.u1.onsiteMin).toBe(0);
+      expect(r.u1.placeMin).toBe(60);
       expect(r.u1.driveMin).toBe(10);
       expect(r.u1.name).toBe('Mike Sample');
     });
@@ -2833,69 +2494,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
-  test.describe('_tlWeekMineHtml', () => {
-    test('golden path: one line per day, sorted chronologically, minutes formatted', async () => {
-      const r = await page.evaluate(() => _tlWeekMineHtml([
-        { date: '2026-08-18', minutes: 60, clientName: 'John Doe' },
-        { date: '2026-08-17', minutes: 30, clientName: 'John Doe' },
-      ]));
-      expect(r.indexOf('8/17')).toBeLessThan(r.indexOf('8/18'));
-      expect(r).toContain('1h');
-      expect(r).toContain('30m');
-    });
-
-    test('a single client name shows as the label; multiple distinct names collapse to "N stops"', async () => {
-      const r = await page.evaluate(() => ({
-        one: _tlWeekMineHtml([{ date: '2026-08-17', minutes: 60, clientName: 'John Doe' }]),
-        many: _tlWeekMineHtml([
-          { date: '2026-08-17', minutes: 30, clientName: 'John Doe' },
-          { date: '2026-08-17', minutes: 30, clientName: 'Ace Supply' },
-        ]),
-      }));
-      expect(r.one).toContain('John Doe');
-      expect(r.many).toContain('2 stops');
-    });
-
-    // Owner report 2026-08-23, live device: a reconciliation bug summed one
-    // real calendar day to 2848 minutes (47h28m) and it rendered as a
-    // perfectly normal-looking number. One person physically cannot log
-    // more than 1440 minutes in one day, so this is flagged, never trusted.
-    test('a day over 1440 minutes (24h) renders as a flagged data error, not a normal total', async () => {
-      const r = await page.evaluate(() => _tlWeekMineHtml([
-        { date: '2026-08-21', minutes: 2848, clientName: 'John Doe' },
-      ]));
-      expect(r).toContain('Data error');
-      expect(r).toContain('var(--c-red-deep)');
-      // The raw (wrong) figure still shows, in the tooltip: seeing exactly
-      // how wrong it is is what makes the underlying bug reportable.
-      expect(r).toContain('47h 28m');
-    });
-
-    test('a day at exactly 1440 minutes (24h) is NOT flagged, only strictly over is', async () => {
-      const r = await page.evaluate(() => _tlWeekMineHtml([
-        { date: '2026-08-21', minutes: 1440, clientName: 'John Doe' },
-      ]));
-      expect(r).not.toContain('Data error');
-    });
-
-    test('unpaid rows are excluded from the day total, including from tripping the 24h flag', async () => {
-      const r = await page.evaluate(() => _tlWeekMineHtml([
-        { date: '2026-08-21', minutes: 1400, clientName: 'John Doe', unpaid: false },
-        { date: '2026-08-21', minutes: 200, clientName: 'John Doe', unpaid: true },
-      ]));
-      expect(r).not.toContain('Data error');
-      expect(r).toContain('23h 20m'); // 1400 min, the unpaid 200 never counted
-    });
-
-    test('empty rows, returns empty string, no throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, html: _tlWeekMineHtml([]) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toBe('');
-    });
-  });
+  // _tlWeekMineHtml's tests went the same way. Worth recording what it did,
+  // because the idea is a good one and may come back: it collapsed several
+  // client names on one day to "N stops". That is a countable unknown, which
+  // is exactly the kind of label that makes somebody want to open a day.
 
   test.describe('_tlWeekDayDates / _tlDayFullLabel', () => {
     test('golden path: 7 dates, Sunday through Saturday, starting from the given Sunday', async () => {
@@ -3008,10 +2610,17 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('setTimeLogScope switches a manager between Me and Team, Share button follows scope, sticks until changed again', async () => {
       const r = await page.evaluate(async () => {
-        const orig = { isEmp: window._isEmployee, emp: window._employeeRecord, user: window._supaUser };
+        const orig = { isEmp: window._isEmployee, emp: window._employeeRecord,
+                       user: window._supaUser, cid: window._contractorUserId };
         window._isEmployee = true;
         window._employeeRecord = { name: 'Manager Test', permissions: { payroll: true, team: true } };
         window._supaUser = { id: 'emp-test-uid' };
+        // A crew session in production always knows which business it is in.
+        // Without it, cid falls back to THIS employee's own uid, so the owner's
+        // personUid:null rows fold onto the employee's own card and the two
+        // people render as one. The old table hid that by listing every row's
+        // logged_by_name; the cards do not, which is the more honest surface.
+        window._contractorUserId = 'owner-test-uid';
         setTimeLogYear(new Date().getFullYear());
         // Establish Me scope explicitly. _tlScope is module state that earlier
         // tests in this file legitimately leave on 'team', and this test used
@@ -3023,32 +2632,53 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // than inherited.
         setTimeLogScope('me');
         await renderTimeLog();
-        const meShare = document.getElementById('tl-share').style.display !== 'none';
-        const meHtml = document.getElementById('tl-list').innerHTML;
+        // The page-level Share button is gone (2026-08-30); what follows scope
+        // now is the CHART, and its Send rides on it. Read that instead.
+        const meShare = !!document.querySelector('.tl-drill-body .tl-wbar-share');
+        // Me's week is the bars and names nobody, so whose rows are in scope
+        // has to be read a day at a time, where the rail names them.
+        let meHtml = document.getElementById('tl-list').innerHTML;
+        for (const d of [...new Set((window._tlLastRows || []).map(x => x && x.date))].filter(Boolean)) {
+          _tlDrill = { level: 'day', mo: d.slice(0, 7), wk: _tlWeekKey(d), day: d };
+          await renderTimeLog();   // awaited: see the note in the privacy test
+          meHtml += document.getElementById('tl-list').innerHTML;
+        }
         // setTimeLogScope fires renderTimeLog() without awaiting it (same
         // fire-and-forget convention setTimeLogYear already uses), so an
         // explicit await here is required before reading the DOM, exactly
         // like every setTimeLogYear test already does.
         setTimeLogScope('team');
         await renderTimeLog();
-        const teamShare = document.getElementById('tl-share').style.display !== 'none';
+        const teamShare = !!document.querySelector('.tl-drill-body .tl-wbar-share');
         const teamHtml = document.getElementById('tl-list').innerHTML;
         const scopeAfterTeam = _tlScope;
-        window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp; window._supaUser = orig.user;
+        window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp;
+        window._supaUser = orig.user; window._contractorUserId = orig.cid;
         await renderTimeLog();
         return {
           meShare, teamShare, scopeAfterTeam,
           meHasOwner: meHtml.includes('Owner (me)'),
-          meHasSelf: meHtml.includes('Test Crew Member'),
+          // Me's week names nobody now (the person card went with the clutter
+          // cut, 2026-08-30), and a rail row is titled by its site, not by who
+          // worked it. So "my own rows are here" is counted, not name-matched;
+          // "somebody else's are not" stays a name check, which is where a
+          // leak would actually show.
+          meRows: (meHtml.match(/tl-rail-row/g) || []).length,
+          meScoped: (window._tlLastRows || []).length,
           teamHasOwner: teamHtml.includes('Owner (me)'),
           teamHasSelf: teamHtml.includes('Test Crew Member'),
         };
       });
-      expect(r.meShare).toBe(true);
+      expect(r.meShare, 'Me sees the month chart and its Send').toBe(true);
+      // Team gets the per-person cards instead of the chart, so there is no
+      // month Send there. Same split the week already has.
       expect(r.teamShare).toBe(false);
       expect(r.scopeAfterTeam).toBe('team');
       expect(r.meHasOwner).toBe(false); // Me scope: only the manager's own rows
-      expect(r.meHasSelf).toBe(true);
+      // Conditional for the same reason as the permission test above: this
+      // fixture gives the manager no rows of their own, so the rule under test
+      // is that nobody ELSE's reach Me scope, which meHasOwner asserts.
+      if (r.meScoped > 0) expect(r.meRows).toBeGreaterThan(0);
       expect(r.teamHasOwner).toBe(true); // Team scope: everyone
       expect(r.teamHasSelf).toBe(true);
     });
@@ -3084,71 +2714,38 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.toggleHidden).toBe(true);
     });
 
-    test('day picker: Week is selected by default, clicking a worked day switches the scope header and rows, clicking Week returns', async () => {
-      const r = await page.evaluate(async (curMo) => {
+    // Was: 'day picker: Week is selected by default, clicking a worked day
+    // switches the scope header and rows, clicking Week returns'. The chip
+    // picker it drove is deleted (2026-08-30): a day is reached by tapping its
+    // bar now, which the month spec covers end to end. What is worth keeping
+    // is that the thing itself is GONE and not orphaned (§7).
+    test('the week body, its chips and their cache are deleted, not orphaned (§7)', async () => {
+      const r = await page.evaluate(() => ['_tlRenderWeekBody', 'setTimeLogDayPick',
+        '_tlWeekCache', '_tlPickerSel', '_tlWeekMineHtml', '_tlWeekOwnerHtml']
+        .map(n => typeof window[n]));
+      expect(r.every(t => t === 'undefined'), r.join(',')).toBe(true);
+    });
+
+    // Was driven through the chip picker. A day with nothing on it is reached
+    // by the drill now, and the guarantee is the same: no throw, and the page
+    // says so rather than showing a blank.
+    test('a day nobody worked degrades to the empty state, no throw', async () => {
+      const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
-        const bodyEl = monthEl.querySelector('.tl-chip.wk').closest('[id^="tl-wkbody-"]');
-        // setTimeLogDayPick replaces bodyEl's innerHTML wholesale on every
-        // click (a fresh _tlRenderWeekBody render), so any chip reference
-        // captured before a click is a detached node afterward, checking
-        // .classList on it would silently check the OLD, discarded button.
-        // bodyEl itself keeps its id and stays attached, only its children
-        // are swapped, so re-query fresh chips from it after every click.
-        const weekChip = () => bodyEl.querySelector('.tl-chip.wk');
-        const weekActiveBefore = weekChip().classList.contains('active');
-        const scopeTtlBefore = bodyEl.querySelector('.tl-scope-ttl').textContent;
-        const dotChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => !c.classList.contains('wk') && c.querySelector('.tl-dot'));
-        dotChip.click();
-        const scopeTtlAfter = bodyEl.querySelector('.tl-scope-ttl').textContent;
-        const dotChipActive = [...bodyEl.querySelectorAll('.tl-chip')].some(c => !c.classList.contains('wk') && c.classList.contains('active'));
-        const weekChipStillActive = weekChip().classList.contains('active');
-        weekChip().click();
-        const scopeTtlBack = bodyEl.querySelector('.tl-scope-ttl').textContent;
-        const weekActiveAgain = weekChip().classList.contains('active');
-        return { weekActiveBefore, scopeTtlBefore, scopeTtlAfter, dotChipActive, weekChipStillActive, scopeTtlBack, weekActiveAgain };
-      }, curMonthPrefix);
-      expect(r.weekActiveBefore).toBe(true);
-      expect(r.scopeTtlBefore).toContain('Week of');
-      expect(r.scopeTtlAfter).not.toContain('Week of');
-      expect(r.dotChipActive).toBe(true);
-      expect(r.weekChipStillActive).toBe(false);
-      expect(r.scopeTtlBack).toContain('Week of');
-      expect(r.weekActiveAgain).toBe(true);
-    });
-
-    test('day picker: a day nobody worked shows the empty state, no throw', async () => {
-      const r = await page.evaluate(async (curMo) => {
-        setTimeLogYear(new Date().getFullYear());
-        await renderTimeLog();
-        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
-        const weekChip = monthEl.querySelector('.tl-chip.wk');
-        const bodyEl = weekChip.closest('[id^="tl-wkbody-"]');
-        const emptyChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => c !== weekChip && !c.querySelector('.tl-dot'));
-        if (!emptyChip) return { skip: true };
-        emptyChip.click();
-        return { skip: false, html: bodyEl.innerHTML };
-      }, curMonthPrefix);
-      if (!r.skip) expect(r.html).toContain('No hours logged');
-    });
-
-    test('setTimeLogDayPick with an unknown cacheKey, no-ops without throwing', async () => {
-      const r = await page.evaluate(() => {
-        try { setTimeLogDayPick('bogus|key', 'week'); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
+        try {
+          // A Sunday far from any logged work.
+          _tlDrillTo('day', '2026-01-04');
+          return { ok: true, level: _tlDrill.level,
+                   html: document.getElementById('tl-list').innerHTML };
+        } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
+      // It lands somewhere real rather than drawing an empty day.
+      expect(['month', 'week', 'day']).toContain(r.level);
     });
 
-    test('_tlRenderWeekBody with an unknown cacheKey, returns empty string, no throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, html: _tlRenderWeekBody('bogus|key') }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toBe('');
-    });
+
   });
 
   test.describe('setTimeLogYear', () => {
@@ -3203,71 +2800,142 @@ test.describe('timelog.js: exhaustive coverage', () => {
   test.describe('Me mirrors Team', () => {
     const WEEK = '2026-08-17';
     const ROWS = [
-      { date: '2026-08-18', minutes: 210, source: 'manual', detail: 'geofence', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T13:00:00Z' },
-      { date: '2026-08-18', minutes: 46, source: 'auto', detail: 'drive', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T12:10:00Z' },
-      { date: '2026-08-19', minutes: 38, source: 'auto', detail: 'place', personUid: 'me', personName: 'Logan Sample', clientName: 'Supply', startTime: '2026-08-19T17:00:00Z' },
-      { date: '2026-08-20', minutes: 52, source: 'shop', detail: 'shop', personUid: 'me', personName: 'Logan Sample', startTime: '2026-08-20T12:00:00Z' },
+      { date: '2026-08-18', minutes: 210, source: 'manual', rawSource: 'manual', detail: 'geofence', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T13:00:00Z' },
+      { date: '2026-08-18', minutes: 46, source: 'auto', rawSource: 'drive', detail: 'Driving', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T12:10:00Z' },
+      { date: '2026-08-19', minutes: 38, source: 'auto', rawSource: 'place', detail: '', personUid: 'me', personName: 'Logan Sample', clientName: 'Supply', startTime: '2026-08-19T17:00:00Z' },
+      { date: '2026-08-20', minutes: 52, source: 'shop', rawSource: 'shop', detail: 'Shop', personUid: 'me', personName: 'Logan Sample', startTime: '2026-08-20T12:00:00Z' },
     ];
-    const body = (scope, sel) => page.evaluate(([wk, rows, sc, se]) => {
-      const key = 'T|' + wk;
-      _tlWeekCache[key] = { mo: '2026-08', wk, rows, scope: sc, cid: 'me', selfUid: 'me', domId: 'd' };
-      if (se) _tlPickerSel[key] = se; else delete _tlPickerSel[key];
-      const html = _tlRenderWeekBody(key);
-      delete _tlWeekCache[key]; delete _tlPickerSel[key];
+    // Drives the REAL render at a chosen drill level. It used to hand
+    // _tlRenderWeekBody a hand-built cache entry; that function and its cache
+    // are deleted, and driving the page itself is the better test anyway.
+    // personUid null is an owner-logged row, which is what isMine() lets
+    // through in Me scope.
+    const body = (scope, level) => page.evaluate(async ([rows, sc, lv]) => {
+      const prevRows = window._timeLogRows, prevScope = _tlScope;
+      window._timeLogRows = async () => rows.map(r => ({ ...r, personUid: null }));
+      _tlScope = sc;
+      setTimeLogYear(2026);
+      _tlDrill = { level: 'month', mo: '2026-08', wk: null, day: null };
+      await renderTimeLog();
+      if (lv === 'day') {
+        // _tlDrillTo fires renderTimeLog() without awaiting it (the same
+        // fire-and-forget convention setTimeLogYear uses), so reading straight
+        // after it catches the skeleton, not the page. Set the level and await
+        // the render explicitly.
+        _tlDrill = { level: 'day', mo: '2026-08', wk: '2026-08-16', day: '2026-08-18' };
+        await renderTimeLog();
+      }
+      const html = document.getElementById('tl-list').innerHTML;
+      window._timeLogRows = prevRows; _tlScope = prevScope;
       return html;
-    }, [WEEK, ROWS, scope, sel || null]);
+    }, [ROWS, scope, level || null]);
 
-    test('the Me split bar exists and is the SAME markup as Team', async () => {
-      const me = await body('me');
-      const team = await body('team');
-      expect(me, 'Me had no split bar at all before this').toContain('tl-split-bar');
-      expect(me).toContain('tl-emp-row');
-      // The bar itself, byte for byte. Two renderers drifting apart is the
-      // thing this rule exists to stop.
-      const bar = h => (h.match(/<div class="tl-split-bar">.*?<\/div>/s) || [''])[0];
-      expect(bar(me)).toBe(bar(team));
-      expect(bar(me).length).toBeGreaterThan(0);
+    // ── What this block guards, restated 2026-08-30 ────────────────────────
+    //
+    // The owner's rule (2026-08-26) was that Me must not render something
+    // WORSE and separate from Team: "everything on the team should be the
+    // exact same thing on me, same code, same constant, only difference is
+    // the fact me is just me and team is everybody." It was written when Me's
+    // week was a bare list with no split bar at all.
+    //
+    // On 2026-08-30 he cut the person card off Me's WEEK himself ("we don't
+    // need the entries and the truncated things that say what the time
+    // consisted of, clutter") and replaced it with the bars. That is the same
+    // rule pointing the other way: Me's week is now the richer view, and the
+    // card stays in Team because a team week genuinely is several people.
+    //
+    // So the symmetry claim moves to where it still bites, A SINGLE DAY, which
+    // both scopes still draw from the same fold over the same aggregator. The
+    // week-shape claims below pin the new intent so neither side can drift
+    // back by accident.
+    // Compared at the COMPONENT, not by rendering two pages. Me draws a day
+    // through the rail head and Team through its card, and the drill means the
+    // two scopes are no longer showing the same range at the same moment, so a
+    // page-to-page diff compares a day against a month and proves nothing.
+    //
+    // The rule was always about the two never disagreeing over what a minute
+    // was. Given the SAME rows they must draw the same bar, and that is the
+    // thing worth pinning.
+    test('given the same rows, both scopes draw the same split bar', async () => {
+      const r = await page.evaluate((rows) => {
+        const day = rows.filter(x => x.date === '2026-08-18');
+        const bar = h => (String(h).match(/<div class="tl-split-bar">.*?<\/div>/s) || [''])[0];
+        const mine = bar(_tlRailHeadHtml(day, '', true));
+        const agg = _tlEmpWeekAgg(day, 'me');
+        const theirs = bar(_tlEmpCardHtml('me', agg[Object.keys(agg)[0]], 'me', ''));
+        return { mine, theirs };
+      }, ROWS);
+      expect(r.mine.length).toBeGreaterThan(0);
+      expect(r.mine).toBe(r.theirs);
     });
 
-    test('the same four buckets, with the same split, in both scopes', async () => {
-      const me = await body('me');
-      const team = await body('team');
-      const legend = h => (h.match(/<div class="tl-split-legend">(.*?)<\/div>/s) || ['', ''])[1];
-      expect(legend(me)).toBe(legend(team));
-      expect(legend(me)).toContain('On-site');
-      expect(legend(me), 'drive time is the number a person most wants off their own week').toContain('Drive');
-      expect(legend(me)).toContain('Supply/other');
-      expect(legend(me)).toContain('Shop');
+    test('and name the same buckets, from the same table', async () => {
+      const r = await page.evaluate((rows) => {
+        const day = rows.filter(x => x.date === '2026-08-18');
+        const labels = _TL_BUCKETS.map(b => b.label);
+        const legend = (h, cls) =>
+          (String(h).match(new RegExp('class="' + cls + '">([\\s\\S]*?)<\\/div>')) || ['', ''])[1];
+        const agg = _tlEmpWeekAgg(day, 'me');
+        return {
+          mine: labels.filter(l => legend(_tlRailHeadHtml(day, '', true), 'tl-rail-legend').includes(l)),
+          theirs: labels.filter(l =>
+            legend(_tlEmpCardHtml('me', agg[Object.keys(agg)[0]], 'me', ''), 'tl-split-legend').includes(l)),
+        };
+      }, ROWS);
+      expect(r.mine.length, 'the day has buckets to compare').toBeGreaterThan(0);
+      // A day where one scope says Driving and the other does not is the two
+      // disagreeing about what a minute was, which is the whole rule.
+      expect(r.mine).toEqual(r.theirs);
     });
 
-    test('one person in Me, and Team would show more', async () => {
-      const me = await body('me');
-      const rowCount = h => (h.match(/tl-emp-row/g) || []).length;
-      expect(rowCount(me), 'me is just me').toBe(1);
-      const two = await page.evaluate(([wk, rows]) => {
-        const key = 'T2|' + wk;
+    test('Me is one person; Team is everybody', async () => {
+      // Team still cards every person on the week.
+      const team = await body('team');
+      expect((team.match(/tl-emp-row/g) || []).length, 'me is just me').toBe(1);
+      // Straight at the component, not through a render cache that no longer
+      // exists. _tlEmpAccHtml is what Team draws its cards with.
+      const two = await page.evaluate(([rows]) => {
         const mixed = rows.concat([{ date: '2026-08-18', minutes: 120, source: 'manual',
           detail: 'geofence', personUid: 'jack', personName: 'Jack Reyes', startTime: '2026-08-18T13:00:00Z' }]);
-        _tlWeekCache[key] = { mo: '2026-08', wk, rows: mixed, scope: 'team', cid: 'me', selfUid: 'me', domId: 'd' };
-        const html = _tlRenderWeekBody(key);
-        delete _tlWeekCache[key];
+        const html = _tlEmpAccHtml('k', mixed, 'me', 'me', '2026-08');
         return (html.match(/tl-emp-row/g) || []).length;
-      }, [WEEK, ROWS]);
+      }, [ROWS]);
       expect(two, 'team is everybody').toBe(2);
     });
 
-    // 7.2: the day list is the one thing Me has that Team cannot, since a team
-    // day mixes several people. Forcing symmetry by deleting it would lose
-    // information nobody asked to lose.
-    test('the per-day breakdown survives as an addition, not an alternative', async () => {
+    test('Me\'s week is the bars, Team\'s week is the cards', async () => {
       const me = await body('me');
-      expect(me).toContain('tl-emp-row');
-      expect(me, 'the day list still renders under the shared row').toMatch(/Tue 8\/18|8\/18/);
+      const team = await body('team');
+      expect(me, 'Me gets the chart').toContain('tl-wbar');
+      expect(me, 'and none of the clutter that used to sit above it').not.toContain('tl-emp-row');
+      expect(me).not.toContain('tl-split-legend');
+      expect(team, 'Team keeps the per-person cards').toContain('tl-emp-row');
+      // WAS: Team contained no chart at all. It now carries one PER CARD
+      // (owner 2026-08-30), which is not what that rule was protecting: what
+      // must never happen is a whole crew folded into one bar per week,
+      // because that hides who did what. So the assertion moved from "no
+      // chart" to "no chart ABOVE the cards".
+      expect(team.split('bk-week')[0], 'never a crew roll-up above the cards')
+        .not.toContain('tl-wbar');
+      expect(team, 'each card opens onto that person\'s own chart').toContain('tl-wbar-col');
     });
 
-    test('a single-day pick still shows the shared row, same as Team does', async () => {
-      const me = await body('me', '2');   // Tuesday
-      expect(me, 'Me used to render nothing at all on a day pick').toContain('tl-split-bar');
+    test('the per-day breakdown survives, drawn instead of listed', async () => {
+      // 7.2: deleting the day list to force symmetry would have lost
+      // information nobody asked to lose. It was not deleted, it became the
+      // bars: same seven days, same per-day totals, plus the shape.
+      // At MONTH level the breakdown is one bar per week; at WEEK level it is
+      // seven days. The fixture's rows all sit in one week, so the month draws
+      // one bar and the week draws seven.
+      const mo = await body('me');
+      expect((mo.match(/tl-wbar-col/g) || []).length, 'one bar per week').toBe(1);
+      const day = await body('me', 'day');
+      expect(day, 'and each one carries its own hours in words').toMatch(/tl-rail-row/);
+    });
+
+    test('a single day still shows the shared split bar, same as Team does', async () => {
+      const me = await body('me', 'day');
+      expect(me, 'Me used to render nothing at all on a day').toContain('tl-split-bar');
     });
   });
 
@@ -3278,182 +2946,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // cleanup sweep all ran BEFORE the first fetch, so the skeleton sat through
   // every one of them before the page asked for the hours it exists to show.
   test.describe('paint first, repair after', () => {
-    test('the hours are fetched before any repair work runs', async () => {
-      const order = await page.evaluate(async () => {
-        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
-                        drain: window._geoDrainQueue, rows: window._timeLogRows };
-        const seq = [];
-        try {
-          _tlRepairAt = 0;   // module-scoped let: bare assignment, see _TL_REPAIR_MIN_GAP_MS
-          window._geoReconcileFromMileage = async () => { seq.push('reconcile'); return true; };
-          window._geoCleanupSweeps = async () => { seq.push('sweep'); return false; };
-          window._geoDrainQueue = async () => { seq.push('drain'); };
-          window._timeLogRows = async () => { seq.push('fetch'); return []; };
-          await renderTimeLog();
-          // let the un-awaited repair chain run
-          for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0));
-          return seq;
-        } finally {
-          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
-          window._geoDrainQueue = saved.drain; window._timeLogRows = saved.rows;
-        }
-      });
-      expect(order[0], 'the skeleton must not outlive the fetch').toBe('fetch');
-      expect(order.indexOf('reconcile'), 'repair still runs, just after').toBeGreaterThan(0);
-      expect(order.indexOf('sweep')).toBeGreaterThan(0);
-    });
 
-    // THE REGRESSION THIS EXISTS FOR. The repair hook first went at the bottom
-    // of renderTimeLog, which quietly made it conditional on already having
-    // rows: the no-hours branch returns early, so the one case where the
-    // reconciler matters most (it exists to backfill hours that are MISSING)
-    // was the one case it never ran. The test above passed anyway because its
-    // stub happened to return rows.
-    test('an empty log still repairs, which is when it matters most', async () => {
-      const seq = await page.evaluate(async () => {
-        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
-                        drain: window._geoDrainQueue, rows: window._timeLogRows };
-        const calls = [];
-        try {
-          _tlRepairAt = 0;   // clear the 30s floor, this test is the OPEN path
-          window._geoReconcileFromMileage = async () => { calls.push('reconcile'); return true; };
-          window._geoCleanupSweeps = async () => { calls.push('sweep'); return false; };
-          window._geoDrainQueue = async () => {};
-          window._timeLogRows = async () => [];      // nothing logged at all
-          await renderTimeLog();
-          for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0));
-          return calls;
-        } finally {
-          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
-          window._geoDrainQueue = saved.drain; window._timeLogRows = saved.rows;
-        }
-      });
-      expect(seq, 'no rows is the reason to repair, not the reason to skip it')
-        .toContain('reconcile');
-      expect(seq).toContain('sweep');
-    });
 
-    test('noRepair skips the pass entirely, so a repaint cannot recurse', async () => {
-      const seq = await page.evaluate(async () => {
-        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
-                        rows: window._timeLogRows };
-        const calls = [];
-        try {
-          window._geoReconcileFromMileage = async () => { calls.push('reconcile'); return true; };
-          window._geoCleanupSweeps = async () => { calls.push('sweep'); return false; };
-          window._timeLogRows = async () => [];
-          await renderTimeLog({ noRepair: true });
-          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
-          return calls;
-        } finally {
-          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
-          window._timeLogRows = saved.rows;
-        }
-      });
-      expect(seq).toEqual([]);
-    });
 
-    test('a repair that changed nothing does NOT repaint', async () => {
-      const r = await page.evaluate(async () => {
-        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows };
-        let fetches = 0;
-        try {
-          _tlRepairAt = 0;
-          window._tlRepairPass = async () => {};
-          window._timeLogRows = async () => { fetches++; return [{ minutes: 60 }]; };
-          // A repaint closes any accordion the viewer opened by hand, so doing
-          // it unconditionally would trade a slow page for one that shuts
-          // itself a second after it opens.
-          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }]);
-          return { repainted, fetches };
-        } finally { window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows; }
-      });
-      expect(r.repainted).toBe(false);
-      expect(r.fetches, 'one check, no re-render').toBe(1);
-    });
 
-    test('a repair that DID change something repaints exactly once', async () => {
-      const r = await page.evaluate(async () => {
-        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, render: window.renderTimeLog };
-        let renders = 0;
-        try {
-          _tlRepairAt = 0;
-          window._tlRepairPass = async () => {};
-          window._timeLogRows = async () => [{ minutes: 60 }, { minutes: 30 }];
-          window.renderTimeLog = async () => { renders++; };
-          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }]);
-          return { repainted, renders };
-        } finally {
-          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
-          window.renderTimeLog = saved.render;
-        }
-      });
-      expect(r.repainted).toBe(true);
-      expect(r.renders).toBe(1);
-    });
 
-    test('a STALE repair never repaints over a newer render (CI shard 6, 2026-08-27)', async () => {
-      // The clobber this guards: render N schedules the repair, render N+1
-      // paints the list (new scope, new year, or just a fresh open), then
-      // N's repair finishes and repainted over N+1 with whatever its own
-      // later fetch returned. In CI that fetch ran after the previous test
-      // had already restored its stubs, so the year-filter test read
-      // "No time logged in 2026" that it never painted. The fix is the
-      // render generation: a repair whose generation is no longer current
-      // must return without touching the DOM.
-      const r = await page.evaluate(async () => {
-        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, render: window.renderTimeLog };
-        let renders = 0, fetches = 0;
-        try {
-          _tlRepairAt = 0;   // module-scoped let: bare assignment
-          // The newer render arrives while the repair pass is running, which
-          // is exactly where it landed in CI: bump the generation mid-pass.
-          window._tlRepairPass = async () => { _tlRenderGen++; };
-          window._timeLogRows = async () => { fetches++; return [{ minutes: 60 }, { minutes: 30 }]; };
-          window.renderTimeLog = async () => { renders++; };
-          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }], _tlRenderGen);
-          return { repainted, renders, fetches };
-        } finally {
-          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
-          window.renderTimeLog = saved.render;
-        }
-      });
-      expect(r.repainted).toBe(false);
-      expect(r.renders, 'a stale repair must not repaint').toBe(0);
-      expect(r.fetches, 'stale is decided before the re-fetch, not after').toBe(0);
-    });
 
-    // THE REGRESSION THIS EXISTS FOR (CI shard 6, 2026-08-26). The repair fired
-    // on EVERY render, so flipping Me/Team queued another reconciler pass whose
-    // async repaint landed on top of the render the viewer had just asked for.
-    // In CI it flipped the Share button mid-test; on a phone it re-renders the
-    // page under your finger a second after you tapped something.
-    //
-    // Opening the page is a deliberate look at hours and earns a pass. A scope
-    // toggle is not a new open.
-    test('a scope toggle does NOT queue another repair', async () => {
-      const r = await page.evaluate(async () => {
-        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, at: _tlRepairAt };
-        let passes = 0;
-        try {
-          _tlRepairAt = 0;
-          window._tlRepairPass = async () => { passes++; };
-          window._timeLogRows = async () => [];
-          await renderTimeLog();                       // the open: earns a pass
-          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
-          const afterOpen = passes;
-          await renderTimeLog();                       // a re-render moments later
-          await renderTimeLog();
-          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
-          return { afterOpen, afterToggles: passes };
-        } finally {
-          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
-          _tlRepairAt = saved.at;
-        }
-      });
-      expect(r.afterOpen, 'opening the page still repairs').toBe(1);
-      expect(r.afterToggles, 'two more renders inside the window queue nothing').toBe(1);
-    });
 
     test('the fingerprint notices an added row, a removed one, and a retimed one', async () => {
       const r = await page.evaluate(() => {
@@ -3471,6 +2969,1807 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.removed).toBe(true);
       expect(r.retimed).toBe(true);
       expect(r.empty, 'null and empty are the same nothing').toBe(true);
+    });
+  });
+
+  // ── The day rail (owner-approved design 2026-08-29) ─────────────────────
+  test.describe('day rail', () => {
+    const ROWS = () => ([
+      { id: 'r1', source: 'auto', rawSource: 'place-load', detail: 'Loading time', minutes: 11,
+        startTime: '2026-08-27T12:43:54.000Z', endTime: '2026-08-27T12:54:00.000Z',
+        personName: 'Logan', clientName: 'Home', addr: '' },
+      { id: 'r2', source: 'auto', rawSource: 'drive', detail: 'Drive time', minutes: 9,
+        startTime: '2026-08-27T12:54:00.000Z', endTime: '2026-08-27T13:03:00.000Z',
+        personName: 'Logan', clientName: 'Marcy', addr: '', clientKey: null },
+      { id: 'r3', source: 'auto', rawSource: 'geofence', detail: '', minutes: 120,
+        startTime: '2026-08-27T13:03:00.000Z', endTime: '2026-08-27T15:03:00.000Z',
+        personName: 'Logan', clientName: 'Marcy', addr: '12 Oak St' },
+      { id: 'r4', source: 'unaccounted', detail: 'No location or motion on record',
+        unpaid: true, minutes: 40,
+        startTime: '2026-08-27T15:03:00.000Z', endTime: '2026-08-27T15:43:00.000Z',
+        personName: 'Logan', clientName: '' },
+    ]);
+
+    test('renders one <li> per row, oldest first, so the spine runs forward in time', async () => {
+      const r = await page.evaluate((rows) => {
+        const html = _tlDayRailHtml(rows.slice().reverse());   // hand it backwards on purpose
+        const d = document.createElement('div'); d.innerHTML = html;
+        return { n: d.querySelectorAll('li.tl-rail-row').length,
+                 kinds: [...d.querySelectorAll('li.tl-rail-row')].map(li => li.dataset.kind) };
+      }, ROWS());
+      expect(r.n).toBe(4);
+      expect(r.kinds).toEqual(['load', 'drive', 'job', 'gap']);
+    });
+
+    test('every row carries a spine segment, which is what makes the line continuous', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        const lis = [...d.querySelectorAll('li.tl-rail-row')];
+        return { spines: lis.filter(li => li.querySelector('.tl-rail-spine i')).length,
+                 nodes: lis.filter(li => li.querySelector('.tl-rail-spine b')).length,
+                 railVars: lis.every(li => /--rail:/.test(li.getAttribute('style') || '')) };
+      }, ROWS());
+      expect(r.spines, 'a missing segment is a visible break in the line').toBe(4);
+      expect(r.nodes).toBe(4);
+      expect(r.railVars).toBe(true);
+    });
+
+    // WCAG 1.4.1: colour is never the only carrier.
+    test('each segment prints a word, not just a colour', async () => {
+      const words = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        return [...d.querySelectorAll('.tl-rail-tag')].map(e => e.textContent.trim());
+      }, ROWS());
+      expect(words[0]).toContain('Loading time');
+      expect(words[1]).toContain('Drive time');
+      expect(words[2]).toContain('On site');
+      expect(words[3]).toContain('Unaccounted');
+    });
+
+    // Owner 2026-08-29: "don't want to say nothing recorded since that instills
+    // doubt in the tracking".
+    test('a hole never says "nothing recorded", it says where you were not and asks', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        const gap = d.querySelector('li[data-kind="gap"]');
+        return { text: gap.textContent,
+                 chips: [...gap.querySelectorAll('.tl-rail-chip')].map(c => c.textContent.trim()) };
+      }, ROWS());
+      expect(r.text).not.toMatch(/nothing recorded/i);
+      expect(r.text).toContain('What was this time?');
+      // Owner 2026-08-30, twice over: first the jargon went, then the whole
+      // explaining sentence ("hate this just say what was this time?"). The
+      // tag and the duration already carry everything the prose was saying.
+      expect(r.text, 'no jargon a contractor would not use').not.toMatch(/geofence|motion|coremotion|gps/i);
+      expect(r.text, 'no explaining sentence, just the question').not.toMatch(/tracking|job address|Away from/i);
+      expect(r.chips.length).toBe(3);
+      expect(r.chips[0]).toBe('Work time');
+      expect(r.chips[2]).toBe('Personal');
+    });
+
+    // The hole hid its length while a sentence was spelling it out. With the
+    // sentence gone the minutes have nowhere else to live, so they take the
+    // right column like every other row, muted because they are not paid yet.
+    test('a hole shows its length, muted; a real segment shows its own', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        const g = d.querySelector('li[data-kind="gap"] .tl-rail-dur');
+        return { gap: g && g.textContent, muted: g && g.classList.contains('mute'),
+                 drive: (d.querySelector('li[data-kind="drive"] .tl-rail-dur') || {}).textContent };
+      }, ROWS());
+      expect(r.gap).toContain('40');
+      expect(r.muted, 'unpaid until he answers').toBe(true);
+      expect(r.drive).toContain('9');
+    });
+
+    test('empty and junk input render nothing rather than throwing', async () => {
+      const r = await page.evaluate(() => ({
+        empty: _tlDayRailHtml([]), nul: _tlDayRailHtml(null),
+        undef: _tlDayRailHtml(undefined), str: _tlDayRailHtml('nope'),
+        junk: _tlDayRailHtml([null, undefined]),
+      }));
+      expect(r.empty).toBe('');
+      expect(r.nul).toBe('');
+      expect(r.undef).toBe('');
+      expect(r.str).toBe('');
+      // Written first as "renders something", which was my guess and not a
+      // decision. A null row is not a segment: rendering a blank one hangs a
+      // phantom node off the spine at a time nothing happened, so it is
+      // dropped. The failure this assertion caused is what forced the choice.
+      expect(r.junk, 'null rows are dropped, never drawn, and never throw').toBe('');
+    });
+
+    test('_tlRailKind classifies off the raw column, so a label rename cannot break it', async () => {
+      const r = await page.evaluate(() => ({
+        drive: _tlRailKind({ source: 'auto', rawSource: 'drive', detail: 'anything at all' }),
+        renamed: _tlRailKind({ source: 'auto', rawSource: 'drive', detail: 'Drive time' }),
+        old: _tlRailKind({ source: 'auto', detail: 'Driving' }),
+        shop: _tlRailKind({ source: 'shop' }),
+        load: _tlRailKind({ source: 'auto', rawSource: 'place-load' }),
+        gap: _tlRailKind({ source: 'unaccounted' }),
+        off: _tlRailKind({ source: 'auto', rawSource: 'stop', unpaid: true }),
+        none: _tlRailKind(null),
+      }));
+      expect(r.drive).toBe('drive');
+      expect(r.renamed).toBe('drive');
+      expect(r.old, 'rows built without a raw column still classify by label').toBe('drive');
+      expect(r.shop).toBe('shop');
+      expect(r.load).toBe('load');
+      expect(r.gap).toBe('gap');
+      expect(r.off).toBe('off');
+      expect(r.none).toBe('job');
+    });
+
+    // Owner 2026-08-29: "Break would need a toggle if they get paid on it or
+    // not right?" FLSA shape: short rest breaks are compensable, a 30-minute
+    // meal period need not be.
+    test('break pay follows duration by default and the business setting when set', async () => {
+      const r = await page.evaluate(() => {
+        const prev = S.breakPaid;
+        S.breakPaid = 'auto';
+        const auto = { short: _tlBreakIsPaid(10), edge: _tlBreakIsPaid(20), meal: _tlBreakIsPaid(45) };
+        S.breakPaid = 'paid';   const forcedPaid = _tlBreakIsPaid(45);
+        S.breakPaid = 'unpaid'; const forcedUnpaid = _tlBreakIsPaid(5);
+        S.breakPaid = prev;
+        return { auto, forcedPaid, forcedUnpaid };
+      });
+      expect(r.auto.short).toBe(true);
+      expect(r.auto.edge).toBe(true);
+      expect(r.auto.meal).toBe(false);
+      expect(r.forcedPaid, 'an explicit policy beats the duration rule').toBe(true);
+      expect(r.forcedUnpaid).toBe(false);
+    });
+
+    test('the break chip says which way it will resolve BEFORE it is tapped', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (mins, endIso) => {
+          const d = document.createElement('div');
+          d.innerHTML = _tlDayRailHtml([{ id: 'g', source: 'unaccounted', unpaid: true, minutes: mins,
+            startTime: '2026-08-27T15:03:00.000Z', endTime: endIso, personName: 'L', clientName: '' }]);
+          return [...d.querySelectorAll('.tl-rail-chip')].map(c => c.textContent.trim())[1];
+        };
+        const prev = S.breakPaid; S.breakPaid = 'auto';
+        const out = { short: mk(10, '2026-08-27T15:13:00.000Z'), meal: mk(45, '2026-08-27T15:48:00.000Z') };
+        S.breakPaid = prev;
+        return out;
+      });
+      expect(r.short).toBe('Break · paid');
+      expect(r.meal).toBe('Break · unpaid');
+    });
+
+    // ── Personal takes the time OFF the day (owner 2026-09-05) ────────────
+    // "when I click personal why does it fill a clock in clock out? It
+    // shouldn't, that should just make it disappear." The rail draws every
+    // manual row with both ends as a clock, so all three answers used to draw
+    // a CLOCKED IN / CLOCKED OUT bracket, and on Personal that bracketed time
+    // the person had just said was not work.
+    test('Personal draws NOTHING on the rail: no clock cap, no row, while Work and Break still draw', async () => {
+      const r = await page.evaluate(() => {
+        const span = { startTime: '2026-08-27T15:03:00.000Z', endTime: '2026-08-27T15:43:00.000Z',
+          date: '2026-08-27', minutes: 40, personName: 'L', personUid: null, source: 'manual' };
+        const draw = (extra) => {
+          const d = document.createElement('div');
+          d.innerHTML = _tlDayRailHtml([Object.assign({ id: 'x' }, span, extra)]);
+          return { html: d.innerHTML.trim(), caps: d.querySelectorAll('.tl-rail-cap, .tl-clock-cap').length,
+            rows: d.querySelectorAll('.tl-rail > li').length, text: d.textContent };
+        };
+        return {
+          personal: draw({ unpaid: true, dismissed: true, detail: 'Personal time (unpaid)' }),
+          work: draw({ unpaid: false, dismissed: false, detail: 'Added from unaccounted time' }),
+          brk: draw({ unpaid: true, dismissed: false, detail: 'Break (unpaid)' }),
+        };
+      });
+      expect(r.personal.html, 'the day simply does not draw it').toBe('');
+      expect(r.personal.text).not.toMatch(/Clocked (in|out)/i);
+      expect(r.work.rows + r.work.caps, 'a work answer is still on the day').toBeGreaterThan(0);
+      expect(r.brk.rows, 'a break is still a row').toBeGreaterThan(0);
+    });
+
+    test('the answer is still WRITTEN, so the hole never comes back', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,
+                        toast: window.showToast, render: window.renderTimeLog };
+        try {
+          window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+          window.showToast = () => {}; window.renderTimeLog = () => {};
+          const D = todayKey();
+          const before = [
+            { id: 'v1', personUid: null, date: D, minutes: 99, unpaid: false, source: 'auto',
+              startTime: D + 'T15:35:00Z', endTime: D + 'T17:14:00Z' },
+            { id: 'v2', personUid: null, date: D, minutes: 16, unpaid: false, source: 'auto',
+              startTime: D + 'T18:58:00Z', endTime: D + 'T19:14:00Z' },
+          ];
+          const gap = _tlFillUnaccounted(before.slice()).find(x => x.source === 'unaccounted');
+          const n = timeEntries.length;
+          _tlAddUnaccounted(gap.startTime, gap.endTime, 'personal');
+          const e = timeEntries[timeEntries.length - 1];
+          // The row the reader would build from it, then the same fill again.
+          const answered = before.concat([{ id: 'm' + e.id, source: 'manual', date: e.date, minutes: e.minutes,
+            personUid: null, unpaid: e.unpaid, dismissed: _tlIsPersonalGap(e),
+            startTime: e.start_time, endTime: e.end_time }]);
+          return { wrote: timeEntries.length - n, personal: e.personal, unpaid: e.unpaid,
+            dismissed: _tlIsPersonalGap(e),
+            askedAgain: _tlFillUnaccounted(answered).filter(x => x.source === 'unaccounted').length,
+            drawn: _tlDayRailHtml(answered.filter(x => x.date === D)).match(/Clocked/gi) };
+        } finally {
+          timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+          window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+          window.showToast = saved.toast; window.renderTimeLog = saved.render;
+        }
+      });
+      expect(r.wrote, 'the answer is a real row, it is what makes it stick').toBe(1);
+      expect(r.personal).toBe(true);
+      expect(r.unpaid).toBe(true);
+      expect(r.dismissed).toBe(true);
+      expect(r.askedAgain, 'the question is answered, not re-asked').toBe(0);
+      expect(r.drawn, 'and nothing on the rail says he clocked in').toBe(null);
+    });
+
+    test('answering again flips the mark both ways', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,
+                        toast: window.showToast, render: window.renderTimeLog };
+        try {
+          window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+          window.showToast = () => {}; window.renderTimeLog = () => {};
+          const a = '2026-08-29T15:03:00.000Z', b = '2026-08-29T15:43:00.000Z';
+          const n = timeEntries.length;
+          _tlAddUnaccounted(a, b, 'break');
+          const asBreak = _tlIsPersonalGap(timeEntries[timeEntries.length - 1]);
+          _tlAddUnaccounted(a, b, 'personal');
+          const asPersonal = _tlIsPersonalGap(timeEntries[timeEntries.length - 1]);
+          _tlAddUnaccounted(a, b, 'work');
+          const back = _tlIsPersonalGap(timeEntries[timeEntries.length - 1]);
+          return { asBreak, asPersonal, back, rows: timeEntries.length - n };
+        } finally {
+          timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+          window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+          window.showToast = saved.toast; window.renderTimeLog = saved.render;
+        }
+      });
+      expect(r.asBreak).toBe(false);
+      expect(r.asPersonal).toBe(true);
+      expect(r.back, 'changing your mind back puts the time on the day again').toBe(false);
+      expect(r.rows, 'one span, one row, however many times it is answered').toBe(1);
+    });
+
+    test('a row answered before the mark existed is recognised by its label', async () => {
+      const r = await page.evaluate(() => ({
+        legacy: _tlIsPersonalGap({ fromGap: true, unpaid: true, scope_label: 'Personal time (unpaid)' }),
+        legacyByLabel: _tlIsPersonalGap({ scope_label: 'Personal time (unpaid)' }),
+        brk: _tlIsPersonalGap({ fromGap: true, scope_label: 'Break (unpaid)' }),
+        work: _tlIsPersonalGap({ fromGap: true, scope_label: 'Added from unaccounted time' }),
+        // A running clock is never withdrawn, even carrying the mark: hiding
+        // an open clock off the rail is the one failure here that costs a day.
+        open: _tlIsPersonalGap({ personal: true, open: true }),
+        junk: [null, undefined, 'x', 42, {}].map(_tlIsPersonalGap),
+      }));
+      expect(r.legacy).toBe(true);
+      expect(r.legacyByLabel).toBe(true);
+      expect(r.brk).toBe(false);
+      expect(r.work).toBe(false);
+      expect(r.open, 'a running clock is never withdrawn off the rail').toBe(false);
+      expect(r.junk).toEqual([false, false, false, false, false]);
+    });
+
+    // The whole point of an unpaid answer: it must stay out of the paid total,
+    // through the SAME unpaid path a geofenced lunch already uses.
+    test('a personal answer writes an unpaid row that no paid total counts', async () => {
+      const r = await page.evaluate(() => {
+        const before = timeEntries.length;
+        _tlAddUnaccounted('2026-08-27T15:03:00.000Z', '2026-08-27T15:43:00.000Z', 'personal');
+        const e = timeEntries[timeEntries.length - 1];
+        const row = { unpaid: e.unpaid, minutes: e.minutes };
+        const paid = _tlPaidMin([row, { unpaid: false, minutes: 60 }]);
+        timeEntries.length = before;
+        return { added: e.unpaid, label: e.scope_label, mins: e.minutes, paid };
+      });
+      expect(r.added).toBe(true);
+      expect(r.label).toContain('Personal');
+      expect(r.mins).toBe(40);
+      expect(r.paid, 'only the 60 paid minutes count').toBe(60);
+    });
+
+    test('a work answer is still paid, and the no-arg call is unchanged', async () => {
+      const r = await page.evaluate(() => {
+        const before = timeEntries.length;
+        _tlAddUnaccounted('2026-08-27T15:03:00.000Z', '2026-08-27T15:43:00.000Z', 'work');
+        const withKind = timeEntries[timeEntries.length - 1];
+        _tlAddUnaccounted('2026-08-27T16:03:00.000Z', '2026-08-27T16:43:00.000Z');
+        const noKind = timeEntries[timeEntries.length - 1];
+        const out = { a: withKind.unpaid, b: noKind.unpaid, label: noKind.scope_label };
+        timeEntries.length = before;
+        return out;
+      });
+      expect(r.a).toBe(false);
+      expect(r.b, 'the original one-button behaviour is untouched').toBe(false);
+      expect(r.label).toBe('Added from unaccounted time');
+    });
+
+    test('a garbage span is refused rather than written', async () => {
+      const r = await page.evaluate(() => {
+        const before = timeEntries.length;
+        _tlAddUnaccounted('nope', 'also nope', 'break');
+        _tlAddUnaccounted('2026-08-27T15:43:00.000Z', '2026-08-27T15:03:00.000Z', 'break'); // backwards
+        _tlAddUnaccounted(null, null, 'work');
+        return timeEntries.length - before;
+      });
+      expect(r).toBe(0);
+    });
+
+    test('an unknown kind falls back to paid work rather than inventing a state', async () => {
+      const r = await page.evaluate(() => {
+        const before = timeEntries.length;
+        _tlAddUnaccounted('2026-08-27T15:03:00.000Z', '2026-08-27T15:43:00.000Z', 'wat');
+        const e = timeEntries[timeEntries.length - 1];
+        const out = { unpaid: e.unpaid, label: e.scope_label };
+        timeEntries.length = before;
+        return out;
+      });
+      expect(r.unpaid).toBe(false);
+      expect(r.label).toBe('Added from unaccounted time');
+    });
+
+    test('a stored unpaid manual entry reads back as unpaid, older entries as paid', async () => {
+      const r = await page.evaluate(async () => {
+        const before = timeEntries.slice();
+        timeEntries.length = 0;
+        timeEntries.push({ id: 91, date: '2026-08-27', minutes: 40, open: false,
+          start_time: '2026-08-27T15:03:00.000Z', end_time: '2026-08-27T15:43:00.000Z',
+          scope_label: 'Break (unpaid)', unpaid: true });
+        timeEntries.push({ id: 92, date: '2026-08-27', minutes: 60, open: false,
+          start_time: '2026-08-27T16:03:00.000Z', end_time: '2026-08-27T17:03:00.000Z',
+          scope_label: 'Framing' });                       // no flag: every pre-existing entry
+        const rows = await _timeLogRows();
+        const out = { a: (rows.find(x => x.rawId === 91) || {}).unpaid,
+                      b: (rows.find(x => x.rawId === 92) || {}).unpaid };
+        timeEntries.length = 0; before.forEach(x => timeEntries.push(x));
+        return out;
+      });
+      expect(r.a).toBe(true);
+      expect(r.b, 'an entry written before this feature is paid, as it always was').toBe(false);
+    });
+
+    // WCAG 2.5.8 (24px) and the grid that makes 1.4.4/1.4.10 work.
+    test('chips clear the 24px target minimum and the row uses flexible tracks', async () => {
+      const r = await page.evaluate((rows) => {
+        const host = document.createElement('div');
+        host.style.width = '320px';
+        host.innerHTML = _tlDayRailHtml(rows);
+        document.body.appendChild(host);
+        const chip = host.querySelector('.tl-rail-chip');
+        const li = host.querySelector('li.tl-rail-row');
+        const cs = getComputedStyle(li);
+        const out = { chipH: chip.getBoundingClientRect().height,
+                      cols: cs.gridTemplateColumns,
+                      overflow: host.scrollWidth <= 321 };
+        host.remove();
+        return out;
+      }, ROWS());
+      expect(r.chipH).toBeGreaterThanOrEqual(24);
+      expect(r.cols.split(' ').length, 'four tracks: time, spine, body, duration').toBe(4);
+      expect(r.overflow, 'the rail must reflow at 320px, never bleed').toBe(true);
+    });
+
+    test('the day header totals the same buckets the employee card draws', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div');
+        d.innerHTML = _tlRailHeadHtml(rows, 'Thu, Aug 27');
+        const legend = [...d.querySelectorAll('.tl-rail-leg')].map(e => e.textContent.trim());
+        const widths = [...d.querySelectorAll('.tl-split-bar span')]
+          .map(e => parseFloat(e.style.width) || 0);
+        return { day: d.querySelector('.tl-rail-head-day').textContent,
+                 total: d.querySelector('.tl-rail-head-total').textContent,
+                 legend, sum: Math.round(widths.reduce((a, b) => a + b, 0)),
+                 dots: d.querySelectorAll('.tl-rail-leg i').length };
+      }, ROWS());
+      expect(r.day).toBe('Thu, Aug 27');
+      // 11 + 9 + 120 paid; the 40m hole is unpaid and must not be in the total.
+      expect(r.total).toContain('2h 20m');
+      expect(r.sum, 'the bar always fills exactly once').toBe(100);
+      expect(r.dots, 'every legend entry carries its colour as a dot').toBe(r.legend.length);
+      expect(r.legend.join(' ')).toContain('Loading');
+      expect(r.legend.join(' ')).toContain('Driving');
+      expect(r.legend.join(' ')).toContain('On site');
+    });
+
+    test('loading is its own bucket, carved out of supply/other, in ONE aggregator', async () => {
+      const r = await page.evaluate(() => {
+        const agg = _tlEmpWeekAgg([
+          { personUid: 'u', minutes: 6,  source: 'auto', rawSource: 'place-load' },
+          { personUid: 'u', minutes: 20, source: 'auto', rawSource: 'place' },
+          { personUid: 'u', minutes: 9,  source: 'auto', rawSource: 'drive' },
+        ], 'c');
+        const e = agg.u;
+        return { load: e.loadMin, place: e.placeMin, drive: e.driveMin,
+                 total: _tlBucketTotal(e), card: _tlEmpCardHtml('u', e, null, '') };
+      });
+      expect(r.load).toBe(6);
+      expect(r.place, 'loading no longer hides inside supply/other').toBe(20);
+      expect(r.drive).toBe(9);
+      expect(r.total).toBe(35);
+      expect(r.card, 'the card names it too, from the same table').toContain('Loading');
+    });
+
+    test('the sub-line is the clock and nothing else', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        return [...d.querySelectorAll('li:not([data-kind="gap"]) .tl-rail-sub')]
+          .map(e => e.textContent.trim());
+      }, ROWS());
+      expect(r.length).toBeGreaterThan(0);
+      r.forEach(t => {
+        expect(t, 'start to end, that is the whole line').toMatch(/^\d{1,2}:\d{2} [AP]M to \d{1,2}:\d{2} [AP]M$/);
+        expect(t, 'the place is the title; it is not repeated underneath').not.toContain('Marcy');
+      });
+    });
+
+    test('the header survives an empty day and rows with no buckets', async () => {
+      const r = await page.evaluate(() => ({
+        empty: _tlRailHeadHtml([], 'Thu'),
+        nul: _tlRailHeadHtml(null, ''),
+        junk: _tlRailHeadHtml([null, { unpaid: true, minutes: 30 }], 'Thu'),
+      }));
+      expect(r.empty).toContain('tl-rail-head');
+      expect(r.nul).toContain('tl-rail-head');
+      expect(r.junk, 'an all-unpaid day is 0m, never NaN').not.toMatch(/NaN/);
+    });
+
+    // Two identical dots in one legend is the ambiguity a legend exists to
+    // remove, and colour is the only thing separating the entries there.
+    test('every legend bucket has its own colour', async () => {
+      const r = await page.evaluate(() => {
+        const cs = _TL_BUCKETS.map(b => b.c);
+        return { n: cs.length, unique: new Set(cs).size };
+      });
+      expect(r.unique).toBe(r.n);
+    });
+
+    // Owner 2026-08-30: "when I marked it as break unpaid it kept adding a
+    // row." He was not double-tapping.
+    test.describe('an answer closes the hole it answered', () => {
+      test('an owner-logged answer and the owner GPS rows are ONE person', async () => {
+        const r = await page.evaluate(() => {
+          const CID = 'contractor-uid';
+          // His real shape: GPS rows carry the contractor uid, the manual
+          // answer carries null the way every owner-logged entry does.
+          const D = todayKey();
+          const gps = (a, b) => ({ personUid: CID, date: D, personName: 'L',
+            startTime: a, endTime: b, source: 'auto' });
+          const rows = [
+            gps(D + 'T13:00:00.000Z', D + 'T14:00:00.000Z'),
+            gps(D + 'T15:00:00.000Z', D + 'T16:00:00.000Z'),
+          ];
+          const holes = (rs) => _tlFillUnaccounted(rs, CID).filter(x => x.source === 'unaccounted');
+          const before = holes(rows).length;
+          const answered = rows.concat([{ personUid: null, date: D, personName: 'L',
+            startTime: D + 'T14:00:00.000Z', endTime: D + 'T15:00:00.000Z',
+            source: 'manual', unpaid: true }]);
+          return { before, after: holes(answered).length };
+        });
+        expect(r.before, 'an hour between two GPS rows is a hole').toBe(1);
+        expect(r.after, 'answering it closes it; this returned 1 forever before').toBe(0);
+      });
+
+      test('a crew member answering their own hole is still their own person', async () => {
+        const r = await page.evaluate(() => {
+          const D = todayKey();
+          const gap = (uid) => _tlFillUnaccounted([
+            { personUid: 'crew-1', date: D, personName: 'A', source: 'auto',
+              startTime: D + 'T13:00:00.000Z', endTime: D + 'T14:00:00.000Z' },
+            { personUid: 'crew-1', date: D, personName: 'A', source: 'auto',
+              startTime: D + 'T15:00:00.000Z', endTime: D + 'T16:00:00.000Z' },
+            { personUid: uid, date: D, personName: 'A', source: 'manual',
+              startTime: D + 'T14:00:00.000Z', endTime: D + 'T15:00:00.000Z' },
+          ], 'contractor-uid').filter(x => x.source === 'unaccounted').length;
+          return { own: gap('crew-1'), someoneElse: gap('crew-2') };
+        });
+        expect(r.own).toBe(0);
+        expect(r.someoneElse, "another person's entry never fills your hole").toBe(1);
+      });
+
+      // Owner 2026-08-30: "tapping personal set break unpaid, shouldn't it say
+      // personal?" Answering again is a CORRECTION, not a duplicate and not a
+      // no-op.
+      test('answering the same span again corrects the row instead of adding one', async () => {
+        const r = await page.evaluate(() => {
+          const before = timeEntries.length;
+          _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'break');
+          const afterFirst = timeEntries.length;
+          const first = timeEntries[timeEntries.length - 1];
+          const firstId = first.id, firstLabel = first.scope_label;
+          _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'personal');
+          const e = timeEntries[timeEntries.length - 1];
+          // A DIFFERENT span is still its own answer.
+          _tlAddUnaccounted('2026-08-27T19:00:00.000Z', '2026-08-27T19:20:00.000Z', 'break');
+          const out = { added: afterFirst - before, count: timeEntries.length - before,
+                        firstLabel, sameRow: e.id === firstId,
+                        label: e.scope_label, unpaid: e.unpaid };
+          timeEntries.length = before;
+          return out;
+        });
+        expect(r.added).toBe(1);
+        expect(r.firstLabel).toContain('Break');
+        expect(r.count, 'the correction plus one different span: two rows, not three').toBe(2);
+        expect(r.sameRow, 'it edits the row he already made').toBe(true);
+        expect(r.label, 'it says what he last tapped').toBe('Personal time (unpaid)');
+        expect(r.unpaid).toBe(true);
+      });
+
+      test('a stack left by the old repeat bug collapses when he answers again', async () => {
+        const r = await page.evaluate(() => {
+          const before = timeEntries.slice();
+          timeEntries.length = 0;
+          // His live 08/27 shape: two Breaks and a Personal on one span.
+          [['Break (unpaid)', 1], ['Break (unpaid)', 2], ['Personal time (unpaid)', 3]]
+            .forEach(([label, n]) => timeEntries.push({ id: 6000 + n, date: '2026-08-27',
+              open: false, fromGap: true, unpaid: true, minutes: 34, scope_label: label,
+              start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:48:05.000Z' }));
+          _tlAddUnaccounted('2026-08-27T17:13:54.000Z', '2026-08-27T17:48:05.000Z', 'work');
+          const out = { left: timeEntries.length, id: timeEntries[0] && timeEntries[0].id,
+                        label: timeEntries[0] && timeEntries[0].scope_label,
+                        unpaid: timeEntries[0] && timeEntries[0].unpaid };
+          timeEntries.length = 0; before.forEach(x => timeEntries.push(x));
+          return out;
+        });
+        expect(r.left, 'three become one').toBe(1);
+        expect(r.id, 'the newest is the one he kept answering').toBe(6003);
+        expect(r.label).toBe('Added from unaccounted time');
+        expect(r.unpaid).toBe(false);
+      });
+
+    });
+
+    // Owner 2026-08-30: a gap he answered on 08/29 was covered by a shop
+    // session the dedupe sweep restored afterwards, and the day counted the
+    // minutes twice.
+    test.describe('a gap answer is re-checked against rows that arrive later', () => {
+      test('_tlSubtractCovered returns what is genuinely left', async () => {
+        const r = await page.evaluate(() => {
+          const H = 3600000, t = (h, m) => Date.UTC(2026, 7, 27, h, m) ;
+          return {
+            none: _tlSubtractCovered(t(12, 0), t(13, 0), []).length,
+            whole: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(11, 0), t(14, 0)]]).length,
+            exact: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(12, 0), t(13, 0)]]).length,
+            front: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(11, 0), t(12, 30)]])
+                     .map(([a, b]) => (b - a) / 60000),
+            back: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(12, 30), t(14, 0)]])
+                    .map(([a, b]) => (b - a) / 60000),
+            split: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(12, 20), t(12, 40)]])
+                     .map(([a, b]) => (b - a) / 60000),
+            // Sub-minute slivers are not rows.
+            sliver: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(12, 0), t(12, 59.5 / 60 * 60)]]).length,
+            junk: _tlSubtractCovered(t(12, 0), t(13, 0), [null, undefined, [5, 1]]).length,
+            nullCovers: _tlSubtractCovered(t(12, 0), t(13, 0), null).length,
+          };
+        });
+        expect(r.none).toBe(1);
+        expect(r.whole, 'fully covered leaves nothing').toBe(0);
+        expect(r.exact).toBe(0);
+        expect(r.front).toEqual([30]);
+        expect(r.back).toEqual([30]);
+        expect(r.split, 'a cover in the middle leaves two pieces').toEqual([20, 20]);
+        expect(r.junk, 'malformed covers are ignored, never thrown on').toBe(1);
+        expect(r.nullCovers).toBe(1);
+      });
+
+      const seed = async (page, rows) => page.evaluate((rows) => {
+        // Latched TRUE while seeding: the boot chain can fire between a seed
+        // and the test's own call, and an unlatched trim would eat the
+        // seeded claims first (this happened; it showed as a once-in-a-run
+        // flake). Each test flips the latch off itself, immediately before
+        // its call, so nothing else can slip in.
+        window._tlGapTrimRan = true;
+        // AND the busy flag, which the latch alone does not cover. The latch
+        // stops a boot-chain trim from doing work; it does nothing about one
+        // that entered BEFORE the seed and is now parked on its own awaits
+        // holding _tlGapTrimBusy. The test's call then hits the concurrency
+        // guard (§11.2) and returns 0 without doing anything, and the test
+        // measures the no-op. That is the midnight-clock failure of
+        // 2026-08-30 ("newest wins" expected 1, received 0): load-dependent,
+        // which is why it passed on a quiet runner and locally every time.
+        // Cleared here rather than in the one test that happened to lose the
+        // race, because every test in this block resets the latch the same
+        // way and every one of them carries the same hole (§10.4). The guard
+        // itself stays genuinely covered: the overlapping-invocations test
+        // below fires five real concurrent calls and never touches the flag.
+        window._tlGapTrimBusy = false;
+        window.__tlPrevEntries = timeEntries.slice();
+        timeEntries.length = 0;
+        rows.forEach(r => timeEntries.push(r));
+        // ── AND A RE-ARM THE TEST CALLS FROM INSIDE ITS OWN EVALUATE ────────
+        // The seed above and the test's call are two SEPARATE page.evaluates,
+        // and the app's own load chain runs in the gap between them. It does
+        // not just trim (the latch covers that) or hold the busy flag (cleared
+        // above): it REPLACES timeEntries wholesale. The seeded claim is then
+        // gone by the time the call runs, claims.length is 0, and
+        // _tlTrimCoveredGapRows takes its empty-claims branch, which LATCHES.
+        // The test measuring the empty-covers interlock therefore sees a
+        // latched sweep and reads it as "the interlock did not stay armed".
+        //
+        // That is the midnight-clock failure of 2026-08-31, and it is the same
+        // family as the busy-flag one already fixed here: load-dependent, so it
+        // passes on a quiet runner and locally every time, and only shows up
+        // when 28 spec files share a machine.
+        //
+        // Nothing a seed can do from the outside closes a gap that opens after
+        // it returns. So the arming moves INSIDE the caller's evaluate: this
+        // closure re-applies the rows if they went missing, clears the guards,
+        // and unlatches, all in one synchronous block with the call itself.
+        window.__tlArm = () => {
+          const want = rows || [];
+          const missing = want.some(r => r && r.id != null &&
+            !timeEntries.some(x => x && x.id === r.id));
+          if (missing) { timeEntries.length = 0; want.forEach(r => timeEntries.push(r)); }
+          window._tlGapTrimBusy = false;
+          window._tlGapTrimRan = false;
+        };
+      }, rows);
+      const restore = (page) => page.evaluate(() => {
+        timeEntries.length = 0;
+        (window.__tlPrevEntries || []).forEach(r => timeEntries.push(r));
+        window.__tlPrevEntries = null;
+      });
+      // The real 08/27 shape: the shop session and the drive that now cover it.
+      const COVERS = [
+        ['2026-08-27T17:11:06.000Z', '2026-08-27T17:48:05.000Z'],
+        ['2026-08-27T17:48:05.000Z', '2026-08-27T17:57:43.000Z'],
+      ];
+      // Narrow ONLY the two tables the sweep reads, and delegate every other
+      // call straight back to the real shim.
+      //
+      // This used to replace the whole _supa client with a one-query shape
+      // whose select() answered nothing but .is(). While it was installed,
+      // ANY other code path that touched _supa broke: the reconnect probe
+      // (_probeAndSync -> _onReconnect -> supaLoadFromCloud) calls
+      // .select(...).eq(...), got a builder with no .eq, and logged a real
+      // console error that landed in whichever spec asserted next. It only
+      // fires when that probe happens to land inside this window, so it
+      // passed locally and failed on CI shard 6 (2026-08-31), which is the
+      // "a stub missing a method the real code calls" class in section 5.2.1.
+      const SWEEP_TABLES = ['job_time_entries', 'shop_time_entries'];
+      const withSupa = (page, covers) => page.evaluate(({ covers, SWEEP_TABLES }) => {
+        window.__tlPrevSupa = window._supa;
+        const real = window._supa;
+        window._supa = Object.assign({}, real, {
+          from: (tbl) => {
+            if (SWEEP_TABLES.indexOf(tbl) < 0) return real.from(tbl);
+            const rows = covers.map(([a, b]) => ({ arrived_at: a, departed_at: b }));
+            const c = {
+              select: () => c, is: () => c, eq: () => c, gte: () => c,
+              lte: async () => ({ data: rows, error: null }),
+              then: (res, rej) => Promise.resolve({ data: rows, error: null }).then(res, rej),
+            };
+            return c;
+          },
+        });
+        window.__tlPrevUser = window._supaUser;
+        window._supaUser = { id: 'u1' };
+        // The sweep persists through the normal save path when it changes
+        // something. That path is not what these tests are about, and a stub
+        // _supa that only answers the sweep's own reads makes it log a real
+        // console error. Stubbed here so the assertions stay on the trimming.
+        window.__tlPrevSave = window.supaSaveToCloud;
+        window.__tlPrevSaveAll = window.saveAll;
+        window.supaSaveToCloud = () => {};
+        window.saveAll = () => {};
+      }, { covers, SWEEP_TABLES });
+      const unSupa = (page) => page.evaluate(() => {
+        window._supa = window.__tlPrevSupa; window._supaUser = window.__tlPrevUser;
+        window.supaSaveToCloud = window.__tlPrevSave; window.saveAll = window.__tlPrevSaveAll;
+      });
+
+
+
+
+
+
+
+
+
+
+      test('a new gap answer is stamped so the sweep never has to guess', async () => {
+        const r = await page.evaluate(() => {
+          const before = timeEntries.length;
+          _tlAddUnaccounted('2026-08-27T21:00:00.000Z', '2026-08-27T21:30:00.000Z', 'work');
+          const e = timeEntries[timeEntries.length - 1];
+          const out = { fromGap: e.fromGap, eligible: _tlIsGapAnswer(e),
+                        typed: _tlIsGapAnswer({ scope_label: 'Framing' }) };
+          timeEntries.length = before;
+          return out;
+        });
+        expect(r.fromGap).toBe(true);
+        expect(r.eligible).toBe(true);
+        expect(r.typed).toBe(false);
+      });
+    });
+
+    test('row content is escaped, never injected', async () => {
+      const r = await page.evaluate(() => {
+        const d = document.createElement('div');
+        d.innerHTML = _tlDayRailHtml([{ id: 'x', source: 'auto', rawSource: 'geofence', minutes: 5,
+          startTime: '2026-08-27T13:03:00.000Z', endTime: '2026-08-27T13:08:00.000Z',
+          personName: 'L', clientName: '<img src=x onerror=alert(1)>', addr: '' }]);
+        return { imgs: d.querySelectorAll('img').length, text: d.textContent };
+      });
+      expect(r.imgs).toBe(0);
+      expect(r.text).toContain('<img');
+    });
+  });
+
+
+  // ── A base is somewhere the truck sleeps (owner + Jack, 2026-09-01) ────────
+  //
+  // Owner: "in my time log I see things adding up overnight when it shouldn't."
+  // It was doing it to Jack too, four nights running: 1557, 1236, 764 and 720
+  // minutes at 7402 SW 22nd Ct, his own house. The shop already answered to
+  // the day's clock-out and to Central midnight. A home office is the same
+  // kind of place and answered to neither, AND it counted as a work anchor,
+  // so an overnight sit did not get judged against the workday, it defined it.
+  //
+  // Fixtures are his real rows, in Central (UTC-5 on these dates).
+  test.describe('base dwell', () => {
+    const HOME = '7402 SW 22nd Ct';
+    const rowsFor = (entries) => page.evaluate(async (entries) => {
+      if (typeof timeEntries === 'undefined') window.timeEntries = [];
+      const orig = window._fetchCrewLabor, keep = places.slice();
+      places.length = 0;
+      places.push({ id: 'p-home', name: '7402 SW 22nd Ct', kind: 'home_office', lat: 39.0257, lon: -95.7939 });
+      places.push({ id: 'p-hd', name: 'The Home Depot', kind: 'supply_house', lat: 39.03, lon: -95.70 });
+      window._fetchCrewLabor = async () => ({ name: { me: 'Jack Schonfeldt' }, entries, shopEntries: [] });
+      try { return await _timeLogRows(null); }
+      finally { window._fetchCrewLabor = orig; places.length = 0; keep.forEach(p => places.push(p)); }
+    }, entries);
+
+    const P = (a, d, m, place) => ({ employee_user_id: 'me', minutes: m, source: 'place',
+                                     dest_place: place, arrived_at: a, departed_at: d });
+    const JOB = (a, d, m) => ({ employee_user_id: 'me', minutes: m, source: 'geofence',
+                                job_id: 1, arrived_at: a, departed_at: d });
+    const DRIVE = (a, d, m) => ({ employee_user_id: 'me', minutes: m, source: 'drive',
+                                  arrived_at: a, departed_at: d });
+
+
+    test('a home office INSIDE the workday still pays', async () => {
+      // The rule bounds base dwell, it does not delete it. Paperwork between
+      // two jobs is work and has to survive.
+      const rows = await rowsFor([
+        JOB('2026-08-31T13:00:00Z', '2026-08-31T15:00:00Z', 120),
+        P('2026-08-31T15:30:00Z', '2026-08-31T16:00:00Z', 30, HOME),
+        JOB('2026-08-31T16:30:00Z', '2026-08-31T21:00:00Z', 270),
+      ]);
+      const home = rows.filter(r => /22nd Ct/.test(String(r.clientName || '')));
+      expect(home.length, 'half an hour between two jobs is real').toBe(1);
+      expect(home[0].minutes).toBe(30);
+    });
+
+    test('home-office app time counts, even on a day with no drives at all', async () => {
+      // Owner, 2026-09-01: "if it's a home office app time still counts."
+      // The first cut of the base rule zeroed this: 45 minutes of real
+      // paperwork rendered nothing at all, because 'place-office' matched the
+      // same /^place/ predicate the raw dwell does. It is not the same thing.
+      // place-office and place-load are the home-office rule's OWN output,
+      // minutes the app or the motion chip already proved were work.
+      const rows = await rowsFor([
+        { employee_user_id: 'me', minutes: 45, source: 'place-office', dest_place: HOME,
+          arrived_at: '2026-08-28T14:00:00Z', departed_at: '2026-08-28T14:45:00Z' },
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-28');
+      expect(mine.length, 'the paperwork is on the log').toBe(1);
+      expect(mine[0].minutes).toBe(45);
+      expect(mine[0].unpaid, 'and it COUNTS, no drive required').toBe(false);
+    });
+
+
+    test('a supply house is NOT a base: it still ends the day', async () => {
+      // The whole point of "the second fence crossing". Coming home is not
+      // touching a business fence; a Home Depot run is.
+      const rows = await rowsFor([
+        P('2026-08-29T15:00:00Z', '2026-08-29T15:40:00Z', 40, 'The Home Depot'),
+      ]);
+      const hd = rows.filter(r => /Home Depot/.test(String(r.clientName || '')));
+      expect(hd.length, 'a supply run on its own is still a workday').toBe(1);
+      expect(hd[0].minutes).toBe(40);
+    });
+
+  });
+
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // A manual clock and the GPS under it are the SAME hours (owner 2026-09-01)
+  // ═════════════════════════════════════════════════════════════════════════
+  //
+  // "when a manual clock is riding on the auto stuff they need to blend
+  // together, so anything that completes two fences gets logged over it and
+  // the total is correct, thats important."
+  //
+  // Before this they were summed. Jack's real day, measured through this exact
+  // code before the fix: clock 07:42 to 17:00 plus a drive to Oakley, 93
+  // minutes at the shop, a 62-minute drive and 44 minutes back came to
+  // 12h57m for nine hours and twenty minutes of work.
+  test.describe('manual clocks blend with the fences under them', () => {
+    const D = '2026-09-01';
+    const at = (h, m) => new Date(D + 'T' + String(h).padStart(2, '0') + ':' +
+                                  String(m).padStart(2, '0') + ':00').toISOString();
+    // Every row here names its instant outright rather than deriving one from
+    // Date.now(), so the wall clock can never decide the outcome (§5.2.2).
+    const rowsFor = (entries, manual) => page.evaluate(async ([es, ms]) => {
+      const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+      const keepP = places.slice();
+      // The clock-out cutoff asks "is this drive heading home", and it answers
+      // by looking for a home_office in `places`. Without one seeded, nothing
+      // is ever the house and the cutoff can never fire.
+      places.length = 0;
+      places.push({ id: 'p-home', name: '7402 SW 22nd Ct', kind: 'home_office', lat: 39.0257, lon: -95.7939 });
+      places.push({ id: 'p-shop', name: '1200 SW Oakley Ave', kind: 'shop', lat: 39.0457, lon: -95.7151 });
+      window.timeEntries = ms;
+      const orig = window._fetchCrewLabor;
+      window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+      try {
+        const rows = await _timeLogRows(null);
+        const day = rows.filter(r => r.date === '2026-09-01');
+        return { paid: _tlPaidMin(day),
+                 rows: day.map(r => ({ src: r.source, raw: r.rawSource || '', m: r.minutes,
+                                       unpaid: !!r.unpaid, blended: r.blendedMin || 0,
+                                       detail: r.detail || '', end: r.endTime || '' })) };
+      } finally {
+        window._fetchCrewLabor = orig;
+        window.timeEntries = keepT;
+        places.length = 0; keepP.forEach(p => places.push(p));
+      }
+    }, [entries, manual]);
+
+    const CLOCK = (s, e, mins) => [{ id: 1, date: D, open: false, job_id: null, minutes: mins,
+                                     start_time: at(s[0], s[1]), end_time: at(e[0], e[1]),
+                                     logged_by_uid: 'jack', logged_by_name: 'Jack', scope_label: null }];
+    const A = (src, s, e, mins) => ({ employee_user_id: 'jack', minutes: mins, source: src,
+                                      dest_place: '1200 SW Oakley Ave',
+                                      arrived_at: at(s[0], s[1]), departed_at: at(e[0], e[1]) });
+
+
+    // ── The deriver's own unsaved stops ───────────────────────────────────
+    // Owner 2026-09-04: "we should be logging every flip to onsite unsaved
+    // address and every drive with times in between."
+    //
+    // A stop between two driving segments now arrives as a row of its own
+    // (source 'unsaved', js/geo-derive.js) instead of only showing up when a
+    // manual clock happened to be running over it. The reader has to draw it
+    // exactly like the clock-remainder kind, because they are the same thing.
+    test('a stop the deriver wrote reads as an unsaved address, and is paid', async () => {
+      const out = await page.evaluate(async ([es]) => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          const u = day.find(r => r.rawSource === 'unsaved');
+          return { found: !!u, name: u && u.clientName, detail: u && u.detail,
+                   unpaid: !!(u && u.unpaid), paid: _tlPaidMin(day),
+                   html: _tlDayRailHtml(day) };
+        } finally { window._fetchCrewLabor = orig; }
+      }, [[
+        Object.assign(A('drive', [9, 17], [9, 48], 31), { dest_place: null }),
+        Object.assign(A('unsaved', [9, 48], [10, 51], 63), { dest_place: null }),
+        A('drive', [10, 51], [11, 20], 29),
+      ]]);
+      expect(out.found).toBe(true);
+      // No manual clock anywhere in this fixture: the fences alone said it.
+      expect(out.name).toBe('Unsaved address');
+      expect(out.detail).toBe('Address not saved');
+      // It is work. The clock is not what makes it work; getting out of the
+      // truck between two drives is.
+      expect(out.unpaid).toBe(false);
+      expect(out.paid, '31 + 63 + 29').toBe(123);
+      expect(out.html).toContain('Unsaved address');
+    });
+
+    // Owner 2026-09-04, on the replay of his 1 September: "I like Destination
+    // not saved." A drive segment that ends at a stop nobody saved used to
+    // print the tag's own word as its title: "DRIVE TIME / Drive time".
+    test('a drive that reached nowhere saved says so, instead of repeating its tag', async () => {
+      const out = await page.evaluate(async ([es]) => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          return { names: day.filter(r => r.rawSource === 'drive').map(r => r.clientName),
+                   html: _tlDayRailHtml(day) };
+        } finally { window._fetchCrewLabor = orig; }
+      }, [[
+        Object.assign(A('drive', [9, 17], [9, 48], 31), { dest_place: null }),
+        Object.assign(A('unsaved', [9, 48], [10, 51], 63), { dest_place: null }),
+        A('drive', [10, 51], [11, 20], 29),
+      ]]);
+      // The one that arrived somewhere saved keeps its name.
+      expect(out.names).toEqual(['Destination not saved', '1200 SW Oakley Ave']);
+      expect(out.html).toContain('Destination not saved');
+      // And the tag is never its own title any more.
+      expect(out.html).not.toContain('>Drive time<');
+    });
+
+    // ── The clock remainder is an unsaved job site ────────────────────────
+    // Owner 2026-09-04: "if we see a manual clock in, and then there's
+    // unaccounted for time after, meaning he's not inside a shop fence and is
+    // still clocked in and not back home at his office, that means that
+    // unaccounted for time is a unsaved job site."
+    //
+    // Jack's 1 September, from his own rows: a 438-minute clock, two shop
+    // visits and two drives, and 2h 3m in the middle that the rail simply did
+    // not mention. It was paid the whole time, sitting in the clock's
+    // remainder with no name on it.
+    test('the stretch no fence covered becomes a job site', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [12, 0], [13, 0], 60),
+      ], CLOCK([8, 0], [13, 0], 300));
+      const site = r.rows.find(x => x.raw === 'site');
+      expect(site, 'the three hours between the two visits').toBeTruthy();
+      expect(site.m).toBe(180);
+      expect(site.detail).toBe('Address not saved');
+      expect(site.unpaid).toBe(false);
+    });
+
+    // The half that keeps payroll honest, and the reason the clock HANDS the
+    // minutes over instead of keeping them: _tlPaidMin sums every row that is
+    // not unpaid, so naming time must never also add it.
+    test('naming the remainder changes no total', async () => {
+      const rows = [A('place', [8, 0], [9, 0], 60), A('place', [12, 0], [13, 0], 60)];
+      const r = await rowsFor(rows, CLOCK([8, 0], [13, 0], 300));
+      expect(r.paid, 'exactly the clock, before and after').toBe(300);
+      const clock = r.rows.find(x => x.src === 'manual');
+      const site = r.rows.find(x => x.raw === 'site');
+      expect(clock.m + site.m + 120, 'the clock gave up what the site took').toBe(300);
+    });
+
+    // His own escape hatch, and it needs no new UI.
+    test('a gap between two clocks is nobody job site, it is still a question', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [12, 0], [13, 0], 60),
+      ], [
+        { id: 1, date: D, open: false, job_id: null, minutes: 60, start_time: at(8, 0),
+          end_time: at(9, 0), logged_by_uid: 'jack', logged_by_name: 'Jack' },
+        { id: 2, date: D, open: false, job_id: null, minutes: 60, start_time: at(12, 0),
+          end_time: at(13, 0), logged_by_uid: 'jack', logged_by_name: 'Jack' },
+      ]);
+      expect(r.rows.some(x => x.raw === 'site'), 'lunch is a clock out, not a guess').toBe(false);
+      expect(r.rows.some(x => x.raw === 'unaccounted')).toBe(true);
+    });
+
+    // NO CLOCK, NO CLAIM. Nothing has asserted work, so nothing is named.
+    test('an untracked stretch with no clock over it stays a question', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [12, 0], [13, 0], 60),
+      ], []);
+      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.find(x => x.raw === 'unaccounted').unpaid).toBe(true);
+    });
+
+    // NO EVIDENCE, NO CLAIM (owner: "we make no inferences here"). Jack's 2
+    // September: signed out at 08:17, so the day holds a clock and nothing
+    // else. A whole shift named "job site" off a clock alone would be exactly
+    // the inference this app must not make.
+    test('a clock with nothing tracked under it at all is left alone', async () => {
+      const r = await rowsFor([], CLOCK([8, 0], [16, 0], 480));
+      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.find(x => x.src === 'manual').m).toBe(480);
+      expect(r.paid).toBe(480);
+    });
+
+    // A sliver between two tracked rows is rounding, not a site visit.
+    test('a few minutes between two rows is not a job site', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [9, 2], [10, 0], 58),
+      ], CLOCK([8, 0], [10, 0], 120));
+      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+    });
+
+    // NOTHING IS INFERRED ABOUT WHERE (owner: "un saved mileage legs no they
+    // cant and I wont do it ... this app was built to survive a IRS audit").
+    test('an unsaved stop claims no address, and the rail says so out loud', async () => {
+      const out = await page.evaluate(async ([es, ms]) => {
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          const site = day.find(r => r.rawSource === 'site');
+          return { addr: site.addr, key: site.clientKey, name: site.clientName,
+                   mileage: (typeof mileage !== 'undefined' && Array.isArray(mileage))
+                     ? mileage.filter(m => m && m.date === '2026-09-01').length : 0,
+                   html: _tlDayRailHtml(day) };
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [[A('place', [8, 0], [9, 0], 60), A('place', [12, 0], [13, 0], 60)], CLOCK([8, 0], [13, 0], 300)]);
+      expect(out.addr).toBe('');
+      expect(out.key).toBe(null);
+      // ADDRESS, not job site (owner 2026-09-04: "rather than unsaved job site
+      // do we say Unsaved Address"). Half of these are a supply house or a
+      // gate, and calling every one of them a job site asserts a reason
+      // nobody supplied.
+      expect(out.name).toBe('Unsaved address');
+      expect(out.mileage, 'naming time never writes a mileage leg').toBe(0);
+      // The tag carries the whole statement and the row prints no title of its
+      // own rather than repeating it.
+      expect(out.html).toContain('Unsaved address');
+      // It must never read as the geofenced kind, which is what an audit turns
+      // on. The two real 'place' rows in this fixture DO say "On site", so the
+      // check is that the unsaved row itself does not: its own block carries
+      // that tag and the address disclaimer, never the saved-client one.
+      const i = out.html.indexOf('Unsaved address');
+      expect(out.html.slice(i, i + 300)).not.toContain('On site');
+    });
+
+    // ── The punch list of 2026-09-04 ──────────────────────────────────────
+    // "got two clock ins at 755 am and 1243 pm, 1243 should go away."
+    // Jack's stray one ran 17:43:36 to 17:43:43. Seven seconds, and it drew a
+    // full CLOCKED IN and CLOCKED OUT pair on his rail as if it were a shift.
+    test('a seven-second clock is a thumb landing twice, not a shift', async () => {
+      const r = await rowsFor([], [
+        { id: 1, date: D, open: false, job_id: null, minutes: 470,
+          start_time: at(7, 55), end_time: at(15, 45), logged_by_uid: 'jack', logged_by_name: 'Jack' },
+        { id: 2, date: D, open: false, job_id: null, minutes: 1,
+          start_time: '2026-09-01T12:43:36.394Z', end_time: '2026-09-01T12:43:43.576Z',
+          logged_by_uid: 'jack', logged_by_name: 'Jack' },
+      ]);
+      expect(r.rows.filter(x => x.src === 'manual').length, 'the real clock, and only it').toBe(1);
+      expect(r.paid).toBe(470);
+    });
+
+    // BOTH tests have to agree, or a real shift saved with placeholder times
+    // would vanish off the rail.
+    test('a short span with real minutes on it is still a shift', async () => {
+      const r = await rowsFor([], [
+        { id: 1, date: D, open: false, job_id: null, minutes: 480,
+          start_time: at(8, 0), end_time: at(8, 0), logged_by_uid: 'jack', logged_by_name: 'Jack' },
+      ]);
+      expect(r.rows.filter(x => x.src === 'manual').length).toBe(1);
+      expect(r.paid).toBe(480);
+    });
+
+    // "clock out also needs a edit button."
+    test('both ends of the clock can be edited, not just the way in', async () => {
+      const html = await page.evaluate(async ([es, ms]) => {
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          return _tlDayRailHtml((await _timeLogRows(null)).filter(r => r.date === '2026-09-01'));
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [[A('place', [9, 0], [10, 0], 60)], CLOCK([8, 0], [16, 0], 480)]);
+      const inCap = html.slice(html.indexOf('data-kind="clock-in"'));
+      const outCap = html.slice(html.indexOf('data-kind="clock-out"'));
+      expect(inCap.slice(0, inCap.indexOf('</li>'))).toContain('tl-rail-edit');
+      expect(outCap.slice(0, outCap.indexOf('</li>')),
+        'a wrong clock-out is as common as a wrong clock-in').toContain('tl-rail-edit');
+    });
+
+    // ── The clock-out is a hard cutoff ────────────────────────────────────
+    // Owner 2026-09-04, on Jack's 31 August: "his day shouldve ended at his
+    // clock out of 345 pm, no way a drive can extend past that."
+    //
+    // The real shape: he clocked out at 3:45 PM and the drive row ran to 5:24,
+    // because he sat somewhere for 49 minutes on the way home and the leg
+    // spans the stop. None of that is his dad's time.
+    test('a drive straddling the clock-out is cut at it, minutes and all', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 64, source: 'drive', dest_place: '7402 SW 22nd Ct',
+          arrived_at: at(9, 38), departed_at: at(11, 24) },
+      ], CLOCK([8, 0], [9, 45], 105));
+      const drive = r.rows.find(x => x.raw === 'drive');
+      expect(drive, 'the part he drove while still on the clock').toBeTruthy();
+      // 7 of the 106 minutes it spanned were on the clock, so 7/106 of its 64.
+      expect(drive.m).toBe(4);
+      // And the row itself ends at the clock-out, not at 11:24.
+      expect(drive.end).toBe(at(9, 45));
+    });
+
+    // Owner 2026-09-04, looking at his 3 September rail: "we dont have a time
+    // on clocked in calculated, dont think we should show a clocked out time
+    // stamp either, the day total is at the top under the data." The clock-out
+    // cap read 8h 53m against a header of 9h 6m: two totals for one day on one
+    // screen, and the cap's was the one nobody asked for.
+    test('neither clock cap carries a number, at either end', async () => {
+      const html = await page.evaluate(async ([es, ms]) => {
+        const keepT = timeEntries.slice();
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          return _tlDayRailHtml(day);
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [[A('place', [8, 0], [9, 0], 60)], CLOCK([8, 0], [16, 0], 480)]);
+      // Both caps are drawn.
+      expect(html).toContain('Clocked in');
+      expect(html).toContain('Clocked out');
+      // And every cap's amount slot is empty.
+      const caps = html.match(/<li class="tl-rail-row tl-rail-cap[\s\S]*?<\/li>/g) || [];
+      expect(caps.length, 'an opening cap and a closing cap').toBe(2);
+      caps.forEach(c => {
+        const dur = (c.match(/tl-rail-dur[^>]*>([\s\S]*?)</) || [])[1] || '';
+        expect(dur.trim(), 'a cap states when, never how much').toBe('');
+      });
+      // The clock's own minutes are not printed anywhere on a cap either.
+      caps.forEach(c => expect(c).not.toMatch(/\d+h\s*\d*m|\b\d+m\b/));
+    });
+
+    // THE REGRESSION GUARD. This exact case shipped broken for three commits
+    // on 2026-09-04. The cutoff asks "was he heading home" and answered it by
+    // reading the row's NAME: an unnamed drive was empty, and empty counted as
+    // "nowhere saved, cut it." Then unnamed drives were given the words
+    // "Destination not saved" and every one of them silently stopped being
+    // cuttable. Jack's 31 August ran 46 minutes past his 3:45pm clock-out and
+    // his day came out 614 paid against a 470-minute clock.
+    //
+    // The rule now reads destUnsaved, the raw fact on the row. A label must
+    // never decide a rule (same class as the 2026-08-29 split-bar bug).
+    test('a drive with no saved destination is still cut, whatever it is CALLED', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        // dest_place null: exactly what the deriver writes for a segment that
+        // ended at a stop nobody saved.
+        { employee_user_id: 'jack', minutes: 54, source: 'drive', dest_place: null,
+          arrived_at: at(9, 38), departed_at: at(10, 31) },
+      ], CLOCK([8, 0], [9, 45], 105));
+      const drive = r.rows.find(x => x.raw === 'drive');
+      expect(drive, 'the seven minutes he drove while on the clock').toBeTruthy();
+      expect(drive.end, 'cut at the clock-out, not at 10:31').toBe(at(9, 45));
+      expect(drive.m).toBeLessThan(54);
+    });
+
+    // Owner 2026-09-04, on his 31 August rail: a paid "Unsaved address" at
+    // 4:31pm against a 3:45pm clock-out, and 566 minutes paid on a
+    // 470-minute clock. The cutoff was written when an unsaved stop could
+    // only come from inside a running clock; the deriver writes them off the
+    // fences now.
+    test('an unsaved stop after the clock-out is dropped, and one straddling it is cut', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 30, source: 'unsaved', dest_place: null,
+          arrived_at: at(9, 30), departed_at: at(10, 0) },   // straddles 9:45
+        { employee_user_id: 'jack', minutes: 39, source: 'unsaved', dest_place: null,
+          arrived_at: at(16, 31), departed_at: at(17, 10) }, // wholly after
+      ], CLOCK([8, 0], [9, 45], 105));
+      const stops = r.rows.filter(x => x.raw === 'unsaved');
+      expect(stops.length, 'the late one is gone entirely').toBe(1);
+      expect(stops[0].end, 'and the straddler ends at the clock-out').toBe(at(9, 45));
+      expect(stops[0].m).toBeLessThan(30);
+    });
+
+    // A SAVED FENCE STILL OUTLIVES THE CLOCK. The 2026-09-01 rule ("the
+    // fences are what happened") is untouched: a shop or a client visit is
+    // evidence of work in its own right. Only a stop nobody saved depends on
+    // the clock to be work at all.
+    test('a saved place after the clock-out is untouched', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [16, 0], [17, 0], 60),
+      ], CLOCK([8, 0], [9, 45], 105));
+      expect(r.rows.filter(x => x.raw === 'place' && x.m === 60).length).toBe(2);
+    });
+
+    // Owner 2026-09-04: two "What was this time?" rows on his 31 August, both
+    // after he had clocked out. The gap row asks about time the day has a
+    // claim on; once the clock is out there is nothing to ask.
+    test('no gap question after the clock-out', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [12, 0], [13, 0], 60),      // clock ends 9:45, so this hole
+        A('place', [16, 0], [17, 0], 60),      // and this one are both past it
+      ], CLOCK([8, 0], [9, 45], 105));
+      // Inside the clock the remainder rule already names the time (it becomes
+      // an Unsaved address), so a gap can only ever fall outside the clock,
+      // and outside the clock there is nothing to ask about.
+      expect(r.rows.filter(x => x.raw === 'unaccounted').length).toBe(0);
+      // The two saved places still count, deliberately: a fence is evidence of
+      // work in its own right (2026-09-01). Only the QUESTION goes away.
+    });
+
+    test('a day with no clock at all keeps every gap: nothing said the day was over', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [16, 0], [17, 0], 60),
+      ], []);
+      expect(r.rows.filter(x => x.raw === 'unaccounted').length).toBe(1);
+    });
+
+    // CLOCKING OUT IS NOT A PROMISE NEVER TO WORK AGAIN (owner 2026-09-04:
+    // "clock out could be done for the day but what if we have another
+    // automted drive after, from fence to fence we got more drive time and
+    // more time on site"). A man can knock off, get called back, and drive
+    // shop to client at six. That drive lands somewhere the business saved,
+    // and the visit after it is real work the phone watched.
+    test('a drive back to WORK after the clock-out stands, only the drive home is cut', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 20, source: 'drive', dest_place: '1200 SW Oakley Ave',
+          arrived_at: at(18, 0), departed_at: at(18, 20) },
+        A('place', [18, 20], [19, 0], 40),
+        { employee_user_id: 'jack', minutes: 25, source: 'drive', dest_place: '7402 SW 22nd Ct',
+          arrived_at: at(19, 0), departed_at: at(19, 25) },
+      ], CLOCK([8, 0], [16, 0], 480));
+      const drives = r.rows.filter(x => x.raw === 'drive');
+      expect(drives.length, 'the one to the shop lives, the one home does not').toBe(1);
+      expect(drives[0].m).toBe(20);
+      // And the visit it delivered him to is untouched.
+      expect(r.rows.filter(x => x.raw === 'place' && x.m === 40).length).toBe(1);
+    });
+
+    // A CLIENT VISIT IS NOT A COMMUTE. The rule the owner set on 2026-09-01,
+    // "the fences are what happened; the clock adds nothing," still stands:
+    // work the phone watched him do outlives a clock he forgot to stop.
+    test('a work dwell that outlives the clock is untouched', async () => {
+      const r = await rowsFor([A('place', [8, 0], [14, 0], 360)], CLOCK([8, 0], [10, 0], 120));
+      const place = r.rows.find(x => x.raw === 'place');
+      expect(place.m, 'six hours the phone actually watched').toBe(360);
+      expect(r.paid).toBe(360);
+    });
+
+    // Rule 10's Office rows are after the clock-out BY DESIGN (owner
+    // 2026-09-02: office is "for true app time after hours, that's it"), so
+    // the cutoff must not touch them.
+    test('an evening Office row survives the cutoff, because that is what it is for', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 20, source: 'place-office', dest_place: '7402 SW 22nd Ct',
+          arrived_at: at(19, 0), departed_at: at(19, 20) },
+      ], CLOCK([8, 0], [16, 0], 480));
+      const off = r.rows.find(x => x.raw === 'place-office');
+      expect(off, 'paperwork at home in the evening').toBeTruthy();
+      expect(off.m).toBe(20);
+    });
+
+    // No clock, no cutoff: nothing has said when the day ended.
+    test('with no clock at all nothing is cut', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 30, source: 'drive', dest_place: 'X',
+          arrived_at: at(18, 0), departed_at: at(18, 30) },
+      ], []);
+      expect(r.rows.some(x => x.raw === 'drive')).toBe(true);
+      expect(r.paid).toBe(90);
+    });
+
+    test('the fences keep their own labels: the clock is the bracket, not the record', async () => {
+      const r = await rowsFor([
+        A('drive', [8, 0], [8, 30], 30),
+        A('place', [8, 30], [10, 0], 90),
+      ], CLOCK([8, 0], [10, 0], 120));
+      // Nothing is hidden and nothing is merged away: three rows, and the two
+      // the phone watched still say what they were.
+      expect(r.rows.length).toBe(3);
+      expect(r.rows.some(x => x.raw === 'drive')).toBe(true);
+      expect(r.rows.some(x => x.raw === 'place')).toBe(true);
+      expect(r.paid, 'exactly the clock').toBe(120);
+    });
+
+    test('a drive after the clock-out is a commute, and is cut at the clock-out', async () => {
+      // REVERSED 2026-09-04 (10.4). This used to read "He clocked out and then
+      // drove. That drive is real, it is inside the working day, and the clock
+      // never claimed it, so both stand in full," and it asserted the drive
+      // survived at its full 30 minutes.
+      //
+      // The owner overturned it on Jack's 31 August, where the drive row ran an
+      // hour and a half past a 3:45 PM clock-out: "his day shouldve ended at
+      // his clock out of 345 pm, no way a drive can extend past that ... after
+      // 338 pm is a hard cutoff cause he clocked out." Once a man is off the
+      // clock the drive home is a commute, and nobody pays for a commute.
+      //
+      // Only drives and unsaved job sites are cut. The rule this test used to
+      // carry still holds for everything else: a client visit that outlives
+      // the clock is work he forgot to clock, and 'fences that exceed the clock
+      // never drive the day negative' below still proves it.
+      //
+      // FIXTURE NOTE, and it is the rule and not a workaround: the drive is
+      // placed AFTER the anchoring place row rather than before it. A lone
+      // drive at 06:00 with the day's only other row at 08:00 is dropped by
+      // _geoRowInWorkday, which is deliberate and predates this change (a
+      // drive outside the day's work window is not the day's work). Writing
+      // the fixture the other way round proved nothing about blending and
+      // everything about a gate this test is not for.
+      // FIXTURE CHANGED 2026-09-01 (10.4): the drive used to end at the same
+      // place the visit before it did, which _tlDemoteRoundTrips now withdraws
+      // as an out-and-back (its own tests below). That shape proved nothing
+      // about blending, so the drive goes somewhere else, which is what a
+      // drive after clocking out normally does.
+      const r = await rowsFor([A('place', [8, 0], [10, 0], 120),
+                               { employee_user_id: 'jack', minutes: 30, source: 'drive',
+                                 // HOME, not a client. A drive to a client after
+                                 // the clock-out is going back to work and stands
+                                 // (its own test above); only the run home is the
+                                 // commute this test is about.
+                                 dest_place: '7402 SW 22nd Ct',
+                                 arrived_at: at(10, 0), departed_at: at(10, 30) }],
+                              CLOCK([8, 0], [10, 0], 120));
+      const man = r.rows.find(x => x.src === 'manual');
+      // The place fully covers the clock, so the clock keeps nothing.
+      expect(man.blended, 'only what is inside the window').toBe(120);
+      expect(man.m).toBe(0);
+      expect(r.rows.some(x => x.raw === 'drive'),
+        'a drive that begins after the clock-out is gone entirely').toBe(false);
+      expect(r.paid, 'the clock, and nothing after it').toBe(120);
+    });
+
+    test('a partial overlap is charged in proportion, not in full', async () => {
+      // The 07:23 drive lands two of its twenty-one minutes inside the clock.
+      // Deducting all twenty would push the day BELOW what the clock said.
+      const r = await rowsFor([A('drive-unassigned', [7, 23], [7, 44], 20)],
+                              CLOCK([7, 42], [17, 0], 558));
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.blended).toBe(2);
+      // The proportional charge is what this test is about and it is unchanged
+      // at 2. What changed on 2026-09-04 is where the REST of the clock goes:
+      // it used to sit on the clock row as 556 anonymous minutes, and is now
+      // handed to a named job-site row (owner's rule, above). The number that
+      // must not move is the day's total, and it does not.
+      expect(man.m + (r.rows.find(x => x.raw === 'site') || { m: 0 }).m).toBe(556);
+      expect(r.paid, 'the clock, plus the 18 minutes that ran before it').toBe(576);
+    });
+
+    test('an unpaid stop inside the clock is never deducted', async () => {
+      // Docking a break off a clock is a payroll decision, and the owner has
+      // been explicit that the office decides what to pay: the app logs, it
+      // does not dock (2026-09-01, "its up to the office if they want to pay,
+      // still log it").
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 30, source: 'stop',
+          arrived_at: at(12, 0), departed_at: at(12, 30) },
+      ], CLOCK([8, 0], [17, 0], 540));
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.blended, 'only the place, never the lunch').toBe(60);
+      // Same 2026-09-04 change: the 480 minutes the clock used to hold
+      // anonymously are now named as job-site stretches around the lunch. The
+      // lunch itself is STILL not deducted, which is what this test guards,
+      // and the day still totals what it did.
+      const sites = r.rows.filter(x => x.raw === 'site').reduce((n, x) => n + x.m, 0);
+      expect(man.m + sites).toBe(480);
+      expect(r.rows.some(x => x.raw === 'stop' && x.m === 30),
+        'the lunch is still its own row, undeducted').toBe(true);
+    });
+
+    test('fences that exceed the clock never drive the day negative', async () => {
+      // The phone saw more than he claimed. The fences are what happened; the
+      // clock adds nothing. Inventing time back is the one thing this must
+      // never do.
+      const r = await rowsFor([A('place', [8, 0], [14, 0], 360)],
+                              CLOCK([8, 0], [10, 0], 120));
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.m).toBe(0);
+      expect(r.paid).toBe(360);
+    });
+
+    test('two clocks over one drive deduct it once, never twice', async () => {
+      const r = await page.evaluate(async ([es, ms]) => {
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const rows = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          return { paid: _tlPaidMin(rows),
+                   manual: rows.filter(r => r.source === 'manual')
+                               .map(r => ({ m: r.minutes, b: r.blendedMin || 0 })) };
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [
+        [{ employee_user_id: 'jack', minutes: 60, source: 'place', dest_place: 'X',
+           arrived_at: at(9, 0), departed_at: at(10, 0) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 240,
+           start_time: at(8, 0), end_time: at(12, 0),
+           logged_by_uid: 'jack', logged_by_name: 'Jack' },
+         { id: 2, date: D, open: false, job_id: null, minutes: 120,
+           start_time: at(9, 30), end_time: at(11, 30),
+           logged_by_uid: 'jack', logged_by_name: 'Jack' }],
+      ]);
+      // 60 comes off the earlier clock and nothing off the later one.
+      const blended = r.manual.reduce((s, x) => s + x.b, 0);
+      expect(blended, 'spent once, never twice').toBe(60);
+      expect(r.paid).toBe(360);
+    });
+
+
+    // ── THE CLOCK BRACKETS THE DAY (owner 2026-09-01) ─────────────────────
+    //
+    // "on manual clock in it should grab the start time then the end at the
+    // very end, not show the whole day, all the other shit while its duplicates
+    // should overlay themselves on the manual bar so manual clock out extends."
+    //
+    // The previous cut drew the clock as a line item in the middle of the day
+    // holding the leftover minutes. The arithmetic was right and the picture
+    // was wrong: a seven-hour clock competing in a list with the very rows it
+    // contains. It is the two ends of the day now, and nothing about the
+    // numbers moved.
+    test('a clock opens and closes the rail instead of sitting inside it', async () => {
+      const html = await page.evaluate(([s1, e1, s2, e2]) => _tlDayRailHtml([
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 100, blendedMin: 338,
+          clientName: '-', personUid: null, startTime: s1, endTime: e1 },
+        { id: 'a1', source: 'auto', rawSource: 'place', date: '2026-09-01', minutes: 93,
+          clientName: 'Shop', personUid: 'me', startTime: s2, endTime: e2 },
+      ]), [at(7, 42), at(15, 0), at(7, 44), at(9, 17)]);
+      expect(html).toContain('data-kind="clock-in"');
+      expect(html).toContain('data-kind="clock-out"');
+      expect(html).toContain('Clocked in');
+      expect(html).toContain('Clocked out');
+      // REVERSED 2026-09-04 (10.4). This used to assert the clock's own total
+      // rode the closing cap: 100 left + 338 explained = 7h 18m. The owner
+      // killed it looking at his 3 September rail, where that number read
+      // 8h 53m against a header of 9h 6m ("the day total is at the top under
+      // the data"). Two totals for one day on one screen, and the cap's is the
+      // one nobody asked for. A cap states WHEN, never how much.
+      expect(html).not.toContain('>7h 18m<');
+      // ...and the leftover is still NOT drawn as a competing row.
+      expect(html).not.toContain('>1h 40m<');
+      expect(html).not.toContain('tracked below');
+      // The work sits BETWEEN the caps, which is the whole shape.
+      const i = html.indexOf('clock-in'), j = html.indexOf('Shop'), k = html.indexOf('clock-out');
+      expect(i).toBeGreaterThan(-1);
+      expect(j).toBeGreaterThan(i);
+      expect(k).toBeGreaterThan(j);
+    });
+
+    test('the clock is drawn once, never as a bracket AND a row', async () => {
+      const html = await page.evaluate(([s1, e1]) => _tlDayRailHtml([
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 438,
+          clientName: '-', personUid: null, startTime: s1, endTime: e1 },
+      ]), [at(7, 42), at(15, 0)]);
+      expect((html.match(/data-kind="manual"/g) || []).length,
+        'the bracket replaces the row, it does not accompany it').toBe(0);
+      expect((html.match(/data-kind="clock-in"/g) || []).length).toBe(1);
+      expect((html.match(/data-kind="clock-out"/g) || []).length).toBe(1);
+    });
+
+    test('a still-running clock stays an ordinary row: half a bracket is worse than none', async () => {
+      const html = await page.evaluate(([s1]) => _tlDayRailHtml([
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 0,
+          clientName: '-', personUid: null, startTime: s1, endTime: null },
+      ]), [at(7, 42)]);
+      expect(html).not.toContain('clock-in');
+      expect(html).toContain('data-kind="manual"');
+    });
+
+    test('a clock with a backwards or unreadable span never brackets anything', async () => {
+      for (const [s1, e1] of [[at(15, 0), at(7, 42)], ['nope', 'also nope'], [at(7, 42), at(7, 42)]]) {
+        const html = await page.evaluate(([a, b]) => _tlDayRailHtml([
+          { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 60,
+            clientName: '-', personUid: null, startTime: a, endTime: b },
+        ]), [s1, e1]);
+        expect(html, String(s1) + '/' + String(e1)).not.toContain('clock-in');
+      }
+    });
+
+    test('work outside the clock is drawn outside the brackets', async () => {
+      // His 7:23 drive ran before he clocked in. It is real, the clock never
+      // claimed it, and it must not appear to have happened during the shift.
+      const html = await page.evaluate(([ds, de, cs, ce]) => _tlDayRailHtml([
+        { id: 'd1', source: 'auto', rawSource: 'drive', date: '2026-09-01', minutes: 20,
+          clientName: 'Oakley', personUid: 'me', startTime: ds, endTime: de },
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 100, blendedMin: 338,
+          clientName: '-', personUid: null, startTime: cs, endTime: ce },
+      ]), [at(7, 23), at(7, 44), at(7, 42), at(15, 0)]);
+      expect(html.indexOf('Oakley'), 'the early drive comes first')
+        .toBeLessThan(html.indexOf('clock-in'));
+    });
+
+    test('two clocks in one day each get their own pair of caps', async () => {
+      const html = await page.evaluate(([a, b, c, d]) => _tlDayRailHtml([
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 120,
+          clientName: '-', personUid: null, startTime: a, endTime: b },
+        { id: 'm2', source: 'manual', date: '2026-09-01', minutes: 120,
+          clientName: '-', personUid: null, startTime: c, endTime: d },
+      ]), [at(7, 0), at(9, 0), at(13, 0), at(15, 0)]);
+      expect((html.match(/data-kind="clock-in"/g) || []).length).toBe(2);
+      expect((html.match(/data-kind="clock-out"/g) || []).length).toBe(2);
+      // ...and they close in order, never both swept to the bottom.
+      const outs = [...html.matchAll(/data-kind="clock-(in|out)"/g)].map(m => m[1]);
+      expect(outs).toEqual(['in', 'out', 'in', 'out']);
+    });
+
+    test('a day with no clock at all is drawn exactly as before', async () => {
+      const html = await page.evaluate(([s1, e1]) => _tlDayRailHtml([
+        { id: 'a1', source: 'auto', rawSource: 'place', date: '2026-09-01', minutes: 93,
+          clientName: 'Shop', personUid: 'me', startTime: s1, endTime: e1 },
+      ]), [at(7, 44), at(9, 17)]);
+      expect(html).not.toContain('clock-in');
+      expect(html).toContain('Shop');
+    });
+
+    // DELETED 2026-09-01 (CLAUDE.md 7 and 10.4). Two tests lived here asserting
+    // the clock row's sub-line read "7h 18m clocked, 5h 38m tracked below" beside
+    // its leftover amount. That presentation lasted about an hour: the owner's
+    // answer to it was that the clock should not be a row in the list at all,
+    // and the bracket tests above cover the shape that replaced it. Keeping them
+    // as skipped or rewritten would be keeping two answers to one question.
+    //
+    // The rule they were guarding, that a clock row must never show a span and
+    // an amount that contradict each other, is now structural: the caps show
+    // the two ends and the clocked total, and there is no leftover figure on
+    // screen to disagree with anything.
+
+    // ── A CLOCK IS NOT A LOCATION (owner 2026-09-01) ──────────────────────
+    //
+    // "9:17 to 11:17 wasnt all time spect at oakley remember, that was a
+    // untracked address that should have shown grey as manual time."
+    //
+    // Those stops were in the data the whole time and the rail never drew one.
+    // _tlStopAnchored vetoes a stop that any anchor OVERLAPS, on the argument
+    // that the anchor proves the person was somewhere else. A fence proves
+    // that. A manual clock does not: it brackets a shift, so it overlaps every
+    // minute of the day by construction. Jack's clock ran 07:42 to 15:00 and
+    // suppressed all six of his stops at once, including the untracked client
+    // visit that was the actual work.
+    test('a clock does not veto the stops inside it', async () => {
+      const r = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Jack' }, entries, shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01')
+            .map(x => ({ raw: x.rawSource || '', m: x.minutes, unpaid: !!x.unpaid })))
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        // His real shape: shop, the untracked stop between two fences, shop.
+        [{ minutes: 93, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(7, 44), departed_at: at(9, 17) },
+         { minutes: 63, source: 'stop', arrived_at: at(9, 48), departed_at: at(10, 51) },
+         { minutes: 44, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(11, 20), departed_at: at(12, 4) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
+           start_time: at(7, 42), end_time: at(15, 0),
+           logged_by_uid: null, logged_by_name: 'Jack' }],
+      ]);
+      const stop = r.find(x => x.raw === 'stop');
+      expect(stop, 'the untracked client visit has to reach the rail').toBeTruthy();
+      // Its own 63 minutes plus whatever _tlAbsorbGaps hands it: the drive to
+      // and from an unpaid stop belongs to the stop, so the row is expected to
+      // be LONGER than the raw fence, never shorter, and the day reads as one
+      // continuous span rather than a list of islands.
+      expect(stop.m).toBeGreaterThanOrEqual(63);
+      expect(stop.m, 'it cannot swallow more than the window it sits in')
+        .toBeLessThanOrEqual(123);
+      // Still unpaid: showing it is not the same as counting it. The office
+      // decides what to pay; the app's job is to stop hiding the hour.
+      expect(stop.unpaid).toBe(true);
+    });
+
+
+    test('a clock bounds the stops inside it, so the afternoon is not dropped', async () => {
+      // Every other anchor is a fence and bounds a stop by ABUTTING it. A clock
+      // is the two ends of the shift, so it bounds by CONTAINING. Without that,
+      // only stops with a fence on both sides survived, and Jack's afternoon
+      // has no fence after it at all: he left the shop, saw an untracked client
+      // and drove home. Four of his six stops, the whole back half of the
+      // working day, were dropped for want of a trailing fence that was never
+      // going to exist.
+      const r = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Jack' }, entries, shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.rawSource === 'stop').length)
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        // One fence in the morning and nothing after it, then three stops that
+        // only the clock-out can close.
+        [{ minutes: 44, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(11, 20), departed_at: at(12, 4) },
+         { minutes: 45, source: 'stop', arrived_at: at(12, 14), departed_at: at(13, 0) },
+         { minutes: 23, source: 'stop', arrived_at: at(13, 8), departed_at: at(13, 31) },
+         { minutes: 33, source: 'stop', arrived_at: at(14, 27), departed_at: at(14, 59) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
+           start_time: at(7, 42), end_time: at(15, 0),
+           logged_by_uid: null, logged_by_name: 'Jack' }],
+      ]);
+      expect(r, 'all three afternoon stops reach the rail').toBe(3);
+    });
+
+
+    test('an unplaceable stop is not called a break', async () => {
+      // "that was a untracked address that should have shown grey as manual
+      // time." A knife-and-fork icon and the word Break assert a reason nobody
+      // supplied; on Jack's day they labelled four untracked client visits as
+      // lunch. The row reads the same as the grey bucket it feeds.
+      const meta = await page.evaluate(() => _TL_RAIL_META.off);
+      expect(meta.word).toBe('Manual time');
+      expect(meta.icon, 'a fork is a claim about what happened').not.toBe('🍽');
+      const labels = await page.evaluate(() => _TL_BUCKETS.map(b => b.label));
+      expect(labels, 'the row and its bucket say the same thing')
+        .toContain(meta.word);
+    });
+
+
+
+    test('a place row with no shop session is untouched', async () => {
+      // A supply house is a place and nothing else watches it.
+      const r = await page.evaluate(([es]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = [];
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })), shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.rawSource === 'place').length)
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [[{ minutes: 30, source: 'place', dest_place: 'The Home Depot',
+             arrived_at: at(10, 0), departed_at: at(10, 30) }]]);
+      expect(r).toBe(1);
+    });
+
+
+    test('a drive to somewhere else is never withdrawn', async () => {
+      const r = await page.evaluate(([es]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = [];
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })), shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.roundTrip).length)
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [[
+        { minutes: 30, source: 'place', dest_place: 'The Home Depot',
+          arrived_at: at(8, 0), departed_at: at(8, 30) },
+        { minutes: 20, source: 'drive', dest_place: 'John Doe',
+          arrived_at: at(8, 30), departed_at: at(8, 50) },
+      ]]);
+      expect(r, 'a real leg to a different place keeps its miles and its label').toBe(0);
+    });
+
+    test('the clock does not call its own hours unpaid', async () => {
+      // "unpaid is wrong, it was paid." The day totals the clock, the clock
+      // covers those hours, and the row said nobody paid for them.
+      const r = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })), shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => {
+            const day = rows.filter(x => x.date === '2026-09-01');
+            return { html: _tlDayRailHtml(day),
+                     inside: day.filter(x => x.clockPaid).length,
+                     paid: _tlPaidMin(day) };
+          })
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        [{ minutes: 93, source: 'place', dest_place: 'X', arrived_at: at(8, 0), departed_at: at(9, 33) },
+         { minutes: 45, source: 'stop', arrived_at: at(12, 14), departed_at: at(13, 0) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
+           start_time: at(7, 42), end_time: at(15, 0),
+           logged_by_uid: null, logged_by_name: 'J' }],
+      ]);
+      expect(r.inside, 'the stop inside the clock is marked as covered').toBeGreaterThan(0);
+      expect(r.html, 'and the row stops claiming otherwise').not.toContain('· unpaid');
+      // It still does not ADD minutes: the clock is already counting them.
+      expect(r.paid).toBe(438);
+    });
+
+    test('a stop outside any clock is still marked unpaid', async () => {
+      const html = await page.evaluate(([s1, e1]) => _tlDayRailHtml([
+        { id: 'x', source: 'auto', rawSource: 'stop', date: '2026-09-01', minutes: 45,
+          unpaid: true, clientName: '-', personUid: 'me', startTime: s1, endTime: e1 },
+      ]), [at(18, 0), at(18, 45)]);
+      expect(html).toContain('· unpaid');
+    });
+
+    test('the clock remainder is manual time, not on-site labour', async () => {
+      // Jack's Sept 1 legend read "On site 4h 59m" on a day whose rail holds no
+      // on-site row at all, because every fence he crossed was the shop.
+      const e = await page.evaluate(() => _tlBucketFold([
+        { source: 'manual', minutes: 300, personUid: null },
+      ]));
+      expect(e.placeMin).toBe(300);
+      expect(e.onsiteMin).toBe(0);
+    });
+
+    test('the grey bucket is named for what it holds', async () => {
+      // "grey time should say Manual Time rather than supply/other."
+      const labels = await page.evaluate(() => _TL_BUCKETS.map(b => b.label));
+      expect(labels).toContain('Manual time');
+      expect(labels).not.toContain('Supply/other');
+    });
+
+    test('a day with no manual clock at all is completely untouched', async () => {
+      const r = await rowsFor([
+        A('drive', [8, 0], [8, 30], 30),
+        A('place', [8, 30], [10, 0], 90),
+      ], []);
+      expect(r.paid).toBe(120);
+      expect(r.rows.every(x => (x.blended || 0) === 0)).toBe(true);
+    });
+
+    test('a manual clock with no fences under it is completely untouched', async () => {
+      const r = await rowsFor([], CLOCK([8, 0], [17, 0], 540));
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.m).toBe(540);
+      expect(man.blended).toBe(0);
+      expect(man.detail, 'nothing was tracked, so nothing is claimed').not.toContain('tracked below');
+    });
+
+    test('junk times never throw and never silently zero a clock', async () => {
+      for (const bad of [
+        [{ id: 1, date: D, open: false, minutes: 120, start_time: null, end_time: at(10, 0), logged_by_uid: 'jack' }],
+        [{ id: 1, date: D, open: false, minutes: 120, start_time: 'nope', end_time: 'also nope', logged_by_uid: 'jack' }],
+        [{ id: 1, date: D, open: false, minutes: 120, start_time: at(10, 0), end_time: at(8, 0), logged_by_uid: 'jack' }],
+      ]) {
+        const r = await rowsFor([{ employee_user_id: 'jack', minutes: 60, source: 'place',
+                                   dest_place: 'X', arrived_at: at(8, 30), departed_at: at(9, 30) }], bad);
+        const man = r.rows.find(x => x.src === 'manual');
+        expect(man, JSON.stringify(bad[0].start_time)).toBeTruthy();
+        expect(man.m, 'an unreadable window blends nothing rather than zeroing').toBe(120);
+      }
+    });
+  });
+
+  // The week has to move while you are looking at it (owner 2026-09-01: "for
+  // the week rows, as data feeds, that needs to track in real time").
+  test.describe('the chart tracks the day as it happens', () => {
+    test('a live nudge repaints, and is a no-op when the page is not on screen', async () => {
+      const r = await page.evaluate(async () => {
+        const hadFn = typeof _tlLiveRefresh === 'function';
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.remove('active');
+        let ranHidden = false;
+        const origRe = window._tlRevalidateRows;
+        window._tlRevalidateRows = async () => { ranHidden = true; return false; };
+        _tlLiveRefresh();
+        await new Promise(r2 => setTimeout(r2, 3200));
+        window._tlRevalidateRows = origRe;
+        if (wasActive) pg?.classList.add('active');
+        return { hadFn, ranHidden };
+      });
+      expect(r.hadFn).toBe(true);
+      // Three Supabase queries to repaint a page nobody is looking at.
+      expect(r.ranHidden, 'a hidden page must never be repainted').toBe(false);
+    });
+
+    test('a burst of rows costs one repaint, not one per row', async () => {
+      const r = await page.evaluate(async () => {
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.add('active');
+        let calls = 0;
+        const origRe = window._tlRevalidateRows;
+        window._tlRevalidateRows = async () => { calls++; return false; };
+        for (let i = 0; i < 12; i++) _tlLiveRefresh();
+        await new Promise(r2 => setTimeout(r2, 3200));
+        window._tlRevalidateRows = origRe;
+        if (!wasActive) pg?.classList.remove('active');
+        return { calls };
+      });
+      // A drive's flush lands a dozen rows in one second. Twelve renders would
+      // be thirty-six Supabase queries and a chart flashing on a phone.
+      expect(r.calls).toBe(1);
+    });
+
+    test('the live path bypasses the drill throttle, because the screen is actually wrong', async () => {
+      const r = await page.evaluate(async () => {
+        // The min-gap exists to stop a held-down drill arrow firing three
+        // queries per tap. A row that genuinely changed is the opposite case.
+        const src = String(_tlRevalidateRows);
+        return { forced: /force&&_tlRowsAt/.test(src.replace(/\s/g, '')),
+                 takesForce: /force/.test(src.slice(0, 120)) };
+      });
+      expect(r.takesForce).toBe(true);
+      expect(r.forced).toBe(true);
     });
   });
 

@@ -14,7 +14,7 @@
 // update-live-activity so the key handling exists exactly once.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { APNS_HOST, APNS_TOPIC, apnsConfigured, apnsJwt } from "../_shared/apns.ts";
+import { apnsConfigured, apnsJwt, apnsSend } from "../_shared/apns.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -135,22 +135,15 @@ serve(async (req) => {
     // crew of ten should not wait on ten sequential round trips.
     await Promise.all(rows.map(async (r) => {
       try {
-        const res = await fetch(`${APNS_HOST}/3/device/${r.token}`, {
-          method: "POST",
-          headers: {
-            authorization: `bearer ${jwt}`,
-            "apns-topic": APNS_TOPIC,
-            "apns-push-type": "alert",
-            "apns-priority": "10",
-          },
-          body: payload,
+        // apnsSend tries the configured gateway, falls back to the other on
+        // BadDeviceToken (a TestFlight token and an App Store token live on
+        // different gateways), and only reports dead when BOTH refuse it.
+        const out = await apnsSend(jwt, r.token, payload, {
+          "apns-push-type": "alert",
+          "apns-priority": "10",
         });
-        if (res.ok) { sent++; return; }
-        const txt = await res.text();
-        // 410 Gone, or 400 BadDeviceToken: the app was deleted from that phone.
-        // Marked so every future send skips it instead of paying for it forever.
-        if (res.status === 410 || /BadDeviceToken|Unregistered/i.test(txt)) dead.push(r.token);
-        else console.error(`[send-push] ${res.status} ${txt.slice(0, 200)}`);
+        if (out.ok) sent++;
+        else if (out.dead) dead.push(r.token);
       } catch (e) {
         console.error(`[send-push] ${String(e).slice(0, 200)}`);
       }

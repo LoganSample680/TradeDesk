@@ -189,6 +189,228 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r).toEqual([{ name: 'end', ch: 'clock' }]);
   });
 
+  // Regression (CI, webkit shard 1, 2026-09-03): the not-ready diagnostic
+  // toasted on EVERY caller, including the ordinary web case where there is
+  // no Capacitor at all. That put a floating element over the Home card
+  // between a visibility check and a boundingBox measurement, and it would
+  // have popped a meaningless toast on every arrival for every web user.
+  // A person can only act on the on-device cases, so only those speak.
+  test('no plugin at all is silent: the web app never toasts about Live Activities', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const toasts = [];
+      const realToast = window._toast;
+      window._toast = (m) => { toasts.push(String(m)); };
+      window.Capacitor = { isNativePlatform: () => false, registerPlugin: () => ({}), Plugins: {} };
+      try {
+        // Force the readiness cache to re-evaluate against the web platform.
+        const keep = window._liveSupported; window._liveSupported = undefined;
+        const ok = await _liveActSet('drive', { kind: 'DRIVING', title: 'On the road' });
+        window._liveSupported = keep;
+        return { ok, toasts };
+      } finally { window.Capacitor = realCap; window._toast = realToast; }
+    });
+    expect(r.ok).toBe(false);
+    expect(r.toasts).toEqual([]);
+  });
+
+  // Owner 2026-09-03, home for the evening with the card still up: "I need it
+  // to go away or be very small, right now it's wasted space running when I'm
+  // home and done working."
+  test('no on-site card at the house, and an existing one ends on arrival there', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const since = Date.now() - 45 * 60000;
+      const atDoe = { id: 'd-doe', name: 'John Doe', kind: 'client', sinceTs: since, atHome: false, fence: {} };
+      const atHouse = { id: 'd-home', name: 'TradeDesk shop', kind: 'shop', sinceTs: Date.now() - 5 * 60000, atHome: true, fence: {} };
+      // A real visit puts a card up.
+      _liveActOnSite(atDoe); await new Promise(r => setTimeout(r, 60));
+      const atWork = window.__td.calls.filter(c => c.name === 'start').length;
+      // Driving home and arriving: the card comes down, nothing replaces it.
+      const homeAccepted = _liveActOnSite(atHouse);
+      await new Promise(r => setTimeout(r, 60));
+      const ended = window.__td.calls.filter(c => c.name === 'end').length;
+      const startsAfter = window.__td.calls.filter(c => c.name === 'start').length;
+      // And asking again at home never puts one back.
+      _liveActOnSite(atHouse); await new Promise(r => setTimeout(r, 60));
+      return { atWork, homeAccepted, ended, startsAfter,
+               startsFinal: window.__td.calls.filter(c => c.name === 'start').length };
+    });
+    expect(r.atWork).toBe(1);          // a client visit is worth a card
+    expect(r.homeAccepted).toBe(false); // the house is not
+    expect(r.ended).toBe(1);            // and it took the old one down
+    expect(r.startsAfter).toBe(1);      // nothing started in its place
+    expect(r.startsFinal).toBe(1);      // still nothing, however often we ask
+  });
+
+  // The one that actually explains the whole day (owner 2026-09-03, confirmed
+  // from his own telemetry): liveact_refused carried iOS's own words, "The
+  // operation couldn't be completed. Target is not foreground". ActivityKit
+  // refuses Activity.request() from a backgrounded app. Every on-site card is
+  // requested by the geo engine with the phone in a pocket, so every one was
+  // refused; the drive card flashed up for a second only because he happened
+  // to have the app open at that instant.
+  test('a start refused for being backgrounded is replayed the next time the app is on screen', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const P = window.Capacitor.registerPlugin('TdLive');
+      const realStart = P.start;
+      let backgrounded = true;
+      P.start = (args) => {
+        window.__td.calls.push({ name: 'start', args: args || {} });
+        return Promise.resolve(backgrounded
+          ? { ok: false, reason: "The operation couldn't be completed. Target is not foreground" }
+          : { ok: true, id: 'a1' });
+      };
+      try {
+        const since = Date.now() - 30 * 60000;
+        const dwell = { id: 'd-fg', name: 'John Doe', kind: 'client', sinceTs: since, fence: { addr: '2950 SW McClure Rd' } };
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 60));
+        const afterRefusal = window.__td.calls.filter(c => c.name === 'start').length;
+        // The phone comes back on screen. The held payload is replayed.
+        //
+        // _liveActForeground is called directly rather than by dispatching a
+        // visibilitychange event: that event wakes EVERY listener in the app,
+        // including the cloud sync, which then failed against this spec's
+        // Supabase stub and tripped assertNoErrors in a later test on shard 3.
+        // The listener wiring itself is one line and is not what this asserts.
+        backgrounded = false;
+        await _liveActForeground();
+        await new Promise(r => setTimeout(r, 120));
+        const afterForeground = window.__td.calls.filter(c => c.name === 'start').length;
+        // And the card that is now up is remembered, so an unchanged assert
+        // does not spend another ActivityKit call.
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 60));
+        const afterRepeat = window.__td.calls.filter(c => c.name === 'start').length;
+        return { afterRefusal, afterForeground, afterRepeat };
+      } finally { P.start = realStart; await _liveActEndAll(); }
+    });
+    expect(r.afterRefusal).toBe(1);          // refused while backgrounded
+    expect(r.afterForeground).toBe(2);       // replayed on foreground
+    expect(r.afterRepeat).toBe(2);           // and then deduped
+  });
+
+  // Regression (owner 2026-09-03: nothing on the island all day, on drive,
+  // arrival OR departure). The plugin RESOLVES {ok:false, reason} when
+  // ActivityKit refuses; _liveActSet used to cache the state signature
+  // anyway, so that one refusal was permanent: every later call with the
+  // same state hit the dedup and returned without ever retrying the start.
+  test('a refused start is not remembered, so the next assert retries it', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const P = window.Capacitor.registerPlugin('TdLive');
+      const realStart = P.start;
+      let refuse = true;
+      P.start = (args) => {
+        window.__td.calls.push({ name: 'start', args: args || {} });
+        return Promise.resolve(refuse ? { ok: false, reason: 'not allowed from background' } : { ok: true });
+      };
+      try {
+        const since = Math.floor(Date.now() / 1000) - 600;
+        const dwell = { id: 'd-r', name: 'John Doe', kind: 'client', sinceTs: since * 1000, fence: {} };
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        const afterRefusal = window.__td.calls.filter(c => c.name === 'start').length;
+        // Same dwell again: because the refusal was not cached, this must
+        // reach the plugin a second time instead of being deduped away.
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        const afterRetry = window.__td.calls.filter(c => c.name === 'start').length;
+        // Now the phone allows it: the card goes up and THAT is remembered.
+        refuse = false;
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        const afterSuccess = window.__td.calls.filter(c => c.name === 'start').length;
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        const afterDedup = window.__td.calls.filter(c => c.name === 'start').length;
+        return { afterRefusal, afterRetry, afterSuccess, afterDedup };
+      } finally { P.start = realStart; await _liveActEndAll(); }
+    });
+    expect(r.afterRefusal).toBe(1);
+    expect(r.afterRetry).toBe(2);      // retried, not silently deduped
+    expect(r.afterSuccess).toBe(3);
+    expect(r.afterDedup).toBe(3);      // success IS cached: no wasted budget
+  });
+
+  // ── The on-site card (owner 2026-09-02) ────────────────────────────────
+  // "A popup on the dynamic island and lock screen when we arrive with a
+  // running timer of how long we're there." Driven by the deriver's open
+  // dwell, the same fact the dashboard card and the Time Log's live row read.
+  test('arriving somewhere saved starts a ticking ON SITE card from the arrival instant', async () => {
+    const r = await page.evaluate(async () => {
+      window.__td.calls.length = 0;
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const since = Date.now() - 12 * 60000;
+      const dwell = { id: 'd-j-x', name: 'John Doe', kind: 'client', sinceTs: since, sinceIso: new Date(since).toISOString(), journeyId: 'x', fence: { addr: '2950 SW McClure Rd' } };
+      const ok = _liveActOnSite(dwell);
+      await new Promise(r => setTimeout(r, 50));
+      const again = _liveActOnSite(dwell);                 // same dwell: nothing spent
+      await new Promise(r => setTimeout(r, 50));
+      const calls = window.__td.calls.map(c => [c.name, c.args.channel, c.args.kind, c.args.title, c.args.detail, c.args.timer, c.args.startedAt, c.args.tint]);
+      _liveActOnSite(null);                                 // left: the card ends
+      await new Promise(r => setTimeout(r, 50));
+      return { ok, again, calls, since, ended: window.__td.calls.slice(-1)[0] };
+    });
+    expect(r.ok).toBe(true);
+    expect(r.again).toBe(true);
+    expect(r.calls).toEqual([['start', 'onsite', 'ON SITE', 'John Doe', '2950 SW McClure Rd', true, Math.floor(r.since / 1000), '#F2A93B']]);
+    expect(r.ended.name).toBe('end');
+    expect(r.ended.args.channel).toBe('onsite');
+  });
+
+  test('the shop is named as the shop, and a fence with no address shows the arrival time', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const since = Date.now() - 5 * 60000;
+      _liveActOnSite({ id: 'd-1', name: 'TradeDesk shop', kind: 'shop', sinceTs: since, fence: {} });
+      await new Promise(r => setTimeout(r, 50));
+      const c = window.__td.calls[0];
+      _liveActOnSite(null); await new Promise(r => setTimeout(r, 30));
+      return [c.args.kind, c.args.title, /^Arrived \d/.test(c.args.detail)];
+    });
+    expect(r).toEqual(['AT THE SHOP', 'TradeDesk shop', true]);
+  });
+
+  test('a clocked-in person keeps the clock card: the on-site card yields and returns on clock-out', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const since = Date.now() - 3 * 60000;
+      const dwell = { id: 'd-2', name: 'John Doe', kind: 'client', sinceTs: since, fence: { addr: '2950 SW McClure Rd' } };
+      window._geoOpenDwell = dwell;
+      _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 50));
+      _liveActClockIn({ jobId: null, clientName: 'John Doe', scopeLabel: 'Trim', startTime: Date.now() });
+      await new Promise(r => setTimeout(r, 80));
+      const duringClock = window.__td.calls.map(c => c.name + ':' + c.args.channel);
+      const yielded = _liveActOnSite(dwell);                // clock card live: no on-site card
+      await new Promise(r => setTimeout(r, 30));
+      window.__td.calls.length = 0;
+      await _liveActClockOut();
+      await new Promise(r => setTimeout(r, 80));
+      const afterOut = window.__td.calls.map(c => c.name + ':' + c.args.channel);
+      window._geoOpenDwell = null; _liveActOnSite(null); await new Promise(r => setTimeout(r, 30));
+      return { duringClock, yielded, afterOut };
+    });
+    expect(r.duringClock).toEqual(['start:onsite', 'end:onsite', 'start:clock']);
+    expect(r.yielded).toBe(false);
+    expect(r.afterOut).toEqual(['end:clock', 'start:onsite']);
+  });
+
+  test('the drive card goes up the moment the drive window opens, tally or not', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const keep = window._geoDriving;
+      window._geoDriving = () => false;
+      const keepWin = _geoDriveWinAt;
+      try {
+        _geoDriveWinAt = Date.now(); _geoDriveMiles = 0; _geoDriveSteps = 0; _geoLegOrigin = { name: 'TradeDesk shop' };
+        _liveActDrive(); await new Promise(r => setTimeout(r, 50));
+        const up = window.__td.calls.map(c => [c.name, c.args.channel, c.args.kind, c.args.detail, c.args.value]);
+        _geoDriveWinAt = 0; window.__td.calls.length = 0;
+        _liveActDrive(); await new Promise(r => setTimeout(r, 50));
+        return { up, down: window.__td.calls.map(c => c.name + ':' + c.args.channel) };
+      } finally { window._geoDriving = keep; _geoDriveWinAt = keepWin; }
+    });
+    expect(r.up).toEqual([['start', 'drive', 'DRIVING', 'From TradeDesk shop', 'logging']]);
+    expect(r.down).toEqual(['end:drive']);
+  });
+
   test('an unchanged drive ping never spends an ActivityKit update', async () => {
     const r = await page.evaluate(async () => {
       window._geoDriving = () => true;
@@ -374,6 +596,35 @@ test.describe('Remote push: token handling and tap routing', () => {
   });
 
   test.afterEach(() => { assertNoErrors(page, 'push'); });
+
+  // A TestFlight build mints SANDBOX device tokens; the same app from the App
+  // Store mints PRODUCTION ones. The wrong gateway answers BadDeviceToken,
+  // which is indistinguishable from an uninstalled app, so a single static
+  // APNS_ENV silently drops every push for half the fleet during any rollout
+  // where both builds are live AND marks those good tokens dead on the way
+  // past. Owner asked directly (2026-08-27) whether production would handle
+  // itself; it would not have, so the environment is now a per-token fact.
+  test('APNs sends survive the wrong gateway, and only condemn a token both refuse', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..');
+    const apns = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'apns.ts'), 'utf8');
+    expect(apns.includes('export async function apnsSend'),
+      'both push functions must share one sender, never hand-roll the retry').toBe(true);
+    expect(apns.includes('APNS_OTHER_HOST'),
+      'without the other gateway there is no fallback to make').toBe(true);
+    // The retry must be reached BEFORE a token is written off, or the
+    // fallback exists but never runs.
+    const badIdx = apns.indexOf('if (badToken(');
+    const deadIdx = apns.indexOf('return { ok: false, dead: true }');
+    expect(badIdx).toBeGreaterThan(-1);
+    expect(deadIdx).toBeGreaterThan(badIdx);
+    for (const fn of ['send-push', 'push-geo-ping']) {
+      const src = fs.readFileSync(path.join(root, 'supabase', 'functions', fn, 'index.ts'), 'utf8');
+      expect(src.includes('apnsSend('), `${fn} must send through the shared sender`).toBe(true);
+      expect(src.includes('APNS_HOST'), `${fn} must not pin itself to one gateway`).toBe(false);
+    }
+  });
 
   test('a notification tap lands on the right screen, and an unknown one still goes somewhere', async () => {
     const r = await page.evaluate(async () => {

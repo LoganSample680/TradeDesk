@@ -54,39 +54,9 @@ test.describe('Receipt-gated supply runs', () => {
   });
 
   test.describe('the hold', () => {
-    test('a leg INTO a supply place is written held and kept out of the deduction', async () => {
-      const row = await logLeg(JOB, SUPPLY, 'sr-in-1');
-      expect(row).toBeTruthy();
-      expect(row.pendingReceipt).toBe(true);
-      expect(row.supplyRunKey).toBe(row.date + '|Home Depot');
-      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
-      expect(ded, 'a held row must not deduct').toBe(0);
-    });
 
-    test('the leg back OUT of the supply place is held under the SAME run key', async () => {
-      const inRow = await logLeg(JOB, SUPPLY, 'sr-out-1');
-      const outRow = await logLeg(SUPPLY, JOB, 'sr-out-2');
-      expect(outRow.pendingReceipt).toBe(true);
-      expect(outRow.supplyRunKey).toBe(inRow.supplyRunKey);
-    });
 
-    test('an ordinary leg is untouched: no hold, deducts as always', async () => {
-      const row = await logLeg(HOME, JOB, 'sr-plain-1');
-      expect(row.pendingReceipt).toBeUndefined();
-      expect(row.supplyRunKey).toBeUndefined();
-      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
-      expect(ded).toBe(1);
-    });
 
-    test('pendingSupplyRuns groups both legs of one visit into one run', async () => {
-      await logLeg(JOB, SUPPLY, 'sr-grp-1');
-      await logLeg(SUPPLY, JOB, 'sr-grp-2');
-      const runs = await page.evaluate(() => pendingSupplyRuns());
-      expect(runs.length).toBe(1);
-      expect(runs[0].name).toBe('Home Depot');
-      expect(runs[0].count).toBe(2);
-      expect(runs[0].miles).toBeCloseTo(11.0, 1);   // 5.5 + 5.5 from the stub
-    });
 
     test('pendingSupplyStores nests multiple visits to the SAME store, oldest first', async () => {
       const out = await page.evaluate(() => {
@@ -117,35 +87,59 @@ test.describe('Receipt-gated supply runs', () => {
       return key;
     });
 
-    test('Personal: clears the held rows from the log ENTIRELY, not just marked', async () => {
+    // AMENDED 2026-09-05 (10.4). Personal used to DELETE the held rows (owner
+    // 2026-08-17). A held leg is a derived leg now and the deriver owns it: the
+    // next rebuild re-derives the same journey id, geo_replace_day clears the
+    // tombstone and re-inserts it, and the run comes back held. A delete is
+    // not a stable answer to a row that will be written again; personal:true
+    // is, and every money total already excludes it. The row stays in the
+    // log, off the books, which is what the toast has always said.
+    test('Personal: marks the held rows personal and keeps them in the log, off the books', async () => {
       const key = await seedHeld();
       const out = await page.evaluate((k) => {
         const before = mileage.length;
         const n = resolveSupplyRun(k, 'personal');
-        return { n, before, after: mileage.length, gone: mileage.every(m => m.supplyRunKey !== k) };
+        const rows = mileage.filter(m => m.supplyRunKey === k);
+        return { n, before, after: mileage.length,
+          marked: rows.every(m => m.personal === true && !m.pendingReceipt),
+          offBooks: deductibleTrips(mileage).length === 0 && reimbursableTrips(mileage).length === 0,
+          heldGone: pendingSupplyRuns().length === 0 };
       }, key);
       expect(out.n).toBe(2);
       expect(out.before).toBe(2);
-      expect(out.after, 'Personal deletes, it does not mark').toBe(0);
-      expect(out.gone).toBe(true);
+      expect(out.after, 'the log keeps its odometer story').toBe(2);
+      expect(out.marked).toBe(true);
+      expect(out.offBooks, 'and no total counts them').toBe(true);
+      expect(out.heldGone, 'and the card has nothing left to ask').toBe(true);
     });
 
-    test('Personal deletion is recorded as an explicit delete for cross-device sync', async () => {
-      // Routed through _userDelete (cloud.js), which diffs every synced
-      // array's ids before/after and records whatever disappeared into
-      // _locallyDeletedIds.td_mileage. That set is what stops the sync
-      // sweep from resurrecting the rows on another device: without it,
-      // Personal would look identical to a row nobody ever deleted.
-      const key = await seedHeld();
-      const out = await page.evaluate((k) => {
-        const ids = mileage.filter(m => m.supplyRunKey === k).map(m => String(m.id));
-        resolveSupplyRun(k, 'personal');
-        const tracked = typeof _locallyDeletedIds !== 'undefined' && _locallyDeletedIds.td_mileage
-          ? ids.every(id => _locallyDeletedIds.td_mileage.has(id)) : null;
-        return { tracked, stillThere: mileage.some(m => m.supplyRunKey === k) };
-      }, key);
-      expect(out.stillThere).toBe(false);
-      if (out.tracked !== null) expect(out.tracked, 'both deleted ids land in the explicit-delete set').toBe(true);
+    test('an answered run stays answered when the deriver writes the same leg again', async () => {
+      // The carry-across in js/geo-track.js: whatever the person answered
+      // rides onto the re-derived leg, and the fresh hold is dropped.
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        const day = todayKey(), key = day + '|Home Depot';
+        const leg = (extra) => Object.assign({ id: 'j-x-1', legKey: 'j-x-1', gps: true, date: day, miles: 4,
+          pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', startedIso: new Date().toISOString() }, extra || {});
+        const results = {};
+        for (const [name, answer] of [['personal', 'personal'], ['noreceipt', 'noreceipt'], ['receipt', 'receipt']]) {
+          mileage.length = 0;
+          _geoDeriveApplyMileage(day, [leg()]);
+          resolveSupplyRun(key, answer, answer === 'receipt' ? 777001 : undefined);
+          _geoDeriveApplyMileage(day, [leg()]);          // the rebuild
+          const m = mileage.find(x => x.id === 'j-x-1');
+          results[name] = { held: !!m.pendingReceipt, personal: !!m.personal, noReceipt: !!m.noReceipt, exp: m.receiptExpenseId };
+        }
+        // And a run nobody answered stays held through a rebuild.
+        mileage.length = 0;
+        _geoDeriveApplyMileage(day, [leg()]); _geoDeriveApplyMileage(day, [leg()]);
+        results.unanswered = { held: !!mileage[0].pendingReceipt, n: mileage.length };
+        return results;
+      });
+      expect(out.personal).toEqual({ held: false, personal: true, noReceipt: false, exp: undefined });
+      expect(out.noreceipt).toEqual({ held: false, personal: false, noReceipt: true, exp: undefined });
+      expect(out.receipt).toEqual({ held: false, personal: false, noReceipt: false, exp: 777001 });
+      expect(out.unanswered).toEqual({ held: true, n: 1 });
     });
 
     test('No receipt: commits as business carrying the noReceipt flag', async () => {
@@ -207,18 +201,27 @@ test.describe('Receipt-gated supply runs', () => {
   });
 
   test.describe('the 7-day sweep', () => {
-    test('a week-old unanswered run disappears; a fresh one stays held', async () => {
+    // AMENDED 2026-09-05 (10.4): off the books, not deleted, for the reason
+    // on _supplyRunSettleByKeys. The week-old run is marked personal and
+    // leaves the card; the fresh one stays held.
+    test('a week-old unanswered run goes off the books; a fresh one stays held', async () => {
       const out = await page.evaluate(() => {
         mileage.length = 0;
         const day = (n) => { const d = new Date(Date.now() - n * 86400000); return dateKey(d); };
         mileage.push({ id: _newId(), date: day(8), miles: 3, pendingReceipt: true, supplyRunKey: day(8) + '|Ace', created_at: new Date().toISOString() });
         mileage.push({ id: _newId(), date: day(2), miles: 3, pendingReceipt: true, supplyRunKey: day(2) + '|Ace2', created_at: new Date().toISOString() });
         const n = _supplyRunSweep();
-        return { n, rows: mileage.length, freshStillHeld: mileage[0] && mileage[0].pendingReceipt === true };
+        const stale = mileage[0], fresh = mileage[1];
+        return { n, rows: mileage.length,
+          staleSettled: !!stale && stale.personal === true && !stale.pendingReceipt,
+          freshStillHeld: !!fresh && fresh.pendingReceipt === true && !fresh.personal,
+          onCard: pendingSupplyRuns().length };
       });
-      expect(out.n, 'the sweep removed the stale row').toBe(1);
-      expect(out.rows, 'it disappears, it is not left behind marked').toBe(1);
+      expect(out.n, 'the sweep settled the stale row').toBe(1);
+      expect(out.rows, 'off the books, still in the log').toBe(2);
+      expect(out.staleSettled).toBe(true);
       expect(out.freshStillHeld).toBe(true);
+      expect(out.onCard, 'only the fresh one is still asked about').toBe(1);
     });
 
     test('a corrupt date cannot crash the sweep or be swept', async () => {
@@ -231,6 +234,88 @@ test.describe('Receipt-gated supply runs', () => {
       expect(out.threw).toBe(false);
       expect(out.n).toBe(0);
       expect(out.held).toBe(true);
+    });
+  });
+
+  // ── The receipt card's sibling: visits that need an answer (rule 13) ────
+  test.describe('visits need an answer', () => {
+    const ROWS = [
+      { id: 'v1', arrived_at: '2026-08-30T22:00:00Z', departed_at: '2026-08-31T01:00:00Z', minutes: 180, dest_place: 'Mom', job_id: null },
+      { id: 'v2', arrived_at: '2026-08-23T21:00:00Z', departed_at: '2026-08-23T23:00:00Z', minutes: 120, dest_place: 'Dad', job_id: null },
+    ];
+    test('the card lists each held visit with a Working and a Personal door, and hides with nothing to ask', async () => {
+      const r = await page.evaluate((rows) => {
+        const el = document.getElementById('dash-visit-hold');
+        _paintDashVisitHold(el, rows);
+        // AMENDED 2026-09-05 (10.4): the count moved off the section and onto the
+        // one Needs-an-answer shell (#dash-hold-count) when the two cards became
+        // one (owner: "Combine them"). The section itself carries no count.
+        const shell = document.getElementById('dash-hold');
+        const shown = { display: el.style.display, names: [...el.querySelectorAll('.td-supply-visit')].map(v => v.firstElementChild.textContent),
+          doors: [...el.querySelectorAll('button')].map(b => b.textContent.trim()), held: /2 held/.test(document.getElementById('dash-hold-count').textContent),
+          shellShown: shell.style.display !== 'none', noOwnCount: !/held/.test(el.textContent) };
+        _paintDashVisitHold(el, []);
+        return { shown, hidden: el.style.display === 'none' && el.innerHTML === '', shellHidden: document.getElementById('dash-supply-hold').style.display === 'none' ? shell.style.display === 'none' : true };
+      }, ROWS);
+      expect(r.shown.display).toBe('block');
+      expect(r.shown.names).toEqual(['Mom', 'Dad']);
+      expect(r.shown.doors).toEqual(['Personal', 'Working', 'Personal', 'Working']);
+      expect(r.shown.held).toBe(true);
+      expect(r.shown.shellShown).toBe(true);
+      expect(r.shown.noOwnCount, 'the count lives on the shell, not the section').toBe(true);
+      expect(r.hidden).toBe(true);
+      expect(r.shellHidden, 'nothing left in either section: the whole card goes').toBe(true);
+    });
+
+    test('answering goes through geo_answer_visit and takes the visit off the card at once', async () => {
+      const r = await page.evaluate(async (rows) => {
+        const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast };
+        const calls = [], toasts = [];
+        window._supa = { rpc: async (fn, args) => { calls.push([fn, args]); return { error: null }; } };
+        window._supaUser = { id: 'me' }; window.showToast = (t) => toasts.push(t);
+        try {
+          _visitHoldCache = { at: Date.now(), rows: rows.slice(), uid: 'me' };
+          const el = document.getElementById('dash-visit-hold');
+          _paintDashVisitHold(el, _visitHoldCache.rows);
+          await _visitHoldAnswer('v1', 'working');
+          const left = [...el.querySelectorAll('.td-supply-visit')].map(v => v.firstElementChild.textContent);
+          await _visitHoldAnswer('v2', 'personal');
+          return { calls, left, empty: el.style.display === 'none', toasts };
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; window.showToast = saved.toast; _visitHoldCache = { at: 0, rows: [], uid: null }; }
+      }, ROWS);
+      expect(r.calls).toEqual([['geo_answer_visit', { p_id: 'v1', p_mode: 'working' }], ['geo_answer_visit', { p_id: 'v2', p_mode: 'personal' }]]);
+      expect(r.left).toEqual(['Dad']);
+      expect(r.empty).toBe(true);
+      expect(r.toasts).toEqual(['Counted as work', 'Kept off the books']);
+    });
+
+    test('a refused answer puts the visit back and says so', async () => {
+      const r = await page.evaluate(async (rows) => {
+        const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast };
+        const toasts = [];
+        window._supa = { rpc: async () => ({ error: { message: 'geo_answer_visit: not your visit' } }),
+          // order-agnostic chain: the filter order is the soft-delete lint's business, not this test's
+          from: () => { const q = { select: () => q, eq: () => q, is: () => q, order: () => q, limit: async () => ({ data: rows, error: null }) }; return q; } };
+        window._supaUser = { id: 'me' }; window.showToast = (t) => toasts.push(t);
+        try {
+          _visitHoldCache = { at: Date.now(), rows: rows.slice(), uid: 'me' };
+          const el = document.getElementById('dash-visit-hold');
+          _paintDashVisitHold(el, _visitHoldCache.rows);
+          await _visitHoldAnswer('v1', 'working');
+          await new Promise(r2 => setTimeout(r2, 50));
+          return { toasts, cacheCleared: _visitHoldCache.at === 0 || _visitHoldCache.rows.length === 2 };
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; window.showToast = saved.toast; _visitHoldCache = { at: 0, rows: [], uid: null }; }
+      }, ROWS);
+      expect(r.toasts).toEqual(['Could not save that answer, try again']);
+      expect(r.cacheCleared).toBe(true);
+    });
+
+    test('junk in never throws', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.getElementById('dash-visit-hold');
+        try { _paintDashVisitHold(el, null); _paintDashVisitHold(el, [null, {}, { id: 'x' }]); _paintDashVisitHold(null, []); return true; } catch (e) { return String(e); }
+      });
+      expect(r).toBe(true);
     });
   });
 
@@ -476,6 +561,110 @@ test.describe('Receipt-gated supply runs', () => {
       });
       expect(html).toContain('Held · receipt?');
       expect(html).toContain('>No receipt<');
+    });
+  });
+
+  // ── ONE card, two sections (owner 2026-09-05: "Combine them") ─────────────
+  // Two amber cards stacked at the top read as two alarms and pushed the money
+  // tiles off the screen. Now one shell (#dash-hold) carries the title and the
+  // count; store runs and visits are sections inside it, each with its own
+  // doors, because the answers really are different.
+  test.describe('one Needs-an-answer card', () => {
+    const VISITS = [
+      { id: 'v1', arrived_at: '2026-08-30T22:00:00Z', departed_at: '2026-08-31T01:00:00Z', minutes: 180, dest_place: 'Mom', job_id: null },
+      { id: 'v2', arrived_at: '2026-08-23T21:00:00Z', departed_at: '2026-08-23T23:00:00Z', minutes: 120, dest_place: 'Dad', job_id: null },
+    ];
+    const seedRun = () => page.evaluate(() => {
+      mileage.length = 0;
+      const key = todayKey() + '|Home Depot';
+      mileage.push({ id: _newId(), date: todayKey(), miles: 4.2, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
+      _renderDashSupplyHold();
+      return key;
+    });
+    test.afterEach(async () => {
+      await page.evaluate(() => { mileage.length = 0; _renderDashSupplyHold(); _paintDashVisitHold(document.getElementById('dash-visit-hold'), []); });
+    });
+
+    test('both kinds held: one shell, one title, the count is the SUM, each section keeps its own doors', async () => {
+      await seedRun();
+      const r = await page.evaluate((rows) => {
+        _paintDashVisitHold(document.getElementById('dash-visit-hold'), rows);
+        const shell = document.getElementById('dash-hold');
+        const secs = [...shell.querySelectorAll('.td-hold-sec-t')].map(e => e.textContent.trim());
+        return {
+          shown: shell.style.display !== 'none',
+          cards: shell.querySelectorAll('.card').length,
+          title: shell.querySelector('.td-hold-title').textContent.trim(),
+          count: document.getElementById('dash-hold-count').textContent.trim(),
+          secs,
+          storeDoors: [...document.querySelectorAll('#dash-supply-hold .td-supply-visit button')].map(b => b.textContent.trim()),
+          visitDoors: [...document.querySelectorAll('#dash-visit-hold .td-supply-visit button')].map(b => b.textContent.trim()),
+          oldTitles: /Store runs need an answer|Visits need an answer/.test(shell.textContent),
+        };
+      }, VISITS);
+      expect(r.shown).toBe(true);
+      expect(r.cards, 'one card, not one per kind').toBe(1);
+      expect(r.title).toBe('Needs an answer');
+      expect(r.count).toBe('3 held');
+      expect(r.secs).toEqual(['Store runs', 'Visits']);
+      expect(r.storeDoors).toEqual(['Personal', 'No receipt', 'Scan receipt']);
+      expect(r.visitDoors).toEqual(['Personal', 'Working', 'Personal', 'Working']);
+      expect(r.oldTitles, 'the two old card titles are gone').toBe(false);
+    });
+
+    test('the count follows the answers: 3, then 1, then the card is gone', async () => {
+      const key = await seedRun();
+      const r = await page.evaluate(async ({ rows, key }) => {
+        const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast };
+        window._supa = { rpc: async () => ({ error: null }) }; window._supaUser = { id: 'me' }; window.showToast = () => {};
+        try {
+          _visitHoldCache = { at: Date.now(), rows: rows.slice(), uid: 'me' };
+          _paintDashVisitHold(document.getElementById('dash-visit-hold'), _visitHoldCache.rows);
+          const c = () => document.getElementById('dash-hold-count').textContent.trim();
+          const out = [c()];
+          await _visitHoldAnswer('v1', 'working'); await _visitHoldAnswer('v2', 'personal');
+          out.push(c());
+          resolveSupplyRun(key, 'noreceipt'); _renderDashSupplyHold();
+          out.push(c());
+          return { out, gone: document.getElementById('dash-hold').style.display === 'none' };
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; window.showToast = saved.toast; _visitHoldCache = { at: 0, rows: [], uid: null }; }
+      }, { rows: VISITS, key });
+      expect(r.out).toEqual(['3 held', '1 held', '']);
+      expect(r.gone).toBe(true);
+    });
+
+    test('the shell is what the boot skeleton covers, as one card, and it sits above the money tiles', async () => {
+      await seedRun();
+      const r = await page.evaluate(() => {
+        const shell = document.getElementById('dash-hold');
+        const widgets = document.getElementById('dash-widget-root');
+        const above = !!(widgets && (shell.compareDocumentPosition(widgets) & Node.DOCUMENT_POSITION_FOLLOWING));
+        const src = _dashApplySkeletons.toString();
+        return { above, targetsShell: /#dash-hold\b/.test(src) && !/#dash-supply-hold/.test(src) && !/#dash-visit-hold/.test(src) };
+      });
+      expect(r.above).toBe(true);
+      expect(r.targetsShell, 'the skeleton shimmers the one shell, not the two sections').toBe(true);
+    });
+
+    test('layout (§15.3): no bleed and no overlapping doors at 320px', async () => {
+      await seedRun();
+      await page.setViewportSize({ width: 320, height: 700 });
+      try {
+        const r = await page.evaluate((rows) => {
+          _paintDashVisitHold(document.getElementById('dash-visit-hold'), rows);
+          const shell = document.getElementById('dash-hold');
+          const btns = [...shell.querySelectorAll('button')].map(b => b.getBoundingClientRect());
+          let overlap = false;
+          for (let i = 0; i < btns.length; i++) for (let j = i + 1; j < btns.length; j++) {
+            const a = btns[i], b = btns[j];
+            if (a.width && b.width && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) overlap = true;
+          }
+          return { bleed: document.documentElement.scrollWidth > window.innerWidth + 1, right: shell.getBoundingClientRect().right <= window.innerWidth, overlap };
+        }, VISITS);
+        expect(r.bleed).toBe(false);
+        expect(r.right).toBe(true);
+        expect(r.overlap).toBe(false);
+      } finally { await page.setViewportSize({ width: 390, height: 844 }); }
     });
   });
 

@@ -28,6 +28,14 @@ on:
 jobs:
   build-upload:
     runs-on: macos-latest
+    env:
+      # HOISTED FROM THE SHARE-EXTENSION STEP (2026-09-01). It used to live on
+      # that step alone, which meant nothing else in the build could see it and
+      # nothing could check it. Build 49, the monthly keep-alive, ran from main
+      # while main still had this at '1' and shipped a TestFlight build with no
+      # share extension at all: no vCard import, no receipt share, and not one
+      # line of output saying so. One value, readable by the guard below.
+      SKIP_SHARE_EXT: '0'
     defaults:
       run:
         working-directory: native
@@ -47,14 +55,29 @@ jobs:
       - name: Sync config and plugins into the iOS project
         run: npx cap sync ios
 
-      # Silent pushes (content-available) are delivered ONLY to
-      # application(_:didReceiveRemoteNotification:fetchCompletionHandler:),
-      # and the stock Capacitor AppDelegate does not implement it, so without
-      # this patch the geo-ping cron's pushes evaporate. The method forwards
-      # the payload to TdGeo via NotificationCenter and holds the completion
-      # 15s so the fix + background upload get off the ground. The project is
-      # regenerated fresh every build, so this patches every build.
-      - name: Wire silent pushes into the AppDelegate (geo-ping)
+      # THE APNs BRIDGE. Capacitor 7's generated AppDelegate implements NONE
+      # of the three remote-notification methods, and every one of them is
+      # load-bearing here:
+      #
+      #   didRegisterForRemoteNotificationsWithDeviceToken -> this is the one
+      #     that was missing and broke everything. Apple returns the device
+      #     token to this exact selector; with no implementation the OS
+      #     discards it, TdPushPlugin's listener on
+      #     capacitorDidRegisterForRemoteNotifications never fires, and no
+      #     token is ever saved. Observed live 2026-08-27: every permission
+      #     granted, "granted, still waiting on Apple" forever, device_tokens
+      #     empty account-wide since the project began. No JS can fix this.
+      #   didFailToRegisterForRemoteNotificationsWithError -> why the failure
+      #     was also SILENT. The error path was missing too, so a rejection
+      #     (bad entitlement, no network) looked identical to success-pending.
+      #   didReceiveRemoteNotification:fetchCompletionHandler -> silent
+      #     (content-available) pushes are delivered here and nowhere else, so
+      #     the geo-ping cron's 30-minute nudges evaporate without it.
+      #
+      # The first two post the notification names Capacitor's own plugins
+      # expect, which is what TdPushPlugin already listens for. The project is
+      # regenerated fresh every build, so this runs every build.
+      - name: Wire the APNs bridge into the AppDelegate (token + silent push)
         run: |
           python3 - <<'EOF'
           import sys
@@ -62,21 +85,55 @@ jobs:
           s = open(p).read()
           if 'TdSilentPush' in s:
               print('already patched'); sys.exit(0)
-          method = '''
-              // TdGeo geo-ping (workflow-injected, see ios-beta.yml): iOS hands
-              // content-available pushes to this exact selector and nothing else.
+          methods = '''
+              // ── APNs bridge (workflow-injected, see ios-beta.yml) ──────────
+              // Apple hands the device token to THIS selector and nowhere else.
+              // Capacitor 7's template omits it, so without this the token is
+              // discarded by the OS and no push ever reaches the phone.
+              func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+                  NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+              }
+
+              // The matching failure path, so a refusal is loud instead of
+              // looking exactly like a token that has not arrived yet.
+              func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+                  NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+              }
+
+              // TdGeo geo-ping: iOS delivers content-available pushes to this
+              // exact selector and nothing else. Holds the completion handler
+              // long enough for the fix and its background upload to start.
               func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
                   NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: userInfo as? [String: Any] ?? [:])
                   DispatchQueue.main.asyncAfter(deadline: .now() + 15) { completionHandler(.newData) }
               }
+
+              // TdGeo's event flush rides a BACKGROUND URLSession ("td.geo.flush").
+              // When its uploads finish while the app is suspended, iOS wakes
+              // the app through this selector and expects the handler to be
+              // called once the session's events are processed. Without it
+              // the system counts every completion as mishandled and throttles
+              // the session, which is how the phone's raw event upload went
+              // silent mid-drive twice on 2026-09-02 and only came back on a
+              // relaunch. The plugin calls it from urlSessionDidFinishEvents.
+              func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+                  TdGeoPlugin.backgroundFlushCompletion = completionHandler
+              }
           '''
+          if 'import TdGeo' not in s:
+              s = s.replace('import Capacitor', 'import Capacitor\nimport TdGeo', 1)
           i = s.rfind('}')
           if i < 0:
               print('::error::AppDelegate.swift has no closing brace to anchor on'); sys.exit(1)
-          open(p, 'w').write(s[:i] + method + '\n' + s[i:])
+          open(p, 'w').write(s[:i] + methods + '\n' + s[i:])
           print('patched')
           EOF
-          grep -q "TdSilentPush" ios/App/App/AppDelegate.swift || { echo "::error::AppDelegate silent-push patch did not apply"; exit 1; }
+          # Each one is load-bearing and each one is checked by name: a patch
+          # that half-applied must fail the build, not ship a phone that can
+          # never be reached.
+          for m in didRegisterForRemoteNotificationsWithDeviceToken didFailToRegisterForRemoteNotificationsWithError TdSilentPush handleEventsForBackgroundURLSession "import TdGeo"; do
+            grep -q "$m" ios/App/App/AppDelegate.swift || { echo "::error::AppDelegate APNs patch missing $m"; exit 1; }
+          done
 
       # Build 19 shipped without six plugins and said nothing: their
       # package.json files were caught by a blanket .gitignore rule, so npm
@@ -102,6 +159,28 @@ jobs:
             fi
             echo "ok: $d"
           done
+          exit $MISSING
+
+      # Build 19 shipped without six plugins and said nothing. Build 49 shipped
+      # without the SHARE EXTENSION and said nothing, for a different reason:
+      # the monthly keep-alive cron builds `main`, main still carried
+      # SKIP_SHARE_EXT='1' from the signing-isolation era, and a scheduled build
+      # is the one nobody is watching. The owner found it by noticing a build
+      # number he did not recognise.
+      #
+      # THE RULE: source in the tree means the component is in the build. A skip
+      # flag may only ever cover a component that does not exist yet, never one
+      # that already shipped. Cheap, and it runs long before the archive, so a
+      # stripped build costs seconds instead of fifteen minutes and a bad
+      # install on somebody's phone.
+      - name: Every native component in the tree must be in the build
+        run: |
+          MISSING=0
+          if [ -d td-share ] && [ "$SKIP_SHARE_EXT" = "1" ]; then
+            echo "::error::native/td-share is in the tree but SKIP_SHARE_EXT=1, so this build would ship WITHOUT the share extension. A skip flag may only cover a component that does not exist yet."
+            MISSING=1
+          fi
+          [ "$MISSING" = "0" ] && echo "ok: every component in the tree is in this build"
           exit $MISSING
 
       - name: Configure Info.plist (background location + consent copy)
@@ -231,7 +310,8 @@ jobs:
           sed -i '' 's|PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;|PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;\n\t\t\t\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g' ios/App/App.xcodeproj/project.pbxproj
           grep -n "CODE_SIGN_ENTITLEMENTS" ios/App/App.xcodeproj/project.pbxproj
 
-      - name: Share extension target
+      - name: 'COMPONENT share-extension: build the target'
+        id: share-target
         # An app EXTENSION cannot ride a CocoaPod: it needs its own target,
         # bundle id, entitlements, and an embed phase in the app. The project
         # is regenerated every build, so the target is rebuilt every build too
@@ -289,7 +369,15 @@ jobs:
         # Back to skipped so the rest of the build ships.
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          SKIP_SHARE_EXT: '1'
+          # ATTEMPT 4, 2026-09-01. What changed since attempt 3 is not another
+          # manual portal click: scripts/asc-ensure-ids.mjs now VERIFIES that
+          # group.app.tradedesk.beta is actually ATTACHED to the App Groups
+          # capability, not merely that the capability is on. That gap is the
+          # best explanation for all three failures, and it is checked in the
+          # preflight step, BEFORE the archive, so a fourth failure costs
+          # seconds instead of a build.
+          # SKIP_SHARE_EXT is set at JOB level now (see the top of this file):
+          # the guard step cannot check a value only this step can see.
         run: |
           if [ "$SKIP_SHARE_EXT" = "1" ]; then
             echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
@@ -375,7 +463,8 @@ jobs:
           fi
           xcodebuild -version
 
-      - name: Portal identifiers exist with the capabilities the entitlements need
+      - name: 'COMPONENT share-extension: portal preflight (ids, capabilities, and the GROUP)'
+        id: portal-preflight
         # Cloud signing can DOWNLOAD profiles but has twice proven unable to
         # CREATE portal records here (the share extension's bundle id, then
         # builds 25/26: the Live extension id + the new push capability on the
@@ -392,6 +481,7 @@ jobs:
         run: node ../scripts/asc-ensure-ids.mjs
 
       - name: Archive (ad-hoc signed; real signing happens at export)
+        id: archive
         # Automatic signing at ARCHIVE time demands a DEVELOPMENT profile,
         # which requires a registered device on the team, and this account
         # has none (build #2: "Your team has no devices"). App Store
@@ -417,6 +507,7 @@ jobs:
             AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Export the signed IPA
+        id: export-ipa
         run: |
           cat > build/export.plist <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -549,6 +640,53 @@ jobs:
 
           exit $MISSING
 
+      # ── WHICH HALF BROKE (owner 2026-09-01) ─────────────────────────────────
+      # "I want them looped together but analytics to show what failed."
+      # Build 46 carries two unverified native changes: the share extension
+      # (three prior export failures) and the drive-window GPS plugin. Without
+      # this, a red run says only "the build failed" and you cannot tell which
+      # one to go and fix.
+      #
+      # Runs on failure ONLY, reads the step outcomes GitHub already tracks, and
+      # writes a verdict to the run summary. It never masks the failure: the job
+      # is already red by the time this runs and it does not change that.
+      #
+      # The drive window is deliberately NOT guesswork here: its Swift is
+      # compiled and unit-tested by ios-native-tests.yml on every PR touching
+      # native/, so if that gate was green the plugin's code is already proven
+      # and a failure at THIS stage is almost certainly signing, which is the
+      # share extension's problem, not the plugin's.
+      - name: 'ANALYTICS: which component failed'
+        if: failure()
+        run: |
+          {
+            echo "## Build failed, and here is which half"
+            echo ""
+            echo "| Component | Step | Outcome |"
+            echo "|---|---|---|"
+            echo "| share extension | build the target | ${{ steps.share-target.outcome || 'see log' }} |"
+            echo "| share extension | portal preflight | ${{ steps.portal-preflight.outcome || 'see log' }} |"
+            echo "| both | archive | ${{ steps.archive.outcome || 'see log' }} |"
+            echo "| both | export / signing | ${{ steps.export-ipa.outcome || 'see log' }} |"
+            echo ""
+            if [ "${{ steps.portal-preflight.outcome }}" = "failure" ]; then
+              echo "**Verdict: the SHARE EXTENSION's portal setup.** Nothing was archived, so this cost seconds."
+              echo "The preflight prints the exact two clicks. The drive-window plugin is untouched by this and is fine."
+            elif [ "${{ steps.export-ipa.outcome }}" = "failure" ]; then
+              echo "**Verdict: signing, which means the SHARE EXTENSION.** The archive built, so both plugins compiled."
+              echo "Look for \"No profiles for 'app.tradedesk.beta.share'\" in the export log."
+              echo "The component guard now BLOCKS shipping without it while native/td-share is in the tree,"
+              echo "which is deliberate: build 49 shipped stripped and silent. Fix the portal, or delete the"
+              echo "component, but do not ship a build missing something that already shipped."
+            elif [ "${{ steps.archive.outcome }}" = "failure" ]; then
+              echo "**Verdict: a COMPILE error, so it is native code, not signing.**"
+              echo "Check ios-native-tests.yml on this commit: if that was green, the TdGeo plugin compiles and the"
+              echo "failure is in the share extension's own Swift or in how the target was injected."
+            else
+              echo "**Verdict: not in the native components.** The failure is before or after them; read the red step above."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload to TestFlight
         env:
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
@@ -568,3 +706,42 @@ jobs:
             --ipa "$IPA" \
             --api_key_path build/asc_key.json \
             --skip_waiting_for_build_processing true
+
+  # ── PUT IT IN FRONT OF THE TESTERS ──────────────────────────────────────────
+  # The upload job exits before Apple has an opinion (fastlane pilot upload runs
+  # with --skip_waiting_for_build_processing), so it proves the IPA left the
+  # runner and nothing more. Which groups end up with the build was decided by
+  # whoever remembered to go and click, and for builds 36 through 41 nobody did:
+  # an external tester sat on build 35 from 2026-08-19 to 2026-08-27 while every
+  # run in between reported success.
+  #
+  # App Store Connect's own per-group automatic distribution cannot be turned on
+  # after the fact (hasAccessToAllBuilds is create-only and Apple refuses it in
+  # an UPDATE), so distribution happens here, which also covers every group made
+  # before anyone thought about the flag.
+  #
+  # ubuntu, not macOS: it is HTTPS and a wait. Putting it on the Mac runner would
+  # bill the expensive minutes for sitting still.
+  distribute:
+    needs: build-upload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyJWT (ES256 needs the crypto extra)
+        run: pip install --quiet 'pyjwt[crypto]==2.9.0'
+
+      - name: Wait for processing, then distribute to every tester group
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TD_BUNDLE_ID: app.tradedesk.beta
+          # The build THIS run made. CFBundleVersion is set to github.run_number
+          # in the upload job, so this can never pick up a concurrent upload.
+          TD_BUILD_VERSION: ${{ github.run_number }}
+        run: python3 scripts/testflight-distribute.py | tee "$GITHUB_STEP_SUMMARY"
