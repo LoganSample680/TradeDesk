@@ -1616,6 +1616,16 @@ async function startRoomScan(ctx){
     name:'Scan '+new Date().toLocaleDateString(),
     createdAt:new Date().toISOString(),
     headingDeg:(typeof res.headingDeg==='number'?res.headingDeg:null),
+    // The camera's yaw in the scene's own frame at the instant the compass was
+    // read. Without it headingDeg describes a direction nobody can locate: the
+    // scene's zero is fixed when the session starts and the compass is sampled
+    // two seconds later, by which time somebody walking into a room has turned.
+    // scene-north = headingDeg - headingCamYawDeg.
+    headingCamYawDeg:(typeof res.headingCamYawDeg==='number'?res.headingCamYawDeg:null),
+    // What the phone said about the scan while it was being taken.
+    coaching:Array.isArray(res.coaching)?res.coaching:[],
+    trackingIssues:Array.isArray(res.trackingIssues)?res.trackingIssues:[],
+    meshAnchorCount:(typeof res.meshAnchorCount==='number'?res.meshAnchorCount:null),
     rooms,
     // Photos stay device-local paths in v1 (the client deliverable excludes
     // them by design); cam pose rides along for the pinned walkthrough. The

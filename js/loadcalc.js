@@ -502,8 +502,19 @@ function loadcalcScanGeometry(scan, opts) {
   const storyOf = function (r) { return Math.max(1, _lcNum(r && r.story, 1)); };
   // One centre per room, for deciding which side of a wall is outdoors.
   const centres = rooms.map(_lcRoomCentre);
+  // SCENE NORTH, not the raw compass reading.
+  //
+  // headingDeg is the bearing the phone faced when the compass was sampled,
+  // and the scene's own zero was fixed when the session started, two seconds
+  // earlier. Subtracting the camera's yaw at that same instant turns one
+  // useless number into an exact one. A scan taken before the plugin sent the
+  // yaw has no way to recover it, so it is treated as having no compass at
+  // all rather than being quietly believed.
   const headingDeg = Number(scan && scan.headingDeg);
-  const hasHeading = isFinite(headingDeg) && headingDeg >= 0;
+  const camYaw = Number(scan && scan.headingCamYawDeg);
+  const hasHeading = isFinite(headingDeg) && headingDeg >= 0
+                  && isFinite(camYaw) && camYaw >= 0;
+  const sceneNorth = hasHeading ? (((headingDeg - camYaw) % 360) + 360) % 360 : null;
   const stories = Array.from(new Set(rooms.map(storyOf))).sort(function (a, b) { return a - b; });
   const topStory = stories[stories.length - 1], botStory = stories[0];
 
@@ -566,7 +577,7 @@ function loadcalcScanGeometry(scan, opts) {
     const c = centres[a.ri] || { x: 0, z: 0 };
     const n = _lcWallNormal(a.w, c.x, c.z);
     if (!n) { unfacedWalls++; return; }
-    const oct = _lcOctant(_lcBearing(n, hasHeading ? headingDeg : null));
+    const oct = _lcOctant(_lcBearing(n, sceneNorth));
     _lcOrientAdd(byOrient, oct, net, glass, door);
     _lcOrientAdd(roomOrient[a.ri], oct, net, glass, door);
   });
@@ -601,9 +612,9 @@ function loadcalcScanGeometry(scan, opts) {
     notes.push('No exterior walls could be identified in this scan.');
   }
   if (!hasHeading) {
-    notes.push('This scan captured no compass heading, so the per-direction areas are angles within the scan itself, not north, south, east and west. Solar gain cannot be resolved by direction from it.');
+    notes.push('This scan carries no usable compass reading, so the per-direction areas are angles within the scan itself, not north, south, east and west. Solar gain cannot be resolved by direction from it. Scans taken before the app recorded which way the camera was pointing when the compass was read are in this group.');
   } else {
-    notes.push('The compass mapping has not been checked against a real scan yet, so treat the per-direction split as provisional.');
+    notes.push('The compass mapping has not been checked against a scan of a house whose facing is known, so treat the per-direction split as provisional.');
   }
   if (unfacedWalls) {
     notes.push(unfacedWalls + ' exterior wall(s) had no usable direction and are counted in the totals but not in the per-direction split.');

@@ -922,8 +922,14 @@ test.describe('sizing estimate: orientation', () => {
   // A 4m x 4m box room, walls running clockwise, one window on each wall.
   // Scene axes: +x right, -z "forward". With no compass heading, a wall whose
   // outward normal points along -z is the zero bearing.
-  const BOX = (headingDeg) => ({
+  // Both halves of the compass. headingDeg alone is the bearing the phone
+  // faced when the compass was sampled; the scene's own zero was fixed two
+  // seconds earlier, when the session started. Scene north is the difference,
+  // so a fixture that supplies only one half is a scan with no usable compass,
+  // which is exactly what the old-scan test below asserts.
+  const BOX = (headingDeg, camYawDeg) => ({
     headingDeg: headingDeg,
+    headingCamYawDeg: (camYawDeg === undefined ? 0 : camYawDeg),
     rooms: [{
       label: 'Box', story: 1, floorM2: 16, hM: 2.5, winM2: 4,
       poly: [[0, 0], [4, 0], [4, 4], [0, 4]],
@@ -937,7 +943,7 @@ test.describe('sizing estimate: orientation', () => {
   });
 
   test('every window lands on exactly one side and none go missing', async () => {
-    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0));
+    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0, 0));
     expect(r.ok).toBe(true);
     const dirs = Object.keys(r.byOrientation);
     expect(dirs.sort()).toEqual(['E', 'N', 'NE', 'NW', 'S', 'SE', 'SW', 'W']);
@@ -949,7 +955,7 @@ test.describe('sizing estimate: orientation', () => {
   });
 
   test('opposite walls come out on opposite sides', async () => {
-    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0));
+    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0, 0));
     const at = area => Object.keys(r.byOrientation)
       .find(k => Math.abs(r.byOrientation[k].windowSqFt - Math.round(area * 10.7639)) <= 1);
     const opposite = { N: 'S', S: 'N', E: 'W', W: 'E', NE: 'SW', SW: 'NE', NW: 'SE', SE: 'NW' };
@@ -959,8 +965,8 @@ test.describe('sizing estimate: orientation', () => {
   });
 
   test('the compass rotates the whole house, it does not reshuffle it', async () => {
-    const a = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0));
-    const b = await page.evaluate(x => loadcalcScanGeometry(x), BOX(90));
+    const a = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0, 0));
+    const b = await page.evaluate(x => loadcalcScanGeometry(x), BOX(90, 0));
     // A quarter turn moves every side by exactly two octants, so the sorted
     // list of areas is unchanged and only the labels move.
     const areas = o => Object.keys(o.byOrientation).map(k => o.byOrientation[k].windowSqFt).sort((x, y) => x - y);
@@ -972,25 +978,25 @@ test.describe('sizing estimate: orientation', () => {
   });
 
   test('a scan with no compass says so instead of inventing north', async () => {
-    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(undefined));
+    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(undefined, undefined));
     expect(r.hasCompass).toBe(false);
-    expect(r.notes.join(' ')).toMatch(/no compass heading/i);
+    expect(r.notes.join(' ')).toMatch(/no usable compass/i);
     // The split is still produced, because it is still useful relative to the
     // scan; it just must not be read as north and south.
     expect(r.byOrientation).toBeTruthy();
   });
 
   test('the compass mapping is flagged unverified until a real scan checks it', async () => {
-    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0));
+    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0, 0));
     // Getting the sign backwards puts south glass on the north side and halves
     // a cooling load silently. It stays flagged until somebody scans a house
     // whose facing they know.
     expect(r.orientationUnverified).toBe(true);
-    expect(r.notes.join(' ')).toMatch(/not been checked against a real scan/i);
+    expect(r.notes.join(' ')).toMatch(/not been checked against a scan of a house whose facing is known/i);
   });
 
   test('each room carries its own eight sides', async () => {
-    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0));
+    const r = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0, 0));
     const room = r.rooms[0];
     expect(Object.keys(room.byOrientation).sort()).toEqual(['E', 'N', 'NE', 'NW', 'S', 'SE', 'SW', 'W']);
     // One room, so the room's split is the whole house's split.
@@ -1000,7 +1006,7 @@ test.describe('sizing estimate: orientation', () => {
   });
 
   test('a wall with no length is counted in the totals but not given a direction', async () => {
-    const bad = BOX(0);
+    const bad = BOX(0, 0);
     bad.rooms[0].walls.push({ ax: 1, az: 1, bx: 1, bz: 1, len: 2, h: 2.5, windows: [{ area: 5 }], doors: [] });
     const r = await page.evaluate(b => loadcalcScanGeometry(b), bad);
     expect(r.ok).toBe(true);
@@ -1008,6 +1014,28 @@ test.describe('sizing estimate: orientation', () => {
     // It still contributes glass to the house total, so nothing is lost.
     expect(r.windowSqFt).toBeGreaterThan(
       Object.keys(r.byOrientation).reduce((t, k) => t + r.byOrientation[k].windowSqFt, 0));
+  });
+
+  test('a scan taken before the camera yaw was recorded is not believed', async () => {
+    // The compass fix has two halves and old scans only carry one. Believing
+    // the raw heading would put south glass on whichever side the phone
+    // happened to be facing two seconds into the walk, which is worse than
+    // saying nothing: it looks like an answer.
+    const r = await page.evaluate(() => loadcalcScanGeometry({
+      headingDeg: 137, rooms: [{ label: 'Old', story: 1, floorM2: 16, hM: 2.5, winM2: 1,
+        poly: [[0,0],[4,0],[4,4],[0,4]],
+        walls: [{ ax: 0, az: 0, bx: 4, bz: 0, len: 4, h: 2.5, windows: [{ area: 1 }], doors: [] }] }]
+    }));
+    expect(r.hasCompass).toBe(false);
+    expect(r.notes.join(' ')).toMatch(/no usable compass/i);
+  });
+
+  test('the two halves subtract, so turning the phone before the read changes nothing', async () => {
+    // Same house, same true north, two different moments of sampling. If the
+    // yaw were ignored these would disagree by 90 degrees.
+    const a = await page.evaluate(b => loadcalcScanGeometry(b), BOX(0, 0));
+    const b = await page.evaluate(x => loadcalcScanGeometry(x), BOX(90, 90));
+    expect(b.byOrientation).toEqual(a.byOrientation);
   });
 
   test('rubbish geometry does not throw', async () => {

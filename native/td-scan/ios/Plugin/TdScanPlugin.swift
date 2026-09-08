@@ -252,7 +252,28 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private var pinAlert: UIAlertController?
     private var pinDrop: ((String) -> Void)?
     private var headingDeg: Double = -1
+    // THE CAMERA'S YAW AT THE INSTANT THE COMPASS WAS READ, and the reason the
+    // heading was close to useless before. World alignment is .gravity, so the
+    // scene's -z is wherever the phone pointed when the session STARTED, but
+    // the compass is sampled two seconds later, by which time somebody walking
+    // into a room has turned. The difference was a silent, per-scan error in
+    // every direction JS derived, which matters the moment solar gain is
+    // resolved by orientation. Ship both and the arithmetic is exact:
+    // scene-north = headingDeg - headingCamYawDeg.
+    private var headingCamYawDeg: Double = -1
     private var lastGeomCount = 0
+    // What RoomPlan and ARKit said about the quality of this scan. Nothing here
+    // steers the capture; it exists so a scan that went badly is KNOWABLE
+    // afterward instead of arriving in the same shape as a clean one.
+    private var lastInstruction = ""
+    private var instructionsSeen: [String] = []
+    private var trackingIssues: [String] = []
+    private var lastTracking = ""
+    // Live dimension chips over the walls and windows being scanned.
+    private var measureHost: UIView?
+    private var measureLabels: [UILabel] = []
+    private var liveRoom: CapturedRoom?
+    private var measureTimer: Timer?
     private let locMgr = CLLocationManager()
     private let tickGen = UIImpactFeedbackGenerator(style: .light)
 
@@ -323,6 +344,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             arSession.run(cfg, options: [.resetTracking, .removeExistingAnchors])
         }
         startRoom()
+        startMeasureChips()
         buildOverlay()
         // Keyframes ride the walk on a slow tick; the pose gate keeps only
         // frames that actually add coverage, so a slow scanner is not a
@@ -333,9 +355,150 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         // Grab the heading shortly after start; one sample is plenty.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self = self else { return }
-            if let h = self.locMgr.heading { self.headingDeg = h.trueHeading >= 0 ? h.trueHeading : h.magneticHeading }
+            if let h = self.locMgr.heading {
+                self.headingDeg = h.trueHeading >= 0 ? h.trueHeading : h.magneticHeading
+                // Same instant, same frame: where the camera was actually
+                // pointing in scene coordinates when that bearing was true.
+                // Without this the heading describes a direction nobody can
+                // locate, because the scene's zero was fixed two seconds ago.
+                if let t = self.arSession.currentFrame?.camera.transform {
+                    self.headingCamYawDeg = TdScanViewController.yawDeg(t)
+                }
+            }
             self.locMgr.stopUpdatingHeading()
         }
+    }
+
+    // ── Live dimensions on the walls and the windows ────────────────────────
+    //
+    // Owner 2026-09-08: "want lidar measurement to show live when you complete
+    // a wall, want height in the middle and length in the middle as well, then
+    // want the measurements for the window".
+    //
+    // Every number here is already in hand: didUpdate hands over the live room
+    // twice a second with each surface's dimensions and transform, and the
+    // camera can project a world point to a screen point. Nothing is computed
+    // that was not already known; it is only put where the person can see it
+    // while they are standing in front of the wall it describes.
+    //
+    // THAT IS THE WHOLE POINT. A dimension he can check against the room he is
+    // standing in is a dimension he can catch being wrong. One shown after the
+    // walk is one he has to take on faith.
+    private func startMeasureChips() {
+        let host = UIView(frame: view.bounds)
+        host.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.isUserInteractionEnabled = false
+        view.addSubview(host)
+        measureHost = host
+        // The chips sit under the controls, which are added after this.
+        view.sendSubviewToBack(host)
+        view.sendSubviewToBack(captureView)
+        measureTimer?.invalidate()
+        measureTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            self?.drawMeasureChips()
+        }
+    }
+
+    private func stopMeasureChips() {
+        measureTimer?.invalidate(); measureTimer = nil
+        measureHost?.removeFromSuperview(); measureHost = nil
+        measureLabels.removeAll()
+    }
+
+    private func chipLabel(_ i: Int) -> UILabel {
+        while measureLabels.count <= i {
+            let l = UILabel()
+            l.font = .systemFont(ofSize: 13, weight: .bold)
+            l.textColor = .white
+            l.textAlignment = .center
+            l.backgroundColor = UIColor.black.withAlphaComponent(0.62)
+            l.layer.cornerRadius = 5
+            l.layer.masksToBounds = true
+            l.isHidden = true
+            measureHost?.addSubview(l)
+            measureLabels.append(l)
+        }
+        return measureLabels[i]
+    }
+
+    private func drawMeasureChips() {
+        guard let host = measureHost, let room = liveRoom,
+              let frame = arSession.currentFrame else { return }
+        // Nothing is drawn while ARKit is unsure where the phone is: a chip
+        // pinned to a wall the tracker has lost is worse than no chip.
+        if case .normal = frame.camera.trackingState {} else {
+            measureLabels.forEach { $0.isHidden = true }
+            return
+        }
+        let cam = frame.camera
+        let size = host.bounds.size
+        let orient = TdScanViewController.uiOrientation()
+        let eye = simd_float3(cam.transform.columns.3.x, cam.transform.columns.3.y, cam.transform.columns.3.z)
+        let fwd = -simd_float3(cam.transform.columns.2.x, cam.transform.columns.2.y, cam.transform.columns.2.z)
+
+        var i = 0
+        let place = { (surface: CapturedRoom.Surface) in
+            let t = surface.transform
+            let centre = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
+            let text = TdScanViewController.ftIn(surface.dimensions.x) + " x "
+                     + TdScanViewController.ftIn(surface.dimensions.y)
+            // Behind the camera, or too far to be the wall he is looking at.
+            let to = centre - eye
+            let dist = simd_length(to)
+            if dist < 0.4 || dist > 7.0 { return }
+            if simd_dot(simd_normalize(to), fwd) < 0.35 { return }
+            let p = cam.projectPoint(centre, orientation: orient, viewportSize: size)
+            if !p.x.isFinite || !p.y.isFinite { return }
+            if p.x < 0 || p.y < 0 || p.x > size.width || p.y > size.height { return }
+            let l = self.chipLabel(i); i += 1
+            l.text = "  " + text + "  "
+            // RoomPlan's own doubt, shown where it matters: amber is a wall to
+            // walk again, not a number to write down.
+            switch String(describing: surface.confidence) {
+            case "medium": l.backgroundColor = UIColor(red: 0.55, green: 0.38, blue: 0.02, alpha: 0.72)
+            case "low":    l.backgroundColor = UIColor(red: 0.60, green: 0.20, blue: 0.05, alpha: 0.78)
+            default:       l.backgroundColor = UIColor.black.withAlphaComponent(0.62)
+            }
+            l.sizeToFit()
+            l.frame = CGRect(x: p.x - l.frame.width / 2, y: p.y - l.frame.height / 2,
+                             width: l.frame.width, height: l.frame.height + 4)
+            l.isHidden = false
+        }
+
+        // Length and height in the middle of every wall, which is what he
+        // asked for, and the same on every window and door.
+        for w in room.walls   { place(w) }
+        for o in room.windows { place(o) }
+        for o in room.doors   { place(o) }
+        while i < measureLabels.count { measureLabels[i].isHidden = true; i += 1 }
+    }
+
+    static func uiOrientation() -> UIInterfaceOrientation {
+        if let s = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            return s.interfaceOrientation
+        }
+        return .portrait
+    }
+
+    // Compass bearing of the camera's facing, in the scene's own frame: zero
+    // along -z, increasing clockwise toward +x. Matches the convention
+    // js/loadcalc.js uses for wall normals, deliberately, so the two can be
+    // subtracted without anybody having to remember a sign.
+    static func yawDeg(_ t: simd_float4x4) -> Double {
+        let fwd = -simd_float3(t.columns.2.x, t.columns.2.y, t.columns.2.z)
+        var d = Double(atan2(fwd.x, -fwd.z)) * 180.0 / Double.pi
+        d = d.truncatingRemainder(dividingBy: 360)
+        return d < 0 ? d + 360 : d
+    }
+
+    // Feet and inches, the way a tape reads. 2.4384 m is 8'0", not 8.0 ft.
+    static func ftIn(_ metres: Float) -> String {
+        let total = Double(metres) * 39.3700787
+        var inches = Int((total).rounded())
+        var feet = inches / 12
+        inches -= feet * 12
+        if inches == 12 { feet += 1; inches = 0 }
+        return "\(feet)'\(inches)\""
     }
 
     private func startRoom() {
@@ -565,6 +728,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     @objc private func cancelTapped() {
         cancelled = true
         kfTimer?.invalidate(); kfTimer = nil
+        stopMeasureChips()
         captureView.captureSession.stop()
         for k in keyframes { try? FileManager.default.removeItem(atPath: k.path) }
         TdScanDraft.remove() // explicit cancel throws the draft away too
@@ -579,7 +743,38 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     // back to the video frame if the still fails. One request in flight at a
     // time; each frame saves with the pose + intrinsics of the frame that was
     // actually written.
+    // ARKit's own verdict on whether it still knows where the phone is.
+    //
+    // POLLED, NOT DELEGATED, on purpose: RoomCaptureView owns the ARSession's
+    // delegate, and taking it to hear about tracking would be trading a
+    // working scanner for a diagnostic. The keyframe tick already runs twice a
+    // second and already holds the frame, so this costs nothing.
+    //
+    // Excessive motion and insufficient features are the two states where the
+    // geometry quietly stops being trustworthy, and until now a scan taken
+    // through either arrived looking exactly like a clean one.
+    private func noteTracking(_ frame: ARFrame) {
+        let now: String
+        switch frame.camera.trackingState {
+        case .normal: now = ""
+        case .notAvailable: now = "Tracking lost"
+        case .limited(let why):
+            switch why {
+            case .excessiveMotion: now = "Moved too fast"
+            case .insufficientFeatures: now = "Not enough to track on"
+            case .initializing: now = ""            // normal at the start
+            case .relocalizing: now = "Finding the room again"
+            @unknown default: now = "Tracking limited"
+            }
+        }
+        if now != lastTracking {
+            lastTracking = now
+            if !now.isEmpty && !trackingIssues.contains(now) { trackingIssues.append(now) }
+        }
+    }
+
     private func maybeKeyframe() {
+        if let f = arSession.currentFrame { noteTracking(f) }
         guard keyframes.count < kfMax, !kfBusy, let frame = arSession.currentFrame,
               case .normal = frame.camera.trackingState else { return }
         let t = frame.camera.transform
@@ -644,6 +839,49 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         if n > lastGeomCount {
             lastGeomCount = n
             DispatchQueue.main.async { self.tickGen.impactOccurred(); self.tickGen.prepare() }
+        }
+        // The live room is what the measurement chips are drawn from.
+        liveRoom = room
+    }
+
+    // ── RoomPlan's own coaching, which we were throwing away ────────────────
+    //
+    // The session actively says move closer to the wall, move away, slow down,
+    // turn on the light, not enough texture. Every one of those is the phone
+    // telling the person how to get a scan worth measuring, and it reached
+    // nobody: the delegate method was simply not implemented. Telling him
+    // mid-walk is worth more than telling him afterward that a wall was low
+    // confidence, because mid-walk he can still fix it.
+    public func captureSession(_ session: RoomCaptureSession,
+                               didProvide instruction: RoomCaptureSession.Instruction) {
+        // Matched on the case's NAME rather than the case itself, deliberately.
+        // Apple can add an instruction in any iOS release, and a switch over
+        // cases would either stop compiling or silently drop the new one. This
+        // way an unknown instruction still reaches the person as words.
+        let raw = String(describing: instruction)
+        let text: String
+        switch raw {
+        case "moveCloseToWall":  text = "Move closer to the wall"
+        case "moveAwayFromWall": text = "Move back from the wall"
+        case "slowDown":         text = "Slow down"
+        case "turnOnLight":      text = "Too dark, turn on the light"
+        case "lowTexture":       text = "Blank surface, aim at an edge or a corner"
+        case "normal":           text = ""
+        default:
+            // camelCase to something readable, so a case nobody has seen still
+            // says something rather than nothing.
+            var out = ""
+            for ch in raw {
+                if ch.isUppercase && !out.isEmpty { out.append(" ") }
+                out.append(ch)
+            }
+            text = out.prefix(1).uppercased() + out.dropFirst().lowercased()
+        }
+        lastInstruction = text
+        if !text.isEmpty && !instructionsSeen.contains(text) { instructionsSeen.append(text) }
+        DispatchQueue.main.async {
+            // The hint line is the coaching line while a scan is running.
+            self.hint.text = text.isEmpty ? "" : text
         }
     }
 
@@ -730,6 +968,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
 
     private func deliver() {
         kfTimer?.invalidate(); kfTimer = nil
+        stopMeasureChips()
         // Compact the slots: a nil (failed build, Next tapped without walking)
         // drops out together with its label and story, indices stay aligned.
         var built: [CapturedRoom] = [], lbl: [String] = [], sto: [Int] = []
@@ -825,6 +1064,22 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                     "stories": self.roomStories,
                     "photos": self.photos,
                     "headingDeg": self.headingDeg,
+                    // Scene-north = headingDeg - headingCamYawDeg. Both are
+                    // sent because either alone is a direction nobody can
+                    // locate. -1 in either means no compass reading.
+                    "headingCamYawDeg": self.headingCamYawDeg,
+                    // What the phone said about this scan while it was being
+                    // taken. A scan that went badly must not arrive in the
+                    // same shape as a clean one.
+                    "coaching": self.instructionsSeen,
+                    "trackingIssues": self.trackingIssues,
+                    // How many LiDAR mesh anchors existed at the end. Reported
+                    // rather than acted on: RoomPlan configures the session
+                    // itself and only the resume path asks for scene
+                    // reconstruction, so whether a FIRST scan has a mesh at
+                    // all is a question one real scan answers and no amount of
+                    // reading the code does.
+                    "meshAnchorCount": meshAnchors.count,
                     // The pins: JS partitions each merged floor into rooms by
                     // these positions + the walls between them.
                     "pins": self.pins.map { ["x": $0.x, "z": $0.z, "story": $0.story, "name": $0.name] }
