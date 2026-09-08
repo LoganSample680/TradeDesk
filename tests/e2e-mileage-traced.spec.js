@@ -33,10 +33,10 @@ test.describe('traced trips', () => {
       window.supaLoadFromCloud = async () => {};
       mileage.length = 0;
       mileage.push({ id: 'j-real', legKey: 'j-real', gps: true, date: day, from_name: 'Shop', from: '1200 SW Oakley Ave', to_name: 'John Doe', to: '2950 SW McClure Rd',
-        miles: 3.2, purpose: 'Client Consult', calc_method: 'derived-routed', startedIso: '2026-09-08T12:49:00.000Z', endedIso: '2026-09-08T12:58:00.000Z', created_at: '2026-09-08T12:49:00.000Z',
+        miles: 3.2, mins: 9, purpose: 'Client Consult', calc_method: 'derived-routed', startedIso: '2026-09-08T12:49:00.000Z', endedIso: '2026-09-08T12:58:00.000Z', created_at: '2026-09-08T12:49:00.000Z',
         fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0123, lng: -95.7465 }, path: [[39.0456, -95.7151, 1], [39.0123, -95.7465, 2]] });
       mileage.push({ id: 'j-traced', legKey: 'j-traced', gps: true, date: day, from_name: 'John Doe', from: '2950 SW McClure Rd', to_name: '', to: '',
-        miles: 6.2, purpose: 'Business', calc_method: 'derived-traced', gpsMiles: 6.2, addressUnknown: true, unsavedFrom: false, unsavedTo: true, unsavedVia: false,
+        miles: 6.2, mins: 16, purpose: 'Business', calc_method: 'derived-traced', gpsMiles: 6.2, addressUnknown: true, unsavedFrom: false, unsavedTo: true, unsavedVia: false,
         startedIso: '2026-09-08T18:12:00.000Z', endedIso: '2026-09-08T18:28:00.000Z', created_at: '2026-09-08T18:12:00.000Z',
         fromCoord: { lat: 39.0123, lng: -95.7465 }, toCoord: { lat: 39.0350, lng: -95.7000 }, path: [[39.0123, -95.7465, 1], [39.02, -95.72, 2], [39.0350, -95.7000, 3]] });
       mileage.push({ id: 'hand-1', date: day, from_name: 'Shop', to_name: 'Ace Supply', miles: 2.0, purpose: 'Supply run', created_at: '2026-09-08T20:00:00.000Z', loggedAt: '2026-09-08T20:00:00.000Z' });
@@ -86,7 +86,7 @@ test.describe('traced trips', () => {
       const row = html.slice(html.indexOf('data-lp-id="j-traced"'));
       const rowEnd = row.indexOf('data-lp-id="', 20);
       const traced = rowEnd > 0 ? row.slice(0, rowEnd) : row;
-      expect(traced).toContain('Address not saved');
+      expect(traced).toContain('Unsaved address');
       expect(traced).toMatch(/_mileSaveAddress\('j-traced','to'\)/);
       expect(traced).not.toMatch(/_mileSaveAddress\('j-traced','from'\)/);
       expect(traced).toContain('Not on the books · no address');
@@ -103,6 +103,60 @@ test.describe('traced trips', () => {
         return { needs: !!(el && el.classList.contains('needs')) };
       });
       expect(r.needs).toBe(false);
+    });
+
+    // ── The two ends are the same word, so the clock is what tells them apart
+    // (owner 2026-09-08: "what about the unsaved address to unsaved address
+    // with the time stamp in mileage?").
+    test('unsaved to unsaved: each end carries its own stamp, and each offers its own Save', async () => {
+      await page.evaluate(() => {
+        const m = mileage.find(x => x.id === 'j-traced');
+        m.unsavedFrom = true; m.from_name = ''; m.from = '';
+      });
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const i = html.indexOf('data-lp-id="j-traced"');
+      const row = html.slice(i, html.indexOf('data-lp-id="', i + 20));
+      expect((row.match(/Unsaved address/g) || []).length, 'both ends say it').toBe(2);
+      expect(row).toMatch(/_mileSaveAddress\('j-traced','from'\)/);
+      expect(row).toMatch(/_mileSaveAddress\('j-traced','to'\)/);
+      // The departure clock on the start, the arrival clock on the end: the
+      // only thing distinguishing two identical labels.
+      expect(row).toContain('6:12p');
+      expect(row).toContain('6:28p');
+      expect(row.indexOf('6:12p'), 'departure sits on the FROM end').toBeLessThan(row.indexOf('6:28p'));
+      // Said once: with both ends stamped the right-hand span would repeat
+      // them. The duration is not something either endpoint says, so it stays.
+      expect((row.match(/6:12p/g) || []).length).toBe(1);
+      expect((row.match(/6:28p/g) || []).length).toBe(1);
+      expect(row).toContain('16m');
+    });
+
+    test('one end unsaved keeps the trip span on the right: there is nothing to repeat', async () => {
+      await seed();
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const i = html.indexOf('data-lp-id="j-traced"');
+      const row = html.slice(i, html.indexOf('data-lp-id="', i + 20));
+      expect(row).toContain('6:12p–6:28p');
+    });
+
+    test('a named end never grows a stamp: only the ones with nothing else to say', async () => {
+      await seed();
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const i = html.indexOf('data-lp-id="j-traced"');
+      const row = html.slice(i, html.indexOf('data-lp-id="', i + 20));
+      const fromBlock = row.slice(row.indexOf('>From<'), row.indexOf('>To<') > 0 ? row.indexOf('>To<') : undefined);
+      expect(fromBlock).toContain('John Doe');
+      expect(fromBlock).not.toContain('6:12p');
+    });
+
+    test('a row with no clock still renders both ends without throwing', async () => {
+      await seed();
+      const ok = await page.evaluate(() => {
+        const m = mileage.find(x => x.id === 'j-traced');
+        m.unsavedFrom = true; m.from_name = ''; delete m.startedIso; delete m.endedIso;
+        try { renderAllMileage(); return document.getElementById('mil-table').innerHTML.includes('Unsaved address'); } catch (_e) { return false; }
+      });
+      expect(ok).toBe(true);
     });
 
     test('a real row is untouched by any of this', async () => {
@@ -185,7 +239,9 @@ test.describe('traced trips', () => {
       });
       expect(r.t).toContain('Traced 6.2 mi');
       expect(r.t).toMatch(/Not claimed and not in any total/);
-      expect(r.t).toContain('Address not saved');
+      expect(r.t).toContain('Unsaved address');
+      // Said once, not twice: the whole figure IS the trace.
+      expect(r.t.match(/Traced 6\.2 mi/g).length).toBe(1);
       expect(r.h).toMatch(/_mileSaveAddress\('j-traced','to'\)/);
       expect(r.h).not.toMatch(/_mileSaveAddress\('j-traced','from'\)/);
       expect(r.t).not.toContain('Logged 6.2');
@@ -293,6 +349,66 @@ test.describe('traced trips', () => {
       expect(src).toContain('_mileAddressSaved(c)');
       const wrapped = await page.evaluate(() => saveClient.toString());
       expect(wrapped).toContain('_origSaveClient()');
+    });
+  });
+
+  // ── A deduction is not a cost (owner 2026-09-08: "summary is showing
+  // mileage as a negative number when that's not the case") ─────────────────
+  test.describe('the Books summary', () => {
+    async function summary(seedFn) {
+      return page.evaluate((fn) => {
+        income.length = 0; expenses.length = 0; mileage.length = 0;
+        // eslint-disable-next-line no-new-func
+        (new Function('return ' + fn))()();
+        trackerYear = String(new Date().getFullYear());
+        renderSummary();
+        const el = document.getElementById('sum-mets');
+        return el ? el.textContent : '';
+      }, seedFn.toString());
+    }
+
+    test('driving with no income is not a loss: the deduction lowers the tax, not the profit', async () => {
+      const t = await summary(() => {
+        const yr = String(new Date().getFullYear());
+        mileage.push({ id: 'm1', date: yr + '-09-08', from_name: 'Shop', to_name: 'John Doe', miles: 3.2, purpose: 'Client Consult' });
+      });
+      // The old formula subtracted the deduction from profit as though it
+      // were cash, and printed -$2.32 for one 3.2 mile drive.
+      expect(t).not.toContain('-$2.32');
+      expect(t).toMatch(/Net profit\$0\.00|Net profit\$0/);
+      // The deduction is still shown, on its own tile, as a positive figure.
+      expect(t).toContain('$2.32');
+      expect(t).toContain('3 mi');
+    });
+
+    test('with income, profit is income less expenses less tax, and the deduction is only in the tax', async () => {
+      const t = await summary(() => {
+        const yr = String(new Date().getFullYear());
+        income.push({ id: 'i1', date: yr + '-09-08', amount: 10000, cat: 'Revenue' });
+        expenses.push({ id: 'e1', date: yr + '-09-08', amount: 1000, cat: 'supplies' });
+        mileage.push({ id: 'm1', date: yr + '-09-08', from_name: 'Shop', to_name: 'John Doe', miles: 100, purpose: 'Client Consult' });
+      });
+      const num = (label) => { const m = t.match(new RegExp(label + '\\$([\\d,]+\\.\\d\\d)')); return m ? Number(m[1].replace(/,/g, '')) : null; };
+      const inc = num('Income'), exp = num('Expenses'), tax = num('Est\\. tax'), profit = num('Net profit');
+      expect([inc, exp]).toEqual([10000, 1000]);
+      expect(profit).toBeCloseTo(inc - exp - tax, 2);
+      // And it is NOT the old double subtraction.
+      expect(profit).not.toBeCloseTo(inc - exp - 72.5 - tax, 2);
+    });
+
+    test('a traced trip changes no figure on the summary at all', async () => {
+      const withOut = await summary(() => {
+        const yr = String(new Date().getFullYear());
+        income.push({ id: 'i1', date: yr + '-09-08', amount: 5000, cat: 'Revenue' });
+        mileage.push({ id: 'm1', date: yr + '-09-08', from_name: 'Shop', to_name: 'John Doe', miles: 10, purpose: 'Client Consult' });
+      });
+      const withTraced = await summary(() => {
+        const yr = String(new Date().getFullYear());
+        income.push({ id: 'i1', date: yr + '-09-08', amount: 5000, cat: 'Revenue' });
+        mileage.push({ id: 'm1', date: yr + '-09-08', from_name: 'Shop', to_name: 'John Doe', miles: 10, purpose: 'Client Consult' });
+        mileage.push({ id: 'm2', date: yr + '-09-08', from_name: '', to_name: '', miles: 99, purpose: 'Business', addressUnknown: true, unsavedTo: true });
+      });
+      expect(withTraced).toBe(withOut);
     });
   });
 

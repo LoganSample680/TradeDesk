@@ -2648,6 +2648,10 @@ function _milRenderTripList(shown,yr){
       const fromAddr=r.from||'';
       const toName=r.to_name||'';
       const toAddr=r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
+      // Declared here, above its first use: the unsaved-end labels below
+      // carry their own stamp, and a const used before its line is a dead
+      // zone, not a hoist. Same compact format the ON SITE card uses.
+      const _fmtClk=(t)=>{try{return bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _loc=(name,addr)=>{
         if(!name&&!addr)return'';
         if(name&&addr&&name!==addr)return escHtml(name)+'<div style="font-size:12px;color:var(--text3);font-weight:400;margin-top:1px">'+escHtml(addr)+'</div>';
@@ -2655,14 +2659,28 @@ function _milRenderTripList(shown,yr){
       };
       // AN UNSAVED END SAYS SO, AND OFFERS THE FIX (rule 14, owner 2026-09-08:
       // "save this address should popup the enter lead"). The traced row
-      // knows which end it is missing; that end reads "Address not saved"
+      // knows which end it is missing; that end reads "Unsaved address"
       // with a Save button that opens the new-lead form on the traced
       // coordinates, so the place lands as a real client record and the
       // day re-derives with a fence where the hole was.
+      //
+      // THE SAME WORDS THE TIME LOG USES (owner 2026-09-08: "in the mileage
+      // just use the Unsaved Address verbiage like we do in timesheet"). The
+      // rail has said "Unsaved address" since 2026-09-04; two screens
+      // describing one fact in two vocabularies is two things to learn.
+      //
+      // AND ITS OWN CLOCK, because on an unsaved-to-unsaved trip the two ends
+      // are otherwise the same word twice with nothing to tell them apart
+      // (owner, same day: "what about the unsaved address to unsaved address
+      // with the time stamp in mileage?"). The stamp is what he actually has
+      // to go on: he remembers where he was at 8:12, not a coordinate. Only
+      // on an end that has no name, so a named end is unchanged.
       // Same pill as the Route button beside it, so the row has one button
       // language rather than a browser-default control in the middle of it.
-      const _unsavedEnd=(which)=>'<span style="color:var(--text-3);font-style:italic">Address not saved</span>'+
-        ' <button type="button" class="mil-save-addr" style="font-size:11px;font-weight:700;padding:2px 9px;border:1px solid var(--border);border-radius:999px;background:var(--bg2);color:var(--text);font-family:inherit;margin-left:4px;cursor:pointer;vertical-align:middle" onclick="_mileSaveAddress('+_milIdArg(r.id)+',\''+which+'\')">Save</button>';
+      const _endClk=(iso)=>{if(!iso)return '';try{const t=_fmtClk(iso);return t?'<div style="font-size:11px;color:var(--text3);font-weight:400;margin-top:1px">'+escHtml(t)+'</div>':'';}catch(_e){return '';}};
+      const _unsavedEnd=(which)=>'<span style="color:var(--text-3);font-style:italic">Unsaved address</span>'+
+        ' <button type="button" class="mil-save-addr" style="font-size:11px;font-weight:700;padding:2px 9px;border:1px solid var(--border);border-radius:999px;background:var(--bg2);color:var(--text);font-family:inherit;margin-left:4px;cursor:pointer;vertical-align:middle" onclick="_mileSaveAddress('+_milIdArg(r.id)+',\''+which+'\')">Save</button>'+
+        _endClk(which==='from'?r.startedIso:(r.endedIso||r.startedIso));
       const fromHtml=(r.addressUnknown&&r.unsavedFrom)?_unsavedEnd('from')
         :(_loc(fromName,fromAddr)||'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>');
       const toHtml=(r.addressUnknown&&(r.unsavedTo||r.unsavedVia))?_unsavedEnd('to')
@@ -2683,9 +2701,15 @@ function _milRenderTripList(shown,yr){
       // End falls back to start+wheel-time for rows written before endedIso
       // existed. Stale/manual rows show neither, their clock was never
       // observed.
-      const _fmtClk=(t)=>{try{return bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
+      //
+      // SAID ONCE. When BOTH ends are unsaved they each carry their own stamp
+      // on the left (that is the only thing telling two identical labels
+      // apart), so the span here would be the same two times a third and
+      // fourth time. The duration stays: how long the drive took is not
+      // something either endpoint says.
+      const _bothStamped=!!(r.addressUnknown&&r.unsavedFrom&&(r.unsavedTo||r.unsavedVia));
       let clockLine='';
-      if(r.startedIso&&(r.endedIso||r.mins>0)){
+      if(!_bothStamped&&r.startedIso&&(r.endedIso||r.mins>0)){
         const _s=_fmtClk(r.startedIso);
         const _e=_fmtClk(r.endedIso||new Date(Date.parse(r.startedIso)+(r.mins||0)*60000).toISOString());
         if(_s&&_e)clockLine=_s+'–'+_e;
@@ -2915,15 +2939,23 @@ function openMileageRoute(id){
       '<div>'+(r.unsavedFrom?_saveBtn('from','start'):'')+((r.unsavedTo||r.unsavedVia)?_saveBtn('to',r.unsavedVia&&!r.unsavedTo?'stop':'end'):'')+'</div>'+
     '</div>';
   }
-  const _fromLbl=(r.addressUnknown&&r.unsavedFrom)?'Address not saved':(r.from_name||r.from||'Start');
-  const _toLbl=(r.addressUnknown&&(r.unsavedTo||r.unsavedVia))?'Address not saved':(r.to_name||r.to||'End');
+  // The Time Log's words, and each unsaved end's own clock: on an
+  // unsaved-to-unsaved trip the header would otherwise read "Unsaved address
+  // → Unsaved address" and name nothing (owner 2026-09-08).
+  const _clk=(t)=>{try{return t?bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p'):'';}catch(_e){return'';}};
+  const _unsLbl=(t)=>{const c=_clk(t);return 'Unsaved address'+(c?' '+c:'');};
+  const _fromLbl=(r.addressUnknown&&r.unsavedFrom)?_unsLbl(r.startedIso):(r.from_name||r.from||'Start');
+  const _toLbl=(r.addressUnknown&&(r.unsavedTo||r.unsavedVia))?_unsLbl(r.endedIso||r.startedIso):(r.to_name||r.to||'End');
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;line-height:1.25;margin-bottom:2px">Route driven</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+
       escHtml(_fromLbl)+' → '+escHtml(_toLbl)+'</div>'+
     '<div id="_mil-route-body" style="margin-bottom:10px"></div>'+
-    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:'+((_csNote||_trNote)?'8px':'12px')+'">'+
-      gps+(r.addressUnknown?'Traced ':'Logged ')+_mi+' mi</div>'+
+    // On a traced row the amber note below states the figure and what it
+    // means; repeating it on its own line first said "Traced 6.2 mi" twice.
+    (r.addressUnknown?'':
+      '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:'+(_csNote?'8px':'12px')+'">'+
+        gps+'Logged '+_mi+' mi</div>')+
     _trNote+
     _csNote+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';

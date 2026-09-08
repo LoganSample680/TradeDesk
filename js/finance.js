@@ -3938,7 +3938,25 @@ function renderSummary(){
   const _mileDedS=_vdS?_vdS.mileDed:tMi*irsRateYr;
   const net=Math.max(0,tIn-tEx-_mileDedS);
   const tax=estimateTax(net,yr);
-  const profit=tIn-tEx-_mileDedS-tax;
+  // A MILEAGE DEDUCTION IS NOT MONEY OUT THE DOOR (owner 2026-09-08: "summary
+  // is showing mileage as a negative number when that's not the case").
+  //
+  // This read tIn-tEx-_mileDedS-tax, so the deduction was subtracted TWICE:
+  // once here as though it were cash spent, and again inside `tax`, which is
+  // already computed on income less expenses less the deduction. A day with no
+  // invoices and one 3.2 mile drive therefore read "Net profit -$2.32", as if
+  // driving to a job had cost him two dollars and thirty-two cents.
+  //
+  // It had not. The standard rate is a TAX allowance standing in for fuel,
+  // wear, insurance and depreciation; the fuel he actually bought is already
+  // in expenses. What it buys him is a smaller tax bill, and that is exactly
+  // how it reaches this line now: through `tax`.
+  //
+  // The other two net-profit figures in this file have always agreed with
+  // this: the job-by-job table (grandRev-grandExp) and the P&L CSV, which
+  // lists MILEAGE DEDUCTION as its own section and never subtracts it from
+  // NET PROFIT. This tile was the one that disagreed.
+  const profit=tIn-tEx-tax;
   document.getElementById('sum-mets').innerHTML=
     '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">'+yr+' summary</div>'+
     '<div class="mets">'+
@@ -3946,7 +3964,7 @@ function renderSummary(){
     '<div class="met"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">'+fmt(tEx)+'</div></div>'+
     '<div class="met"><div class="met-l">Mileage</div><div class="met-v">'+fmt(_mileDedS)+'</div><div class="met-s">'+(_vdS?_vdS.deductedMiles:tMi).toFixed(0)+' mi · $'+irsRateYr.toFixed(3)+'/mi</div></div>'+
     '<div class="met"><div class="met-l">Est. tax</div><div class="met-v" style="color:var(--amber)">'+fmt(tax)+'</div></div>'+
-    '<div class="met" style="grid-column:1/-1"><div class="met-l">Net profit</div><div class="met-v" style="color:'+(profit>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(profit)+'</div><div class="met-s">After tax &amp; deductions</div></div>'+
+    '<div class="met" style="grid-column:1/-1"><div class="met-l">Net profit</div><div class="met-v" style="color:'+(profit>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(profit)+'</div><div class="met-s">Income less expenses and tax. The mileage deduction lowers the tax, not this.</div></div>'+
     '</div>';
   const byType={};yInc.forEach(r=>{byType[r.type]=(byType[r.type]||0)+r.amount;});
   const byCat={};yExp.forEach(r=>{byCat[r.cat]=(byCat[r.cat]||0)+r.amount;});
