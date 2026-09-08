@@ -1809,6 +1809,145 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // ── WHAT ACTUALLY RUNS THE DERIVE (Jack, 2026-09-08) ──────────────────────
+  //
+  // The deriver was never wrong about his morning. Nothing ever asked it.
+  //
+  // He drove in at 7:44, parked at the shop at 7:57 and left the phone in the
+  // truck, so the tape flipped automotive -> `still` and never to onFoot. The
+  // journey-end trigger tested `_foot(cur)`, which `still` is not, so it did
+  // not fire. The two push-pings that came after it (8:00 and 8:30) did call
+  // the derive, but through a 4-second setTimeout armed inside a background
+  // wake that iOS suspended before it could fire. The 8:14 relaunch was a
+  // location wake, not a person, so no app-active came either. His day sat
+  // underived on the phone until he opened the app, and no screen anywhere
+  // said the trip was missing.
+  //
+  // The deriver already knew about phones left in trucks: stillEndMs is ten
+  // minutes, "a truck that sits this long has parked, foot flip or not", and
+  // there is a test for it in tests/e2e-geo-derive.spec.js. Only the wiring
+  // had not been told. So these tests are about WHO CALLS, and about the one
+  // thing that turned a missed call into a silent one: an edge that arrives
+  // on a background wake must derive NOW, in the runtime it actually has,
+  // never on a timer into a process that is about to be suspended.
+  test.describe('what runs a live derive', () => {
+    // Every case records the `why` and whether it asked for the immediate
+    // path, then the real function is put back. Nothing here derives for
+    // real: the point is which calls are made, not what they produce.
+    async function calls(events) {
+      return page.evaluate(async (evs) => {
+        const keep = window._geoDeriveLiveSoon, keepUpd = window._geoBgUpdateCheck;
+        const seen = [];
+        window._geoDeriveLiveSoon = (why, now) => { seen.push({ why, now: !!now }); };
+        window._geoBgUpdateCheck = () => {};
+        try {
+          for (const e of evs) {
+            try { await _geoTdEvent(Object.assign({ ts: Date.now() }, e), false); } catch (_e) {}
+          }
+          return seen;
+        } finally { window._geoDeriveLiveSoon = keep; window._geoBgUpdateCheck = keepUpd; }
+      }, events);
+    }
+    const motion = (kind, prevKind) => ({ type: 'motion', kind, prevKind });
+
+    test('a phone left in the truck ends the journey: automotive to still derives', async () => {
+      // THE BUG, as a test. Before the fix this returned [].
+      const r = await calls([motion('automotive', 'walking'), motion('still', 'automotive')]);
+      expect(r.some(c => c.why === 'flip'), 'automotive to still is a journey end').toBe(true);
+    });
+
+    test('and it does not wait four seconds to do it', async () => {
+      // The half that made it silent rather than late. A flip arrives on a
+      // background wake exactly like a ping does.
+      const r = await calls([motion('automotive', 'walking'), motion('still', 'automotive')]);
+      expect(r.find(c => c.why === 'flip').now).toBe(true);
+    });
+
+    test('walking off still ends it too: the old case is not traded for the new one', async () => {
+      for (const k of ['onFoot', 'walking', 'running']) {
+        const r = await calls([motion('automotive', 'walking'), motion(k, 'automotive')]);
+        expect(r.some(c => c.why === 'flip'), k + ' ends a journey').toBe(true);
+      }
+    });
+
+    test('cycling does not end a journey', async () => {
+      // Deliberate, and the reason is already in js/geo-track.js: the server
+      // counts cycling as vehicular. A truck crawling through a lot reads as
+      // cycling, and calling that a journey end splits one drive into two.
+      const r = await calls([motion('automotive', 'walking'), motion('cycling', 'automotive')]);
+      expect(r.some(c => c.why === 'flip')).toBe(false);
+    });
+
+    test('coming to rest from a standstill is not a journey end either', async () => {
+      // No drive to end. Only automotive -> rest counts.
+      const r = await calls([motion('still', 'onFoot'), motion('onFoot', 'still')]);
+      expect(r.some(c => c.why === 'flip')).toBe(false);
+    });
+
+    test('the 30-minute ping derives now, not on a timer', async () => {
+      // The load-bearing one for his actual morning. At the instant the truck
+      // stops, the stillness is zero minutes long and the journey cannot
+      // close yet (stillEndMs is ten). It is the NEXT ping that closes it, so
+      // that ping is the last thing standing between a real drive and a hole
+      // in the day.
+      const r = await calls([{ type: 'push-ping', lat: 39.01, lng: -95.69, acc: 5 }]);
+      const c = r.find(x => x.why === 'push-ping');
+      expect(c, 'a ping asks for a derive').toBeTruthy();
+      expect(c.now, 'and cannot afford to wait for a timer').toBe(true);
+    });
+
+    test('a background relaunch derives: iOS wakes the app without ever making it active', async () => {
+      const r = await calls([{ type: 'app-relaunch' }]);
+      const c = r.find(x => x.why === 'app-relaunch');
+      expect(c).toBeTruthy();
+      expect(c.now).toBe(true);
+    });
+
+    test('wake-on-move derives now: it IS the relaunch', async () => {
+      const r = await calls([{ type: 'wake-move', lat: 39.01, lng: -95.69, acc: 5 }]);
+      const c = r.find(x => x.why === 'wake-move');
+      expect(c).toBeTruthy();
+      expect(c.now).toBe(true);
+    });
+
+    test('the foreground sources keep the debounce they were given', async () => {
+      // The 4 seconds is not a bug, it is a burst absorber, and a fence
+      // crossing genuinely arrives in bursts. Only the wake-driven callers
+      // needed taking off it.
+      const r = await calls([
+        { type: 'regionEnter', regionId: 'shop', lat: 39.01, lng: -95.69 },
+        { type: 'regionExit', regionId: 'shop', lat: 39.01, lng: -95.69 },
+      ]);
+      const fence = r.filter(c => c.why === 'regionEnter' || c.why === 'regionExit');
+      expect(fence.length, 'both crossings ask').toBe(2);
+      expect(fence.every(c => c.now === false), 'and both are content to wait').toBe(true);
+    });
+
+    test('an immediate derive leaves no timer armed behind it', async () => {
+      // Belt and braces on the real function: `now` must not also arm the
+      // 4-second path, or a suspended process still has a stale timer to
+      // fire on its next wake and the day gets derived twice for nothing.
+      const r = await page.evaluate(async () => {
+        const keepDay = window._geoDeriveDayNow;
+        let ran = 0;
+        window._geoDeriveDayNow = async () => { ran++; return null; };
+        try {
+          _geoDeriveLiveSoon('test-debounced');
+          const armedAfterDebounced = _geoDeriveLiveT != null;
+          await _geoDeriveLiveSoon('test-now', true);
+          return { armedAfterDebounced, armedAfterNow: _geoDeriveLiveT != null, ran };
+        } finally {
+          window._geoDeriveDayNow = keepDay;
+          if (_geoDeriveLiveT) { clearTimeout(_geoDeriveLiveT); window._geoDeriveLiveT = null; }
+        }
+      });
+      expect(r.armedAfterDebounced, 'the debounced path arms a timer').toBe(true);
+      // The immediate call cancels the pending one and runs instead of arming.
+      expect(r.armedAfterNow).toBe(false);
+      expect(r.ran, 'it derived once, right then').toBe(1);
+    });
+  });
+
   test('no console errors across the wiring', async () => {
     assertNoErrors(page, 'geo-derive wiring');
   });

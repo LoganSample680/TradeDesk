@@ -5134,6 +5134,21 @@ async function _geoTdEvent(ev,replay){
     if(/^app-/.test(String(ev.type||''))){
       _geoAppLogPush(Number(ev.ts)||Date.now(),String(ev.type).slice(4));
       if(!replay&&ev.type==='app-active'){_geoDeriveRebuildIfStale();_geoTapeDriveCheck('active');_geoDeriveLiveSoon('app-active');}
+      // A BACKGROUND RELAUNCH IS ALSO A CHANCE (Jack, 2026-09-08). iOS
+      // relaunches this app for a location wake without ever making it
+      // active, so app-active never comes and the day stays underived until
+      // somebody opens it by hand. His 8:14 relaunch was exactly that.
+      //
+      // A derive is a pure function of the tape, the fixes and the rules, so
+      // running one on a day that needed nothing writes the same rows onto
+      // the same keys and changes nothing. Cheap to be wrong, expensive to
+      // miss. NOW rather than debounced, for the same reason as the ping.
+      //
+      // It does NOT open a foreground interval: rule 10 in js/geo-derive.js
+      // reads app-active alone for office minutes, deliberately (a relaunch
+      // nobody asked for is not somebody doing paperwork), and this leaves
+      // that judgement exactly where it is.
+      if(!replay&&ev.type==='app-relaunch')_geoDeriveLiveSoon('app-relaunch',true);
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
     if(!replay&&ev.type==='push-ping')_geoPingBurst();
@@ -5143,7 +5158,10 @@ async function _geoTdEvent(ev,replay){
     // fix has since left gets closed without waiting for a flip.
     if(!replay&&ev.type==='push-ping'){
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
-      _geoDeriveLiveSoon('push-ping');
+      // NOW, not in four seconds. This arrives on a background wake with a few
+      // seconds of runtime; see the note on _geoDeriveLiveSoon. A ping every
+      // thirty minutes is not a burst and has nothing to coalesce with.
+      _geoDeriveLiveSoon('push-ping',true);
     }
     return;
   }
@@ -5276,11 +5294,27 @@ async function _geoTdEvent(ev,replay){
       // it is not the departure that a fence exit ten minutes from now would
       // be describing.
       if(_foot(cur)||cur==='still'){_geoDrivePendingAt=null;_geoDrivePendingId=null;}
-      // THE JOURNEY END (owner 2026-09-02): automotive -> foot is when the
+      // THE JOURNEY END (owner 2026-09-02): automotive -> rest is when the
       // day is re-derived. Live only, and only a fresh edge: a replayed
       // buffer from yesterday is the boot rebuild's job, not a reason to
       // rewrite today.
-      if(_foot(cur)&&_auto(prev)&&!replay&&_geoEvFresh(ev))_geoDeriveLiveSoon('flip');
+      //
+      // AMENDED 2026-09-08: it read automotive -> FOOT, and a phone left in
+      // the truck never walks anywhere. Owner, on Jack's morning: "guess this
+      // is an instance where he left his phone in the truck." He drove in at
+      // 7:44, parked at the shop at 7:57, and the tape flipped straight to
+      // `still` because the phone stayed on the seat. `still` is not foot, so
+      // the journey end never fired and the leg was never derived. Every
+      // other day this week the same drive ended in an onFoot flip and logged
+      // fine, which is the whole reason it took until now to see.
+      //
+      // Coming to rest ends a journey whether or not the person carrying the
+      // phone got out with it. This is the same `_foot(cur)||cur==='still'`
+      // test the pending-departure claim four lines above already uses, so it
+      // is this file's existing idiom for "the truck stopped", not a new rule.
+      // Cycling stays out of it on purpose: the server counts cycling as
+      // vehicular (see _geoKindRests), so a cycling edge is not a journey end.
+      if((_foot(cur)||cur==='still')&&_auto(prev)&&!replay&&_geoEvFresh(ev))_geoDeriveLiveSoon('flip',true);
       // ── AND THIS IS WHAT SHUTS THE CONTINUOUS GPS OFF ────────────────────
       // Owner: "when automotive goes back to cycling or walking that fire
       // another ping which shuts off the continuous gps." Any non-automotive
@@ -5339,7 +5373,8 @@ async function _geoTdEvent(ev,replay){
   if(ev.type==='wake-move'&&!replay&&_geoEvFresh(ev)){
     _geoParkNote('wake-move',hasFix?'fix':'no fix');
     if(!_geoDriveWinAt)_geoTapeDriveCheck('wake-move');
-    _geoDeriveLiveSoon('wake-move');
+    // Wake-driven by definition: this IS the relaunch. Derive now (2026-09-08).
+    _geoDeriveLiveSoon('wake-move',true);
   }
   if(ev.type==='regionExit'&&_geoEvFresh(ev)){
     if(replay)_geoDriveWindowOpen('fence-exit-replay');
@@ -7040,8 +7075,24 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
 }
 
 let _geoDeriveLiveT=null;
-function _geoDeriveLiveSoon(why){
-  if(_geoDeriveLiveT)clearTimeout(_geoDeriveLiveT);
+// WHY SOME CALLERS CANNOT AFFORD TO WAIT (Jack, 2026-09-08).
+//
+// The 4-second debounce exists to fold a burst of fence crossings into one
+// derive, and for an app somebody is holding it is free. On a BACKGROUND WAKE
+// it is fatal. A silent push gets the process a few seconds of runtime and
+// then iOS suspends the JS again, so a derive scheduled four seconds out is
+// scheduled into a process that is already asleep. It never runs, and nothing
+// says so.
+//
+// His 8 September: drove 7:44 to 7:57, and the day sat underived all morning.
+// Both of its chances (the 8:00 and 8:30 push-pings) armed a timer nothing was
+// awake to fire. The trip did not exist on any screen until he opened the app.
+//
+// So a wake-driven caller derives NOW and spends the window it actually has.
+// The chatty foreground sources keep the debounce, which is what it is for.
+function _geoDeriveLiveSoon(why,now){
+  if(_geoDeriveLiveT){clearTimeout(_geoDeriveLiveT);_geoDeriveLiveT=null;}
+  if(now)return _geoDeriveDayNow(_geoDayKeyOf(Date.now(),_geoBizTz()),null);
   _geoDeriveLiveT=setTimeout(()=>{_geoDeriveLiveT=null;_geoDeriveDayNow(_geoDayKeyOf(Date.now(),_geoBizTz()),null);},4000);
 }
 
