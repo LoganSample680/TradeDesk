@@ -96,9 +96,17 @@ function _seRoomLines(r,st){
   if(_seIsElec()){
     const er=_scanElecRates();
     const n=_scanElectricalNumbers(r);
-    if(n.outlets)out.push({k:'outlet',desc:r.label+' · receptacles (NEC-spaced)',qty:n.outlets,unit:'ea',rate:bake(+er.outlet||0),notes:'Count from scanned walls per NEC 210.52'+multNote});
+    // A receptacle count is a code conclusion, so it only appears when a
+    // verified dataset for this contractor's own edition answered it. When it
+    // has not, the line is left off rather than filled with a plausible
+    // number: the note used to cite "NEC 210.52" as the authority for a count
+    // that came out of nobody's code book.
+    const edLabel=(n.marks&&n.marks.length&&typeof codeEditionFor==='function')
+      ? (codeEditionFor('nec')||'') : '';
+    if(n.outlets)out.push({k:'outlet',desc:r.label+' · receptacles',qty:n.outlets,unit:'ea',rate:bake(+er.outlet||0),
+      notes:'Count from scanned walls, spacing per NEC '+(edLabel?edLabel+' ':'')+'210.52(A)(1)'+multNote});
     if(n.switches)out.push({k:'sw',desc:r.label+' · switches',qty:n.switches,unit:'ea',rate:bake(+er.sw||0),notes:'One per entry'+multNote});
-    if(n.gfci)out.push({k:'gfci',desc:r.label+' · GFCI protection',qty:1,unit:'lot',rate:bake(+er.gfci||0),notes:'GFCI-required room'+multNote});
+    if(n.gfci)out.push({k:'gfci',desc:r.label+' · GFCI protection',qty:1,unit:'lot',rate:bake(+er.gfci||0),notes:'GFCI required, NEC 210.8(A)'+multNote});
   }else{
     const rates=_scanRates();
     _SE_SURFS.forEach(s=>{
@@ -158,7 +166,11 @@ function _seRender(){
     }).join('');
     const multChips=_SCANEST_MULTS.map(m=>
       '<button onclick="_seToggleMult('+i+',\''+m.k+'\')" class="btn btn-sm" style="padding:5px 9px;font-size:10px;'+(st.mults[m.k]?'background:#D97706;color:#fff;border-color:#D97706':'')+'">'+m.label+' +'+m.pct+'%'+(m.auto&&r.hM>=_SCANEST_HIGH_CEIL_M?' (measured)':'')+'</button>').join('');
-    const elecLine=elec?('<div style="font-size:11px;color:var(--text2)">'+(()=>{const n=_scanElectricalNumbers(r);return n.outlets+' outlets · '+n.switches+' switch'+(n.switches>1?'es':'')+(n.gfci?' · GFCI':'');})()+'</div>'):'';
+    // Wall footage is measurement and always shows. The receptacle count only
+    // shows when the code answered, and says plainly when it did not.
+    const elecLine=elec?('<div style="font-size:11px;color:var(--text2)">'+(()=>{const n=_scanElectricalNumbers(r);
+      return (n.outlets!=null?n.outlets+' outlets':n.wallSpaceFt+' ft of wall, no code loaded')+
+             ' · '+n.switches+' switch'+(n.switches>1?'es':'')+(n.gfci?' · GFCI':'');})()+'</div>'):'';
     return '<div class="card" id="se-room-'+i+'" style="padding:12px 14px;transition:box-shadow .3s ease;'+(st.on?'':'opacity:.45')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
         '<label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;cursor:pointer"><input type="checkbox" '+(st.on?'checked':'')+' onchange="_seToggleRoom('+i+')" style="width:17px;height:17px;accent-color:var(--blue)">'+escHtml(r.label)+'</label>'+

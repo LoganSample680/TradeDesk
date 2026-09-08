@@ -50,6 +50,8 @@ function fabricatedRoom() {
   });
 }
 
+const { FAKE_NEC } = require('./fixtures/code-fake-verified');
+
 test.describe('TdScan web half', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
@@ -59,7 +61,23 @@ test.describe('TdScan web half', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
     await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+    // The knowingly fake edition, parked on the page for the tests that need a
+    // verified dataset. Registering it is each test's own deliberate act.
+    await page.evaluate((f) => { window.__FAKE_NEC = f; }, FAKE_NEC);
   });
+
+  // Any test that expects a receptacle count has to register a verified book
+  // first, and say so. Leaning on an earlier test having done it is how a
+  // suite starts passing for reasons nobody chose: the shards reorder and it
+  // is suddenly red with nothing changed.
+  const withBook = () => page.evaluate(() => {
+    window.codeRegister(Object.assign({}, window.__FAKE_NEC,
+      { rules: window.necRules, verified: true }));
+    window.setCodeEdition('nec', 'FAKE');
+  });
+  // And a test that expects the refusal has to be sure no earlier test left a
+  // book lying around.
+  const withoutBook = () => page.evaluate(() => { window.setCodeEdition('nec', ''); });
   test.afterAll(async () => { await page.context().close(); });
 
   test('parses RoomPlan JSON into honest footage: 120 sq ft floor, 44 ft of wall, 8 ft ceilings', async () => {
@@ -87,32 +105,71 @@ test.describe('TdScan web half', () => {
     expect(r.windows).toBe(1);
   });
 
-  test('NEC engine: 6-foot rule placement, walls under 2 ft skipped, doorways break the run', async () => {
+  test('with no code book loaded there is no receptacle count, and the walls are still measured', async () => {
+    // THE POINT OF THIS TEST. The spacing distances used to be literals in
+    // js/scan.js, typed from memory, feeding a priced bid line whose note
+    // cited "NEC 210.52" as its authority. Now the count comes through
+    // codeEval and there is no verified dataset here, so there is no count.
+    // Measuring the wall is ours and still happens.
+    await withoutBook();
     const r = await page.evaluate((raw) => {
       const room = _scanParseRoom(raw, 'Bedroom');
-      const plan = _scanOutletPlan(room);
       const el = _scanElectricalNumbers(room);
-      // A bare 20 ft wall must get 2 receptacles (ceil(20/12)); 18 in of wall
-      // gets none (under the 2 ft minimum).
-      const wall20 = { walls: [{ id: 'a', ax: 0, az: 0, bx: 6.096, bz: 0, len: 6.096, h: 2.4, doors: [], windows: [] }] };
-      const wall18in = { walls: [{ id: 'b', ax: 0, az: 0, bx: 0.4572, bz: 0, len: 0.4572, h: 2.4, doors: [], windows: [] }] };
+      return { outlets: el.outlets, reason: el.outletsReason, marks: el.marks.length,
+               spaces: el.wallSpaces.length, wallFt: el.wallSpaceFt,
+               south: el.wallSpaces.filter(x => x.wallId === 'w-s').length,
+               gfci: el.gfci, switches: el.switches };
+    }, fabricatedRoom());
+    // null, never 0: "no book" and "this room needs none" are different answers.
+    expect(r.outlets).toBe(null);
+    expect(r.reason).toBeTruthy();
+    expect(r.marks, 'nothing is drawn that cannot be defended').toBe(0);
+    expect(r.gfci, 'the GFCI list is the book\'s too').toBe(null);
+    // Geometry owes nothing to any book and answers anyway.
+    expect(r.spaces).toBe(5);
+    expect(r.south, 'the doorway splits the south wall into two spaces').toBe(2);
+    expect(r.wallFt).toBeGreaterThan(40);
+    // Not a code number, so it survives: one switch per way in.
+    expect(r.switches).toBe(1);
+  });
+
+  test('with a verified book loaded the count is the book\'s arithmetic, not ours', async () => {
+    // A knowingly fake edition: 10 ft spacing, 5 ft minimum wall space.
+    // Deliberately not the real NEC, so this proves the RULE rather than
+    // quietly re-asserting numbers nobody read out of a code book.
+    await withBook();
+    const r = await page.evaluate((raw) => {
+      const room = _scanParseRoom(raw, 'Bedroom');
+      const el = _scanElectricalNumbers(room);
+      const one = (lenM) => _scanElectricalNumbers({ label: 'x', doorN: 0,
+        walls: [{ id: 'a', ax: 0, az: 0, bx: lenM, bz: 0, len: lenM, h: 2.4, doors: [], windows: [] }] });
       return {
-        marks: plan.length,
-        southSplit: plan.filter(m => m.wallId === 'w-s').length,
-        n20: _scanOutletPlan(wall20).length,
-        n18in: _scanOutletPlan(wall18in).length,
-        gfciBedroom: el.gfci,
+        outlets: el.outlets, marks: el.marks.length,
+        n20ft: one(6.096).outlets,          // 20 ft / 10 = 2
+        n18in: one(0.4572).outlets,         // 1.5 ft, under the 5 ft minimum
+        edition: (el.marks.length && codeEditionFor('nec')) || ''
       };
     }, fabricatedRoom());
-    // North 12ft: 1. South 12ft split by the door into ~5.8ft + ~3.2ft: 1 each.
-    // East + West 10ft: 1 each. Total 5, and never fewer than code needs.
-    expect(r.marks).toBe(5);
-    expect(r.southSplit, 'the doorway splits the south wall into two spaces').toBe(2);
-    expect(r.n20).toBe(2);
-    expect(r.n18in, 'wall spaces under 2 ft carry no requirement').toBe(0);
-    expect(r.gfciBedroom, 'a bedroom is not a GFCI room').toBe(false);
-    const gk = await page.evaluate((raw) => _scanElectricalNumbers(_scanParseRoom(raw, 'Kitchen')).gfci, fabricatedRoom());
-    expect(gk, 'a kitchen is').toBe(true);
+    expect(r.n20ft, '20 ft at the fixture\'s 10 ft spacing is 2').toBe(2);
+    expect(r.n18in, 'a wall space under the fixture\'s minimum carries none').toBe(0);
+    expect(r.outlets).toBeGreaterThan(0);
+    // A mark per receptacle, so the plan and the bid can never disagree.
+    expect(r.marks).toBe(r.outlets);
+    expect(r.edition).toBe('FAKE');
+  });
+
+  test('the GFCI answer comes from the book\'s list, not a hardcoded one', async () => {
+    await withBook();
+    const r = await page.evaluate((raw) => {
+      return {
+        kitchen: _scanElectricalNumbers(_scanParseRoom(raw, 'Kitchen')).gfci,
+        bedroom: _scanElectricalNumbers(_scanParseRoom(raw, 'Bedroom')).gfci,
+        bath: _scanElectricalNumbers(_scanParseRoom(raw, 'Hall Bath')).gfci
+      };
+    }, fabricatedRoom());
+    expect(r.kitchen).toBe(true);
+    expect(r.bath).toBe(true);
+    expect(r.bedroom).toBe(false);
   });
 
   test('the scan opens in the lens matching the business trade', async () => {
@@ -181,6 +238,9 @@ test.describe('TdScan web half', () => {
   });
 
   test('the plan SVG renders rooms, labels, and electrical markers', async () => {
+    // The markers are a code conclusion, so this test needs a book like any
+    // other caller does.
+    await withBook();
     const r = await page.evaluate((raw) => {
       const sc = { id: 'svg-1', rooms: [_scanParseRoom(raw, 'Kitchen')] };
       const plain = _scanPlanSvg(sc, { lens: 'plan' });
@@ -1041,6 +1101,8 @@ test.describe('TdScan web half', () => {
   });
 
   test('Scan Estimate: a measured 10 ft room auto-flags high ceilings; electricians bill by device count', async () => {
+    // Device count is priced off the code, so the book has to be loaded.
+    await withBook();
     const r = await page.evaluate((raw) => {
       const savedClients = clients.slice(), savedER = S.scanElecRates;
       const savedTrade = typeof _activeTrade !== 'undefined' ? _activeTrade : null;

@@ -1225,12 +1225,98 @@ function _necBoxFill(inp, data, h) {
 
 // ── Registration ────────────────────────────────────────────────────────────
 
+
+// ── 210.52(A)(1): how many receptacles a wall space needs ────────────────────
+//
+// The caller measures the house and hands over wall spaces in feet; this says
+// how many receptacles each one takes. The split is deliberate and it is the
+// whole point of putting this here: measuring a wall is OUR geometry and it is
+// always allowed, while deciding how far apart receptacles may sit is the
+// book's and it waits for the book.
+//
+// This rule exists because those distances were living as literals in
+// js/scan.js, typed from memory, feeding a priced bid line whose note cited
+// "NEC 210.52" by name. A number on a contractor's bid, with the code cited as
+// its authority, that nobody ever read out of the code. That is the exposure
+// the whole codes/ design exists to remove, and it does not care that it was
+// only four numbers.
+function _necReceptacleSpacing(inp, data, h) {
+  const cite = '210.52(A)(1)';
+  const sp = _necGet(data, 'receptacleSpacing') || {};
+  const maxGap = _necNum(sp.maxGapFt);
+  const fromBreak = _necNum(sp.fromBreakFt);
+  const minSpace = _necNum(sp.minWallSpaceFt);
+
+  const missing = [];
+  if (maxGap === null || maxGap <= 0) missing.push('receptacleSpacing.maxGapFt');
+  if (fromBreak === null || fromBreak <= 0) missing.push('receptacleSpacing.fromBreakFt');
+  if (minSpace === null || minSpace < 0) missing.push('receptacleSpacing.minWallSpaceFt');
+  if (missing.length) return _necRefuseMissing(missing, inp, cite);
+
+  const spaces = Array.isArray(inp.wallSpaceFt) ? inp.wallSpaceFt : null;
+  if (!spaces) {
+    return _necRefuse('bad-input', 'wallSpaceFt must be an array of wall space lengths in feet.', inp, cite);
+  }
+
+  let total = 0;
+  const per = [];
+  for (let i = 0; i < spaces.length; i++) {
+    const ft = _necNum(spaces[i]);
+    if (ft === null || ft < 0) {
+      return _necRefuse('bad-input', 'Every wall space must be a length in feet, zero or more.', inp, cite);
+    }
+    // Under the smallest wall space the rule speaks to, nothing is required.
+    if (ft < minSpace) { per.push(0); continue; }
+    // No point along the space may be further than fromBreak from a
+    // receptacle, which is the same as saying they sit at most maxGap apart.
+    const n = Math.max(1, h.up(ft / maxGap));
+    per.push(n);
+    total += n;
+  }
+
+  return {
+    ok: true, value: total, unit: 'receptacles', cite: cite,
+    inputs: { wallSpaceFt: spaces },
+    detail: { perSpace: per, maxGapFt: maxGap, fromBreakFt: fromBreak, minWallSpaceFt: minSpace },
+    items: total ? [{ label: 'Receptacle', qty: total, unit: 'ea',
+                      why: 'Spacing required by NEC ' + cite }] : []
+  };
+}
+
+// ── 210.8(A): which rooms need GFCI protection ───────────────────────────────
+//
+// A list, not a calculation, and it is still the book's list. Same reason as
+// above: "GFCI-required room" was a hardcoded array of six words.
+function _necGfciRequired(inp, data, h) {
+  const cite = '210.8(A)';
+  const kinds = _necGet(data, 'gfciRoomKinds');
+  if (!Array.isArray(kinds) || !kinds.length) {
+    return _necRefuseMissing(['gfciRoomKinds'], inp, cite);
+  }
+  const name = String(inp.roomName === undefined ? '' : inp.roomName).toLowerCase();
+  if (!name) {
+    return _necRefuse('bad-input', 'roomName is required.', inp, cite);
+  }
+  const hit = kinds.filter(function (k) {
+    const word = String((k && k.kind !== undefined) ? k.kind : k || '').toLowerCase();
+    return word && name.indexOf(word) >= 0;
+  }).map(function (k) { return String((k && k.kind !== undefined) ? k.kind : k); });
+
+  return {
+    ok: true, value: hit.length > 0, unit: '', cite: cite,
+    inputs: { roomName: inp.roomName },
+    detail: { matched: hit }
+  };
+}
+
 const NEC_RULES = {
   'dwelling-load': _necDwellingLoad,
   'conductor-ampacity': _necConductorAmpacity,
   'voltage-drop': _necVoltageDrop,
   'conduit-fill': _necConduitFill,
-  'box-fill': _necBoxFill
+  'box-fill': _necBoxFill,
+  'receptacle-spacing': _necReceptacleSpacing,
+  'gfci-required': _necGfciRequired
 };
 
 // Takes a parsed dataset file and hands the engine a set. The rules are the

@@ -93,7 +93,11 @@ const FAKE_NEC = {
     boxDeviceMultiplier: 2,
     boxVolumeCuIn: {},
     voltageDropAdviceBranchPct: 3,
-    voltageDropAdviceTotalPct: 5
+    voltageDropAdviceTotalPct: 5,
+    // Round tens again, and deliberately NOT the real spacing, so a test that
+    // expects the true NEC numbers fails here instead of passing by accident.
+    receptacleSpacing: { maxGapFt: 10, fromBreakFt: 5, minWallSpaceFt: 5 },
+    gfciRoomKinds: [{ kind: 'kitchen' }, { kind: 'bath' }]
   }
 };
 

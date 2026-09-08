@@ -51,6 +51,23 @@ ever be in. Every edition stays live and selectable forever.
 `<family>-<edition>.json`, lowercase: `nec-2023.json`, `ipc-2021.json`,
 `upc-2024.json`.
 
+## Nothing outside this directory may hold a code value
+
+`_SCAN_NEC` in js/scan.js used to carry the receptacle spacing distances and
+the list of rooms needing GFCI, typed from memory, feeding a priced bid line
+whose note cited "NEC 210.52" as its authority. A number on a contractor's bid
+with the code named as the source, that nobody had ever read out of the code.
+
+Four numbers is not an exemption. Anything a code book decides comes through
+`codeEval` and waits for a verified dataset, however small it looks.
+
+The split that makes this livable: **measuring is ours, concluding is the
+book's.** Splitting a wall at its doorways is geometry and always answers
+(`_scanWallSpaces`). How far apart receptacles may sit is 210.52(A)(1) and
+answers only once somebody has typed and signed that edition. A room with no
+book loaded still says "22 ft of wall in 3 spaces"; it just will not say how
+many receptacles that needs.
+
 ## Typing the values in
 
 `tools/code-entry.html` is the only thing that should ever write these files.

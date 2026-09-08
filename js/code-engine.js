@@ -84,7 +84,13 @@ function _codeResult(fields) {
     // {label, qty, unit, why} - never a price. His book prices it.
     items: f.items || [],
     // Anything the contractor must confirm before this is trustworthy.
-    warnings: f.warnings || []
+    warnings: f.warnings || [],
+    // The working shown. A caller that has to place what the rule counted
+    // (receptacles along a wall, conductors in a raceway) needs the breakdown,
+    // not just the total, and dropping it here silently gave one caller a
+    // count of five and nowhere to draw them. js/loadcalc.js already carries
+    // the same field for the same reason.
+    detail: f.detail || {}
   };
 }
 

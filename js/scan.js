@@ -627,13 +627,20 @@ function _scanPaintNumbers(room,subtractOpenings){
 // EXTRA outlet near a corner, never miss one: conservative by construction.
 // Kitchens add the counter rule (24 in / max 48 in apart) as a note, counters
 // aren't in the scan geometry.
-const _SCAN_NEC={maxGapFt:12,fromBreakFt:6,minWallFt:2,
-  outletsInTypical:12,switchInTypical:48,switchInMaxCode:79,
-  gfciRooms:['kitchen','bathroom','garage','laundry','basement','outdoor']};
-function _scanOutletPlan(room){
+// Mounting heights for drawing a device on an elevation. These are working
+// defaults for a plan symbol, not code minimums, and nothing prices off them.
+const _SCAN_NEC={outletsInTypical:12,switchInTypical:48,switchInMaxCode:79};
+// ── Wall spaces: ours, always available ──────────────────────────────────────
+//
+// Splitting a wall at its doorways is geometry. It is measurement of the
+// house in front of us, it owes nothing to any book, and it answers whether
+// or not anybody has bought one. Every consumer below builds on this.
+//
+// Returns one entry per usable stretch: {wallId, a, b, ft, ux, uz, ax, az}.
+function _scanWallSpaces(room){
   const out=[];
-  room.walls.forEach(w=>{
-    // Split the wall into wall spaces at door edges.
+  ((room&&room.walls)||[]).forEach(w=>{
+    if(!w||!w.len)return;
     const breaks=[[0,w.len]];
     (w.doors||[]).slice().sort((a,b)=>(a.off||0)-(b.off||0)).forEach(d=>{
       const seg=breaks.pop();
@@ -642,30 +649,76 @@ function _scanOutletPlan(room){
       if(dB<seg[1])breaks.push([dB,seg[1]]);
       else if(dA<=seg[0])breaks.push(seg); // door outside segment, keep as-is
     });
+    const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
     breaks.forEach(([a,b])=>{
-      const lenFt=_scanFt(b-a);
-      if(lenFt<_SCAN_NEC.minWallFt)return;           // under 2 ft, no requirement
-      // First within 6 ft of each break, then every 12 ft: N = ceil(len/12),
-      // spread evenly so no point sits more than 6 ft out.
-      const n=Math.max(1,Math.ceil(lenFt/_SCAN_NEC.maxGapFt));
-      for(let i=0;i<n;i++){
-        const t=(a+(b-a)*((i+0.5)/n));
-        const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
-        out.push({x:w.ax+ux*t,z:w.az+uz*t,wallId:w.id});
-      }
+      out.push({wallId:w.id,a:a,b:b,ft:_scanFt(b-a),ux:ux,uz:uz,ax:w.ax,az:w.az});
     });
   });
   return out;
 }
+
+// ── The receptacle count: the book's, and it waits for the book ──────────────
+//
+// The spacing distances used to live in this file as literals typed from
+// memory, and they fed a priced bid line whose note cited "NEC 210.52" by
+// name. A number on a contractor's bid with the code named as its authority,
+// that nobody had ever read out of the code. That is exactly what codes/ was
+// built to stop, and four numbers is not an exemption.
+//
+// So the count comes through codeEval now. No verified dataset for the
+// contractor's own edition means no count, and the caller says so rather than
+// filling the gap with a plausible number.
+//
+// Returns {ok, marks, count, reason}. `marks` is empty unless the code
+// answered; the wall spaces behind them are available either way.
+function _scanReceptacles(room){
+  const spaces=_scanWallSpaces(room);
+  const none={ok:false,marks:[],count:null,reason:'no-engine',spaces:spaces};
+  if(typeof codeEval!=='function')return none;
+  const r=codeEval('nec','receptacle-spacing',{wallSpaceFt:spaces.map(s=>s.ft)});
+  if(!r||!r.ok)return Object.assign({},none,{reason:(r&&r.reason)||'refused',result:r});
+  const per=(r.detail&&r.detail.perSpace)||[];
+  const marks=[];
+  spaces.forEach((sp,i)=>{
+    const n=per[i]|0;
+    for(let k=0;k<n;k++){
+      const t=sp.a+(sp.b-sp.a)*((k+0.5)/n);
+      marks.push({x:sp.ax+sp.ux*t,z:sp.az+sp.uz*t,wallId:sp.wallId});
+    }
+  });
+  return {ok:true,marks:marks,count:r.value,reason:'',spaces:spaces,result:r};
+}
+
+// Kept for the plan layer, which only ever wanted the dots. Empty when the
+// code has not answered, so nothing is drawn that cannot be defended.
+function _scanOutletPlan(room){
+  return _scanReceptacles(room).marks;
+}
+
 function _scanElectricalNumbers(room){
-  const outlets=_scanOutletPlan(room);
-  const label=String(room.label||'').toLowerCase();
+  const rec=_scanReceptacles(room);
+  const label=String(room.label||'');
+  // The GFCI list is the book's too, and it refuses the same way.
+  let gfci=null;
+  if(typeof codeEval==='function'){
+    const g=codeEval('nec','gfci-required',{roomName:label});
+    if(g&&g.ok)gfci=!!g.value;
+  }
   return {
-    outlets:outlets.length,
-    marks:outlets,
-    switches:1+(room.doorN>1?room.doorN-1:0),   // one per entry as the working default
-    gfci:_SCAN_NEC.gfciRooms.some(r=>label.includes(r)),
-    kitchenCounterNote:/kitchen/.test(label)
+    // null, never 0: "the code has not been loaded" and "this room needs no
+    // receptacles" are different answers and the caller has to tell them apart.
+    outlets:rec.ok?rec.count:null,
+    outletsReason:rec.reason,
+    marks:rec.marks,
+    // Wall spaces are measurement and are always here, so a room can show
+    // "22 ft of wall in 3 spaces" even when nothing may state a count.
+    wallSpaces:rec.spaces,
+    wallSpaceFt:Math.round(rec.spaces.reduce((t,s)=>t+s.ft,0)),
+    // Not a code number: one switch per way in, which is how the trade wires
+    // it. Nothing here claims 210.52 and nothing prices off a book.
+    switches:1+(room.doorN>1?room.doorN-1:0),
+    gfci:gfci,
+    kitchenCounterNote:/kitchen/i.test(label)
   };
 }
 // ── HVAC lens: sizing inputs + infiltration from ACH50 ───────────────────────
