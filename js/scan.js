@@ -103,6 +103,31 @@ function _scanConf(v){
   const k=_scanEnumKey(v);
   return (k==='high'||k==='medium'||k==='low')?k:'';
 }
+// The height most of the room's wall run sits at. Weighted by wall LENGTH, so
+// a two-foot soffit return cannot outvote a twelve-foot wall.
+function _scanModalHeight(walls){
+  const ws=(walls||[]).filter(w=>w&&w.h>0&&w.len>0);
+  if(!ws.length)return 2.44;
+  // Band only to GROUP walls that are the same height. The answer is the real
+  // measured height of the winning band, length-weighted, never the band key:
+  // rounding to the 5 cm bucket throws away up to an inch of a number the
+  // whole point of this file is measuring accurately.
+  const band={};
+  ws.forEach(w=>{
+    const k=String(Math.round(w.h*20));
+    const b=band[k]||(band[k]={run:0,sum:0});
+    b.run+=w.len; b.sum+=w.h*w.len;
+  });
+  let best=null,bestRun=-1;
+  Object.keys(band).forEach(k=>{
+    const b=band[k],h=b.sum/b.run;
+    // Longest run wins; the taller band breaks a tie, because a room that
+    // genuinely steps should read as the ceiling somebody stands under.
+    if(b.run>bestRun+1e-9||(Math.abs(b.run-bestRun)<1e-9&&h>best)){best=h;bestRun=b.run;}
+  });
+  return best||2.44;
+}
+
 // One wall surface → {ax,az,bx,bz,len,h,id} plus openings resolved onto it.
 function _scanParseRoom(rawJson,label){
   let cr=null;
@@ -197,15 +222,32 @@ function _scanParseRoom(rawJson,label){
     const fm=_scanMat(fl.transform);
     poly=fl.polygonCorners.map(p=>{const v=_scanVec(p);return [v.x+(fm?fm.col3.x:0),v.z+(fm?fm.col3.z:0)];});
   }
+  // NO FLOOR POLYGON. The plugin is iOS 17 only so RoomPlan normally supplies
+  // one, and this fires on a partial or interrupted scan. The fallback is a
+  // CONVEX hull of the wall endpoints, which fills in the notch of an L and
+  // therefore overstates the floor. That error runs one way, toward a bigger
+  // number on a bid, so the room is flagged rather than handed over looking
+  // like any other.
+  let polyFromHull=false;
   if(!poly){
     poly=[];walls.forEach(w=>{poly.push([w.ax,w.az]);poly.push([w.bx,w.bz]);});
     poly=_scanHull(poly);
+    polyFromHull=true;
   }
   const floorM2=Math.abs(_scanShoelace(poly));
   const wallM2=walls.reduce((t,w)=>t+w.len*w.h,0);
   const openM2=doors.reduce((t,o)=>t+o.area,0)+windows.reduce((t,o)=>t+o.area,0);
   const perimM=walls.reduce((t,w)=>t+w.len,0);
-  const hM=walls.length?Math.max(...walls.map(w=>w.h)):2.44;
+  // THE MODAL HEIGHT, NOT THE TALLEST WALL. A soffit over the cabinets, a
+  // bulkhead, or a dropped ceiling gives one short wall and the max reported
+  // the room as if the whole ceiling were at the high side. That inflated wall
+  // area on every paint bid and volume on every load calc, silently, and
+  // kitchens and baths are exactly where soffits live.
+  //
+  // Walls are grouped to the nearest 5 cm and the tallest band wins ties, so a
+  // room that genuinely steps up still reads as the taller part rather than
+  // being dragged down by one short return.
+  const hM=_scanModalHeight(walls);
   // RoomPlan classifies the area it scanned: bedroom, kitchen, bathroom,
   // livingRoom, diningRoom. It is a suggestion for the room name and a sanity
   // check on the fixtures found in it, never an override of what the
@@ -216,6 +258,9 @@ function _scanParseRoom(rawJson,label){
   })).filter(x=>x.label);
   return {label:label||'Room',walls,poly,objects,floorM2,wallM2,openM2,perimM,hM,
           sections,
+          // True when floorM2 came from the convex hull above, so a reader can
+          // say "about" instead of quoting it.
+          floorApprox:polyFromHull,
           doorN:doors.length,winN:windows.length,winM2:windows.reduce((t,o)=>t+o.area,0)};
 }
 function _scanObjCorners(o){
@@ -693,6 +738,131 @@ function _scanReceptacles(room){
 // code has not answered, so nothing is drawn that cannot be defended.
 function _scanOutletPlan(room){
   return _scanReceptacles(room).marks;
+}
+
+// ── What the scan found, and whether to believe it ───────────────────────────
+//
+// RoomPlan classifies what it sees, and until now we drew a symbol for it and
+// dropped the meaning. That is the single largest thing the scanner already
+// knows and never told anyone: a toilet is a drainage fixture unit, a range is
+// a cooking load, a washer is both. Those are the inputs the code engines ask
+// for, and the contractor was retyping them.
+//
+// IT PROPOSES, IT NEVER ASSERTS. RoomPlan's detection is good and not perfect,
+// so every fixture below is a suggestion carrying its own confidence and a
+// note when it turned up somewhere it does not belong. A phantom toilet is a
+// wrong pipe size; a silently-dropped one is a missing rough-in. Both are the
+// contractor's call, and the list exists so he can make it in one tap instead
+// of discovering it on site.
+
+// What each detected thing MEANS to a trade. Nothing here is a code value: it
+// is the name of an input, and what that input is worth is the book's business
+// (codes/README.md).
+const _SCAN_FIXTURE_MEANING = {
+  toilet:       { label: 'Toilet',        plumbing: 'water-closet' },
+  sink:         { label: 'Sink',          plumbing: 'sink' },
+  bathtub:      { label: 'Bathtub',       plumbing: 'bathtub' },
+  dishwasher:   { label: 'Dishwasher',    plumbing: 'dishwasher', electrical: 'fixed-appliance' },
+  washerDryer:  { label: 'Washer/dryer',  plumbing: 'clothes-washer', electrical: 'dryer' },
+  stove:        { label: 'Range',         electrical: 'cooking' },
+  oven:         { label: 'Oven',          electrical: 'cooking' },
+  refrigerator: { label: 'Refrigerator',  electrical: 'fixed-appliance' },
+  fireplace:    { label: 'Fireplace',     hvac: 'fireplace' },
+  stairs:       { label: 'Stairs' }
+};
+
+// Where each one belongs. A toilet in a kitchen is a misdetection far more
+// often than it is a house, so it gets asked about rather than counted.
+const _SCAN_FIXTURE_ROOMS = {
+  toilet:       ['bath'],
+  bathtub:      ['bath'],
+  stove:        ['kitchen'],
+  oven:         ['kitchen'],
+  dishwasher:   ['kitchen'],
+  refrigerator: ['kitchen', 'garage', 'pantry'],
+  sink:         ['kitchen', 'bath', 'laundry', 'utility', 'bar'],
+  washerDryer:  ['laundry', 'utility', 'kitchen', 'bath', 'garage']
+};
+
+// The room's kind, in the app's own words, from three sources in order of
+// authority: what the contractor typed, then RoomPlan's own classification,
+// then nothing. Never invented from the fixtures, because the fixtures are
+// what this is used to check.
+function _scanRoomKind(room){
+  const typed=String((room&&room.label)||'').toLowerCase();
+  const words=['kitchen','bath','laundry','utility','garage','bedroom','living','dining','pantry','bar','office','closet'];
+  for(let i=0;i<words.length;i++){ if(typed.indexOf(words[i])>=0) return {kind:words[i],from:'typed'}; }
+  const sec=((room&&room.sections)||[])[0];
+  if(sec&&sec.label){
+    const l=String(sec.label).toLowerCase();
+    // RoomPlan spells them livingRoom / diningRoom; ours are single words.
+    const k=l.indexOf('bath')>=0?'bath':l.indexOf('kitchen')>=0?'kitchen':
+            l.indexOf('bed')>=0?'bedroom':l.indexOf('living')>=0?'living':
+            l.indexOf('dining')>=0?'dining':'';
+    if(k)return {kind:k,from:'roomplan'};
+  }
+  return {kind:'',from:''};
+}
+
+// One room's fixtures, grouped, counted, and checked against where they are.
+// Returns {kind, kindFrom, items:[...], needsReview:n}.
+function _scanFixtures(room){
+  const kindInfo=_scanRoomKind(room);
+  const by={};
+  (Array.isArray(room&&room.objects)?room.objects:[]).forEach(o=>{
+    const cat=o&&o.cat;
+    if(!cat||!_SCAN_FIXTURE_MEANING[cat])return;   // furniture is not a fixture
+    const g=by[cat]||(by[cat]={cat:cat,n:0,confs:[],attrs:[]});
+    g.n++;
+    if(o.conf)g.confs.push(o.conf);
+    (o.attrs||[]).forEach(a=>{ if(g.attrs.indexOf(a)<0)g.attrs.push(a); });
+  });
+
+  const items=Object.keys(by).map(cat=>{
+    const g=by[cat],meaning=_SCAN_FIXTURE_MEANING[cat];
+    // The weakest sighting sets the group's confidence: one shaky toilet among
+    // three is still a reason to look.
+    const conf=g.confs.indexOf('low')>=0?'low':g.confs.indexOf('medium')>=0?'medium':
+               (g.confs.length?'high':'');
+    const belongs=_SCAN_FIXTURE_ROOMS[cat];
+    // Out of place only counts as a question when we actually know the room.
+    const misplaced=!!(belongs&&kindInfo.kind&&belongs.indexOf(kindInfo.kind)<0);
+    return {
+      cat:cat, label:meaning.label, n:g.n, conf:conf, attrs:g.attrs,
+      plumbing:meaning.plumbing||'', electrical:meaning.electrical||'', hvac:meaning.hvac||'',
+      misplaced:misplaced,
+      // Anything worth a second look says why, in words the contractor reads.
+      ask: misplaced ? (meaning.label+' found in a room called '+(room.label||'this room')+'. Confirm it is really there.')
+         : conf==='low' ? ('The scanner was not confident about this '+meaning.label.toLowerCase()+'.')
+         : ''
+    };
+  }).sort((a,b)=>a.label.localeCompare(b.label));
+
+  return {
+    kind:kindInfo.kind, kindFrom:kindInfo.from,
+    items:items,
+    needsReview:items.filter(x=>x.ask).length
+  };
+}
+
+// Every fixture in a scan, rolled up per trade, ready to be handed to a code
+// engine as inputs. Counts only: what a water closet is WORTH in fixture units
+// is 709.1 and waits for the book, exactly like the receptacle spacing does.
+function _scanFixtureTotals(scan){
+  const rooms=Array.isArray(scan&&scan.rooms)?scan.rooms:[];
+  const out={plumbing:{},electrical:{},hvac:{},needsReview:0};
+  rooms.forEach(r=>{
+    const f=_scanFixtures(r);
+    out.needsReview+=f.needsReview;
+    f.items.forEach(it=>{
+      ['plumbing','electrical','hvac'].forEach(trade=>{
+        const key=it[trade];
+        if(!key)return;
+        out[trade][key]=(out[trade][key]||0)+it.n;
+      });
+    });
+  });
+  return out;
 }
 
 function _scanElectricalNumbers(room){

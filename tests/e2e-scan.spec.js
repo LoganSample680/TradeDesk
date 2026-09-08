@@ -2248,3 +2248,207 @@ test.describe('TdScan: the fields RoomPlan was already sending', () => {
     expect(r.sections).toEqual([]);
   });
 });
+
+// ── What the scan found, and whether to believe it ───────────────────────────
+//
+// RoomPlan classifies toilets, sinks, ranges and washers on every scan. We drew
+// a symbol for each and threw the meaning away, so the contractor retyped the
+// exact inputs the code engines ask for. These tests pin the two halves: the
+// meaning, and the fact that it is a proposal rather than an assertion.
+
+test.describe('TdScan: fixtures the scan already identified', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const obj = (cat, conf, attrs) => ({ cat, cx: 0, cz: 0, w: 0.5, d: 0.5, h: 0.8,
+                                       ux: 1, uz: 0, conf: conf || '', attrs: attrs || [] });
+  const room = (label, objects, sections) => ({ label, objects, walls: [], doorN: 0,
+                                                sections: sections || [] });
+
+  test('a bathroom\'s fixtures come back named and counted', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Hall Bath', [obj('toilet', 'high'), obj('sink', 'high'), obj('bathtub', 'high')]));
+    expect(r.items.map(x => x.label)).toEqual(['Bathtub', 'Sink', 'Toilet']);
+    expect(r.items.every(x => x.n === 1)).toBe(true);
+    // Nothing here is out of place, so nothing is asked about.
+    expect(r.needsReview).toBe(0);
+  });
+
+  test('each fixture says what it is to which trade', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Kitchen', [obj('stove', 'high'), obj('dishwasher', 'high'), obj('washerDryer', 'high')]));
+    const by = {}; r.items.forEach(x => { by[x.cat] = x; });
+    expect(by.stove.electrical).toBe('cooking');
+    expect(by.dishwasher.plumbing).toBe('dishwasher');
+    // A washer is both, and both trades need it.
+    expect(by.washerDryer.plumbing).toBe('clothes-washer');
+    expect(by.washerDryer.electrical).toBe('dryer');
+  });
+
+  test('a toilet in a kitchen is asked about, not counted quietly', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Kitchen', [obj('toilet', 'high'), obj('stove', 'high')]));
+    const t = r.items.find(x => x.cat === 'toilet');
+    expect(t.misplaced).toBe(true);
+    expect(t.ask).toMatch(/confirm/i);
+    // The range in the same room is where it belongs and stays silent.
+    expect(r.items.find(x => x.cat === 'stove').ask).toBe('');
+    expect(r.needsReview).toBe(1);
+  });
+
+  test('a sink is at home in several rooms and is questioned in none of them', async () => {
+    const kinds = ['Kitchen', 'Hall Bath', 'Laundry'];
+    for (const k of kinds) {
+      const r = await page.evaluate(o => _scanFixtures(o), room(k, [obj('sink', 'high')]));
+      expect(r.items[0].misplaced, k + ' has a sink').toBe(false);
+    }
+  });
+
+  test('a low-confidence sighting is flagged even where it belongs', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Hall Bath', [obj('toilet', 'low')]));
+    expect(r.items[0].conf).toBe('low');
+    expect(r.items[0].ask).toMatch(/not confident/i);
+  });
+
+  test('the weakest sighting sets the group, so one shaky one is still worth a look', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Hall Bath', [obj('sink', 'high'), obj('sink', 'low')]));
+    expect(r.items[0].n).toBe(2);
+    expect(r.items[0].conf).toBe('low');
+  });
+
+  test('with no room name, RoomPlan\'s own classification decides, and it is never invented', async () => {
+    const a = await page.evaluate(o => _scanFixtures(o),
+      room('Room 3', [obj('toilet', 'high')], [{ label: 'bathroom' }]));
+    expect(a.kind).toBe('bath');
+    expect(a.kindFrom).toBe('roomplan');
+    expect(a.items[0].misplaced, 'RoomPlan says bathroom, so a toilet belongs').toBe(false);
+
+    // What the contractor typed outranks it.
+    const b = await page.evaluate(o => _scanFixtures(o),
+      room('Kitchen', [obj('toilet', 'high')], [{ label: 'bathroom' }]));
+    expect(b.kindFrom).toBe('typed');
+    expect(b.items[0].misplaced).toBe(true);
+
+    // And with neither, nothing is out of place, because nothing is known.
+    const c = await page.evaluate(o => _scanFixtures(o), room('Room 3', [obj('toilet', 'high')]));
+    expect(c.kind).toBe('');
+    expect(c.items[0].misplaced).toBe(false);
+  });
+
+  test('furniture is not a fixture', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Living', [obj('sofa', 'high'), obj('television', 'high'), obj('chair', 'high')]));
+    expect(r.items).toEqual([]);
+  });
+
+  test('attributes ride along, because a recessed sink is a different rough-in', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Kitchen', [obj('sink', 'high', ['sinkType:recessed'])]));
+    expect(r.items[0].attrs).toContain('sinkType:recessed');
+  });
+
+  test('a whole scan rolls up per trade, as counts and never as code values', async () => {
+    const r = await page.evaluate(() => _scanFixtureTotals({ rooms: [
+      { label: 'Hall Bath', objects: [{ cat: 'toilet', conf: 'high' }, { cat: 'sink', conf: 'high' }] },
+      { label: 'Master Bath', objects: [{ cat: 'toilet', conf: 'high' }, { cat: 'bathtub', conf: 'high' }] },
+      { label: 'Kitchen', objects: [{ cat: 'stove', conf: 'high' }, { cat: 'sink', conf: 'high' }] }
+    ] }));
+    expect(r.plumbing['water-closet']).toBe(2);
+    expect(r.plumbing.sink).toBe(2);
+    expect(r.plumbing.bathtub).toBe(1);
+    expect(r.electrical.cooking).toBe(1);
+    // What a water closet is WORTH in fixture units is 709.1 and waits for the
+    // book. This only ever counts them.
+    expect(r.needsReview).toBe(0);
+  });
+
+  test('rubbish rooms do not throw', async () => {
+    const r = await page.evaluate(() => {
+      try {
+        _scanFixtures(null); _scanFixtures({}); _scanFixtures({ objects: 'no' });
+        _scanFixtures({ label: 5, objects: [null, {}, { cat: 7 }] });
+        _scanFixtureTotals(null); _scanFixtureTotals({ rooms: 'no' });
+        return { threw: false };
+      } catch (e) { return { threw: true, msg: String(e) }; }
+    });
+    expect(r.threw).toBe(false);
+  });
+});
+
+// ── Two numbers that were quietly too big ────────────────────────────────────
+
+test.describe('TdScan: room dimensions that were overstating', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('a soffit does not raise the whole ceiling', async () => {
+    // Three long 8 ft walls and one short 10 ft return over the cabinets. The
+    // max reported the room as a 10 ft room, which inflated wall area on every
+    // paint bid and volume on every load calc.
+    const h = await page.evaluate(() => _scanModalHeight([
+      { len: 4, h: 2.44 }, { len: 3, h: 2.44 }, { len: 4, h: 2.44 }, { len: 0.6, h: 3.05 }
+    ]));
+    expect(h).toBeCloseTo(2.44, 2);
+  });
+
+  test('a room that genuinely steps up reads as the taller part', async () => {
+    // Equal runs at two heights: the tie goes to the ceiling somebody stands
+    // under, not the one over the bulkhead.
+    const h = await page.evaluate(() => _scanModalHeight([
+      { len: 3, h: 2.44 }, { len: 3, h: 3.05 }
+    ]));
+    expect(h).toBeCloseTo(3.05, 2);
+  });
+
+  test('no walls, or junk walls, fall back rather than throw', async () => {
+    const r = await page.evaluate(() => ({
+      empty: _scanModalHeight([]),
+      nil: _scanModalHeight(null),
+      junk: _scanModalHeight([{ len: 0, h: 0 }, null, { h: 'x', len: 'y' }])
+    }));
+    expect(r.empty).toBeCloseTo(2.44, 2);
+    expect(r.nil).toBeCloseTo(2.44, 2);
+    expect(r.junk).toBeCloseTo(2.44, 2);
+  });
+
+  test('a floor area guessed from a convex hull says it is a guess', async () => {
+    // No floors[] at all, which is a partial or interrupted scan. The hull
+    // fills in the notch of an L, so the number runs one way: too big.
+    const r = await page.evaluate(() => {
+      const noFloor = JSON.stringify({
+        walls: [
+          { identifier: 'a', category: { wall: {} }, dimensions: [4, 2.44, 0],
+            transform: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,1.22,0,1] },
+          { identifier: 'b', category: { wall: {} }, dimensions: [4, 2.44, 0],
+            transform: [0,0,1,0, 0,1,0,0, -1,0,0,0, 2,1.22,2,1] }
+        ],
+        doors: [], windows: [], openings: [], objects: [], floors: []
+      });
+      const room = _scanParseRoom(noFloor, 'Partial');
+      return { approx: room.floorApprox, hasArea: room.floorM2 > 0 };
+    });
+    expect(r.approx, 'the reader has to be able to say "about"').toBe(true);
+  });
+
+  test('a normal scan is not flagged as approximate', async () => {
+    const r = await page.evaluate(raw => _scanParseRoom(raw, 'Kitchen').floorApprox, fabricatedRoom());
+    expect(r).toBe(false);
+  });
+});
