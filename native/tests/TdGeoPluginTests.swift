@@ -2079,7 +2079,11 @@ extension TdGeoPluginTests {
         plugin.wakeUpdateForTest(lat: 39.0308, lng: -95.7112, stationary: true)   // still still: no second row
         plugin.wakeUpdateForTest(lat: 39.0296, lng: -95.7120, stationary: false)  // moved: wake-move + fix
         plugin.wakeUpdateForTest(lat: 39.0295, lng: -95.7247, stationary: false)  // inside the throttle: nothing
-        let rows = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        // The radio ledger (2026-09-08) writes its own `radio` rows onto the
+        // same buffer when the stream un-pauses; they are a separate contract
+        // (see the ledger tests) and are read past here.
+        let rows = ((d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? [])
+            .filter { ($0["type"] as? String) != "radio" }
         let types = rows.compactMap { $0["type"] as? String }
         XCTAssertEqual(types, ["wake-still", "wake-move", "fix"])
         let fix = rows[2]
@@ -2096,7 +2100,9 @@ extension TdGeoPluginTests {
         plugin.wakeOnForTest()
         plugin.wakeUpdateForTest(stationary: true)
         plugin.wakeUpdateForTest(stationary: false)   // moved with no fix: transition row, no fix row
-        let types = ((d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []).compactMap { $0["type"] as? String }
+        let types = ((d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? [])
+            .compactMap { $0["type"] as? String }
+            .filter { $0 != "radio" }   // the ledger's own rows, asserted in their own tests
         XCTAssertEqual(types, ["wake-still", "wake-move"])
     }
 
