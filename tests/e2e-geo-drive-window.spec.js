@@ -507,8 +507,11 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
   test('parking arms the wake stream, and the answer is journaled', async () => {
     const r = await page.evaluate(async () => {
       const notes = [];
-      const savedNote = _geoParkNote;
+      const savedNote = _geoParkNote, savedOk = _geoWakeArmOk;
       _geoParkNote = (ev, x) => notes.push([ev, String(x)]);
+      // The gate (rule 2, tested in e2e-geo-wake-bounds) reads the clock and
+      // the work week; held open here so this test is about the arm itself.
+      _geoWakeArmOk = () => '';
       try {
         const calls = [];
         const td = { setWakeOnMove: (o) => { calls.push(o); return Promise.resolve({ on: true, supported: true }); } };
@@ -521,13 +524,17 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
         const failed = _geoWakeOnMoveArm({ setWakeOnMove: () => Promise.reject(new Error('nope')) });
         await new Promise(r => setTimeout(r, 10));
         return { armed, calls, old, none, unsupported, failed, notes, flag: _GEO_WAKE_ON_MOVE };
-      } finally { _geoParkNote = savedNote; }
+      } finally { _geoParkNote = savedNote; _geoWakeArmOk = savedOk; }
     });
     expect(r.flag).toBe(true);
     expect(r.armed).toBe(true);
     // The reason rides the call since 2026-09-08 (the radio ledger): the
-    // plugin writes the row, JS says why.
-    expect(r.calls).toEqual([{ on: true, reason: 'park armed' }]);
+    // plugin writes the row, JS says why. The two bounds ride it too
+    // (e2e-geo-wake-bounds pins the numbers).
+    expect(r.calls.length).toBe(1);
+    expect(r.calls[0]).toEqual(expect.objectContaining({ on: true, reason: 'park armed' }));
+    expect(r.calls[0].maxMovingMs).toBeGreaterThan(0);
+    expect(r.calls[0].tapeGraceMs).toBeGreaterThan(0);
     expect(r.old).toBe(false);
     expect(r.none).toBe(false);
     expect(r.unsupported).toBe(true);
@@ -539,7 +546,7 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
     const i = js.indexOf("_geoParkNote('park-on'");
     expect(i).toBeGreaterThan(-1);
-    expect(js.slice(i, i + 900).includes('_geoWakeOnMoveArm(Td)')).toBe(true);
+    expect(js.slice(i, i + 900).includes('_geoWakeOnMoveArm(Td,_at)')).toBe(true);
   });
 
   test('a live wake-move with the flip only on the tape opens the window; a replayed one does not', async () => {

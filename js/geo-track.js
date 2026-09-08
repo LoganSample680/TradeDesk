@@ -4726,7 +4726,8 @@ function _geoEnterParkMode(spot){
       // truck moves; the first fix it hands back is the ping half of the
       // drive pair. Held only while parked: stopAll on the park exit drops
       // it. Older shells resolve supported:false and change nothing.
-      _geoWakeOnMoveArm(Td);
+      _geoWakeQuietSinceMs=Date.now();
+      _geoWakeOnMoveArm(Td,_at);
       // The shift heartbeat (owner 2026-08-27: catch the phone left in the
       // truck or set down all day). A park at a WORK spot keeps a 30-minute
       // liveness tick alive; a park at the likely-home pin is the end of the
@@ -4753,19 +4754,71 @@ function _geoEnterParkMode(spot){
 // roll, turns the wake-on-movement stream off again if the indicator it
 // holds while parked is not worth the instant departure.
 const _GEO_WAKE_ON_MOVE=true;
-function _geoWakeOnMoveArm(Td){
+// ── The stream is bounded (owner 2026-09-08) ────────────────────────────────
+// Eight days of his own phone, measured on the server: 45 moving episodes, 2
+// of them a drive, 1 of 13 real departures led by the stream, the longest
+// episode 36.6 hours with every fix inside one foot. The stream is right that
+// a phone in a pocket on a job site is "not stationary" and wrong about what
+// that is worth. Four rules keep the phone-in-the-truck case (the 12:02
+// departure the stream exists for) and bound the radio:
+//   1. The tape outranks the stream. CoreMotion saying still for tapeGraceMs
+//      while the stream says moving is a pocket, not a truck. Native.
+//   2. Don't arm it where a phone is never still: at home, off-day, off-hours.
+//      That is _geoWakeArmOk, here.
+//   3. A moving episode with no drive window for maxMovingMs is a person, not
+//      a departure JS missed (a truck trips a fence in 0 to 1.6 min). Native.
+//   4. Re-arm on the next quiet ping, so a drop at 8am does not cost the 4pm
+//      departure. _geoWakeRearm, here, on the push-ping.
+// The numbers are JS's (3.2) and ride the arm; the plugin enforces them while
+// JS is asleep, exactly as it does the drive window's cap, and reports a drop
+// as a `wake-drop` event so JS can forget the arm and wait for quiet.
+const _GEO_WAKE_MAX_MOVING_MS=12*60000;
+const _GEO_WAKE_TAPE_GRACE_MS=2*60000;
+let _geoWakeArmed=false;        // JS's memory of the arm; the plugin's flag is the truth
+let _geoWakeQuietSinceMs=0;     // the tape must be all still since here for a re-arm
+function _geoWakeArmOk(spot){
+  try{
+    if(spot&&typeof _placeIsLikelyHome==='function'&&_placeIsLikelyHome({lat:spot.lat,lng:spot.lng},0))return 'home';
+    const why=_geoPingBurstOk();
+    return (why==='home'||why==='off-day'||why==='off-hours')?why:'';
+  }catch(_e){return '';}
+}
+function _geoWakeOnMoveArm(Td,spot,why){
   try{
     if(!_GEO_WAKE_ON_MOVE||!Td||typeof Td.setWakeOnMove!=='function')return false;
-    Promise.resolve(Td.setWakeOnMove({on:true,reason:'park armed'})).then((r)=>{
+    const skip=_geoWakeArmOk(spot);
+    if(skip){_geoParkNote('wake-skip',skip);return false;}
+    Promise.resolve(Td.setWakeOnMove({on:true,reason:String(why||'park armed'),
+      maxMovingMs:_GEO_WAKE_MAX_MOVING_MS,tapeGraceMs:_GEO_WAKE_TAPE_GRACE_MS})).then((r)=>{
+      _geoWakeArmed=!!(r&&r.on);
       _geoParkNote('wake-on-move',(r&&r.supported===false)?'unsupported':((r&&r.on)?'on':'off'));
     },(err)=>{_geoParkNote('wake-on-move-fail',(err&&(err.message||err.code))||err);});
     return true;
+  }catch(_e){return false;}
+}
+// Rule 4. Parked, stream down (a drop, or a boot that forgot), the gate open,
+// and the coprocessor with nothing but still to say since the park or the
+// drop: that is a phone sitting in a truck, and the stream goes back up. A
+// tape with a walk on it is a phone on a person, and the fences keep watch
+// alone until the next ping asks again.
+async function _geoWakeRearm(){
+  try{
+    if(!_GEO_WAKE_ON_MOVE||!_geoParkModeOn||_geoWakeArmed||_geoDriveWinAt)return false;
+    const Td=_geoTdPlugin();
+    if(!Td||typeof Td.setWakeOnMove!=='function')return false;
+    if(_geoWakeArmOk(_geoParkSpot))return false;   // quietly: the ping asks every half hour
+    const since=_geoWakeQuietSinceMs||(Date.now()-30*60000);
+    const tape=await _geoMotionTape(since,0);
+    if(tape===null){_geoParkNote('wake-rearm-skip','no tape');return false;}
+    if(tape.some(t=>t.ts>=since&&String(t.kind)!=='still')){_geoParkNote('wake-rearm-skip','tape moved');return false;}
+    return _geoWakeOnMoveArm(Td,_geoParkSpot,'re-armed on a quiet ping');
   }catch(_e){return false;}
 }
 function _geoExitParkMode(){
   _geoClearParkTimer();
   if(!_geoParkModeOn)return;
   _geoParkModeOn=false;
+  _geoWakeArmed=false;
   _geoParkForget();
   // Fresh observation window on wake: if this exit was a real drive the next
   // fixes clear the quiet clock; if it was a walk out of the region, GPS gets
@@ -5083,6 +5136,7 @@ function _geoDiagPanel(){
     ['Queue error',_geoQueueLastError||'none'],
     ['GPS watcher',_geoNativeWatcherId!=null?String(_geoNativeWatcherId):'off'],
     ['Park mode',_geoParkModeOn?'ON (GPS off)':'off'],
+    ['Wake stream',_geoWakeArmed?'armed':'off'],
     ['Park countdown',_geoParkTimer?'running':'idle'],
     ['In fence',_geoLastFenceLoc?((_geoLastFenceLoc.name||_geoLastFenceLoc.kind||'yes')+(dwellMin!=null?' · '+dwellMin+' min':'')):'no'],
     ['Below drive speed',_geoQuietSinceMs?Math.round((Date.now()-_geoQuietSinceMs)/60000)+' min':'no (moving)'],
@@ -5190,6 +5244,19 @@ async function _geoTdEvent(ev,replay){
   // carries no position and must never touch the fence machine; it exists so
   // the journal and the server tape can both show when the radio was up, and
   // so JS learns about a cap it did not ask for.
+  // The plugin dropped the wake stream on its own (rules 1 and 3 at
+  // _geoWakeOnMoveArm): JS forgets the arm and the quiet clock restarts here,
+  // so the next ping can put it back up only if the tape stays still from
+  // this moment. Bookkeeping only: the position on it is whatever the
+  // manager last held, and it must never reach the fence machine.
+  if(ev.type==='wake-drop'){
+    if(!replay){
+      _geoWakeArmed=false;
+      _geoWakeQuietSinceMs=Number(ev.ts)||Date.now();
+      _geoParkNote('wake-drop',String(ev.reason||''));
+    }
+    return;
+  }
   if(ev.type==='sampling'){
     if(ev.mode!=='drive'&&_geoDriveWinAt){_geoDriveWinAt=0;_geoDriveWinWhy='';_geoDriveWinAskedAt=0;}
     if(!replay)_geoParkNote('sampling',String(ev.mode||'')+(ev.reason?' ('+ev.reason+')':''));
@@ -5250,6 +5317,7 @@ async function _geoTdEvent(ev,replay){
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
     if(!replay&&ev.type==='push-ping')_geoPingBurst();
+    if(!replay&&ev.type==='push-ping')_geoWakeRearm();
     if(!replay&&ev.type==='push-ping')_geoRadioCheck();
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
     // And the day is re-derived on the same push, so an open dwell that a
@@ -5759,6 +5827,7 @@ function stopGeoTracking(){
   // woken by the previous account's fence.
   _geoClearParkTimer();
   _geoParkModeOn=false;
+  _geoWakeArmed=false;
   _geoParkForget();
   _geoFenceEnteredAtMs=null;
   _geoQuietSinceMs=null;_geoParkPrevFix=null;

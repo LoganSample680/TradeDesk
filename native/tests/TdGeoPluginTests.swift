@@ -2133,6 +2133,231 @@ extension TdGeoPluginTests {
         XCTAssertLessThanOrEqual(TdGeoPlugin.wakeFixThrottleMsForTest, 120_000)
     }
 
+    // MARK: - The wake stream is bounded (owner 2026-09-08)
+    // 45 moving episodes in eight days on his own phone, two of them a drive,
+    // the longest 36.6 hours. Two bounds, both enforced here while JS sleeps:
+    // the coprocessor outranks the stream (tape grace), and a moving episode
+    // with no drive window is a person, not a truck (moving cap).
+
+    private func wakeBoundsReset() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.removeObject(forKey: plugin.wakeStillKeyForTest)
+        d.removeObject(forKey: plugin.wakeCfgKeyForTest)
+        d.removeObject(forKey: plugin.samplingKeyForTest)
+        d.removeObject(forKey: plugin.lastMotionKindKeyForTest)
+    }
+    private func bufferTypes() -> [String] {
+        ((UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? [])
+            .compactMap { $0["type"] as? String }
+    }
+    private func wakeDropRow() -> [String: Any]? {
+        ((UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? [])
+            .first { ($0["type"] as? String) == "wake-drop" }
+    }
+
+    func testWakeBounds_defaultsAreMinutesNotHours() {
+        XCTAssertEqual(TdGeoPlugin.wakeMaxMovingDefaultMsForTest, 12 * 60_000)
+        XCTAssertEqual(TdGeoPlugin.wakeTapeGraceDefaultMsForTest, 2 * 60_000)
+        // The grace has to outlast CoreMotion's lag on a real departure
+        // (30 to 90 s measured) or the truck loses its stream at the kerb.
+        XCTAssertGreaterThanOrEqual(TdGeoPlugin.wakeTapeGraceDefaultMsForTest, 90_000)
+        XCTAssertLessThanOrEqual(TdGeoPlugin.wakeMaxMovingCeilingMsForTest, 24 * 3_600_000, "a ceiling in days is no ceiling")
+    }
+
+    func testWakeBounds_clampJunkAndFillAbsent() {
+        XCTAssertEqual(TdGeoPlugin.clampWakeMoving(nil), TdGeoPlugin.wakeMaxMovingDefaultMsForTest)
+        XCTAssertEqual(TdGeoPlugin.clampWakeMoving(5), TdGeoPlugin.wakeMaxMovingFloorMsForTest, "5 ms is never a cap")
+        XCTAssertEqual(TdGeoPlugin.clampWakeMoving(1e12), TdGeoPlugin.wakeMaxMovingCeilingMsForTest)
+        XCTAssertEqual(TdGeoPlugin.clampWakeGrace(nil), TdGeoPlugin.wakeTapeGraceDefaultMsForTest)
+        XCTAssertEqual(TdGeoPlugin.clampWakeGrace(-1), TdGeoPlugin.wakeTapeGraceFloorMsForTest)
+        XCTAssertEqual(TdGeoPlugin.clampWakeGrace(1e12), TdGeoPlugin.wakeTapeGraceCeilingMsForTest)
+    }
+
+    func testSetWakeOnMove_persistsTheBoundsJsSentAndEchoesThem() {
+        wakeBoundsReset()
+        let done = expectation(description: "resolve")
+        plugin.setWakeOnMove(makeCall(options: ["on": true, "maxMovingMs": 300_000.0, "tapeGraceMs": 45_000.0], onSuccess: { r in
+            XCTAssertEqual(r?["maxMovingMs"] as? Double, 300_000)
+            XCTAssertEqual(r?["tapeGraceMs"] as? Double, 45_000)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+        let cfg = plugin.wakeCfgForTest()
+        XCTAssertEqual(cfg.maxMovingMs, 300_000, "a relaunch re-enters with the numbers JS chose")
+        XCTAssertEqual(cfg.tapeGraceMs, 45_000)
+    }
+
+    func testSetWakeOnMove_junkBoundsFallToDefaultsNeverReject() {
+        wakeBoundsReset()
+        let done = expectation(description: "resolve")
+        plugin.setWakeOnMove(makeCall(options: ["on": true, "maxMovingMs": "soon", "tapeGraceMs": [1]], onSuccess: { r in
+            XCTAssertEqual(r?["maxMovingMs"] as? Double, TdGeoPlugin.wakeMaxMovingDefaultMsForTest)
+            XCTAssertEqual(r?["tapeGraceMs"] as? Double, TdGeoPlugin.wakeTapeGraceDefaultMsForTest)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testWakeUpdate_movingArmsTheCapAndRestCancelsIt() {
+        wakeBoundsReset()
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: true)
+        XCTAssertFalse(plugin.wakeMovingTimerArmedForTest, "a still phone is on no clock")
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        XCTAssertTrue(plugin.wakeMovingTimerArmedForTest, "the episode starts the cap")
+        XCTAssertFalse(plugin.wakeTapeTimerArmedForTest, "no tape word yet, no grace")
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        XCTAssertTrue(plugin.wakeMovingTimerArmedForTest, "a second moving update does not restart the clock")
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: true)
+        XCTAssertFalse(plugin.wakeMovingTimerArmedForTest, "rest closes the episode and its clock")
+    }
+
+    func testWakeUpdate_aStreamThatStartsMovingIsOnTheClockToo() {
+        // The 36.6-hour episode began with "moving at stream start" on a
+        // relaunch (wasStill nil): the case the cap most has to cover.
+        wakeBoundsReset()
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        XCTAssertTrue(plugin.wakeMovingTimerArmedForTest)
+    }
+
+    func testWakeMovingCap_dropsTheStreamJournalsAndClearsTheFlag() {
+        wakeBoundsReset()
+        let d = UserDefaults.standard
+        d.set(true, forKey: plugin.wakeKeyForTest)
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        plugin.fireWakeMovingCapForTest()
+        XCTAssertFalse(plugin.wakeOnMoveOnForTest, "the stream is gone")
+        XCTAssertFalse(d.bool(forKey: plugin.wakeKeyForTest), "and a relaunch must not re-arm the same episode")
+        XCTAssertFalse(plugin.wakeMovingTimerArmedForTest)
+        let drop = wakeDropRow()
+        XCTAssertNotNil(drop, "JS reads the drop off the buffer")
+        XCTAssertEqual(drop?["reason"] as? String, "moving 12m, no drive window")
+        // The ledger closes both the episode and the session, by native.
+        let radio = plugin.radioRowsForTest()
+        let moving = radio.last { ($0["session"] as? String) == "wake-moving" }
+        let stream = radio.last { ($0["session"] as? String) == "wake-stream" }
+        XCTAssertEqual(moving?["on"] as? Bool, false)
+        XCTAssertEqual(moving?["trigger"] as? String, "native")
+        XCTAssertEqual(moving?["reason"] as? String, "moving 12m, no drive window")
+        XCTAssertEqual(stream?["on"] as? Bool, false)
+        XCTAssertEqual(stream?["trigger"] as? String, "native")
+    }
+
+    func testWakeMovingCap_standsDownWhileTheDriveWindowOwnsTheRadio() {
+        wakeBoundsReset()
+        let d = UserDefaults.standard
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        d.set(["mode": "drive", "startedAtMs": Date().timeIntervalSince1970 * 1000, "maxMs": 600000.0, "filter": 10.0],
+              forKey: plugin.samplingKeyForTest)
+        plugin.fireWakeMovingCapForTest()
+        XCTAssertTrue(plugin.wakeOnMoveOnForTest, "a drive is exactly what the stream is for")
+        XCTAssertNil(wakeDropRow())
+        // The window closing puts the episode back on the clock.
+        plugin.expireSamplingCapForTest()
+        XCTAssertTrue(plugin.wakeMovingTimerArmedForTest, "still moving with no window: back on the clock")
+        XCTAssertTrue(plugin.wakeOnMoveOnForTest)
+    }
+
+    func testWakeUpdate_withTheWindowAlreadyOpenArmsNothing() {
+        wakeBoundsReset()
+        let d = UserDefaults.standard
+        d.set(["mode": "drive", "startedAtMs": Date().timeIntervalSince1970 * 1000, "maxMs": 600000.0, "filter": 10.0],
+              forKey: plugin.samplingKeyForTest)
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        XCTAssertFalse(plugin.wakeMovingTimerArmedForTest)
+        XCTAssertFalse(plugin.wakeTapeTimerArmedForTest)
+    }
+
+    func testWakeTapeGrace_theTapeStartsItAndAFlipCancelsIt() {
+        wakeBoundsReset()
+        let d = UserDefaults.standard
+        d.set("still", forKey: plugin.lastMotionKindKeyForTest)
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        XCTAssertTrue(plugin.wakeTapeTimerArmedForTest, "stream says moving, tape says still: the grace starts")
+        plugin.wakeTapeChangedForTest("automotive")
+        XCTAssertFalse(plugin.wakeTapeTimerArmedForTest, "the tape agreeing is the departure; the grace is off")
+        XCTAssertTrue(plugin.wakeMovingTimerArmedForTest, "the cap keeps running regardless")
+        plugin.wakeTapeChangedForTest("still")
+        XCTAssertTrue(plugin.wakeTapeTimerArmedForTest, "a return to still starts a fresh grace")
+    }
+
+    func testWakeTapeGrace_dropsOnlyIfTheTapeStillSaysStillWhenItFires() {
+        wakeBoundsReset()
+        let d = UserDefaults.standard
+        d.set("still", forKey: plugin.lastMotionKindKeyForTest)
+        d.set(true, forKey: plugin.wakeKeyForTest)
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        // The tape flipped after the timer was armed but before it fired, by
+        // a path that did not go through wakeTapeChanged: still a keep.
+        d.set("automotive", forKey: plugin.lastMotionKindKeyForTest)
+        plugin.fireWakeTapeGraceForTest()
+        XCTAssertTrue(plugin.wakeOnMoveOnForTest, "the truck left; the stream stays")
+        XCTAssertNil(wakeDropRow())
+        // And the honest case.
+        d.set("still", forKey: plugin.lastMotionKindKeyForTest)
+        plugin.wakeTapeChangedForTest("still")
+        plugin.fireWakeTapeGraceForTest()
+        XCTAssertFalse(plugin.wakeOnMoveOnForTest)
+        XCTAssertEqual(wakeDropRow()?["reason"] as? String, "tape says still")
+        XCTAssertFalse(d.bool(forKey: plugin.wakeKeyForTest))
+    }
+
+    func testWakeTapeGrace_aTapeWithNoWordArmsNoGrace() {
+        // No coprocessor, or nothing said yet: there is no tape to outrank
+        // the stream, and the cap alone bounds the episode.
+        wakeBoundsReset()
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        XCTAssertFalse(plugin.wakeTapeTimerArmedForTest)
+        plugin.wakeTapeChangedForTest("")
+        XCTAssertFalse(plugin.wakeTapeTimerArmedForTest)
+    }
+
+    func testWakeBounds_firingWithNothingOpenIsANoOp() {
+        wakeBoundsReset()
+        plugin.fireWakeMovingCapForTest()
+        plugin.fireWakeTapeGraceForTest()
+        plugin.wakeTapeChangedForTest("still")
+        XCTAssertEqual(bufferTypes(), [])
+        // On but resting: the episode is closed, so neither exit may fire.
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: true)
+        plugin.fireWakeMovingCapForTest()
+        plugin.fireWakeTapeGraceForTest()
+        XCTAssertTrue(plugin.wakeOnMoveOnForTest)
+        XCTAssertNil(wakeDropRow())
+    }
+
+    func testWakeBounds_rapidRepeatedFiresNeverCrashOrDoubleDrop() {
+        wakeBoundsReset()
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        for _ in 0..<20 {
+            plugin.fireWakeMovingCapForTest()
+            plugin.fireWakeTapeGraceForTest()
+        }
+        XCTAssertEqual(bufferTypes().filter { $0 == "wake-drop" }.count, 1)
+    }
+
+    func testStopAll_cancelsTheWakeClocks() {
+        wakeBoundsReset()
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.03, lng: -95.71, stationary: false)
+        XCTAssertTrue(plugin.wakeMovingTimerArmedForTest)
+        let stopped = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        XCTAssertFalse(plugin.wakeMovingTimerArmedForTest)
+        XCTAssertFalse(plugin.wakeTapeTimerArmedForTest)
+    }
+
     // MARK: - The event flush: one upload per batch, and the background session's completion handoff (2026-09-02)
 
     private func seedFlushConfig() {

@@ -78,7 +78,9 @@ test.describe('the radio ledger', () => {
     });
 
     test('the wake-on-move stream says it was armed by a park', async () => {
-      const c = await askedWith(`_geoWakeOnMoveArm(_geoTdPlugin());`);
+      const c = await askedWith(`
+        const keep = _geoWakeArmOk; _geoWakeArmOk = () => '';
+        try { _geoWakeOnMoveArm(_geoTdPlugin()); } finally { _geoWakeArmOk = keep; }`);
       expect((c.setWakeOnMove || [])[0]).toEqual(expect.objectContaining({ on: true, reason: 'park armed' }));
     });
 

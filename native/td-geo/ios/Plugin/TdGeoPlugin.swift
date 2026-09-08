@@ -201,6 +201,33 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // the only thing describing the road; this is how often that is worth a
     // row. The drive window's own breadcrumbs take over once JS opens it.
     private static let wakeFixThrottleMs: Double = 30_000
+    // ── The stream is bounded (owner 2026-09-08) ─────────────────────────
+    // Measured on his own phone over eight days: 45 moving episodes, 2 of
+    // them a drive, the longest 36.6 hours with every fix inside one foot.
+    // The stream is right that the phone is not stationary and wrong about
+    // what that is worth: a phone in a pocket on a job site is never still.
+    // Two bounds, both numbers JS's (3.2), both enforced HERE because the
+    // whole point is that JS is asleep when they matter:
+    //   tapeGraceMs   the coprocessor outranks the stream. CoreMotion saying
+    //                 still for this long while the stream says moving is a
+    //                 pocket, not a truck. A grace and not an instant drop,
+    //                 because the tape lags a real departure by 30 to 90 s.
+    //   maxMovingMs   a moving episode with no drive window open for this
+    //                 long is not a departure JS missed; the truck would have
+    //                 tripped a fence by now. It is a person.
+    // Either bound drops the stream, journals a wake-drop, and clears the
+    // persisted flag so a relaunch does not quietly re-arm the same episode.
+    // JS re-arms on the next quiet ping (geo-track.js _geoWakeRearm), which
+    // is what keeps the phone-in-the-truck case alive across a whole shift.
+    private let wakeCfgKey = "td_geo_wake_cfg"
+    private var wakeMovingTimer: Timer?
+    private var wakeTapeTimer: Timer?
+    private static let wakeMaxMovingDefaultMs: Double = 12 * 60_000
+    private static let wakeMaxMovingFloorMs: Double = 60_000
+    private static let wakeMaxMovingCeilingMs: Double = 6 * 3_600_000
+    private static let wakeTapeGraceDefaultMs: Double = 2 * 60_000
+    private static let wakeTapeGraceFloorMs: Double = 15_000
+    private static let wakeTapeGraceCeilingMs: Double = 15 * 60_000
     private var lastMotionKind: String {
         get { UserDefaults.standard.string(forKey: lastMotionKindKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: lastMotionKindKey) }
@@ -600,6 +627,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 self.record(["type": "sampling", "mode": "drive",
                              "ts": Double(Date().timeIntervalSince1970 * 1000)])
                 self.radioLog("drive", on: true, accuracy: accuracy, reason: reason, trigger: "js")
+                // The window owns the radio now; the wake bounds stand down.
+                self.wakeCancelTimers()
             }
             let m = self.mgr()
             // A burst already owns the receiver at Best accuracy; leave it, and
@@ -665,6 +694,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // "cap" is this file's own timer; everything else came in on a call.
         radioLog("drive", on: false, reason: reason, trigger: reason == "cap" ? "native" : "js")
         restoreBaselineRadio()
+        // A stream still moving with the window gone is back on the clock.
+        if wakeMovingOpen() { armWakeMovingCap() }
     }
 
     // Whatever the radio should be doing when no drive window and no burst is
@@ -700,15 +731,99 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // setWakeOnMove({on}) : hold (or drop) the iOS 17 live-updates stream that
     // relaunches this app when a stationary phone starts moving. Resolves
     // {on, supported}; on a shell older than iOS 17 it is a no-op that says so.
+    // {on, reason, maxMovingMs, tapeGraceMs}: the two bounds ride the arm and
+    // are persisted beside the flag, so a relaunch re-enters the stream with
+    // the same numbers JS last chose. Absent means the defaults above.
     @objc func setWakeOnMove(_ call: CAPPluginCall) {
         let on = call.getBool("on") ?? false
         let reason = reasonOf(call)
+        let maxMoving = TdGeoPlugin.clampWakeMoving(self.num(call.getValue("maxMovingMs")))
+        let grace = TdGeoPlugin.clampWakeGrace(self.num(call.getValue("tapeGraceMs")))
         DispatchQueue.main.async {
-            if on { self.startWakeOnMove(reason: reason, trigger: "js") }
-            else { self.stopWakeOnMove(reason: reason, trigger: "js") }
+            if on {
+                UserDefaults.standard.set(["maxMovingMs": maxMoving, "tapeGraceMs": grace], forKey: self.wakeCfgKey)
+                self.startWakeOnMove(reason: reason, trigger: "js")
+            } else { self.stopWakeOnMove(reason: reason, trigger: "js") }
             UserDefaults.standard.set(on, forKey: self.wakeKey)
-            call.resolve(["on": self.wakeOnMoveOn, "supported": TdGeoPlugin.wakeOnMoveSupported()])
+            call.resolve(["on": self.wakeOnMoveOn, "supported": TdGeoPlugin.wakeOnMoveSupported(),
+                          "maxMovingMs": maxMoving, "tapeGraceMs": grace])
         }
+    }
+
+    static func clampWakeMoving(_ v: Double?) -> Double {
+        return min(max(v ?? wakeMaxMovingDefaultMs, wakeMaxMovingFloorMs), wakeMaxMovingCeilingMs)
+    }
+    static func clampWakeGrace(_ v: Double?) -> Double {
+        return min(max(v ?? wakeTapeGraceDefaultMs, wakeTapeGraceFloorMs), wakeTapeGraceCeilingMs)
+    }
+    private func wakeCfg() -> (maxMovingMs: Double, tapeGraceMs: Double) {
+        let c = UserDefaults.standard.dictionary(forKey: wakeCfgKey)
+        return (TdGeoPlugin.clampWakeMoving(num(c?["maxMovingMs"])),
+                TdGeoPlugin.clampWakeGrace(num(c?["tapeGraceMs"])))
+    }
+    // A moving episode is open: the stream is held and its last word was
+    // "not stationary". The only state either bound applies to.
+    private func wakeMovingOpen() -> Bool {
+        return wakeOnMoveOn && (UserDefaults.standard.object(forKey: wakeStillKey) as? Bool) == false
+    }
+    private func armWakeMovingCap() {
+        guard wakeMovingTimer == nil else { return }
+        let ms = wakeCfg().maxMovingMs
+        wakeMovingTimer = Timer.scheduledTimer(withTimeInterval: ms / 1000, repeats: false) { [weak self] _ in
+            self?.wakeMovingCapFired()
+        }
+    }
+    private func wakeMovingCapFired() {
+        wakeMovingTimer?.invalidate()
+        wakeMovingTimer = nil
+        guard wakeMovingOpen() else { return }
+        // A drive window means this WAS a departure and the radio is earned;
+        // the window's own cap governs, and endDriveSampling re-arms this one
+        // if the stream is still moving when the window closes.
+        if driveSamplingOn() { return }
+        let mins = Int((wakeCfg().maxMovingMs / 60_000).rounded())
+        wakeDrop(reason: "moving \(mins)m, no drive window")
+    }
+    private func armWakeTapeGrace() {
+        guard wakeTapeTimer == nil else { return }
+        let ms = wakeCfg().tapeGraceMs
+        wakeTapeTimer = Timer.scheduledTimer(withTimeInterval: ms / 1000, repeats: false) { [weak self] _ in
+            self?.wakeTapeGraceFired()
+        }
+    }
+    private func wakeTapeGraceFired() {
+        wakeTapeTimer?.invalidate()
+        wakeTapeTimer = nil
+        // Re-read at the moment it fires: a flip to driving inside the grace
+        // is exactly the departure this stream exists for, and it keeps it.
+        guard wakeMovingOpen(), lastMotionKind == "still", !driveSamplingOn() else { return }
+        wakeDrop(reason: "tape says still")
+    }
+    private func wakeCancelTimers() {
+        wakeMovingTimer?.invalidate()
+        wakeMovingTimer = nil
+        wakeTapeTimer?.invalidate()
+        wakeTapeTimer = nil
+    }
+    // The coprocessor's word, from the motion stream, while an episode is
+    // open: still starts the grace, anything else cancels it.
+    private func wakeTapeChanged(_ kind: String) {
+        guard wakeMovingOpen() else { return }
+        if kind == "still" { armWakeTapeGrace() }
+        else { wakeTapeTimer?.invalidate(); wakeTapeTimer = nil }
+    }
+    // The drop itself. The event is what JS reads (it clears its own memory
+    // of the arm and waits for a quiet ping); the ledger rows come from
+    // stopWakeOnMove as for any other stop; the flag is cleared so load()
+    // cannot re-enter the episode that was just judged worthless.
+    private func wakeDrop(reason: String) {
+        guard wakeOnMoveOn else { return }
+        countWake("wake-drop")
+        var ev = event(type: "wake-drop", loc: mgr().location, regionId: nil)
+        ev["reason"] = reason
+        record(ev)
+        stopWakeOnMove(reason: reason, trigger: "native")
+        UserDefaults.standard.removeObject(forKey: wakeKey)
     }
 
     static func wakeOnMoveSupported() -> Bool {
@@ -758,6 +873,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             DispatchQueue.main.async { self.stopWakeOnMove(reason: reason, trigger: trigger) }
             return
         }
+        wakeCancelTimers()
         (wakeTask as? Task<Void, Never>)?.cancel()
         wakeTask = nil
         if #available(iOS 17.0, *) {
@@ -807,6 +923,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             }
             d.set(true, forKey: wakeStillKey)
             wakeLastFixAt = nil
+            // Rest closes the episode, and with it both bounds.
+            wakeCancelTimers()
             return
         }
         let resumed = (wasStill == true)
@@ -826,6 +944,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             radioLog("wake-moving", on: true, accuracy: "otherNavigation",
                      reason: resumed ? "iOS: movement resumed" : "iOS: moving at stream start",
                      trigger: "ios")
+        }
+        // The bounds start with the episode, not with the drive window: a
+        // window already open means the radio is earned and nothing is armed.
+        if !driveSamplingOn() {
+            armWakeMovingCap()
+            if lastMotionKind == "still" { armWakeTapeGrace() }
         }
         guard let l = loc else { return }
         if driveSamplingOn() { return }
@@ -1226,6 +1350,21 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
     func wakeUpdateForTest(stationary: Bool) { onWakeUpdate(nil, stationary: stationary) }
     func wakeOnForTest() { wakeOnMoveOn = true }
+    // The bounds fire on Timers measured in minutes; the tests reach the same
+    // two exits the timers do, and feed the tape the way the motion stream does.
+    var wakeCfgKeyForTest: String { wakeCfgKey }
+    var wakeMovingTimerArmedForTest: Bool { wakeMovingTimer != nil }
+    var wakeTapeTimerArmedForTest: Bool { wakeTapeTimer != nil }
+    func fireWakeMovingCapForTest() { wakeMovingCapFired() }
+    func fireWakeTapeGraceForTest() { wakeTapeGraceFired() }
+    func wakeTapeChangedForTest(_ kind: String) { wakeTapeChanged(kind) }
+    func wakeCfgForTest() -> (maxMovingMs: Double, tapeGraceMs: Double) { wakeCfg() }
+    static var wakeMaxMovingDefaultMsForTest: Double { wakeMaxMovingDefaultMs }
+    static var wakeMaxMovingFloorMsForTest: Double { wakeMaxMovingFloorMs }
+    static var wakeMaxMovingCeilingMsForTest: Double { wakeMaxMovingCeilingMs }
+    static var wakeTapeGraceDefaultMsForTest: Double { wakeTapeGraceDefaultMs }
+    static var wakeTapeGraceFloorMsForTest: Double { wakeTapeGraceFloorMs }
+    static var wakeTapeGraceCeilingMsForTest: Double { wakeTapeGraceCeilingMs }
     // The upload itself, reachable without a debounce timer or a real
     // background: the tests point the config at a dead port and assert the
     // bookkeeping (one in-flight entry per batch, the completion handoff).
@@ -1475,6 +1614,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             if kind.isEmpty || kind == self.lastMotionKind { return }
             let prev = self.lastMotionKind
             self.lastMotionKind = kind
+            self.wakeTapeChanged(kind)
             // THE TRANSITION IS THE PING (owner 2026-08-29). Every state
             // change is a boundary the day is measured on: still -> onFoot is
             // a load-out starting, onFoot -> automotive is a departure,
