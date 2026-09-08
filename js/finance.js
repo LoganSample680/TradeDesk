@@ -3443,7 +3443,7 @@ function renderJobSummary(){
   const rows=wonBids.map(b=>{
     const rev=getClientIncome(b.client_id).reduce((s,i)=>s+i.amount,0);
     const exp=expenses.filter(e=>e.job_id===b.id).reduce((s,e)=>s+e.amount,0);
-    const miles=mileage.filter(m=>m.client_id===b.client_id).reduce((s,m)=>s+(m.miles||0),0); // miles-not-deduction: distance driven to this job, shown as "3.4mi", never multiplied by a rate
+    const miles=addressedTrips(mileage).filter(m=>m.client_id===b.client_id).reduce((s,m)=>s+(m.miles||0),0); // miles-not-deduction: distance driven to this job, shown as "3.4mi", never multiplied by a rate
     const net=rev-exp;
     grandRev+=rev;grandExp+=exp;
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
@@ -3928,7 +3928,8 @@ function renderSummary(){
   if(sumSel&&S.txStatus)sumSel.value=S.txStatus;
   const yInc=income.filter(r=>r.date&&r.date.startsWith(yr));
   const yExp=expenses.filter(e=>e.date&&e.date.startsWith(yr));
-  const yMi=mileage.filter(m=>m.date&&m.date.startsWith(yr));
+  // Addressed rows only (owner 2026-09-08): a traced row is on no total.
+  const yMi=addressedTrips(mileage).filter(m=>m.date&&m.date.startsWith(yr));
   const tIn=yInc.reduce((s,r)=>s+r.amount,0);
   const _vdS=(typeof _vehSchedC==='function')?_vehSchedC(yr):null; // one method per vehicle (IRS)
   const tEx=yExp.reduce((s,r)=>s+r.amount,0)-(_vdS?_vdS.expAdjust:0);

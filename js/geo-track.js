@@ -7028,6 +7028,11 @@ async function _geoDeriveRouteMiles(rows){
   for(const m of rows){
     try{
       if(!m||!m.fromCoord||!m.toCoord||!isFinite(m.fromCoord.lat)||!isFinite(m.toCoord.lat))continue;
+      // A ROUTE NEEDS TWO ADDRESSES (rule 14, owner 2026-09-08). A traced row
+      // has at least one end nobody saved; routing between its coordinates
+      // would hand it exactly the inferred number it exists not to have. It
+      // keeps the breadcrumb figure until an address makes it a real leg.
+      if(m.addressUnknown)continue;
       // A leg collapsed through a personal stop is billed at the DIRECT
       // route (rule 6): no breadcrumbs steer that one, they run through the
       // stop. Every other leg's router is steered down the road it drove.

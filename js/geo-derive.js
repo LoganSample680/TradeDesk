@@ -90,6 +90,19 @@
 //      the flip and woke down the road still names the fence it left.
 //      Mirror for arrivals: the first fix after the walking flip and
 //      before the next drive, when none sits inside the window.
+//  14. A DRIVE WITH AN UNSAVED END IS STILL A DRIVE (owner 2026-09-08:
+//      "only things with addresses saved should update any totals, if a
+//      address gets added it can add the mileage back on the deriver").
+//      Rules 5, 7 and 8 used to write NOTHING for a journey that started or
+//      ended somewhere unsaved, so the drive vanished from every screen and
+//      the day showed a hole where it had been. Now such a journey writes a
+//      TRACED leg: the phone's own breadcrumb miles, never a routed number
+//      (a route needs two addresses), flagged addressUnknown so it is on no
+//      total anywhere, with the unsaved end named as exactly that. Saving the
+//      address makes it a fence; the next derive of that day finds the fence,
+//      writes the real leg under the SAME journey id, and the traced row is
+//      replaced. Nothing is inferred and nothing is claimed: the drive is
+//      shown, the deduction waits for the address.
 //  11. THE DAY ENDS WITH THE LAST REAL WORK (owner 2026-08-24, restated
 //      2026-09-02 on his own 5:29pm: "those aren't needed"). A dwell at a
 //      base (the shop, a home office) that begins after the day's last
@@ -607,8 +620,26 @@ function geoDeriveDay(input) {
 
     if (!chain) {
       if (!fromFence) {
-        // Unknown origin: nothing to measure from. If it ended somewhere
-        // saved, a dwell opens there, and that is all.
+        // Unknown origin: nothing to ROUTE from, but the phone still watched
+        // the road. Rule 14: a traced leg, breadcrumb miles, off every total,
+        // with the unsaved end saying so. If it ended somewhere saved, a
+        // dwell opens there as before.
+        if (startFix && endFix && autoMs >= opts.minLegMs) {
+          const a = _gdUnsavedEnd(startFix), b = toFence || _gdUnsavedEnd(endFix);
+          const p = _gdPathMiles(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.maxMph);
+          const miles = p > 0 ? p : _gdMiles(a, b);
+          if (miles > 0) {
+            legs.push({
+              id: j.id, from: a, to: b, startTs: j.startTs, endTs: j.endTs,
+              minutes: Math.round(autoMs / 60000),
+              miles: Math.round(miles * 10) / 10, milesFrom: p > 0 ? 'path' : 'straight',
+              collapsed: false, stops: 0, roundTrip: false,
+              traced: true, unsavedFrom: true, unsavedTo: !toFence,
+              drives: [[j.startTs, j.endTs, autoMs]],
+              path: _gdPath(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax, opts.maxMph),
+            });
+          }
+        }
         if (toFence) arrived = { fence: toFence, ts: j.endTs, journeyId: j.id };
         continue;
       }
@@ -693,7 +724,11 @@ function geoDeriveDay(input) {
       const a = chain.originFence, b = toFence;
       let miles, milesFrom;
       if (roundTrip) {
-        miles = 0; milesFrom = 'none';
+        // Rule 14: the place he actually went was never saved, so there is
+        // still no routed number; the breadcrumbs are shown and claimed by
+        // nobody. Saving that stop turns this into two real legs.
+        const p = _gdPathMiles(fixes, chain.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.maxMph);
+        miles = p > 0 ? p : 0; milesFrom = p > 0 ? 'path' : 'none';
       } else if (collapsed) {
         const d = directMiles ? Number(directMiles(a, b)) : NaN;
         miles = d > 0 ? d : _gdMiles(a, b);
@@ -709,6 +744,9 @@ function geoDeriveDay(input) {
         minutes: Math.round(chain.autoMs / 60000),
         miles: Math.round(miles * 10) / 10, milesFrom,
         collapsed, stops: chain.stops, roundTrip,
+        // Rule 14: a round trip through an unsaved stop is a traced row,
+        // never a claimed one.
+        traced: roundTrip && miles > 0, unsavedVia: roundTrip,
         // The driving segments, in order. One entry unless a stop split them.
         drives: chain.drives.slice(),
         // What the phone actually saw between the two flips, for the map and
@@ -720,6 +758,34 @@ function geoDeriveDay(input) {
     }
     chain = null;
     arrived = { fence: toFence, ts: j.endTs, journeyId: j.id };
+  }
+
+  // Rule 14, the day-end case (rule 8 as amended): a chain that reached its
+  // last CLOSED journey without ever arriving anywhere saved. Nothing was
+  // written and the drive vanished. Now it is a traced leg from the saved
+  // origin to wherever the truck last came to rest, breadcrumb miles, off
+  // every total, the far end named as unsaved. A chain whose last journey is
+  // still OPEN (openSince set) is still driving and stays pending exactly as
+  // before; the live screens read `pending` for that.
+  if (chain && !chain.openSince && Array.isArray(chain.drives) && chain.drives.length && chain.autoMs >= opts.minLegMs) {
+    const lastEnd = Number(chain.drives[chain.drives.length - 1][1]);
+    const restFix = _gdSettledFixAfter(fixes, lastEnd, Infinity, opts.parkedFixMaxMs, opts.maxFixAccM) || at(lastEnd);
+    if (restFix) {
+      const a = chain.originFence, b = _gdUnsavedEnd(restFix);
+      const p = _gdPathMiles(fixes, chain.startTs, lastEnd, opts.maxFixAccM, [null, restFix], opts.maxMph);
+      const miles = p > 0 ? p : _gdMiles(a, b);
+      if (miles > 0) {
+        legs.push({
+          id: chain.id, from: a, to: b, startTs: chain.startTs, endTs: lastEnd,
+          minutes: Math.round(chain.autoMs / 60000),
+          miles: Math.round(miles * 10) / 10, milesFrom: p > 0 ? 'path' : 'straight',
+          collapsed: chain.stops > 0, stops: chain.stops, roundTrip: false,
+          traced: true, unsavedFrom: false, unsavedTo: true,
+          drives: chain.drives.slice(),
+          path: _gdPath(fixes, chain.startTs, lastEnd, opts.maxFixAccM, [null, restFix], opts.pathMax, opts.maxMph),
+        });
+      }
+    }
   }
 
   // The tail: arrived somewhere saved, no departure flip yet. Rule 9: a dwell
@@ -1295,6 +1361,14 @@ function _gdHeldVisits(dwells, inp, dayStart) {
   });
 }
 
+// Rule 14: the end of a traced leg that no fence could name. Shaped like a
+// fence so the leg carries coordinates for the map and for the Save flow,
+// and NOTHING else: no name, no address, no kind that any total could read
+// as a place of business. `unsaved` is the fact every reader keys on.
+function _gdUnsavedEnd(fix) {
+  return { id: 'unsaved', kind: 'unsaved', name: '', addr: '', lat: Number(fix.lat), lng: Number(fix.lng), unsaved: true };
+}
+
 function _gdDwell(fence, startTs, endTs, journeyId, open) {
   return {
     id: (/^o-/.test(String(journeyId)) ? '' : 'd-') + String(journeyId),
@@ -1426,11 +1500,25 @@ function geoDeriveRows(result, ids) {
     // A round trip writes time but never mileage (rule 7 as amended): both of
     // its endpoints are the same fence, and the place between them was never
     // saved.
-    if (l.roundTrip) continue;
+    // Rule 14: a traced round trip is a row (shown, never claimed); a plain
+    // same-fence loop is still nothing.
+    if (l.roundTrip && !l.traced) continue;
     miles.push(Object.assign({
       id: l.id, legKey: l.id, gps: true, date: result.day,
       from: l.from.addr || l.from.name || '', from_name: l.from.name || '',
       to: l.to.addr || l.to.name || '', to_name: l.to.name || '',
+    }, l.traced ? {
+      // THE ROW IS SHOWN, THE MILES ARE NOT CLAIMED (owner 2026-09-08: "only
+      // things with addresses saved should update any totals"). Every total
+      // in the app goes through addressedTrips (js/mileage.js), which drops
+      // this flag; the row itself stays on the log and the map so the drive
+      // is not a hole in the day. Which end is missing is named so the Save
+      // button knows what it is saving, and a round trip through an unsaved
+      // stop says `via`. Saving the address re-derives the day and the real
+      // leg lands under this same id.
+      addressUnknown: true,
+      unsavedFrom: !!l.unsavedFrom, unsavedTo: !!l.unsavedTo, unsavedVia: !!l.unsavedVia,
+    } : {}, {
       fromCoord: { lat: l.from.lat, lng: l.from.lng }, toCoord: { lat: l.to.lat, lng: l.to.lng },
       startedIso: iso(l.startTs), endedIso: iso(l.endTs), mins: l.minutes,
       // The mileage list orders by when a row was logged; a derived row is
@@ -1458,6 +1546,10 @@ function geoDeriveRows(result, ids) {
       // 28 August Home Depot leg landed as a plain Supply run and the card
       // never showed. The key is what the card groups visits by.
       pendingReceipt: true, supplyRunKey: String(result.day || '') + '|' + (l.to.name || 'Store'),
+    } : {}, l.traced ? {
+      // Named as what it is, so the log and the map can say "traced" rather
+      // than pretending a breadcrumb sum is a routed distance.
+      calc_method: 'derived-traced', gpsMiles: l.miles,
     } : {}));
   }
   return { job_time_entries: time, shop_time_entries: shop, td_mileage: miles };

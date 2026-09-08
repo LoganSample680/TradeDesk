@@ -342,21 +342,35 @@ test.describe('geo-derive: the day deriver', () => {
       ]);
       // Both driving segments survive, and the hole between them does not.
       expect(r.legs[0].drives.map(d => [hm(d[0]), hm(d[1])])).toEqual([['14:00', '14:20'], ['14:40', '15:00']]);
-      expect(r.legs[0].miles).toBe(0);
+      // Rule 14 (owner 2026-09-08): the miles are TRACED now, shown on the
+      // row and the map and on no total. The stop is still unsaved, so
+      // nothing is claimed; this used to be zero and a hole.
+      expect(r.legs[0].traced).toBe(true);
+      expect(r.legs[0].unsavedVia).toBe(true);
+      expect(r.legs[0].miles).toBeGreaterThan(0);
       // The yard dwell 10:00 to 11:00 is real: he arrived and later departed.
       expect(r.dwells.map(d => [d.name, hm(d.startTs), hm(d.endTs)])).toEqual([['The yard', '15:00', '16:00']]);
       const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
       // Two drive rows out of the round trip, one out of the leg to Doe.
       expect(rows.job_time_entries.filter(t => t.source === 'drive').length).toBe(3);
-      // And ONE mileage row: the round trip contributes none.
-      expect(rows.td_mileage.map(m => m.to_name)).toEqual(['John Doe']);
+      // Two mileage rows: the round trip is a TRACED row now (rule 14), on no
+      // total, and the leg to Doe is the one real row. Order is by departure.
+      expect(rows.td_mileage.map(m => [m.to_name, !!m.addressUnknown])).toEqual([['The yard', true], ['John Doe', false]]);
     });
 
-    test('never resolved that day: nothing written, reported as pending', async () => {
+    test('never resolved that day: a TRACED leg to where it came to rest, still reported as pending', async () => {
+      // Rule 8 as amended by rule 14 (owner 2026-09-08). This used to write
+      // nothing and the drive vanished; now the shop-to-wherever drive is a
+      // traced leg, off every total, with its far end named as unsaved.
       const t3 = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(9, 40), 'driving'), mo(T(10, 0), 'onFoot')];
       const f3 = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), GAS), fix(T(9, 40, 5), GAS), fix(T(10, 0, 5), { lat: 39.05, lng: -95.70 })];
       const r = await run(page, base({ tape: t3, fixes: f3 }));
-      expect(r.legs).toEqual([]);
+      expect(r.legs.length).toBe(1);
+      expect(r.legs[0].traced).toBe(true);
+      expect(r.legs[0].unsavedTo).toBe(true);
+      expect(r.legs[0].from.name).toBe('TradeDesk shop');
+      expect(r.legs[0].to.unsaved).toBe(true);
+      expect(r.legs[0].miles).toBeGreaterThan(0);
       expect(r.dwells).toEqual([]);
       expect(r.pending).toBeTruthy();
       expect(r.pending.origin.name).toBe('TradeDesk shop');
@@ -364,11 +378,16 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.pending.autoMinutes).toBe(40);
     });
 
-    test('a day that starts somewhere unsaved: no leg into the first fence, but the dwell opens there', async () => {
+    test('a day that starts somewhere unsaved: a TRACED leg into the first fence, and the dwell opens there', async () => {
+      // Rule 14 (owner 2026-09-08): the drive in from nowhere saved used to be
+      // dropped; it is now a traced leg with an unsaved start, and the real
+      // leg after it is untouched.
       const t4 = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot'), mo(T(12, 0), 'driving'), mo(T(12, 10), 'onFoot')];
       const f4 = [fix(T(8, 0, 5), GAS), fix(T(8, 20, 5), DOE), fix(T(12, 0, 5), DOE), fix(T(12, 10, 5), SHOP), fix(T(12, 30), SHOP)];
       const r = await run(page, base({ tape: t4, fixes: f4 }));
-      expect(r.legs.map(l => [l.from.name, l.to.name])).toEqual([['John Doe', 'TradeDesk shop']]);
+      expect(r.legs.map(l => [l.from.name, l.to.name, !!l.traced])).toEqual([['', 'John Doe', true], ['John Doe', 'TradeDesk shop', false]]);
+      expect(r.legs[0].unsavedFrom).toBe(true);
+      expect(r.legs[0].unsavedTo).toBe(false);
       expect(r.dwells.map(d => [d.name, d.minutes])).toEqual([['John Doe', 220]]);
     });
   });
@@ -523,11 +542,14 @@ test.describe('geo-derive: the day deriver', () => {
         // drives are real for every fence kind EXCEPT his own house, where
         // there is nothing to say the trip was work; the mileage never is.
         const house = from === 'home_office';
-        expect(r.legs.map(l => [l.from.kind, l.to.kind, !!l.roundTrip, l.miles]))
-          .toEqual(house ? [] : [[from, from, true, 0]]);
+        // Rule 14 (2026-09-08): the round trip carries its traced miles now,
+        // flagged so no total reads them; the leg shape is otherwise the same.
+        expect(r.legs.map(l => [l.from.kind, l.to.kind, !!l.roundTrip, !!l.traced, l.miles > 0]))
+          .toEqual(house ? [] : [[from, from, true, true, true]]);
         const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
         expect(rows.job_time_entries.filter(t2 => t2.source === 'drive').length).toBe(house ? 0 : 2);
-        expect(rows.td_mileage).toEqual([]);
+        // One traced, unclaimed row (rule 14); none at all from the house.
+        expect(rows.td_mileage.map(m => [!!m.addressUnknown, !!m.unsavedVia])).toEqual(house ? [] : [[true, true]]);
       });
     }
   });
@@ -945,7 +967,12 @@ test.describe('geo-derive: the day deriver', () => {
       // happen is the 7:40 origin being read as the shop on its own.
       expect(r.legs.map(l => [l.from.name, l.to.name, l.collapsed])).toEqual([['TradeDesk shop', 'John Doe', true]]);
       const r2 = await run(page, base({ tape: tape.slice(2), fixes: fixes.slice(2), nowMs: T(9, 0) }));
-      expect(r2.legs, 'starting at the unsaved stop, the shop fix is never reached for').toEqual([]);
+      // The guarantee is unchanged: the shop fix is never reached for. Since
+      // rule 14 the drive is a TRACED leg whose origin is named as unsaved.
+      expect(r2.legs.length).toBe(1);
+      expect(r2.legs[0].from.unsaved, 'starting at the unsaved stop, the shop fix is never reached for').toBe(true);
+      expect(r2.legs[0].from.name).toBe('');
+      expect(r2.legs[0].to.name).toBe('John Doe');
       expect(r2.dwells).toEqual([]);
       expect(r2.open && r2.open.name).toBe('John Doe');
     });
@@ -961,7 +988,12 @@ test.describe('geo-derive: the day deriver', () => {
       const tape = [mo(T(8, 0), 'onFoot'), mo(T(20, 30), 'driving'), mo(T(20, 45), 'onFoot')];
       const fixes = [fix(T(7, 0), SHOP), fix(T(20, 32), OUT), fix(T(20, 45, 5), DOE), fix(T(21, 30), DOE)];
       const r = await run(page, base({ tape, fixes }));
-      expect(r.legs).toEqual([]);
+      // Not the truck any more: the origin is NOT the shop. Since rule 14 the
+      // drive is still written, as a traced leg from an unsaved origin.
+      expect(r.legs.length).toBe(1);
+      expect(r.legs[0].traced).toBe(true);
+      expect(r.legs[0].from.unsaved).toBe(true);
+      expect(r.legs[0].from.name).not.toBe('TradeDesk shop');
       expect(r.open && r.open.name).toBe('John Doe');
       // Eleven hours old is still the truck.
       const r2 = await run(page, base({ tape, fixes: [fix(T(9, 45), SHOP)].concat(fixes.slice(1)) }));
@@ -1004,7 +1036,12 @@ test.describe('geo-derive: the day deriver', () => {
       const r = await run(page, base({ tape, fixes }));
       expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['client', '14:20', '22:08']]);
       // The legs are untouched by the rule: the drive home is still a leg.
-      expect(r.legs.map(l => [l.from.name, l.to.name])).toEqual([['TradeDesk shop', 'John Doe'], ['John Doe', 'TradeDesk shop']]);
+      // And since rule 14 the 18:20 run out to the store (unsaved) is a third,
+      // traced, leg rather than nothing.
+      expect(r.legs.map(l => [l.from.name, l.to.name, !!l.traced])).toEqual([
+        ['TradeDesk shop', 'John Doe', false], ['John Doe', 'TradeDesk shop', false], ['TradeDesk shop', '', true],
+      ]);
+      expect(r.legs[2].unsavedTo).toBe(true);
     });
 
     test('a real shop after the last job keeps the unloading, capped, and nothing past it', async () => {
@@ -1374,11 +1411,16 @@ test.describe('geo-derive: the day deriver', () => {
     // arrival to find and the journey is still an unresolved stop. This is
     // what makes the test above about the fix that exists, not about loosening
     // the fence.
-    test('with no fix after the flip at all, nothing is invented', async () => {
+    test('with no fix after the flip at all, nothing is invented: the far end is unsaved, not the shop', async () => {
       const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 11, 28), 'automotive'), mo(T(7, 50, 34), 'onFoot')];
       const fixes = [fix(T(7, 0), JF), fix(T(7, 11, 28), JF), fix(T(7, 48, 18), NEARLY)];
       const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(9, 0) }));
-      expect(r.legs).toEqual([]);
+      // The guard is the same: no arrival is invented at the shop. Since rule
+      // 14 the drive itself is a traced leg ending somewhere unsaved.
+      expect(r.legs.length).toBe(1);
+      expect(r.legs[0].traced).toBe(true);
+      expect(r.legs[0].to.unsaved).toBe(true);
+      expect(r.legs[0].to.name).toBe('');
       expect(r.dwells).toEqual([]);
     });
 
@@ -1983,8 +2025,13 @@ test.describe('geo-derive: the day deriver', () => {
       const stops = rows.job_time_entries.filter(t => t.source === 'unsaved');
       expect(stops.map(t => [t.arrived_at.slice(11, 16), t.departed_at.slice(11, 16)]))
         .toEqual([['14:48', '15:51']]);
-      // And nothing enters the IRS log for a trip with no saved far end.
-      expect(rows.td_mileage).toEqual([]);
+      // And nothing is CLAIMED for a trip with no saved far end: rule 14
+      // writes it as a traced round trip, on the log and off every total.
+      expect(rows.td_mileage.length).toBe(1);
+      expect(rows.td_mileage[0].addressUnknown).toBe(true);
+      expect(rows.td_mileage[0].unsavedVia).toBe(true);
+      expect(rows.td_mileage[0].calc_method).toBe('derived-traced');
+      expect(rows.td_mileage[0].miles).toBeGreaterThan(15);   // out ~10.5 and back, breadcrumb sum
     });
 
     // A clean run with nothing in between is still ONE row: this must not
@@ -2000,6 +2047,98 @@ test.describe('geo-derive: the day deriver', () => {
       const drives = rows.job_time_entries.filter(t => t.source === 'drive');
       expect(drives.length).toBe(1);
       expect(drives[0].dest_place).toBe('7402 SW 22nd Ct');
+    });
+  });
+
+  // ── Rule 14: a drive with an unsaved end is still a drive (owner 2026-09-08)
+  // "only things with addresses saved should update any totals, if a address
+  // gets added it can add the mileage back on the deriver."
+  test.describe('rule 14: traced legs', () => {
+    const GAS2 = { lat: 39.0350, lng: -95.7000 };   // also not saved
+    const rowsOf = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      return JSON.parse(JSON.stringify({ res: r, rows: geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' }) }));
+    }, inp);
+
+    test('unsaved to unsaved: the fully invisible case is now a traced row with both ends named as unsaved', async () => {
+      const t = [mo(T(7, 0), 'onFoot'), mo(T(8, 12), 'automotive'), mo(T(8, 41), 'onFoot')];
+      const f = [fix(T(8, 11), GAS), fix(T(8, 12, 5), GAS), fix(T(8, 25), { lat: 39.028, lng: -95.715 }),
+        fix(T(8, 41, 5), GAS2), fix(T(9, 0), GAS2)];
+      const { res, rows } = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+      expect(res.legs.length).toBe(1);
+      const m = rows.td_mileage[0];
+      expect(m.addressUnknown).toBe(true);
+      expect([m.unsavedFrom, m.unsavedTo, m.unsavedVia]).toEqual([true, true, false]);
+      expect([m.from_name, m.to_name]).toEqual(['', '']);
+      expect(m.calc_method).toBe('derived-traced');
+      expect(m.miles).toBeGreaterThan(0);
+      // The drive's TIME is written too, and the far end says it was never saved.
+      const drives = rows.job_time_entries.filter(x => x.source === 'drive');
+      expect(drives.length).toBe(1);
+      expect(drives[0].dest_place).toBe(null);
+    });
+
+    test('never routed: a traced row carries the breadcrumb sum and nothing else', async () => {
+      const t = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'automotive'), mo(T(8, 20), 'onFoot')];
+      // A detour the road would never take: routing would shorten it, the
+      // breadcrumbs say what the truck did.
+      const f = [fix(T(7, 59), GAS), fix(T(8, 0, 5), GAS), fix(T(8, 7), { lat: 39.06, lng: -95.73 }),
+        fix(T(8, 14), { lat: 39.00, lng: -95.74 }), fix(T(8, 20, 5), DOE), fix(T(8, 40), DOE)];
+      const { rows } = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+      const m = rows.td_mileage[0];
+      expect(m.gpsMiles).toBe(m.miles);
+      expect(m.calc_method).toBe('derived-traced');
+      expect(m.miles).toBeGreaterThan(6);   // the detour (7.8 by breadcrumb), not the ~3 mi direct line
+    });
+
+    test('the same journey under the same id: save the address and the real leg replaces the traced one', async () => {
+      const t = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'automotive'), mo(T(8, 20), 'onFoot')];
+      const f = [fix(T(7, 59), GAS), fix(T(8, 0, 5), GAS), fix(T(8, 10), { lat: 39.017, lng: -95.738 }), fix(T(8, 20, 5), DOE), fix(T(8, 40), DOE)];
+      const before = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+      // The owner saves the place he left from.
+      const NEWPLACE = { id: 'client-9', kind: 'client', name: 'Gas Corner Job', clientId: 9, lat: GAS.lat, lng: GAS.lng, addr: '1 Gas Ln' };
+      const after = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0), fences: FENCES.concat([NEWPLACE]) }));
+      expect(before.rows.td_mileage[0].addressUnknown).toBe(true);
+      expect(after.rows.td_mileage[0].addressUnknown).toBeUndefined();
+      expect(after.rows.td_mileage[0].from_name).toBe('Gas Corner Job');
+      // Same id, so geo_replace_day swaps the row rather than adding a second.
+      expect(after.rows.td_mileage[0].id).toBe(before.rows.td_mileage[0].id);
+      expect(after.rows.td_mileage[0].calc_method).not.toBe('derived-traced');
+    });
+
+    test('a same-fence loop with no stop in it is still nothing at all', async () => {
+      const t = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'automotive'), mo(T(8, 6), 'onFoot')];
+      const f = [fix(T(7, 59), SHOP), fix(T(8, 0, 5), SHOP), fix(T(8, 6, 5), SHOP), fix(T(8, 30), SHOP)];
+      const { res, rows } = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+      expect(res.legs).toEqual([]);
+      expect(rows.td_mileage).toEqual([]);
+    });
+
+    test('still driving at derive time writes no traced leg: pending stays pending', async () => {
+      const t = [mo(T(7, 0), 'onFoot'), mo(T(9, 0), 'automotive')];
+      const f = [fix(T(8, 59), SHOP), fix(T(9, 0, 5), SHOP), fix(T(9, 10), GAS)];
+      const { res, rows } = await rowsOf(base({ tape: t, fixes: f, nowMs: T(9, 15) }));
+      expect(res.legs).toEqual([]);
+      expect(rows.td_mileage).toEqual([]);
+      expect(res.pending).toBeTruthy();
+    });
+
+    test('a walk across a fence line is still too short to be a traced leg', async () => {
+      const t = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'automotive'), mo(T(8, 1), 'onFoot')];
+      const f = [fix(T(7, 59), GAS), fix(T(8, 0, 5), GAS), fix(T(8, 1, 5), GAS2), fix(T(8, 30), GAS2)];
+      const { res } = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+      expect(res.legs).toEqual([]);
+    });
+
+    test('a traced row never carries a name or address it could not know', async () => {
+      const t = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'automotive'), mo(T(8, 20), 'onFoot')];
+      const f = [fix(T(7, 59), GAS), fix(T(8, 0, 5), GAS), fix(T(8, 10), { lat: 39.017, lng: -95.738 }), fix(T(8, 20, 5), DOE), fix(T(8, 40), DOE)];
+      const { rows } = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+      const m = rows.td_mileage[0];
+      expect(m.from).toBe('');
+      expect(m.from_name).toBe('');
+      expect(m.fromCoord).toEqual({ lat: GAS.lat, lng: GAS.lng });
+      expect(m.to_name).toBe('John Doe');
     });
   });
 

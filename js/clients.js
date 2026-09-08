@@ -1315,7 +1315,14 @@ function saveClient(){
   if(street&&city&&(addr!==_prevAddr||_noPropData))_lookupPropertyData(c.id,{street,city,state,zip});
   // Warm the nearby-job/geofence cache the moment the address is entered, not
   // on the next passive checkNearbyJob heartbeat (§ eager geocode, js/jobs.js).
-  if(addr&&addr!==_prevAddr&&typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
+  if(addr&&addr!==_prevAddr&&typeof _eagerGeocodeClient==='function'){
+    // SAVE THIS ADDRESS closes the loop here (owner 2026-09-08): once the new
+    // client's address is a geocode, it is a fence, and the traced day this
+    // form was opened for is re-derived so the real leg replaces the traced
+    // row. Nothing to do on an ordinary new lead: the pending marker is only
+    // set by the mileage log's Save button.
+    _eagerGeocodeClient(c.id,addr).catch(()=>{}).then(()=>{try{if(typeof _mileAddressSaved==='function')_mileAddressSaved(c);}catch(_e){}});
+  }
   if(isNew){
     closeClientForm();
     currentClientId=c.id;

@@ -1113,15 +1113,31 @@ function _bizReceiptForStop(o){
 function unattributedTrips(list){
   return (list||[]).filter(m=>m&&m.vehicleUnknown);
 }
+// THE FOURTH POT (owner 2026-09-08: "only things with addresses saved should
+// update any totals, if a address gets added it can add the mileage back on
+// the deriver"). A traced row (js/geo-derive.js rule 14) is a real drive the
+// phone watched, with at least one end nobody saved. It is on the log and the
+// map so the day has no hole in it, and on NO total of any kind: not the
+// deduction, not the reimbursement, not the plain miles-driven figure on the
+// day card, because an unaddressed mile in any headline number looks claimed,
+// and that is the audit posture the whole engine is built on ("we make no
+// inferences here"). Saving the address turns it into a normal row through
+// the deriver, never through an edit here.
+function addressedTrips(list){
+  return (list||[]).filter(m=>m&&!m.addressUnknown);
+}
+function unaddressedTrips(list){
+  return (list||[]).filter(m=>m&&m.addressUnknown);
+}
 // pendingReceipt rows are HELD supply runs awaiting the receipt card's answer;
 // personal rows were answered "not business". Both stay in the log (unbroken
 // odometer story) and out of every money total, and this filter is the single
 // choke point every total already flows through.
 function deductibleTrips(list){
-  return (list||[]).filter(m=>m&&!m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.personal);
+  return addressedTrips(list).filter(m=>!m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.personal);
 }
 function reimbursableTrips(list){
-  return (list||[]).filter(m=>m&&m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.personal);
+  return addressedTrips(list).filter(m=>m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.personal);
 }
 // ── Receipt-gated supply runs (owner design 2026-08-17) ─────────────────────
 // The held legs of one store visit, grouped for the dashboard card.
@@ -2591,8 +2607,9 @@ function _milRenderTripList(shown,yr){
   });
   const days=Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0]));
   // Purpose breakdown strip
+  // Addressed rows only, here and on every figure below (owner 2026-09-08).
   const purpTotals={};
-  shown.forEach(r=>{const p=r.purpose||'';if(p){purpTotals[p]=(purpTotals[p]||0)+(r.miles||0);}});
+  addressedTrips(shown).forEach(r=>{const p=r.purpose||'';if(p){purpTotals[p]=(purpTotals[p]||0)+(r.miles||0);}});
   const purpChips=Object.entries(purpTotals).sort((a,b)=>b[1]-a[1]).map(([p,mi])=>{
     const _pc=MILE_PURPOSE_COLORS[p]||MILE_PURPOSE_COLORS['Other'];
     return '<div class="mil-purp-chip">'+
@@ -2607,12 +2624,14 @@ function _milRenderTripList(shown,yr){
   // _bkMonthAcc/_bkTogMonth (finance.js) own the month shell; the day cards
   // inside are mileage's existing owner-approved day accordions, unchanged.
   const _dayCard=([date,trips],dayOpen)=>{
-    const dayMi=trips.reduce((s,t)=>s+(t.miles||0),0);/*miles-not-deduction*/
+    // Addressed rows only, even for plain distance (owner 2026-09-08): a
+    // traced row's miles live on the row and the map, never in a headline.
+    const dayMi=addressedTrips(trips).reduce((s,t)=>s+(t.miles||0),0);/*miles-not-deduction*/
     // The "+$" figure is a DEDUCTION preview, so it flows through the same
     // choke point every real total uses: held (pendingReceipt) and personal
     // rows drive dayMi (distance really driven) but never this number.
     const dayDed=deductibleTrips(trips).reduce((s,t)=>s+(t.miles||0)*irsRate,0);
-    const needsCount=trips.filter(t=>!t.purpose).length;
+    const needsCount=trips.filter(t=>!t.purpose&&!t.addressUnknown).length;
     const [y,mo,d]=date.split('-').map(Number);
     const dateObj=new Date(y,mo-1,d);
     const dow=dateObj.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase().slice(0,3);
@@ -2620,6 +2639,10 @@ function _milRenderTripList(shown,yr){
     const openClass=dayOpen?' open':'';
     const reviewClass=needsCount?' has-review':'';
     const _sorted=trips.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    // ONE NUMBERING, shared with the Time Log (owner 2026-09-08): chronological
+    // within the day, oldest is Trip 1, keyed by row id so it never renumbers
+    // when a row above it moves. _mileTripNumbers is the one definition.
+    const _tripNos=_mileTripNumbers(date,trips);
     const tripRows=_sorted.map((r,i)=>{
       const fromName=r.from_name||'';
       const fromAddr=r.from||'';
@@ -2630,10 +2653,24 @@ function _milRenderTripList(shown,yr){
         if(name&&addr&&name!==addr)return escHtml(name)+'<div style="font-size:12px;color:var(--text3);font-weight:400;margin-top:1px">'+escHtml(addr)+'</div>';
         return escHtml(name||addr);
       };
-      const fromHtml=_loc(fromName,fromAddr)||'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>';
-      const toHtml=_loc(toName,toAddr)||'<span style="color:var(--text-3);font-style:italic">End not recorded</span>';
-      const needsClass=r.purpose?'':' needs';
-      const tripNum=trips.length-i;
+      // AN UNSAVED END SAYS SO, AND OFFERS THE FIX (rule 14, owner 2026-09-08:
+      // "save this address should popup the enter lead"). The traced row
+      // knows which end it is missing; that end reads "Address not saved"
+      // with a Save button that opens the new-lead form on the traced
+      // coordinates, so the place lands as a real client record and the
+      // day re-derives with a fence where the hole was.
+      // Same pill as the Route button beside it, so the row has one button
+      // language rather than a browser-default control in the middle of it.
+      const _unsavedEnd=(which)=>'<span style="color:var(--text-3);font-style:italic">Address not saved</span>'+
+        ' <button type="button" class="mil-save-addr" style="font-size:11px;font-weight:700;padding:2px 9px;border:1px solid var(--border);border-radius:999px;background:var(--bg2);color:var(--text);font-family:inherit;margin-left:4px;cursor:pointer;vertical-align:middle" onclick="_mileSaveAddress('+_milIdArg(r.id)+',\''+which+'\')">Save</button>';
+      const fromHtml=(r.addressUnknown&&r.unsavedFrom)?_unsavedEnd('from')
+        :(_loc(fromName,fromAddr)||'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>');
+      const toHtml=(r.addressUnknown&&(r.unsavedTo||r.unsavedVia))?_unsavedEnd('to')
+        :(_loc(toName,toAddr)||'<span style="color:var(--text-3);font-style:italic">End not recorded</span>');
+      // A traced row cannot be answered with a purpose, only with an address,
+      // so it is never a review nag.
+      const needsClass=(r.purpose||r.addressUnknown)?'':' needs';
+      const tripNum=_tripNos[String(r.id)]||(trips.length-i);
       // The trip's real clock (owner ask 2026-08-07): departed/arrived times
       // off the geofence stamps. Kept off the route/address column entirely
       // (a first pass put a time beside each stop and it read as scattered,
@@ -2659,9 +2696,10 @@ function _milRenderTripList(shown,yr){
       // waiting on the dashboard receipt card; a no-receipt row shows how it
       // resolved so the log reads honestly at a glance; a personal row stays
       // in the log (2026-09-05, see _supplyRunSettleByKeys) and says so.
-      const stateBadge=r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
+      const stateBadge=r.addressUnknown?'<div style="font-size:10px;font-weight:800;color:#B45309">Not on the books · no address</div>'
+        :(r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
         :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'
-        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>':''));
+        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>':'')));
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
@@ -2730,7 +2768,7 @@ function _milRenderTripList(shown,yr){
   el.innerHTML='<div class="mil-list">'+purpRow+'<div class="bk-months">'+months.map((mo,mIdx)=>{
     const moDays=byMonth[mo];
     const moTripsN=moDays.reduce((s,[,t])=>s+t.length,0);
-    const moMi=moDays.reduce((s,[,t])=>s+t.reduce((x,r)=>x+(r.miles||0),0),0);
+    const moMi=moDays.reduce((s,[,t])=>s+addressedTrips(t).reduce((x,r)=>x+(r.miles||0),0),0);
     // The newest month's newest day arrives open, the same at-a-glance
     // landing the flat list gave; everything older is one tap away.
     const inner=moDays.map((d,dIdx)=>_dayCard(d,mIdx===0&&dIdx===0)).join('');
@@ -2752,7 +2790,10 @@ function _milTogDay(date){
 function _milRenderSummary(filtered,tot,irsRate){
   const el=document.getElementById('mil-summary-wrap');
   if(!el||!filtered.length){if(el)el.innerHTML='';return;}
-  const classified=filtered.filter(m=>m.purpose);
+  // Addressed rows only (owner 2026-09-08): a traced row is neither in the
+  // average nor in the count under it.
+  const addressed=addressedTrips(filtered);
+  const classified=addressed.filter(m=>m.purpose);
   const avgTrip=classified.length?tot/classified.length:0;
   const byPurpose={};
   classified.forEach(m=>{const p=m.purpose||'Other';byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);});
@@ -2773,7 +2814,7 @@ function _milRenderSummary(filtered,tot,irsRate){
       '<div class="mil-summary-cell">'+
         '<div class="td-micro">Avg trip length</div>'+
         '<div class="mil-summary-v">'+avgTrip.toFixed(1)+'<span style="font-size:12px;color:var(--text-3);font-weight:600"> mi</span></div>'+
-        '<div class="mil-summary-sub">'+filtered.length+' trips this period</div>'+
+        '<div class="mil-summary-sub">'+addressed.length+' trips this period</div>'+
       '</div>'+
       '<div class="mil-summary-cell">'+
         '<div class="td-micro">Top purpose</div>'+
@@ -2837,7 +2878,8 @@ function openMileageRoute(id){
   // chain of straight lines between fixes and so always reads at or under the
   // routed distance; the ONE thing worth acting on is when it reads OVER,
   // which is the case _mileBestMiles already promotes.
-  const gps=(r.gpsMiles>0)?('Traced '+(+r.gpsMiles).toFixed(1)+' mi · '):'';
+  // A traced row's whole figure IS the trace; the prefix would say it twice.
+  const gps=(r.gpsMiles>0&&!r.addressUnknown)?('Traced '+(+r.gpsMiles).toFixed(1)+' mi · '):'';
   // WHY THE NUMBER IS SHORTER THAN THE LINE (owner 2026-09-06, looking at his
   // own Home Depot run home through two personal stops). A leg collapsed
   // through a personal stop is billed at the DIRECT route (rule 6, see
@@ -2855,13 +2897,34 @@ function openMileageRoute(id){
       escHtml(r.from_name||r.from||'start')+' and '+escHtml(r.to_name||r.to||'end')+
       ' ('+_mi+' mi)'+_vs+'. The detour is yours, so it is not on the books.</div>';
   }
+  // NOT ON THE BOOKS, AND WHY, AND THE WAY ON (rule 14, owner 2026-09-08).
+  // The map is the one place he is already looking at the traced line, so
+  // the exclusion is explained here, beside the number, with a Save for each
+  // end that has no address. Same amber note pattern as the personal-stop
+  // explanation above it (7.3).
+  let _trNote='';
+  if(r.addressUnknown){
+    const ends=[];
+    if(r.unsavedFrom)ends.push('start');
+    if(r.unsavedTo)ends.push('end');
+    if(r.unsavedVia&&!r.unsavedTo)ends.push('stop');
+    const _saveBtn=(which,label)=>'<button type="button" class="btn" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0" onclick="_mileSaveAddress('+_milIdArg(r.id)+',\''+which+'\')">Save the '+label+' address</button>';
+    _trNote='<div style="font-size:11px;line-height:1.6;color:#856404;background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 10px;margin-bottom:12px">'+
+      svgIcon('ℹ',{size:11})+' <b>Traced '+_mi+' mi.</b> Not claimed and not in any total: the IRS wants a destination for every business mile, and the '+
+      escHtml(ends.join(' and ')||'address')+' of this drive was never saved. Save it and this day re-derives with the real leg.'+
+      '<div>'+(r.unsavedFrom?_saveBtn('from','start'):'')+((r.unsavedTo||r.unsavedVia)?_saveBtn('to',r.unsavedVia&&!r.unsavedTo?'stop':'end'):'')+'</div>'+
+    '</div>';
+  }
+  const _fromLbl=(r.addressUnknown&&r.unsavedFrom)?'Address not saved':(r.from_name||r.from||'Start');
+  const _toLbl=(r.addressUnknown&&(r.unsavedTo||r.unsavedVia))?'Address not saved':(r.to_name||r.to||'End');
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;line-height:1.25;margin-bottom:2px">Route driven</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+
-      escHtml((r.from_name||r.from||'Start'))+' → '+escHtml((r.to_name||r.to||'End'))+'</div>'+
+      escHtml(_fromLbl)+' → '+escHtml(_toLbl)+'</div>'+
     '<div id="_mil-route-body" style="margin-bottom:10px"></div>'+
-    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:'+(_csNote?'8px':'12px')+'">'+
-      gps+'Logged '+_mi+' mi</div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:'+((_csNote||_trNote)?'8px':'12px')+'">'+
+      gps+(r.addressUnknown?'Traced ':'Logged ')+_mi+' mi</div>'+
+    _trNote+
     _csNote+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
@@ -2875,6 +2938,68 @@ function openMileageRoute(id){
       allowKit:(typeof tdAppleHardware==='function')?tdAppleHardware():false,
     });
   }catch(_e){}
+}
+// ── ONE TRIP NUMBER, TWO SCREENS (owner 2026-09-08) ─────────────────────────
+// "list trip numbers on timesheet and on mileage log." The day's trips in
+// the order they happened, oldest is Trip 1, keyed by row id. The mileage log
+// reads it by id; the Time Log reads it by legKey (a drive row's client_key is
+// the leg id, with ':n' on a segment). Hand-typed trips number in the same
+// sequence by when they were logged. Positional numbering (length minus
+// index) renumbered every row above whatever moved; this does not.
+function _mileTripNumbers(dayKey,rows){
+  const list=(Array.isArray(rows)?rows:(mileage||[]).filter(m=>m&&m.date===dayKey)).filter(Boolean);
+  const stamp=m=>m.startedIso||m.loggedAt||m.created_at||'';
+  const out={};
+  list.slice().sort((a,b)=>stamp(a).localeCompare(stamp(b))||String(a.id).localeCompare(String(b.id)))
+    .forEach((m,i)=>{out[String(m.id)]=i+1;if(m.legKey!=null)out['leg:'+String(m.legKey)]=i+1;});
+  return out;
+}
+function _mileTripNumberForLeg(dayKey,clientKey){
+  if(!clientKey)return null;
+  const key=String(clientKey).replace(/:\d+$/,'');
+  const nos=_mileTripNumbers(dayKey);
+  return nos['leg:'+key]||null;
+}
+// ── SAVE THIS ADDRESS → the new-lead form (owner 2026-09-08) ─────────────────
+// "save this address should popup the enter lead." Not a bare address field:
+// the place becomes a real client, which is what makes it a fence, which is
+// what lets the deriver write the real leg. The traced coordinates are
+// reverse-geocoded into the form's street/city/state/zip so he confirms
+// rather than types; the name is his to give. What is being repaired is
+// remembered so the save can re-derive that day (_mileAddressSaved).
+let _mileAddressPending=null;
+async function _mileSaveAddress(id,which){
+  const r=(typeof mileage!=='undefined'?mileage:[]).find(x=>String(x.id)===String(id));
+  if(!r||!r.addressUnknown)return false;
+  // Only an end that is actually unsaved has anything to save.
+  if(which==='from'?!r.unsavedFrom:(which==='to'?!(r.unsavedTo||r.unsavedVia):true))return false;
+  const c=which==='from'?r.fromCoord:r.toCoord;
+  const lat=c&&Number(c.lat),lng=c&&Number(c.lng!=null?c.lng:c.lon);
+  if(!isFinite(lat)||!isFinite(lng))return false;
+  _mileAddressPending={legKey:r.legKey||r.id,day:r.date,which,lat,lng};
+  let addr=null;
+  try{if(typeof _nominatimReverse==='function')addr=await _nominatimReverse(lat,lng);}catch(_e){addr=null;}
+  try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
+  if(typeof openNewClient==='function')openNewClient();
+  const parts=(typeof _parseAddrParts==='function'&&addr)?_parseAddrParts(addr):{street:addr||'',city:'',state:'',zip:''};
+  const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};
+  set('cf-street',parts.street);set('cf-city',parts.city);set('cf-state',parts.state);set('cf-zip',parts.zip);
+  try{if(typeof _updateAddrComputed==='function')_updateAddrComputed();}catch(_e){}
+  return true;
+}
+// Called by saveClient once the new client's address has been geocoded (so
+// the fence exists). Re-derives the traced day; the real leg lands under the
+// same journey id and the traced row is replaced by geo_replace_day.
+async function _mileAddressSaved(client){
+  const p=_mileAddressPending;
+  if(!p||!client||!client.addr)return false;
+  _mileAddressPending=null;
+  try{
+    if(typeof _geoDeriveDayNow==='function')await _geoDeriveDayNow(p.day,null);
+    const n=_mileTripNumberForLeg(p.day,p.legKey);
+    if(typeof showToast==='function')showToast(n?('Trip '+n+' is on the books'):'Address saved, day re-derived');
+  }catch(_e){}
+  return true;
 }
 function openMileageEdit(id){
   // Ids arrive quoted from the inline handler (_milIdArg); a numeric id still

@@ -1355,8 +1355,12 @@ function _tlRailRow(r){
     body=_tlRailGapBody(r);
   }else{
     const isDrive=kind==='drive';
-    const leg=isDrive&&r.clientKey&&typeof mileage!=='undefined'&&Array.isArray(mileage)
-      ?mileage.find(x=>x&&x.legKey===r.clientKey):null;
+    // A segment of a split drive carries the leg id with ':n' on it; the leg
+    // row carries the bare id. Match on the bare id so a chain through
+    // unsaved stops still names its leg (and its trip number, below).
+    const _legId=r.clientKey?String(r.clientKey).replace(/:\d+$/,''):'';
+    const leg=isDrive&&_legId&&typeof mileage!=='undefined'&&Array.isArray(mileage)
+      ?mileage.find(x=>x&&String(x.legKey)===_legId):null;
     // A manual clock against no job has nothing to name, and _tlJobClientInfo
     // returns the bare '-' placeholder for that. A row whose title is a hyphen
     // tells the reader nothing about the one row on the day they created by
@@ -1424,7 +1428,11 @@ function _tlRailRow(r){
   // The 'unpaid' qualifier is dropped for anything a manual clock brackets:
   // that time IS paid, by the clock, and saying otherwise on the row while the
   // day totals the clock is the screen contradicting itself (owner 2026-09-01).
-  const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+escHtml(m.word)+
+  // THE SAME TRIP NUMBER THE MILEAGE LOG SHOWS (owner 2026-09-08): one
+  // definition, _mileTripNumbers, keyed by the leg id the drive row carries.
+  let _tripNo=null;
+  try{if(kind==='drive'&&typeof _mileTripNumberForLeg==='function')_tripNo=_mileTripNumberForLeg(r.date,r.clientKey);}catch(_e){_tripNo=null;}
+  const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+(_tripNo?('Trip '+_tripNo+' · '):'')+escHtml(m.word)+
     (r.unpaid&&!isGap&&!r.clockPaid?' · unpaid':'')+'</span>';
   // EDIT LIVES HERE NOW. The entries table was the only place a manual clock
   // could be fixed, and the owner cut it off the week view as clutter
