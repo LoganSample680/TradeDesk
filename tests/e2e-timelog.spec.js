@@ -3815,7 +3815,22 @@ test.describe('timelog.js: exhaustive coverage', () => {
                                   String(m).padStart(2, '0') + ':00').toISOString();
     // Every row here names its instant outright rather than deriving one from
     // Date.now(), so the wall clock can never decide the outcome (§5.2.2).
-    const rowsFor = (entries, manual) => page.evaluate(async ([es, ms]) => {
+    //
+    // ONE EXCEPTION, and it is forced. Three tests below turn on
+    // _TL_HOLE_ASK_DAYS (js/timelog.js): a hole older than a week stops being
+    // asked about, because nobody remembers it and it pays nothing either way.
+    // That is the owner's rule and it is right. It also means those three
+    // cannot use a frozen day: pinned to D they went green for six days and
+    // turned red on the seventh with nothing in the repo having changed, which
+    // is exactly what happened. They use DR instead, a few days back: inside
+    // the window, safely in the past, and far enough from both edges that a
+    // timezone disagreement between this runner and the page cannot move it
+    // across a boundary. The DAY is derived; the times within it are still
+    // named outright, which is what §5.2.2 is really asking for.
+    const DR = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+    const atR = (h, m) => new Date(DR + 'T' + String(h).padStart(2, '0') + ':' +
+                                   String(m).padStart(2, '0') + ':00').toISOString();
+    const rowsFor = (entries, manual, day) => page.evaluate(async ([es, ms, day0]) => {
       const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
       const keepP = places.slice();
       // The clock-out cutoff asks "is this drive heading home", and it answers
@@ -3829,7 +3844,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
       try {
         const rows = await _timeLogRows(null);
-        const day = rows.filter(r => r.date === '2026-09-01');
+        const day = rows.filter(r => r.date === day0);
         return { paid: _tlPaidMin(day),
                  rows: day.map(r => ({ src: r.source, raw: r.rawSource || '', m: r.minutes,
                                        unpaid: !!r.unpaid, blended: r.blendedMin || 0,
@@ -3839,8 +3854,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window.timeEntries = keepT;
         places.length = 0; keepP.forEach(p => places.push(p));
       }
-    }, [entries, manual]);
+    }, [entries, manual, day || '2026-09-01']);
 
+    // Same shapes on the recent day, for the three staleness tests only.
+    const AR = (src, s, e, mins) => ({ employee_user_id: 'jack', minutes: mins, source: src,
+                                       dest_place: '1200 SW Oakley Ave',
+                                       arrived_at: atR(s[0], s[1]), departed_at: atR(e[0], e[1]) });
+    const CLOCKR = (id, s, e, mins) => ({ id: id, date: DR, open: false, job_id: null, minutes: mins,
+                                          start_time: atR(s[0], s[1]), end_time: atR(e[0], e[1]),
+                                          logged_by_uid: 'jack', logged_by_name: 'Jack' });
     const CLOCK = (s, e, mins) => [{ id: 1, date: D, open: false, job_id: null, minutes: mins,
                                      start_time: at(s[0], s[1]), end_time: at(e[0], e[1]),
                                      logged_by_uid: 'jack', logged_by_name: 'Jack', scope_label: null }];
@@ -3944,15 +3966,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     // His own escape hatch, and it needs no new UI.
     test('a gap between two clocks is nobody job site, it is still a question', async () => {
+      // DR, not D: this asserts a hole IS still asked about, which only holds
+      // inside the seven-day window.
       const r = await rowsFor([
-        A('place', [8, 0], [9, 0], 60),
-        A('place', [12, 0], [13, 0], 60),
+        AR('place', [8, 0], [9, 0], 60),
+        AR('place', [12, 0], [13, 0], 60),
       ], [
-        { id: 1, date: D, open: false, job_id: null, minutes: 60, start_time: at(8, 0),
-          end_time: at(9, 0), logged_by_uid: 'jack', logged_by_name: 'Jack' },
-        { id: 2, date: D, open: false, job_id: null, minutes: 60, start_time: at(12, 0),
-          end_time: at(13, 0), logged_by_uid: 'jack', logged_by_name: 'Jack' },
-      ]);
+        CLOCKR(1, [8, 0], [9, 0], 60),
+        CLOCKR(2, [12, 0], [13, 0], 60),
+      ], DR);
       expect(r.rows.some(x => x.raw === 'site'), 'lunch is a clock out, not a guess').toBe(false);
       expect(r.rows.some(x => x.raw === 'unaccounted')).toBe(true);
     });
@@ -3960,9 +3982,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // NO CLOCK, NO CLAIM. Nothing has asserted work, so nothing is named.
     test('an untracked stretch with no clock over it stays a question', async () => {
       const r = await rowsFor([
-        A('place', [8, 0], [9, 0], 60),
-        A('place', [12, 0], [13, 0], 60),
-      ], []);
+        AR('place', [8, 0], [9, 0], 60),
+        AR('place', [12, 0], [13, 0], 60),
+      ], [], DR);
       expect(r.rows.some(x => x.raw === 'site')).toBe(false);
       expect(r.rows.find(x => x.raw === 'unaccounted').unpaid).toBe(true);
     });
@@ -4193,9 +4215,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('a day with no clock at all keeps every gap: nothing said the day was over', async () => {
       const r = await rowsFor([
-        A('place', [8, 0], [9, 0], 60),
-        A('place', [16, 0], [17, 0], 60),
-      ], []);
+        AR('place', [8, 0], [9, 0], 60),
+        AR('place', [16, 0], [17, 0], 60),
+      ], [], DR);
       expect(r.rows.filter(x => x.raw === 'unaccounted').length).toBe(1);
     });
 
