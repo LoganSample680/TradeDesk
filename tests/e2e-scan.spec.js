@@ -2019,3 +2019,170 @@ test.describe('client hub: floor plan cards', () => {
 
   });
 });
+
+// ── What RoomPlan tells us that we used to throw away ────────────────────────
+//
+// The plugin encodes the whole CapturedRoom, so confidence, completed edges,
+// section labels, object attributes and parent links have always been arriving
+// in the JSON. The parser read six fields off it and dropped the rest, which
+// meant a wall RoomPlan was unsure about fed a load calculation looking
+// exactly like one it had measured cleanly.
+
+test.describe('TdScan: the fields RoomPlan was already sending', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // The fabricated room, plus everything iOS 17 attaches to it.
+  function richRoom() {
+    const L = 3.6576, W = 3.048, H = 2.4384;
+    const wall = (id, dir, cx, cz, len, extra) => Object.assign({
+      identifier: id, category: { wall: {} }, dimensions: [len, H, 0],
+      transform: [dir[0], 0, dir[1], 0, 0, 1, 0, 0, -dir[1], 0, dir[0], 0, cx, H / 2, cz, 1],
+    }, extra || {});
+    return JSON.stringify({
+      identifier: 'room-1', story: 0, version: 3,
+      sections: [{ label: { bathroom: {} }, story: 0 }],
+      walls: [
+        wall('w-n', [1, 0], 0, -W / 2, L, { confidence: { high: {} }, completedEdges: ['top', 'left', 'right', 'bottom'] }),
+        wall('w-s', [1, 0], 0, W / 2, L, { confidence: { low: {} }, completedEdges: ['top'] }),
+        wall('w-e', [0, 1], L / 2, 0, W, { confidence: { medium: {} }, completedEdges: 3 }),
+        // A bay: RoomPlan hands a polygon rather than a rectangle.
+        wall('w-w', [0, 1], -L / 2, 0, W, { polygonCorners: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]] }),
+      ],
+      doors: [], openings: [],
+      windows: [{
+        identifier: 'win-1', parentIdentifier: 'w-n', category: { window: {} },
+        dimensions: [1.2192, 1.2192, 0], confidence: { medium: {} },
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.6, 1.5, -W / 2, 1],
+      }],
+      objects: [{
+        identifier: 'o-1', parentIdentifier: 'w-n', category: { toilet: {} },
+        confidence: { high: {} }, attributes: { sinkType: { recessed: {} } },
+        dimensions: [0.4, 0.7, 0.7],
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0.35, -1, 1],
+      }],
+      floors: [{
+        identifier: 'f-1', category: { floor: {} }, dimensions: [L, 0, W],
+        polygonCorners: [[-L / 2, 0, -W / 2], [L / 2, 0, -W / 2], [L / 2, 0, W / 2], [-L / 2, 0, W / 2]],
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      }],
+    });
+  }
+
+  test('every wall carries RoomPlan\'s own confidence in it', async () => {
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Bath');
+      const by = {}; room.walls.forEach(w => { by[w.id] = w.conf; });
+      return by;
+    }, richRoom());
+    expect(r['w-n']).toBe('high');
+    expect(r['w-s']).toBe('low');
+    expect(r['w-e']).toBe('medium');
+    // Not stated is empty, never a guess at 'high'.
+    expect(r['w-w']).toBe('');
+  });
+
+  test('completed edges survive whichever shape they arrive in', async () => {
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Bath');
+      const by = {}; room.walls.forEach(w => { by[w.id] = w.edges; });
+      return by;
+    }, richRoom());
+    expect(r['w-n'].sort()).toEqual(['bottom', 'left', 'right', 'top']);
+    expect(r['w-s']).toEqual(['top']);
+    // A raw OptionSet bitfield: 3 = the first two bits.
+    expect(r['w-e']).toEqual(['top', 'right']);
+    // Silence is an empty list, which is different from "no edges completed".
+    expect(r['w-w']).toEqual([]);
+  });
+
+  test('a wall RoomPlan gave as a polygon keeps its shape and is not squared', async () => {
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Bath');
+      const w = room.walls.find(x => x.id === 'w-w');
+      return { hasPoly: !!w.poly, corners: w.poly ? w.poly.length : 0 };
+    }, richRoom());
+    expect(r.hasPoly).toBe(true);
+    expect(r.corners).toBe(4);
+  });
+
+  test('a window carries its confidence and its sill height', async () => {
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Bath');
+      const w = room.walls.find(x => x.id === 'w-n').windows[0];
+      return { conf: w.conf, sillY: w.sillY, h: w.h };
+    }, richRoom());
+    expect(r.conf).toBe('medium');
+    // Centre at 1.5 m, 1.2192 m tall, so the sill sits just under 0.9 m.
+    expect(r.sillY).toBeGreaterThan(0.8);
+    expect(r.sillY).toBeLessThan(1.0);
+  });
+
+  test('an object carries confidence, attributes and what it belongs to', async () => {
+    const r = await page.evaluate(raw => _scanParseRoom(raw, 'Bath').objects[0], richRoom());
+    expect(r.cat).toBe('toilet');
+    expect(r.conf).toBe('high');
+    // A recessed sink is a different rough-in, so the attribute is a plumbing
+    // fact rather than a drawing detail.
+    expect(r.attrs).toContain('sinkType:recessed');
+    expect(r.parent).toBe('w-n');
+  });
+
+  test('RoomPlan\'s own room-type classification comes through', async () => {
+    const r = await page.evaluate(raw => _scanParseRoom(raw, 'Bath').sections, richRoom());
+    expect(r.length).toBe(1);
+    expect(r[0].label).toBe('bathroom');
+  });
+
+  test('a scan with none of these fields still parses exactly as before', async () => {
+    // Older captures, and any device that reports less. Nothing may become a
+    // guess just because RoomPlan stayed quiet.
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Kitchen');
+      return {
+        floorSqFt: Math.round(_scanSqFt(room.floorM2)),
+        conf: room.walls.map(w => w.conf),
+        edges: room.walls.map(w => w.edges.length),
+        sections: room.sections,
+        polys: room.walls.filter(w => w.poly).length
+      };
+    }, fabricatedRoom());
+    expect(r.floorSqFt).toBe(120);
+    expect(r.conf).toEqual(['', '', '', '']);
+    expect(r.edges).toEqual([0, 0, 0, 0]);
+    expect(r.sections).toEqual([]);
+    expect(r.polys).toBe(0);
+  });
+
+  test('rubbish in any of the new fields does not throw', async () => {
+    const r = await page.evaluate(() => {
+      const junk = JSON.stringify({
+        walls: [{ identifier: 'w', category: { wall: {} }, dimensions: [3, 2.4, 0],
+          transform: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,1.2,0,1],
+          confidence: 'nonsense', completedEdges: { rawValue: 'x' }, polygonCorners: 'no' }],
+        doors: [], windows: [], openings: [], floors: [],
+        objects: [{ identifier: 'o', category: 7, attributes: 42, dimensions: [1,1,1],
+          transform: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] }],
+        sections: [{ label: null }, 'junk', 5]
+      });
+      try {
+        const room = _scanParseRoom(junk, 'X');
+        return { threw: false, conf: room.walls[0].conf, edges: room.walls[0].edges,
+                 poly: room.walls[0].poly, sections: room.sections };
+      } catch (e) { return { threw: true, msg: String(e) }; }
+    });
+    expect(r.threw).toBe(false);
+    expect(r.conf).toBe('');
+    expect(r.edges).toEqual([]);
+    expect(r.poly).toBe(null);
+    expect(r.sections).toEqual([]);
+  });
+});

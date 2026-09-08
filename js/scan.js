@@ -43,7 +43,10 @@ function _scanDims(d){
 }
 // RoomPlan encodes an enum as {"sofa":{}} on some OS versions and the bare
 // string "sofa" on others; a couple of builds nest it under .value.
-function _scanObjCat(c){
+// Swift's Codable writes an enum as a single-key object: {wall:{}}, {high:{}}.
+// Every RoomPlan enum that reaches us arrives in that shape, so category,
+// confidence and section label all unwrap the same way.
+function _scanEnumKey(c){
   if(!c)return '';
   if(typeof c==='string')return c;
   if(typeof c==='object'){
@@ -51,6 +54,54 @@ function _scanObjCat(c){
     const k=Object.keys(c);if(k.length)return k[0];
   }
   return '';
+}
+function _scanObjCat(c){return _scanEnumKey(c);}
+
+// completedEdges is an OptionSet, so it can arrive as an array of names, a
+// single-key object, or a raw bitfield. Normalise to names; an empty result
+// means RoomPlan never told us, which is different from "no edges completed"
+// and is why the caller checks length rather than trusting a count of zero.
+const _SCAN_EDGE_BITS=['top','right','bottom','left'];
+function _scanEdges(v){
+  // A wall has four edges and they are these four. Filtering to the known
+  // names is what keeps a wrapper key like {rawValue:'x'} from being read as
+  // an edge that was completed, which is the difference between "RoomPlan said
+  // nothing" and "RoomPlan saw the top of this wall".
+  const known=n=>_SCAN_EDGE_BITS.indexOf(n)>=0;
+  const bits=n=>_SCAN_EDGE_BITS.filter((_e,i)=>(n>>i)&1);
+  if(!v)return [];
+  if(Array.isArray(v))return v.map(_scanEnumKey).filter(known);
+  if(typeof v==='number')return isFinite(v)?bits(v):[];
+  if(typeof v==='object'){
+    const raw=v.rawValue;
+    if(typeof raw==='number')return isFinite(raw)?bits(raw):[];
+    return Object.keys(v).filter(k=>v[k]&&known(k));
+  }
+  return [];
+}
+
+// Object attributes (iOS 17). Shape varies by category, so this flattens
+// whatever arrives into plain names rather than pretending to know the schema.
+function _scanAttrs(v){
+  if(!v)return [];
+  if(Array.isArray(v))return v.map(_scanEnumKey).filter(Boolean);
+  if(typeof v==='object'){
+    return Object.keys(v).map(k=>{
+      const inner=_scanEnumKey(v[k]);
+      return inner?(k+':'+inner):k;
+    });
+  }
+  const one=_scanEnumKey(v);
+  return one?[one]:[];
+}
+
+// RoomPlan's own confidence in a surface or an object: 'high', 'medium', 'low'
+// or '' when it did not say. This is the single most useful field we were
+// ignoring, because a low-confidence wall is exactly where the geometry is
+// wrong and it currently feeds a load calculation in silence.
+function _scanConf(v){
+  const k=_scanEnumKey(v);
+  return (k==='high'||k==='medium'||k==='low')?k:'';
 }
 // One wall surface → {ax,az,bx,bz,len,h,id} plus openings resolved onto it.
 function _scanParseRoom(rawJson,label){
@@ -68,7 +119,16 @@ function _scanParseRoom(rawJson,label){
       // ey = the wall's center elevation in scan world space. The photo mesh
       // lives in that same space, so painting a wall on the mesh can mask by
       // height and a floor-2 wall never tints the floor-1 wall below it.
-      len:d.w,h:d.h||2.44,ey:m.col3.y||0,doors:[],windows:[]};
+      len:d.w,h:d.h||2.44,ey:m.col3.y||0,doors:[],windows:[],
+      // RoomPlan's own verdict on this wall, and which of its edges it
+      // actually saw rather than inferred. Both ride through to the plan and
+      // to anything that measures off this wall.
+      conf:_scanConf(w.confidence),
+      edges:_scanEdges(w.completedEdges),
+      // A slanted or curved wall arrives as a polygon (iOS 17). We keep it raw
+      // because the squaring pass below would otherwise straighten a wall that
+      // is genuinely not straight, and a bay window is not a mistake.
+      poly:Array.isArray(w.polygonCorners)&&w.polygonCorners.length>2?w.polygonCorners:null};
     walls.push(wall);wallById[wall.id]=wall;
   });
   // Squaring pass (owner 2026-08-10: "we can be off by 8 inches in some
@@ -80,7 +140,11 @@ function _scanParseRoom(rawJson,label){
   const placeOpening=(o,list,isDoor,kind)=>{
     const m=_scanMat(o.transform),d=_scanDims(o.dimensions);
     if(!m||!d.w)return;
-    const rec={w:d.w,h:d.h||2,area:d.w*(d.h||2),kind:kind||(isDoor?'door':'window')};
+    const rec={w:d.w,h:d.h||2,area:d.w*(d.h||2),kind:kind||(isDoor?'door':'window'),
+      conf:_scanConf(o.confidence),
+      // Sill height above the scan's floor plane, which egress and trim both
+      // need and which nothing was reading.
+      sillY:(typeof m.col3.y==='number')?m.col3.y-(d.h||2)/2:null};
     // Offset along the parent wall from its A endpoint, so the electrical
     // engine knows where wall space breaks.
     const host=o.parentIdentifier&&wallById[o.parentIdentifier];
@@ -112,7 +176,14 @@ function _scanParseRoom(rawJson,label){
     const ln=Math.hypot(ux,uz)||1;
     objects.push({cat:_scanObjCat(o.category),
       cx:m.col3.x,cz:m.col3.z,w:d.w,d:d.d||d.w,h:d.h||0,
-      ux:ux/ln,uz:uz/ln});
+      ux:ux/ln,uz:uz/ln,
+      conf:_scanConf(o.confidence),
+      // iOS 17 attributes separate a recessed sink from a freestanding one and
+      // an L-shaped sofa from a single seat. A recessed sink is a different
+      // rough-in, so this is a plumbing fact, not a drawing detail.
+      attrs:_scanAttrs(o.attributes),
+      // Which surface or object RoomPlan says this belongs to.
+      parent:o.parentIdentifier||null});
   });
   // RoomPlan fragments one real piece into several boxes (owner screenshots
   // 2026-08-10: a corner hutch as two stacked storages, a table as two
@@ -135,7 +206,16 @@ function _scanParseRoom(rawJson,label){
   const openM2=doors.reduce((t,o)=>t+o.area,0)+windows.reduce((t,o)=>t+o.area,0);
   const perimM=walls.reduce((t,w)=>t+w.len,0);
   const hM=walls.length?Math.max(...walls.map(w=>w.h)):2.44;
+  // RoomPlan classifies the area it scanned: bedroom, kitchen, bathroom,
+  // livingRoom, diningRoom. It is a suggestion for the room name and a sanity
+  // check on the fixtures found in it, never an override of what the
+  // contractor typed.
+  const sections=(cr.sections||[]).map(x=>({
+    label:_scanEnumKey(x&&(x.label!==undefined?x.label:x.category)),
+    story:(typeof (x&&x.story)==='number')?x.story:null
+  })).filter(x=>x.label);
   return {label:label||'Room',walls,poly,objects,floorM2,wallM2,openM2,perimM,hM,
+          sections,
           doorN:doors.length,winN:windows.length,winM2:windows.reduce((t,o)=>t+o.area,0)};
 }
 function _scanObjCorners(o){
@@ -409,6 +489,11 @@ function _scanSquareWalls(walls){
   const theta=Math.atan2(sy,sx)/4;
   const SNAP=6*Math.PI/180,Q=Math.PI/2;
   walls.forEach(w=>{
+    // A wall RoomPlan handed us as a polygon is genuinely not a rectangle.
+    // Nudging its chord while the polygon stays raw makes the two disagree,
+    // so it is left exactly as captured. (The 6 degree gate below already
+    // spares a real 45: this is about the shape, not the angle.)
+    if(w.poly)return;
     const a=Math.atan2(w.bz-w.az,w.bx-w.ax);
     let d=a-theta;d-=Math.round(d/Q)*Q;
     if(Math.abs(d)>SNAP)return;
