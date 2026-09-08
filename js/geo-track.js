@@ -3243,7 +3243,7 @@ function _geoConsentChain(){
     if(Td&&typeof Td.startEvents==='function'){
       // This raises the Motion & Fitness dialog by itself: startEvents starts
       // the coprocessor stream, and the first query is what iOS prompts on.
-      Promise.resolve(Td.startEvents({regions:_geoParkRegions(null)})).catch(()=>{});
+      Promise.resolve(Td.startEvents({regions:_geoParkRegions(null),reason:'tracking start baseline'})).catch(()=>{});
       armed=true;
     }
   }catch(_e){}
@@ -3423,23 +3423,113 @@ function _geoClockPing(kind){
         try{
           const ev={type,ts:Date.now(),
             lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6)};
-          const devId=(typeof _initDeviceId==='function')?_initDeviceId():'';
-          // The same edge function the plugin flushes to, on the JS side's own
-          // JWT (ingest-geo reads Authorization first, the device key second).
-          // Client inserts into geo_events are denied by RLS on purpose.
-          _supa.auth.getSession().then(({data})=>{
-            const tok=data&&data.session&&data.session.access_token;
-            if(!tok)return;
-            fetch(_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',{
-              method:'POST',
-              headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},
-              body:JSON.stringify({device_id:devId,events:[ev]})
-            }).catch(()=>{});
-          }).catch(()=>{});
+          _geoIngestPost([ev]);
         }catch(_e){}
       },()=>{},{enableHighAccuracy:true,maximumAge:0,timeout:10000});
     }).catch(()=>{});
   }catch(_e){}
+}
+// The same edge function the plugin flushes to, on the JS side's own JWT
+// (ingest-geo reads Authorization first, the device key second). Client
+// inserts into geo_events are denied by RLS on purpose. ONE poster for every
+// JS-originated event (the clock stamps, the radio ledger's js rows) rather
+// than a fetch per caller (7.3).
+function _geoIngestPost(events){
+  try{
+    if(!Array.isArray(events)||!events.length)return;
+    if(typeof _supa==='undefined'||!_supa||typeof _SUPA_DIRECT_URL==='undefined')return;
+    const devId=(typeof _initDeviceId==='function')?_initDeviceId():'';
+    _supa.auth.getSession().then(({data})=>{
+      const tok=data&&data.session&&data.session.access_token;
+      if(!tok)return;
+      fetch(_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},
+        body:JSON.stringify({device_id:devId,events})
+      }).catch(()=>{});
+    }).catch(()=>{});
+  }catch(_e){}
+}
+// ── THE RADIO LEDGER, JS side (owner 2026-09-08) ────────────────────────────
+// "Do I have something that tells me when the gps radio fires and the exact
+// reason and time by user?" The plugin now writes a row at every line that
+// touches the receiver (TdGeoPlugin.radioLog), carrying the `reason` JS put
+// on the call. This is the one receiver the plugin cannot see: the
+// background-geolocation plugin's own watcher, which only JS ever asks for.
+// Same row shape, source 'js', so geo_radio_day reads both as one ledger.
+function _geoRadioNote(session,on,reason){
+  try{
+    if(typeof supaEnabled!=='function'||!supaEnabled())return;
+    _geoIngestPost([{type:'radio',ts:Date.now(),session:String(session||''),on:!!on,
+      accuracy:on?'best':undefined,reason:String(reason||'').slice(0,60),trigger:'js',source:'js'}]);
+  }catch(_e){}
+}
+// One person's radio day, paired on the server (geo_radio_day, the ONLY
+// pairing there is: the dashboard runs the same function for a crew member
+// on another account). Under RLS: the person, the account, a team manager.
+async function _geoRadioLedgerRows(uid,dayKey){
+  if(typeof _supa==='undefined'||!_supa||!uid)return [];
+  const day=dayKey||_geoDayKeyOf(Date.now(),_geoBizTz());
+  const{data,error}=await _supa.rpc('geo_radio_day',{p_uid:uid,p_day:day});
+  if(error)throw error;
+  return Array.isArray(data)?data:[];
+}
+// The day, as text a person reads in a truck. Pure: rows in, HTML out, so it
+// is testable without a server and the modal is only a frame around it.
+const _GEO_RADIO_WORDS={
+  'drive':'Drive window','burst':'Ping burst','heartbeat':'Shift keepalive',
+  'wake-stream':'Wake-on-move stream','wake-moving':'Wake stream: radio running',
+  'fences':'Fences (no receiver)','js-watcher':'Live GPS watcher'
+};
+function _geoRadioRender(rows){
+  const list=Array.isArray(rows)?rows.filter(r=>r&&r.session):[];
+  if(!list.length)return '<div style="color:var(--text3);font-size:12px">Nothing on the ledger for this day.</div>';
+  const fmt=(t)=>{try{return bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return String(t||'');}};
+  // The number he asked for first: minutes the receiver actually ran. Fences
+  // hold no receiver and the stream's session row is the indicator, not the
+  // burn; the burn is its moving episodes, and everything else is a receiver.
+  const burn=list.filter(r=>r.session!=='fences'&&r.session!=='wake-stream')
+    .reduce((s,r)=>s+(Number(r.minutes)||0),0);
+  const head='<div style="font-size:12px;font-weight:700;margin-bottom:8px">Receiver on '+Math.round(burn)+' min'+
+    (list.some(r=>r.open&&r.session!=='fences')?' <span style="color:#B45309">· still running</span>':'')+'</div>';
+  const body=list.map(r=>{
+    const word=_GEO_RADIO_WORDS[r.session]||r.session;
+    const span=fmt(r.on_at)+(r.open?' → now':' → '+fmt(r.off_at));
+    const mins=(Number(r.minutes)||0);
+    const why=[r.reason?('on: '+r.reason):'',r.off_reason?('off: '+r.off_reason):'',r.trigger&&r.trigger!=='js'?('by '+r.trigger):''].filter(Boolean).join(' · ');
+    return '<div style="padding:6px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px">'+
+        '<span style="font-weight:700">'+escHtml(word)+(r.accuracy?' <span style="font-weight:400;color:var(--text3)">'+escHtml(r.accuracy)+'</span>':'')+'</span>'+
+        '<span style="font-variant-numeric:tabular-nums;white-space:nowrap">'+escHtml(span)+' · '+(mins>=1?Math.round(mins)+'m':'<1m')+(r.open?' <span style="color:#B45309">●</span>':'')+'</span>'+
+      '</div>'+
+      (why?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(why)+'</div>':'')+
+    '</div>';
+  }).join('');
+  return head+body;
+}
+// The screen: one person, one day, in the app's one modal shell (7.3). From
+// the diagnostics panel for yourself, from the crew map for a crew member.
+async function openRadioLedger(uid,name,dayKey){
+  document.getElementById('_geo-radio-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_geo-radio-ov';ov.className='zmodal-overlay';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='520px';
+  const day=dayKey||_geoDayKeyOf(Date.now(),_geoBizTz());
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;line-height:1.25;margin-bottom:2px">Radio ledger</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+escHtml(name||'You')+' · '+escHtml(day)+'</div>'+
+    '<div id="_geo-radio-body" style="max-height:52vh;overflow-y:auto;margin-bottom:12px">'+(typeof _tdSkelRows==='function'?_tdSkelRows(4):'')+'</div>'+
+    '<button class="btn" style="width:100%;padding:12px" onclick="_geoCopyText(window.__geoRadioText||\'\')">Copy</button>'+
+    '<button class="btn btn-p" style="width:100%;margin-top:8px;padding:12px" onclick="document.getElementById(\'_geo-radio-ov\').remove()">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  const body=document.getElementById('_geo-radio-body');
+  try{
+    const rows=await _geoRadioLedgerRows(uid,day);
+    if(body)body.innerHTML=_geoRadioRender(rows);
+    window.__geoRadioText=(name||'You')+' '+day+'\n'+rows.map(r=>[r.session,r.on_at,r.open?'open':r.off_at,r.minutes+'m',r.accuracy||'',r.reason||'',r.off_reason||'',r.trigger||''].join(' | ')).join('\n');
+  }catch(e){
+    if(body)body.innerHTML='<div style="color:var(--text3);font-size:12px">Could not load the ledger: '+escHtml(String((e&&e.message)||e))+'</div>';
+  }
 }
 function _stampGeo(rec,done,fieldPrefix){
   if(!rec)return;
@@ -4303,7 +4393,9 @@ function _geoDriveWindowOpen(why){
   const first=!_geoDriveWinAt;
   _geoDriveWinAskedAt=now;
   if(first){_geoDriveWinAt=now;_geoDriveWinWhy=String(why||'');_geoDriveConfirmFix=null;}
-  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS,accuracy:_GEO_DRIVE_ACCURACY})).catch(()=>{});}catch(_e){}
+  // `reason` rides every call that can turn the receiver on (owner 2026-09-08,
+  // the radio ledger): the plugin writes the row, JS says why. 3.2 both ways.
+  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS,accuracy:_GEO_DRIVE_ACCURACY,reason:String(why||'')})).catch(()=>{});}catch(_e){}
   _geoParkNote(first?'drive-window-on':'drive-window-hold',String(why||''));
   // The island shows the drive from the first second of the window, not from
   // the first fix that moves the tally (js/live-activity.js).
@@ -4422,7 +4514,7 @@ function _geoPingBurst(){
     _geoPingBurstAt=now;
     const Td=_geoTdPlugin();
     if(!Td||typeof Td.burstFix!=='function')return false;
-    Promise.resolve(Td.burstFix({seconds:_GEO_PING_BURST_S})).catch(()=>{});
+    Promise.resolve(Td.burstFix({seconds:_GEO_PING_BURST_S,reason:'push-ping burst'})).catch(()=>{});
     _geoParkNote('ping-burst',_GEO_PING_BURST_S+'s');
     return true;
   }catch(_e){return false;}
@@ -4495,7 +4587,7 @@ function _geoParkRestore(){
     _geoParkForget();
     const Td=_geoTdPlugin();
     if(Td&&typeof Td.setWakeOnMove==='function'){
-      Promise.resolve(Td.setWakeOnMove({on:false})).then(()=>{
+      Promise.resolve(Td.setWakeOnMove({on:false,reason:'no park on this boot'})).then(()=>{
         _geoParkNote('wake-disarm','no park on this boot');
       },()=>{});
     }
@@ -4524,7 +4616,7 @@ function _geoHeartbeatSync(spot){
     const atHome=!!(spot&&typeof _placeIsLikelyHome==='function'&&_placeIsLikelyHome({lat:spot.lat,lng:spot.lng},0));
     if(atHome){
       _geoHbArmedAtMs=0;
-      if(typeof Td.stopHeartbeat==='function')Promise.resolve(Td.stopHeartbeat()).catch(()=>{});
+      if(typeof Td.stopHeartbeat==='function')Promise.resolve(Td.stopHeartbeat({reason:'parked at home'})).catch(()=>{});
       _geoParkNote('hb-off','home park');
       return;
     }
@@ -4551,7 +4643,7 @@ function _geoHeartbeatSync(spot){
     // What still wakes a dead app is unchanged and is not this: region
     // monitoring, significant-location-change and visit monitoring, all armed
     // by startEvents, all of which relaunch a force-quit app.
-    Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs:12*3600000,keepalive:false})).catch(()=>{});
+    Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs:12*3600000,keepalive:false,reason:'shift start'})).catch(()=>{});
     _geoParkNote('hb-on','30m tick armed');
   }catch(_e){}
 }
@@ -4618,9 +4710,10 @@ function _geoEnterParkMode(spot){
   // stops while the app is dead. Older shells without it fall back to the
   // single-region park arm, exactly the old behavior.
   const _regs=_geoParkRegions(_at,radiusM);
+  const _armReason='park: '+(_at.name||'stop');
   const _armCall=(typeof Td.startEvents==='function')
-    ?Td.startEvents({regions:_regs})
-    :Td.startParked({regions:_regs.slice(0,1)});
+    ?Td.startEvents({regions:_regs,reason:_armReason})
+    :Td.startParked({regions:_regs.slice(0,1),reason:_armReason});
   Promise.resolve(_armCall)
     .then((r)=>{
       _geoParkModeOn=true;
@@ -4647,6 +4740,7 @@ function _geoEnterParkMode(spot){
         _geoForgetWatcher(_geoNativeWatcherId);
         _geoNativeWatcherId=null;
         if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
+        _geoRadioNote('js-watcher',false,_armReason);
       }
     },(err)=>{
       // A failed attempt must never die silently (it did, and the arrow sat
@@ -4662,7 +4756,7 @@ const _GEO_WAKE_ON_MOVE=true;
 function _geoWakeOnMoveArm(Td){
   try{
     if(!_GEO_WAKE_ON_MOVE||!Td||typeof Td.setWakeOnMove!=='function')return false;
-    Promise.resolve(Td.setWakeOnMove({on:true})).then((r)=>{
+    Promise.resolve(Td.setWakeOnMove({on:true,reason:'park armed'})).then((r)=>{
       _geoParkNote('wake-on-move',(r&&r.supported===false)?'unsupported':((r&&r.on)?'on':'off'));
     },(err)=>{_geoParkNote('wake-on-move-fail',(err&&(err.message||err.code))||err);});
     return true;
@@ -4679,7 +4773,7 @@ function _geoExitParkMode(){
   _geoQuietSinceMs=Date.now();_geoParkPrevFix=null;
   _geoParkNote('park-exit');
   const Td=_geoTdPlugin();
-  try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}
+  try{if(Td&&typeof Td.stopAll==='function')Td.stopAll({reason:'park exit'});}catch(_e){}
   startGeoTracking();
 }
 // crew-locate.js loads after this file, so the journal is read through a guard
@@ -5039,7 +5133,11 @@ function _geoDiagPanel(){
     '</div>'+
     // Copy, because a diagnostic you cannot get OFF the phone is only half a
     // diagnostic: the owner reads it in a truck and pastes it into a message.
-    '<button class="btn" style="width:100%;margin-top:14px;padding:12px" onclick="_geoDiagCopy()">Copy everything</button>'+
+    // The radio ledger for this phone, today (owner 2026-09-08): every time
+    // the receiver went on or off, why, and for how long. Server-side, so it
+    // reads the same here as it does pulled for a crew member.
+    '<button class="btn" style="width:100%;margin-top:14px;padding:12px" onclick="openRadioLedger((typeof _supaUser!==\'undefined\'&&_supaUser&&_supaUser.id)||null,\'You\')">Radio ledger today</button>'+
+    '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoDiagCopy()">Copy everything</button>'+
     '<button class="btn btn-p" style="width:100%;margin-top:8px;padding:12px" onclick="document.getElementById(\'_geo-diag-ov\').remove()">Close</button>';
   window.__geoDiagText=state.map(([k,v])=>k+': '+v).join('\n')+'\n\n'+
     _geoParkLog.slice().reverse().map(r=>_geoDiagFmtT(r.t)+' '+(r.ev||'')+(r.x?' '+r.x:'')).join('\n');
@@ -5335,7 +5433,7 @@ async function _geoTdEvent(ev,replay){
       if(!replay&&(boundary||(_geoParkModeOn&&cur!=='still'))&&now-_geoMotionBurstAt>_GEO_MOTION_BURST_GAP_MS){
         _geoMotionBurstAt=now;
         _geoParkNote('motion-burst',prev?prev+'->'+cur:cur);
-        try{const Td=_geoTdPlugin();if(Td&&typeof Td.burstFix==='function')Td.burstFix({seconds:boundary?15:12});}catch(_e){}
+        try{const Td=_geoTdPlugin();if(Td&&typeof Td.burstFix==='function')Td.burstFix({seconds:boundary?15:12,reason:'motion '+(prev?prev+'->'+cur:cur)});}catch(_e){}
       }
     }
     return;
@@ -5622,6 +5720,9 @@ function startGeoTracking(){
         if(typeof _shadowLiveGpsStart==='function')_shadowLiveGpsStart();
         if(typeof startShadowEngine==='function'){try{startShadowEngine();}catch(_e){}}
         _geoParkNote('watcher-on',String(id||''));
+        // The radio ledger's one JS-written row: this plugin's watcher, which
+        // TdGeoPlugin cannot see (see _geoRadioNote).
+        _geoRadioNote('js-watcher',true,'tracking start');
         // THE FORCE-CLOSE NET (owner 2026-08-27: "log mileage and time even
         // if the app is dead"). The live watcher above dies with the process
         // and iOS relaunches nobody for continuous GPS. Visits, regions and
@@ -5666,12 +5767,13 @@ function stopGeoTracking(){
   // native side, this ends the JS side's memory of it.
   _geoDriveWindowClose('tracking-off');
   _geoTapePollStop();
-  {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}}
+  {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll({reason:'tracking off'});}catch(_e){}}
   if(_geoNativeWatcherId!=null){
     const BG=_geoNativePlugin();
     try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
     _geoForgetWatcher(_geoNativeWatcherId);
     _geoNativeWatcherId=null;
+    _geoRadioNote('js-watcher',false,'tracking off');
   }
   if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
   _geoNativeStarting=false;

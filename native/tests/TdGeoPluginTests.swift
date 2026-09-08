@@ -2204,4 +2204,159 @@ extension TdGeoPluginTests {
         wait(for: [settled], timeout: 30)
         XCTAssertNil(TdGeoPlugin.backgroundFlushCompletion)
     }
+
+    // MARK: - The radio ledger (owner 2026-09-08)
+    //
+    // "Do I have something that tells me when the gps radio fires and the
+    // exact reason and time by user?" These pin the contract that answers
+    // it: one row per session CHANGE, at the line that touches the receiver,
+    // carrying the reason JS gave. A re-assert that changes nothing writes
+    // nothing. Every row has the shape ingest-geo stores (session, on,
+    // reason, trigger, source), because a ledger the server cannot read is
+    // no better than the counters it replaces.
+
+    private func radio(_ session: String) -> [[String: Any]] {
+        plugin.radioRowsForTest().filter { ($0["session"] as? String) == session }
+    }
+    private func onOff(_ rows: [[String: Any]]) -> [Bool] {
+        rows.compactMap { $0["on"] as? Bool }
+    }
+
+    func testRadioLedger_driveWindowWritesOneOnAndOneOff_withTheReasonJsGave() {
+        plugin.clearBufferForTest()
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "reason": "flip: walking->automotive"],
+                                    onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        // Re-asserting an open window buys more cap; it is not a new session.
+        let again = expectation(description: "re-assert")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "reason": "still driving"],
+                                    onSuccess: { _ in again.fulfill() }))
+        wait(for: [again], timeout: 30)
+        let closed = expectation(description: "close")
+        plugin.setSampling(makeCall(options: ["mode": "coarse", "reason": "park"],
+                                    onSuccess: { _ in closed.fulfill() }))
+        wait(for: [closed], timeout: 30)
+
+        let rows = radio("drive")
+        XCTAssertEqual(onOff(rows), [true, false], "one on, one off, whatever JS re-asserted in between")
+        XCTAssertEqual(rows.first?["reason"] as? String, "flip: walking->automotive")
+        XCTAssertEqual(rows.first?["accuracy"] as? String, "best")
+        XCTAssertEqual(rows.first?["trigger"] as? String, "js")
+        XCTAssertEqual(rows.last?["reason"] as? String, "park")
+        XCTAssertEqual(rows.first?["source"] as? String, "native")
+    }
+
+    func testRadioLedger_burstOpensAndStopAllClosesItWithStopAllsReason() {
+        plugin.clearBufferForTest()
+        let b = expectation(description: "burst")
+        plugin.burstFix(makeCall(options: ["seconds": 30, "reason": "push-ping burst"],
+                                 onSuccess: { _ in b.fulfill() }))
+        wait(for: [b], timeout: 30)
+        let s = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(options: ["reason": "park exit"], onSuccess: { _ in s.fulfill() }))
+        wait(for: [s], timeout: 30)
+
+        let rows = radio("burst")
+        XCTAssertEqual(onOff(rows), [true, false])
+        XCTAssertEqual(rows.first?["reason"] as? String, "push-ping burst")
+        XCTAssertEqual(rows.last?["reason"] as? String, "park exit",
+                       "the OFF says who ended it, not just that it ended")
+    }
+
+    func testRadioLedger_fencesArmIsARowEvenThoughItHoldsNoReceiver() {
+        plugin.clearBufferForTest()
+        let armed = expectation(description: "events")
+        plugin.startEvents(makeCall(options: ["regions": [region("shop")], "reason": "park at the shop"],
+                                    onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        let s = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(options: ["reason": "sign-out"], onSuccess: { _ in s.fulfill() }))
+        wait(for: [s], timeout: 30)
+
+        let rows = radio("fences")
+        XCTAssertEqual(onOff(rows), [true, false])
+        XCTAssertEqual(rows.first?["accuracy"] as? String, "regions+slc+visits")
+        XCTAssertEqual(rows.first?["reason"] as? String, "park at the shop")
+        XCTAssertEqual(rows.last?["reason"] as? String, "sign-out")
+    }
+
+    func testRadioLedger_wakeStreamMovingEpisodesAreTheRowsThatShowTheBurn() {
+        // His own phone, 2026-09-08: the stream flapped still/moving every ten
+        // minutes on a job site all day. The moving episodes are where the
+        // receiver actually ran, and they are decided by iOS, so the ledger
+        // names iOS as the trigger.
+        let d = UserDefaults.standard
+        plugin.clearBufferForTest()
+        d.removeObject(forKey: plugin.wakeStillKeyForTest)
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.0308, lng: -95.7112, stationary: true)
+        plugin.wakeUpdateForTest(lat: 39.0296, lng: -95.7120, stationary: false)   // resumed
+        plugin.wakeUpdateForTest(lat: 39.0295, lng: -95.7247, stationary: false)   // still moving: no new row
+        plugin.wakeUpdateForTest(lat: 39.0295, lng: -95.7247, stationary: true)    // rests
+        plugin.wakeUpdateForTest(lat: 39.0295, lng: -95.7247, stationary: true)    // still resting: nothing
+
+        let rows = radio("wake-moving")
+        XCTAssertEqual(onOff(rows), [true, false],
+                       "a stream whose first word is stationary opens nothing; then exactly one episode")
+        XCTAssertEqual(rows[0]["trigger"] as? String, "ios")
+        XCTAssertEqual(rows[0]["reason"] as? String, "iOS: movement resumed")
+        XCTAssertEqual(rows[1]["reason"] as? String, "iOS: stationary")
+    }
+
+    func testRadioLedger_aStreamStartingMidWalkOpensAMovingEpisodeAtOnce() {
+        // A relaunch with the phone already in motion never sees a
+        // stationary first; the burn started at the first update.
+        let d = UserDefaults.standard
+        plugin.clearBufferForTest()
+        d.removeObject(forKey: plugin.wakeStillKeyForTest)
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.0296, lng: -95.7120, stationary: false)
+        let rows = radio("wake-moving")
+        XCTAssertEqual(onOff(rows), [true])
+        XCTAssertEqual(rows.first?["reason"] as? String, "iOS: moving at stream start")
+    }
+
+    func testRadioLedger_reasonIsBoundedAndAMissingOneIsEmptyNeverInvented() {
+        plugin.clearBufferForTest()
+        let long = String(repeating: "x", count: 500)
+        let a = expectation(description: "long")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "reason": long], onSuccess: { _ in a.fulfill() }))
+        wait(for: [a], timeout: 30)
+        let b = expectation(description: "close")
+        plugin.setSampling(makeCall(options: ["mode": "coarse"], onSuccess: { _ in b.fulfill() }))
+        wait(for: [b], timeout: 30)
+        let rows = radio("drive")
+        XCTAssertEqual((rows.first?["reason"] as? String)?.count, 60, "a reason is a label, not a transcript")
+        XCTAssertEqual(rows.last?["reason"] as? String, "js",
+                       "endDriveSampling's own default when JS names nothing; never a made-up why")
+    }
+
+    func testRadioLedger_nothingOnNothingOff_stopAllOnAColdPluginWritesNoRadioRows() {
+        plugin.clearBufferForTest()
+        let s = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(options: ["reason": "sign-out"], onSuccess: { _ in s.fulfill() }))
+        wait(for: [s], timeout: 30)
+        XCTAssertTrue(plugin.radioRowsForTest().isEmpty,
+                      "an OFF for a session that was never on would be a lie on the ledger")
+    }
+
+    func testRadioLedger_everyRowHasTheShapeIngestGeoStores() {
+        plugin.clearBufferForTest()
+        let a = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "reason": "r"], onSuccess: { _ in a.fulfill() }))
+        wait(for: [a], timeout: 30)
+        let s = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(onSuccess: { _ in s.fulfill() }))
+        wait(for: [s], timeout: 30)
+        for r in plugin.radioRowsForTest() {
+            XCTAssertEqual(r["type"] as? String, "radio")
+            XCTAssertNotNil(r["ts"] as? Double)
+            XCTAssertFalse(((r["session"] as? String) ?? "").isEmpty)
+            XCTAssertNotNil(r["on"] as? Bool)
+            XCTAssertNotNil(r["reason"] as? String)
+            XCTAssertFalse(((r["trigger"] as? String) ?? "").isEmpty)
+            XCTAssertEqual(r["source"] as? String, "native")
+        }
+    }
 }

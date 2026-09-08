@@ -255,6 +255,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             let m = self.mgr()
             m.startMonitoringSignificantLocationChanges()
             if visits { m.startMonitoringVisits() }
+            self.radioLog("fences", on: true, accuracy: visits ? "regions+slc+visits" : "regions+slc",
+                          reason: "relaunch restored the fence set", trigger: "relaunch")
             // AND THE MOTION STREAM. It was armed only from startParked and
             // startEvents, which run when JS asks, so after a force-quit wake
             // the phone resumed fences and the heartbeat but stayed deaf to
@@ -294,6 +296,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                         m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
                         m.distanceFilter = 99999
                         m.startUpdatingLocation()
+                        self.radioLog("heartbeat", on: true, accuracy: "3km",
+                                      reason: "relaunch restored the keepalive", trigger: "relaunch")
                     }
                     self.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: iv / 1000, repeats: true) { [weak self] _ in
                         self?.heartbeatTick()
@@ -312,7 +316,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             // iOS hands the resumed updates only to a process that asks for
             // them again promptly. Ask now, from the persisted flag, before
             // JS has even loaded.
-            if d.bool(forKey: self.wakeKey) { self.startWakeOnMove() }
+            if d.bool(forKey: self.wakeKey) {
+                self.startWakeOnMove(reason: "relaunch re-armed a persisted park", trigger: "relaunch")
+            }
         }
     }
 
@@ -343,6 +349,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             countWake("drive-off-expired")
             record(["type": "sampling", "mode": "coarse", "reason": "expired",
                     "ts": Double(Date().timeIntervalSince1970 * 1000)])
+            radioLog("drive", on: false, reason: "expired", trigger: "relaunch")
             restoreBaselineRadio()
             return
         }
@@ -400,6 +407,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // radius in meters; iOS region monitoring is only reliable up to ~400m.
     @objc func startParked(_ call: CAPPluginCall) {
         let regions = (call.getArray("regions") as? [JSObject]) ?? []
+        let reason = reasonOf(call)
         DispatchQueue.main.async {
             let m = self.mgr()
             m.stopUpdatingLocation()
@@ -424,6 +432,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             m.startMonitoringSignificantLocationChanges()
             self.startMotionStream()
             UserDefaults.standard.set(["mode": "parked", "visits": false], forKey: self.armedKey)
+            self.radioLog("fences", on: true, accuracy: "regions+slc", reason: reason, trigger: "js")
             call.resolve(["armed": armed])
         }
     }
@@ -436,6 +445,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // data it was already collecting.
     @objc func startEvents(_ call: CAPPluginCall) {
         let regions = (call.getArray("regions") as? [JSObject]) ?? []
+        let reason = reasonOf(call)
         DispatchQueue.main.async {
             let m = self.mgr()
             m.stopUpdatingLocation()
@@ -461,6 +471,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             m.startMonitoringVisits()
             self.startMotionStream()
             UserDefaults.standard.set(["mode": "events", "visits": true], forKey: self.armedKey)
+            // No receiver at all in this baseline; it is on the ledger so a
+            // day reads from the first arm to the last stop, not from the
+            // first thing that cost something.
+            self.radioLog("fences", on: true, accuracy: "regions+slc+visits", reason: reason, trigger: "js")
             call.resolve(["armed": armed, "visits": true])
         }
     }
@@ -470,6 +484,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // compared on the only number that actually drives battery.
     @objc func burstFix(_ call: CAPPluginCall) {
         let secs = min(max(self.num(call.getValue("seconds")) ?? 12, 3), 60)
+        let reason = reasonOf(call)
         DispatchQueue.main.async {
             let m = self.mgr()
             if self.burstStartedAt == nil {
@@ -477,6 +492,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 m.desiredAccuracy = kCLLocationAccuracyBest
                 m.startUpdatingLocation()
                 self.countWake("burst")
+                self.radioLog("burst", on: true, accuracy: "best", reason: reason, trigger: "js")
             }
             self.burstTimer?.invalidate()
             self.burstTimer = Timer.scheduledTimer(withTimeInterval: secs, repeats: false) { [weak self] _ in
@@ -486,12 +502,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         }
     }
 
-    private func endBurst() {
+    private func endBurst(reason: String = "timer") {
         guard let started = burstStartedAt else { return }
         addGpsMs(Date().timeIntervalSince(started) * 1000)
         burstStartedAt = nil
         burstTimer?.invalidate()
         burstTimer = nil
+        radioLog("burst", on: false, reason: reason, trigger: reason == "timer" ? "native" : "js")
         // A DRIVE WINDOW OUTRANKS THE BASELINE. The burst borrowed a receiver
         // the window already owns, so handing it back to coarse (or worse,
         // stopping it) would silently end the dense sampling in the middle of
@@ -562,6 +579,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // JS names the tier (3.2), unknown falls back to best so a bad string
         // can never quietly downgrade a route to something unusable.
         let accuracy = (call.getString("accuracy") ?? "best").lowercased()
+        let reason = reasonOf(call)
         DispatchQueue.main.async {
             let d = UserDefaults.standard
             let already = self.driveSamplingOn()
@@ -581,6 +599,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 // window open and close and nobody has to trust a comment.
                 self.record(["type": "sampling", "mode": "drive",
                              "ts": Double(Date().timeIntervalSince1970 * 1000)])
+                self.radioLog("drive", on: true, accuracy: accuracy, reason: reason, trigger: "js")
             }
             let m = self.mgr()
             // A burst already owns the receiver at Best accuracy; leave it, and
@@ -643,6 +662,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         countWake("drive-off-" + reason)
         record(["type": "sampling", "mode": "coarse", "reason": reason,
                 "ts": Double(Date().timeIntervalSince1970 * 1000)])
+        // "cap" is this file's own timer; everything else came in on a call.
+        radioLog("drive", on: false, reason: reason, trigger: reason == "cap" ? "native" : "js")
         restoreBaselineRadio()
     }
 
@@ -681,8 +702,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // {on, supported}; on a shell older than iOS 17 it is a no-op that says so.
     @objc func setWakeOnMove(_ call: CAPPluginCall) {
         let on = call.getBool("on") ?? false
+        let reason = reasonOf(call)
         DispatchQueue.main.async {
-            if on { self.startWakeOnMove() } else { self.stopWakeOnMove() }
+            if on { self.startWakeOnMove(reason: reason, trigger: "js") }
+            else { self.stopWakeOnMove(reason: reason, trigger: "js") }
             UserDefaults.standard.set(on, forKey: self.wakeKey)
             call.resolve(["on": self.wakeOnMoveOn, "supported": TdGeoPlugin.wakeOnMoveSupported()])
         }
@@ -693,15 +716,18 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         return false
     }
 
-    private func startWakeOnMove() {
+    private func startWakeOnMove(reason: String = "", trigger: String = "js") {
         if !Thread.isMainThread {
-            DispatchQueue.main.async { self.startWakeOnMove() }
+            DispatchQueue.main.async { self.startWakeOnMove(reason: reason, trigger: trigger) }
             return
         }
         guard #available(iOS 17.0, *) else { return }
         if wakeOnMoveOn { return }
         wakeOnMoveOn = true
         countWake("wake-on")
+        // The session itself is the row that explains the blue indicator:
+        // it is shown for as long as this exists, moving or not.
+        radioLog("wake-stream", on: true, accuracy: "otherNavigation", reason: reason, trigger: trigger)
         if wakeSession == nil { wakeSession = CLBackgroundActivitySession() }
         (wakeTask as? Task<Void, Never>)?.cancel()
         // The stream is the whole mechanism: while it is being iterated the
@@ -727,9 +753,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         }
     }
 
-    private func stopWakeOnMove() {
+    private func stopWakeOnMove(reason: String = "", trigger: String = "js") {
         if !Thread.isMainThread {
-            DispatchQueue.main.async { self.stopWakeOnMove() }
+            DispatchQueue.main.async { self.stopWakeOnMove(reason: reason, trigger: trigger) }
             return
         }
         (wakeTask as? Task<Void, Never>)?.cancel()
@@ -738,7 +764,15 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             (wakeSession as? CLBackgroundActivitySession)?.invalidate()
         }
         wakeSession = nil
-        if wakeOnMoveOn { countWake("wake-off") }
+        if wakeOnMoveOn {
+            countWake("wake-off")
+            // A stream dropped mid-motion closes its moving episode too, so
+            // the ledger never shows the radio running past the session.
+            if (UserDefaults.standard.object(forKey: wakeStillKey) as? Bool) == false {
+                radioLog("wake-moving", on: false, reason: reason, trigger: trigger)
+            }
+            radioLog("wake-stream", on: false, reason: reason, trigger: trigger)
+        }
         wakeOnMoveOn = false
         wakeLastFixAt = nil
         UserDefaults.standard.removeObject(forKey: wakeStillKey)
@@ -762,6 +796,14 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 var ev = event(type: "wake-still", loc: loc, regionId: nil)
                 ev["ts"] = Double(now.timeIntervalSince1970 * 1000)
                 record(ev)
+                // The receiver rests here. This is the row that pairs with the
+                // moving one below and says how long the radio actually ran.
+                // Only when it WAS running: a stream whose first word is
+                // "stationary" has no episode to close, and an OFF with no ON
+                // would be a lie on the ledger.
+                if wasStill == false {
+                    radioLog("wake-moving", on: false, reason: "iOS: stationary", trigger: "ios")
+                }
             }
             d.set(true, forKey: wakeStillKey)
             wakeLastFixAt = nil
@@ -772,6 +814,18 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         if resumed {
             countWake("wake-move")
             record(event(type: "wake-move", loc: loc, regionId: nil))
+        }
+        // The stream un-pausing is the moment the radio starts burning, and
+        // iOS decides it, not this file and not JS. A phone in a pocket on a
+        // job site does this every ten minutes all day (owner's own phone,
+        // 2026-09-08); a phone left in a truck does it once, when the truck
+        // leaves. Written on the first non-stationary update after a rest,
+        // AND on a stream that starts already moving (wasStill nil), which
+        // is what a relaunch mid-walk looks like.
+        if resumed || wasStill == nil {
+            radioLog("wake-moving", on: true, accuracy: "otherNavigation",
+                     reason: resumed ? "iOS: movement resumed" : "iOS: moving at stream start",
+                     trigger: "ios")
         }
         guard let l = loc else { return }
         if driveSamplingOn() { return }
@@ -1073,12 +1127,17 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
 
     @objc func stopAll(_ call: CAPPluginCall) {
+        // JS says why (park exit, sign-out); with nothing said the ledger
+        // still knows it was this call.
+        let why = reasonOf(call)
+        let reason = why.isEmpty ? "stopAll" : why
         DispatchQueue.main.async {
             let m = self.mgr()
-            self.endBurst()
+            let fencesWere = UserDefaults.standard.dictionary(forKey: self.armedKey) != nil
+            self.endBurst(reason: reason)
             self.endDriveSampling(reason: "stopAll")
-            self.hbStop()
-            self.stopWakeOnMove()
+            self.hbStop(reason: reason, trigger: "js")
+            self.stopWakeOnMove(reason: reason, trigger: "js")
             UserDefaults.standard.removeObject(forKey: self.wakeKey)
             self.motionMgr.stopActivityUpdates()
             m.stopMonitoringSignificantLocationChanges()
@@ -1086,6 +1145,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             for r in m.monitoredRegions { m.stopMonitoring(for: r) }
             m.stopUpdatingLocation()
             UserDefaults.standard.removeObject(forKey: self.armedKey)
+            if fencesWere { self.radioLog("fences", on: false, reason: reason, trigger: "js") }
             call.resolve()
         }
     }
@@ -1104,6 +1164,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // contract between the phone and the server.
     #if DEBUG
     func recordForTest(_ ev: [String: Any]) { record(ev) }
+    // The radio ledger's rows, oldest first, straight off the buffer.
+    func radioRowsForTest() -> [[String: Any]] {
+        let rows = (UserDefaults.standard.array(forKey: bufferKey) as? [[String: Any]]) ?? []
+        return rows.filter { ($0["type"] as? String) == "radio" }
+    }
+    func clearBufferForTest() { UserDefaults.standard.removeObject(forKey: bufferKey) }
     // The backfill is driven by a CoreLocation delegate callback the simulator
     // will not fire on demand, so the tests reach it the same way the region
     // wake does. Named ForTest so it is obvious this is not a shipping entry
@@ -1176,6 +1242,42 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         d.set(buf, forKey: bufferKey)
         notifyListeners("geoEvent", data: ev)
         scheduleFlush(for: (ev["type"] as? String) ?? "")
+    }
+
+    // ── THE RADIO LEDGER (owner 2026-09-08) ─────────────────────────────────
+    // "Do I have something that tells me when the gps radio fires and the
+    // exact reason and time by user?" He did not. Five things turn the
+    // receiver on and one of them (the drive window) left a row with a
+    // reason; the rest left counters in stats(). Finding out why his phone
+    // had burned six hours of navigation-grade GPS on a day he never drove
+    // meant reading fix cadences per hour and reasoning backwards.
+    //
+    // One row per session CHANGE, written at the line that touches
+    // CLLocationManager, because this file is the only thing that knows
+    // whether the radio actually moved. The reason comes from JS on the
+    // call that asked (3.2: JS decides why, Swift records that it did);
+    // native-originated changes (a cap, a ttl, a relaunch, iOS itself) name
+    // their own trigger. A re-assert that changes nothing writes nothing:
+    // the ledger is what the radio did, not how often it was asked.
+    // Served by 20260915_geo_radio_ledger (geo_radio_day) and read per
+    // person per day in js/geo-track.js.
+    private func radioLog(_ session: String, on: Bool, accuracy: String? = nil,
+                          reason: String, trigger: String) {
+        var ev: [String: Any] = [
+            "type": "radio",
+            "ts": Double(Date().timeIntervalSince1970 * 1000),
+            "session": session,
+            "on": on,
+            "reason": String(reason.prefix(60)),
+            "trigger": trigger,
+            "source": "native"
+        ]
+        if let a = accuracy { ev["accuracy"] = a }
+        record(ev)
+    }
+    // The JS-supplied reason on a call, or nothing. Never invented.
+    private func reasonOf(_ call: CAPPluginCall) -> String {
+        return call.getString("reason") ?? ""
     }
 
     private func event(type: String, loc: CLLocation?, regionId: String?) -> [String: Any] {
@@ -1259,8 +1361,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // between drives, and the app's own logs say it was not buying the
         // residency it cost. JS asks for it explicitly or it does not happen.
         let keepalive = call.getBool("keepalive") ?? false
+        let reason = reasonOf(call)
         DispatchQueue.main.async {
             self.heartbeatTimer?.invalidate()
+            // A keepalive that was already holding the receiver is not a new
+            // session; one that is starting now is.
+            let radioWas = self.heartbeatOn && self.heartbeatKeepalive
             self.heartbeatOn = true
             self.heartbeatKeepalive = keepalive
             self.heartbeatStartedAt = Date()
@@ -1278,6 +1384,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 m.distanceFilter = 99999
                 m.startUpdatingLocation()
             }
+            if keepalive && !radioWas {
+                self.radioLog("heartbeat", on: true, accuracy: "3km", reason: reason, trigger: "js")
+            }
             self.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: intervalMs / 1000, repeats: true) { [weak self] _ in
                 self?.heartbeatTick()
             }
@@ -1286,15 +1395,22 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
 
     @objc func stopHeartbeat(_ call: CAPPluginCall) {
+        let reason = reasonOf(call)
         DispatchQueue.main.async {
-            self.hbStop()
+            self.hbStop(reason: reason, trigger: "js")
             call.resolve(["on": false])
         }
     }
 
-    private func hbStop() {
+    private func hbStop(reason: String = "", trigger: String = "js") {
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
+        // Only a keepalive ever held the receiver, so only a keepalive ending
+        // is a radio row; a bare timer stopping changes nothing the ledger
+        // is about.
+        if heartbeatOn && heartbeatKeepalive {
+            radioLog("heartbeat", on: false, reason: reason, trigger: trigger)
+        }
         heartbeatOn = false
         heartbeatKeepalive = false
         heartbeatStartedAt = nil
@@ -1308,7 +1424,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     private func heartbeatTick() {
         if let started = heartbeatStartedAt,
            Date().timeIntervalSince(started) * 1000 > heartbeatTtlMs {
-            hbStop()
+            hbStop(reason: "ttl", trigger: "native")
             return
         }
         let m = mgr()

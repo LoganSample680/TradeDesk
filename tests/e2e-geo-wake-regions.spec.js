@@ -262,7 +262,10 @@ test.describe('Wake region set for the dead app', () => {
     const src = readJs('geo-track.js');
     const i = src.indexOf("_geoParkNote('watcher-on'");
     expect(i).toBeGreaterThan(-1);
-    const after = src.slice(i, i + 1500);
+    // 2000, not 1500: the radio ledger's watcher row (2026-09-08) sits
+    // between the journal note and the chain; the guarantee is proximity,
+    // not a byte count.
+    const after = src.slice(i, i + 2000);
     // The arming moved one function along on 2026-09-06: the watcher callback
     // now calls _geoConsentChain, which arms the event set on its FIRST line
     // and then gates the permission prompts that follow so iOS cannot stack
@@ -753,21 +756,22 @@ test.describe('Wake region set for the dead app', () => {
       const r = await boot({});
       expect(r.ok).toBe(false);
       expect(r.park).toBe(false);
+      // The disarm names itself since 2026-09-08 (the radio ledger).
       expect(r.wake, 'the phone must not hold a stream this session knows nothing about')
-        .toEqual([{ on: false }]);
+        .toEqual([{ on: false, reason: 'no park on this boot' }]);
     });
 
     test('a park older than the shift is not a park', async () => {
       const r = await boot({ store: true, ageMs: 13 * 3600000 });
       expect(r.ok, 'a weekend at the shop must not restore on Monday').toBe(false);
-      expect(r.wake).toEqual([{ on: false }]);
+      expect(r.wake).toEqual([{ on: false, reason: 'no park on this boot' }]);
       expect(r.left, 'and the stale record is cleared').toBe(null);
     });
 
     test("another login's park is not mine", async () => {
       const r = await boot({ store: true, ageMs: 60000, uid: 'somebody-else' });
       expect(r.ok).toBe(false);
-      expect(r.wake).toEqual([{ on: false }]);
+      expect(r.wake).toEqual([{ on: false, reason: 'no park on this boot' }]);
     });
 
     test('junk in storage disarms rather than throwing or restoring', async () => {

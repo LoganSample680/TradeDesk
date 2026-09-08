@@ -99,7 +99,24 @@ const DRIVE_PENDING_MAX_MS = 15 * 60 * 1000;   // js/geo-track.js _GEO_DRIVE_PEN
 const AUTO_KINDS = new Set(["automotive", "driving", "cycling"]);
 const REST_KINDS = new Set(["walking", "running", "onFoot", "still"]);
 
-type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: string; arrivalTs?: number; kind?: string; flipId?: string };
+type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: string; arrivalTs?: number; kind?: string; flipId?: string;
+  // The radio ledger (20260915_geo_radio_ledger): a session change and why.
+  session?: string; on?: boolean; accuracy?: string; reason?: string; trigger?: string; source?: string };
+type RadioDetail = { on: boolean; accuracy: string | null; reason: string; trigger: string; source: string };
+// One radio row's detail, bounded. A session name doubles as the row's
+// region_id so the dedupe index (employee, type, ts, region_id) tells two
+// sessions changing in the same millisecond apart, and so a reader can
+// filter on it without opening the json.
+function radioDetail(e: Ev): RadioDetail {
+  const s = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : "");
+  return {
+    on: e.on === true,
+    accuracy: typeof e.accuracy === "string" ? e.accuracy.slice(0, 24) : null,
+    reason: s(e.reason, 60),
+    trigger: s(e.trigger, 24),
+    source: e.source === "js" ? "js" : "native",
+  };
+}
 type Dwell = { regionId: string; arrivedTs: number; lat: number; lon: number };
 type Leg = { startTs: number; lat: number; lon: number; regionId: string; flipId?: string | null };
 // A foot -> automotive edge, held until a fence exit confirms a departure
@@ -163,8 +180,12 @@ Deno.serve(async (req) => {
         ts: Math.round(e.ts),
         lat: typeof e.lat === "number" ? e.lat : null,
         lng: typeof e.lng === "number" ? e.lng : null,
-        regionId: String(e.regionId || "").slice(0, 60),
+        // A radio row's "region" is its session name (see radioDetail).
+        regionId: e.type === "radio"
+          ? String(e.session || "").slice(0, 60)
+          : String(e.regionId || "").slice(0, 60),
         arrivalTs: typeof e.arrivalTs === "number" ? Math.round(e.arrivalTs) : null,
+        detail: e.type === "radio" ? radioDetail(e) : null,
         // What the coprocessor actually said: onFoot / still / driving. The
         // native plugin has always sent it and this function has always
         // dropped it, so the server could see that a transition happened and
@@ -188,6 +209,8 @@ Deno.serve(async (req) => {
         // (owner 2026-08-31, and the 20260904 migration says the rest).
         flip_id: e.flipId,
         arrival_ts: e.arrivalTs ? new Date(e.arrivalTs).toISOString() : null,
+        // The radio ledger's payload; null on every other row.
+        detail: e.detail,
       })),
       { onConflict: "employee_user_id,type,ts,region_id", ignoreDuplicates: true },
     );

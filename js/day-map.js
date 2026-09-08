@@ -410,6 +410,11 @@ function _dayMapCrewStrip(){
         '<span class="_dm-when dm-age'+(stale?' old':'')+'">'+escHtml((stale?'Last seen ':'')+_dayMapAgeText(c.ts))+'</span>'+
         batt+
         '<button class="_dm-locate dm-loc" onclick="_dayMapLocate(\''+escHtml(String(c.uid))+'\')">Locate</button>'+
+        // The radio ledger for this crew member, today (owner 2026-09-08):
+        // when their receiver went on, why, for how long. Same server
+        // function the owner's own diagnostics panel reads, under the same
+        // RLS (account owner, or a manager with the team permission).
+        '<button class="_dm-radio dm-loc" onclick="openRadioLedger(\''+escHtml(String(c.uid))+'\',\''+escHtml(c.name)+'\')">Radio</button>'+
       '</div>'+
     '</div>';
   }).join('')+

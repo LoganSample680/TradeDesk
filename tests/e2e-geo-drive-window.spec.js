@@ -525,7 +525,9 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     });
     expect(r.flag).toBe(true);
     expect(r.armed).toBe(true);
-    expect(r.calls).toEqual([{ on: true }]);
+    // The reason rides the call since 2026-09-08 (the radio ledger): the
+    // plugin writes the row, JS says why.
+    expect(r.calls).toEqual([{ on: true, reason: 'park armed' }]);
     expect(r.old).toBe(false);
     expect(r.none).toBe(false);
     expect(r.unsupported).toBe(true);
@@ -1172,7 +1174,7 @@ test.describe('The native half of the drive window', () => {
     expect(s.includes('self.endDriveSampling(reason: "stopAll")')).toBe(true);
     expect(s.includes('func restoreBaselineRadio()')).toBe(true);
     // endBurst must not go dark on top of an open window.
-    const i = s.indexOf('private func endBurst()');
+    const i = s.indexOf('private func endBurst(');
     const body = s.slice(i, s.indexOf('// MARK: - The drive window', i));
     expect(body.includes('if driveSamplingOn()')).toBe(true);
   });
@@ -1220,14 +1222,17 @@ test.describe('The native half of the drive window', () => {
     expect(s.includes('CLBackgroundActivitySession()')).toBe(true);
     // Every reach into the iOS 17 API sits behind an availability check, so
     // the shell still builds and runs at the 15.0 deployment target.
-    const start = s.indexOf('private func startWakeOnMove()');
+    const start = s.indexOf('private func startWakeOnMove(');
     expect(start).toBeGreaterThan(-1);
     expect(s.slice(start, s.indexOf('CLLocationUpdate.liveUpdates(')).includes('guard #available(iOS 17.0, *)')).toBe(true);
     // Swift decides nothing: the flag is JS's, persisted so a relaunch on
-    // movement re-enters the stream before JS has loaded.
-    expect(s.includes('if d.bool(forKey: self.wakeKey) { self.startWakeOnMove() }')).toBe(true);
+    // movement re-enters the stream before JS has loaded. Since 2026-09-08
+    // the re-entry names itself on the radio ledger (trigger "relaunch").
+    const relaunch = s.indexOf('if d.bool(forKey: self.wakeKey) {');
+    expect(relaunch).toBeGreaterThan(-1);
+    expect(s.slice(relaunch, relaunch + 200).includes('self.startWakeOnMove(reason: "relaunch re-armed a persisted park", trigger: "relaunch")')).toBe(true);
     const stop = s.indexOf('@objc func stopAll(');
-    expect(s.slice(stop, stop + 900).includes('self.stopWakeOnMove()')).toBe(true);
+    expect(s.slice(stop, stop + 1200).includes('self.stopWakeOnMove(reason: reason, trigger: "js")')).toBe(true);
     // The stream is silent while the drive window owns the radio.
     expect(s.includes('if driveSamplingOn() { return }')).toBe(true);
   });
