@@ -863,12 +863,21 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     });
     expect(r.lastError, 'a duplicate on our own key is durability already achieved, not a failure').toBe(null);
     expect(r.pending, 'the item is removed, nothing left stuck behind it').toBe(0);
-    expect(r.updates.length, 'the collision triggers an UPDATE, not a silent no-op').toBe(1);
-    expect(r.updates[0].filters, 'matched on the deterministic key, never a bare table-wide update').toEqual({ contractor_user_id: 'geo-park-user-1', client_key: 'rec-dup1' });
-    expect(r.updates[0].patch.minutes, 'the newer, more complete recompute wins, the stale row does not').toBe(551);
-    expect(r.updates[0].patch.departed_at).toBe('2026-08-21T22:07:00.000Z');
-    expect(r.updates[0].patch.contractor_user_id, 'the match keys never ride along inside the patch itself').toBeUndefined();
-    expect(r.updates[0].patch.client_key).toBeUndefined();
+    // ONLY THE UPDATE FOR THIS KEY (webkit shard 2, 2026-09-09: "expected 1,
+    // received 3"). The stub above answers for EVERY table and every caller,
+    // and the drain runs whatever else the app enqueued in the same window
+    // through the same always-duplicate script, so each of those rows ends
+    // as an update too. Counting the whole recorder measured the app's
+    // background traffic, not the behaviour under test. The claim is that
+    // THIS collision became exactly one keyed UPDATE, so that is what is
+    // counted; anything else the drain wrote is somebody else's row.
+    const mine = r.updates.filter(u => u.filters && u.filters.client_key === 'rec-dup1');
+    expect(mine.length, 'the collision triggers an UPDATE, not a silent no-op').toBe(1);
+    expect(mine[0].filters, 'matched on the deterministic key, never a bare table-wide update').toEqual({ contractor_user_id: 'geo-park-user-1', client_key: 'rec-dup1' });
+    expect(mine[0].patch.minutes, 'the newer, more complete recompute wins, the stale row does not').toBe(551);
+    expect(mine[0].patch.departed_at).toBe('2026-08-21T22:07:00.000Z');
+    expect(mine[0].patch.contractor_user_id, 'the match keys never ride along inside the patch itself').toBeUndefined();
+    expect(mine[0].patch.client_key).toBeUndefined();
     await geoRestore();
   });
 
