@@ -2074,6 +2074,25 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // The journal that has to outlive a bad boot (owner 2026-09-09). The build
+  // that never started its geo layer ran for an hour; the build that replaced
+  // it wrote 30 lines of its own boot inside a minute, and the bad boot's
+  // lines were gone before anyone could read them.
+  test.describe('the park journal keeps 200 lines', () => {
+    test('the cap is 200, the newest survive, and it persists', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('td_geo_park_log'); _geoParkLog.length = 0;
+        for (let i = 0; i < 260; i++) _geoParkNote('probe', 'line ' + i);
+        const stored = JSON.parse(localStorage.getItem('td_geo_park_log') || '[]');
+        return { mem: _geoParkLog.length, stored: stored.length, first: stored[0].x, last: stored[stored.length - 1].x };
+      });
+      expect(r.mem).toBe(200);
+      expect(r.stored).toBe(200);
+      expect(r.first, 'the oldest sixty were dropped, nothing newer').toBe('line 60');
+      expect(r.last).toBe('line 259');
+    });
+  });
+
   test('no console errors across the wiring', async () => {
     assertNoErrors(page, 'geo-derive wiring');
   });

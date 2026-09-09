@@ -4119,10 +4119,16 @@ try{_geoParkLog=JSON.parse(localStorage.getItem('td_geo_park_log')||'[]')||[];}c
 // to Central at render time (owner ask 2026-08-23), and keeping the raw
 // instant here means that conversion is always exact, never a guess at
 // which year an old, already-stored entry belonged to.
+// 200 lines, not 30 (owner 2026-09-09). The build that never started its
+// geo layer ran from 12:23 to 13:29; the build that replaced it filled all
+// 30 lines with its own boot inside a minute, and the bad boot's lines were
+// gone before anyone could read them. Two hundred is a few days of a normal
+// phone, and a few boots of a bad one, at 140 characters a line.
+const _GEO_PARK_LOG_MAX=200;
 function _geoParkNote(ev,extra){
   try{
     _geoParkLog.push({t:new Date().toISOString(),ev:ev,x:extra?String(extra).slice(0,140):''});
-    if(_geoParkLog.length>30)_geoParkLog.splice(0,_geoParkLog.length-30);
+    if(_geoParkLog.length>_GEO_PARK_LOG_MAX)_geoParkLog.splice(0,_geoParkLog.length-_GEO_PARK_LOG_MAX);
     localStorage.setItem('td_geo_park_log',JSON.stringify(_geoParkLog));
   }catch(_e){}
 }
