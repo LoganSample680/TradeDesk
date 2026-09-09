@@ -608,6 +608,43 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dwells.filter(d => d.kind === 'client')).toEqual([]);
     });
 
+    // Owner 2026-09-09, 13:06:55. He had parked at John Doe at 13:05; the
+    // phone then restated its cached road position (the exact 13:02:02
+    // coordinate, 0.8 mi out) and it reached the server twice, 1 ms apart: a
+    // location_pings row and a geo_events fix from the same reading. The
+    // second row was read as the "next fix also outside", the visit closed
+    // at its own arrival instant, and everything downstream went with it:
+    // no on-site card, an Office row at 12:23, the house dwell after 12:14
+    // dropped as after-hours, two Unaccounted holes on the rail.
+    test('the same stale reading written twice is one reading, not a departure', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(12, 55), 'driving'), mo(T(13, 5), 'onFoot')];
+      const ROAD = { lat: 39.01065256527216, lng: -95.73155216104179 };   // 0.8 mi from DOE
+      const NEAR = { lat: 39.012890126348864, lng: -95.74387150829563 };  // 0.2 mi out, still rolling
+      const fixes = [fix(T(12, 55, 5), SHOP), fix(T(13, 2), ROAD), fix(T(13, 3), NEAR),
+                     // the cached road reading, restated after arrival, from two tables
+                     { ts: T(13, 6, 55), lat: ROAD.lat, lng: ROAD.lng, acc: 2 },
+                     { ts: T(13, 6, 55) + 1, lat: ROAD.lat, lng: ROAD.lng, acc: null },
+                     fix(T(13, 7, 3), DOE), fix(T(13, 30), DOE), fix(T(14, 37), DOE)];
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE], nowMs: T(14, 40) }));
+      expect(r.open && r.open.name).toBe('John Doe');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(13, 5)));
+      expect(r.openWhy).toBe('');
+      expect(r.dwells.filter(d => d.kind === 'client')).toEqual([]);
+    });
+
+    test('the same outside reading twice, then a genuinely new one outside, IS leaving', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
+      const OUT = { lat: DOE.lat + 0.003, lng: DOE.lng };
+      const OUT2 = { lat: DOE.lat + 0.004, lng: DOE.lng };
+      const fixes = [fix(T(8, 0, 5), SHOP), fix(T(8, 20, 5), DOE), fix(T(10, 0), DOE),
+                     fix(T(12, 0), OUT), { ts: T(12, 0) + 1, lat: OUT.lat, lng: OUT.lng, acc: null },
+                     fix(T(12, 10), OUT2)];
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE] }));
+      expect(r.open).toBeNull();
+      expect(r.dwells.filter(d => d.kind === 'client').map(d => [hm(d.startTs), hm(d.endTs)]))
+        .toEqual([[hm(T(8, 20)), hm(T(10, 0))]]);
+    });
+
     test('two fixes outside in a row IS leaving: the visit closes at the last one inside', async () => {
       const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
       const OUT = { lat: DOE.lat + 0.003, lng: DOE.lng };

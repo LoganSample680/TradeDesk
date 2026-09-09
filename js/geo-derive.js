@@ -142,6 +142,10 @@ const GEO_DERIVE_DEFAULTS = Object.freeze({
   parkedStillMs: 4 * 60000,
   stillEndMs: 10 * 60000, // a truck that sits this long has parked, foot flip or not
   maxFixAccM: 150,        // fixes worse than this are not part of a path
+  // The same coordinate, to the digit, this close together is one reading
+  // that reached the log through two doors (a location_pings row and a
+  // geo_events fix, 1 ms apart), not two readings that agree.
+  sameReadingMs: 5000,
 });
 
 // Fence precedence when more than one contains the fix. His shop and his home
@@ -230,7 +234,7 @@ function _gdParkedFixBefore(fixes, ts, notBeforeTs, maxAgeMs, maxAccM) {
 }
 // The arrival's mirror: the first good fix after the walking flip and before
 // the next drive, for a phone that only woke once it had parked.
-function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM) {
+function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM, sinceTs) {
   // A REPEAT IS NOT A NEW READING (owner 2026-09-04, his 2 September 1:00pm
   // drive: "I know the drive leg should be a lot longer then that").
   //
@@ -247,9 +251,20 @@ function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM) {
   // is not evidence he was not there, it is a reading that carries no
   // information about where he settled. If every candidate is a repeat, the
   // first one still wins, because a stale answer beats no answer.
+  //
+  // AND A REPEAT OF THE ROAD IS THE ROAD (owner 2026-09-09, 13:06:55). The
+  // restated position is not always the row immediately before: he parked at
+  // John Doe at 13:05, a fresh ping at 13:03:05 sat between, and the cache the
+  // phone then restated was the 13:02:02 road fix, 0.8 mi out. With `sinceTs`
+  // (the start of the journey that just ended) a candidate repeating ANY
+  // reading taken on that drive is skipped for the same reason: the truck
+  // cannot have come to rest on a coordinate it was passing through, and a
+  // reading that says it did is the cache talking. Today it resolved to the
+  // client only because a stale fence row happened to sit in the right slot.
   const ordered = (fixes || []).filter(f => f && f.lat != null && f.lng != null &&
     typeof f.ts === 'number' && (f.acc == null || Number(f.acc) <= maxAccM))
     .sort((a, b) => a.ts - b.ts);
+  const road = _gdRoadReadings(ordered, sinceTs, ts);
   let best = null, fallback = null;
   for (let i = 0; i < ordered.length; i++) {
     const f = ordered[i];
@@ -257,9 +272,21 @@ function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM) {
     if (!fallback) fallback = f;
     const prev = ordered[i - 1];
     if (prev && prev.lat === f.lat && prev.lng === f.lng) continue;
+    if (road.has(f.lat + ',' + f.lng)) continue;
     if (!best || f.ts < best.ts) best = f;
   }
   return best || fallback;
+}
+// The coordinates read while the truck was moving, sinceTs up to but not
+// including ts: the set a cached restatement after the stop is drawn from. A
+// reading AT the end is where it stopped, not the road (a drive split at a
+// parked spot ends on that spot's first fix). Empty when no sinceTs is given,
+// which leaves the immediately-before rule on its own.
+function _gdRoadReadings(ordered, sinceTs, ts) {
+  const road = new Set();
+  if (typeof sinceTs !== 'number' || !(sinceTs < ts)) return road;
+  for (const f of ordered) { if (f.ts >= sinceTs && f.ts < ts) road.add(f.lat + ',' + f.lng); }
+  return road;
 }
 
 // A stale coordinate riding on a fence event (a regionEnter row carries the
@@ -614,7 +641,7 @@ function geoDeriveDay(input) {
     // _gdParkedFixBefore names the origin from where the truck SAT, and this
     // is its mirror. `at()` stays as the fallback for a journey with nothing
     // after it at all.
-    const endFix = _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM) || at(j.endTs);
+    const endFix = _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM, j.startTs) || at(j.endTs);
     const toFence = fenceOf(endFix);
     const autoMs = j.endTs - j.startTs;
 
@@ -640,7 +667,7 @@ function geoDeriveDay(input) {
             });
           }
         }
-        if (toFence) arrived = { fence: toFence, ts: j.endTs, journeyId: j.id };
+        if (toFence) arrived = { fence: toFence, ts: j.endTs, journeyId: j.id, startTs: j.startTs };
         continue;
       }
       chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, drives: [] };
@@ -757,7 +784,7 @@ function geoDeriveDay(input) {
       });
     }
     chain = null;
-    arrived = { fence: toFence, ts: j.endTs, journeyId: j.id };
+    arrived = { fence: toFence, ts: j.endTs, journeyId: j.id, startTs: j.startTs };
   }
 
   // Rule 14, the day-end case (rule 8 as amended): a chain that reached its
@@ -769,7 +796,7 @@ function geoDeriveDay(input) {
   // before; the live screens read `pending` for that.
   if (chain && !chain.openSince && Array.isArray(chain.drives) && chain.drives.length && chain.autoMs >= opts.minLegMs) {
     const lastEnd = Number(chain.drives[chain.drives.length - 1][1]);
-    const restFix = _gdSettledFixAfter(fixes, lastEnd, Infinity, opts.parkedFixMaxMs, opts.maxFixAccM) || at(lastEnd);
+    const restFix = _gdSettledFixAfter(fixes, lastEnd, Infinity, opts.parkedFixMaxMs, opts.maxFixAccM, Number(chain.drives[chain.drives.length - 1][0])) || at(lastEnd);
     if (restFix) {
       const a = chain.originFence, b = _gdUnsavedEnd(restFix);
       const p = _gdPathMiles(fixes, chain.startTs, lastEnd, opts.maxFixAccM, [null, restFix], opts.maxMph);
@@ -803,7 +830,7 @@ function geoDeriveDay(input) {
   let openWhy = !arrived ? 'no-arrival' : (!arrived.fence ? 'arrival-unfenced' : 'left');
   if (arrived && arrived.fence) {
     let end = arrived.ts, left = false;
-    const later = fixes.filter(f => f.ts > arrived.ts && f.ts < dayEnd && (f.acc == null || Number(f.acc) <= opts.maxFixAccM)).sort((a, b) => a.ts - b.ts);
+    const rows = fixes.filter(f => f.ts > arrived.ts && f.ts < dayEnd && (f.acc == null || Number(f.acc) <= opts.maxFixAccM)).sort((a, b) => a.ts - b.ts);
     // A departure needs CORROBORATION: one fix outside is not leaving.
     //
     // This guard existed in the old engine and was lost in the rewrite. Its
@@ -847,6 +874,34 @@ function geoDeriveDay(input) {
     // asks the only question that matters, and a real departure still leaves
     // that fence like any other.
     const inFence = f => _gdSameFence(geoFenceAt(f, [arrived.fence], opts.radiusFt), arrived.fence);
+    // ONE READING, HOWEVER MANY ROWS (owner 2026-09-09, 13:06:55). The phone
+    // restated its cached position after he had parked at John Doe: the same
+    // sixteen digits as the 13:02:02 road fix, 0.8 mi from the client, and it
+    // reached the server twice, 1 ms apart (a location_pings row and a
+    // geo_events fix from the same reading). The second row was taken as the
+    // "next fix also outside" that corroborates a departure, so the visit
+    // closed at its own arrival instant: no dwell, no open tail, no on-site
+    // card, the working day ended at 12:03, the 12:23 app-open became an
+    // Office row, and the house dwell after it was dropped as after-hours.
+    // That double write happens hundreds of times a day; it only bites when
+    // the reading it doubles is a stale one outside the fence.
+    //
+    // Same idiom as _gdSettledFixAfter and _gdCleanTrace, both halves of it:
+    // a row repeating the coordinate of the row before it, within
+    // sameReadingMs, is the same reading, not a witness (minutes apart it is
+    // still two rows: a parked truck is allowed to sit still, and the run
+    // keeps its LAST timestamp so an inside reading moves `end` exactly as it
+    // did); and a row repeating a coordinate read on the drive that arrived
+    // here is the cache restating the road, and is no witness to anything.
+    const sameMs = Number(opts.sameReadingMs) > 0 ? Number(opts.sameReadingMs) : GEO_DERIVE_DEFAULTS.sameReadingMs;
+    const road = _gdRoadReadings(fixes.filter(f => f.lat != null && f.lng != null), arrived.startTs, arrived.ts);
+    const later = [];
+    for (const f of rows) {
+      if (road.has(f.lat + ',' + f.lng)) continue;
+      const prev = later[later.length - 1];
+      if (prev && prev.lat === f.lat && prev.lng === f.lng && f.ts - prev.ts <= sameMs) { later[later.length - 1] = f; continue; }
+      later.push(f);
+    }
     for (let i = 0; i < later.length; i++) {
       if (inFence(later[i])) { end = later[i].ts; continue; }
       // Outside. Confirmed only if the NEXT fix is also outside; a single
