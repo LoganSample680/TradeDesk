@@ -3827,9 +3827,32 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // timezone disagreement between this runner and the page cannot move it
     // across a boundary. The DAY is derived; the times within it are still
     // named outright, which is what §5.2.2 is really asking for.
-    const DR = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
-    const atR = (h, m) => new Date(DR + 'T' + String(h).padStart(2, '0') + ':' +
-                                   String(m).padStart(2, '0') + ':00').toISOString();
+    //
+    // And it has to be a WORKING day (midnight clock, 2026-09-08 19:28 Central):
+    // "three days ago" is a Sunday one day in seven, and _tlWorkWindow asks no
+    // questions on a day nobody works, so all three tests went red every
+    // Tuesday evening. Same rule __tlDay already applies to "today", one step
+    // back: the nearest working day at or before three days ago. Chosen IN THE
+    // PAGE, on the page's pinned clock and timezone (5.2.2: the runner's UTC
+    // date is already tomorrow after 7pm Central), and the instants are built
+    // from the page's own offset for that day so 08:00 means 08:00 there.
+    let DR = '', DR_OFF_MIN = 0;
+    test.beforeEach(async () => {
+      const r = await page.evaluate(() => {
+        const w = (typeof _geoWorkHours === 'function') ? _geoWorkHours() : null;
+        const days = (w && Array.isArray(w.days)) ? w.days : [1, 2, 3, 4, 5, 6];
+        let t = Date.parse(todayKey() + 'T00:00:00') - 3 * 86400000;
+        for (let i = 0; i < 7; i++) { if (days.indexOf(new Date(t).getDay()) >= 0) break; t -= 86400000; }
+        const d = new Date(t);
+        return { key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'),
+                 offMin: new Date(t + 12 * 3600000).getTimezoneOffset() };
+      });
+      DR = r.key; DR_OFF_MIN = r.offMin;
+    });
+    const atR = (h, m) => {
+      const [y, mo, d] = DR.split('-').map(Number);
+      return new Date(Date.UTC(y, mo - 1, d, h, m) + DR_OFF_MIN * 60000).toISOString();
+    };
     const rowsFor = (entries, manual, day) => page.evaluate(async ([es, ms, day0]) => {
       const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
       const keepP = places.slice();

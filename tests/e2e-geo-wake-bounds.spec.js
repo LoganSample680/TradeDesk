@@ -125,8 +125,8 @@ test.describe('the wake stream is bounded', () => {
     });
 
     test('the gate reads the real clock and work week through _geoPingBurstOk', async () => {
-      // Pinned clock is 10:00 Central (5.2.2); the default work week has a
-      // day off, so both answers are reachable without touching the clock.
+      // The clock is pinned (5.2.2) but to two different hours across CI
+      // jobs, so the windows here are chosen to answer the same way at both.
       const r = await page.evaluate(() => {
         const saved = { dwell: window._geoOpenDwell, wh: (typeof S !== 'undefined' && S) ? S.workHours : undefined, win: _geoDriveWinAt, home: window._placeIsLikelyHome };
         window._placeIsLikelyHome = () => false;
@@ -137,9 +137,10 @@ test.describe('the wake stream is bounded', () => {
           window._geoOpenDwell = null;
           S.workHours = { start: '06:00', end: '20:00', days: [1, 2, 3, 4, 5, 6, 0].filter(d => d !== new Date().getDay()) };
           const offDay = _geoWakeArmOk(null);
-          S.workHours = { start: '11:00', end: '12:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          // Outside both pins (10:00 by default, 00:20 in the midnight job).
+          S.workHours = { start: '02:00', end: '03:00', days: [0, 1, 2, 3, 4, 5, 6] };
           const offHours = _geoWakeArmOk(null);
-          S.workHours = { start: '06:00', end: '20:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] };
           const open = _geoWakeArmOk(null);
           return { home, offDay, offHours, open };
         } finally {
