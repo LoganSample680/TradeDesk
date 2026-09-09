@@ -1434,6 +1434,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     var wakeStopWatchdogArmedForTest: Bool { wakeStopWatchdog != nil }
     var burstOnForTest: Bool { burstStartedAt != nil }
     static var blindPingBurstSecForTest: Double { blindPingBurstSec }
+    static var blindPingStaleMsForTest: Double { blindPingStaleMs }
     func fireWakeStopWatchdogForTest(stoppedSecondsAgo: Double = 5) {
         wakeStopWatchdogFired(stoppedAt: Date(timeIntervalSinceNow: -stoppedSecondsAgo))
     }
@@ -1561,11 +1562,26 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             "ts": Double(Date().timeIntervalSince1970 * 1000)
         ]
         let m = mgr()
-        if let l = m.location {
+        // A STALE CACHE IS AS BLIND AS AN EMPTY ONE (owner 2026-09-09). The
+        // empty case was Jack's; this is the same hole wearing a different
+        // hat. A significant-change wake or a visit can leave a position in
+        // the manager from hours ago, so the ping is not empty, buys no
+        // burst, and the coordinate it carries is one the deriver refuses
+        // anyway (it only trusts a real `fix`). Nothing lands, exactly as
+        // before. Five minutes because that is already this app's idea of
+        // "current" for a position: geo-derive's fixWindowMs, how far from a
+        // motion flip a fix may sit and still be that flip's fix.
+        // The coordinate still rides along for the crew map's last-known dot,
+        // marked with its age; `blind` is what JS and this file act on.
+        let cached = m.location
+        let ageMs = cached.map { Date().timeIntervalSince($0.timestamp) * 1000 } ?? Double.infinity
+        if let l = cached {
             ev["lat"] = l.coordinate.latitude
             ev["lng"] = l.coordinate.longitude
             ev["acc"] = l.horizontalAccuracy
-        } else {
+            if ageMs > TdGeoPlugin.blindPingStaleMs { ev["staleMs"] = ageMs }
+        }
+        if cached == nil || ageMs > TdGeoPlugin.blindPingStaleMs {
             // A BLIND PING IS NOT A PING (Jack, 2026-09-08). This only ever
             // READ the manager's cached position, and a manager born on a
             // relaunch has none until something delivers one: at home
@@ -1578,7 +1594,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             // tell a blind ping from a quiet one.
             ev["blind"] = true
             if burstStartedAt == nil && !driveSamplingOn() {
-                beginBurst(seconds: TdGeoPlugin.blindPingBurstSec, reason: "push-ping had no fix", trigger: "native")
+                beginBurst(seconds: TdGeoPlugin.blindPingBurstSec,
+                           reason: cached == nil ? "push-ping had no fix" : "push-ping fix was stale",
+                           trigger: "native")
             }
         }
         // record() persists and schedules the flush; the AppDelegate holds
@@ -1586,6 +1604,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         record(ev)
     }
     private static let blindPingBurstSec: Double = 4
+    private static let blindPingStaleMs: Double = 5 * 60_000
 
     // MARK: - Shift heartbeat + motion stream (owner 2026-08-27)
 

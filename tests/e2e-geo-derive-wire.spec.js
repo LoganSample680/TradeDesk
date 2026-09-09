@@ -1576,7 +1576,7 @@ test.describe('geo-derive wiring', () => {
       expect(r.fired).toBe(false);
     });
 
-    test('the push-ping handler routes on whether the ping carried a position', async () => {
+    test('the push-ping handler routes on the blind flag, and on a missing fix for an older shell', async () => {
       const r = await page.evaluate(async () => {
         const saved = { blind: _geoPingBlindBurst, normal: _geoPingBurst, note: _geoParkNote, rearm: _geoWakeRearm,
           radio: _geoRadioCheck, upd: _geoBgUpdateCheck, derive: _geoDeriveLiveSoon, confirm: _geoDriveConfirm, fix: _geoFixLogPush };
@@ -1586,28 +1586,39 @@ test.describe('geo-derive wiring', () => {
         _geoParkNote = () => {}; _geoWakeRearm = async () => false; _geoRadioCheck = async () => null; _geoBgUpdateCheck = () => {};
         _geoDeriveLiveSoon = () => {}; _geoDriveConfirm = () => ''; _geoFixLogPush = () => {};
         try {
+          // An older shell: no blind field, no coordinate.
           await _geoTdEvent({ type: 'push-ping', ts: Date.now() });
+          // A ping that knows where it is: the gates apply as before.
           await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39.02, lng: -95.79, acc: 9 });
-          await _geoTdEvent({ type: 'push-ping', ts: Date.now() }, true);
+          // A STALE cache: it carries a position AND the blind flag, and the
+          // flag wins (owner 2026-09-09).
+          await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39.02, lng: -95.79, acc: 9, blind: true, staleMs: 900000 });
+          // Replayed: describes a ping that already happened.
+          await _geoTdEvent({ type: 'push-ping', ts: Date.now(), blind: true }, true);
           return calls;
         } finally {
           _geoPingBlindBurst = saved.blind; _geoPingBurst = saved.normal; _geoParkNote = saved.note; _geoWakeRearm = saved.rearm;
           _geoRadioCheck = saved.radio; _geoBgUpdateCheck = saved.upd; _geoDeriveLiveSoon = saved.derive; _geoDriveConfirm = saved.confirm; _geoFixLogPush = saved.fix;
         }
       });
-      expect(r).toEqual(['blind', 'normal']);
+      expect(r).toEqual(['blind', 'normal', 'blind']);
     });
 
     test('the plugin does the same for itself when JS is not there to ask', () => {
       const fs = require('fs'), path = require('path');
       const s = fs.readFileSync(path.join(__dirname, '..', 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
       const push = s.indexOf('@objc private func silentPush(');
-      const body = s.slice(push, push + 2200);
+      const body = s.slice(push, push + 4000);
       expect(body.includes('ev["blind"] = true')).toBe(true);
-      expect(body.includes('beginBurst(seconds: TdGeoPlugin.blindPingBurstSec, reason: "push-ping had no fix", trigger: "native")')).toBe(true);
+      expect(body.includes('beginBurst(seconds: TdGeoPlugin.blindPingBurstSec,')).toBe(true);
+      // Empty and stale take the same branch, and the ledger names which.
+      expect(body.includes('if cached == nil || ageMs > TdGeoPlugin.blindPingStaleMs {')).toBe(true);
+      expect(body.includes('reason: cached == nil ? "push-ping had no fix" : "push-ping fix was stale"')).toBe(true);
       expect(s.includes('private static let blindPingBurstSec: Double = 4')).toBe(true);
+      expect(s.includes('private static let blindPingStaleMs: Double = 5 * 60_000')).toBe(true);
       const t = fs.readFileSync(path.join(__dirname, '..', 'native', 'tests', 'TdGeoPluginTests.swift'), 'utf8');
       expect(t.includes('testSilentPush_withNoCachedPositionSaysBlindAndBuysAShortBurst')).toBe(true);
+      expect(t.includes('testSilentPush_marksAStaleCachedPositionAndStillCarriesIt')).toBe(true);
     });
   });
 

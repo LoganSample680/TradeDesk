@@ -1052,6 +1052,30 @@ final class TdGeoPluginTests: XCTestCase {
         XCTAssertLessThanOrEqual(TdGeoPlugin.blindPingBurstSecForTest, 10)
     }
 
+    // A STALE CACHE IS AS BLIND AS AN EMPTY ONE (owner 2026-09-09).
+    func testBlindPingStaleWindow_isMinutesAndMatchesTheDeriversIdeaOfCurrent() {
+        // geo-derive's fixWindowMs is 5 minutes: how far from a motion flip a
+        // fix may sit and still be that flip's fix. The ping uses the same
+        // number for the same reason, so the two cannot drift apart.
+        XCTAssertEqual(TdGeoPlugin.blindPingStaleMsForTest, 5 * 60_000)
+    }
+
+    func testSilentPush_marksAStaleCachedPositionAndStillCarriesIt() {
+        // The simulator's manager has no location to age, so what is pinned
+        // here is the CONTRACT the source promises: a cached fix older than
+        // the window is marked, still carried for the crew map's last-known
+        // dot, and buys a burst under its own reason.
+        let src = try! String(contentsOfFile: #filePath.replacingOccurrences(
+            of: "native/tests/TdGeoPluginTests.swift",
+            with: "native/td-geo/ios/Plugin/TdGeoPlugin.swift"), encoding: .utf8)
+        XCTAssertTrue(src.contains("if ageMs > TdGeoPlugin.blindPingStaleMs { ev[\"staleMs\"] = ageMs }"),
+                      "a stale ping still carries where the phone was, marked with its age")
+        XCTAssertTrue(src.contains("if cached == nil || ageMs > TdGeoPlugin.blindPingStaleMs {"),
+                      "empty and stale take the same branch")
+        XCTAssertTrue(src.contains("reason: cached == nil ? \"push-ping had no fix\" : \"push-ping fix was stale\""),
+                      "the ledger says which kind of blind it was")
+    }
+
     func testHeartbeatPersistsStateAndStopClearsIt() {
         // The whole point of the persisted dict: a force-quit or OS kill must
         // not silently end the shift's 30-minute beat (owner report

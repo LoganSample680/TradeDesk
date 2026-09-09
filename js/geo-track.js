@@ -5350,9 +5350,14 @@ async function _geoTdEvent(ev,replay){
       if(!replay&&ev.type==='app-relaunch')_geoDeriveLiveSoon('app-relaunch',true);
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
-    // A ping with no position asks for one, gates or not; a ping with one
-    // goes through the gates as before.
-    if(!replay&&ev.type==='push-ping'){if(hasFix)_geoPingBurst();else _geoPingBlindBurst();}
+    // A ping that does not know where it is asks, gates or not. The plugin
+    // sets `blind` for an empty cache AND for one too old to mean anything
+    // (owner 2026-09-09); an older shell sets neither, so a fixless ping is
+    // read as blind on its own. A ping that knows goes through the gates.
+    if(!replay&&ev.type==='push-ping'){
+      if(ev.blind===true||!hasFix)_geoPingBlindBurst();
+      else _geoPingBurst();
+    }
     if(!replay&&ev.type==='push-ping')_geoWakeRearm();
     if(!replay&&ev.type==='push-ping')_geoRadioCheck();
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
