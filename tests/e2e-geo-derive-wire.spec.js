@@ -18,8 +18,29 @@
 //   * Derived GPS legs are never sweep-eligible on any device (_sweepGuarded).
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-const DAY = '2026-09-01';
-const DAY_START = Date.parse('2026-09-01T05:00:00Z');
+// ── The day this spec derives is RELATIVE, on purpose ──────────────────────
+// It used to be the fixed date '2026-09-01', and that passed for exactly
+// eight days. _geoFixLogSeed / _geoAppLogSeed prune anything older than
+// _GEO_FIXLOG_KEEP_MS (8 days) measured from Date.now(), so on 2026-09-09 the
+// cut landed in the middle of that day and the two morning fixes the server
+// handed back were dropped before the test could read them. Nothing was
+// wrong with the code: the calendar moved. A day the app is meant to still
+// remember has to BE a day the app still remembers, so it is derived from
+// the clock, two days back, and the Central midnight comes from Intl so a
+// DST boundary cannot shift it either (CLAUDE.md 5.2.2).
+const CENTRAL = 'America/Chicago';
+const centralParts = (ms) => {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: CENTRAL, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ms));
+  const g = (t) => Number(p.find((x) => x.type === t).value);
+  return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'), g('second'));
+};
+const centralOff = (ms) => centralParts(ms) - ms;
+const centralDayKey = (ms) => new Date(centralParts(ms)).toISOString().slice(0, 10);
+const centralMidnight = (key) => { const u = Date.parse(key + 'T00:00:00Z'); return u - centralOff(u - centralOff(u)); };
+const DAY = centralDayKey(Date.now() - 2 * 86400000);
+const DAY_START = centralMidnight(DAY);
+const DAY_END = centralMidnight(centralDayKey(DAY_START + 36 * 3600000));
+const PREV_DAY = centralDayKey(DAY_START - 12 * 3600000);
 const T = (h, m) => DAY_START + h * 3600000 + m * 60000;
 const SHOP = { lat: 39.0307066, lng: -95.7112082 };
 const DOE = { lat: 39.0123292, lng: -95.7464936 };
@@ -496,7 +517,7 @@ test.describe('geo-derive wiring', () => {
       { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
       { ts: T(12, 21), kind: 'driving' }, { ts: T(12, 31), kind: 'onFoot' },
     ];
-    const seed = async () => page.evaluate(([tape, SHOP, DOE, T]) => {
+    const seed = async () => page.evaluate(([tape, SHOP, DOE, T, OWNED_SINCE]) => {
       S.bizTz = 'America/Chicago';
       S.officeLat = SHOP.lat; S.officeLon = SHOP.lng; S.bname = 'JS Solutions';
       window.places = [];
@@ -505,7 +526,7 @@ test.describe('geo-derive wiring', () => {
       window._geoDeriveTape = async () => tape;
       // This phone has been this person's since long before the day: the
       // normal case, and the one in which a sweep is allowed at all.
-      localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: Date.parse('2026-08-01T00:00:00Z') }));
+      localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: OWNED_SINCE }));
       window._geoDrainQueue = () => {};   // hold the queue so it can be inspected
       window._routeDistance = async () => ({ miles: 0, mins: 0 });   // no router unless a test brings one
       _geoFixLogPush(T[0], SHOP.lat, SHOP.lng, 5);
@@ -513,7 +534,7 @@ test.describe('geo-derive wiring', () => {
       _geoFixLogPush(T[2], DOE.lat, DOE.lng, 5);
       _geoFixLogPush(T[3], SHOP.lat, SHOP.lng, 5);
       _geoFixLogPush(T[4], SHOP.lat, SHOP.lng, 5);
-    }, [tape, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)]]);
+    }, [tape, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)], DAY_START - 30 * 86400000]);
 
     test('one queue item per day, carrying the whole day for geo_replace_day', async () => {
       await seed();
@@ -527,12 +548,12 @@ test.describe('geo-derive wiring', () => {
       expect(r.q).toHaveLength(1);
       const it = r.q[0];
       expect(it.rpc).toBe('geo_replace_day');
-      expect(it.key).toBe('rpc:2026-09-01');
+      expect(it.key).toBe('rpc:' + DAY);
       expect(it.args.p_sweep, 'the tape covered the day, so the sweep is allowed').toBe(true);
       expect(it.args.p_day).toBe(DAY);
       expect(it.args.p_employee).toBe(await page.evaluate(() => _supaUser.id));
-      expect(it.args.p_day_start).toBe('2026-09-01T05:00:00.000Z');
-      expect(it.args.p_day_end).toBe('2026-09-02T05:00:00.000Z');
+      expect(it.args.p_day_start).toBe(new Date(DAY_START).toISOString());
+      expect(it.args.p_day_end).toBe(new Date(DAY_END).toISOString());
       expect(it.args.p_time.map(x => x.source)).toEqual(['client', 'drive', 'drive']);
       expect(it.args.p_time[0].dest_place).toBe('John Doe');
       expect(it.args.p_shop).toEqual([]);
@@ -568,7 +589,7 @@ test.describe('geo-derive wiring', () => {
         const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
         return q.map(x => x.row.client_key);
       }, DAY);
-      expect(r).toEqual(['rpc:2026-09-01']);
+      expect(r).toEqual(['rpc:' + DAY]);
     });
 
     test('an empty tape derives nothing and touches no queue: a browser cannot wipe a day', async () => {
@@ -576,7 +597,7 @@ test.describe('geo-derive wiring', () => {
       const r = await page.evaluate(async (DAY) => {
         window._geoDeriveTape = async () => [];
         const res = await _geoDeriveDayNow(DAY, null);
-        const other = await (async () => { window._geoDeriveTape = async () => [{ ts: Date.parse('2026-08-20T15:00:00Z'), kind: 'driving' }]; return _geoDeriveDayNow(DAY, null); })();
+        const other = await (async () => { window._geoDeriveTape = async () => [{ ts: DAY_START - 5 * 86400000 + 10 * 3600000, kind: 'driving' }]; return _geoDeriveDayNow(DAY, null); })();
         return { res, other, q: JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length };
       }, DAY);
       expect(r.res).toBeNull();
@@ -586,18 +607,18 @@ test.describe('geo-derive wiring', () => {
 
     test('the in-memory mileage follows: old legs for the day go, hand trips stay, the vehicle rides across', async () => {
       await seed();
-      const r = await page.evaluate(async (DAY) => {
+      const r = await page.evaluate(async ([DAY, PREV_DAY]) => {
         window.mileage = [
           { id: 'old-gps', gps: true, date: DAY, miles: 9 },
           { id: 'hand', gps: false, date: DAY, miles: 12 },
-          { id: 'other-day', gps: true, date: '2026-08-31', miles: 4 },
+          { id: 'other-day', gps: true, date: PREV_DAY, miles: 4 },
         ];
         const first = await _geoDeriveDayNow(DAY, null);
         const legId = first.legs[0].id;
         mileage.find(m => m.id === legId).vehicle = '2018 Silverado 2500';
         await _geoDeriveDayNow(DAY, null);
         return { ids: mileage.map(m => m.id).sort(), veh: mileage.find(m => m.id === legId).vehicle, legId };
-      }, DAY);
+      }, [DAY, PREV_DAY]);
       expect(r.ids).not.toContain('old-gps');
       expect(r.ids).toContain('hand');
       expect(r.ids).toContain('other-day');
@@ -670,7 +691,7 @@ test.describe('geo-derive wiring', () => {
       }, DAY);
       expect(r.res).toBeNull();
       expect(r.q, 'nothing is sent to geo_replace_day').toBe(0);
-      expect(r.notes).toEqual(['2026-09-01: 2 drives on the tape, none resolved']);
+      expect(r.notes).toEqual([DAY + ': 2 drives on the tape, none resolved']);
       expect(r.miles, 'the in-memory legs are not touched either').toEqual(['leg-live']);
     });
 
@@ -774,7 +795,7 @@ test.describe('geo-derive wiring', () => {
 
     test('once the table has taken a day, the list is read back from it', async () => {
       await seed();
-      const r = await page.evaluate(async (DAY) => {
+      const r = await page.evaluate(async ([DAY, PREV_DAY]) => {
         window.mileage = [{ id: 'hand', gps: false, date: DAY, miles: 12 }, { id: 'stray', gps: true, date: DAY, miles: 1 }];
         await _geoDeriveDayNow(DAY, null);
         const legIds = mileage.filter(m => m.gps).map(m => m.id).sort();
@@ -784,7 +805,7 @@ test.describe('geo-derive wiring', () => {
         mileage.find(m => m.id === legIds[1]).vehicle = 'F-250';
         const origSupa = window._supa;
         const serverRows = legIds.map(id => ({ id, data: { id, gps: true, date: DAY, miles: 3.2, from_name: 'S', to_name: 'D' } }))
-          .concat([{ id: 'other-day', data: { id: 'other-day', gps: true, date: '2026-08-30', miles: 2 } }]);
+          .concat([{ id: 'other-day', data: { id: 'other-day', gps: true, date: PREV_DAY, miles: 2 } }]);
         const sel = { data: serverRows, error: null };
         const chain = { eq: () => chain, is: () => chain, then: (res) => res(sel) };
         window._supa = { rpc: async () => ({ data: { ok: true }, error: null }), from: (t) => t === 'td_mileage' ? { select: () => chain } : origSupa.from(t) };
@@ -795,7 +816,7 @@ test.describe('geo-derive wiring', () => {
           return { ids: mileage.map(m => m.id).sort(), veh: mileage.find(m => m.id === legIds[1]).vehicle, miles: mileage.filter(m => m.gps).map(m => m.miles),
             direct: await _geoDeriveSyncMileage(DAY), junk: [await _geoDeriveSyncMileage(''), await _geoDeriveSyncMileage(null)] };
         } finally { window._supa = origSupa; window._geoDrainQueue = () => {}; }
-      }, DAY);
+      }, [DAY, PREV_DAY]);
       expect(r.ids).toEqual(['hand'].concat(r.ids.filter(i => /^j-/.test(i))).sort());
       expect(r.ids.filter(i => /^j-/.test(i))).toHaveLength(2);
       expect(r.ids).not.toContain('stray');
