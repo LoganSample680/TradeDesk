@@ -1604,6 +1604,13 @@ test.describe('geo-derive wiring', () => {
       expect(r).toEqual(['blind', 'normal', 'blind']);
     });
 
+    // THE SOURCE PIN LIVES HERE, NOT IN SWIFT (2026-09-09, red once). An
+    // XCTest that read the plugin's own source through #filePath could never
+    // work: scripts/ios-add-native-tests.rb copies the test file into a
+    // generated Xcode project, so its path at runtime is
+    // native/ios/App/TdNativeTests/, and no string replacement finds the
+    // plugin from there. Node reads the repo at a stable path; XCTest gets
+    // the behaviour tests.
     test('the plugin does the same for itself when JS is not there to ask', () => {
       const fs = require('fs'), path = require('path');
       const s = fs.readFileSync(path.join(__dirname, '..', 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
@@ -1613,13 +1620,16 @@ test.describe('geo-derive wiring', () => {
       expect(body.includes('beginBurst(seconds: TdGeoPlugin.blindPingBurstSec,')).toBe(true);
       // Empty and stale take the same branch, and the ledger names which.
       expect(body.includes('if cached == nil || ageMs > TdGeoPlugin.blindPingStaleMs {')).toBe(true);
+      // A stale ping still carries where the phone WAS, marked with its age,
+      // for the crew map's last-known dot.
+      expect(body.includes('if ageMs > TdGeoPlugin.blindPingStaleMs { ev["staleMs"] = ageMs }')).toBe(true);
       expect(body.includes('reason: cached == nil ? "push-ping had no fix" : "push-ping fix was stale"')).toBe(true);
       expect(s.includes('private static let blindPingBurstSec: Double = 4')).toBe(true);
       expect(s.includes('private static let blindPingStaleMs: Double = 5 * 60_000')).toBe(true);
       const t = fs.readFileSync(path.join(__dirname, '..', 'native', 'tests', 'TdGeoPluginTests.swift'), 'utf8');
       expect(t.includes('testSilentPush_withNoCachedPositionSaysBlindAndBuysAShortBurst')).toBe(true);
-      expect(t.includes('testSilentPush_marksAStaleCachedPositionAndStillCarriesIt')).toBe(true);
       expect(t.includes('testBeginBurst_secondCallInsideARunningBurstOpensNoSecondSession')).toBe(true);
+      expect(t.includes('testBlindPingStaleWindow_isMinutesAndMatchesTheDeriversIdeaOfCurrent')).toBe(true);
     });
   });
 
