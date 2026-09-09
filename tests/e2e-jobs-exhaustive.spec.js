@@ -3182,6 +3182,168 @@ test.describe('jobs.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Lunch (owner 2026-09-09: "it would be important to be able to put
+  // something in like a lunch")
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('lunch', () => {
+    // Every test drives the real startLunch/endLunch against a real running
+    // clock, with only the writers stubbed so the assertions read what was
+    // asked for rather than what the cloud happened to do with it.
+    const run = (body) => page.evaluate(async (src) => {
+      const saved = { add: window._tlAddUnaccounted, save: window.saveAll, cloud: window.supaSaveToCloud,
+        toast: window.showToast, dash: window.renderDash, jobs: window.renderJobsPage, ping: window._geoClockPing };
+      const out = { breaks: [] };
+      window._tlAddUnaccounted = (a, b, k) => out.breaks.push([a, b, k]);
+      window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+      window.showToast = () => {}; window.renderDash = () => {}; window.renderJobsPage = () => {};
+      window._geoClockPing = () => {};
+      try { localStorage.removeItem(_lunchKey()); } catch (e) {}
+      // _activeTimer is a top-level `let` (js/data.js), so it is a script-scope
+      // binding and NOT a window property. Assigning window._activeTimer makes
+      // a lookalike and leaves the real clock running into the next test, which
+      // is exactly how the general-clock test failed only when it ran second.
+      _activeTimer = null;
+      // clockIn writes a real open row the instant the clock starts, and these
+      // tests only ever ADD rows. Truncating back to the starting length in
+      // the finally is what keeps them independent: without it the open row
+      // one test leaves behind changes what clockIn does in the next one, and
+      // the failure lands on whichever test happens to run second.
+      const n0 = timeEntries.length;
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new (Object.getPrototypeOf(async function () {}).constructor)('out', src);
+        await fn(out);
+        return out;
+      } finally {
+        window._tlAddUnaccounted = saved.add; window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+        window.showToast = saved.toast; window.renderDash = saved.dash; window.renderJobsPage = saved.jobs;
+        window._geoClockPing = saved.ping;
+        if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+        _activeTimer = null;
+        if (timeEntries.length > n0) timeEntries.length = n0;
+        try { localStorage.removeItem(_lunchKey()); } catch (e) {}
+      }
+    }, body);
+
+    test('Lunch stops the clock keeping the morning, and remembers what to come back to', async () => {
+      const r = await run(`
+        clockIn(77701, 's1', 'Prep');
+        out.clockedInBefore = !!_activeTimer;
+        startLunch();
+        out.onLunch = onLunch();
+        out.clockedInAfter = !!_activeTimer;
+        const l = _lunchRead();
+        out.remembered = { jobId: l.jobId, scopeId: l.scopeId, scopeLabel: l.scopeLabel };
+        out.openRows = timeEntries.filter(e => e.job_id === 77701 && e.open).length;
+        out.closedRows = timeEntries.filter(e => e.job_id === 77701 && e.open === false).length;
+      `);
+      expect(r.clockedInBefore).toBe(true);
+      expect(r.onLunch, 'he is on lunch').toBe(true);
+      expect(r.clockedInAfter, 'and off the clock while he eats').toBe(false);
+      expect(r.remembered).toEqual({ jobId: 77701, scopeId: 's1', scopeLabel: 'Prep' });
+      expect(r.openRows, 'the morning is banked, not left running').toBe(0);
+      expect(r.closedRows, 'and it is banked as a closed row').toBeGreaterThan(0);
+      expect(r.breaks, 'nothing is written as a break until he comes back').toEqual([]);
+    });
+
+    test('Back to work writes the stretch as a break and restarts the same job', async () => {
+      const r = await run(`
+        clockIn(77701, 's1', 'Prep');
+        startLunch();
+        // Thirty minutes ago, so the span is a real break rather than a mis-tap.
+        const started = new Date(Date.now() - 30 * 60000).toISOString();
+        _lunchWrite(Object.assign(_lunchRead(), { startedIso: started }));
+        endLunch();
+        out.onLunch = onLunch();
+        out.back = _activeTimer && { jobId: _activeTimer.jobId, scopeId: _activeTimer.scopeId, scopeLabel: _activeTimer.scopeLabel };
+        out.startedIso = started;
+      `);
+      expect(r.onLunch, 'the lunch is over and does not linger').toBe(false);
+      expect(r.back, 'back on the same job and the same task').toEqual({ jobId: 77701, scopeId: 's1', scopeLabel: 'Prep' });
+      expect(r.breaks, 'exactly one break, through the SAME writer the rail uses').toHaveLength(1);
+      expect(r.breaks[0][0]).toBe(r.startedIso);
+      expect(r.breaks[0][2], "and it is a break, never 'work' or 'personal'").toBe('break');
+    });
+
+    test('a mis-tap is not a break: under a minute writes nothing but still goes back on the clock', async () => {
+      const r = await run(`
+        clockIn(77701, null, null);
+        startLunch();
+        endLunch();
+        out.back = !!_activeTimer;
+      `);
+      expect(r.breaks, 'no one-second break row on the rail').toEqual([]);
+      expect(r.back, 'and he is back on the clock either way').toBe(true);
+    });
+
+    test('a general clock (no job) survives the round trip', async () => {
+      const r = await run(`
+        clockIn(null, null, null);
+        startLunch();
+        _lunchWrite(Object.assign(_lunchRead(), { startedIso: new Date(Date.now() - 20 * 60000).toISOString() }));
+        endLunch();
+        out.jobId = _activeTimer ? _activeTimer.jobId : 'NONE';
+      `);
+      expect(r.jobId, 'null is a real value here, not a missing one').toBe(null);
+      expect(r.breaks).toHaveLength(1);
+    });
+
+    test('Lunch off the clock, and a second tap, do nothing', async () => {
+      const r = await run(`
+        startLunch();                       // never clocked in
+        out.afterNoClock = onLunch();
+        clockIn(77701, null, null);
+        startLunch();
+        const first = _lunchRead().startedIso;
+        startLunch();                       // second tap
+        out.same = _lunchRead().startedIso === first;
+        out.clocked = !!_activeTimer;
+      `);
+      expect(r.afterNoClock, 'no clock, no lunch').toBe(false);
+      expect(r.same, 'the second tap does not restart the lunch clock').toBe(true);
+      expect(r.clocked, 'and it does not quietly clock him back in').toBe(false);
+    });
+
+    test('Back to work with no lunch running is a no-op', async () => {
+      const r = await run(`
+        endLunch();
+        out.clocked = !!_activeTimer;
+      `);
+      expect(r.breaks).toEqual([]);
+      expect(r.clocked).toBe(false);
+    });
+
+    test('a lunch left open overnight expires instead of running all night', async () => {
+      const r = await run(`
+        clockIn(77701, null, null);
+        startLunch();
+        _lunchWrite(Object.assign(_lunchRead(), { startedIso: new Date(Date.now() - 3 * 86400000).toISOString() }));
+        out.expired = _lunchExpireStale();
+        out.onLunch = onLunch();
+        out.sameDay = _lunchExpireStale();
+      `);
+      expect(r.expired).toBe(true);
+      expect(r.onLunch, 'yesterday\'s lunch is gone, not still counting').toBe(false);
+      expect(r.breaks, 'and nothing is invented for the hours nobody was there').toEqual([]);
+      expect(r.sameDay, 'nothing left to expire').toBe(false);
+    });
+
+    test('corrupted lunch state reads as no lunch, never a throw', async () => {
+      const r = await run(`
+        try { localStorage.setItem(_lunchKey(), '{BROKEN{{'); } catch (e) {}
+        out.onLunch = onLunch();
+        out.ok = true;
+        endLunch();
+        try { localStorage.setItem(_lunchKey(), JSON.stringify({ startedIso: 'not-a-date' })); } catch (e) {}
+        out.junkDate = onLunch();
+      `);
+      expect(r.ok).toBe(true);
+      expect(r.onLunch).toBe(false);
+      expect(r.junkDate, 'a start nobody can parse is not a lunch').toBe(false);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // Console error guard
   // ═══════════════════════════════════════════════════════════════════════════
   test('no console errors, jobs.js', async () => {

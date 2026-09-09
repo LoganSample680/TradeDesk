@@ -1273,7 +1273,10 @@ function renderDash(){
         setTimeout(()=>{_nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';},380);
       }
       const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
-      const _cardHead=(name,addr,extra)=>'<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
+      // badge defaults to ON SITE, the case every caller but one wants. On
+      // lunch the pin is still on the job but the man is not working it, and a
+      // live green ON SITE there would be the card asserting something untrue.
+      const _cardHead=(name,addr,extra,badge)=>'<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
           '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
             '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite"></span>'+
             '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite;animation-delay:.8s"></span>'+
@@ -1281,19 +1284,19 @@ function renderDash(){
             '<span style="position:relative;z-index:2;width:34px;height:34px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#0E6B39);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(14,107,57,.5)">'+_svgPin('#fff',17)+'</span>'+
           '</div>'+
           '<div style="flex:1;min-width:0">'+
-            '<span style="display:inline-flex;align-items:center;gap:6px;background:#0E6B39;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px"><span style="width:6px;height:6px;border-radius:50%;background:#7CFFB0;animation:tdNearbyDot 1.4s ease-in-out infinite"></span>ON SITE</span>'+
+            '<span style="display:inline-flex;align-items:center;gap:6px;background:'+(badge?'#8a6d3b':'#0E6B39')+';color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px">'+(badge?'':'<span style="width:6px;height:6px;border-radius:50%;background:#7CFFB0;animation:tdNearbyDot 1.4s ease-in-out infinite"></span>')+escHtml(badge||'ON SITE')+'</span>'+
             '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B1612" title="You\'re here">'+escHtml(name)+'</div>'+
             (addr?'<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:600;margin-top:3px"><span style="flex-shrink:0">'+_svgPin('#0E6B39',12)+'</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(addr)+'</span></div>':'')+
             (extra||'')+
           '</div>'+
         '</div>';
+      const _svgClk=(c)=>'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="'+c+'" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
       const _dayEndP=(typeof _dayEndPending==='function')?_dayEndPending():null;
       if(_dayEndP){
         // YOUR DAY: the phone proposes, the person confirms (js/day-end.js,
         // owner 2026-09-02: "tap to confirm then that tap clocks him out at
         // 7:40"). Sits where the clock card would, until answered.
         const _dt=_dayEndCardText(_dayEndP);
-        const _svgClk=(c)=>'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="'+c+'" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
         const _deHead='<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
           '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
             '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite"></span>'+
@@ -1309,6 +1312,18 @@ function renderDash(){
         const _deBtns='<button id="dash-dayend-no" onclick="_dayEndDismiss()" style="flex:0 0 auto;border-radius:12px;padding:13px 14px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center">'+escHtml(_dt.no)+'</button>'+
           '<button id="dash-dayend-yes" onclick="_dayEndConfirm()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px">'+escHtml(_dt.yes)+'</button>';
         _nearbyEl.innerHTML=_cardShell(_deHead+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_deBtns+'</div>');
+      } else if(typeof onLunch==='function'&&onLunch()){
+        // ON LUNCH: the clock is stopped and there is exactly one thing to do.
+        // This card is the way back; without it the lunch has no end and the
+        // stretch never gets written as a break (startLunch, js/jobs.js).
+        const _l=_lunchRead()||{startedIso:new Date().toISOString(),jobName:''};
+        const _lSince=Date.parse(_l.startedIso);
+        const _lExtra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#8a6d3b;font-weight:700;margin-top:3px"><span style="flex-shrink:0">'+_svgClk('#8a6d3b')+'</span>Since '+_fmtClk(_l.startedIso)+' <span style="color:#c7b299;font-weight:700">·</span> <span data-onsite-since="'+_lSince+'">'+_fmtDur(_lSince)+'</span></div>';
+        _nearbyEl.innerHTML=_cardShell(
+          _cardHead('On lunch',_l.jobName||'',_lExtra,'ON LUNCH')+
+          '<div style="display:flex;gap:9px;padding:4px 14px 15px">'+
+            '<button onclick="endLunch()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px">'+_svgClk('#fff')+'Back to work</button>'+
+          '</div>');
       } else if(_onClock){
         // ON THE CLOCK: live time-on-site (updateClockTimer ticks #dash-onsite-time every 1s).
         const _aj=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===_onClock.jobId):null;
@@ -1319,9 +1334,16 @@ function renderDash(){
         const _ocNoteBlock=_ocNoteHtml?'<div style="padding:0 14px 2px">'+_ocNoteHtml+'</div>':'';
         const _extra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_onClock.startTime)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span id="dash-onsite-time">'+_fmtDur(_onClock.startTime)+'</span> on site</div>';
         const ocBtns=[];
+        // LUNCH sits beside Clock out, it is not a question in front of it
+        // (owner 2026-09-09). Clocking out is the most-tapped control on the
+        // phone and it means done; a chooser there would spend a tap every day
+        // to catch the one day in five somebody stops to eat. See startLunch,
+        // js/jobs.js. The Proposal button drops to a second row when both are
+        // present rather than squeezing three across a 390px phone (15.1).
+        ocBtns.push('<button onclick="startLunch()" style="flex:0 0 auto;border-radius:12px;padding:13px 14px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:6px">🍽 Lunch</button>');
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
-        if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
+        const _ocProp=_cid?'<div style="display:flex;gap:9px;padding:0 14px 15px"><button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button></div>':'';
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px '+(_ocProp?'9px':'15px')+'">'+ocBtns.join('')+'</div>'+_ocProp);
       } else if(_openDwell){
         const _od=_openDwell,_f=_od.fence||{};
         const _kindLabel=_od.kind==='shop'?'At the shop':_od.kind==='home_office'?'At the home office':_od.kind==='supply'?'At the supply house':_od.kind==='job'?'On the job':'On site';

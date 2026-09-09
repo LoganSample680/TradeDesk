@@ -622,6 +622,80 @@ function clockOut(saveEntry,silent){
   renderDash&&setTimeout(renderDash,300);
 }
 
+// ── LUNCH (owner 2026-09-09) ───────────────────────────────────────────────
+//
+// "I think it would be important to be able to put something in like a lunch."
+//
+// NOT a reason picker on clock out. Clocking out is the most-tapped control on
+// the phone and it means one thing: done. Putting a chooser in front of it
+// spends a tap every single day to catch the one day in five somebody stops
+// for lunch, which is the opposite of what the ratchet (CLAUDE.md 12.2) is
+// for. Lunch is its own button, so the common path costs exactly what it did.
+//
+// Two taps, and they are the two a man actually makes: Lunch when he stops,
+// Back to work when he starts again. The first closes the clock keeping every
+// worked minute; the second writes the stretch between them as a break and
+// starts the clock again on the same job. Paid or unpaid is the company's
+// existing policy (S.breakPaid, _tlBreakIsPaid), never a third tap.
+//
+// It writes through _tlAddUnaccounted, the SAME writer the Time Log's
+// after-the-fact "What was this time?" answer uses (7.3). So a lunch taken
+// with the button and a gap answered Break the next morning produce the
+// identical row, and neither one leaves a question on the rail.
+const _LUNCH_KEY_PREFIX='zp3_lunch_';
+function _lunchKey(){
+  const uid=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'local';
+  return _LUNCH_KEY_PREFIX+uid;
+}
+function _lunchRead(){
+  try{const o=JSON.parse(localStorage.getItem(_lunchKey())||'null');
+    return (o&&o.startedIso&&Date.parse(o.startedIso)>0)?o:null;}catch(_e){return null;}
+}
+function _lunchWrite(o){
+  try{if(o)localStorage.setItem(_lunchKey(),JSON.stringify(o));else localStorage.removeItem(_lunchKey());}catch(_e){}
+}
+// Is he on lunch right now? The dashboard and the banner both ask.
+function onLunch(){return !!_lunchRead();}
+function startLunch(){
+  if(!_activeTimer)return;
+  if(_lunchRead())return;                       // already on it, second tap is a no-op
+  const t=_activeTimer;
+  // Remember what to come back TO before clockOut clears it.
+  _lunchWrite({startedIso:new Date().toISOString(),jobId:t.jobId===undefined?null:t.jobId,
+    jobName:t.jobName||'',scopeId:t.scopeId||null,scopeLabel:t.scopeLabel||null});
+  clockOut(true,true);                          // keep the morning, no toast of its own
+  if(typeof showToast==='function')showToast('On lunch, clock stopped','🍽');
+  if(typeof renderDash==='function')setTimeout(renderDash,150);
+}
+function endLunch(){
+  const l=_lunchRead();
+  if(!l)return;
+  _lunchWrite(null);
+  const a=l.startedIso,b=new Date().toISOString();
+  // A lunch shorter than a minute is a mis-tap, not a break: nothing is
+  // written for it, he just goes back on the clock.
+  if(Date.parse(b)-Date.parse(a)>=60000&&typeof _tlAddUnaccounted==='function'){
+    _tlAddUnaccounted(a,b,'break');
+  }
+  clockIn(l.jobId===undefined?null:l.jobId,l.scopeId,l.scopeLabel);
+  if(typeof renderDash==='function')setTimeout(renderDash,150);
+}
+// A lunch nobody ever came back from is not a lunch that runs all night. If
+// the day rolls over with one still open it is closed at the moment it
+// started: no break row, no clock restarted, and the day reads exactly as it
+// would have if he had simply clocked out for good, which is what he did.
+function _lunchExpireStale(){
+  const l=_lunchRead();
+  if(!l)return false;
+  const started=Date.parse(l.startedIso);
+  const sameDay=(typeof _bizDateStr==='function')
+    ? _bizDateStr(new Date(started))===_bizDateStr(new Date())
+    : new Date(started).toDateString()===new Date().toDateString();
+  if(sameDay)return false;
+  _lunchWrite(null);
+  return true;
+}
+
 // On boot, an open entry (clocked in, never closed) belonging to THIS person on
 // THIS account means either: (a) this device reloaded mid-timer, _activeTimer
 // (a `let`, not persisted) doesn't survive a reload, but the open row does, so
