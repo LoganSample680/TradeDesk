@@ -1528,6 +1528,89 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // ── A blind ping buys its own fix (Jack, 2026-09-08) ──────────────────────
+  // Thirty pings from Sunday noon to Monday 7:34am with no coordinate, and
+  // the morning drive never had a start. A ping that does not know where it
+  // is asks, home or not, hour or not.
+  test.describe('a blind ping buys its own fix', () => {
+    const blind = (over) => page.evaluate(({ over }) => {
+      const saved = { hours: S.workHours, td: _geoTdPlugin, win: _geoDriveWinAt, note: _geoParkNote };
+      // The gates that stop a NORMAL burst, all closed at once.
+      S.workHours = { start: '06:00', end: '06:01', days: [0, 1, 2, 3, 4, 5, 6] };
+      window._geoOpenDwell = { id: 'h', sinceTs: Date.now(), atHome: true };
+      _geoDriveWinAt = over && over.driving ? Date.now() : 0;
+      _geoPingBurstAt = over && over.recent ? Date.now() : 0;
+      const notes = [];
+      _geoParkNote = (ev, x) => notes.push([ev, String(x)]);
+      window.__bursts = [];
+      _geoTdPlugin = over && over.noPlugin ? (() => null) : (() => ({ burstFix: async (a) => { window.__bursts.push(a); return a; } }));
+      let out;
+      try { out = { fired: _geoPingBlindBurst(), bursts: window.__bursts.slice(), notes, normal: _geoPingBurstOk() }; }
+      finally { S.workHours = saved.hours; _geoTdPlugin = saved.td; _geoDriveWinAt = saved.win; _geoParkNote = saved.note; window._geoOpenDwell = null; }
+      return out;
+    }, { over });
+
+    test('at home, off hours, it still fires: four seconds, and says why', async () => {
+      const r = await blind({});
+      expect(r.normal, 'the normal burst would have been refused here').not.toBe('');
+      expect(r.fired).toBe(true);
+      expect(r.bursts).toEqual([{ seconds: 4, reason: 'push-ping had no fix' }]);
+      expect(r.notes).toEqual([['ping-blind-burst', '4s']]);
+    });
+
+    test('an open drive window still outranks it', async () => {
+      const r = await blind({ driving: true });
+      expect(r.fired).toBe(false);
+      expect(r.bursts).toEqual([]);
+      expect(r.notes).toEqual([['ping-blind-skip', 'drive']]);
+    });
+
+    test('the ten-minute gap is shared with the normal burst', async () => {
+      const r = await blind({ recent: true });
+      expect(r.fired).toBe(false);
+      expect(r.notes).toEqual([['ping-blind-skip', 'gap']]);
+    });
+
+    test('no plugin, no throw', async () => {
+      const r = await blind({ noPlugin: true });
+      expect(r.fired).toBe(false);
+    });
+
+    test('the push-ping handler routes on whether the ping carried a position', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { blind: _geoPingBlindBurst, normal: _geoPingBurst, note: _geoParkNote, rearm: _geoWakeRearm,
+          radio: _geoRadioCheck, upd: _geoBgUpdateCheck, derive: _geoDeriveLiveSoon, confirm: _geoDriveConfirm, fix: _geoFixLogPush };
+        const calls = [];
+        _geoPingBlindBurst = () => { calls.push('blind'); return true; };
+        _geoPingBurst = () => { calls.push('normal'); return true; };
+        _geoParkNote = () => {}; _geoWakeRearm = async () => false; _geoRadioCheck = async () => null; _geoBgUpdateCheck = () => {};
+        _geoDeriveLiveSoon = () => {}; _geoDriveConfirm = () => ''; _geoFixLogPush = () => {};
+        try {
+          await _geoTdEvent({ type: 'push-ping', ts: Date.now() });
+          await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39.02, lng: -95.79, acc: 9 });
+          await _geoTdEvent({ type: 'push-ping', ts: Date.now() }, true);
+          return calls;
+        } finally {
+          _geoPingBlindBurst = saved.blind; _geoPingBurst = saved.normal; _geoParkNote = saved.note; _geoWakeRearm = saved.rearm;
+          _geoRadioCheck = saved.radio; _geoBgUpdateCheck = saved.upd; _geoDeriveLiveSoon = saved.derive; _geoDriveConfirm = saved.confirm; _geoFixLogPush = saved.fix;
+        }
+      });
+      expect(r).toEqual(['blind', 'normal']);
+    });
+
+    test('the plugin does the same for itself when JS is not there to ask', () => {
+      const fs = require('fs'), path = require('path');
+      const s = fs.readFileSync(path.join(__dirname, '..', 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
+      const push = s.indexOf('@objc private func silentPush(');
+      const body = s.slice(push, push + 2200);
+      expect(body.includes('ev["blind"] = true')).toBe(true);
+      expect(body.includes('beginBurst(seconds: TdGeoPlugin.blindPingBurstSec, reason: "push-ping had no fix", trigger: "native")')).toBe(true);
+      expect(s.includes('private static let blindPingBurstSec: Double = 4')).toBe(true);
+      const t = fs.readFileSync(path.join(__dirname, '..', 'native', 'tests', 'TdGeoPluginTests.swift'), 'utf8');
+      expect(t.includes('testSilentPush_withNoCachedPositionSaysBlindAndBuysAShortBurst')).toBe(true);
+    });
+  });
+
   // ── The ping carries what the map needs ───────────────────────────────────
   // Owner 2026-09-05: "like Life360 but better." A ping used to be a position
   // and nothing else, so the map could only draw a dot with an age on it.

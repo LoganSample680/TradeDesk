@@ -530,19 +530,25 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let secs = min(max(self.num(call.getValue("seconds")) ?? 12, 3), 60)
         let reason = reasonOf(call)
         DispatchQueue.main.async {
-            let m = self.mgr()
-            if self.burstStartedAt == nil {
-                self.burstStartedAt = Date()
-                m.desiredAccuracy = kCLLocationAccuracyBest
-                m.startUpdatingLocation()
-                self.countWake("burst")
-                self.radioLog("burst", on: true, accuracy: "best", reason: reason, trigger: "js")
-            }
-            self.burstTimer?.invalidate()
-            self.burstTimer = Timer.scheduledTimer(withTimeInterval: secs, repeats: false) { [weak self] _ in
-                self?.endBurst()
-            }
+            self.beginBurst(seconds: secs, reason: reason, trigger: "js")
             call.resolve(["seconds": secs])
+        }
+    }
+
+    // The one burst, whoever asks: JS through burstFix, or this file itself
+    // for a ping that has nothing to say (see silentPush).
+    private func beginBurst(seconds secs: Double, reason: String, trigger: String) {
+        let m = mgr()
+        if burstStartedAt == nil {
+            burstStartedAt = Date()
+            m.desiredAccuracy = kCLLocationAccuracyBest
+            m.startUpdatingLocation()
+            countWake("burst")
+            radioLog("burst", on: true, accuracy: "best", reason: reason, trigger: trigger)
+        }
+        burstTimer?.invalidate()
+        burstTimer = Timer.scheduledTimer(withTimeInterval: secs, repeats: false) { [weak self] _ in
+            self?.endBurst()
         }
     }
 
@@ -1420,6 +1426,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         set { wakeLoopOpen = newValue }
     }
     var wakeStopWatchdogArmedForTest: Bool { wakeStopWatchdog != nil }
+    var burstOnForTest: Bool { burstStartedAt != nil }
+    static var blindPingBurstSecForTest: Double { blindPingBurstSec }
     func fireWakeStopWatchdogForTest(stoppedSecondsAgo: Double = 5) {
         wakeStopWatchdogFired(stoppedAt: Date(timeIntervalSinceNow: -stoppedSecondsAgo))
     }
@@ -1551,11 +1559,27 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             ev["lat"] = l.coordinate.latitude
             ev["lng"] = l.coordinate.longitude
             ev["acc"] = l.horizontalAccuracy
+        } else {
+            // A BLIND PING IS NOT A PING (Jack, 2026-09-08). This only ever
+            // READ the manager's cached position, and a manager born on a
+            // relaunch has none until something delivers one: at home
+            // overnight nothing does, because JS deliberately buys no burst
+            // there. Thirty pings from Sunday noon to Monday 7:34am, thirty
+            // blanks, and the deriver had no proof he was ever at his house
+            // when the truck pulled out. Four seconds of receiver, once per
+            // ping, only while the cache is EMPTY: a phone that knows where
+            // it is pays nothing. Said on the row so JS and the server can
+            // tell a blind ping from a quiet one.
+            ev["blind"] = true
+            if burstStartedAt == nil && !driveSamplingOn() {
+                beginBurst(seconds: TdGeoPlugin.blindPingBurstSec, reason: "push-ping had no fix", trigger: "native")
+            }
         }
         // record() persists and schedules the flush; the AppDelegate holds
         // the completion handler open long enough for the upload to start.
         record(ev)
     }
+    private static let blindPingBurstSec: Double = 4
 
     // MARK: - Shift heartbeat + motion stream (owner 2026-08-27)
 

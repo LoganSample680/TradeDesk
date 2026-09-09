@@ -4505,6 +4505,28 @@ function _geoPingBurstOk(){
     return '';
   }catch(_e){return 'err';}
 }
+// A BLIND PING BUYS ITS OWN FIX (Jack, 2026-09-08). The ping carries the
+// plugin's cached position, and a plugin relaunched at home has none: thirty
+// pings from Sunday noon to Monday 7:34am, thirty blanks, and when the truck
+// pulled out the deriver had no proof he was ever at his house, so the drive
+// was never a drive. The home and off-hours gates exist so a phone that KNOWS
+// where it is spends nothing on the crew map; a phone that does not know is a
+// different question, and four seconds of receiver every half hour answers it.
+// The drive window and the ten-minute gap still hold.
+const _GEO_PING_BLIND_S=4;
+function _geoPingBlindBurst(){
+  try{
+    if(_geoDriveWinAt){_geoParkNote('ping-blind-skip','drive');return false;}
+    const now=Date.now();
+    if(now-_geoPingBurstAt<_GEO_PING_BURST_GAP_MS){_geoParkNote('ping-blind-skip','gap');return false;}
+    const Td=_geoTdPlugin();
+    if(!Td||typeof Td.burstFix!=='function')return false;
+    _geoPingBurstAt=now;
+    Promise.resolve(Td.burstFix({seconds:_GEO_PING_BLIND_S,reason:'push-ping had no fix'})).catch(()=>{});
+    _geoParkNote('ping-blind-burst',_GEO_PING_BLIND_S+'s');
+    return true;
+  }catch(_e){return false;}
+}
 function _geoPingBurst(){
   try{
     const why=_geoPingBurstOk();
@@ -5328,7 +5350,9 @@ async function _geoTdEvent(ev,replay){
       if(!replay&&ev.type==='app-relaunch')_geoDeriveLiveSoon('app-relaunch',true);
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
-    if(!replay&&ev.type==='push-ping')_geoPingBurst();
+    // A ping with no position asks for one, gates or not; a ping with one
+    // goes through the gates as before.
+    if(!replay&&ev.type==='push-ping'){if(hasFix)_geoPingBurst();else _geoPingBlindBurst();}
     if(!replay&&ev.type==='push-ping')_geoWakeRearm();
     if(!replay&&ev.type==='push-ping')_geoRadioCheck();
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();

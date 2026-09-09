@@ -986,6 +986,59 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: [off], timeout: 30)
     }
 
+    // A BLIND PING BUYS ITS OWN FIX (Jack, 2026-09-08: thirty blank pings
+    // overnight, no proof he was at his house when the truck left).
+    func testSilentPush_withNoCachedPositionSaysBlindAndBuysAShortBurst() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        plugin.load()
+        NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
+        let done = expectation(description: "push handled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            let ping = rows.last { ($0["type"] as? String) == "push-ping" }
+            XCTAssertNotNil(ping)
+            if ping?["lat"] == nil {
+                // The simulator's manager has no cached location: the row
+                // says so, and the receiver is asked for one.
+                XCTAssertEqual(ping?["blind"] as? Bool, true)
+                XCTAssertTrue(self.plugin.burstOnForTest, "a blind ping asks for a fix")
+                let burst = self.plugin.radioRowsForTest().last { ($0["session"] as? String) == "burst" }
+                XCTAssertEqual(burst?["on"] as? Bool, true)
+                XCTAssertEqual(burst?["reason"] as? String, "push-ping had no fix")
+                XCTAssertEqual(burst?["trigger"] as? String, "native")
+            } else {
+                // A cached position means no burst and no blind mark.
+                XCTAssertNil(ping?["blind"])
+            }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    func testSilentPush_blindTwiceBuysOneBurstNotTwo() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        plugin.load()
+        for _ in 0..<3 {
+            NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
+        }
+        let done = expectation(description: "pushes handled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let ons = self.plugin.radioRowsForTest().filter { ($0["session"] as? String) == "burst" && ($0["on"] as? Bool) == true }
+            XCTAssertLessThanOrEqual(ons.count, 1, "the burst is one session however many pings land inside it")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    func testBlindPingBurst_isSecondsNotAWindow() {
+        XCTAssertGreaterThanOrEqual(TdGeoPlugin.blindPingBurstSecForTest, 3)
+        XCTAssertLessThanOrEqual(TdGeoPlugin.blindPingBurstSecForTest, 10)
+    }
+
     func testHeartbeatPersistsStateAndStopClearsIt() {
         // The whole point of the persisted dict: a force-quit or OS kill must
         // not silently end the shift's 30-minute beat (owner report
