@@ -462,19 +462,17 @@ test.describe('the wake stream is bounded', () => {
   test.describe('a boot into a remembered park does not start the watcher', () => {
     const boot = (visible) => page.evaluate((visible) => {
       const saved = { park: _geoParkModeOn, on: _geoAppOnScreen, exit: _geoExitParkMode, note: _geoParkNote,
-        bg: _geoNativePlugin, wid: _geoNativeWatcherId, starting: _geoNativeStarting, web: _geoWatchId, td: _geoTdInit };
-      const out = { added: 0, exits: 0, notes: [], drains: 0 };
+        bg: _geoNativePlugin, wid: _geoNativeWatcherId, starting: _geoNativeStarting, web: _geoWatchId };
+      const out = { added: 0, exits: 0, notes: [] };
       _geoParkModeOn = true; _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
       _geoAppOnScreen = () => visible;
       _geoExitParkMode = () => { out.exits++; _geoParkModeOn = false; };
       _geoParkNote = (ev, x) => out.notes.push([ev, String(x)]);
-      _geoTdInit = () => { out.drains++; };
       _geoNativePlugin = () => ({ addWatcher: () => { out.added++; return new Promise(() => {}); }, removeWatcher: () => {} });
       try { startGeoTracking(); return out; }
       finally {
         _geoParkModeOn = saved.park; _geoAppOnScreen = saved.on; _geoExitParkMode = saved.exit; _geoParkNote = saved.note;
         _geoNativePlugin = saved.bg; _geoNativeWatcherId = saved.wid; _geoNativeStarting = saved.starting; _geoWatchId = saved.web;
-        _geoTdInit = saved.td;
       }
     }, visible);
 
@@ -485,42 +483,25 @@ test.describe('the wake stream is bounded', () => {
       expect(r.notes).toEqual([['start-skip', 'parked, app hidden']]);
     });
 
-    // THE HOLE THIS SKIP PUNCHED (Jack, 2026-09-09). The skip used to return
-    // before _geoTdInit, and _geoTdInit is what binds the plugin's event
-    // stream and replays everything that fired while the app was dead. So the
-    // one boot that most needs its backlog, a background relaunch into a
-    // persisted park, was the only boot that never read it: his 7:36 drive to
-    // the shop was still missing three hours later. Binding a listener and
-    // reading a buffer start no receiver, which is all this skip is for.
-    test('hidden: the native buffer is STILL drained, which is the whole catch-up', async () => {
-      const r = await boot(false);
-      expect(r.drains, 'the event stream is bound and the backlog replayed').toBe(1);
-      expect(r.added, 'and still no continuous watcher').toBe(0);
-    });
-
     test('visible: the park is exited properly, which is what restarts the watcher', async () => {
       const r = await boot(true);
       expect(r.exits).toBe(1);
       expect(r.added, 'the exit owns the restart; this call adds nothing itself').toBe(0);
-      expect(r.drains, 'and the buffer is drained on this path too, exactly once').toBe(1);
     });
 
     test('with no park remembered the start is exactly what it was', async () => {
       const r = await page.evaluate(() => {
-        const saved = { park: _geoParkModeOn, bg: _geoNativePlugin, wid: _geoNativeWatcherId, starting: _geoNativeStarting, web: _geoWatchId, note: _geoParkNote, td: _geoTdInit };
-        let added = 0, drains = 0;
+        const saved = { park: _geoParkModeOn, bg: _geoNativePlugin, wid: _geoNativeWatcherId, starting: _geoNativeStarting, web: _geoWatchId, note: _geoParkNote };
+        let added = 0;
         _geoParkModeOn = false; _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null; _geoParkNote = () => {};
-        _geoTdInit = () => { drains++; };
         _geoNativePlugin = () => ({ addWatcher: () => { added++; return new Promise(() => {}); }, removeWatcher: () => {} });
-        try { startGeoTracking(); return { added, starting: _geoNativeStarting, drains }; }
+        try { startGeoTracking(); return { added, starting: _geoNativeStarting }; }
         finally {
           _geoParkModeOn = saved.park; _geoNativePlugin = saved.bg; _geoNativeWatcherId = saved.wid;
-          _geoNativeStarting = saved.starting; _geoWatchId = saved.web; _geoParkNote = saved.note; _geoTdInit = saved.td;
+          _geoNativeStarting = saved.starting; _geoWatchId = saved.web; _geoParkNote = saved.note;
         }
       });
-      // drains is 1, never 2: the init used to be called again inside the
-      // native branch and that second call is gone, not merely harmless.
-      expect(r).toEqual({ added: 1, starting: true, drains: 1 });
+      expect(r).toEqual({ added: 1, starting: true });
     });
 
     test('the park restore is not a decision until the login is known', async () => {

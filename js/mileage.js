@@ -2818,15 +2818,7 @@ function _milRenderSummary(filtered,tot,irsRate){
   // average nor in the count under it.
   const addressed=addressedTrips(filtered);
   const classified=addressed.filter(m=>m.purpose);
-  // The average is over the SET THE CAPTION NAMES. This divided all business
-  // miles by the count of only the categorized trips, so the number and the
-  // "N trips this period" under it described two different sets: Jack's two
-  // uncategorized trips read "0.0 mi" over "2 trips this period" (2026-09-09),
-  // and one categorized trip in ten would have read ten trips' miles as the
-  // average of one. Addressed rows only, both halves, which is what the
-  // 2026-09-08 rule above already said.
-  const addressedMi=addressed.reduce((n,m)=>n+(Number(m.miles)||0),0);
-  const avgTrip=addressed.length?addressedMi/addressed.length:0;
+  const avgTrip=classified.length?tot/classified.length:0;
   const byPurpose={};
   classified.forEach(m=>{const p=m.purpose||'Other';byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);});
   const topPurpose=Object.entries(byPurpose).sort((a,b)=>b[1]-a[1])[0];

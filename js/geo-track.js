@@ -5748,51 +5748,9 @@ function _geoTdInit(){
     if(typeof Td.drainBuffer==='function'){
       Promise.resolve(Td.drainBuffer()).then(r=>{
         const fixes=((r&&r.fixes)||[]).slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
-        (async()=>{
-          for(const f of fixes){try{await _geoTdEvent(f,true);}catch(_e){}}
-          await _geoDeriveAfterReplay(fixes);
-        })();
+        (async()=>{for(const f of fixes){try{await _geoTdEvent(f,true);}catch(_e){}}})();
       },()=>{});
     }
-  }catch(_e){}
-}
-// ── A REPLAYED WAKE STILL HAS TO DERIVE (Jack, 2026-09-09) ──────────────────
-//
-// Every derive trigger inside _geoTdEvent is written `if(!replay)`, and it has
-// to be: the buffer replays a whole backlog at once, and deriving per event
-// would be N derives of the same day. But that left the replay path with no
-// writer at all. Under the old engine the fence machine wrote its own rows on
-// replay; since §17 the deriver is the only writer, so a wake whose events
-// arrive as a replay produced nothing.
-//
-// His 9 September, exactly: 7:36 leaves home, 7:51 reaches the shop, iOS kills
-// the app at 7:54:06, the 8:00 push wakes it cold. The events replay, every
-// derive is skipped, and the drive does not exist on any screen. The pings
-// that landed on an app still in memory wrote their rows inside one second
-// (17:00:01 and 22:06:22 on the 8th); every ping that had to relaunch the app
-// wrote nothing (21:00:04, 23:33:34, and 08:00:04 the next morning).
-//
-// So: ONE derive after the whole backlog is in, for each day the backlog
-// actually touches, oldest first, and NOW rather than on a timer, because this
-// runs in a process iOS is about to suspend.
-const _GEO_REPLAY_DERIVE_DAYS=7;
-async function _geoDeriveAfterReplay(fixes){
-  try{
-    if(!Array.isArray(fixes)||!fixes.length)return;
-    const tz=_geoBizTz();
-    const floor=Date.now()-_GEO_REPLAY_DERIVE_DAYS*86400000;
-    const days=[];
-    fixes.forEach(f=>{
-      const t=Number(f&&f.ts)||0;
-      if(t<floor)return;
-      const k=_geoDayKeyOf(t,tz);
-      if(k&&days.indexOf(k)<0)days.push(k);
-    });
-    const today=_geoDayKeyOf(Date.now(),tz);
-    if(today&&days.indexOf(today)<0)days.push(today);
-    days.sort();
-    for(const d of days){try{await _geoDeriveDayNow(d,null);}catch(_e){}}
-    try{_geoParkNote('replay-derive',days.length+'d from '+fixes.length+' buffered');}catch(_e){}
   }catch(_e){}
 }
 // ── Stale native watcher bookkeeping ─────────────────────────────────────────
@@ -5838,16 +5796,6 @@ function startGeoTracking(){
   // live GPS, so a visible boot exits the park properly (which restarts this
   // through _geoExitParkMode with the flag down); a hidden one (a background
   // relaunch, a reload behind the lock screen) stays parked on the fences.
-  //
-  // BUT THE BUFFER STILL HAS TO BE DRAINED (Jack, 2026-09-09). This skip used
-  // to return BEFORE _geoTdInit, and _geoTdInit is what binds the plugin's
-  // event stream and replays everything that fired while the app was dead. So
-  // the one boot that most needs to catch up, a background relaunch into a
-  // persisted park, was the one boot that read none of its own backlog. His
-  // 7:36 drive to the shop was still missing three hours later. Binding a
-  // listener and reading a buffer start no receiver and light no indicator,
-  // which is the only thing the skip is here to prevent.
-  _geoTdInit();
   if(_geoParkModeOn){
     if(_geoAppOnScreen()){_geoExitParkMode();return;}
     _geoParkNote('start-skip','parked, app hidden');
@@ -5856,9 +5804,8 @@ function startGeoTracking(){
   const BG=_geoNativePlugin();
   if(BG&&typeof BG.addWatcher==='function'){
     // Native shell: the background watcher also fires in the foreground, so it
-    // fully replaces the web watcher rather than doubling it up. (_geoTdInit,
-    // which binds the event stream and drains the buffer, already ran above:
-    // every boot needs it, parked or not.)
+    // fully replaces the web watcher rather than doubling it up.
+    _geoTdInit();   // bind the park-mode event stream + replay anything buffered
     _geoStaleWatcherSweep(BG);   // kill watchers orphaned by a prior reload
     _geoNativeStarting=true;
     try{
@@ -7533,15 +7480,8 @@ function _geoOnsiteTickStart(){
   _geoOnsiteTickT=setInterval(_geoOnsiteTick,1000);
 }
 let _geoDeriveRebuildT=null;
-// The 2.5 seconds are a courtesy to a boot somebody is watching: the rebuild
-// asks the server for a week of fixes, and there is no reason to do that while
-// the first paint is still going in. On a HIDDEN boot there is no paint to be
-// polite to and no guarantee of a second and a half of runtime, so it runs
-// now. Same rule, same reason, as _geoDeriveLiveSoon's `now` flag: a timer in
-// a process iOS is about to suspend is a derive that never happens.
 function _geoDeriveRebuildSoon(){
   if(window._geoDeriveRebuilt||_geoDeriveRebuildT)return;
-  if(!_geoAppOnScreen()){window._geoDeriveRebuilt=true;_geoDeriveRebuild();return;}
   _geoDeriveRebuildT=setTimeout(()=>{_geoDeriveRebuildT=null;window._geoDeriveRebuilt=true;_geoDeriveRebuild();},2500);
 }
 
