@@ -2680,7 +2680,7 @@ function _milRenderTripList(shown,yr){
       const _endClk=(iso)=>{if(!iso)return '';try{const t=_fmtClk(iso);return t?'<div style="font-size:11px;color:var(--text3);font-weight:400;margin-top:1px">'+escHtml(t)+'</div>':'';}catch(_e){return '';}};
       const _unsavedEnd=(which)=>'<span style="color:var(--text-3);font-style:italic">Unsaved address</span>'+
         ' <button type="button" class="mil-save-addr" style="font-size:11px;font-weight:700;padding:2px 9px;border:1px solid var(--border);border-radius:999px;background:var(--bg2);color:var(--text);font-family:inherit;margin-left:4px;cursor:pointer;vertical-align:middle" onclick="_mileSaveAddress('+_milIdArg(r.id)+',\''+which+'\')">Save</button>'+
-        _endClk(which==='from'?r.startedIso:(r.endedIso||r.startedIso));
+        _endClk(which==='from'?r.startedIso:((r.unsavedVia&&r.viaIso)?r.viaIso:(r.endedIso||r.startedIso)));
       const fromHtml=(r.addressUnknown&&r.unsavedFrom)?_unsavedEnd('from')
         :(_loc(fromName,fromAddr)||'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>');
       const toHtml=(r.addressUnknown&&(r.unsavedTo||r.unsavedVia))?_unsavedEnd('to')
@@ -3005,7 +3005,11 @@ async function _mileSaveAddress(id,which){
   if(!r||!r.addressUnknown)return false;
   // Only an end that is actually unsaved has anything to save.
   if(which==='from'?!r.unsavedFrom:(which==='to'?!(r.unsavedTo||r.unsavedVia):true))return false;
-  const c=which==='from'?r.fromCoord:r.toCoord;
+  // A round trip through an unsaved stop has the same fence at both ends;
+  // the place to save is the STOP, which the deriver carries as viaCoord
+  // (owner 2026-09-09: Jack's shop-to-shop Wednesday, Save would have opened
+  // a lead at his own yard).
+  const c=which==='from'?r.fromCoord:((r.unsavedVia&&r.viaCoord)?r.viaCoord:r.toCoord);
   const lat=c&&Number(c.lat),lng=c&&Number(c.lng!=null?c.lng:c.lon);
   if(!isFinite(lat)||!isFinite(lng))return false;
   _mileAddressPending={legKey:r.legKey||r.id,day:r.date,which,lat,lng};

@@ -606,7 +606,7 @@ function geoDeriveDay(input) {
 
     if (j.open) {
       // Still driving. Nothing to write yet; the chain (if any) stays open.
-      if (!chain && fromFence) chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, drives: [], openSince: j.startTs };
+      if (!chain && fromFence) chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, via: [], drives: [], openSince: j.startTs };
       else if (chain) chain.openSince = j.startTs;
       break;
     }
@@ -670,7 +670,7 @@ function geoDeriveDay(input) {
         if (toFence) arrived = { fence: toFence, ts: j.endTs, journeyId: j.id, startTs: j.startTs };
         continue;
       }
-      chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, drives: [] };
+      chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, via: [], drives: [] };
     }
     // EACH DRIVE KEEPS ITS OWN SPAN (owner 2026-09-04). A chain through
     // unsaved stops is not one drive: his 1 September ran shop, four
@@ -704,7 +704,7 @@ function geoDeriveDay(input) {
       chain.autoMs += j.endTs - prevSeg[1];
       prevSeg[1] = j.endTs;
       prevSeg[2] = prevSeg[1] - prevSeg[0];
-      if (chain.stops > 0) chain.stops -= 1;
+      if (chain.stops > 0) { chain.stops -= 1; if (chain.via) chain.via.pop(); }
     } else {
       chain.autoMs += autoMs;
       chain.drives.push([j.startTs, j.endTs, autoMs]);
@@ -712,7 +712,15 @@ function geoDeriveDay(input) {
 
     if (!toFence) {
       // Pending: a personal stop, or somewhere not saved. Held, not written.
+      // WHERE THE STOP WAS is kept (owner 2026-09-09, on Jack's Wednesday: a
+      // shop-to-shop row through a place he never saved). The row's two ends
+      // are both the shop, so the Save button on it had only the shop to
+      // offer, and saving the address would have opened a lead at his own
+      // yard. The settled fix at each held stop rides along as `via`, so the
+      // row can say where the truck actually went and the lead form opens
+      // there.
       chain.stops += 1;
+      if (endFix) (chain.via = chain.via || []).push({ lat: Number(endFix.lat), lng: Number(endFix.lng), ts: j.endTs });
       continue;
     }
 
@@ -774,6 +782,9 @@ function geoDeriveDay(input) {
         // Rule 14: a round trip through an unsaved stop is a traced row,
         // never a claimed one.
         traced: roundTrip && miles > 0, unsavedVia: roundTrip,
+        // The held stops, in order, where the truck sat: what a via row's
+        // Save button saves.
+        via: (chain.via || []).slice(),
         // The driving segments, in order. One entry unless a stop split them.
         drives: chain.drives.slice(),
         // What the phone actually saw between the two flips, for the map and
@@ -1573,6 +1584,11 @@ function geoDeriveRows(result, ids) {
       // leg lands under this same id.
       addressUnknown: true,
       unsavedFrom: !!l.unsavedFrom, unsavedTo: !!l.unsavedTo, unsavedVia: !!l.unsavedVia,
+    } : {}, (l.unsavedVia && Array.isArray(l.via) && l.via[0]) ? {
+      // The stop itself, for a round trip whose two ends are the same fence:
+      // the coordinate the Save button opens the lead on, and the stamp the
+      // row shows beside "Unsaved address" (owner 2026-09-09).
+      viaCoord: { lat: l.via[0].lat, lng: l.via[0].lng }, viaIso: iso(l.via[0].ts),
     } : {}, {
       fromCoord: { lat: l.from.lat, lng: l.from.lng }, toCoord: { lat: l.to.lat, lng: l.to.lng },
       startedIso: iso(l.startTs), endedIso: iso(l.endTs), mins: l.minutes,

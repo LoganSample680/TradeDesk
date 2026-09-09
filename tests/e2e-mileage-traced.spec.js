@@ -283,6 +283,34 @@ test.describe('traced trips', () => {
       expect(r.pending).toEqual(expect.objectContaining({ legKey: 'j-traced', which: 'to', lat: 39.035, lng: -95.7 }));
     });
 
+    // Jack's Wednesday, 2026-09-09: shop to shop through a place he never
+    // saved. Both ends of that row ARE the shop, so Save used to open the
+    // lead form on his own yard. The deriver now carries the stop as viaCoord
+    // and that is what gets saved.
+    test('a round trip through an unsaved stop saves the STOP, not the shop it left from', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        mileage.push({ id: 'j-via', legKey: 'j-via', gps: true, date: todayKey(), from_name: 'Shop', from: '1200 SW Oakley Ave', to_name: 'Shop', to: '1200 SW Oakley Ave',
+          miles: 4.7, mins: 33, purpose: 'Other', calc_method: 'derived-traced', gpsMiles: 4.7, addressUnknown: true, unsavedFrom: false, unsavedTo: false, unsavedVia: true,
+          startedIso: '2026-09-09T18:48:34.000Z', endedIso: '2026-09-09T20:56:17.000Z', created_at: '2026-09-09T18:48:34.000Z',
+          fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0456, lng: -95.7151 },
+          viaCoord: { lat: 39.06146, lng: -95.69681 }, viaIso: '2026-09-09T19:05:42.000Z', path: [[39.0456, -95.7151, 1], [39.06146, -95.69681, 2], [39.0456, -95.7151, 3]] });
+        renderAllMileage();
+        const row = [...document.querySelectorAll('#mil-table .mil-trip, #mil-table [data-mid]')].map(el => el.outerHTML).find(h => /_mileSaveAddress\('j-via','to'\)/.test(h)) || document.getElementById('mil-table').innerHTML;
+        const clk = (t) => bizTime(t).replace(/\s/g, '').replace('AM', 'a').replace('PM', 'p');
+        const keep = window._nominatimReverse;
+        window._nominatimReverse = async () => null;
+        try {
+          const ok = await _mileSaveAddress('j-via', 'to');
+          return { ok, pending: _mileAddressPending, stamp: row.includes(clk('2026-09-09T19:05:42.000Z')) };
+        } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.pending).toEqual(expect.objectContaining({ legKey: 'j-via', which: 'to', lat: 39.06146, lng: -95.69681 }));
+      // And the stamp beside "Unsaved address" is when he was AT the stop.
+      expect(r.stamp).toBe(true);
+    });
+
     test('with no reverse geocode the form still opens, empty, on the right day', async () => {
       await seed();
       const r = await page.evaluate(async () => {

@@ -348,6 +348,9 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.legs[0].traced).toBe(true);
       expect(r.legs[0].unsavedVia).toBe(true);
       expect(r.legs[0].miles).toBeGreaterThan(0);
+      // And WHERE the stop was rides on the leg (owner 2026-09-09): both ends
+      // are the yard, so without this the Save button had only the yard.
+      expect(r.legs[0].via.map(v => [v.lat, v.lng, hm(v.ts)])).toEqual([[GAS.lat, GAS.lng, hm(T(9, 20))]]);
       // The yard dwell 10:00 to 11:00 is real: he arrived and later departed.
       expect(r.dwells.map(d => [d.name, hm(d.startTs), hm(d.endTs)])).toEqual([['The yard', '15:00', '16:00']]);
       const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
@@ -2069,6 +2072,10 @@ test.describe('geo-derive: the day deriver', () => {
       expect(rows.td_mileage[0].unsavedVia).toBe(true);
       expect(rows.td_mileage[0].calc_method).toBe('derived-traced');
       expect(rows.td_mileage[0].miles).toBeGreaterThan(15);   // out ~10.5 and back, breadcrumb sum
+      // The row names the stop it went through, not its own shop end, so the
+      // Save button opens the lead where he actually stood (owner 2026-09-09).
+      expect(rows.td_mileage[0].viaCoord).toEqual({ lat: OUT917.lat, lng: OUT917.lng });
+      expect(rows.td_mileage[0].viaIso.slice(11, 16)).toBe('14:48');
     });
 
     // A clean run with nothing in between is still ONE row: this must not
