@@ -893,31 +893,34 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // closed, proven by those same flips. "No location or motion on record"
     // is a lie about a fact the deriver actually has, so this one adjacency
     // is the one hole the fill pass must leave alone.
+    // The day these two run on is __tlDay(), not a fixed date, and it has to
+    // be: a hole older than _TL_HOLE_ASK_DAYS (7) stops being asked at all
+    // (js/timelog.js, "nobody's memory any more"). Pinned to '2026-09-02'
+    // these passed for a week and then the calendar carried that date out of
+    // the ask window, so on 2026-09-09 the second one stopped seeing its own
+    // hole. Nothing was wrong with the code (CLAUDE.md 5.2.2).
+    const officeRows = async () => page.evaluate(() => {
+      const day = __tlDay();
+      const [y, mo, d] = day.split('-').map(Number);
+      const off = new Date(Date.UTC(y, mo - 1, d, 12, 0)).getTimezoneOffset();
+      const at = (h, m) => new Date(Date.UTC(y, mo - 1, d, h, m) + off * 60000).toISOString();
+      const row = (id, raw, a, b) => ({ id, personUid: 'jack', date: day, unpaid: false, source: 'auto',
+        rawSource: raw, minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b });
+      return { day,
+        o1: row('o1', 'place-office', at(7, 0), at(7, 5)),      // app open 7:00-7:05 local
+        o2: row('o2', 'place-office', at(8, 0), at(8, 5)),      // app open again an hour later
+        c1: row('c1', 'client', at(8, 0), at(8, 5)) };
+    });
+
     test('a gap between two Office rows is the app closing, not a question', async () => {
-      const office = (id, a, b) => ({
-        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'place-office',
-        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
-      });
-      const r = await page.evaluate((rows) => _tlFillUnaccounted(rows).map(x => x.source), [
-        office('o1', '2026-09-02T12:00:00Z', '2026-09-02T12:05:00Z'),   // app open 7:00-7:05 CT
-        office('o2', '2026-09-02T13:00:00Z', '2026-09-02T13:05:00Z'),   // app open again an hour later
-      ]);
+      const f = await officeRows();
+      const r = await page.evaluate((rows) => _tlFillUnaccounted(rows).map(x => x.source), [f.o1, f.o2]);
       expect(r.sort()).toEqual(['auto', 'auto']);   // no 'unaccounted' row between them
     });
 
     test('the same gap IS flagged when only one side is an Office row', async () => {
-      const office = (id, a, b) => ({
-        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'place-office',
-        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
-      });
-      const auto = (id, a, b) => ({
-        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'client',
-        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
-      });
-      const r = await page.evaluate((rows) => _tlFillUnaccounted(rows).map(x => x.source), [
-        office('o1', '2026-09-02T12:00:00Z', '2026-09-02T12:05:00Z'),
-        auto('c1', '2026-09-02T13:00:00Z', '2026-09-02T13:05:00Z'),
-      ]);
+      const f = await officeRows();
+      const r = await page.evaluate((rows) => _tlFillUnaccounted(rows).map(x => x.source), [f.o1, f.c1]);
       expect(r).toEqual(['auto', 'auto', 'unaccounted']);
     });
 
