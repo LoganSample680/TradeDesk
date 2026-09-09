@@ -1584,12 +1584,20 @@ function geoDeriveRows(result, ids) {
       // leg lands under this same id.
       addressUnknown: true,
       unsavedFrom: !!l.unsavedFrom, unsavedTo: !!l.unsavedTo, unsavedVia: !!l.unsavedVia,
-    } : {}, (l.unsavedVia && Array.isArray(l.via) && l.via[0]) ? {
-      // The stop itself, for a round trip whose two ends are the same fence:
-      // the coordinate the Save button opens the lead on, and the stamp the
-      // row shows beside "Unsaved address" (owner 2026-09-09).
+    } : {}, (Array.isArray(l.via) && l.via.length) ? Object.assign({
+      // WHERE HE ACTUALLY STOOD, in order, one per held stop. Carried on
+      // EVERY leg that has them, not only a traced one: a leg that collapsed
+      // through a stop and then reached a saved fence still leaves that stop
+      // on the Time Log rail, and the Save button there needs somewhere to
+      // send the lead form. The rail's row is keyed ':sN' against this same
+      // leg (see the stop rows above), so N indexes straight into this.
+      viaStops: l.via.map(v => ({ lat: v.lat, lng: v.lng, at: iso(v.ts) })),
+    }, l.unsavedVia ? {
+      // The MILEAGE row's own Save button and the stamp beside its "Unsaved
+      // address": a round trip's two ends are the same fence, so the stop is
+      // the only thing on it worth saving (owner 2026-09-09).
       viaCoord: { lat: l.via[0].lat, lng: l.via[0].lng }, viaIso: iso(l.via[0].ts),
-    } : {}, {
+    } : {}) : {}, {
       fromCoord: { lat: l.from.lat, lng: l.from.lng }, toCoord: { lat: l.to.lat, lng: l.to.lng },
       startedIso: iso(l.startTs), endedIso: iso(l.endTs), mins: l.minutes,
       // The mileage list orders by when a row was logged; a derived row is

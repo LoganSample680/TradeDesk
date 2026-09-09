@@ -4844,6 +4844,52 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+  // ── A stop nobody saved can be answered from the rail (owner 2026-09-09) ──
+  // The mileage log has offered this since 2026-09-08; the rail stated the
+  // same fact with no way to act on it. Same chip, same door.
+  test.describe('saving an unsaved stop from the rail', () => {
+    const STOP = { source: 'auto', rawSource: 'unsaved', clientName: 'Unsaved address',
+                   clientKey: 'j-abc:s0', date: '2026-09-09', minutes: 95, personUid: null,
+                   startTime: '2026-09-09T19:05:42.000Z', endTime: '2026-09-09T20:40:26.000Z' };
+    const render = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, STOP, over));
+
+    test('the stop offers Save, wired to the leg and the day it belongs to', async () => {
+      const h = await render();
+      expect(h).toMatch(/Save this address/);
+      expect(h, 'the same chip the question row uses, not a new control').toMatch(/class="tl-rail-chip"/);
+      expect(h).toMatch(/_mileSaveStopAddress\('j-abc:s0','2026-09-09'\)/);
+    });
+
+    test('no other kind of row grows a Save button', async () => {
+      for (const over of [{ rawSource: 'place-office' }, { rawSource: 'drive' },
+                          { rawSource: 'shop' }, { source: 'manual', rawSource: null }]) {
+        expect(await render(over), JSON.stringify(over)).not.toMatch(/_mileSaveStopAddress/);
+      }
+    });
+
+    test('a stop with no leg key has nothing to save and says nothing', async () => {
+      expect(await render({ clientKey: null })).not.toMatch(/_mileSaveStopAddress/);
+    });
+
+    // Saving creates a client record on the account: never on somebody
+    // else's row, and never on a shared timesheet. Same gate as the answer
+    // chips (_tlRowIsMine), which is why it is one call and not a new rule.
+    test('a crew member\'s stop is stated but not answerable', async () => {
+      const h = await page.evaluate((r) => String(_tlRailRow(r)),
+        Object.assign({}, STOP, { personUid: 'somebody-else' }));
+      expect(h, 'the stop is still on the rail').toMatch(/Unsaved address|UNSAVED/i);
+      expect(h).not.toMatch(/_mileSaveStopAddress/);
+    });
+
+    test('a shared, read-only timesheet offers no Save either', async () => {
+      const h = await page.evaluate((r) => {
+        window._tlViewOnly = true;
+        try { return String(_tlRailRow(r)); } finally { window._tlViewOnly = false; }
+      }, STOP);
+      expect(h).not.toMatch(/_mileSaveStopAddress/);
+    });
+  });
+
   test('no console errors during time log tests', async () => {
     await assertNoErrors(page);
   });

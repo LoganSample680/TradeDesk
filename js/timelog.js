@@ -1422,6 +1422,24 @@ function _tlRailRow(r){
     // spine where a name would sit.
     body=(ttl?'<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>':'')+
          (sub?'<div class="tl-rail-sub">'+escHtml(sub)+'</div>':'');
+    // SAVE IT FROM HERE TOO (owner 2026-09-09). A stop nobody saved is the
+    // same fact on two screens: the mileage log has said "Unsaved address"
+    // with a Save button beside it since 2026-09-08, and the rail said it
+    // with no way to answer, so the fix meant going and finding the other
+    // screen. Same chip as the question row above uses, and the same door:
+    // _mileSaveStopAddress (js/mileage.js) resolves the stop's coordinate and
+    // hands it to the one function the mileage button also calls, so the lead
+    // form, the prefill and the re-derive can never drift apart (7.3).
+    //
+    // ONLY ON YOUR OWN ROW, the same gate the answer chips carry: saving this
+    // creates a client record on the account, and a crew rail or a shared
+    // timesheet is not the place to do that on somebody else's behalf.
+    if(kind==='site'&&r.rawSource==='unsaved'&&r.clientKey&&_tlRowIsMine(r)){
+      body+='<div class="tl-rail-chips">'+
+        '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
+        escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
+        svgIcon('📍',{size:11})+' Save this address</button></div>';
+    }
   }
   // The word rides with the icon in every case, so the colour is never doing
   // the work on its own (1.4.1).

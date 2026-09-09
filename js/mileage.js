@@ -3000,6 +3000,32 @@ function _mileTripNumberForLeg(dayKey,clientKey){
 // rather than types; the name is his to give. What is being repaired is
 // remembered so the save can re-derive that day (_mileAddressSaved).
 let _mileAddressPending=null;
+// ONE DOOR, TWO BUTTONS (owner 2026-09-09: "reuse the same functionality,
+// don't hand roll a brand new copy ... wire the functions together with a
+// split in between them so it's an either or kind of thing, that way one
+// update carries it to both locations").
+//
+// Everything that happens once the coordinate is known lives HERE: remember
+// what is being answered so the save can re-derive the right day, reverse
+// geocode it, open the new-lead form, prefill the address. The mileage row's
+// Save button and the Time Log rail's both do nothing but RESOLVE A
+// COORDINATE and call this, so the flow can only ever change in both places
+// at once.
+async function _mileSaveAddressAt(lat,lng,pend){
+  const la=Number(lat),ln=Number(lng);
+  if(!isFinite(la)||!isFinite(ln))return false;
+  _mileAddressPending=Object.assign({which:'to'},pend||{},{lat:la,lng:ln});
+  let addr=null;
+  try{if(typeof _nominatimReverse==='function')addr=await _nominatimReverse(la,ln);}catch(_e){addr=null;}
+  try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
+  if(typeof openNewClient==='function')openNewClient();
+  const parts=(typeof _parseAddrParts==='function'&&addr)?_parseAddrParts(addr):{street:addr||'',city:'',state:'',zip:''};
+  const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};
+  set('cf-street',parts.street);set('cf-city',parts.city);set('cf-state',parts.state);set('cf-zip',parts.zip);
+  try{if(typeof _updateAddrComputed==='function')_updateAddrComputed();}catch(_e){}
+  return true;
+}
+// Door one: an end of a row in the mileage log.
 async function _mileSaveAddress(id,which){
   const r=(typeof mileage!=='undefined'?mileage:[]).find(x=>String(x.id)===String(id));
   if(!r||!r.addressUnknown)return false;
@@ -3010,18 +3036,29 @@ async function _mileSaveAddress(id,which){
   // (owner 2026-09-09: Jack's shop-to-shop Wednesday, Save would have opened
   // a lead at his own yard).
   const c=which==='from'?r.fromCoord:((r.unsavedVia&&r.viaCoord)?r.viaCoord:r.toCoord);
-  const lat=c&&Number(c.lat),lng=c&&Number(c.lng!=null?c.lng:c.lon);
-  if(!isFinite(lat)||!isFinite(lng))return false;
-  _mileAddressPending={legKey:r.legKey||r.id,day:r.date,which,lat,lng};
-  let addr=null;
-  try{if(typeof _nominatimReverse==='function')addr=await _nominatimReverse(lat,lng);}catch(_e){addr=null;}
-  try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
-  if(typeof openNewClient==='function')openNewClient();
-  const parts=(typeof _parseAddrParts==='function'&&addr)?_parseAddrParts(addr):{street:addr||'',city:'',state:'',zip:''};
-  const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};
-  set('cf-street',parts.street);set('cf-city',parts.city);set('cf-state',parts.state);set('cf-zip',parts.zip);
-  try{if(typeof _updateAddrComputed==='function')_updateAddrComputed();}catch(_e){}
-  return true;
+  return _mileSaveAddressAt(c&&c.lat,c&&(c.lng!=null?c.lng:c.lon),{legKey:r.legKey||r.id,day:r.date,which});
+}
+// Door two: a stop on the Time Log rail (owner 2026-09-09). It is the same
+// fact the mileage log shows as "Unsaved address", so it gets the same
+// button, and neither screen owns the behaviour.
+//
+// A rail stop carries its leg id with ':sN' on it (js/geo-derive.js writes
+// both), which names the trip it belongs to AND which of that trip's stops
+// this is, so the coordinate comes straight off the leg's viaStops. No new
+// lookup, no second source of truth: the leg the mileage log is already
+// drawing is the leg this reads.
+async function _mileSaveStopAddress(clientKey,day){
+  const m=/^(.*):s(\d+)$/.exec(String(clientKey||''));
+  if(!m)return false;
+  const legKey=m[1],ix=Number(m[2]);
+  const r=(typeof mileage!=='undefined'?mileage:[]).find(x=>x&&String(x.legKey||x.id)===legKey&&(!day||x.date===day));
+  if(!r)return false;
+  // viaStops is the answer; viaCoord is the same stop on an older row
+  // written before the array existed, so a day nobody has re-derived yet
+  // still answers its first stop instead of doing nothing.
+  const c=(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null;
+  if(!c)return false;
+  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to'});
 }
 // Called by saveClient once the new client's address has been geocoded (so
 // the fence exists). Re-derives the traced day; the real leg lands under the

@@ -311,6 +311,94 @@ test.describe('traced trips', () => {
       expect(r.stamp).toBe(true);
     });
 
+    // ── The Time Log's button comes through the same door (owner 2026-09-09:
+    // "wire the functions together with a split in between them ... one
+    // update carries it to both locations") ────────────────────────────────
+    test.describe('from the Time Log rail', () => {
+      const seedVia = () => page.evaluate(() => {
+        mileage.push({ id: 'j-chain', legKey: 'j-chain', gps: true, date: todayKey(),
+          from_name: 'Shop', from: '1200 SW Oakley Ave', to_name: 'John Doe', to: '2950 SW McClure Rd',
+          miles: 8.1, mins: 40, purpose: 'Client Consult', calc_method: 'derived-routed',
+          startedIso: '2026-09-09T13:00:00.000Z', endedIso: '2026-09-09T13:40:00.000Z',
+          fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0123, lng: -95.7465 },
+          viaStops: [{ lat: 39.06146, lng: -95.69681, at: '2026-09-09T13:10:00.000Z' },
+                     { lat: 39.0700, lng: -95.6800, at: '2026-09-09T13:25:00.000Z' }] });
+      });
+      const save = (key) => page.evaluate(async (key) => {
+        const keep = window._nominatimReverse;
+        window._nominatimReverse = async () => null;
+        try { return { ok: await _mileSaveStopAddress(key, todayKey()), pending: _mileAddressPending }; }
+        finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+      }, key);
+
+      test('the :sN on the rail row picks that stop off the leg', async () => {
+        await seed(); await seedVia();
+        const r = await save('j-chain:s1');
+        expect(r.ok).toBe(true);
+        expect(r.pending).toEqual(expect.objectContaining(
+          { legKey: 'j-chain', which: 'to', lat: 39.07, lng: -95.68 }));
+      });
+
+      test('and the first stop is the first stop', async () => {
+        await seed(); await seedVia();
+        const r = await save('j-chain:s0');
+        expect(r.pending).toEqual(expect.objectContaining({ lat: 39.06146, lng: -95.69681 }));
+      });
+
+      // A leg that reached a saved fence is NOT traced and carries no
+      // viaCoord, which is exactly the row this needed viaStops for.
+      test('a leg on the books still answers its stops', async () => {
+        await seed(); await seedVia();
+        const claimed = await page.evaluate(() => {
+          const m = mileage.find(x => x.id === 'j-chain');
+          return { addressUnknown: !!m.addressUnknown, viaCoord: m.viaCoord || null };
+        });
+        expect(claimed).toEqual({ addressUnknown: false, viaCoord: null });
+        expect((await save('j-chain:s0')).ok).toBe(true);
+      });
+
+      test('a via row written before viaStops existed still answers its first stop', async () => {
+        await seed();
+        await page.evaluate(() => {
+          mileage.push({ id: 'j-old', legKey: 'j-old', gps: true, date: todayKey(), from_name: 'Shop', to_name: 'Shop',
+            miles: 4.7, addressUnknown: true, unsavedVia: true, calc_method: 'derived-traced',
+            fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0456, lng: -95.7151 },
+            viaCoord: { lat: 39.061, lng: -95.697 } });
+        });
+        expect((await save('j-old:s0')).pending).toEqual(expect.objectContaining({ lat: 39.061, lng: -95.697 }));
+        // ...and only the first: nothing invents a second stop it never saw.
+        expect((await save('j-old:s1')).ok).toBe(false);
+      });
+
+      test('junk keys and legs that are not here do nothing at all', async () => {
+        await seed(); await seedVia();
+        for (const key of ['j-chain', 'j-chain:0', 'nope:s0', '', null, ':s0']) {
+          expect((await save(key)).ok, String(key)).toBe(false);
+        }
+      });
+
+      test('both doors end in the same place: one pending target, one form', async () => {
+        await seed(); await seedVia();
+        const r = await page.evaluate(async () => {
+          const keep = window._nominatimReverse;
+          window._nominatimReverse = async () => null;
+          const out = {};
+          try {
+            await _mileSaveAddress('j-traced', 'to');
+            out.viaMileage = Object.assign({}, _mileAddressPending);
+            out.formA = !!document.getElementById('cf-street');
+            closeClientForm && closeClientForm();
+            await _mileSaveStopAddress('j-chain:s0', todayKey());
+            out.viaRail = Object.assign({}, _mileAddressPending);
+            out.formB = !!document.getElementById('cf-street');
+          } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+          return out;
+        });
+        expect(Object.keys(r.viaMileage).sort()).toEqual(Object.keys(r.viaRail).sort());
+        expect([r.formA, r.formB], 'the same lead form opens either way').toEqual([true, true]);
+      });
+    });
+
     test('with no reverse geocode the form still opens, empty, on the right day', async () => {
       await seed();
       const r = await page.evaluate(async () => {

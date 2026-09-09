@@ -351,6 +351,9 @@ test.describe('geo-derive: the day deriver', () => {
       // And WHERE the stop was rides on the leg (owner 2026-09-09): both ends
       // are the yard, so without this the Save button had only the yard.
       expect(r.legs[0].via.map(v => [v.lat, v.lng, hm(v.ts)])).toEqual([[GAS.lat, GAS.lng, hm(T(9, 20))]]);
+      // A leg that DID reach a saved fence keeps its stops too: the rail
+      // shows them either way, and its Save button reads this same array.
+      expect(r.legs[1].via).toEqual([]);
       // The yard dwell 10:00 to 11:00 is real: he arrived and later departed.
       expect(r.dwells.map(d => [d.name, hm(d.startTs), hm(d.endTs)])).toEqual([['The yard', '15:00', '16:00']]);
       const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
