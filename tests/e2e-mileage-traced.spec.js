@@ -71,6 +71,39 @@ test.describe('traced trips', () => {
       expect(r.text).not.toMatch(/11\.4 mi/);
     });
 
+    // Jack's log, 2026-09-09: two real trips, 8.8 miles, and the tile read
+    // "0.0 mi" over the caption "2 trips this period". The average divided ALL
+    // business miles by the count of only the CATEGORIZED trips, so the number
+    // and its own caption described two different sets. Nothing categorized
+    // meant a divide-by-nothing and a flat zero; one categorized trip in ten
+    // would have read ten trips' miles as the average of one.
+    test('the average trip is over the same trips the caption counts', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        renderAllMileage();
+        const t = (document.getElementById('mil-summary-wrap') || {}).textContent || '';
+        const avg = /([0-9.]+)\s*mi\s*([0-9]+) trips this period/.exec(t.replace(/\s+/g, ' '));
+        return { t: t.replace(/\s+/g, ' '), avg: avg && [Number(avg[1]), Number(avg[2])] };
+      });
+      // Addressed: the 3.2 real leg and the 2.0 hand trip. The traced 6.2 is
+      // in neither half. Neither has a purpose, and that must not zero it.
+      expect(r.avg, 'the tile prints an average and a trip count').not.toBeNull();
+      expect(r.avg[1], 'two addressed trips').toBe(2);
+      expect(r.avg[0], '5.2 over 2, not 5.2 over nothing').toBeCloseTo(2.6, 1);
+    });
+
+    test('categorizing one trip does not make it the average of all of them', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        mileage.find(m => m.id === 'j-real').purpose = 'Job';
+        renderAllMileage();
+        const t = ((document.getElementById('mil-summary-wrap') || {}).textContent || '').replace(/\s+/g, ' ');
+        return /([0-9.]+)\s*mi\s*([0-9]+) trips this period/.exec(t);
+      });
+      expect(Number(r[2])).toBe(2);
+      expect(Number(r[1]), 'still 5.2 over 2, never 5.2 over 1').toBeCloseTo(2.6, 1);
+    });
+
     test('junk never throws through the pots', async () => {
       const ok = await page.evaluate(() => {
         try { addressedTrips(null); addressedTrips([null, 1, 'x', {}]); deductibleTrips(undefined); unaddressedTrips([{ addressUnknown: 'yes' }]); return true; } catch (_e) { return false; }

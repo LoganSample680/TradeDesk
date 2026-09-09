@@ -2074,6 +2074,122 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // ── A REPLAYED WAKE STILL HAS TO DERIVE (Jack, 2026-09-09) ────────────────
+  //
+  // Every derive trigger in _geoTdEvent is gated `!replay`, and has to be: the
+  // buffer replays a whole backlog at once and a derive per event would be N
+  // derives of the same day. But that left the replay path with no writer at
+  // all, because since §17 the deriver is the only writer. A ping landing on
+  // an app still in memory wrote its rows within a second; a ping that had to
+  // relaunch the app wrote nothing, ever. One derive after the whole backlog
+  // is in, for each day the backlog touches, is the missing half.
+  test.describe('a wake that arrives as a replay', () => {
+    const run = (fixes) => page.evaluate(async (fixes) => {
+      const keep = window._geoDeriveDayNow, keepNote = window._geoParkNote;
+      const days = [], notes = [];
+      window._geoDeriveDayNow = async (d) => { days.push(d); return null; };
+      window._geoParkNote = (ev, x) => notes.push([ev, String(x)]);
+      try { S.bizTz = 'America/Chicago'; await _geoDeriveAfterReplay(fixes); return { days, notes }; }
+      finally { window._geoDeriveDayNow = keep; window._geoParkNote = keepNote; }
+    }, fixes);
+
+    test('every day the backlog touches is derived, once each, oldest first', async () => {
+      const t = (ago, h) => Date.now() - ago * 86400000 - (new Date().getHours() - h) * 3600000;
+      const r = await run([{ ts: t(2, 9) }, { ts: t(2, 15) }, { ts: t(1, 10) }, { ts: t(2, 11) }]);
+      const uniq = Array.from(new Set(r.days));
+      expect(r.days.length, 'one derive per day, not one per buffered event').toBe(uniq.length);
+      expect(r.days, 'oldest first, so a later day never re-derives an earlier one out of order')
+        .toEqual(r.days.slice().sort());
+      expect(r.days.length).toBe(3);   // two days ago, yesterday, and today
+    });
+
+    test('today is derived even when nothing in the backlog happened today', async () => {
+      const r = await run([{ ts: Date.now() - 2 * 86400000 }]);
+      const today = await page.evaluate(() => _geoDayKeyOf(Date.now(), 'America/Chicago'));
+      expect(r.days, 'the open dwell on today still has to be resolved').toContain(today);
+    });
+
+    test('a backlog older than the week is not re-derived', async () => {
+      // A phone dead for a month replays a month. Deriving all of it on a wake
+      // with seconds of runtime finishes none of it.
+      const r = await run([{ ts: Date.now() - 40 * 86400000 }, { ts: Date.now() - 9 * 86400000 }]);
+      expect(r.days.length, 'only today').toBe(1);
+    });
+
+    test('nothing buffered derives nothing, and junk never throws', async () => {
+      for (const junk of [[], null, undefined]) {
+        const r = await run(junk);
+        expect(r.days).toEqual([]);
+      }
+      const r = await run([null, { }, { ts: 'x' }, { ts: 0 }]);
+      const today = await page.evaluate(() => _geoDayKeyOf(Date.now(), 'America/Chicago'));
+      expect(r.days, 'unusable entries drop out, today still runs').toEqual([today]);
+    });
+
+    test('it runs NOW: no timer is armed and nothing is left pending', async () => {
+      const r = await page.evaluate(async () => {
+        const keep = window._geoDeriveDayNow;
+        let ran = 0;
+        window._geoDeriveDayNow = async () => { ran++; return null; };
+        try {
+          await _geoDeriveAfterReplay([{ ts: Date.now() }]);
+          return { ran, armed: _geoDeriveLiveT != null };
+        } finally { window._geoDeriveDayNow = keep; }
+      });
+      expect(r.ran, 'derived before the promise resolved, not on a timer').toBe(1);
+      expect(r.armed).toBe(false);
+    });
+
+    test('the drain calls it, which is the wiring that was missing', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { bound: window._geoTdBound, plug: window._geoTdPlugin, after: window._geoDeriveAfterReplay,
+          ev: window._geoTdEvent };
+        const seen = { replayed: [], after: null };
+        window._geoTdBound = false;
+        window._geoTdPlugin = () => ({ addListener: () => {}, drainBuffer: async () => ({ fixes: [{ ts: 2 }, { ts: 1 }] }) });
+        window._geoTdEvent = async (ev, replay) => { seen.replayed.push([ev.ts, replay === true]); };
+        window._geoDeriveAfterReplay = async (f) => { seen.after = f.map(x => x.ts); };
+        try {
+          _geoTdInit();
+          await new Promise(r => setTimeout(r, 60));
+          return seen;
+        } finally {
+          window._geoTdBound = saved.bound; window._geoTdPlugin = saved.plug;
+          window._geoDeriveAfterReplay = saved.after; window._geoTdEvent = saved.ev;
+        }
+      });
+      expect(r.replayed, 'replayed oldest-first, and flagged as a replay').toEqual([[1, true], [2, true]]);
+      expect(r.after, 'and the catch-up derive runs AFTER the whole backlog is in').toEqual([1, 2]);
+    });
+  });
+
+  // ── The boot rebuild cannot be a timer on a hidden boot ───────────────────
+  test.describe('the boot rebuild', () => {
+    const soon = (visible) => page.evaluate((visible) => {
+      const saved = { on: _geoAppOnScreen, reb: window._geoDeriveRebuild, done: window._geoDeriveRebuilt, t: _geoDeriveRebuildT };
+      let ran = 0;
+      window._geoDeriveRebuilt = false; window._geoDeriveRebuildT = null;
+      _geoAppOnScreen = () => visible;
+      window._geoDeriveRebuild = async () => { ran++; return 0; };
+      try { _geoDeriveRebuildSoon(); return { ran, armed: _geoDeriveRebuildT != null }; }
+      finally {
+        if (_geoDeriveRebuildT) clearTimeout(_geoDeriveRebuildT);
+        _geoAppOnScreen = saved.on; window._geoDeriveRebuild = saved.reb;
+        window._geoDeriveRebuilt = saved.done; window._geoDeriveRebuildT = saved.t;
+      }
+    }, visible);
+
+    test('a hidden boot rebuilds immediately: a 2.5s timer never fires in a suspended process', async () => {
+      expect(await soon(false)).toEqual({ ran: 1, armed: false });
+    });
+
+    test('a boot somebody is watching keeps the courtesy delay', async () => {
+      // The rebuild asks the server for a week of fixes; no reason to do that
+      // while the first paint is still going in.
+      expect(await soon(true)).toEqual({ ran: 0, armed: true });
+    });
+  });
+
   test('no console errors across the wiring', async () => {
     assertNoErrors(page, 'geo-derive wiring');
   });
