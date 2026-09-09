@@ -222,6 +222,23 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     private let wakeCfgKey = "td_geo_wake_cfg"
     private var wakeMovingTimer: Timer?
     private var wakeTapeTimer: Timer?
+    // ── The stop has to be provable (owner 2026-09-08, 19:18) ──────────────
+    // The blue arrow stayed on his island after a force quit and after
+    // Location was set to Never. Nothing alive can hold location then, so
+    // the suspect is a stream iteration that never observed its cancel: the
+    // stream pauses itself while the phone is still, and a paused iteration
+    // has no update on which to notice it was told to stop. Two guards:
+    //   wakeGen      every start mints a generation; an update reaching an
+    //                iteration from an older generation ends that iteration
+    //                on the spot (wake-zombie-closed), whatever cancel did.
+    //   the watchdog five seconds after a stop, an iteration still open is
+    //                written down (wake-stop-stuck) so the ledger, not a
+    //                theory, says whether the stop landed.
+    private var wakeGen = 0
+    private var wakeLoopGen = 0      // the generation whose iteration owns wakeLoopOpen
+    private var wakeLoopOpen = false
+    private var wakeStopWatchdog: Timer?
+    private static let wakeStopGraceMs: Double = 5_000
     private static let wakeMaxMovingDefaultMs: Double = 12 * 60_000
     private static let wakeMaxMovingFloorMs: Double = 60_000
     private static let wakeMaxMovingCeilingMs: Double = 6 * 3_600_000
@@ -845,15 +862,25 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         radioLog("wake-stream", on: true, accuracy: "otherNavigation", reason: reason, trigger: trigger)
         if wakeSession == nil { wakeSession = CLBackgroundActivitySession() }
         (wakeTask as? Task<Void, Never>)?.cancel()
+        wakeStopWatchdog?.invalidate()
+        wakeStopWatchdog = nil
+        wakeGen += 1
+        let gen = wakeGen
+        wakeLoopGen = gen
+        wakeLoopOpen = true
         // The stream is the whole mechanism: while it is being iterated the
         // system owns the pause (isStationary) and the resume, and a resume
         // that finds the process gone relaunches it, at which point load()
         // re-enters here and iterates again. Nothing is decided in the loop.
         wakeTask = Task { [weak self] in
+            var zombie = false
             do {
                 for try await u in CLLocationUpdate.liveUpdates(.otherNavigation) {
                     guard let self = self else { break }
                     if Task.isCancelled { break }
+                    // An update for a generation that was stopped: the cancel
+                    // never landed. End it here, and say so.
+                    if gen != self.wakeGen { zombie = true; break }
                     let loc = u.location
                     let still = u.isStationary
                     await MainActor.run { self.onWakeUpdate(loc, stationary: still) }
@@ -865,7 +892,36 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                     self?.record(["type": "wake-error", "ts": Double(Date().timeIntervalSince1970 * 1000)])
                 }
             }
+            await MainActor.run {
+                guard let self = self else { return }
+                // Only the newest iteration owns the flag; an older one that
+                // finally exits must not clear it under a running stream.
+                if gen == self.wakeLoopGen { self.wakeLoopOpen = false }
+                if zombie {
+                    self.record(["type": "wake-zombie-closed", "gen": gen,
+                                 "ts": Double(Date().timeIntervalSince1970 * 1000)])
+                }
+            }
         }
+    }
+
+    // Five seconds after a stop, an iteration still open is a fact for the
+    // ledger, not a guess for a chat. The row carries how long ago the stop
+    // was asked, and the fences are untouched either way.
+    private func armWakeStopWatchdog(stoppedAt: Date) {
+        wakeStopWatchdog?.invalidate()
+        wakeStopWatchdog = Timer.scheduledTimer(withTimeInterval: TdGeoPlugin.wakeStopGraceMs / 1000, repeats: false) { [weak self] _ in
+            self?.wakeStopWatchdogFired(stoppedAt: stoppedAt)
+        }
+    }
+    private func wakeStopWatchdogFired(stoppedAt: Date) {
+        wakeStopWatchdog?.invalidate()
+        wakeStopWatchdog = nil
+        guard wakeLoopOpen, !wakeOnMoveOn else { return }
+        countWake("wake-stop-stuck")
+        record(["type": "wake-stop-stuck",
+                "sinceMs": Double(Date().timeIntervalSince(stoppedAt) * 1000),
+                "ts": Double(Date().timeIntervalSince1970 * 1000)])
     }
 
     private func stopWakeOnMove(reason: String = "", trigger: String = "js") {
@@ -874,12 +930,19 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             return
         }
         wakeCancelTimers()
-        (wakeTask as? Task<Void, Never>)?.cancel()
-        wakeTask = nil
+        // The session first: with it gone the process has no background
+        // eligibility for the stream, whatever the iteration does next.
         if #available(iOS 17.0, *) {
             (wakeSession as? CLBackgroundActivitySession)?.invalidate()
         }
         wakeSession = nil
+        // Retire the generation before the cancel, so an iteration that
+        // ignores the cancel still ends on its next update.
+        let hadLoop = wakeLoopOpen
+        wakeGen += 1
+        (wakeTask as? Task<Void, Never>)?.cancel()
+        wakeTask = nil
+        if hadLoop { armWakeStopWatchdog(stoppedAt: Date()) }
         if wakeOnMoveOn {
             countWake("wake-off")
             // A stream dropped mid-motion closes its moving episode too, so
@@ -1350,6 +1413,17 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
     func wakeUpdateForTest(stationary: Bool) { onWakeUpdate(nil, stationary: stationary) }
     func wakeOnForTest() { wakeOnMoveOn = true }
+    // The stop watchdog, reachable without a real stream: the tests set the
+    // loop flag the way an iteration would and fire the check.
+    var wakeLoopOpenForTest: Bool {
+        get { wakeLoopOpen }
+        set { wakeLoopOpen = newValue }
+    }
+    var wakeStopWatchdogArmedForTest: Bool { wakeStopWatchdog != nil }
+    func fireWakeStopWatchdogForTest(stoppedSecondsAgo: Double = 5) {
+        wakeStopWatchdogFired(stoppedAt: Date(timeIntervalSinceNow: -stoppedSecondsAgo))
+    }
+    static var wakeStopGraceMsForTest: Double { wakeStopGraceMs }
     // The bounds fire on Timers measured in minutes; the tests reach the same
     // two exits the timers do, and feed the tape the way the motion stream does.
     var wakeCfgKeyForTest: String { wakeCfgKey }

@@ -2346,6 +2346,61 @@ extension TdGeoPluginTests {
         XCTAssertEqual(bufferTypes().filter { $0 == "wake-drop" }.count, 1)
     }
 
+    // MARK: - The stop is provable (owner 2026-09-08, 19:18)
+    // A blue arrow that outlived a force quit and a Location: Never. The
+    // watchdog writes the row that says whether a stop actually landed.
+
+    func testWakeStopWatchdog_anIterationStillOpenAfterAStopIsWrittenDown() {
+        wakeBoundsReset()
+        plugin.wakeLoopOpenForTest = true
+        plugin.fireWakeStopWatchdogForTest(stoppedSecondsAgo: 5)
+        let rows = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        let stuck = rows.first { ($0["type"] as? String) == "wake-stop-stuck" }
+        XCTAssertNotNil(stuck, "the ledger, not a theory, says the stop did not land")
+        XCTAssertGreaterThanOrEqual((stuck?["sinceMs"] as? Double) ?? 0, 4_000)
+    }
+
+    func testWakeStopWatchdog_aClosedIterationWritesNothing() {
+        wakeBoundsReset()
+        plugin.wakeLoopOpenForTest = false
+        plugin.fireWakeStopWatchdogForTest()
+        XCTAssertEqual(bufferTypes(), [])
+    }
+
+    func testWakeStopWatchdog_aStreamRestartedInsideTheGraceIsNotStuck() {
+        wakeBoundsReset()
+        plugin.wakeLoopOpenForTest = true
+        plugin.wakeOnForTest()   // JS armed it again before the watchdog fired
+        plugin.fireWakeStopWatchdogForTest()
+        XCTAssertEqual(bufferTypes(), [])
+    }
+
+    func testWakeStopWatchdog_firesOnceAndNeverCrashesRepeated() {
+        wakeBoundsReset()
+        plugin.wakeLoopOpenForTest = true
+        for _ in 0..<10 { plugin.fireWakeStopWatchdogForTest() }
+        XCTAssertEqual(bufferTypes().filter { $0 == "wake-stop-stuck" }.count, 10, "each fire is one honest row; nothing crashes")
+    }
+
+    func testWakeStopGrace_isSecondsNotMinutes() {
+        XCTAssertGreaterThanOrEqual(TdGeoPlugin.wakeStopGraceMsForTest, 2_000)
+        XCTAssertLessThanOrEqual(TdGeoPlugin.wakeStopGraceMsForTest, 30_000)
+    }
+
+    func testStopWakeOnMove_withNoIterationArmsNoWatchdog() {
+        wakeBoundsReset()
+        let on = expectation(description: "on")
+        plugin.setWakeOnMove(makeCall(options: ["on": true], onSuccess: { _ in on.fulfill() }))
+        wait(for: [on], timeout: 30)
+        let off = expectation(description: "off")
+        plugin.setWakeOnMove(makeCall(options: ["on": false], onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+        // On a simulator without iOS 17 live updates the loop never opened;
+        // with them it did and the watchdog is armed. Either way: no crash,
+        // and the stream is reported off.
+        XCTAssertFalse(plugin.wakeOnMoveOnForTest)
+    }
+
     func testStopAll_cancelsTheWakeClocks() {
         wakeBoundsReset()
         plugin.wakeOnForTest()

@@ -5261,6 +5261,14 @@ async function _geoTdEvent(ev,replay){
     }
     return;
   }
+  // The plugin's own word on whether a stop landed (owner 2026-09-08, the
+  // arrow that outlived a force quit): an iteration still open five seconds
+  // after the stop, or one that finally ended on a stale update. Journal
+  // only; the server row is the evidence.
+  if(ev.type==='wake-stop-stuck'||ev.type==='wake-zombie-closed'){
+    if(!replay)_geoParkNote(String(ev.type),ev.sinceMs!=null?Math.round(Number(ev.sinceMs)/1000)+'s':(ev.gen!=null?'gen '+ev.gen:''));
+    return;
+  }
   if(ev.type==='sampling'){
     if(ev.mode!=='drive'&&_geoDriveWinAt){_geoDriveWinAt=0;_geoDriveWinWhy='';_geoDriveWinAskedAt=0;}
     if(!replay)_geoParkNote('sampling',String(ev.mode||'')+(ev.reason?' ('+ev.reason+')':''));

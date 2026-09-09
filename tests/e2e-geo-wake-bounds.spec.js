@@ -408,6 +408,39 @@ test.describe('the wake stream is bounded', () => {
       expect(s.slice(end, end + 1600).includes('if wakeMovingOpen() { armWakeMovingCap() }')).toBe(true);
     });
 
+    test('the stop is provable: a retired generation ends a stale iteration, and a watchdog writes down one that stays open', () => {
+      const s = swiftSrc();
+      const start = s.indexOf('private func startWakeOnMove(');
+      const loop = s.slice(start, start + 3500);
+      expect(loop.includes('if gen != self.wakeGen { zombie = true; break }')).toBe(true);
+      expect(loop.includes('"type": "wake-zombie-closed"')).toBe(true);
+      const stop = s.indexOf('private func stopWakeOnMove(');
+      const body = s.slice(stop, stop + 1600);
+      // The session goes first, the generation retires before the cancel,
+      // and an open iteration arms the watchdog.
+      const sess = body.indexOf('(wakeSession as? CLBackgroundActivitySession)?.invalidate()');
+      const gen = body.indexOf('wakeGen += 1');
+      const cancel = body.indexOf('(wakeTask as? Task<Void, Never>)?.cancel()');
+      expect(sess).toBeGreaterThan(-1);
+      expect(gen).toBeGreaterThan(sess);
+      expect(cancel).toBeGreaterThan(gen);
+      expect(body.includes('if hadLoop { armWakeStopWatchdog(stoppedAt: Date()) }')).toBe(true);
+      const dog = s.indexOf('private func wakeStopWatchdogFired(');
+      expect(s.slice(dog, dog + 600).includes('"type": "wake-stop-stuck"')).toBe(true);
+      expect(s.includes('private static let wakeStopGraceMs: Double = 5_000')).toBe(true);
+    });
+
+    test('JS journals the plugin\'s verdict on a stop and touches nothing else', async () => {
+      const r = await run(`
+        _geoWakeArmed = true; _geoWakeQuietSinceMs = 7;
+        await _geoTdEvent({ type: 'wake-stop-stuck', sinceMs: 5200, ts: Date.now() });
+        await _geoTdEvent({ type: 'wake-zombie-closed', gen: 3, ts: Date.now() });
+        await _geoTdEvent({ type: 'wake-stop-stuck', ts: Date.now() }, true);
+        return { armed: _geoWakeArmed, quiet: _geoWakeQuietSinceMs };`);
+      expect(r.ret).toEqual({ armed: true, quiet: 7 });
+      expect(r.notes).toEqual([['wake-stop-stuck', '5s'], ['wake-zombie-closed', 'gen 3']]);
+    });
+
     test('the native tests cover both exits', () => {
       const t = swiftTests();
       for (const name of [
@@ -417,6 +450,8 @@ test.describe('the wake stream is bounded', () => {
         'testWakeMovingCap_standsDownWhileTheDriveWindowOwnsTheRadio',
         'testWakeTapeGrace_dropsOnlyIfTheTapeStillSaysStillWhenItFires',
         'testWakeBounds_rapidRepeatedFiresNeverCrashOrDoubleDrop',
+        'testWakeStopWatchdog_anIterationStillOpenAfterAStopIsWrittenDown',
+        'testWakeStopWatchdog_aStreamRestartedInsideTheGraceIsNotStuck',
       ]) expect(t.includes(name), `native tests must cover ${name}`).toBe(true);
     });
   });
