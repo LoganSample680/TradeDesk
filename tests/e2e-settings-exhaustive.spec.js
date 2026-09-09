@@ -895,10 +895,22 @@ test.describe('settings.js: exhaustive coverage', () => {
         // throws "_supa.from is not a function" as a real console.error and
         // fails the suite's assertNoErrors (seen in CI 2026-08-24, shard 3).
         // Park both sync entry points for the duration; restored below.
+        //
+        // AND THE SAVER, for the same reason (CI 2026-09-09, shard 3, webkit).
+        // The two parked above are the LOADERS. The periodic save is a third
+        // door into the same partial _supa, and it throws the same way, on
+        // zj_data instead of on a read. Nothing about the unlink asks for a
+        // save, so any background work that shifts the timing by a few tens of
+        // milliseconds decides whether this test passes: exactly the class
+        // CLAUDE.md 5.2.2 is about, one axis over from the clock. The app is
+        // right; the stub is deliberately incomplete and every door onto it
+        // has to be shut, not just the two we happened to hit first.
         const savedLoad = window.supaLoadFromCloud;
         const savedCursor = window._cursorCheckReconcile;
+        const savedSave = window.supaSaveToCloud;
         window.supaLoadFromCloud = async () => {};
         if (savedCursor) window._cursorCheckReconcile = () => {};
+        if (savedSave) window.supaSaveToCloud = async () => {};
         window._supaUser = { id: 'e2e-user' };
         window.supaEnabled = () => true;
         window._supa = { auth: { getSession: async () => ({ data: { session: { access_token: 't' } } }) } };
@@ -918,6 +930,7 @@ test.describe('settings.js: exhaustive coverage', () => {
         window._supa = savedSupa;
         window.supaLoadFromCloud = savedLoad;
         if (savedCursor) window._cursorCheckReconcile = savedCursor;
+        if (savedSave) window.supaSaveToCloud = savedSave;
         return { threw, connected: !!(status && status.connected) };
       });
       expect(r.threw).toBe(null);
