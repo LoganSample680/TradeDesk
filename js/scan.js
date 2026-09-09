@@ -1023,16 +1023,74 @@ const _SCAN_TXT='#2F3542';
 const _SCAN_TXT2='#6E7684';
 // Room tints by name, the way a real plan color-keys spaces. Pastel enough
 // that the poché, the furniture, and the labels all stay legible on top.
+// Owner review 2026-09-09, on a rendered five-room house: bath (#E7F0F8) and
+// bedroom (#E6ECF8) were the same pale blue side by side, so two rooms that
+// share a wall read as one space. A tint table only earns its place if
+// neighbouring rooms land on different hues, so the wet rooms go teal, sleep
+// goes lavender, and cooking leaves the blue family entirely.
 const _SCAN_ROOM_TINTS=[
-  [/bath|powder|shower|restroom|\bwc\b/i,'#E7F0F8'],
-  [/kitchen|pantry|kitchenette/i,'#EDEDF8'],
-  [/bed|nursery|primary|master/i,'#E6ECF8'],
-  [/dining/i,'#F3E9DB'],
-  [/living|family|great room|den|lounge/i,'#FBF2E8'],
-  [/office|study|studio/i,'#E9F2EB'],
-  [/laundry|utility|mud/i,'#F1EFE6'],
-  [/garage|shop|basement|attic/i,'#EEEEEB'],
+  [/bath|powder|shower|restroom|\bwc\b/i,'#DFEFEC'],   // teal: the wet rooms
+  [/kitchen|pantry|kitchenette/i,'#EDE8DC'],            // warm stone
+  [/bed|nursery|primary|master/i,'#E8E5F4'],            // lavender: sleep
+  [/dining/i,'#F5E5D0'],                                // tan
+  [/living|family|great room|den|lounge/i,'#FCF1E4'],   // cream
+  [/office|study|studio/i,'#E4EFE6'],                   // green
+  [/laundry|utility|mud/i,'#E7EEF3'],                   // pale blue, now unshared
+  [/garage|shop|basement|attic/i,'#EBEBE7'],
 ];
+// WHERE A ROOM'S NAME GOES (owner review 2026-09-09). The centroid put
+// "341 wall sq ft" straight through the bedroom door's swing arc, because a
+// swing hugs the wall it hinges on and the centroid of a small room is not
+// far from that wall. A plan puts the name in the room's OPEN space, which is
+// the point furthest from any edge (the pole of inaccessibility), not the
+// average of the corners. A coarse grid is plenty at label size: 24 columns
+// across the room's box, scored on distance to the nearest wall, with door
+// swings treated as walls so the name steps around them.
+function _scanLabelSpot(r){
+  const poly=(r&&r.poly)||[];
+  if(poly.length<3)return null;
+  const xs=poly.map(p=>p[0]),zs=poly.map(p=>p[1]);
+  const x0=Math.min(...xs),x1=Math.max(...xs),z0=Math.min(...zs),z1=Math.max(...zs);
+  const inside=(px,pz)=>{
+    let hit=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const[ax,az]=poly[i],[bx,bz]=poly[j];
+      if((az>pz)!==(bz>pz)&&px<(bx-ax)*(pz-az)/((bz-az)||1e-9)+ax)hit=!hit;
+    }
+    return hit;
+  };
+  const segD=(px,pz,ax,az,bx,bz)=>{
+    const dx=bx-ax,dz=bz-az,L=dx*dx+dz*dz;
+    const t=L?Math.max(0,Math.min(1,((px-ax)*dx+(pz-az)*dz)/L)):0;
+    return Math.hypot(px-(ax+t*dx),pz-(az+t*dz));
+  };
+  // Every wall, plus a keep-out disc where each door swings.
+  const segs=[];
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++)segs.push([poly[i][0],poly[i][1],poly[j][0],poly[j][1]]);
+  const swings=[];
+  (r.walls||[]).forEach(w=>{
+    if(!w.len)return;
+    const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
+    (w.doors||[]).forEach(d=>{
+      if(typeof d.off!=='number'||!d.w)return;
+      const d0=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2));
+      swings.push([w.ax+ux*d0,w.az+uz*d0,d.w]);
+    });
+  });
+  const N=24;
+  let best=null,bestScore=-1;
+  for(let i=0;i<=N;i++)for(let j=0;j<=N;j++){
+    const px=x0+(x1-x0)*i/N,pz=z0+(z1-z0)*j/N;
+    if(!inside(px,pz))continue;
+    let sc=Infinity;
+    segs.forEach(g=>{sc=Math.min(sc,segD(px,pz,g[0],g[1],g[2],g[3]));});
+    // A door's swing owns a quarter circle of radius d.w at its hinge; the
+    // name must clear it, so being inside one scores as if it were a wall.
+    swings.forEach(([hx,hz,rw])=>{const d=Math.hypot(px-hx,pz-hz);if(d<rw)sc=Math.min(sc,d*0.35);});
+    if(sc>bestScore){bestScore=sc;best=[px,pz];}
+  }
+  return best;
+}
 function _scanRoomTint(label){
   const t=String(label||'');
   for(const[re,c] of _SCAN_ROOM_TINTS)if(re.test(t))return c;
@@ -1086,7 +1144,7 @@ function _scanPlanSvg(sc,opts){
   // Sheet layout, in viewBox units: a margin wide enough for two rows of
   // dimension string on every side, a title block on top and a scale bar
   // underneath when this is a full sheet.
-  const MAR=13, HEAD=o.sheet?17:2, FOOT=o.sheet?11:2;
+  const MAR=13, HEAD=o.sheet?17:2, FOOT=o.sheet?14:2;
   const wM=maxX-minX,hM=maxZ-minZ;
   const k=(100-MAR*2)/(wM||1);                     // meters → viewBox units
   const px=x=>+(MAR+(x-minX)*k).toFixed(2);
@@ -1132,6 +1190,13 @@ function _scanPlanSvg(sc,opts){
     s+='<line x1="'+px(w.ax)+'" y1="'+pz(w.az)+'" x2="'+px(w.bx)+'" y2="'+pz(w.bz)+'" stroke="'+ink+'" stroke-width="'+th.toFixed(2)+'" stroke-linecap="square"/>';
   }));
   // 3. Openings punched into the poché: door gap + swing arc, window glazing.
+  // EVERY OPENING SAYS HOW BIG IT IS (owner 2026-09-09). Written once per
+  // physical opening: an interior door belongs to the walls of BOTH rooms it
+  // connects, so without this bucket the same door prints its width twice,
+  // once facing each way. Keyed to a 5 cm bucket on the opening's midpoint,
+  // which is far tighter than any two real openings sit apart.
+  const seenOpen=new Set(),seenSwing=new Set();
+  let openLbls='';
   rooms.forEach(r=>{
     const cx0=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz0=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
@@ -1143,12 +1208,26 @@ function _scanPlanSvg(sc,opts){
       const mx=(w.ax+w.bx)/2,mz=(w.az+w.bz)/2;
       if(nx*(cx0-mx)+nz*(cz0-mz)<0){nx=-nx;nz=-nz;}
       const at=d=>[w.ax+ux*d,w.az+uz*d];
+      // The figure sits just OUTSIDE the wall, turned to run along it, so it
+      // never lands on the swing arc it is describing.
+      const openLbl=(d0,d1,txt)=>{
+        const[mx,mz]=at((d0+d1)/2);
+        const key=Math.round(mx*20)+'|'+Math.round(mz*20);
+        if(seenOpen.has(key))return;
+        seenOpen.add(key);
+        let a=Math.atan2(uz,ux)*180/Math.PI;
+        if(a>90)a-=180; else if(a<-90)a+=180;
+        const X=px(mx)-nx*2.7,Y=pz(mz)-nz*2.7;
+        openLbls+='<g transform="translate('+X.toFixed(2)+','+Y.toFixed(2)+') rotate('+a.toFixed(1)+')">'+
+          '<text y="0.75" font-size="1.9" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+txt+'</text></g>';
+      };
       const punch=(d0,d1)=>{const[a1,b1]=at(d0),[a2,b2]=at(d1);
         s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+bg+'" stroke-width="'+(th+0.35).toFixed(2)+'"/>';};
       (w.doors||[]).forEach(d=>{
         if(typeof d.off!=='number'||!d.w)return;
         const d0=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2)),d1=d0+d.w;
         punch(d0,d1);
+        openLbl(d0,d1,_scanFtIn(d.w));
         if(d.kind==='opening'){
           // A cased opening / archway: the wall stops, the jambs cap the ends,
           // and a DASHED line spans the gap for the header above the cut plane.
@@ -1162,6 +1241,15 @@ function _scanPlanSvg(sc,opts){
           s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+ink+'" stroke-width="0.22" stroke-dasharray="1.2 0.9"/>';
           return;
         }
+        // ONE DOOR, ONE SWING (owner review 2026-09-09, on the rendered
+        // house: the bedroom-to-hall door drew two arcs facing each other,
+        // because that door is a wall of the bedroom AND a wall of the hall).
+        // The punch above still runs for both, since each room draws its own
+        // wall and both need the gap; the leaf and the arc are the door, and
+        // a door only swings one way.
+        const swKey=Math.round((at((d0+d1)/2)[0])*20)+'|'+Math.round((at((d0+d1)/2)[1])*20);
+        if(seenSwing.has(swKey))return;
+        seenSwing.add(swKey);
         // Hinge at d0: thin leaf into the room + quarter swing arc back to d1.
         // The sweep flag must put the arc's CENTER at the hinge so it bows
         // INTO the room (owner review 2026-08-09 vs reference plans: the old
@@ -1177,6 +1265,7 @@ function _scanPlanSvg(sc,opts){
         if(typeof win.off!=='number'||!win.w)return;
         const d0=Math.max(0,Math.min(w.len-win.w,win.off-win.w/2)),d1=d0+win.w;
         punch(d0,d1);
+        openLbl(d0,d1,_scanFtIn(win.w)+(win.h>0?' \u00d7 '+_scanFtIn(win.h):''));
         // The classic triple-line window (owner review 2026-08-09 vs
         // reference plans: a bare gap with one hairline read as nothing):
         // both wall faces redrawn across the opening, the center glazing
@@ -1192,6 +1281,7 @@ function _scanPlanSvg(sc,opts){
       });
     });
   });
+  s+=openLbls;
   // 4. Dimension strings around the envelope: extension lines off the wall,
   // a dimension line with tick marks, the figure centered on it, and a second
   // overall row outside that when a side breaks into more than one run. This
@@ -1230,13 +1320,47 @@ function _scanPlanSvg(sc,opts){
       if(hi-lo>0.3)s+=dimRun(side,lo,hi,1);
     }
   });
-  // 5. Labels: name + the billing number (wall sq ft leads, owner 2026-08-09).
+  // 5. Labels: the ROOM, not the invoice (owner 2026-09-09: "shouldn't be wall
+  // sq feet on a floor plan, should be room square feet"). This supersedes the
+  // 2026-08-09 call that wall area leads. That number is what paint bills on
+  // and it is still right ON THE ESTIMATE, where somebody is pricing; on a
+  // drawing that a homeowner and a framer both read, the room's size is the
+  // only number either of them is looking for. Wall area is one tap away in
+  // the takeoff and no longer competes with the name.
+  //
+  // Size reads as a drawing does: width by length off the room's box, then the
+  // floor area under it. The box is only honest for a room that fills it, so a
+  // bay or an L keeps its area and drops the two figures rather than printing
+  // a rectangle nobody can measure to.
   rooms.forEach((r,ri)=>{
-    const cx=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
-    const cz=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
+    const spot=_scanLabelSpot(r);
+    const cx=spot?spot[0]:(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
+    const cz=spot?spot[1]:(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
+    const xs=(r.poly||[]).map(p=>p[0]),zs=(r.poly||[]).map(p=>p[1]);
+    const bw=xs.length?Math.max(...xs)-Math.min(...xs):0;
+    const bh=zs.length?Math.max(...zs)-Math.min(...zs):0;
+    const boxy=bw>0&&bh>0&&(r.floorM2||0)/(bw*bh)>=0.9;
     const g=o.roomClick?'<g onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer">':'<g>';
-    s+=g+'<text x="'+px(cx)+'" y="'+(pz(cz)-0.6)+'" font-size="2.9" font-weight="700" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+escHtml(r.label||'Room')+'</text>'+
-      '<text x="'+px(cx)+'" y="'+(pz(cz)+2.9)+'" font-size="2.4" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text></g>';
+    // A HALL IS NOT A LIVING ROOM (owner review 2026-09-09). At one fixed size
+    // the size line ran wall to wall in the narrow rooms and straight over the
+    // door swing. The block is scaled to the room that holds it: the longest
+    // line has to fit inside 82% of the room's width, at roughly 0.55em per
+    // character, and never grows past the size a big room gets or shrinks past
+    // readable. Small rooms end up with a smaller, quieter label, which is
+    // also how a real plan draws them.
+    const dimTxt=_scanFtIn(bw)+' \u00d7 '+_scanFtIn(bh);
+    const areaTxt=Math.round(_scanSqFt(r.floorM2||0)).toLocaleString()+' sq ft';
+    const widest=Math.max((r.label||'Room').length,boxy?dimTxt.length:0,areaTxt.length);
+    const fit=(bw*k*0.82)/(widest*0.55||1);
+    const f1=Math.max(1.75,Math.min(2.9,fit));
+    const f2=f1*0.83,f3=f1*0.79;
+    const lines=1+(boxy?1:0)+1;
+    const top=-(lines-1)*f1*0.62;
+    let yy=pz(cz)+top;
+    s+=g+'<text x="'+px(cx)+'" y="'+yy.toFixed(2)+'" font-size="'+f1.toFixed(2)+'" font-weight="700" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+escHtml(r.label||'Room')+'</text>';
+    if(boxy){yy+=f1*1.18;s+='<text x="'+px(cx)+'" y="'+yy.toFixed(2)+'" font-size="'+f2.toFixed(2)+'" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+dimTxt+'</text>';}
+    yy+=f1*1.14;
+    s+='<text x="'+px(cx)+'" y="'+yy.toFixed(2)+'" font-size="'+f3.toFixed(2)+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+areaTxt+'</text></g>';
     if(lens==='electrical'){
       _scanOutletPlan(r).forEach(m=>{
         s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
@@ -1261,6 +1385,14 @@ function _scanPlanSvg(sc,opts){
        '<line x1="'+x1.toFixed(2)+'" y1="'+(y-1.2).toFixed(2)+'" x2="'+x1.toFixed(2)+'" y2="'+(y+1.2).toFixed(2)+'" stroke="'+_SCAN_TXT+'" stroke-width="0.35"/>'+
        '<text x="'+(x1+2).toFixed(2)+'" y="'+(y+1).toFixed(2)+'" font-size="2.5" fill="'+_SCAN_TXT2+'">'+barFt+' ft</text>'+
        '<text x="'+(100-MAR)+'" y="'+(y+1).toFixed(2)+'" font-size="2.3" fill="'+_SCAN_LINE+'" text-anchor="end">Measured with TradeDesk</text>';
+    // WHEN, AND BY WHOM (owner review 2026-09-09: the block read thin). A
+    // drawing without a date is not evidence of anything, and a homeowner
+    // holding two scans a year apart has no way to tell them apart. Both
+    // come from what the scan already carries; neither is invented.
+    const when=o.dateText||(sc.ts?new Date(sc.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'');
+    const by=o.byText||sc.scannedBy||'';
+    const foot=[when,by?'Scanned by '+by:''].filter(Boolean).join('  \u00b7  ');
+    if(foot)s+='<text x="'+MAR+'" y="'+(y+5.2).toFixed(2)+'" font-size="2.2" fill="'+_SCAN_LINE+'">'+escHtml(foot)+'</text>';
   }
   // Photo pins: each shot taken during the scan knows exactly where the
   // camera stood (the pose rides along from the plugin), so the walkthrough

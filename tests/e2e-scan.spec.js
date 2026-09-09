@@ -248,7 +248,15 @@ test.describe('TdScan web half', () => {
       return {
         hasPolygon: /<polygon/.test(plain),
         hasLabel: /Kitchen/.test(plain),
-        hasSqFt: /352 wall sq ft/.test(plain),
+        // OLD: /352 wall sq ft/. The plan carried the paint billing number
+        // under every room name. NEW (owner 2026-09-09): a drawing carries
+        // the ROOM: 12'0" x 10'0" and its 120 sq ft of floor. Wall area is
+        // still right on the ESTIMATE, and the test below at
+        // "the seed survives" pins it there, which is the whole point of
+        // moving it: the two numbers stop competing for one line.
+        hasSqFt: /120 sq ft/.test(plain),
+        hasRoomDims: /12'0" \u00d7 10'0"/.test(plain),
+        noWallSqFt: !/wall sq ft/.test(plain),
         plainCircles: (plain.match(/<circle/g) || []).length,
         elecCircles: (elec.match(/<circle/g) || []).length,
       };
@@ -256,6 +264,8 @@ test.describe('TdScan web half', () => {
     expect(r.hasPolygon).toBe(true);
     expect(r.hasLabel).toBe(true);
     expect(r.hasSqFt).toBe(true);
+    expect(r.hasRoomDims, 'a room says how big it is, the way a plan does').toBe(true);
+    expect(r.noWallSqFt, 'the invoice number belongs on the estimate, not the drawing').toBe(true);
     expect(r.plainCircles, 'no outlet markers outside the electrical lens').toBe(0);
     expect(r.elecCircles).toBe(5);
   });
@@ -988,6 +998,8 @@ test.describe('TdScan web half', () => {
     expect(r.lines).toBe(1);
     expect(r.consumed, 'the seed is consumed exactly once').toBe(true);
     expect(r.desc).toContain('Kitchen');
+    // The estimate is where wall area belongs and where it stays: this is the
+    // other half of moving it off the plan (owner 2026-09-09).
     expect(r.desc).toContain('352 wall sq ft');
     expect(r.qty).toBe(352);
     expect(r.unit).toBe('sq ft');
@@ -1155,7 +1167,7 @@ test.describe('TdScan web half', () => {
         // jamb caps (the 0.35 family), so a window reads as a window.
         windowLines: (svg.match(/stroke-width="0\.35"/g) || []).length >= 4,
         northArrow: /rotate\(40\)/.test(svg) && />N</.test(svg),
-        stillHasLabel: /Kitchen/.test(svg) && /352 wall sq ft/.test(svg),
+        stillHasLabel: /Kitchen/.test(svg) && /120 sq ft/.test(svg),
         dims: /12'0"/.test(svg),
       };
     }, fabricatedRoom());
@@ -1203,6 +1215,117 @@ test.describe('TdScan web half', () => {
       expect(r.font, 'no font-family means the UA serif, which reads as a worksheet').toBe(true);
     });
 
+    // ── The sheet after the 2026-09-09 review ────────────────────────────
+    // Rendered as a real five-room house and judged as a drawing rather than
+    // as a feature list. Four things were wrong and all four are drawing code.
+    test.describe('the sheet reads as a drawing', () => {
+      // Two rooms sharing a wall, with one door in it. Built plainly rather
+      // than through _scanParseRoom: what is under test is the DRAWING, and a
+      // shared door is exactly the shape the parser never produces from one
+      // captured room.
+      const twoRooms = () => page.evaluate(() => {
+        const W = (id, ax, az, bx, bz, doors, wins) => ({
+          id, ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az), h: 2.44,
+          doors: doors || [], windows: wins || [],
+        });
+        const mk = (label, x0, z0, x1, z1, o) => {
+          o = o || {};
+          const perimM = 2 * ((x1 - x0) + (z1 - z0));
+          return { label, story: 1, poly: [[x0, z0], [x1, z0], [x1, z1], [x0, z1]],
+            walls: [W(label + '-n', x0, z0, x1, z0, o.n, o.nw),
+                    W(label + '-e', x1, z0, x1, z1, o.e, o.ew),
+                    W(label + '-s', x1, z1, x0, z1, o.s, o.sw),
+                    W(label + '-w', x0, z1, x0, z0, o.w, o.ww)],
+            objects: [], floorM2: (x1 - x0) * (z1 - z0), perimM, hM: 2.44,
+            wallM2: perimM * 2.44, openM2: 0 };
+        };
+        // The door at x=4.0 on the shared wall belongs to BOTH rooms.
+        const door = [{ off: 2.0, w: 0.9, kind: 'door' }];
+        const win = [{ off: 2.0, w: 1.2, h: 1.22 }];
+        const a = mk('Kitchen', 0, 0, 4, 4, { e: door, n: [], nw: win });
+        const b = mk('Hall', 4, 0, 6.2, 4, { w: door });
+        return {
+          svg: _scanPlanSvg({ rooms: [a, b] }, { lens: 'plan' }),
+          sheet: _scanPlanSvg({ rooms: [a, b], ts: Date.parse('2026-09-09T15:00:00Z'),
+                                scannedBy: 'Logan Sample' },
+                              { lens: 'plan', sheet: true, title: 'Floor plan' }),
+        };
+      });
+
+      test('a door shared by two rooms swings once, not twice', async () => {
+        const r = await twoRooms();
+        // The arc is the door. Before this, the bedroom drew one and the hall
+        // drew another facing it, because that door is a wall of both.
+        const arcs = (r.svg.match(/<path d="M [\d. ]+A /g) || []).length;
+        expect(arcs, 'one physical door, one swing').toBe(1);
+      });
+
+      test('every opening says how wide it is, once', async () => {
+        const r = await twoRooms();
+        // The door is 0.9 m; the window 1.2 x 1.22 m.
+        expect((r.svg.match(/2'11"/g) || []).length, 'the shared door is measured exactly once').toBe(1);
+        expect(/3'11" \u00d7 4'0"/.test(r.svg), 'a window carries width by height').toBe(true);
+      });
+
+      test('the name sits in the open, not on the door swing', async () => {
+        const r = await page.evaluate(() => {
+          // A room small enough that its CENTROID falls inside the door's
+          // swing, which is the whole case this rule exists for. In a big
+          // square room the centre is already clear and the centroid is the
+          // right answer; there is nothing to prove there.
+          const room = { label: 'Bath', story: 1,
+            poly: [[0, 0], [1.2, 0], [1.2, 1.2], [0, 1.2]],
+            walls: [{ id: 'w', ax: 0, az: 0, bx: 1.2, bz: 0, len: 1.2, h: 2.44,
+                      doors: [{ off: 0.5, w: 0.9, kind: 'door' }], windows: [] }],
+            objects: [], floorM2: 1.44, perimM: 4.8, hM: 2.44, wallM2: 11.7, openM2: 0 };
+          const spot = _scanLabelSpot(room);
+          const hinge = [0.05, 0];
+          const d = (p) => Math.hypot(p[0] - hinge[0], p[1] - hinge[1]);
+          return { spot, spotD: d(spot), centroidD: d([0.6, 0.6]),
+                   inside: spot[0] > 0 && spot[0] < 1.2 && spot[1] > 0 && spot[1] < 1.2 };
+        });
+        expect(r.spot, 'a room with a polygon always gets a spot').not.toBe(null);
+        expect(r.centroidD, 'the premise: the centroid really is inside the swing').toBeLessThan(0.9);
+        expect(r.spotD, 'so the name steps out of it').toBeGreaterThan(r.centroidD);
+        expect(r.inside, 'and stays in the room').toBe(true);
+      });
+
+      test('a label with no polygon falls back instead of throwing', async () => {
+        const r = await page.evaluate(() => {
+          const bad = [{}, { poly: [] }, { poly: [[0, 0]] }, { poly: [[0, 0], [1, 1]] }];
+          return bad.map(b => _scanLabelSpot(b));
+        });
+        expect(r.every(x => x === null), 'too few corners is not a room').toBe(true);
+      });
+
+      test('the sheet says when it was made and who made it', async () => {
+        const r = await twoRooms();
+        expect(/Sep 9, 2026/.test(r.sheet), 'a drawing without a date is not evidence').toBe(true);
+        expect(/Scanned by Logan Sample/.test(r.sheet)).toBe(true);
+        expect(/Sep 9, 2026/.test(r.svg), 'the bare plan carries no title block').toBe(false);
+      });
+
+      test('a narrow room gets a smaller label so it still fits', async () => {
+        const r = await page.evaluate(() => {
+          // Both rooms in ONE plan: the scale comes from the bounding box of
+          // every room together, so a lone room always fills the sheet however
+          // narrow it really is. The squeeze only happens beside a wide room.
+          const mk = (label, x0, x1) => ({ label, story: 1,
+            poly: [[x0, 0], [x1, 0], [x1, 4], [x0, 4]], walls: [], objects: [],
+            floorM2: (x1 - x0) * 4, perimM: 2 * ((x1 - x0) + 4), hM: 2.44,
+            wallM2: 2 * ((x1 - x0) + 4) * 2.44, openM2: 0 });
+          const svg = _scanPlanSvg({ rooms: [mk('Living', 0, 6), mk('Hall', 6, 7.1)] }, { lens: 'plan' });
+          const sizes = [...svg.matchAll(/font-size="([\d.]+)" font-weight="700"/g)].map(m => +m[1]);
+          return { sizes };
+        });
+        expect(r.sizes.length, 'both rooms are named').toBe(2);
+        const [big, small] = r.sizes;   // drawn in room order
+        expect(big, 'the wide room keeps the full size').toBeGreaterThan(small);
+        expect(small, 'but never smaller than readable').toBeGreaterThanOrEqual(1.75);
+        expect(big, 'and never bigger than the room label was').toBeLessThanOrEqual(2.9);
+      });
+    });
+
     test('rooms tint by what they are, and an explicit fill still wins', async () => {
       const r = await page.evaluate((raw) => {
         const mk = (n) => _scanParseRoom(raw, n);
@@ -1219,6 +1342,10 @@ test.describe('TdScan web half', () => {
       }, fabricatedRoom());
       expect(r.kitchen).not.toBe(r.bath);
       expect(r.bed).not.toBe(r.kitchen);
+      // The pair that was actually broken (owner review 2026-09-09, on a
+      // rendered five-room house): bath #E7F0F8 and bedroom #E6ECF8 were the
+      // same pale blue, side by side, so two rooms read as one space.
+      expect(r.bed, 'a bath and a bedroom sharing a wall must not share a tint').not.toBe(r.bath);
       expect(r.distinct, 'four room types, four tints').toBe(4);
       expect(r.unknown, 'an unrecognized name still gets paper, never undefined').toBe(r.nameless);
       expect(r.drawn, 'every room draws its tint').toBe(3);
