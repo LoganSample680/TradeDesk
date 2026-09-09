@@ -1340,8 +1340,11 @@ function renderDash(){
         // to catch the one day in five somebody stops to eat. See startLunch,
         // js/jobs.js. The Proposal button drops to a second row when both are
         // present rather than squeezing three across a 390px phone (15.1).
-        ocBtns.push('<button onclick="startLunch()" style="flex:0 0 auto;border-radius:12px;padding:13px 14px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:6px">🍽 Lunch</button>');
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
+        // Lunch on the RIGHT, matching Clock out (owner 2026-09-09). Equal
+        // flex, equal padding, equal weight: two ways to stop, neither one
+        // dressed as the lesser.
+        ocBtns.push('<button onclick="startLunch()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px">🍽 Lunch</button>');
         const _ocProp=_cid?'<div style="display:flex;gap:9px;padding:0 14px 15px"><button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button></div>':'';
         _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px '+(_ocProp?'9px':'15px')+'">'+ocBtns.join('')+'</div>'+_ocProp);
       } else if(_openDwell){
