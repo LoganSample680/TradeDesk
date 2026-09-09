@@ -1020,31 +1020,54 @@ final class TdGeoPluginTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "td_geo_armed")
     }
 
-    func testSilentPush_blindTwiceBuysOneBurstNotTwo() {
-        // A burst left running by an earlier test owns the receiver, and its
-        // 4-second timer would end it mid-test and let the next push open a
-        // SECOND session. Start from a known-quiet radio, then post the three
-        // pushes inside one burst's lifetime so the count is a fact, not a race.
+    // WHY THIS IS NOT DRIVEN THROUGH THE NOTIFICATION (2026-09-09, twice red).
+    // The first two versions posted TdSilentPush and counted burst sessions.
+    // Both raced: the burst carries a real 4-second Timer that can fire from
+    // an earlier test mid-count, and whether silentPush takes the blind
+    // branch at all depends on whether the CI simulator happens to hold a
+    // cached location, which the test cannot set. The dedup being asserted
+    // lives in beginBurst, so that is what is driven. silentPush's own job,
+    // choosing blind vs not, is pinned on the source above.
+    func testBeginBurst_secondCallInsideARunningBurstOpensNoSecondSession() {
         let quiet = expectation(description: "radio quiet")
         plugin.stopAll(makeCall(onSuccess: { _ in quiet.fulfill() }))
         wait(for: [quiet], timeout: 30)
-        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
-        plugin.load()
-        let armed = expectation(description: "load settled")
-        DispatchQueue.main.async { armed.fulfill() }
-        wait(for: [armed], timeout: 30)
         plugin.clearBufferForTest()
-        for _ in 0..<3 {
-            NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
-        }
-        let done = expectation(description: "pushes handled")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            let ons = self.plugin.radioRowsForTest().filter { ($0["session"] as? String) == "burst" && ($0["on"] as? Bool) == true }
-            XCTAssertLessThanOrEqual(ons.count, 1, "the burst is one session however many pings land inside it")
+        let done = expectation(description: "bursts driven on main")
+        DispatchQueue.main.async {
+            self.plugin.beginBurstForTest(reason: "push-ping had no fix")
+            self.plugin.beginBurstForTest(reason: "push-ping had no fix")
+            self.plugin.beginBurstForTest(reason: "push-ping fix was stale")
+            let ons = self.plugin.radioRowsForTest()
+                .filter { ($0["session"] as? String) == "burst" && ($0["on"] as? Bool) == true }
+            XCTAssertEqual(ons.count, 1, "one session however many pings land inside it")
+            XCTAssertEqual(ons.first?["reason"] as? String, "push-ping had no fix",
+                           "the session is named for the ping that opened it")
+            XCTAssertTrue(self.plugin.burstOnForTest)
+            // And it closes once, cleanly.
+            self.plugin.endBurstForTest()
+            XCTAssertFalse(self.plugin.burstOnForTest)
+            let offs = self.plugin.radioRowsForTest()
+                .filter { ($0["session"] as? String) == "burst" && ($0["on"] as? Bool) == false }
+            XCTAssertEqual(offs.count, 1)
             done.fulfill()
         }
         wait(for: [done], timeout: 30)
-        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    func testEndBurst_withNothingRunningIsAGracefulNoOp() {
+        let quiet = expectation(description: "radio quiet")
+        plugin.stopAll(makeCall(onSuccess: { _ in quiet.fulfill() }))
+        wait(for: [quiet], timeout: 30)
+        plugin.clearBufferForTest()
+        let done = expectation(description: "driven on main")
+        DispatchQueue.main.async {
+            self.plugin.endBurstForTest()
+            self.plugin.endBurstForTest()
+            XCTAssertEqual(self.plugin.radioRowsForTest().filter { ($0["session"] as? String) == "burst" }.count, 0)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
     }
 
     func testBlindPingBurst_isSecondsNotAWindow() {

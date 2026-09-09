@@ -1433,6 +1433,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
     var wakeStopWatchdogArmedForTest: Bool { wakeStopWatchdog != nil }
     var burstOnForTest: Bool { burstStartedAt != nil }
+    // The burst's own dedup, reachable without a notification and without
+    // waiting on its 4-second Timer. The notification path adds nothing to
+    // test here: silentPush's only job is to decide blind vs not, and that
+    // decision is pinned on the source.
+    func beginBurstForTest(reason: String) { beginBurst(seconds: 4, reason: reason, trigger: "native") }
+    func endBurstForTest() { endBurst(reason: "test") }
     static var blindPingBurstSecForTest: Double { blindPingBurstSec }
     static var blindPingStaleMsForTest: Double { blindPingStaleMs }
     func fireWakeStopWatchdogForTest(stoppedSecondsAgo: Double = 5) {

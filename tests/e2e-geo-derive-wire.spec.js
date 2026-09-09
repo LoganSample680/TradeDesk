@@ -1619,6 +1619,7 @@ test.describe('geo-derive wiring', () => {
       const t = fs.readFileSync(path.join(__dirname, '..', 'native', 'tests', 'TdGeoPluginTests.swift'), 'utf8');
       expect(t.includes('testSilentPush_withNoCachedPositionSaysBlindAndBuysAShortBurst')).toBe(true);
       expect(t.includes('testSilentPush_marksAStaleCachedPositionAndStillCarriesIt')).toBe(true);
+      expect(t.includes('testBeginBurst_secondCallInsideARunningBurstOpensNoSecondSession')).toBe(true);
     });
   });
 
