@@ -538,6 +538,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // The one burst, whoever asks: JS through burstFix, or this file itself
     // for a ping that has nothing to say (see silentPush).
     private func beginBurst(seconds secs: Double, reason: String, trigger: String) {
+        // CLLocationManager and Timer.scheduledTimer both need the main run
+        // loop, and a silent push arrives on whatever thread iOS chose.
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.beginBurst(seconds: secs, reason: reason, trigger: trigger) }
+            return
+        }
         let m = mgr()
         if burstStartedAt == nil {
             burstStartedAt = Date()

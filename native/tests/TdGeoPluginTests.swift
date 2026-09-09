@@ -989,6 +989,9 @@ final class TdGeoPluginTests: XCTestCase {
     // A BLIND PING BUYS ITS OWN FIX (Jack, 2026-09-08: thirty blank pings
     // overnight, no proof he was at his house when the truck left).
     func testSilentPush_withNoCachedPositionSaysBlindAndBuysAShortBurst() {
+        let quiet = expectation(description: "radio quiet")
+        plugin.stopAll(makeCall(onSuccess: { _ in quiet.fulfill() }))
+        wait(for: [quiet], timeout: 30)
         UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
         UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
         plugin.load()
@@ -1018,9 +1021,19 @@ final class TdGeoPluginTests: XCTestCase {
     }
 
     func testSilentPush_blindTwiceBuysOneBurstNotTwo() {
+        // A burst left running by an earlier test owns the receiver, and its
+        // 4-second timer would end it mid-test and let the next push open a
+        // SECOND session. Start from a known-quiet radio, then post the three
+        // pushes inside one burst's lifetime so the count is a fact, not a race.
+        let quiet = expectation(description: "radio quiet")
+        plugin.stopAll(makeCall(onSuccess: { _ in quiet.fulfill() }))
+        wait(for: [quiet], timeout: 30)
         UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
-        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
         plugin.load()
+        let armed = expectation(description: "load settled")
+        DispatchQueue.main.async { armed.fulfill() }
+        wait(for: [armed], timeout: 30)
+        plugin.clearBufferForTest()
         for _ in 0..<3 {
             NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
         }
