@@ -420,6 +420,85 @@ test.describe('the wake stream is bounded', () => {
     });
   });
 
+  // The arrow after the 19:02 watchdog reload (owner 2026-09-08): a boot that
+  // remembers a park still started the continuous watcher, and the park
+  // routine then refused to remove it because it believed it was parked.
+  test.describe('a boot into a remembered park does not start the watcher', () => {
+    const boot = (visible) => page.evaluate((visible) => {
+      const saved = { park: _geoParkModeOn, on: _geoAppOnScreen, exit: _geoExitParkMode, note: _geoParkNote,
+        bg: _geoNativePlugin, wid: _geoNativeWatcherId, starting: _geoNativeStarting, web: _geoWatchId };
+      const out = { added: 0, exits: 0, notes: [] };
+      _geoParkModeOn = true; _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+      _geoAppOnScreen = () => visible;
+      _geoExitParkMode = () => { out.exits++; _geoParkModeOn = false; };
+      _geoParkNote = (ev, x) => out.notes.push([ev, String(x)]);
+      _geoNativePlugin = () => ({ addWatcher: () => { out.added++; return new Promise(() => {}); }, removeWatcher: () => {} });
+      try { startGeoTracking(); return out; }
+      finally {
+        _geoParkModeOn = saved.park; _geoAppOnScreen = saved.on; _geoExitParkMode = saved.exit; _geoParkNote = saved.note;
+        _geoNativePlugin = saved.bg; _geoNativeWatcherId = saved.wid; _geoNativeStarting = saved.starting; _geoWatchId = saved.web;
+      }
+    }, visible);
+
+    test('hidden (a background relaunch, a reload behind the lock screen): stays parked on the fences', async () => {
+      const r = await boot(false);
+      expect(r.added, 'no continuous watcher, no indicator').toBe(0);
+      expect(r.exits).toBe(0);
+      expect(r.notes).toEqual([['start-skip', 'parked, app hidden']]);
+    });
+
+    test('visible: the park is exited properly, which is what restarts the watcher', async () => {
+      const r = await boot(true);
+      expect(r.exits).toBe(1);
+      expect(r.added, 'the exit owns the restart; this call adds nothing itself').toBe(0);
+    });
+
+    test('with no park remembered the start is exactly what it was', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { park: _geoParkModeOn, bg: _geoNativePlugin, wid: _geoNativeWatcherId, starting: _geoNativeStarting, web: _geoWatchId, note: _geoParkNote };
+        let added = 0;
+        _geoParkModeOn = false; _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null; _geoParkNote = () => {};
+        _geoNativePlugin = () => ({ addWatcher: () => { added++; return new Promise(() => {}); }, removeWatcher: () => {} });
+        try { startGeoTracking(); return { added, starting: _geoNativeStarting }; }
+        finally {
+          _geoParkModeOn = saved.park; _geoNativePlugin = saved.bg; _geoNativeWatcherId = saved.wid;
+          _geoNativeStarting = saved.starting; _geoWatchId = saved.web; _geoParkNote = saved.note;
+        }
+      });
+      expect(r).toEqual({ added: 1, starting: true });
+    });
+
+    test('the park restore is not a decision until the login is known', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { td: _geoTdPlugin, park: _geoParkModeOn, user: window._supaUser, restored: window._geoParkRestored, note: _geoParkNote };
+        window.__wake = [];
+        _geoTdPlugin = () => ({ setWakeOnMove: async (a) => { window.__wake.push(a); return a; } });
+        _geoParkNote = () => {};
+        _geoParkModeOn = false; window._geoParkRestored = false;
+        localStorage.setItem('zp3_geo_park', JSON.stringify({ spot: { lat: 41.5, lng: -88.1, name: 'Shop' }, at: Date.now() - 60000, uid: 'owner-uid' }));
+        try {
+          window._supaUser = null;
+          const early = _geoParkRestore();
+          const out = { early, restoredFlag: window._geoParkRestored, kept: !!localStorage.getItem('zp3_geo_park'), disarms: window.__wake.length };
+          window._supaUser = { id: 'owner-uid' };
+          out.later = _geoParkRestore();
+          out.park = _geoParkModeOn;
+          return out;
+        } finally {
+          localStorage.removeItem('zp3_geo_park');
+          _geoTdPlugin = saved.td; _geoParkModeOn = saved.park; window._supaUser = saved.user;
+          window._geoParkRestored = saved.restored; _geoParkNote = saved.note;
+        }
+      });
+      expect(r.early).toBe(false);
+      expect(r.restoredFlag, 'the once-per-boot latch must not close on a non-answer').toBe(false);
+      expect(r.kept, 'the stored park is not forgotten').toBe(true);
+      expect(r.disarms, 'and the stream is not disarmed on a guess').toBe(0);
+      expect(r.later).toBe(true);
+      expect(r.park).toBe(true);
+    });
+  });
+
   test('no console errors', async () => {
     await assertNoErrors(page);
   });

@@ -4574,6 +4574,10 @@ function _geoParkStored(){
 function _geoParkRestore(){
   try{
     if(window._geoParkRestored)return false;
+    // Not a decision until the login is known: judged against a null uid the
+    // stored park can only ever mismatch, and the disarm below would then
+    // forget a park that is genuinely still running and never look again.
+    if(!(_supaUser&&_supaUser.id))return false;
     window._geoParkRestored=true;
     const s=_geoParkStored();
     if(s){
@@ -5746,6 +5750,20 @@ function _geoStaleWatcherSweep(BG){
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
   if(_geoWatchId!=null||_geoNativeWatcherId!=null||_geoNativeStarting)return;
+  // A BOOT INTO A PARK IT REMEMBERS (owner 2026-09-08, the arrow after the
+  // 19:02 watchdog reload). _geoParkRestore has already put JS back in park
+  // mode; starting the continuous watcher here anyway lit the indicator, and
+  // nothing could ever take it down: _geoEnterParkMode opens with
+  // `if(_geoParkModeOn)return`, so the one routine that removes the watcher
+  // believed the job was done. Same rule as everywhere else: on screen means
+  // live GPS, so a visible boot exits the park properly (which restarts this
+  // through _geoExitParkMode with the flag down); a hidden one (a background
+  // relaunch, a reload behind the lock screen) stays parked on the fences.
+  if(_geoParkModeOn){
+    if(_geoAppOnScreen()){_geoExitParkMode();return;}
+    _geoParkNote('start-skip','parked, app hidden');
+    return;
+  }
   const BG=_geoNativePlugin();
   if(BG&&typeof BG.addWatcher==='function'){
     // Native shell: the background watcher also fires in the foreground, so it
