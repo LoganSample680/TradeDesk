@@ -29,6 +29,18 @@ test.describe('the wake stream is bounded', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // THE BOOT'S OWN ONE-SHOT MUST NOT LAND IN A CASE'S WINDOW (webkit shard
+    // 3, 2026-09-10). _geoParkRestore (js/geo-track.js) is latched once per
+    // page but gated on the login being known, so it fires at whatever
+    // moment that becomes true, and it journals from inside a promise. It
+    // landed in the middle of "a replayed drop ... changes nothing", which
+    // recorded ['wake-disarm', 'no park on this boot'] for an event that
+    // caused nothing: a note from work the case never drove. Which case
+    // catches it is pure timing, which is why it only ever showed up on a
+    // loaded shard. Closing the latch here means every note a case records
+    // is one it caused. The case below that drives the restore deliberately
+    // saves and restores this flag itself, so it is unaffected.
+    await page.evaluate(() => { window._geoParkRestored = true; });
   });
   test.afterAll(async () => { await page.context().close(); });
 
