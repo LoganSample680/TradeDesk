@@ -3114,6 +3114,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         load: _tlRailKind({ source: 'auto', rawSource: 'place-load' }),
         gap: _tlRailKind({ source: 'unaccounted' }),
         off: _tlRailKind({ source: 'auto', rawSource: 'stop', unpaid: true }),
+        held: _tlRailKind({ source: 'auto', rawSource: 'client-held', unpaid: true }),
         none: _tlRailKind(null),
       }));
       expect(r.drive).toBe('drive');
@@ -3123,6 +3124,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.load).toBe('load');
       expect(r.gap).toBe('gap');
       expect(r.off).toBe('off');
+      // A held visit has its own kind, and takes it before the unpaid
+      // catch-all it used to fall into (owner 2026-09-10).
+      expect(r.held).toBe('held');
       expect(r.none).toBe('job');
     });
 
@@ -4841,6 +4845,55 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r.takesForce).toBe(true);
       expect(r.forced).toBe(true);
+    });
+  });
+
+  // ── Rule 13's question, asked where it is stated (owner 2026-09-10) ───────
+  // His Sunday rail: 14 minutes at a client he had just saved came back
+  // reading "MANUAL TIME · UNPAID". Nothing typed it, and "unpaid" is a
+  // verdict on a row the app is deliberately holding open to ask about.
+  test.describe('a held visit is a question, not manual time', () => {
+    const HELD = { source: 'auto', rawSource: 'client-held', clientName: 'Aldi GUYS',
+                   rawId: 'srv-77', unpaid: true, minutes: 14, date: '2026-09-06', personUid: null,
+                   startTime: '2026-09-06T21:46:00Z', endTime: '2026-09-06T22:00:00Z' };
+    const render = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, HELD, over));
+
+    test('it is named a visit, and never stamped unpaid', async () => {
+      const h = await render();
+      expect(h).toMatch(/Visit/);
+      expect(h, 'the word that was wrong').not.toMatch(/Manual time/);
+      expect(h, 'a question does not carry a verdict').not.toMatch(/· unpaid/);
+      expect(h, 'and it still says it is not counted').toMatch(/Were you working here\?/);
+    });
+
+    test('both answers are on the row, wired to the server row', async () => {
+      const h = await render();
+      expect(h).toMatch(/_visitHoldAnswer\('srv-77','working'\)/);
+      expect(h).toMatch(/_visitHoldAnswer\('srv-77','personal'\)/);
+    });
+
+    test('a row with no server id asks nothing it cannot answer', async () => {
+      const h = await render({ rawId: null });
+      expect(h).not.toMatch(/_visitHoldAnswer/);
+    });
+
+    // Answering writes to that person's timesheet: never from a crew rail or
+    // a shared one. Same gate as every other chip here.
+    test('a crew visit is shown but not answerable, and neither is a shared sheet', async () => {
+      expect(await render({ personUid: 'somebody-else' })).not.toMatch(/_visitHoldAnswer/);
+      const ro = await page.evaluate((r) => {
+        window._tlViewOnly = true;
+        try { return String(_tlRailRow(r)); } finally { window._tlViewOnly = false; }
+      }, HELD);
+      expect(ro).not.toMatch(/_visitHoldAnswer/);
+      expect(ro, 'the visit itself is still on the rail').toMatch(/Visit/);
+    });
+
+    test('no other row grows the answers', async () => {
+      for (const over of [{ rawSource: 'client' }, { rawSource: 'unsaved' }, { rawSource: 'stop' },
+                          { source: 'manual', rawSource: null }]) {
+        expect(await render(over), JSON.stringify(over)).not.toMatch(/_visitHoldAnswer/);
+      }
     });
   });
 

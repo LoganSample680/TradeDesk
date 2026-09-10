@@ -73,8 +73,9 @@ function _tlJobClientInfo(jobId){
 function _tlSourceLabel(source){
   const s=String(source||'');
   if(/^geofence/.test(s))return '';
-  // Rule 13's question, said as a question. Answered on the Home screen.
-  if(s==='client-held')return 'Working here? Answer on Home';
+  // Rule 13's question, said as a question. Answerable on the rail itself
+  // and on the Home screen, through the same handler (owner 2026-09-10).
+  if(s==='client-held')return 'Not counted until you answer';
   // "Drive time", "Shop time", "Loading time" (owner 2026-08-29): every badge
   // on this table names a BLOCK OF TIME, so they all end in the same word. A
   // bare gerund reads as a status the app is currently in ("Driving...") when
@@ -1243,6 +1244,13 @@ function _tlRailKind(r){
   if(r.rawSource==='place-office')return 'office';
   if(r.rawSource==='place-home')return 'home';
   if(r.rawSource==='site'||r.rawSource==='unsaved')return 'site';
+  // RULE 13'S QUESTION IS NOT MANUAL TIME (owner 2026-09-10, on his Sunday
+  // rail: a 14-minute visit to a client he had just saved came back reading
+  // "MANUAL TIME · UNPAID"). Nothing about it is manual, nobody typed it,
+  // and "unpaid" states a verdict on a row the app is deliberately holding
+  // open to ask about. It had no arm of its own, so it fell through to the
+  // unpaid catch-all below and inherited that bucket's word.
+  if(r.rawSource==='client-held')return 'held';
   // Same raw-column-first rule as _tlRow, and for the same reason: the
   // friendly label is not a stable key.
   if(r.source==='auto'&&((typeof _geoIsDriveSource==='function'&&r.rawSource)
@@ -1289,6 +1297,11 @@ const _TL_RAIL_META={
   // could name. The row prints "Address not saved" underneath and no title of
   // its own, the same way the gap row refuses to repeat its own tag.
   site:  {c:'var(--blue)',       icon:'📍', word:'Unsaved address'},
+  // A visit at a saved client that the day cannot vouch for: no clock over
+  // it and outside the working week (js/geo-derive.js rule 13). Grey with
+  // the others that are not asserted work, because it is not counted, but
+  // named as what it is: a visit waiting on an answer, not a verdict.
+  held:  {c:'var(--text3)',      icon:'📍', word:'Visit'},
   manual:{c:'var(--text3)',      icon:'▶',  word:'Manual'},
   gap:   {c:'var(--border2)',    icon:'❓', word:'Unaccounted'}
 };
@@ -1434,6 +1447,20 @@ function _tlRailRow(r){
     // ONLY ON YOUR OWN ROW, the same gate the answer chips carry: saving this
     // creates a client record on the account, and a crew rail or a shared
     // timesheet is not the place to do that on somebody else's behalf.
+    // ASK WHERE IT IS ASKED (owner 2026-09-10). The row states that this
+    // visit is not counted; the two answers that settle it were only on the
+    // Home card, so the rail's own words sent him to another screen. Same
+    // handler, not a second copy: _visitHoldAnswer (js/dashboard.js) writes
+    // through geo_answer_visit and refreshes this rail when it lands, so one
+    // change to what an answer means still lands in both places (7.3).
+    if(kind==='held'&&r.rawId!=null&&_tlRowIsMine(r)){
+      const a=escHtml(String(r.rawId));
+      body+='<div class="tl-rail-ttl">Were you working here?</div>'+
+        '<div class="tl-rail-chips">'+
+        '<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+a+'\',\'working\')">Working</button>'+
+        '<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+a+'\',\'personal\')">Personal</button>'+
+        '</div>';
+    }
     if(kind==='site'&&r.rawSource==='unsaved'&&r.clientKey&&_tlRowIsMine(r)){
       body+='<div class="tl-rail-chips">'+
         '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
@@ -1451,7 +1478,9 @@ function _tlRailRow(r){
   let _tripNo=null;
   try{if(kind==='drive'&&typeof _mileTripNumberForLeg==='function')_tripNo=_mileTripNumberForLeg(r.date,r.clientKey);}catch(_e){_tripNo=null;}
   const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+(_tripNo?('Trip '+_tripNo+' · '):'')+escHtml(m.word)+
-    (r.unpaid&&!isGap&&!r.clockPaid?' · unpaid':'')+'</span>';
+    // A held visit carries no "unpaid": it is not counted YET, and the row
+    // says so in words and offers the two answers underneath.
+    (r.unpaid&&!isGap&&kind!=='held'&&!r.clockPaid?' · unpaid':'')+'</span>';
   // EDIT LIVES HERE NOW. The entries table was the only place a manual clock
   // could be fixed, and the owner cut it off the week view as clutter
   // (2026-08-30). Losing the ability to correct an entry was not part of that

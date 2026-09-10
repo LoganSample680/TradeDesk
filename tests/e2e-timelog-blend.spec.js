@@ -253,7 +253,12 @@ test.describe('manual clock over a derived day', () => {
                  dismissed: !!byId('d1'), paid: _tlPaidMin(rows) };
       } finally { window._fetchCrewLabor = saved; }
     });
-    expect(r.held).toEqual({ unpaid: true, detail: 'Working here? Answer on Home', kind: 'off' });
+    // unpaid stays: a held visit is still in no total, which is the whole
+    // point of rule 13. The KIND and the words changed on 2026-09-10: it used
+    // to fall through to the unpaid catch-all and read "Manual time · unpaid",
+    // which is not manual and is not a verdict, and it used to send him to the
+    // Home screen for the answer that now sits on the row.
+    expect(r.held).toEqual({ unpaid: true, detail: 'Not counted until you answer', kind: 'held' });
     expect(r.dismissed).toBe(false);
     expect(r.paid).toBe(120);
   });
