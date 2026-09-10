@@ -309,6 +309,40 @@ async function loadAccountData(){
     const _hatPickCrew=await(async()=>{
       if(!(u&&u.account_id))return false;
       window._hatOwnsBusiness=true;
+      // AN OWNER CLAIMS THEIR OWN INVITES TOO (owner report 2026-09-10).
+      //
+      // Blake owns Sample Co, was invited onto TradeDesk as a manager, opened
+      // the link three minutes later, and got no switcher and no crew hat. His
+      // roster row still read employee_user_id null, active false.
+      //
+      // Root cause: the links query below only ever counted rows that were
+      // ALREADY linked, and the owner branch underneath this returns before
+      // the CREW LINKING block, so the claim that lives in that block never
+      // ran for a login that owns a business. A dual-hat user could be invited
+      // and stay unlinked forever, which is 9.10's entire case, and it landed
+      // on the first real one we had.
+      //
+      // Both claim paths, in the order the crew block already uses them: the
+      // forge-proof token while the invite link is still stashed, then the
+      // email match. The email match is what makes this RETROACTIVE and is the
+      // reason it is not gated on a stash: Blake has none left, and
+      // claim_crew_by_email reads his address off auth.users rather than from
+      // the client, so every invite sitting unclaimed against a login that
+      // owns a business links itself on that login's next boot with nothing
+      // for the contractor to re-send.
+      //
+      // Claiming is not switching. The hat still has to be chosen below, and
+      // an unchosen hat still lands them in their own business exactly as
+      // before. All this does is make the link exist so the switcher can offer
+      // it, which is why it is safe to run on every owner boot.
+      try{
+        const _tok=(()=>{try{return (JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null')||{}).tok||null;}catch(_e2){return null;}})();
+        if(_tok){
+          const{data:_ct}=await _supa.rpc('claim_crew_invite',{tok:_tok});
+          if(_ct&&_ct.ok){try{localStorage.removeItem('_pendingEmpInvite');}catch(_e2){}}
+        }
+        await _supa.rpc('claim_crew_by_email');
+      }catch(_e){}
       let _links=[];
       try{
         const{data:_hr}=await _supa.from('team_members').select('contractor_user_id,name,role').eq('employee_user_id',_supaUser.id).eq('active',true);
@@ -634,7 +668,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.10.26.7';
+const APP_VERSION='09.10.26.8';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
