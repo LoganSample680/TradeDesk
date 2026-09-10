@@ -167,6 +167,87 @@ test.describe('TdScan web half', () => {
     });
   });
 
+  // ── The sheet is square to the page (owner 2026-09-10) ───────────────────
+  // "the floor plan itself is ugly as hell". His living room sat 68 degrees
+  // off the scene's zero, which is wherever the phone pointed when the
+  // session started, so the drawing ran corner to corner, every dimension
+  // string read at an angle and half the sheet was margin.
+  test.describe('the plan is turned square to the page', () => {
+    const wall = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                        h: 2.44, doors: [], windows: [], conf: 'high' });
+    // His own room, to the centimetre, off his own account.
+    const ALDI = [wall(-0.66, 2.81, -2.46, -1.68), wall(-2.46, -1.68, -3.72, -4.83),
+                  wall(-3.72, -4.83, -0.57, -6.09), wall(-0.57, -6.09, 0.69, -2.94),
+                  wall(0.69, -2.94, 2.48, 1.56), wall(2.48, 1.56, -0.66, 2.81),
+                  wall(-2.46, -1.68, 0.69, -2.94)];
+
+    test('a room already square to the page is left exactly alone', async () => {
+      const deg = await page.evaluate((walls) => _scanPlanAngle([{ walls }]) * 180 / Math.PI,
+        [wall(0, 0, 4, 0), wall(4, 0, 4, 3), wall(4, 3, 0, 3), wall(0, 3, 0, 0)]);
+      expect(deg).toBe(0);
+    });
+
+    test('and his room turns until its longest run of wall lies flat', async () => {
+      const r = await page.evaluate((walls) => {
+        const rot = _scanPlanAngle([{ walls }]);
+        const cs = Math.cos(rot), sn = Math.sin(rot);
+        const out = _scanRotateRoom({ walls, poly: [], objects: [] }, cs, sn, 0, 0);
+        // The longest wall, as an angle off horizontal, folded to a half turn.
+        const longest = out.walls.slice().sort((a, b) => b.len - a.len)[0];
+        let a = Math.atan2(longest.bz - longest.az, longest.bx - longest.ax) * 180 / Math.PI;
+        a = ((a % 180) + 180) % 180;
+        return { deg: Math.round(rot * 180 / Math.PI), lies: Math.min(a, 180 - a) };
+      }, ALDI);
+      expect(r.deg, 'his was 68 degrees off').toBe(-70);
+      expect(r.lies, 'and lies flat afterwards, to within the bucket').toBeLessThanOrEqual(5);
+    });
+
+    test('turning the page never changes the room', async () => {
+      const r = await page.evaluate((walls) => {
+        const room = { walls, poly: [[-0.66, 2.81], [-2.46, -1.68], [-3.72, -4.83],
+                                     [-0.57, -6.09], [0.69, -2.94], [2.48, 1.56]],
+                       objects: [{ cx: 1, cz: 2, w: 1, d: 2, ux: 1, uz: 0 }] };
+        const rot = _scanPlanAngle([room]);
+        const out = _scanRotateRoom(room, Math.cos(rot), Math.sin(rot), 0, 0);
+        const len = w => Math.round(Math.hypot(w.bx - w.ax, w.bz - w.az) * 1000);
+        return { areaBefore: Math.round(Math.abs(_scanShoelace(room.poly)) * 100),
+                 areaAfter: Math.round(Math.abs(_scanShoelace(out.poly)) * 100),
+                 lensBefore: room.walls.map(len), lensAfter: out.walls.map(len),
+                 unit: Math.round(Math.hypot(out.objects[0].ux, out.objects[0].uz) * 1000) };
+      }, ALDI);
+      expect(r.areaAfter, 'the floor is the same floor').toBe(r.areaBefore);
+      expect(r.lensAfter, 'and every wall is the same length').toEqual(r.lensBefore);
+      expect(r.unit, "a symbol's own direction stays a unit vector").toBe(1000);
+    });
+
+    test('north turns with the sheet, because north is not a property of paper', async () => {
+      const r = await page.evaluate((walls) => {
+        const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly: [], objects: [], hM: 2.44,
+                     floorM2: 20, wallM2: 40, openM2: 0, perimM: 20, story: 1 }], headingDeg: 90 };
+        const svg = _scanPlanSvg(sc, { sheet: true });
+        const m = /rotate\((-?\d+)\)/.exec(svg);
+        return { rot: Math.round(_scanPlanAngle(sc.rooms) * 180 / Math.PI), drawn: m && +m[1] };
+      }, ALDI);
+      expect(r.drawn, 'the arrow moved by exactly the angle the page did').toBe(90 + r.rot);
+    });
+
+    test('nothing to square, or junk, and it simply does not turn', async () => {
+      const r = await page.evaluate(() => ({
+        none: _scanPlanAngle([]),
+        noWalls: _scanPlanAngle([{ walls: [] }]),
+        junk: _scanPlanAngle([{ walls: [{ ax: 0, az: 0, bx: 0, bz: 0 }] }]),
+        undef: _scanPlanAngle(null),
+        room: _scanRotateRoom(null, 1, 0, 0, 0),
+        bare: _scanRotateRoom({}, 1, 0, 0, 0),
+        nullObj: _scanRotateRoom({ walls: [], poly: [], objects: [null] }, 0, 1, 0, 0).objects,
+      }));
+      expect([r.none, r.noWalls, r.junk, r.undef]).toEqual([0, 0, 0, 0]);
+      expect(r.room).toBeNull();
+      expect(r.bare).toEqual({ poly: [], walls: [], objects: [] });
+      expect(r.nullObj, 'a malformed object rides through rather than throwing').toEqual([null]);
+    });
+  });
+
   test('parses RoomPlan JSON into honest footage: 120 sq ft floor, 44 ft of wall, 8 ft ceilings', async () => {
     const r = await page.evaluate((raw) => {
       const room = _scanParseRoom(raw, 'Kitchen');

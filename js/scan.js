@@ -1162,6 +1162,76 @@ function _scanSideRuns(rooms,side,minX,minZ,maxX,maxZ){
 // and a north arrow when the compass grabbed a heading. RoomPlan hands us
 // clean parametric vectors, so the render is CAD-crisp where competitors
 // trace wobbly meshes.
+// ── A ROOM ALREADY SAVED STILL HAS TO DRAW (owner 2026-09-10) ─────────────
+// His Aldi GUYS scan was parsed before the floor-polygon fix above, so its
+// stored poly is the flat line that bug produced: six corners on one z. It
+// cost him more than the missing area. The sheet SIZES ITSELF from the poly,
+// so a polygon of height zero laid out a sheet of height zero, and the walls,
+// which span 8.9 m and were always correct, drew straight through the title
+// block and off the page. That is the screenshot he sent.
+//
+// A re-scan is not the answer to a parser bug: repair what is there. This
+// hands back a usable outline and area for any room, stored or fresh, without
+// touching the record, so the drawing and the numbers can never disagree
+// about which polygon they used.
+function _scanRoomGeom(r){
+  const walls=(r&&r.walls)||[];
+  let poly=(r&&Array.isArray(r.poly)&&r.poly.length>2)?r.poly:null;
+  if(poly&&Math.abs(_scanShoelace(poly))<0.5&&walls.length>=3)poly=null;
+  if(poly)return {poly,floorM2:(typeof r.floorM2==='number'&&r.floorM2>0.5)?r.floorM2:Math.abs(_scanShoelace(poly)),approx:!!(r&&r.floorApprox)};
+  const pts=[];walls.forEach(w=>{pts.push([w.ax,w.az]);pts.push([w.bx,w.bz]);});
+  const hull=pts.length>2?_scanHull(pts):[];
+  if(hull.length>2)return {poly:hull,floorM2:Math.abs(_scanShoelace(hull)),approx:true};
+  return {poly:(r&&r.poly)||[],floorM2:(r&&r.floorM2)||0,approx:!!(r&&r.floorApprox)};
+}
+// ── SQUARE TO THE PAGE (owner 2026-09-10: "the floor plan itself is ugly as
+// hell") ──────────────────────────────────────────────────────────────────
+// A scan's coordinates are the SCENE's, and the scene's zero is wherever the
+// phone happened to point when the session started. His living room came out
+// 68 degrees off, so the drawing ran corner to corner across the sheet, every
+// dimension string read at an angle, and half the page was margin. Nothing
+// was wrong with it; it was just never turned the right way up.
+//
+// Every floor plan ever drawn is square to its paper. The longest RUN of wall
+// is what a room squares to, because it is the one a person reads the room
+// along, and the runs are bucketed so a scan's own noise cannot split one
+// wall into two rivals.
+//
+// The compass is what keeps this honest: north is a fact about the building,
+// not about the sheet, so the arrow turns by the same angle and still points
+// where north really is.
+function _scanPlanAngle(rooms){
+  const by={};
+  (rooms||[]).forEach(r=>(r.walls||[]).forEach(w=>{
+    const dx=w.bx-w.ax,dz=w.bz-w.az,len=Math.hypot(dx,dz);
+    if(!(len>0.3))return;
+    // Folded to a half turn: a wall and the same wall backwards square the
+    // page identically.
+    let a=Math.atan2(dz,dx)*180/Math.PI;
+    a=((a%180)+180)%180;
+    const key=(Math.round(a/5)*5)%180;
+    by[key]=(by[key]||0)+len;
+  }));
+  const best=Object.keys(by).sort((a,b)=>by[b]-by[a]||(+a)-(+b))[0];
+  return best==null?0:(-(+best)*Math.PI/180)||0;   // ||0 so a square room reads 0, never -0
+}
+function _scanRotateRoom(r,cs,sn,ox,oz){
+  if(!r)return r;
+  const pt=(x,z)=>{const dx=x-ox,dz=z-oz;return [ox+dx*cs-dz*sn,oz+dx*sn+dz*cs];};
+  const dir=(x,z)=>[x*cs-z*sn,x*sn+z*cs];
+  const out=Object.assign({},r);
+  out.poly=(r.poly||[]).map(q=>pt(q[0],q[1]));
+  out.walls=(r.walls||[]).map(w=>{
+    const a=pt(w.ax,w.az),b=pt(w.bx,w.bz);
+    return Object.assign({},w,{ax:a[0],az:a[1],bx:b[0],bz:b[1]});
+  });
+  out.objects=(r.objects||[]).map(ob=>{
+    if(!ob)return ob;                              // junk rides through untouched
+    const c=pt(ob.cx,ob.cz),u=dir(ob.ux==null?1:ob.ux,ob.uz==null?0:ob.uz);
+    return Object.assign({},ob,{cx:c[0],cz:c[1],ux:u[0],uz:u[1]});
+  });
+  return out;
+}
 function _scanPlanSvg(sc,opts){
   const o=opts||{};
   const lens=o.lens||'plan';
@@ -1172,8 +1242,28 @@ function _scanPlanSvg(sc,opts){
   const rooms=[],gidx=[];
   (sc.rooms||[]).forEach((r,gi)=>{if(!o.story||Math.max(1,+r.story||1)===o.story){rooms.push(r);gidx.push(gi);}});
   if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3,#6a6963)">No rooms captured</text></svg>';
+  // Turned once, here, so every measurement, symbol and label below is drawn
+  // in page space and nothing downstream needs to know this happened.
+  const _rot=_scanPlanAngle(rooms);
+  if(Math.abs(_rot)>0.001){
+    let ox=0,oz=0,n=0;
+    rooms.forEach(r=>(r.walls||[]).forEach(w=>{ox+=w.ax+w.bx;oz+=w.az+w.bz;n+=2;}));
+    if(n){ox/=n;oz/=n;}
+    const cs=Math.cos(_rot),sn=Math.sin(_rot);
+    for(let i=0;i<rooms.length;i++)rooms[i]=_scanRotateRoom(rooms[i],cs,sn,ox,oz);
+  }
+  // THE SHEET IS SIZED BY EVERYTHING IT DRAWS, not by the floor polygon
+  // alone. Walls are drawn from their own endpoints, and a poly that does not
+  // contain them (a bad one, or an interior divider reaching past the floor)
+  // put them outside the page. Fitting the drawing to the drawing cannot go
+  // wrong the way fitting it to one of its layers can.
   let minX=1e9,minZ=1e9,maxX=-1e9,maxZ=-1e9;
-  rooms.forEach(r=>(r.poly||[]).forEach(([x,z])=>{minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);}));
+  const seen=(x,z)=>{if(!isFinite(x)||!isFinite(z))return;minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);};
+  rooms.forEach(r=>{
+    _scanRoomGeom(r).poly.forEach(([x,z])=>seen(x,z));
+    (r.walls||[]).forEach(w=>{seen(w.ax,w.az);seen(w.bx,w.bz);});
+    (r.objects||[]).forEach(ob=>{if(!ob)return;const rr=Math.max(ob.w||0,ob.d||0)/2;seen(ob.cx-rr,ob.cz-rr);seen(ob.cx+rr,ob.cz+rr);});
+  });
   if(minX>maxX)return '<svg viewBox="0 0 100 40"></svg>';
   // Sheet layout, in viewBox units: a margin wide enough for two rows of
   // dimension string on every side, a title block on top and a scale bar
@@ -1200,7 +1290,7 @@ function _scanPlanSvg(sc,opts){
   // 0. Title block: what it is, whose it is, how big it is. A plan without one
   // reads like a screenshot; with one it reads like a document you hand over.
   if(o.sheet){
-    const tot=Math.round(_scanSqFt(rooms.reduce((t,r)=>t+(r.floorM2||0),0)));
+    const tot=Math.round(_scanSqFt(rooms.reduce((t,r)=>t+_scanRoomGeom(r).floorM2,0)));
     s+='<text x="50" y="7.6" font-size="4.6" font-weight="700" fill="'+_SCAN_TXT+'" text-anchor="middle">'+escHtml(o.title||'Floor plan')+'</text>';
     if(o.subtitle)s+='<text x="50" y="12.2" font-size="2.9" fill="'+_SCAN_TXT2+'" text-anchor="middle">'+escHtml(o.subtitle)+'</text>';
     s+='<text x="50" y="'+(o.subtitle?15.9:12.4)+'" font-size="2.6" fill="'+_SCAN_TXT2+'" text-anchor="middle">Approximately '+tot.toLocaleString()+' sq ft total</text>';
@@ -1383,7 +1473,7 @@ function _scanPlanSvg(sc,opts){
     // readable. Small rooms end up with a smaller, quieter label, which is
     // also how a real plan draws them.
     const dimTxt=_scanFtIn(bw)+' \u00d7 '+_scanFtIn(bh);
-    const areaTxt=Math.round(_scanSqFt(r.floorM2||0)).toLocaleString()+' sq ft';
+    const areaTxt=Math.round(_scanSqFt(_scanRoomGeom(r).floorM2)).toLocaleString()+' sq ft';
     const widest=Math.max((r.label||'Room').length,boxy?dimTxt.length:0,areaTxt.length);
     const fit=(bw*k*0.82)/(widest*0.55||1);
     const f1=Math.max(1.75,Math.min(2.9,fit));
@@ -1403,7 +1493,9 @@ function _scanPlanSvg(sc,opts){
   });
   // 6. North arrow when the compass grabbed a heading at capture.
   if(typeof sc.headingDeg==='number'&&sc.headingDeg>=0){
-    s+='<g transform="translate(94.5,'+(HEAD+5).toFixed(1)+') rotate('+Math.round(sc.headingDeg)+')">'+
+    // The page turned, so the arrow turns with it.
+    const _nDeg=Math.round(sc.headingDeg+_rot*180/Math.PI);
+    s+='<g transform="translate(94.5,'+(HEAD+5).toFixed(1)+') rotate('+_nDeg+')">'+
        '<circle r="3" fill="none" stroke="'+_SCAN_LINE+'" stroke-width="0.3"/>'+
        '<path d="M 0 -2.2 L 1 1.6 L 0 0.7 L -1 1.6 Z" fill="'+_SCAN_TXT+'"/>'+
        '<text y="-4" font-size="2.2" fill="'+_SCAN_TXT2+'" text-anchor="middle">N</text></g>';
@@ -1862,7 +1954,7 @@ function openScanViewer(id){
   if(!stories.includes(_scanViewStory))_scanViewStory=stories[0];
   const story=_scanViewStory;
   document.getElementById('_scan-view-ov')?.remove();
-  const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
+  const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+_scanRoomGeom(r).floorM2,0)));
   const totalWallSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.wallM2,0)));
   const tabs=_scanTabs();
   let body='';
