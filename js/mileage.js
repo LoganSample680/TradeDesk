@@ -3089,7 +3089,9 @@ async function _mileSaveStopAddress(clientKey,day){
   // still answers its first stop instead of doing nothing.
   const c=(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null;
   if(!c)return false;
-  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to'});
+  // WHICH stop, not just which leg: the fallback below names one rail row and
+  // a leg can carry several.
+  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to',stop:ix});
 }
 // Called by saveClient once the new client's address has been geocoded (so
 // the fence exists). Re-derives the traced day; the real leg lands under the
@@ -3100,9 +3102,85 @@ async function _mileAddressSaved(client){
   _mileAddressPending=null;
   try{
     if(typeof _geoDeriveDayNow==='function')await _geoDeriveDayNow(p.day,null);
+    // A day the deriver could not rebuild leaves the row exactly as it was,
+    // so ask the row itself whether the answer landed rather than trusting
+    // the derive to have run. This also covers the day it DID rebuild and
+    // still could not reach the end, which is the same problem for the
+    // person looking at it.
+    if(_mileStillUnsaved(p))await _mileNameUnsaved(p,client);
     const n=_mileTripNumberForLeg(p.day,p.legKey);
     if(typeof showToast==='function')showToast(n?('Trip '+n+' is on the books'):'Address saved, day re-derived');
   }catch(_e){}
+  return true;
+}
+// ── When the day is too old to rebuild (owner 2026-09-10) ──────────────────
+// The re-derive above replays the day from Apple's CoreMotion tape, and iOS
+// keeps about seven days of it. Past that there is no tape, `_geoDeriveDayNow`
+// correctly refuses to rebuild a day it cannot see, and the trip sat on the
+// log reading "Unsaved address" with its miles uncounted forever however many
+// times the person saved the lead.
+//
+// Nothing about that drive is in question. The path, the miles and both
+// stamps were written when it happened and are still on the row. The only
+// thing missing was the NAME of one end, and the person just supplied it. So
+// this writes the name onto the row that is already there instead of trying
+// to rebuild a day nothing can rebuild.
+//
+// It is a hand fix, not a derive, and §17 holds: the deriver stays the only
+// thing that decides what a drive IS. This decides nothing. It records an
+// answer a human gave about a row that already exists, the same way Fix clock
+// times does, and it is stamped the same way so a later rebuild carries it
+// across rather than reverting it. A day with no tape never sweeps
+// (`p_sweep`, js/geo-track.js), so a named row can be neither reverted nor
+// retired behind the person's back.
+function _mileLegRow(p){
+  return (typeof mileage!=='undefined'?mileage:[])
+    .find(x=>x&&String(x.legKey||x.id)===String(p.legKey)&&(!p.day||x.date===p.day))||null;
+}
+function _mileStillUnsaved(p){
+  const r=_mileLegRow(p);
+  return !!(r&&r.addressUnknown&&(p.which==='from'?r.unsavedFrom:(r.unsavedTo||r.unsavedVia)));
+}
+async function _mileNameUnsaved(p,client){
+  const r=_mileLegRow(p);
+  if(!r||!r.addressUnknown)return false;
+  const addr=String(client.addr||'').trim(),nm=String(client.name||'').trim();
+  if(!addr&&!nm)return false;
+  // The same end the Save button resolved a coordinate for (_mileSaveAddress
+  // above), in the same order: a round trip's stop before its two identical
+  // ends, or there is no end worth naming.
+  let named=false;
+  if(p.which==='from'&&r.unsavedFrom){r.from=addr||nm;r.from_name=nm;r.unsavedFrom=false;named=true;}
+  else if(r.unsavedVia){r.via_name=nm;r.via_addr=addr;r.unsavedVia=false;named=true;}
+  else if(r.unsavedTo){r.to=addr||nm;r.to_name=nm;r.unsavedTo=false;named=true;}
+  if(!named)return false;
+  // Only once NOTHING is left unnamed do the miles count: a leg with one end
+  // still missing is as unclaimable as it was before (owner 2026-09-08, "only
+  // things with addresses saved should update any totals").
+  if(!r.unsavedFrom&&!r.unsavedTo&&!r.unsavedVia)delete r.addressUnknown;
+  r.fixedAt=new Date().toISOString();
+  try{saveAll();_flushSaveNow();}catch(_e){}
+  await _mileNameStopRow(p,client);
+  try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
+  return true;
+}
+// The Time Log rail's own row for that same stop. The deriver writes it with
+// no name on purpose (an unsaved stop is never given one) and keeps it out of
+// every total; naming it is the same answer `geo_answer_visit` records for a
+// held visit, so it lands in the same shape: the client's name, source
+// 'client', and the fixed_at stamp that makes it a person's answer.
+async function _mileNameStopRow(p,client){
+  if(p.stop==null||!window._supa||!window._supaUser)return false;
+  const nm=String(client.name||client.addr||'').trim();
+  if(!nm)return false;
+  try{
+    const{error}=await _supa.from('job_time_entries')
+      .update({dest_place:nm,source:'client',fixed_at:new Date().toISOString()})
+      .eq('employee_user_id',_supaUser.id)
+      .eq('client_key',String(p.legKey)+':s'+p.stop);
+    if(error)return false;
+  }catch(_e){return false;}
+  try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
   return true;
 }
 function openMileageEdit(id){

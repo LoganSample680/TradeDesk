@@ -394,7 +394,15 @@ test.describe('traced trips', () => {
           } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
           return out;
         });
-        expect(Object.keys(r.viaMileage).sort()).toEqual(Object.keys(r.viaRail).sort());
+        // OLD: the two doors handed over identical targets. NEW (2026-09-10):
+        // the rail door adds `stop`, because a rail row IS one stop of a leg
+        // and the too-old-to-rebuild path has to name that row and no other.
+        // Everything else the two doors carry still has to match exactly, or
+        // they have stopped being one behaviour.
+        const shared = k => Object.keys(k).filter(x => x !== 'stop').sort();
+        expect(shared(r.viaMileage)).toEqual(shared(r.viaRail));
+        expect(r.viaMileage.stop, 'the mileage log names an END, so it names no stop').toBe(undefined);
+        expect(r.viaRail.stop, 'the rail names the stop that was pressed').toBe(0);
         expect([r.formA, r.formB], 'the same lead form opens either way').toEqual([true, true]);
       });
     });
@@ -530,6 +538,160 @@ test.describe('traced trips', () => {
         } finally { window._geoDeriveDayNow = keepD; _mileAddressPending = null; }
       }, day);
       expect(r).toEqual({ a: false, n: 0, still: true });
+    });
+
+    // ── The day too old to rebuild (owner 2026-09-10) ─────────────────────
+    // "How long does the code save the address if it's an unsaved address?"
+    // The coordinate is on the row forever; the REPLAY needs Apple's motion
+    // tape and iOS keeps about seven days of it. Past that the deriver
+    // correctly refuses to rebuild a day it cannot see, and the trip used to
+    // sit on the log reading "Unsaved address" with its miles uncounted
+    // however many times the lead was saved.
+    test.describe('a trip older than the tape', () => {
+      const stale = () => page.evaluate(() => { window._geoDeriveDayNow = async () => null; });
+
+      test('names the end on the row that is already there, and the miles count', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          const row = mileage.find(m => m.id === 'j-traced');
+          return { to: row.to, toName: row.to_name, unsavedTo: !!row.unsavedTo,
+                   unknown: !!row.addressUnknown, fixed: !!row.fixedAt,
+                   addressed: addressedTrips(mileage).map(m => m.id),
+                   miles: row.miles };
+        }, day);
+        expect(r.to, 'the end carries the address the person just saved').toBe('2100 SW Gage Blvd');
+        expect(r.toName).toBe('Ace Hardware');
+        expect([r.unsavedTo, r.unknown], 'and nothing is unsaved about it now').toEqual([false, false]);
+        expect(r.fixed, 'stamped as a person\'s answer, not a derive').toBe(true);
+        expect(r.addressed, 'so it counts, like any other trip').toContain('j-traced');
+        expect(r.miles, 'the drive itself was never in question').toBe(6.2);
+      });
+
+      test('a leg with BOTH ends missing still counts nothing until both are named', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          const row = mileage.find(m => m.id === 'j-traced');
+          row.unsavedFrom = true; row.from = ''; row.from_name = '';
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          const half = { unknown: !!row.addressUnknown, addressed: addressedTrips(mileage).map(m => m.id) };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'from', lat: 39.012, lng: -95.74 };
+          await _mileAddressSaved({ id: 10, name: 'John Doe', addr: '2950 SW McClure Rd' });
+          return { half, from: row.from, unknown: !!row.addressUnknown,
+                   addressed: addressedTrips(mileage).map(m => m.id) };
+        }, day);
+        expect(r.half.unknown, 'one end named is still a trip with a hole in it').toBe(true);
+        expect(r.half.addressed).not.toContain('j-traced');
+        expect(r.from).toBe('2950 SW McClure Rd');
+        expect([r.unknown], 'both named, and only now is it whole').toEqual([false]);
+        expect(r.addressed).toContain('j-traced');
+      });
+
+      test('a round trip names its STOP, never the two ends that were always the same fence', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          mileage.push({ id: 'j-loop', legKey: 'j-loop', gps: true, date: d,
+            from_name: 'Shop', from: '1200 SW Oakley Ave', to_name: 'Shop', to: '1200 SW Oakley Ave',
+            miles: 8.4, mins: 40, purpose: 'Business', calc_method: 'derived-traced',
+            addressUnknown: true, unsavedVia: true, viaCoord: { lat: 39.02, lng: -95.72 },
+            viaStops: [{ lat: 39.02, lng: -95.72, at: '2026-09-08T19:00:00.000Z' }],
+            startedIso: '2026-09-08T18:40:00.000Z', endedIso: '2026-09-08T19:20:00.000Z' });
+          _mileAddressPending = { legKey: 'j-loop', day: d, which: 'to', lat: 39.02, lng: -95.72, stop: 0 };
+          await _mileAddressSaved({ id: 11, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          const row = mileage.find(m => m.id === 'j-loop');
+          return { from: row.from, to: row.to, via: row.via_addr, viaName: row.via_name,
+                   unsavedVia: !!row.unsavedVia, unknown: !!row.addressUnknown,
+                   addressed: addressedTrips(mileage).map(m => m.id) };
+        }, day);
+        expect([r.from, r.to], 'both ends are his own yard and stay his own yard')
+          .toEqual(['1200 SW Oakley Ave', '1200 SW Oakley Ave']);
+        expect(r.via, 'the place between them is what was missing').toBe('2100 SW Gage Blvd');
+        expect(r.viaName).toBe('Ace Hardware');
+        expect([r.unsavedVia, r.unknown]).toEqual([false, false]);
+        expect(r.addressed).toContain('j-loop');
+      });
+
+      test('the rail row for that stop is named too, and only that one', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          const sent = [];
+          window._supa = { from: (t) => ({ update: (u) => { const f = { _t: t, _u: u, _w: {} };
+            f.eq = (k, v) => { f._w[k] = v; return f; };
+            f.then = (res) => { sent.push({ table: f._t, update: f._u, where: f._w }); return res({ error: null }); };
+            return f; } }) };
+          window._supaUser = { id: 'emp-1' };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7, stop: 2 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          return sent;
+        }, day);
+        expect(r.length, 'one write, to the time row').toBe(1);
+        expect(r[0].table).toBe('job_time_entries');
+        expect(r[0].where.client_key, 'stop 2 of that leg, not the leg and not stop 0')
+          .toBe('j-traced:s2');
+        expect(r[0].where.employee_user_id).toBe('emp-1');
+        expect(r[0].update.dest_place, 'the client\'s name, the way a resolved dwell carries it')
+          .toBe('Ace Hardware');
+        expect(r[0].update.source, 'answered as work, so it leaves the unpaid bucket').toBe('client');
+        expect(typeof r[0].update.fixed_at, 'and stamped as a person\'s answer').toBe('string');
+      });
+
+      test('no stop was pressed, so no time row is touched', async () => {
+        const day = await seed();
+        await stale();
+        const n = await page.evaluate(async (d) => {
+          let calls = 0;
+          window._supa = { from: () => { calls++; return { update: () => ({ eq: () => ({ eq: () => ({ then: (r) => r({ error: null }) }) }) }) }; } };
+          window._supaUser = { id: 'emp-1' };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          return calls;
+        }, day);
+        expect(n, 'a mileage-log Save names a leg end and nothing else').toBe(0);
+      });
+
+      test('a day that DID rebuild is left entirely alone', async () => {
+        const day = await seed();
+        const r = await page.evaluate(async (d) => {
+          // The derive ran and resolved the end, which is what it does inside
+          // the window. The row is already right; nothing here may touch it.
+          window._geoDeriveDayNow = async () => {
+            const row = mileage.find(m => m.id === 'j-traced');
+            row.to = '1 Derived Way'; row.to_name = 'Derived'; row.unsavedTo = false;
+            delete row.addressUnknown;
+            return {};
+          };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          const row = mileage.find(m => m.id === 'j-traced');
+          return { to: row.to, fixed: !!row.fixedAt };
+        }, day);
+        expect(r.to, 'the deriver had it, so the deriver keeps it').toBe('1 Derived Way');
+        expect(r.fixed, 'and it is not marked as a hand fix, because it is not one').toBe(false);
+      });
+
+      test('junk cannot name anything', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          const out = [];
+          // A leg that is not there, an end that is not missing, a client with
+          // no name and no address.
+          _mileAddressPending = { legKey: 'nope', day: d, which: 'to', lat: 1, lng: 1 };
+          out.push(await _mileAddressSaved({ id: 1, addr: 'x' }));
+          _mileAddressPending = { legKey: 'j-real', day: d, which: 'to', lat: 1, lng: 1 };
+          out.push(await _mileAddressSaved({ id: 1, addr: 'x' }));
+          const real = mileage.find(m => m.id === 'j-real');
+          return { out, realTo: real.to, realFixed: !!real.fixedAt };
+        }, day);
+        expect(r.realTo, 'a trip that was never missing an end is untouched').toBe('2950 SW McClure Rd');
+        expect(r.realFixed).toBe(false);
+      });
     });
 
     test('the form\'s save hands off to the mileage side once the address is geocoded', async () => {
