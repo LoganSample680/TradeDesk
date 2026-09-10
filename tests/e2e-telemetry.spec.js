@@ -92,6 +92,50 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
     expect(typeof windowObj._obs.error).toBe('function');
   });
 
+  // ── Who is driving the app (owner 2026-09-10) ────────────────────────────
+  // The flow suite drives the DEPLOYED app with a real login, so its steps
+  // reach ingest-telemetry exactly like a contractor's taps do. Of the
+  // seventeen event kinds in analytics_events on the day this was written, the
+  // three highest-volume were the test harness, so every product metric built
+  // on that table would have counted CI as customers.
+  test('a real session flushes as the app, which is the default', () => {
+    const { windowObj, invocations } = loadSandbox();
+    windowObj._obs.track('lead_created', 'pg-clients');
+    windowObj._obs.flush();
+    const body = invocations[invocations.length - 1].body;
+    expect(body.source, 'nothing said otherwise, so it is a person').toBe('app');
+    expect(body.events[0].event).toBe('lead_created');
+  });
+
+  test('the harness says what it is, and every row after says it too', () => {
+    const { windowObj, invocations } = loadSandbox();
+    windowObj._obs.markTest();
+    windowObj._obs.track('flow_step', 'estimate-build|open BYO');
+    windowObj._obs.flush();
+    expect(invocations[invocations.length - 1].body.source).toBe('test');
+  });
+
+  test('it is one way: a run cannot talk itself back into the product numbers', () => {
+    const { windowObj, invocations } = loadSandbox();
+    expect(typeof windowObj._obs.markTest).toBe('function');
+    // There is no unmark, by design, and nothing else may set the source.
+    const back = Object.keys(windowObj._obs).filter(k => /app|unmark|clearTest|setSource/i.test(k));
+    expect(back, 'no way back to app once a session has declared itself').toEqual([]);
+    windowObj._obs.markTest();
+    windowObj._obs.markTest();
+    windowObj._obs.track('flow_total', 'estimate-build', 42);
+    windowObj._obs.flush();
+    expect(invocations[invocations.length - 1].body.source).toBe('test');
+  });
+
+  test('the flow harness declares itself BEFORE it writes its first row', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'flow', 'live-helpers.js'), 'utf8');
+    const mark = src.indexOf('_obs.markTest');
+    const first = src.indexOf("_obs.track('flow_step'");
+    expect(mark, 'the harness marks itself at all').toBeGreaterThan(-1);
+    expect(mark, 'and does it before the first tracked row').toBeLessThan(first);
+  });
+
   test('regression #37: MapKit transient 503 outage is NOT reported to error_log', () => {
     const { consoleObj, invocations } = loadSandbox();
     consoleObj.error('[MapKit] Initialization failed because the server returned error 503 (Network Unavailable).');

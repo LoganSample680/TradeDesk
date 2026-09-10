@@ -447,6 +447,10 @@ function report(tag, baseline, page) {
       page.evaluate(({ rows, tag2, total }) => {
         try {
           if (!window._obs) return;
+          // Say what we are BEFORE the first row: these land in the same table
+          // the product dashboard reads, and a run that did not declare itself
+          // is counted as a contractor using the app.
+          if (typeof window._obs.markTest === 'function') window._obs.markTest();
           rows.forEach(r => window._obs.track('flow_step', r.label, r.clicks));
           window._obs.track('flow_total', tag2, total);
           window._obs.flush();
