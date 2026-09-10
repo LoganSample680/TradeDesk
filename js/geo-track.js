@@ -6958,23 +6958,99 @@ function _geoWorkHours(){
 // would be no derive-version key), so it keeps its seven-day window rather
 // than losing last week to the upgrade. Anything with no history starts now.
 const _GEO_TAPE_OWNER_KEY='zp3_geo_tape_owner';
+// A LOG, NOT A VALUE (owner 2026-09-10). The old key held one {uid, since}
+// and every sign-in overwrote it, so on a phone two businesses share, each
+// sign-in blinded the other account to its own past. His 10 September: he
+// signed into a second account at 3:41pm, and his own account's read floor
+// jumped to that instant, which is why the 1:26pm arrival at John Doe could
+// never be closed and why signing back in could not rebuild it. The tape
+// itself is CoreMotion's and spans the whole week; only our permission to
+// read it was being thrown away.
+//
+// So: intervals. Each sign-in closes the open one and opens its own. A person
+// may read the spans they actually held, however many times the phone has
+// changed hands since, and two accounts on one phone each derive their own
+// day from the same tape without seeing each other's.
+const _GEO_TAPE_LOG_KEY='zp3_geo_tape_log';
+function _geoTapeLog(){
+  try{const a=JSON.parse(localStorage.getItem(_GEO_TAPE_LOG_KEY)||'null');return Array.isArray(a)?a.filter(x=>x&&x.uid&&Number(x.from)>0):[];}catch(_e){return [];}
+}
+function _geoTapeLogWrite(log){
+  try{
+    // Nothing older than the derive window can ever be asked for, and an
+    // unbounded log on a shared phone is a slow leak in localStorage.
+    const cut=Date.now()-(_GEO_DERIVE_DAYS+1)*86400000;
+    const keep=log.filter(x=>x&&(x.to==null||Number(x.to)>=cut));
+    localStorage.setItem(_GEO_TAPE_LOG_KEY,JSON.stringify(keep.slice(-40)));
+  }catch(_e){}
+}
 function _geoTapeOwner(){
   try{const o=JSON.parse(localStorage.getItem(_GEO_TAPE_OWNER_KEY)||'null');return (o&&o.uid&&Number(o.since)>0)?o:null;}catch(_e){return null;}
 }
 function _geoTapeClaim(){
   if(!_supaUser||!_supaUser.id)return;
   try{
-    const cur=_geoTapeOwner();
-    if(cur&&cur.uid===_supaUser.id)return;
-    const prior=!cur&&!!localStorage.getItem(_GEO_DERIVE_VER_KEY);
-    const since=prior?Date.now()-_GEO_DERIVE_DAYS*86400000:Date.now();
-    localStorage.setItem(_GEO_TAPE_OWNER_KEY,JSON.stringify({uid:_supaUser.id,since}));
+    const log=_geoTapeLog();
+    const open=log.length?log[log.length-1]:null;
+    if(open&&open.to==null&&open.uid===_supaUser.id){
+      // Same person still holding it. Keep the interval; refresh the account
+      // so a hat switch inside one login is recorded.
+      open.cid=(typeof _geoCid==='function'?_geoCid():null)||open.cid||null;
+      _geoTapeLogWrite(log);
+      return;
+    }
+    const now=Date.now();
+    if(open&&open.to==null)open.to=now;
+    // A phone that was already deriving before any of this shipped is a
+    // single-user phone by construction, so it keeps its seven-day window
+    // rather than losing last week to the upgrade. Carried over from the old
+    // single-claim behaviour, and from the old key when it is the only record.
+    const legacy=_geoTapeOwner();
+    const priorSolo=!log.length&&!!localStorage.getItem(_GEO_DERIVE_VER_KEY);
+    const from=(legacy&&legacy.uid===_supaUser.id&&Number(legacy.since)>0)?Number(legacy.since)
+      :(priorSolo?now-_GEO_DERIVE_DAYS*86400000:now);
+    log.push({uid:_supaUser.id,cid:(typeof _geoCid==='function'?_geoCid():null),from,to:null});
+    _geoTapeLogWrite(log);
+    localStorage.setItem(_GEO_TAPE_OWNER_KEY,JSON.stringify({uid:_supaUser.id,since:from}));
   }catch(_e){}
+}
+// Close the open interval without opening another: signing out, or switching
+// to a hat this device has not claimed yet. Leaving it open would let the
+// next person's derive read minutes that were never theirs.
+function _geoTapeRelease(){
+  try{
+    const log=_geoTapeLog();
+    const open=log.length?log[log.length-1]:null;
+    if(open&&open.to==null){open.to=Date.now();_geoTapeLogWrite(log);}
+  }catch(_e){}
+}
+// Every span of tape this signed-in person may read, oldest first, clipped to
+// the derive window.
+function _geoTapeMine(){
+  if(!_supaUser||!_supaUser.id)return [];
+  const now=Date.now(), cut=now-_GEO_DERIVE_DAYS*86400000;
+  return _geoTapeLog().filter(x=>x.uid===_supaUser.id)
+    .map(x=>({start:Math.max(Number(x.from),cut),end:x.to==null?now:Number(x.to)}))
+    .filter(x=>x.end>x.start);
+}
+// Has this device been signed into more than one account inside the window?
+// The only question geoSpanClaim needs answered, and the only thing that
+// turns the ownership test on.
+function _geoTapeShared(){
+  const cut=Date.now()-_GEO_DERIVE_DAYS*86400000;
+  const ids={};
+  _geoTapeLog().forEach(x=>{if(x.to==null||Number(x.to)>=cut)ids[x.uid]=1;});
+  return Object.keys(ids).length>1;
 }
 // The earliest tape moment this signed-in person may read on this device.
 // No claim at all (a test, a boot that has not reached init) trusts nothing
 // older than this instant, which is the safe way to be wrong.
+//
+// Reads the LOG now, so a person who handed the phone over and got it back
+// still reaches their own morning instead of starting again from now.
 function _geoTapeSince(){
+  const mine=_geoTapeMine();
+  if(mine.length)return mine[0].start;
   const o=_geoTapeOwner();
   if(o&&_supaUser&&o.uid===_supaUser.id)return Number(o.since);
   return Date.now();
@@ -6986,7 +7062,15 @@ async function _geoDeriveTape(sinceMs){
     const floor=Math.max(Number(sinceMs)||0,_geoTapeSince());
     const r=await Td.motionSince({sinceMs:floor});
     if(!r||!r.available||!Array.isArray(r.transitions))return [];
-    return r.transitions.filter(t=>t&&typeof t.ts==='number'&&t.kind&&t.ts>=floor);
+    const raw=r.transitions.filter(t=>t&&typeof t.ts==='number'&&t.kind&&t.ts>=floor);
+    // A FLOOR IS NOT ENOUGH ON A SHARED PHONE. _geoTapeSince only says how
+    // far back this person may look; on a phone handed back and forth it can
+    // reach across somebody else's afternoon. Keep only the transitions
+    // inside spans this person actually held, so two accounts on one handset
+    // derive two clean days from one tape instead of each other's.
+    const mine=_geoTapeMine();
+    if(!mine.length||!_geoTapeShared())return raw;
+    return raw.filter(t=>mine.some(w=>t.ts>=w.start&&t.ts<w.end));
   }catch(_e){return [];}
 }
 
@@ -7271,7 +7355,16 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       try{_geoParkNote('derive-skip',dayKey+': '+res.journeys.length+' drives on the tape, none resolved');}catch(_e){}
       return null;
     }
-    const rows=_geoDeriveVehicleRows(geoDeriveRows(res,{contractorId:_geoCid(),employeeId:_supaUser.id}));
+    // shared + clocks are what geoSpanClaim needs to decide whose rows these
+    // are (js/geo-derive.js). On a single-account phone shared is false and
+    // nothing about this call changes.
+    const rows=_geoDeriveVehicleRows(geoDeriveRows(res,{
+      contractorId:_geoCid(),employeeId:_supaUser.id,
+      shared:_geoTapeShared(),clocks:_geoDeriveClocks(b.start,b.end),
+    }));
+    if(rows.held&&rows.held.length){
+      try{_geoParkNote('derive-held',dayKey+': '+rows.held.length+' span(s) this account cannot identify either end of, left to whoever can');}catch(_e){}
+    }
     // The legs show the moment the day is derived (owner 2026-09-02: "the
     // drives themselves weren't instant"); the road miles are a lookup that
     // can take seconds per new pair, so they land as a second paint.

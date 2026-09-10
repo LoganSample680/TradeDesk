@@ -396,13 +396,13 @@ test.describe('geo-derive wiring', () => {
       window.__realTd = window._geoTdPlugin;
       window._geoTdPlugin = () => ({ motionSince: async ({ sinceMs }) => ({ available: true, transitions: T.filter(t => t.ts >= (sinceMs || 0)) }) });
     }, TAPE);
-    const restore = () => page.evaluate(() => { window._geoTdPlugin = window.__realTd; localStorage.removeItem('zp3_geo_tape_owner'); });
+    const restore = () => page.evaluate(() => { window._geoTdPlugin = window.__realTd; localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log'); });
 
     test('a brand-new device has no usable history for yesterday, and today from now on', async () => {
       await withTape();
       try {
         const r = await page.evaluate(async () => {
-          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_derive_ver');
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log'); localStorage.removeItem('zp3_geo_derive_ver');
           const savedUser = window._supaUser; window._supaUser = { id: 'jack' };
           try {
             const before = await _geoDeriveTape(0);       // no claim yet: trusts nothing older than now
@@ -423,7 +423,7 @@ test.describe('geo-derive wiring', () => {
       await withTape();
       try {
         const r = await page.evaluate(async () => {
-          localStorage.removeItem('zp3_geo_tape_owner');
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
           localStorage.setItem('zp3_geo_derive_ver', 'older-build');
           const savedUser = window._supaUser; window._supaUser = { id: 'jack' };
           try {
@@ -445,25 +445,54 @@ test.describe('geo-derive wiring', () => {
       await withTape();
       try {
         const r = await page.evaluate(async () => {
-          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_derive_ver');
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log'); localStorage.removeItem('zp3_geo_derive_ver');
           const savedUser = window._supaUser;
           try {
+            // A HANDOVER TAKES TIME. Three claims in the same millisecond make
+            // zero-length spans, which the reader drops as the nothing they
+            // are, so the clock has to move the way a real day does.
+            const realNow = Date.now; let t = realNow.call(Date);
+            Date.now = () => t;
+            const later = ms => { t += ms; };
             window._supaUser = { id: 'jack' }; _geoTapeClaim();
             const jack1 = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            later(3600000);
             window._supaUser = { id: 'dad' }; _geoTapeClaim();
             const dad = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            later(3600000);
             // Jack again, later: a fresh claim, never the old one back.
             window._supaUser = { id: 'jack' }; _geoTapeClaim();
             const jack2 = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
-            // and a signed-in person who is NOT the owner reads no tape at all
+            later(3600000);
+            Date.now = realNow;
+            // Dad is no longer holding the phone, but the log remembers the
+            // span he DID hold, and that span is his to read. See the
+            // assertion note below: this is the behaviour that changed.
             window._supaUser = { id: 'dad' };
-            const dadReads = (await _geoDeriveTape(0)).length;
-            return { jack1: jack1.uid, dad: dad.uid, jack2: jack2.uid, fresh: jack2.since >= dad.since, dadReads };
+            const dadWindows = _geoTapeMine().length;
+            const dadReadsJacksTape = (await _geoDeriveTape(0)).some(t => t.ts > jack2.since);
+            const shared = _geoTapeShared();
+            return { jack1: jack1.uid, dad: dad.uid, jack2: jack2.uid, fresh: jack2.since >= dad.since,
+              dadWindows, dadReadsJacksTape, shared };
           } finally { window._supaUser = savedUser; }
         });
         expect([r.jack1, r.dad, r.jack2]).toEqual(['jack', 'dad', 'jack']);
         expect(r.fresh, 'a new claim, not the old one resurrected').toBe(true);
-        expect(r.dadReads, 'not the owner, not their tape').toBe(0);
+        // ASSERTION RESTATED 2026-09-10, and the old one was right when it
+        // was written. With a single {uid, since} slot there was no record of
+        // who had held the phone when, so "you are not the current owner"
+        // was the only safe answer and dad read nothing.
+        //
+        // It is wrong now, and it is wrong in a way that cost the owner an
+        // afternoon: on a phone two businesses share, that rule means every
+        // sign-in permanently blinds the other account to its own history.
+        // His 1:26pm arrival at John Doe could not be closed and could not be
+        // rebuilt afterwards, because signing back in started his read floor
+        // at that instant. The claim is a log now, so a person reads the
+        // spans they actually held and nobody else's.
+        expect(r.dadWindows, 'dad held the phone once, so he has one span to read').toBe(1);
+        expect(r.dadReadsJacksTape, 'his own span only, never the minutes jack holds now').toBe(false);
+        expect(r.shared, 'two accounts on one handset inside the window').toBe(true);
       } finally { await restore(); }
     });
 
@@ -471,7 +500,7 @@ test.describe('geo-derive wiring', () => {
       await withTape();
       try {
         const r = await page.evaluate(async () => {
-          localStorage.removeItem('zp3_geo_tape_owner');
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
           const savedUser = window._supaUser; window._supaUser = null;
           try { _geoTapeClaim(); return { key: localStorage.getItem('zp3_geo_tape_owner'), n: (await _geoDeriveTape(0)).length }; }
           finally { window._supaUser = savedUser; }
@@ -481,6 +510,74 @@ test.describe('geo-derive wiring', () => {
       } finally { await restore(); }
     });
 
+    test('the log survives a handover and back: each account reads its own spans', async () => {
+      await withTape();
+      try {
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
+          localStorage.removeItem('zp3_geo_derive_ver');
+          const savedUser = window._supaUser;
+          try {
+            // His real 10 September, compressed: his own morning, four hours
+            // on the other account, then back. Each step needs real elapsed
+            // time or the spans are zero-length and mean nothing.
+            const realNow = Date.now; let t = realNow.call(Date);
+            Date.now = () => t;
+            const later = ms => { t += ms; };
+            window._supaUser = { id: 'logan' }; _geoTapeClaim();
+            const loganFirst = _geoTapeSince();
+            later(8 * 3600000);
+            window._supaUser = { id: 'blake' }; _geoTapeClaim();
+            later(4 * 3600000);
+            window._supaUser = { id: 'logan' }; _geoTapeClaim();
+            later(60000);
+            // THE WHOLE POINT: back on his own account, he can still reach
+            // the morning he actually held, not just this instant.
+            const out = { reachesMorning: _geoTapeSince() <= loganFirst, spans: _geoTapeMine().length };
+            Date.now = realNow;
+            return out;
+          } finally { window._supaUser = savedUser; }
+        });
+        expect(r.reachesMorning, 'signing back in must not throw away his own morning').toBe(true);
+        expect(r.spans, 'two separate spells holding the phone').toBe(2);
+      } finally { await restore(); }
+    });
+
+    test('release closes the span without opening another', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
+        const savedUser = window._supaUser;
+        try {
+          window._supaUser = { id: 'logan' }; _geoTapeClaim();
+          const openBefore = JSON.parse(localStorage.getItem('zp3_geo_tape_log')).filter(x => x.to == null).length;
+          _geoTapeRelease();
+          const log = JSON.parse(localStorage.getItem('zp3_geo_tape_log'));
+          _geoTapeRelease();   // idempotent: nothing open to close
+          return { openBefore, openAfter: log.filter(x => x.to == null).length, kept: log.length,
+            stillLen: JSON.parse(localStorage.getItem('zp3_geo_tape_log')).length };
+        } finally { window._supaUser = savedUser; }
+      });
+      expect(r.openBefore).toBe(1);
+      expect(r.openAfter, 'signing out ends your hold on the tape').toBe(0);
+      expect(r.kept, 'the span is closed, never deleted: it is what you read back').toBe(1);
+      expect(r.stillLen, 'releasing twice adds nothing').toBe(1);
+    });
+
+    test('one account on the phone is never treated as shared', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
+        const savedUser = window._supaUser;
+        try {
+          window._supaUser = { id: 'logan' }; _geoTapeClaim(); _geoTapeClaim(); _geoTapeClaim();
+          const solo = _geoTapeShared();
+          window._supaUser = { id: 'blake' }; _geoTapeClaim();
+          return { solo, shared: _geoTapeShared() };
+        } finally { window._supaUser = savedUser; }
+      });
+      expect(r.solo, 'signing in repeatedly is still one person').toBe(false);
+      expect(r.shared).toBe(true);
+    });
+
     test('junk in the claim slot is ignored, never a throw', async () => {
       const r = await page.evaluate(async () => {
         const out = [];
@@ -488,7 +585,7 @@ test.describe('geo-derive wiring', () => {
           localStorage.setItem('zp3_geo_tape_owner', junk);
           try { out.push(_geoTapeOwner() === null && typeof _geoTapeSince() === 'number'); } catch (e) { out.push('THREW'); }
         }
-        localStorage.removeItem('zp3_geo_tape_owner');
+        localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
         return out;
       });
       expect(r).toEqual([true, true, true, true, true]);
@@ -527,6 +624,9 @@ test.describe('geo-derive wiring', () => {
       // This phone has been this person's since long before the day: the
       // normal case, and the one in which a sweep is allowed at all.
       localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: OWNED_SINCE }));
+      // One account has ever held this phone, so the ownership guard
+      // (geoSpanClaim) is off and these tests read the single-account path.
+      localStorage.removeItem('zp3_geo_tape_log');
       window._geoDrainQueue = () => {};   // hold the queue so it can be inspected
       window._routeDistance = async () => ({ miles: 0, mins: 0 });   // no router unless a test brings one
       _geoFixLogPush(T[0], SHOP.lat, SHOP.lng, 5);

@@ -681,7 +681,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.10.26.15';
+const APP_VERSION='09.10.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1595,6 +1595,10 @@ window.switchHat=async function(hat){
     // deleting it here could drop unsaved records the other hat still owns.
     localStorage.removeItem('zp3_cloud_cache');
     localStorage.removeItem('zp3_delta_meta');
+    // Close this hat's span of the phone's motion tape. The boot after the
+    // reload opens the incoming hat's own span, so the two never overlap and
+    // neither can derive minutes the other held.
+    try{if(typeof _geoTapeRelease==='function')_geoTapeRelease();}catch(_e){}
     // Teachable moment: the boot after the switch confirms it worked AND names
     // the surface ("tap the business name"), so the switcher teaches itself the
     // first time it's used (owner ask 2026-08-18: "how do we make it so they
@@ -2527,6 +2531,12 @@ async function supaInit(){
         if(session){_supaUser=session.user;_saveSessionBackup(session);}
         return;
       } else if(event==='SIGNED_OUT'){
+        // Stop owning this phone's tape at the moment you leave it, not at
+        // the moment the next person signs in. Deliberately BEFORE _supaUser
+        // is cleared: _geoTapeRelease only closes the interval already open,
+        // and the log is what lets each account read back its own spans
+        // later (js/geo-track.js).
+        try{if(typeof _geoTapeRelease==='function')_geoTapeRelease();}catch(_e){}
         _supaUser=null;_user=null;_account=null;_config=null;
         // Only wipe local data when the user explicitly clicked sign out.
         // Supabase fires SIGNED_OUT on token refresh failures too (e.g. offline, network blip).

@@ -1453,13 +1453,91 @@ function _gdDwell(fence, startTs, endTs, journeyId, open) {
 //   leg                   -> job_time_entries source 'drive' + td_mileage (gps)
 //
 // client_key carries the journey id, so a rebuild upserts onto its own rows.
+/**
+ * geoSpanClaim(span, ctx) -> { claim, why }
+ *
+ * ONE PHONE, TWO BUSINESSES: which account may write this row.
+ *
+ * Owner 2026-09-10, after four of his own rows landed on the wrong company:
+ * "I was at John Doe, but John Doe wasn't a client of sample co, only
+ * tradedesk, so how could a mileage leg and time land there if that person
+ * isn't in the system."
+ *
+ * They landed because nothing ever asked. Fence resolution decides a stop's
+ * NAME; the OWNER of the row was whatever _geoCid() happened to be at derive
+ * time. So an afternoon at a TradeDesk client, driven back to the TradeDesk
+ * shop, was written to Sample Co with both ends blank, because Sample Co
+ * cannot see either fence. The blanks were the evidence and nobody read them.
+ *
+ * The rule, in his terms: an account has no claim on a span it cannot
+ * identify either end of. Since _geoDeriveFences builds only from the
+ * signed-in account's own places, clients and jobs, "resolved to a fence" and
+ * "owned by this account" are the same fact, which is what makes this
+ * decidable without ever reading another business's data.
+ *
+ * WHY `shared` GATES IT. A single-account phone drives to unsaved addresses
+ * constantly, and those legs are the whole point of the save-this-address
+ * flow. Refusing them there would delete real work to solve a problem that
+ * phone does not have. So the test only bites once more than one account has
+ * claimed this device's tape inside the derive window.
+ *
+ * THE LADDER, for a span both accounts CAN see (the same client in both
+ * books). Geography is silent there, so the tie-break is evidence, strongest
+ * first:
+ *   job    a job or estimate on the calendar at that fence that day. Intent,
+ *          recorded before the ambiguity existed.
+ *   clock  a manual clock open over the span. The person said they were
+ *          working, and for whom.
+ *   fence  the place is in this account's book and nothing stronger applies.
+ *   hat    nothing resolved, single-account phone. Today's behaviour, kept.
+ *
+ * HONEST RESIDUAL, stated rather than hidden: when both accounts hold the
+ * same client AND the same rung, both will claim, because neither can read
+ * the other's books to break the tie. That writes a duplicate the Time Log
+ * shows, which is a visible, fixable wrong answer. The failure it replaces
+ * was a silent one in the wrong company's IRS log. Do not "solve" this by
+ * having one account guess about the other's data; it cannot see it.
+ *
+ * span  a leg ({unsavedFrom, unsavedTo, from, to, startTs, endTs}) or a
+ *       dwell ({fence, startTs, endTs}).
+ * ctx   {shared, clocks:[{start,end}]}
+ */
+function geoSpanClaim(span, ctx) {
+  const c = ctx || {};
+  const sp = span || {};
+  // A dwell is at a fence by construction: reaching one is what opens it.
+  // A leg is identified when EITHER end is, because one known end is enough
+  // to say whose road this was.
+  const fence = sp.fence || null;
+  const ends = [sp.from, sp.to].filter(Boolean);
+  const identified = !!fence || ends.some(e => e && (e.clientId != null || e.jobId != null ||
+    e.placeId != null || e.kind === 'shop' || e.kind === 'home_office' || e.kind === 'supply'));
+  if (!identified) return { claim: !c.shared, why: c.shared ? 'none' : 'hat' };
+
+  const scheduled = (fence && (fence.jobId != null || fence.scheduled === true)) ||
+    ends.some(e => e && (e.jobId != null || e.scheduled === true));
+  if (scheduled) return { claim: true, why: 'job' };
+
+  const a = Number(sp.startTs), b = Number(sp.endTs);
+  const clocked = Array.isArray(c.clocks) && a > 0 && b > a &&
+    c.clocks.some(k => k && Number(k.start) < b && Number(k.end) > a);
+  return { claim: true, why: clocked ? 'clock' : 'fence' };
+}
+
 function geoDeriveRows(result, ids) {
   const cid = ids && ids.contractorId, uid = ids && ids.employeeId;
   const iso = ms => new Date(ms).toISOString();
   const time = [], shop = [], miles = [];
+  // Whose row is this (geoSpanClaim above). Defaults keep every existing
+  // caller and every existing test on the old path exactly: a phone with one
+  // account claims everything it derives, as it always has.
+  const claimCtx = { shared: !!(ids && ids.shared), clocks: (ids && ids.clocks) || [] };
+  const held = [];
   for (const d of (result && result.dwells) || []) {
     const base = { contractor_user_id: cid, employee_user_id: uid,
       arrived_at: iso(d.startTs), departed_at: iso(d.endTs), minutes: d.minutes, client_key: d.id };
+    const dClaim = geoSpanClaim(d, claimCtx);
+    if (!dClaim.claim) { held.push({ kind: 'dwell', id: d.id, startTs: d.startTs, endTs: d.endTs }); continue; }
     if (d.kind === 'shop') { shop.push(base); continue; }
     const f = d.fence || {};
     time.push(Object.assign(base, {
@@ -1479,6 +1557,15 @@ function geoDeriveRows(result, ids) {
     }));
   }
   for (const l of (result && result.legs) || []) {
+    // NOT THIS ACCOUNT'S ROAD. A leg with neither end resolvable on a phone
+    // more than one business has signed into is exactly the shape of the two
+    // drives that landed on Sample Co: John Doe out, TradeDesk shop back,
+    // both ends blank because that account holds neither place. Held here,
+    // which leaves the stretch uncovered, and js/timelog.js already renders
+    // an uncovered stretch as a question. A question beats a row in the wrong
+    // company's mileage log.
+    const lClaim = geoSpanClaim(l, claimCtx);
+    if (!lClaim.claim) { held.push({ kind: 'leg', id: l.id, startTs: l.startTs, endTs: l.endTs }); continue; }
     // ONE ROW PER DRIVE, NOT ONE PER CHAIN (owner 2026-09-04: "right, in
     // between it logs the time as a unsaved job site").
     //
@@ -1631,5 +1718,8 @@ function geoDeriveRows(result, ids) {
       calc_method: 'derived-traced', gpsMiles: l.miles,
     } : {}));
   }
-  return { job_time_entries: time, shop_time_entries: shop, td_mileage: miles };
+  // `held` is the spans this account declined, so the caller can say so
+  // rather than the day quietly coming up short. Never written anywhere: the
+  // whole point is that this account has no standing to write them.
+  return { job_time_entries: time, shop_time_entries: shop, td_mileage: miles, held };
 }

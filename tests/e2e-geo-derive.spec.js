@@ -44,6 +44,96 @@ const base = (over) => Object.assign({ day: DAY, dayStart: DAY_START, dayEnd: DA
 const hm = ts => new Date(ts).toISOString().slice(11, 16);
 const _sameId = (a, b) => !!a && !!b && String(a.id) === String(b.id);
 
+// ── Whose row is this: one phone, two businesses ────────────────────────────
+//
+// Owner 2026-09-10, after his own afternoon landed on another company:
+// "I was at John Doe, but John Doe wasn't a client of sample co, only
+// tradedesk, so how could a mileage leg and time land there if that person
+// isn't in the system." It could because nothing asked. geoSpanClaim asks.
+test.describe('geoSpanClaim: an account cannot claim a span it cannot identify', () => {
+  // Same boot as the deriver block below (one context for the describe), so
+  // this block costs one page load rather than one per test.
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const claim = (span, ctx) => page.evaluate(([sp, cx]) => geoSpanClaim(sp, cx), [span, ctx]);
+  const leg = (o) => Object.assign({ startTs: T(13, 26), endTs: T(17, 14) }, o);
+
+  test('the exact pair of drives that went to the wrong business', async () => {
+    // Both ends blank is precisely what those two rows looked like: Sample Co
+    // holds neither John Doe nor the TradeDesk shop, so it resolved neither.
+    const blind = leg({ unsavedFrom: true, unsavedTo: true, from: {}, to: {} });
+    expect(await claim(blind, { shared: true })).toEqual({ claim: false, why: 'none' });
+    // Same drive on the account that DOES hold the shop: one known end is
+    // enough to say whose road it was.
+    const seeing = leg({ from: {}, to: { kind: 'shop', placeId: 'p1', name: 'TradeDesk shop' } });
+    expect(await claim(seeing, { shared: true })).toEqual({ claim: true, why: 'fence' });
+    await assertNoErrors(page);
+  });
+
+  test('a single-account phone is untouched: unsaved addresses still log', async () => {
+    // The save-this-address flow exists for exactly this leg. Refusing it on
+    // a phone with one account would delete real work to fix a problem that
+    // phone does not have.
+    const blind = leg({ unsavedFrom: true, unsavedTo: true, from: {}, to: {} });
+    expect(await claim(blind, { shared: false })).toEqual({ claim: true, why: 'hat' });
+    await assertNoErrors(page);
+  });
+
+  test('the ladder: a job outranks a clock outranks the bare fence', async () => {
+    const at = (o) => leg({ from: {}, to: Object.assign({ kind: 'client', clientId: 9 }, o) });
+    const clocks = [{ start: T(13, 0), end: T(18, 0) }];
+    expect((await claim(at({ jobId: 7 }), { shared: true, clocks })).why).toBe('job');
+    expect((await claim(at({ scheduled: true }), { shared: true, clocks })).why).toBe('job');
+    expect((await claim(at({}), { shared: true, clocks })).why).toBe('clock');
+    expect((await claim(at({}), { shared: true, clocks: [] })).why).toBe('fence');
+    // A clock that does not cover the span is not evidence about the span.
+    expect((await claim(at({}), { shared: true, clocks: [{ start: T(2, 0), end: T(3, 0) }] })).why).toBe('fence');
+    await assertNoErrors(page);
+  });
+
+  test('a dwell is at a fence by construction, so it is always identified', async () => {
+    const d = { fence: { kind: 'client', clientId: 9 }, startTs: T(8, 0), endTs: T(12, 0) };
+    expect((await claim(d, { shared: true })).claim).toBe(true);
+    await assertNoErrors(page);
+  });
+
+  test('null, empty and garbage never throw', async () => {
+    const out = await page.evaluate(() => {
+      const tries = [[null, null], [undefined, undefined], [{}, {}], [{ from: null, to: null }, { shared: true }],
+        [{ from: {}, to: {} }, { shared: true, clocks: 'nope' }], [{ startTs: NaN, endTs: NaN }, { shared: true, clocks: [null] }]];
+      return tries.map(([a, b]) => { try { const r = geoSpanClaim(a, b); return typeof r.claim === 'boolean'; } catch (e) { return 'THREW'; } });
+    });
+    expect(out).toEqual([true, true, true, true, true, true]);
+    await assertNoErrors(page);
+  });
+
+  test('geoDeriveRows holds an unclaimable leg and reports it, writing nothing', async () => {
+    const r = await page.evaluate(() => {
+      const res = { day: '2026-09-10', dwells: [], legs: [{
+        id: 'L1', startTs: 1, endTs: 2, minutes: 9, miles: 3, from: {}, to: {},
+        unsavedFrom: true, unsavedTo: true, drives: [[1, 2, 60000]], roundTrip: false }] };
+      const shared = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e', shared: true });
+      const solo = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+      return { sharedTime: shared.job_time_entries.length, sharedMiles: shared.td_mileage.length,
+        held: shared.held.length, soloTime: solo.job_time_entries.length, soloHeld: solo.held.length };
+    });
+    expect(r.sharedTime, 'no time row on an account that cannot name either end').toBe(0);
+    expect(r.sharedMiles, 'and no mileage row: this is the IRS log').toBe(0);
+    expect(r.held, 'held, so the caller can say the day is short rather than guess').toBe(1);
+    expect(r.soloTime, 'unchanged on a one-account phone').toBeGreaterThan(0);
+    expect(r.soloHeld).toBe(0);
+    await assertNoErrors(page);
+  });
+});
+
 test.describe('geo-derive: the day deriver', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
