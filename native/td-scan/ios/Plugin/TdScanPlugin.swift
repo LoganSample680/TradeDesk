@@ -421,6 +421,66 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         return measureLabels[i]
     }
 
+    // ── WHERE A NUMBER GOES (owner 2026-09-10: "measurements on all sides,
+    // measurements across lines everywhere") ─────────────────────────────────
+    //
+    // The first cut drew each chip at the CENTRE of the surface and dropped it
+    // if that one point failed a distance test, a facing cone, or fell off the
+    // viewport. Standing in a room, that is most of them: the wall you are
+    // beside runs off both edges of the frame, so its centre is nowhere near
+    // the screen and its number is silently skipped. He saw one chip in a room
+    // with four walls, a door and an archway.
+    //
+    // A surface is a rectangle in space, so project its CORNERS, keep the part
+    // that is on screen, and put the number in the middle of THAT. A wall you
+    // can see any of now carries its size, wherever you stand.
+    //
+    // These three are static and take plain values, because the whole of the
+    // placement decision is arithmetic and arithmetic is the only part of a
+    // LiDAR scanner that can be tested without a LiDAR device (3.3).
+
+    /// The four corners of a captured surface, in world space. RoomPlan gives
+    /// a surface as a transform plus width (x) and height (y); the rectangle
+    /// lies in the transform's own XY plane.
+    static func surfaceCorners(_ t: simd_float4x4, _ dim: simd_float3) -> [simd_float3] {
+        let hw = dim.x / 2, hh = dim.y / 2
+        return [simd_float2(-hw, -hh), simd_float2(hw, -hh), simd_float2(hw, hh), simd_float2(-hw, hh)]
+            .map { c -> simd_float3 in
+                let w = t * simd_float4(c.x, c.y, 0, 1)
+                return simd_float3(w.x, w.y, w.z)
+            }
+    }
+
+    /// The on-screen part of a projected shape, or nil when none of it is.
+    /// Clamping rather than skipping is the whole fix: a wall running off both
+    /// edges keeps the strip of itself you can actually see, and the label
+    /// lands in the middle of that strip.
+    static func visibleBox(_ pts: [CGPoint], _ size: CGSize) -> CGRect? {
+        let good = pts.filter { $0.x.isFinite && $0.y.isFinite }
+        if good.isEmpty || size.width <= 0 || size.height <= 0 { return nil }
+        let x0 = max(0, good.map { $0.x }.min()!), x1 = min(size.width, good.map { $0.x }.max()!)
+        let y0 = max(0, good.map { $0.y }.min()!), y1 = min(size.height, good.map { $0.y }.max()!)
+        if x1 <= x0 || y1 <= y0 { return nil }
+        return CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+    }
+
+    /// A free spot for one chip: its own place first, then a step down, then
+    /// up, and so on. Two walls meeting at a corner project their labels on
+    /// top of each other, and two numbers in the same pixels is worse than
+    /// one number and a gap. Returns nil when there is nowhere clear, so the
+    /// chip is hidden rather than stacked.
+    static func freeSpot(_ want: CGRect, _ taken: [CGRect], _ size: CGSize) -> CGRect? {
+        let step = want.height + 5
+        for k in 0..<7 {
+            let dy = CGFloat((k + 1) / 2) * step * (k % 2 == 0 ? 1 : -1)
+            var r = want.offsetBy(dx: 0, dy: k == 0 ? 0 : dy)
+            r.origin.x = min(max(0, r.origin.x), max(0, size.width - r.width))
+            r.origin.y = min(max(0, r.origin.y), max(0, size.height - r.height))
+            if !taken.contains(where: { $0.intersects(r) }) { return r }
+        }
+        return nil
+    }
+
     private func drawMeasureChips() {
         guard let host = measureHost, let room = liveRoom,
               let frame = arSession.currentFrame else { return }
@@ -433,24 +493,32 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         let cam = frame.camera
         let size = host.bounds.size
         let orient = TdScanViewController.uiOrientation()
-        let eye = simd_float3(cam.transform.columns.3.x, cam.transform.columns.3.y, cam.transform.columns.3.z)
-        let fwd = -simd_float3(cam.transform.columns.2.x, cam.transform.columns.2.y, cam.transform.columns.2.z)
+        let inv = cam.transform.inverse
 
         var i = 0
+        var taken: [CGRect] = []
         let place = { (surface: CapturedRoom.Surface) in
-            let t = surface.transform
-            let centre = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
             let text = TdScanViewController.ftIn(surface.dimensions.x) + " x "
                      + TdScanViewController.ftIn(surface.dimensions.y)
-            // Behind the camera, or too far to be the wall he is looking at.
-            let to = centre - eye
-            let dist = simd_length(to)
-            if dist < 0.4 || dist > 7.0 { return }
-            if simd_dot(simd_normalize(to), fwd) < 0.35 { return }
-            let p = cam.projectPoint(centre, orientation: orient, viewportSize: size)
-            if !p.x.isFinite || !p.y.isFinite { return }
-            if p.x < 0 || p.y < 0 || p.x > size.width || p.y > size.height { return }
-            let l = self.chipLabel(i); i += 1
+            // BEHIND THE CAMERA PROJECTS TO NONSENSE, and nonsense that lands
+            // on screen is a number in the wrong place. Camera space has the
+            // lens looking down -z, so a corner in front has z < 0. Only the
+            // corners in front are projected; a surface with none is behind
+            // him and is not drawn.
+            var front: [CGPoint] = []
+            var near = Float.greatestFiniteMagnitude
+            for c in TdScanViewController.surfaceCorners(surface.transform, surface.dimensions) {
+                let v = inv * simd_float4(c.x, c.y, c.z, 1)
+                if v.z >= -0.05 { continue }
+                near = min(near, simd_length(simd_float3(v.x, v.y, v.z)))
+                front.append(cam.projectPoint(c, orientation: orient, viewportSize: size))
+            }
+            if front.isEmpty { return }
+            // Far enough away to be a room he is not in. No near cutoff and no
+            // facing cone any more: if he can see it, it has a number.
+            if near > 9.0 { return }
+            guard let box = TdScanViewController.visibleBox(front, size) else { return }
+            let l = self.chipLabel(i)
             l.text = "  " + text + "  "
             // RoomPlan's own doubt, shown where it matters: amber is a wall to
             // walk again, not a number to write down.
@@ -460,16 +528,24 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             default:       l.backgroundColor = UIColor.black.withAlphaComponent(0.62)
             }
             l.sizeToFit()
-            l.frame = CGRect(x: p.x - l.frame.width / 2, y: p.y - l.frame.height / 2,
-                             width: l.frame.width, height: l.frame.height + 4)
+            let want = CGRect(x: box.midX - l.frame.width / 2, y: box.midY - l.frame.height / 2,
+                              width: l.frame.width, height: l.frame.height + 4)
+            guard let spot = TdScanViewController.freeSpot(want, taken, size) else { return }
+            taken.append(spot)
+            l.frame = spot
             l.isHidden = false
+            i += 1
         }
 
-        // Length and height in the middle of every wall, which is what he
-        // asked for, and the same on every window and door.
-        for w in room.walls   { place(w) }
-        for o in room.windows { place(o) }
-        for o in room.doors   { place(o) }
+        // EVERY SIDE, AND EVERY HOLE IN ONE. Openings were missing: RoomPlan
+        // files a cased opening or an archway under `openings`, its own fourth
+        // category, and the loop only ran the first three. That is exactly the
+        // element the owner was standing in front of when he asked why it had
+        // no number on it (2026-09-10).
+        for w in room.walls    { place(w) }
+        for o in room.windows  { place(o) }
+        for o in room.doors    { place(o) }
+        for o in room.openings { place(o) }
         while i < measureLabels.count { measureLabels[i].isHidden = true; i += 1 }
     }
 

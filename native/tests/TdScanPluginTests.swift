@@ -238,6 +238,140 @@ final class TdScanPluginTests: XCTestCase {
         }
     }
 
+    // ── Where a number goes (owner 2026-09-10) ──────────────────────────────
+    // "measurements on all sides, measurements across lines everywhere". The
+    // chip used to be placed at the surface's centre and dropped when that one
+    // point left the frame, so the wall he was standing beside, which runs off
+    // both edges, never carried its size. Placement is arithmetic, and this is
+    // the whole of it: without a LiDAR device these are the tests there are.
+
+    @available(iOS 17.0, *)
+    func testSurfaceCornersAreTheRectangleRoomPlanDescribes() {
+        // A wall 4 m wide and 2.5 m tall, sitting at the origin, unrotated.
+        var t = matrix_identity_float4x4
+        t.columns.3 = simd_float4(0, 0, 0, 1)
+        let c = TdScanViewController.surfaceCorners(t, simd_float3(4, 2.5, 0.1))
+        XCTAssertEqual(c.count, 4)
+        XCTAssertEqual(c.map { $0.x }.min()!, -2, accuracy: 0.001)
+        XCTAssertEqual(c.map { $0.x }.max()!,  2, accuracy: 0.001)
+        XCTAssertEqual(c.map { $0.y }.min()!, -1.25, accuracy: 0.001)
+        XCTAssertEqual(c.map { $0.y }.max()!,  1.25, accuracy: 0.001)
+        // A surface is a plane: its own z is flat, whatever its thickness says.
+        XCTAssertEqual(c.map { abs($0.z) }.max()!, 0, accuracy: 0.001)
+    }
+
+    @available(iOS 17.0, *)
+    func testSurfaceCornersRideTheTransform() {
+        // Moved across the room and turned a quarter turn: the rectangle goes
+        // with it, and its centre is still the transform's own position.
+        var t = matrix_identity_float4x4
+        let a = Float.pi / 2
+        t.columns.0 = simd_float4(cos(a), 0, -sin(a), 0)
+        t.columns.2 = simd_float4(sin(a), 0,  cos(a), 0)
+        t.columns.3 = simd_float4(3, 1.2, -5, 1)
+        let c = TdScanViewController.surfaceCorners(t, simd_float3(4, 2.5, 0))
+        let mid = c.reduce(simd_float3(0, 0, 0), +) / 4
+        XCTAssertEqual(mid.x, 3, accuracy: 0.001)
+        XCTAssertEqual(mid.y, 1.2, accuracy: 0.001)
+        XCTAssertEqual(mid.z, -5, accuracy: 0.001)
+        // Turned, so the width now runs along z rather than x.
+        XCTAssertEqual(c.map { $0.z }.max()! - c.map { $0.z }.min()!, 4, accuracy: 0.001)
+    }
+
+    // ── visibleBox: the fix itself ──────────────────────────────────────────
+
+    @available(iOS 17.0, *)
+    func testAWallRunningOffBothEdgesKeepsTheStripYouCanSee() {
+        // THE ONE THAT COST HIM THE SCREENSHOT. Standing beside a wall, it
+        // projects from far left to far right and its centre is nowhere near
+        // the screen. The old placement dropped it. The label belongs in the
+        // middle of the part he can actually see.
+        let size = CGSize(width: 390, height: 844)
+        let box = TdScanViewController.visibleBox(
+            [CGPoint(x: -900, y: 200), CGPoint(x: 1400, y: 210),
+             CGPoint(x: 1400, y: 700), CGPoint(x: -900, y: 690)], size)
+        XCTAssertNotNil(box)
+        XCTAssertEqual(box!.minX, 0, accuracy: 0.01)
+        XCTAssertEqual(box!.maxX, 390, accuracy: 0.01)
+        XCTAssertEqual(box!.midX, 195, accuracy: 0.01)
+    }
+
+    @available(iOS 17.0, *)
+    func testSomethingFullyOffScreenIsStillNotDrawn() {
+        // Clamping must not drag a wall behind him into view.
+        let size = CGSize(width: 390, height: 844)
+        XCTAssertNil(TdScanViewController.visibleBox(
+            [CGPoint(x: -900, y: 100), CGPoint(x: -400, y: 100),
+             CGPoint(x: -400, y: 600), CGPoint(x: -900, y: 600)], size))
+        XCTAssertNil(TdScanViewController.visibleBox(
+            [CGPoint(x: 100, y: 1000), CGPoint(x: 300, y: 1400)], size))
+    }
+
+    @available(iOS 17.0, *)
+    func testVisibleBoxRefusesJunkRatherThanPlacingIt() {
+        let size = CGSize(width: 390, height: 844)
+        XCTAssertNil(TdScanViewController.visibleBox([], size))
+        XCTAssertNil(TdScanViewController.visibleBox([CGPoint(x: .nan, y: .nan)], size))
+        XCTAssertNil(TdScanViewController.visibleBox([CGPoint(x: .infinity, y: 4)], size))
+        XCTAssertNil(TdScanViewController.visibleBox([CGPoint(x: 10, y: 10)], .zero))
+    }
+
+    @available(iOS 17.0, *)
+    func testAnEdgeOnSurfaceStillGetsAPlace() {
+        // A wall seen almost edge-on projects to a sliver. A sliver is still
+        // somewhere to put a number.
+        let size = CGSize(width: 390, height: 844)
+        let box = TdScanViewController.visibleBox(
+            [CGPoint(x: 200, y: 300), CGPoint(x: 201, y: 300),
+             CGPoint(x: 201, y: 500), CGPoint(x: 200, y: 500)], size)
+        XCTAssertNotNil(box)
+        XCTAssertEqual(box!.midX, 200.5, accuracy: 0.01)
+    }
+
+    // ── freeSpot: two numbers never share the same pixels ───────────────────
+
+    @available(iOS 17.0, *)
+    func testTheFirstChipGetsExactlyWhereItAsked() {
+        let size = CGSize(width: 390, height: 844)
+        let want = CGRect(x: 100, y: 400, width: 120, height: 24)
+        XCTAssertEqual(TdScanViewController.freeSpot(want, [], size), want)
+    }
+
+    @available(iOS 17.0, *)
+    func testTwoWallsMeetingAtACornerDoNotStackTheirNumbers() {
+        let size = CGSize(width: 390, height: 844)
+        let first = CGRect(x: 100, y: 400, width: 120, height: 24)
+        let spot = TdScanViewController.freeSpot(first, [first], size)
+        XCTAssertNotNil(spot)
+        XCTAssertFalse(spot!.intersects(first), "the second number moved off the first")
+        XCTAssertEqual(spot!.minX, first.minX, accuracy: 0.01, "and only downwards or up")
+    }
+
+    @available(iOS 17.0, *)
+    func testAChipIsHiddenRatherThanPiledOnWhenThereIsNowhereClear() {
+        // Better one number and a gap than two in the same pixels.
+        let size = CGSize(width: 390, height: 844)
+        let want = CGRect(x: 100, y: 400, width: 120, height: 24)
+        var wall: [CGRect] = []
+        for k in -4...4 { wall.append(want.offsetBy(dx: 0, dy: CGFloat(k) * (want.height + 5))) }
+        XCTAssertNil(TdScanViewController.freeSpot(want, wall, size))
+    }
+
+    @available(iOS 17.0, *)
+    func testAChipIsAlwaysFullyOnScreen() {
+        // Nudged or not, half a number hanging off the edge is not a number.
+        let size = CGSize(width: 390, height: 844)
+        for want in [CGRect(x: -40, y: 830, width: 120, height: 24),
+                     CGRect(x: 360, y: -10, width: 120, height: 24)] {
+            let spot = TdScanViewController.freeSpot(want, [], size)
+            XCTAssertNotNil(spot)
+            XCTAssertGreaterThanOrEqual(spot!.minX, 0)
+            XCTAssertGreaterThanOrEqual(spot!.minY, 0)
+            XCTAssertLessThanOrEqual(spot!.maxX, size.width)
+            XCTAssertLessThanOrEqual(spot!.maxY, size.height)
+        }
+    }
+
     func testViewUsdzWithoutAPathRejects() {
         let done = expectation(description: "reject")
         plugin.viewUsdz(makeCall(method: "viewUsdz",
