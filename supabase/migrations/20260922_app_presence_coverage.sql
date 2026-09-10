@@ -42,9 +42,18 @@ select g.employee_user_id,
        max(g.created_at)                                         as last_write_at,
        count(*) filter (where g.type <> 'push-ping'
                           and g.created_at > now() - interval '40 minutes') as self_writes_40m,
+       (select count(*) from v_app_open o
+        where o.employee_user_id = g.employee_user_id
+          and (o.opened_at at time zone 'America/Chicago')::date
+              = (now() at time zone 'America/Chicago')::date)      as opens_today,
        -- How much of the un-answered window the device was demonstrably
        -- awake for. One bucket per half hour, which is the nudge period, so
        -- this is directly comparable to the count of skipped nudges.
+       --
+       -- LAST, and it has to be. create or replace view may only APPEND
+       -- columns: inserting this one above opens_today, which is where it
+       -- reads better, fails with "cannot change name of view column" and
+       -- takes the whole migration down with it.
        count(distinct date_trunc('hour', g.created_at)
                       + interval '30 minutes'
                         * floor(extract(minute from g.created_at) / 30))
@@ -52,11 +61,7 @@ select g.employee_user_id,
                    and g.created_at > (select max(p.created_at)
                                        from geo_events p
                                        where p.employee_user_id = g.employee_user_id
-                                         and p.type = 'push-ping'))        as buckets_alive_since_ping,
-       (select count(*) from v_app_open o
-        where o.employee_user_id = g.employee_user_id
-          and (o.opened_at at time zone 'America/Chicago')::date
-              = (now() at time zone 'America/Chicago')::date)      as opens_today
+                                         and p.type = 'push-ping'))        as buckets_alive_since_ping
 from geo_events g
 where g.created_at > now() - interval '14 days'
 group by g.employee_user_id;
