@@ -1346,6 +1346,12 @@ function _scanPlanSvg(sc,opts){
   // and would otherwise print its length twice, back to back.
   const seenOpen=new Set(),seenSwing=new Set(),seenWall=new Set();
   let openLbls='',wallLbls='';
+  // Where a whole-wall figure has already been set, so a piece-of-wall figure
+  // can stand off it rather than print on top of it.
+  const lblAt=[],wallSegs=[];
+  const lblFree=(X,Y,r)=>!lblAt.some(p=>Math.abs(p[0]-X)<r&&Math.abs(p[1]-Y)<r);
+  const wLbl=(X,Y,a,txt,lead)=>'<g class="td-wlen" transform="translate('+X.toFixed(2)+','+Y.toFixed(2)+') rotate('+a.toFixed(1)+')">'+
+    '<text y="0.75" font-size="'+(lead?2.1:1.8)+'"'+(lead?' font-weight="600"':'')+' fill="'+(lead?_SCAN_TXT:_SCAN_TXT2)+'" text-anchor="middle"'+halo+'>'+txt+'</text></g>';
   rooms.forEach(r=>{
     const cx0=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz0=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
@@ -1363,10 +1369,32 @@ function _scanPlanSvg(sc,opts){
           let wa=Math.atan2(uz,ux)*180/Math.PI;
           if(wa>90)wa-=180; else if(wa<-90)wa+=180;   // never upside down
           const WX=px(mx)+nx*2.2,WY=pz(mz)+nz*2.2;
-          wallLbls+='<g class="td-wlen" transform="translate('+WX.toFixed(2)+','+WY.toFixed(2)+') rotate('+wa.toFixed(1)+')">'+
-            '<text y="0.75" font-size="2.1" font-weight="600" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+
-            _scanFtIn(w.len)+'</text></g>';
+          wallLbls+=wLbl(WX,WY,wa,_scanFtIn(w.len),1);
+          lblAt.push([WX,WY]);
         }
+      }
+      // The PIECES of wall left between the openings get their own figure.
+      // The two stubs either side of an archway are what somebody actually
+      // frames, tapes and trims, and the wall's overall length never says how
+      // wide they are. Doors and cased openings break the wall at the cut
+      // plane; a window does not, so it never splits a run.
+      const cuts=(w.doors||[]).filter(d=>typeof d.off==='number'&&d.w>0)
+        .map(d=>{const a=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2));return[a,a+d.w];})
+        .sort((p,q)=>p[0]-q[0]);
+      if(cuts.length){
+        let end=0;const segs=[];
+        cuts.forEach(([a,b])=>{if(a>end)segs.push([end,a]);end=Math.max(end,b);});
+        if(end<w.len)segs.push([end,w.len]);
+        segs.forEach(([a,b])=>{
+          if(b-a<0.3)return;                      // under a foot is a reveal, not a wall
+          const sx=w.ax+ux*(a+b)/2,sz=w.az+uz*(a+b)/2;
+          const key='s'+Math.round(sx*20)+'|'+Math.round(sz*20);
+          if(seenWall.has(key))return;
+          seenWall.add(key);
+          let sa=Math.atan2(uz,ux)*180/Math.PI;
+          if(sa>90)sa-=180; else if(sa<-90)sa+=180;
+          wallSegs.push({ax:w.ax,az:w.az,ux,uz,a,b,nx,nz,sa,txt:_scanFtIn(b-a)});
+        });
       }
       const at=d=>[w.ax+ux*d,w.az+uz*d];
       // The figure sits just OUTSIDE the wall, turned to run along it, so it
@@ -1441,6 +1469,22 @@ function _scanPlanSvg(sc,opts){
         });
       });
     });
+  });
+  // Second pass, after every whole-wall figure is placed, so a stub yields to
+  // one whichever order the walls came in. A stub next to a corner lands on
+  // that corner's figure, so it SLIDES along its own piece of wall until it is
+  // clear. It never steps out into the middle of the room to find space: a
+  // figure that has left its wall behind describes nothing.
+  wallSegs.forEach(g=>{
+    let X=0,Y=0,ok=0;
+    for(const f of [0.5,0.28,0.72,0.14,0.86]){
+      const d=g.a+(g.b-g.a)*f;
+      X=px(g.ax+g.ux*d)+g.nx*2.2;Y=pz(g.az+g.uz*d)+g.nz*2.2;
+      if(lblFree(X,Y,4.6)){ok=1;break;}
+    }
+    if(!ok)return;                                 // nowhere legible left on it
+    lblAt.push([X,Y]);
+    wallLbls+=wLbl(X,Y,g.sa,g.txt,0);
   });
   s+=wallLbls+openLbls;
   // 4. Dimension strings around the envelope: extension lines off the wall,

@@ -298,6 +298,26 @@ test.describe('TdScan web half', () => {
       expect(t.filter(x => x === "9'10\"").length, 'three walls, three figures, not six').toBe(3);
     });
 
+    // "Still not seeing the length of the two small walls." Those stubs are
+    // not walls in the scan: they are what is left of ONE wall after a 7 ft
+    // arch is punched out of it, so the wall's own figure never described
+    // them and nothing else measured what a framer actually builds.
+    test('the pieces either side of an archway are measured', async () => {
+      const arch = W(2, 0, 2, 3);
+      arch.doors = [{ off: 1.5, w: 2.13, kind: 'opening' }];
+      const t = await draw(RECT.concat([arch]), RECT_POLY);
+      // 3 m of wall less a 2.13 m arch, centred: 43 cm and 44 cm of stub.
+      expect(t.filter(x => x === "1'5\"").length, 'both jambs back to a corner').toBe(2);
+      expect(t.some(x => x === "9'10\""), 'and the wall it came out of still says 9\'10"').toBe(true);
+    });
+
+    test('a window does not break a run, because the wall goes on under it', async () => {
+      const wall = W(0, 0, 4, 0);
+      wall.windows = [{ off: 2, w: 1.2, h: 1.2 }];
+      const t = await draw([wall], [[0, 0], [4, 0], [4, 3], [0, 3]]);
+      expect(t, 'one figure, the whole wall').toEqual(["13'1\""]);
+    });
+
     test('a stub too short to letter is left alone', async () => {
       const t = await draw(RECT.concat([W(1, 1, 1.4, 1)]), RECT_POLY);
       expect(t.some(x => x === "1'4\""), 'a 40 cm jog is not a wall worth lettering').toBe(false);
