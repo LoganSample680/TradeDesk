@@ -225,7 +225,9 @@ test.describe('TdScan web half', () => {
         const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly: [], objects: [], hM: 2.44,
                      floorM2: 20, wallM2: 40, openM2: 0, perimM: 20, story: 1 }], headingDeg: 90 };
         const svg = _scanPlanSvg(sc, { sheet: true });
-        const m = /rotate\((-?\d+)\)/.exec(svg);
+        // Anchor to the compass group: the dimension chains and the wall
+        // figures carry rotate() too, so a bare match reads whichever is first.
+        const m = /translate\(94\.5,[^)]*\) rotate\((-?\d+)\)/.exec(svg);
         return { rot: Math.round(_scanPlanAngle(sc.rooms) * 180 / Math.PI), drawn: m && +m[1] };
       }, ALDI);
       expect(r.drawn, 'the arrow moved by exactly the angle the page did').toBe(90 + r.rot);
@@ -245,6 +247,88 @@ test.describe('TdScan web half', () => {
       expect(r.room).toBeNull();
       expect(r.bare).toEqual({ poly: [], walls: [], objects: [] });
       expect(r.nullObj, 'a malformed object rides through rather than throwing').toEqual([null]);
+    });
+  });
+
+  // ── Every wall says how long it is (owner 2026-09-10) ────────────────────
+  // "each one of those walls in the actual scan and on the floor plan don't
+  // show how long they are, even the small internal ones with the giant arch
+  // in between the left and right room." The chains run around the OUTSIDE of
+  // the envelope, so they describe the building and never one wall, and an
+  // interior wall got no number at all however much of the room it defined.
+  test.describe('a length on every wall', () => {
+    const W = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                     h: 2.44, doors: [], windows: [], conf: 'high' });
+    const draw = (walls, poly) => page.evaluate(([walls, poly]) => {
+      const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly, objects: [], hM: 2.44,
+                   floorM2: Math.abs(_scanShoelace(poly)), wallM2: 40, openM2: 0, perimM: 20, story: 1 }] };
+      const svg = _scanPlanSvg(sc, { sheet: true });
+      const d = document.createElement('div'); d.innerHTML = svg;
+      return [...d.querySelectorAll('g.td-wlen text')].map(t => t.textContent);
+    }, [walls, poly]);
+
+    const RECT = [W(0, 0, 4, 0), W(4, 0, 4, 3), W(4, 3, 0, 3), W(0, 3, 0, 0)];
+    const RECT_POLY = [[0, 0], [4, 0], [4, 3], [0, 3]];
+
+    test('all four walls of a plain room carry a figure', async () => {
+      const t = await draw(RECT, RECT_POLY);
+      // 4 m is 13'1", 3 m is 9'10". Two of each, and nothing else lettered.
+      expect(t.filter(x => x === "13'1\"").length).toBe(2);
+      expect(t.filter(x => x === "9'10\"").length).toBe(2);
+      expect(t.length, 'a figure per wall, no more').toBe(4);
+    });
+
+    test('the interior wall gets one too, which is the whole ask', async () => {
+      // Two rooms sharing a divider, the shape of his living room.
+      const walls = RECT.concat([W(2, 0, 2, 3)]);
+      const t = await draw(walls, RECT_POLY);
+      expect(t.filter(x => x === "9'10\"").length,
+        'the divider is 3 m like the two ends, so three of them now').toBe(3);
+    });
+
+    test('and it says it once, not once per room it divides', async () => {
+      const t = await page.evaluate(([walls, poly]) => {
+        const room = { label: 'R', walls, poly, objects: [], hM: 2.44, floorM2: 12,
+                       wallM2: 40, openM2: 0, perimM: 20, story: 1 };
+        // The same divider on both rooms, which is how a real scan carries it.
+        const sc = { id: 's', name: 'S', rooms: [room, Object.assign({}, room, { label: 'R2' })] };
+        const d = document.createElement('div'); d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        return [...d.querySelectorAll('g.td-wlen text')].map(x => x.textContent);
+      }, [RECT.concat([W(2, 0, 2, 3)]), RECT_POLY]);
+      expect(t.filter(x => x === "9'10\"").length, 'three walls, three figures, not six').toBe(3);
+    });
+
+    test('a stub too short to letter is left alone', async () => {
+      const t = await draw(RECT.concat([W(1, 1, 1.4, 1)]), RECT_POLY);
+      expect(t.some(x => x === "1'4\""), 'a 40 cm jog is not a wall worth lettering').toBe(false);
+    });
+
+    test('a figure never reads upside down', async () => {
+      const rots = await page.evaluate(([walls, poly]) => {
+        const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly, objects: [], hM: 2.44,
+                     floorM2: 12, wallM2: 40, openM2: 0, perimM: 20, story: 1 }] };
+        const d = document.createElement('div'); d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        return [...d.querySelectorAll('g[transform]')].map(g => {
+          const m = /rotate\((-?[\d.]+)\)/.exec(g.getAttribute('transform'));
+          return m ? +m[1] : null;
+        }).filter(v => v !== null);
+      }, [RECT, RECT_POLY]);
+      rots.forEach(r => { expect(Math.abs(r), 'nothing past a quarter turn').toBeLessThanOrEqual(90); });
+    });
+
+    // The chains vanished off his sheet for the same reason the area did: a
+    // room whose outline had no height reaches no side of the envelope.
+    test('and a repaired room gets its overall dimensions back', async () => {
+      const t = await page.evaluate(([walls]) => {
+        const flat = [[0, 1.5], [4, 1.5], [0, 1.5]];      // the degenerate line
+        const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly: flat, objects: [],
+                     hM: 2.44, floorM2: 0, wallM2: 40, openM2: 0, perimM: 14, story: 1 }] };
+        const d = document.createElement('div'); d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        return [...d.querySelectorAll('text')].map(x => x.textContent);
+      }, [RECT]);
+      expect(t.some(x => x === "13'1\""), 'the 4 m side is dimensioned').toBe(true);
+      expect(t.some(x => x === "9'10\""), 'and so is the 3 m side').toBe(true);
+      expect(t.some(x => /^\d+ sq ft$/.test(x) && x !== '0 sq ft'), 'with a real area').toBe(true);
     });
   });
 

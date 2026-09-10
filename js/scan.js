@@ -1242,6 +1242,17 @@ function _scanPlanSvg(sc,opts){
   const rooms=[],gidx=[];
   (sc.rooms||[]).forEach((r,gi)=>{if(!o.story||Math.max(1,+r.story||1)===o.story){rooms.push(r);gidx.push(gi);}});
   if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3,#6a6963)">No rooms captured</text></svg>';
+  // REPAIRED FIRST, THEN TURNED, so everything below reads ONE polygon. The
+  // dimension chains around the envelope (_scanSideRuns) go off r.poly, and
+  // on his scan that was still the flat line: a room whose outline has no
+  // height reaches no side of the sheet, so the chain found no runs and the
+  // sheet lost every overall dimension it used to carry. Repairing it here
+  // rather than at each reader is what stops two parts of one drawing
+  // disagreeing about the shape of the same room.
+  for(let i=0;i<rooms.length;i++){
+    const g=_scanRoomGeom(rooms[i]);
+    rooms[i]=Object.assign({},rooms[i],{poly:g.poly,floorM2:g.floorM2,floorApprox:g.approx});
+  }
   // Turned once, here, so every measurement, symbol and label below is drawn
   // in page space and nothing downstream needs to know this happened.
   const _rot=_scanPlanAngle(rooms);
@@ -1260,7 +1271,7 @@ function _scanPlanSvg(sc,opts){
   let minX=1e9,minZ=1e9,maxX=-1e9,maxZ=-1e9;
   const seen=(x,z)=>{if(!isFinite(x)||!isFinite(z))return;minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);};
   rooms.forEach(r=>{
-    _scanRoomGeom(r).poly.forEach(([x,z])=>seen(x,z));
+    (r.poly||[]).forEach(q=>seen(q[0],q[1]));
     (r.walls||[]).forEach(w=>{seen(w.ax,w.az);seen(w.bx,w.bz);});
     (r.objects||[]).forEach(ob=>{if(!ob)return;const rr=Math.max(ob.w||0,ob.d||0)/2;seen(ob.cx-rr,ob.cz-rr);seen(ob.cx+rr,ob.cz+rr);});
   });
@@ -1290,7 +1301,7 @@ function _scanPlanSvg(sc,opts){
   // 0. Title block: what it is, whose it is, how big it is. A plan without one
   // reads like a screenshot; with one it reads like a document you hand over.
   if(o.sheet){
-    const tot=Math.round(_scanSqFt(rooms.reduce((t,r)=>t+_scanRoomGeom(r).floorM2,0)));
+    const tot=Math.round(_scanSqFt(rooms.reduce((t,r)=>t+(r.floorM2||0),0)));
     s+='<text x="50" y="7.6" font-size="4.6" font-weight="700" fill="'+_SCAN_TXT+'" text-anchor="middle">'+escHtml(o.title||'Floor plan')+'</text>';
     if(o.subtitle)s+='<text x="50" y="12.2" font-size="2.9" fill="'+_SCAN_TXT2+'" text-anchor="middle">'+escHtml(o.subtitle)+'</text>';
     s+='<text x="50" y="'+(o.subtitle?15.9:12.4)+'" font-size="2.6" fill="'+_SCAN_TXT2+'" text-anchor="middle">Approximately '+tot.toLocaleString()+' sq ft total</text>';
@@ -1319,8 +1330,22 @@ function _scanPlanSvg(sc,opts){
   // connects, so without this bucket the same door prints its width twice,
   // once facing each way. Keyed to a 5 cm bucket on the opening's midpoint,
   // which is far tighter than any two real openings sit apart.
-  const seenOpen=new Set(),seenSwing=new Set();
-  let openLbls='';
+  // EVERY WALL SAYS HOW LONG IT IS (owner 2026-09-10: "each one of those
+  // walls in the actual scan and on the floor plan don't show how long they
+  // are, even the small internal ones with the giant arch in between the left
+  // and right room").
+  //
+  // The dimension chains below run around the OUTSIDE of the envelope, so
+  // they describe the building and say nothing about any one wall, and an
+  // interior wall gets no number at all however much of the room it defines.
+  // A trim carpenter pricing base, or anybody standing in front of the wall
+  // with the arch in it, is reading the wall, not the envelope.
+  //
+  // Inside the room, because the openings already label outside it, and once
+  // per physical wall: an interior wall belongs to the rooms on both sides
+  // and would otherwise print its length twice, back to back.
+  const seenOpen=new Set(),seenSwing=new Set(),seenWall=new Set();
+  let openLbls='',wallLbls='';
   rooms.forEach(r=>{
     const cx0=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz0=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
@@ -1331,6 +1356,18 @@ function _scanPlanSvg(sc,opts){
       // Flip the normal to point INTO this room, so swings draw inward.
       const mx=(w.ax+w.bx)/2,mz=(w.az+w.bz)/2;
       if(nx*(cx0-mx)+nz*(cz0-mz)<0){nx=-nx;nz=-nz;}
+      if(w.len>=0.6){
+        const wKey=Math.round(mx*20)+'|'+Math.round(mz*20);
+        if(!seenWall.has(wKey)){
+          seenWall.add(wKey);
+          let wa=Math.atan2(uz,ux)*180/Math.PI;
+          if(wa>90)wa-=180; else if(wa<-90)wa+=180;   // never upside down
+          const WX=px(mx)+nx*2.2,WY=pz(mz)+nz*2.2;
+          wallLbls+='<g class="td-wlen" transform="translate('+WX.toFixed(2)+','+WY.toFixed(2)+') rotate('+wa.toFixed(1)+')">'+
+            '<text y="0.75" font-size="2.1" font-weight="600" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+
+            _scanFtIn(w.len)+'</text></g>';
+        }
+      }
       const at=d=>[w.ax+ux*d,w.az+uz*d];
       // The figure sits just OUTSIDE the wall, turned to run along it, so it
       // never lands on the swing arc it is describing.
@@ -1405,7 +1442,7 @@ function _scanPlanSvg(sc,opts){
       });
     });
   });
-  s+=openLbls;
+  s+=wallLbls+openLbls;
   // 4. Dimension strings around the envelope: extension lines off the wall,
   // a dimension line with tick marks, the figure centered on it, and a second
   // overall row outside that when a side breaks into more than one run. This
@@ -1473,7 +1510,7 @@ function _scanPlanSvg(sc,opts){
     // readable. Small rooms end up with a smaller, quieter label, which is
     // also how a real plan draws them.
     const dimTxt=_scanFtIn(bw)+' \u00d7 '+_scanFtIn(bh);
-    const areaTxt=Math.round(_scanSqFt(_scanRoomGeom(r).floorM2)).toLocaleString()+' sq ft';
+    const areaTxt=Math.round(_scanSqFt(r.floorM2||0)).toLocaleString()+' sq ft';
     const widest=Math.max((r.label||'Room').length,boxy?dimTxt.length:0,areaTxt.length);
     const fit=(bw*k*0.82)/(widest*0.55||1);
     const f1=Math.max(1.75,Math.min(2.9,fit));
