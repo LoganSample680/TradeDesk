@@ -409,7 +409,7 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     const r = await page.evaluate(() => {
       const saved = { links: window._hatCrewLinks, owns: window._hatOwnsBusiness, isEmp: _isEmployee };
       try {
-        window._hatCrewLinks = [{ contractor_user_id: 'boss-1', name: 'BIL', role: 'plumber' }];
+        window._hatCrewLinks = [{ contractor_user_id: 'boss-1', name: 'BIL', role: 'plumber', business_name: 'TradeDesk' }];
         window._hatOwnsBusiness = true;
         _isEmployee = false;
         _hatSwitcherMenu();
@@ -418,7 +418,13 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         const out = {
           open: !!ov,
           hasOwner: html.includes('Owner'),
-          hasCrew: html.includes('Crew'),
+          // OLD: the crew row printed the literal string 'Crew' and named no
+          // business, so two crews read "Crew" twice and neither could be told
+          // apart. NEW (owner 2026-09-10): the business on top, the real role
+          // underneath.
+          hasBusiness: html.includes('TradeDesk'),
+          hasRole: html.includes('Plumber'),
+          literalCrew: /&gt;Crew&lt;|>Crew</.test(html),
           currentMarked: html.includes('CURRENT'),
           routesToSwitchHat: html.includes("switchHat('boss-1')"),
         };
@@ -430,9 +436,54 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     });
     expect(r.open).toBe(true);
     expect(r.hasOwner).toBe(true);
-    expect(r.hasCrew).toBe(true);
+    expect(r.hasBusiness, 'the crew hat names the business it belongs to').toBe(true);
+    expect(r.hasRole, 'and says what he is to it, capitalised').toBe(true);
+    expect(r.literalCrew, 'never the bare word "Crew" standing in for a name').toBe(false);
     expect(r.currentMarked, 'the active hat reads as current, not tappable').toBe(true);
     expect(r.routesToSwitchHat).toBe(true);
+  });
+
+  test('an old link with no business name still reads as something, never blank', async () => {
+    const html = await page.evaluate(() => {
+      const saved = { links: window._hatCrewLinks, owns: window._hatOwnsBusiness, isEmp: _isEmployee };
+      try {
+        // A link built by the fallback select (RPC not deployed) carries the
+        // crew member's name and no business name at all.
+        window._hatCrewLinks = [{ contractor_user_id: 'boss-2', name: 'BIL', role: '' }];
+        window._hatOwnsBusiness = true; _isEmployee = false;
+        _hatSwitcherMenu();
+        const ov = document.getElementById('_hat-switch-ov');
+        const out = ov ? ov.innerHTML : '';
+        ov?.remove();
+        return out;
+      } finally { window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns; _isEmployee = saved.isEmp; }
+    });
+    expect(html.includes('BIL'), 'it falls back to whatever name it has').toBe(true);
+    expect(html.includes('Crew'), 'and an empty role still says what the hat is').toBe(true);
+  });
+
+  test('a self-link is never offered as a hat by the fallback select', async () => {
+    const n = await page.evaluate(async ({ supaSrc }) => {
+      const saved = { supa: _supa, user: window._supaUser, isEmp: _isEmployee, cid: _contractorUserId, rec: _employeeRecord, u: _user, links: window._hatCrewLinks, owns: window._hatOwnsBusiness };
+      try {
+        _supa = eval(supaSrc);
+        // No RPC on this stack, so the fallback select runs and returns a row
+        // the owner made on their OWN roster. Offering it would let them switch
+        // into their own business as crew and strip their own permissions.
+        _supa.rpc = () => Promise.resolve({ data: null, error: { message: 'not deployed' } });
+        window._supaUser = { id: 'self-1', email: 'self@test.com' };
+        await loadAccountData();
+        return (window._hatCrewLinks || []).length;
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _isEmployee = saved.isEmp;
+        _contractorUserId = saved.cid; _employeeRecord = saved.rec; _user = saved.u;
+        window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns;
+        localStorage.removeItem('zp3_acct_self-1');
+        applyPermissions();
+      }
+    }, { supaSrc: fakeSupaFor({ id: 'self-1', account_id: 'acct-1' },
+        [{ contractor_user_id: 'self-1', name: 'Me', role: 'owner', active: true, id: 'tm-self' }]) });
+    expect(n, 'your own business is the owner hat, never also a crew hat').toBe(0);
   });
 
   test('employee sign-out menu offers "Switch to my business" only for dual-hat logins', async () => {

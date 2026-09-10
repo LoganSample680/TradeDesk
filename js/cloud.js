@@ -343,12 +343,25 @@ async function loadAccountData(){
         }
         await _supa.rpc('claim_crew_by_email');
       }catch(_e){}
+      // NAMED, not just counted. The plain select below can only ever return
+      // team_members.name, which is the CREW MEMBER's name and not the
+      // business's, so the switcher had nothing to print and said "Crew".
+      // accounts.business_name is unreachable to a crew member under RLS, so
+      // crew_hat_links (definer) is what carries it. Falls back to the plain
+      // select on a stack where the RPC is not deployed, the same
+      // hosted-compat pattern the claim paths above use.
       let _links=[];
       try{
-        const{data:_hr}=await _supa.from('team_members').select('contractor_user_id,name,role').eq('employee_user_id',_supaUser.id).eq('active',true);
-        _links=_hr||[];
-      }catch(_e){}
-      window._hatCrewLinks=_links.map(r=>({contractor_user_id:r.contractor_user_id,name:r.name,role:r.role}));
+        const{data:_hl,error:_hlErr}=await _supa.rpc('crew_hat_links');
+        if(!_hlErr&&Array.isArray(_hl))_links=_hl;
+        else throw new Error('fallback');
+      }catch(_e){
+        try{
+          const{data:_hr}=await _supa.from('team_members').select('contractor_user_id,name,role').eq('employee_user_id',_supaUser.id).eq('active',true);
+          _links=(_hr||[]).filter(r=>String(r.contractor_user_id)!==String(_supaUser.id));
+        }catch(_e2){}
+      }
+      window._hatCrewLinks=_links.map(r=>({contractor_user_id:r.contractor_user_id,name:r.name,role:r.role,business_name:r.business_name}));
       let _hat=null;try{_hat=localStorage.getItem('zp3_hat_'+_supaUser.id);}catch(_e){}
       if(!_hat||_hat.indexOf('crew:')!==0)return false;
       const _cid=_hat.slice(5);
@@ -668,7 +681,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.10.26.8';
+const APP_VERSION='09.10.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard

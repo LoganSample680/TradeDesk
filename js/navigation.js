@@ -291,7 +291,12 @@ function _hatSwitcherMenu(){
     row(ownLabel,'Owner',!_isEmployee,'switchHat(\'owner\')');
   links.forEach(l=>{
     const cur=!!(_isEmployee&&typeof _contractorUserId!=='undefined'&&String(_contractorUserId)===String(l.contractor_user_id));
-    html+=row('Crew','Signed on as '+escHtml(l.role||'crew'),cur,'switchHat(\''+String(l.contractor_user_id).replace(/[^\w-]/g,'')+'\')');
+    // The BUSINESS on top, what he is to it underneath: "TradeDesk / Manager",
+    // not "Crew / Signed on as manager". With two crews the old label read
+    // "Crew" twice and named neither (owner 2026-09-10).
+    const _hatName=escHtml((l.business_name||l.name||'Their business').trim()||'Their business');
+    const _hatRole=String(l.role||'crew').trim();
+    html+=row(_hatName,escHtml(_hatRole.charAt(0).toUpperCase()+_hatRole.slice(1)),cur,'switchHat(\''+String(l.contractor_user_id).replace(/[^\w-]/g,'')+'\')');
   });
   html+='<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>';
   box.innerHTML=html;
