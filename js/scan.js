@@ -1080,6 +1080,73 @@ const _SCAN_ROOM_TINTS=[
 // average of the corners. A coarse grid is plenty at label size: 24 columns
 // across the room's box, scored on distance to the nearest wall, with door
 // swings treated as walls so the name steps around them.
+// ── One room, more than one space ────────────────────────────────────────────
+// RoomPlan hands a whole open floor back as ONE room: his 300 sq ft scan is a
+// single "Floor 1" with a wall through the middle of it, so one square-footage
+// figure was printed over two rooms. Any wall that runs clean across the floor
+// cuts it, and each side of the cut gets its own size and its own footage. The
+// pieces always add back up to the room, because they are that room's outline.
+function _scanCutPoly(poly,A,B,eps){
+  const n=poly.length;
+  const on=P=>{
+    let bi=-1,bd=1e9,bt=0;
+    for(let i=0;i<n;i++){
+      const a=poly[i],b=poly[(i+1)%n];
+      const dx=b[0]-a[0],dz=b[1]-a[1],L=dx*dx+dz*dz;
+      const t=L?Math.max(0,Math.min(1,((P[0]-a[0])*dx+(P[1]-a[1])*dz)/L)):0;
+      const d=Math.hypot(P[0]-(a[0]+t*dx),P[1]-(a[1]+t*dz));
+      if(d<bd){bd=d;bi=i;bt=t;}
+    }
+    if(bd>eps||bi<0)return null;
+    const a=poly[bi],b=poly[(bi+1)%n];
+    return {i:bi,p:[a[0]+(b[0]-a[0])*bt,a[1]+(b[1]-a[1])*bt]};
+  };
+  const ea=on(A),eb=on(B);
+  if(!ea||!eb||ea.i===eb.i)return null;
+  const walk=(from,to)=>{
+    const out=[];
+    for(let c=0,i=(from+1)%n;c<=n;c++,i=(i+1)%n){out.push(poly[i]);if(i===to)return out;}
+    return null;
+  };
+  const w1=walk(ea.i,eb.i),w2=walk(eb.i,ea.i);
+  if(!w1||!w2)return null;
+  return [[ea.p].concat(w1,[eb.p]),[eb.p].concat(w2,[ea.p])];
+}
+function _scanBoundD(P,ring){
+  let d=1e9;
+  for(let i=0;i<ring.length;i++){
+    const a=ring[i],b=ring[(i+1)%ring.length];
+    const dx=b[0]-a[0],dz=b[1]-a[1],L=dx*dx+dz*dz;
+    const t=L?Math.max(0,Math.min(1,((P[0]-a[0])*dx+(P[1]-a[1])*dz)/L)):0;
+    d=Math.min(d,Math.hypot(P[0]-(a[0]+t*dx),P[1]-(a[1]+t*dz)));
+  }
+  return d;
+}
+function _scanFloorAreas(room){
+  const poly=(room&&room.poly)||[],walls=(room&&room.walls)||[];
+  if(!Array.isArray(poly)||poly.length<3)return [];
+  let parts=[poly];
+  (Array.isArray(walls)?walls:[]).forEach(w=>{
+    if(!w||!(w.len>0.6))return;
+    for(let i=0;i<parts.length;i++){
+      const P=parts[i];
+      // An interior wall has its ends on the outline and its middle standing
+      // clear of it. A perimeter wall lies ALONG the outline and never does.
+      let inner=1;
+      [0.25,0.5,0.75].forEach(f=>{
+        const qx=w.ax+(w.bx-w.ax)*f,qz=w.az+(w.bz-w.az)*f;
+        if(!_scanPtInPoly(qx,qz,P)||_scanBoundD([qx,qz],P)<0.3)inner=0;
+      });
+      if(!inner)continue;
+      const cut=_scanCutPoly(P,[w.ax,w.az],[w.bx,w.bz],0.35);
+      if(!cut)continue;
+      if(Math.abs(_scanShoelace(cut[0]))<0.5||Math.abs(_scanShoelace(cut[1]))<0.5)continue;
+      parts.splice(i,1,cut[0],cut[1]);
+      break;
+    }
+  });
+  return parts.map(q=>({poly:q,m2:Math.abs(_scanShoelace(q))}));
+}
 function _scanLabelSpot(r){
   const poly=(r&&r.poly)||[];
   if(poly.length<3)return null;
@@ -1345,13 +1412,66 @@ function _scanPlanSvg(sc,opts){
   // per physical wall: an interior wall belongs to the rooms on both sides
   // and would otherwise print its length twice, back to back.
   const seenOpen=new Set(),seenSwing=new Set(),seenWall=new Set();
-  let openLbls='',wallLbls='';
-  // Where a whole-wall figure has already been set, so a piece-of-wall figure
-  // can stand off it rather than print on top of it.
-  const lblAt=[],wallSegs=[];
-  const lblFree=(X,Y,r)=>!lblAt.some(p=>Math.abs(p[0]-X)<r&&Math.abs(p[1]-Y)<r);
-  const wLbl=(X,Y,a,txt,lead)=>'<g class="td-wlen" transform="translate('+X.toFixed(2)+','+Y.toFixed(2)+') rotate('+a.toFixed(1)+')">'+
-    '<text y="0.75" font-size="'+(lead?2.1:1.8)+'"'+(lead?' font-weight="600"':'')+' fill="'+(lead?_SCAN_TXT:_SCAN_TXT2)+'" text-anchor="middle"'+halo+'>'+txt+'</text></g>';
+  let wallLbls='';
+  // Every label that has taken a piece of paper, so the next one can stand off
+  // it rather than print on top of it.
+  // Each entry is the BOX a figure occupies, [x, y, half-width, half-height],
+  // not a point with one radius. A radius says a short figure sitting a line
+  // below a long one is on top of it, which it is not, and the figure that
+  // gets dropped for it is the one with nowhere else to go.
+  const lblAt=[];
+  const lblFree=(X,Y,hw,hh)=>!lblAt.some(p=>Math.abs(p[0]-X)<p[2]+hw+0.4&&Math.abs(p[1]-Y)<p[3]+hh+0.5);
+  const tall=fs=>fs*0.36;
+  // NOTHING ON THE SHEET IS TURNED (owner 2026-09-10: "needs to not be tilted
+  // at all"). A figure set on its side is a figure the reader turns the page
+  // for. Standing a figure off a wall it runs parallel to therefore has to
+  // clear the WIDTH of the text, not its height, or it prints over the wall.
+  const wide=(txt,fs)=>txt.length*0.55*fs/2;
+  // ONE placement pass for every figure a wall produces, whole wall, the runs
+  // between its openings, and the openings themselves. They compete for the
+  // same paper, so they cannot each pick a spot on their own and hope.
+  const figs=[];
+  const inPage=(X,Y,hw,hh)=>X-hw>1&&X+hw<99&&Y-hh>HEAD&&Y+hh<vh-2;
+  // THE ROOM LABELS ARE LAID OUT FIRST, before a single wall figure is placed,
+  // so the figures give way to them. A space's name and its square footage is
+  // what the sheet is read for; a wall dimension can always slide a foot along
+  // its own wall.
+  const roomLbls=[];
+  rooms.forEach((r,ri)=>{
+    const areas=_scanFloorAreas(r);
+    if(!areas.length)return;
+    let big=0;areas.forEach((a,i)=>{if(a.m2>areas[big].m2)big=i;});
+    areas.forEach((a,ai)=>{
+      const spot=_scanLabelSpot({poly:a.poly,walls:r.walls});
+      const cx=spot?spot[0]:a.poly.reduce((t,q)=>t+q[0],0)/a.poly.length;
+      const cz=spot?spot[1]:a.poly.reduce((t,q)=>t+q[1],0)/a.poly.length;
+      const xs=a.poly.map(q=>q[0]),zs=a.poly.map(q=>q[1]);
+      const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...zs)-Math.min(...zs);
+      // The box is only honest for a space that fills it, so a bay or an L
+      // keeps its area and drops the two figures rather than printing a
+      // rectangle nobody can measure to.
+      const boxy=bw>0&&bh>0&&a.m2/(bw*bh)>=0.9;
+      const name=ai===big?(r.label||'Room'):'';
+      const dimTxt=_scanFtIn(bw)+' \u00d7 '+_scanFtIn(bh);
+      const areaTxt=Math.round(_scanSqFt(a.m2)).toLocaleString()+' sq ft';
+      // A HALL IS NOT A LIVING ROOM (owner review 2026-09-09). At one fixed
+      // size the block ran wall to wall in the narrow rooms and straight over
+      // the door swing, so it is scaled to the space that holds it.
+      const widest=Math.max(name.length,boxy?dimTxt.length:0,areaTxt.length);
+      const f1=Math.max(1.75,Math.min(2.9,(bw*k*0.82)/((widest*0.55)||1)));
+      const rows=[];
+      if(name)rows.push({txt:escHtml(name),fs:f1,bold:1,fill:_SCAN_TXT,step:0});
+      if(boxy)rows.push({txt:dimTxt,fs:f1*0.83,bold:0,fill:_SCAN_TXT,step:1.18});
+      rows.push({txt:areaTxt,fs:f1*0.79,bold:0,fill:_SCAN_TXT2,step:1.14});
+      let yy=pz(cz)-(rows.length-1)*f1*0.62;
+      rows.forEach((row,i)=>{
+        if(i)yy+=f1*row.step;
+        row.x=px(cx);row.y=yy;
+        lblAt.push([row.x,yy,wide(row.txt,row.fs),tall(row.fs)]);
+      });
+      roomLbls.push({gi:gidx[ri],rows});
+    });
+  });
   rooms.forEach(r=>{
     const cx0=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz0=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
@@ -1366,11 +1486,8 @@ function _scanPlanSvg(sc,opts){
         const wKey=Math.round(mx*20)+'|'+Math.round(mz*20);
         if(!seenWall.has(wKey)){
           seenWall.add(wKey);
-          let wa=Math.atan2(uz,ux)*180/Math.PI;
-          if(wa>90)wa-=180; else if(wa<-90)wa+=180;   // never upside down
-          const WX=px(mx)+nx*2.2,WY=pz(mz)+nz*2.2;
-          wallLbls+=wLbl(WX,WY,wa,_scanFtIn(w.len),1);
-          lblAt.push([WX,WY]);
+          figs.push({rank:0,ax:w.ax,az:w.az,ux,uz,a:0,b:w.len,nx,nz,
+                     txt:_scanFtIn(w.len),fs:2.1,lead:1,base:2.2,out:0});
         }
       }
       // The PIECES of wall left between the openings get their own figure.
@@ -1391,9 +1508,8 @@ function _scanPlanSvg(sc,opts){
           const key='s'+Math.round(sx*20)+'|'+Math.round(sz*20);
           if(seenWall.has(key))return;
           seenWall.add(key);
-          let sa=Math.atan2(uz,ux)*180/Math.PI;
-          if(sa>90)sa-=180; else if(sa<-90)sa+=180;
-          wallSegs.push({ax:w.ax,az:w.az,ux,uz,a,b,nx,nz,sa,txt:_scanFtIn(b-a)});
+          figs.push({rank:2,ax:w.ax,az:w.az,ux,uz,a,b,nx,nz,
+                     txt:_scanFtIn(b-a),fs:1.8,lead:0,base:2.2,out:0});
         });
       }
       const at=d=>[w.ax+ux*d,w.az+uz*d];
@@ -1404,11 +1520,8 @@ function _scanPlanSvg(sc,opts){
         const key=Math.round(mx*20)+'|'+Math.round(mz*20);
         if(seenOpen.has(key))return;
         seenOpen.add(key);
-        let a=Math.atan2(uz,ux)*180/Math.PI;
-        if(a>90)a-=180; else if(a<-90)a+=180;
-        const X=px(mx)-nx*2.7,Y=pz(mz)-nz*2.7;
-        openLbls+='<g transform="translate('+X.toFixed(2)+','+Y.toFixed(2)+') rotate('+a.toFixed(1)+')">'+
-          '<text y="0.75" font-size="1.9" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+txt+'</text></g>';
+        figs.push({rank:1,ax:w.ax,az:w.az,ux,uz,a:d0,b:d1,nx,nz,
+                   txt,fs:1.9,lead:0,base:2.7,out:1});
       };
       const punch=(d0,d1)=>{const[a1,b1]=at(d0),[a2,b2]=at(d1);
         s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+bg+'" stroke-width="'+(th+0.35).toFixed(2)+'"/>';};
@@ -1470,23 +1583,7 @@ function _scanPlanSvg(sc,opts){
       });
     });
   });
-  // Second pass, after every whole-wall figure is placed, so a stub yields to
-  // one whichever order the walls came in. A stub next to a corner lands on
-  // that corner's figure, so it SLIDES along its own piece of wall until it is
-  // clear. It never steps out into the middle of the room to find space: a
-  // figure that has left its wall behind describes nothing.
-  wallSegs.forEach(g=>{
-    let X=0,Y=0,ok=0;
-    for(const f of [0.5,0.28,0.72,0.14,0.86]){
-      const d=g.a+(g.b-g.a)*f;
-      X=px(g.ax+g.ux*d)+g.nx*2.2;Y=pz(g.az+g.uz*d)+g.nz*2.2;
-      if(lblFree(X,Y,4.6)){ok=1;break;}
-    }
-    if(!ok)return;                                 // nowhere legible left on it
-    lblAt.push([X,Y]);
-    wallLbls+=wLbl(X,Y,g.sa,g.txt,0);
-  });
-  s+=wallLbls+openLbls;
+
   // 4. Dimension strings around the envelope: extension lines off the wall,
   // a dimension line with tick marks, the figure centered on it, and a second
   // overall row outside that when a side breaks into more than one run. This
@@ -1505,14 +1602,19 @@ function _scanPlanSvg(sc,opts){
       const y=edge+dir*gap, x1=px(a), x2=px(b);
       out+=ln(x1,edge+dir*ext,x1,y+dir*1.1,0.2)+ln(x2,edge+dir*ext,x2,y+dir*1.1,0.2);
       out+=ln(x1,y,x2,y,0.25)+tickAt(x1,y,0.9,0.9*dir)+tickAt(x2,y,0.9,0.9*dir);
-      out+='<text x="'+((x1+x2)/2).toFixed(2)+'" y="'+(y+(side==='top'?-1.4:t+0.6)).toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+_scanFtIn(b-a)+'</text>';
+      const tx=(x1+x2)/2,ty=y+(side==='top'?-1.4:t+0.6),ft=_scanFtIn(b-a);
+      lblAt.push([tx,ty,wide(ft,t),tall(t)]);
+      out+='<text x="'+tx.toFixed(2)+'" y="'+ty.toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+ft+'</text>';
     }else{
       const edge=side==='left'?px(minX):px(maxX), dir=side==='left'?-1:1;
       const x=edge+dir*gap, y1=pz(a), y2=pz(b);
       out+=ln(edge+dir*ext,y1,x+dir*1.1,y1,0.2)+ln(edge+dir*ext,y2,x+dir*1.1,y2,0.2);
       out+=ln(x,y1,x,y2,0.25)+tickAt(x,y1,0.9*dir,0.9)+tickAt(x,y2,0.9*dir,0.9);
-      const my=((y1+y2)/2).toFixed(2);
-      out+='<g transform="translate('+x.toFixed(2)+','+my+') rotate(-90)"><text y="'+(side==='left'?-1.3:t+0.5).toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+_scanFtIn(b-a)+'</text></g>';
+      // Upright, sitting ON the chain: the halo behind the glyphs breaks the
+      // line for it, which is how a drafter writes a vertical dimension too.
+      const my=(y1+y2)/2,ft=_scanFtIn(b-a);
+      lblAt.push([x,my,wide(ft,t),tall(t)]);
+      out+='<text x="'+x.toFixed(2)+'" y="'+(my+t*0.36).toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+ft+'</text>';
     }
     return out;
   };
@@ -1525,6 +1627,32 @@ function _scanPlanSvg(sc,opts){
       if(hi-lo>0.3)s+=dimRun(side,lo,hi,1);
     }
   });
+  // Placed in order of what the reader needs most: the wall itself, then what
+  // is cut into it, then the runs left between those cuts. Each figure SLIDES
+  // along the piece of wall it describes, and will sit on the other face of
+  // that wall before it gives up. It never wanders off into the middle of the
+  // room to find space, and it never runs off the edge of the paper: a figure
+  // that has left its wall behind describes nothing, and one in the gutter
+  // does not print.
+  figs.sort((p,q)=>p.rank-q.rank).forEach(g=>{
+    const hw=wide(g.txt,g.fs),hh=tall(g.fs),off=g.base+Math.abs(g.nx)*hw;
+    const sides=g.out?[-1,1]:[1,-1];
+    let X=0,Y=0,ok=0;
+    for(const f of [0.5,0.3,0.7,0.16,0.84]){
+      const d=g.a+(g.b-g.a)*f,cx=g.ax+g.ux*d,cz=g.az+g.uz*d;
+      for(const sd of sides){
+        X=px(cx)+g.nx*off*sd;Y=pz(cz)+g.nz*off*sd;
+        if(inPage(X,Y,hw,hh)&&lblFree(X,Y,hw,hh)){ok=1;break;}
+      }
+      if(ok)break;
+    }
+    if(!ok)return;                                 // nowhere legible left on it
+    lblAt.push([X,Y,hw,hh]);
+    wallLbls+='<g class="'+(g.rank===1?'td-olen':'td-wlen')+'"><text x="'+X.toFixed(2)+'" y="'+(Y+0.75).toFixed(2)+
+      '" font-size="'+g.fs+'"'+(g.lead?' font-weight="600"':'')+' fill="'+(g.lead?_SCAN_TXT:_SCAN_TXT2)+
+      '" text-anchor="middle"'+halo+'>'+g.txt+'</text></g>';
+  });
+  s+=wallLbls;
   // 5. Labels: the ROOM, not the invoice (owner 2026-09-09: "shouldn't be wall
   // sq feet on a floor plan, should be room square feet"). This supersedes the
   // 2026-08-09 call that wall area leads. That number is what paint bills on
@@ -1537,49 +1665,35 @@ function _scanPlanSvg(sc,opts){
   // floor area under it. The box is only honest for a room that fills it, so a
   // bay or an L keeps its area and drops the two figures rather than printing
   // a rectangle nobody can measure to.
-  rooms.forEach((r,ri)=>{
-    const spot=_scanLabelSpot(r);
-    const cx=spot?spot[0]:(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
-    const cz=spot?spot[1]:(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
-    const xs=(r.poly||[]).map(p=>p[0]),zs=(r.poly||[]).map(p=>p[1]);
-    const bw=xs.length?Math.max(...xs)-Math.min(...xs):0;
-    const bh=zs.length?Math.max(...zs)-Math.min(...zs):0;
-    const boxy=bw>0&&bh>0&&(r.floorM2||0)/(bw*bh)>=0.9;
-    const g=o.roomClick?'<g onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer">':'<g>';
-    // A HALL IS NOT A LIVING ROOM (owner review 2026-09-09). At one fixed size
-    // the size line ran wall to wall in the narrow rooms and straight over the
-    // door swing. The block is scaled to the room that holds it: the longest
-    // line has to fit inside 82% of the room's width, at roughly 0.55em per
-    // character, and never grows past the size a big room gets or shrinks past
-    // readable. Small rooms end up with a smaller, quieter label, which is
-    // also how a real plan draws them.
-    const dimTxt=_scanFtIn(bw)+' \u00d7 '+_scanFtIn(bh);
-    const areaTxt=Math.round(_scanSqFt(r.floorM2||0)).toLocaleString()+' sq ft';
-    const widest=Math.max((r.label||'Room').length,boxy?dimTxt.length:0,areaTxt.length);
-    const fit=(bw*k*0.82)/(widest*0.55||1);
-    const f1=Math.max(1.75,Math.min(2.9,fit));
-    const f2=f1*0.83,f3=f1*0.79;
-    const lines=1+(boxy?1:0)+1;
-    const top=-(lines-1)*f1*0.62;
-    let yy=pz(cz)+top;
-    s+=g+'<text x="'+px(cx)+'" y="'+yy.toFixed(2)+'" font-size="'+f1.toFixed(2)+'" font-weight="700" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+escHtml(r.label||'Room')+'</text>';
-    if(boxy){yy+=f1*1.18;s+='<text x="'+px(cx)+'" y="'+yy.toFixed(2)+'" font-size="'+f2.toFixed(2)+'" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+dimTxt+'</text>';}
-    yy+=f1*1.14;
-    s+='<text x="'+px(cx)+'" y="'+yy.toFixed(2)+'" font-size="'+f3.toFixed(2)+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+areaTxt+'</text></g>';
-    if(lens==='electrical'){
-      _scanOutletPlan(r).forEach(m=>{
-        s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
-      });
-    }
+  roomLbls.forEach(b=>{
+    s+=(o.roomClick?'<g onclick="'+o.roomClick+'('+b.gi+')" style="cursor:pointer">':'<g>');
+    b.rows.forEach(t=>{
+      s+='<text x="'+t.x+'" y="'+t.y.toFixed(2)+'" font-size="'+t.fs.toFixed(2)+'"'+
+         (t.bold?' font-weight="700"':'')+' fill="'+t.fill+'" text-anchor="middle"'+halo+'>'+t.txt+'</text>';
+    });
+    s+='</g>';
   });
-  // 6. North arrow when the compass grabbed a heading at capture.
-  if(typeof sc.headingDeg==='number'&&sc.headingDeg>=0){
-    // The page turned, so the arrow turns with it.
-    const _nDeg=Math.round(sc.headingDeg+_rot*180/Math.PI);
-    s+='<g transform="translate(94.5,'+(HEAD+5).toFixed(1)+') rotate('+_nDeg+')">'+
+  if(lens==='electrical'){
+    rooms.forEach(r=>{
+      _scanOutletPlan(r).forEach(m=>{
+        s+='<circle class="td-outlet" cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
+      });
+    });
+  }
+  // 6. North. ALWAYS DRAWN (owner 2026-09-10: "needs the compass drawn
+  // somewhere"). A plan with no orientation mark is a picture: nobody holding
+  // it can say which wall faces the street. The NEEDLE turns, because the page
+  // turned and north did not; the letter never does, because a letter on its
+  // side is a letter the reader turns the page for. Where the compass gave no
+  // heading at capture the needle is drawn light and up the sheet and the mark
+  // reads "N?", which says the direction is the paper's, not the world's.
+  {
+    const hasN=typeof sc.headingDeg==='number'&&sc.headingDeg>=0;
+    const _nDeg=Math.round((hasN?sc.headingDeg:0)+_rot*180/Math.PI);
+    s+='<g transform="translate(94.5,'+(HEAD+5).toFixed(1)+')">'+
        '<circle r="3" fill="none" stroke="'+_SCAN_LINE+'" stroke-width="0.3"/>'+
-       '<path d="M 0 -2.2 L 1 1.6 L 0 0.7 L -1 1.6 Z" fill="'+_SCAN_TXT+'"/>'+
-       '<text y="-4" font-size="2.2" fill="'+_SCAN_TXT2+'" text-anchor="middle">N</text></g>';
+       '<g transform="rotate('+_nDeg+')"><path d="M 0 -2.2 L 1 1.6 L 0 0.7 L -1 1.6 Z" fill="'+(hasN?_SCAN_TXT:_SCAN_LINE)+'"/></g>'+
+       '<text y="-4" font-size="2.2" fill="'+_SCAN_TXT2+'" text-anchor="middle">'+(hasN?'N':'N?')+'</text></g>';
   }
   // 7. Scale bar: the thing that lets a client hold a ruler to the printout.
   // The bar is a round number of feet, the largest that still fits the margin.

@@ -225,9 +225,9 @@ test.describe('TdScan web half', () => {
         const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly: [], objects: [], hM: 2.44,
                      floorM2: 20, wallM2: 40, openM2: 0, perimM: 20, story: 1 }], headingDeg: 90 };
         const svg = _scanPlanSvg(sc, { sheet: true });
-        // Anchor to the compass group: the dimension chains and the wall
-        // figures carry rotate() too, so a bare match reads whichever is first.
-        const m = /translate\(94\.5,[^)]*\) rotate\((-?\d+)\)/.exec(svg);
+        // Anchor to the compass group, then to the needle inside it: the rose
+        // itself never turns, only the needle does.
+        const m = /translate\(94\.5,[^)]*\)[\s\S]*?rotate\((-?\d+)\)/.exec(svg);
         return { rot: Math.round(_scanPlanAngle(sc.rooms) * 180 / Math.PI), drawn: m && +m[1] };
       }, ALDI);
       expect(r.drawn, 'the arrow moved by exactly the angle the page did').toBe(90 + r.rot);
@@ -247,6 +247,138 @@ test.describe('TdScan web half', () => {
       expect(r.room).toBeNull();
       expect(r.bare).toEqual({ poly: [], walls: [], objects: [] });
       expect(r.nullObj, 'a malformed object rides through rather than throwing').toEqual([null]);
+    });
+  });
+
+  // ── One room, more than one space (owner 2026-09-10) ─────────────────────
+  // "Each individual room needs its own square feet without overlap on text."
+  // RoomPlan handed his whole 300 sq ft capture back as ONE room called
+  // "Floor 1" with a wall through the middle, so a single figure was printed
+  // over two rooms.
+  test.describe('a square footage per space', () => {
+    const W = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                     h: 2.44, doors: [], windows: [], conf: 'high' });
+    const RECT = [W(0, 0, 4, 0), W(4, 0, 4, 3), W(4, 3, 0, 3), W(0, 3, 0, 0)];
+    const RECT_POLY = [[0, 0], [4, 0], [4, 3], [0, 3]];
+
+    test('a wall clean across the floor makes two spaces, and they add up', async () => {
+      const r = await page.evaluate(([walls, poly]) => {
+        const a = _scanFloorAreas({ poly, walls });
+        return { n: a.length, m2: a.map(x => Math.round(x.m2 * 100) / 100 ) };
+      }, [RECT.concat([W(1.5, 0, 1.5, 3)]), RECT_POLY]);
+      expect(r.n, 'the divider cuts it in two').toBe(2);
+      expect(r.m2.reduce((t, x) => t + x, 0), 'and nothing is lost or invented').toBeCloseTo(12, 1);
+      expect(r.m2.sort((x, y) => x - y), 'split where the wall is, 1.5 m and 2.5 m').toEqual([4.5, 7.5]);
+    });
+
+    test('a perimeter wall is not a divider, however long it is', async () => {
+      const n = await page.evaluate(([walls, poly]) =>
+        _scanFloorAreas({ poly, walls }).length, [RECT, RECT_POLY]);
+      expect(n, 'four walls around one room is one space').toBe(1);
+    });
+
+    test('a stub reaching only part way across divides nothing', async () => {
+      const n = await page.evaluate(([walls, poly]) =>
+        _scanFloorAreas({ poly, walls }).length, [RECT.concat([W(1.5, 0, 1.5, 1.2)]), RECT_POLY]);
+      expect(n, 'a peninsula is not a wall between rooms').toBe(1);
+    });
+
+    test('each space carries its own figure and its own footage', async () => {
+      const t = await page.evaluate(([walls, poly]) => {
+        const sc = { id: 's', name: 'S', rooms: [{ label: 'Shop', walls, poly, objects: [],
+                     hM: 2.44, floorM2: 12, wallM2: 40, openM2: 0, perimM: 14, story: 1 }] };
+        const d = document.createElement('div'); d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        return [...d.querySelectorAll('text')].map(x => x.textContent);
+      }, [RECT.concat([W(1.5, 0, 1.5, 3)]), RECT_POLY]);
+      // 4.5 m2 is 48 sq ft, 7.5 m2 is 81 sq ft.
+      expect(t.filter(x => /sq ft$/.test(x) && !/total/.test(x)).sort(),
+        'one footage each, never one number over two rooms').toEqual(['48 sq ft', '81 sq ft']);
+      // The name goes on the bigger space, once.
+      expect(t.filter(x => x === 'Shop').length, 'named once, on the larger space').toBe(1);
+    });
+
+    test('junk in, no throw, and one space back', async () => {
+      const r = await page.evaluate(() => ({
+        none: _scanFloorAreas(null).length,
+        empty: _scanFloorAreas({}).length,
+        thin: _scanFloorAreas({ poly: [[0, 0], [1, 0]], walls: [] }).length,
+        noWalls: _scanFloorAreas({ poly: [[0, 0], [4, 0], [4, 3], [0, 3]] }).length,
+        junkWall: _scanFloorAreas({ poly: [[0, 0], [4, 0], [4, 3], [0, 3]],
+                                    walls: [{ ax: 0, az: 0, bx: 0, bz: 0, len: 0 }, null] }).length,
+      }));
+      expect([r.none, r.empty, r.thin], 'nothing to divide, nothing back').toEqual([0, 0, 0]);
+      expect([r.noWalls, r.junkWall], 'a floor with no usable wall is one space').toEqual([1, 1]);
+    });
+  });
+
+  // ── Nothing on the sheet is turned (owner 2026-09-10) ─────────────────────
+  // "Needs to not be tilted at all on the measurement lines or the canisters."
+  test.describe('every figure reads straight', () => {
+    const W = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                     h: 2.44, doors: [], windows: [], conf: 'high' });
+    const sheet = (extra) => page.evaluate((ex) => {
+      const mk = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                        h: 2.44, doors: [], windows: [], conf: 'high' });
+      const walls = [mk(0, 0, 4, 0), mk(4, 0, 4, 3), mk(4, 3, 0, 3), mk(0, 3, 0, 0)];
+      walls[0].windows = [{ off: 2, w: 1.2, h: 1.22 }];
+      walls[2].doors = [{ off: 2, w: 0.8, kind: 'door' }];
+      const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly: [[0, 0], [4, 0], [4, 3], [0, 3]],
+                   objects: [], hM: 2.44, floorM2: 12, wallM2: 40, openM2: 0, perimM: 14, story: 1 }] };
+      if (ex) sc.headingDeg = ex;
+      return _scanPlanSvg(sc, { sheet: true });
+    }, extra);
+
+    test('no figure anywhere carries a rotation', async () => {
+      const svg = await sheet(0);
+      // Everything that turns must be the compass, and only its needle.
+      const turns = svg.match(/rotate\([^)]*\)/g) || [];
+      const needle = (svg.match(/translate\(94\.5,[^)]*\)[\s\S]*?rotate\([^)]*\)/g) || []).length;
+      expect(turns.length, 'one turn on the sheet, and it is the needle').toBe(needle);
+    });
+
+    test('no figure runs off the edge of the paper', async () => {
+      const bad = await page.evaluate(() => {
+        const mk = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                          h: 2.44, doors: [], windows: [], conf: 'high' });
+        const walls = [mk(0, 0, 4, 0), mk(4, 0, 4, 3), mk(4, 3, 0, 3), mk(0, 3, 0, 0)];
+        // A window on every side, which is what pushed figures into the gutter.
+        walls.forEach(w => { w.windows = [{ off: w.len / 2, w: 1.0, h: 1.22 }]; });
+        const sc = { id: 's', name: 'S', headingDeg: 30, rooms: [{ label: 'R', walls,
+                     poly: [[0, 0], [4, 0], [4, 3], [0, 3]], objects: [], hM: 2.44, floorM2: 12,
+                     wallM2: 40, openM2: 0, perimM: 14, story: 1 }] };
+        const d = document.createElement('div');
+        d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        // Rough box per figure: 0.55em a character, centred on its x.
+        return [...d.querySelectorAll('g.td-wlen text, g.td-olen text')].filter(t => {
+          const half = t.textContent.length * 0.55 * (+t.getAttribute('font-size')) / 2;
+          const x = +t.getAttribute('x');
+          return x - half < 0 || x + half > 100;
+        }).map(t => t.textContent);
+      });
+      expect(bad, 'a figure in the gutter does not print').toEqual([]);
+    });
+
+    test('the compass is on every sheet, heading or no heading', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                          h: 2.44, doors: [], windows: [], conf: 'high' });
+        const room = { label: 'R', walls: [mk(0, 0, 4, 0), mk(4, 0, 4, 3), mk(4, 3, 0, 3), mk(0, 3, 0, 0)],
+                       poly: [[0, 0], [4, 0], [4, 3], [0, 3]], objects: [], hM: 2.44, floorM2: 12,
+                       wallM2: 40, openM2: 0, perimM: 14, story: 1 };
+        const grab = svg => {
+          const d = document.createElement('div'); d.innerHTML = svg;
+          const g = [...d.querySelectorAll('g')].find(x => /translate\(94\.5,/.test(x.getAttribute('transform') || ''));
+          return g ? { mark: g.querySelector('text').textContent, circles: g.querySelectorAll('circle').length } : null;
+        };
+        return {
+          withN: grab(_scanPlanSvg({ id: 'a', rooms: [room], headingDeg: 41 }, { sheet: true })),
+          without: grab(_scanPlanSvg({ id: 'b', rooms: [room] }, { sheet: true })),
+        };
+      });
+      expect(r.withN, 'a heading draws a compass').not.toBeNull();
+      expect(r.withN.mark, 'and it says north').toBe('N');
+      expect(r.without, 'no heading still draws one').not.toBeNull();
+      expect(r.without.mark, 'and says the direction is the paper\'s, not the world\'s').toBe('N?');
     });
   });
 
@@ -529,8 +661,10 @@ test.describe('TdScan web half', () => {
         hasSqFt: /120 sq ft/.test(plain),
         hasRoomDims: /12'0" \u00d7 10'0"/.test(plain),
         noWallSqFt: !/wall sq ft/.test(plain),
-        plainCircles: (plain.match(/<circle/g) || []).length,
-        elecCircles: (elec.match(/<circle/g) || []).length,
+        // Counted by class, not by tag: the compass rose is a circle too and
+        // it is on every sheet now, lens or no lens.
+        plainCircles: (plain.match(/td-outlet/g) || []).length,
+        elecCircles: (elec.match(/td-outlet/g) || []).length,
       };
     }, fabricatedRoom());
     expect(r.hasPolygon).toBe(true);
@@ -1644,7 +1778,12 @@ test.describe('TdScan web half', () => {
           overall: svg.includes(_scanFtIn(runsTop[runsTop.length - 1][1] - runsTop[0][0])),
           // Ticks and extension lines are what make it a dimension STRING.
           ticks: (svg.match(/stroke="#98A0AE"/g) || []).length,
-          rotatedSide: /rotate\(-90\)/.test(svg),
+          // OLD: the left and right figures were set on their side, the way a
+          // drafter writes a vertical dimension. NEW (owner 2026-09-10, "needs
+          // to not be tilted at all"): nothing on the sheet is turned but the
+          // compass needle, which turns because north is not a property of
+          // paper. The figure sits ON its chain and its halo breaks the line.
+          turnedText: /<text[^>]*rotate\(/.test(svg) || /rotate\([^)]*\)[^>]*>\s*<text/.test(svg),
           merges: _scanSideRuns([a, a], 'top', -1.83, -1.53, 1.83, 1.53).length,
           none: _scanSideRuns([], 'top', 0, 0, 1, 1).length,
         };
@@ -1653,7 +1792,7 @@ test.describe('TdScan web half', () => {
       expect(r.figures, 'each run is dimensioned').toBeGreaterThanOrEqual(2);
       expect(r.overall, 'and an overall run outside them').toBe(true);
       expect(r.ticks, 'extension lines, dimension lines, and tick marks').toBeGreaterThan(10);
-      expect(r.rotatedSide, 'the left and right figures read up the page').toBe(true);
+      expect(r.turnedText, 'no figure anywhere on the sheet is set on its side').toBe(false);
       expect(r.merges, 'two rooms on the same span merge into one dimension').toBe(1);
       expect(r.none, 'no rooms on a side draws no string').toBe(0);
     });
