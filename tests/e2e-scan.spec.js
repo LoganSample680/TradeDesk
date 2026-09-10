@@ -187,19 +187,29 @@ test.describe('TdScan web half', () => {
       expect(deg).toBe(0);
     });
 
-    test('and his room turns until its longest run of wall lies flat', async () => {
+    // OLD: each wall was dropped in a 5 degree bucket and the page turned by
+    // the BUCKET, so it squared to -70 and left up to two and a half degrees
+    // of tilt on the sheet. NEW (owner 2026-09-10, "see how the plan itself
+    // isn't set on a 90 degree axis"): it turns by the actual grid angle, so
+    // every wall lands on an axis and not just the longest one.
+    test('and his room turns until every wall lies on an axis', async () => {
       const r = await page.evaluate((walls) => {
         const rot = _scanPlanAngle([{ walls }]);
-        const cs = Math.cos(rot), sn = Math.sin(rot);
-        const out = _scanRotateRoom({ walls, poly: [], objects: [] }, cs, sn, 0, 0);
-        // The longest wall, as an angle off horizontal, folded to a half turn.
-        const longest = out.walls.slice().sort((a, b) => b.len - a.len)[0];
-        let a = Math.atan2(longest.bz - longest.az, longest.bx - longest.ax) * 180 / Math.PI;
-        a = ((a % 180) + 180) % 180;
-        return { deg: Math.round(rot * 180 / Math.PI), lies: Math.min(a, 180 - a) };
+        const out = _scanRotateRoom({ walls, poly: [], objects: [] },
+                                    Math.cos(rot), Math.sin(rot), 0, 0);
+        // Each wall's angle off the nearest axis, folded to a quarter turn.
+        const off = out.walls.map(w => {
+          let a = Math.atan2(w.bz - w.az, w.bx - w.ax) * 180 / Math.PI;
+          a = ((a % 180) + 180) % 180;
+          return Math.min(a, Math.abs(90 - a), 180 - a);
+        });
+        const xs = out.walls.flatMap(w => [w.ax, w.bx]), zs = out.walls.flatMap(w => [w.az, w.bz]);
+        return { deg: rot * 180 / Math.PI, worst: Math.max(...off),
+                 wide: (Math.max(...xs) - Math.min(...xs)) > (Math.max(...zs) - Math.min(...zs)) };
       }, ALDI);
-      expect(r.deg, 'his was 68 degrees off').toBe(-70);
-      expect(r.lies, 'and lies flat afterwards, to within the bucket').toBeLessThanOrEqual(5);
+      expect(r.deg, 'his grid was 68 degrees off, not 70').toBeCloseTo(-68.2, 1);
+      expect(r.worst, 'and no wall is left leaning afterwards').toBeLessThan(0.2);
+      expect(r.wide, 'the long side lies across the page, the way a sheet is held').toBe(true);
     });
 
     test('turning the page never changes the room', async () => {

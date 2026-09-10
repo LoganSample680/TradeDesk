@@ -1052,7 +1052,11 @@ function _scanObjSvgFor(room,px,pz,k,ink){
 const _SCAN_PAPER='#FFFFFF';
 const _SCAN_POCHE='#2F3542';      // navy-charcoal walls, not flat black
 const _SCAN_LINE='#98A0AE';       // dimension and leader lines
-const _SCAN_FURN='#8B93A1';       // furniture and fixture symbols
+// Furniture is CONTEXT, not content (owner 2026-09-10: "turn the furniture
+// way down to a light grey"). A sofa tells the reader which way the room is
+// used; it must never compete with a wall, a door swing or a figure, all of
+// which somebody is going to measure or price off.
+const _SCAN_FURN='#C6CBD3';       // furniture and fixture symbols
 const _SCAN_TXT='#2F3542';
 const _SCAN_TXT2='#6E7684';
 // Room tints by name, the way a real plan color-keys spaces. Pastel enough
@@ -1268,19 +1272,43 @@ function _scanRoomGeom(r){
 // not about the sheet, so the arrow turns by the same angle and still points
 // where north really is.
 function _scanPlanAngle(rooms){
-  const by={};
+  // OLD: every wall was dropped into a 5 degree bucket and the page was turned
+  // by the BUCKET, so up to two and a half degrees of tilt survived the
+  // squaring and his plan sat visibly off the axis (owner 2026-09-10: "see how
+  // the plan itself isn't set on a 90 degree axis"). The bucket was never the
+  // answer: the angle is.
+  //
+  // Folded to a QUARTER turn, because a wall, the same wall backwards, and the
+  // wall at right angles to it are all the same evidence about how the
+  // building sits on the paper. Averaged as a DIRECTION and not as a number,
+  // so 89 degrees and 1 degree agree that the grid is a degree out instead of
+  // averaging to 45, and weighted by length, so the long walls decide.
+  let sx=0,sz=0;
   (rooms||[]).forEach(r=>(r.walls||[]).forEach(w=>{
     const dx=w.bx-w.ax,dz=w.bz-w.az,len=Math.hypot(dx,dz);
     if(!(len>0.3))return;
-    // Folded to a half turn: a wall and the same wall backwards square the
-    // page identically.
-    let a=Math.atan2(dz,dx)*180/Math.PI;
-    a=((a%180)+180)%180;
-    const key=(Math.round(a/5)*5)%180;
-    by[key]=(by[key]||0)+len;
+    const a=Math.atan2(dz,dx)*4;                   // a quarter turn becomes a whole one
+    sx+=len*Math.cos(a);sz+=len*Math.sin(a);
   }));
-  const best=Object.keys(by).sort((a,b)=>by[b]-by[a]||(+a)-(+b))[0];
-  return best==null?0:(-(+best)*Math.PI/180)||0;   // ||0 so a square room reads 0, never -0
+  if(!sx&&!sz)return 0;
+  let m=Math.atan2(sz,sx)/4;
+  if(Math.abs(m)<1e-9)m=0;                         // a square room is left exactly alone
+  // That grid can be laid on the paper two ways, ninety degrees apart. Take
+  // the one that puts the building's long side across the page: the sheet is
+  // sized off its width, and it is the way anybody holds a plan.
+  const span=rot=>{
+    const cs=Math.cos(rot),sn=Math.sin(rot);
+    let x0=1e9,x1=-1e9;
+    (rooms||[]).forEach(r=>(r.walls||[]).forEach(w=>{
+      [[w.ax,w.az],[w.bx,w.bz]].forEach(q=>{
+        const X=q[0]*cs-q[1]*sn;
+        x0=Math.min(x0,X);x1=Math.max(x1,X);
+      });
+    }));
+    return x1-x0;
+  };
+  const a=-m,b=a+(a<=0?Math.PI/2:-Math.PI/2);
+  return (span(b)>span(a)?b:a)||0;
 }
 function _scanRotateRoom(r,cs,sn,ox,oz){
   if(!r)return r;
