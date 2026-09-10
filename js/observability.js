@@ -160,8 +160,15 @@
   function _track(type, page, value, label) {
     try { if (!_ready()) return; _batch.push({ event: type, ctx: (page != null ? page : (label || _page())), value: (typeof value === 'number' ? value : null) }); if (_batch.length >= 60) _flush(); } catch (_e) {}
   }
+  // WHAT IS DRIVING THE APP. The flow suite drives the DEPLOYED app with a real
+  // login, so its steps reach ingest-telemetry exactly like a customer's taps
+  // (tests/flow/live-helpers.js calls _obs.track). Without this every product
+  // metric counts CI as a user: of the seventeen event kinds in the table on
+  // 2026-09-10, the three highest-volume were the test harness. The harness
+  // sets this; nothing else ever does, and the default is a real person.
+  var _source = 'app';
   function _flush() {
-    try { if (!_ready() || !_batch.length) return; var events = _batch.splice(0, _batch.length); _send({ session_id: _sid, app_version: _ver(), events: events }); } catch (_e) {}
+    try { if (!_ready() || !_batch.length) return; var events = _batch.splice(0, _batch.length); _send({ session_id: _sid, app_version: _ver(), source: _source, events: events }); } catch (_e) {}
   }
   try {
     document.addEventListener('click', function () { try { _track('click'); } catch (_x) {} }, true);
@@ -179,6 +186,10 @@
       track: _track,                                          // _obs.track('event', page)
       flush: _flush,
       time: function (label, ms) { try { _track('timing', null, (typeof ms === 'number' ? ms : null), label); } catch (_e) {} }, // _obs.time('label', ms)
+      // Declare this session as the test harness. One way on purpose: a page
+      // that has said it is a test must not be able to talk its way back into
+      // the product numbers halfway through.
+      markTest: function () { try { _source = 'test'; } catch (_e) {} },
     };
   } catch (_e) {}
 })();

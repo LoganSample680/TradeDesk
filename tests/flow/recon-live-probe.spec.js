@@ -95,8 +95,8 @@ test.describe('Reconciliation live probe (real account data)', () => {
         windows.push(w);
         if (!(t1 > 0 && t2 > t1)) { w.verdict = 'bad-order'; continue; }
         if (t2 - t1 < _GEO_RECON_MIN_GAP_MS) { w.verdict = 'under-min-gap'; continue; }
-        if (_ctDateStr(new Date(t1)) !== _ctDateStr(new Date(t2))) { w.verdict = 'crosses-midnight'; continue; }
-        const dayKey = _ctDateStr(new Date(t1));
+        if (_bizDateStr(new Date(t1)) !== _bizDateStr(new Date(t2))) { w.verdict = 'crosses-midnight'; continue; }
+        const dayKey = _bizDateStr(new Date(t1));
         const dayJobs = (typeof _geoJobsOnDay === 'function') ? _geoJobsOnDay(dayKey) : null;
         w.day = dayKey;
         w.dayJobs = dayJobs ? dayJobs.map(j => j.name || j.id) : 'HELPER-MISSING';

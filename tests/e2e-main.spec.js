@@ -54,7 +54,10 @@ test.describe('TradeDesk main app', () => {
     );
     expect(isActive).toBe(true);
 
-    // Fill client name
+    // Fill client name. The name/address fields moved behind the "Change"
+    // reveal on step 1 (they arrive from the who-is-it-for gate and are shown
+    // as a read-only line), so open the reveal the way a user would first.
+    await page.evaluate(() => { if (typeof _geiToggleJob === 'function') _geiToggleJob(); });
     const cnameEl = page.locator('#gei-client');
     await cnameEl.waitFor({ timeout: 5000 });
     await cnameEl.fill('');

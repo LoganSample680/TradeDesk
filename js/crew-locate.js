@@ -210,7 +210,31 @@ function _crewLocateTeardown(){
 // reason:'timeout'} when nothing came back at all. A timeout is not evidence of
 // anything: an asleep phone and a phone in a basement look identical from here,
 // which is exactly what the UI is required to say.
+// ── LOCATING YOURSELF NEEDS NO NETWORK ──────────────────────────────────────
+// Owner 2026-09-06, on his own phone: "tried locate but it said couldn't do it
+// on my own phone." Two guards conspired, and both were right on their own.
+// The channel is built with broadcast self:false, so a device never receives
+// its own broadcast, and the responder refuses outright when req.by is req.uid
+// ("never answer yourself", which stops a loop). Between them a manager asking
+// where HE is could only ever time out, and the row then said his phone was
+// asleep or out of signal, which was a lie about a phone in his hand.
+//
+// It was never a round trip anyway. Take the fix here, write it to the same
+// place the responder writes it, and answer. A solo contractor IS the crew, so
+// this is the common case, not an edge one.
+async function _crewLocateSelf(){
+  const gate=_crewLocateAllowed();
+  if(gate!=='ok')return {ok:false,reason:gate};
+  const fix=await _crewLocateFix();
+  if(!fix)return {ok:false,reason:'no-fix'};
+  // Same write the responder makes, so a self-locate becomes this person's new
+  // last-known on the map exactly like an answered one does (7.3).
+  try{if(typeof _geoWritePing==='function')_geoWritePing({lat:fix.lat,lng:fix.lng},fix.acc||0,fix.ts);}catch(_e){}
+  return {ok:true,lat:fix.lat,lng:fix.lng,acc:fix.acc||0,fixTs:fix.ts};
+}
 function crewLocateRequest(uid){
+  const _me=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+  if(_me&&uid&&String(uid)===String(_me))return _crewLocateSelf();
   return new Promise(resolve=>{
     const ch=_crewLocateInit();
     const me=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;

@@ -266,7 +266,30 @@ const TRADE_SCOPE_CHIPS={
 };
 let _activeTrade=null; // set on login from account_config.business_type
 
-function getActiveTrade(){return _activeTrade||_config?.business_type||'painting';}
+// THERE IS NO DEFAULT TRADE (owner 2026-09-06: "any trade specific branding
+// goes out the window, everything has to be aligned to each of the trades").
+//
+// This used to fall back to 'painting', and every other fallback in the app
+// chained off it, so a plumber whose business_type had not loaded yet, a crew
+// session, or any path that lost the trade for a moment got a proposal headed
+// "Painting Proposal" with a palette icon on it. That is somebody else's trade
+// on his paperwork.
+//
+// 'general' is the honest answer to "we do not know yet": it is a real trade in
+// TRADE_META, it has its own services and scope chips, and _tradeProposalLabel
+// below prints it as plain "Proposal" rather than branding his document with a
+// word he never chose.
+function getActiveTrade(){return _activeTrade||_config?.business_type||'general';}
+
+// What a proposal calls itself. A plumber's says Plumbing, a roofer's says
+// Roofing, and one we cannot name says Proposal: never another trade's word.
+function _tradeProposalLabel(trade,opts){
+  const t=trade||'';
+  const m=TRADE_META[t];
+  const bare=(opts&&opts.bare)?'Proposal':'Proposal';
+  if(!m||t==='general'||t==='other')return bare;
+  return m.label+' '+((opts&&opts.lower)?'proposal':'Proposal');
+}
 
 function setActiveTrade(type){
   _activeTrade=type;
@@ -486,6 +509,59 @@ function _geiStartFreshDraft(){
   openGenericEstimate(c,null,null,{mode,forceNew:true,forceAddr:addr});
 }
 
+// ── One fact, one home ──────────────────────────────────────────────────────
+//
+// Owner 2026-09-06: fewer clicks, less setup, and it has to be the smartest
+// tool out there. Smart starts with not asking a man something the app has
+// already been told.
+//
+// Every one of these was a question on step 1 whose answer was already sitting
+// in the account or on the customer record, and the estimator threw the stored
+// answer away and started blank:
+//
+//   * PROPERTY TYPE. The client form asks single family / condo / rental /
+//     commercial / new construction. Step 1 asked Residential or Commercial
+//     again, and _geiIsCommercial was hardcoded false on every open.
+//   * WORK TYPE. "New construction" is one of those same client-form answers.
+//     Step 1 asked Repair or New build as if nobody had said.
+//   * HIS HOURLY RATE. S.laborRate is set in Settings and this file NEVER read
+//     it: _tmRatePerMan started at 0 every time, so he typed his own rate on
+//     every T&M bid, and the send button refused him until he did.
+//   * THE DEPOSIT. Hardcoded 25% with nowhere to store his own standard, so a
+//     contractor who always takes a third re-set it on every single estimate.
+//
+// The chain is: what he set on THIS estimate, then this customer's record,
+// then his account default, then the trade's. Nothing starts at zero that the
+// app has been told, and the screen states the answer instead of asking the
+// question.
+function _geiFacts(c){
+  const pt=String((c&&c.ptype)||'').toLowerCase();
+  const rate=Number(S&&S.laborRate)||0;
+  const dep=Number(S&&S.depositPct);
+  return {
+    // The customer's own property type, which is a strictly better answer than
+    // a blank toggle: he told us when he wrote the customer down.
+    commercial:pt==='commercial',
+    // Same field, second question. "New construction" answers both.
+    workScope:pt==='new construction'?'improvement':'repair',
+    // His rate, not zero.
+    laborRate:rate>0?rate:0,
+    // His standard deposit, and 25 only when he has never said otherwise.
+    depositPct:(dep>0&&dep<=100)?dep:25,
+  };
+}
+// What the summary line on step 1 reads out, in his words. It states what the
+// app worked out so he can correct it in one tap, instead of making him
+// re-enter it every time to prove he means it.
+function _geiFactsLine(){
+  const bits=[
+    _geiIsCommercial?'Commercial':'Residential',
+    _geiJobScope==='improvement'?'new build':'repair',
+    _geiEmergency?'emergency rate':'normal hours',
+  ];
+  return bits.join(', ');
+}
+
 function openGenericEstimate(c,bidId,_tradePick,opts){
   // Start of the drafting clock, so "how long to write a proposal" is measurable.
   try{if(typeof lcProposalStarted==='function')lcProposalStarted(c&&c.id!=null?c.id:_geiClientId);}catch(_e){}
@@ -497,7 +573,16 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
-  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];
+  const _facts=_geiFacts(c);
+  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_geiExclusions=[];_attachSkipped=[];
+  // Resolved, not blanked. An emergency is the one thing nobody can know in
+  // advance, so that one still starts off.
+  _geiIsCommercial=_facts.commercial;
+  _geiJobScope=_facts.workScope;
+  _geiNewWork=(_facts.workScope==='improvement');
+  if(typeof _geiFactsOpen!=='undefined')_geiFactsOpen=false;
+  if(typeof _geiJobOpen!=='undefined')_geiJobOpen=false;
+  if(typeof _geiDescUserSet!=='undefined')_geiDescUserSet=false;
   _geiScanId=null;
   // Seeded lines (scan / TrueMeasure) are computed here but NOT applied to
   // _geiLines yet: the resume-an-existing-draft lookup below this block can
@@ -544,16 +629,18 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(typeof showToast==='function')showToast('Measured line loaded from TrueMeasure','🛰️');
     }
   }
-  _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
+  // His hourly rate comes from Settings. It used to start at 0, which made him
+  // type his own rate on every bid and blocked Send until he did.
+  _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
   const trade=_geiTrade;
   const m=TRADE_META[trade]||{icon:'🔧',label:trade.charAt(0).toUpperCase()+trade.slice(1)};
   const titleEl=document.getElementById('gei-trade-title');
-  if(titleEl)titleEl.innerHTML=svgIcon(m.icon,{size:24})+' '+m.label+' Proposal';
+  if(titleEl)titleEl.innerHTML=svgIcon(m.icon,{size:24})+' '+_tradeProposalLabel(trade);
   const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
-  if(eyebrowEl)eyebrowEl.textContent=m.label+' proposal';
+  if(eyebrowEl)eyebrowEl.textContent=_tradeProposalLabel(trade,{lower:true});
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
   sf('gei-client',c?.name||'');
   sf('gei-addr',opts?.forceAddr||c?.addr||''); // forceAddr = property chosen at the type gate
@@ -574,10 +661,12 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     const b=bids.find(x=>x.id===bidId);
     if(b){
       sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');if(b.addr){sf('gei-addr',b.addr);_geiCurAddr=b.addr;}
+      _geiDescUserSet=!!b.descUserSet;
       if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
       if(b.scopeChips)_geiScopeChips=[...b.scopeChips];
+      if(Array.isArray(b.exclusions))_geiExclusions=[...b.exclusions];
       _geiScopeNoScope=!!(b.scopeNoScope);
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
@@ -588,7 +677,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       // and letting isFreeForm win resumed T&M drafts as empty BYO estimates.
       if(b.isTM){
         _geiIsTM=true;_geiIsFreeForm=false;
-        _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
+        _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||_facts.laborRate;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
@@ -634,6 +723,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       _geiEditBidId=_existingGei.id;
       const _b=_existingGei;
       sf('gei-desc',_b.geiDesc||'');sf('gei-notes',_b.notes||'');
+      _geiDescUserSet=!!_b.descUserSet;
       // The resumed draft's address applies, UNLESS the property gate just picked
       // one (forceAddr) — a deliberate pick always wins over a stub's default.
       if(_b.addr&&!opts?.forceAddr){sf('gei-addr',_b.addr);_geiCurAddr=_b.addr;}
@@ -644,9 +734,10 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       // isTM precedence, legacy dual-flag rows (see _byoAutosave note) must
       // resume as T&M, never as an empty BYO.
-      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
+      if(Array.isArray(_b.exclusions))_geiExclusions=[..._b.exclusions];
       _geiScopeNoScope=!!(_b.scopeNoScope);
       // Deposit % is restored in _tmShowPage/_byoShowPage instead, the field
       // doesn't exist in the DOM yet at this point (rendered lazily on page show).
@@ -708,9 +799,11 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   }
   // Restore scope title from saved description when reopening an existing bid
   if(!_geiIsTM&&!_geiIsFreeForm){
+    if(typeof _geiSyncAutoName==='function')_geiSyncAutoName();
     const _descVal=document.getElementById('gei-desc')?.value?.trim();
     if(_descVal){const _tEl=document.getElementById('gei-trade-title');if(_tEl)_tEl.textContent=_descVal;}
   }
+  if(typeof _geiRenderJobLine==='function')_geiRenderJobLine();
   goPg('pg-est-generic');
   // The builder is now up: retire the "pick estimate type" screen (kept as the
   // backdrop behind the address gate for multi-property clients) with a soft fade.
@@ -759,7 +852,6 @@ function goGeiStep(n){
   const _tmP=document.getElementById('gei-tm-page');if(_tmP)_tmP.style.display='none';
   const _byoP=document.getElementById('gei-byo-page');if(_byoP)_byoP.style.display='none';
   // If going to Step 2 and no bundles are set, show the onboarding picker first
-  if(n===2&&(!S.myBundles||!S.myBundles.length)){showGeiOnboarding();return;}
   _geiStep=n;
   [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===n)?'':'none';});
   if(n===1)_geiRenderSiteNoteField('gen'); // generic wizard: field lives in step 1, by the property context
@@ -863,13 +955,37 @@ function _geiRenderTopBar(prefix,defaultTitle,editFnName){
       '<button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>'+
     '</div>';
 }
+// BYO's LINES are the scope. Every item carries a title and a description, and
+// the proposal prints both as the Scope of work, so a separate chip picker asks
+// him to describe the same job a second time and costs taps on the flow that
+// has to be the fastest thing in the app. Owner 2026-09-07: "why am I still
+// seeing scope of work selections in BYO? Thought we made that smart off
+// descriptions?" He is right, the reader got smart and the input never got
+// removed.
+//
+// T&M keeps it, and that is not an inconsistency. A T&M estimate prices
+// material CATEGORIES and an hourly rate: nothing in it says what the crew is
+// actually going to do. There the chips are the only scope there is.
+//
+// A BYO draft written before tonight can still carry chips, and they still
+// print on its proposal. Hiding the card outright would strand them on a live
+// document with no way to take them off (§7.2), so an estimate that HAS them
+// keeps a remove-only card and no way to add more.
+function _geiScopeCardMode(prefix){
+  if(prefix!=='byo')return 'full';
+  return (typeof _geiScopeChips!=='undefined'&&_geiScopeChips&&_geiScopeChips.length)?'legacy':'off';
+}
 function _geiRenderScopeCard(prefix){
   const wrap=document.getElementById(prefix+'-scopecard-wrap');if(!wrap)return;
+  const mode=_geiScopeCardMode(prefix);
+  if(mode==='off'){wrap.innerHTML='';wrap.style.display='none';return;}
+  wrap.style.display='';
   wrap.innerHTML=
     '<div class="card-hd">'+
       '<div class="card-hd-title">Scope of work</div>'+
-      '<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>'+
+      (mode==='full'?'<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>':'')+
     '</div>'+
+    (mode==='legacy'?'<div style="padding:11px 16px 2px;font-size:11.5px;color:var(--text-3);line-height:1.5">Your line items and their descriptions are the scope on this proposal now. These older entries still print, remove any you do not want.</div>':'')+
     '<div id="'+prefix+'-scope-wrap"></div>';
 }
 function _geiRenderProfitGauge(prefix,costOninput){
@@ -877,6 +993,7 @@ function _geiRenderProfitGauge(prefix,costOninput){
   if(!wrap||wrap.children.length)return; // idempotent: preserve gauge/animation state across repeat page shows
   wrap.innerHTML=
     '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
+    '<div id="'+prefix+'-drive-line" style="display:none;padding:10px 12px;margin:0 0 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2)"></div>'+
     '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
     '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
       // Hard-edged stops at the EXACT _updateMarginGauge breakpoints (22/35/55%) so
@@ -902,6 +1019,7 @@ function _geiRenderActionButtons(prefix,opts){
   const extra=(o.extraButtons||[]).map(b=>'<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+b.onclick+'">'+b.label+'</button>').join('');
   wrap.innerHTML=
     '<button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">'+svgIcon('📨',{size:16})+' '+(o.sendLabel||'Send proposal')+'</button>'+
+    '<button class="btn btn-xl btn-full" style="margin-top:8px;background:#0f172a;color:#fff;border-color:#0f172a" onclick="_geiPresent()">'+svgIcon('📱',{size:16,color:'#fff'})+' Present on this screen</button>'+
     '<button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">'+svgIcon('✍',{size:16})+' Sign in person</button>'+
     '<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:6px;margin-top:8px">'+
       '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+(o.previewOnclick||'_geiPreviewClient()')+'">'+svgIcon('👁',{size:11})+' Preview</button>'+
@@ -925,12 +1043,53 @@ function _geiRenderDepositField(prefix,onInputExpr){
     '</div>'+
     '<div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="'+prefix+'-rail-balance">$0</span></div>';
 }
+// The field is BUILT once and never reset, with a hardcoded 25 in the markup.
+// Two things followed from that: his own default (S.depositPct, whose settings
+// help text has always promised it is "applied to every new proposal") was
+// ignored, and the last estimate's deposit carried into the next one. Both are
+// fixed here, on every page show: the resumed bid's own percent if it has one,
+// then his standard, then 25 for a contractor who has never said.
+function _geiApplyDepositDefault(prefix){
+  const el=document.getElementById(prefix+'-deposit-pct');
+  if(!el)return;
+  const b=_geiEditBidId?bids.find(x=>x.id===_geiEditBidId):null;
+  let pct=Number(b&&b.tmDepositPct);
+  // BYO stores dollars, not a percent, so read the percent back off the pair.
+  if(!(pct>0)&&b&&Number(b.amount)>0&&Number(b.deposit)>0)pct=Math.round(Number(b.deposit)/Number(b.amount)*100);
+  if(!(pct>0&&pct<=100)){
+    const own=Number(S&&S.depositPct);
+    pct=(own>0&&own<=100)?own:25;
+  }
+  el.value=String(pct);
+}
 // Single source of truth for "what % deposit does this estimate use", read by
 // _byoAutosave, saveGenericEstimate, sendGenericProposal, _geiSignInPerson, and
 // _geiConfirmInPerson so T&M and BYO can never drift onto different formulas.
 function _geiDepositPct(){
   const el=document.getElementById(_geiIsTM?'tm-deposit-pct':'byo-deposit-pct');
-  return parseFloat(el?.value)||25;
+  const typed=parseFloat(el?.value);
+  if(typed>0)return typed;
+  // A TYPED ZERO IS AN ANSWER, not a blank. Settings has said "0 = no deposit"
+  // since it shipped, but zero fell through to the account default here, so a
+  // contractor who wanted none got 25% anyway and only found out when the
+  // client's proposal asked for money up front. An empty field is still NaN
+  // and still falls through, which is the case the default exists for.
+  if(typed===0)return 0;
+  // His own standard, learned the first time he changes it (_geiRememberDeposit),
+  // and 25 only for a contractor who has never said otherwise.
+  const own=Number(S&&S.depositPct);
+  return (own>0&&own<=100)?own:25;
+}
+// What he corrects, the app keeps. He sets a third once and every estimate
+// after it opens at a third, the same way the price book learns what he
+// charges. Never learned from the value we put there ourselves.
+function _geiRememberDeposit(){
+  const el=document.getElementById(_geiIsTM?'tm-deposit-pct':'byo-deposit-pct');
+  const v=parseFloat(el?.value);
+  if(!(v>0&&v<=100))return;
+  if(Number(S.depositPct)===v)return;
+  S.depositPct=v;
+  if(typeof _settingsChanged==='function')_settingsChanged();
 }
 
 // ── Estimate mode registry ────────────────────────────────────────────────────
@@ -969,7 +1128,7 @@ const _GEI_MODES={
     editFnName:'_editTMTitle',
     titleSuffix:'Time & Materials',
     gaugeOninput:'_tmInputChange()',
-    depositOninput:'_tmInputChange()',
+    depositOninput:'_tmInputChange();_geiRememberDeposit()',
     actionOpts:{sendLabel:'Send T&amp;M proposal'},
   },
   byo:{
@@ -978,8 +1137,8 @@ const _GEI_MODES={
     editFnName:'_editByoTitle',
     titleSuffix:'Build Your Own',
     gaugeOninput:"this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()",
-    depositOninput:'_byoUpdateRail();_byoAutosave()',
-    actionOpts:{extraButtons:[{label:svgIcon('📋',{size:11})+' Option B',onclick:'_byoDuplicateBid()'}]},
+    depositOninput:'_byoUpdateRail();_byoAutosave();_geiRememberDeposit()',
+    actionOpts:{extraButtons:[{label:svgIcon('📋',{size:11})+' Add option',onclick:'_byoDuplicateBid()'}]},
   },
 };
 // Shared page chrome for both single-page estimate layouts: hide the legacy
@@ -1027,6 +1186,86 @@ function _geiSiteNoteInput(val){
   if(_geiSiteNoteT)clearTimeout(_geiSiteNoteT);
   _geiSiteNoteT=setTimeout(()=>{try{saveAll();}catch(e){}},400);
 }
+// ── What is NOT included ────────────────────────────────────────────────────
+//
+// The single most-named thing missing from a contractor's estimate, and the
+// one that turns into a fight: permits, asbestos and mold, structural damage
+// found after demo, owner-supplied materials, disposal beyond normal debris.
+// Homeowner guides literally teach people to treat a missing exclusions list as
+// a red flag and go get another bid, and estimate-terms guides call it the
+// first line of defense against a dispute. TradeDesk had nothing.
+//
+// Presets first because nobody writes these from memory at a kitchen table,
+// free text underneath because every job has its own. Same card on every
+// estimate type, injected by the shared chrome like everything else.
+const _EXCL_COMMON=[
+  'Permits, plan review and inspection fees',
+  'Hazardous materials (asbestos, lead, mold)',
+  'Structural or hidden damage found after demo',
+  'Owner-supplied materials and fixtures',
+  'Disposal beyond normal job debris',
+  'Work not specifically listed above',
+];
+const _EXCL_BY_TRADE={
+  roofing:    ['Deck replacement beyond the sheets listed','Gutter replacement','Interior ceiling or drywall repair'],
+  hvac:       ['Electrical service upgrades','Duct replacement or resizing','Gas line modifications'],
+  plumbing:   ['Wall, ceiling and floor repair after access','Septic or main sewer line work','Fixture upgrades not listed'],
+  electrical: ['Drywall patch and paint after access','Panel or service upgrades','Low-voltage and data wiring'],
+  painting:   ['Wallpaper removal','Carpentry and rot repair','Moving heavy or fragile furniture'],
+  landscaping:['Irrigation repair','Tree removal','Grading or drainage correction'],
+};
+function _exclList(trade){
+  const t=trade||_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general');
+  return [...(_EXCL_BY_TRADE[t]||[]),..._EXCL_COMMON];
+}
+let _geiExclusions=[];
+Object.defineProperty(window,'_geiExclusions',{get:()=>_geiExclusions,set:v=>{_geiExclusions=Array.isArray(v)?v:[];},configurable:true});
+function _exclToggle(label){
+  const i=_geiExclusions.indexOf(label);
+  if(i>=0)_geiExclusions.splice(i,1);else _geiExclusions.push(label);
+  _geiRenderExclusions(_geiIsTM?'tm':'byo');
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+function _exclAddCustom(){
+  const el=document.getElementById('gei-excl-custom');
+  const v=(el&&el.value||'').trim();
+  if(!v)return;
+  if(_geiExclusions.indexOf(v)<0)_geiExclusions.push(v);
+  if(el)el.value='';
+  _geiRenderExclusions(_geiIsTM?'tm':'byo');
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+function _geiRenderExclusions(prefix){
+  ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-excl-wrap');if(w)w.innerHTML='';}});
+  const wrap=document.getElementById(prefix+'-excl-wrap');if(!wrap)return;
+  const opts=_exclList();
+  const chosen=_geiExclusions.slice();
+  // Anything he typed himself sits with the presets, so the list reads as one
+  // thing and he can turn a custom line back off the same way.
+  const all=opts.concat(chosen.filter(c=>opts.indexOf(c)<0));
+  wrap.innerHTML='<div class="card card-pad-0" style="margin-bottom:12px">'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('⚠',{size:14})+' What is not included</div>'+
+      '<div style="font-size:11px;color:var(--text3);font-weight:600">'+(chosen.length?chosen.length+' on the proposal':'optional')+'</div>'+
+    '</div>'+
+    '<div style="padding:12px 14px">'+
+      '<div style="font-size:11px;color:var(--text-3);margin-bottom:10px;line-height:1.5">Naming the boundary is what stops the argument later. Tap what this job does not cover.</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
+        all.map(l=>{
+          const on=chosen.indexOf(l)>=0;
+          return '<button type="button" onclick="_exclToggle('+escHtml(JSON.stringify(l))+')" '+
+            'style="padding:8px 12px;border-radius:20px;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt)':'var(--bg2)')+';color:'+(on?'var(--blue-dk)':'var(--text)')+';font-size:12px;font-weight:'+(on?'800':'600')+';cursor:pointer;font-family:inherit;min-height:38px;text-align:left">'+
+            (on?svgIcon('✓',{size:11})+' ':'')+escHtml(l)+'</button>';
+        }).join('')+
+      '</div>'+
+      '<div style="display:flex;gap:8px">'+
+        '<input type="text" id="gei-excl-custom" placeholder="Anything else this job does not cover" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_exclAddCustom();}" '+
+          'style="flex:1;min-width:0;font-size:13px;padding:9px 11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+
+        '<button onclick="_exclAddCustom()" class="btn btn-sm" style="flex-shrink:0;min-height:38px">+ Add</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+
 function _geiRenderSiteNoteField(prefix){
   ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
   const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
@@ -1055,10 +1294,15 @@ function _geiShowSharedChrome(prefix){
   _geiRenderProfitGauge(prefix,m.gaugeOninput);
   _geiRenderActionButtons(prefix,m.actionOpts);
   _geiRenderDepositField(prefix,m.depositOninput);
+  _geiApplyDepositDefault(prefix);
   _geiRenderSiteNoteField(prefix);
+  _geiRenderExclusions(prefix);
   // Trade branding in title
   const tmMeta=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
   const titleEl=document.getElementById(prefix+'-tbar-title');
+  // The proposal names itself from the work (see _geiAutoName): the trade label
+  // is only the empty-estimate state now, not a name he has to replace.
+  if(typeof _geiSyncAutoName==='function')_geiSyncAutoName();
   if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.innerHTML=_customName?escHtml(_customName):(svgIcon(tmMeta.icon,{size:24})+' '+tmMeta.label+' · '+m.titleSuffix);}
   // Sub-header: client name · address (address is a picker chip when the client
   // has 2+ properties, so an estimate never silently lands on the wrong one).
@@ -1103,7 +1347,26 @@ function _tmHidePage(){_geiHidePage('gei-tm-page');}
 
 // ── Build Your Own single-page layout ────────────────────────────────────────
 let _byoItems=[],_byoCustomSections=[],_byoCustomTerms='';
-const _BYO_DEFAULT_SECTIONS=['Interior','Exterior','Materials','Add-ons'];
+// Interior and Exterior are PAINTING words. An HVAC man swapping a condenser,
+// a plumber setting a water heater and an electrician pulling a panel all have
+// exactly one honest answer to "is this interior or exterior", which is "who
+// cares", and until now the send button refused to let them past without one.
+// So the sections follow the trade: painting keeps the two it actually uses,
+// everybody else gets Work.
+//
+// Old estimates are untouched: a bid whose items sit in "Interior" still shows
+// an Interior section, because any section an item names is added back to the
+// list below (extraFromItems).
+const _BYO_PAINT_SECTIONS=['Interior','Exterior','Materials','Add-ons'];
+const _BYO_TRADE_SECTIONS=['Work','Materials','Add-ons'];
+function _byoSections(){
+  const t=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  return t==='painting'?_BYO_PAINT_SECTIONS.slice():_BYO_TRADE_SECTIONS.slice();
+}
+// Where a line lands when something other than a person put it there (a spoken
+// estimate, a seeded hand-off): the trade's first work section, never Materials,
+// because "replace the water heater" is the job and not a part.
+function _byoWorkSection(){return _byoSections()[0];}
 const _RRP_BYO_SECTION='RRP: Lead-Safe Protocol';
 const _RRP_ITEMS=[
   {label:'Lead-safe setup & interior containment',hint:'Plastic sheeting 6 ft from work surfaces; sealed ducts, vents, door coverings (EPA §745.85)',price:0,_scope:'interior'},
@@ -1141,6 +1404,7 @@ function _toggleScopeChip(label){
   _geiScopeNoScope=false;
   const idx=_geiScopeChips.indexOf(label);
   if(idx>=0)_geiScopeChips.splice(idx,1);else _geiScopeChips.push(label);
+  _geiRenderScopeCard('byo');   // the last legacy chip taking the card with it
   ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
   _updateScopeSheetBtn(label);
   // Scope drives the auto crew-labor estimate, refresh the rail + gauge.
@@ -1150,6 +1414,7 @@ function _toggleScopeChip(label){
 function _toggleScopeNone(){
   _geiScopeNoScope=!_geiScopeNoScope;
   if(_geiScopeNoScope)_geiScopeChips=[];
+  _geiRenderScopeCard('byo');
   ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
   _byoAutosave();
 }
@@ -1249,8 +1514,19 @@ function _openScopeSheet(containerId){
 // item rows and T&M's material category rows so the two lists look and
 // behave identically. event.stopPropagation() keeps a wrapping row-level
 // onclick (BYO toggles on/off; T&M opens edit) from also firing.
-function _geiRowActionBtns(editCall,delCall,delTitle){
-  return '<button onclick="event.stopPropagation();'+editCall+'" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);touch-action:manipulation">Edit</button>'+
+function _geiRowActionBtns(editCall,delCall,delTitle,dupCall){
+  // COPY, because "Bedroom 1, walls only" then "Bedroom 2, walls only" is the
+  // single most repeated act in a room-by-room estimate, and retyping the label,
+  // the price and the description every time is the whole reason the fast way
+  // to build a bid is still a notepad.
+  // ICON, not the word "Copy". Three text buttons on a 390px row squeezed the
+  // title column until overflow-wrap:anywhere broke a four-letter word across
+  // two lines, which made the header taller and pulled the centered checkbox
+  // off the title it belongs to (webkit shard 3, 2026-09-07). Same footprint as
+  // the delete button, so the row is exactly as wide as it was before Copy
+  // existed, and a phone gets one icon instead of a third word.
+  return (dupCall?'<button onclick="event.stopPropagation();'+dupCall+'" title="Duplicate this line" aria-label="Duplicate this line" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text3);touch-action:manipulation">'+svgIcon('📋',{size:12})+'</button>':'')+
+    '<button onclick="event.stopPropagation();'+editCall+'" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);touch-action:manipulation">Edit</button>'+
     '<button onclick="event.stopPropagation();'+delCall+'" title="'+(delTitle||'Remove')+'" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D;touch-action:manipulation">'+svgIcon('✕',{size:12})+'</button>';
 }
 function _editEstTitle(titleId,btnId){
@@ -1271,6 +1547,10 @@ function _editEstTitle(titleId,btnId){
     titleEl.textContent=val;
     if(btn)btn.style.opacity='';
     const descEl=document.getElementById('gei-desc');if(descEl)descEl.value=val;
+    // He named it himself, so the auto name stops writing over it, and the
+    // rename is saved the way the old "Name your proposal" field's blur was.
+    if(typeof _geiDescUserSet!=='undefined')_geiDescUserSet=true;
+    if(typeof _byoAutosave==='function')_byoAutosave();
   };
   const cancel=()=>{
     if(_done)return;_done=true;
@@ -1286,13 +1566,65 @@ function _editEstTitle(titleId,btnId){
 function _editByoTitle(){_editEstTitle('byo-tbar-title','byo-edit-title-btn');}
 function _editTMTitle(){_editEstTitle('tm-tbar-title','tm-edit-title-btn');}
 function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn');}
+// ── A line is a QUANTITY at a RATE ──────────────────────────────────────────
+//
+// A BYO item used to carry one flat price and nothing else. Twelve interior
+// doors at $95 meant the contractor did 12 x 95 in his head and typed 1140, and
+// the price book then learned that an interior door costs $1,140 EACH, because
+// _pbLearn was handed the line total and told it was a rate. Every
+// multiple-quantity line he ever wrote was poisoning his own book, and the
+// hours ride on the same key, so the profit gauge drank it too.
+//
+// price stays the LINE TOTAL. Every existing reader (the rail, the materials
+// subtotal, the pro-rata hours split, _estPricedLines) means the total by it and
+// keeps working untouched. qty and rate are what is new, and rate is what the
+// book learns.
+//
+// One normalizer, called from _byoRenderSections, which runs after every change:
+// no add path can forget it, and an item saved before this shipped is read as
+// one at its old price. Nothing to migrate, nothing to sweep.
+// Round half UP at the cent, the way money rounds. Math.round alone does not:
+// 2.5 x 3.33 is 8.325, which floats to 832.4999999999999 and rounds DOWN to
+// $8.32, a penny off on the client's line for no reason a human could explain.
+function _geiCents(n){
+  const v=Number(n)||0;
+  return Math.round(v*100+(v>=0?1e-9:-1e-9))/100;
+}
+function _byoNormItem(it){
+  if(!it||typeof it!=='object')return it;
+  const q=Number(it.qty);
+  it.qty=(q>0)?q:1;
+  // 'ea' for a row that never had one. The trade's own unit is a DEFAULT for a
+  // NEW line in the modal, never a rewrite of something already stored: a
+  // roofer opening an old bid must not find its lines relabelled "square".
+  it.unit=it.unit||'ea';
+  if(!(Number(it.rate)>0)){
+    // Pre-quantity item: its price WAS the whole line. Read it at one, and read
+    // it EXACTLY. Dividing by a qty it never had would cut a signed line to a
+    // twelfth of its value; multiplying by one would inflate it just as far.
+    // Either way the number a client already agreed to would move, so a row
+    // with no rate is one line at its stored price and nothing else.
+    it.rate=Number(it.price)||0;
+    it.qty=1;
+  }
+  it.price=_geiCents(it.qty*it.rate);
+  return it;
+}
+function _byoNormAll(){(_byoItems||[]).forEach(_byoNormItem);}
+// "12 × $95.00" when there is a count worth showing, empty at a quantity of one.
+function _byoQtyLabel(it){
+  if(!it||!(Number(it.qty)>1))return '';
+  const u=(it.unit&&it.unit!=='ea')?' '+it.unit:'';
+  return it.qty+u+' × '+((typeof fmt==='function')?fmt(it.rate):'$'+it.rate);
+}
+
 // Shared item-row renderer, one row shape for BYO items (checkbox toggle +
 // edit/delete) and T&M material categories (no checkbox, add/edit/delete only):
 // title + price + actions on one header line; notes (if present) run full-width
 // below that line instead of being squeezed into a narrow left column next to
 // empty grey space under the price/action buttons.
 function _geiItemRowHtml(opts){
-  const{label,notes,price,editFn,delFn,delTitle,checked,rowOnclick,extraClass}=opts;
+  const{label,notes,price,qtyLabel,editFn,delFn,delTitle,dupFn,checked,rowOnclick,extraClass}=opts;
   const checkHtml=checked!==undefined?'<div class="byo-check'+(checked?' on':'')+'">'+(checked?svgIcon('✓',{size:14}):'')+'</div>':'';
   return '<div class="byo-row'+(checked?' on':'')+(extraClass?' '+extraClass:'')+'"'+(rowOnclick?' onclick="'+rowOnclick+'"':'')+'>'+
     '<div class="byo-row-hd">'+
@@ -1300,27 +1632,291 @@ function _geiItemRowHtml(opts){
       '<div class="byo-label">'+escHtml(label)+'</div>'+
       '<div class="byo-price">$'+price.toLocaleString()+'</div>'+
       '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
-        _geiRowActionBtns(editFn,delFn,delTitle)+
+        _geiRowActionBtns(editFn,delFn,delTitle,dupFn)+
       '</div>'+
     '</div>'+
-    (notes?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(notes)+'</div>':'')+
+    // The arithmetic, shown. He typed a count and a rate; this is the app
+    // saying what it did with them, so a wrong total is caught here and not on
+    // the client's copy.
+    (qtyLabel?'<div class="byo-meta" style="font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums">'+escHtml(qtyLabel)+'</div>':'')+
+    // A described line shows its words. An undescribed one says so, in the
+    // list, where he can see at a glance which lines will reach the client as
+    // a bare title. Quiet, not red: this is a nudge, not an error.
+    (notes
+      ?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(notes)+'</div>'
+      :(editFn?'<div class="byo-meta" style="font-size:11px;color:var(--text3);opacity:.75" onclick="event.stopPropagation();'+editFn+'">+ Add description</div>':''))+
   '</div>';
 }
+// ── Start from what he already sells ────────────────────────────────────────
+//
+// 78% of homeowners hire whoever answers first, and a text inside a minute
+// books 73% of the time against 4% after half an hour. The proposal document
+// cannot win that race; only the clock can. Everything else in the estimate is
+// already free (the name writes itself, the scope comes from the lines, the
+// exclusions are presets, the description comes back out of the book), so the
+// last expensive thing left is naming the six lines he sells on every job of
+// this kind. He has already typed them, on every previous bid.
+//
+// Two ways in, because they answer two different questions:
+//   "Same as last time" -> the lines from his most recent proposal for this
+//     trade. The right answer when this job is like the last one.
+//   "What you always sell" -> the lines that appear in MOST of his bids for
+//     this trade, which is the package he does not think about any more.
+//
+// Derived at render time from bids he already has. No new store, no catalog to
+// maintain, no migration, and it is his own history so it can never suggest
+// work he does not do.
+const _PKG_MIN_BIDS=3;      // below this there is no "usually", only a last time
+const _PKG_SHARE=0.5;       // in at least half his bids to count as usual
+function _pkgBidLines(b){
+  const out=[];
+  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
+  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
+  return out;
+}
+// His own bids for this trade, newest first, drafts and empties excluded: a
+// blank stub is not a job he sold.
+function _pkgHistory(trade){
+  const t=trade||_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general');
+  if(typeof bids==='undefined')return [];
+  return bids.filter(b=>b&&!b.cancelledAt&&(b.trade_type||'general')===t&&b.id!==_geiEditBidId&&_pkgBidLines(b).length)
+    .sort((a,b)=>String(b.bid_date||'').localeCompare(String(a.bid_date||''))||(b.id-a.id));
+}
+function _pkgSuggestions(trade){
+  const hist=_pkgHistory(trade);
+  const out=[];
+  if(!hist.length)return out;
+  const last=_pkgBidLines(hist[0]);
+  if(last.length)out.push({key:'last',label:'Same as last time',sub:last.length+' line'+(last.length===1?'':'s')+' from '+(hist[0].bid_date||'your last one'),lines:last});
+  if(hist.length>=_PKG_MIN_BIDS){
+    const seen=new Map();
+    hist.forEach(b=>{
+      const once=new Set();
+      _pkgBidLines(b).forEach(l=>{
+        const k=_pbKey(l.label);
+        if(!k||once.has(k))return;
+        once.add(k);
+        const e=seen.get(k)||{n:0,l};
+        e.n++;e.l=e.l||l;
+        seen.set(k,e);
+      });
+    });
+    const usual=[...seen.values()].filter(e=>e.n/hist.length>=_PKG_SHARE)
+      .sort((a,b)=>b.n-a.n).map(e=>e.l);
+    // Only worth offering when it is genuinely a package and genuinely
+    // different from the last job, or it is the same button twice.
+    const lastKeys=new Set(last.map(l=>_pbKey(l.label)));
+    const differs=usual.some(l=>!lastKeys.has(_pbKey(l.label)))||usual.length!==last.length;
+    if(usual.length>=2&&differs)out.push({key:'usual',label:'What you always sell',sub:usual.length+' line'+(usual.length===1?'':'s')+' on most of your '+hist.length+' jobs',lines:usual});
+  }
+  return out;
+}
+// Drop the package in. The BOOK is the source of price and words wherever it
+// knows the line, so a package carries his current rate and his current
+// description, not whatever they were on the job he copied from.
+function _pkgApply(key){
+  const pick=_pkgSuggestions().find(x=>x.key===key);
+  if(!pick)return;
+  // _geiAddRememberedLine is the one path (book price, book words, never a
+  // double-up), shared with the attach suggestions below.
+  pick.lines.forEach(l=>{_geiAddRememberedLine(l);});
+  _geiRefreshLines();
+  if(typeof showToast==='function')showToast(pick.label+' added, adjust the counts','⚡');
+}
+function _pkgCardHTML(){
+  if(_byoItems.some(x=>x&&!x._rrp))return '';   // only on an empty estimate
+  const sugg=_pkgSuggestions();
+  if(!sugg.length)return '';
+  return '<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--blue)">'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('⚡',{size:14})+' Start from what you sell</div></div>'+
+    '<div style="padding:12px 14px">'+
+      '<div style="font-size:11px;color:var(--text-3);margin-bottom:10px;line-height:1.5">Your own lines, at your current prices, already described. Adjust the counts and send.</div>'+
+      sugg.map(x=>'<button onclick="_pkgApply('+escHtml(JSON.stringify(x.key))+')" '+
+        'style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;min-height:52px">'+
+        '<div style="min-width:0">'+
+          '<div style="font-size:13px;font-weight:800;color:var(--text)">'+escHtml(x.label)+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(x.sub)+'</div>'+
+        '</div>'+
+        '<span style="font-size:13px;font-weight:800;color:var(--blue);flex-shrink:0">Use →</span>'+
+      '</button>').join('')+
+    '</div>'+
+  '</div>';
+}
+
+// ── What goes with what ─────────────────────────────────────────────────────
+//
+// Owner 2026-09-07: "whoever got a tankless unit also gets the isolation
+// valves (service valves, maintenance valves, flush kits, etc)."
+//
+// The package card above answers "what do I sell on a job like this" and only
+// shows on an EMPTY estimate. This answers a different question, and it is the
+// one that costs money: the estimate already has the tankless on it, the
+// valves are missing, and nobody notices until the truck is at the house. A
+// forgotten $180 line is not a rounding error on a callback, it is a return
+// trip and an argument about whether it was in the price.
+//
+// Same source as the packages, for the same reasons: his own bids. No catalog
+// to maintain, no trade knowledge baked in that goes stale, and it can never
+// suggest work he does not do. The rule is plain association: of his past jobs
+// that carried this line, most of them also carried that one.
+//
+// The measure is WITH the anchor against WITHOUT it, not against how often the
+// line shows up overall, and the difference is not academic. A trip charge on
+// five of six jobs is on every tankless job too, so by any "appears a lot with
+// it" test it looks like an attach. Asked the honest question, does he add it
+// BECAUSE of the tankless, it falls straight out: 100% with, 67% without, no
+// jump. The isolation valves are 100% with and 0% without. That is the whole
+// rule, and it is also why an overall-frequency ceiling was rejected: the
+// valves sit on exactly half his jobs, which any such ceiling would have cut.
+const _ATTACH_MIN=2;        // he has done the anchor at least twice: once is not a habit
+const _ATTACH_SHARE=0.6;    // and brought the companion on most of those
+const _ATTACH_JUMP=0.5;     // and clearly more often than on jobs without it
+const _ATTACH_SCAN=200;     // most recent bids only, this runs on every re-render
+let _attachSkipped=[];      // "not this time", for this estimate only
+// Every line on the estimate right now, both shapes, so the anchor can be a
+// BYO item or a T&M material category.
+function _attachCurrent(){
+  const out=new Map();
+  if(typeof _byoItems!=='undefined'&&Array.isArray(_byoItems))_byoItems.forEach(it=>{
+    if(!it||it._rrp||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
+  });
+  if(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))_geiLines.forEach(l=>{
+    if(!l||l._tmLabor||l._rrp||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
+  });
+  return out;
+}
+function _attachSuggestions(trade){
+  const cur=_attachCurrent();
+  if(!cur.size)return [];
+  const hist=_pkgHistory(trade).slice(0,_ATTACH_SCAN);
+  if(hist.length<_ATTACH_MIN)return [];
+  // One key->line map per past bid, built once. Everything below is set math
+  // over these, not another pass through the bids.
+  const past=hist.map(b=>{
+    const m=new Map();
+    _pkgBidLines(b).forEach(l=>{const k=_pbKey(l.label);if(k&&!m.has(k))m.set(k,l);});
+    return m;
+  });
+  const skip=new Set(_attachSkipped||[]);
+  const cand=new Map();
+  cur.forEach((anchorLabel,anchorKey)=>{
+    const withAnchor=past.filter(m=>m.has(anchorKey));
+    if(withAnchor.length<_ATTACH_MIN)return;
+    const without=past.filter(m=>!m.has(anchorKey));
+    const tally=new Map();
+    withAnchor.forEach(m=>m.forEach((l,k)=>{
+      if(k===anchorKey||cur.has(k)||skip.has(k))return;
+      const e=tally.get(k)||{n:0,l};e.n++;e.l=e.l||l;tally.set(k,e);
+    }));
+    tally.forEach((e,k)=>{
+      const share=e.n/withAnchor.length;
+      if(share<_ATTACH_SHARE)return;
+      // Nothing to compare against means we cannot tell the two apart yet, so
+      // the share alone has to carry it.
+      if(without.length){
+        const other=without.filter(m=>m.has(k)).length/without.length;
+        if(share-other<_ATTACH_JUMP)return;   // he sells it anyway, that is not an attach
+      }
+      const prev=cand.get(k);
+      if(prev&&prev.share>=share)return;
+      cand.set(k,{key:k,line:e.l,share,n:e.n,of:withAnchor.length,anchorLabel});
+    });
+  });
+  return [...cand.values()].sort((a,b)=>b.share-a.share||b.n-a.n).slice(0,4);
+}
+// One place that turns a remembered line into a line on THIS estimate, so a
+// package and an attach can never price or word it differently. The BOOK wins
+// on rate, unit and description wherever it knows the line: a suggestion
+// carries his CURRENT price, never whatever it was on the job it came from.
+function _geiAddRememberedLine(l){
+  if(!l||!l.label)return false;
+  const key=_pbKey(l.label);
+  if(!key)return false;
+  const bk=(typeof _pbFind==='function')?_pbFind(l.label,_pbTrade()):null;
+  const rate=(bk&&Number(bk.rate)>0)?bk.rate:(Number(l.rate)||0);
+  const notes=(bk&&bk.notes)||l.notes||'';
+  if(typeof _geiIsFreeForm!=='undefined'&&_geiIsFreeForm){
+    if(_byoItems.some(x=>x&&_pbKey(x.label)===key))return false;
+    const secs=_byoSections();
+    const sec=(/material/i.test(l.label)&&secs.find(x=>/material/i.test(x)))||secs[0]||'Work';
+    const nid=(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
+    _byoItems.push(_byoNormItem({id:nid,section:sec,label:l.label,qty:1,
+      unit:(bk&&bk.unit)||l.unit||'ea',rate,price:rate,notes,on:true}));
+    return true;
+  }
+  if(_geiLines.some(x=>x&&!x._tmLabor&&_pbKey(x.desc)===key))return false;
+  // T&M material categories are a lot, priced as one number, the shape
+  // _tmMatCatSave writes. Matching it is what keeps the row editable.
+  _geiLines.push({desc:String(l.label).trim(),notes,qty:1,unit:'lot',rate,total:rate});
+  return true;
+}
+function _geiRefreshLines(){
+  if(typeof _geiIsFreeForm!=='undefined'&&_geiIsFreeForm){
+    _byoRenderSections();_byoUpdateRail();
+    if(typeof _byoAutosave==='function')_byoAutosave();
+    return;
+  }
+  if(typeof _tmRenderMatList==='function')_tmRenderMatList();
+  if(typeof _tmInputChange==='function')_tmInputChange();
+}
+function _attachAdd(key){
+  const pick=_attachSuggestions().find(x=>x.key===key);
+  if(!pick){_geiRefreshLines();return;}
+  const ok=_geiAddRememberedLine(pick.line);
+  _geiRefreshLines();
+  if(ok&&typeof showToast==='function')showToast(pick.line.label+' added','⚡');
+}
+function _attachAddAll(){
+  const sugg=_attachSuggestions();
+  let n=0;
+  sugg.forEach(s=>{if(_geiAddRememberedLine(s.line))n++;});
+  _geiRefreshLines();
+  if(n&&typeof showToast==='function')showToast(n+' line'+(n===1?'':'s')+' added','⚡');
+}
+// "Not this time" is per estimate and not remembered: next job the history may
+// say something different, and a permanently muted suggestion is how a tool
+// stops telling you the thing you needed to hear.
+function _attachSkip(key){
+  if(!_attachSkipped.includes(key))_attachSkipped.push(key);
+  _geiRefreshLines();
+}
+function _attachCardHTML(){
+  const sugg=_attachSuggestions();
+  if(!sugg.length)return '';
+  const rows=sugg.map((s,i)=>
+    '<div style="display:flex;align-items:center;gap:8px;padding:10px 0'+(i?';border-top:1px solid var(--border)':'')+'">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text);overflow-wrap:anywhere">'+escHtml(s.line.label)+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow-wrap:anywhere">with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of+'</div>'+
+      '</div>'+
+      '<button onclick="_attachAdd('+escHtml(JSON.stringify(s.key))+')" class="btn btn-sm btn-p" style="flex-shrink:0;font-size:12px;padding:8px 14px">Add</button>'+
+      '<button onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
+    '</div>').join('');
+  return '<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#B7791F)">'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('🔗',{size:14})+' Usually goes with this</div>'+
+      (sugg.length>1?'<button onclick="_attachAddAll()" class="btn btn-sm" style="font-size:11px;padding:6px 10px">Add all</button>':'')+
+    '</div>'+
+    '<div style="padding:2px 14px 12px">'+rows+'</div>'+
+  '</div>';
+}
+
 function _byoRenderSections(){
   _injectRrpItems();
+  _byoNormAll();
   const wrap=document.getElementById('byo-sections');if(!wrap)return;
-  const extraFromItems=_byoItems.map(x=>x.section).filter(s=>!_BYO_DEFAULT_SECTIONS.includes(s));
+  const _defSecs=_byoSections();
+  const extraFromItems=_byoItems.map(x=>x.section).filter(s=>!_defSecs.includes(s));
   const allExtra=[..._byoCustomSections,...extraFromItems.filter(s=>!_byoCustomSections.includes(s))];
-  const sections=[..._BYO_DEFAULT_SECTIONS,...new Set(allExtra)];
+  const sections=[..._defSecs,...new Set(allExtra)];
   const secHtml=sections.map(sec=>{
     const rows=_byoItems.filter(it=>it.section===sec);
-    const isCustom=!_BYO_DEFAULT_SECTIONS.includes(sec);
+    const isCustom=!_defSecs.includes(sec);
     const rowHtml=rows.length?rows.map(it=>{
       const idx=_byoItems.indexOf(it);
       return _geiItemRowHtml({
         checked:it.on,rowOnclick:'_byoToggle('+idx+')',
-        label:it.label,notes:(it.notes&&!it._rrp)?it.notes:'',price:it.price,
-        editFn:'_byoEditItem('+idx+')',delFn:'_byoDelItem('+idx+')'
+        label:it.label,notes:(it.notes&&!it._rrp)?it.notes:'',price:it.price,qtyLabel:_byoQtyLabel(it),
+        editFn:'_byoEditItem('+idx+')',delFn:'_byoDelItem('+idx+')',dupFn:it._rrp?'':'_byoDupItem('+idx+')'
       });
     }).join(''):
     '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet, tap + Add item</div>';
@@ -1345,7 +1941,13 @@ function _byoRenderSections(){
         'style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box;line-height:1.5">'+escHtml(_byoCustomTerms||'')+'</textarea>'+
     '</div>'+
   '</div>';
-  wrap.innerHTML=secHtml+addSecBtn+tcCard;
+  // The package card sits ABOVE the sections and only on an empty estimate: it
+  // is the fastest way in, and once there is a line on the bid it has done its
+  // job and gets out of the way.
+  // The attach card goes directly under the work and ABOVE "+ Add section":
+  // it is about the lines that are already on the estimate, and putting a
+  // rarely-used structural control between them buried it three cards down.
+  wrap.innerHTML=_pkgCardHTML()+secHtml+_attachCardHTML()+addSecBtn+tcCard;
 }
 function _byoToggle(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
@@ -1365,10 +1967,11 @@ function _byoAutosave(){
   // button (saveGenericEstimate): every autosave silently dropped a name edit until
   // the user hit Save, so backing out mid-edit lost the new name.
   const _trade=_geiTrade||getActiveTrade();
-  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[_trade]?.label||'Trade')+' Proposal';
+  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':_tradeProposalLabel(_trade);
   const _descVal=document.getElementById('gei-desc')?.value||'';
   b.type=_descVal||_typeLabel;
   b.geiDesc=_descVal;
+  b.descUserSet=!!_geiDescUserSet;
   b.byoItems=JSON.parse(JSON.stringify(_byoItems));
   b.byoCustomSections=[..._byoCustomSections];
   // Stamp the bid's REAL type, this used to write isFreeForm=true on every
@@ -1376,6 +1979,15 @@ function _byoAutosave(){
   // Build Your Own with empty items (the "my work disappeared" bug).
   b.isFreeForm=_geiIsFreeForm&&!_geiIsTM;
   b.estCrew=[..._estCrew];
+  b.exclusions=[..._geiExclusions];
+  // THE PROMISE, frozen. _estLaborHours() is derived live from the price book
+  // and his scope history, so it MOVES as the book learns. Stamping it here is
+  // what lets the job compare what really happened against what this estimate
+  // actually said, instead of against a number that has since drifted
+  // (js/jobs.js _jobOverrun). Zero is stored as zero on purpose: a bid with no
+  // hours behind it has no promise to be over.
+  b.estHours=_estLaborHours();
+  b.estCrewSize=_estCrew.length||1;
   b.scopeChips=[..._geiScopeChips];
   b.scopeNoScope=_geiScopeNoScope||false;
   const _termsEl=document.getElementById('byo-custom-terms');
@@ -1459,16 +2071,34 @@ function _estLaborHours(){
   // picker + payroll-cost stack (_estLaborCost, _renderLaborPicker) work for
   // both estimate types without duplicating any of it.
   if(_geiIsTM)return _tmEstHours||0;
-  const trade=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'painting');
+  const trade=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general');
   const allItems=[..._GEN_SCOPE,...((typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade])||[])];
   let hrs=0;
+  const _chipHrsKeys=new Set();
   (_geiScopeChips||[]).forEach(label=>{
     const item=allItems.find(x=>x.label===label);
     if(!item||!item.id)return;
     const own=_scopeHistoryHrs(item.id);
-    if(own!=null){hrs+=own;return;}
+    if(own!=null){hrs+=own;_chipHrsKeys.add(_pbKey(label));return;}
     const rate=(typeof window!=='undefined'&&window._scopeRates)?window._scopeRates[item.id+':'+trade]:null;
-    if(rate&&rate.sample_count>=5&&rate.median_min>0)hrs+=rate.median_min/60;
+    if(rate&&rate.sample_count>=5&&rate.median_min>0){hrs+=rate.median_min/60;_chipHrsKeys.add(_pbKey(label));}
+  });
+  // Priced lines carry hours too (see _pbLearnHours). A line whose description
+  // repeats a chip that ALREADY contributed hours is the same work said twice
+  // and is counted once. A chip that contributed nothing (no history, no
+  // benchmark) does not suppress the line, or the fast path would lose the
+  // hours the price book actually knows.
+  _estPricedLines().forEach(l=>{
+    if(_chipHrsKeys.has(_pbKey(l.desc)))return;
+    // MEASURED BEATS SPLIT. A line he has actually clocked into carries its own
+    // history now (the clock can see the work he sold, js/jobs.js
+    // _jobScopesFromBid), keyed line:<pbKey>. That is a real stopwatch on this
+    // exact service, so it outranks the pro-rata figure _pbLearnFromJob derives
+    // when nobody timed it.
+    const own=_scopeHistoryHrs('line:'+_pbKey(l.desc));
+    if(own!=null){hrs+=own;return;}
+    const h=_pbHrs(_pbFind(l.desc,trade));
+    if(h!=null)hrs+=h;
   });
   return Math.round(hrs*10)/10;
 }
@@ -1516,15 +2146,216 @@ function _empLoadedFor(email){
   const comp=(typeof _teamComp!=='undefined'&&_teamComp)?_teamComp[(email||'').toLowerCase()]:null;
   return (comp&&typeof _empLoadedHourly==='function')?_empLoadedHourly(comp):0;
 }
-// Crew payroll the owner pays out of this bid = job hours × the loaded rate of EACH assigned
-// crew member (so two people cost ~2× one). Solo operators (no crew assigned) → 0, since their
-// labor is already priced into the line items. Hours come automatically from the scope.
+// ── What it costs him to get there ──────────────────────────────────────────
+//
+// Owner 2026-09-06. The 45-minutes-each-way service call is the job that
+// quietly loses money, and a contractor almost never works that out on paper.
+// We are the only tool that can tell him before he sends the bid, because we
+// already log every drive he makes.
+//
+// It runs on EVERY estimate and almost never costs a network call, because it
+// resolves cheapest first:
+//   1. Has he driven there before? Use what the truck actually did. Real miles,
+//      real minutes, free, instant, works with no signal, and better than any
+//      router because it is that road at that hour in his truck.
+//   2. Coordinates on both ends? Straight line times a road factor. Within a
+//      few percent, free, offline.
+//   3. Neither? Return nothing and say nothing. Never invent a drive.
+//
+// Deliberately NOT a line on the customer's proposal. This is cost, and what he
+// charges for a trip is a separate decision he already has a tool for.
+const _DRV_ROAD_FACTOR=1.25;   // straight line to road miles, flat country
+const _DRV_MPH=32;             // mixed local driving, only used without history
+const _DRV_QUIET_MIN=10;       // under this each way, count it but do not natter
+const _DRV_MAX_VISITS=30;
+
+// Where his day starts. Not a setting: the shop if he has one, then the home
+// office, then the business address, which _migrateShopToPlaces already turns
+// into a shop place. Named on the line so a wrong guess is visible.
+function _drvOrigin(){
+  const rows=(typeof places!=='undefined'&&Array.isArray(places))?places:[];
+  const rank=p=>p&&p.kind==='shop'?0:(p&&p.kind==='home_office')?1:9;
+  const cand=rows.filter(p=>rank(p)<9&&Number(p.lat)&&Number(p.lon)).sort((a,b)=>rank(a)-rank(b));
+  if(cand.length)return{name:cand[0].name||'the shop',lat:+cand[0].lat,lon:+cand[0].lon,kind:cand[0].kind};
+  const la=Number(S&&S.officeLat),lo=Number(S&&S.officeLon);
+  if(la&&lo)return{name:'the shop',lat:la,lon:lo,kind:'shop'};
+  return null;
+}
+function _drvClientCoords(clientId){
+  try{
+    const c=JSON.parse(localStorage.getItem('zp3_nearby_geo')||'{}')[clientId];
+    if(c&&Number(c.lat)&&Number(c.lon))return{lat:+c.lat,lon:+c.lon};
+  }catch(_e){}
+  return null;
+}
+// What the truck actually did, median over every logged run between these two.
+function _drvFromHistory(originName,clientName){
+  const rows=(typeof mileage!=='undefined'&&Array.isArray(mileage))?mileage:[];
+  const nm=v=>String(v||'').trim().toLowerCase();
+  const o=nm(originName),c=nm(clientName);
+  if(!o||!c)return null;
+  const hits=[];
+  rows.forEach(m=>{
+    if(!m)return;
+    const f=nm(m.from_name),t=nm(m.to_name);
+    if(!((f===o&&t===c)||(f===c&&t===o)))return;
+    const mi=Number(m.miles)||0;
+    if(mi<=0)return;
+    const a=Date.parse(m.startedIso||''),b=Date.parse(m.endedIso||'');
+    const min=(a>0&&b>a)?Math.round((b-a)/60000):0;
+    hits.push({mi,min});
+  });
+  if(!hits.length)return null;
+  const med=arr=>{const v=arr.slice().sort((x,y)=>x-y);const i=Math.floor(v.length/2);return v.length%2?v[i]:(v[i-1]+v[i])/2;};
+  const miles=med(hits.map(h=>h.mi));
+  const mins=hits.map(h=>h.min).filter(v=>v>0);
+  return{
+    miles:Math.round(miles*10)/10,
+    minutes:Math.round(mins.length?med(mins):(miles/_DRV_MPH*60)),
+    source:'driven',
+  };
+}
+function _drvFromCoords(origin,dest){
+  if(!origin||!dest||typeof _haversineMiles!=='function')return null;
+  let mi=0;
+  try{mi=_haversineMiles({lat:origin.lat,lng:origin.lon},{lat:dest.lat,lng:dest.lon});}catch(_e){return null;}
+  if(!(mi>0))return null;
+  const miles=Math.round(mi*_DRV_ROAD_FACTOR*10)/10;
+  return{miles,minutes:Math.round(miles/_DRV_MPH*60),source:'estimated'};
+}
+// One way. Null when we genuinely cannot tell, which is not the same as zero.
+function _geiDriveLeg(){
+  const origin=_drvOrigin();
+  if(!origin)return null;
+  const c=_geiClientId?((typeof clients!=='undefined'&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null):null;
+  const hist=_drvFromHistory(origin.name,c&&c.name);
+  if(hist)return Object.assign({origin},hist);
+  const dest=_drvClientCoords(_geiClientId);
+  const est=_drvFromCoords(origin,dest);
+  return est?Object.assign({origin},est):null;
+}
+// A three day job is three round trips. Without this the number is a toy.
+function _geiDriveVisits(){
+  if(!_geiIsTM)return 1;
+  const hrs=Number(_tmEstHours)||0;
+  if(hrs<=0)return 1;
+  return Math.max(1,Math.min(_DRV_MAX_VISITS,Math.ceil(hrs/8)));
+}
+// He may already be billing the trip. That drive is then revenue as well as
+// cost, and counting only the cost side would understate the job twice over.
+// A heuristic on the line's own words, which is what a trip charge is called.
+function _geiTripChargeOnBid(){
+  const re=/\b(trip charge|trip fee|service call|diagnostic|call out|callout)\b/i;
+  let sum=0;
+  (_byoItems||[]).forEach(it=>{if(it&&it.on&&re.test(String(it.label||'')))sum+=Number(it.price)||0;});
+  (_geiLines||[]).forEach(l=>{if(l&&re.test(String(l.desc||'')))sum+=Number(l.total!=null?l.total:(l.rate||0))||0;});
+  return sum;
+}
+// The whole thing: what the driving on this job costs him, net of anything he
+// is already charging for it.
+function _geiDriveCost(){
+  if(S&&S.countDriveCost===false)return null;
+  const leg=_geiDriveLeg();
+  if(!leg)return null;
+  const visits=_geiDriveVisits();
+  const perHr=(_estCrew.length&&_hasEmployees())
+    ? _estCrew.reduce((s,e)=>s+_empLoadedFor(e),0)
+    : _ownerLoadedHourly();
+  const rate=Number(S&&S.irsRate)||0.725;
+  const minutes=leg.minutes*2*visits;
+  const miles=Math.round(leg.miles*2*visits*10)/10;
+  const gross=Math.round((minutes/60)*perHr + miles*rate);
+  const billed=_geiTripChargeOnBid();
+  const cost=Math.max(0,gross-billed);
+  return{
+    minutes,miles,cost,gross,billed,visits,
+    origin:leg.origin&&leg.origin.name,
+    source:leg.source,
+    // Worth a word on screen, or short enough to just fold into the number.
+    quiet:leg.minutes<_DRV_QUIET_MIN,
+    // Asked once, with a real job on the screen, never at signup.
+    ask:(S&&S.countDriveCost===undefined)&&leg.minutes>=_DRV_QUIET_MIN,
+  };
+}
+function _geiSetDriveCost(on){
+  S.countDriveCost=!!on;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(_geiIsFreeForm&&typeof _byoUpdateRail==='function')_byoUpdateRail();
+  else if(typeof _tmInputChange==='function')_tmInputChange();
+}
+
+// His own time, loaded, the same way Crew Cost already values it (finance.js
+// builds exactly this from S.ownerPayType/ownerPayRate). One helper so the
+// estimate and the books can never disagree about what an hour of his costs.
+// ── How long his price holds ────────────────────────────────────────────────
+// The proposal has always printed "Valid until: <date>", and it meant nothing:
+// generic-estimate computed send-date+30 at RENDER time, sign.html computed
+// createdAt+30 of its own, and bids.js computed bid_date+30 of its own. Three
+// clocks, three answers, none of them stored, so reopening a three-week-old
+// proposal silently handed the client another fresh 30 days and nothing on the
+// contractor's side ever knew a price had gone stale.
+//
+// One number, stamped once, at send. Everything else reads it.
+const _EST_VALID_DEFAULT=30;
+function _estValidDays(){
+  const n=Number(typeof S!=='undefined'&&S?S.estValidDays:0);
+  return (n>0&&n<=365)?Math.round(n):_EST_VALID_DEFAULT;
+}
+// A date key is YYYY-MM-DD or it is not a date. Checked by SHAPE, never by
+// handing junk to the Date parser and trusting it to say no: WebKit reads
+// "12345T12:00" as the year 12345 and prints 01/01/12345 where Chromium
+// returns Invalid Date. Every reader below goes through this.
+const _VALID_KEY_RE=/^\d{4}-\d{2}-\d{2}$/;
+function _isDateKey(k){return _VALID_KEY_RE.test(String(k||''));}
+// The date THIS bid's price holds until. A sent bid carries its own stamp, so
+// what the client received is what everyone sees forever after. An unsent draft
+// projects from today, because that is what it would be if he sent it now. A
+// stamp that is not a date key is not a promise, so it projects too.
+function _bidValidUntil(b){
+  if(b&&_isDateKey(b.validUntil))return b.validUntil;
+  const from=(b&&_isDateKey(b.proposalSentDate)&&b.proposalSentDate)||(b&&_isDateKey(b.bid_date)&&b.bid_date)||todayKey();
+  return addDays(from,_estValidDays());
+}
+// Days until the price expires. 0 = today, negative = already expired.
+function _bidValidDaysLeft(b){
+  const k=_bidValidUntil(b);
+  if(!_isDateKey(k))return null;
+  const a=new Date(todayKey()+'T12:00'),z=new Date(k+'T12:00');
+  if(isNaN(z))return null;
+  return Math.round((z-a)/86400000);
+}
+function _fmtValidUntil(key){
+  if(!_isDateKey(key))return'';
+  const d=new Date(String(key)+'T12:00');
+  return isNaN(d)?'':d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+}
+function _ownerLoadedHourly(){
+  if(typeof _empLoadedHourly!=='function')return 0;
+  const rate=Number(S&&S.ownerPayRate)||0;
+  if(rate<=0)return 0;
+  return _empLoadedHourly({pay_type:S.ownerPayType||'hourly',pay_rate:rate})||0;
+}
+
+// What this bid costs him in labor.
+//
+// It used to return 0 for anybody with no crew assigned, on the grounds that a
+// solo operator's labor is "already priced into the line items". That confuses
+// revenue with cost. On a fixed price his own hours ARE the cost, and leaving
+// them out meant the gauge computed margin on materials alone and showed most
+// of this market a number far better than the truth. A calculator that
+// flatters him is worse than none: the day he works it out on paper he never
+// trusts the app again.
+//
+// Crew assigned: their loaded rates, unchanged. Nobody assigned: it is him.
 function _estLaborCost(){
-  if(!_hasEmployees()||!_estCrew.length)return 0;
   const hrs=_estLaborHours();
   if(hrs<=0)return 0;
-  const crewRate=_estCrew.reduce((s,email)=>s+_empLoadedFor(email),0);
-  return Math.round(hrs*crewRate);
+  if(_estCrew.length&&_hasEmployees()){
+    const crewRate=_estCrew.reduce((s,email)=>s+_empLoadedFor(email),0);
+    return Math.round(hrs*crewRate);
+  }
+  const own=_ownerLoadedHourly();
+  return own>0?Math.round(hrs*own):0;
 }
 // Toggle an employee on/off this job's crew, then refresh the expense + gauge.
 // Mode-aware: T&M refreshes through _tmInputChange, BYO through _byoUpdateRail.
@@ -1588,6 +2419,31 @@ function _renderLaborPicker(type){
     '<div style="font-size:11px;line-height:1.5;min-height:14px">'+body+'</div>'+
     '<div class="summary-divider"></div>';
 }
+// One line in the COST breakdown, never on the customer's proposal. It states
+// what it worked out and where it drove from, so a wrong origin is visible, and
+// it asks the count-it question exactly once, with a real job on the screen
+// instead of at signup where nobody can answer it honestly.
+function _geiRenderDriveLine(type,d){
+  const el=document.getElementById(type+'-drive-line');
+  if(!el)return;
+  if(!d||d.quiet||!(d.cost>0)){el.style.display='none';el.innerHTML='';return;}
+  const mi=d.miles.toLocaleString('en-US',{maximumFractionDigits:1});
+  const trips=d.visits>1?(' \u00b7 '+d.visits+' trips'):'';
+  const netNote=d.billed>0?('<div style="font-size:10.5px;color:var(--text3);margin-top:3px">Less the '+(typeof fmt==='function'?fmt(d.billed):'$'+d.billed)+' you are already charging for the trip.</div>'):'';
+  const ask=d.ask?
+    '<div style="display:flex;gap:8px;margin-top:8px">'+
+      '<button onclick="_geiSetDriveCost(true)" class="btn btn-sm" style="flex:1">Always count it</button>'+
+      '<button onclick="_geiSetDriveCost(false)" class="btn btn-sm" style="flex:1">Never</button>'+
+    '</div>':'';
+  el.style.display='';
+  el.innerHTML=
+    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">'+
+      '<span style="font-size:12px;color:var(--text2)">Driving from '+escHtml(d.origin||'the shop')+
+        ' \u00b7 '+d.minutes+' min \u00b7 '+mi+' mi'+trips+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:var(--text)">'+(typeof fmt==='function'?fmt(d.cost):'$'+d.cost)+'</span>'+
+    '</div>'+netNote+ask;
+}
+
 function _updateMarginGauge(type,total){
   const gWrap=document.getElementById(type+'-profit-gauge');
   if(!gWrap)return;
@@ -1621,6 +2477,25 @@ function _updateMarginGauge(type,total){
   // margins that usually mean a cost got missed, green now tops out at 55%.
   else if(margin<75){color='#F59E0B';msg='High margin, double-check your cost numbers';}
   else{color='#F59E0B';msg='Very high margin, double-check your numbers';}
+  // The same honest caveat one level down. A line built straight from the price
+  // book carries no measured hours until a job containing it has been finished
+  // (see _pbLearnHours), so its labor is not in the cost at all and the margin
+  // shown is materials-only for those lines. Skipped when he typed the cost
+  // himself, that number is his and needs no apology.
+  const _cEl=document.getElementById(type+'-expected-cost');
+  if(!(_cEl&&_cEl.dataset&&_cEl.dataset.userSet)){
+    const _cov=_estHoursCoverage();
+    if(_cov.total>0&&_cov.known<_cov.total){
+      const _n=_cov.total-_cov.known;
+      msg='Labor not counted on '+_n+' line'+(_n>1?'s':'')+' yet, it learns from your clock the first time you finish one.';
+    }
+  }
+  // The honest caveat. If this bid has hours on it and we have no idea what an
+  // hour of HIS time costs, the number on screen is materials-only and it is
+  // flattering him. Say so on the gauge rather than let him read it as profit.
+  if(!_estCrew.length&&_ownerLoadedHourly()<=0&&_estLaborHours()>0){
+    msg='Your own time is not costed yet. Add your pay rate in Settings for a true number.';
+  }
   const dot=document.getElementById(type+'-gauge-dot');
   const pct=document.getElementById(type+'-gauge-pct');
   const msgEl=document.getElementById(type+'-gauge-msg');
@@ -1652,6 +2527,9 @@ function _byoDelItem(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems.splice(idx,1);_byoRenderSections();_byoUpdateRail();_byoAutosave();}
 }
 function _byoUpdateRail(){
+  // The name follows the work: adding or turning off a line renames the
+  // proposal live, unless he has named it himself (_geiDescUserSet).
+  _geiRefreshAutoTitle('byo');
   const selected=_byoItems.filter(it=>it.on);
   const sub=selected.reduce((s,it)=>s+it.price,0);
   _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false}));
@@ -1703,7 +2581,9 @@ function _byoUpdateRail(){
   // Solo operators have no employees, so labor is 0 and cost stays materials-only.
   const _matTotal=_byoItems.filter(it=>it.on&&!it._rrp&&(it.section||'').toLowerCase()==='materials').reduce((s,it)=>s+it.price,0);
   const _laborCost=(typeof _estLaborCost==='function')?_estLaborCost():0;
-  const _autoCost=_matTotal+_laborCost;
+  const _byoDrive=(typeof _geiDriveCost==='function')?_geiDriveCost():null;
+  const _autoCost=_matTotal+_laborCost+((_byoDrive&&_byoDrive.cost)||0);
+  _geiRenderDriveLine('byo',_byoDrive);
   const _railCostEl=document.getElementById('byo-expected-cost');
   if(_railCostEl&&!_railCostEl.dataset.userSet){
     if(_autoCost>0){_railCostEl.value=_autoCost;_railCostEl.dataset.autoFilled='true';}
@@ -1729,26 +2609,35 @@ function _byoAddItem(sec){
   const ov=document.createElement('div');ov.id='_byo-add-modal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
-    '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Add to '+escHtml(sec)+'</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3, walls only"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
-    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><textarea id="_bya-notes" rows="3" placeholder="e.g. Two coats, ceilings included" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea></div>'+
-    '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab from Notes to save &amp; add another</div>'+
-    '<div style="display:flex;gap:10px">'+
-      '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px">'+
+      '<div style="font-weight:800;font-size:16px">Add to '+escHtml(sec)+'</div>'+
+      '<div id="_bya-count" style="font-size:12px;font-weight:700;color:var(--text3)"></div>'+
+    '</div>'+
+    '<div id="_bya-book"></div>'+
+    '<div class="f" style="margin-bottom:4px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3, walls only" autocomplete="off"></div>'+
+    '<div id="_bya-sugg" style="margin-bottom:10px"></div>'+
+    _byaQtyRateHTML(1,'','')+
+    _byaDescFieldHTML('')+
+    '<div style="display:flex;gap:10px;margin-top:14px">'+
+      '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1" id="_bya-close">Cancel</button>'+
       '<button data-sec="'+escHtml(sec)+'" onclick="_byaConfirm(this.dataset.sec)" class="btn btn-p" style="flex:2">Add item</button>'+
     '</div></div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  _byaDescHint();_byaLineMath();_byaLineMath();
+  _byaRenderBook(sec);
+  // The search is wired synchronously: the field exists the moment the sheet is
+  // in the DOM, and a listener that only attaches 50ms later misses whatever he
+  // typed in the meantime. Only the focus call needs to wait for the paint.
+  document.getElementById('_bya-label')?.addEventListener('input',()=>_byaSuggest(sec));
   setTimeout(()=>{
     const labelEl=document.getElementById('_bya-label');
     const priceEl=document.getElementById('_bya-price');
     const notesEl=document.getElementById('_bya-notes');
     if(labelEl)labelEl.focus();
-    // Tab from label → price (default), Tab from price → notes (default)
-    // Tab or Enter from notes → save + open next
     if(notesEl){
-      // Enter now makes a newline in the notes textarea, only Tab saves & advances.
+      // Enter makes a newline in notes; only Tab saves and advances. On a phone
+      // there is no Tab key, which is what the Add item button is for.
       notesEl.addEventListener('keydown',e=>{
         if(e.key==='Tab'&&!e.shiftKey){
           e.preventDefault();
@@ -1756,7 +2645,6 @@ function _byoAddItem(sec){
         }
       });
     }
-    // Enter on label or price → move to next field
     if(labelEl){
       labelEl.addEventListener('keydown',e=>{
         if(e.key==='Enter'){e.preventDefault();priceEl?.focus();}
@@ -1769,24 +2657,193 @@ function _byoAddItem(sec){
     }
   },50);
 }
+// What he has charged before, at the top of the sheet, one tap each. This is
+// the whole answer to why a Build Your Own estimate cost ninety interactions
+// and a template one cost nineteen: the same work, except one of them made him
+// type it. A tap here adds the line and leaves the sheet open, so four items
+// is four taps and a Done, not four rounds of typing.
+function _byaRenderBook(sec){
+  const el=document.getElementById('_bya-book');if(!el)return;
+  const book=_pbList().slice(0,6);
+  if(!book.length){el.innerHTML='';return;}
+  el.innerHTML=
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">What you usually charge</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">'+
+      book.map((b,i)=>'<button data-sec="'+escHtml(sec)+'" data-i="'+i+'" onclick="_byaAddFromBook(this.dataset.sec,+this.dataset.i)" '+
+        'style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:7px 11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;max-width:100%">'+
+        '<span style="font-size:12px;font-weight:700;color:var(--text);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(b.desc)+'</span>'+
+        '<span style="font-size:10px;color:var(--text3)">'+(typeof fmt==='function'?fmt(b.rate):'$'+b.rate)+'</span>'+
+      '</button>').join('')+
+    '</div>'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Or type it</div>';
+}
+// Six chips, never sixty. Past that, the field he is already typing in does the
+// searching: three letters beats scrolling forty pills every time, and it is
+// the same shape as the who-is-it-for picker, so "find what I have, or make a
+// new one" is one pattern in this app and not two (7.3).
+function _byaSuggest(sec){
+  const wrap=document.getElementById('_bya-sugg');if(!wrap)return;
+  const q=(document.getElementById('_bya-label')?.value||'').trim();
+  if(q.length<2){wrap.innerHTML='';return;}
+  const ql=_pbKey(q);
+  const hits=_pbList().filter(b=>_pbKey(b.desc).includes(ql)||_pbSimilar(b.desc,q)>=0.5).slice(0,5);
+  if(!hits.length){wrap.innerHTML='';return;}
+  wrap.innerHTML=hits.map(b=>{
+    const i=_pbList().indexOf(b);
+    return '<button data-sec="'+escHtml(sec)+'" data-i="'+i+'" onclick="_byaAddFromBook(this.dataset.sec,+this.dataset.i)" '+
+      'style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:5px">'+
+      '<span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(b.desc)+'</span>'+
+      '<span style="font-size:12px;font-weight:700;color:var(--text3);flex-shrink:0">'+(typeof fmt==='function'?fmt(b.rate):'$'+b.rate)+'</span>'+
+    '</button>';
+  }).join('');
+}
+// ONE description field, both modals, so the add and the edit can never drift
+// apart on what it is called or what it says (the two used to disagree on
+// nothing but they were two copies waiting to).
+//
+// It is called Description, not Notes, because Notes reads like something for
+// HIM. It says the client reads it, because that is the fact that gets it
+// filled in. It is NOT required: making it required adds keystrokes to the one
+// flow we measure and ratchet down (CLAUDE.md 12.2), and a field people are
+// forced past gets junk typed into it. It is encouraged, and the price book
+// makes it free from the second job on.
+// Count, unit and rate on one row, with the line total spelled out underneath.
+// ONE block, both modals, same reason the description field is shared: two
+// copies of a money input is two chances for them to disagree.
+//
+// The rate field keeps the id _bya-price. It is the same box it always was and
+// it still holds a per-line number at a quantity of one, so nothing that reads
+// it has to change and every existing test still finds it.
+// EVERY TRADE PRICES IN ITS OWN UNIT, and a list that does not carry his is
+// the tool telling him it was not built for him. The pattern is all over the
+// review data: software that treats a roof replacement like a plumbing service
+// call loses roofing offices inside a few months. A roofer prices SQUARES, HVAC
+// prices TONS, concrete and landscaping price CUBIC YARDS.
+//
+// His trade's units come first, then the ones every trade uses. Nothing is
+// hidden: the full list is always there, because a plumber does occasionally
+// sell a square of roof and a hard filter would strand him.
+const _UNITS_COMMON=['ea','hr','day','lot','sq ft','lin ft'];
+const _UNITS_BY_TRADE={
+  roofing:    ['square','sq ft','lin ft','bundle'],
+  hvac:       ['ton','ea','system','CFM','lin ft'],
+  landscaping:['cu yd','sq ft','ea','ton','flat','plant'],
+  painting:   ['sq ft','room','gal','lin ft'],
+  plumbing:   ['ea','fixture','lin ft','hr'],
+  electrical: ['ea','circuit','fixture','lin ft'],
+  general:    ['ea','sq ft','lin ft','cu yd'],
+};
+const _UNITS_EXTRA=['gal','sq yd','cu yd','ton','square','bundle','fixture','circuit','system','plant','sheet','box','roll','week','month','%'];
+function _byaUnitList(trade){
+  const t=trade||_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general');
+  const seen=new Set(),out=[];
+  [...(_UNITS_BY_TRADE[t]||[]),..._UNITS_COMMON,..._UNITS_EXTRA].forEach(u=>{
+    const k=String(u).toLowerCase();
+    if(seen.has(k))return;
+    seen.add(k);out.push(u);
+  });
+  return out;
+}
+function _byaQtyRateHTML(qty,unit,rate){
+  const q=(Number(qty)>0)?Number(qty):1;
+  const units=_byaUnitList();
+  const cur=unit||units[0]||'ea';
+  // A unit saved on an older line (or by a trade he has since switched away
+  // from) still has to appear, or editing that line would silently retitle it.
+  const list=units.includes(cur)?units:[cur,...units];
+  return '<div class="f" style="margin-bottom:6px">'+
+    '<label>How many, and what each</label>'+
+    '<div style="display:flex;gap:8px;align-items:center">'+
+      '<input type="text" inputmode="decimal" id="_bya-qty" value="'+q+'" oninput="_byaLineMath()" aria-label="Quantity" '+
+        'style="width:72px;flex-shrink:0;text-align:center;font-weight:700">'+
+      '<select id="_bya-unit" onchange="_byaLineMath()" aria-label="Unit" style="width:104px;flex-shrink:0;font-family:inherit">'+
+        list.map(u=>'<option value="'+escHtml(u)+'"'+(u===cur?' selected':'')+'>'+escHtml(u)+'</option>').join('')+
+      '</select>'+
+      '<div class="input-prefix" style="flex:1;min-width:0"><span>$</span>'+
+        '<input type="text" inputmode="numeric" id="_bya-price" value="'+(rate?Number(rate).toLocaleString('en-US'):'')+'" placeholder="0" oninput="_byaFormatPriceInput(this);_byaLineMath()" aria-label="Rate"></div>'+
+    '</div>'+
+    '<div id="_bya-line-total" style="font-size:12px;font-weight:700;color:var(--text3);margin-top:6px;font-variant-numeric:tabular-nums"></div>'+
+  '</div>';
+}
+// The multiply, done out loud. Silent at a quantity of one, where there is no
+// arithmetic to show and a line saying "1 × $95 = $95" is just noise.
+function _byaLineMath(){
+  const el=document.getElementById('_bya-line-total');if(!el)return;
+  const q=parseFloat((document.getElementById('_bya-qty')?.value||'').replace(/,/g,''))||0;
+  const r=_byaPriceValue('_bya-price');
+  const u=document.getElementById('_bya-unit')?.value||'ea';
+  if(!(q>1)||!(r>0)){el.textContent='';return;}
+  const t=_geiCents(q*r);
+  el.textContent=q+' '+u+' × '+((typeof fmt==='function')?fmt(r):'$'+r)+' = '+((typeof fmt==='function')?fmt(t):'$'+t);
+}
+function _byaQtyValue(){const v=parseFloat((document.getElementById('_bya-qty')?.value||'').replace(/,/g,''));return (v>0)?v:1;}
+function _byaUnitValue(){return document.getElementById('_bya-unit')?.value||_byaUnitList()[0]||'ea';}
+
+function _byaDescFieldHTML(val){
+  return '<div class="f" style="margin-bottom:6px">'+
+    '<label>Description <span style="font-weight:400;color:var(--text3)">, what it consists of</span></label>'+
+    '<textarea id="_bya-notes" rows="3" oninput="_byaDescHint()" placeholder="e.g. Two coats, ceilings included, all trim cut in by hand" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(val||'')+'</textarea>'+
+    '<div id="_bya-desc-hint" style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:4px"></div>'+
+  '</div>';
+}
+// The nudge. Present when the field is empty, gone the moment he writes
+// anything, so it reads as encouragement rather than an error he has to clear.
+function _byaDescHint(){
+  const el=document.getElementById('_bya-desc-hint');if(!el)return;
+  const v=(document.getElementById('_bya-notes')?.value||'').trim();
+  el.innerHTML=v?'':'Worth 10 seconds: a line with no description prints as just its title, and a vague scope is the top reason clients push back on a price.';
+}
+
+function _byaAddFromBook(sec,i){
+  const b=_pbList()[i];if(!b)return;
+  // Whatever he had half-typed was him looking for THIS, so the field clears
+  // and the search closes rather than leaving a stale fragment behind.
+  const _l=document.getElementById('_bya-label');if(_l)_l.value='';
+  const _sg=document.getElementById('_bya-sugg');if(_sg)_sg.innerHTML='';
+  const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
+  // The book's own words come with it. This is the whole payoff: the second
+  // time he sells a water heater swap, the client's proposal already explains
+  // what a water heater swap consists of, and he typed nothing.
+  _byoItems.push(_byoNormItem({id:nextId,section:sec,label:b.desc,qty:1,unit:b.unit||'ea',rate:b.rate,price:b.rate,notes:b.notes||'',on:true}));
+  _pbLearn(b.desc,b.rate,b.unit);   // used again, so it climbs
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  // The sheet stays open on purpose: he is usually adding several.
+  _byaBumpCount();
+  _byaRenderBook(sec);
+}
+function _byaBumpCount(){
+  const el=document.getElementById('_bya-count');
+  if(!el)return;
+  const n=(parseInt(el.dataset.n||'0',10)||0)+1;
+  el.dataset.n=String(n);
+  el.textContent=n+' added';
+  const close=document.getElementById('_bya-close');
+  if(close)close.textContent='Done';
+}
 function _byaConfirm(sec){
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=_byaPriceValue('_bya-price');
+  const rate=_byaPriceValue('_bya-price');
+  const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
   const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
-  _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
+  _byoItems.push(_byoNormItem({id:nextId,section:sec,label,qty,unit,rate,price:qty*rate,notes,on:true}));
+  // THE RATE, never the line total. Handing the book 12 doors' worth of money
+  // and calling it the price of a door is the bug this whole change exists for.
+  _pbLearn(label,rate,unit,notes);
   document.getElementById('_byo-add-modal')?.remove();
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
 }
 function _byaConfirmAndNext(sec){
   // Save current item (if label is filled) then immediately open a fresh modal for same section
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=_byaPriceValue('_bya-price');
+  const rate=_byaPriceValue('_bya-price');
+  const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(label){
     const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
-    _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
+    _byoItems.push(_byoNormItem({id:nextId,section:sec,label,qty,unit,rate,price:qty*rate,notes,on:true}));
+    _pbLearn(label,rate,unit,notes);
     _byoRenderSections();_byoUpdateRail();_byoAutosave();
   }
   // Open next item modal for the same section
@@ -1799,15 +2856,16 @@ function _byoEditItem(idx){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Edit item</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3, walls only"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" value="'+(it.price?Number(it.price).toLocaleString('en-US'):'')+'" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
-    '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><textarea id="_bya-notes" rows="4" placeholder="e.g. Two coats, ceilings included" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(it.notes||'')+'</textarea></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3, walls only"></div>'+
+    _byaQtyRateHTML(it.qty,it.unit,(Number(it.rate)>0?it.rate:it.price))+
+    _byaDescFieldHTML(it.notes||'')+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_byaEditConfirm('+idx+')" class="btn btn-p" style="flex:2">Save changes</button>'+
     '</div></div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  _byaDescHint();
   setTimeout(()=>{
     const labelEl=document.getElementById('_bya-label');
     const priceEl=document.getElementById('_bya-price');
@@ -1823,11 +2881,32 @@ function _byoEditItem(idx){
 function _byaEditConfirm(idx){
   const it=_byoItems[idx];if(!it)return;
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=_byaPriceValue('_bya-price');
+  const rate=_byaPriceValue('_bya-price');
+  const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
-  it.label=label;it.price=price;it.notes=notes;
+  it.label=label;it.qty=qty;it.unit=unit;it.rate=rate;it.notes=notes;
+  _byoNormItem(it);
+  // Editing an item is the other moment he writes the words. Teach the book
+  // here too, or a description added on the second pass is lost to the next job.
+  _pbLearn(label,rate,unit,notes);
   document.getElementById('_byo-add-modal')?.remove();
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+}
+// A copy lands directly under the original, named so he can tell them apart at
+// a glance and so two rows reading exactly the same thing never reach a client.
+// Everything else rides along: quantity, unit, rate and the description, which
+// is the part that made copying worth doing.
+function _byoDupItem(idx){
+  const it=_byoItems[idx];if(!it||it._rrp)return;
+  const base=String(it.label||'').replace(/\s*\((\d+)\)$/,'').trim();
+  let n=2,name=base+' (2)';
+  while(_byoItems.some(x=>String(x.label||'').trim()===name)){n++;name=base+' ('+n+')';}
+  const copy=_byoNormItem(Object.assign({},JSON.parse(JSON.stringify(it)),{
+    id:(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1,
+    label:name,on:true
+  }));
+  _byoItems.splice(idx+1,0,copy);
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
 }
 function _byoAddSection(){
@@ -1849,7 +2928,7 @@ function _byoAddSection(){
 function _byoConfirmSection(){
   const name=(document.getElementById('_byo-sec-name')?.value||'').trim();
   if(!name)return;
-  const all=[..._BYO_DEFAULT_SECTIONS,..._byoCustomSections];
+  const all=[..._byoSections(),..._byoCustomSections];
   if(all.map(s=>s.toLowerCase()).includes(name.toLowerCase())){
     const inp=document.getElementById('_byo-sec-name');
     if(inp){inp.style.borderColor='#A32D2D';inp.placeholder='That section already exists';}
@@ -1860,7 +2939,7 @@ function _byoConfirmSection(){
   _byoRenderSections();_byoAutosave();
 }
 function _byoDeleteSection(sec){
-  if(_BYO_DEFAULT_SECTIONS.includes(sec))return;
+  if(_byoSections().includes(sec))return;
   const hasItems=_byoItems.some(x=>x.section===sec);
   const doDelete=()=>{
     _byoCustomSections=_byoCustomSections.filter(s=>s!==sec);
@@ -1871,15 +2950,79 @@ function _byoDeleteSection(sec){
   else doDelete();
 }
 function _byoPreviewClient(){_geiPreviewClient();}
+// ── Options on one job ──────────────────────────────────────────────────────
+//
+// Options were added for Zach's Bettis bids, and the shape they took is right:
+// two GENUINELY different proposals, each its own record, its own scope, its
+// own total, its own signed contract. That does not change.
+//
+// What was missing is the half the client lives in. He got two separate
+// documents and two links and was left to compare them himself, when every
+// HVAC and roofing tool ships options on ONE document because that is what
+// moves the conversation from "yes or no" to "which one".
+//
+// So the bids stay separate and gain a shared group id. The proposal prints
+// the whole group with its prices, whichever option the client opened, and
+// signing one retires the others. Nothing about the Bettis flow moves.
+// The client's own link to one option's document. One builder, used by the
+// options list on the proposal AND by the difference block, so wherever a
+// sibling option is named the client can actually get to it.
+function _geiSignUrlFor(x){
+  const base=(typeof _clientBaseUrl==='function')?_clientBaseUrl():'';
+  const uid=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:'';
+  return (x&&x.signingToken&&base)?(base+'sign.html?t='+encodeURIComponent(x.signingToken)+'&u='+encodeURIComponent(uid)+'&b='+x.id):'';
+}
+function _optionGroupOf(b){return b?(b.optionGroup||null):null;}
+// Every proposal in one group, oldest first, so A stays A.
+function _optionSiblings(b){
+  const g=_optionGroupOf(b);
+  if(!g||typeof bids==='undefined')return [];
+  return bids.filter(x=>x&&x.optionGroup===g&&!x.cancelledAt)
+    .sort((x,y)=>String(x.optionLabel||'').localeCompare(String(y.optionLabel||''))||(x.id-y.id));
+}
+// A, B, C… The next free letter in the group, so a third option is not "B" again.
+function _optionNextLabel(sibs){
+  const used=new Set((sibs||[]).map(x=>String(x.optionLabel||'').toUpperCase()));
+  for(let i=0;i<26;i++){const L=String.fromCharCode(65+i);if(!used.has(L))return L;}
+  return 'X';
+}
+// One option signed means the rest were not chosen. lostReason is the field the
+// contractor's own "Mark Lost" already writes, so these land in the Declined
+// tab and the dashboard with no new UI anywhere.
+function _optionRetireSiblings(wonBid){
+  const sibs=_optionSiblings(wonBid);
+  if(sibs.length<2)return false;
+  let changed=false;
+  sibs.forEach(x=>{
+    if(x.id===wonBid.id)return;
+    if(x.status==='Closed Won'||x.status==='Closed Lost')return;
+    x.status='Closed Lost';x.draft=false;
+    x.lostReason='Client chose Option '+(wonBid.optionLabel||'another');
+    x.lostAt=wonBid.signedAt||new Date().toISOString();
+    changed=true;
+  });
+  return changed;
+}
+
 function _byoDuplicateBid(){
   if(!_geiEditBidId){showToast('Save your draft first, then duplicate','⚠️');return;}
   saveGenericEstimate(true);
   const src=bids.find(x=>x.id===_geiEditBidId);
   if(!src){showToast('Proposal not found','⚠️');return;}
-  // Label the original "Option A" so both show distinct names in the bid list
-  const baseName=(src.type||'Custom Proposal').replace(/\s*-\s*Option\s+[AB]$/i,'').trim();
-  if(!/option [ab]$/i.test(src.type||'')){
+  // Label the original "Option A" so both show distinct names in the bid list.
+  // Option A/B is a CHOSEN name, not the auto one, so both sides are marked
+  // descUserSet: the auto name must never write over it, and the client's
+  // proposal must print it (the whole point of options is that the client can
+  // tell them apart).
+  const baseName=(src.type||'Custom Proposal').replace(/[,\s-]*Option\s+[A-Z]$/i,'').trim();
+  // The group is the FIRST option's own id: stable, already unique, and it
+  // needs no new id space or migration.
+  if(!src.optionGroup){src.optionGroup=src.id;src.optionLabel='A';}
+  if(!/option [a-z]$/i.test(src.type||'')){
     src.type=baseName+', Option A';
+    src.geiDesc=src.type;
+    src.descUserSet=true;
+    _geiDescUserSet=true;
     const descEl=document.getElementById('gei-desc');
     if(descEl)descEl.value=src.type;
     const titleEl=document.getElementById('byo-tbar-title');
@@ -1887,13 +3030,22 @@ function _byoDuplicateBid(){
   }
   const copy=JSON.parse(JSON.stringify(src));
   copy.id=_newBidId();
-  copy.type=baseName+', Option B';
+  copy.optionGroup=src.optionGroup;
+  copy.optionLabel=_optionNextLabel(_optionSiblings(src).concat([src]));
+  copy.type=baseName+', Option '+copy.optionLabel;
+  copy.geiDesc=copy.type;
+  copy.descUserSet=true;
   copy.status='Draft';copy.draft=true;
   copy.signingToken=undefined;copy.proposalKey=undefined;copy.proposalSentDate=undefined;
   bids.unshift(copy);saveAll();
-  // Open the copy in the editor
-  _byoShowPage({id:copy.client_id,name:copy.client_name||copy.name||''},copy.id);
-  showToast('Duplicated: edit Option B now','📋');
+  // Open the COPY. _byoShowPage takes no arguments and reads _geiEditBidId, so
+  // the old call here was a no-op that left the editor on Option A while the
+  // toast said "edit Option B now": every change he made after tapping the
+  // button landed on the wrong document. openGenericEstimate is the one path
+  // that actually switches which bid is open.
+  const _dupC=(typeof clients!=='undefined')?clients.find(x=>x&&x.id===copy.client_id):null;
+  openGenericEstimate(_dupC||{id:copy.client_id,name:copy.client_name||copy.name||''},copy.id,copy.trade_type||_geiTrade,{mode:'byo'});
+  showToast('Duplicated: edit Option '+copy.optionLabel+' now','📋');
 }
 function _showProposalPreviewOverlay(proposalHtml){
   document.getElementById('_prop-preview-ov')?.remove();
@@ -1911,6 +3063,262 @@ function _showProposalPreviewOverlay(proposalHtml){
   body.innerHTML=proposalHtml;
   ov.appendChild(hdr);ov.appendChild(body);
   document.body.appendChild(ov);
+}
+// ─── Presentation mode ───────────────────────────────────────────────────────
+// The tablet on the kitchen table. Owner 2026-09-07: "so smart like Jarvis and
+// easy to get done it can be presented on at the home."
+//
+// Every part of that already existed and was pointed the wrong way. The preview
+// overlay is captioned "how they'll see it" and framed for HIM. The options only
+// appear together on a document the client has to be emailed first. "Sign in
+// person" is a button he has to reach past the client's shoulder to find. So
+// this adds no new document, no new signing path and no new record: it is the
+// same proposal HTML (sendGenericProposal), the same option group
+// (_optionOffered) and the same signature sheet (_geiSignInPerson), arranged
+// for a screen he turns around and hands across the table.
+//
+// Which one is a real offer is decided in ONE place, here, and the client's
+// document (_optionsSection) reads the same function. A half-written draft is
+// not an offer and must never carry a price into a client's hands, on paper or
+// on the tablet, and the two can never disagree about it.
+function _optionOffered(cur){
+  const sibs=(typeof _optionSiblings==='function')?_optionSiblings(cur):[];
+  return sibs.filter(x=>(cur&&x.id===cur.id)||x.proposalSentDate||x.signingToken||x.status==='Pending'||x.status==='Closed Won');
+}
+// The options to put in front of the client: the group if there is one, else
+// just the proposal that is open.
+function _presentList(){
+  const cur=(typeof bids!=='undefined'&&typeof _geiEditBidId!=='undefined'&&_geiEditBidId)?bids.find(x=>x.id===_geiEditBidId):null;
+  if(!cur)return [];
+  const off=_optionOffered(cur);
+  return off.length?off:[cur];
+}
+// HE marks the recommendation. Nothing is badged until he taps the star.
+// Auto-badging the middle option by price is the textbook anchor and it was
+// deliberately not built: it puts a recommendation in the contractor's mouth
+// that he never made, in front of the client, on his own letterhead.
+function _presentRecId(list){
+  const m=(list||[]).find(x=>x&&x.optionRecommended);
+  return m?m.id:null;
+}
+function _presentSetRec(bidId){
+  const list=_presentList();
+  if(!list.length)return;
+  const already=list.some(x=>x&&x.optionRecommended&&String(x.id)===String(bidId));
+  list.forEach(x=>{x.optionRecommended=(!already&&String(x.id)===String(bidId));});
+  try{if(typeof saveAll==='function')saveAll();}catch(_e){}
+  _presentChooser(_presentList());
+}
+function _presentClose(){
+  const ov=document.getElementById('_gei-present-ov');
+  if(ov)ov.remove();
+}
+// One shell for both screens. Two overlays stacked is how a "Back to options"
+// ends up behind the document it was supposed to replace.
+function _presentShell(inner){
+  let ov=document.getElementById('_gei-present-ov');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='_gei-present-ov';
+    ov.style.cssText='position:fixed;inset:0;z-index:9650;background:#1B1612;display:flex;flex-direction:column;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML=inner;
+  return ov;
+}
+function _presentHdr(sub){
+  const biz=(typeof S!=='undefined'&&S.bname)||(typeof getBusinessName==='function'?getBusinessName():'')||'';
+  return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
+    '<div style="min-width:0"><div style="font-size:15px;font-weight:800;color:#F5EFE2;letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(biz)+'</div>'+
+      (sub?'<div style="font-size:11.5px;color:rgba(245,239,226,.62);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</div>':'')+
+    '</div>'+
+    '<button id="present-exit" onclick="_presentClose()" aria-label="Exit presentation" style="flex-shrink:0;background:rgba(245,239,226,.10);border:none;color:rgba(245,239,226,.75);width:34px;height:34px;border-radius:9px;font-size:18px;line-height:1;cursor:pointer;font-family:inherit;touch-action:manipulation">×</button>'+
+  '</div>';
+}
+function _presentName(b){
+  if(!b)return 'Proposal';
+  return b.optionLabel?('Option '+b.optionLabel):(String(b.type||'Proposal').trim()||'Proposal');
+}
+function _presentMoney(n){return '$'+(Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:0});}
+// Entry point. Save first: from here on the client is reading it, and a number
+// on screen that is not the number on the record is the one mistake this whole
+// mode exists to avoid.
+async function _geiPresent(){
+  try{if(typeof saveGenericEstimate==='function')saveGenericEstimate(true);}catch(_e){}
+  const list=_presentList();
+  if(!list.length){showToast('Save your proposal first','⚠️');return;}
+  if(list.length===1){return _presentOpen(list[0].id);}
+  _presentChooser(list);
+}
+// The lines on an option RIGHT NOW. For the one he has open that means the
+// editor, not the record: he may have changed it thirty seconds ago and the
+// client is about to read it.
+function _presentLines(b,cur){
+  if(cur&&b&&b.id===cur.id){
+    const live=[];
+    if(typeof _byoItems!=='undefined'&&Array.isArray(_byoItems))_byoItems.forEach(it=>{
+      if(it&&it.on!==false&&!it._rrp&&it.label)live.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)||0,notes:it.notes||''});
+    });
+    if(!live.length&&typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))_geiLines.forEach(l=>{
+      if(l&&!l._tmLabor&&!l._rrp&&l.desc)live.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});
+    });
+    if(live.length)return live;
+  }
+  return _pkgBidLines(b);
+}
+// Said once, not three times. Three cards that each repeat "tear off, haul
+// away, ice and water shield" make the client read the same paragraph three
+// times to find the two lines that actually differ, and the two lines that
+// differ ARE the decision. Pull the common work up into one rail and every
+// card underneath is nothing but its own answer.
+function _presentShared(list,cur){
+  if(!list||list.length<2)return [];
+  const sets=list.map(b=>{
+    const m=new Map();
+    _presentLines(b,cur).forEach(l=>{const k=_pbKey(l.label);if(k&&!m.has(k))m.set(k,l);});
+    return m;
+  });
+  const out=[];
+  sets[0].forEach((l,k)=>{if(sets.every(m=>m.has(k)))out.push(l);});
+  return out;
+}
+function _presentUnique(b,list,cur){
+  const shared=new Set(_presentShared(list,cur).map(l=>_pbKey(l.label)));
+  const seen=new Set();
+  return _presentLines(b,cur).filter(l=>{
+    const k=_pbKey(l.label);
+    if(!k||shared.has(k)||seen.has(k))return false;
+    seen.add(k);return true;
+  });
+}
+// The deposit is what he actually has to pay today, and it is the number that
+// decides whether "yes" happens now or "let me talk to my wife" happens now.
+function _presentDeposit(b,me,total){
+  if(me){
+    const pct=(typeof _geiDepositPct==='function')?_geiDepositPct():0;
+    return pct>0?Math.round(total*pct/100*100)/100:0;
+  }
+  return Number(b&&b.deposit)||0;
+}
+function _presentCount(n){return ['','One','Two','Three','Four','Five','Six'][n]||'Your';}
+function _presentChooser(list){
+  const cur=(typeof bids!=='undefined'&&typeof _geiEditBidId!=='undefined'&&_geiEditBidId)?bids.find(x=>x.id===_geiEditBidId):null;
+  const recId=_presentRecId(list);
+  // His brand, not our navy. This is his letterhead and the client is looking
+  // at it in his truck's colours if he set one (adaBrand already clamped it so
+  // it holds contrast as a background under white text).
+  let accent='#1a365d';
+  if(typeof S!=='undefined'&&S&&S.brandColor){
+    const bh=(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor).replace('#','');
+    if(/^[0-9a-f]{6}$/i.test(bh))accent='#'+bh;
+  }
+  const shared=_presentShared(list,cur);
+  const warranty=(typeof S!=='undefined'&&S&&S.warrantyPeriod)?String(S.warrantyPeriod):'';
+  const cards=list.map(b=>{
+    const me=!!(cur&&b.id===cur.id);
+    const amt=me&&typeof calcGeiTotal==='function'?(calcGeiTotal().total||0):(Number(b.amount)||0);
+    const dep=_presentDeposit(b,me,amt);
+    const rec=!!(recId&&String(b.id)===String(recId));
+    const head=String(b.type||'').replace(/[,\s-]*Option\s+[A-Z]$/i,'').trim();
+    const uniq=_presentUnique(b,list,cur);
+    const rows=uniq.slice(0,6).map(l=>
+      '<li style="font-size:13px;line-height:1.55;color:#2C2620;margin-bottom:5px;overflow-wrap:anywhere">'+escHtml(l.label)+'</li>').join('');
+    const more=Math.max(0,uniq.length-6);
+    const star=svgIcon('★',{size:16,color:rec?accent:'#C9C2B6'});
+    const idAttr=escHtml(JSON.stringify(String(b.id)));
+    return '<div style="position:relative;display:flex;flex-direction:column;min-width:0;background:#fff;border-radius:4px;'+
+        'border:1px solid '+(rec?accent:'#DED7CA')+';'+(rec?'box-shadow:0 10px 34px rgba(0,0,0,.30)':'box-shadow:0 3px 14px rgba(0,0,0,.18)')+';overflow:hidden">'+
+      // Reserved on every card, filled on one. Rendered only where it applies,
+      // the badged card's price sat lower than the others and the column of
+      // numbers the client is comparing stopped lining up.
+      '<div style="height:24px;flex-shrink:0;background:'+(rec?accent:'transparent')+';color:#fff;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;padding:0 14px;display:flex;align-items:center">'+(rec?'Our recommendation':'')+'</div>'+
+      '<button onclick="_presentSetRec('+idAttr+')" aria-label="Mark as our recommendation" style="position:absolute;top:33px;right:11px;background:none;border:none;padding:4px;cursor:pointer;line-height:1;font-family:inherit;touch-action:manipulation">'+star+'</button>'+
+      '<div style="padding:14px 16px 0">'+
+        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.16em;color:#8C8375">'+escHtml(_presentName(b))+'</div>'+
+        '<div style="font-size:15px;font-weight:700;color:#1B1612;line-height:1.3;margin-top:4px;min-height:2.6em;padding-right:24px;overflow-wrap:anywhere">'+escHtml(head||'')+'</div>'+
+        // tabular-nums is load-bearing: three prices in a row with proportional
+        // digits do not line up at their commas and the comparison reads sloppy.
+        '<div style="font-size:38px;font-weight:800;color:#1B1612;letter-spacing:-1.5px;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums">'+_presentMoney(amt)+'</div>'+
+        (dep>0?'<div style="font-size:11.5px;color:#6B6355;margin-top:6px;font-variant-numeric:tabular-nums">'+_presentMoney(dep)+' to get started</div>':'')+
+      '</div>'+
+      (rows
+        ?'<div style="padding:14px 16px 0"><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:'+accent+';margin-bottom:8px">'+(list.length>1&&shared.length?'What this adds':'Includes')+'</div>'+
+          '<ul style="margin:0;padding-left:17px">'+rows+'</ul>'+
+          (more?'<div style="font-size:11.5px;color:#8C8375;margin-top:2px">and '+more+' more</div>':'')+
+        '</div>'
+        :(shared.length?'<div style="padding:14px 16px 0;font-size:12.5px;color:#8C8375;line-height:1.5">The work listed above, nothing added.</div>':''))+
+      '<div style="padding:16px;margin-top:auto">'+
+        '<button onclick="_presentOpen('+idAttr+')" style="width:100%;padding:14px;border-radius:3px;border:1px solid '+accent+';background:'+(rec?accent:'#fff')+';color:'+(rec?'#fff':accent)+';font-size:15px;font-weight:800;letter-spacing:.01em;cursor:pointer;font-family:inherit;touch-action:manipulation">See the details</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  const sharedRail=(shared.length||warranty)
+    ?'<div style="border:1px solid rgba(245,239,226,.14);border-radius:4px;padding:14px 16px;margin-bottom:18px;background:rgba(245,239,226,.04)">'+
+      '<div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.16em;color:rgba(245,239,226,.55);margin-bottom:'+(shared.length?'9px':'0')+'">Every option includes</div>'+
+      // The separator TRAILS its item, it never leads the next one. Leading it,
+      // a wrap on a phone put a stray slash at the start of every line.
+      (shared.length?'<div style="display:flex;flex-wrap:wrap;gap:4px 0">'+shared.slice(0,10).map((l,i,a)=>
+        '<span style="font-size:13px;color:#F5EFE2;line-height:1.55;white-space:nowrap">'+escHtml(l.label)+(i<a.length-1?'<span style="color:rgba(245,239,226,.30);padding:0 9px">/</span>':'')+'</span>').join('')+'</div>':'')+
+      (warranty?'<div style="font-size:12px;color:rgba(245,239,226,.62);margin-top:'+(shared.length?'10px':'6px')+';padding-top:'+(shared.length?'10px':'0')+';'+(shared.length?'border-top:1px solid rgba(245,239,226,.10)':'')+'">'+escHtml(warranty)+' workmanship warranty, in writing, on every option.</div>':'')+
+    '</div>'
+    :'';
+  _presentShell(
+    _presentHdr('Prepared for '+((cur&&(cur.client_name||cur.name))||'you'))+
+    // margin:auto inside a flex column centres the block when the screen has
+    // room and still scrolls when it does not, which justify-content cannot do
+    // without clipping the top of a tall list.
+    '<div style="flex:1;overflow-y:auto;padding:22px 16px 30px;box-sizing:border-box;display:flex;flex-direction:column">'+
+      '<div style="max-width:1060px;width:100%;margin:auto">'+
+        '<div style="margin-bottom:18px">'+
+          '<div style="font-size:24px;font-weight:800;color:#F5EFE2;letter-spacing:-.4px">'+_presentCount(list.length)+' ways to do this job</div>'+
+          '<div style="font-size:13px;color:rgba(245,239,226,.62);margin-top:5px">Same crew, same warranty. The difference is below. Tap one to read it in full and sign it right here.</div>'+
+        '</div>'+
+        sharedRail+
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(248px,1fr));gap:14px;align-items:stretch">'+cards+'</div>'+
+      '</div>'+
+    '</div>'
+  );
+}
+// The document, full screen, with the signature one tap away. Switching to a
+// sibling goes through openGenericEstimate, the same path every resume button
+// uses: the editor really is on that bid, so the total, the terms and the
+// signature all belong to the option on screen.
+async function _presentOpen(bidId){
+  const cur=(typeof bids!=='undefined'&&typeof _geiEditBidId!=='undefined'&&_geiEditBidId)?bids.find(x=>x.id===_geiEditBidId):null;
+  if(!cur||String(bidId)!==String(cur.id)){
+    const b=(typeof bids!=='undefined')?bids.find(x=>String(x.id)===String(bidId)):null;
+    if(!b){showToast('Option not found','⚠️');return;}
+    try{if(typeof saveGenericEstimate==='function')saveGenericEstimate(true);}catch(_e){}
+    const c=(typeof getClientById==='function')?getClientById(b.client_id):null;
+    openGenericEstimate(c||{id:b.client_id,name:b.client_name||b.name||''},b.id,b.trade_type||'general');
+  }
+  let html='';
+  // sendGenericProposal is async: awaited, or the client is handed a tablet
+  // showing "[object Promise]" where the contract should be.
+  try{html=(typeof sendGenericProposal==='function')?(await sendGenericProposal(true,{silent:true})||''):'';}catch(_e){html='';}
+  if(!html){showToast('Add items to this proposal first','⚠️');return;}
+  const open=(typeof bids!=='undefined'&&typeof _geiEditBidId!=='undefined'&&_geiEditBidId)?bids.find(x=>x.id===_geiEditBidId):null;
+  const multi=_presentList().length>1;
+  _presentShell(
+    _presentHdr(multi?('Reading '+_presentName(open)):'')+
+    '<div style="flex:1;overflow-y:auto;padding:18px 16px;box-sizing:border-box;background:#EFEBE3;overflow-wrap:anywhere;display:flex;flex-direction:column"><div style="max-width:760px;width:100%;margin:auto">'+html+'</div></div>'+
+    '<div style="flex-shrink:0;display:flex;gap:10px;padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
+      // ALWAYS a way out down here, not just when there are options behind it.
+      // Owner 2026-09-07: on a phone with one option there was no back button.
+      // The header × is a 34px target in the far corner, and the only thing
+      // under his thumb was Approve & sign, on the screen where a mis-tap
+      // signs a contract. When nothing is behind it the button closes instead
+      // of going back, because Back with nowhere to go is its own trap.
+      '<button id="present-back" onclick="'+(multi?'_geiPresent()':'_presentClose()')+'" style="flex:0 0 auto;padding:14px 18px;border-radius:3px;border:1px solid rgba(245,239,226,.26);background:none;color:rgba(245,239,226,.85);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation">'+(multi?'Back':'Close')+'</button>'+
+      '<button id="present-sign" onclick="_presentSign()" style="flex:1;min-width:0;padding:14px;border-radius:3px;border:none;background:#0E6B39;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;touch-action:manipulation">'+svgIcon('✍',{size:16,color:'#fff'})+' Approve &amp; sign</button>'+
+    '</div>'
+  );
+}
+// The signature sheet is z-index 9700, deliberately above this overlay: a
+// client who backs out of signing lands back on the proposal, not in the
+// contractor's editor.
+function _presentSign(){
+  if(typeof _geiSignInPerson==='function')_geiSignInPerson();
 }
 // ─── Comparison proposal picker ─────────────────────────────────────────────
 // Show a picker so the contractor can send two side-by-side options to a client.
@@ -2014,12 +3422,16 @@ function _tmInputChange(){
   if(typeof _renderLaborPicker==='function')_renderLaborPicker('tm');
   // TRUE cost feeds the gauge: materials at raw cost + what the selected crew
   // actually costs the business (loaded pay rates × the T&M hours). No employees
-  //, or none selected, means the OWNER is doing the work: their labor costs
-  // the business $0 and the labor revenue correctly reads as profit. The old
-  // code fed the labor BILLING amount as "cost", which hid all labor profit and
-  // made every T&M job read as underpriced.
+  //, or none selected, means the OWNER is on the job, and his hours are now
+  // costed at his own loaded rate too (_estLaborCost): counting them at zero is
+  // what made the gauge flatter every solo contractor. The old code before that
+  // fed the labor BILLING amount as "cost", which hid all labor profit and made
+  // every T&M job read as underpriced.
   const _tmCrewCost=(typeof _estLaborCost==='function')?_estLaborCost():0;
-  const _tmTrueCost=Math.round(matRaw+_tmCrewCost);
+  // Getting there is a cost too, and on a short job it can be most of it.
+  const _tmDrive=(typeof _geiDriveCost==='function')?_geiDriveCost():null;
+  const _tmTrueCost=Math.round(matRaw+_tmCrewCost+((_tmDrive&&_tmDrive.cost)||0));
+  _geiRenderDriveLine('tm',_tmDrive);
   const _tmCostEl=document.getElementById('tm-expected-cost');
   if(_tmCostEl&&!_tmCostEl.dataset.userSet){_tmCostEl.value=_tmTrueCost>0?_tmTrueCost:'';}
   _updateMarginGauge('tm',total);
@@ -2029,16 +3441,19 @@ function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
   const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor);
   if(!mats.length){
-    el.innerHTML='<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>';
+    el.innerHTML='<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
     return;
   }
+  // Same card as BYO (§7.3): a T&M job forgets the isolation valves exactly the
+  // same way a fixed-price one does, and one renderer is what keeps the two
+  // from drifting apart again.
   el.innerHTML=mats.map(({l,i})=>{
     const rawTotal=l.total||((l.qty||0)*(l.rate||0));
     return _geiItemRowHtml({
       label:l.desc||'Untitled',notes:l.notes||'',price:rawTotal||0,
       editFn:'_tmEditMatCat('+i+')',delFn:'_tmDelMatCat('+i+')',delTitle:'Remove category'
     });
-  }).join('');
+  }).join('')+_attachCardHTML();
 }
 function _tmAddMatCat(){ _tmMatCatModal(-1); }
 function _tmEditMatCat(idx){ _tmMatCatModal(idx); }
@@ -2055,8 +3470,8 @@ function _tmMatCatModal(idx){
     '<div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:16px">'+(isEdit?'Edit category':'Add material category')+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>Category name</label><input type="text" id="tcm-name" placeholder="e.g. Paint &amp; primer" value="'+escHtml(l?.desc||'')+'" style="font-size:15px"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Estimated cost ($)</label><div class="input-prefix"><span>$</span><input type="number" id="tcm-cost" min="0" step="10" placeholder="0" value="'+(cur||'')+'" inputmode="decimal"></div></div>'+
-    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text3)">(optional)</span></label><textarea id="tcm-notes" rows="3" placeholder="Brand, product type, etc." style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(l?.notes||'')+'</textarea></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Tab from Notes to save</div>'+
+    '<div class="f" style="margin-bottom:6px"><label>Description <span style="font-weight:400;color:var(--text3)">, what it consists of</span></label><textarea id="tcm-notes" rows="3" placeholder="e.g. Sherwin-Williams Duration, two coats, tinted to the approved color" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(l?.notes||'')+'</textarea></div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">The client reads this on the proposal. Tab from here to save.</div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_tm-mat-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_tmMatCatSave('+idx+')" class="btn btn-p" style="flex:2">'+(isEdit?'Save changes':'Add category')+'</button>'+
@@ -2099,6 +3514,9 @@ function _tmMatCatSave(idx){
   } else {
     _geiLines.push({desc:name,notes,qty:1,unit:'lot',rate:cost,total:cost});
   }
+  // Same moment BYO's modal teaches the book, so a T&M category he describes
+  // once arrives already described on the next job.
+  _pbLearn(name,cost,'lot',notes);
   document.getElementById('_tm-mat-modal')?.remove();
   _tmRenderMatList();_tmInputChange();
 }
@@ -2312,14 +3730,22 @@ function _geiAddWithRate(job,inputEl){
   renderGeiLines();calcGeiTotal();
 }
 
-function _geiVisibleJobIds(){
-  const bundles=S.myBundles||[];
-  if(!bundles.length||bundles[0]==='__all')return null;
-  const ids=new Set();
-  bundles.forEach(b=>(GEI_BUNDLES[b]||[]).forEach(id=>ids.add(id)));
-  return ids;
-}
-
+// The "Set up your services" gate is DELETED (owner 2026-09-06: "any trade
+// specific branding goes out the window, everything has to be aligned to each
+// of the trades", and less setup).
+//
+// It asked "what kind of work do you do?" 900ms after boot and again the first
+// time anybody opened step 2, from a hardcoded list of TEN ELECTRICAL
+// categories: Panels & Circuits, EV & Solar, Smart Home & Security. A plumber
+// was asked which of those he does. Worse, GEI_BUNDLES held nothing but
+// electrical job ids, so a plumber who answered it filtered his own service
+// list down to zero rows and had to find the "search all" link to recover.
+//
+// Nothing replaces it, because the question is already asked properly: the
+// onboarding service picker (js/settings.js obStepServices) offers his own
+// trade's real jobs at his own prices, once, at signup. Everybody now sees
+// every service their trade ships with, organised by that trade's own
+// categories, and the add sheet's search covers the rest.
 function _geiOpenCatSheet(catLabel){
   const trade=_geiTrade||'general';
   const allJobs=TRADE_JOBS[trade]||TRADE_JOBS.general;
@@ -2400,7 +3826,6 @@ function _geiRenderTemplates(){
   const allJobs=TRADE_JOBS[trade]||TRADE_JOBS.general;
   const scope=_geiIsCommercial?'commercial':'resi';
   const jobs=allJobs.filter(j=>!j.scope||j.scope==='both'||j.scope===scope);
-  const visibleIds=_geiVisibleJobIds();
 
   let html='';
   if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">${svgIcon('🚨',{size:12,color:'#b91c1c'})} Emergency mode, labor rates ×1.5 · after-hours surcharge added</div>`;
@@ -2412,7 +3837,7 @@ function _geiRenderTemplates(){
     const jobById=Object.fromEntries(jobs.map(j=>[j.id,j]));
     html+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">`;
     for(const [catLabel,ids] of Object.entries(cats)){
-      const catJobs=ids.map(id=>jobById[id]).filter(Boolean).filter(j=>!visibleIds||visibleIds.has(j.id));
+      const catJobs=ids.map(id=>jobById[id]).filter(Boolean);
       if(!catJobs.length)continue;
       const parts=catLabel.split(' ');
       const emoji=parts[0];
@@ -2426,10 +3851,6 @@ function _geiRenderTemplates(){
       </button>`;
     }
     html+=`</div>`;
-    if(visibleIds){
-      const totalCount=(TRADE_JOBS[trade]||[]).length;
-      html+=`<button onclick="_geiShowAllServices()" style="width:100%;margin-top:12px;padding:10px;background:none;border:1px dashed var(--border2);border-radius:var(--r);color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">+ Find unlisted service (search all ${totalCount} services)</button>`;
-    }
   } else {
     // Flat chip fallback for general/other
     const makeChip=job=>{
@@ -2442,77 +3863,6 @@ function _geiRenderTemplates(){
     html+=`<div style="display:flex;flex-wrap:wrap;gap:6px">${jobs.map(makeChip).join('')}</div>`;
   }
   el.innerHTML=html;
-}
-
-function _geiShowAllServices(){
-  S.myBundles=['__all'];_settingsChanged();_geiRenderTemplates();showToast('Showing all services','✓');
-}
-
-function showGeiOnboarding(opts){
-  if(!opts?.force&&S.myBundles&&S.myBundles.length)return;
-  const BUNDLE_CARDS=[
-    {id:'residential',   emoji:'🏠', label:'Residential\nService'},
-    {id:'panels_circuits',emoji:'⚡',label:'Panels &\nCircuits'},
-    {id:'service_upgrades',emoji:'🔧',label:'Service\nUpgrades'},
-    {id:'ev_solar',      emoji:'☀️', label:'EV & Solar'},
-    {id:'outdoor_pool',  emoji:'🏊', label:'Outdoor\n& Pool'},
-    {id:'smart_security',emoji:'🔒', label:'Smart Home\n& Security'},
-    {id:'appliances',    emoji:'🍳', label:'Appliance\nCircuits'},
-    {id:'diagnostics',   emoji:'🔍', label:'Diagnostics\n& Specialty'},
-    {id:'new_construction',emoji:'🏗️',label:'New\nConstruction'},
-    {id:'commercial',    emoji:'🏢', label:'Commercial'},
-  ];
-  const selected=new Set();
-  const ov=document.createElement('div');
-  ov.id='_gei-onboard-ov';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  function render(){
-    const stateStr=S.state||'US';
-    const mult=STATE_LABOR_MULT[S.state]||1.0;
-    const multNote=mult!==1.0?` (${mult>1?'+':''}${Math.round((mult-1)*100)}% vs national avg)`:'';
-    ov.innerHTML=`<div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-sizing:border-box;padding:22px 18px 28px">
-      <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">${svgIcon('⚡',{size:20})} Set up your services</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Takes about 30 seconds · you can change this anytime</div>
-      <div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--blue-dk)">
-        ${svgIcon('📍',{size:12,color:'var(--blue-dk)'})} You're in <strong>${stateStr}</strong>, market rates loaded${multNote}
-        <button onclick="document.getElementById('_gei-state-sel')?.classList.toggle('show')" style="margin-left:8px;background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">Change</button>
-        <select id="_gei-state-sel" class="show" onchange="S.state=this.value;_settingsChanged();showGeiOnboarding()" style="display:block;margin-top:8px;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg);color:var(--text);width:100%">
-          ${['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'].map(st=>`<option value="${st}"${S.state===st?' selected':''}>${st}</option>`).join('')}
-        </select>
-      </div>
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">What kind of work do you do? <span style="font-weight:400;color:var(--text3)">(tap all that apply)</span></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px">
-        ${BUNDLE_CARDS.map(b=>{
-          const on=selected.has(b.id);
-          return `<button onclick="_geiOnboardToggle('${b.id}')" data-bid="${b.id}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:2px solid ${on?'var(--blue)':'var(--border2)'};background:${on?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;gap:5px;min-height:80px;text-align:center;box-sizing:border-box">
-            <span style="font-size:26px;line-height:1">${svgIcon(b.emoji,{size:26})}</span>
-            <span style="font-size:11px;font-weight:700;color:${on?'var(--blue-dk)':'var(--text)'};white-space:pre-line;line-height:1.3">${b.label}</span>
-            ${on?'<span style="font-size:10px;color:var(--blue);font-weight:700">'+svgIcon('✓',{size:10,color:'var(--blue)'})+'</span>':''}
-          </button>`;
-        }).join('')}
-      </div>
-      <button onclick="_geiOnboardFinish()" id="_gei-ob-btn" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:${selected.size?'var(--blue)':'var(--border2)'};color:${selected.size?'#fff':'var(--text3)'};font-weight:800;font-size:15px;cursor:${selected.size?'pointer':'default'};font-family:inherit;margin-bottom:10px">
-        ${selected.size?`Get started → (${selected.size} service type${selected.size!==1?'s':''})`:'Select at least one service type'}
-      </button>
-      <button onclick="_geiOnboardSkip()" style="width:100%;padding:10px;background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">Set up later, you'll be reminded next time</button>
-    </div>`;
-  }
-  window._geiOnboardToggle=function(id){
-    if(selected.has(id))selected.delete(id);else selected.add(id);
-    document.getElementById('_gei-onboard-ov')?.remove();
-    document.body.appendChild(ov);
-    render();
-  };
-  window._geiOnboardFinish=function(){
-    if(!selected.size)return;
-    S.myBundles=[...selected];S.hasOnboarded=true;_settingsChanged();
-    ov.remove();showToast('Services set up, showing '+S.state+' market rates','✓');
-  };
-  window._geiOnboardSkip=function(){
-    ov.remove(); // session-only dismiss, myBundles stays unset, popup re-appears next load
-  };
-  render();
-  document.body.appendChild(ov);
 }
 
 function _geiSetScope(commercial){
@@ -2534,7 +3884,94 @@ function _geiSetWorkType(scope){
   if(_geiStep===2)_geiRenderTemplates();
   calcGeiTotal();
 }
+// The summary line and the controls behind it. Open once and it stays open for
+// the rest of the estimate, because a man who had to correct the guess is
+// probably about to correct another one.
+let _geiFactsOpen=false;
+function _geiToggleFacts(){
+  _geiFactsOpen=!_geiFactsOpen;
+  _geiSyncJobTypeButtons();
+}
+function _geiRenderFactsLine(){
+  const txt=document.getElementById('gei-facts-text');
+  const card=document.getElementById('gei-facts-card');
+  const chev=document.getElementById('gei-facts-chev');
+  if(txt)txt.textContent=_geiFactsLine();
+  if(card)card.style.display=_geiFactsOpen?'':'none';
+  if(chev)chev.textContent=_geiFactsOpen?'Done':'Change';
+}
+
+// Who it is for, where, and when: one line he reads, not three fields he fills.
+// Name and address arrived from the who-is-it-for gate and the date is today,
+// so the normal case is zero taps. Same reveal shape as the facts line above.
+let _geiJobOpen=false;
+function _geiToggleJob(){
+  _geiJobOpen=!_geiJobOpen;
+  _geiRenderJobLine();
+}
+function _geiJobLineText(){
+  const v=id=>{const e=document.getElementById(id);return e?(e.value||'').trim():'';};
+  const name=v('gei-client');
+  const addr=v('gei-addr');
+  const parts=[];
+  if(name)parts.push(name);
+  if(addr)parts.push(addr);
+  if(!parts.length)return 'Add who this is for';
+  const d=v('gei-date');
+  if(d&&typeof todayKey==='function'&&d!==todayKey()&&typeof _shortDate==='function')parts.push(_shortDate(d));
+  return parts.join(' \u00b7 ');
+}
+function _geiRenderJobLine(){
+  const txt=document.getElementById('gei-job-text');
+  const card=document.getElementById('gei-job-fields');
+  const chev=document.getElementById('gei-job-chev');
+  if(txt)txt.textContent=_geiJobLineText();
+  if(card)card.style.display=_geiJobOpen?'':'none';
+  if(chev)chev.textContent=_geiJobOpen?'Done':'Change';
+}
+// What the proposal is called, derived from the work he already described.
+// Contractors do not name documents: every competitor identifies a quote by
+// number + customer, and a "Name your proposal" box just makes him type the
+// first line item a second time. So the name is written for him from the work
+// itself and stays editable through the title-bar pencil, which is the rename
+// control the screen already had.
+//   one thing   -> "Water heater replacement"
+//   several     -> "Water heater replacement +2 more"
+//   nothing yet -> the trade's own proposal label
+function _geiAutoName(){
+  const labels=[];
+  if(_geiIsFreeForm)(_byoItems||[]).forEach(it=>{if(it&&it.on&&!it._rrp&&it.label)labels.push(it.label);});
+  (_geiScopeChips||[]).forEach(l=>{if(l&&labels.indexOf(l)<0)labels.push(l);});
+  if(!_geiIsFreeForm)(_geiLines||[]).forEach(l=>{if(l&&!l._tmLabor&&l.desc&&labels.indexOf(l.desc)<0)labels.push(l.desc);});
+  if(!labels.length)return _tradeProposalLabel(_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general'));
+  const first=String(labels[0]).trim();
+  return labels.length>1?first+' +'+(labels.length-1)+' more':first;
+}
+// The stored name, auto when he has not renamed it. #gei-desc is the carrier
+// every save/send path already reads, so writing it here keeps all of them
+// untouched; _geiDescUserSet marks a name he typed himself so the auto name
+// never overwrites it.
+let _geiDescUserSet=false;
+function _geiSyncAutoName(){
+  const el=document.getElementById('gei-desc');
+  if(!el||_geiDescUserSet)return;
+  el.value=_geiAutoName();
+}
+// Write the auto name and repaint the title bar showing it. No-op the moment
+// he renames it by hand.
+function _geiRefreshAutoTitle(prefix){
+  if(_geiDescUserSet)return;
+  _geiSyncAutoName();
+  const el=document.getElementById(prefix+'-tbar-title');
+  if(el&&!el.querySelector('input')){
+    const n=document.getElementById('gei-desc')?.value||'';
+    if(n)el.textContent=n;
+  }
+}
+
 function _geiSyncJobTypeButtons(){
+  _geiRenderFactsLine();
+  if(typeof _geiRenderJobLine==='function')_geiRenderJobLine();
   const _propActive=_geiIsCommercial?'comm':'res';
   ['res','comm'].forEach(k=>{
     const btn=document.getElementById('gei-prop-'+k);if(!btn)return;
@@ -2660,25 +4097,203 @@ function _geiConfirmFreeForm(job){
   renderGeiLines();calcGeiTotal();
 }
 
-function _geiAddFromBook(i){
-  const trade=_geiTrade||'general';
-  const book=(S.priceBook&&S.priceBook[trade])||[];
-  if(!book[i])return;
-  _geiLines.push({desc:book[i].desc,qty:1,unit:book[i].unit||'',rate:book[i].rate,total:book[i].rate});
-  renderGeiLines();calcGeiTotal();
+// ── The price book, which now fills itself ──────────────────────────────────
+//
+// It has existed for a long time and been useless for exactly as long: a
+// contractor could tap "Save to price book" on a line, the row landed in
+// S.priceBook[trade], and the function that read it back, _geiAddFromBook, had
+// no call site anywhere in the app. He could save prices for a year and never
+// once get one back.
+//
+// So it learns instead of being filed. Every line he deliberately adds is
+// remembered with what he charged, how many times he has used it and when, and
+// the ones he actually uses float to the top of the add sheet. The point is
+// that after two weeks of working, his own book is the fastest thing in here,
+// and he never typed a word into a settings screen to build it.
+//
+// Learned on a deliberate add, never on a keystroke: _byoAutosave fires on
+// field handlers, so learning there would fill the book with "Repl" and "Repla".
+const _PB_MAX=200;
+const _PB_DRIFT=0.25;          // a quarter off is a decision, not a typo
+const _PB_STOP=['the','a','an','and','or','of','to','for','with','on','in','at','new'];
+function _pbTrade(){return _geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';}
+function _pbKey(d){return String(d||'').trim().toLowerCase().replace(/\s+/g,' ');}
+function _pbWords(d){return _pbKey(d).replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w&&!_PB_STOP.includes(w));}
+// "Water heater replace" and "Replace water heater" are one service. Compared on
+// the words that carry meaning, so word order and punctuation stop mattering.
+function _pbSimilar(a,b){
+  const A=new Set(_pbWords(a)),B=new Set(_pbWords(b));
+  if(!A.size||!B.size)return 0;
+  let hit=0;A.forEach(w=>{if(B.has(w))hit++;});
+  return hit/(A.size+B.size-hit);
+}
+function _pbBook(trade){
+  // A stored book that is not an array (a bad sync, a hand-edited settings blob)
+  // must not take the add sheet down with it: the sheet is how he adds a line at
+  // all, and losing it costs him the estimate, not just the suggestions.
+  const raw=S.priceBook&&S.priceBook[trade||_pbTrade()];
+  return Array.isArray(raw)?raw:[];
+}
+function _pbList(trade){
+  // n===1 means seen once and NOT yet offered. This is the rule that keeps the
+  // book clean without anybody maintaining it: "Bedroom 3, walls only" is typed
+  // once and never comes back, so it never becomes a suggestion, while
+  // "Replace 40 gal water heater" earns its place the second time he uses it.
+  // ServiceTitan makes the book a project you finish before you can work. This
+  // one is a byproduct of working.
+  return _pbBook(trade).filter(x=>(x.n||1)>=2)
+    .sort((a,b)=>((b.n||1)-(a.n||1))||String(b.last||'').localeCompare(String(a.last||'')));
+}
+function _pbFind(desc,trade){
+  const book=_pbBook(trade);
+  const key=_pbKey(desc);
+  return book.find(x=>_pbKey(x.desc)===key)||book.find(x=>_pbSimilar(x.desc,desc)>=0.8)||null;
+}
+// THE DESCRIPTION IS THE PART THAT SELLS, AND IT WAS THE PART NOBODY TYPED.
+// The book remembered a line's price, unit, count and hours, but never the
+// sentence saying what the work consists of, so that sentence had to be
+// retyped on every estimate forever and it simply never was: the proposal fell
+// back to "Labor and materials per agreed scope", which is the vague scope line
+// homeowners push back on (research 2026-09-07). Remembering it makes the
+// FIRST job the only one he ever types it on.
+//
+// An empty description never erases a stored one. He may add a line in a hurry
+// from the book and fill the words in later, and losing the good sentence
+// because of a fast add would teach him not to trust the field.
+function _pbLearn(desc,rate,unit,notes){
+  const d=String(desc||'').trim();
+  const r=Number(rate)||0;
+  if(!d||d.length<3||r<=0)return;
+  const _n=String(notes||'').trim();
+  const trade=_pbTrade();
+  if(!S.priceBook||typeof S.priceBook!=='object')S.priceBook={};
+  if(!Array.isArray(S.priceBook[trade]))S.priceBook[trade]=[];
+  const book=S.priceBook[trade];
+  const hit=_pbFind(d,trade);
+  if(hit){
+    const was=Number(hit.rate)||0;
+    hit.n=(hit.n||1)+1;
+    hit.last=todayKey();
+    hit.unit=unit||hit.unit||'ea';
+    if(_n)hit.notes=_n;
+    // A quarter off the stored price is either a real change or a one-off he
+    // does not want remembered, and guessing wrong either freezes an old price
+    // or poisons a good one. So ask, once, and only for a line he already uses.
+    if(was>0&&Math.abs(r-was)/was>_PB_DRIFT&&(hit.n||0)>2){
+      const _keep=was;
+      if(typeof zConfirm==='function'){
+        setTimeout(()=>zConfirm(
+          'You charged '+(typeof fmt==='function'?fmt(r):'$'+r)+' for "'+escHtml(hit.desc)+'" this time. It was '+(typeof fmt==='function'?fmt(_keep):'$'+_keep)+'.',
+          ()=>{hit.rate=r;if(typeof _settingsChanged==='function')_settingsChanged();},
+          {title:'Is that your price now?',yes:'Yes, update it',no:'Just this job'}),0);
+      }else{hit.rate=r;}
+    }else{
+      hit.rate=r;
+    }
+  }else{
+    // n:1, remembered but not offered until he uses it again.
+    book.push({desc:d,unit:unit||'ea',rate:r,n:1,last:todayKey(),...(_n?{notes:_n}:{})});
+    if(book.length>_PB_MAX){
+      // The one-offs go first: never used twice, oldest of those first.
+      book.sort((a,b)=>((b.n||1)-(a.n||1))||String(b.last||'').localeCompare(String(a.last||'')));
+      book.length=_PB_MAX;
+    }
+  }
+  if(typeof _settingsChanged==='function')_settingsChanged();
+}
+function _pbLearnAll(){
+  try{
+    // The DESCRIPTION rides along on every save, or the smarts only reach the
+    // one path whose modal happens to pass it. T&M material categories and
+    // fixed-scope lines carry notes too (tcm-notes), and dropping them here
+    // meant those two estimate types could never teach the book what their
+    // work consists of. An empty one is still harmless: _pbLearn refuses to
+    // erase a stored description with a blank.
+    (_byoItems||[]).forEach(i=>_pbLearn(i.label,(Number(i.rate)>0?i.rate:i.price),i.unit,i.notes));
+    // Labor lines are the crew rate, not a thing he sells, so they stay out.
+    (_geiLines||[]).forEach(l=>{if(!l._tmLabor)_pbLearn(l.desc,l.rate,l.unit,l.notes);});
+  }catch(_e){}
 }
 
-function _geiSaveToPriceBook(i){
-  const line=_geiLines[i];if(!line||!line.desc||!line.rate)return;
-  const trade=_geiTrade||'general';
-  if(!S.priceBook)S.priceBook={};
-  if(!S.priceBook[trade])S.priceBook[trade]=[];
-  if(S.priceBook[trade].some(x=>x.desc===line.desc&&x.rate===line.rate)){showToast('Already in price book');return;}
-  S.priceBook[trade].push({desc:line.desc,unit:line.unit||'ea',rate:line.rate});
-  _settingsChanged();showToast('Saved to price book','🔖');
-  _geiRenderTemplates();
+// How long a price-book line actually takes him, learned from the clock and
+// never asked for.
+//
+// The profit gauge used to read hours ONLY from scope chips (_estLaborHours),
+// so an estimate built the fast way, straight out of the price book, priced
+// its labor at zero and showed a margin that was materials-only. A calculator
+// that flatters him is worse than none (see _estLaborCost), and this is the
+// same class of bug one level down.
+//
+// So when a job is completed, its measured hours are split across the bid's
+// own lines in proportion to their price and recorded here. One job is a rough
+// split; the median across jobs converges on the truth, exactly the way
+// _scopeHistoryHrs already works for scope chips. Nothing is typed.
+function _pbLearnHours(desc,hrs,trade){
+  const h=Number(hrs)||0;
+  if(!(h>0))return;
+  const t=trade||_pbTrade();
+  const hit=_pbFind(desc,t);
+  if(!hit)return;
+  if(!Array.isArray(hit.h))hit.h=[];
+  hit.h.push(Math.round(h*100)/100);
+  if(hit.h.length>20)hit.h=hit.h.slice(-20);
 }
-
+// Teach the price book what a finished job actually took. Called once, when a
+// job is completed with real hours on it. The job knows its total measured
+// hours; the bid knows which lines it was made of; the split is pro-rata by
+// price because a line worth twice as much is, on average, twice the work.
+// Rough at n=1, right by n=5, and it costs him nothing.
+function _pbLearnFromJob(bid,hours){
+  try{
+    const h=Number(hours)||0;
+    if(!bid||!(h>0))return false;
+    const trade=bid.trade_type||'general';
+    const lines=[];
+    if(Array.isArray(bid.byoItems))bid.byoItems.forEach(it=>{if(it&&it.on&&!it._rrp&&it.label)lines.push({desc:it.label,price:Number(it.price)||0});});
+    if(!lines.length&&Array.isArray(bid.geiLines))bid.geiLines.forEach(l=>{if(l&&!l._tmLabor&&l.desc)lines.push({desc:l.desc,price:(Number(l.qty)||1)*(Number(l.rate)||0)});});
+    // Scope chips record their own measured hours through S.scopeHistory, so a
+    // line repeating a REAL scope chip is skipped here rather than counted
+    // twice by _estLaborHours. A chip that is not a known scope item has no
+    // such home, so its line still learns.
+    const _defs=[..._GEN_SCOPE,...((typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade])||[])];
+    const chips=new Set((bid.scopeChips||[]).filter(l=>_defs.some(x=>x&&x.id&&x.label===l)).map(l=>_pbKey(l)));
+    // A line that was CLOCKED does not need a guess. Splitting a job total
+    // across it too would teach the book twice from one day's work, once
+    // measured and once estimated, and the estimate would drift up.
+    const priced=lines.filter(l=>l.price>0&&!chips.has(_pbKey(l.desc))&&_scopeHistoryHrs('line:'+_pbKey(l.desc))==null);
+    const sum=priced.reduce((s,l)=>s+l.price,0);
+    if(!priced.length||sum<=0)return false;
+    priced.forEach(l=>_pbLearnHours(l.desc,h*(l.price/sum),trade));
+    return true;
+  }catch(_e){return false;}
+}
+// Median of what it took, null until it has been measured at least once.
+function _pbHrs(entry){
+  const vals=((entry&&entry.h)||[]).filter(v=>typeof v==='number'&&v>0).sort((a,b)=>a-b);
+  if(!vals.length)return null;
+  const m=Math.floor(vals.length/2);
+  return vals.length%2?vals[m]:(vals[m-1]+vals[m])/2;
+}
+// The bid's own priced lines, one shape for BYO items and generic lines, so
+// the hours math and the coverage note both read the same list.
+function _estPricedLines(){
+  const out=[];
+  if(_geiIsFreeForm)(_byoItems||[]).forEach(it=>{if(it&&it.on&&!it._rrp&&it.label)out.push({desc:it.label,price:Number(it.price)||0});});
+  else (_geiLines||[]).forEach(l=>{if(l&&!l._tmLabor&&l.desc)out.push({desc:l.desc,price:(Number(l.qty)||1)*(Number(l.rate)||0)});});
+  return out;
+}
+// How much of this bid's labor is actually known: {known, total} line counts.
+// Drives the honest note on the gauge, an unmeasured line is reported as not
+// counted rather than quietly costed at zero.
+function _estHoursCoverage(){
+  if(_geiIsTM)return{known:1,total:1};
+  const trade=_pbTrade();
+  const lines=_estPricedLines();
+  let known=0;
+  lines.forEach(l=>{if(_pbHrs(_pbFind(l.desc,trade))!=null)known++;});
+  (_geiScopeChips||[]).forEach(()=>{});
+  return{known,total:lines.length};
+}
 
 function renderGeiLines(){
   const el=document.getElementById('gei-lines');if(!el)return;
@@ -2719,7 +4334,7 @@ function renderGeiLines(){
           <div id="gei-line-total-${i}" style="font-size:18px;font-weight:800;color:var(--blue);line-height:1.2">${totalFmt}</div>
         </div>
       </div>
-      ${isLabor?'':`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="_geiSaveToPriceBook(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;font-weight:600;font-family:inherit;padding:0;display:flex;align-items:center;gap:3px">${svgIcon('🔖',{size:11})} Save to price book</button></div>`}
+      
     </div>`;
   }).join('');
 }
@@ -3011,6 +4626,10 @@ function _geiEnsureClientProperty(clientId,addr){
 function saveGenericEstimate(draft){
   const v=id=>document.getElementById(id)?.value||'';
   _geiEnsureClientProperty(_geiClientId,v('gei-addr'));
+  // Saving is the other deliberate moment worth learning from: it catches the
+  // T&M material lines, which are edited in a grid rather than added through a
+  // sheet, and any BYO line whose price was changed after it was added.
+  _pbLearnAll();
   const{total}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
@@ -3044,7 +4663,7 @@ function saveGenericEstimate(draft){
       }
     }
   }
-  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[trade]?.label||'Trade')+' Proposal';
+  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':_tradeProposalLabel(trade);
   // Extract BYO field values before object literals, Safari fails to parse ?.?? inside spread conditionals
   const _byoTermsEl=document.getElementById('byo-custom-terms');
   const _byoTermsSave=_byoTermsEl?_byoTermsEl.value:(_byoCustomTerms||'');
@@ -3059,13 +4678,20 @@ function saveGenericEstimate(draft){
       // mutating: the transition from stub to real content is the "wrote a
       // proposal" moment the "new bid" branch's lcProposalSaved can never fire.
       const _wasEmpty=_geiDraftIsEmpty(b);
-      b.amount=total;b.type=v('gei-desc')||_typeLabel;b.geiDesc=v('gei-desc')||'';
+      b.amount=total;b.type=v('gei-desc')||_typeLabel;b.geiDesc=v('gei-desc')||'';b.descUserSet=!!_geiDescUserSet;
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
       b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=parseFloat(S.salesTaxRate)||0;b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
       b.scopeChips=[..._geiScopeChips];
       b.scopeNoScope=_geiScopeNoScope||false;
+      // The promise, stamped on the deliberate save too, not only on autosave
+      // (_byoAutosave). Relying on an autosave having happened first is how a
+      // bid reaches a job with nothing to measure it against.
+      b.estHours=_estLaborHours();
+      b.estCrew=[..._estCrew];
+      b.estCrewSize=_estCrew.length||1;
+      b.exclusions=[..._geiExclusions];
       if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));
       if(_geiIsFreeForm){b.byoCustomSections=_byoSecsSave;b.byoCustomTerms=_byoTermsSave;}
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
@@ -3082,7 +4708,7 @@ function saveGenericEstimate(draft){
       phone:'',addr:v('gei-addr'),
       bid_date:v('gei-date')||todayKey(),
       amount:total,deposit:_deposit,
-      type:v('gei-desc')||_typeLabel,geiDesc:v('gei-desc')||'',
+      type:v('gei-desc')||_typeLabel,geiDesc:v('gei-desc')||'',descUserSet:!!_geiDescUserSet,
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       isFreeForm:_geiIsFreeForm||false,
       ...(_geiScanId?{scanId:_geiScanId}:{}),
@@ -3092,6 +4718,8 @@ function saveGenericEstimate(draft){
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
       scopeChips:[..._geiScopeChips],
       scopeNoScope:_geiScopeNoScope||false,
+      estHours:_estLaborHours(),estCrew:[..._estCrew],estCrewSize:_estCrew.length||1,
+      exclusions:[..._geiExclusions],
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
@@ -3166,7 +4794,7 @@ function _geiBuildTermsHtml(){
   return _clausesHtml+_customTermsBlock;
 }
 
-async function sendGenericProposal(previewOnly){
+async function sendGenericProposal(previewOnly,opts){
   saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
   _saveToLineHistory();
   if(!previewOnly){
@@ -3174,13 +4802,22 @@ async function sendGenericProposal(previewOnly){
     // Only block if there are no chips, no line items, and the contractor hasn't explicitly skipped.
     const _hasLineItems=_geiIsFreeForm?_byoItems.some(it=>it.on):_geiLines.length>0;
     if(!_geiScopeChips.length&&!_geiScopeNoScope&&!_hasLineItems){zAlert('Add scope items or tap "None" to skip scope on this proposal.',{title:'Scope required'});return;}
+    // A proposal needs a price. That is the whole list.
+    //
+    // It used to need a line in Materials AND a line in Interior or Exterior,
+    // which meant a plumber who had typed "Replace 40 gal water heater, $1,850"
+    // was refused at the send button, in painting vocabulary, after he had
+    // already done the work of writing the bid. That is the worst moment in an
+    // app to tell somebody no, and it made every fast path we have (the seeded
+    // services, the price-book chips, a spoken estimate) end in a wall.
     if(_geiIsTM){
+      // The rate and the hours ARE the bid on a time and materials job, so
+      // those stay. A service call with no parts is an ordinary T&M job and is
+      // no longer refused for having no materials.
       if(!_tmRatePerMan||!_tmEstHours){zAlert('Enter your hourly rate and estimated days in the Rates & crew section.',{title:'Time & labor required'});return;}
-      if(!_geiLines.some(l=>!l._tmLabor&&l.desc)){zAlert('Add at least one material or cost item in the Materials section.',{title:'Materials required'});return;}
     }else if(_geiIsFreeForm){
       const _byoOn=_byoItems.filter(it=>it.on);
-      if(!_byoOn.some(it=>it.section==='Materials')){zAlert('Add at least one item in the Materials section.',{title:'Materials required'});return;}
-      if(!_byoOn.some(it=>it.section==='Interior'||it.section==='Exterior')){zAlert('Add at least one line item in Interior or Exterior.',{title:'Work items required'});return;}
+      if(!_byoOn.length){zAlert('Add at least one line before you send this.',{title:'Nothing to send yet'});return;}
     }
     // Build minimal proposal for sign.html
     if(!navigator.onLine){zAlert('You\'re offline, the proposal link can\'t be activated right now.\n\nYour proposal is saved. Once you\'re back online, open this proposal and tap Send to send the link to your client.',{title:'No internet connection'});return;}
@@ -3214,13 +4851,25 @@ async function sendGenericProposal(previewOnly){
   const clientName=escHtml(v('gei-client'));const clientAddr=escHtml(v('gei-addr'));
   const _clientRec=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   const clientPhone=escHtml(_clientRec?.phone||'');
-  const jobDesc=escHtml(v('gei-desc'));const duration=escHtml(v('gei-duration'));
+  // The Project line is the CLIENT's header, so it only carries a name the
+  // contractor actually chose. The auto name (_geiAutoName) is derived from the
+  // first line item and exists so he can find the proposal in his own list,
+  // printing it here would put that item's words on the document twice: once as
+  // the title, once in Scope of work. Auto name -> the trade service label.
+  const jobDesc=escHtml(_geiDescUserSet?v('gei-desc'):'');const duration=escHtml(v('gei-duration'));
   const _tradeM=TRADE_META[trade]||null;
   const tradeName=(_tradeM&&_tradeM.label)||'Service';
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'-';
   const _geiNow=new Date();
   const dateStr=_geiNow.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-  const _geiExpD=new Date(_geiNow.getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  // The price-hold date is decided ONCE, here, and written onto the bid before
+  // the document is built, so the printed date, the snapshot the client signs,
+  // the portal chip and the dashboard all read the same stamp (see
+  // _bidValidUntil). A preview never stamps: nothing has been promised yet.
+  const _bidForValid=_geiEditBidId?bids.find(x=>x.id===_geiEditBidId):null;
+  const _validUntilKey=(_bidForValid&&_bidForValid.validUntil)||addDays(todayKey(),_estValidDays());
+  if(!previewOnly&&_bidForValid&&!_bidForValid.validUntil)_bidForValid.validUntil=_validUntilKey;
+  const _geiExpD=_fmtValidUntil(_validUntilKey);
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const _tmDepPct=_geiDepositPct();
   // Deposit is a % of the client-facing TOTAL (incl. tax): the label says "(N%)" next
@@ -3294,7 +4943,7 @@ async function sendGenericProposal(previewOnly){
     const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'-')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
     _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Panel Schedule, ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:${_pAccent};color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
-  const _hdrLabel=_geiIsTM?'Time &amp; Materials':tradeName+' Proposal';
+  const _hdrLabel=_geiIsTM?'Time &amp; Materials':_tradeProposalLabel(trade);
   // No standalone NTE pricing row, the cap is already disclosed in the Terms &
   // Conditions "Contract type" clause below, so this isn't a lost disclosure, just
   // one less dollar figure sitting in the pricing table.
@@ -3304,10 +4953,16 @@ async function sendGenericProposal(previewOnly){
   // own line-item section list is additional structured detail specific to BYO
   // and renders alongside it, not instead of it (previously an if/else silently
   // dropped the selected scope chips whenever BYO had any line items on).
+  // One exception, added 2026-09-06: a chip whose label is also a line item is
+  // the SAME work written twice, and the client reads it twice in one section.
+  // The line item wins (it is the priced, itemized one) and the chip is
+  // dropped. Chips that say something the items do not still print.
   const _scopeBlocks=[];
-  if(_geiScopeChips.length&&!_geiScopeNoScope){
+  const _itemLabelKeys=new Set((_geiIsFreeForm?_byoItems.filter(it=>it&&it.on&&!it._rrp):[]).map(it=>_pbKey(it.label)));
+  const _chipsToPrint=_geiScopeChips.filter(l=>!_itemLabelKeys.has(_pbKey(l)));
+  if(_chipsToPrint.length&&!_geiScopeNoScope){
     const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
-    const _listItems=_geiScopeChips.map(l=>{
+    const _listItems=_chipsToPrint.map(l=>{
       const chip=_allChipDefs.find(c=>c.label===l);
       const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096">, ${escHtml(chip.clientDesc)}</span>`:'';
       return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
@@ -3323,7 +4978,14 @@ async function sendGenericProposal(previewOnly){
       // one-word line ("1. Room") next to fully-described scope items reads as an
       // unfinished document to the client.
       const _fallbackDesc=/material/i.test(sec)?'Included in project total':'Labor and materials per agreed scope';
-      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}<span style="font-size:10.5px;color:#718096">, ${escHtml(it.notes||_fallbackDesc)}</span></li>`).join('')+'</ol>';
+      // The count is part of the scope, not a pricing detail: "12 doors" and
+      // "1 door" are different jobs and the client should read which one they
+      // agreed to. The RATE stays off the proposal, same one-price rule the
+      // document already follows.
+      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>{
+        const _q=(Number(it.qty)>1)?` <span style="font-size:10.5px;color:#718096">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
+        return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}${_q}<span style="font-size:10.5px;color:#718096">, ${escHtml(it.notes||_fallbackDesc)}</span></li>`;
+      }).join('')+'</ol>';
       // Sub-section headers match the document's one header style (accent, same
       // scale as "Scope of work"): the old hardcoded gray read as a different
       // font family entirely and made the section look mismatched.
@@ -3331,6 +4993,117 @@ async function sendGenericProposal(previewOnly){
     }).join('');
     _scopeBlocks.push(_secBlocks2);
   }
+  // EVERY ESTIMATE TYPE GETS A SCOPE SECTION, not just BYO. Until now the
+  // section was built from scope chips plus BYO items only, so a T&M or
+  // fixed-scope proposal with no chips selected printed NO description of the
+  // work at all: the client got a price table and nothing saying what they were
+  // buying. The lines are already there and already carry a title and a
+  // description (owner 2026-09-07: "scope of work pulls from title and the
+  // description"), so they say it here in words, priced rows stay in the table
+  // below where they belong.
+  if(!_geiIsFreeForm&&!_geiScopeNoScope){
+    const _lineScope=(_geiLines||[]).filter(l=>l&&!l._tmLabor&&!l._rrp&&String(l.desc||'').trim()
+      &&!_chipsToPrint.some(c=>_pbKey(c)===_pbKey(l.desc)));
+    if(_lineScope.length){
+      const _rows='<ol style="margin:0 0 10px;padding-left:18px">'+_lineScope.map(l=>{
+        const d=String(l.notes||'').trim();
+        return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l.desc)}${d?`<span style="font-size:10.5px;color:#718096">, ${escHtml(d)}</span>`:''}</li>`;
+      }).join('')+'</ol>';
+      _scopeBlocks.push(_rows);
+    }
+  }
+  // ── The other options, on this document ─────────────────────────────────
+  // Whichever option the client opened, they can see the whole choice and what
+  // each one costs. A price is only shown once that option has actually been
+  // sent: a half-written draft is not an offer and must never reach a client.
+  let _optionsSection='';
+  {
+    const _thisBid=_geiEditBidId?bids.find(x=>x.id===_geiEditBidId):null;
+    // Same rule as the tablet (_optionOffered), one function, so the document
+    // and presentation mode can never disagree about what the client is
+    // choosing from.
+    const _offered=(typeof _optionOffered==='function')?_optionOffered(_thisBid):[];
+    if(_offered.length>1){
+      // The client must be able to GET to the other one. A price with no way to
+      // read what it buys is worse than not listing it: they can see there is a
+      // cheaper option and cannot find out what it leaves out. Each sibling that
+      // has a signing link becomes a link; the one they are reading does not.
+      const _oUrl=_geiSignUrlFor;
+      const _rows=_offered.map(x=>{
+        const _me=_thisBid&&x.id===_thisBid.id;
+        const _amt=_me?total:(Number(x.amount)||0);
+        // The LABEL names the option, not the stored title. The title of the
+        // one being sent has already been rewritten by the live editor (an
+        // unnamed proposal auto-names itself), so reading it back here printed
+        // "Custom Proposal" where the client needed to see "Option B".
+        const _nm=x.optionLabel?('Option '+x.optionLabel):String(x.type||'').replace(/^.*?,\s*(Option\s+[A-Z])$/i,'$1');
+        // A one-line headline of what that option IS, so the price has meaning.
+        // Suppressed on the one they are reading: this whole page is its
+        // description, and repeating a title above it is noise.
+        const _hd=_me?'':String(x.type||'').replace(/[,\s-]*Option\s+[A-Z]$/i,'').trim();
+        const _u=_me?'':_oUrl(x);
+        const _inner=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;width:100%">
+            <div style="min-width:0">
+              <div style="font-size:12px;font-weight:800;color:${_me?_pAccent:'#4a5568'}">${escHtml(_nm)}${_me?' <span style="font-weight:700;font-size:10px;color:#718096">, this one</span>':(_u?' <span style="font-weight:700;font-size:10px;color:'+_pAccent+'">, read it →</span>':'')}</div>
+              ${_hd?`<div style="font-size:10.5px;color:#718096;margin-top:1px;overflow-wrap:anywhere">${escHtml(_hd)}</div>`:''}
+            </div>
+            <div style="font-size:14px;font-weight:800;color:#111;white-space:nowrap">${'$'+_amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          </div>`;
+        const _box=`display:flex;padding:9px 12px;border-radius:8px;margin-bottom:6px;background:${_me?'#EBF2FB':'#f8fafc'};border:1.5px solid ${_me?_pAccent:'#e2e8f0'}`;
+        return _u
+          ? `<a href="${escHtml(_u)}" target="_top" style="${_box};text-decoration:none;color:inherit">${_inner}</a>`
+          : `<div style="${_box}">${_inner}</div>`;
+      }).join('');
+      _optionsSection=`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;background:#fbfcfe"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Your options</div>${_rows}<div style="font-size:10.5px;color:#718096;margin-top:4px">Tap any option to read it. Sign the one you want, and the others simply close out.</div></div>`;
+    }
+  }
+
+  // The boundary, on the client's copy, right after the scope. It answers the
+  // question the scope raises ("is X in there?") at the moment they ask it,
+  // instead of in the terms accordion where nobody looks until there is an
+  // argument.
+  const _exclSection=_geiExclusions.length
+    ?`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
+    :'';
+
+  // ── What the other options add ──────────────────────────────────────────
+  // Owner's question, 2026-09-07: on the option that does NOT replace the deck,
+  // does the client see that? The scope was already right (it prints this
+  // option's own lines and nothing else), but "right" was silent: the cheap
+  // option read as complete, because nothing on the page said what the dearer
+  // one buys. That is the whole good-better-best mechanic and it was missing
+  // from the document.
+  //
+  // Derived, never typed: any line a sibling offer carries that this one does
+  // not. He cannot forget to write it and it cannot go stale when he edits an
+  // option.
+  let _optDiffSection='';
+  {
+    const _dBid=_geiEditBidId?bids.find(x=>x.id===_geiEditBidId):null;
+    const _dOff=(typeof _optionOffered==='function')?_optionOffered(_dBid):[];
+    if(_dBid&&_dOff.length>1&&typeof _presentLines==='function'){
+      const _mine=new Set(_presentLines(_dBid,_dBid).map(l=>_pbKey(l.label)));
+      const _blocks=_dOff.map(x=>{
+        if(x.id===_dBid.id)return '';
+        const _extra=_pkgBidLines(x).filter(l=>l.label&&!_mine.has(_pbKey(l.label)));
+        if(!_extra.length)return '';
+        const _nm=x.optionLabel?('Option '+x.optionLabel):String(x.type||'the other option');
+        const _amt=Number(x.amount)||0;
+        const _seen=new Set();
+        const _li=_extra.filter(l=>{const k=_pbKey(l.label);if(_seen.has(k))return false;_seen.add(k);return true;})
+          .slice(0,6).map(l=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l.label)}</li>`).join('');
+        // The option NAME is the way into it. Telling a client what they are
+        // missing and leaving them to text about it is how a proposal turns
+        // into an evening of back and forth: the answer has to be a tap that
+        // lands them on that option's own document, where they can sign it.
+        const _u=_geiSignUrlFor(x);
+        const _hd=`${escHtml(_nm)}${_amt?` <span style="font-weight:700;color:#718096">(${'$'+_amt.toLocaleString('en-US',{maximumFractionDigits:0})})</span>`:''} also includes`;
+        return `<div style="margin-bottom:10px"><div style="font-size:11.5px;font-weight:800;color:${_pAccent};margin-bottom:4px">${_hd}</div><ul style="margin:0 0 6px;padding-left:18px">${_li}</ul>${_u?`<a href="${escHtml(_u)}" target="_top" style="display:inline-block;font-size:11.5px;font-weight:800;color:${_pAccent};text-decoration:none;border:1.5px solid ${_pAccent};border-radius:6px;padding:6px 12px">Switch to ${escHtml(_nm)} &rarr;</a>`:''}</div>`;
+      }).filter(Boolean).join('');
+      if(_blocks)_optDiffSection=`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;background:#fbfcfe"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
+    }
+  }
+
   const _scopeSection=_scopeBlocks.length
     ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
     :'';
@@ -3384,12 +5157,16 @@ async function sendGenericProposal(previewOnly){
   const _lineItemsSection=_geiIsFreeForm
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
     :`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows
   // only the document, same as sign.html's Review step before Approve & Sign.
-  if(previewOnly){_showProposalPreviewOverlay(proposalHtml);return;}
+  // The document the client would receive, kept so the in-person sheet can put
+  // the SAME one in front of them (_geiSignInPerson). Building it twice, once
+  // for the screen and once for the signature, is how the two drift apart.
+  window._geiLastProposalHtml=proposalHtml;
+  if(previewOnly){if(!opts||!opts.silent)_showProposalPreviewOverlay(proposalHtml);return proposalHtml;}
   const bidId=_geiEditBidId;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
@@ -3402,6 +5179,10 @@ async function sendGenericProposal(previewOnly){
     proposalHtml,termsHtml:_fullTermsHtml,clientAddr:v('gei-addr'),
     amount:total,deposit:_tmDepAmt,
     createdAt:new Date().toISOString(),status:'pending',
+    // The price-hold date travels WITH the proposal, so the portal stops
+    // recomputing its own +30 from createdAt and an extended price actually
+    // reads as extended on the client's screen.
+    validUntil:_validUntilKey,
     notifyEmail:_supaUser.email,businessPhone:S.bphone||'',
     stripeConnectEnabled:_stripeEnabled,
     // Which manual pay options the client sees at signing (Settings → How you get
@@ -3855,6 +5636,56 @@ function _stsuSave(){
 }
 
 // ─── Sign in person, T&M and Build Your Own ─────────────────────────────────
+// The proposal document, rendered into the in-person sheet. Built by the same
+// call that builds the emailed one (sendGenericProposal in silent preview mode,
+// which promises nothing and stamps nothing), so there is exactly one document
+// in the product. Scrolls inside its own box: the sheet is already tall and the
+// signature has to stay reachable on a phone.
+function _geiIpDoc(){
+  try{
+    if(typeof sendGenericProposal==='function')sendGenericProposal(true,{silent:true});
+  }catch(_e){}
+  return (typeof window!=='undefined'&&window._geiLastProposalHtml)||'';
+}
+function _geiIpDocHTML(){
+  const doc=_geiIpDoc();
+  if(!doc)return'';
+  return'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">What they are signing</div>'+
+    '<div id="gei-ip-doc" style="max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:var(--r);padding:8px;background:var(--bg2);margin-bottom:16px">'+doc+'</div>';
+}
+
+// ── The signature is never left on the phone ────────────────────────────────
+// An in-person signature used to go to signed_proposals as a fire-and-forget
+// insert inside a try/catch that console.warned and moved on. In a basement
+// with no signal that is the single most important record in the business,
+// silently lost, while the bid itself saved fine and looked signed.
+//
+// Same shape the photo queue already uses (_drainPhotoQueue, js/jobs.js): park
+// the pending write ON THE BID, which syncs, survives a force-quit and drains
+// on the next connection. No new storage, no new durability story.
+function _geiQueueSignature(bid,row){
+  if(!bid||!row)return;
+  bid.sigPending=row;
+  try{saveAll();}catch(_e){}
+}
+async function _drainSignatureQueue(){
+  if(typeof supaEnabled!=='function'||!supaEnabled())return;
+  if(typeof _supaUser==='undefined'||!_supaUser||!_supa)return;
+  let dirty=false;
+  for(const b of (typeof bids!=='undefined'?bids:[])){
+    const row=b&&b.sigPending;
+    if(!row)continue;
+    try{
+      const{data:rows}=await _supa.from('signed_proposals').select('id')
+        .eq('bid_id',String(b.id)).eq('contractor_user_id',_supaUser.id).limit(1);
+      if(rows&&rows[0])await _supa.from('signed_proposals').update(row).eq('id',rows[0].id);
+      else await _supa.from('signed_proposals').insert(row);
+      delete b.sigPending;dirty=true;
+      if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
+    }catch(_e){/* still no signal: it stays queued, on the bid, for next time */}
+  }
+  if(dirty){try{saveAll();}catch(_e){}}
+}
 function _geiSignInPerson(){
   saveGenericEstimate(true);
   const bid=bids.find(x=>x.id===_geiEditBidId);
@@ -3888,6 +5719,14 @@ function _geiSignInPerson(){
             :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>'
           )+
         '</div>'+
+        // THE DOCUMENT THEY ARE SIGNING (owner 2026-09-06: "I want it done and
+        // prepared in person, sign on the spot"). This sheet used to show a
+        // total, a deposit and a signature box, so the version used face to
+        // face was weaker than the one sign.html puts in front of a remote
+        // client, and it was also the one most likely to be argued about
+        // later. Same HTML, built once by sendGenericProposal and reused here,
+        // so the in-person contract and the emailed one can never differ.
+        _geiIpDocHTML()+
         // The ONE shared signing pad + the ONE shared terms block (esign.js)
         //, same layout, same capture code, same substance as sign.html's
         // remote signature for this exact document. Full clause list, not a
@@ -3928,6 +5767,21 @@ async function _geiConfirmInPerson(){
   const ts=new Date().toISOString();
   bid.amount=total;bid.deposit=depAmt;bid.status='Closed Won';bid.draft=false;
   bid.signedAt=ts;bid.estStatus='signed';
+  // Same rule the remote path applies (cloud.js _applySigStatusToBid): the
+  // options he did not pick close out instead of sitting in Pending. AFTER
+  // signedAt is stamped, because that is the date the others are lost on.
+  _optionRetireSiblings(bid);
+  // The exact document that was on screen when they signed, kept as the legal
+  // record the same way the remote send keeps it (_finalizeProposalSend). An
+  // in-person signature had no snapshot at all before this.
+  if(!bid.proposalHtml&&typeof window!=='undefined'&&window._geiLastProposalHtml)bid.proposalHtml=window._geiLastProposalHtml;
+  // MINT THE HUB TOKEN NOW, NOT WHEN THE NETWORK SAYS SO. It is random hex and
+  // needs nothing but the device, yet it was only ever created inside
+  // _uploadClientHub. So the client he just signed at the kitchen table, who is
+  // usually brand new, had no hub link at the exact moment he tapped "Text them
+  // their copy": a race when online and a flat failure when not. The token
+  // exists immediately; the hub contents publish when there is signal.
+  if(bid.client_id&&typeof _ensureClientToken==='function')_ensureClientToken(bid.client_id);
   const clientName=document.getElementById('gei-client')?.value||bid.client_name||'Client';
   bid.client_name=bid.client_name||clientName;
   saveAll();
@@ -3940,6 +5794,9 @@ async function _geiConfirmInPerson(){
   // in the one cursive face when nothing was drawn).
   const _sigR=esignResult('gei-ip',{requireTyped:false,typedAsSig:true});
   const sigData=_sigR.ok?_sigR.sigData:'';
+  // The presentation is over the moment it is signed. Close it here so "Back
+  // to home" doesn't peel back to a stale proposal still on screen behind it.
+  try{if(typeof _presentClose==='function')_presentClose();}catch(_e){}
   // Show confirmation screen immediately
   const ov=document.getElementById('_gei-ip-ov');
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3956,21 +5813,26 @@ async function _geiConfirmInPerson(){
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+escHtml(pname)+'</strong></div>'+
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0"><span style="color:#374151">Date &amp; time</span><span>'+dtFmt+'</span></div>'+
       '</div>'+
+      // Do the two things that are only possible WHILE HE IS STILL IN THE ROOM.
+      // The deposit leads because card-in-hand right after a signature is the
+      // best collection moment in the business, and this screen used to walk
+      // straight past it to "Back to home".
+      (depAmt>0?'<button onclick="_geiCollectDepositNow('+bid.id+')" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--green,#16a34a);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('💳',{size:16,color:'#fff'})+' Collect '+fmt(depAmt)+' now</button>':'')+
+      '<button onclick="_geiTextSignedCopy('+bid.id+')" style="width:100%;padding:13px;border-radius:var(--rl,12px);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱',{size:15})+' Text them their copy</button>'+
       '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🏠',{size:16,color:'#fff'})+' Back to home</button>'+
     '</div>';
   }
-  // Background: write to signed_proposals + upload client hub
-  if(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&bid.client_id){(async()=>{
-    const row={bid_id:String(bid.id),contractor_user_id:_supaUser.id,
-      client_name:bid.client_name,client_signed_name:pname||typed,
-      signed_at:ts,signature_data:sigData,
-      payment_status:'pending',deposit:depAmt,amount:total};
-    try{
-      const{data:rows}=await _supa.from('signed_proposals').select('id')
-        .eq('bid_id',String(bid.id)).eq('contractor_user_id',_supaUser.id).limit(1);
-      if(rows&&rows[0])await _supa.from('signed_proposals').update(row).eq('id',rows[0].id);
-      else await _supa.from('signed_proposals').insert(row);
-      if(typeof _uploadClientHub==='function')_uploadClientHub(bid.client_id).catch(()=>{});
-    }catch(e){console.warn('gei in-person sign save:',e);}
-  })();}
+  // QUEUE FIRST, THEN SEND. The row is parked on the bid before any network is
+  // attempted, so a signature taken in a basement is on the device, in a record
+  // that syncs, and drains the moment there is signal (_drainSignatureQueue).
+  // This used to be a bare insert whose only failure handling was a console
+  // warning, which meant no signal equalled no signature, silently.
+  const _sigRow={bid_id:String(bid.id),contractor_user_id:(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null,
+    client_name:bid.client_name,client_signed_name:pname||typed,
+    signed_at:ts,signature_data:sigData,
+    payment_status:'pending',deposit:depAmt,amount:total};
+  if(bid.client_id){
+    _geiQueueSignature(bid,_sigRow);
+    if(typeof _drainSignatureQueue==='function')_drainSignatureQueue();
+  }
 }

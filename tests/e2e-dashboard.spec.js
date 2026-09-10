@@ -1376,6 +1376,40 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).toContain('tdGeoPing');
     });
 
+    // Owner 2026-09-03: "since we have auto tracking now we dont need the
+    // click in button since it already shows when I arrived and how long im
+    // on site for". The AUTO-DETECTED dwell card (the deriver already owns
+    // this dwell and writes its time row, CLAUDE.md 17) must not offer a
+    // manual clock on top of it. The pre-arrival _nearbyJob card above
+    // KEEPS its Clock in: that is time the deriver cannot see yet.
+    test('the auto-detected on-site card has no Clock in button, the arrival stamp is the clock', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer, origDwell = window._geoOpenDwell;
+        _activeTimer = null; _nearbyJob = null;
+        const since = Date.now() - 116 * 60000;            // 1h 56m on site
+        window._geoOpenDwell = { id: 'd-auto', name: 'John Doe', kind: 'client', sinceTs: since,
+          sinceIso: new Date(since).toISOString(), journeyId: 'j1',
+          fence: { id: 'f1', kind: 'client', name: 'John Doe', jobId: null, clientId: 555001, addr: '2950 SW McClure Rd' } };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; window._geoOpenDwell = origDwell; }
+      });
+      expect(r.ok).toBe(true);
+      // The card is the auto-detected one: place, arrival stamp, live duration.
+      expect(r.html).toContain('John Doe');
+      expect(r.html).toContain('on site');
+      expect(r.html).toContain('data-onsite-since');
+      // The deleted control is GONE, not hidden and not inert (CLAUDE.md 7.1).
+      expect(r.html).not.toContain('Clock in');
+      expect(r.html).not.toContain('clockIn(');
+      // Proposal survives: it is the one action this card still earns.
+      expect(r.html).toContain('_nearbyStartWork(555001)');
+      expect(r.html).toContain('Proposal');
+    });
+
     test('no job scheduled today, Clock in falls back to the client\'s nearest open job', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;

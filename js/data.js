@@ -1,5 +1,5 @@
 // ── Submit guard, prevents double-tap on any button ─────────────────────
-let _submitting=false,_allowPhoneDupe=false;
+let _submitting=false,_allowPhoneDupe=false,_allowNameDupe=false;
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[],vehicles=[],places=[],scans=[],equipment=[];
 // Expose all data arrays and employee record on window so Playwright E2E tests can read/write them.
 // All are module-scoped `let` variables (not on window by default in non-module scripts).

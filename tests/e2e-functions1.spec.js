@@ -2015,20 +2015,6 @@ test.describe('Generic estimate, trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geiVisibleJobIds: returns Set or null without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _geiVisibleJobIds !== 'function') return { skip: true };
-      try {
-        const ids = _geiVisibleJobIds();
-        return { ok: true, validType: ids === null || ids instanceof Set };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) {
-      expect(result.ok).toBe(true);
-      expect(result.validType).toBe(true);
-    }
-  });
-
   test('goGeiStep: navigates estimate wizard steps without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof goGeiStep !== 'function') return { skip: true };

@@ -94,7 +94,17 @@ jobs:
           key: playwright-browsers-${{ runner.os }}-1.56.0
 
       - name: Install Playwright browsers (Chromium + WebKit)
-        run: npx playwright install --with-deps chromium webkit
+        run: |
+          # Google's apt repo is not ours to depend on, and on 2026-09-09 it
+          # served an index whose hash did not match its own signature. That
+          # made apt-get update exit non-zero, which made `--with-deps` abort,
+          # which took down every shard on every push before a single test ran.
+          # Nothing here needs Google Chrome: Playwright ships its own chromium
+          # and webkit, and no project sets channel 'chrome'. So the repo comes
+          # out of apt's list first and CI stops depending on somebody else's
+          # CDN being healthy.
+          sudo grep -rl 'dl\.google\.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f
+          npx playwright install --with-deps chromium webkit
 
       # HARD GATE: a flow-test failure fails this job and blocks the PR. Tests that
       # depend on a not-yet-merged migration soft-skip when their schema is absent

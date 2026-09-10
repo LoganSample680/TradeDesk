@@ -26,15 +26,30 @@ function _scanVec(v){
   return null;
 }
 function _scanMat(m){
-  // Returns {col0:{x,y,z}, col3:{x,y,z}} (direction + translation), from a
-  // flat 16-array (column-major) or nested [[..4],[..4],[..4],[..4]].
+  // Returns all four columns (the three axes + the translation), from a flat
+  // 16-array (column-major) or nested [[..4],[..4],[..4],[..4]].
+  //
+  // col1 and col2 used to be thrown away, because a WALL only ever needed its
+  // length direction (col0) and its centre (col3). A FLOOR polygon needs the
+  // whole basis, and dropping it silently flattened every room to a line: see
+  // the floor-polygon note below (owner's Aldi GUYS scan, 2026-09-10).
   if(!m)return null;
   let f=null;
   if(Array.isArray(m)&&m.length===16)f=m.map(Number);
   else if(Array.isArray(m)&&m.length===4&&Array.isArray(m[0])){f=[];m.forEach(c=>c.forEach(x=>f.push(+x)));}
   else if(m.columns){f=[];[0,1,2,3].forEach(i=>{const c=_scanVec(m.columns[i]);f.push(c.x,c.y,c.z,0);});}
   if(!f||f.length<16)return null;
-  return {col0:{x:f[0],y:f[1],z:f[2]},col3:{x:f[12],y:f[13],z:f[14]}};
+  return {col0:{x:f[0],y:f[1],z:f[2]},col1:{x:f[4],y:f[5],z:f[6]},
+          col2:{x:f[8],y:f[9],z:f[10]},col3:{x:f[12],y:f[13],z:f[14]}};
+}
+// A point in a surface's own space, put where it really is. The plan only
+// wants the ground plane, so it hands back [worldX, worldZ].
+function _scanToWorldXZ(m,v){
+  if(!v)return null;
+  if(!m)return [v.x,v.z];
+  const c1=m.col1||{x:0,y:1,z:0},c2=m.col2||{x:0,y:0,z:1};
+  return [m.col3.x+m.col0.x*v.x+c1.x*v.y+c2.x*v.z,
+          m.col3.z+m.col0.z*v.x+c1.z*v.y+c2.z*v.z];
 }
 function _scanDims(d){
   // w = width (local x), h = height (local y), d = DEPTH (local z). Walls and
@@ -43,7 +58,10 @@ function _scanDims(d){
 }
 // RoomPlan encodes an enum as {"sofa":{}} on some OS versions and the bare
 // string "sofa" on others; a couple of builds nest it under .value.
-function _scanObjCat(c){
+// Swift's Codable writes an enum as a single-key object: {wall:{}}, {high:{}}.
+// Every RoomPlan enum that reaches us arrives in that shape, so category,
+// confidence and section label all unwrap the same way.
+function _scanEnumKey(c){
   if(!c)return '';
   if(typeof c==='string')return c;
   if(typeof c==='object'){
@@ -52,6 +70,79 @@ function _scanObjCat(c){
   }
   return '';
 }
+function _scanObjCat(c){return _scanEnumKey(c);}
+
+// completedEdges is an OptionSet, so it can arrive as an array of names, a
+// single-key object, or a raw bitfield. Normalise to names; an empty result
+// means RoomPlan never told us, which is different from "no edges completed"
+// and is why the caller checks length rather than trusting a count of zero.
+const _SCAN_EDGE_BITS=['top','right','bottom','left'];
+function _scanEdges(v){
+  // A wall has four edges and they are these four. Filtering to the known
+  // names is what keeps a wrapper key like {rawValue:'x'} from being read as
+  // an edge that was completed, which is the difference between "RoomPlan said
+  // nothing" and "RoomPlan saw the top of this wall".
+  const known=n=>_SCAN_EDGE_BITS.indexOf(n)>=0;
+  const bits=n=>_SCAN_EDGE_BITS.filter((_e,i)=>(n>>i)&1);
+  if(!v)return [];
+  if(Array.isArray(v))return v.map(_scanEnumKey).filter(known);
+  if(typeof v==='number')return isFinite(v)?bits(v):[];
+  if(typeof v==='object'){
+    const raw=v.rawValue;
+    if(typeof raw==='number')return isFinite(raw)?bits(raw):[];
+    return Object.keys(v).filter(k=>v[k]&&known(k));
+  }
+  return [];
+}
+
+// Object attributes (iOS 17). Shape varies by category, so this flattens
+// whatever arrives into plain names rather than pretending to know the schema.
+function _scanAttrs(v){
+  if(!v)return [];
+  if(Array.isArray(v))return v.map(_scanEnumKey).filter(Boolean);
+  if(typeof v==='object'){
+    return Object.keys(v).map(k=>{
+      const inner=_scanEnumKey(v[k]);
+      return inner?(k+':'+inner):k;
+    });
+  }
+  const one=_scanEnumKey(v);
+  return one?[one]:[];
+}
+
+// RoomPlan's own confidence in a surface or an object: 'high', 'medium', 'low'
+// or '' when it did not say. This is the single most useful field we were
+// ignoring, because a low-confidence wall is exactly where the geometry is
+// wrong and it currently feeds a load calculation in silence.
+function _scanConf(v){
+  const k=_scanEnumKey(v);
+  return (k==='high'||k==='medium'||k==='low')?k:'';
+}
+// The height most of the room's wall run sits at. Weighted by wall LENGTH, so
+// a two-foot soffit return cannot outvote a twelve-foot wall.
+function _scanModalHeight(walls){
+  const ws=(walls||[]).filter(w=>w&&w.h>0&&w.len>0);
+  if(!ws.length)return 2.44;
+  // Band only to GROUP walls that are the same height. The answer is the real
+  // measured height of the winning band, length-weighted, never the band key:
+  // rounding to the 5 cm bucket throws away up to an inch of a number the
+  // whole point of this file is measuring accurately.
+  const band={};
+  ws.forEach(w=>{
+    const k=String(Math.round(w.h*20));
+    const b=band[k]||(band[k]={run:0,sum:0});
+    b.run+=w.len; b.sum+=w.h*w.len;
+  });
+  let best=null,bestRun=-1;
+  Object.keys(band).forEach(k=>{
+    const b=band[k],h=b.sum/b.run;
+    // Longest run wins; the taller band breaks a tie, because a room that
+    // genuinely steps should read as the ceiling somebody stands under.
+    if(b.run>bestRun+1e-9||(Math.abs(b.run-bestRun)<1e-9&&h>best)){best=h;bestRun=b.run;}
+  });
+  return best||2.44;
+}
+
 // One wall surface → {ax,az,bx,bz,len,h,id} plus openings resolved onto it.
 function _scanParseRoom(rawJson,label){
   let cr=null;
@@ -68,7 +159,16 @@ function _scanParseRoom(rawJson,label){
       // ey = the wall's center elevation in scan world space. The photo mesh
       // lives in that same space, so painting a wall on the mesh can mask by
       // height and a floor-2 wall never tints the floor-1 wall below it.
-      len:d.w,h:d.h||2.44,ey:m.col3.y||0,doors:[],windows:[]};
+      len:d.w,h:d.h||2.44,ey:m.col3.y||0,doors:[],windows:[],
+      // RoomPlan's own verdict on this wall, and which of its edges it
+      // actually saw rather than inferred. Both ride through to the plan and
+      // to anything that measures off this wall.
+      conf:_scanConf(w.confidence),
+      edges:_scanEdges(w.completedEdges),
+      // A slanted or curved wall arrives as a polygon (iOS 17). We keep it raw
+      // because the squaring pass below would otherwise straighten a wall that
+      // is genuinely not straight, and a bay window is not a mistake.
+      poly:Array.isArray(w.polygonCorners)&&w.polygonCorners.length>2?w.polygonCorners:null};
     walls.push(wall);wallById[wall.id]=wall;
   });
   // Squaring pass (owner 2026-08-10: "we can be off by 8 inches in some
@@ -80,7 +180,11 @@ function _scanParseRoom(rawJson,label){
   const placeOpening=(o,list,isDoor,kind)=>{
     const m=_scanMat(o.transform),d=_scanDims(o.dimensions);
     if(!m||!d.w)return;
-    const rec={w:d.w,h:d.h||2,area:d.w*(d.h||2),kind:kind||(isDoor?'door':'window')};
+    const rec={w:d.w,h:d.h||2,area:d.w*(d.h||2),kind:kind||(isDoor?'door':'window'),
+      conf:_scanConf(o.confidence),
+      // Sill height above the scan's floor plane, which egress and trim both
+      // need and which nothing was reading.
+      sillY:(typeof m.col3.y==='number')?m.col3.y-(d.h||2)/2:null};
     // Offset along the parent wall from its A endpoint, so the electrical
     // engine knows where wall space breaks.
     const host=o.parentIdentifier&&wallById[o.parentIdentifier];
@@ -112,7 +216,14 @@ function _scanParseRoom(rawJson,label){
     const ln=Math.hypot(ux,uz)||1;
     objects.push({cat:_scanObjCat(o.category),
       cx:m.col3.x,cz:m.col3.z,w:d.w,d:d.d||d.w,h:d.h||0,
-      ux:ux/ln,uz:uz/ln});
+      ux:ux/ln,uz:uz/ln,
+      conf:_scanConf(o.confidence),
+      // iOS 17 attributes separate a recessed sink from a freestanding one and
+      // an L-shaped sofa from a single seat. A recessed sink is a different
+      // rough-in, so this is a plumbing fact, not a drawing detail.
+      attrs:_scanAttrs(o.attributes),
+      // Which surface or object RoomPlan says this belongs to.
+      parent:o.parentIdentifier||null});
   });
   // RoomPlan fragments one real piece into several boxes (owner screenshots
   // 2026-08-10: a corner hutch as two stacked storages, a table as two
@@ -123,19 +234,67 @@ function _scanParseRoom(rawJson,label){
   let poly=null;
   const fl=(cr.floors||[])[0];
   if(fl&&Array.isArray(fl.polygonCorners)&&fl.polygonCorners.length>=3){
+    // THROUGH THE TRANSFORM, NOT PAST IT (owner's Aldi GUYS scan, 2026-09-10:
+    // a room with seven good walls came out 0 sq ft).
+    //
+    // This read the corner's own x and z and added the floor's translation.
+    // But a RoomPlan surface is a plane in its LOCAL XY, with z as the normal,
+    // and a floor is that plane turned flat: local y is what becomes world z.
+    // Reading local z instead read the same 0 from every corner, so all six
+    // came back on one line, the shoelace of a line is zero, and the room
+    // reported no floor at all while its walls, perimeter and wall area were
+    // all correct. Six corners at z = -1.9913149, every one of them.
+    //
+    // Putting the corner through the whole basis is right whichever local
+    // plane RoomPlan used, because it is no longer a guess about which axis
+    // means what.
     const fm=_scanMat(fl.transform);
-    poly=fl.polygonCorners.map(p=>{const v=_scanVec(p);return [v.x+(fm?fm.col3.x:0),v.z+(fm?fm.col3.z:0)];});
+    poly=fl.polygonCorners.map(p=>_scanToWorldXZ(fm,_scanVec(p))).filter(Boolean);
   }
+  // NO FLOOR POLYGON. The plugin is iOS 17 only so RoomPlan normally supplies
+  // one, and this fires on a partial or interrupted scan. The fallback is a
+  // CONVEX hull of the wall endpoints, which fills in the notch of an L and
+  // therefore overstates the floor. That error runs one way, toward a bigger
+  // number on a bid, so the room is flagged rather than handed over looking
+  // like any other.
+  let polyFromHull=false;
+  // AND A ROOM WITH WALLS NEVER REPORTS NO FLOOR. Whatever the cause, a
+  // polygon that encloses nothing is not an answer, it is a failure that
+  // reads like an answer: 0 sq ft on a bid is a number somebody could act
+  // on. The hull overstates and says so; zero understates and says nothing.
+  if(poly&&Math.abs(_scanShoelace(poly))<0.5&&walls.length>=3)poly=null;
   if(!poly){
     poly=[];walls.forEach(w=>{poly.push([w.ax,w.az]);poly.push([w.bx,w.bz]);});
     poly=_scanHull(poly);
+    polyFromHull=true;
   }
   const floorM2=Math.abs(_scanShoelace(poly));
   const wallM2=walls.reduce((t,w)=>t+w.len*w.h,0);
   const openM2=doors.reduce((t,o)=>t+o.area,0)+windows.reduce((t,o)=>t+o.area,0);
   const perimM=walls.reduce((t,w)=>t+w.len,0);
-  const hM=walls.length?Math.max(...walls.map(w=>w.h)):2.44;
+  // THE MODAL HEIGHT, NOT THE TALLEST WALL. A soffit over the cabinets, a
+  // bulkhead, or a dropped ceiling gives one short wall and the max reported
+  // the room as if the whole ceiling were at the high side. That inflated wall
+  // area on every paint bid and volume on every load calc, silently, and
+  // kitchens and baths are exactly where soffits live.
+  //
+  // Walls are grouped to the nearest 5 cm and the tallest band wins ties, so a
+  // room that genuinely steps up still reads as the taller part rather than
+  // being dragged down by one short return.
+  const hM=_scanModalHeight(walls);
+  // RoomPlan classifies the area it scanned: bedroom, kitchen, bathroom,
+  // livingRoom, diningRoom. It is a suggestion for the room name and a sanity
+  // check on the fixtures found in it, never an override of what the
+  // contractor typed.
+  const sections=(cr.sections||[]).map(x=>({
+    label:_scanEnumKey(x&&(x.label!==undefined?x.label:x.category)),
+    story:(typeof (x&&x.story)==='number')?x.story:null
+  })).filter(x=>x.label);
   return {label:label||'Room',walls,poly,objects,floorM2,wallM2,openM2,perimM,hM,
+          sections,
+          // True when floorM2 came from the convex hull above, so a reader can
+          // say "about" instead of quoting it.
+          floorApprox:polyFromHull,
           doorN:doors.length,winN:windows.length,winM2:windows.reduce((t,o)=>t+o.area,0)};
 }
 function _scanObjCorners(o){
@@ -409,6 +568,11 @@ function _scanSquareWalls(walls){
   const theta=Math.atan2(sy,sx)/4;
   const SNAP=6*Math.PI/180,Q=Math.PI/2;
   walls.forEach(w=>{
+    // A wall RoomPlan handed us as a polygon is genuinely not a rectangle.
+    // Nudging its chord while the polygon stays raw makes the two disagree,
+    // so it is left exactly as captured. (The 6 degree gate below already
+    // spares a real 45: this is about the shape, not the angle.)
+    if(w.poly)return;
     const a=Math.atan2(w.bz-w.az,w.bx-w.ax);
     let d=a-theta;d-=Math.round(d/Q)*Q;
     if(Math.abs(d)>SNAP)return;
@@ -542,13 +706,20 @@ function _scanPaintNumbers(room,subtractOpenings){
 // EXTRA outlet near a corner, never miss one: conservative by construction.
 // Kitchens add the counter rule (24 in / max 48 in apart) as a note, counters
 // aren't in the scan geometry.
-const _SCAN_NEC={maxGapFt:12,fromBreakFt:6,minWallFt:2,
-  outletsInTypical:12,switchInTypical:48,switchInMaxCode:79,
-  gfciRooms:['kitchen','bathroom','garage','laundry','basement','outdoor']};
-function _scanOutletPlan(room){
+// Mounting heights for drawing a device on an elevation. These are working
+// defaults for a plan symbol, not code minimums, and nothing prices off them.
+const _SCAN_NEC={outletsInTypical:12,switchInTypical:48,switchInMaxCode:79};
+// ── Wall spaces: ours, always available ──────────────────────────────────────
+//
+// Splitting a wall at its doorways is geometry. It is measurement of the
+// house in front of us, it owes nothing to any book, and it answers whether
+// or not anybody has bought one. Every consumer below builds on this.
+//
+// Returns one entry per usable stretch: {wallId, a, b, ft, ux, uz, ax, az}.
+function _scanWallSpaces(room){
   const out=[];
-  room.walls.forEach(w=>{
-    // Split the wall into wall spaces at door edges.
+  ((room&&room.walls)||[]).forEach(w=>{
+    if(!w||!w.len)return;
     const breaks=[[0,w.len]];
     (w.doors||[]).slice().sort((a,b)=>(a.off||0)-(b.off||0)).forEach(d=>{
       const seg=breaks.pop();
@@ -557,30 +728,201 @@ function _scanOutletPlan(room){
       if(dB<seg[1])breaks.push([dB,seg[1]]);
       else if(dA<=seg[0])breaks.push(seg); // door outside segment, keep as-is
     });
+    const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
     breaks.forEach(([a,b])=>{
-      const lenFt=_scanFt(b-a);
-      if(lenFt<_SCAN_NEC.minWallFt)return;           // under 2 ft, no requirement
-      // First within 6 ft of each break, then every 12 ft: N = ceil(len/12),
-      // spread evenly so no point sits more than 6 ft out.
-      const n=Math.max(1,Math.ceil(lenFt/_SCAN_NEC.maxGapFt));
-      for(let i=0;i<n;i++){
-        const t=(a+(b-a)*((i+0.5)/n));
-        const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
-        out.push({x:w.ax+ux*t,z:w.az+uz*t,wallId:w.id});
-      }
+      out.push({wallId:w.id,a:a,b:b,ft:_scanFt(b-a),ux:ux,uz:uz,ax:w.ax,az:w.az});
     });
   });
   return out;
 }
-function _scanElectricalNumbers(room){
-  const outlets=_scanOutletPlan(room);
-  const label=String(room.label||'').toLowerCase();
+
+// ── The receptacle count: the book's, and it waits for the book ──────────────
+//
+// The spacing distances used to live in this file as literals typed from
+// memory, and they fed a priced bid line whose note cited "NEC 210.52" by
+// name. A number on a contractor's bid with the code named as its authority,
+// that nobody had ever read out of the code. That is exactly what codes/ was
+// built to stop, and four numbers is not an exemption.
+//
+// So the count comes through codeEval now. No verified dataset for the
+// contractor's own edition means no count, and the caller says so rather than
+// filling the gap with a plausible number.
+//
+// Returns {ok, marks, count, reason}. `marks` is empty unless the code
+// answered; the wall spaces behind them are available either way.
+function _scanReceptacles(room){
+  const spaces=_scanWallSpaces(room);
+  const none={ok:false,marks:[],count:null,reason:'no-engine',spaces:spaces};
+  if(typeof codeEval!=='function')return none;
+  const r=codeEval('nec','receptacle-spacing',{wallSpaceFt:spaces.map(s=>s.ft)});
+  if(!r||!r.ok)return Object.assign({},none,{reason:(r&&r.reason)||'refused',result:r});
+  const per=(r.detail&&r.detail.perSpace)||[];
+  const marks=[];
+  spaces.forEach((sp,i)=>{
+    const n=per[i]|0;
+    for(let k=0;k<n;k++){
+      const t=sp.a+(sp.b-sp.a)*((k+0.5)/n);
+      marks.push({x:sp.ax+sp.ux*t,z:sp.az+sp.uz*t,wallId:sp.wallId});
+    }
+  });
+  return {ok:true,marks:marks,count:r.value,reason:'',spaces:spaces,result:r};
+}
+
+// Kept for the plan layer, which only ever wanted the dots. Empty when the
+// code has not answered, so nothing is drawn that cannot be defended.
+function _scanOutletPlan(room){
+  return _scanReceptacles(room).marks;
+}
+
+// ── What the scan found, and whether to believe it ───────────────────────────
+//
+// RoomPlan classifies what it sees, and until now we drew a symbol for it and
+// dropped the meaning. That is the single largest thing the scanner already
+// knows and never told anyone: a toilet is a drainage fixture unit, a range is
+// a cooking load, a washer is both. Those are the inputs the code engines ask
+// for, and the contractor was retyping them.
+//
+// IT PROPOSES, IT NEVER ASSERTS. RoomPlan's detection is good and not perfect,
+// so every fixture below is a suggestion carrying its own confidence and a
+// note when it turned up somewhere it does not belong. A phantom toilet is a
+// wrong pipe size; a silently-dropped one is a missing rough-in. Both are the
+// contractor's call, and the list exists so he can make it in one tap instead
+// of discovering it on site.
+
+// What each detected thing MEANS to a trade. Nothing here is a code value: it
+// is the name of an input, and what that input is worth is the book's business
+// (codes/README.md).
+const _SCAN_FIXTURE_MEANING = {
+  toilet:       { label: 'Toilet',        plumbing: 'water-closet' },
+  sink:         { label: 'Sink',          plumbing: 'sink' },
+  bathtub:      { label: 'Bathtub',       plumbing: 'bathtub' },
+  dishwasher:   { label: 'Dishwasher',    plumbing: 'dishwasher', electrical: 'fixed-appliance' },
+  washerDryer:  { label: 'Washer/dryer',  plumbing: 'clothes-washer', electrical: 'dryer' },
+  stove:        { label: 'Range',         electrical: 'cooking' },
+  oven:         { label: 'Oven',          electrical: 'cooking' },
+  refrigerator: { label: 'Refrigerator',  electrical: 'fixed-appliance' },
+  fireplace:    { label: 'Fireplace',     hvac: 'fireplace' },
+  stairs:       { label: 'Stairs' }
+};
+
+// Where each one belongs. A toilet in a kitchen is a misdetection far more
+// often than it is a house, so it gets asked about rather than counted.
+const _SCAN_FIXTURE_ROOMS = {
+  toilet:       ['bath'],
+  bathtub:      ['bath'],
+  stove:        ['kitchen'],
+  oven:         ['kitchen'],
+  dishwasher:   ['kitchen'],
+  refrigerator: ['kitchen', 'garage', 'pantry'],
+  sink:         ['kitchen', 'bath', 'laundry', 'utility', 'bar'],
+  washerDryer:  ['laundry', 'utility', 'kitchen', 'bath', 'garage']
+};
+
+// The room's kind, in the app's own words, from three sources in order of
+// authority: what the contractor typed, then RoomPlan's own classification,
+// then nothing. Never invented from the fixtures, because the fixtures are
+// what this is used to check.
+function _scanRoomKind(room){
+  const typed=String((room&&room.label)||'').toLowerCase();
+  const words=['kitchen','bath','laundry','utility','garage','bedroom','living','dining','pantry','bar','office','closet'];
+  for(let i=0;i<words.length;i++){ if(typed.indexOf(words[i])>=0) return {kind:words[i],from:'typed'}; }
+  const sec=((room&&room.sections)||[])[0];
+  if(sec&&sec.label){
+    const l=String(sec.label).toLowerCase();
+    // RoomPlan spells them livingRoom / diningRoom; ours are single words.
+    const k=l.indexOf('bath')>=0?'bath':l.indexOf('kitchen')>=0?'kitchen':
+            l.indexOf('bed')>=0?'bedroom':l.indexOf('living')>=0?'living':
+            l.indexOf('dining')>=0?'dining':'';
+    if(k)return {kind:k,from:'roomplan'};
+  }
+  return {kind:'',from:''};
+}
+
+// One room's fixtures, grouped, counted, and checked against where they are.
+// Returns {kind, kindFrom, items:[...], needsReview:n}.
+function _scanFixtures(room){
+  const kindInfo=_scanRoomKind(room);
+  const by={};
+  (Array.isArray(room&&room.objects)?room.objects:[]).forEach(o=>{
+    const cat=o&&o.cat;
+    if(!cat||!_SCAN_FIXTURE_MEANING[cat])return;   // furniture is not a fixture
+    const g=by[cat]||(by[cat]={cat:cat,n:0,confs:[],attrs:[]});
+    g.n++;
+    if(o.conf)g.confs.push(o.conf);
+    (o.attrs||[]).forEach(a=>{ if(g.attrs.indexOf(a)<0)g.attrs.push(a); });
+  });
+
+  const items=Object.keys(by).map(cat=>{
+    const g=by[cat],meaning=_SCAN_FIXTURE_MEANING[cat];
+    // The weakest sighting sets the group's confidence: one shaky toilet among
+    // three is still a reason to look.
+    const conf=g.confs.indexOf('low')>=0?'low':g.confs.indexOf('medium')>=0?'medium':
+               (g.confs.length?'high':'');
+    const belongs=_SCAN_FIXTURE_ROOMS[cat];
+    // Out of place only counts as a question when we actually know the room.
+    const misplaced=!!(belongs&&kindInfo.kind&&belongs.indexOf(kindInfo.kind)<0);
+    return {
+      cat:cat, label:meaning.label, n:g.n, conf:conf, attrs:g.attrs,
+      plumbing:meaning.plumbing||'', electrical:meaning.electrical||'', hvac:meaning.hvac||'',
+      misplaced:misplaced,
+      // Anything worth a second look says why, in words the contractor reads.
+      ask: misplaced ? (meaning.label+' found in a room called '+(room.label||'this room')+'. Confirm it is really there.')
+         : conf==='low' ? ('The scanner was not confident about this '+meaning.label.toLowerCase()+'.')
+         : ''
+    };
+  }).sort((a,b)=>a.label.localeCompare(b.label));
+
   return {
-    outlets:outlets.length,
-    marks:outlets,
-    switches:1+(room.doorN>1?room.doorN-1:0),   // one per entry as the working default
-    gfci:_SCAN_NEC.gfciRooms.some(r=>label.includes(r)),
-    kitchenCounterNote:/kitchen/.test(label)
+    kind:kindInfo.kind, kindFrom:kindInfo.from,
+    items:items,
+    needsReview:items.filter(x=>x.ask).length
+  };
+}
+
+// Every fixture in a scan, rolled up per trade, ready to be handed to a code
+// engine as inputs. Counts only: what a water closet is WORTH in fixture units
+// is 709.1 and waits for the book, exactly like the receptacle spacing does.
+function _scanFixtureTotals(scan){
+  const rooms=Array.isArray(scan&&scan.rooms)?scan.rooms:[];
+  const out={plumbing:{},electrical:{},hvac:{},needsReview:0};
+  rooms.forEach(r=>{
+    const f=_scanFixtures(r);
+    out.needsReview+=f.needsReview;
+    f.items.forEach(it=>{
+      ['plumbing','electrical','hvac'].forEach(trade=>{
+        const key=it[trade];
+        if(!key)return;
+        out[trade][key]=(out[trade][key]||0)+it.n;
+      });
+    });
+  });
+  return out;
+}
+
+function _scanElectricalNumbers(room){
+  const rec=_scanReceptacles(room);
+  const label=String(room.label||'');
+  // The GFCI list is the book's too, and it refuses the same way.
+  let gfci=null;
+  if(typeof codeEval==='function'){
+    const g=codeEval('nec','gfci-required',{roomName:label});
+    if(g&&g.ok)gfci=!!g.value;
+  }
+  return {
+    // null, never 0: "the code has not been loaded" and "this room needs no
+    // receptacles" are different answers and the caller has to tell them apart.
+    outlets:rec.ok?rec.count:null,
+    outletsReason:rec.reason,
+    marks:rec.marks,
+    // Wall spaces are measurement and are always here, so a room can show
+    // "22 ft of wall in 3 spaces" even when nothing may state a count.
+    wallSpaces:rec.spaces,
+    wallSpaceFt:Math.round(rec.spaces.reduce((t,s)=>t+s.ft,0)),
+    // Not a code number: one switch per way in, which is how the trade wires
+    // it. Nothing here claims 210.52 and nothing prices off a book.
+    switches:1+(room.doorN>1?room.doorN-1:0),
+    gfci:gfci,
+    kitchenCounterNote:/kitchen/i.test(label)
   };
 }
 // ── HVAC lens: sizing inputs + infiltration from ACH50 ───────────────────────
@@ -710,21 +1052,150 @@ function _scanObjSvgFor(room,px,pz,k,ink){
 const _SCAN_PAPER='#FFFFFF';
 const _SCAN_POCHE='#2F3542';      // navy-charcoal walls, not flat black
 const _SCAN_LINE='#98A0AE';       // dimension and leader lines
-const _SCAN_FURN='#8B93A1';       // furniture and fixture symbols
+// Furniture is CONTEXT, not content (owner 2026-09-10: "turn the furniture
+// way down to a light grey"). A sofa tells the reader which way the room is
+// used; it must never compete with a wall, a door swing or a figure, all of
+// which somebody is going to measure or price off.
+const _SCAN_FURN='#C6CBD3';       // furniture and fixture symbols
 const _SCAN_TXT='#2F3542';
 const _SCAN_TXT2='#6E7684';
 // Room tints by name, the way a real plan color-keys spaces. Pastel enough
 // that the poché, the furniture, and the labels all stay legible on top.
+// Owner review 2026-09-09, on a rendered five-room house: bath (#E7F0F8) and
+// bedroom (#E6ECF8) were the same pale blue side by side, so two rooms that
+// share a wall read as one space. A tint table only earns its place if
+// neighbouring rooms land on different hues, so the wet rooms go teal, sleep
+// goes lavender, and cooking leaves the blue family entirely.
 const _SCAN_ROOM_TINTS=[
-  [/bath|powder|shower|restroom|\bwc\b/i,'#E7F0F8'],
-  [/kitchen|pantry|kitchenette/i,'#EDEDF8'],
-  [/bed|nursery|primary|master/i,'#E6ECF8'],
-  [/dining/i,'#F3E9DB'],
-  [/living|family|great room|den|lounge/i,'#FBF2E8'],
-  [/office|study|studio/i,'#E9F2EB'],
-  [/laundry|utility|mud/i,'#F1EFE6'],
-  [/garage|shop|basement|attic/i,'#EEEEEB'],
+  [/bath|powder|shower|restroom|\bwc\b/i,'#DFEFEC'],   // teal: the wet rooms
+  [/kitchen|pantry|kitchenette/i,'#EDE8DC'],            // warm stone
+  [/bed|nursery|primary|master/i,'#E8E5F4'],            // lavender: sleep
+  [/dining/i,'#F5E5D0'],                                // tan
+  [/living|family|great room|den|lounge/i,'#FCF1E4'],   // cream
+  [/office|study|studio/i,'#E4EFE6'],                   // green
+  [/laundry|utility|mud/i,'#E7EEF3'],                   // pale blue, now unshared
+  [/garage|shop|basement|attic/i,'#EBEBE7'],
 ];
+// WHERE A ROOM'S NAME GOES (owner review 2026-09-09). The centroid put
+// "341 wall sq ft" straight through the bedroom door's swing arc, because a
+// swing hugs the wall it hinges on and the centroid of a small room is not
+// far from that wall. A plan puts the name in the room's OPEN space, which is
+// the point furthest from any edge (the pole of inaccessibility), not the
+// average of the corners. A coarse grid is plenty at label size: 24 columns
+// across the room's box, scored on distance to the nearest wall, with door
+// swings treated as walls so the name steps around them.
+// ── One room, more than one space ────────────────────────────────────────────
+// RoomPlan hands a whole open floor back as ONE room: his 300 sq ft scan is a
+// single "Floor 1" with a wall through the middle of it, so one square-footage
+// figure was printed over two rooms. Any wall that runs clean across the floor
+// cuts it, and each side of the cut gets its own size and its own footage. The
+// pieces always add back up to the room, because they are that room's outline.
+function _scanCutPoly(poly,A,B,eps){
+  const n=poly.length;
+  const on=P=>{
+    let bi=-1,bd=1e9,bt=0;
+    for(let i=0;i<n;i++){
+      const a=poly[i],b=poly[(i+1)%n];
+      const dx=b[0]-a[0],dz=b[1]-a[1],L=dx*dx+dz*dz;
+      const t=L?Math.max(0,Math.min(1,((P[0]-a[0])*dx+(P[1]-a[1])*dz)/L)):0;
+      const d=Math.hypot(P[0]-(a[0]+t*dx),P[1]-(a[1]+t*dz));
+      if(d<bd){bd=d;bi=i;bt=t;}
+    }
+    if(bd>eps||bi<0)return null;
+    const a=poly[bi],b=poly[(bi+1)%n];
+    return {i:bi,p:[a[0]+(b[0]-a[0])*bt,a[1]+(b[1]-a[1])*bt]};
+  };
+  const ea=on(A),eb=on(B);
+  if(!ea||!eb||ea.i===eb.i)return null;
+  const walk=(from,to)=>{
+    const out=[];
+    for(let c=0,i=(from+1)%n;c<=n;c++,i=(i+1)%n){out.push(poly[i]);if(i===to)return out;}
+    return null;
+  };
+  const w1=walk(ea.i,eb.i),w2=walk(eb.i,ea.i);
+  if(!w1||!w2)return null;
+  return [[ea.p].concat(w1,[eb.p]),[eb.p].concat(w2,[ea.p])];
+}
+function _scanBoundD(P,ring){
+  let d=1e9;
+  for(let i=0;i<ring.length;i++){
+    const a=ring[i],b=ring[(i+1)%ring.length];
+    const dx=b[0]-a[0],dz=b[1]-a[1],L=dx*dx+dz*dz;
+    const t=L?Math.max(0,Math.min(1,((P[0]-a[0])*dx+(P[1]-a[1])*dz)/L)):0;
+    d=Math.min(d,Math.hypot(P[0]-(a[0]+t*dx),P[1]-(a[1]+t*dz)));
+  }
+  return d;
+}
+function _scanFloorAreas(room){
+  const poly=(room&&room.poly)||[],walls=(room&&room.walls)||[];
+  if(!Array.isArray(poly)||poly.length<3)return [];
+  let parts=[poly];
+  (Array.isArray(walls)?walls:[]).forEach(w=>{
+    if(!w||!(w.len>0.6))return;
+    for(let i=0;i<parts.length;i++){
+      const P=parts[i];
+      // An interior wall has its ends on the outline and its middle standing
+      // clear of it. A perimeter wall lies ALONG the outline and never does.
+      let inner=1;
+      [0.25,0.5,0.75].forEach(f=>{
+        const qx=w.ax+(w.bx-w.ax)*f,qz=w.az+(w.bz-w.az)*f;
+        if(!_scanPtInPoly(qx,qz,P)||_scanBoundD([qx,qz],P)<0.3)inner=0;
+      });
+      if(!inner)continue;
+      const cut=_scanCutPoly(P,[w.ax,w.az],[w.bx,w.bz],0.35);
+      if(!cut)continue;
+      if(Math.abs(_scanShoelace(cut[0]))<0.5||Math.abs(_scanShoelace(cut[1]))<0.5)continue;
+      parts.splice(i,1,cut[0],cut[1]);
+      break;
+    }
+  });
+  return parts.map(q=>({poly:q,m2:Math.abs(_scanShoelace(q))}));
+}
+function _scanLabelSpot(r){
+  const poly=(r&&r.poly)||[];
+  if(poly.length<3)return null;
+  const xs=poly.map(p=>p[0]),zs=poly.map(p=>p[1]);
+  const x0=Math.min(...xs),x1=Math.max(...xs),z0=Math.min(...zs),z1=Math.max(...zs);
+  const inside=(px,pz)=>{
+    let hit=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const[ax,az]=poly[i],[bx,bz]=poly[j];
+      if((az>pz)!==(bz>pz)&&px<(bx-ax)*(pz-az)/((bz-az)||1e-9)+ax)hit=!hit;
+    }
+    return hit;
+  };
+  const segD=(px,pz,ax,az,bx,bz)=>{
+    const dx=bx-ax,dz=bz-az,L=dx*dx+dz*dz;
+    const t=L?Math.max(0,Math.min(1,((px-ax)*dx+(pz-az)*dz)/L)):0;
+    return Math.hypot(px-(ax+t*dx),pz-(az+t*dz));
+  };
+  // Every wall, plus a keep-out disc where each door swings.
+  const segs=[];
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++)segs.push([poly[i][0],poly[i][1],poly[j][0],poly[j][1]]);
+  const swings=[];
+  (r.walls||[]).forEach(w=>{
+    if(!w.len)return;
+    const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
+    (w.doors||[]).forEach(d=>{
+      if(typeof d.off!=='number'||!d.w)return;
+      const d0=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2));
+      swings.push([w.ax+ux*d0,w.az+uz*d0,d.w]);
+    });
+  });
+  const N=24;
+  let best=null,bestScore=-1;
+  for(let i=0;i<=N;i++)for(let j=0;j<=N;j++){
+    const px=x0+(x1-x0)*i/N,pz=z0+(z1-z0)*j/N;
+    if(!inside(px,pz))continue;
+    let sc=Infinity;
+    segs.forEach(g=>{sc=Math.min(sc,segD(px,pz,g[0],g[1],g[2],g[3]));});
+    // A door's swing owns a quarter circle of radius d.w at its hinge; the
+    // name must clear it, so being inside one scores as if it were a wall.
+    swings.forEach(([hx,hz,rw])=>{const d=Math.hypot(px-hx,pz-hz);if(d<rw)sc=Math.min(sc,d*0.35);});
+    if(sc>bestScore){bestScore=sc;best=[px,pz];}
+  }
+  return best;
+}
 function _scanRoomTint(label){
   const t=String(label||'');
   for(const[re,c] of _SCAN_ROOM_TINTS)if(re.test(t))return c;
@@ -762,6 +1233,100 @@ function _scanSideRuns(rooms,side,minX,minZ,maxX,maxZ){
 // and a north arrow when the compass grabbed a heading. RoomPlan hands us
 // clean parametric vectors, so the render is CAD-crisp where competitors
 // trace wobbly meshes.
+// ── A ROOM ALREADY SAVED STILL HAS TO DRAW (owner 2026-09-10) ─────────────
+// His Aldi GUYS scan was parsed before the floor-polygon fix above, so its
+// stored poly is the flat line that bug produced: six corners on one z. It
+// cost him more than the missing area. The sheet SIZES ITSELF from the poly,
+// so a polygon of height zero laid out a sheet of height zero, and the walls,
+// which span 8.9 m and were always correct, drew straight through the title
+// block and off the page. That is the screenshot he sent.
+//
+// A re-scan is not the answer to a parser bug: repair what is there. This
+// hands back a usable outline and area for any room, stored or fresh, without
+// touching the record, so the drawing and the numbers can never disagree
+// about which polygon they used.
+function _scanRoomGeom(r){
+  const walls=(r&&r.walls)||[];
+  let poly=(r&&Array.isArray(r.poly)&&r.poly.length>2)?r.poly:null;
+  if(poly&&Math.abs(_scanShoelace(poly))<0.5&&walls.length>=3)poly=null;
+  if(poly)return {poly,floorM2:(typeof r.floorM2==='number'&&r.floorM2>0.5)?r.floorM2:Math.abs(_scanShoelace(poly)),approx:!!(r&&r.floorApprox)};
+  const pts=[];walls.forEach(w=>{pts.push([w.ax,w.az]);pts.push([w.bx,w.bz]);});
+  const hull=pts.length>2?_scanHull(pts):[];
+  if(hull.length>2)return {poly:hull,floorM2:Math.abs(_scanShoelace(hull)),approx:true};
+  return {poly:(r&&r.poly)||[],floorM2:(r&&r.floorM2)||0,approx:!!(r&&r.floorApprox)};
+}
+// ── SQUARE TO THE PAGE (owner 2026-09-10: "the floor plan itself is ugly as
+// hell") ──────────────────────────────────────────────────────────────────
+// A scan's coordinates are the SCENE's, and the scene's zero is wherever the
+// phone happened to point when the session started. His living room came out
+// 68 degrees off, so the drawing ran corner to corner across the sheet, every
+// dimension string read at an angle, and half the page was margin. Nothing
+// was wrong with it; it was just never turned the right way up.
+//
+// Every floor plan ever drawn is square to its paper. The longest RUN of wall
+// is what a room squares to, because it is the one a person reads the room
+// along, and the runs are bucketed so a scan's own noise cannot split one
+// wall into two rivals.
+//
+// The compass is what keeps this honest: north is a fact about the building,
+// not about the sheet, so the arrow turns by the same angle and still points
+// where north really is.
+function _scanPlanAngle(rooms){
+  // OLD: every wall was dropped into a 5 degree bucket and the page was turned
+  // by the BUCKET, so up to two and a half degrees of tilt survived the
+  // squaring and his plan sat visibly off the axis (owner 2026-09-10: "see how
+  // the plan itself isn't set on a 90 degree axis"). The bucket was never the
+  // answer: the angle is.
+  //
+  // Folded to a QUARTER turn, because a wall, the same wall backwards, and the
+  // wall at right angles to it are all the same evidence about how the
+  // building sits on the paper. Averaged as a DIRECTION and not as a number,
+  // so 89 degrees and 1 degree agree that the grid is a degree out instead of
+  // averaging to 45, and weighted by length, so the long walls decide.
+  let sx=0,sz=0;
+  (rooms||[]).forEach(r=>(r.walls||[]).forEach(w=>{
+    const dx=w.bx-w.ax,dz=w.bz-w.az,len=Math.hypot(dx,dz);
+    if(!(len>0.3))return;
+    const a=Math.atan2(dz,dx)*4;                   // a quarter turn becomes a whole one
+    sx+=len*Math.cos(a);sz+=len*Math.sin(a);
+  }));
+  if(!sx&&!sz)return 0;
+  let m=Math.atan2(sz,sx)/4;
+  if(Math.abs(m)<1e-9)m=0;                         // a square room is left exactly alone
+  // That grid can be laid on the paper two ways, ninety degrees apart. Take
+  // the one that puts the building's long side across the page: the sheet is
+  // sized off its width, and it is the way anybody holds a plan.
+  const span=rot=>{
+    const cs=Math.cos(rot),sn=Math.sin(rot);
+    let x0=1e9,x1=-1e9;
+    (rooms||[]).forEach(r=>(r.walls||[]).forEach(w=>{
+      [[w.ax,w.az],[w.bx,w.bz]].forEach(q=>{
+        const X=q[0]*cs-q[1]*sn;
+        x0=Math.min(x0,X);x1=Math.max(x1,X);
+      });
+    }));
+    return x1-x0;
+  };
+  const a=-m,b=a+(a<=0?Math.PI/2:-Math.PI/2);
+  return (span(b)>span(a)?b:a)||0;
+}
+function _scanRotateRoom(r,cs,sn,ox,oz){
+  if(!r)return r;
+  const pt=(x,z)=>{const dx=x-ox,dz=z-oz;return [ox+dx*cs-dz*sn,oz+dx*sn+dz*cs];};
+  const dir=(x,z)=>[x*cs-z*sn,x*sn+z*cs];
+  const out=Object.assign({},r);
+  out.poly=(r.poly||[]).map(q=>pt(q[0],q[1]));
+  out.walls=(r.walls||[]).map(w=>{
+    const a=pt(w.ax,w.az),b=pt(w.bx,w.bz);
+    return Object.assign({},w,{ax:a[0],az:a[1],bx:b[0],bz:b[1]});
+  });
+  out.objects=(r.objects||[]).map(ob=>{
+    if(!ob)return ob;                              // junk rides through untouched
+    const c=pt(ob.cx,ob.cz),u=dir(ob.ux==null?1:ob.ux,ob.uz==null?0:ob.uz);
+    return Object.assign({},ob,{cx:c[0],cz:c[1],ux:u[0],uz:u[1]});
+  });
+  return out;
+}
 function _scanPlanSvg(sc,opts){
   const o=opts||{};
   const lens=o.lens||'plan';
@@ -772,13 +1337,44 @@ function _scanPlanSvg(sc,opts){
   const rooms=[],gidx=[];
   (sc.rooms||[]).forEach((r,gi)=>{if(!o.story||Math.max(1,+r.story||1)===o.story){rooms.push(r);gidx.push(gi);}});
   if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3,#6a6963)">No rooms captured</text></svg>';
+  // REPAIRED FIRST, THEN TURNED, so everything below reads ONE polygon. The
+  // dimension chains around the envelope (_scanSideRuns) go off r.poly, and
+  // on his scan that was still the flat line: a room whose outline has no
+  // height reaches no side of the sheet, so the chain found no runs and the
+  // sheet lost every overall dimension it used to carry. Repairing it here
+  // rather than at each reader is what stops two parts of one drawing
+  // disagreeing about the shape of the same room.
+  for(let i=0;i<rooms.length;i++){
+    const g=_scanRoomGeom(rooms[i]);
+    rooms[i]=Object.assign({},rooms[i],{poly:g.poly,floorM2:g.floorM2,floorApprox:g.approx});
+  }
+  // Turned once, here, so every measurement, symbol and label below is drawn
+  // in page space and nothing downstream needs to know this happened.
+  const _rot=_scanPlanAngle(rooms);
+  if(Math.abs(_rot)>0.001){
+    let ox=0,oz=0,n=0;
+    rooms.forEach(r=>(r.walls||[]).forEach(w=>{ox+=w.ax+w.bx;oz+=w.az+w.bz;n+=2;}));
+    if(n){ox/=n;oz/=n;}
+    const cs=Math.cos(_rot),sn=Math.sin(_rot);
+    for(let i=0;i<rooms.length;i++)rooms[i]=_scanRotateRoom(rooms[i],cs,sn,ox,oz);
+  }
+  // THE SHEET IS SIZED BY EVERYTHING IT DRAWS, not by the floor polygon
+  // alone. Walls are drawn from their own endpoints, and a poly that does not
+  // contain them (a bad one, or an interior divider reaching past the floor)
+  // put them outside the page. Fitting the drawing to the drawing cannot go
+  // wrong the way fitting it to one of its layers can.
   let minX=1e9,minZ=1e9,maxX=-1e9,maxZ=-1e9;
-  rooms.forEach(r=>(r.poly||[]).forEach(([x,z])=>{minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);}));
+  const seen=(x,z)=>{if(!isFinite(x)||!isFinite(z))return;minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);};
+  rooms.forEach(r=>{
+    (r.poly||[]).forEach(q=>seen(q[0],q[1]));
+    (r.walls||[]).forEach(w=>{seen(w.ax,w.az);seen(w.bx,w.bz);});
+    (r.objects||[]).forEach(ob=>{if(!ob)return;const rr=Math.max(ob.w||0,ob.d||0)/2;seen(ob.cx-rr,ob.cz-rr);seen(ob.cx+rr,ob.cz+rr);});
+  });
   if(minX>maxX)return '<svg viewBox="0 0 100 40"></svg>';
   // Sheet layout, in viewBox units: a margin wide enough for two rows of
   // dimension string on every side, a title block on top and a scale bar
   // underneath when this is a full sheet.
-  const MAR=13, HEAD=o.sheet?17:2, FOOT=o.sheet?11:2;
+  const MAR=13, HEAD=o.sheet?17:2, FOOT=o.sheet?14:2;
   const wM=maxX-minX,hM=maxZ-minZ;
   const k=(100-MAR*2)/(wM||1);                     // meters → viewBox units
   const px=x=>+(MAR+(x-minX)*k).toFixed(2);
@@ -824,6 +1420,86 @@ function _scanPlanSvg(sc,opts){
     s+='<line x1="'+px(w.ax)+'" y1="'+pz(w.az)+'" x2="'+px(w.bx)+'" y2="'+pz(w.bz)+'" stroke="'+ink+'" stroke-width="'+th.toFixed(2)+'" stroke-linecap="square"/>';
   }));
   // 3. Openings punched into the poché: door gap + swing arc, window glazing.
+  // EVERY OPENING SAYS HOW BIG IT IS (owner 2026-09-09). Written once per
+  // physical opening: an interior door belongs to the walls of BOTH rooms it
+  // connects, so without this bucket the same door prints its width twice,
+  // once facing each way. Keyed to a 5 cm bucket on the opening's midpoint,
+  // which is far tighter than any two real openings sit apart.
+  // EVERY WALL SAYS HOW LONG IT IS (owner 2026-09-10: "each one of those
+  // walls in the actual scan and on the floor plan don't show how long they
+  // are, even the small internal ones with the giant arch in between the left
+  // and right room").
+  //
+  // The dimension chains below run around the OUTSIDE of the envelope, so
+  // they describe the building and say nothing about any one wall, and an
+  // interior wall gets no number at all however much of the room it defines.
+  // A trim carpenter pricing base, or anybody standing in front of the wall
+  // with the arch in it, is reading the wall, not the envelope.
+  //
+  // Inside the room, because the openings already label outside it, and once
+  // per physical wall: an interior wall belongs to the rooms on both sides
+  // and would otherwise print its length twice, back to back.
+  const seenOpen=new Set(),seenSwing=new Set(),seenWall=new Set();
+  let wallLbls='';
+  // Every label that has taken a piece of paper, so the next one can stand off
+  // it rather than print on top of it.
+  // Each entry is the BOX a figure occupies, [x, y, half-width, half-height],
+  // not a point with one radius. A radius says a short figure sitting a line
+  // below a long one is on top of it, which it is not, and the figure that
+  // gets dropped for it is the one with nowhere else to go.
+  const lblAt=[];
+  const lblFree=(X,Y,hw,hh)=>!lblAt.some(p=>Math.abs(p[0]-X)<p[2]+hw+0.4&&Math.abs(p[1]-Y)<p[3]+hh+0.5);
+  const tall=fs=>fs*0.36;
+  // NOTHING ON THE SHEET IS TURNED (owner 2026-09-10: "needs to not be tilted
+  // at all"). A figure set on its side is a figure the reader turns the page
+  // for. Standing a figure off a wall it runs parallel to therefore has to
+  // clear the WIDTH of the text, not its height, or it prints over the wall.
+  const wide=(txt,fs)=>txt.length*0.55*fs/2;
+  // ONE placement pass for every figure a wall produces, whole wall, the runs
+  // between its openings, and the openings themselves. They compete for the
+  // same paper, so they cannot each pick a spot on their own and hope.
+  const figs=[];
+  const inPage=(X,Y,hw,hh)=>X-hw>1&&X+hw<99&&Y-hh>HEAD&&Y+hh<vh-2;
+  // THE ROOM LABELS ARE LAID OUT FIRST, before a single wall figure is placed,
+  // so the figures give way to them. A space's name and its square footage is
+  // what the sheet is read for; a wall dimension can always slide a foot along
+  // its own wall.
+  const roomLbls=[];
+  rooms.forEach((r,ri)=>{
+    const areas=_scanFloorAreas(r);
+    if(!areas.length)return;
+    let big=0;areas.forEach((a,i)=>{if(a.m2>areas[big].m2)big=i;});
+    areas.forEach((a,ai)=>{
+      const spot=_scanLabelSpot({poly:a.poly,walls:r.walls});
+      const cx=spot?spot[0]:a.poly.reduce((t,q)=>t+q[0],0)/a.poly.length;
+      const cz=spot?spot[1]:a.poly.reduce((t,q)=>t+q[1],0)/a.poly.length;
+      const xs=a.poly.map(q=>q[0]),zs=a.poly.map(q=>q[1]);
+      const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...zs)-Math.min(...zs);
+      // The box is only honest for a space that fills it, so a bay or an L
+      // keeps its area and drops the two figures rather than printing a
+      // rectangle nobody can measure to.
+      const boxy=bw>0&&bh>0&&a.m2/(bw*bh)>=0.9;
+      const name=ai===big?(r.label||'Room'):'';
+      const dimTxt=_scanFtIn(bw)+' \u00d7 '+_scanFtIn(bh);
+      const areaTxt=Math.round(_scanSqFt(a.m2)).toLocaleString()+' sq ft';
+      // A HALL IS NOT A LIVING ROOM (owner review 2026-09-09). At one fixed
+      // size the block ran wall to wall in the narrow rooms and straight over
+      // the door swing, so it is scaled to the space that holds it.
+      const widest=Math.max(name.length,boxy?dimTxt.length:0,areaTxt.length);
+      const f1=Math.max(1.75,Math.min(2.9,(bw*k*0.82)/((widest*0.55)||1)));
+      const rows=[];
+      if(name)rows.push({txt:escHtml(name),fs:f1,bold:1,fill:_SCAN_TXT,step:0});
+      if(boxy)rows.push({txt:dimTxt,fs:f1*0.83,bold:0,fill:_SCAN_TXT,step:1.18});
+      rows.push({txt:areaTxt,fs:f1*0.79,bold:0,fill:_SCAN_TXT2,step:1.14});
+      let yy=pz(cz)-(rows.length-1)*f1*0.62;
+      rows.forEach((row,i)=>{
+        if(i)yy+=f1*row.step;
+        row.x=px(cx);row.y=yy;
+        lblAt.push([row.x,yy,wide(row.txt,row.fs),tall(row.fs)]);
+      });
+      roomLbls.push({gi:gidx[ri],rows});
+    });
+  });
   rooms.forEach(r=>{
     const cx0=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz0=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
@@ -834,13 +1510,54 @@ function _scanPlanSvg(sc,opts){
       // Flip the normal to point INTO this room, so swings draw inward.
       const mx=(w.ax+w.bx)/2,mz=(w.az+w.bz)/2;
       if(nx*(cx0-mx)+nz*(cz0-mz)<0){nx=-nx;nz=-nz;}
+      if(w.len>=0.6){
+        const wKey=Math.round(mx*20)+'|'+Math.round(mz*20);
+        if(!seenWall.has(wKey)){
+          seenWall.add(wKey);
+          figs.push({rank:0,ax:w.ax,az:w.az,ux,uz,a:0,b:w.len,nx,nz,
+                     txt:_scanFtIn(w.len),fs:2.1,lead:1,base:2.2,out:0});
+        }
+      }
+      // The PIECES of wall left between the openings get their own figure.
+      // The two stubs either side of an archway are what somebody actually
+      // frames, tapes and trims, and the wall's overall length never says how
+      // wide they are. Doors and cased openings break the wall at the cut
+      // plane; a window does not, so it never splits a run.
+      const cuts=(w.doors||[]).filter(d=>typeof d.off==='number'&&d.w>0)
+        .map(d=>{const a=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2));return[a,a+d.w];})
+        .sort((p,q)=>p[0]-q[0]);
+      if(cuts.length){
+        let end=0;const segs=[];
+        cuts.forEach(([a,b])=>{if(a>end)segs.push([end,a]);end=Math.max(end,b);});
+        if(end<w.len)segs.push([end,w.len]);
+        segs.forEach(([a,b])=>{
+          if(b-a<0.3)return;                      // under a foot is a reveal, not a wall
+          const sx=w.ax+ux*(a+b)/2,sz=w.az+uz*(a+b)/2;
+          const key='s'+Math.round(sx*20)+'|'+Math.round(sz*20);
+          if(seenWall.has(key))return;
+          seenWall.add(key);
+          figs.push({rank:2,ax:w.ax,az:w.az,ux,uz,a,b,nx,nz,
+                     txt:_scanFtIn(b-a),fs:1.8,lead:0,base:2.2,out:0});
+        });
+      }
       const at=d=>[w.ax+ux*d,w.az+uz*d];
+      // The figure sits just OUTSIDE the wall, turned to run along it, so it
+      // never lands on the swing arc it is describing.
+      const openLbl=(d0,d1,txt)=>{
+        const[mx,mz]=at((d0+d1)/2);
+        const key=Math.round(mx*20)+'|'+Math.round(mz*20);
+        if(seenOpen.has(key))return;
+        seenOpen.add(key);
+        figs.push({rank:1,ax:w.ax,az:w.az,ux,uz,a:d0,b:d1,nx,nz,
+                   txt,fs:1.9,lead:0,base:2.7,out:1});
+      };
       const punch=(d0,d1)=>{const[a1,b1]=at(d0),[a2,b2]=at(d1);
         s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+bg+'" stroke-width="'+(th+0.35).toFixed(2)+'"/>';};
       (w.doors||[]).forEach(d=>{
         if(typeof d.off!=='number'||!d.w)return;
         const d0=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2)),d1=d0+d.w;
         punch(d0,d1);
+        openLbl(d0,d1,_scanFtIn(d.w));
         if(d.kind==='opening'){
           // A cased opening / archway: the wall stops, the jambs cap the ends,
           // and a DASHED line spans the gap for the header above the cut plane.
@@ -854,6 +1571,15 @@ function _scanPlanSvg(sc,opts){
           s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+ink+'" stroke-width="0.22" stroke-dasharray="1.2 0.9"/>';
           return;
         }
+        // ONE DOOR, ONE SWING (owner review 2026-09-09, on the rendered
+        // house: the bedroom-to-hall door drew two arcs facing each other,
+        // because that door is a wall of the bedroom AND a wall of the hall).
+        // The punch above still runs for both, since each room draws its own
+        // wall and both need the gap; the leaf and the arc are the door, and
+        // a door only swings one way.
+        const swKey=Math.round((at((d0+d1)/2)[0])*20)+'|'+Math.round((at((d0+d1)/2)[1])*20);
+        if(seenSwing.has(swKey))return;
+        seenSwing.add(swKey);
         // Hinge at d0: thin leaf into the room + quarter swing arc back to d1.
         // The sweep flag must put the arc's CENTER at the hinge so it bows
         // INTO the room (owner review 2026-08-09 vs reference plans: the old
@@ -869,6 +1595,7 @@ function _scanPlanSvg(sc,opts){
         if(typeof win.off!=='number'||!win.w)return;
         const d0=Math.max(0,Math.min(w.len-win.w,win.off-win.w/2)),d1=d0+win.w;
         punch(d0,d1);
+        openLbl(d0,d1,_scanFtIn(win.w)+(win.h>0?' \u00d7 '+_scanFtIn(win.h):''));
         // The classic triple-line window (owner review 2026-08-09 vs
         // reference plans: a bare gap with one hairline read as nothing):
         // both wall faces redrawn across the opening, the center glazing
@@ -884,6 +1611,7 @@ function _scanPlanSvg(sc,opts){
       });
     });
   });
+
   // 4. Dimension strings around the envelope: extension lines off the wall,
   // a dimension line with tick marks, the figure centered on it, and a second
   // overall row outside that when a side breaks into more than one run. This
@@ -902,14 +1630,19 @@ function _scanPlanSvg(sc,opts){
       const y=edge+dir*gap, x1=px(a), x2=px(b);
       out+=ln(x1,edge+dir*ext,x1,y+dir*1.1,0.2)+ln(x2,edge+dir*ext,x2,y+dir*1.1,0.2);
       out+=ln(x1,y,x2,y,0.25)+tickAt(x1,y,0.9,0.9*dir)+tickAt(x2,y,0.9,0.9*dir);
-      out+='<text x="'+((x1+x2)/2).toFixed(2)+'" y="'+(y+(side==='top'?-1.4:t+0.6)).toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+_scanFtIn(b-a)+'</text>';
+      const tx=(x1+x2)/2,ty=y+(side==='top'?-1.4:t+0.6),ft=_scanFtIn(b-a);
+      lblAt.push([tx,ty,wide(ft,t),tall(t)]);
+      out+='<text x="'+tx.toFixed(2)+'" y="'+ty.toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+ft+'</text>';
     }else{
       const edge=side==='left'?px(minX):px(maxX), dir=side==='left'?-1:1;
       const x=edge+dir*gap, y1=pz(a), y2=pz(b);
       out+=ln(edge+dir*ext,y1,x+dir*1.1,y1,0.2)+ln(edge+dir*ext,y2,x+dir*1.1,y2,0.2);
       out+=ln(x,y1,x,y2,0.25)+tickAt(x,y1,0.9*dir,0.9)+tickAt(x,y2,0.9*dir,0.9);
-      const my=((y1+y2)/2).toFixed(2);
-      out+='<g transform="translate('+x.toFixed(2)+','+my+') rotate(-90)"><text y="'+(side==='left'?-1.3:t+0.5).toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+_scanFtIn(b-a)+'</text></g>';
+      // Upright, sitting ON the chain: the halo behind the glyphs breaks the
+      // line for it, which is how a drafter writes a vertical dimension too.
+      const my=(y1+y2)/2,ft=_scanFtIn(b-a);
+      lblAt.push([x,my,wide(ft,t),tall(t)]);
+      out+='<text x="'+x.toFixed(2)+'" y="'+(my+t*0.36).toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+ft+'</text>';
     }
     return out;
   };
@@ -922,25 +1655,73 @@ function _scanPlanSvg(sc,opts){
       if(hi-lo>0.3)s+=dimRun(side,lo,hi,1);
     }
   });
-  // 5. Labels: name + the billing number (wall sq ft leads, owner 2026-08-09).
-  rooms.forEach((r,ri)=>{
-    const cx=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
-    const cz=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
-    const g=o.roomClick?'<g onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer">':'<g>';
-    s+=g+'<text x="'+px(cx)+'" y="'+(pz(cz)-0.6)+'" font-size="2.9" font-weight="700" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+escHtml(r.label||'Room')+'</text>'+
-      '<text x="'+px(cx)+'" y="'+(pz(cz)+2.9)+'" font-size="2.4" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text></g>';
-    if(lens==='electrical'){
-      _scanOutletPlan(r).forEach(m=>{
-        s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
-      });
+  // Placed in order of what the reader needs most: the wall itself, then what
+  // is cut into it, then the runs left between those cuts. Each figure SLIDES
+  // along the piece of wall it describes, and will sit on the other face of
+  // that wall before it gives up. It never wanders off into the middle of the
+  // room to find space, and it never runs off the edge of the paper: a figure
+  // that has left its wall behind describes nothing, and one in the gutter
+  // does not print.
+  figs.sort((p,q)=>p.rank-q.rank).forEach(g=>{
+    const hw=wide(g.txt,g.fs),hh=tall(g.fs),off=g.base+Math.abs(g.nx)*hw;
+    const sides=g.out?[-1,1]:[1,-1];
+    let X=0,Y=0,ok=0;
+    for(const f of [0.5,0.3,0.7,0.16,0.84]){
+      const d=g.a+(g.b-g.a)*f,cx=g.ax+g.ux*d,cz=g.az+g.uz*d;
+      for(const sd of sides){
+        X=px(cx)+g.nx*off*sd;Y=pz(cz)+g.nz*off*sd;
+        if(inPage(X,Y,hw,hh)&&lblFree(X,Y,hw,hh)){ok=1;break;}
+      }
+      if(ok)break;
     }
+    if(!ok)return;                                 // nowhere legible left on it
+    lblAt.push([X,Y,hw,hh]);
+    wallLbls+='<g class="'+(g.rank===1?'td-olen':'td-wlen')+'"><text x="'+X.toFixed(2)+'" y="'+(Y+0.75).toFixed(2)+
+      '" font-size="'+g.fs+'"'+(g.lead?' font-weight="600"':'')+' fill="'+(g.lead?_SCAN_TXT:_SCAN_TXT2)+
+      '" text-anchor="middle"'+halo+'>'+g.txt+'</text></g>';
   });
-  // 6. North arrow when the compass grabbed a heading at capture.
-  if(typeof sc.headingDeg==='number'&&sc.headingDeg>=0){
-    s+='<g transform="translate(94.5,'+(HEAD+5).toFixed(1)+') rotate('+Math.round(sc.headingDeg)+')">'+
+  s+=wallLbls;
+  // 5. Labels: the ROOM, not the invoice (owner 2026-09-09: "shouldn't be wall
+  // sq feet on a floor plan, should be room square feet"). This supersedes the
+  // 2026-08-09 call that wall area leads. That number is what paint bills on
+  // and it is still right ON THE ESTIMATE, where somebody is pricing; on a
+  // drawing that a homeowner and a framer both read, the room's size is the
+  // only number either of them is looking for. Wall area is one tap away in
+  // the takeoff and no longer competes with the name.
+  //
+  // Size reads as a drawing does: width by length off the room's box, then the
+  // floor area under it. The box is only honest for a room that fills it, so a
+  // bay or an L keeps its area and drops the two figures rather than printing
+  // a rectangle nobody can measure to.
+  roomLbls.forEach(b=>{
+    s+=(o.roomClick?'<g onclick="'+o.roomClick+'('+b.gi+')" style="cursor:pointer">':'<g>');
+    b.rows.forEach(t=>{
+      s+='<text x="'+t.x+'" y="'+t.y.toFixed(2)+'" font-size="'+t.fs.toFixed(2)+'"'+
+         (t.bold?' font-weight="700"':'')+' fill="'+t.fill+'" text-anchor="middle"'+halo+'>'+t.txt+'</text>';
+    });
+    s+='</g>';
+  });
+  if(lens==='electrical'){
+    rooms.forEach(r=>{
+      _scanOutletPlan(r).forEach(m=>{
+        s+='<circle class="td-outlet" cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
+      });
+    });
+  }
+  // 6. North. ALWAYS DRAWN (owner 2026-09-10: "needs the compass drawn
+  // somewhere"). A plan with no orientation mark is a picture: nobody holding
+  // it can say which wall faces the street. The NEEDLE turns, because the page
+  // turned and north did not; the letter never does, because a letter on its
+  // side is a letter the reader turns the page for. Where the compass gave no
+  // heading at capture the needle is drawn light and up the sheet and the mark
+  // reads "N?", which says the direction is the paper's, not the world's.
+  {
+    const hasN=typeof sc.headingDeg==='number'&&sc.headingDeg>=0;
+    const _nDeg=Math.round((hasN?sc.headingDeg:0)+_rot*180/Math.PI);
+    s+='<g transform="translate(94.5,'+(HEAD+5).toFixed(1)+')">'+
        '<circle r="3" fill="none" stroke="'+_SCAN_LINE+'" stroke-width="0.3"/>'+
-       '<path d="M 0 -2.2 L 1 1.6 L 0 0.7 L -1 1.6 Z" fill="'+_SCAN_TXT+'"/>'+
-       '<text y="-4" font-size="2.2" fill="'+_SCAN_TXT2+'" text-anchor="middle">N</text></g>';
+       '<g transform="rotate('+_nDeg+')"><path d="M 0 -2.2 L 1 1.6 L 0 0.7 L -1 1.6 Z" fill="'+(hasN?_SCAN_TXT:_SCAN_LINE)+'"/></g>'+
+       '<text y="-4" font-size="2.2" fill="'+_SCAN_TXT2+'" text-anchor="middle">'+(hasN?'N':'N?')+'</text></g>';
   }
   // 7. Scale bar: the thing that lets a client hold a ruler to the printout.
   // The bar is a round number of feet, the largest that still fits the margin.
@@ -953,6 +1734,14 @@ function _scanPlanSvg(sc,opts){
        '<line x1="'+x1.toFixed(2)+'" y1="'+(y-1.2).toFixed(2)+'" x2="'+x1.toFixed(2)+'" y2="'+(y+1.2).toFixed(2)+'" stroke="'+_SCAN_TXT+'" stroke-width="0.35"/>'+
        '<text x="'+(x1+2).toFixed(2)+'" y="'+(y+1).toFixed(2)+'" font-size="2.5" fill="'+_SCAN_TXT2+'">'+barFt+' ft</text>'+
        '<text x="'+(100-MAR)+'" y="'+(y+1).toFixed(2)+'" font-size="2.3" fill="'+_SCAN_LINE+'" text-anchor="end">Measured with TradeDesk</text>';
+    // WHEN, AND BY WHOM (owner review 2026-09-09: the block read thin). A
+    // drawing without a date is not evidence of anything, and a homeowner
+    // holding two scans a year apart has no way to tell them apart. Both
+    // come from what the scan already carries; neither is invented.
+    const when=o.dateText||(sc.ts?new Date(sc.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'');
+    const by=o.byText||sc.scannedBy||'';
+    const foot=[when,by?'Scanned by '+by:''].filter(Boolean).join('  \u00b7  ');
+    if(foot)s+='<text x="'+MAR+'" y="'+(y+5.2).toFixed(2)+'" font-size="2.2" fill="'+_SCAN_LINE+'">'+escHtml(foot)+'</text>';
   }
   // Photo pins: each shot taken during the scan knows exactly where the
   // camera stood (the pose rides along from the plugin), so the walkthrough
@@ -1308,6 +2097,16 @@ async function startRoomScan(ctx){
     name:'Scan '+new Date().toLocaleDateString(),
     createdAt:new Date().toISOString(),
     headingDeg:(typeof res.headingDeg==='number'?res.headingDeg:null),
+    // The camera's yaw in the scene's own frame at the instant the compass was
+    // read. Without it headingDeg describes a direction nobody can locate: the
+    // scene's zero is fixed when the session starts and the compass is sampled
+    // two seconds later, by which time somebody walking into a room has turned.
+    // scene-north = headingDeg - headingCamYawDeg.
+    headingCamYawDeg:(typeof res.headingCamYawDeg==='number'?res.headingCamYawDeg:null),
+    // What the phone said about the scan while it was being taken.
+    coaching:Array.isArray(res.coaching)?res.coaching:[],
+    trackingIssues:Array.isArray(res.trackingIssues)?res.trackingIssues:[],
+    meshAnchorCount:(typeof res.meshAnchorCount==='number'?res.meshAnchorCount:null),
     rooms,
     // Photos stay device-local paths in v1 (the client deliverable excludes
     // them by design); cam pose rides along for the pinned walkthrough. The
@@ -1378,7 +2177,7 @@ function openScanViewer(id){
   if(!stories.includes(_scanViewStory))_scanViewStory=stories[0];
   const story=_scanViewStory;
   document.getElementById('_scan-view-ov')?.remove();
-  const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
+  const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+_scanRoomGeom(r).floorM2,0)));
   const totalWallSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.wallM2,0)));
   const tabs=_scanTabs();
   let body='';
@@ -1605,7 +2404,12 @@ function _scanToEstimate(id){
   // The seed is consumed by openGenericEstimate for this client (one row per
   // room, wall footage as the quantity), so the path is: land on the client,
   // tap New estimate, rooms are already lined.
-  if(sc.clientId!=null&&typeof openClient==='function'){openClient(sc.clientId);}
+  // openClientDetail, not openClient. openClient has never existed, so this
+  // guard was always false and the comment above described a landing that
+  // never happened: the scan overlay closed and the contractor was left
+  // wherever they already were, with a toast telling them to go start an
+  // estimate they had not been taken to.
+  if(sc.clientId!=null&&typeof openClientDetail==='function'){openClientDetail(sc.clientId);}
   if(typeof showToast==='function')showToast('Rooms measured. Start an estimate for this client and they load in automatically.','📐');
 }
 // Standalone sale completion: collect the money through the normal payment

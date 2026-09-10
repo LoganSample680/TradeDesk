@@ -2330,7 +2330,7 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.editId).toBeNull();
     });
 
-    test('clears the "Who is this?" party-type on a fresh lead (forces an explicit pick)', async () => {
+    test('clears the "Who is this?" party-type on a fresh lead (no carry-over from the last one)', async () => {
       const r = await page.evaluate(() => {
         const pt = document.getElementById('cf-partytype');
         if (pt) pt.value = 'gc';
@@ -2341,31 +2341,267 @@ test.describe('clients.js: exhaustive coverage', () => {
     });
   });
 
-  test.describe('party type (Who is this?) is required and persists', () => {
-    test('saveClient blocks when party type is not chosen, and stores it once set', async () => {
+  // ── Starting a proposal with nobody selected ───────────────────────────────
+  //
+  // It used to say "Select a client first" and send him to the Clients tab, to
+  // a form with four required fields, and then he had to walk back. Now it asks
+  // the one question he is actually answering, who is this for, and most of the
+  // time the answer is somebody already in here: he types, they appear, he taps.
+  // Creating is the fallback, not the assumption, which is what stops it quietly
+  // making a second Mike Johnson every time he starts a proposal from scratch.
+  test.describe('new proposal with no client selected', () => {
+    const arm = () => page.evaluate(() => {
+      document.getElementById('_newc-gate-overlay')?.remove();
+      currentClientId = null;
+      window.__rrp = [];
+      // Stashed once, because a later test needs the REAL chain back: a picked
+      // property is only proved to work by watching it come out the far end.
+      window.__origRrp = window.__origRrp || window._rrpGateThenEstimate;
+      window._rrpGateThenEstimate = (c, addr) => { window.__rrp.push(c && c.id); window.__rrpAddr = addr; };
+      window._canEstimate = () => true;
+      openEstimateForClient();
+      return !!document.getElementById('_newc-gate-overlay');
+    });
+    // The same, but with the real gate chain in place and only the final step
+    // stubbed, so the address a pick chose is observed where it lands.
+    const armReal = () => page.evaluate(() => {
+      document.getElementById('_newc-gate-overlay')?.remove();
+      currentClientId = null;
+      if (window.__origRrp) window._rrpGateThenEstimate = window.__origRrp;
+      window.__opened = [];
+      window.__origOpen = window.__origOpen || window._doOpenEstimate;
+      window._doOpenEstimate = (c, addr) => { window.__opened.push([c && c.id, addr || null]); };
+      window._canEstimate = () => true;
+      openEstimateForClient();
+      return !!document.getElementById('_newc-gate-overlay');
+    });
+    // Typing for real: setting .value fires no input event, and the whole
+    // behaviour under test hangs off that event.
+    const typeName = (v) => page.evaluate((val) => {
+      const el = document.getElementById('_newc-gate-name');
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, v);
+
+    test('asks who it is for, and does not bounce him to the Clients tab', async () => {
+      expect(await arm()).toBe(true);
+      const r = await page.evaluate(() => ({
+        onClientsPage: document.getElementById('pg-clients')?.classList.contains('active') || false,
+        name: !!document.getElementById('_newc-gate-name'),
+        // The create half stays out of the way until it is the answer.
+        createHidden: document.getElementById('_newc-gate-new').style.display === 'none',
+      }));
+      expect(r.name).toBe(true);
+      expect(r.createHidden).toBe(true);
+    });
+
+    test('typing a name he already has offers that customer, and a tap goes straight to the estimator', async () => {
+      await page.evaluate(() => {
+        clients = clients.filter(c => !/^GateExisting/.test(c.name || ''));
+        clients.push({ id: 55510001, name: 'GateExisting Molly', phone: '3165550101', addr: '11 Oak St, Wichita, KS 67201' });
+      });
+      await arm();
+      await typeName('GateExisting');
+      const r = await page.evaluate(() => {
+        const hits = document.getElementById('_newc-gate-hits');
+        const btn = hits.querySelector('button');
+        const shown = hits.querySelectorAll('button').length;
+        const text = hits.textContent;
+        btn.click();
+        return {
+          shown, text,
+          picked: window.__rrp[window.__rrp.length - 1],
+          current: currentClientId,
+          closed: !document.getElementById('_newc-gate-overlay'),
+          made: clients.filter(c => /^GateExisting/.test(c.name || '')).length,
+        };
+      });
+      expect(r.shown).toBe(1);
+      expect(r.text).toContain('11 Oak St');   // the address, so two Mollys are tellable apart
+      expect(r.picked).toBe(55510001);
+      expect(r.current).toBe(55510001);
+      expect(r.closed).toBe(true);
+      expect(r.made).toBe(1);                  // picked, never duplicated
+      await page.evaluate(() => { clients = clients.filter(c => !/^GateExisting/.test(c.name || '')); });
+    });
+
+    test('a name nobody has asks for the address, and refuses to create without one', async () => {
+      await arm();
+      await typeName('GateBrandNew ' + Date.now());
+      const r = await page.evaluate(() => {
+        const before = clients.length;
+        const shown = document.getElementById('_newc-gate-new').style.display !== 'none';
+        const label = document.getElementById('_newc-gate-newlbl').textContent;
+        document.getElementById('_newc-gate-ok').click();     // no address yet
+        const err = document.getElementById('_newc-gate-err');
+        return {
+          shown, label,
+          errShown: err.style.display !== 'none' && /address/i.test(err.textContent),
+          made: clients.length - before,
+          stillOpen: !!document.getElementById('_newc-gate-overlay'),
+        };
+      });
+      expect(r.shown).toBe(true);
+      expect(r.label).toContain('GateBrandNew');
+      expect(r.errShown).toBe(true);
+      expect(r.made).toBe(0);
+      expect(r.stillOpen).toBe(true);
+    });
+
+    test('name plus address creates a real client and hands it to the estimator', async () => {
+      await arm();
+      const uid = 'GateClient_' + Date.now();
+      await typeName(uid);
+      const r = await page.evaluate((name) => {
+        document.getElementById('_newc-gate-addr').value = '742 Evergreen Ter, Wichita, KS 67201';
+        document.getElementById('_newc-gate-ok').click();
+        const c = clients.find(x => x.name === name);
+        const out = c ? {
+          // The address is split, not dumped in one field: the property lookup
+          // and the pre-1978 lead-paint gate both need the parts.
+          street: c.street, city: c.city, state: c.state, zip: c.zip,
+          current: currentClientId === c.id,
+          handedOff: window.__rrp[window.__rrp.length - 1] === c.id,
+          closed: !document.getElementById('_newc-gate-overlay'),
+        } : null;
+        if (c) clients.splice(clients.indexOf(c), 1);
+        return out;
+      }, uid);
+      expect(r).not.toBeNull();
+      expect(r.street).toBe('742 Evergreen Ter');
+      expect(r.city).toBe('Wichita');
+      expect(r.state).toBe('KS');
+      expect(r.zip).toBe('67201');
+      expect(r.current).toBe(true);
+      expect(r.handedOff).toBe(true);
+      expect(r.closed).toBe(true);
+    });
+
+    test('an exact name he already has never offers to create a second one', async () => {
+      await page.evaluate(() => {
+        clients = clients.filter(c => c.name !== 'GateExact Person');
+        clients.push({ id: 55510002, name: 'GateExact Person', addr: '1 A St' });
+      });
+      await arm();
+      await typeName('GateExact Person');
+      const r = await page.evaluate(() => ({
+        createShown: document.getElementById('_newc-gate-new').style.display !== 'none',
+        offered: document.getElementById('_newc-gate-hits').querySelectorAll('button').length,
+      }));
+      expect(r.createShown).toBe(false);
+      expect(r.offered).toBe(1);
+      await page.evaluate(() => { clients = clients.filter(c => c.name !== 'GateExact Person'); document.getElementById('_newc-gate-overlay')?.remove(); });
+    });
+
+    // A landlord with four rentals must never have a proposal land on the wrong
+    // house because the app used whichever address it happened to store first.
+    test('a customer with several properties opens instead of guessing, and the pick rides through', async () => {
+      await page.evaluate(() => {
+        clients = clients.filter(c => !/^GateLandlord/.test(c.name || ''));
+        clients.push({ id: 55510003, name: 'GateLandlord Rentals', addr: '1 First St, Wichita, KS 67201',
+          extraAddresses: [{ label: 'Duplex', addr: '9 Second Ave, Wichita, KS 67202' },
+                           { label: 'Triplex', addr: '77 Third Rd, Derby, KS 67037' }] });
+      });
+      await armReal();
+      await typeName('GateLandlord');
+      const collapsed = await page.evaluate(() => {
+        const hits = document.getElementById('_newc-gate-hits');
+        return { sub: hits.textContent, subRows: hits.querySelectorAll('button').length };
+      });
+      expect(collapsed.sub).toContain('3 properties');   // counted, not guessed
+      expect(collapsed.subRows).toBe(1);                 // still one row until opened
+
+      const opened = await page.evaluate(() => {
+        document.getElementById('_newc-gate-hits').querySelector('button').click();
+        const btns = [...document.getElementById('_newc-gate-hits').querySelectorAll('button')];
+        return { count: btns.length, text: document.getElementById('_newc-gate-hits').textContent };
+      });
+      expect(opened.count).toBe(4);                      // the row plus its three properties
+      expect(opened.text).toContain('Duplex');
+      expect(opened.text).toContain('77 Third Rd');
+
+      const picked = await page.evaluate(() => {
+        const btns = [...document.getElementById('_newc-gate-hits').querySelectorAll('button')];
+        btns[3].click();                                 // the Triplex
+        return { opened: window.__opened[window.__opened.length - 1], closed: !document.getElementById('_newc-gate-overlay') };
+      });
+      expect(picked.opened[0]).toBe(55510003);
+      expect(picked.opened[1]).toBe('77 Third Rd, Derby, KS 67037');
+      expect(picked.closed).toBe(true);
+      await page.evaluate(() => { clients = clients.filter(c => !/^GateLandlord/.test(c.name || '')); });
+    });
+
+    test('one property is still one tap, and carries no address override', async () => {
+      await page.evaluate(() => {
+        clients = clients.filter(c => !/^GateSingle/.test(c.name || ''));
+        clients.push({ id: 55510004, name: 'GateSingle Home', addr: '5 Only St, Wichita, KS 67201' });
+      });
+      await armReal();
+      await typeName('GateSingle');
+      const r = await page.evaluate(() => {
+        const hits = document.getElementById('_newc-gate-hits');
+        hits.querySelector('button').click();
+        return { opened: window.__opened[window.__opened.length - 1], text: hits.textContent };
+      });
+      // Straight through on the first tap: no accordion, and no forced address,
+      // because the primary is what the estimator would have used anyway.
+      expect(r.opened[0]).toBe(55510004);
+      expect(r.opened[1]).toBeNull();
+      await page.evaluate(() => {
+        clients = clients.filter(c => !/^GateSingle/.test(c.name || ''));
+        if (window.__origOpen) window._doOpenEstimate = window.__origOpen;
+      });
+    });
+
+    test('the record it makes is committed the same way the full form commits one', async () => {
+      // One creator (_clientCommitNew), two callers. If a second creation path
+      // ever grows its own copy of this, the lifecycle stamp or the client
+      // token silently stops happening for half the clients in the account.
+      const r = await page.evaluate(() => ({
+        creator: typeof _clientCommitNew === 'function',
+        gate: typeof _newClientQuickGate === 'function',
+      }));
+      expect(r.creator).toBe(true);
+      expect(r.gate).toBe(true);
+    });
+  });
+
+  test.describe('party type (Who is this?) is optional and persists', () => {
+    // WAS required: an unchosen party type blocked the save outright. NOW
+    // optional (owner rule 2026-09-06): an empty partyType already reads as
+    // "not a GC" everywhere it is consumed (accountOwnsSites in data.js, the
+    // third-party check in dashboard.js), which is the common case, and the QR
+    // intake path has always created clients without it. It still persists
+    // exactly as before once someone does pick one, which is the half of this
+    // that has to keep working.
+    test('saveClient saves without a party type, and stores it once set', async () => {
       const r = await page.evaluate(() => {
         openNewClient();
         window.editClientId = null;
-        const before = clients.length;
         document.getElementById('cf-name').value = 'Party Type Test Co';
         document.getElementById('cf-phone').value = '316-555-0199';
-        document.getElementById('cf-source').value = document.getElementById('cf-source').options[1]?.value || 'Google';
+        document.getElementById('cf-source').value = '';
         document.getElementById('cf-partytype').value = ''; // not chosen
-        window._allowPhoneDupe = true;
+        _allowPhoneDupe = true;
         saveClient();
-        const blocked = clients.length === before &&
-          document.getElementById('err-cf-partytype')?.style.display !== 'none';
-        // now choose a type and save
+        const savedBlank = clients.find(c => c.name === 'Party Type Test Co');
+        const blankType = savedBlank ? (savedBlank.partyType || '') : null;
+        if (savedBlank) clients.splice(clients.indexOf(savedBlank), 1);
+        // and again with one chosen
+        openNewClient();
+        window.editClientId = null;
+        document.getElementById('cf-name').value = 'Party Type Test Co';
+        document.getElementById('cf-phone').value = '316-555-0199';
         document.getElementById('cf-partytype').value = 'gc';
-        window._submitting = false; window._allowPhoneDupe = true;
+        _submitting = false; _allowPhoneDupe = true; _allowNameDupe = true;
         saveClient();
         const saved = clients.find(c => c.name === 'Party Type Test Co');
         const partyType = saved ? saved.partyType : null;
         if (saved) clients.splice(clients.indexOf(saved), 1);
-        return { blocked, partyType };
+        return { blankType, partyType };
       });
-      expect(r.blocked).toBe(true);        // required: no save until chosen
-      expect(r.partyType).toBe('gc');      // persisted on the client record
+      expect(r.blankType).toBe('');   // saved, not blocked
+      expect(r.partyType).toBe('gc'); // still persisted on the client record
     });
 
     test('shows client-form-wrap', async () => {

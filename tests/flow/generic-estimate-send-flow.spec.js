@@ -85,8 +85,12 @@ test.describe('generic estimator send → artifact (UI-driven)', () => {
         // Fire the real send and wait for the artifact.
         await p.evaluate(async () => { try { await sendGenericProposal(false); } catch (e) {} });
         sent = await awaitSentArtifact(p);
-        // honest count: open(1)+crew(1)+rate"65"(2)+hours"40"(2)+addLine(1)+desc(16)+price"300"(3)+send(1)=27
-        return 27;
+        // honest count: open(2)+crew(1)+rate"65"(2)+hours"40"(2)+addLine(1)+desc(16)+price"300"(3)+send(1)=28
+        // Opening is TWO taps, "+ New estimate" then the type card, the same two
+        // the BYO flow pays. It was counted as one here, which undercounted the
+        // door on this side while estimate-build.spec.js overcounted it on the
+        // other. Same door, one price, both specs.
+        return 28;
       },
       rule: async (p) => {
         const cloud = await cloudRows(p, 'td_bids');
@@ -132,7 +136,8 @@ test.describe('generic estimator send → artifact (UI-driven)', () => {
         await p.evaluate(async () => { try { await sendGenericProposal(false); } catch (e) {} });
         sent = await awaitSentArtifact(p);
         // open(1) + 2 items × [add(1)+label+price+notes+confirm(1)] + send(1)
-        return 1 + (1 + 36 + 3 + 11 + 1) + (1 + 38 + 4 + 16 + 1) + 1;
+        // open(2) + Materials item(tap+label+price+desc+confirm) + Interior item(same) + send(1)
+        return 2 + (1 + 36 + 3 + 11 + 1) + (1 + 38 + 4 + 16 + 1) + 1;
       },
       rule: async (p) => {
         const cloud = await cloudRows(p, 'td_bids');

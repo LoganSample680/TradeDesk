@@ -1,0 +1,113 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Shared styling for the two public legal pages (privacy.html, terms.html).
+   Same palette and type as landing.html so they read as the same company,
+   but set as a DOCUMENT: one column, generous measure, numbered sections,
+   a sticky contents rail on desktop. Deliberately not marketing.
+   ───────────────────────────────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --ink:#1B1612;--ink-2:#211B16;
+  --denim:#2D5DA8;--denim-deep:#1B3F7A;--denim-lt:#DCE8FA;
+  --terra:#B8512A;--terra-lt:#FBEAE1;
+  --cream:#F5EFE2;--cream-2:rgba(245,239,226,.66);--cream-3:rgba(245,239,226,.40);
+  --paper:#F4F5F7;--card:#FFFFFF;--line:#E2E5EB;--line-2:#CFD4DC;
+  --text:#161A1F;--text-2:#4B5563;--text-3:#636C7B;
+  --font-display:'Geist',-apple-system,BlinkMacSystemFont,sans-serif;
+  --font-ui:'Inter Tight',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --maxw:1080px;
+}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{font-family:var(--font-ui);background:var(--paper);color:var(--text);
+  -webkit-font-smoothing:antialiased;line-height:1.62}
+a{color:var(--denim);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.disp{font-family:var(--font-display);font-weight:900;letter-spacing:-.03em;line-height:1.05}
+.eyebrow{font-size:11.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+
+/* ── Masthead ── */
+.mast{background:var(--ink);color:var(--cream);padding:22px 0 54px}
+.mast-nav{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:46px}
+.logo{display:inline-flex;align-items:center;gap:10px;color:var(--cream)}
+.logo:hover{text-decoration:none}
+.logo .mark{width:34px;height:34px;border-radius:9px;flex-shrink:0;
+  background:linear-gradient(150deg,#2D5DA8 0%,#1B3F7A 100%);
+  display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(45,93,168,.4)}
+.logo .name{font-family:var(--font-display);font-weight:800;font-size:19px;letter-spacing:-.02em}
+.mast-links{display:flex;gap:22px;font-size:14px;font-weight:600;flex-wrap:wrap;justify-content:flex-end}
+.mast-links a{white-space:nowrap}
+.mast-links a{color:var(--cream-2)}
+.mast-links a:hover{color:var(--cream);text-decoration:none}
+.mast-links a[aria-current]{color:var(--cream)}
+.mast .eyebrow{color:var(--denim-lt);margin-bottom:12px}
+.mast h1{font-size:clamp(34px,6vw,52px);margin-bottom:14px}
+.mast .lede{font-size:17px;color:var(--cream-2);max-width:60ch}
+.stamp{margin-top:20px;font-size:12.5px;color:var(--cream-3);font-weight:600;
+  letter-spacing:.02em;font-variant-numeric:tabular-nums}
+
+/* ── Body layout ── */
+.doc{display:grid;grid-template-columns:230px minmax(0,1fr);gap:52px;padding:44px 0 72px;align-items:start}
+.doc > main{min-width:0}
+@media(max-width:900px){.doc{grid-template-columns:minmax(0,1fr);gap:0;padding-top:28px}}
+@media(max-width:520px){.wrap{padding:0 18px}.mast-links{gap:16px;font-size:13.5px}}
+
+/* Contents rail */
+.toc{position:sticky;top:26px;font-size:13.5px;line-height:1.45}
+.toc .h{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--text-3);margin-bottom:12px}
+.toc ol{list-style:none;counter-reset:toc}
+.toc li{counter-increment:toc;margin-bottom:9px;padding-left:24px;position:relative}
+.toc li::before{content:counter(toc);position:absolute;left:0;top:1px;font-size:11px;
+  font-weight:800;color:var(--line-2);font-variant-numeric:tabular-nums}
+.toc a{color:var(--text-2);font-weight:600}
+.toc a:hover{color:var(--denim);text-decoration:none}
+@media(max-width:900px){.toc{display:none}}
+
+/* ── The short version ── */
+.tldr{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:24px 26px;margin-bottom:40px;box-shadow:0 1px 2px rgba(22,26,31,.04)}
+.tldr .h{font-family:var(--font-display);font-weight:800;font-size:18px;
+  letter-spacing:-.02em;margin-bottom:14px}
+.tldr ul{list-style:none}
+.tldr li{position:relative;padding-left:26px;margin-bottom:10px;font-size:15px;color:var(--text-2)}
+.tldr li:last-child{margin-bottom:0}
+.tldr li::before{content:'';position:absolute;left:4px;top:9px;width:8px;height:8px;
+  border-radius:50%;background:var(--denim)}
+.tldr strong{color:var(--text);font-weight:700}
+
+/* ── Sections ── */
+section{margin-bottom:44px;scroll-margin-top:24px}
+section > h2{font-family:var(--font-display);font-weight:800;font-size:23px;
+  letter-spacing:-.025em;line-height:1.2;margin-bottom:14px;padding-bottom:12px;
+  border-bottom:1px solid var(--line);text-wrap:balance}
+section > h2 .n{color:var(--line-2);margin-right:12px;font-variant-numeric:tabular-nums}
+h3{font-size:16px;font-weight:800;letter-spacing:-.01em;margin:24px 0 8px}
+p{margin-bottom:14px;max-width:70ch}
+ul.body,ol.body{margin:0 0 16px 0;padding-left:22px;max-width:70ch}
+ul.body li,ol.body li{margin-bottom:8px}
+strong{font-weight:700}
+
+/* Callout: the things a person must not miss */
+.note{border-left:3px solid var(--terra);background:var(--terra-lt);
+  border-radius:0 12px 12px 0;padding:16px 20px;margin:20px 0;max-width:70ch}
+.note p:last-child{margin-bottom:0}
+.note .h{font-weight:800;font-size:14px;margin-bottom:6px;color:#8C3D1F}
+.note.calm{border-left-color:var(--denim);background:var(--denim-lt)}
+.note.calm .h{color:var(--denim-deep)}
+
+/* Tables */
+.tw{overflow-x:auto;margin:18px 0 22px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:540px}
+th,td{text-align:left;padding:12px 16px;vertical-align:top;border-bottom:1px solid var(--line)}
+th{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--text-3);background:#FAFBFC;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td strong{display:block;margin-bottom:2px}
+td .m{color:var(--text-2)}
+
+/* ── Footer ── */
+footer{background:var(--ink);color:var(--cream-3);padding:34px 0;font-size:13.5px}
+.foot-inner{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+.foot-inner a{color:var(--cream-2);font-weight:600}
+.foot-inner a:hover{color:var(--cream);text-decoration:none}
+.foot-links{display:flex;gap:20px;flex-wrap:wrap}

@@ -1979,6 +1979,49 @@ test.describe('sign.html: decline reason picker', () => {
   });
 });
 
+// The price-hold date the contractor actually stamped travels with the
+// proposal now (validUntil). The page used to recompute createdAt + 30 of its
+// own, which meant a contractor who shortened or extended his window was
+// telling the client one thing while the portal showed another.
+test.describe('sign.html: the price hold comes from the proposal, not a second clock', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    const held = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+    await mockAllExternal(page, {
+      alreadySigned: false,
+      proposalData: { ...MOCK_PROPOSAL, validUntil: held },
+      bidId: FAKE_BID_ID_1
+    });
+    page._heldKey = held;
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the chip shows the stamped date, not createdAt + 30', async () => {
+    const chip = page.locator('#price-held-chip');
+    await expect(chip).toBeVisible();
+    const text = await chip.textContent();
+    const [y, m, d] = page._heldKey.split('-');
+    expect(text).toContain(`${m}/${d}/${y}`);
+    // The old second clock would have landed 30 days out from createdAt
+    const stale = new Date(new Date(MOCK_PROPOSAL.createdAt).getTime() + 30 * 86400000)
+      .toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    expect(text).not.toContain(stale);
+  });
+
+  test('no console errors on a proposal carrying a price-hold date', async () => {
+    assertNoErrors(page, 'price hold on sign.html');
+  });
+});
+
 // ════════════════════════════════════════════════════════════════════════════
 //  PSYCH/UX CLOSE PASS, deposit-first framing, price-held date, endowed
 //  progress, risk reversal, peak-end confirmation (owner-approved 5)

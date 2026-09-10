@@ -880,8 +880,12 @@ async function init(){
     // send date + 30 days" into the terms). Hidden once that window has passed:
     // never advertise a price hold that's no longer true.
     const _phc=document.getElementById('price-held-chip');
-    if(_phc&&_prop.createdAt){
-      const _exp=new Date(new Date(_prop.createdAt).getTime()+30*86400000);
+    if(_phc&&(_prop.validUntil||_prop.createdAt)){
+      // The proposal carries its own price-hold date now (validUntil), stamped
+      // when it was sent. Recomputing createdAt+30 here was a second clock, and
+      // it ignored a contractor who extended the price. Older proposals with no
+      // stamp keep the old projection so nothing regresses for them.
+      const _exp=_prop.validUntil?new Date(_prop.validUntil+'T12:00'):new Date(new Date(_prop.createdAt).getTime()+30*86400000);
       if(_exp>new Date()){
         _phc.innerHTML=svgIcon('⏳',{size:13})+' This price is held for you until <strong style="color:var(--ink)">&nbsp;'+_exp.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'</strong>';
         _phc.style.display='flex';

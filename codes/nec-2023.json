@@ -1,0 +1,1530 @@
+{
+  "family": "nec",
+  "edition": "2023",
+  "verified": false,
+  "verifiedBy": "",
+  "verifiedAt": "",
+  "sources": {},
+  "todo": [
+    "data.dwelling.generalLightingVaPerSqft \u2014 220.41, VA per square foot for dwelling units",
+    "data.dwelling.smallApplianceCircuitVa + smallApplianceCircuitsMin \u2014 220.52(A), 210.11(C)(1)",
+    "data.dwelling.laundryCircuitVa + laundryCircuitsMin \u2014 220.52(B), 210.11(C)(2)",
+    "data.dwelling.generalDemandRows \u2014 Table 220.45, rows {uptoVa, pct}, ascending, last row uptoVa:null",
+    "data.dwelling.fixedAppliance.triggerCount + pct \u2014 220.53",
+    "data.dwelling.dryer.minVa + demandRows \u2014 220.54 and Table 220.54, rows {count, pct} or {countFrom, countTo, pct}",
+    "data.dwelling.cooking.colCRows / colARows / colBRows / colALimitKw / colBLimitKw / colCLimitKw / colCMaxKw / note1.perKwPct \u2014 Table 220.55 and its notes",
+    "data.dwelling.heatPct + acPct \u2014 220.60 noncoincident loads",
+    "data.dwelling.largestMotorPct \u2014 430.24",
+    "data.dwelling.optional.* \u2014 220.82(A)(B)(C), including all six hvacPct selections and heatUnitThreshold",
+    "data.dwelling.serviceMinAmps \u2014 230.79(C) and 230.42(B)",
+    "data.standardOcpdAmps \u2014 240.6(A), ascending list",
+    "data.smallConductorMaxOcpd \u2014 240.4(D)",
+    "data.continuousPct \u2014 210.19(A)(1)/215.2(A)(1)/230.42(A), the continuous-load percentage",
+    "data.ampacity.cu / data.ampacity.al \u2014 Table 310.16, 60/75/90 C columns, every size 14 AWG through 2000 kcmil. Copper-clad aluminum shares the aluminum column; confirm before relying on al for CCA.",
+    "data.ampacityBaseAmbientC \u2014 the ambient Table 310.16 is built on",
+    "data.tempCorrectionRows \u2014 Table 310.15(B)(1), rows {minC, maxC, f60, f75, f90}",
+    "data.adjustmentRows \u2014 Table 310.15(C)(1), rows {countFrom, countTo, pct}",
+    "data.terminationDefaultC + terminationSplitAmps \u2014 110.14(C)(1)",
+    "data.conductorProps \u2014 Chapter 9 Table 8 (circular mils, dc ohms/kFT) and Table 9 (ac ohms/kFT by raceway metal)",
+    "data.conductorAreaSqIn \u2014 Chapter 9 Table 5, approximate area per insulation type. Only four insulation types are stubbed here; add the rest as needed.",
+    "data.conduitArea \u2014 Chapter 9 Table 4, per conduit type and trade size: totalSqIn plus the printed 1-conductor / 2-conductor / over-2 / nipple columns. Type the PRINTED columns, do not compute them, the book rounds.",
+    "data.fillPct \u2014 Chapter 9 Table 1 and its Note 4 (nipples)",
+    "data.boxVolumeAllowanceCuIn \u2014 Table 314.16(B), 18 AWG through 6 AWG",
+    "data.boxDeviceMultiplier \u2014 314.16(B)(4)",
+    "data.boxVolumeCuIn \u2014 Table 314.16(A), the common boxes only, our naming",
+    "data.voltageDropAdviceBranchPct + voltageDropAdviceTotalPct \u2014 210.19(A) and 215.2(A) Informational Notes. Advice, never a pass/fail.",
+    "data.receptacleSpacing.maxGapFt + fromBreakFt + minWallSpaceFt \u2014 210.52(A)(1), the spacing rule and the smallest wall space it applies to",
+    "data.gfciRoomKinds[] \u2014 210.8(A), rows of {kind}, the dwelling locations that require GFCI protection"
+  ],
+  "data": {
+    "dwelling": {
+      "generalLightingVaPerSqft": null,
+      "smallApplianceCircuitVa": null,
+      "smallApplianceCircuitsMin": null,
+      "laundryCircuitVa": null,
+      "laundryCircuitsMin": null,
+      "generalDemandRows": [],
+      "fixedAppliance": {
+        "triggerCount": null,
+        "pct": null
+      },
+      "dryer": {
+        "minVa": null,
+        "demandRows": []
+      },
+      "cooking": {
+        "colCRows": [],
+        "colARows": [],
+        "colBRows": [],
+        "colALimitKw": null,
+        "colBLimitKw": null,
+        "colCLimitKw": null,
+        "colCMaxKw": null,
+        "note1": {
+          "perKwPct": null
+        }
+      },
+      "heatPct": null,
+      "acPct": null,
+      "largestMotorPct": null,
+      "optional": {
+        "minServiceAmps": null,
+        "generalFirstVa": null,
+        "generalFirstPct": null,
+        "generalRemainderPct": null,
+        "hvacPct": {
+          "ac": null,
+          "heatPumpWithSupplemental": null,
+          "heatPumpNoSupplemental": null,
+          "spaceHeatUnder": null,
+          "spaceHeatAtOrOver": null,
+          "centralSpaceHeat": null
+        },
+        "heatUnitThreshold": null
+      },
+      "serviceMinAmps": null
+    },
+    "standardOcpdAmps": [],
+    "smallConductorMaxOcpd": {
+      "cu": {
+        "10": null,
+        "12": null,
+        "14": null
+      },
+      "al": {
+        "10": null,
+        "12": null
+      }
+    },
+    "continuousPct": null,
+    "ampacity": {
+      "cu": {
+        "1": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "2": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "3": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "4": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "6": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "8": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "10": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "12": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "14": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "250": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "300": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "350": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "400": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "500": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "600": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "700": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "750": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "800": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "900": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1000": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1250": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1500": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1750": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "2000": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1/0": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "2/0": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "3/0": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "4/0": {
+          "60": null,
+          "75": null,
+          "90": null
+        }
+      },
+      "al": {
+        "1": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "2": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "3": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "4": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "6": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "8": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "10": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "12": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "14": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "250": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "300": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "350": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "400": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "500": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "600": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "700": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "750": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "800": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "900": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1000": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1250": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1500": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1750": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "2000": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "1/0": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "2/0": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "3/0": {
+          "60": null,
+          "75": null,
+          "90": null
+        },
+        "4/0": {
+          "60": null,
+          "75": null,
+          "90": null
+        }
+      }
+    },
+    "ampacityBaseAmbientC": null,
+    "tempCorrectionRows": [],
+    "adjustmentRows": [],
+    "terminationDefaultC": null,
+    "terminationSplitAmps": null,
+    "conductorProps": {
+      "cu": {
+        "1": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "2": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "3": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "4": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "6": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "8": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "10": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "12": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "14": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "250": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "300": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "350": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "400": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "500": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "600": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "700": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "750": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "800": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "900": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1000": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1250": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1500": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1750": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "2000": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1/0": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "2/0": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "3/0": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "4/0": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        }
+      },
+      "al": {
+        "1": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "2": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "3": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "4": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "6": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "8": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "10": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "12": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "14": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "250": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "300": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "350": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "400": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "500": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "600": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "700": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "750": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "800": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "900": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1000": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1250": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1500": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1750": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "2000": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "1/0": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "2/0": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "3/0": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        },
+        "4/0": {
+          "circularMils": null,
+          "dcOhmsPerKft": null,
+          "acOhmsPerKftPvc": null,
+          "acOhmsPerKftAlum": null,
+          "acOhmsPerKftSteel": null
+        }
+      }
+    },
+    "conductorAreaSqIn": {
+      "thhn-thwn-2": {
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "6": null,
+        "8": null,
+        "10": null,
+        "12": null,
+        "14": null,
+        "250": null,
+        "300": null,
+        "350": null,
+        "400": null,
+        "500": null,
+        "600": null,
+        "700": null,
+        "750": null,
+        "800": null,
+        "900": null,
+        "1000": null,
+        "1250": null,
+        "1500": null,
+        "1750": null,
+        "2000": null,
+        "1/0": null,
+        "2/0": null,
+        "3/0": null,
+        "4/0": null
+      },
+      "xhhw-2": {
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "6": null,
+        "8": null,
+        "10": null,
+        "12": null,
+        "14": null,
+        "250": null,
+        "300": null,
+        "350": null,
+        "400": null,
+        "500": null,
+        "600": null,
+        "700": null,
+        "750": null,
+        "800": null,
+        "900": null,
+        "1000": null,
+        "1250": null,
+        "1500": null,
+        "1750": null,
+        "2000": null,
+        "1/0": null,
+        "2/0": null,
+        "3/0": null,
+        "4/0": null
+      },
+      "thw": {
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "6": null,
+        "8": null,
+        "10": null,
+        "12": null,
+        "14": null,
+        "250": null,
+        "300": null,
+        "350": null,
+        "400": null,
+        "500": null,
+        "600": null,
+        "700": null,
+        "750": null,
+        "800": null,
+        "900": null,
+        "1000": null,
+        "1250": null,
+        "1500": null,
+        "1750": null,
+        "2000": null,
+        "1/0": null,
+        "2/0": null,
+        "3/0": null,
+        "4/0": null
+      },
+      "tw": {
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "6": null,
+        "8": null,
+        "10": null,
+        "12": null,
+        "14": null,
+        "250": null,
+        "300": null,
+        "350": null,
+        "400": null,
+        "500": null,
+        "600": null,
+        "700": null,
+        "750": null,
+        "800": null,
+        "900": null,
+        "1000": null,
+        "1250": null,
+        "1500": null,
+        "1750": null,
+        "2000": null,
+        "1/0": null,
+        "2/0": null,
+        "3/0": null,
+        "4/0": null
+      }
+    },
+    "conduitArea": {
+      "emt": {
+        "1": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        }
+      },
+      "imc": {
+        "1": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        }
+      },
+      "rmc": {
+        "1": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        }
+      },
+      "pvc40": {
+        "1": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        }
+      },
+      "pvc80": {
+        "1": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        }
+      },
+      "ent": {
+        "1": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        }
+      },
+      "fmc": {
+        "1": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        }
+      },
+      "lfmc": {
+        "1": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/4": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "1-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "2-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        },
+        "3-1/2": {
+          "totalSqIn": null,
+          "over2SqIn": null,
+          "twoSqIn": null,
+          "oneSqIn": null,
+          "nippleSqIn": null
+        }
+      }
+    },
+    "fillPct": {
+      "one": null,
+      "two": null,
+      "overTwo": null,
+      "nipple": null
+    },
+    "boxVolumeAllowanceCuIn": {
+      "6": null,
+      "8": null,
+      "10": null,
+      "12": null,
+      "14": null,
+      "16": null,
+      "18": null
+    },
+    "boxDeviceMultiplier": null,
+    "boxVolumeCuIn": {
+      "device-3x2x2": null,
+      "device-3x2x2.25": null,
+      "device-3x2x2.5": null,
+      "device-3x2x2.75": null,
+      "device-3x2x3.5": null,
+      "square-4x1.25": null,
+      "square-4x1.5": null,
+      "square-4x2.125": null,
+      "square-4.6875x1.25": null,
+      "square-4.6875x1.5": null,
+      "square-4.6875x2.125": null,
+      "octagon-4x1.25": null,
+      "octagon-4x1.5": null,
+      "octagon-4x2.125": null
+    },
+    "voltageDropAdviceBranchPct": null,
+    "voltageDropAdviceTotalPct": null,
+    "receptacleSpacing": {
+      "maxGapFt": null,
+      "fromBreakFt": null,
+      "minWallSpaceFt": null
+    },
+    "gfciRoomKinds": []
+  }
+}

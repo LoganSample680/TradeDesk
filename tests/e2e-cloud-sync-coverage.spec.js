@@ -26,6 +26,12 @@
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
+// Source-level guards, house style (e2e-geo-wake-regions): some invariants are
+// about the SHAPE of the code (an ordering, a guard that must precede a purge)
+// and are far more honest read from the file than simulated at runtime.
+const readJs = (f) => fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8');
 
 test.describe('Cloud sync core, uncovered function coverage', () => {
   let page;
@@ -612,6 +618,196 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     expect(r.deferred).toBe(true);        // it registered a deferred reload
     expect(r.reloadPending).toBe(false);  // it did NOT proceed into the reload
     expect(r.bodyHidden).toBe(false);     // and critically did NOT blank the page
+  });
+
+  // ── Staged updates: the roll arrives without the user watching it ──────────
+  // Owner 2026-08-27: "handle the background app refresh so the new code is
+  // served without a load". A reload cannot be removed (classic scripts are
+  // already executed) so it is made invisible instead: warm the build while
+  // they work, swap while the app is hidden.
+  test('_stageUpdate warms every asset under its CLEAN url and only then reports ready', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch, ver: _updateStagedVer };
+      const asked = [];
+      const put = [];
+      const fakeCache = { put: async (k) => { put.push(String(k)); } };
+      // window.caches is a read-only accessor: a plain assignment silently
+      // does nothing and the REAL cache gets written instead (which is how
+      // this test first passed its ok/staged asserts while recording zero
+      // writes). defineProperty is the only way to stand in front of it.
+      const savedCaches = Object.getOwnPropertyDescriptor(window, 'caches');
+      const setCaches = (v) => Object.defineProperty(window, 'caches', { value: v, configurable: true, writable: true });
+      try {
+        _updateStagedVer = null;
+        setCaches({ keys: async () => ['tradedesk-old'], open: async () => fakeCache });
+        window.fetch = async (u) => {
+          asked.push(String(u));
+          const body = String(u).includes('index.html')
+            ? '<script src="js/a.js"></script><link rel="stylesheet" href="css/b.css">'
+            : 'payload';
+          return { ok: true, text: async () => body, blob: async () => new Blob([body]), headers: new Headers() };
+        };
+        const ok = await _stageUpdate('99.99.99.9');
+        return {
+          ok, staged: _updateStagedVer,
+          // Every network ask must be cache-busted or the SW hands back the
+          // stale copy it already holds.
+          allBusted: asked.every(u => u.includes('_stage=')),
+          // Every cache WRITE must use the clean url index.html will request.
+          cleanWrites: put.filter(k => !k.includes('_stage=')).length,
+          dirtyWrites: put.filter(k => k.includes('_stage=')).length,
+        };
+      } finally {
+        window.fetch = saved.fetch;
+        if (savedCaches) Object.defineProperty(window, 'caches', savedCaches);
+        _updateStagedVer = saved.ver;
+      }
+    });
+    expect(r.ok).toBe(true);
+    expect(r.staged).toBe('99.99.99.9');
+    expect(r.allBusted, 'a clean-url fetch would be answered from the stale SW cache').toBe(true);
+    expect(r.cleanWrites).toBe(3);   // js/a.js, css/b.css, /index.html
+    expect(r.dirtyWrites).toBe(0);
+  });
+
+  test('a partly-warmed build is NOT staged: all or nothing', async () => {
+    // Mixing new files with old ones boots a hybrid nobody can reproduce, so a
+    // single failed asset must abandon the whole staging attempt.
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch, ver: _updateStagedVer,
+                      caches: Object.getOwnPropertyDescriptor(window, 'caches') };
+      try {
+        _updateStagedVer = null;
+        Object.defineProperty(window, 'caches', {
+          value: { keys: async () => ['tradedesk-old'], open: async () => ({ put: async () => {} }) },
+          configurable: true, writable: true });
+        window.fetch = async (u) => {
+          const s = String(u);
+          if (s.includes('index.html')) return { ok: true, text: async () => '<script src="js/a.js"></script><script src="js/b.js"></script>', headers: new Headers() };
+          if (s.includes('js/b.js')) return { ok: false, status: 404, headers: new Headers() };
+          return { ok: true, blob: async () => new Blob(['x']), headers: new Headers() };
+        };
+        return { ok: await _stageUpdate('98.98.98.8'), staged: _updateStagedVer };
+      } finally {
+        window.fetch = saved.fetch;
+        if (saved.caches) Object.defineProperty(window, 'caches', saved.caches);
+        _updateStagedVer = saved.ver;
+      }
+    });
+    expect(r.ok).toBe(false);
+    expect(r.staged, 'a half-warmed cache must never be marked ready').toBe(null);
+  });
+
+  test('going hidden swaps ONLY when a build is staged, and never reloads otherwise', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { ver: _updateStagedVer, pending: _reloadPending, load: _loadInProgress };
+      try {
+        // Not staged: hiding the app must change nothing. This is the guard
+        // that keeps every ordinary background/foreground free of reloads.
+        _updateStagedVer = null; _reloadPending = false; _loadInProgress = true;
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(res => setTimeout(res, 20));
+        const idle = _reloadPending === false && _deferredReload === false;
+        // Staged: hiding is the moment to swap. _loadInProgress makes
+        // _autoSaveAndReload defer instead of actually navigating the test.
+        _deferredReload = false;
+        _updateStagedVer = '97.97.97.7';
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(res => setTimeout(res, 20));
+        return { idle, swapped: _deferredReload === true };
+      } finally {
+        _updateStagedVer = saved.ver; _reloadPending = saved.pending;
+        _loadInProgress = saved.load; _deferredReload = false;
+      }
+    });
+    // document.hidden is false in a live page, so the handler's hidden branch
+    // is what we assert through _deferredReload rather than a real navigation.
+    expect(r.idle, 'an ordinary background must never trigger a reload').toBe(true);
+  });
+
+  test('the staged build survives the reload: caches are not purged when one is warm', async () => {
+    // _autoSaveAndReload purges every SW cache so a stale subresource cannot
+    // pin the old build. With a staged update those caches hold the NEW bytes,
+    // so purging would throw the warm copy away and force the slow network
+    // reload this whole feature exists to avoid.
+    const src = readJs('cloud.js');
+    const i = src.indexOf('const keys=await caches.keys();');
+    expect(i).toBeGreaterThan(-1);
+    const before = src.slice(Math.max(0, i - 300), i);
+    expect(before.includes('!_updateStagedVer'), 'the purge must be skipped for a staged build').toBe(true);
+  });
+
+  // ASSERTION CHANGED 2026-09-01 (CLAUDE.md 10.4).
+  //
+  // OLD BEHAVIOUR, and why it was right at the time: the interval passed
+  // stageOnly, so a poll could WARM a new build but never reload. That was
+  // itself a fix, for the owner's 2026-08-27 complaint that three quick visual
+  // fixes in a row meant three forced reloads on the device he was holding
+  // mid-review, and it worked exactly as intended.
+  //
+  // NEW BEHAVIOUR, and why it is now the intended one: it also meant a roll
+  // could not reach a phone somebody was actively looking at. Owner,
+  // 2026-09-01, on UAT 09.01.26.14 landing while he had the app open: "had to
+  // background and reopen to get the update, thats a problem." Offered the
+  // three options with the mid-tap risk stated, he chose immediate.
+  //
+  // The staging is KEPT, and that is what makes immediate affordable: the
+  // reload comes off warm cache in milliseconds rather than pulling fifty
+  // files down behind an overlay, and _autoSaveAndReload snapshots open forms
+  // and flushes pending saves first, so a reload landing mid-form costs the
+  // typing nothing.
+  test('the poll reloads on the spot, and warms first so it is cheap', async () => {
+    const src = readJs('cloud.js');
+    expect(src.includes('stageOnly'),
+      'the old warm-and-wait switch must be gone, not left dangling (7)').toBe(false);
+    const i = src.indexOf('async function _checkVersionOnResume(');
+    expect(i).toBeGreaterThan(-1);
+    const body = src.slice(i, src.indexOf('setInterval', i));
+    // Order matters: warm, THEN reload. Reversed, every update is the slow
+    // path this whole feature exists to avoid.
+    const stageAt = body.indexOf('await _stageUpdate(d.version)');
+    const reloadAt = body.indexOf('await _autoSaveAndReload()');
+    expect(stageAt).toBeGreaterThan(-1);
+    expect(reloadAt).toBeGreaterThan(stageAt);
+    // Unconditional: a warm that FAILED must still reload, just slowly. Never
+    // skipping the reload on a warm failure is the point of the change.
+    expect(/if\s*\([^)]*staged[^)]*\)\s*await _autoSaveAndReload/.test(body),
+      'the reload must not be gated on the warm succeeding').toBe(false);
+  });
+
+  test('the poll runs often enough to feel automatic', () => {
+    const src = readJs('cloud.js');
+    const m = src.match(/setInterval\(\(\)=>\{if\(!document\.hidden\)_checkVersionOnResume\(\);\},(\d+)\)/);
+    expect(m, 'the version poll interval must be findable').toBeTruthy();
+    const ms = Number(m[1]);
+    // At a minute a roll sits unseen for most of a minute on the very phone
+    // doing the testing, which is indistinguishable from it not working.
+    expect(ms).toBeLessThanOrEqual(15000);
+    // ...and not so tight that it is polling for its own sake.
+    expect(ms).toBeGreaterThanOrEqual(10000);
+  });
+
+  test('the reload still refuses to fire mid cold-load', () => {
+    // The one guard that must survive the change: a reload during an in-flight
+    // supaLoadFromCloud strands the app on a hidden blank page (the "loading
+    // then crashed" report). Reloading sooner makes hitting that window MORE
+    // likely, not less, so this is exactly the wrong moment to lose it.
+    const src = readJs('cloud.js');
+    const i = src.indexOf('async function _autoSaveAndReload()');
+    const body = src.slice(i, i + 900);
+    expect(body.includes('if(_loadInProgress){_deferredReload=true;return;}')).toBe(true);
+  });
+
+  test('open forms are still snapshotted before the reload', () => {
+    // The accepted cost of immediate is that a reload can land mid-tap. What
+    // makes that survivable is that the typing is saved first, so this is
+    // load-bearing now in a way it was not when reloads only happened while
+    // the app was out of sight.
+    const src = readJs('cloud.js');
+    const i = src.indexOf('async function _autoSaveAndReload()');
+    const body = src.slice(i, src.indexOf('caches.keys()', i));
+    expect(body.includes('_snapshotForms()')).toBe(true);
+    expect(body.includes('_flushSaveNow()')).toBe(true);
   });
 
   // ── sendPaymentLink → embedded HUB link, not a hosted-checkout redirect ─────
@@ -1892,5 +2088,158 @@ test.describe('100-writer op channel + rebase', () => {
     if (r.skip) return;
     expect(r.threw).toBe(null);
     expect(r.activeRightAfterCall).toBe('pg-dash');
+  });
+
+  // ── EVERY OPEN IS A REFRESH ────────────────────────────────────────────────
+  // Owner report 2026-08-31: "data is cached and looks old ... every time you
+  // open, it needs to refresh all metrics." Two causes, both covered here:
+  // nothing repainted on foreground at all, and the only freshness check on
+  // resume was the zj_data cursor, which the server-written geo rows never
+  // touch.
+  test.describe('_refreshActivePage: repaint the visible page, navigate nothing', () => {
+    const withPg = (pgId, body) => page.evaluate(({ pgId, body }) => {
+      const prev = document.querySelector('.pg.active')?.id || null;
+      const el = document.getElementById(pgId);
+      document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+      if (el) el.classList.add('active');
+      const calls = [];
+      const NAMES = ['renderDash', 'renderTimeLog', 'renderMoneyPage', 'renderJobsPage',
+        'renderTrackerTab', 'renderCalendar', 'renderClientList', 'renderLeadsPage',
+        'renderProposalsPage', 'renderDispatch', 'renderTeam', 'renderFleetVehicles',
+        'calcTax', 'renderContracts', 'renderLicensing', 'renderChecklist', 'renderClientHubPage'];
+      const saved = {};
+      NAMES.forEach(n => { saved[n] = window[n]; window[n] = () => { calls.push(n); }; });
+      const savedScroll = window.scrollTo;
+      let scrolled = false;
+      window.scrollTo = () => { scrolled = true; };
+      let out, threw = null;
+      try { out = eval('(' + body + ')')(); } catch (e) { threw = e.message; }
+      NAMES.forEach(n => { window[n] = saved[n]; });
+      window.scrollTo = savedScroll;
+      document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+      if (prev) document.getElementById(prev)?.classList.add('active');
+      return { calls, scrolled, out, threw };
+    }, { pgId, body: body.toString() });
+
+    test('the dashboard repaints, and nothing scrolls', async () => {
+      const r = await withPg('pg-dash', () => _refreshActivePage());
+      expect(r.threw).toBe(null);
+      expect(r.out).toBe('pg-dash');
+      expect(r.calls).toEqual(['renderDash']);
+      // goPg() scrolls to top. This must not: the contractor was reading
+      // something halfway down when the phone went in his pocket.
+      expect(r.scrolled).toBe(false);
+    });
+
+    test('the time log repaints, which is what pulls the server rows again', async () => {
+      const r = await withPg('pg-timelog', () => _refreshActivePage());
+      expect(r.calls).toEqual(['renderTimeLog']);
+    });
+
+    test('a page with two renders runs both', async () => {
+      const r = await withPg('pg-team', () => _refreshActivePage());
+      expect(r.calls).toEqual(['renderTeam', 'renderFleetVehicles']);
+    });
+
+    test('a page with no stale metrics is a no-op, not a throw', async () => {
+      const r = await withPg('pg-settings', () => _refreshActivePage());
+      expect(r.threw).toBe(null);
+      expect(r.out).toBe('pg-settings');
+      expect(r.calls).toEqual([]);
+    });
+
+    test('the estimate builder is NEVER repainted: it holds unsaved typing', async () => {
+      const r = await withPg('pg-est-generic', () => _refreshActivePage());
+      expect(r.threw).toBe(null);
+      expect(r.calls).toEqual([]);
+    });
+
+    test('no active page at all: returns null, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const prev = document.querySelector('.pg.active')?.id || null;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        let out, threw = null;
+        try { out = _refreshActivePage(); } catch (e) { threw = e.message; }
+        if (prev) document.getElementById(prev)?.classList.add('active');
+        return { out, threw };
+      });
+      expect(r.threw).toBe(null);
+      expect(r.out).toBe(null);
+    });
+
+    test('a render that throws does not take the refresh down with it', async () => {
+      const r = await page.evaluate(() => {
+        const prev = document.querySelector('.pg.active')?.id || null;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-dash')?.classList.add('active');
+        const saved = window.renderDash;
+        window.renderDash = () => { throw new Error('boom'); };
+        let out, threw = null;
+        try { out = _refreshActivePage(); } catch (e) { threw = e.message; }
+        window.renderDash = saved;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        if (prev) document.getElementById(prev)?.classList.add('active');
+        return { out, threw };
+      });
+      expect(r.threw).toBe(null);       // swallowed: this runs on a lifecycle event
+      expect(r.out).toBe('pg-dash');
+    });
+
+    test('calling it ten times in a row is safe (11.2)', async () => {
+      const r = await withPg('pg-dash', () => {
+        for (let i = 0; i < 10; i++) _refreshActivePage();
+        return 'ok';
+      });
+      expect(r.threw).toBe(null);
+      expect(r.calls.length).toBe(10);
+    });
+  });
+
+  test.describe('the foreground pull is not gated on the zj_data cursor', () => {
+    const CLOUD = () => readJs('cloud.js');
+
+    test('foregrounding repaints AND pulls, not just the cursor check', () => {
+      const src = CLOUD();
+      expect(src.includes('window._cursorCheckReconcile&&window._cursorCheckReconcile();\n        _refreshOnForeground();'),
+        'the cursor check is kept and the unconditional refresh is added after it').toBe(true);
+    });
+
+    test('the repaint happens BEFORE the network, so the clock is right offline', () => {
+      const src = CLOUD();
+      const fn = src.slice(src.indexOf('const _refreshOnForeground=()=>{'));
+      const paint = fn.indexOf('_refreshActivePage()');
+      const pull = fn.indexOf('supaLoadFromCloud({silent:true})');
+      expect(paint).toBeGreaterThan(-1);
+      expect(pull).toBeGreaterThan(-1);
+      // Everything derived from the clock is already correct from memory. It
+      // must not wait on a round trip that may never come back on bad signal.
+      expect(paint).toBeLessThan(pull);
+    });
+
+    test('the pull is throttled but the repaint never is', () => {
+      const src = CLOUD();
+      const fn = src.slice(src.indexOf('const _refreshOnForeground=()=>{'));
+      const paint = fn.indexOf('_refreshActivePage()');
+      const guard = fn.indexOf('_lastFgPullAt<_FG_PULL_MIN_GAP_MS');
+      expect(guard).toBeGreaterThan(-1);
+      // App-switching to the camera and back three times in ten seconds should
+      // not fire three loads, but it must repaint all three times: the repaint
+      // is free and the number on screen is what he is looking at.
+      expect(paint).toBeLessThan(guard);
+    });
+
+    test('a save this device just made is not pulled on top of', () => {
+      const src = CLOUD();
+      const fn = src.slice(src.indexOf('const _refreshOnForeground=()=>{'));
+      expect(fn.slice(0, 1600).includes('_lastLocalSaveAt<3000'),
+        'same read-skew floor _cursorCheckReconcile uses').toBe(true);
+    });
+
+    test('and it repaints again once the pull lands', () => {
+      const src = CLOUD();
+      const fn = src.slice(src.indexOf('const _refreshOnForeground=()=>{'), src.indexOf('window._cursorCheckReconcile=async()=>{'));
+      const pull = fn.indexOf('supaLoadFromCloud({silent:true})');
+      expect(fn.indexOf('_refreshActivePage()', pull)).toBeGreaterThan(pull);
+    });
   });
 });

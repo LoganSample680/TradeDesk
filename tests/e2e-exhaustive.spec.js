@@ -15949,25 +15949,28 @@ test.describe('clients.js: exhaustive coverage', () => {
   // openEstimateForClient
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openEstimateForClient', () => {
-    test('no currentClientId, shows gate, does not throw', async () => {
+    // WAS: no client meant showWorkflowGate("Select a client first") and a walk
+    // to the Clients tab. NOW: the name-and-address gate opens right here and
+    // the record writes itself (owner direction 2026-09-06).
+    test('no currentClientId, asks for a name and address, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = currentClientId;
         currentClientId = null;
-        let gateShown = false;
-        const orig = typeof showWorkflowGate === 'function' ? showWorkflowGate : null;
-        window.showWorkflowGate = () => { gateShown = true; };
+        let workflowGate = false;
+        const orig = window.showWorkflowGate;
+        window.showWorkflowGate = () => { workflowGate = true; };
         try {
           openEstimateForClient();
-          currentClientId = saved;
-          window.showWorkflowGate = orig || window.showWorkflowGate;
-          return { ok: true, gateShown };
+          const quickGate = !!document.getElementById('_newc-gate-overlay');
+          document.getElementById('_newc-gate-overlay')?.remove();
+          return { ok: true, quickGate, workflowGate };
         }
-        catch (e) {
-          currentClientId = saved;
-          return { ok: false, err: e.message };
-        }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { currentClientId = saved; window.showWorkflowGate = orig; }
       });
       expect(r.ok).toBe(true);
+      expect(r.quickGate).toBe(true);
+      expect(r.workflowGate).toBe(false);
     });
 
     test('blacklisted client, calls zAlert, does not throw', async () => {

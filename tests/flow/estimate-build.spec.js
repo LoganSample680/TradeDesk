@@ -47,9 +47,19 @@ test.describe('estimate build → proposal → real artifact (UI-driven)', () =>
           const ad = document.getElementById('gei-addr');   if (ad) ad.value = c.addr;
         }, client);
         await p.waitForTimeout(500);
-        // Honest thumb-work: tap "+ New estimate" (1) + tap "Build Your Own" card (1)
-        // + type client name + type address.
-        return 2 + client.name.length + client.addr.length;
+        // TWO TAPS, THE SAME TWO T&M PAYS: "+ New estimate" then the type card.
+        // Both types go through one function (_geiOpenModeEstimate, mode is the
+        // only difference), so the door has to cost the same in both specs or
+        // the ratchet is grading a comparison that does not exist.
+        //
+        // The client name and address used to be charged here, 48 keystrokes of
+        // it, because this flow invents a fresh client every run and types them
+        // into the estimator. That is client-record work, it belongs to the
+        // intake flow that already measures it, and a contractor opening an
+        // estimate on an existing client types neither. Charging it to the
+        // estimate double-counted it and made BYO look 49 taps more expensive
+        // to open than T&M when the product charges both exactly two.
+        return 2;
       },
       rule: async (p) => {
         const r = await p.evaluate(() => ({

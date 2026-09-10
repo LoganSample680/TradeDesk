@@ -1,0 +1,665 @@
+{
+  "schema": "td-plumb-1",
+  "family": "ipc",
+  "edition": "2021",
+  "title": "International Plumbing Code, 2021 edition",
+  "publisher": "International Code Council",
+  "verified": false,
+  "verifiedBy": "",
+  "verifiedAt": "",
+  "notes": "Values and procedures only, in our schema (see codes/README.md). Every number is null: none has been read out of the purchased edition yet. IPC and UPC assign DIFFERENT fixture units to the same fixture, so this file and codes/upc-2024.json never merge and never fall back to one another.",
+  "todo": [
+    "fixtures[*].dfu.private and .public: drainage fixture units per fixture (IPC)",
+    "fixtures[*].trapSizeIn: minimum trap size per fixture",
+    "fixtures[*].wsfu.private/.public .cold/.hot/.total: water supply fixture units per fixture",
+    "dfu.continuousFlowDfuPerGpm: fixture units per gpm of continuous flow",
+    "dfu.unlistedByTrapSizeIn[]: fixture units for an unlisted fixture, by trap size",
+    "drain.minSizeIn, drain.minSizeForWaterClosetIn, drain.defaultSlopeInPerFt, drain.slopesInPerFt",
+    "drain.horizontalBranch[]: rows of {sizeIn, maxDfu}",
+    "drain.stack[]: rows of {sizeIn, maxDfuTotal, maxDfuPerBranchInterval, maxBranchIntervals}",
+    "drain.buildingDrain[]: rows of {sizeIn, maxDfuBySlope}",
+    "vent.minSizeIn, vent.minFractionOfDrainSize",
+    "vent.table[]: rows of {drainSizeIn, maxDfu, maxLengthFtByVentSize}",
+    "water.minServiceSizeIn, water.minDistributionSizeIn, water.continuousFlowWsfuPerGpm",
+    "water.serviceSizing[]: rows of {pressureRange, meterSizeIn, serviceSizeIn, distributionSizeIn, maxWsfuByLengthFt}",
+    "waterHeater.expansion.*: whether expansion control is required on a closed system, and the sizing method plus its factors",
+    "waterHeater.relief.*: relief valve setting limits and discharge piping rules"
+  ],
+  "sources": {
+    "fixtures": null,
+    "dfu": null,
+    "drain": null,
+    "vent": null,
+    "water": null,
+    "waterHeater": null
+  },
+  "lookup": {
+    "publisher": "https://www.iccsafe.org/",
+    "sectionIndex": "https://codes.iccsafe.org/content/IPC2021P1",
+    "note": "Jurisdictions amend. Confirm the local amendment set before flipping verified."
+  },
+  "cites": {
+    "dfu-total": "IPC 2021 709.1",
+    "dfu-unlisted": "IPC 2021 709.2",
+    "dfu-continuous": "IPC 2021 709.3",
+    "drain-size": "IPC 2021 710.1",
+    "drain-slope": "IPC 2021 704.1",
+    "vent-size": "IPC 2021 916.1",
+    "vent-min": "IPC 2021 916.2",
+    "wsfu-total": "IPC 2021 E103.3",
+    "water-service-size": "IPC 2021 E103.3",
+    "water-min-size": "IPC 2021 603.1",
+    "water-heater-relief": "IPC 2021 504.4",
+    "water-heater-expansion": "IPC 2021 607.3",
+    "water-heater-discharge": "IPC 2021 504.6"
+  },
+  "shapes": {
+    "drainBranchRow": {
+      "sizeIn": null,
+      "maxDfu": null
+    },
+    "drainStackRow": {
+      "sizeIn": null,
+      "maxDfuTotal": null,
+      "maxDfuPerBranchInterval": null,
+      "maxBranchIntervals": null
+    },
+    "buildingDrainRow": {
+      "sizeIn": null,
+      "maxDfuBySlope": {
+        "0.0625": null,
+        "0.125": null,
+        "0.25": null,
+        "0.5": null
+      }
+    },
+    "ventRow": {
+      "drainSizeIn": null,
+      "maxDfu": null,
+      "maxLengthFtByVentSize": {}
+    },
+    "waterSizingRow": {
+      "pressureRange": {
+        "minPsi": null,
+        "maxPsi": null
+      },
+      "meterSizeIn": null,
+      "serviceSizeIn": null,
+      "distributionSizeIn": null,
+      "maxWsfuByLengthFt": {}
+    }
+  },
+  "fixtures": {
+    "water-closet-tank": {
+      "label": "Water closet, tank type",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "water-closet-flushometer": {
+      "label": "Water closet, flushometer",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "urinal-tank": {
+      "label": "Urinal, tank or washout",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "urinal-flushometer": {
+      "label": "Urinal, flushometer",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "lavatory": {
+      "label": "Lavatory (bathroom sink)",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "bathtub": {
+      "label": "Bathtub",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "bathtub-shower": {
+      "label": "Bathtub with shower over it",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "shower-stall": {
+      "label": "Shower stall",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "bidet": {
+      "label": "Bidet",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "kitchen-sink": {
+      "label": "Kitchen sink",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "kitchen-sink-disposal": {
+      "label": "Kitchen sink with disposer",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "kitchen-sink-disposal-dw": {
+      "label": "Kitchen sink with disposer and dishwasher",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "dishwasher": {
+      "label": "Dishwasher, standalone",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "clothes-washer": {
+      "label": "Clothes washer standpipe",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "laundry-tub": {
+      "label": "Laundry tub",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "bar-sink": {
+      "label": "Bar sink",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "service-sink": {
+      "label": "Service sink",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "mop-basin": {
+      "label": "Mop basin / floor sink",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "floor-drain": {
+      "label": "Floor drain",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "drinking-fountain": {
+      "label": "Drinking fountain",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "hose-bibb": {
+      "label": "Hose bibb / sillcock",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "bathroom-group-full": {
+      "label": "Full bath group (closet, lavatory, tub or shower)",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    },
+    "bathroom-group-half": {
+      "label": "Half bath group (closet and lavatory)",
+      "trapSizeIn": {
+        "private": null,
+        "public": null
+      },
+      "dfu": {
+        "private": null,
+        "public": null
+      },
+      "wsfu": {
+        "private": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        },
+        "public": {
+          "cold": null,
+          "hot": null,
+          "total": null
+        }
+      }
+    }
+  },
+  "dfu": {
+    "unlistedByTrapSizeIn": [],
+    "continuousFlowDfuPerGpm": null
+  },
+  "drain": {
+    "minSizeIn": null,
+    "minSizeForWaterClosetIn": null,
+    "defaultSlopeInPerFt": null,
+    "slopesInPerFt": [],
+    "horizontalBranch": [],
+    "stack": [],
+    "buildingDrain": []
+  },
+  "vent": {
+    "minSizeIn": null,
+    "minFractionOfDrainSize": null,
+    "maxDeveloped": null,
+    "table": []
+  },
+  "water": {
+    "minServiceSizeIn": null,
+    "minDistributionSizeIn": null,
+    "continuousFlowWsfuPerGpm": null,
+    "serviceSizing": []
+  },
+  "waterHeater": {
+    "expansion": {
+      "requiredOnClosedSystem": null,
+      "method": null,
+      "waterExpansionFactorByTempF": {},
+      "acceptanceFactorMethod": null,
+      "standardTankSizesGal": []
+    },
+    "relief": {
+      "tempPressureValveRequired": null,
+      "maxSetPsi": null,
+      "maxSetTempF": null,
+      "dischargePipeSizeRule": null,
+      "dischargeMaxElbows": null,
+      "dischargeMaxLengthFt": null
+    }
+  }
+}

@@ -1350,7 +1350,7 @@ function renderOverview(){
 
   // Change orders awaiting the client's signature, prominent approval card
   const pendingCOs=[];
-  h.bids.forEach(b=>{if(b.cancelledAt)return;(b.changeOrders||[]).forEach(co=>{if(!co.signedAt)pendingCOs.push({bid:b,co});});});
+  h.bids.forEach(b=>{if(b.cancelledAt)return;(b.changeOrders||[]).forEach(co=>{if(!co.signedAt&&!co.declinedAt)pendingCOs.push({bid:b,co});});});
   pendingCOs.forEach(({bid,co})=>{
     const deltaLabel=(co.type==='sub'?'−':'+')+fmt(co.amount);
     const deltaColor=co.type==='sub'?'var(--red)':'var(--denim)';
@@ -2034,6 +2034,64 @@ function _showEpaDoc(bidId){
 // Pending: CO badge, original contract, change requested, adjustment, new total,
 // legal paragraph, the ONE shared signing pad (esign.js). Signed: renders as a
 // signed document (signature image + signer + date/time), like the EPA disclosure.
+// What they signed, every change order since, where the contract stands. Built
+// from the hub's own bid, so it is right even when the snapshot predates a CO.
+function _hubCOHistoryHTML(bid,thisCO){
+  const prior=(bid&&bid.changeOrders||[]).filter(c=>c&&c.signedAt&&(c.coNum||0)<(thisCO.coNum||0))
+    .sort((a,b)=>(a.coNum||0)-(b.coNum||0));
+  if(!prior.length)return '';
+  const first=prior[0].originalAmount||0;
+  return '<div style="font-size:12px;color:#6b7280;line-height:1.7;margin-top:6px">Signed '+fmt(first)+
+    prior.map(c=>' · CO #'+c.coNum+' '+((c.delta||0)<0?'-':'+')+fmt(Math.abs(c.delta||0))).join('')+'</div>';
+}
+function _hubCOLinesHTML(lines,color,type){
+  if(!lines||!lines.length)return '';
+  const sign=type==='sub'?'-':'+';
+  return '<div style="margin-bottom:10px">'+
+    lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6">'+
+      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+esc(l.desc||'')+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:#111;white-space:nowrap">'+sign+fmt(l.amt||0)+'</span>'+
+    '</div>').join('')+
+    '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0 0">'+
+      '<span style="font-size:13px;font-weight:800;color:#111">Adjustment</span>'+
+      '<span style="font-size:16px;font-weight:800;color:'+color+'">'+sign+fmt(lines.reduce((s,l)=>s+(Number(l.amt)||0),0))+'</span>'+
+    '</div></div>';
+}
+function _hubCOPhotosHTML(urls){
+  if(!urls||!urls.length)return '';
+  return '<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:10px">What We Found</div>'+
+    '<div style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px">'+
+      urls.map(u=>'<img src="'+esc(u)+'" style="width:132px;height:132px;flex-shrink:0;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb">').join('')+
+    '</div></div>';
+}
+function _hubCODaysHTML(days){
+  const d=Number(days)||0;
+  if(d<=0)return '';
+  return '<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Schedule</div>'+
+    '<div style="font-size:14px;color:#111;line-height:1.5">This change adds <strong>'+d+' working day'+(d===1?'':'s')+'</strong> to the job.</div>'+
+  '</div>';
+}
+function _hubHrs(v){const n=Math.round((Number(v)||0)*10)/10;return (Number.isInteger(n)?n:n.toFixed(1))+' hr'+(n===1?'':'s');}
+function _coOverrunDocHTML(o){
+  if(!o)return '';
+  const rows=[];
+  if((+o.addedHours||0)>0)rows.push(['Labor on site',_hubHrs(o.estHours),_hubHrs(o.actualHours)]);
+  if((+o.addedCrew||0)>0)rows.push(['Crew',(o.estCrew||1)+' on the estimate',(o.actualCrew||0)+' on the job']);
+  if((+o.addedDays||0)>0)rows.push(['Days on site',(o.estDays||1)+' booked',(o.actualDays||0)+' worked']);
+  if(!rows.length)return '';
+  return '<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:10px">What changed on site</div>'+
+    rows.map(r=>'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0">'+
+      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+esc(r[0])+'</span>'+
+      '<span style="font-size:12px;color:#6b7280;text-decoration:line-through;white-space:nowrap">'+esc(String(r[1]))+'</span>'+
+      '<span style="font-size:13px;font-weight:800;color:#111;white-space:nowrap">'+esc(String(r[2]))+'</span>'+
+    '</div>').join('')+
+    ((+o.rate||0)>0&&(+o.addedHours||0)>0?'<div style="font-size:11px;color:#6b7280;margin-top:8px">Additional labor billed at $'+(+o.rate)+'/hr.</div>':'')+
+  '</div>';
+}
+
 function _showCODoc(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co)return;
@@ -2054,15 +2112,28 @@ function _showCODoc(bidId,coNum){
   h+='<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">';
   h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Original Contract</div>';
   h+='<div style="font-size:24px;font-weight:800;color:#111">'+fmt(co.originalAmount)+'</div>';
+  h+=_hubCOHistoryHTML(bid,co);
   h+='</div>';
   // Change requested
   h+='<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">';
   h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Change Requested</div>';
   h+='<div style="font-size:14px;color:#111;line-height:1.5;margin-bottom:10px">'+esc(co.desc||'')+'</div>';
-  h+='<div style="display:flex;align-items:center;gap:8px">';
-  h+='<span style="font-size:13px;color:#6b7280">Adjustment:</span>';
-  h+='<span style="font-size:16px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>';
-  h+='</div></div>';
+  // Itemized when the contractor broke it out. A lump sum is what a homeowner
+  // argues with; lines are what they read and accept.
+  h+=_hubCOLinesHTML(co.lines,deltaColor,co.type);
+  if(!(co.lines&&co.lines.length)){
+    h+='<div style="display:flex;align-items:center;gap:8px">';
+    h+='<span style="font-size:13px;color:#6b7280">Adjustment:</span>';
+    h+='<span style="font-size:16px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>';
+    h+='</div>';
+  }
+  h+='</div>';
+  h+=_hubCOPhotosHTML(co.photos);
+  h+=_hubCODaysHTML(co.addedDays);
+  // What changed on site, when the job's own clock is the reason (js/jobs.js
+  // _jobOverrun). The client sees the same three facts the contractor saw,
+  // estimated beside actual, rather than a bigger number to take on faith.
+  h+=_coOverrunDocHTML(co.overrun);
   // New total
   h+='<div style="background:#f0fdf4;border:2px solid #86efac;border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">';
   h+='<div style="font-size:13px;font-weight:700;color:#166534">New Contract Total</div>';
@@ -2079,6 +2150,14 @@ function _showCODoc(bidId,coNum){
     h+=esignConsentHTML('co-hub',ESIGN_NOTE_CHANGE_ORDER);
     h+='<div id="co-hub-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:6px"></div>';
     h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:14})+' Sign Change Order</button>';
+    // Signing was the only way out of this screen. A homeowner should be
+    // MAKING A DECISION here, not cornered by one, and the contractor needs to
+    // know a job is about to stall while he can still do something about it.
+    const _cph=(_hub&&_hub.contractorPhone||'').replace(/\D/g,'');
+    h+='<div style="display:grid;grid-template-columns:'+(_cph?'1fr 1fr':'1fr')+';gap:8px;margin-top:10px">';
+    if(_cph)h+='<a target="_top" href="sms:'+_cph+'?&body='+encodeURIComponent('Question about Change Order #'+co.coNum+': ')+'" style="padding:13px;border-radius:8px;border:1.5px solid #d1d5db;background:#f9fafb;color:#374151;font-size:14px;font-weight:700;text-align:center;text-decoration:none;font-family:inherit">'+svgIcon('💬')+' Ask a question</a>';
+    h+='<button onclick="_declineCOHub('+bid.id+','+co.coNum+')" style="padding:13px;border-radius:8px;border:1.5px solid #d1d5db;background:#f9fafb;color:#374151;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Decline</button>';
+    h+='</div>';
   }
   h+='</div>';
   const ov=document.createElement('div');
@@ -2096,6 +2175,37 @@ function _showCODoc(bidId,coNum){
     setTimeout(()=>document.getElementById('co-hub-sign-name')?.focus(),300);
   }
 }
+// Decline: the same jsonb row the signature writes to, so the contractor sees
+// it through the exact path he already sees signatures through. Nothing about
+// the contract moves; the change order simply stops waiting.
+async function _declineCOHub(bidId,coNum){
+  const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co||co.signedAt)return;
+  const note=(window.prompt('Tell them why, so they can fix it or talk it through. (Optional)')||'').trim();
+  const ts=new Date().toISOString();
+  const btnWrap=document.getElementById('co-hub-sign-btn');
+  if(btnWrap)btnWrap.disabled=true;
+  try{
+    let arr=null;
+    try{
+      const{data:rows}=await _supa.from('signed_proposals').select('change_orders').eq('bid_id',String(bidId)).limit(1);
+      if(rows&&rows[0]&&Array.isArray(rows[0].change_orders))arr=rows[0].change_orders;
+    }catch(_){}
+    if(!arr)arr=(bid.changeOrders||[]).map(c=>({coNum:c.coNum,desc:c.desc,type:c.type,amount:c.amount,delta:c.delta,originalAmount:c.originalAmount,newAmount:c.newAmount,sentAt:c.sentAt||'',signedAt:c.signedAt||null,signerName:c.signerName||null,signatureData:c.sigData||c.signatureData||null}));
+    let entry=arr.find(x=>x&&x.coNum===coNum);
+    if(!entry){entry={coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,sentAt:co.sentAt||''};arr.push(entry);}
+    entry.declinedAt=ts;entry.declineNote=note;
+    const{error}=await _supa.from('signed_proposals').update({change_orders:arr}).eq('bid_id',String(bidId));
+    if(error)console.warn('CO decline DB write deferred:',error.message);
+    try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum,declined:true}));}catch(_){}
+    _hubNudgePeers();
+  }catch(_e){}
+  co.declinedAt=ts;co.declineNote=note;co.status='declined';
+  document.getElementById('co-hub-ov')?.remove();
+  renderOverview();renderDocuments();
+  alert('Declined. '+_cnText('Your contractor')+' will be notified.');
+}
+
 async function _submitCOHubSign(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co||co.signedAt)return;
@@ -2114,9 +2224,9 @@ async function _submitCOHubSign(bidId,coNum){
       const{data:rows}=await _supa.from('signed_proposals').select('change_orders').eq('bid_id',String(bidId)).limit(1);
       if(rows&&rows[0]&&Array.isArray(rows[0].change_orders))arr=rows[0].change_orders;
     }catch(_){}
-    if(!arr)arr=(bid.changeOrders||[]).map(c=>({coNum:c.coNum,desc:c.desc,type:c.type,amount:c.amount,delta:c.delta,originalAmount:c.originalAmount,newAmount:c.newAmount,sentAt:c.sentAt||'',signedAt:c.signedAt||null,signerName:c.signerName||null,signatureData:c.sigData||c.signatureData||null}));
+    if(!arr)arr=(bid.changeOrders||[]).map(c=>({coNum:c.coNum,desc:c.desc,type:c.type,amount:c.amount,delta:c.delta,originalAmount:c.originalAmount,newAmount:c.newAmount,sentAt:c.sentAt||'',signedAt:c.signedAt||null,signerName:c.signerName||null,signatureData:c.sigData||c.signatureData||null,overrun:c.overrun||null}));
     let entry=arr.find(x=>x&&x.coNum===coNum);
-    if(!entry){entry={coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,sentAt:co.sentAt||''};arr.push(entry);}
+    if(!entry){entry={coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,overrun:co.overrun||null,sentAt:co.sentAt||''};arr.push(entry);}
     entry.signedAt=ts;entry.signerName=name;entry.signatureData=sigData;
     const{error}=await _supa.from('signed_proposals').update({change_orders:arr}).eq('bid_id',String(bidId));
     if(error){

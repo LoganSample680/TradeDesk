@@ -110,7 +110,7 @@ test.describe('the pinned test clock', () => {
     // comparison in the app (js/finance.js _crewCostRender, js/timelog.js,
     // todayKey) and trade one class of flake for a worse one.
     const out = await page.evaluate(() => ({
-      ct: _ctDateStr(new Date()),
+      ct: _bizDateStr(new Date()),
       todayKey: (typeof todayKey === 'function') ? todayKey() : null,
     }));
     const realCt = new Intl.DateTimeFormat('en-CA', {
@@ -132,7 +132,7 @@ test.describe('the pinned test clock', () => {
     test.skip(!!process.env.TD_CLOCK_AT && process.env.TD_CLOCK_AT !== '10:00',
       'only meaningful under the default pin; the midnight job straddles on purpose');
     const out = await page.evaluate(() => {
-      const day = (t) => _ctDateStr(new Date(t));
+      const day = (t) => _bizDateStr(new Date(t));
       const now = Date.now();
       const bad = [];
       [5, 30, 50, 62, 120, 180, 300].forEach((mins) => {

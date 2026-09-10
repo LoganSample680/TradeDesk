@@ -1044,6 +1044,176 @@ test.describe('jobs.js: exhaustive coverage', () => {
       expect(r.activeTimer).toBe(null);
     });
 
+    // Owner report 2026-08-31: "Jack just said its not letting him clock out",
+    // and then "it needs to survive app reloads". He clocked in with NO job
+    // (clockIn(null,...), the "General time" button) at 7:55am. On the next
+    // reload this bailed on `jobs.find(x=>x.id===null)` and _activeTimer was
+    // never restored, so there was no banner and the Time Log's Clock out
+    // button hit clockOut's `if(!_activeTimer)return;` and did nothing. His
+    // row was still open fourteen hours later.
+    test('_rehydrateActiveTimer restores a JOB-LESS clock across a reload (the Jack case)', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner;
+        window.showClockBanner = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          clockIn(null, null, null);
+          const entryId = _activeTimer.entryId;
+          clearInterval(_activeTimer.timerInterval);
+          _activeTimer = null;                       // the reload
+          _rehydrateActiveTimer();
+          return { ok: true, restored: !!_activeTimer, entryId: _activeTimer && _activeTimer.entryId, expectedId: entryId,
+                   jobId: _activeTimer && _activeTimer.jobId, jobName: _activeTimer && _activeTimer.jobName,
+                   ticking: !!(_activeTimer && _activeTimer.timerInterval) };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); clockOut(false, true); }
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.restored).toBe(true);
+      expect(r.entryId).toBe(r.expectedId);
+      expect(r.jobId).toBe(null);
+      expect(r.jobName).toBe('General time');
+      expect(r.ticking).toBe(true);
+    });
+
+    test('_rehydrateActiveTimer matches a job_id that came back from Supabase as a string', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner;
+        window.showClockBanner = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          timeEntries.push({ id: 9911001, job_id: '77701', date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 3 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+          _activeTimer = null;
+          _rehydrateActiveTimer();
+          return { ok: true, jobId: _activeTimer && _activeTimer.jobId, jobName: _activeTimer && _activeTimer.jobName };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911001);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.jobId).toBe(77701);                 // the real job, not "General time"
+      expect(r.jobName).not.toBe('General time');
+    });
+
+    test('_rehydrateActiveTimer refuses a row with a malformed start_time (never a clock counting from 1970)', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner;
+        window.showClockBanner = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          timeEntries.push({ id: 9911002, job_id: null, date: '', start_time: 'not a date', end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+          _activeTimer = null;
+          _rehydrateActiveTimer();
+          return { ok: true, active: _activeTimer };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911002);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.active).toBe(null);
+    });
+
+    // The dead-button half. clockOut() alone returns on `if(!_activeTimer)`,
+    // so the Time Log card's own-row button silently did nothing whenever this
+    // device had not started the clock itself.
+    test('clockOutEntry closes a job-less open row with NO _activeTimer at all', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origHide = window.hideClockBanner, origRender = window.renderJobsPage;
+        window.showClockBanner = () => {}; window.hideClockBanner = () => {}; window.renderJobsPage = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          const id = 9911010;
+          timeEntries.push({ id, job_id: null, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 42 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Jack Test' });
+          _activeTimer = null;                       // exactly the post-reload state
+          clockOutEntry(id);
+          const row = timeEntries.find(e => e.id === id);
+          return { ok: true, open: row.open, minutes: row.minutes, hasEnd: !!row.end_time, cleared: _activeTimer === null,
+                   forceTagged: !!row.force_closed_by_name };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911010);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.open).toBe(false);
+      expect(r.minutes).toBe(42);
+      expect(r.hasEnd).toBe(true);
+      expect(r.cleared).toBe(true);
+      expect(r.forceTagged).toBe(false);   // your own clock-out is not a manager force-close
+    });
+
+    test('clockOutEntry banks a DIFFERENT running entry before taking over the one it was given', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origHide = window.hideClockBanner, origRender = window.renderJobsPage;
+        window.showClockBanner = () => {}; window.hideClockBanner = () => {}; window.renderJobsPage = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          const other = 9911020;
+          timeEntries.push({ id: other, job_id: null, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 17 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+          clockIn(77701, null, null);                // this device is running something else
+          const liveId = _activeTimer.entryId;
+          clockOutEntry(other);
+          const a = timeEntries.find(e => e.id === other), b = timeEntries.find(e => e.id === liveId);
+          return { ok: true, targetClosed: a.open === false, targetMin: a.minutes, otherClosed: b.open === false, stillOpen: timeEntries.filter(e => e.open).length };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911020);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.targetClosed).toBe(true);
+      expect(r.targetMin).toBe(17);
+      expect(r.otherClosed).toBe(true);   // banked, never abandoned open
+      expect(r.stillOpen).toBe(0);
+    });
+
+    test('clockOutEntry on an unknown, already-closed, or junk id does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          _activeTimer = null;
+          clockOutEntry(424242); clockOutEntry(null); clockOutEntry(undefined); clockOutEntry('nope');
+          return { ok: true, active: _activeTimer };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.active).toBe(null);
+    });
+
+    test('_clockElapsedStr: seconds, minutes, hours, and junk', async () => {
+      const r = await page.evaluate(() => ({
+        zero: _clockElapsedStr(0),
+        seven: _clockElapsedStr(7000),
+        min: _clockElapsedStr(65 * 1000),
+        hour: _clockElapsedStr(3 * 3600000 + 4 * 60000 + 9000),
+        long: _clockElapsedStr(14 * 3600000),
+        negative: _clockElapsedStr(-5000),
+        junk: _clockElapsedStr('nope'),
+        nothing: _clockElapsedStr(undefined),
+      }));
+      expect(r.zero).toBe('0:00');
+      expect(r.seven).toBe('0:07');
+      expect(r.min).toBe('1:05');
+      expect(r.hour).toBe('3h 4:09');
+      expect(r.long).toBe('14h 0:00');
+      expect(r.negative).toBe('0:00');     // a clock never runs backwards
+      expect(r.junk).toBe('0:00');
+      expect(r.nothing).toBe('0:00');
+    });
+
     test('_rehydrateActiveTimer does not clobber an already-running local timer', async () => {
       const r = await page.evaluate(() => {
         const origBanner = window.showClockBanner;
@@ -1218,6 +1388,181 @@ test.describe('jobs.js: exhaustive coverage', () => {
         catch (e) { return false; }
       });
       expect(r).toBe(true);
+    });
+
+    // ── Delete, from inside the edit modal ────────────────────────────────
+    // Owner 2026-08-31: "add a delete button to the edit button on manual
+    // clock out things". deleteTimeEntry() has existed since July but the
+    // only way to reach it was a long-press nobody discovers.
+    // Seeded INSIDE each evaluate, never from a helper in a separate one.
+    // A cross-evaluate gap lets this file's own async tails (renderTimeLog and
+    // its repair pass) run against the seeded array in between, and the row
+    // was gone before the assertion ran. Every other test in this describe
+    // seeds inline for the same reason (7.3).
+    const SEED_SRC = `
+      timeEntries = timeEntries.filter(e => e.id !== ID);
+      timeEntries.push({ id: ID, job_id: 77701, date: todayKey(),
+        start_time: '2026-08-21T14:00:00.000Z', end_time: '2026-08-21T17:30:00.000Z',
+        minutes: 210, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());`;
+    const cleanup = (id) => page.evaluate((i) => {
+      timeEntries = timeEntries.filter(e => e.id !== i);
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+    }, id);
+    const seedThen = (id, body) => page.evaluate(
+      new Function('ID', SEED_SRC.split('ID').join('ID') + '\nreturn (' + body.toString() + ')();'), id);
+    // This file's beforeAll replaces zConfirm with an auto-accept stub so the
+    // other destructive paths can be driven without a dialog. These tests are
+    // ABOUT the dialog, so they put the real one back for their own duration
+    // and restore the stub after; anything else would be asserting against the
+    // stub and proving nothing.
+    const seedThenReal = (id, body) => page.evaluate(
+      new Function('ID',
+        'const _stub = window.zConfirm; if (window._origZConfirm) window.zConfirm = window._origZConfirm;\n' +
+        'try {' + SEED_SRC.split('ID').join('ID') + '\nreturn (' + body.toString() + ')();' +
+        '} finally { window.zConfirm = _stub; }'), id);
+
+    test('the edit modal carries a Delete button, wired to the confirm path', async () => {
+      const r = await seedThen(9990140, () => {
+        _openEditTimeEntry(ID);
+        const box = document.querySelector('.zmodal-overlay .zmodal');
+        return { html: box ? box.innerHTML : '' };
+      });
+      await cleanup(9990140);
+      expect(r.html).toContain('_deleteTimeEntryFromModal(9990140)');
+      expect(r.html).toContain('Delete this entry');
+      // Never a bare deleteTimeEntry() on the button: that one does not ask.
+      expect(r.html).not.toContain('onclick="deleteTimeEntry(');
+    });
+
+    test('Delete is on its own row, never a third column beside Save', async () => {
+      const r = await seedThen(9990141, () => {
+        _openEditTimeEntry(ID);
+        const del = [...document.querySelectorAll('.zmodal button')].find(b => /Delete this entry/.test(b.textContent));
+        const save = [...document.querySelectorAll('.zmodal button')].find(b => b.textContent.trim() === 'Save');
+        if (!del || !save) return { found: false };
+        const d = del.getBoundingClientRect(), s = save.getBoundingClientRect();
+        return {
+          found: true,
+          sameParent: del.parentElement === save.parentElement,
+          // Below, not beside: a destroy button one thumb-width from Save is
+          // how a payroll record dies by accident.
+          below: d.top >= s.bottom - 1,
+          overlaps: !(d.right <= s.left || d.left >= s.right || d.bottom <= s.top || d.top >= s.bottom),
+        };
+      });
+      await cleanup(9990141);
+      expect(r.found).toBe(true);
+      expect(r.sameParent).toBe(false);
+      expect(r.below).toBe(true);
+      expect(r.overlaps).toBe(false);   // 15.1: no two controls overlap
+    });
+
+    test('it asks before it deletes, and names what is being destroyed', async () => {
+      const r = await seedThenReal(9990142, () => {
+        _openEditTimeEntry(ID);
+        _deleteTimeEntryFromModal(ID);
+        const overlays = [...document.querySelectorAll('.zmodal-overlay')];
+        const confirm = overlays[overlays.length - 1];
+        return {
+          stillThere: !!timeEntries.find(e => e.id === ID),   // nothing gone yet
+          title: confirm ? (confirm.querySelector('.zmodal-title')?.textContent || '') : '',
+          msg: confirm ? (confirm.querySelector('.zmodal-msg')?.textContent || '') : '',
+          yes: confirm ? (confirm.querySelector('#zmodal-yes')?.textContent || '') : '',
+        };
+      });
+      await cleanup(9990142);
+      expect(r.stillThere).toBe(true);
+      expect(r.title).toBe('Delete time entry');
+      expect(r.yes).toBe('Delete');
+      expect(r.msg).toContain('3h 30m');            // it says WHICH entry
+      expect(r.msg).toContain('cannot be undone');
+    });
+
+    test('confirming deletes the row and closes the modal', async () => {
+      const r = await seedThenReal(9990143, () => {
+        _openEditTimeEntry(ID);
+        _deleteTimeEntryFromModal(ID);
+        document.querySelector('#zmodal-yes').click();
+        return { gone: !timeEntries.find(e => e.id === ID), overlays: document.querySelectorAll('.zmodal-overlay').length };
+      });
+      await cleanup(9990143);
+      expect(r.gone).toBe(true);
+      expect(r.overlays).toBe(0);      // the edit modal closes with it
+    });
+
+    test('cancelling the confirm leaves the entry exactly alone', async () => {
+      const r = await seedThenReal(9990144, () => {
+        _openEditTimeEntry(ID);
+        _deleteTimeEntryFromModal(ID);
+        [...document.querySelectorAll('.zmodal-overlay')].pop().querySelector('.zmodal-cancel').click();
+        const e = timeEntries.find(x => x.id === ID);
+        return { survived: !!e, minutes: e && e.minutes, editStillOpen: !!document.querySelector('.zmodal-overlay') };
+      });
+      await cleanup(9990144);
+      expect(r.survived).toBe(true);
+      expect(r.minutes).toBe(210);
+      expect(r.editStillOpen).toBe(true);   // back to the edit modal, not nowhere
+    });
+
+    test('someone else\'s entry without payroll permission: no prompt, no delete', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990145);
+        timeEntries.push({ id: 9990145, job_id: 77701, date: todayKey(), start_time: '2026-08-21T14:00:00.000Z', end_time: '2026-08-21T15:00:00.000Z', minutes: 60, logged_by_uid: 'somebody-else', logged_by_name: 'Someone Else', open: false });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        const savedEmp = window._isEmployee, savedRec = window._employeeRecord, savedUser = window._supaUser;
+        window._isEmployee = true; window._employeeRecord = { permissions: { payroll: false } }; window._supaUser = { id: 'me-uid' };
+        let threw = null;
+        try { _deleteTimeEntryFromModal(9990145); } catch (e) { threw = e.message; }
+        const out = { threw, prompted: !!document.querySelector('.zmodal-overlay'), survived: !!timeEntries.find(x => x.id === 9990145) };
+        window._isEmployee = savedEmp; window._employeeRecord = savedRec; window._supaUser = savedUser;
+        timeEntries = timeEntries.filter(e => e.id !== 9990145);
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return out;
+      });
+      expect(r.threw).toBe(null);
+      // A prompt that asks and then silently does nothing is worse than no button.
+      expect(r.prompted).toBe(false);
+      expect(r.survived).toBe(true);
+    });
+
+    test('_deleteTimeEntryFromModal on a missing or junk id does not throw or prompt', async () => {
+      const r = await page.evaluate(() => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        try {
+          _deleteTimeEntryFromModal(424242); _deleteTimeEntryFromModal(null);
+          _deleteTimeEntryFromModal(undefined); _deleteTimeEntryFromModal('nope');
+          return { ok: true, prompted: !!document.querySelector('.zmodal-overlay') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.prompted).toBe(false);
+    });
+
+    test('deleting the row a live timer is holding stops the clock with it', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origHide = window.hideClockBanner, origRender = window.renderJobsPage;
+        let hid = 0;
+        window.showClockBanner = () => {}; window.hideClockBanner = () => { hid++; }; window.renderJobsPage = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          clockIn(77701, null, null);
+          const id = _activeTimer.entryId;
+          deleteTimeEntry(id);
+          return { ok: true, gone: !timeEntries.find(e => e.id === id), timerCleared: _activeTimer === null, bannerHidden: hid > 0 };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.gone).toBe(true);
+      // Otherwise the banner keeps ticking against a record that no longer
+      // exists, and the lock screen keeps saying CLOCKED IN.
+      expect(r.timerCleared).toBe(true);
+      expect(r.bannerHidden).toBe(true);
     });
   });
 
@@ -2833,6 +3178,168 @@ test.describe('jobs.js: exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Lunch (owner 2026-09-09: "it would be important to be able to put
+  // something in like a lunch")
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('lunch', () => {
+    // Every test drives the real startLunch/endLunch against a real running
+    // clock, with only the writers stubbed so the assertions read what was
+    // asked for rather than what the cloud happened to do with it.
+    const run = (body) => page.evaluate(async (src) => {
+      const saved = { add: window._tlAddUnaccounted, save: window.saveAll, cloud: window.supaSaveToCloud,
+        toast: window.showToast, dash: window.renderDash, jobs: window.renderJobsPage, ping: window._geoClockPing };
+      const out = { breaks: [] };
+      window._tlAddUnaccounted = (a, b, k) => out.breaks.push([a, b, k]);
+      window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+      window.showToast = () => {}; window.renderDash = () => {}; window.renderJobsPage = () => {};
+      window._geoClockPing = () => {};
+      try { localStorage.removeItem(_lunchKey()); } catch (e) {}
+      // _activeTimer is a top-level `let` (js/data.js), so it is a script-scope
+      // binding and NOT a window property. Assigning window._activeTimer makes
+      // a lookalike and leaves the real clock running into the next test, which
+      // is exactly how the general-clock test failed only when it ran second.
+      _activeTimer = null;
+      // clockIn writes a real open row the instant the clock starts, and these
+      // tests only ever ADD rows. Truncating back to the starting length in
+      // the finally is what keeps them independent: without it the open row
+      // one test leaves behind changes what clockIn does in the next one, and
+      // the failure lands on whichever test happens to run second.
+      const n0 = timeEntries.length;
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new (Object.getPrototypeOf(async function () {}).constructor)('out', src);
+        await fn(out);
+        return out;
+      } finally {
+        window._tlAddUnaccounted = saved.add; window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+        window.showToast = saved.toast; window.renderDash = saved.dash; window.renderJobsPage = saved.jobs;
+        window._geoClockPing = saved.ping;
+        if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+        _activeTimer = null;
+        if (timeEntries.length > n0) timeEntries.length = n0;
+        try { localStorage.removeItem(_lunchKey()); } catch (e) {}
+      }
+    }, body);
+
+    test('Lunch stops the clock keeping the morning, and remembers what to come back to', async () => {
+      const r = await run(`
+        clockIn(77701, 's1', 'Prep');
+        out.clockedInBefore = !!_activeTimer;
+        startLunch();
+        out.onLunch = onLunch();
+        out.clockedInAfter = !!_activeTimer;
+        const l = _lunchRead();
+        out.remembered = { jobId: l.jobId, scopeId: l.scopeId, scopeLabel: l.scopeLabel };
+        out.openRows = timeEntries.filter(e => e.job_id === 77701 && e.open).length;
+        out.closedRows = timeEntries.filter(e => e.job_id === 77701 && e.open === false).length;
+      `);
+      expect(r.clockedInBefore).toBe(true);
+      expect(r.onLunch, 'he is on lunch').toBe(true);
+      expect(r.clockedInAfter, 'and off the clock while he eats').toBe(false);
+      expect(r.remembered).toEqual({ jobId: 77701, scopeId: 's1', scopeLabel: 'Prep' });
+      expect(r.openRows, 'the morning is banked, not left running').toBe(0);
+      expect(r.closedRows, 'and it is banked as a closed row').toBeGreaterThan(0);
+      expect(r.breaks, 'nothing is written as a break until he comes back').toEqual([]);
+    });
+
+    test('Back to work writes the stretch as a break and restarts the same job', async () => {
+      const r = await run(`
+        clockIn(77701, 's1', 'Prep');
+        startLunch();
+        // Thirty minutes ago, so the span is a real break rather than a mis-tap.
+        const started = new Date(Date.now() - 30 * 60000).toISOString();
+        _lunchWrite(Object.assign(_lunchRead(), { startedIso: started }));
+        endLunch();
+        out.onLunch = onLunch();
+        out.back = _activeTimer && { jobId: _activeTimer.jobId, scopeId: _activeTimer.scopeId, scopeLabel: _activeTimer.scopeLabel };
+        out.startedIso = started;
+      `);
+      expect(r.onLunch, 'the lunch is over and does not linger').toBe(false);
+      expect(r.back, 'back on the same job and the same task').toEqual({ jobId: 77701, scopeId: 's1', scopeLabel: 'Prep' });
+      expect(r.breaks, 'exactly one break, through the SAME writer the rail uses').toHaveLength(1);
+      expect(r.breaks[0][0]).toBe(r.startedIso);
+      expect(r.breaks[0][2], "and it is a break, never 'work' or 'personal'").toBe('break');
+    });
+
+    test('a mis-tap is not a break: under a minute writes nothing but still goes back on the clock', async () => {
+      const r = await run(`
+        clockIn(77701, null, null);
+        startLunch();
+        endLunch();
+        out.back = !!_activeTimer;
+      `);
+      expect(r.breaks, 'no one-second break row on the rail').toEqual([]);
+      expect(r.back, 'and he is back on the clock either way').toBe(true);
+    });
+
+    test('a general clock (no job) survives the round trip', async () => {
+      const r = await run(`
+        clockIn(null, null, null);
+        startLunch();
+        _lunchWrite(Object.assign(_lunchRead(), { startedIso: new Date(Date.now() - 20 * 60000).toISOString() }));
+        endLunch();
+        out.jobId = _activeTimer ? _activeTimer.jobId : 'NONE';
+      `);
+      expect(r.jobId, 'null is a real value here, not a missing one').toBe(null);
+      expect(r.breaks).toHaveLength(1);
+    });
+
+    test('Lunch off the clock, and a second tap, do nothing', async () => {
+      const r = await run(`
+        startLunch();                       // never clocked in
+        out.afterNoClock = onLunch();
+        clockIn(77701, null, null);
+        startLunch();
+        const first = _lunchRead().startedIso;
+        startLunch();                       // second tap
+        out.same = _lunchRead().startedIso === first;
+        out.clocked = !!_activeTimer;
+      `);
+      expect(r.afterNoClock, 'no clock, no lunch').toBe(false);
+      expect(r.same, 'the second tap does not restart the lunch clock').toBe(true);
+      expect(r.clocked, 'and it does not quietly clock him back in').toBe(false);
+    });
+
+    test('Back to work with no lunch running is a no-op', async () => {
+      const r = await run(`
+        endLunch();
+        out.clocked = !!_activeTimer;
+      `);
+      expect(r.breaks).toEqual([]);
+      expect(r.clocked).toBe(false);
+    });
+
+    test('a lunch left open overnight expires instead of running all night', async () => {
+      const r = await run(`
+        clockIn(77701, null, null);
+        startLunch();
+        _lunchWrite(Object.assign(_lunchRead(), { startedIso: new Date(Date.now() - 3 * 86400000).toISOString() }));
+        out.expired = _lunchExpireStale();
+        out.onLunch = onLunch();
+        out.sameDay = _lunchExpireStale();
+      `);
+      expect(r.expired).toBe(true);
+      expect(r.onLunch, 'yesterday\'s lunch is gone, not still counting').toBe(false);
+      expect(r.breaks, 'and nothing is invented for the hours nobody was there').toEqual([]);
+      expect(r.sameDay, 'nothing left to expire').toBe(false);
+    });
+
+    test('corrupted lunch state reads as no lunch, never a throw', async () => {
+      const r = await run(`
+        try { localStorage.setItem(_lunchKey(), '{BROKEN{{'); } catch (e) {}
+        out.onLunch = onLunch();
+        out.ok = true;
+        endLunch();
+        try { localStorage.setItem(_lunchKey(), JSON.stringify({ startedIso: 'not-a-date' })); } catch (e) {}
+        out.junkDate = onLunch();
+      `);
+      expect(r.ok).toBe(true);
+      expect(r.onLunch).toBe(false);
+      expect(r.junkDate, 'a start nobody can parse is not a lunch').toBe(false);
     });
   });
 

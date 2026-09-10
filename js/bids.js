@@ -552,7 +552,10 @@ function sendBidEmail(bidId){
   const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
   const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-  const expD=b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'30 days from now';
+  // Same stamp the document and the portal use, never its own +30 (§ price hold).
+  const expD=(typeof _bidValidUntil==='function'&&typeof _fmtValidUntil==='function')
+    ?(_fmtValidUntil(_bidValidUntil(b))||'30 days from now')
+    :(b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'30 days from now');
   const PAINT={'std':'Standard (Behr/Valspar)','prem':'Sherwin-Williams Premium','ultra':'SW Emerald Ultra'};
   const paintL=(b.paint?PAINT[b.paint]:null)||'Premium Sherwin-Williams';
   const surfs=b.surfaces||[];

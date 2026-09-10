@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Code value entry</title>
+<style>
+  :root{
+    --ink:#16181D; --ink-2:#4B5563; --ink-3:#7A8395;
+    --ground:#F2F1ED; --card:#FFFFFF; --line:#DDDCD6;
+    --accent:#8A4B1F; --accent-soft:#F3E4D8;
+    --good:#146B3A; --good-soft:#DCEEE2;
+    --warn:#8A6A00;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  button{font:inherit}
+
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;
+    background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  .brand{font-weight:800;letter-spacing:-.2px}
+  .brand small{display:block;font-weight:600;color:var(--ink-3);font-size:11px;letter-spacing:.04em}
+  .grow{flex:1}
+  .btn{height:32px;padding:0 12px;border-radius:7px;border:1px solid var(--line);
+    background:var(--card);color:var(--ink);font-weight:700;font-size:12.5px;cursor:pointer}
+  .btn:hover{background:#FAFAF8}
+  .btn.primary{background:var(--ink);border-color:var(--ink);color:#fff}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+
+  .wrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;
+    max-width:1180px;margin:0 auto;padding:18px}
+  @media(max-width:820px){.wrap{grid-template-columns:1fr}}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px}
+  .panel h2{margin:0;padding:11px 14px;border-bottom:1px solid var(--line);
+    font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-3)}
+
+  .grp{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+    padding:9px 14px;border:0;border-bottom:1px solid var(--line);background:none;cursor:pointer}
+  .grp:last-child{border-bottom:0}
+  .grp:hover{background:#FAFAF8}
+  .grp.on{background:var(--accent-soft)}
+  .grp-n{flex:1;min-width:0;font-weight:700;font-size:12.5px;overflow-wrap:anywhere}
+  .grp-c{font:600 11px/1 var(--mono);color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .grp.done .grp-c{color:var(--good)}
+
+  .bar{height:4px;background:var(--line);border-radius:99px;overflow:hidden;margin:0}
+  .bar i{display:block;height:100%;background:var(--good);transition:width .18s ease}
+
+  .now{padding:20px 22px 22px}
+  .cite{display:inline-block;font:700 11px/1 var(--mono);color:var(--accent);
+    background:var(--accent-soft);border-radius:5px;padding:5px 8px;letter-spacing:.02em}
+  .lbl{font-size:22px;font-weight:800;letter-spacing:-.5px;margin:12px 0 4px}
+  .desc{color:var(--ink-2);font-size:12.5px;max-width:62ch}
+  .path{font:600 11px/1.5 var(--mono);color:var(--ink-3);margin-top:8px;overflow-wrap:anywhere}
+  .entry{display:flex;gap:10px;align-items:center;margin-top:16px}
+  input[type=text]{flex:1;height:46px;padding:0 14px;border:1.5px solid var(--line);
+    border-radius:8px;font:700 18px var(--mono);color:var(--ink);background:var(--card);
+    font-variant-numeric:tabular-nums}
+  input[type=text]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .hint{margin-top:10px;font-size:11.5px;color:var(--ink-3)}
+  kbd{font:700 10.5px var(--mono);background:var(--ground);border:1px solid var(--line);
+    border-radius:4px;padding:2px 5px}
+
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:7px 14px;border-bottom:1px solid var(--line);font-size:12.5px}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:800}
+  tr.cur td{background:var(--accent-soft)}
+  tr[data-i]{cursor:pointer}
+  tr[data-i]:hover td{background:#FAFAF8}
+  td.v{font:700 12.5px var(--mono);text-align:right;font-variant-numeric:tabular-nums;width:96px}
+  td.v.empty{color:var(--ink-3);font-weight:600}
+  .scroll{max-height:330px;overflow:auto}
+
+  .sign{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:14px}
+  .sign label{display:block;font-size:10.5px;font-weight:800;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--ink-3);margin-bottom:4px}
+  .sign input{width:100%;height:36px;padding:0 10px;border:1.5px solid var(--line);
+    border-radius:7px;font:600 13px inherit;background:var(--card);color:var(--ink)}
+  .signnote{padding:0 14px 14px;font-size:11.5px;color:var(--ink-2);max-width:78ch}
+  .signrow{padding:0 14px 16px;display:flex;gap:10px;align-items:center}
+
+  .empty{padding:44px 22px;text-align:center;color:var(--ink-2)}
+  .empty b{display:block;font-size:16px;color:var(--ink);margin-bottom:6px}
+  .drop{margin:14px auto 0;max-width:460px;border:2px dashed var(--line);border-radius:10px;
+    padding:26px;background:#FAFAF8}
+  .warnbox{margin:0;padding:11px 14px;background:#FBF3D9;border-bottom:1px solid var(--line);
+    font-size:12px;color:var(--warn);font-weight:600}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Code value entry<small id="which">no file loaded</small></div>
+  <div class="grow"></div>
+  <input type="file" id="file" accept=".json" hidden>
+  <button class="btn" id="open">Open file</button>
+  <button class="btn" id="save" disabled>Download JSON</button>
+</header>
+
+<div class="wrap" id="app" hidden>
+  <div>
+    <div class="panel">
+      <h2>Sections</h2>
+      <div id="groups"></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h2>Sign off</h2>
+      <div class="sign">
+        <div><label for="sn">Name</label><input id="sn" placeholder="Full name"></div>
+        <div><label for="sl">License #</label><input id="sl" placeholder="Optional"></div>
+        <div><label for="sd">Date</label><input id="sd" type="date"></div>
+      </div>
+      <div class="signnote">
+        Signing sets <code>verified: true</code>, which is the only thing that lets
+        <code>codeEval</code> return an answer at all. Sign only what you checked against
+        the book in your hand. Values you have not filled stay null and every rule that
+        needs one refuses by name, so a partly filled file is safe to sign.
+      </div>
+      <div class="signrow">
+        <button class="btn primary" id="sign">Mark verified</button>
+        <span id="signstate" style="font-size:11.5px;color:var(--ink-3)"></span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <div class="bar"><i id="bar" style="width:0%"></i></div>
+      <div id="warn" class="warnbox" hidden></div>
+      <div class="now" id="now"></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h2 id="listhd">Section</h2>
+      <div class="scroll"><table><thead><tr><th>Value</th><th>Where it comes from</th><th class="v" style="text-align:right">Entered</th></tr></thead><tbody id="rows"></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+<div class="empty" id="landing">
+  <b>Open a dataset to start</b>
+  Pick one of the files in <code>codes/</code>. Everything stays on this machine.
+  <div class="drop">Drop a <code>.json</code> here, or use Open file above.</div>
+</div>
+
+<script>
+// Code value entry.
+//
+// One job: turn a purchased code book into codes/<family>-<edition>.json without
+// anyone retyping a JSON path. It walks the null leaves the dataset already
+// declares, shows the citation the file's own todo list names for that leaf, and
+// takes one number at a time.
+//
+// It never fetches anything and it never guesses a value. A blank stays null, and
+// a null makes every rule that needs it refuse by name, which is what makes it
+// safe to fill this in over several sittings.
+
+let DOC = null, FLAT = [], GROUPS = [], CUR = 0, GRP = null, CITES = [];
+
+// Top-level keys that describe the file rather than carry code values. Two
+// dataset shapes exist: electrical nests everything under "data", plumbing puts
+// its tables at the root. Skipping the metadata handles both without the tool
+// needing to know which family it opened. "shapes" is a row template and
+// "sources" holds page references, so neither is a value anyone types.
+const META = ['schema','family','edition','title','publisher','verified','verifiedBy',
+  'verifiedAt','notes','todo','lookup','cites','shapes','sources'];
+
+// The value-bearing part of a dataset, as {key: node} at the root.
+function bodyOf(d){
+  if (d && d.data && typeof d.data === 'object') return { data: d.data };
+  const out = {};
+  Object.keys(d || {}).forEach(k => { if (META.indexOf(k) < 0) out[k] = d[k]; });
+  return out;
+}
+
+const $ = id => document.getElementById(id);
+
+// ── Reading the file ────────────────────────────────────────────────────────
+
+// The todo list is the file's own map of where each value comes from. Entries
+// look like "data.a.b + data.a.c - 220.52(A), small appliance circuits". Parse
+// them into prefix rules so every leaf inherits its citation automatically.
+function buildCites(doc){
+  const out = [];
+  (doc.todo || []).forEach(t => {
+    const s = String(t);
+    // Two shapes in the wild: "path - 220.41, description" (electrical) and
+    // "path: description" (plumbing). Take whichever separator comes first.
+    const dash = s.search(/\s[\u2014\u2013-]\s/);
+    const colon = s.indexOf(': ');
+    let cut, skip;
+    if (dash >= 0 && (colon < 0 || dash < colon)) { cut = dash; skip = 3; }
+    else if (colon >= 0) { cut = colon; skip = 2; }
+    else return;
+    const left = s.slice(0, cut).trim();
+    const right = s.slice(cut + skip).trim();
+    // A leading section number is the citation; the rest is the description.
+    // A citation opens with a section number or with the word the book uses for
+    // one: "220.41", "Table 310.16", "Chapter 9 Table 4". Anything else is prose.
+    const m = right.match(/^((?:(?:Table|Chapter|Annex|Article|Part)\s+)*\d[\w.()\/ -]*?)(?:,\s*(.*))?$/);
+    const cite = m ? m[1].trim() : '';
+    const desc = m ? (m[2] || '').trim() : right;
+    // "a.b and .c" and "a.b + a.c" and "a.b / a.c" all mean several paths.
+    // "data.a.colCRows / colARows / colBRows" lists siblings, not root paths.
+    // A fragment with no dot inherits the parent of the first one.
+    let parent = '';
+    left.split(/\s*[+/]\s*|\s+and\s+/).forEach((p, i) => {
+      let raw = p.trim();
+      if (i === 0) parent = raw.replace(/\.[^.]*$/, '');
+      else if (raw.indexOf('.') < 0 && parent) raw = parent + '.' + raw;
+      const path = raw.replace(/\[\*\]/g, '.*').replace(/\[\]/g, '')
+                      .replace(/^\.+|[.\s]+$/g, '');
+      const seg = path.split('.');
+      if (seg[0] === 'data') seg.shift();
+      if (seg.length) out.push({ seg, cite, desc });
+    });
+  });
+  // Longest pattern wins, so a specific entry beats a general one.
+  out.sort((a, b) => b.seg.length - a.seg.length);
+  return out;
+}
+// A todo pattern matches a leaf when it is a segment-wise prefix of it, with
+// "*" standing for exactly one segment: "fixtures.*.dfu.private" covers every
+// fixture's private DFU without naming forty of them.
+function citeFor(segs){
+  const body = segs[0] === 'data' ? segs.slice(1) : segs;
+  for (const c of CITES){
+    if (c.seg.length > body.length) continue;
+    let hit = true;
+    for (let i = 0; i < c.seg.length; i++){
+      if (c.seg[i] !== '*' && c.seg[i] !== body[i]) { hit = false; break; }
+    }
+    if (hit) return c;
+  }
+  return { cite: '', desc: '' };
+}
+
+// Every null leaf, in file order. Arrays count: a row of a demand table is as
+// much a value as a scalar is.
+// Carries the real key segments, never a joined string: box sizes are keyed
+// "square-4x1.25" and a dot-split path silently addresses the wrong leaf.
+function flatten(node, seg, out){
+  if (node === null){ out.push({ seg: seg.slice(), path: seg.join('.') }); return; }
+  if (Array.isArray(node)){
+    node.forEach((v, i) => flatten(v, seg.concat(String(i)), out));
+    // The "add another row" slot sits after the rows and never goes away, so
+    // finishing a row lands on it and the next row is one keystroke off.
+    out.push({ seg: seg.slice(), path: seg.join('.'), grow: 'array' });
+    return;
+  }
+  if (node && typeof node === 'object'){
+    const keys = Object.keys(node);
+    keys.forEach(k => flatten(node[k], seg.concat(k), out));
+    // An open map: the book decides its keys (vent sizes, run lengths), so the
+    // tool never invents them either. Only maps that ship empty are open ones.
+    if (!keys.length) out.push({ seg: seg.slice(), path: seg.join('.'), grow: 'object' });
+  }
+}
+
+// What one row of a table looks like. The field names come from the dataset's
+// own todo line ("rows of {sizeIn, maxDfu}"); when the file also ships a shapes
+// block, a shape whose fields match is preferred because it carries the nested
+// structure the prose cannot.
+function rowShape(segs){
+  const desc = citeFor(segs);
+  const text = (desc.cite || '') + ' ' + (desc.desc || '');
+  const m = text.match(/\{([^{}]+)\}/);
+  if (!m) return null;
+  const fields = m[1].split(',').map(x => x.trim().split(':')[0].trim()).filter(Boolean);
+  if (!fields.length) return null;
+  const shapes = (DOC && DOC.shapes) || {};
+  for (const k of Object.keys(shapes)){
+    const sk = Object.keys(shapes[k] || {});
+    if (sk.length === fields.length && sk.every(x => fields.indexOf(x) >= 0)){
+      return JSON.parse(JSON.stringify(shapes[k]));
+    }
+  }
+  const row = {};
+  fields.forEach(f => { row[f] = null; });
+  return row;
+}
+
+function getAt(seg){
+  let o = DOC;
+  for (const k of seg){ if (o === null || o === undefined) return undefined; o = o[k]; }
+  return o;
+}
+function setAt(seg, val){
+  let o = DOC;
+  for (let i = 0; i < seg.length - 1; i++) o = o[seg[i]];
+  o[seg[seg.length - 1]] = val;
+}
+
+// ── Naming a leaf in words ──────────────────────────────────────────────────
+
+const WORDS = {
+  cu:'Copper', al:'Aluminum', pvc:'PVC', emt:'EMT', rmc:'RMC', imc:'IMC',
+  fmc:'FMC', ent:'ENT', lfmc:'LFMC', hdpe:'HDPE',
+  thhn:'THHN', thwn:'THWN', xhhw:'XHHW', rhh:'RHH', rhw:'RHW', tw:'TW', uf:'UF',
+  ac:'Air conditioning', pct:'percent', va:'VA', kw:'kW', amps:'amps',
+  private:'Private use', public:'Public use', cold:'Cold', hot:'Hot', total:'Total'
+};
+function humanKey(k, path){
+  if (WORDS[k]) return WORDS[k];
+  if (/^\d+$/.test(k)){
+    if (/ampacity|conductorProps|conductorArea|boxVolumeAllowance/.test(path)) return k + ' AWG';
+    if (/ampacity\.[a-z]+\.[^.]+$/.test(path)) return k + ' °C';
+    return k;
+  }
+  if (/^\d+$/.test(k) === false && /^(60|75|90)$/.test(k)) return k + ' °C';
+  return k.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+          .replace(/^./, c => c.toUpperCase());
+}
+function labelFor(segs){
+  const path = segs.join('.');
+  const body = segs[0] === 'data' ? segs.slice(1) : segs;
+  const eaten = groupOf(segs).split('.').length;
+  const seg = body.length > eaten ? body.slice(eaten) : body.slice(-1);
+  // Every key is read against the FULL path, not the trimmed remainder: "1"
+  // means 1 AWG only because the table it sits in is the ampacity table, and
+  // that fact lives in the part of the path the group name already ate.
+  return seg.map(k => {
+    if (/^(60|75|90)$/.test(k) && /ampacity|tempCorrection/.test(path)) return k + ' °C column';
+    return humanKey(k, path);
+  }).join('  ›  ');
+}
+// One section per table. Dwelling is split a level deeper because its
+// sub-objects are separate tables (220.54 dryer, Table 220.55 cooking), but its
+// bare scalars all belong to the same load-calc section.
+function groupOf(segs){
+  const seg = segs[0] === 'data' ? segs.slice(1) : segs;
+  if (!seg.length) return 'data';
+  // Dwelling splits a level deeper because its sub-objects are separate tables
+  // (220.54 dryer, Table 220.55 cooking), but its bare scalars are one section.
+  if (seg[0] === 'dwelling') return seg.length > 2 ? 'dwelling.' + seg[1] : 'dwelling';
+  // Same for fixtures: one section per fixture beats one 230-row section.
+  if (seg[0] === 'fixtures' && seg.length > 2) return 'fixtures.' + seg[1];
+  return seg[0];
+}
+
+// ── Rendering ───────────────────────────────────────────────────────────────
+
+function counts(){
+  const by = {};
+  FLAT.forEach(f => {
+    const g = f.group;
+    by[g] = by[g] || { done:0, all:0 };
+    if (f.grow) return;               // an affordance, not a value to count
+    by[g].all++;
+    if (getAt(f.seg) !== null) by[g].done++;
+  });
+  return by;
+}
+
+function renderGroups(){
+  const by = counts();
+  $('groups').innerHTML = GROUPS.map(g => {
+    const c = by[g] || { done:0, all:0 };
+    const done = c.done === c.all;
+    return '<button class="grp' + (g === GRP ? ' on' : '') + (done ? ' done' : '') +
+      '" data-g="' + esc(g) + '"><span class="grp-n">' + esc(g) + '</span>' +
+      '<span class="grp-c">' + c.done + '/' + c.all + '</span></button>';
+  }).join('');
+  [...document.querySelectorAll('.grp')].forEach(b => {
+    b.onclick = () => { GRP = b.dataset.g; CUR = FLAT.findIndex(f => f.group === GRP && getAt(f.seg) === null);
+      if (CUR < 0) CUR = FLAT.findIndex(f => f.group === GRP); render(); };
+  });
+  const vals = FLAT.filter(f => !f.grow);
+  const total = vals.length, done = vals.filter(f => getAt(f.seg) !== null).length;
+  $('bar').style.width = total ? Math.round(done / total * 100) + '%' : '0%';
+  $('which').textContent = DOC.family.toUpperCase() + ' ' + DOC.edition + '  ·  ' +
+    done + ' of ' + total + ' filled';
+}
+
+function renderNow(){
+  const f = FLAT[CUR];
+  if (!f){ $('now').innerHTML = '<div class="lbl">Nothing selected</div>'; return; }
+  const c = citeFor(f.seg);
+  const head =
+    (c.cite ? '<span class="cite">' + esc(c.cite) + '</span>' : '') +
+    '<div class="lbl">' + esc(labelFor(f.seg)) + '</div>' +
+    (c.desc ? '<div class="desc">' + esc(c.desc) + '</div>' : '') +
+    '<div class="path">' + esc(f.path) + '</div>';
+
+  if (f.grow) return renderGrow(f, head);
+
+  const val = getAt(f.seg);
+  $('now').innerHTML = head +
+    '<div class="entry"><input type="text" id="inp" autocomplete="off" spellcheck="false" ' +
+      'placeholder="value from the book" value="' + esc(val === null ? '' : String(val)) + '"></div>' +
+    '<div class="hint"><kbd>Enter</kbd> save and next  ·  <kbd>Shift</kbd>+<kbd>Enter</kbd> back  ·  ' +
+      '<kbd>Esc</kbd> skip without saving  ·  clear the box and press Enter to blank it again</div>';
+  const inp = $('inp');
+  inp.focus(); inp.select();
+  inp.onkeydown = e => {
+    if (e.key === 'Enter'){ e.preventDefault(); commit(inp.value); move(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape'){ e.preventDefault(); move(1); }
+  };
+}
+
+// A table with no rows, or a map with no keys. Nothing can be typed until it
+// has members, so this slot grows it and the members then fill like anything
+// else. Deliberately one row at a time: the book says how many rows there are.
+function renderGrow(f, head){
+  const isArr = f.grow === 'array';
+  const shape = isArr ? rowShape(f.seg) : null;
+  const fields = shape ? Object.keys(shape) : [];
+  $('now').innerHTML = head +
+    '<div class="desc" style="margin-top:10px">' +
+      (isArr
+        ? ((getAt(f.seg) || []).length + ' row(s) so far. ' + (fields.length
+            ? 'Each row is ' + esc(fields.join(', ')) + '. Add one per row in the book.'
+            : 'The file does not say what a row looks like, so name the fields and they become the row.'))
+        : 'Empty map. The book decides the keys here, so name one and it becomes a value to fill.') +
+    '</div>' +
+    '<div class="entry">' +
+      (isArr && fields.length ? '' :
+        '<input type="text" id="inp" autocomplete="off" spellcheck="false" placeholder="' +
+        (isArr ? 'field names, comma separated' : 'key name, exactly as the book prints it') + '">') +
+      '<button class="btn primary" id="grow" style="height:46px;padding:0 18px">' +
+        (isArr ? 'Add row' : 'Add key') + '</button>' +
+      '<button class="btn" id="ungrow" style="height:46px">Remove last</button>' +
+    '</div>' +
+    '<div class="hint">Rows and keys you add become ordinary blanks in the list below.</div>';
+  const inp = $('inp');
+  if (inp){ inp.focus(); inp.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); grow(f, inp.value); } }; }
+  $('grow').onclick = () => grow(f, inp ? inp.value : '');
+  if (!inp) $('grow').focus();      // so Enter adds the next row, hands on keys
+  $('ungrow').onclick = () => ungrow(f);
+}
+
+function grow(f, raw){
+  const node = getAt(f.seg);
+  if (f.grow === 'array'){
+    let shape = rowShape(f.seg);
+    if (!shape){
+      const names = String(raw).split(',').map(x => x.trim()).filter(Boolean);
+      if (!names.length) return;
+      shape = {}; names.forEach(n => { shape[n] = null; });
+    }
+    node.push(JSON.parse(JSON.stringify(shape)));
+  } else {
+    const k = String(raw).trim();
+    if (!k || Object.prototype.hasOwnProperty.call(node, k)) return;
+    node[k] = null;
+  }
+  reflow(f.path, false);
+}
+
+function ungrow(f){
+  const node = getAt(f.seg);
+  if (Array.isArray(node)) node.pop();
+  else { const k = Object.keys(node).pop(); if (k !== undefined) delete node[k]; }
+  // Stay put: removing is usually the first of several, and jumping into the
+  // row above would put the cursor on a value nobody asked to edit.
+  reflow(f.path, true);
+}
+
+// Adding a row changes what there is to fill, so the working list is rebuilt.
+// Land on the first blank the growth created, or back on the slot itself.
+function reflow(path, stay){
+  const grp = GRP;
+  rebuild();
+  GRP = grp;
+  const slot = FLAT.findIndex(x => x.path === path);
+  const first = stay ? -1
+    : FLAT.findIndex(x => x.path.indexOf(path + '.') === 0 && !x.grow && getAt(x.seg) === null);
+  CUR = first >= 0 ? first : Math.max(0, slot);
+  render();
+}
+
+function rebuild(){
+  FLAT = [];
+  const body = bodyOf(DOC);
+  Object.keys(body).forEach(k => flatten(body[k], [k], FLAT));
+  FLAT.forEach(x => { x.group = groupOf(x.seg); });
+  GROUPS = [...new Set(FLAT.map(x => x.group))];
+}
+
+function renderRows(){
+  const list = FLAT.map((f, i) => ({ f, i })).filter(x => x.f.group === GRP);
+  $('listhd').textContent = GRP || 'Section';
+  $('rows').innerHTML = list.map(x => {
+    const v = getAt(x.f.seg);
+    const c = citeFor(x.f.seg);
+    const shown = x.f.grow
+      ? (Array.isArray(v) ? 'no rows' : 'no keys')
+      : (v === null ? 'blank' : String(v));
+    return '<tr data-i="' + x.i + '"' + (x.i === CUR ? ' class="cur"' : '') + '>' +
+      '<td>' + esc(labelFor(x.f.seg)) + '</td>' +
+      '<td style="color:var(--ink-3);font:600 11px var(--mono)">' + esc(c.cite || '\u2014') + '</td>' +
+      '<td class="v' + (v === null || x.f.grow ? ' empty' : '') + '">' + esc(shown) + '</td></tr>';
+  }).join('');
+  [...document.querySelectorAll('tr[data-i]')].forEach(tr => {
+    tr.onclick = () => { CUR = Number(tr.dataset.i); render(); };
+  });
+  const cur = document.querySelector('tr.cur');
+  if (cur) cur.scrollIntoView({ block:'nearest' });
+}
+
+function render(){ renderGroups(); renderNow(); renderRows(); renderWarn(); autosave(); }
+
+function renderWarn(){
+  const unfilled = FLAT.filter(f => !f.grow && getAt(f.seg) === null).length;
+  const w = $('warn');
+  if (DOC.verified && unfilled){
+    w.hidden = false;
+    w.textContent = 'Marked verified with ' + unfilled + ' values still blank. That is allowed: ' +
+      'every rule that needs a blank one refuses instead of guessing.';
+  } else { w.hidden = true; }
+  $('signstate').textContent = DOC.verified
+    ? 'Verified by ' + (DOC.verifiedBy || '?') + ' on ' + (DOC.verifiedAt || '?')
+    : 'Not verified. codeEval returns nothing from this file.';
+}
+
+// ── Editing ─────────────────────────────────────────────────────────────────
+
+function commit(raw){
+  const f = FLAT[CUR]; if (!f) return;
+  const s = String(raw).trim();
+  if (s === ''){ setAt(f.seg, null); return; }
+  // A bare number is a number. Anything else is kept verbatim, because a few
+  // leaves are genuinely strings (a size like "1/0", an insulation name).
+  const n = Number(s);
+  setAt(f.seg, (s !== '' && isFinite(n) && /^-?[\d.]+$/.test(s)) ? n : s);
+}
+function move(d){
+  let i = CUR + d;
+  while (i >= 0 && i < FLAT.length && FLAT[i].group !== GRP) i += d;
+  if (i < 0 || i >= FLAT.length) i = CUR;
+  CUR = i; render();
+}
+
+// ── Persistence ─────────────────────────────────────────────────────────────
+
+function storeKey(){ return 'tdcode:' + DOC.family + ':' + DOC.edition; }
+function autosave(){
+  try { localStorage.setItem(storeKey(), JSON.stringify(DOC)); } catch (e) {}
+}
+function load(text){
+  let d;
+  try { d = JSON.parse(text); }
+  catch (e){ alert('That is not valid JSON.'); return; }
+  if (!d || !d.family || !d.edition){ alert('That file has no family and edition. Not a code dataset.'); return; }
+  // A newer draft in this browser wins, but only after saying so.
+  try {
+    const saved = localStorage.getItem('tdcode:' + d.family + ':' + d.edition);
+    if (saved){
+      const s = JSON.parse(saved);
+      const sn = countFilled(s), dn = countFilled(d);
+      if (sn > dn && confirm('This browser has a draft of ' + d.family.toUpperCase() + ' ' +
+          d.edition + ' with ' + sn + ' values filled, against ' + dn + ' in the file you opened. Use the draft?')) d = s;
+    }
+  } catch (e) {}
+  DOC = d;
+  CITES = buildCites(DOC);
+  rebuild();
+  GRP = GROUPS[0]; CUR = 0;
+  $('landing').hidden = true; $('app').hidden = false; $('save').disabled = false;
+  $('sn').value = DOC.verifiedBy || '';
+  $('sd').value = DOC.verifiedAt || new Date().toISOString().slice(0, 10);
+  render();
+}
+// How many leaves in a draft already carry a value. flatten() only reports the
+// nulls, so this counts every leaf and subtracts them.
+function countFilled(d){
+  let leaves = 0;
+  (function walk(n){
+    if (n === null || typeof n !== 'object'){ leaves++; return; }
+    if (Array.isArray(n)){ n.forEach(walk); return; }
+    Object.keys(n).forEach(k => walk(n[k]));
+  })(bodyOf(d));
+  const nulls = [];
+  const body = bodyOf(d);
+  Object.keys(body).forEach(k => flatten(body[k], [k], nulls));
+  // Grow slots are not leaves and were never counted above, so they must not
+  // be subtracted here either, or an empty table reads as a value gone missing.
+  return leaves - nulls.filter(x => !x.grow).length;
+}
+
+function esc(s){
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Wiring ──────────────────────────────────────────────────────────────────
+
+$('open').onclick = () => $('file').click();
+$('file').onchange = e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const r = new FileReader(); r.onload = () => load(r.result); r.readAsText(f);
+};
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (!f) return;
+  const r = new FileReader(); r.onload = () => load(r.result); r.readAsText(f);
+});
+
+$('save').onclick = () => {
+  const name = DOC.family + '-' + DOC.edition + '.json';
+  const blob = new Blob([JSON.stringify(DOC, null, 2) + '\n'], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+};
+
+$('sign').onclick = () => {
+  const name = $('sn').value.trim();
+  if (!name){ alert('A name is required. That is the whole point of the flag.'); $('sn').focus(); return; }
+  const lic = $('sl').value.trim();
+  DOC.verified = true;
+  DOC.verifiedBy = name + (lic ? ' (' + lic + ')' : '');
+  DOC.verifiedAt = $('sd').value || new Date().toISOString().slice(0, 10);
+  render();
+};
+</script>
+</body>
+</html>

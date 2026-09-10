@@ -1,0 +1,414 @@
+/* ── Timesheet: toggle, day rail, drill, week bars ──
+   Shared by index.html (the app) and timesheet.html (the public page a
+   submitted week is sent as), so the boss sees exactly what the person saw.
+   Extracted from index.html's inline style 2026-09-05; the design tokens it
+   reads (--blue, --line, --ink, --r-*, --text*) come from whichever page
+   loads it. One file, two pages, never two copies (CLAUDE.md 7.3). */
+/* Time Log: Me/Team toggle + the per-week day picker (owner: "need the day
+   picker to change what day we're looking at") + Team-scope employee rows. */
+.tl-scope-toggle{display:flex;gap:6px;background:var(--bg-card);border:1px solid var(--line-2);border-radius:11px;padding:4px;margin-bottom:10px}
+.tl-scope-btn{flex:1;height:34px;border:none;border-radius:8px;background:transparent;font-family:inherit;font-size:12.5px;font-weight:800;color:var(--text3);cursor:pointer}
+.tl-scope-btn.active{background:var(--ink);color:#fff}
+.tl-picker{display:flex;gap:5px;padding:10px 0}
+.tl-chip{flex:1;height:32px;border-radius:9px;border:1.5px solid var(--line-2);background:var(--bg-card);font-family:inherit;font-size:11px;font-weight:800;color:var(--text2);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+.tl-chip.wk{flex:1.6}
+.tl-chip .tl-dot{position:absolute;left:50%;top:auto;bottom:4px;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--blue)}
+.tl-chip.active{background:var(--ink);border-color:var(--ink);color:#fff}
+.tl-chip.active .tl-dot{background:#fff}
+.tl-scope-hd{display:flex;justify-content:space-between;align-items:center;padding:0 2px 4px}
+.tl-scope-ttl{font-size:12.5px;font-weight:800;color:var(--text)}
+.tl-scope-amt{font-size:14px;font-weight:900;font-variant-numeric:tabular-nums;color:var(--text)}
+.tl-emp-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line)}
+.tl-emp-row:last-child{border-bottom:none}
+.tl-emp-row.ot{background:linear-gradient(90deg,var(--c-amber-soft),transparent 45%);margin:0 -4px;padding-left:8px;border-radius:8px}
+.tl-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0}
+.tl-emp-mid{flex:1;min-width:0}
+.tl-emp-name-row{display:flex;align-items:center;gap:6px}
+.tl-emp-name{font-size:13px;font-weight:700;color:var(--text)}
+.tl-ot-badge{font-size:9px;font-weight:800;color:var(--c-amber-deep);background:var(--bg-card);border:1px solid var(--c-amber);padding:1px 5px;border-radius:4px}
+.tl-split{margin-top:4px}
+.tl-split-bar{display:flex;height:4px;border-radius:2px;overflow:hidden;background:var(--line-2);margin-bottom:3px}
+.tl-split-bar span{display:block;height:100%}
+.tl-split-legend{font-size:10px;color:var(--text3)}
+.tl-emp-total{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;flex-shrink:0;color:var(--text)}
+.tl-empty{padding:18px 4px;text-align:center;color:var(--text3);font-size:12px}
+/* ── Time log: the day rail ──
+   ONE continuous line. Each row's spine segment is height:100% of its own
+   grid row and the rows carry no vertical margin, so segments meet exactly
+   and the colour changes mid-line instead of the line restarting. Do not add
+   margin or gap between .tl-rail-row: that is what breaks the spine, and a
+   broken spine is the exact thing this replaced.
+   Tracks are minmax(0,...) so the whole thing reflows to 320px and survives
+   200% zoom (WCAG 1.4.4/1.4.10) without clipping the job name. */
+.tl-rail-head{padding:2px 2px 12px}
+.tl-rail-head-day{font-size:12.5px;font-weight:700;color:var(--text3)}
+.tl-rail-head-total{font-family:var(--font-display);font-size:30px;font-weight:900;letter-spacing:-.8px;
+  line-height:1.1;color:var(--text);font-variant-numeric:tabular-nums;margin:1px 0 8px}
+.tl-rail-head .tl-split-bar{height:6px;border-radius:3px;margin-bottom:8px}
+.tl-rail-legend{display:flex;flex-wrap:wrap;gap:6px 14px}
+/* The dot carries the colour so the bar is readable without separating its
+   segments by hue, and the word and the number sit right beside it. */
+.tl-rail-leg{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text3);white-space:nowrap}
+.tl-rail-leg i{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:block}
+.tl-rail-leg b{color:var(--text);font-weight:800;font-variant-numeric:tabular-nums}
+.tl-rail{list-style:none;margin:0;padding:0}
+.tl-rail-row{display:grid;grid-template-columns:minmax(0,4.4rem) 14px minmax(0,1fr) auto;
+  column-gap:8px;align-items:stretch;margin:0;padding:0}
+.tl-rail-time{font-size:11px;font-weight:700;color:var(--text3);font-variant-numeric:tabular-nums;
+  text-align:left;padding:10px 0 0;line-height:1.2;overflow-wrap:anywhere}
+.tl-rail-spine{position:relative;width:14px}
+/* The line. Full row height, no rounding, so consecutive segments abut. */
+.tl-rail-spine i{position:absolute;left:5px;top:0;bottom:0;width:4px;background:var(--rail);display:block}
+/* The boundary node, drawn ON the line at the moment the segment starts. */
+.tl-rail-spine b{position:absolute;left:2px;top:11px;width:10px;height:10px;border-radius:50%;
+  background:var(--bg-card);border:3px solid var(--rail);box-sizing:border-box;display:block}
+.tl-rail-body{min-width:0;padding:9px 0 12px}
+.tl-rail-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;
+  letter-spacing:.02em;color:var(--rail);text-transform:uppercase}
+.tl-rail-ttl{font-size:13px;font-weight:700;color:var(--text);line-height:1.35;margin-top:2px;overflow-wrap:anywhere}
+.tl-rail-sub{font-size:11.5px;color:var(--text3);line-height:1.4;margin-top:1px;overflow-wrap:anywhere}
+.tl-rail-ask{font-size:11.5px;font-weight:700;color:var(--text2);margin-top:6px}
+.tl-rail-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+/* 32px clears the 24px target minimum (WCAG 2.5.8) with room to spare, and
+   matches the .tl-chip height already used by the day picker above. */
+.tl-rail-chip{min-height:32px;padding:0 11px;border-radius:8px;border:1.5px solid var(--line-2);
+  background:var(--bg-card);color:var(--text);font-family:inherit;font-size:11.5px;font-weight:700;
+  cursor:pointer;white-space:nowrap}
+.tl-rail-chip:hover{border-color:var(--ink)}
+.tl-rail-dur{font-size:13px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;
+  padding:9px 0 0 8px;white-space:nowrap}
+.tl-rail-dur.mute{font-weight:700;color:var(--text3)}
+/* Edit moved onto the row when the entries table left the week view. Right
+   column, under the duration, so it never competes with the clock for the eye
+   and never widens the row. 28px clears the 24px target minimum (2.5.8). */
+.tl-rail-editwrap{display:block;margin-top:4px}
+.tl-rail-edit{min-height:28px;padding:0 9px;border-radius:6px;border:1px solid var(--border2);
+  background:var(--bg-card);color:var(--text);font-family:inherit;font-size:11px;font-weight:700;
+  cursor:pointer;white-space:nowrap}
+.tl-rail-edit:hover{border-color:var(--ink)}
+/* A hole is the SHAPE OF A HOLE: dashed line, nothing measured. */
+.tl-rail-row[data-kind="gap"] .tl-rail-spine i{
+  background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px)}
+.tl-rail-row[data-kind="gap"] .tl-rail-spine b{border-color:var(--border2)}
+/* The month nav: back arrow, month, forward arrow. Replaced a twelve-chip row
+   that never fit a phone, scrolled, and therefore had to scroll itself back
+   into view to be usable (owner 2026-08-30). One line, no scrolling, and the
+   month you are on is the biggest thing on it. */
+/* One header for every level of the drill. The back link sits above the
+   stepper and NAMES where it goes, because "back" alone makes somebody guess,
+   and guessing is what this rebuild is undoing. */
+.tl-drill{margin:4px 0 10px}
+.tl-drill-back{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:0 10px 0 6px;
+  margin-bottom:2px;border:0;border-radius:8px;background:none;color:var(--text3);
+  font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;
+  transition:color .14s ease,background .14s ease}
+.tl-drill-back:hover{color:var(--text);background:var(--cream)}
+.tl-drill-body{margin-top:2px}
+.tl-monav{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;
+  gap:8px;margin:0}
+.tl-monav-mid{min-width:0;text-align:center}
+.tl-monav-lbl{font-family:var(--font-display);font-size:17px;font-weight:900;
+  letter-spacing:-.3px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The month's total, which used to live on the accordion header this replaced.
+   It belongs beside the month it totals, not on a second row saying the month
+   again. */
+.tl-monav-tot{font-size:12px;font-weight:800;color:var(--text3);
+  font-variant-numeric:tabular-nums;margin-top:1px}
+/* 44px clears the 24px target minimum (WCAG 2.5.8) with room for a thumb. */
+.tl-monav-btn{width:44px;height:44px;border-radius:12px;border:1.5px solid var(--line-2);
+  background:var(--bg-card);color:var(--text);font-family:inherit;font-size:22px;font-weight:700;
+  line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:background .14s ease,border-color .14s ease,transform .14s cubic-bezier(.22,1,.36,1)}
+.tl-monav-btn:hover:not(:disabled){border-color:var(--ink);background:var(--cream)}
+/* The press lands on the SAME FRAME (owner 2026-08-31: the arrows "are really
+   laggy to response"). Easing the scale IN over .14s means the thumb is
+   already lifting before the button has finished admitting it was touched;
+   the transition belongs on the RELEASE, where it reads as the control
+   settling back. Duration only, on the pressed state only: the properties,
+   the easing and the .92 scale are all unchanged, so it looks exactly as it
+   did, it just starts the moment you touch it. */
+.tl-monav-btn:active:not(:disabled){transform:scale(.92);transition-duration:0s}
+/* Disabled, never hidden: a control that vanishes makes the row jump and
+   leaves somebody wondering whether they broke it. */
+.tl-monav-btn:disabled{opacity:.3;cursor:default}
+/* The month chart needs breathing room inside the accordion body: it is the
+   page's headline now, not a row in a table. */
+.tl-mbars{padding:16px 12px 4px;border-bottom:1px solid var(--line)}
+/* Month change slides the chart in from the side you came from, so a back tap
+   reads as going back rather than as the numbers silently changing. Entrance
+   easing and duration per §8.4; transform and opacity only, never layout. */
+/* SIDEWAYS: a different week, same kind of thing. It slides, because that is
+   what moving along a row of them feels like. */
+@keyframes td-mo-back{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+@keyframes td-mo-fwd{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+.tl-mbars-back{animation:td-mo-back .2s cubic-bezier(.22,1,.36,1) both}
+.tl-mbars-fwd{animation:td-mo-fwd .2s cubic-bezier(.22,1,.36,1) both}
+/* DOWN AND UP: a different KIND of thing, so it must not look like sideways.
+   The drill is a zoom (a month contains its weeks, a week contains its days),
+   so down grows in from slightly small, as if the bar you tapped opened up,
+   and up pulls back from slightly large, as if you stepped away from it. That
+   direction is the whole message: without it, tapping a bar and tapping an
+   arrow produced the same motion for two things that mean nothing alike, and
+   the one that changed what the chart IS was the one saying nothing.
+   Marginally longer than the sideways .2s because it covers more ground. */
+/* THE ZOOM COMES OUT OF THE BAR YOU TOUCHED (design handoff 2026-09-04).
+   It used to grow from a fixed 50% 40%, the middle of the card, whichever
+   column was tapped, so the drill read as a page swap. --tl-drill-x is the
+   tapped column's horizontal centre, written onto the body by the render
+   (_tlDrillXStyle); the Y origin is the baseline because that is where the
+   bars grow from. Coming back up anchors on the column being returned to and
+   rings it for one beat (td-seam) so the eye lands oriented. */
+@keyframes td-drill-down{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
+@keyframes td-drill-up{from{opacity:0;transform:scale(1.08)}to{opacity:1;transform:none}}
+.tl-mbars-down{animation:td-drill-down .24s cubic-bezier(.22,1,.36,1) both;
+  transform-origin:var(--tl-drill-x,50%) 100%}
+.tl-mbars-up{animation:td-drill-up .24s cubic-bezier(.22,1,.36,1) both;
+  transform-origin:var(--tl-drill-x,50%) 100%}
+@keyframes td-seam{from{box-shadow:0 0 0 2px #B7CDED}to{box-shadow:0 0 0 2px rgba(183,205,237,0)}}
+.tl-wbar-seam{animation:td-seam 1s ease-out .12s both}
+/* ── Time log: the week bars ──
+   Seven columns, one big number above them (the shared employee card), and a
+   guide line at 8 hours so a long day is over a LINE and not merely taller
+   than its neighbour. The plot area is an absolute overlay across the top
+   _TL_BAR_H pixels of the wrap, which is exactly the height of each column's
+   .tl-wbar-plot, so the guide lands on the same y as the bars measure from.
+   Change one of those heights and you must change the other. */
+/* THE CHART SITS ON SOMETHING (owner 2026-08-30: "charts are just kind of
+   floating with no background"). It is the app's own card surface, not a new
+   one: same background, same radius, same shadow token every other card on
+   every other screen uses (§7.3), so a chart reads as a panel on the grey page
+   AND inside a white crew card, which a tint could not do for both at once.
+   --tl-pad is declared here and consumed by the plot overlay below, because
+   the guide line has to land on exactly the y the columns measure from and an
+   absolutely positioned child offsets from the PADDING box. One number, two
+   readers: hard-coding it twice is how the guide drifts off the bars. */
+/* --tl-tile is the tile's own top padding (.tl-wbar-hit): the plot inside a
+   column starts that far below the wrap's padding box, so the overlays that
+   must land on the same y as the bars (guide, gridlines, floor) offset by it
+   too. One number, three readers. */
+.tl-wbar-wrap{--tl-pad:12px;--tl-tile:8px;position:relative;margin:2px 0 0;
+  padding:var(--tl-pad) var(--tl-pad) 8px;
+  background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card)}
+.tl-wbar-plotarea{position:absolute;left:var(--tl-pad);right:var(--tl-pad);
+  top:calc(var(--tl-pad) + var(--tl-tile));height:158px;pointer-events:none;z-index:3}
+/* Gridlines and the floor sit BEHIND the bars (z 1; the guide stays above at
+   3). One continuous floor across all the columns, replacing the per-column
+   baseline the plot used to carry, so seven columns share one line. */
+.tl-wbar-grid{position:absolute;left:var(--tl-pad);right:var(--tl-pad);
+  top:calc(var(--tl-pad) + var(--tl-tile));height:158px;pointer-events:none;z-index:1}
+.tl-wbar-grid i{position:absolute;left:0;right:0;height:1px;background:#F0F2F6}
+.tl-wbar-grid b{position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:1px;background:#E2E5EB}
+body.dark .tl-wbar-grid i{background:rgba(255,255,255,.06)}
+body.dark .tl-wbar-grid b{background:rgba(255,255,255,.14)}
+/* Dark enough to read on the blue of a tall bar AND on the page behind a short
+   one, with a light halo either side so it never dissolves into the bar it is
+   crossing. A pale line here was invisible on exactly the long days it exists
+   to flag. */
+.tl-wbar-guide{position:absolute;left:0;right:0;height:0;display:block;
+  border-top:1.5px dashed var(--denim-edge,#B7CDED);
+  box-shadow:0 1px 0 rgba(255,255,255,.55),0 -1px 0 rgba(255,255,255,.55)}
+body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,.45)}
+.tl-wbar-guide b{position:absolute;right:0;top:-9px;height:17px;padding:0 7px;
+  border-radius:9px;background:#EDF2FA;color:var(--text2);
+  font-size:9px;font-weight:800;line-height:17px;letter-spacing:.04em}
+body.dark .tl-wbar-guide b{background:rgba(183,205,237,.18);color:var(--text)}
+.tl-wbar{list-style:none;margin:0;padding:0;display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;position:relative;z-index:2;
+  justify-items:center}
+.tl-wbar.tl-wbar-dense{gap:1px}
+/* A month with one week gave that week the whole page and it read as a block,
+   not a bar (owner 2026-08-30: "one week looks awful"). The TRACK still splits
+   evenly so every column keeps the same ruler; the bar inside it is capped and
+   centred, so one bar and seven bars are the same object at different counts.
+   THE CAP IS AN ASPECT RATIO, NOT A ROUND NUMBER. It was 104px, which is wider
+   than the 92px plot is tall, so any chart with two or three columns produced
+   bars wider than they were tall and they read as slabs again (owner
+   2026-08-30, on Jose's two-week card: "the bars don't look great"). 56px is
+   comfortably under the plot height, so a bar is a bar at every count: two
+   weeks, four weeks and seven days now all look like the same object, and the
+   seven-day week is unchanged because its tracks were already narrower than
+   this. */
+/* The 56px column cap is gone: the BAR is capped now, with clamp() per level
+   (below), so the track can be as wide as the tile it lives in while one
+   week and seven days still draw the same object. */
+.tl-wbar-col{min-width:0;justify-self:center;width:100%}
+.tl-wbar-hit{display:flex;flex-direction:column;align-items:stretch;width:100%;min-width:0;
+  background:none;border:0;padding:var(--tl-tile) 2px 9px;margin:0;font-family:inherit;cursor:pointer}
+/* The column the bar grows inside. Height is fixed so every day is measured
+   against the same ruler; the bar itself is a percentage of it. A BASELINE,
+   not a filled track: a full-height grey box on a day with nothing logged read
+   heavier than the real bars beside it, which is backwards. */
+/* 158px, in three places that must move together: this, .tl-wbar-plotarea,
+   .tl-wbar-grid, and _TL_BAR_H in js/timelog.js. Fixed at every width on
+   purpose: a chart that grows with the viewport makes the same week look like
+   a different week on a different device. */
+.tl-wbar-plot{position:relative;height:158px;display:flex;align-items:flex-end;justify-content:center}
+.tl-wbar-week .tl-wbar-stack{width:clamp(13px,68%,36px)}
+.tl-wbar-month .tl-wbar-stack{width:clamp(16px,62%,46px)}
+/* The bars grow out of the baseline instead of appearing at full height.
+   scaleY from the bottom, not a height transition: §8.5 bans animating height,
+   and scaling the stack takes its segments with it, which is what a stacked
+   bar growing actually looks like. */
+/* .34s, up from .22s (owner 2026-08-30: "make them load themselves in a bit
+   slower"). It is doing a different job now: the shimmer only ever runs once,
+   so on every drill after that the growth IS the load and it needs long enough
+   to be read as one. Still inside §8.4's 350ms ceiling for a single element,
+   and the sequence past that is stagger, not duration. */
+@keyframes td-bar-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.tl-wbar-stack{display:flex;flex-direction:column;width:100%;overflow:hidden;
+  border-radius:11px 11px 5px 5px;min-height:4px;transform-origin:bottom;
+  animation:td-bar-rise .34s cubic-bezier(.22,1,.36,1) both}
+/* Staggered left to right so the chart reads as filling in rather than
+   flashing. Small enough that the last column still lands inside §8.4's
+   350ms ceiling. */
+.tl-wbar-col:nth-child(2) .tl-wbar-stack{animation-delay:.04s}
+.tl-wbar-col:nth-child(3) .tl-wbar-stack{animation-delay:.08s}
+.tl-wbar-col:nth-child(4) .tl-wbar-stack{animation-delay:.12s}
+.tl-wbar-col:nth-child(5) .tl-wbar-stack{animation-delay:.16s}
+.tl-wbar-col:nth-child(6) .tl-wbar-stack{animation-delay:.2s}
+.tl-wbar-col:nth-child(7) .tl-wbar-stack{animation-delay:.24s}
+/* A month can run to six weeks and a future chart may hold more, so the ramp
+   does not stop at seven and leave the eighth column snapping in ahead of its
+   neighbours. */
+.tl-wbar-col:nth-child(8) .tl-wbar-stack{animation-delay:.28s}
+.tl-wbar-col:nth-child(9) .tl-wbar-stack{animation-delay:.32s}
+.tl-wbar-col:nth-child(n+10) .tl-wbar-stack{animation-delay:.36s}
+/* Somebody who asked their device for less motion gets the chart, not the
+   show. This is vestibular, not taste. */
+@media (prefers-reduced-motion:reduce){
+  .tl-wbar-stack,.tl-mbars-back,.tl-mbars-fwd,
+  .tl-mbars-down,.tl-mbars-up,.tl-wbar-seam{animation:none}
+  .tl-monav-btn,.tl-wbar-hit{transition:none}
+}
+.tl-wbar-seg{display:block;width:100%;min-height:2px}
+/* Whose week this is. Sits between the back link and the stepper because that
+   is the reading order of the question: where am I going back to, whose data
+   is this, which week. Only Team ever sets it. */
+.tl-drill-who{font-size:12px;font-weight:800;color:var(--text2);margin:2px 0 0;
+  line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The chart inside an expanded crew card. Padded off the card's own edges so
+   the bars are not flush against the accordion border. */
+.tl-emp-bars{padding:8px 4px 4px}
+/* The placeholder wears the real chart's shapes: a bar on the baseline, a day
+   label under it, an hours line under that. What it promises is what arrives,
+   so the swap reads as the same object resolving rather than one thing being
+   replaced by another. */
+.tl-skel-bar{display:block;width:100%;border-radius:11px 11px 5px 5px}
+.tl-skel-lbl{display:block;height:11px;width:62%;margin:6px auto 0}
+.tl-skel-amt{display:block;height:11px;width:80%;margin:4px auto 0}
+.tl-skel-btn{display:block;width:44px;height:44px;border-radius:11px;flex-shrink:0}
+.tl-skel-ttl{display:block;height:17px;width:132px;max-width:100%;margin:0 auto}
+.tl-skel-sub{display:block;height:12px;width:74px;margin:5px auto 0}
+.tl-emp-nobars{padding:10px 2px;font-size:12px;color:var(--text3);font-weight:600}
+/* ── Why the bars look like objects instead of pictures ──
+   Two different jobs, and they are not the same job.
+
+   LOOKING tappable is perceived affordance: the eye reads a top highlight and
+   a shadow underneath as a raised thing, and raised things get pressed. A flat
+   coloured region reads as a printed chart, and nobody presses a picture. The
+   depth is 1px of light and 2px of shadow, which is enough to change the
+   category and not enough to be noticed as styling.
+
+   WANTING to tap is a different mechanism: a specific missing number. A closed
+   fact ("39h 27m") answers itself and ends there. A count of things you cannot
+   see yet ("8") is an open loop, and open loops are what make a person's hand
+   move. That is the badge below, and it is why it is a number and not the
+   words "tap for details": a label tells, and telling is the thing the owner
+   has cut three times today. */
+/* Directional: light from the upper-left, cast down and to the right, so the
+   bar is a raised object and not a printed region. The tile under it does the
+   hover work now, so the bar itself no longer changes on hover. */
+.tl-wbar-stack{position:relative;
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.55),inset 1.5px 0 0 rgba(255,255,255,.16),
+    inset 0 -10px 14px rgba(17,24,39,.14),
+    1px 1px 2px rgba(17,24,39,.11),4px 5px 10px rgba(17,24,39,.15),9px 13px 24px rgba(17,24,39,.10)}
+body.dark .tl-wbar-stack{
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.16),inset 1.5px 0 0 rgba(255,255,255,.26),
+    inset 0 -10px 14px rgba(0,0,0,.3),
+    1px 1px 2px rgba(0,0,0,.5),4px 5px 10px rgba(0,0,0,.5),9px 13px 24px rgba(0,0,0,.5)}
+/* The count of places actually stopped, printed on the bar it belongs to.
+   ABSOLUTE, not a flex item: as a flex item it would eat height out of the
+   segments and the bar would stop being an honest measurement of minutes.
+   A white pill so it reads on any bucket colour without needing a per-colour
+   rule, and aria-hidden in the markup because the button's label already says
+   "8 stops" in words. */
+.tl-wbar-n{position:absolute;left:50%;bottom:5px;transform:translateX(-50%);
+  font-style:normal;font-size:10px;font-weight:900;line-height:16px;
+  min-width:16px;height:16px;padding:0 4px;border-radius:8px;text-align:center;
+  background:rgba(255,255,255,.94);color:#111827;
+  font-variant-numeric:tabular-nums;pointer-events:none;
+  box-shadow:0 1px 2px rgba(17,24,39,.2)}
+/* The column has to LOOK pressable or the tap is a secret. The whole column
+   lights up, not just the bar, so the target and the affordance are the same
+   shape, and it presses on touch where there is no hover at all. */
+/* A LIFTING TILE. The whole column is the target and the affordance: it lifts
+   on hover, presses on touch, and a column with nothing in it does neither and
+   says so with its cursor, so the affordance never lies. */
+.tl-wbar-hit{border-radius:13px;
+  transition:background .16s ease,box-shadow .16s ease,transform .16s cubic-bezier(.22,1,.36,1)}
+.tl-wbar-hit:hover{background:#FAFBFC;
+  box-shadow:0 6px 16px rgba(27,22,18,.09),0 0 0 1px var(--line);transform:translateY(-3px)}
+.tl-wbar-hit:active{transform:translateY(0) scale(.97);
+  box-shadow:0 1px 3px rgba(27,22,18,.10),0 0 0 1px var(--line)}
+body.dark .tl-wbar-hit:hover{background:rgba(255,255,255,.04)}
+.tl-wbar-hit:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.tl-wbar-col.tl-wbar-none .tl-wbar-hit{cursor:default}
+.tl-wbar-col.tl-wbar-none .tl-wbar-hit:hover,.tl-wbar-col.tl-wbar-none .tl-wbar-hit:active{
+  background:none;box-shadow:none;transform:none}
+/* The persistent "these open" cue, in the app's own action colour. Hover does
+   not exist on the phone, which is the device that matters here; this does. */
+.tl-wbar-go{font:800 13px/1 var(--font-ui,inherit);color:var(--blue);margin-left:1px}
+/* The key, quiet: it is a legend, not data. */
+.tl-wbar-key{display:flex;flex-wrap:wrap;gap:2px 9px;margin-top:12px;padding-top:10px;
+  border-top:1px solid #EEF0F4;font-size:9px;font-weight:700;letter-spacing:.02em;color:var(--text3)}
+.tl-wbar-key span{display:inline-flex;align-items:center;gap:4px}
+.tl-wbar-key i{display:inline-block;width:7px;height:7px;border-radius:2px}
+body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
+.tl-wbar-share{display:block;margin:10px auto 0;padding:0 12px;height:34px;
+  border-radius:9px;border:1.5px solid var(--line-2);background:var(--bg-card);
+  color:var(--text);font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;
+  display:flex;align-items:center;gap:6px}
+.tl-wbar-share:hover{border-color:var(--ink)}
+/* Fixed min-height per level so a two-line range like "Aug 30–Sep 5" can wrap
+   without pushing that one column's amounts down and breaking the shared
+   baseline. */
+.tl-wbar-dow{font-size:11px;font-weight:800;color:var(--text2);margin-top:6px;line-height:1.18;
+  text-wrap:balance;min-height:14px}
+.tl-wbar-month .tl-wbar-dow{min-height:26px}
+.tl-wbar-col.tl-wbar-none .tl-wbar-dow{color:var(--text3)}
+/* The height comparison, restated in words: a chart that only encodes hours as
+   a height is unreadable to anyone who cannot judge one, and a short day must
+   never be mistakable for a day that recorded nothing (1.4.1). */
+/* Hours over minutes, each on its own line, each short enough that nothing is
+   ever abbreviated or clipped (owner 2026-08-30: "don't want hours cutting
+   off"). Fixed line-heights so a day with no minutes part still leaves the
+   same vertical space and the seven columns stay bottom-aligned. */
+.tl-wbar-amt{font-family:var(--font-display);font-size:14px;font-weight:900;color:var(--text);
+  margin-top:4px;letter-spacing:-.3px;
+  font-variant-numeric:tabular-nums;line-height:16px;height:16px;white-space:nowrap}
+.tl-wbar-sub{font-size:9.5px;font-weight:800;color:var(--text3);
+  font-variant-numeric:tabular-nums;line-height:12px;height:12px;white-space:nowrap}
+
+.tl-wbar-col.tl-wbar-none .tl-wbar-amt{font-weight:700;color:var(--text3)}
+.tl-wbar-col.tl-wbar-none .tl-wbar-plot{opacity:.6}
+/* "Still needs an answer", as a character and not a colour (1.4.1).
+   --amber and --amber-lt are the one amber pair restated in BOTH palettes, so
+   this stays readable in dark mode instead of going dark-on-dark. */
+/* The glyph is OPTICALLY centred, not box-centred (owner 2026-08-30: "the
+   amber question mark isn't centered on the circle"). A "?" is a cap-height
+   glyph sitting on the baseline, so a line box centred in the circle reserves
+   descender space underneath it and pushes the ink up: it was touching the top
+   of the ring with a gap below. The padding shifts the content box down by the
+   half-descender the font reserves and never uses here. */
+.tl-wbar-q{position:absolute;left:50%;transform:translateX(-50%);
+  box-sizing:border-box;padding-top:5px;
+  font-style:normal;font-size:11px;font-weight:900;line-height:1;z-index:3;
+  width:19px;height:19px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  background:var(--amber-lt);color:var(--amber);border:1.5px solid var(--amber);
+  box-shadow:0 1px 3px rgba(112,64,0,.24)}
+
+/* The chart button as a STAMP (js/timesheet.js): submitted or approved is
+   green and quiet, sent back is amber. Still a button: tapping it reopens
+   the review so the week can be fixed and submitted again. */
+.tl-wbar-stamp.ok{background:var(--c-green-soft,#E6F4EA);color:var(--c-green-deep,#1B6E3A);border-color:transparent}
+.tl-wbar-stamp.back{background:var(--amber-lt);color:var(--amber);border-color:transparent}

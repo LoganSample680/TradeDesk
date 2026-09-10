@@ -50,6 +50,8 @@ function fabricatedRoom() {
   });
 }
 
+const { FAKE_NEC } = require('./fixtures/code-fake-verified');
+
 test.describe('TdScan web half', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
@@ -59,8 +61,438 @@ test.describe('TdScan web half', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
     await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+    // The knowingly fake edition, parked on the page for the tests that need a
+    // verified dataset. Registering it is each test's own deliberate act.
+    await page.evaluate((f) => { window.__FAKE_NEC = f; }, FAKE_NEC);
   });
+
+  // Any test that expects a receptacle count has to register a verified book
+  // first, and say so. Leaning on an earlier test having done it is how a
+  // suite starts passing for reasons nobody chose: the shards reorder and it
+  // is suddenly red with nothing changed.
+  const withBook = () => page.evaluate(() => {
+    window.codeRegister(Object.assign({}, window.__FAKE_NEC,
+      { rules: window.necRules, verified: true }));
+    window.setCodeEdition('nec', 'FAKE');
+  });
+  // And a test that expects the refusal has to be sure no earlier test left a
+  // book lying around.
+  const withoutBook = () => page.evaluate(() => { window.setCodeEdition('nec', ''); });
   test.afterAll(async () => { await page.context().close(); });
+
+  // ── A REAL floor transform, off the owner's own scan (2026-09-10) ────────
+  // His Aldi GUYS living room: seven good walls, a right perimeter, a right
+  // wall area, and 0 sq ft of floor. RoomPlan hands a surface's polygon in
+  // the surface's LOCAL XY plane with z as the normal, and a floor is that
+  // plane laid flat, so local y is what becomes world z. The parser read
+  // local z and added the translation, and local z is 0 at every corner of a
+  // planar polygon: all six came back on one line at z = -1.9913149, and the
+  // shoelace of a line is nothing. The fixture above happens to use the other
+  // convention with an identity transform, which is why it never caught this.
+  test.describe('the floor polygon comes through its transform', () => {
+    // A floor laid flat: local X stays world X, local Y becomes world -Z, and
+    // the normal (local Z) points up. This is the shape a device sends.
+    const laidFlat = (tx, tz) => [1, 0, 0, 0,  0, 0, -1, 0,  0, 1, 0, 0,  tx, 0, tz, 1];
+    const roomWithFloor = (corners, transform) => {
+      // fabricatedRoom() hands back the JSON STRING the parser takes.
+      const raw = JSON.parse(fabricatedRoom());
+      raw.floors = [{ identifier: 'f-1', category: { floor: {} }, dimensions: [4.84, 0, 3.4],
+                      polygonCorners: corners, transform }];
+      return JSON.stringify(raw);
+    };
+
+    test('a rectangle in the local XY plane keeps its area', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Living');
+        return { sqFt: Math.round(_scanSqFt(room.floorM2)), approx: !!room.floorApprox,
+                 zs: room.poly.map(p => Math.round(p[1] * 100) / 100) };
+      }, roomWithFloor([[-2.42, -1.7, 0], [2.42, -1.7, 0], [2.42, 1.7, 0], [-2.42, 1.7, 0]],
+                       laidFlat(0, 0)));
+      // 4.84 x 3.4 m is 16.46 m2, 177 sq ft. It used to be 0.
+      expect(r.sqFt).toBe(177);
+      expect(r.approx, 'a real polygon is not an approximation').toBe(false);
+      expect(new Set(r.zs).size, 'the corners are not all on one line any more').toBeGreaterThan(1);
+    });
+
+    test('and it lands where the floor actually is, not at the origin', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Living');
+        return { xs: room.poly.map(p => p[0]), zs: room.poly.map(p => p[1]) };
+      }, roomWithFloor([[-2.42, -1.7, 0], [2.42, -1.7, 0], [2.42, 1.7, 0], [-2.42, 1.7, 0]],
+                       laidFlat(4, -1.99)));
+      expect(Math.min(...r.xs)).toBeCloseTo(1.58, 2);
+      expect(Math.max(...r.xs)).toBeCloseTo(6.42, 2);
+      expect(Math.min(...r.zs)).toBeCloseTo(-3.69, 2);
+      expect(Math.max(...r.zs)).toBeCloseTo(-0.29, 2);
+    });
+
+    test('the old convention still parses, so no scan already taken changes', async () => {
+      // Corners in XZ with an identity transform: what the fixture uses and
+      // what the parser assumed. Putting a point through the whole basis is
+      // right for this one too, which is the point of doing it that way.
+      const r = await page.evaluate((raw) => Math.round(_scanSqFt(_scanParseRoom(raw, 'K').floorM2)),
+        roomWithFloor([[-2.42, 0, -1.7], [2.42, 0, -1.7], [2.42, 0, 1.7], [-2.42, 0, 1.7]],
+                      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+      expect(r).toBe(177);
+    });
+
+    // A number that reads like an answer and is not is worse than a number
+    // that admits what it is. 0 sq ft on a bid is something somebody acts on.
+    test('a polygon that encloses nothing falls back to the walls and says so', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Living');
+        return { sqFt: Math.round(_scanSqFt(room.floorM2)), approx: !!room.floorApprox };
+      }, roomWithFloor([[-2.42, 0, 0], [0, 0, 0], [2.42, 0, 0], [0, 0, 0]], laidFlat(0, 0)));
+      expect(r.sqFt, 'a room with walls never reports no floor').toBeGreaterThan(0);
+      expect(r.approx, 'and it admits the hull overstates').toBe(true);
+    });
+
+    test('_scanToWorldXZ: no matrix, a partial one, and junk', async () => {
+      const r = await page.evaluate(() => ({
+        none: _scanToWorldXZ(null, { x: 2, y: 3, z: 4 }),
+        noVec: _scanToWorldXZ(_scanMat([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]), null),
+        identity: _scanToWorldXZ(_scanMat([1,0,0,0, 0,1,0,0, 0,0,1,0, 5,0,7,1]), { x: 2, y: 3, z: 4 }),
+      }));
+      expect(r.none, 'no matrix is the point itself on the ground plane').toEqual([2, 4]);
+      expect(r.noVec).toBeNull();
+      expect(r.identity).toEqual([7, 11]);
+    });
+
+    test('_scanMat carries all four columns now', async () => {
+      const m = await page.evaluate(() => _scanMat([1,2,3,0, 4,5,6,0, 7,8,9,0, 10,11,12,1]));
+      expect(m.col0).toEqual({ x: 1, y: 2, z: 3 });
+      expect(m.col1).toEqual({ x: 4, y: 5, z: 6 });
+      expect(m.col2).toEqual({ x: 7, y: 8, z: 9 });
+      expect(m.col3).toEqual({ x: 10, y: 11, z: 12 });
+    });
+  });
+
+  // ── The sheet is square to the page (owner 2026-09-10) ───────────────────
+  // "the floor plan itself is ugly as hell". His living room sat 68 degrees
+  // off the scene's zero, which is wherever the phone pointed when the
+  // session started, so the drawing ran corner to corner, every dimension
+  // string read at an angle and half the sheet was margin.
+  test.describe('the plan is turned square to the page', () => {
+    const wall = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                        h: 2.44, doors: [], windows: [], conf: 'high' });
+    // His own room, to the centimetre, off his own account.
+    const ALDI = [wall(-0.66, 2.81, -2.46, -1.68), wall(-2.46, -1.68, -3.72, -4.83),
+                  wall(-3.72, -4.83, -0.57, -6.09), wall(-0.57, -6.09, 0.69, -2.94),
+                  wall(0.69, -2.94, 2.48, 1.56), wall(2.48, 1.56, -0.66, 2.81),
+                  wall(-2.46, -1.68, 0.69, -2.94)];
+
+    test('a room already square to the page is left exactly alone', async () => {
+      const deg = await page.evaluate((walls) => _scanPlanAngle([{ walls }]) * 180 / Math.PI,
+        [wall(0, 0, 4, 0), wall(4, 0, 4, 3), wall(4, 3, 0, 3), wall(0, 3, 0, 0)]);
+      expect(deg).toBe(0);
+    });
+
+    // OLD: each wall was dropped in a 5 degree bucket and the page turned by
+    // the BUCKET, so it squared to -70 and left up to two and a half degrees
+    // of tilt on the sheet. NEW (owner 2026-09-10, "see how the plan itself
+    // isn't set on a 90 degree axis"): it turns by the actual grid angle, so
+    // every wall lands on an axis and not just the longest one.
+    test('and his room turns until every wall lies on an axis', async () => {
+      const r = await page.evaluate((walls) => {
+        const rot = _scanPlanAngle([{ walls }]);
+        const out = _scanRotateRoom({ walls, poly: [], objects: [] },
+                                    Math.cos(rot), Math.sin(rot), 0, 0);
+        // Each wall's angle off the nearest axis, folded to a quarter turn.
+        const off = out.walls.map(w => {
+          let a = Math.atan2(w.bz - w.az, w.bx - w.ax) * 180 / Math.PI;
+          a = ((a % 180) + 180) % 180;
+          return Math.min(a, Math.abs(90 - a), 180 - a);
+        });
+        const xs = out.walls.flatMap(w => [w.ax, w.bx]), zs = out.walls.flatMap(w => [w.az, w.bz]);
+        return { deg: rot * 180 / Math.PI, worst: Math.max(...off),
+                 wide: (Math.max(...xs) - Math.min(...xs)) > (Math.max(...zs) - Math.min(...zs)) };
+      }, ALDI);
+      expect(r.deg, 'his grid was 68 degrees off, not 70').toBeCloseTo(-68.2, 1);
+      expect(r.worst, 'and no wall is left leaning afterwards').toBeLessThan(0.2);
+      expect(r.wide, 'the long side lies across the page, the way a sheet is held').toBe(true);
+    });
+
+    test('turning the page never changes the room', async () => {
+      const r = await page.evaluate((walls) => {
+        const room = { walls, poly: [[-0.66, 2.81], [-2.46, -1.68], [-3.72, -4.83],
+                                     [-0.57, -6.09], [0.69, -2.94], [2.48, 1.56]],
+                       objects: [{ cx: 1, cz: 2, w: 1, d: 2, ux: 1, uz: 0 }] };
+        const rot = _scanPlanAngle([room]);
+        const out = _scanRotateRoom(room, Math.cos(rot), Math.sin(rot), 0, 0);
+        const len = w => Math.round(Math.hypot(w.bx - w.ax, w.bz - w.az) * 1000);
+        return { areaBefore: Math.round(Math.abs(_scanShoelace(room.poly)) * 100),
+                 areaAfter: Math.round(Math.abs(_scanShoelace(out.poly)) * 100),
+                 lensBefore: room.walls.map(len), lensAfter: out.walls.map(len),
+                 unit: Math.round(Math.hypot(out.objects[0].ux, out.objects[0].uz) * 1000) };
+      }, ALDI);
+      expect(r.areaAfter, 'the floor is the same floor').toBe(r.areaBefore);
+      expect(r.lensAfter, 'and every wall is the same length').toEqual(r.lensBefore);
+      expect(r.unit, "a symbol's own direction stays a unit vector").toBe(1000);
+    });
+
+    test('north turns with the sheet, because north is not a property of paper', async () => {
+      const r = await page.evaluate((walls) => {
+        const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly: [], objects: [], hM: 2.44,
+                     floorM2: 20, wallM2: 40, openM2: 0, perimM: 20, story: 1 }], headingDeg: 90 };
+        const svg = _scanPlanSvg(sc, { sheet: true });
+        // Anchor to the compass group, then to the needle inside it: the rose
+        // itself never turns, only the needle does.
+        const m = /translate\(94\.5,[^)]*\)[\s\S]*?rotate\((-?\d+)\)/.exec(svg);
+        return { rot: Math.round(_scanPlanAngle(sc.rooms) * 180 / Math.PI), drawn: m && +m[1] };
+      }, ALDI);
+      expect(r.drawn, 'the arrow moved by exactly the angle the page did').toBe(90 + r.rot);
+    });
+
+    test('nothing to square, or junk, and it simply does not turn', async () => {
+      const r = await page.evaluate(() => ({
+        none: _scanPlanAngle([]),
+        noWalls: _scanPlanAngle([{ walls: [] }]),
+        junk: _scanPlanAngle([{ walls: [{ ax: 0, az: 0, bx: 0, bz: 0 }] }]),
+        undef: _scanPlanAngle(null),
+        room: _scanRotateRoom(null, 1, 0, 0, 0),
+        bare: _scanRotateRoom({}, 1, 0, 0, 0),
+        nullObj: _scanRotateRoom({ walls: [], poly: [], objects: [null] }, 0, 1, 0, 0).objects,
+      }));
+      expect([r.none, r.noWalls, r.junk, r.undef]).toEqual([0, 0, 0, 0]);
+      expect(r.room).toBeNull();
+      expect(r.bare).toEqual({ poly: [], walls: [], objects: [] });
+      expect(r.nullObj, 'a malformed object rides through rather than throwing').toEqual([null]);
+    });
+  });
+
+  // ── One room, more than one space (owner 2026-09-10) ─────────────────────
+  // "Each individual room needs its own square feet without overlap on text."
+  // RoomPlan handed his whole 300 sq ft capture back as ONE room called
+  // "Floor 1" with a wall through the middle, so a single figure was printed
+  // over two rooms.
+  test.describe('a square footage per space', () => {
+    const W = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                     h: 2.44, doors: [], windows: [], conf: 'high' });
+    const RECT = [W(0, 0, 4, 0), W(4, 0, 4, 3), W(4, 3, 0, 3), W(0, 3, 0, 0)];
+    const RECT_POLY = [[0, 0], [4, 0], [4, 3], [0, 3]];
+
+    test('a wall clean across the floor makes two spaces, and they add up', async () => {
+      const r = await page.evaluate(([walls, poly]) => {
+        const a = _scanFloorAreas({ poly, walls });
+        return { n: a.length, m2: a.map(x => Math.round(x.m2 * 100) / 100 ) };
+      }, [RECT.concat([W(1.5, 0, 1.5, 3)]), RECT_POLY]);
+      expect(r.n, 'the divider cuts it in two').toBe(2);
+      expect(r.m2.reduce((t, x) => t + x, 0), 'and nothing is lost or invented').toBeCloseTo(12, 1);
+      expect(r.m2.sort((x, y) => x - y), 'split where the wall is, 1.5 m and 2.5 m').toEqual([4.5, 7.5]);
+    });
+
+    test('a perimeter wall is not a divider, however long it is', async () => {
+      const n = await page.evaluate(([walls, poly]) =>
+        _scanFloorAreas({ poly, walls }).length, [RECT, RECT_POLY]);
+      expect(n, 'four walls around one room is one space').toBe(1);
+    });
+
+    test('a stub reaching only part way across divides nothing', async () => {
+      const n = await page.evaluate(([walls, poly]) =>
+        _scanFloorAreas({ poly, walls }).length, [RECT.concat([W(1.5, 0, 1.5, 1.2)]), RECT_POLY]);
+      expect(n, 'a peninsula is not a wall between rooms').toBe(1);
+    });
+
+    test('each space carries its own figure and its own footage', async () => {
+      const t = await page.evaluate(([walls, poly]) => {
+        const sc = { id: 's', name: 'S', rooms: [{ label: 'Shop', walls, poly, objects: [],
+                     hM: 2.44, floorM2: 12, wallM2: 40, openM2: 0, perimM: 14, story: 1 }] };
+        const d = document.createElement('div'); d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        return [...d.querySelectorAll('text')].map(x => x.textContent);
+      }, [RECT.concat([W(1.5, 0, 1.5, 3)]), RECT_POLY]);
+      // 4.5 m2 is 48 sq ft, 7.5 m2 is 81 sq ft.
+      expect(t.filter(x => /sq ft$/.test(x) && !/total/.test(x)).sort(),
+        'one footage each, never one number over two rooms').toEqual(['48 sq ft', '81 sq ft']);
+      // The name goes on the bigger space, once.
+      expect(t.filter(x => x === 'Shop').length, 'named once, on the larger space').toBe(1);
+    });
+
+    test('junk in, no throw, and one space back', async () => {
+      const r = await page.evaluate(() => ({
+        none: _scanFloorAreas(null).length,
+        empty: _scanFloorAreas({}).length,
+        thin: _scanFloorAreas({ poly: [[0, 0], [1, 0]], walls: [] }).length,
+        noWalls: _scanFloorAreas({ poly: [[0, 0], [4, 0], [4, 3], [0, 3]] }).length,
+        junkWall: _scanFloorAreas({ poly: [[0, 0], [4, 0], [4, 3], [0, 3]],
+                                    walls: [{ ax: 0, az: 0, bx: 0, bz: 0, len: 0 }, null] }).length,
+      }));
+      expect([r.none, r.empty, r.thin], 'nothing to divide, nothing back').toEqual([0, 0, 0]);
+      expect([r.noWalls, r.junkWall], 'a floor with no usable wall is one space').toEqual([1, 1]);
+    });
+  });
+
+  // ── Nothing on the sheet is turned (owner 2026-09-10) ─────────────────────
+  // "Needs to not be tilted at all on the measurement lines or the canisters."
+  test.describe('every figure reads straight', () => {
+    const W = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                     h: 2.44, doors: [], windows: [], conf: 'high' });
+    const sheet = (extra) => page.evaluate((ex) => {
+      const mk = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                        h: 2.44, doors: [], windows: [], conf: 'high' });
+      const walls = [mk(0, 0, 4, 0), mk(4, 0, 4, 3), mk(4, 3, 0, 3), mk(0, 3, 0, 0)];
+      walls[0].windows = [{ off: 2, w: 1.2, h: 1.22 }];
+      walls[2].doors = [{ off: 2, w: 0.8, kind: 'door' }];
+      const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly: [[0, 0], [4, 0], [4, 3], [0, 3]],
+                   objects: [], hM: 2.44, floorM2: 12, wallM2: 40, openM2: 0, perimM: 14, story: 1 }] };
+      if (ex) sc.headingDeg = ex;
+      return _scanPlanSvg(sc, { sheet: true });
+    }, extra);
+
+    test('no figure anywhere carries a rotation', async () => {
+      const svg = await sheet(0);
+      // Everything that turns must be the compass, and only its needle.
+      const turns = svg.match(/rotate\([^)]*\)/g) || [];
+      const needle = (svg.match(/translate\(94\.5,[^)]*\)[\s\S]*?rotate\([^)]*\)/g) || []).length;
+      expect(turns.length, 'one turn on the sheet, and it is the needle').toBe(needle);
+    });
+
+    test('no figure runs off the edge of the paper', async () => {
+      const bad = await page.evaluate(() => {
+        const mk = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                          h: 2.44, doors: [], windows: [], conf: 'high' });
+        const walls = [mk(0, 0, 4, 0), mk(4, 0, 4, 3), mk(4, 3, 0, 3), mk(0, 3, 0, 0)];
+        // A window on every side, which is what pushed figures into the gutter.
+        walls.forEach(w => { w.windows = [{ off: w.len / 2, w: 1.0, h: 1.22 }]; });
+        const sc = { id: 's', name: 'S', headingDeg: 30, rooms: [{ label: 'R', walls,
+                     poly: [[0, 0], [4, 0], [4, 3], [0, 3]], objects: [], hM: 2.44, floorM2: 12,
+                     wallM2: 40, openM2: 0, perimM: 14, story: 1 }] };
+        const d = document.createElement('div');
+        d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        // Rough box per figure: 0.55em a character, centred on its x.
+        return [...d.querySelectorAll('g.td-wlen text, g.td-olen text')].filter(t => {
+          const half = t.textContent.length * 0.55 * (+t.getAttribute('font-size')) / 2;
+          const x = +t.getAttribute('x');
+          return x - half < 0 || x + half > 100;
+        }).map(t => t.textContent);
+      });
+      expect(bad, 'a figure in the gutter does not print').toEqual([]);
+    });
+
+    test('the compass is on every sheet, heading or no heading', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                          h: 2.44, doors: [], windows: [], conf: 'high' });
+        const room = { label: 'R', walls: [mk(0, 0, 4, 0), mk(4, 0, 4, 3), mk(4, 3, 0, 3), mk(0, 3, 0, 0)],
+                       poly: [[0, 0], [4, 0], [4, 3], [0, 3]], objects: [], hM: 2.44, floorM2: 12,
+                       wallM2: 40, openM2: 0, perimM: 14, story: 1 };
+        const grab = svg => {
+          const d = document.createElement('div'); d.innerHTML = svg;
+          const g = [...d.querySelectorAll('g')].find(x => /translate\(94\.5,/.test(x.getAttribute('transform') || ''));
+          return g ? { mark: g.querySelector('text').textContent, circles: g.querySelectorAll('circle').length } : null;
+        };
+        return {
+          withN: grab(_scanPlanSvg({ id: 'a', rooms: [room], headingDeg: 41 }, { sheet: true })),
+          without: grab(_scanPlanSvg({ id: 'b', rooms: [room] }, { sheet: true })),
+        };
+      });
+      expect(r.withN, 'a heading draws a compass').not.toBeNull();
+      expect(r.withN.mark, 'and it says north').toBe('N');
+      expect(r.without, 'no heading still draws one').not.toBeNull();
+      expect(r.without.mark, 'and says the direction is the paper\'s, not the world\'s').toBe('N?');
+    });
+  });
+
+  // ── Every wall says how long it is (owner 2026-09-10) ────────────────────
+  // "each one of those walls in the actual scan and on the floor plan don't
+  // show how long they are, even the small internal ones with the giant arch
+  // in between the left and right room." The chains run around the OUTSIDE of
+  // the envelope, so they describe the building and never one wall, and an
+  // interior wall got no number at all however much of the room it defined.
+  test.describe('a length on every wall', () => {
+    const W = (ax, az, bx, bz) => ({ ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az),
+                                     h: 2.44, doors: [], windows: [], conf: 'high' });
+    const draw = (walls, poly) => page.evaluate(([walls, poly]) => {
+      const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly, objects: [], hM: 2.44,
+                   floorM2: Math.abs(_scanShoelace(poly)), wallM2: 40, openM2: 0, perimM: 20, story: 1 }] };
+      const svg = _scanPlanSvg(sc, { sheet: true });
+      const d = document.createElement('div'); d.innerHTML = svg;
+      return [...d.querySelectorAll('g.td-wlen text')].map(t => t.textContent);
+    }, [walls, poly]);
+
+    const RECT = [W(0, 0, 4, 0), W(4, 0, 4, 3), W(4, 3, 0, 3), W(0, 3, 0, 0)];
+    const RECT_POLY = [[0, 0], [4, 0], [4, 3], [0, 3]];
+
+    test('all four walls of a plain room carry a figure', async () => {
+      const t = await draw(RECT, RECT_POLY);
+      // 4 m is 13'1", 3 m is 9'10". Two of each, and nothing else lettered.
+      expect(t.filter(x => x === "13'1\"").length).toBe(2);
+      expect(t.filter(x => x === "9'10\"").length).toBe(2);
+      expect(t.length, 'a figure per wall, no more').toBe(4);
+    });
+
+    test('the interior wall gets one too, which is the whole ask', async () => {
+      // Two rooms sharing a divider, the shape of his living room.
+      const walls = RECT.concat([W(2, 0, 2, 3)]);
+      const t = await draw(walls, RECT_POLY);
+      expect(t.filter(x => x === "9'10\"").length,
+        'the divider is 3 m like the two ends, so three of them now').toBe(3);
+    });
+
+    test('and it says it once, not once per room it divides', async () => {
+      const t = await page.evaluate(([walls, poly]) => {
+        const room = { label: 'R', walls, poly, objects: [], hM: 2.44, floorM2: 12,
+                       wallM2: 40, openM2: 0, perimM: 20, story: 1 };
+        // The same divider on both rooms, which is how a real scan carries it.
+        const sc = { id: 's', name: 'S', rooms: [room, Object.assign({}, room, { label: 'R2' })] };
+        const d = document.createElement('div'); d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        return [...d.querySelectorAll('g.td-wlen text')].map(x => x.textContent);
+      }, [RECT.concat([W(2, 0, 2, 3)]), RECT_POLY]);
+      expect(t.filter(x => x === "9'10\"").length, 'three walls, three figures, not six').toBe(3);
+    });
+
+    // "Still not seeing the length of the two small walls." Those stubs are
+    // not walls in the scan: they are what is left of ONE wall after a 7 ft
+    // arch is punched out of it, so the wall's own figure never described
+    // them and nothing else measured what a framer actually builds.
+    test('the pieces either side of an archway are measured', async () => {
+      const arch = W(2, 0, 2, 3);
+      arch.doors = [{ off: 1.5, w: 2.13, kind: 'opening' }];
+      const t = await draw(RECT.concat([arch]), RECT_POLY);
+      // 3 m of wall less a 2.13 m arch, centred: 43 cm and 44 cm of stub.
+      expect(t.filter(x => x === "1'5\"").length, 'both jambs back to a corner').toBe(2);
+      expect(t.some(x => x === "9'10\""), 'and the wall it came out of still says 9\'10"').toBe(true);
+    });
+
+    test('a window does not break a run, because the wall goes on under it', async () => {
+      const wall = W(0, 0, 4, 0);
+      wall.windows = [{ off: 2, w: 1.2, h: 1.2 }];
+      const t = await draw([wall], [[0, 0], [4, 0], [4, 3], [0, 3]]);
+      expect(t, 'one figure, the whole wall').toEqual(["13'1\""]);
+    });
+
+    test('a stub too short to letter is left alone', async () => {
+      const t = await draw(RECT.concat([W(1, 1, 1.4, 1)]), RECT_POLY);
+      expect(t.some(x => x === "1'4\""), 'a 40 cm jog is not a wall worth lettering').toBe(false);
+    });
+
+    test('a figure never reads upside down', async () => {
+      const rots = await page.evaluate(([walls, poly]) => {
+        const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly, objects: [], hM: 2.44,
+                     floorM2: 12, wallM2: 40, openM2: 0, perimM: 20, story: 1 }] };
+        const d = document.createElement('div'); d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        return [...d.querySelectorAll('g[transform]')].map(g => {
+          const m = /rotate\((-?[\d.]+)\)/.exec(g.getAttribute('transform'));
+          return m ? +m[1] : null;
+        }).filter(v => v !== null);
+      }, [RECT, RECT_POLY]);
+      rots.forEach(r => { expect(Math.abs(r), 'nothing past a quarter turn').toBeLessThanOrEqual(90); });
+    });
+
+    // The chains vanished off his sheet for the same reason the area did: a
+    // room whose outline had no height reaches no side of the envelope.
+    test('and a repaired room gets its overall dimensions back', async () => {
+      const t = await page.evaluate(([walls]) => {
+        const flat = [[0, 1.5], [4, 1.5], [0, 1.5]];      // the degenerate line
+        const sc = { id: 's', name: 'S', rooms: [{ label: 'R', walls, poly: flat, objects: [],
+                     hM: 2.44, floorM2: 0, wallM2: 40, openM2: 0, perimM: 14, story: 1 }] };
+        const d = document.createElement('div'); d.innerHTML = _scanPlanSvg(sc, { sheet: true });
+        return [...d.querySelectorAll('text')].map(x => x.textContent);
+      }, [RECT]);
+      expect(t.some(x => x === "13'1\""), 'the 4 m side is dimensioned').toBe(true);
+      expect(t.some(x => x === "9'10\""), 'and so is the 3 m side').toBe(true);
+      expect(t.some(x => /^\d+ sq ft$/.test(x) && x !== '0 sq ft'), 'with a real area').toBe(true);
+    });
+  });
 
   test('parses RoomPlan JSON into honest footage: 120 sq ft floor, 44 ft of wall, 8 ft ceilings', async () => {
     const r = await page.evaluate((raw) => {
@@ -87,32 +519,71 @@ test.describe('TdScan web half', () => {
     expect(r.windows).toBe(1);
   });
 
-  test('NEC engine: 6-foot rule placement, walls under 2 ft skipped, doorways break the run', async () => {
+  test('with no code book loaded there is no receptacle count, and the walls are still measured', async () => {
+    // THE POINT OF THIS TEST. The spacing distances used to be literals in
+    // js/scan.js, typed from memory, feeding a priced bid line whose note
+    // cited "NEC 210.52" as its authority. Now the count comes through
+    // codeEval and there is no verified dataset here, so there is no count.
+    // Measuring the wall is ours and still happens.
+    await withoutBook();
     const r = await page.evaluate((raw) => {
       const room = _scanParseRoom(raw, 'Bedroom');
-      const plan = _scanOutletPlan(room);
       const el = _scanElectricalNumbers(room);
-      // A bare 20 ft wall must get 2 receptacles (ceil(20/12)); 18 in of wall
-      // gets none (under the 2 ft minimum).
-      const wall20 = { walls: [{ id: 'a', ax: 0, az: 0, bx: 6.096, bz: 0, len: 6.096, h: 2.4, doors: [], windows: [] }] };
-      const wall18in = { walls: [{ id: 'b', ax: 0, az: 0, bx: 0.4572, bz: 0, len: 0.4572, h: 2.4, doors: [], windows: [] }] };
+      return { outlets: el.outlets, reason: el.outletsReason, marks: el.marks.length,
+               spaces: el.wallSpaces.length, wallFt: el.wallSpaceFt,
+               south: el.wallSpaces.filter(x => x.wallId === 'w-s').length,
+               gfci: el.gfci, switches: el.switches };
+    }, fabricatedRoom());
+    // null, never 0: "no book" and "this room needs none" are different answers.
+    expect(r.outlets).toBe(null);
+    expect(r.reason).toBeTruthy();
+    expect(r.marks, 'nothing is drawn that cannot be defended').toBe(0);
+    expect(r.gfci, 'the GFCI list is the book\'s too').toBe(null);
+    // Geometry owes nothing to any book and answers anyway.
+    expect(r.spaces).toBe(5);
+    expect(r.south, 'the doorway splits the south wall into two spaces').toBe(2);
+    expect(r.wallFt).toBeGreaterThan(40);
+    // Not a code number, so it survives: one switch per way in.
+    expect(r.switches).toBe(1);
+  });
+
+  test('with a verified book loaded the count is the book\'s arithmetic, not ours', async () => {
+    // A knowingly fake edition: 10 ft spacing, 5 ft minimum wall space.
+    // Deliberately not the real NEC, so this proves the RULE rather than
+    // quietly re-asserting numbers nobody read out of a code book.
+    await withBook();
+    const r = await page.evaluate((raw) => {
+      const room = _scanParseRoom(raw, 'Bedroom');
+      const el = _scanElectricalNumbers(room);
+      const one = (lenM) => _scanElectricalNumbers({ label: 'x', doorN: 0,
+        walls: [{ id: 'a', ax: 0, az: 0, bx: lenM, bz: 0, len: lenM, h: 2.4, doors: [], windows: [] }] });
       return {
-        marks: plan.length,
-        southSplit: plan.filter(m => m.wallId === 'w-s').length,
-        n20: _scanOutletPlan(wall20).length,
-        n18in: _scanOutletPlan(wall18in).length,
-        gfciBedroom: el.gfci,
+        outlets: el.outlets, marks: el.marks.length,
+        n20ft: one(6.096).outlets,          // 20 ft / 10 = 2
+        n18in: one(0.4572).outlets,         // 1.5 ft, under the 5 ft minimum
+        edition: (el.marks.length && codeEditionFor('nec')) || ''
       };
     }, fabricatedRoom());
-    // North 12ft: 1. South 12ft split by the door into ~5.8ft + ~3.2ft: 1 each.
-    // East + West 10ft: 1 each. Total 5, and never fewer than code needs.
-    expect(r.marks).toBe(5);
-    expect(r.southSplit, 'the doorway splits the south wall into two spaces').toBe(2);
-    expect(r.n20).toBe(2);
-    expect(r.n18in, 'wall spaces under 2 ft carry no requirement').toBe(0);
-    expect(r.gfciBedroom, 'a bedroom is not a GFCI room').toBe(false);
-    const gk = await page.evaluate((raw) => _scanElectricalNumbers(_scanParseRoom(raw, 'Kitchen')).gfci, fabricatedRoom());
-    expect(gk, 'a kitchen is').toBe(true);
+    expect(r.n20ft, '20 ft at the fixture\'s 10 ft spacing is 2').toBe(2);
+    expect(r.n18in, 'a wall space under the fixture\'s minimum carries none').toBe(0);
+    expect(r.outlets).toBeGreaterThan(0);
+    // A mark per receptacle, so the plan and the bid can never disagree.
+    expect(r.marks).toBe(r.outlets);
+    expect(r.edition).toBe('FAKE');
+  });
+
+  test('the GFCI answer comes from the book\'s list, not a hardcoded one', async () => {
+    await withBook();
+    const r = await page.evaluate((raw) => {
+      return {
+        kitchen: _scanElectricalNumbers(_scanParseRoom(raw, 'Kitchen')).gfci,
+        bedroom: _scanElectricalNumbers(_scanParseRoom(raw, 'Bedroom')).gfci,
+        bath: _scanElectricalNumbers(_scanParseRoom(raw, 'Hall Bath')).gfci
+      };
+    }, fabricatedRoom());
+    expect(r.kitchen).toBe(true);
+    expect(r.bath).toBe(true);
+    expect(r.bedroom).toBe(false);
   });
 
   test('the scan opens in the lens matching the business trade', async () => {
@@ -181,6 +652,9 @@ test.describe('TdScan web half', () => {
   });
 
   test('the plan SVG renders rooms, labels, and electrical markers', async () => {
+    // The markers are a code conclusion, so this test needs a book like any
+    // other caller does.
+    await withBook();
     const r = await page.evaluate((raw) => {
       const sc = { id: 'svg-1', rooms: [_scanParseRoom(raw, 'Kitchen')] };
       const plain = _scanPlanSvg(sc, { lens: 'plan' });
@@ -188,14 +662,26 @@ test.describe('TdScan web half', () => {
       return {
         hasPolygon: /<polygon/.test(plain),
         hasLabel: /Kitchen/.test(plain),
-        hasSqFt: /352 wall sq ft/.test(plain),
-        plainCircles: (plain.match(/<circle/g) || []).length,
-        elecCircles: (elec.match(/<circle/g) || []).length,
+        // OLD: /352 wall sq ft/. The plan carried the paint billing number
+        // under every room name. NEW (owner 2026-09-09): a drawing carries
+        // the ROOM: 12'0" x 10'0" and its 120 sq ft of floor. Wall area is
+        // still right on the ESTIMATE, and the test below at
+        // "the seed survives" pins it there, which is the whole point of
+        // moving it: the two numbers stop competing for one line.
+        hasSqFt: /120 sq ft/.test(plain),
+        hasRoomDims: /12'0" \u00d7 10'0"/.test(plain),
+        noWallSqFt: !/wall sq ft/.test(plain),
+        // Counted by class, not by tag: the compass rose is a circle too and
+        // it is on every sheet now, lens or no lens.
+        plainCircles: (plain.match(/td-outlet/g) || []).length,
+        elecCircles: (elec.match(/td-outlet/g) || []).length,
       };
     }, fabricatedRoom());
     expect(r.hasPolygon).toBe(true);
     expect(r.hasLabel).toBe(true);
     expect(r.hasSqFt).toBe(true);
+    expect(r.hasRoomDims, 'a room says how big it is, the way a plan does').toBe(true);
+    expect(r.noWallSqFt, 'the invoice number belongs on the estimate, not the drawing').toBe(true);
     expect(r.plainCircles, 'no outlet markers outside the electrical lens').toBe(0);
     expect(r.elecCircles).toBe(5);
   });
@@ -928,6 +1414,8 @@ test.describe('TdScan web half', () => {
     expect(r.lines).toBe(1);
     expect(r.consumed, 'the seed is consumed exactly once').toBe(true);
     expect(r.desc).toContain('Kitchen');
+    // The estimate is where wall area belongs and where it stays: this is the
+    // other half of moving it off the plan (owner 2026-09-09).
     expect(r.desc).toContain('352 wall sq ft');
     expect(r.qty).toBe(352);
     expect(r.unit).toBe('sq ft');
@@ -1041,6 +1529,8 @@ test.describe('TdScan web half', () => {
   });
 
   test('Scan Estimate: a measured 10 ft room auto-flags high ceilings; electricians bill by device count', async () => {
+    // Device count is priced off the code, so the book has to be loaded.
+    await withBook();
     const r = await page.evaluate((raw) => {
       const savedClients = clients.slice(), savedER = S.scanElecRates;
       const savedTrade = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
@@ -1093,7 +1583,7 @@ test.describe('TdScan web half', () => {
         // jamb caps (the 0.35 family), so a window reads as a window.
         windowLines: (svg.match(/stroke-width="0\.35"/g) || []).length >= 4,
         northArrow: /rotate\(40\)/.test(svg) && />N</.test(svg),
-        stillHasLabel: /Kitchen/.test(svg) && /352 wall sq ft/.test(svg),
+        stillHasLabel: /Kitchen/.test(svg) && /120 sq ft/.test(svg),
         dims: /12'0"/.test(svg),
       };
     }, fabricatedRoom());
@@ -1141,6 +1631,117 @@ test.describe('TdScan web half', () => {
       expect(r.font, 'no font-family means the UA serif, which reads as a worksheet').toBe(true);
     });
 
+    // ── The sheet after the 2026-09-09 review ────────────────────────────
+    // Rendered as a real five-room house and judged as a drawing rather than
+    // as a feature list. Four things were wrong and all four are drawing code.
+    test.describe('the sheet reads as a drawing', () => {
+      // Two rooms sharing a wall, with one door in it. Built plainly rather
+      // than through _scanParseRoom: what is under test is the DRAWING, and a
+      // shared door is exactly the shape the parser never produces from one
+      // captured room.
+      const twoRooms = () => page.evaluate(() => {
+        const W = (id, ax, az, bx, bz, doors, wins) => ({
+          id, ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az), h: 2.44,
+          doors: doors || [], windows: wins || [],
+        });
+        const mk = (label, x0, z0, x1, z1, o) => {
+          o = o || {};
+          const perimM = 2 * ((x1 - x0) + (z1 - z0));
+          return { label, story: 1, poly: [[x0, z0], [x1, z0], [x1, z1], [x0, z1]],
+            walls: [W(label + '-n', x0, z0, x1, z0, o.n, o.nw),
+                    W(label + '-e', x1, z0, x1, z1, o.e, o.ew),
+                    W(label + '-s', x1, z1, x0, z1, o.s, o.sw),
+                    W(label + '-w', x0, z1, x0, z0, o.w, o.ww)],
+            objects: [], floorM2: (x1 - x0) * (z1 - z0), perimM, hM: 2.44,
+            wallM2: perimM * 2.44, openM2: 0 };
+        };
+        // The door at x=4.0 on the shared wall belongs to BOTH rooms.
+        const door = [{ off: 2.0, w: 0.9, kind: 'door' }];
+        const win = [{ off: 2.0, w: 1.2, h: 1.22 }];
+        const a = mk('Kitchen', 0, 0, 4, 4, { e: door, n: [], nw: win });
+        const b = mk('Hall', 4, 0, 6.2, 4, { w: door });
+        return {
+          svg: _scanPlanSvg({ rooms: [a, b] }, { lens: 'plan' }),
+          sheet: _scanPlanSvg({ rooms: [a, b], ts: Date.parse('2026-09-09T15:00:00Z'),
+                                scannedBy: 'Logan Sample' },
+                              { lens: 'plan', sheet: true, title: 'Floor plan' }),
+        };
+      });
+
+      test('a door shared by two rooms swings once, not twice', async () => {
+        const r = await twoRooms();
+        // The arc is the door. Before this, the bedroom drew one and the hall
+        // drew another facing it, because that door is a wall of both.
+        const arcs = (r.svg.match(/<path d="M [\d. ]+A /g) || []).length;
+        expect(arcs, 'one physical door, one swing').toBe(1);
+      });
+
+      test('every opening says how wide it is, once', async () => {
+        const r = await twoRooms();
+        // The door is 0.9 m; the window 1.2 x 1.22 m.
+        expect((r.svg.match(/2'11"/g) || []).length, 'the shared door is measured exactly once').toBe(1);
+        expect(/3'11" \u00d7 4'0"/.test(r.svg), 'a window carries width by height').toBe(true);
+      });
+
+      test('the name sits in the open, not on the door swing', async () => {
+        const r = await page.evaluate(() => {
+          // A room small enough that its CENTROID falls inside the door's
+          // swing, which is the whole case this rule exists for. In a big
+          // square room the centre is already clear and the centroid is the
+          // right answer; there is nothing to prove there.
+          const room = { label: 'Bath', story: 1,
+            poly: [[0, 0], [1.2, 0], [1.2, 1.2], [0, 1.2]],
+            walls: [{ id: 'w', ax: 0, az: 0, bx: 1.2, bz: 0, len: 1.2, h: 2.44,
+                      doors: [{ off: 0.5, w: 0.9, kind: 'door' }], windows: [] }],
+            objects: [], floorM2: 1.44, perimM: 4.8, hM: 2.44, wallM2: 11.7, openM2: 0 };
+          const spot = _scanLabelSpot(room);
+          const hinge = [0.05, 0];
+          const d = (p) => Math.hypot(p[0] - hinge[0], p[1] - hinge[1]);
+          return { spot, spotD: d(spot), centroidD: d([0.6, 0.6]),
+                   inside: spot[0] > 0 && spot[0] < 1.2 && spot[1] > 0 && spot[1] < 1.2 };
+        });
+        expect(r.spot, 'a room with a polygon always gets a spot').not.toBe(null);
+        expect(r.centroidD, 'the premise: the centroid really is inside the swing').toBeLessThan(0.9);
+        expect(r.spotD, 'so the name steps out of it').toBeGreaterThan(r.centroidD);
+        expect(r.inside, 'and stays in the room').toBe(true);
+      });
+
+      test('a label with no polygon falls back instead of throwing', async () => {
+        const r = await page.evaluate(() => {
+          const bad = [{}, { poly: [] }, { poly: [[0, 0]] }, { poly: [[0, 0], [1, 1]] }];
+          return bad.map(b => _scanLabelSpot(b));
+        });
+        expect(r.every(x => x === null), 'too few corners is not a room').toBe(true);
+      });
+
+      test('the sheet says when it was made and who made it', async () => {
+        const r = await twoRooms();
+        expect(/Sep 9, 2026/.test(r.sheet), 'a drawing without a date is not evidence').toBe(true);
+        expect(/Scanned by Logan Sample/.test(r.sheet)).toBe(true);
+        expect(/Sep 9, 2026/.test(r.svg), 'the bare plan carries no title block').toBe(false);
+      });
+
+      test('a narrow room gets a smaller label so it still fits', async () => {
+        const r = await page.evaluate(() => {
+          // Both rooms in ONE plan: the scale comes from the bounding box of
+          // every room together, so a lone room always fills the sheet however
+          // narrow it really is. The squeeze only happens beside a wide room.
+          const mk = (label, x0, x1) => ({ label, story: 1,
+            poly: [[x0, 0], [x1, 0], [x1, 4], [x0, 4]], walls: [], objects: [],
+            floorM2: (x1 - x0) * 4, perimM: 2 * ((x1 - x0) + 4), hM: 2.44,
+            wallM2: 2 * ((x1 - x0) + 4) * 2.44, openM2: 0 });
+          const svg = _scanPlanSvg({ rooms: [mk('Living', 0, 6), mk('Hall', 6, 7.1)] }, { lens: 'plan' });
+          const sizes = [...svg.matchAll(/font-size="([\d.]+)" font-weight="700"/g)].map(m => +m[1]);
+          return { sizes };
+        });
+        expect(r.sizes.length, 'both rooms are named').toBe(2);
+        const [big, small] = r.sizes;   // drawn in room order
+        expect(big, 'the wide room keeps the full size').toBeGreaterThan(small);
+        expect(small, 'but never smaller than readable').toBeGreaterThanOrEqual(1.75);
+        expect(big, 'and never bigger than the room label was').toBeLessThanOrEqual(2.9);
+      });
+    });
+
     test('rooms tint by what they are, and an explicit fill still wins', async () => {
       const r = await page.evaluate((raw) => {
         const mk = (n) => _scanParseRoom(raw, n);
@@ -1157,6 +1758,10 @@ test.describe('TdScan web half', () => {
       }, fabricatedRoom());
       expect(r.kitchen).not.toBe(r.bath);
       expect(r.bed).not.toBe(r.kitchen);
+      // The pair that was actually broken (owner review 2026-09-09, on a
+      // rendered five-room house): bath #E7F0F8 and bedroom #E6ECF8 were the
+      // same pale blue, side by side, so two rooms read as one space.
+      expect(r.bed, 'a bath and a bedroom sharing a wall must not share a tint').not.toBe(r.bath);
       expect(r.distinct, 'four room types, four tints').toBe(4);
       expect(r.unknown, 'an unrecognized name still gets paper, never undefined').toBe(r.nameless);
       expect(r.drawn, 'every room draws its tint').toBe(3);
@@ -1183,7 +1788,12 @@ test.describe('TdScan web half', () => {
           overall: svg.includes(_scanFtIn(runsTop[runsTop.length - 1][1] - runsTop[0][0])),
           // Ticks and extension lines are what make it a dimension STRING.
           ticks: (svg.match(/stroke="#98A0AE"/g) || []).length,
-          rotatedSide: /rotate\(-90\)/.test(svg),
+          // OLD: the left and right figures were set on their side, the way a
+          // drafter writes a vertical dimension. NEW (owner 2026-09-10, "needs
+          // to not be tilted at all"): nothing on the sheet is turned but the
+          // compass needle, which turns because north is not a property of
+          // paper. The figure sits ON its chain and its halo breaks the line.
+          turnedText: /<text[^>]*rotate\(/.test(svg) || /rotate\([^)]*\)[^>]*>\s*<text/.test(svg),
           merges: _scanSideRuns([a, a], 'top', -1.83, -1.53, 1.83, 1.53).length,
           none: _scanSideRuns([], 'top', 0, 0, 1, 1).length,
         };
@@ -1192,7 +1802,7 @@ test.describe('TdScan web half', () => {
       expect(r.figures, 'each run is dimensioned').toBeGreaterThanOrEqual(2);
       expect(r.overall, 'and an overall run outside them').toBe(true);
       expect(r.ticks, 'extension lines, dimension lines, and tick marks').toBeGreaterThan(10);
-      expect(r.rotatedSide, 'the left and right figures read up the page').toBe(true);
+      expect(r.turnedText, 'no figure anywhere on the sheet is set on its side').toBe(false);
       expect(r.merges, 'two rooms on the same span merge into one dimension').toBe(1);
       expect(r.none, 'no rooms on a side draws no string').toBe(0);
     });
@@ -2017,5 +2627,376 @@ test.describe('client hub: floor plan cards', () => {
     expect(r.openNoLock).toBe(true);
   });
 
+  });
+});
+
+// ── What RoomPlan tells us that we used to throw away ────────────────────────
+//
+// The plugin encodes the whole CapturedRoom, so confidence, completed edges,
+// section labels, object attributes and parent links have always been arriving
+// in the JSON. The parser read six fields off it and dropped the rest, which
+// meant a wall RoomPlan was unsure about fed a load calculation looking
+// exactly like one it had measured cleanly.
+
+test.describe('TdScan: the fields RoomPlan was already sending', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // The fabricated room, plus everything iOS 17 attaches to it.
+  function richRoom() {
+    const L = 3.6576, W = 3.048, H = 2.4384;
+    const wall = (id, dir, cx, cz, len, extra) => Object.assign({
+      identifier: id, category: { wall: {} }, dimensions: [len, H, 0],
+      transform: [dir[0], 0, dir[1], 0, 0, 1, 0, 0, -dir[1], 0, dir[0], 0, cx, H / 2, cz, 1],
+    }, extra || {});
+    return JSON.stringify({
+      identifier: 'room-1', story: 0, version: 3,
+      sections: [{ label: { bathroom: {} }, story: 0 }],
+      walls: [
+        wall('w-n', [1, 0], 0, -W / 2, L, { confidence: { high: {} }, completedEdges: ['top', 'left', 'right', 'bottom'] }),
+        wall('w-s', [1, 0], 0, W / 2, L, { confidence: { low: {} }, completedEdges: ['top'] }),
+        wall('w-e', [0, 1], L / 2, 0, W, { confidence: { medium: {} }, completedEdges: 3 }),
+        // A bay: RoomPlan hands a polygon rather than a rectangle.
+        wall('w-w', [0, 1], -L / 2, 0, W, { polygonCorners: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]] }),
+      ],
+      doors: [], openings: [],
+      windows: [{
+        identifier: 'win-1', parentIdentifier: 'w-n', category: { window: {} },
+        dimensions: [1.2192, 1.2192, 0], confidence: { medium: {} },
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.6, 1.5, -W / 2, 1],
+      }],
+      objects: [{
+        identifier: 'o-1', parentIdentifier: 'w-n', category: { toilet: {} },
+        confidence: { high: {} }, attributes: { sinkType: { recessed: {} } },
+        dimensions: [0.4, 0.7, 0.7],
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0.35, -1, 1],
+      }],
+      floors: [{
+        identifier: 'f-1', category: { floor: {} }, dimensions: [L, 0, W],
+        polygonCorners: [[-L / 2, 0, -W / 2], [L / 2, 0, -W / 2], [L / 2, 0, W / 2], [-L / 2, 0, W / 2]],
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      }],
+    });
+  }
+
+  test('every wall carries RoomPlan\'s own confidence in it', async () => {
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Bath');
+      const by = {}; room.walls.forEach(w => { by[w.id] = w.conf; });
+      return by;
+    }, richRoom());
+    expect(r['w-n']).toBe('high');
+    expect(r['w-s']).toBe('low');
+    expect(r['w-e']).toBe('medium');
+    // Not stated is empty, never a guess at 'high'.
+    expect(r['w-w']).toBe('');
+  });
+
+  test('completed edges survive whichever shape they arrive in', async () => {
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Bath');
+      const by = {}; room.walls.forEach(w => { by[w.id] = w.edges; });
+      return by;
+    }, richRoom());
+    expect(r['w-n'].sort()).toEqual(['bottom', 'left', 'right', 'top']);
+    expect(r['w-s']).toEqual(['top']);
+    // A raw OptionSet bitfield: 3 = the first two bits.
+    expect(r['w-e']).toEqual(['top', 'right']);
+    // Silence is an empty list, which is different from "no edges completed".
+    expect(r['w-w']).toEqual([]);
+  });
+
+  test('a wall RoomPlan gave as a polygon keeps its shape and is not squared', async () => {
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Bath');
+      const w = room.walls.find(x => x.id === 'w-w');
+      return { hasPoly: !!w.poly, corners: w.poly ? w.poly.length : 0 };
+    }, richRoom());
+    expect(r.hasPoly).toBe(true);
+    expect(r.corners).toBe(4);
+  });
+
+  test('a window carries its confidence and its sill height', async () => {
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Bath');
+      const w = room.walls.find(x => x.id === 'w-n').windows[0];
+      return { conf: w.conf, sillY: w.sillY, h: w.h };
+    }, richRoom());
+    expect(r.conf).toBe('medium');
+    // Centre at 1.5 m, 1.2192 m tall, so the sill sits just under 0.9 m.
+    expect(r.sillY).toBeGreaterThan(0.8);
+    expect(r.sillY).toBeLessThan(1.0);
+  });
+
+  test('an object carries confidence, attributes and what it belongs to', async () => {
+    const r = await page.evaluate(raw => _scanParseRoom(raw, 'Bath').objects[0], richRoom());
+    expect(r.cat).toBe('toilet');
+    expect(r.conf).toBe('high');
+    // A recessed sink is a different rough-in, so the attribute is a plumbing
+    // fact rather than a drawing detail.
+    expect(r.attrs).toContain('sinkType:recessed');
+    expect(r.parent).toBe('w-n');
+  });
+
+  test('RoomPlan\'s own room-type classification comes through', async () => {
+    const r = await page.evaluate(raw => _scanParseRoom(raw, 'Bath').sections, richRoom());
+    expect(r.length).toBe(1);
+    expect(r[0].label).toBe('bathroom');
+  });
+
+  test('a scan with none of these fields still parses exactly as before', async () => {
+    // Older captures, and any device that reports less. Nothing may become a
+    // guess just because RoomPlan stayed quiet.
+    const r = await page.evaluate(raw => {
+      const room = _scanParseRoom(raw, 'Kitchen');
+      return {
+        floorSqFt: Math.round(_scanSqFt(room.floorM2)),
+        conf: room.walls.map(w => w.conf),
+        edges: room.walls.map(w => w.edges.length),
+        sections: room.sections,
+        polys: room.walls.filter(w => w.poly).length
+      };
+    }, fabricatedRoom());
+    expect(r.floorSqFt).toBe(120);
+    expect(r.conf).toEqual(['', '', '', '']);
+    expect(r.edges).toEqual([0, 0, 0, 0]);
+    expect(r.sections).toEqual([]);
+    expect(r.polys).toBe(0);
+  });
+
+  test('rubbish in any of the new fields does not throw', async () => {
+    const r = await page.evaluate(() => {
+      const junk = JSON.stringify({
+        walls: [{ identifier: 'w', category: { wall: {} }, dimensions: [3, 2.4, 0],
+          transform: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,1.2,0,1],
+          confidence: 'nonsense', completedEdges: { rawValue: 'x' }, polygonCorners: 'no' }],
+        doors: [], windows: [], openings: [], floors: [],
+        objects: [{ identifier: 'o', category: 7, attributes: 42, dimensions: [1,1,1],
+          transform: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] }],
+        sections: [{ label: null }, 'junk', 5]
+      });
+      try {
+        const room = _scanParseRoom(junk, 'X');
+        return { threw: false, conf: room.walls[0].conf, edges: room.walls[0].edges,
+                 poly: room.walls[0].poly, sections: room.sections };
+      } catch (e) { return { threw: true, msg: String(e) }; }
+    });
+    expect(r.threw).toBe(false);
+    expect(r.conf).toBe('');
+    expect(r.edges).toEqual([]);
+    expect(r.poly).toBe(null);
+    expect(r.sections).toEqual([]);
+  });
+});
+
+// ── What the scan found, and whether to believe it ───────────────────────────
+//
+// RoomPlan classifies toilets, sinks, ranges and washers on every scan. We drew
+// a symbol for each and threw the meaning away, so the contractor retyped the
+// exact inputs the code engines ask for. These tests pin the two halves: the
+// meaning, and the fact that it is a proposal rather than an assertion.
+
+test.describe('TdScan: fixtures the scan already identified', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const obj = (cat, conf, attrs) => ({ cat, cx: 0, cz: 0, w: 0.5, d: 0.5, h: 0.8,
+                                       ux: 1, uz: 0, conf: conf || '', attrs: attrs || [] });
+  const room = (label, objects, sections) => ({ label, objects, walls: [], doorN: 0,
+                                                sections: sections || [] });
+
+  test('a bathroom\'s fixtures come back named and counted', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Hall Bath', [obj('toilet', 'high'), obj('sink', 'high'), obj('bathtub', 'high')]));
+    expect(r.items.map(x => x.label)).toEqual(['Bathtub', 'Sink', 'Toilet']);
+    expect(r.items.every(x => x.n === 1)).toBe(true);
+    // Nothing here is out of place, so nothing is asked about.
+    expect(r.needsReview).toBe(0);
+  });
+
+  test('each fixture says what it is to which trade', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Kitchen', [obj('stove', 'high'), obj('dishwasher', 'high'), obj('washerDryer', 'high')]));
+    const by = {}; r.items.forEach(x => { by[x.cat] = x; });
+    expect(by.stove.electrical).toBe('cooking');
+    expect(by.dishwasher.plumbing).toBe('dishwasher');
+    // A washer is both, and both trades need it.
+    expect(by.washerDryer.plumbing).toBe('clothes-washer');
+    expect(by.washerDryer.electrical).toBe('dryer');
+  });
+
+  test('a toilet in a kitchen is asked about, not counted quietly', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Kitchen', [obj('toilet', 'high'), obj('stove', 'high')]));
+    const t = r.items.find(x => x.cat === 'toilet');
+    expect(t.misplaced).toBe(true);
+    expect(t.ask).toMatch(/confirm/i);
+    // The range in the same room is where it belongs and stays silent.
+    expect(r.items.find(x => x.cat === 'stove').ask).toBe('');
+    expect(r.needsReview).toBe(1);
+  });
+
+  test('a sink is at home in several rooms and is questioned in none of them', async () => {
+    const kinds = ['Kitchen', 'Hall Bath', 'Laundry'];
+    for (const k of kinds) {
+      const r = await page.evaluate(o => _scanFixtures(o), room(k, [obj('sink', 'high')]));
+      expect(r.items[0].misplaced, k + ' has a sink').toBe(false);
+    }
+  });
+
+  test('a low-confidence sighting is flagged even where it belongs', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Hall Bath', [obj('toilet', 'low')]));
+    expect(r.items[0].conf).toBe('low');
+    expect(r.items[0].ask).toMatch(/not confident/i);
+  });
+
+  test('the weakest sighting sets the group, so one shaky one is still worth a look', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Hall Bath', [obj('sink', 'high'), obj('sink', 'low')]));
+    expect(r.items[0].n).toBe(2);
+    expect(r.items[0].conf).toBe('low');
+  });
+
+  test('with no room name, RoomPlan\'s own classification decides, and it is never invented', async () => {
+    const a = await page.evaluate(o => _scanFixtures(o),
+      room('Room 3', [obj('toilet', 'high')], [{ label: 'bathroom' }]));
+    expect(a.kind).toBe('bath');
+    expect(a.kindFrom).toBe('roomplan');
+    expect(a.items[0].misplaced, 'RoomPlan says bathroom, so a toilet belongs').toBe(false);
+
+    // What the contractor typed outranks it.
+    const b = await page.evaluate(o => _scanFixtures(o),
+      room('Kitchen', [obj('toilet', 'high')], [{ label: 'bathroom' }]));
+    expect(b.kindFrom).toBe('typed');
+    expect(b.items[0].misplaced).toBe(true);
+
+    // And with neither, nothing is out of place, because nothing is known.
+    const c = await page.evaluate(o => _scanFixtures(o), room('Room 3', [obj('toilet', 'high')]));
+    expect(c.kind).toBe('');
+    expect(c.items[0].misplaced).toBe(false);
+  });
+
+  test('furniture is not a fixture', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Living', [obj('sofa', 'high'), obj('television', 'high'), obj('chair', 'high')]));
+    expect(r.items).toEqual([]);
+  });
+
+  test('attributes ride along, because a recessed sink is a different rough-in', async () => {
+    const r = await page.evaluate(o => _scanFixtures(o),
+      room('Kitchen', [obj('sink', 'high', ['sinkType:recessed'])]));
+    expect(r.items[0].attrs).toContain('sinkType:recessed');
+  });
+
+  test('a whole scan rolls up per trade, as counts and never as code values', async () => {
+    const r = await page.evaluate(() => _scanFixtureTotals({ rooms: [
+      { label: 'Hall Bath', objects: [{ cat: 'toilet', conf: 'high' }, { cat: 'sink', conf: 'high' }] },
+      { label: 'Master Bath', objects: [{ cat: 'toilet', conf: 'high' }, { cat: 'bathtub', conf: 'high' }] },
+      { label: 'Kitchen', objects: [{ cat: 'stove', conf: 'high' }, { cat: 'sink', conf: 'high' }] }
+    ] }));
+    expect(r.plumbing['water-closet']).toBe(2);
+    expect(r.plumbing.sink).toBe(2);
+    expect(r.plumbing.bathtub).toBe(1);
+    expect(r.electrical.cooking).toBe(1);
+    // What a water closet is WORTH in fixture units is 709.1 and waits for the
+    // book. This only ever counts them.
+    expect(r.needsReview).toBe(0);
+  });
+
+  test('rubbish rooms do not throw', async () => {
+    const r = await page.evaluate(() => {
+      try {
+        _scanFixtures(null); _scanFixtures({}); _scanFixtures({ objects: 'no' });
+        _scanFixtures({ label: 5, objects: [null, {}, { cat: 7 }] });
+        _scanFixtureTotals(null); _scanFixtureTotals({ rooms: 'no' });
+        return { threw: false };
+      } catch (e) { return { threw: true, msg: String(e) }; }
+    });
+    expect(r.threw).toBe(false);
+  });
+});
+
+// ── Two numbers that were quietly too big ────────────────────────────────────
+
+test.describe('TdScan: room dimensions that were overstating', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('a soffit does not raise the whole ceiling', async () => {
+    // Three long 8 ft walls and one short 10 ft return over the cabinets. The
+    // max reported the room as a 10 ft room, which inflated wall area on every
+    // paint bid and volume on every load calc.
+    const h = await page.evaluate(() => _scanModalHeight([
+      { len: 4, h: 2.44 }, { len: 3, h: 2.44 }, { len: 4, h: 2.44 }, { len: 0.6, h: 3.05 }
+    ]));
+    expect(h).toBeCloseTo(2.44, 2);
+  });
+
+  test('a room that genuinely steps up reads as the taller part', async () => {
+    // Equal runs at two heights: the tie goes to the ceiling somebody stands
+    // under, not the one over the bulkhead.
+    const h = await page.evaluate(() => _scanModalHeight([
+      { len: 3, h: 2.44 }, { len: 3, h: 3.05 }
+    ]));
+    expect(h).toBeCloseTo(3.05, 2);
+  });
+
+  test('no walls, or junk walls, fall back rather than throw', async () => {
+    const r = await page.evaluate(() => ({
+      empty: _scanModalHeight([]),
+      nil: _scanModalHeight(null),
+      junk: _scanModalHeight([{ len: 0, h: 0 }, null, { h: 'x', len: 'y' }])
+    }));
+    expect(r.empty).toBeCloseTo(2.44, 2);
+    expect(r.nil).toBeCloseTo(2.44, 2);
+    expect(r.junk).toBeCloseTo(2.44, 2);
+  });
+
+  test('a floor area guessed from a convex hull says it is a guess', async () => {
+    // No floors[] at all, which is a partial or interrupted scan. The hull
+    // fills in the notch of an L, so the number runs one way: too big.
+    const r = await page.evaluate(() => {
+      const noFloor = JSON.stringify({
+        walls: [
+          { identifier: 'a', category: { wall: {} }, dimensions: [4, 2.44, 0],
+            transform: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,1.22,0,1] },
+          { identifier: 'b', category: { wall: {} }, dimensions: [4, 2.44, 0],
+            transform: [0,0,1,0, 0,1,0,0, -1,0,0,0, 2,1.22,2,1] }
+        ],
+        doors: [], windows: [], openings: [], objects: [], floors: []
+      });
+      const room = _scanParseRoom(noFloor, 'Partial');
+      return { approx: room.floorApprox, hasArea: room.floorM2 > 0 };
+    });
+    expect(r.approx, 'the reader has to be able to say "about"').toBe(true);
+  });
+
+  test('a normal scan is not flagged as approximate', async () => {
+    const r = await page.evaluate(raw => _scanParseRoom(raw, 'Kitchen').floorApprox, fabricatedRoom());
+    expect(r).toBe(false);
   });
 });

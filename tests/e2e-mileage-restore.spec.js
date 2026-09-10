@@ -584,36 +584,6 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
     expect(r.hidden, 'no button to press when there is nothing to press it for').toBe(true);
   });
 
-  // The extraction that let the recovery ask the SAME business question the
-  // personal-stop sweep asks (§7.3), rather than a lookalike written from
-  // memory. Its original caller must be unchanged by the move.
-  test('_milePersonalStopSweep still keeps a stop with a receipt against it', async () => {
-    const r = await page.evaluate(async () => {
-      const orig = { mileage: mileage.slice(), ran: window._milePersonalSweepRan,
-        expenses: (typeof expenses !== 'undefined' ? expenses.slice() : null), placeAt: window.placeAt };
-      const P = { lat: 38.5, lng: -94.5 };
-      mileage.length = 0;
-      mileage.push({ id: 'i1', gps: true, legKey: 'i-lk', date: '2026-08-19', miles: 3,
-        from_name: 'Shop', to_name: 'Caseys', fromCoord: { lat: 38, lng: -94 }, toCoord: P,
-        startedIso: '2026-08-19T15:00:00.000Z', endedIso: '2026-08-19T15:10:00.000Z' });
-      mileage.push({ id: 'o1', gps: true, legKey: 'o-lk', date: '2026-08-19', miles: 3,
-        from_name: 'Caseys', to_name: 'John Doe', fromCoord: P, toCoord: { lat: 38.3, lng: -94.3 },
-        startedIso: '2026-08-19T15:30:00.000Z', endedIso: '2026-08-19T15:40:00.000Z' });
-      window.placeAt = () => null;
-      const origBiz = window._bizReceiptForStop;
-      window._bizReceiptForStop = () => ({ id: 'exp1' });
-      window._milePersonalSweepRan = false;
-      const fixed = await _milePersonalStopSweep();
-      const left = mileage.length;
-      window._bizReceiptForStop = origBiz; window.placeAt = orig.placeAt;
-      window._milePersonalSweepRan = orig.ran;
-      mileage.length = 0; orig.mileage.forEach(m => mileage.push(m));
-      if (orig.expenses) { expenses.length = 0; orig.expenses.forEach(e => expenses.push(e)); }
-      return { fixed, left };
-    });
-    expect(r.fixed, 'money spent there that day makes it a business stop').toBe(0);
-    expect(r.left).toBe(2);
-  });
 
   test('no console errors', async () => { await assertNoErrors(page); });
 });

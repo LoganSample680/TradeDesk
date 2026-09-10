@@ -60,6 +60,13 @@ public class TdNotifyPlugin: CAPPlugin, CAPBridgedPlugin {
         content.title = title
         content.body = body
         content.sound = .default
+        // Focus modes (Do Not Disturb, Driving, Sleep) silently swallow a
+        // normal local notification, which is exactly the state a contractor's
+        // phone is in for the reminders that matter most: driving to the first
+        // job, and the day-end proposal in the evening. Time Sensitive is the
+        // sanctioned way through, and the entitlement is already declared in
+        // ios-beta.yml. Without this line the entitlement does nothing.
+        if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
         if let payload = call.getObject("data") { content.userInfo = payload }
 
         var trigger: UNNotificationTrigger? = nil

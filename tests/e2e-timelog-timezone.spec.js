@@ -143,4 +143,100 @@ test.describe('Time Log: business clock, not device clock', () => {
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
+
+  // Owner 2026-08-30: "so it should be synced to business location timezone?"
+  // It should. These three used to hardcode America/Chicago while the log
+  // RENDERED through bizTz(), so outside Central the day a row was filed under
+  // and the day it was drawn on could differ. A day boundary decides which day
+  // gets paid.
+  test.describe('day keys follow the business zone, not Central', () => {
+    test('the same instant files under different days in different business zones', async ({ page }) => {
+      await mockAllExternal(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(page);
+      const r = await page.evaluate(() => {
+        // 2026-08-28 04:30 UTC. That is the 27th in Phoenix (21:30) and in
+        // Chicago (23:30), and already the 28th in New York (00:30).
+        const d = new Date('2026-08-28T04:30:00.000Z');
+        const prevTz = S.bizTz, prevState = S.state;
+        const at = (tz) => { S.bizTz = tz; return _bizDateStr(d); };
+        const out = {
+          phx: at('America/Phoenix'),
+          chi: at('America/Chicago'),
+          nyc: at('America/New_York'),
+          la: at('America/Los_Angeles'),
+        };
+        S.bizTz = prevTz; S.state = prevState;
+        return out;
+      });
+      expect(r.phx).toBe('2026-08-27');
+      expect(r.chi).toBe('2026-08-27');
+      expect(r.la).toBe('2026-08-27');
+      expect(r.nyc, 'an hour past midnight in New York is the next day there').toBe('2026-08-28');
+    });
+
+    test('the clock stamps follow the same zone, so they cannot disagree with the day key', async ({ page }) => {
+      await mockAllExternal(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(page);
+      const r = await page.evaluate(() => {
+        const d = new Date('2026-08-28T04:30:00.000Z');
+        const prev = S.bizTz;
+        S.bizTz = 'America/Phoenix';
+        const phx = { day: _bizDateStr(d), stamp: _bizStamp(d), hm: _bizHM(d) };
+        S.bizTz = 'America/New_York';
+        const nyc = { day: _bizDateStr(d), stamp: _bizStamp(d), hm: _bizHM(d) };
+        S.bizTz = prev;
+        return { phx, nyc };
+      });
+      expect(r.phx.hm).toBe('21:30');
+      expect(r.nyc.hm).toBe('00:30');
+      // The stamp's own MM-DD half must agree with the day key it sits beside.
+      expect(r.phx.stamp.slice(0, 5)).toBe('08-27');
+      expect(r.nyc.stamp.slice(0, 5)).toBe('08-28');
+      expect(r.phx.stamp.slice(0, 5)).toBe(r.phx.day.slice(5));
+      expect(r.nyc.stamp.slice(0, 5)).toBe(r.nyc.day.slice(5));
+    });
+
+    test('a garbage or missing business zone degrades to Central, never throws', async ({ page }) => {
+      await mockAllExternal(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(page);
+      const r = await page.evaluate(() => {
+        const d = new Date('2026-08-28T04:30:00.000Z');
+        const prev = S.bizTz;
+        const out = {};
+        S.bizTz = 'Not/AZone'; out.junk = _bizDateStr(d);
+        S.bizTz = ''; out.empty = _bizDateStr(d);
+        S.bizTz = null; out.nul = _bizDateStr(d);
+        S.bizTz = prev;
+        let threw = false;
+        try { _bizDateStr(new Date('nope')); _bizStamp(null); _bizHM(undefined); } catch (e) { threw = true; }
+        out.threw = threw;
+        return out;
+      });
+      // bizTz() rejects an unusable zone and falls through to a derived or
+      // default one, so the answer is still a real date, never a crash.
+      expect(r.junk).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(r.empty).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(r.nul).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(r.threw, 'bad input degrades, it never throws').toBe(false);
+    });
+
+    test('nothing anywhere still hardcodes Central for a day key', async () => {
+      const fs = require('fs'), path = require('path');
+      const dir = path.join(__dirname, '..', 'js');
+      const offenders = [];
+      for (const f of fs.readdirSync(dir).filter(x => x.endsWith('.js'))) {
+        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        src.split('\n').forEach((line, i) => {
+          // A DateTimeFormat pinned to a literal zone is the shape that caused
+          // this. utils.js is exempt: it owns the state -> zone lookup table.
+          if (f === 'utils.js') return;
+          if (/timeZone\s*:\s*'America\//.test(line)) offenders.push(f + ':' + (i + 1));
+        });
+      }
+      expect(offenders, 'format through bizTz(), never a literal zone').toEqual([]);
+    });
+  });
 });

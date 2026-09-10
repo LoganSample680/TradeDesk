@@ -70,7 +70,7 @@ function goPg(id){
     // setTimeout that runs after this synchronous block, so they still win.
     if(typeof _closeSetDetail==='function')_closeSetDetail();
     buildScopeDefaultsUI();
-    loadSettingsForm();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();renderSettingsTrades();
+    loadSettingsForm();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();renderSettingsTrades();renderSettingsCodes();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
       // Vehicles now managed in Fleet & Team, redirect there
@@ -90,6 +90,61 @@ function goPg(id){
   if(id==='pg-money')renderMoneyPage();
   if(id!=='pg-est-generic'){window._wakeLockRelease&&window._wakeLockRelease();}
   if(id==='pg-client-hub')renderClientHubPage();
+}
+
+// ── REPAINT WHAT IS ON SCREEN, WITHOUT NAVIGATING TO IT ─────────────────────
+// goPg() already knows which render belongs to which page, but it cannot be
+// reused for a refresh: it also scrolls to top, closes the open Settings
+// detail panel, and resets trackerYear / _taxPageYear / the client filter.
+// Calling it on every foreground would throw the contractor back to the top of
+// the page and undo whatever he had open, which is worse than the stale number
+// it fixed. This is the DATA half only: no scroll, no filter reset, no panel
+// close, no year reset.
+//
+// Owner report 2026-08-31: "when we pushed the app to have the ability to
+// update in the background data is cached and looks old ... every time you
+// open, it needs to refresh all metrics."
+//
+// Two separate reasons the screen went stale, and this is the fix for both:
+//   1. Nothing repainted on foreground at all, so every metric derived from
+//      the CLOCK (today's total, a running visit, the week bars) was frozen at
+//      whatever it read the moment the phone went in the pocket.
+//   2. The only freshness check on resume was the zj_data cursor
+//      (_cursorCheckReconcile, js/cloud.js), and the geo pipeline's rows are
+//      written server-side by ingest-geo straight into job_time_entries,
+//      shop_time_entries and td_mileage. Those never touch zj_data, so the
+//      cursor sat unchanged and the app concluded nothing had happened while
+//      an entire drive had.
+//
+// Every call is guarded on its own: one page's render throwing must not stop
+// the rest, because this runs on a lifecycle event with nobody watching.
+// A page missing from this map simply has no metrics that go stale.
+function _refreshActivePage(){
+  const id=document.querySelector('.pg.active')?.id;
+  if(!id)return null;
+  const run=(fn)=>{try{if(typeof window[fn]==='function')window[fn]();}catch(_e){}};
+  // Deliberately NOT here: pg-est-generic and the estimate/signature screens.
+  // Those hold unsaved work in live DOM inputs and a repaint would wipe what
+  // the contractor is typing. A half-written estimate is not a stale metric.
+  ({
+    'pg-dash':()=>run('renderDash'),
+    'pg-timelog':()=>run('renderTimeLog'),
+    'pg-money':()=>run('renderMoneyPage'),
+    'pg-jobs':()=>run('renderJobsPage'),
+    'pg-tracker':()=>run('renderTrackerTab'),
+    'pg-cal':()=>run('renderCalendar'),
+    'pg-clients':()=>run('renderClientList'),
+    'pg-leads':()=>run('renderLeadsPage'),
+    'pg-proposals':()=>run('renderProposalsPage'),
+    'pg-dispatch':()=>run('renderDispatch'),
+    'pg-team':()=>{run('renderTeam');run('renderFleetVehicles');},
+    'pg-taxes':()=>run('calcTax'),
+    'pg-contracts':()=>run('renderContracts'),
+    'pg-licensing':()=>run('renderLicensing'),
+    'pg-checklist':()=>run('renderChecklist'),
+    'pg-client-hub':()=>run('renderClientHubPage'),
+  }[id]||(()=>{}))();
+  return id;
 }
 
 function _applyEmployeeNavGating(){

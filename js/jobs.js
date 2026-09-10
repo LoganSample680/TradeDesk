@@ -1,5 +1,26 @@
 // ── Active time tracking ─────────────────────────────────────────────────────
 
+// The work a bid actually sold, as clockable scopes. Priced line items first
+// (they are the job), then any scope chips that say something the lines do not.
+// Deduplicated on the price-book key so a chip repeating a line is one row, the
+// same rule the proposal and the hours math already use.
+function _jobScopesFromBid(bid){
+  if(!bid)return [];
+  const key=d=>(typeof _pbKey==='function')?_pbKey(d):String(d||'').trim().toLowerCase();
+  const out=[],seen=new Set();
+  const add=(label,icon)=>{
+    const l=String(label||'').trim();
+    if(!l)return;
+    const k=key(l);
+    if(!k||seen.has(k))return;
+    seen.add(k);
+    out.push({id:'line:'+k,label:l,icon:icon||'🔧'});
+  };
+  if(Array.isArray(bid.byoItems))bid.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp)add(it.label);});
+  if(!out.length&&Array.isArray(bid.geiLines))bid.geiLines.forEach(l=>{if(l&&!l._tmLabor)add(l.desc);});
+  if(Array.isArray(bid.scopeChips))bid.scopeChips.forEach(l=>add(l,'📋'));
+  return out;
+}
 function getJobScopes(jobId){
   const j=jobs.find(x=>x.id===jobId);
   const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
@@ -9,6 +30,19 @@ function getJobScopes(jobId){
     Object.values(bid.roomScopeMap).forEach(room=>Object.entries(room).forEach(([sid,sv])=>{if(sv&&sv.active)activeIds.add(sid);}));
     base=SCOPE_ITEMS.filter(s=>activeIds.has(s.id));
   }
+  // THE CLOCK HAS TO SEE THE WORK HE ACTUALLY SOLD (owner 2026-09-06). Above
+  // this line, the job's scopes come from SCOPE_ITEMS (the painting list) and
+  // roomScopeMap (a painting-era structure). So a plumber whose bid is three
+  // price-book lines got the generic painting defaults and could not clock into
+  // "Water heater replacement" at all. Every hour he worked landed on the job
+  // with no scope, which is why the price book could only learn hours by
+  // splitting a job total pro-rata across its lines.
+  //
+  // The bid he signed already names the work. Use it. Line ids are namespaced
+  // (line:<key>) off the same _pbKey the price book matches on, so an hour
+  // clocked here lands on the SAME key the estimate priced, and S.scopeHistory
+  // starts holding measured time per service instead of per painting task.
+  if(!base.length&&bid)base=_jobScopesFromBid(bid);
   if(!base.length)base=SCOPE_ITEMS.filter(s=>_CLOCK_DEFAULT_SCOPES.includes(s.id));
   if(j?.extraScopes?.length){
     const baseIds=new Set(base.map(s=>s.id));
@@ -41,6 +75,91 @@ function getJobScopeBreakdown(jobId){
     else{out['__other']=(out['__other']||0)+(e.minutes||0);}
   });
   return out;
+}
+
+// ── No surprises on the final price ─────────────────────────────────────────
+//
+// Owner 2026-09-07: "no surprises on final price if there's a change order?
+// Change order that's signed could mean additional things, increased crew, all
+// the variables?" Yes. A job going long is not a dollar figure that appears at
+// the end, it is three facts the contractor can point at while he is still
+// standing there: the work took longer than the estimate said, more people were
+// on it than he priced, and it ran more days than were booked.
+//
+// The estimate promised a number (bid.estHours, stamped at save time in
+// js/generic-estimate.js, or tmEstHours for T&M) and a crew (bid.estCrew). The
+// clock recorded what really happened. This is the difference, and nothing
+// more: it decides nothing, writes nothing, and shows nothing on its own. The
+// job sheet reads it to offer a change order; the change order carries the
+// three facts onto the signed document so the client sees WHY the number moved.
+//
+// Deliberately reads only CLOSED entries. An open timer is a running number,
+// and a job would flicker in and out of "over" while somebody is clocked in.
+function _jobOverrun(jobId){
+  const j=(typeof jobs!=='undefined'?jobs:[]).find(x=>x.id===jobId);
+  if(!j)return null;
+  const bid=(j.bid_id&&typeof bids!=='undefined')?bids.find(b=>b.id===j.bid_id):null;
+  // T&M PRICES ITS CREW. tmCrewCount is the number the client agreed to pay
+  // for, so it outranks the payroll picker (estCrew), which is who he happened
+  // to assign and can be one name on a three-man T&M job. Everyone else has no
+  // priced crew count, so the picker is the only thing that ever said one.
+  const estCrew=Math.max(1,(bid&&bid.isTM&&Number(bid.tmCrewCount))
+    ||(bid&&Array.isArray(bid.estCrew)&&bid.estCrew.length)
+    ||Number(bid&&bid.tmCrewCount)||1);
+  // ONE UNIT, AND IT IS MAN-HOURS, because that is what the clock measures:
+  // every entry's minutes summed across everybody on site.
+  //
+  // The two estimate types do not promise in the same unit, and comparing them
+  // as if they did overstated the change order on every crewed T&M job.
+  //   T&M:   tmEstHours is DURATION (days x 8, and labor = crew x rate x
+  //          hours), so the man-hours promised are that times the priced crew.
+  //   Everything else: estHours is summed from debrief medians, crowdsourced
+  //          benchmarks and the price book, all of which were learned from
+  //          clock totals, so it is ALREADY man-hours.
+  const estHrs=(bid&&bid.isTM)
+    ? Math.max(0,Number(bid.tmEstHours||bid.estHours)||0)*estCrew
+    : Math.max(0,Number(bid&&bid.estHours)||0);
+  const estDays=Math.max(1,parseInt(j.days)||1);
+  const entries=(typeof timeEntries!=='undefined'?timeEntries:[]).filter(e=>e&&e.job_id===jobId&&!e.open);
+  const actualHrs=Math.round(entries.reduce((s,e)=>s+(Number(e.minutes)||0),0)/60*100)/100;
+  // Who was actually on it. logged_by_uid is the durable identity; a hand-added
+  // entry may only carry a name, and an entry with neither is the owner himself.
+  const people=new Set(entries.map(e=>String(e.logged_by_uid||e.logged_by_name||'owner')));
+  const actualCrew=Math.max(entries.length?people.size:0,0);
+  const actualDays=new Set(entries.map(e=>e.date).filter(Boolean)).size;
+  const overHrs=Math.round(Math.max(0,actualHrs-estHrs)*100)/100;
+  // The rate he BILLS, not what the hour costs him. T&M already names it per
+  // man; everyone else uses the Settings labor rate.
+  const rate=Math.max(0,Number(bid&&bid.tmRatePerMan)||Number(typeof S!=='undefined'&&S.laborRate)||0);
+  return {
+    estHrs,actualHrs,overHrs,
+    overPct:estHrs>0?Math.round((actualHrs/estHrs-1)*100):0,
+    estCrew,actualCrew,extraCrew:Math.max(0,actualCrew-estCrew),
+    estDays,actualDays,extraDays:Math.max(0,actualDays-estDays),
+    rate,
+    suggested:Math.round(overHrs*rate*100)/100,
+    // "Over" needs a promise to be over. A bid that never recorded estimated
+    // hours (hand-entered, or written before estHours was stamped) has nothing
+    // to compare against, and guessing one would put a number in front of a
+    // client that no estimate ever supported.
+    isOver:estHrs>0&&overHrs>0
+  };
+}
+
+// One line a contractor can read at a glance. omitHours drops the hours clause
+// for a surface whose headline already said it, so the card does not tell him
+// the same number twice.
+function _overrunText(o,omitHours){
+  if(!o)return '';
+  const bits=[];
+  if(o.overHrs>0&&!omitHours)bits.push(_fmtHrsShort(o.overHrs)+' beyond the '+_fmtHrsShort(o.estHrs)+' estimated');
+  if(o.extraCrew>0)bits.push(o.extraCrew+' more '+(o.extraCrew===1?'person':'people')+' on site than priced ('+o.actualCrew+' vs '+o.estCrew+')');
+  if(o.extraDays>0)bits.push(o.extraDays+' extra '+(o.extraDays===1?'day':'days')+' on site ('+o.actualDays+' vs '+o.estDays+' booked)');
+  return bits.join(', ');
+}
+function _fmtHrsShort(h){
+  const n=Math.round((Number(h)||0)*10)/10;
+  return (Number.isInteger(n)?n:n.toFixed(1))+' hr'+(n===1?'':'s');
 }
 
 function getJobClockTotal(jobId){
@@ -449,6 +568,11 @@ function clockIn(jobId,scopeId,scopeLabel){
   if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
   renderJobsPage&&renderJobsPage();
   renderDash&&renderDash();
+  // Where the tap happened (owner 2026-09-04). Fire and forget, after the row
+  // and the banner: a clock never waits on location and never fails because of
+  // it. See _geoClockPing (js/geo-track.js) for what the ping is and, just as
+  // importantly, what it deliberately is not.
+  if(typeof _geoClockPing==='function')_geoClockPing('in');
   showToast('Clocked in · '+(scopeLabel||jobName),'⏱');
 }
 
@@ -490,8 +614,86 @@ function clockOut(saveEntry,silent){
   }
   _activeTimer=null;
   hideClockBanner();
+  // Only when the time was actually kept. A discarded session (saveEntry
+  // false, a switch between jobs) is not a clock-out anybody made and must
+  // not leave a mark where it happened.
+  if(saveEntry!==false&&typeof _geoClockPing==='function')_geoClockPing('out');
   renderJobsPage&&renderJobsPage();
   renderDash&&setTimeout(renderDash,300);
+}
+
+// ── LUNCH (owner 2026-09-09) ───────────────────────────────────────────────
+//
+// "I think it would be important to be able to put something in like a lunch."
+//
+// NOT a reason picker on clock out. Clocking out is the most-tapped control on
+// the phone and it means one thing: done. Putting a chooser in front of it
+// spends a tap every single day to catch the one day in five somebody stops
+// for lunch, which is the opposite of what the ratchet (CLAUDE.md 12.2) is
+// for. Lunch is its own button, so the common path costs exactly what it did.
+//
+// Two taps, and they are the two a man actually makes: Lunch when he stops,
+// Back to work when he starts again. The first closes the clock keeping every
+// worked minute; the second writes the stretch between them as a break and
+// starts the clock again on the same job. Paid or unpaid is the company's
+// existing policy (S.breakPaid, _tlBreakIsPaid), never a third tap.
+//
+// It writes through _tlAddUnaccounted, the SAME writer the Time Log's
+// after-the-fact "What was this time?" answer uses (7.3). So a lunch taken
+// with the button and a gap answered Break the next morning produce the
+// identical row, and neither one leaves a question on the rail.
+const _LUNCH_KEY_PREFIX='zp3_lunch_';
+function _lunchKey(){
+  const uid=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'local';
+  return _LUNCH_KEY_PREFIX+uid;
+}
+function _lunchRead(){
+  try{const o=JSON.parse(localStorage.getItem(_lunchKey())||'null');
+    return (o&&o.startedIso&&Date.parse(o.startedIso)>0)?o:null;}catch(_e){return null;}
+}
+function _lunchWrite(o){
+  try{if(o)localStorage.setItem(_lunchKey(),JSON.stringify(o));else localStorage.removeItem(_lunchKey());}catch(_e){}
+}
+// Is he on lunch right now? The dashboard and the banner both ask.
+function onLunch(){return !!_lunchRead();}
+function startLunch(){
+  if(!_activeTimer)return;
+  if(_lunchRead())return;                       // already on it, second tap is a no-op
+  const t=_activeTimer;
+  // Remember what to come back TO before clockOut clears it.
+  _lunchWrite({startedIso:new Date().toISOString(),jobId:t.jobId===undefined?null:t.jobId,
+    jobName:t.jobName||'',scopeId:t.scopeId||null,scopeLabel:t.scopeLabel||null});
+  clockOut(true,true);                          // keep the morning, no toast of its own
+  if(typeof showToast==='function')showToast('On lunch, clock stopped','🍽');
+  if(typeof renderDash==='function')setTimeout(renderDash,150);
+}
+function endLunch(){
+  const l=_lunchRead();
+  if(!l)return;
+  _lunchWrite(null);
+  const a=l.startedIso,b=new Date().toISOString();
+  // A lunch shorter than a minute is a mis-tap, not a break: nothing is
+  // written for it, he just goes back on the clock.
+  if(Date.parse(b)-Date.parse(a)>=60000&&typeof _tlAddUnaccounted==='function'){
+    _tlAddUnaccounted(a,b,'break');
+  }
+  clockIn(l.jobId===undefined?null:l.jobId,l.scopeId,l.scopeLabel);
+  if(typeof renderDash==='function')setTimeout(renderDash,150);
+}
+// A lunch nobody ever came back from is not a lunch that runs all night. If
+// the day rolls over with one still open it is closed at the moment it
+// started: no break row, no clock restarted, and the day reads exactly as it
+// would have if he had simply clocked out for good, which is what he did.
+function _lunchExpireStale(){
+  const l=_lunchRead();
+  if(!l)return false;
+  const started=Date.parse(l.startedIso);
+  const sameDay=(typeof _bizDateStr==='function')
+    ? _bizDateStr(new Date(started))===_bizDateStr(new Date())
+    : new Date(started).toDateString()===new Date().toDateString();
+  if(sameDay)return false;
+  _lunchWrite(null);
+  return true;
 }
 
 // On boot, an open entry (clocked in, never closed) belonging to THIS person on
@@ -504,18 +706,94 @@ function clockOut(saveEntry,silent){
 function _rehydrateActiveTimer(){
   if(_activeTimer||!timeEntries||!timeEntries.length)return;
   const{loggedByUid}=_tlLoggedByInfo();
-  const mine=timeEntries.find(e=>e.open&&(e.logged_by_uid||null)===loggedByUid);
+  const mine=timeEntries.find(e=>e&&e.open&&(e.logged_by_uid||null)===loggedByUid);
   if(!mine)return;
-  const j=jobs.find(x=>x.id===mine.job_id);if(!j)return;
-  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-  _activeTimer={jobId:j.id,jobName:j.name,clientName:c?c.name:j.name,scopeId:mine.scope_id||null,scopeLabel:mine.scope_label||null,startTime:new Date(mine.start_time).getTime(),timerInterval:null,entryId:mine.id};
-  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  if(!_adoptOpenEntry(mine))return;
   showClockBanner();
+  // Paint the real elapsed time immediately instead of showing 0:00 for a
+  // second: this clock has been running since before the reload, and a resumed
+  // shift that starts again from zero reads as the time having been lost.
+  updateClockTimer();
   // A reload mid-shift restores the lock-screen card too, or the contractor
   // reopens the app to find the clock running in-app and gone from the lock
   // screen, which reads as the tracking having stopped.
   if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
+}
+
+// Build the live timer state from a persisted open row. Split out because TWO
+// paths need it and they must agree: the boot rehydrate above, and
+// clockOutEntry() below when the Clock out button is pressed on a device that
+// never held this timer in memory.
+//
+// Owner report 2026-08-31 ("Jack just said its not letting him clock out").
+// This used to be inline in _rehydrateActiveTimer and read
+// `const j=jobs.find(x=>x.id===mine.job_id); if(!j)return;`, so a clock-in
+// with NO job on it could never be resumed. That is not a corner case:
+// clockIn(null,...) is a supported button, js/jobs.js:98, and it names the
+// session "General time". Jack clocked in general at 7:55am, the app reloaded,
+// _activeTimer (a `let`) was gone, this bailed on the null job_id, and from
+// then on there was no banner and no working way to stop the clock. His row
+// was still open fourteen hours later.
+//
+// String() on both sides for the same reason _tlJobClientInfo does it: a row
+// that came back from Supabase carries a string job_id while jobs[].id is a
+// local number, so a strict === silently misses and turns a real job into a
+// general one on every reload.
+function _adoptOpenEntry(row){
+  if(!row||!row.open)return false;
+  const startMs=new Date(row.start_time).getTime();
+  if(!(startMs>0))return false;   // a malformed row must not start a clock counting from 1970
+  const _jl=Array.isArray(jobs)?jobs:[];
+  const _bl=Array.isArray(bids)?bids:[];
+  const j=row.job_id!=null?(_jl.find(x=>x&&String(x.id)===String(row.job_id))||null):null;
+  const bid=(j&&j.bid_id)?(_bl.find(b=>b&&b.id===j.bid_id)||null):null;
+  const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
+  // The same words clockIn() uses for a job-less clock, so a reload never
+  // renames somebody's shift.
+  const jobName=j?j.name:'General time';
+  _activeTimer={
+    // Keep the row's own job_id even when the job itself is missing (deleted,
+    // or not synced onto this device yet). Dropping it here would quietly
+    // detach a real job's time; clockOut's `jobs.find` simply won't match and
+    // skips crediting hours, which is correct when there is no job to credit.
+    jobId:j?j.id:(row.job_id!=null?row.job_id:null),
+    jobName,clientName:c?c.name:jobName,
+    scopeId:row.scope_id||null,scopeLabel:row.scope_label||null,
+    startTime:startMs,timerInterval:null,entryId:row.id
+  };
+  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  return true;
+}
+
+// Close one specific still-open row that belongs to YOU, from the Time Log
+// card, whether or not this device is the one that started it.
+//
+// The card's own-row button used to call clockOut() directly, whose first line
+// is `if(!_activeTimer)return;`. After a reload, or when the open row arrives
+// from the cloud after boot, _activeTimer is null and that button did nothing
+// at all: no toast, no error, no movement. A dead button in the exact
+// Â§13.1 sense, and the reason Jack ended up tapping Clock IN instead and
+// starting a second entry he immediately stopped (7 seconds, 12:43pm).
+//
+// It adopts the row and then hands off to the real clockOut(), rather than
+// closing the row itself: every side effect (haptic, live-activity end, job
+// hours, toast, saveAll, re-renders) then happens exactly once, in one place
+// (Â§7.3). It is NOT forceClockOutEntry: that one audit-tags who force-closed
+// somebody else's clock, and stamping your own name on your own clock-out
+// would be a lie in the record.
+function clockOutEntry(entryId){
+  const e=(Array.isArray(timeEntries)?timeEntries:[]).find(x=>x&&x.id===entryId&&x.open);
+  if(!e){
+    // The row is already gone or already closed (another device got there
+    // first). Still tidy up this device if it is somehow running something.
+    if(_activeTimer)clockOut();
+    return;
+  }
+  // This device is running a DIFFERENT entry: bank that one first rather than
+  // abandoning it open, then take over this row.
+  if(_activeTimer&&_activeTimer.entryId!==e.id)clockOut(true,true);
+  if(!_activeTimer&&!_adoptOpenEntry(e))return;
+  clockOut();
 }
 
 // Owner request 2026-07-11 ("bulletproof", matches Jobber's #1 timesheet
@@ -549,6 +827,18 @@ function forceClockOutEntry(entryId){
 function deleteTimeEntry(entryId){
   const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
   if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  // Deleting the row a live timer is holding leaves _activeTimer pointing at
+  // nothing: the banner keeps ticking, the lock-screen card keeps saying
+  // CLOCKED IN, and the next clock-out writes its minutes into a defensive
+  // fallback row nobody asked for. The edit modal refuses open rows so its
+  // new Delete button cannot reach this, but the long-press path
+  // (js/cloud.js _lpStart) always could. Stop the clock with the record.
+  if(_activeTimer&&_activeTimer.entryId===entryId){
+    clearInterval(_activeTimer.timerInterval);
+    _activeTimer=null;
+    if(typeof hideClockBanner==='function')hideClockBanner();
+    if(typeof _liveActClockOut==='function')_liveActClockOut();
+  }
   timeEntries=timeEntries.filter(x=>x.id!==entryId);
   saveAll();
   typeof renderTimeLog==='function'&&renderTimeLog();
@@ -571,9 +861,46 @@ function _openEditTimeEntry(entryId){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
       '<button onclick="_saveEditedTimeEntry('+entryId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>'+
+    // Owner 2026-08-31: "add a delete button to the edit button on manual
+    // clock out things". deleteTimeEntry() has existed since the 2026-07-11
+    // bulletproof work but the only way to reach it was a long-press
+    // (js/cloud.js _lpStart), which nobody discovers. Editing an entry is
+    // exactly where somebody realises it should not exist at all.
+    //
+    // On its OWN row, below the pair, with a rule above it. Never a third
+    // column beside Save: the two are one thumb-width apart on a phone and
+    // one of them destroys a payroll record. Ghost styling for the same
+    // reason, so the green Save stays the only thing that reads as the
+    // primary action on this screen (15.1).
+    '<div style="border-top:1px solid var(--border2);margin-top:14px;padding-top:12px">'+
+      '<button onclick="_deleteTimeEntryFromModal('+entryId+')" style="width:100%;padding:11px;border-radius:var(--r);border:1px solid var(--c-red-edge,#E3B7B7);background:transparent;color:#A32D2D;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">'+svgIcon('🗑',{size:14})+' Delete this entry</button>'+
     '</div>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
+}
+// Delete from inside the edit modal. Confirms first, through the app's own
+// zConfirm rather than a hand-rolled sheet (7.3), and names the entry being
+// destroyed: "delete this entry" with nothing after it is how somebody deletes
+// the wrong day. The work itself is deleteTimeEntry(), unchanged, so the
+// permission gate and the sync path stay in one place.
+function _deleteTimeEntryFromModal(entryId){
+  const e=(Array.isArray(timeEntries)?timeEntries:[]).find(x=>x&&x.id===entryId);
+  if(!e)return;
+  // Same gate deleteTimeEntry applies. Checked here too so the confirm never
+  // even opens on a row this person could not delete: a prompt that asks and
+  // then silently does nothing is worse than no button.
+  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  const when=(typeof _tlFmtTime==='function'&&e.start_time)
+    ? _tlFmtTime(e.start_time)+(e.end_time?' to '+_tlFmtTime(e.end_time):'')
+    : '';
+  const much=(e.minutes&&typeof _fmtMin==='function')?_fmtMin(e.minutes):'';
+  const what=[when,much].filter(Boolean).join(' · ');
+  zConfirm('This removes '+(what?escHtml(what):'this entry')+' from the time log for good. It cannot be undone.',()=>{
+    deleteTimeEntry(entryId);
+    document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+    if(typeof showToast==='function')showToast('Entry deleted','🗑');
+  },{title:'Delete time entry',yes:'Delete',danger:true});
 }
 function _saveEditedTimeEntry(entryId){
   const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
@@ -602,14 +929,21 @@ function _saveEditedTimeEntry(entryId){
   typeof renderTimeLog==='function'&&renderTimeLog();
 }
 
-function updateClockTimer(){
-  if(!_activeTimer)return;
-  const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+// "0:07", "12:34", "3h 04:09". One formatter, because the running clock is now
+// painted in two places at once: the app-wide clock banner and the Time Log's
+// "Currently clocked in" card (js/timelog.js _tlTickOpenElapsed). Two hand-rolled
+// versions of this would drift the moment either was touched (Â§7.3).
+function _clockElapsedStr(ms){
+  const elapsed=Math.max(0,Math.floor((Number(ms)||0)/1000));
   const h=Math.floor(elapsed/3600);
   const m=Math.floor((elapsed%3600)/60);
   const s=elapsed%60;
-  const timeStr=m+':'+(s<10?'0':'')+s;
-  const full=(h?h+'h ':'')+timeStr;
+  return (h?h+'h ':'')+m+':'+(s<10?'0':'')+s;
+}
+function updateClockTimer(){
+  if(!_activeTimer)return;
+  const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+  const full=_clockElapsedStr(Date.now()-_activeTimer.startTime);
   const el=document.getElementById('clock-banner-time');
   if(el)el.textContent=(_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+full;
   // Live time-on-site counter on the dashboard on-site card (minute granularity).
@@ -1196,6 +1530,12 @@ function openJobSheet(clientId){
         (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" style="background:rgba(52,211,153,.25);color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="event.stopPropagation()">'+svgIcon('📞')+' Call</a>':'')+
         (c.addr?'<button onclick="openMapsForClient('+clientId+');event.stopPropagation()" style="background:rgba(96,165,250,.25);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">'+svgIcon('🗺')+' Drive</button>':'')+
         (c.phone?'<button onclick="sendOMWText('+clientId+');event.stopPropagation()" style="background:rgba(251,191,36,.3);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">'+svgIcon('🚗')+' OMW</button>':'')+
+        // A change order used to live at the very bottom of this sheet, under
+        // payment, schedule, supplies, scope, photos, spec, subs, notes and
+        // tasks. On site with one hand free, that is the same as not having
+        // one, and the whole point is that he writes it while the client is
+        // standing there. It is a header action now.
+        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="background:rgba(255,255,255,.22);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">'+svgIcon('📋')+' Change order</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">Full record ›</button>'+
       '</div>'+
     '</div>';
@@ -1227,6 +1567,11 @@ function openJobSheet(clientId){
             '<div style="font-size:16px;font-weight:800;color:'+(balance>0.01?'#A32D2D':'var(--green-mid)')+'">'+fmt(balance)+'</div>'+
           '</div>'+
         '</div>'+
+        // How the contract got to this number. Without it the total silently
+        // becomes something other than what he signed, which is the thing
+        // homeowners say makes them fight a change order.
+        (typeof _coHistoryLine==='function'&&_coHistoryLine(bid)?
+          '<div style="font-size:11px;color:var(--text3);margin:-4px 0 10px;line-height:1.5">'+escHtml(_coHistoryLine(bid))+'</div>':'')+
         // Progress bar
         '<div style="background:var(--border2);border-radius:20px;height:6px;overflow:hidden;margin-bottom:10px">'+
           '<div style="width:'+pct+'%;height:100%;background:'+barColor+';border-radius:20px;transition:width .3s"></div>'+
@@ -1243,6 +1588,36 @@ function openJobSheet(clientId){
           '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+');setTimeout(()=>setCDTab(\'bids\',document.getElementById(\'cdt-bids\')),200)" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Payment history</button>'+
         '</div>'+
       '</div>';
+  }
+
+  // ── The job is running long ─────────────────────────────────
+  // Surfaced while he is still on site, not discovered at invoice time. One
+  // tap opens the change order already carrying the hours, the crew and the
+  // days (js/proposals.js openOverrunCO), so the conversation happens with the
+  // client in front of him instead of over a surprise invoice three days later.
+  let overrunHtml='';
+  // The job in play, most recent first: the first one that is genuinely over
+  // and does not already have a change order covering it. A change order
+  // already naming this job means the conversation happened, and nagging him
+  // about it again is how a useful card becomes noise.
+  const _orJob=[...allJobs].sort((a,b)=>(b.start||'').localeCompare(a.start||'')).find(j=>{
+    const o=_jobOverrun(j.id);
+    if(!o||!o.isOver)return false;
+    const jb=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+    return !((jb&&jb.changeOrders||[]).some(co=>co&&co.overrun&&co.overrun.jobId===j.id));
+  });
+  const _or=_orJob?_jobOverrun(_orJob.id):null;
+  if(_or){
+    overrunHtml=
+        '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('⚠')+' Running long</div>'+
+          '<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:12px 14px">'+
+            '<div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:4px">'+_fmtHrsShort(_or.overHrs)+' past the estimate'+(_or.overPct>0?' ('+_or.overPct+'% over)':'')+'</div>'+
+            (_overrunText(_or,true)?'<div style="font-size:12px;color:#92400E;line-height:1.5;margin-bottom:10px">'+escHtml(_overrunText(_or,true))+'</div>':'')+
+            (_or.suggested>0?'<div style="font-size:12px;color:#92400E;margin-bottom:10px">Suggested change order: <strong>'+fmt(_or.suggested)+'</strong> at $'+_or.rate+'/hr</div>':'')+
+            '<button onclick="this.closest(\'.zmodal-overlay\').remove();openOverrunCO('+_orJob.id+','+clientId+')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;min-height:44px">Write the change order →</button>'+
+          '</div>'+
+        '</div>';
   }
 
   // ── Schedule section ────────────────────────────────────────
@@ -1553,7 +1928,6 @@ function openJobSheet(clientId){
         (jobActions.length?
           jobActions.map(j=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete, '+escHtml(j.name||'')+'</button>').join('')
         :'')+
-        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">'+svgIcon('📋')+' Change order, adjust scope or price</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text);text-align:left">'+svgIcon('📋')+' Full client record & history</button>'+
       '</div>'+
     '</div>';
@@ -1574,11 +1948,15 @@ function openJobSheet(clientId){
             '<div style="display:flex;align-items:center;gap:6px">'+
               '<span style="font-size:13px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>'+
               (co.signedAt?'<span style="font-size:10px;font-weight:700;background:#D1FAE5;color:#065F46;padding:2px 7px;border-radius:10px">Signed</span>':
+               co.declinedAt?'<span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#A32D2D;padding:2px 7px;border-radius:10px">Declined</span>':
                co.status==='pending_client'?'<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">'+svgIcon('⏳')+' Awaiting client signature</span>':
                            '<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">Unsigned</span>')+
             '</div>'+
           '</div>'+
           '<div style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:6px">'+escHtml(co.desc)+'</div>'+
+          // Why they said no, in their words. This is the whole value of a
+          // decline path: it is the thing he can actually act on.
+          (co.declineNote?'<div style="font-size:12px;color:#A32D2D;line-height:1.4;margin-bottom:6px;padding:8px 10px;background:#FEE8E8;border-radius:var(--r)">'+svgIcon('💬')+' '+escHtml(co.declineNote)+'</div>':'')+
           '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text3)">'+
             '<span>'+fmt(co.originalAmount)+' → <strong style="color:var(--text)">'+fmt(co.newAmount)+'</strong></span>'+
             '<span>'+(co.signerName?'Signed by '+escHtml(co.signerName)+' · ':'')+signedLabel+'</span>'+
@@ -1628,7 +2006,7 @@ function openJobSheet(clientId){
         '<div style="font-size:10px;color:var(--text3);margin-top:6px">Includes 10% waste · '+_coats+' coat'+(_coats!==1?'s':'')+' · Verify with SW rep for dark colors</div>'+
       '</div>';
   }
-  body.innerHTML=payHtml+schedHtml+assignedEmpHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+specHtml+paintOrderHtml+actualCostsHtml+subsHtml+visitNotesHtml+tasksHtml+actionsHtml;
+  body.innerHTML=payHtml+overrunHtml+schedHtml+assignedEmpHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+specHtml+paintOrderHtml+actualCostsHtml+subsHtml+visitNotesHtml+tasksHtml+actionsHtml;
   box.appendChild(body);
   ov.appendChild(box);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
@@ -1817,7 +2195,12 @@ function _doExtendJob(jobId,addDays,btn){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   j.days=(parseInt(j.days)||1)+addDays;
   saveAll();
-  if(typeof renderCal==='function')renderCal();
+  // renderCalendar, not renderCal. renderCal has never existed, so the typeof
+  // guard was always false and extending a job saved the new duration while
+  // the calendar block kept its old width until the page was re-entered.
+  // js/jobs.js's own sibling call site (renderClientDetail();renderCalendar();)
+  // is the convention this should have followed.
+  if(typeof renderCalendar==='function')renderCalendar();
   btn.closest('.zmodal-overlay').remove();
   if(typeof showToast==='function')showToast('Job extended by '+addDays+' day'+(addDays!==1?'s':''),'📅');
 }
@@ -2388,24 +2771,47 @@ function showJobDebrief(jobId){
   const bid=bids.find(b=>b.id===job.bid_id);
   const roomScope=bid?.roomScopeMap||{};
   const scopeRooms=Object.entries(roomScope).filter(([r,sc])=>Object.values(sc).some(e=>e&&e.active));
-  if(!scopeRooms.length){confirmMarkComplete(jobId);return;}
+  // EVERY TRADE GETS A DEBRIEF, not just the one with rooms. This used to
+  // return straight to "complete" for any job with no roomScopeMap, which is
+  // every plumbing, electrical and HVAC job in the product, so S.scopeHistory
+  // only ever filled for painting and every other trade's estimate had nothing
+  // of his own to learn from. A job that sold real work now debriefs against
+  // that work (getJobScopes, which reads the bid's own lines).
+  // Only the work this job can actually account for: scopes the BID sold
+  // (line:<pbKey>, from _jobScopesFromBid) plus anything the crew really
+  // clocked into. getJobScopes falls back to _CLOCK_DEFAULT_SCOPES when a bid
+  // names nothing, and debriefing a plumbing job against "tape / prime /
+  // two coats" is worse than not debriefing it: it asks for hours nobody
+  // worked and would teach the price book painting tasks off a plumbing job.
+  // A job that sold nothing and clocked nothing still goes straight to
+  // complete, exactly as before.
+  const clockedMins=getJobScopeBreakdown(jobId);
+  const soldScopes=scopeRooms.length?[]:getJobScopes(jobId)
+    .filter(s=>/^line:/.test(String(s&&s.id||''))||(clockedMins[s.id]||0)>0);
+  if(!scopeRooms.length&&!soldScopes.length){confirmMarkComplete(jobId);return;}
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.style.maxHeight='88vh';box.style.overflowY='auto';
   let debriefRows='';
+  const _row=(room,s)=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border2)">
+        <div style="font-size:13px;flex:1">${s.icon?svgIcon(s.icon):''} ${escHtml(s.label)}</div>
+        <input type="number" min="0" step="0.25" placeholder="hrs" inputmode="decimal"
+          data-room="${encodeURIComponent(room)}" data-scope="${escHtml(s.id)}"
+          style="width:64px;padding:5px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;text-align:center">
+      </div>`;
   scopeRooms.forEach(([room,sc])=>{
     const items=SCOPE_ITEMS.filter(s=>sc[s.id]&&sc[s.id].active);
     if(!items.length)return;
     debriefRows+=`<div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;margin-bottom:6px">${escHtml(room)}</div>
-      ${items.map(s=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border2)">
-        <div style="font-size:13px;flex:1">${s.icon?svgIcon(s.icon):''} ${s.label}</div>
-        <input type="number" min="0" step="0.25" placeholder="hrs" inputmode="decimal"
-          data-room="${encodeURIComponent(room)}" data-scope="${s.id}"
-          style="width:64px;padding:5px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;text-align:center">
-      </div>`).join('')}
+      ${items.map(s=>_row(room,s)).join('')}
     </div>`;
   });
+  // No rooms: one flat list of what the bid actually sold. Same input shape, so
+  // saveDebriefAndComplete needs no change and the hours land in the same place.
+  if(soldScopes.length){
+    debriefRows+=`<div style="margin-bottom:12px">${soldScopes.map(s=>_row('Job',s)).join('')}</div>`;
+  }
   box.innerHTML=
     `<div style="font-size:17px;font-weight:800;margin-bottom:4px">How'd the job go?</div>
     <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6">Optional: enter actual hours for each task. Over time this builds your personal benchmarks so future estimates get sharper. Skip anything you didn't track.</div>
@@ -2451,14 +2857,25 @@ function saveDebriefAndComplete(jobId,btn){
   // Upload actual hours to crowdsourced benchmark pool
   const _debJob=jobs.find(x=>x.id===jobId);
   const _debBid=_debJob?.bid_id?bids.find(b=>b.id===_debJob.bid_id):null;
-  const _debTrade=_debBid?.trade_type||'painting';
+  const _debTrade=_debBid?.trade_type||'general';
   const _benchRows=[];
   inputs.forEach(inp=>{
     const scopeId=inp.dataset.scope;
     const hrs=parseFloat(inp.value)||0;
-    if(hrs>0&&_user?.id)_benchRows.push({user_id:_user.id,scope_id:scopeId,trade:_debTrade,actual_hrs:hrs});
+    // Only SHARED scope ids reach the crowdsourced pool. A line: id is this
+    // contractor's own wording for his own service; it means nothing to anyone
+    // else's benchmark and it is his business, not the pool's.
+    if(hrs>0&&_user?.id&&!/^line:/.test(String(scopeId||'')))_benchRows.push({user_id:_user.id,scope_id:scopeId,trade:_debTrade,actual_hrs:hrs});
   });
   if(typeof _submitScopeBenchmarks==='function')_submitScopeBenchmarks(_benchRows);
+  // Teach the price book how long this job's own line items take (§ profit
+  // gauge): scope chips learn through S.scopeHistory above, priced lines learn
+  // here, so an estimate built the fast way out of the price book stops
+  // pricing its labor at zero.
+  const _pbHours=totalActualHrs>0?totalActualHrs:(getJobClockTotal(jobId)/60);
+  if(typeof _pbLearnFromJob==='function'&&_debBid&&_pbHours>0){
+    if(_pbLearnFromJob(_debBid,_pbHours))saveAll();
+  }
   btn.closest('.zmodal-overlay').remove();
   confirmMarkComplete(jobId);
 }

@@ -1,0 +1,770 @@
+// @ts-check
+// ── Traced trips on the mileage log and the Time Log (owner 2026-09-08) ──────
+//
+// "if no address is saved, we show the traced mileage start and stop on the
+// map it lists the total miles but then says how they are excluded due to no
+// address entered ... only things with addresses saved should update any
+// totals, if a address gets added it can add the mileage back on the deriver"
+//
+// The deriver's half (rule 14) is in tests/e2e-geo-derive.spec.js. This is the
+// reading half: the fourth pot, the row, the map note, the Save flow into the
+// new-lead form, and the one trip number both screens share.
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+
+test.describe('traced trips', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // One day: a real leg, a traced leg with an unsaved end, and a hand-typed
+  // trip, in that order of departure. Seeded fresh for every test.
+  async function seed() {
+    return page.evaluate(() => {
+      const day = todayKey();
+      // No vehicle, no log: renderAllMileage paints the "add a vehicle" hero
+      // and returns before the trip list. One truck is enough.
+      if (!getVehicles().length) vehicles.push({ id: 7001, name: 'Truck', status: 'active', isDefault: true });
+      window.supaLoadFromCloud = async () => {};
+      mileage.length = 0;
+      mileage.push({ id: 'j-real', legKey: 'j-real', gps: true, date: day, from_name: 'Shop', from: '1200 SW Oakley Ave', to_name: 'John Doe', to: '2950 SW McClure Rd',
+        miles: 3.2, mins: 9, purpose: 'Client Consult', calc_method: 'derived-routed', startedIso: '2026-09-08T12:49:00.000Z', endedIso: '2026-09-08T12:58:00.000Z', created_at: '2026-09-08T12:49:00.000Z',
+        fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0123, lng: -95.7465 }, path: [[39.0456, -95.7151, 1], [39.0123, -95.7465, 2]] });
+      mileage.push({ id: 'j-traced', legKey: 'j-traced', gps: true, date: day, from_name: 'John Doe', from: '2950 SW McClure Rd', to_name: '', to: '',
+        miles: 6.2, mins: 16, purpose: 'Business', calc_method: 'derived-traced', gpsMiles: 6.2, addressUnknown: true, unsavedFrom: false, unsavedTo: true, unsavedVia: false,
+        startedIso: '2026-09-08T18:12:00.000Z', endedIso: '2026-09-08T18:28:00.000Z', created_at: '2026-09-08T18:12:00.000Z',
+        fromCoord: { lat: 39.0123, lng: -95.7465 }, toCoord: { lat: 39.0350, lng: -95.7000 }, path: [[39.0123, -95.7465, 1], [39.02, -95.72, 2], [39.0350, -95.7000, 3]] });
+      mileage.push({ id: 'hand-1', date: day, from_name: 'Shop', to_name: 'Ace Supply', miles: 2.0, purpose: 'Supply run', created_at: '2026-09-08T20:00:00.000Z', loggedAt: '2026-09-08T20:00:00.000Z' });
+      return day;
+    });
+  }
+
+  test.describe('the fourth pot', () => {
+    test('a traced row is on no total: not deductible, not reimbursable, not even plain miles', async () => {
+      await seed();
+      const r = await page.evaluate(() => ({
+        ded: deductibleTrips(mileage).map(m => m.id),
+        reimb: reimbursableTrips(mileage.map(m => Object.assign({}, m, { reimbursable: true }))).map(m => m.id),
+        addressed: addressedTrips(mileage).map(m => m.id),
+        unaddressed: unaddressedTrips(mileage).map(m => m.id),
+      }));
+      expect(r.ded).toEqual(['j-real', 'hand-1']);
+      expect(r.reimb).toEqual(['j-real', 'hand-1']);
+      expect(r.addressed).toEqual(['j-real', 'hand-1']);
+      expect(r.unaddressed).toEqual(['j-traced']);
+    });
+
+    test('the day header sums addressed miles only, and the deduction preview agrees', async () => {
+      const day = await seed();
+      const r = await page.evaluate((d) => {
+        renderAllMileage();
+        const card = [...document.querySelectorAll('#mil-table .mil-day')].find(el => el.textContent.includes('Trip')) || document.querySelector('#mil-table');
+        return { text: card ? card.textContent : '' };
+      }, day);
+      // 3.2 + 2.0 shown; the traced 6.2 is not in the number.
+      expect(r.text).toMatch(/5\.2 mi/);
+      expect(r.text).not.toMatch(/11\.4 mi/);
+    });
+
+    test('junk never throws through the pots', async () => {
+      const ok = await page.evaluate(() => {
+        try { addressedTrips(null); addressedTrips([null, 1, 'x', {}]); deductibleTrips(undefined); unaddressedTrips([{ addressUnknown: 'yes' }]); return true; } catch (_e) { return false; }
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
+  test.describe('the row', () => {
+    test('a traced row names its unsaved end, offers Save, and says it is off the books', async () => {
+      await seed();
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const row = html.slice(html.indexOf('data-lp-id="j-traced"'));
+      const rowEnd = row.indexOf('data-lp-id="', 20);
+      const traced = rowEnd > 0 ? row.slice(0, rowEnd) : row;
+      expect(traced).toContain('Unsaved address');
+      expect(traced).toMatch(/_mileSaveAddress\('j-traced','to'\)/);
+      expect(traced).not.toMatch(/_mileSaveAddress\('j-traced','from'\)/);
+      expect(traced).toContain('Not on the books · no address');
+      // The Route button is there: the row has a trace to draw.
+      expect(traced).toContain('openMileageRoute(');
+    });
+
+    test('a traced row is never a review nag: it cannot be answered with a purpose', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        mileage.find(m => m.id === 'j-traced').purpose = '';
+        renderAllMileage();
+        const el = document.querySelector('#mil-table [data-lp-id="j-traced"]');
+        return { needs: !!(el && el.classList.contains('needs')) };
+      });
+      expect(r.needs).toBe(false);
+    });
+
+    // ── The two ends are the same word, so the clock is what tells them apart
+    // (owner 2026-09-08: "what about the unsaved address to unsaved address
+    // with the time stamp in mileage?").
+    test('unsaved to unsaved: each end carries its own stamp, and each offers its own Save', async () => {
+      await page.evaluate(() => {
+        const m = mileage.find(x => x.id === 'j-traced');
+        m.unsavedFrom = true; m.from_name = ''; m.from = '';
+      });
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const i = html.indexOf('data-lp-id="j-traced"');
+      const row = html.slice(i, html.indexOf('data-lp-id="', i + 20));
+      expect((row.match(/Unsaved address/g) || []).length, 'both ends say it').toBe(2);
+      expect(row).toMatch(/_mileSaveAddress\('j-traced','from'\)/);
+      expect(row).toMatch(/_mileSaveAddress\('j-traced','to'\)/);
+      // The departure clock on the start, the arrival clock on the end: the
+      // only thing distinguishing two identical labels.
+      expect(row).toContain('6:12p');
+      expect(row).toContain('6:28p');
+      expect(row.indexOf('6:12p'), 'departure sits on the FROM end').toBeLessThan(row.indexOf('6:28p'));
+      // Said once: with both ends stamped the right-hand span would repeat
+      // them. The duration is not something either endpoint says, so it stays.
+      expect((row.match(/6:12p/g) || []).length).toBe(1);
+      expect((row.match(/6:28p/g) || []).length).toBe(1);
+      expect(row).toContain('16m');
+    });
+
+    test('one end unsaved keeps the trip span on the right: there is nothing to repeat', async () => {
+      await seed();
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const i = html.indexOf('data-lp-id="j-traced"');
+      const row = html.slice(i, html.indexOf('data-lp-id="', i + 20));
+      expect(row).toContain('6:12p–6:28p');
+    });
+
+    test('a named end never grows a stamp: only the ones with nothing else to say', async () => {
+      await seed();
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const i = html.indexOf('data-lp-id="j-traced"');
+      const row = html.slice(i, html.indexOf('data-lp-id="', i + 20));
+      const fromBlock = row.slice(row.indexOf('>From<'), row.indexOf('>To<') > 0 ? row.indexOf('>To<') : undefined);
+      expect(fromBlock).toContain('John Doe');
+      expect(fromBlock).not.toContain('6:12p');
+    });
+
+    test('a row with no clock still renders both ends without throwing', async () => {
+      await seed();
+      const ok = await page.evaluate(() => {
+        const m = mileage.find(x => x.id === 'j-traced');
+        m.unsavedFrom = true; m.from_name = ''; delete m.startedIso; delete m.endedIso;
+        try { renderAllMileage(); return document.getElementById('mil-table').innerHTML.includes('Unsaved address'); } catch (_e) { return false; }
+      });
+      expect(ok).toBe(true);
+    });
+
+    test('a real row is untouched by any of this', async () => {
+      await seed();
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const i = html.indexOf('data-lp-id="j-real"');
+      const real = html.slice(i, html.indexOf('data-lp-id="', i + 20));
+      expect(real).not.toContain('Address not saved');
+      expect(real).not.toContain('Not on the books');
+      expect(real).toContain('John Doe');
+    });
+  });
+
+  test.describe('one trip number, two screens', () => {
+    test('numbers run oldest to newest within the day, keyed by id and by leg', async () => {
+      const day = await seed();
+      const r = await page.evaluate((d) => _mileTripNumbers(d), day);
+      expect(r['j-real']).toBe(1);
+      expect(r['j-traced']).toBe(2);
+      expect(r['hand-1']).toBe(3);
+      expect(r['leg:j-traced']).toBe(2);
+    });
+
+    test('the mileage log prints them in that order, whatever order the rows render in', async () => {
+      await seed();
+      const html = await page.evaluate(() => { renderAllMileage(); return document.getElementById('mil-table').innerHTML; });
+      const at = (id) => { const i = html.indexOf('data-lp-id="' + id + '"'); const s = html.slice(i, i + 900); const m = s.match(/Trip (\d+)/); return m ? Number(m[1]) : null; };
+      expect([at('j-real'), at('j-traced'), at('hand-1')]).toEqual([1, 2, 3]);
+    });
+
+    test('a segment of a split drive resolves to its leg\'s number', async () => {
+      const day = await seed();
+      const r = await page.evaluate((d) => [_mileTripNumberForLeg(d, 'j-traced:1'), _mileTripNumberForLeg(d, 'j-real'), _mileTripNumberForLeg(d, 'nope'), _mileTripNumberForLeg(d, null)], day);
+      expect(r).toEqual([2, 1, null, null]);
+    });
+
+    test('the Time Log drive row carries the same number', async () => {
+      const day = await seed();
+      const html = await page.evaluate((d) => _tlRailRow({
+        id: 'a1', source: 'auto', rawSource: 'drive', detail: 'Drive time', date: d, minutes: 16,
+        clientKey: 'j-traced:0', clientName: 'Destination not saved', startTime: '2026-09-08T18:12:00.000Z', endTime: '2026-09-08T18:28:00.000Z',
+      }), day);
+      expect(html).toContain('Trip 2');
+      expect(html).toContain('Drive time');
+    });
+
+    test('a non-drive row never gets a number', async () => {
+      const day = await seed();
+      const html = await page.evaluate((d) => _tlRailRow({
+        id: 'a2', source: 'auto', rawSource: 'client', detail: 'On site', date: d, minutes: 60,
+        clientKey: 'd-j-real', clientName: 'John Doe', startTime: '2026-09-08T13:00:00.000Z', endTime: '2026-09-08T14:00:00.000Z',
+      }), day);
+      expect(html).not.toMatch(/Trip \d/);
+    });
+
+    test('adding a row later does not renumber the ones before it', async () => {
+      const day = await seed();
+      const r = await page.evaluate((d) => {
+        const before = _mileTripNumbers(d);
+        mileage.push({ id: 'hand-2', date: d, from_name: 'A', to_name: 'B', miles: 1, purpose: 'Business', created_at: '2026-09-08T22:00:00.000Z' });
+        const after = _mileTripNumbers(d);
+        return { before, after };
+      }, day);
+      expect(r.after['j-real']).toBe(r.before['j-real']);
+      expect(r.after['j-traced']).toBe(r.before['j-traced']);
+      expect(r.after['hand-2']).toBe(4);
+    });
+  });
+
+  test.describe('the map', () => {
+    test('a traced trip draws, says the miles are traced and unclaimed, and offers Save on the missing end', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        openMileageRoute('j-traced');
+        const ov = document.getElementById('_mil-route-ov');
+        const t = ov ? ov.textContent : '';
+        const h = ov ? ov.innerHTML : '';
+        ov && ov.remove();
+        return { t, h };
+      });
+      expect(r.t).toContain('Traced 6.2 mi');
+      expect(r.t).toMatch(/Not claimed and not in any total/);
+      expect(r.t).toContain('Unsaved address');
+      // Said once, not twice: the whole figure IS the trace.
+      expect(r.t.match(/Traced 6\.2 mi/g).length).toBe(1);
+      expect(r.h).toMatch(/_mileSaveAddress\('j-traced','to'\)/);
+      expect(r.h).not.toMatch(/_mileSaveAddress\('j-traced','from'\)/);
+      expect(r.t).not.toContain('Logged 6.2');
+    });
+
+    test('a real trip\'s map says Logged and carries no such note', async () => {
+      await seed();
+      const t = await page.evaluate(() => {
+        openMileageRoute('j-real');
+        const ov = document.getElementById('_mil-route-ov'); const t = ov ? ov.textContent : ''; ov && ov.remove(); return t;
+      });
+      expect(t).toContain('Logged 3.2 mi');
+      expect(t).not.toContain('Not claimed');
+    });
+  });
+
+  test.describe('save this address', () => {
+    test('opens the new-lead form on the traced coordinates, address prefilled from the reverse geocode', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        const keep = window._nominatimReverse;
+        window._nominatimReverse = async (lat, lng) => (lat === 39.035 && lng === -95.7 ? '2100 SW Gage Blvd, Topeka, KS 66604' : null);
+        try {
+          const ok = await _mileSaveAddress('j-traced', 'to');
+          return {
+            ok,
+            title: document.getElementById('cf-title') && document.getElementById('cf-title').textContent,
+            street: document.getElementById('cf-street').value, city: document.getElementById('cf-city').value,
+            state: document.getElementById('cf-state').value, zip: document.getElementById('cf-zip').value,
+            name: document.getElementById('cf-name').value,
+            pending: _mileAddressPending,
+          };
+        } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.title).toBe('New lead');
+      expect([r.street, r.city, r.state, r.zip]).toEqual(['2100 SW Gage Blvd', 'Topeka', 'KS', '66604']);
+      expect(r.name, 'the name is his to give').toBe('');
+      expect(r.pending).toEqual(expect.objectContaining({ legKey: 'j-traced', which: 'to', lat: 39.035, lng: -95.7 }));
+    });
+
+    // Jack's Wednesday, 2026-09-09: shop to shop through a place he never
+    // saved. Both ends of that row ARE the shop, so Save used to open the
+    // lead form on his own yard. The deriver now carries the stop as viaCoord
+    // and that is what gets saved.
+    test('a round trip through an unsaved stop saves the STOP, not the shop it left from', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        mileage.push({ id: 'j-via', legKey: 'j-via', gps: true, date: todayKey(), from_name: 'Shop', from: '1200 SW Oakley Ave', to_name: 'Shop', to: '1200 SW Oakley Ave',
+          miles: 4.7, mins: 33, purpose: 'Other', calc_method: 'derived-traced', gpsMiles: 4.7, addressUnknown: true, unsavedFrom: false, unsavedTo: false, unsavedVia: true,
+          startedIso: '2026-09-09T18:48:34.000Z', endedIso: '2026-09-09T20:56:17.000Z', created_at: '2026-09-09T18:48:34.000Z',
+          fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0456, lng: -95.7151 },
+          viaCoord: { lat: 39.06146, lng: -95.69681 }, viaIso: '2026-09-09T19:05:42.000Z', path: [[39.0456, -95.7151, 1], [39.06146, -95.69681, 2], [39.0456, -95.7151, 3]] });
+        renderAllMileage();
+        const row = [...document.querySelectorAll('#mil-table .mil-trip, #mil-table [data-mid]')].map(el => el.outerHTML).find(h => /_mileSaveAddress\('j-via','to'\)/.test(h)) || document.getElementById('mil-table').innerHTML;
+        const clk = (t) => bizTime(t).replace(/\s/g, '').replace('AM', 'a').replace('PM', 'p');
+        const keep = window._nominatimReverse;
+        window._nominatimReverse = async () => null;
+        try {
+          const ok = await _mileSaveAddress('j-via', 'to');
+          return { ok, pending: _mileAddressPending, stamp: row.includes(clk('2026-09-09T19:05:42.000Z')) };
+        } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.pending).toEqual(expect.objectContaining({ legKey: 'j-via', which: 'to', lat: 39.06146, lng: -95.69681 }));
+      // And the stamp beside "Unsaved address" is when he was AT the stop.
+      expect(r.stamp).toBe(true);
+    });
+
+    // ── The Time Log's button comes through the same door (owner 2026-09-09:
+    // "wire the functions together with a split in between them ... one
+    // update carries it to both locations") ────────────────────────────────
+    test.describe('from the Time Log rail', () => {
+      const seedVia = () => page.evaluate(() => {
+        mileage.push({ id: 'j-chain', legKey: 'j-chain', gps: true, date: todayKey(),
+          from_name: 'Shop', from: '1200 SW Oakley Ave', to_name: 'John Doe', to: '2950 SW McClure Rd',
+          miles: 8.1, mins: 40, purpose: 'Client Consult', calc_method: 'derived-routed',
+          startedIso: '2026-09-09T13:00:00.000Z', endedIso: '2026-09-09T13:40:00.000Z',
+          fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0123, lng: -95.7465 },
+          viaStops: [{ lat: 39.06146, lng: -95.69681, at: '2026-09-09T13:10:00.000Z' },
+                     { lat: 39.0700, lng: -95.6800, at: '2026-09-09T13:25:00.000Z' }] });
+      });
+      const save = (key) => page.evaluate(async (key) => {
+        const keep = window._nominatimReverse;
+        window._nominatimReverse = async () => null;
+        try { return { ok: await _mileSaveStopAddress(key, todayKey()), pending: _mileAddressPending }; }
+        finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+      }, key);
+
+      test('the :sN on the rail row picks that stop off the leg', async () => {
+        await seed(); await seedVia();
+        const r = await save('j-chain:s1');
+        expect(r.ok).toBe(true);
+        expect(r.pending).toEqual(expect.objectContaining(
+          { legKey: 'j-chain', which: 'to', lat: 39.07, lng: -95.68 }));
+      });
+
+      test('and the first stop is the first stop', async () => {
+        await seed(); await seedVia();
+        const r = await save('j-chain:s0');
+        expect(r.pending).toEqual(expect.objectContaining({ lat: 39.06146, lng: -95.69681 }));
+      });
+
+      // A leg that reached a saved fence is NOT traced and carries no
+      // viaCoord, which is exactly the row this needed viaStops for.
+      test('a leg on the books still answers its stops', async () => {
+        await seed(); await seedVia();
+        const claimed = await page.evaluate(() => {
+          const m = mileage.find(x => x.id === 'j-chain');
+          return { addressUnknown: !!m.addressUnknown, viaCoord: m.viaCoord || null };
+        });
+        expect(claimed).toEqual({ addressUnknown: false, viaCoord: null });
+        expect((await save('j-chain:s0')).ok).toBe(true);
+      });
+
+      test('a via row written before viaStops existed still answers its first stop', async () => {
+        await seed();
+        await page.evaluate(() => {
+          mileage.push({ id: 'j-old', legKey: 'j-old', gps: true, date: todayKey(), from_name: 'Shop', to_name: 'Shop',
+            miles: 4.7, addressUnknown: true, unsavedVia: true, calc_method: 'derived-traced',
+            fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0456, lng: -95.7151 },
+            viaCoord: { lat: 39.061, lng: -95.697 } });
+        });
+        expect((await save('j-old:s0')).pending).toEqual(expect.objectContaining({ lat: 39.061, lng: -95.697 }));
+        // ...and only the first: nothing invents a second stop it never saw.
+        expect((await save('j-old:s1')).ok).toBe(false);
+      });
+
+      test('junk keys and legs that are not here do nothing at all', async () => {
+        await seed(); await seedVia();
+        for (const key of ['j-chain', 'j-chain:0', 'nope:s0', '', null, ':s0']) {
+          expect((await save(key)).ok, String(key)).toBe(false);
+        }
+      });
+
+      test('both doors end in the same place: one pending target, one form', async () => {
+        await seed(); await seedVia();
+        const r = await page.evaluate(async () => {
+          const keep = window._nominatimReverse;
+          window._nominatimReverse = async () => null;
+          const out = {};
+          try {
+            await _mileSaveAddress('j-traced', 'to');
+            out.viaMileage = Object.assign({}, _mileAddressPending);
+            out.formA = !!document.getElementById('cf-street');
+            closeClientForm && closeClientForm();
+            await _mileSaveStopAddress('j-chain:s0', todayKey());
+            out.viaRail = Object.assign({}, _mileAddressPending);
+            out.formB = !!document.getElementById('cf-street');
+          } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+          return out;
+        });
+        // OLD: the two doors handed over identical targets. NEW (2026-09-10):
+        // the rail door adds `stop`, because a rail row IS one stop of a leg
+        // and the too-old-to-rebuild path has to name that row and no other.
+        // Everything else the two doors carry still has to match exactly, or
+        // they have stopped being one behaviour.
+        const shared = k => Object.keys(k).filter(x => x !== 'stop').sort();
+        expect(shared(r.viaMileage)).toEqual(shared(r.viaRail));
+        expect(r.viaMileage.stop, 'the mileage log names an END, so it names no stop').toBe(undefined);
+        expect(r.viaRail.stop, 'the rail names the stop that was pressed').toBe(0);
+        expect([r.formA, r.formB], 'the same lead form opens either way').toEqual([true, true]);
+      });
+    });
+
+    // ── Apple Maps answers first, and it answers in fields (owner
+    // 2026-09-10: "rather than calling Apple Maps to fill the form fields
+    // out") ────────────────────────────────────────────────────────────────
+    test.describe('the reverse geocode behind it', () => {
+      const withMapKit = (place) => page.evaluate(async (place) => {
+        // _mapkitReady is a script-scope `let`, so window._mapkitReady = true
+        // sets a different variable and the branch never runs. Bare
+        // assignment is what reaches the real binding.
+        const keepReady = _mapkitReady, keepKit = window.mapkit, keepNom = window._nominatimReverse;
+        let nomCalled = false;
+        window._nominatimReverse = async () => { nomCalled = true; return 'fallback st, Topeka, Kansas, 66604'; };
+        _mapkitReady = true;
+        window.mapkit = {
+          Coordinate: function (lat, lng) { this.latitude = lat; this.longitude = lng; },
+          Geocoder: function () { this.reverseLookup = (c, cb) => cb(place ? null : new Error('no'), place ? { results: [place] } : null); },
+        };
+        try { return { parts: await _reverseGeocode(39.0123, -95.7465), nomCalled }; }
+        finally { _mapkitReady = keepReady; window.mapkit = keepKit; window._nominatimReverse = keepNom; }
+      }, place);
+
+      test('Apple gives the pieces already separated, and nothing else is asked', async () => {
+        const r = await withMapKit({ fullThoroughfare: '1530 SW Arvonia Pl', locality: 'Topeka',
+                                     administrativeAreaCode: 'KS', postCode: '66604' });
+        expect(r.parts).toEqual({ street: '1530 SW Arvonia Pl', city: 'Topeka', state: 'KS', zip: '66604',
+                                  addr: '1530 SW Arvonia Pl, Topeka, KS 66604' });
+        expect(r.nomCalled, 'no second lookup once Apple answered').toBe(false);
+      });
+
+      test('a house number and street arriving apart still make one street line', async () => {
+        const r = await withMapKit({ subThoroughfare: '1530', thoroughfare: 'SW Arvonia Pl',
+                                     locality: 'Topeka', administrativeAreaCode: 'KS', postCode: '66604' });
+        expect(r.parts.street).toBe('1530 SW Arvonia Pl');
+      });
+
+      // A pin in the middle of a field has no street to give.
+      test('an Apple answer with only a one-liner is read apart', async () => {
+        const r = await withMapKit({ formattedAddress: '2100 SW Gage Blvd, Topeka, Kansas, 66604' });
+        expect(r.parts).toEqual(expect.objectContaining({ street: '2100 SW Gage Blvd', city: 'Topeka', state: 'KS', zip: '66604' }));
+      });
+
+      test('Apple refusing falls through to the open one, still in fields', async () => {
+        const r = await withMapKit(null);
+        expect(r.nomCalled).toBe(true);
+        expect(r.parts).toEqual(expect.objectContaining({ street: 'fallback st', city: 'Topeka', state: 'KS', zip: '66604' }));
+      });
+
+      test('no geocoder at all, and junk coordinates, answer empty rather than guessing', async () => {
+        const r = await page.evaluate(async () => {
+          const keep = window._nominatimReverse;
+          window._nominatimReverse = async () => null;
+          try {
+            return { none: await _reverseGeocode(39.01, -95.74), nan: await _reverseGeocode('x', null),
+                     undef: await _reverseGeocode() };
+          } finally { window._nominatimReverse = keep; }
+        });
+        const empty = { street: '', city: '', state: '', zip: '', addr: '' };
+        expect([r.none, r.nan, r.undef]).toEqual([empty, empty, empty]);
+      });
+
+      // The owner's actual bug, end to end: one tap, four boxes filled.
+      test('Save this address fills all four boxes, not one long one', async () => {
+        await seed();
+        const r = await page.evaluate(async () => {
+          const keep = window._nominatimReverse;
+          window._nominatimReverse = async () => '1530 Southwest Arvonia Place, Topeka, Kansas, 66604';
+          try {
+            await _mileSaveAddress('j-traced', 'to');
+            return ['cf-street', 'cf-city', 'cf-state', 'cf-zip'].map(id => document.getElementById(id).value);
+          } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+        });
+        expect(r).toEqual(['1530 Southwest Arvonia Place', 'Topeka', 'KS', '66604']);
+      });
+    });
+
+    test('with no reverse geocode the form still opens, empty, on the right day', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        const keep = window._nominatimReverse;
+        window._nominatimReverse = async () => null;
+        try {
+          const ok = await _mileSaveAddress('j-traced', 'to');
+          return { ok, street: document.getElementById('cf-street').value, day: _mileAddressPending && _mileAddressPending.day };
+        } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.street).toBe('');
+      expect(r.day).toBe(await page.evaluate(() => todayKey()));
+    });
+
+    test('an end that is not unsaved, or a row that does not exist, is a no-op', async () => {
+      await seed();
+      const r = await page.evaluate(async () => [
+        await _mileSaveAddress('nope', 'to'),
+        await _mileSaveAddress('j-traced', 'sideways'),
+      ]);
+      expect(r).toEqual([false, false]);
+    });
+
+    test('saving the lead re-derives that day once, then says which trip is on the books', async () => {
+      const day = await seed();
+      const r = await page.evaluate(async (d) => {
+        const keepD = window._geoDeriveDayNow, keepT = window.showToast;
+        const derived = [], toasts = [];
+        window._geoDeriveDayNow = async (dk) => { derived.push(dk); return {}; };
+        window.showToast = (m) => { toasts.push(m); };
+        try {
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          const a = await _mileAddressSaved({ id: 1, addr: '2100 SW Gage Blvd' });
+          const b = await _mileAddressSaved({ id: 1, addr: '2100 SW Gage Blvd' });   // nothing pending now
+          return { a, b, derived, toasts, pending: _mileAddressPending };
+        } finally { window._geoDeriveDayNow = keepD; window.showToast = keepT; }
+      }, day);
+      expect(r.a).toBe(true);
+      expect(r.b).toBe(false);
+      expect(r.derived).toEqual([day]);
+      expect(r.toasts).toEqual(['Trip 2 is on the books']);
+      expect(r.pending).toBe(null);
+    });
+
+    test('a lead saved with no address changes nothing', async () => {
+      const day = await seed();
+      const r = await page.evaluate(async (d) => {
+        const keepD = window._geoDeriveDayNow; let n = 0;
+        window._geoDeriveDayNow = async () => { n++; return {}; };
+        try {
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 1, lng: 1 };
+          const a = await _mileAddressSaved({ id: 1, addr: '' });
+          return { a, n, still: !!_mileAddressPending };
+        } finally { window._geoDeriveDayNow = keepD; _mileAddressPending = null; }
+      }, day);
+      expect(r).toEqual({ a: false, n: 0, still: true });
+    });
+
+    // ── The day too old to rebuild (owner 2026-09-10) ─────────────────────
+    // "How long does the code save the address if it's an unsaved address?"
+    // The coordinate is on the row forever; the REPLAY needs Apple's motion
+    // tape and iOS keeps about seven days of it. Past that the deriver
+    // correctly refuses to rebuild a day it cannot see, and the trip used to
+    // sit on the log reading "Unsaved address" with its miles uncounted
+    // however many times the lead was saved.
+    test.describe('a trip older than the tape', () => {
+      const stale = () => page.evaluate(() => { window._geoDeriveDayNow = async () => null; });
+
+      test('names the end on the row that is already there, and the miles count', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          const row = mileage.find(m => m.id === 'j-traced');
+          return { to: row.to, toName: row.to_name, unsavedTo: !!row.unsavedTo,
+                   unknown: !!row.addressUnknown, fixed: !!row.fixedAt,
+                   addressed: addressedTrips(mileage).map(m => m.id),
+                   miles: row.miles };
+        }, day);
+        expect(r.to, 'the end carries the address the person just saved').toBe('2100 SW Gage Blvd');
+        expect(r.toName).toBe('Ace Hardware');
+        expect([r.unsavedTo, r.unknown], 'and nothing is unsaved about it now').toEqual([false, false]);
+        expect(r.fixed, 'stamped as a person\'s answer, not a derive').toBe(true);
+        expect(r.addressed, 'so it counts, like any other trip').toContain('j-traced');
+        expect(r.miles, 'the drive itself was never in question').toBe(6.2);
+      });
+
+      test('a leg with BOTH ends missing still counts nothing until both are named', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          const row = mileage.find(m => m.id === 'j-traced');
+          row.unsavedFrom = true; row.from = ''; row.from_name = '';
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          const half = { unknown: !!row.addressUnknown, addressed: addressedTrips(mileage).map(m => m.id) };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'from', lat: 39.012, lng: -95.74 };
+          await _mileAddressSaved({ id: 10, name: 'John Doe', addr: '2950 SW McClure Rd' });
+          return { half, from: row.from, unknown: !!row.addressUnknown,
+                   addressed: addressedTrips(mileage).map(m => m.id) };
+        }, day);
+        expect(r.half.unknown, 'one end named is still a trip with a hole in it').toBe(true);
+        expect(r.half.addressed).not.toContain('j-traced');
+        expect(r.from).toBe('2950 SW McClure Rd');
+        expect([r.unknown], 'both named, and only now is it whole').toEqual([false]);
+        expect(r.addressed).toContain('j-traced');
+      });
+
+      test('a round trip names its STOP, never the two ends that were always the same fence', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          mileage.push({ id: 'j-loop', legKey: 'j-loop', gps: true, date: d,
+            from_name: 'Shop', from: '1200 SW Oakley Ave', to_name: 'Shop', to: '1200 SW Oakley Ave',
+            miles: 8.4, mins: 40, purpose: 'Business', calc_method: 'derived-traced',
+            addressUnknown: true, unsavedVia: true, viaCoord: { lat: 39.02, lng: -95.72 },
+            viaStops: [{ lat: 39.02, lng: -95.72, at: '2026-09-08T19:00:00.000Z' }],
+            startedIso: '2026-09-08T18:40:00.000Z', endedIso: '2026-09-08T19:20:00.000Z' });
+          _mileAddressPending = { legKey: 'j-loop', day: d, which: 'to', lat: 39.02, lng: -95.72, stop: 0 };
+          await _mileAddressSaved({ id: 11, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          const row = mileage.find(m => m.id === 'j-loop');
+          return { from: row.from, to: row.to, via: row.via_addr, viaName: row.via_name,
+                   unsavedVia: !!row.unsavedVia, unknown: !!row.addressUnknown,
+                   addressed: addressedTrips(mileage).map(m => m.id) };
+        }, day);
+        expect([r.from, r.to], 'both ends are his own yard and stay his own yard')
+          .toEqual(['1200 SW Oakley Ave', '1200 SW Oakley Ave']);
+        expect(r.via, 'the place between them is what was missing').toBe('2100 SW Gage Blvd');
+        expect(r.viaName).toBe('Ace Hardware');
+        expect([r.unsavedVia, r.unknown]).toEqual([false, false]);
+        expect(r.addressed).toContain('j-loop');
+      });
+
+      test('the rail row for that stop is named too, and only that one', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          const sent = [];
+          window._supa = { from: (t) => ({ update: (u) => { const f = { _t: t, _u: u, _w: {} };
+            f.eq = (k, v) => { f._w[k] = v; return f; };
+            f.then = (res) => { sent.push({ table: f._t, update: f._u, where: f._w }); return res({ error: null }); };
+            return f; } }) };
+          window._supaUser = { id: 'emp-1' };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7, stop: 2 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          return sent;
+        }, day);
+        expect(r.length, 'one write, to the time row').toBe(1);
+        expect(r[0].table).toBe('job_time_entries');
+        expect(r[0].where.client_key, 'stop 2 of that leg, not the leg and not stop 0')
+          .toBe('j-traced:s2');
+        expect(r[0].where.employee_user_id).toBe('emp-1');
+        expect(r[0].update.dest_place, 'the client\'s name, the way a resolved dwell carries it')
+          .toBe('Ace Hardware');
+        expect(r[0].update.source, 'answered as work, so it leaves the unpaid bucket').toBe('client');
+        expect(typeof r[0].update.fixed_at, 'and stamped as a person\'s answer').toBe('string');
+      });
+
+      test('no stop was pressed, so no time row is touched', async () => {
+        const day = await seed();
+        await stale();
+        const n = await page.evaluate(async (d) => {
+          let calls = 0;
+          window._supa = { from: () => { calls++; return { update: () => ({ eq: () => ({ eq: () => ({ then: (r) => r({ error: null }) }) }) }) }; } };
+          window._supaUser = { id: 'emp-1' };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          return calls;
+        }, day);
+        expect(n, 'a mileage-log Save names a leg end and nothing else').toBe(0);
+      });
+
+      test('a day that DID rebuild is left entirely alone', async () => {
+        const day = await seed();
+        const r = await page.evaluate(async (d) => {
+          // The derive ran and resolved the end, which is what it does inside
+          // the window. The row is already right; nothing here may touch it.
+          window._geoDeriveDayNow = async () => {
+            const row = mileage.find(m => m.id === 'j-traced');
+            row.to = '1 Derived Way'; row.to_name = 'Derived'; row.unsavedTo = false;
+            delete row.addressUnknown;
+            return {};
+          };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
+          await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
+          const row = mileage.find(m => m.id === 'j-traced');
+          return { to: row.to, fixed: !!row.fixedAt };
+        }, day);
+        expect(r.to, 'the deriver had it, so the deriver keeps it').toBe('1 Derived Way');
+        expect(r.fixed, 'and it is not marked as a hand fix, because it is not one').toBe(false);
+      });
+
+      test('junk cannot name anything', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          const out = [];
+          // A leg that is not there, an end that is not missing, a client with
+          // no name and no address.
+          _mileAddressPending = { legKey: 'nope', day: d, which: 'to', lat: 1, lng: 1 };
+          out.push(await _mileAddressSaved({ id: 1, addr: 'x' }));
+          _mileAddressPending = { legKey: 'j-real', day: d, which: 'to', lat: 1, lng: 1 };
+          out.push(await _mileAddressSaved({ id: 1, addr: 'x' }));
+          const real = mileage.find(m => m.id === 'j-real');
+          return { out, realTo: real.to, realFixed: !!real.fixedAt };
+        }, day);
+        expect(r.realTo, 'a trip that was never missing an end is untouched').toBe('2950 SW McClure Rd');
+        expect(r.realFixed).toBe(false);
+      });
+    });
+
+    test('the form\'s save hands off to the mileage side once the address is geocoded', async () => {
+      // finance.js wraps saveClient at runtime (it calls the original first),
+      // so the hook is asserted on the served source of the original.
+      const src = await page.evaluate(async () => (await (await fetch('/js/clients.js')).text()));
+      expect(src).toContain('_mileAddressSaved(c)');
+      const wrapped = await page.evaluate(() => saveClient.toString());
+      expect(wrapped).toContain('_origSaveClient()');
+    });
+  });
+
+  // ── A deduction is not a cost (owner 2026-09-08: "summary is showing
+  // mileage as a negative number when that's not the case") ─────────────────
+  test.describe('the Books summary', () => {
+    async function summary(seedFn) {
+      return page.evaluate((fn) => {
+        income.length = 0; expenses.length = 0; mileage.length = 0;
+        // eslint-disable-next-line no-new-func
+        (new Function('return ' + fn))()();
+        trackerYear = String(new Date().getFullYear());
+        renderSummary();
+        const el = document.getElementById('sum-mets');
+        return el ? el.textContent : '';
+      }, seedFn.toString());
+    }
+
+    test('driving with no income is not a loss: the deduction lowers the tax, not the profit', async () => {
+      const t = await summary(() => {
+        const yr = String(new Date().getFullYear());
+        mileage.push({ id: 'm1', date: yr + '-09-08', from_name: 'Shop', to_name: 'John Doe', miles: 3.2, purpose: 'Client Consult' });
+      });
+      // The old formula subtracted the deduction from profit as though it
+      // were cash, and printed -$2.32 for one 3.2 mile drive.
+      expect(t).not.toContain('-$2.32');
+      expect(t).toMatch(/Net profit\$0\.00|Net profit\$0/);
+      // The deduction is still shown, on its own tile, as a positive figure.
+      expect(t).toContain('$2.32');
+      expect(t).toContain('3 mi');
+    });
+
+    test('with income, profit is income less expenses less tax, and the deduction is only in the tax', async () => {
+      const t = await summary(() => {
+        const yr = String(new Date().getFullYear());
+        income.push({ id: 'i1', date: yr + '-09-08', amount: 10000, cat: 'Revenue' });
+        expenses.push({ id: 'e1', date: yr + '-09-08', amount: 1000, cat: 'supplies' });
+        mileage.push({ id: 'm1', date: yr + '-09-08', from_name: 'Shop', to_name: 'John Doe', miles: 100, purpose: 'Client Consult' });
+      });
+      const num = (label) => { const m = t.match(new RegExp(label + '\\$([\\d,]+\\.\\d\\d)')); return m ? Number(m[1].replace(/,/g, '')) : null; };
+      const inc = num('Income'), exp = num('Expenses'), tax = num('Est\\. tax'), profit = num('Net profit');
+      expect([inc, exp]).toEqual([10000, 1000]);
+      expect(profit).toBeCloseTo(inc - exp - tax, 2);
+      // And it is NOT the old double subtraction.
+      expect(profit).not.toBeCloseTo(inc - exp - 72.5 - tax, 2);
+    });
+
+    test('a traced trip changes no figure on the summary at all', async () => {
+      const withOut = await summary(() => {
+        const yr = String(new Date().getFullYear());
+        income.push({ id: 'i1', date: yr + '-09-08', amount: 5000, cat: 'Revenue' });
+        mileage.push({ id: 'm1', date: yr + '-09-08', from_name: 'Shop', to_name: 'John Doe', miles: 10, purpose: 'Client Consult' });
+      });
+      const withTraced = await summary(() => {
+        const yr = String(new Date().getFullYear());
+        income.push({ id: 'i1', date: yr + '-09-08', amount: 5000, cat: 'Revenue' });
+        mileage.push({ id: 'm1', date: yr + '-09-08', from_name: 'Shop', to_name: 'John Doe', miles: 10, purpose: 'Client Consult' });
+        mileage.push({ id: 'm2', date: yr + '-09-08', from_name: '', to_name: '', miles: 99, purpose: 'Business', addressUnknown: true, unsavedTo: true });
+      });
+      expect(withTraced).toBe(withOut);
+    });
+  });
+
+  test('no console errors across traced trips', async () => {
+    assertNoErrors(page, 'traced trips');
+  });
+});

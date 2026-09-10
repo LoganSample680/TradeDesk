@@ -210,6 +210,115 @@ test.describe('Client hub, pending change order surfaces for approval', () => {
   });
 });
 
+test.describe('Client hub: the change order as a document, and the way out of it', () => {
+  const RICH_CO = {
+    ...PENDING_CO,
+    coNum: 2,
+    originalAmount: 5450,
+    newAmount: 6620,
+    amount: 1170,
+    delta: 1170,
+    desc: 'Opened the wall and found the cast iron stack corroded through',
+    lines: [
+      { desc: '6 ft cast iron stack replacement', amt: 780 },
+      { desc: 'Branch re-tie and pressure test', amt: 240 },
+      { desc: 'Drywall patch back', amt: 150 },
+    ],
+    addedDays: 2,
+    photos: ['https://example.test/found-1.jpg', 'https://example.test/found-2.jpg'],
+  };
+  const PRIOR_SIGNED = { ...SIGNED_CO, coNum: 1, originalAmount: 5000, newAmount: 5450, amount: 450, delta: 450 };
+
+  test('the client sees the breakdown, the photos, the days and how the contract got here', async ({ page }) => {
+    await bootHub(page, hubWith({ amount: 6620, changeOrders: [PRIOR_SIGNED, RICH_CO] }));
+    await page.evaluate(id => _showCODoc(id, 2), FAKE_BID_ID_1);
+    await page.waitForTimeout(300);
+    const body = await page.textContent('#co-hub-ov');
+    expect(body, 'the number they originally signed must survive').toContain('Signed $5,000.00');
+    expect(body).toContain('CO #1 +$450.00');
+    expect(body, 'a lump sum with no breakdown is what they argue with').toContain('6 ft cast iron stack replacement');
+    expect(body).toContain('+$780.00');
+    expect(body).toContain('What We Found');
+    expect(body, 'agreeing to more money is also agreeing to a later finish').toContain('2 working days');
+    expect(body).toContain('$6,620.00');
+    const imgs = await page.locator('#co-hub-ov img[src^="https://example.test"]').count();
+    expect(imgs).toBe(2);
+    assertNoErrors(page, 'rich CO document');
+  });
+
+  test('a plain change order still reads as one Adjustment line', async ({ page }) => {
+    await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
+    await openCOModal(page);
+    const body = await page.textContent('#co-hub-ov');
+    expect(body).toContain('Adjustment:');
+    expect(body).toContain('+$450.00');
+    expect(body, 'no history on a first change order').not.toContain('Signed $');
+    expect(body).not.toContain('What We Found');
+    expect(body).not.toContain('working day');
+    assertNoErrors(page, 'plain CO document');
+  });
+
+  test('signing is no longer the only way out: they can decline or ask', async ({ page }) => {
+    await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
+    await openCOModal(page);
+    const ov = page.locator('#co-hub-ov');
+    await expect(ov.locator('button:has-text("Decline")')).toBeVisible();
+    const ask = ov.locator('a:has-text("Ask a question")');
+    await expect(ask).toBeVisible();
+    const href = await ask.getAttribute('href');
+    expect(href, 'the question goes to the contractor, prefilled with which CO').toContain('sms:9135551234');
+    expect(decodeURIComponent(href)).toContain('Change Order #1');
+    assertNoErrors(page, 'CO decline and ask affordances');
+  });
+
+  test('declining records why, closes the card, and never moves the contract', async ({ page }) => {
+    await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
+    await openCOModal(page);
+    await page.evaluate(() => {
+      window.prompt = () => 'Want to wait until spring on that one';
+      window.alert = () => {};
+    });
+    await page.click('#co-hub-ov button:has-text("Decline")');
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(id => {
+      const b = _hub.bids.find(x => x.id === id);
+      const co = b.changeOrders[0];
+      return { open: !!document.getElementById('co-hub-ov'), status: co.status, note: co.declineNote, declined: !!co.declinedAt, amount: b.amount,
+               overview: document.getElementById('view-overview').textContent };
+    }, FAKE_BID_ID_1);
+    expect(r.open).toBe(false);
+    expect(r.status).toBe('declined');
+    expect(r.note).toBe('Want to wait until spring on that one');
+    expect(r.declined).toBe(true);
+    expect(r.amount, 'nothing was agreed, so nothing about the contract moves').toBe(5000);
+    expect(r.overview, 'a declined change order stops asking for a signature').not.toContain('needs your signature');
+    assertNoErrors(page, 'CO decline');
+  });
+
+  test('declining with no reason still declines', async ({ page }) => {
+    await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
+    await openCOModal(page);
+    await page.evaluate(() => { window.prompt = () => null; window.alert = () => {}; });
+    await page.click('#co-hub-ov button:has-text("Decline")');
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(id => {
+      const co = _hub.bids.find(x => x.id === id).changeOrders[0];
+      return { status: co.status, note: co.declineNote };
+    }, FAKE_BID_ID_1);
+    expect(r.status).toBe('declined');
+    expect(r.note).toBe('');
+    assertNoErrors(page, 'CO decline without a reason');
+  });
+
+  test('an already-signed change order offers no decline', async ({ page }) => {
+    await bootHub(page, hubWith({ changeOrders: [SIGNED_CO] }));
+    await openCOModal(page);
+    const n = await page.locator('#co-hub-ov button:has-text("Decline")').count();
+    expect(n).toBe(0);
+    assertNoErrors(page, 'signed CO has no decline');
+  });
+});
+
 test.describe('TradeDesk: in-person CO flow still works and offers hub sending', () => {
   let page;
   test.beforeAll(async ({ browser }) => {

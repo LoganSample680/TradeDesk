@@ -2124,7 +2124,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r2.hasOptionB).toBe(false);
     });
 
-    test('_byoShowPage renders "Send proposal" with Option B in a 3-column action grid', async () => {
+    // Was "Option B". The button made a SECOND option and said so; a group can
+    // now hold A through Z (_optionNextLabel), so naming one letter was wrong
+    // the moment a third option existed. It adds an option now, and says that.
+    test('_byoShowPage renders "Send proposal" with Add option in a 3-column action grid', async () => {
       const r = await page.evaluate(() => {
         try { _byoShowPage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2132,10 +2135,13 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       const r2 = await page.evaluate(() => {
         const html = document.getElementById('byo-actions-wrap')?.innerHTML || '';
-        return { hasSend: html.includes('Send proposal') && !html.includes('Send T&amp;M'), hasOptionB: html.includes('Option B') };
+        return { hasSend: html.includes('Send proposal') && !html.includes('Send T&amp;M'),
+                 hasAddOption: html.includes('Add option'),
+                 namesOneLetter: /Option [A-Z]\b/.test(html) };
       });
       expect(r2.hasSend).toBe(true);
-      expect(r2.hasOptionB).toBe(true);
+      expect(r2.hasAddOption).toBe(true);
+      expect(r2.namesOneLetter, 'the button cannot promise a letter when the next free one depends on the group').toBe(false);
     });
   });
 
@@ -2448,13 +2454,20 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
             sub: (document.getElementById(prefix + '-page-sub')?.textContent || '') !== '-',
           };
         };
+        _geiScopeChips = [];
         return { tm: probe('tm'), byo: probe('byo') };
       });
+      // Every part is shared by both modes except the scope chip picker, which
+      // BYO deliberately no longer has: its line items and their descriptions
+      // are the scope (owner 2026-09-07). T&M has no itemised work at all, so
+      // there the chips are the only scope there is.
       for (const mode of ['tm', 'byo']) {
-        for (const part of ['title', 'scope', 'gauge', 'deposit', 'actions', 'sub']) {
+        for (const part of ['title', 'gauge', 'deposit', 'actions', 'sub']) {
           expect(r[mode][part], `${mode} ${part}`).toBe(true);
         }
       }
+      expect(r.tm.scope, 'T&M keeps the chip picker').toBe(true);
+      expect(r.byo.scope, 'BYO describes the job once, on the lines').toBe(false);
     });
 
     test('_tmHidePage/_byoHidePage still hide their page and restore the legacy toolbar (shared _geiHidePage)', async () => {
@@ -2620,21 +2633,24 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.matsRestored).toBe(1);
     });
 
-    test('regression: leaving the "Name your proposal" field autosaves the name, no explicit Save needed to survive a back-out', async () => {
+    test('regression: renaming from the title bar autosaves the name, no explicit Save needed to survive a back-out', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90108, name: 'Name Autosave Client', addr: '8 Name Rd' };
         clients = clients.filter(x => x.id !== 90108).concat([c]);
         bids = bids.filter(x => x.client_id !== 90108);
         openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2);                                       // mount the BYO page
         const bidId = _geiEditBidId;
-        const descEl = document.getElementById('gei-desc');
-        descEl.value = 'Kitchen Remodel Quote';
-        descEl.dispatchEvent(new Event('blur')); // simulate the user clicking out, no Save click
+        _editByoTitle();                                    // tap the pencil
+        const inp = document.querySelector('#byo-tbar-title input');
+        inp.value = 'Kitchen Remodel Quote';
+        inp.dispatchEvent(new Event('blur'));               // click out, no Save click
         const saved = bids.find(x => x.id === bidId);
-        return { type: saved?.type, geiDesc: saved?.geiDesc };
+        return { type: saved?.type, geiDesc: saved?.geiDesc, userSet: saved?.descUserSet };
       });
       expect(r.type).toBe('Kitchen Remodel Quote');
       expect(r.geiDesc).toBe('Kitchen Remodel Quote');
+      expect(r.userSet).toBe(true);
     });
 
     test('regression: a legacy dual-flag record (isTM + isFreeForm, from the old autosave) resumes as T&M, not empty BYO', async () => {
@@ -3794,4 +3810,1517 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
   test('no console errors, generic-estimate.js', async () => {
     assertNoErrors(page, 'generic-estimate.js');
   });
+
+  // ── The price book that learns ──────────────────────────────────────────────
+  //
+  // It existed for a long time and was useless for exactly as long: you could
+  // file a line into it and nothing in the app ever read it back. It now learns
+  // from every deliberate add and is the first thing in the add sheet, which is
+  // the entire reason a Build Your Own estimate cost 90 interactions and a
+  // template one cost 19.
+  //
+  // The rules that keep it clean without anybody maintaining it are the point:
+  // a line is only offered once he has used it twice, near-duplicates collapse,
+  // and a price that moves a lot asks instead of guessing.
+  test.describe('price book', () => {
+    const reset = () => page.evaluate(() => {
+      S.priceBook = {};
+      _geiTrade = 'plumbing';
+      _byoItems = [];
+      window.__confirms = [];
+      window.zConfirm = (m, yes, opts) => { window.__confirms.push({ m, opts }); window.__lastYes = yes; };
+      document.getElementById('_byo-add-modal')?.remove();
+    });
+    // Used twice = earned its place in the book.
+    const learnTwice = (d, r) => page.evaluate(([desc, rate]) => { _pbLearn(desc, rate); _pbLearn(desc, rate); }, [d, r]);
+
+    test('learns a line the moment it is added, with what he charged', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _pbLearn('Replace 40 gal water heater', 1800);
+        const book = S.priceBook.plumbing;
+        return { n: book.length, desc: book[0].desc, rate: book[0].rate, count: book[0].n, hasDate: !!book[0].last };
+      });
+      expect(r.n).toBe(1);
+      expect(r.desc).toBe('Replace 40 gal water heater');
+      expect(r.rate).toBe(1800);
+      expect(r.count).toBe(1);
+      expect(r.hasDate).toBe(true);
+    });
+
+    test('a line used once is remembered but never offered', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _pbLearn('Bedroom 3, walls only', 400);      // a one-off, job-specific
+        _pbLearn('Snake main line', 350);
+        _pbLearn('Snake main line', 350);            // used again, so it counts
+        return { stored: S.priceBook.plumbing.length, offered: _pbList().map(x => x.desc) };
+      });
+      expect(r.stored).toBe(2);                       // both remembered
+      expect(r.offered).toEqual(['Snake main line']); // only the repeat is offered
+    });
+
+    test('the same line used again counts up and takes the newest price', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _pbLearn('Water heater swap', 1800);
+        _pbLearn('WATER HEATER SWAP', 1950);   // same line, different day, new price
+        const book = S.priceBook.plumbing;
+        return { rows: book.length, rate: book[0].rate, count: book[0].n };
+      });
+      expect(r.rows).toBe(1);       // one line, not two
+      expect(r.rate).toBe(1950);    // what he charges today is what he charges
+      expect(r.count).toBe(2);
+    });
+
+    test('word order and punctuation do not make a second entry', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _pbLearn('Replace water heater', 1800);
+        _pbLearn('Water heater, replace', 1800);
+        const book = S.priceBook.plumbing;
+        return { rows: book.length, desc: book[0].desc, count: book[0].n };
+      });
+      expect(r.rows).toBe(1);
+      expect(r.desc).toBe('Replace water heater');   // the wording he used first
+      expect(r.count).toBe(2);
+    });
+
+    test('a genuinely different service is not merged into a similar one', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _pbLearn('Replace water heater', 1800);
+        _pbLearn('Replace kitchen faucet', 285);
+        return S.priceBook.plumbing.length;
+      });
+      expect(r).toBe(2);
+    });
+
+    test('a price that moves a lot asks instead of guessing', async () => {
+      await reset();
+      await learnTwice('Rebuild tub valve', 400);
+      const r = await page.evaluate(async () => {
+        _pbLearn('Rebuild tub valve', 900);          // way off: a decision, not a typo
+        // The question is deferred by a tick so it never fights the add sheet
+        // for the same frame, so wait for it the way the app does.
+        await new Promise(res => setTimeout(res, 10));
+        const book = S.priceBook.plumbing;
+        return { asked: window.__confirms.length, kept: book[0].rate, title: window.__confirms[0] && window.__confirms[0].opts.title };
+      });
+      expect(r.asked).toBe(1);
+      expect(r.kept).toBe(400);                      // unchanged until he says so
+      expect(r.title).toContain('your price now');
+      const after = await page.evaluate(() => { window.__lastYes(); return S.priceBook.plumbing[0].rate; });
+      expect(after).toBe(900);                       // one tap and it updates
+    });
+
+    test('a small price change updates silently, no question', async () => {
+      await reset();
+      await learnTwice('Install kitchen faucet', 280);
+      const r = await page.evaluate(async () => {
+        _pbLearn('Install kitchen faucet', 300);      // under a quarter, ordinary drift
+        await new Promise(res => setTimeout(res, 10));
+        return { asked: window.__confirms.length, rate: S.priceBook.plumbing[0].rate };
+      });
+      expect(r.asked).toBe(0);
+      expect(r.rate).toBe(300);
+    });
+
+    test('refuses junk: no price, no description, a half-typed word', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _pbLearn('Replace water heater', 0);
+        _pbLearn('', 500);
+        _pbLearn('Re', 500);
+        _pbLearn(null, null);
+        _pbLearn(undefined, undefined);
+        return (S.priceBook.plumbing || []).length;
+      });
+      expect(r).toBe(0);
+    });
+
+    test('the most used float to the top, not the most recent', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _pbLearn('Used twice', 100); _pbLearn('Used twice', 100);
+        _pbLearn('Used four times', 200); _pbLearn('Used four times', 200);
+        _pbLearn('Used four times', 200); _pbLearn('Used four times', 200);
+        return _pbList().map(x => x.desc);
+      });
+      expect(r[0]).toBe('Used four times');
+    });
+
+    test('the add sheet offers them, and a tap adds the line without typing', async () => {
+      await reset();
+      await learnTwice('Replace 40 gal water heater', 1800);
+      await learnTwice('Rebuild tub valve', 425);
+      const r = await page.evaluate(() => {
+        _byoAddItem('Materials');
+        const chips = document.querySelectorAll('#_bya-book button');
+        const before = _byoItems.length;
+        chips[0].click();
+        const item = _byoItems[_byoItems.length - 1];
+        return {
+          offered: chips.length,
+          added: _byoItems.length - before,
+          label: item.label, price: item.price, section: item.section,
+          // The sheet stays open, because he is usually adding several.
+          stillOpen: !!document.getElementById('_byo-add-modal'),
+          counter: document.getElementById('_bya-count').textContent,
+        };
+      });
+      expect(r.offered).toBe(2);
+      expect(r.added).toBe(1);
+      expect(r.label).toBe('Replace 40 gal water heater');
+      expect(r.price).toBe(1800);
+      expect(r.section).toBe('Materials');
+      expect(r.stillOpen).toBe(true);
+      expect(r.counter).toContain('1 added');
+    });
+
+    test('never more than six chips, however big the book gets', async () => {
+      await reset();
+      await page.evaluate(() => { for (let i = 0; i < 20; i++) { _pbLearn('Service ' + i, 100 + i); _pbLearn('Service ' + i, 100 + i); } });
+      const r = await page.evaluate(() => {
+        _byoAddItem('Materials');
+        return { chips: document.querySelectorAll('#_bya-book button').length, inBook: _pbList().length };
+      });
+      expect(r.inBook).toBe(20);
+      expect(r.chips).toBe(6);
+      await page.evaluate(() => document.getElementById('_byo-add-modal')?.remove());
+    });
+
+    test('typing in the field searches the book, and a tap adds it', async () => {
+      await reset();
+      await learnTwice('Replace 40 gal water heater', 1850);
+      await learnTwice('Install kitchen faucet', 285);
+      const r = await page.evaluate(() => {
+        _byoAddItem('Materials');
+        const el = document.getElementById('_bya-label');
+        el.value = 'wat';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        const sugg = document.querySelectorAll('#_bya-sugg button');
+        const shown = sugg.length;
+        const text = document.getElementById('_bya-sugg').textContent;
+        sugg[0].click();
+        const item = _byoItems[_byoItems.length - 1];
+        return {
+          shown, text,
+          label: item.label, price: item.price,
+          fieldCleared: document.getElementById('_bya-label').value === '',
+          suggCleared: document.getElementById('_bya-sugg').innerHTML === '',
+        };
+      });
+      expect(r.shown).toBe(1);                       // only the matching one
+      expect(r.text).toContain('water heater');
+      expect(r.label).toBe('Replace 40 gal water heater');
+      expect(r.price).toBe(1850);
+      expect(r.fieldCleared).toBe(true);
+      expect(r.suggCleared).toBe(true);
+      await page.evaluate(() => document.getElementById('_byo-add-modal')?.remove());
+    });
+
+    test('one or two letters searches nothing, and no match offers nothing', async () => {
+      await reset();
+      await learnTwice('Replace 40 gal water heater', 1850);
+      const r = await page.evaluate(() => {
+        _byoAddItem('Materials');
+        const el = document.getElementById('_bya-label');
+        const at = (v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); return document.querySelectorAll('#_bya-sugg button').length; };
+        return { one: at('w'), none: at('zzzqq'), hit: at('heater') };
+      });
+      expect(r.one).toBe(0);
+      expect(r.none).toBe(0);
+      expect(r.hit).toBe(1);
+      await page.evaluate(() => document.getElementById('_byo-add-modal')?.remove());
+    });
+
+    test('an empty book shows no chips at all, never an empty heading', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _byoAddItem('Materials');
+        return { html: document.getElementById('_bya-book').innerHTML.trim(), chips: document.querySelectorAll('#_bya-book button').length };
+      });
+      expect(r.chips).toBe(0);
+      expect(r.html).toBe('');
+      await page.evaluate(() => document.getElementById('_byo-add-modal')?.remove());
+    });
+
+    test('typing a line by hand teaches it too', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        _byoAddItem('Materials');
+        document.getElementById('_bya-label').value = 'Snake main line';
+        document.getElementById('_bya-price').value = '350';
+        _byaConfirm('Materials');
+        const book = S.priceBook.plumbing || [];
+        return { learned: book.length, desc: book[0] && book[0].desc, rate: book[0] && book[0].rate, closed: !document.getElementById('_byo-add-modal') };
+      });
+      expect(r.learned).toBe(1);
+      expect(r.desc).toBe('Snake main line');
+      expect(r.rate).toBe(350);
+      expect(r.closed).toBe(true);
+    });
+
+    test('the book never grows into a haystack', async () => {
+      await reset();
+      const r = await page.evaluate(() => {
+        for (let i = 0; i < 240; i++) _pbLearn('Line number ' + i, 100 + i);
+        return (S.priceBook.plumbing || []).length;
+      });
+      expect(r).toBeLessThanOrEqual(200);
+    });
+
+    test('a corrupted or missing book does not take the sheet down', async () => {
+      const r = await page.evaluate(() => {
+        const out = {};
+        try { S.priceBook = null; out.nullBook = _pbList().length; } catch (e) { out.nullBook = 'threw: ' + e.message; }
+        try { S.priceBook = { plumbing: 'not an array' }; _pbList(); out.badShape = 'ok'; } catch (e) { out.badShape = 'threw'; }
+        S.priceBook = {};
+        return out;
+      });
+      expect(r.nullBook).toBe(0);
+      expect(r.badShape).toBe('ok');
+    });
+  });
+
+
+  // ── What it takes to send ───────────────────────────────────────────────────
+  //
+  // It used to take a line in Materials AND a line in Interior or Exterior. A
+  // plumber who had typed "Replace 40 gal water heater, $1,850" was refused at
+  // the send button, in painting vocabulary, after doing all the work of
+  // writing the bid. Every fast path in the app (seeded services, price-book
+  // chips, a spoken estimate) ended in that wall.
+  test.describe('sending needs a price, and nothing else', () => {
+    const armByo = () => page.evaluate(() => {
+      _geiIsFreeForm = true; _geiIsTM = false; _geiTrade = 'plumbing';
+      _geiScopeNoScope = true; _geiScopeChips = [];
+      window.__blocked = [];
+      window.zAlert = (m, o) => { window.__blocked.push((o && o.title) || m); };
+    });
+
+    test('one line in any section sends, in a trade that has no Interior', async () => {
+      await armByo();
+      const r = await page.evaluate(() => {
+        _byoItems = [{ id: 1, section: _byoWorkSection(), label: 'Replace 40 gal water heater', price: 1850, on: true }];
+        sendGenericProposal(true);   // preview path, no network
+        return { blocked: window.__blocked, section: _byoWorkSection() };
+      });
+      expect(r.section).toBe('Work');       // never Interior for a plumber
+      expect(r.blocked).toEqual([]);        // and never refused for it
+    });
+
+    test('an empty estimate still says so, once, in plain words', async () => {
+      await armByo();
+      const r = await page.evaluate(() => {
+        _byoItems = [];
+        sendGenericProposal();
+        return window.__blocked;
+      });
+      expect(r).toEqual(['Nothing to send yet']);
+    });
+
+    test('lines that are all switched off count as empty', async () => {
+      await armByo();
+      const r = await page.evaluate(() => {
+        _byoItems = [{ id: 1, section: 'Work', label: 'Water heater', price: 1850, on: false }];
+        sendGenericProposal();
+        return window.__blocked;
+      });
+      expect(r).toEqual(['Nothing to send yet']);
+    });
+
+    test('a time and materials job with no parts is an ordinary service call', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = true; _geiIsFreeForm = false; _geiTrade = 'plumbing';
+        _geiScopeNoScope = true; _geiScopeChips = [];
+        _tmRatePerMan = 95; _tmEstHours = 3;
+        _geiLines = [{ desc: 'Crew labor', rate: 95, qty: 3, _tmLabor: true }];  // labor only
+        window.__blocked = [];
+        window.zAlert = (m, o) => { window.__blocked.push((o && o.title) || m); };
+        sendGenericProposal(true);
+        return window.__blocked;
+      });
+      expect(r).toEqual([]);      // was "Materials required"
+    });
+
+    test('a time and materials job with no rate or hours is still refused, because that IS the bid', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = true; _geiIsFreeForm = false;
+        _geiScopeNoScope = true; _geiScopeChips = [];
+        _tmRatePerMan = 0; _tmEstHours = 0; _geiLines = [];
+        window.__blocked = [];
+        window.zAlert = (m, o) => { window.__blocked.push((o && o.title) || m); };
+        sendGenericProposal();
+        return window.__blocked;
+      });
+      expect(r).toEqual(['Time & labor required']);
+    });
+  });
+
+  test.describe('sections follow the trade', () => {
+    test('a plumber never sees Interior or Exterior', async () => {
+      const r = await page.evaluate(() => { _geiTrade = 'plumbing'; return _byoSections(); });
+      expect(r).toEqual(['Work', 'Materials', 'Add-ons']);
+    });
+    test('a painter keeps the two words that mean something to a painter', async () => {
+      const r = await page.evaluate(() => { _geiTrade = 'painting'; return _byoSections(); });
+      expect(r).toEqual(['Interior', 'Exterior', 'Materials', 'Add-ons']);
+    });
+    test('an old estimate whose lines sit in Interior still shows Interior', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'plumbing';
+        _byoItems = [{ id: 1, section: 'Interior', label: 'Old line', price: 100, on: true }];
+        _byoCustomSections = [];
+        _byoRenderSections();
+        const html = document.getElementById('gei-byo-page')?.innerHTML || document.body.innerHTML;
+        _byoItems = [];
+        return html.includes('Interior');
+      });
+      expect(r).toBe(true);
+    });
+  });
+
+
+  // ── Nobody else's trade on his paperwork ────────────────────────────────────
+  //
+  // Owner 2026-09-06: "any trade specific branding goes out the window in this
+  // redesign, everything has to be aligned to each of the trades."
+  //
+  // getActiveTrade() used to fall back to 'painting', and every other fallback
+  // in the app chained off it, so a plumber whose business_type had not loaded,
+  // a crew session, or any path that lost the trade for a moment produced a
+  // document headed "Painting Proposal" with a palette on it.
+  test.describe('trade branding', () => {
+    test('an unknown trade is never painting', async () => {
+      const r = await page.evaluate(() => {
+        const prevA = window._activeTrade, prevC = window._config;
+        _activeTrade = null; _config = {};
+        const got = getActiveTrade();
+        _activeTrade = prevA; _config = prevC;
+        return got;
+      });
+      expect(r).toBe('general');
+    });
+
+    test('each trade names its own proposal', async () => {
+      const r = await page.evaluate(() => ({
+        plumbing: _tradeProposalLabel('plumbing'),
+        electrical: _tradeProposalLabel('electrical'),
+        hvac: _tradeProposalLabel('hvac'),
+        roofing: _tradeProposalLabel('roofing'),
+        landscaping: _tradeProposalLabel('landscaping'),
+        painting: _tradeProposalLabel('painting'),
+      }));
+      expect(r).toEqual({
+        plumbing: 'Plumbing Proposal',
+        electrical: 'Electrical Proposal',
+        hvac: 'HVAC Proposal',
+        roofing: 'Roofing Proposal',
+        landscaping: 'Landscaping Proposal',
+        painting: 'Painting Proposal',
+      });
+    });
+
+    test('a trade we cannot name says Proposal, never another trade\'s word', async () => {
+      const r = await page.evaluate(() => [
+        _tradeProposalLabel('general'),
+        _tradeProposalLabel('other'),
+        _tradeProposalLabel(''),
+        _tradeProposalLabel(null),
+        _tradeProposalLabel(undefined),
+        _tradeProposalLabel('a trade that does not exist'),
+      ]);
+      expect(r).toEqual(['Proposal', 'Proposal', 'Proposal', 'Proposal', 'Proposal', 'Proposal']);
+      expect(r.join(' ')).not.toMatch(/painting/i);
+    });
+
+    test('the lower-case eyebrow follows the same rule', async () => {
+      const r = await page.evaluate(() => [
+        _tradeProposalLabel('plumbing', { lower: true }),
+        _tradeProposalLabel('general', { lower: true }),
+      ]);
+      expect(r).toEqual(['Plumbing proposal', 'Proposal']);
+    });
+
+    test('the estimator header shows HIS trade, not the default one', async () => {
+      const r = await page.evaluate(() => {
+        clients = clients.filter(c => c.id !== 96001);
+        clients.push({ id: 96001, name: 'Brand Test', addr: '1 Brand St, Wichita, KS 67201' });
+        _activeTrade = 'plumbing';
+        openTMEstimate(getClientById(96001));
+        document.getElementById('_style-pick-ov')?.remove();
+        const title = document.getElementById('gei-trade-title')?.textContent || '';
+        const eyebrow = document.getElementById('gei-tbar-eyebrow')?.textContent || '';
+        clients = clients.filter(c => c.id !== 96001);
+        return { title: title.trim(), eyebrow };
+      });
+      expect(r.title).toContain('Plumbing');
+      expect(r.title).not.toMatch(/painting/i);
+      expect(r.eyebrow).toBe('Plumbing proposal');
+    });
+  });
+
+
+  // ── One fact, one home ──────────────────────────────────────────────────────
+  //
+  // Every one of these was a question on step 1 whose answer was already in the
+  // account or on the customer record, and the estimator threw the stored
+  // answer away and started blank. Smart starts with not asking a man something
+  // he has already told you.
+  test.describe('the estimate resolves what it already knows', () => {
+    const openFor = (client, settings) => page.evaluate(([c, st]) => {
+      Object.assign(S, st);
+      clients = clients.filter(x => x.id !== 97001);
+      clients.push(Object.assign({ id: 97001, name: 'Facts Test', addr: '1 Fact St, Wichita, KS 67201' }, c));
+      // Each open leaves a draft behind, and a second open for the same
+      // customer then asks "resume the one in progress?" through zConfirm, which
+      // an earlier describe in this file has stubbed to record and never answer.
+      // So the estimator never opened and the test read the PREVIOUS test's
+      // values. Clear the drafts and answer yes like a person would.
+      bids = bids.filter(b => b.client_id !== 97001);
+      window.zConfirm = (m, yes) => { if (typeof yes === 'function') yes(); };
+      _activeTrade = 'plumbing';
+      openTMEstimate(getClientById(97001));
+      document.getElementById('_style-pick-ov')?.remove();
+      // Mount the T&M page the way the app does, so the deposit field is the
+      // one this estimate rendered rather than whatever a previous test left in
+      // the DOM. _geiDepositPct reads that field first, by design.
+      if (typeof _tmShowPage === 'function') _tmShowPage();
+      return {
+        commercial: _geiIsCommercial, scope: _geiJobScope, newWork: _geiNewWork,
+        rate: _tmRatePerMan, deposit: _geiDepositPct(),
+        line: document.getElementById('gei-facts-text')?.textContent,
+      };
+    }, [client, settings || {}]);
+
+    test('a commercial customer opens commercial, without being asked', async () => {
+      const r = await openFor({ ptype: 'Commercial' });
+      expect(r.commercial).toBe(true);
+      expect(r.line).toContain('Commercial');
+    });
+
+    test('a new-construction customer opens as a new build', async () => {
+      const r = await openFor({ ptype: 'New construction' });
+      expect(r.scope).toBe('improvement');
+      expect(r.newWork).toBe(true);
+      expect(r.line).toContain('new build');
+    });
+
+    test('an ordinary house opens residential repair', async () => {
+      const r = await openFor({ ptype: 'Single family home' });
+      expect(r.commercial).toBe(false);
+      expect(r.scope).toBe('repair');
+      expect(r.line).toBe('Residential, repair, normal hours');
+    });
+
+    test('a customer with no property type on file still opens sanely', async () => {
+      const r = await openFor({});
+      expect(r.commercial).toBe(false);
+      expect(r.scope).toBe('repair');
+    });
+
+    test('his hourly rate comes from Settings, not zero', async () => {
+      const r = await openFor({ ptype: 'Single family home' }, { laborRate: 95 });
+      // It started at 0 every time, so he typed his own rate on every bid and
+      // Send refused him until he did.
+      expect(r.rate).toBe(95);
+    });
+
+    test('his own deposit standard is used, not a hardcoded 25', async () => {
+      const r = await openFor({ ptype: 'Single family home' }, { depositPct: 33 });
+      expect(r.deposit).toBe(33);
+    });
+
+    test('the deposit field itself opens at his standard, not the last estimate\'s', async () => {
+      // The field was built once with a hardcoded 25 and never reset, so his
+      // default was ignored AND the previous estimate's percent carried over.
+      const r = await page.evaluate(() => {
+        const el = document.getElementById('tm-deposit-pct');
+        if (!el) return { skip: true };
+        el.value = '70';                       // as if the last estimate left it here
+        S.depositPct = 33;
+        _geiApplyDepositDefault('tm');
+        return { shown: el.value };
+      });
+      if (!r.skip) expect(r.shown).toBe('33');
+    });
+
+    test('a contractor who never set one still gets 25', async () => {
+      const r = await openFor({ ptype: 'Single family home' }, { depositPct: 0 });
+      expect(r.deposit).toBe(25);
+    });
+
+    test('a junk stored deposit is ignored rather than trusted', async () => {
+      const r = await page.evaluate(() => {
+        const out = [];
+        [-5, 250, 'banana', null, undefined].forEach(v => { S.depositPct = v; out.push(_geiDepositPct()); });
+        S.depositPct = 25;
+        return out;
+      });
+      expect(r).toEqual([25, 25, 25, 25, 25]);
+    });
+
+    test('changing the deposit teaches it, so the next estimate opens there', async () => {
+      const r = await page.evaluate(() => {
+        S.depositPct = 25;
+        _geiIsTM = true;
+        const el = document.getElementById('tm-deposit-pct');
+        if (!el) return { skip: true };
+        el.value = '40';
+        _geiRememberDeposit();
+        return { learned: S.depositPct };
+      });
+      if (!r.skip) expect(r.learned).toBe(40);
+    });
+
+    test('the details are one line, and the controls are behind it', async () => {
+      const r = await openFor({ ptype: 'Single family home' });
+      const state = await page.evaluate(() => {
+        const card = () => document.getElementById('gei-facts-card');
+        const chev = () => document.getElementById('gei-facts-chev');
+        const closed = card().style.display === 'none' && chev().textContent === 'Change';
+        _geiToggleFacts();
+        const opened = card().style.display !== 'none' && chev().textContent === 'Done';
+        _geiToggleFacts();
+        return { closed, opened, backClosed: card().style.display === 'none' };
+      });
+      expect(r.line).toBeTruthy();
+      expect(state.closed).toBe(true);
+      expect(state.opened).toBe(true);
+      expect(state.backClosed).toBe(true);
+    });
+
+    test('correcting the guess updates the line he reads', async () => {
+      await openFor({ ptype: 'Single family home' });
+      const r = await page.evaluate(() => {
+        _geiSetPropertyType('commercial');
+        const a = document.getElementById('gei-facts-text').textContent;
+        _geiSetWorkType('improvement');
+        const b = document.getElementById('gei-facts-text').textContent;
+        _geiEmergency = true; _geiSyncJobTypeButtons();
+        const c = document.getElementById('gei-facts-text').textContent;
+        return { a, b, c };
+      });
+      expect(r.a).toContain('Commercial');
+      expect(r.b).toContain('new build');
+      expect(r.c).toContain('emergency rate');
+    });
+  });
+
+
+  // ── The profit gauge stops flattering him ───────────────────────────────────
+  //
+  // _estLaborCost returned 0 for anybody with no crew, on the grounds that a
+  // solo operator's labor is "already priced into the line items". That
+  // confuses revenue with cost: on a fixed price his own hours ARE the cost.
+  // Most of this market is solo, so most of this market was shown a margin
+  // computed on materials alone, which is far better than the truth. A
+  // calculator that flatters him is worse than none.
+  test.describe('profit: his own time is a cost', () => {
+    const setup = (o) => page.evaluate((x) => {
+      S.ownerPayType = 'hourly';
+      S.ownerPayRate = x.ownerRate;
+      S.laborBurden = x.burden;
+      _estCrew = [];
+      _geiIsTM = true;                 // T&M knows its hours exactly
+      _tmEstHours = x.hours;
+      return { hours: _estLaborHours(), cost: _estLaborCost(), loaded: _ownerLoadedHourly() };
+    }, o);
+
+    test('a solo job costs his hours at his loaded rate', async () => {
+      const r = await setup({ ownerRate: 50, burden: 1.3, hours: 8 });
+      expect(r.hours).toBe(8);
+      expect(r.loaded).toBe(65);       // 50 x 1.3 burden, same maths as Crew Cost
+      expect(r.cost).toBe(520);        // was 0, every time, for every solo contractor
+    });
+
+    test('no hours means no labor cost, as before', async () => {
+      const r = await setup({ ownerRate: 50, burden: 1.3, hours: 0 });
+      expect(r.cost).toBe(0);
+    });
+
+    test('a contractor who never set his pay rate is unchanged, not guessed at', async () => {
+      const r = await setup({ ownerRate: 0, burden: 1.3, hours: 8 });
+      // Better to cost nothing than to invent a rate. The gauge says so instead.
+      expect(r.cost).toBe(0);
+    });
+
+    test('and the gauge says the number is incomplete rather than looking good', async () => {
+      await setup({ ownerRate: 0, burden: 1.3, hours: 8 });
+      const msg = await page.evaluate(() => {
+        const c = document.getElementById('tm-expected-cost');
+        if (!c) return { skip: true };
+        c.value = '1000';
+        _updateMarginGauge('tm', 5000);          // 80% margin on materials alone
+        return document.getElementById('tm-gauge-msg')?.textContent || '';
+      });
+      if (msg.skip) return;
+      expect(msg).toMatch(/own time is not costed/i);
+    });
+
+    test('with his rate set, the gauge goes back to talking about margin', async () => {
+      await setup({ ownerRate: 50, burden: 1.3, hours: 8 });
+      const msg = await page.evaluate(() => {
+        const c = document.getElementById('tm-expected-cost');
+        if (!c) return { skip: true };
+        c.value = '1000';
+        _updateMarginGauge('tm', 5000);
+        return document.getElementById('tm-gauge-msg')?.textContent || '';
+      });
+      if (msg.skip) return;
+      expect(msg).not.toMatch(/own time is not costed/i);
+    });
+
+    test('crew assigned still costs the crew, not him', async () => {
+      const r = await page.evaluate(() => {
+        S.ownerPayRate = 50; S.laborBurden = 1;
+        _geiIsTM = true; _tmEstHours = 10;
+        window._hasEmployees = () => true;
+        window._empLoadedFor = () => 40;
+        _estCrew = ['a@x.com', 'b@x.com'];
+        const cost = _estLaborCost();
+        _estCrew = [];
+        return cost;
+      });
+      expect(r).toBe(800);            // two crew at 40, ten hours
+    });
+
+    test('junk pay settings never produce a junk cost', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = true; _tmEstHours = 5; _estCrew = [];
+        const out = [];
+        [null, undefined, -20, 'banana'].forEach(v => { S.ownerPayRate = v; out.push(_estLaborCost()); });
+        S.ownerPayRate = 0;
+        return out;
+      });
+      expect(r).toEqual([0, 0, 0, 0]);
+    });
+  });
+
+
+  // ── What it costs him to get there ──────────────────────────────────────────
+  //
+  // The 45-minutes-each-way service call is the job that quietly loses money,
+  // and a contractor almost never works that out on paper. We can tell him
+  // before he sends the bid because we already log every drive he makes, and
+  // the whole thing resolves without a network call.
+  test.describe('drive cost', () => {
+    const arm = (o) => page.evaluate((x) => {
+      // undefined means "never answered", which is a different state from No.
+      if (x.count === undefined) delete S.countDriveCost; else S.countDriveCost = x.count;
+      S.ownerPayRate = 60; S.laborBurden = 1; S.irsRate = 0.7;
+      S.officeLat = 37.6872; S.officeLon = -97.3301;      // Wichita
+      places = [{ id: 1, name: 'The shop', kind: 'shop', lat: 37.6872, lon: -97.3301 }];
+      mileage = x.mileage || [];
+      clients = clients.filter(c => c.id !== 98001);
+      clients.push({ id: 98001, name: 'Drive Test', addr: '1 Far Rd' });
+      _geiClientId = 98001;
+      _geiIsTM = true; _tmEstHours = x.hours != null ? x.hours : 4;
+      _estCrew = []; _byoItems = []; _geiLines = [];
+      try {
+        localStorage.setItem('zp3_nearby_geo', JSON.stringify(x.coords
+          ? { 98001: { lat: x.coords.lat, lon: x.coords.lon, addr: '1 Far Rd' } } : {}));
+      } catch (e) {}
+      return _geiDriveCost();
+    }, o);
+
+    test('a drive he has actually made is used, not a guess', async () => {
+      const r = await arm({ count: true, mileage: [
+        { from_name: 'The shop', to_name: 'Drive Test', miles: 20,
+          startedIso: '2026-09-01T13:00:00Z', endedIso: '2026-09-01T13:30:00Z' },
+        { from_name: 'Drive Test', to_name: 'The shop', miles: 22,
+          startedIso: '2026-09-02T13:00:00Z', endedIso: '2026-09-02T13:34:00Z' },
+      ] });
+      expect(r.source).toBe('driven');
+      expect(r.miles).toBe(42);            // median 21 each way, there and back
+      expect(r.minutes).toBe(64);          // median 32 min each way
+      // 64 min at $60 loaded = $64, plus 42 mi at 70c = $29.40
+      expect(r.cost).toBe(93);
+      expect(r.origin).toBe('The shop');
+    });
+
+    test('with no history it falls back to the map, and says so', async () => {
+      const r = await arm({ count: true, coords: { lat: 37.9, lon: -97.5 } });
+      expect(r.source).toBe('estimated');
+      expect(r.miles).toBeGreaterThan(0);
+      expect(r.minutes).toBeGreaterThan(0);
+    });
+
+    test('with neither it says nothing rather than inventing a drive', async () => {
+      const r = await arm({ count: true });
+      expect(r).toBeNull();
+    });
+
+    test('a three day job is three round trips', async () => {
+      const one = await arm({ count: true, hours: 4, mileage: [
+        { from_name: 'The shop', to_name: 'Drive Test', miles: 10,
+          startedIso: '2026-09-01T13:00:00Z', endedIso: '2026-09-01T13:20:00Z' }] });
+      const three = await arm({ count: true, hours: 24, mileage: [
+        { from_name: 'The shop', to_name: 'Drive Test', miles: 10,
+          startedIso: '2026-09-01T13:00:00Z', endedIso: '2026-09-01T13:20:00Z' }] });
+      expect(one.visits).toBe(1);
+      expect(three.visits).toBe(3);
+      expect(three.cost).toBe(one.cost * 3);
+    });
+
+    test('a trip charge he is already billing is netted off, never counted twice', async () => {
+      await arm({ count: true, mileage: [{ from_name: 'The shop', to_name: 'Drive Test', miles: 20,
+        startedIso: '2026-09-01T13:00:00Z', endedIso: '2026-09-01T13:30:00Z' }] });
+      const r = await page.evaluate(() => {
+        _geiLines = [{ desc: 'Trip charge', rate: 75, total: 75 }];
+        const d = _geiDriveCost();
+        _geiLines = [];
+        return d;
+      });
+      expect(r.billed).toBe(75);
+      expect(r.cost).toBe(Math.max(0, r.gross - 75));
+    });
+
+    test('a short hop counts but says nothing', async () => {
+      const r = await arm({ count: true, mileage: [
+        { from_name: 'The shop', to_name: 'Drive Test', miles: 2,
+          startedIso: '2026-09-01T13:00:00Z', endedIso: '2026-09-01T13:06:00Z' }] });
+      expect(r.quiet).toBe(true);
+      expect(r.ask).toBe(false);
+      const shown = await page.evaluate((d) => {
+        const el = document.getElementById('tm-drive-line');
+        if (!el) return { skip: true };
+        _geiRenderDriveLine('tm', d);
+        return { display: el.style.display };
+      }, r);
+      if (!shown.skip) expect(shown.display).toBe('none');
+    });
+
+    const REAL_DRIVE = [{ from_name: 'The shop', to_name: 'Drive Test', miles: 20,
+      startedIso: '2026-09-01T13:00:00Z', endedIso: '2026-09-01T13:30:00Z' }];
+
+    test('the question is asked once, with a real job on the screen', async () => {
+      await arm({ count: undefined, mileage: REAL_DRIVE });   // never answered
+      const r = await page.evaluate(() => {
+        const d = _geiDriveCost();
+        const el = document.getElementById('tm-drive-line');
+        if (!el) return { skip: true };
+        _geiRenderDriveLine('tm', d);
+        const asked = el.innerHTML.includes('Always count it');
+        _geiSetDriveCost(true);
+        const after = _geiDriveCost();
+        _geiRenderDriveLine('tm', after);
+        return { asked, askedAgain: el.innerHTML.includes('Always count it'), stored: S.countDriveCost, still: !!after };
+      });
+      if (r.skip) return;
+      expect(r.asked).toBe(true);
+      expect(r.stored).toBe(true);
+      expect(r.askedAgain).toBe(false);   // answered once, never again
+      expect(r.still).toBe(true);         // and it keeps counting
+    });
+
+    test('Never means never, and nothing is counted', async () => {
+      await arm({ count: undefined, mileage: REAL_DRIVE });
+      const r = await page.evaluate(() => {
+        _geiSetDriveCost(false);
+        return { d: _geiDriveCost(), stored: S.countDriveCost };
+      });
+      expect(r.stored).toBe(false);
+      expect(r.d).toBeNull();
+    });
+
+    test('junk places and junk mileage rows never take it down', async () => {
+      const r = await page.evaluate(() => {
+        S.countDriveCost = true;
+        const out = [];
+        [[], [null], [{ kind: 'shop' }], [{ kind: 'shop', lat: 'x', lon: 'y' }]].forEach(p => {
+          places = p; S.officeLat = 0; S.officeLon = 0;
+          try { out.push(_geiDriveCost() === null ? 'null' : 'value'); } catch (e) { out.push('threw'); }
+        });
+        places = [{ name: 'The shop', kind: 'shop', lat: 37.6872, lon: -97.3301 }];
+        mileage = [null, {}, { from_name: 'The shop', to_name: 'Drive Test', miles: 0 }];
+        try { out.push(_geiDriveCost() === null ? 'null' : 'value'); } catch (e) { out.push('threw'); }
+        return out;
+      });
+      expect(r).toEqual(['null', 'null', 'null', 'null', 'null']);
+    });
+  });
+
+
+  // ── The estimate stops asking twice (owner pass 2026-09-06) ──────────────
+  // Name/address/date moved behind one "Change" reveal, the proposal names
+  // itself from the work, and the price book learns hours from the clock so a
+  // fast-path estimate stops pricing its labor at zero.
+  test.describe('no duplicate questions on step 1', () => {
+    // Earlier suites in this file deliberately remove #gei-addr and friends to
+    // prove the missing-DOM paths, so start this block on a pristine document.
+    test.beforeAll(async () => {
+      await page.reload();
+      await waitForAppBoot(page);
+      await seedFixtures();
+    });
+
+    test('the "Name your proposal" field is gone and #gei-desc is a hidden carrier', async () => {
+      const r = await page.evaluate(() => {
+        const desc = document.getElementById('gei-desc');
+        const labels = [...document.querySelectorAll('label')].map(l => l.textContent.trim());
+        return {
+          descType: desc ? desc.type : null,
+          hasLabel: labels.includes('Name your proposal'),
+          hasLine: !!document.getElementById('gei-job-line'),
+          fieldsHidden: document.getElementById('gei-job-fields')?.style.display
+        };
+      });
+      expect(r.descType).toBe('hidden');
+      expect(r.hasLabel).toBe(false);
+      expect(r.hasLine).toBe(true);
+      expect(r.fieldsHidden).toBe('none');
+    });
+
+    test('the job line states name and address, and Change reveals the fields', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90201, name: 'Reveal Client', addr: '11 Reveal Rd' };
+        clients = clients.filter(x => x.id !== 90201).concat([c]);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        _geiJobOpen = false; _geiRenderJobLine();
+        const closed = {
+          text: document.getElementById('gei-job-text').textContent,
+          disp: document.getElementById('gei-job-fields').style.display,
+          chev: document.getElementById('gei-job-chev').textContent
+        };
+        _geiToggleJob();
+        const open = {
+          disp: document.getElementById('gei-job-fields').style.display,
+          chev: document.getElementById('gei-job-chev').textContent
+        };
+        _geiToggleJob();
+        return { closed, open, reclosed: document.getElementById('gei-job-fields').style.display };
+      });
+      expect(r.closed.text).toContain('Reveal Client');
+      expect(r.closed.text).toContain('11 Reveal Rd');
+      expect(r.closed.disp).toBe('none');
+      expect(r.closed.chev).toBe('Change');
+      expect(r.open.disp).toBe('');
+      expect(r.open.chev).toBe('Done');
+      expect(r.reclosed).toBe('none');
+    });
+
+    test('an empty job line asks for the one thing it needs, and junk fields never throw', async () => {
+      const r = await page.evaluate(() => {
+        const out = {};
+        document.getElementById('gei-client').value = '';
+        document.getElementById('gei-addr').value = '';
+        out.empty = _geiJobLineText();
+        document.getElementById('gei-client').value = '   ';
+        out.blank = _geiJobLineText();
+        const line = document.getElementById('gei-job-line');
+        const fields = document.getElementById('gei-job-fields');
+        line.remove(); fields.remove();
+        try { _geiRenderJobLine(); out.missingDom = 'ok'; } catch (e) { out.missingDom = 'threw'; }
+        return out;
+      });
+      expect(r.empty).toBe('Add who this is for');
+      expect(r.blank).toBe('Add who this is for');
+      expect(r.missingDom).toBe('ok');
+      await page.reload();
+      await waitForAppBoot(page);
+      await seedFixtures();
+    });
+  });
+
+  test.describe('the proposal names itself', () => {
+    test('one item names it, several add "+N more", nothing falls back to the trade label', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90202, name: 'Auto Name Client', addr: '12 Name Rd' };
+        clients = clients.filter(x => x.id !== 90202).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90202);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        _geiTrade = 'plumbing';
+        _byoItems = []; _geiScopeChips = [];
+        const none = _geiAutoName();
+        _byoItems = [{ id: 1, section: 'Work', label: 'Water heater replacement', price: 1400, on: true }];
+        const one = _geiAutoName();
+        _byoItems.push({ id: 2, section: 'Work', label: 'Shutoff valves', price: 180, on: true });
+        _byoItems.push({ id: 3, section: 'Materials', label: 'Expansion tank', price: 90, on: true });
+        const three = _geiAutoName();
+        _byoItems[1].on = false;
+        const twoOn = _geiAutoName();
+        return { none, one, three, twoOn, label: _tradeProposalLabel('plumbing') };
+      });
+      expect(r.none).toBe(r.label);
+      expect(r.one).toBe('Water heater replacement');
+      expect(r.three).toBe('Water heater replacement +2 more');
+      expect(r.twoOn).toBe('Water heater replacement +1 more');
+    });
+
+    test('the auto name lands on the bid, and a name he typed is never overwritten', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90203, name: 'Sticky Name Client', addr: '13 Name Rd' };
+        clients = clients.filter(x => x.id !== 90203).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90203);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2);                                       // mount the BYO page
+        _byoItems = [{ id: 1, section: 'Work', label: 'Panel upgrade', price: 2200, on: true }];
+        _geiSyncAutoName();
+        const auto = document.getElementById('gei-desc').value;
+        _editByoTitle();
+        const inp = document.querySelector('#byo-tbar-title input');
+        inp.value = 'Smith job, phase 1';
+        inp.dispatchEvent(new Event('blur'));
+        _byoItems.push({ id: 2, section: 'Work', label: 'Add EV charger', price: 900, on: true });
+        _geiSyncAutoName();
+        return { auto, after: document.getElementById('gei-desc').value, userSet: _geiDescUserSet };
+      });
+      expect(r.auto).toBe('Panel upgrade');
+      expect(r.userSet).toBe(true);
+      expect(r.after).toBe('Smith job, phase 1');
+    });
+
+    test('Option A / Option B are chosen names: they stick, and they print', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90206, name: 'Option Client', addr: '16 Option Rd' };
+        clients = clients.filter(x => x.id !== 90206).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90206);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2);
+        _byoItems = [{ id: 1, section: 'Work', label: 'Panel upgrade', price: 2200, on: true }];
+        _byoUpdateRail();
+        const beforeName = document.getElementById('gei-desc').value;
+        const aId = _geiEditBidId;
+        _byoDuplicateBid();
+        const bId = _geiEditBidId;
+        // Editing Option B must not rename it back to the work
+        _byoItems.push({ id: 2, section: 'Work', label: 'Add EV charger', price: 900, on: true });
+        _byoUpdateRail();
+        const a = bids.find(x => x.id === aId);
+        const b = bids.find(x => x.id === bId);
+        return {
+          beforeName,
+          aType: a?.type, aUserSet: a?.descUserSet,
+          bType: b?.type, bUserSet: b?.descUserSet,
+          liveDesc: document.getElementById('gei-desc').value
+        };
+      });
+      expect(r.beforeName).toBe('Panel upgrade');
+      expect(r.aType).toBe('Panel upgrade, Option A');
+      expect(r.aUserSet).toBe(true);
+      expect(r.bType).toBe('Panel upgrade, Option B');
+      expect(r.bUserSet).toBe(true);
+      expect(r.liveDesc, 'adding work to Option B must not rename it').toBe('Panel upgrade, Option B');
+    });
+
+    test('_geiAutoName survives junk state', async () => {
+      const r = await page.evaluate(() => {
+        const out = [];
+        [[null], [undefined], [{}], [{ on: true }], [{ on: true, label: '' }]].forEach(items => {
+          _byoItems = items; _geiScopeChips = [];
+          try { out.push(typeof _geiAutoName()); } catch (e) { out.push('threw'); }
+        });
+        _byoItems = []; _geiScopeChips = [null, undefined, ''];
+        try { out.push(typeof _geiAutoName()); } catch (e) { out.push('threw'); }
+        return out;
+      });
+      expect(r).toEqual(['string', 'string', 'string', 'string', 'string', 'string']);
+    });
+  });
+
+  test.describe('the price book learns hours from the clock', () => {
+    test('learned hours are the median of what it actually took', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'general';
+        S.priceBook = { general: [{ desc: 'Water heater replacement', unit: 'ea', rate: 1400, n: 3 }] };
+        const e = () => _pbFind('Water heater replacement', 'general');
+        const before = _pbHrs(e());
+        _pbLearnHours('Water heater replacement', 4, 'general');
+        const one = _pbHrs(e());
+        _pbLearnHours('Water heater replacement', 6, 'general');
+        _pbLearnHours('Water heater replacement', 5, 'general');
+        const three = _pbHrs(e());
+        for (let i = 0; i < 30; i++) _pbLearnHours('Water heater replacement', 5, 'general');
+        return { before, one, three, capped: e().h.length };
+      });
+      expect(r.before).toBe(null);
+      expect(r.one).toBe(4);
+      expect(r.three).toBe(5);
+      expect(r.capped).toBe(20);
+    });
+
+    test('junk hours and unknown lines are ignored, never thrown', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'general';
+        S.priceBook = { general: [{ desc: 'Known service', unit: 'ea', rate: 200, n: 2 }] };
+        const out = [];
+        [null, undefined, 0, -3, 'x', NaN].forEach(v => {
+          try { _pbLearnHours('Known service', v, 'general'); out.push('ok'); } catch (e) { out.push('threw'); }
+        });
+        try { _pbLearnHours('Nothing like this in the book', 4, 'general'); out.push('ok'); } catch (e) { out.push('threw'); }
+        return { out, learned: _pbHrs(_pbFind('Known service', 'general')), book: S.priceBook.general.length };
+      });
+      expect(r.out).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+      expect(r.learned).toBe(null);
+      expect(r.book).toBe(1);
+    });
+
+    test('a finished job splits its measured hours across its own lines by price', async () => {
+      const r = await page.evaluate(() => {
+        S.priceBook = { plumbing: [
+          { desc: 'Water heater replacement', unit: 'ea', rate: 1200, n: 2 },
+          { desc: 'Shutoff valves', unit: 'ea', rate: 400, n: 2 }
+        ] };
+        const bid = {
+          id: 90301, trade_type: 'plumbing', scopeChips: [],
+          byoItems: [
+            { id: 1, section: 'Work', label: 'Water heater replacement', price: 1200, on: true },
+            { id: 2, section: 'Work', label: 'Shutoff valves', price: 400, on: true },
+            { id: 3, section: 'Work', label: 'Off the bid', price: 999, on: false }
+          ]
+        };
+        const ok = _pbLearnFromJob(bid, 8);   // 8 measured hours, 1200/400 split
+        return {
+          ok,
+          heater: _pbHrs(_pbFind('Water heater replacement', 'plumbing')),
+          valves: _pbHrs(_pbFind('Shutoff valves', 'plumbing'))
+        };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.heater).toBe(6);
+      expect(r.valves).toBe(2);
+    });
+
+    test('a line that repeats a scope chip is not learned twice, and junk bids are safe', async () => {
+      const r = await page.evaluate(() => {
+        S.priceBook = { plumbing: [{ desc: 'Water heater replacement', unit: 'ea', rate: 1200, n: 2 }] };
+        const realChip = TRADE_SCOPE_ITEMS.plumbing[0];   // has an id, so it owns its own hours
+        S.priceBook.plumbing.push({ desc: realChip.label, unit: 'ea', rate: 900, n: 2 });
+        const chipBid = {
+          id: 90302, trade_type: 'plumbing', scopeChips: [realChip.label],
+          byoItems: [{ id: 1, section: 'Work', label: realChip.label, price: 1200, on: true }]
+        };
+        const skipped = _pbLearnFromJob(chipBid, 8);
+        const out = [];
+        [null, undefined, {}, { byoItems: [] }, { byoItems: [{ on: true, label: 'x', price: 0 }] }].forEach(b => {
+          try { out.push(_pbLearnFromJob(b, 5)); } catch (e) { out.push('threw'); }
+        });
+        [0, -1, null, 'x'].forEach(h => {
+          try { out.push(_pbLearnFromJob(chipBid, h)); } catch (e) { out.push('threw'); }
+        });
+        return { skipped, learned: _pbHrs(_pbFind(realChip.label, 'plumbing')), out };
+      });
+      expect(r.skipped).toBe(false);
+      expect(r.learned).toBe(null);
+      expect(r.out).toEqual([false, false, false, false, false, false, false, false, false]);
+    });
+  });
+
+  test.describe('the profit gauge counts labor on price-book lines', () => {
+    test('learned line hours land in _estLaborHours, and a chip-duplicating line is counted once', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90204, name: 'Hours Client', addr: '14 Hours Rd' };
+        clients = clients.filter(x => x.id !== 90204).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90204);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        _geiTrade = 'plumbing';
+        S.priceBook = { plumbing: [
+          { desc: 'Water heater replacement', unit: 'ea', rate: 1200, n: 2, h: [6, 6, 6] },
+          { desc: 'Shutoff valves', unit: 'ea', rate: 400, n: 2, h: [2, 2] },
+          { desc: 'Not measured yet', unit: 'ea', rate: 300, n: 2 }
+        ] };
+        _geiScopeChips = [];
+        _byoItems = [{ id: 1, section: 'Work', label: 'Water heater replacement', price: 1200, on: true }];
+        const one = _estLaborHours();
+        _byoItems.push({ id: 2, section: 'Work', label: 'Shutoff valves', price: 400, on: true });
+        const two = _estLaborHours();
+        _byoItems.push({ id: 3, section: 'Work', label: 'Not measured yet', price: 300, on: true });
+        const withUnknown = _estLaborHours();
+        const cov = _estHoursCoverage();
+        // A real scope item that has measured history: the chip owns those
+        // hours, so the identical line must not add them a second time.
+        const realChip = TRADE_SCOPE_ITEMS.plumbing[0];
+        S.scopeHistory = S.scopeHistory || {};
+        S.scopeHistory[realChip.id] = [{ hrs: 3, ts: Date.now() }];
+        _geiScopeChips = [realChip.label];
+        _byoItems.push({ id: 4, section: 'Work', label: realChip.label, price: 500, on: true });
+        const withChip = _estLaborHours();
+        return { one, two, withUnknown, cov, withChip };
+      });
+      expect(r.one).toBe(6);
+      expect(r.two).toBe(8);
+      expect(r.withUnknown).toBe(8);          // the unmeasured line adds nothing
+      expect(r.cov).toEqual({ known: 2, total: 3 });
+      expect(r.withChip).toBe(11);            // 8 + the chip's own 3, counted once
+    });
+
+    test('the gauge says so when a line has no measured hours yet', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90205, name: 'Gauge Client', addr: '15 Gauge Rd' };
+        clients = clients.filter(x => x.id !== 90205).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90205);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2);                                       // mount the BYO gauge
+        _geiTrade = 'plumbing';
+        S.priceBook = { plumbing: [{ desc: 'Water heater replacement', unit: 'ea', rate: 1200, n: 2 }] };
+        _geiScopeChips = [];
+        _byoItems = [{ id: 1, section: 'Work', label: 'Water heater replacement', price: 1200, on: true }];
+        const costEl = document.getElementById('byo-expected-cost');
+        costEl.value = '600'; delete costEl.dataset.userSet;
+        _updateMarginGauge('byo', 1200);
+        const auto = document.getElementById('byo-gauge-msg').textContent;
+        costEl.dataset.userSet = '1';
+        _updateMarginGauge('byo', 1200);
+        const his = document.getElementById('byo-gauge-msg').textContent;
+        return { auto, his };
+      });
+      expect(r.auto).toContain('Labor not counted on 1 line');
+      expect(r.his).not.toContain('Labor not counted');
+    });
+
+    test('_estHoursCoverage and _estPricedLines never throw on junk', async () => {
+      const r = await page.evaluate(() => {
+        const out = [];
+        [[null], [undefined], [{}], [{ on: true }], 'notanarray', null].forEach(items => {
+          _byoItems = Array.isArray(items) ? items : [];
+          try { _estPricedLines(); _estHoursCoverage(); out.push('ok'); } catch (e) { out.push('threw'); }
+        });
+        _geiIsTM = true;
+        const tm = _estHoursCoverage();
+        _geiIsTM = false;
+        return { out, tm };
+      });
+      expect(r.out).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+      expect(r.tm).toEqual({ known: 1, total: 1 });
+    });
+  });
+
+
+  test('no console errors after the step-1 / auto-name / learned-hours pass', async () => {
+    assertNoErrors(page, 'generic-estimate.js step-1 pass');
+  });
+
+
+  // ── The in-person close (owner 2026-09-06) ──────────────────────────────────
+  // "I want it done and prepared in person, sign on the spot." That path
+  // existed but was the weaker one: they signed a total with no document, the
+  // signature write was fire-and-forget, and the client walked away with
+  // nothing while he was still standing there.
+  test.describe('signing at the kitchen table', () => {
+    const openIp = () => page.evaluate(() => {
+      const c = { id: 90401, name: 'Kitchen Table Client', addr: '9 Table Rd', phone: '3165550199', clientToken: 'tok-90401' };
+      clients = clients.filter(x => x.id !== 90401).concat([c]);
+      bids = bids.filter(x => x.client_id !== 90401);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      goGeiStep(2);
+      _byoItems = [{ id: 1, section: 'Work', label: 'Water heater replacement', price: 1400, on: true }];
+      _byoUpdateRail();
+      const dep = document.getElementById('byo-deposit-pct');
+      if (dep) dep.value = '25';
+      _geiSignInPerson();
+      return _geiEditBidId;
+    });
+
+    test('the sheet puts the actual document in front of them, the same one the email carries', async () => {
+      const r = await openIp().then(() => page.evaluate(() => {
+        const ov = document.getElementById('_gei-ip-ov');
+        const doc = document.getElementById('gei-ip-doc');
+        const out = {
+          hasDoc: !!doc,
+          // The document, not a summary: the line item and the scope heading
+          // are both in it, exactly as the remote client would see them.
+          saysWork: !!(doc && doc.textContent.includes('Water heater replacement')),
+          saysScope: !!(doc && /Scope of work/i.test(doc.textContent)),
+          // It scrolls in its own box so the signature stays reachable
+          scrolls: !!(doc && /overflow-y:\s*auto/.test(doc.getAttribute('style') || '')),
+          stillHasPad: !!(ov && ov.querySelector('canvas')),
+          // Same HTML object the send path builds, never a second render
+          matchesSend: !!(doc && window._geiLastProposalHtml && doc.innerHTML.trim() === window._geiLastProposalHtml.trim())
+        };
+        ov?.remove();
+        return out;
+      }));
+      expect(r.hasDoc).toBe(true);
+      expect(r.saysWork).toBe(true);
+      expect(r.saysScope).toBe(true);
+      expect(r.scrolls).toBe(true);
+      expect(r.stillHasPad).toBe(true);
+      expect(r.matchesSend).toBe(true);
+    });
+
+    test('a preview built for the sheet promises nothing: no stamp, no overlay', async () => {
+      const r = await page.evaluate(async () => {
+        const c = { id: 90402, name: 'Silent Preview Client', addr: '10 Table Rd' };
+        clients = clients.filter(x => x.id !== 90402).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90402);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2);
+        _byoItems = [{ id: 1, section: 'Work', label: 'Panel upgrade', price: 2200, on: true }];
+        _byoUpdateRail();
+        const id = _geiEditBidId;
+        await sendGenericProposal(true, { silent: true });
+        return {
+          noOverlay: document.querySelectorAll('#_prop-preview-ov').length,
+          gotHtml: !!(window._geiLastProposalHtml || '').includes('Panel upgrade'),
+          noStamp: bids.find(x => x.id === id)?.validUntil || null
+        };
+      });
+      expect(r.noOverlay).toBe(0);
+      expect(r.gotHtml).toBe(true);
+      expect(r.noStamp, 'preparing the sheet must not promise a price hold').toBe(null);
+    });
+
+    test('the signature is parked on the bid before any network, and the document is kept', async () => {
+      const r = await openIp().then(bidId => page.evaluate((id) => {
+        // Sign it the way a thumb does: type the name, confirm.
+        document.getElementById('gei-ip-pname').value = 'Mike Johnson';
+        _geiConfirmInPerson();
+        const b = bids.find(x => x.id === id);
+        document.getElementById('_gei-ip-ov')?.remove();
+        return {
+          status: b.status,
+          signedAt: !!b.signedAt,
+          queued: !!b.sigPending,
+          signer: b.sigPending && b.sigPending.client_signed_name,
+          amount: b.sigPending && b.sigPending.amount,
+          hasSig: !!(b.sigPending && b.sigPending.signature_data),
+          snapshot: !!(b.proposalHtml && b.proposalHtml.includes('Water heater replacement'))
+        };
+      }, bidId));
+      expect(r.status).toBe('Closed Won');
+      expect(r.signedAt).toBe(true);
+      expect(r.queued, 'no signal must never mean no signature').toBe(true);
+      expect(r.signer).toBe('Mike Johnson');
+      expect(r.amount).toBe(1400);
+      expect(r.hasSig).toBe(true);
+      expect(r.snapshot, 'the in-person signature IS the contract, so the document is kept').toBe(true);
+    });
+
+    test('the queue drains once, clears itself, and survives a write that fails', async () => {
+      const r = await page.evaluate(async () => {
+        const b = { id: 904099, client_id: 90401, client_name: 'Kitchen Table Client', amount: 1400,
+                    sigPending: { bid_id: '904099', client_signed_name: 'Mike Johnson', amount: 1400 } };
+        bids = bids.filter(x => x.id !== 904099).concat([b]);
+        const realFrom = _supa.from.bind(_supa);
+        let inserts = 0, fail = true;
+        _supa.from = (t) => {
+          if (t !== 'signed_proposals') return realFrom(t);
+          return {
+            select: () => ({ eq: () => ({ eq: () => ({ limit: async () => ({ data: [] }) }) }) }),
+            insert: async () => { if (fail) throw new Error('offline'); inserts++; return { data: null }; },
+            update: () => ({ eq: async () => ({ data: null }) })
+          };
+        };
+        await _drainSignatureQueue();
+        const stillQueued = !!bids.find(x => x.id === 904099).sigPending;
+        fail = false;
+        await _drainSignatureQueue();
+        const afterOnline = !!bids.find(x => x.id === 904099).sigPending;
+        await _drainSignatureQueue();   // nothing left to send
+        _supa.from = realFrom;
+        bids = bids.filter(x => x.id !== 904099);
+        return { stillQueued, afterOnline, inserts };
+      });
+      expect(r.stillQueued, 'a failed write leaves it queued, on the bid').toBe(true);
+      expect(r.afterOnline, 'a good write clears it').toBe(false);
+      expect(r.inserts, 'and never sends it twice').toBe(1);
+    });
+
+    test('the confirmation offers the deposit and their copy, not just Back to home', async () => {
+      const r = await openIp().then(bidId => page.evaluate((id) => {
+        document.getElementById('gei-ip-pname').value = 'Mike Johnson';
+        _geiConfirmInPerson();
+        const html = document.getElementById('_gei-ip-ov').innerHTML;
+        document.getElementById('_gei-ip-ov').remove();
+        return {
+          collect: html.includes('_geiCollectDepositNow(' + id + ')'),
+          amount: /Collect \$350\.00 now/.test(html),
+          copy: html.includes('_geiTextSignedCopy(' + id + ')'),
+          home: html.includes('Back to home')
+        };
+      }, bidId));
+      expect(r.collect).toBe(true);
+      expect(r.amount, 'the deposit figure is on the button, not hidden behind it').toBe(true);
+      expect(r.copy).toBe(true);
+      expect(r.home).toBe(true);
+    });
+
+    test('a job with no deposit does not offer to collect nothing', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90403, name: 'No Deposit Client', addr: '11 Table Rd', clientToken: 'tok-90403' };
+        clients = clients.filter(x => x.id !== 90403).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90403);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2);
+        _byoItems = [{ id: 1, section: 'Work', label: 'Drain cleaning', price: 240, on: true }];
+        _byoUpdateRail();
+        const dep = document.getElementById('byo-deposit-pct');
+        if (dep) dep.value = '0';
+        _geiSignInPerson();
+        document.getElementById('gei-ip-pname').value = 'Nobody';
+        _geiConfirmInPerson();
+        const html = document.getElementById('_gei-ip-ov').innerHTML;
+        document.getElementById('_gei-ip-ov').remove();
+        return { collect: html.includes('_geiCollectDepositNow'), copy: html.includes('_geiTextSignedCopy') };
+      });
+      expect(r.collect).toBe(false);
+      expect(r.copy, 'they still get their copy').toBe(true);
+    });
+
+    // Settings has promised "0 = no deposit" since it shipped, and the
+    // estimator quietly returned 25 anyway, so a contractor who wanted none
+    // found out when his client's proposal asked for money up front.
+    test('a typed zero deposit is an answer, an empty field still takes his default', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90404, name: 'Deposit Pct Client', addr: '12 Table Rd' };
+        clients = clients.filter(x => x.id !== 90404).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90404);
+        S.depositPct = 40;
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2);
+        const el = document.getElementById('byo-deposit-pct');
+        const out = {};
+        el.value = '0'; out.zero = _geiDepositPct();
+        el.value = ''; out.blank = _geiDepositPct();
+        el.value = '33'; out.typed = _geiDepositPct();
+        el.value = 'abc'; out.junk = _geiDepositPct();
+        delete S.depositPct; el.value = ''; out.noDefault = _geiDepositPct();
+        return out;
+      });
+      expect(r.zero, 'zero means zero').toBe(0);
+      expect(r.blank, 'a blank field still takes his own standard').toBe(40);
+      expect(r.typed).toBe(33);
+      expect(r.junk).toBe(40);
+      expect(r.noDefault).toBe(25);
+    });
+
+    // The client he signs at the kitchen table is usually BRAND NEW, and the
+    // hub token was only ever minted inside _uploadClientHub. So at the exact
+    // moment he tapped "Text them their copy" there was no link: a race online
+    // and a flat failure with no signal.
+    test('a brand new client has a hub link the moment they sign, with no network', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90405, name: 'Brand New Client', addr: '13 Table Rd', phone: '3165550188' };
+        clients = clients.filter(x => x.id !== 90405).concat([c]);   // no clientToken at all
+        bids = bids.filter(x => x.client_id !== 90405);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2);
+        _byoItems = [{ id: 1, section: 'Work', label: 'Water heater replacement', price: 1400, on: true }];
+        _byoUpdateRail();
+        const id = _geiEditBidId;
+        const before = clients.find(x => x.id === 90405).clientToken || null;
+        _geiSignInPerson();
+        document.getElementById('gei-ip-pname').value = 'Brand New';
+        _geiConfirmInPerson();
+        document.getElementById('_gei-ip-ov')?.remove();
+        const after = clients.find(x => x.id === 90405).clientToken || null;
+        const url = _geiHubUrlFor(bids.find(x => x.id === id));
+        return { before, hasToken: !!after, url };
+      });
+      expect(r.before, 'the fixture really did start with no token').toBe(null);
+      expect(r.hasToken, 'signing mints it, no network involved').toBe(true);
+      expect(r.url).toContain('client.html?t=');
+      expect(r.url).toContain('&c=90405');
+    });
+
+    test('the hub link is the client hub, and _geiHubUrlFor mints a token on demand', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90406, name: 'No Token Client', addr: '14 Table Rd' };
+        clients = clients.filter(x => x.id !== 90406).concat([c]);
+        const b = { id: 904061, client_id: 90406, client_name: 'No Token Client', amount: 500 };
+        bids = bids.filter(x => x.id !== 904061).concat([b]);
+        const url = _geiHubUrlFor(b);
+        const out = {
+          url,
+          minted: !!clients.find(x => x.id === 90406).clientToken,
+          // never the sign page, never the raw proposal: the hub is the one
+          // place a client sees everything about their job
+          notSignPage: !/sign\.html/.test(url || ''),
+          noBid: _geiHubUrlFor({ id: 1, client_id: 999999 }),
+          nul: _geiHubUrlFor(null)
+        };
+        bids = bids.filter(x => x.id !== 904061);
+        return out;
+      });
+      expect(r.url).toContain('client.html?t=');
+      expect(r.minted).toBe(true);
+      expect(r.notSignPage).toBe(true);
+      expect(r.noBid).toBe(null);
+      expect(r.nul).toBe(null);
+    });
+
+    test('the after-signature helpers never throw on a missing bid, client or token', async () => {
+      const r = await page.evaluate(() => {
+        const out = [];
+        bids = bids.filter(x => x.id !== 904098).concat([{ id: 904098, client_id: 999999, amount: 100 }]);
+        [() => _geiTextSignedCopy(904098), () => _geiCollectDepositNow(904098),
+         () => _geiTextSignedCopy(123456789), () => _geiCollectDepositNow(123456789),
+         () => _geiTextSignedCopy(null), () => _geiCollectDepositNow(undefined),
+         () => _geiQueueSignature(null, {}), () => _geiQueueSignature({}, null)].forEach(f => {
+          try { f(); out.push('ok'); } catch (e) { out.push('threw'); }
+        });
+        bids = bids.filter(x => x.id !== 904098);
+        return out;
+      });
+      expect(r).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+    });
+
+    // THE WHOLE CLOSE, WITH THE RADIO OFF (owner 2026-09-06: "does the
+    // e-signature require connectivity to work?"). A basement, a mechanical
+    // room, a rural crawlspace: the signature is the one thing that cannot
+    // wait for a bar of signal.
+    test('the entire in-person signing works with no connectivity', async () => {
+      const r = await page.evaluate(async () => {
+        const onlineDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+        Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true });
+        const realFrom = _supa.from.bind(_supa);
+        const realStorage = _supa.storage;
+        // Every network door slammed, the way a dead spot slams them.
+        _supa.from = () => { throw new Error('offline'); };
+        try { _supa.storage = { from: () => { throw new Error('offline'); } }; } catch (_e) {}
+        try {
+          const c = { id: 90407, name: 'Basement Client', addr: '15 Table Rd', phone: '3165550177', clientToken: 'tok-90407' };
+          clients = clients.filter(x => x.id !== 90407).concat([c]);
+          bids = bids.filter(x => x.client_id !== 90407);
+          openGenericEstimate(c, null, null, { mode: 'byo' });
+          goGeiStep(2);
+          _byoItems = [{ id: 1, section: 'Work', label: 'Water heater replacement', price: 1400, on: true }];
+          _byoUpdateRail();
+          const id = _geiEditBidId;
+
+          _geiSignInPerson();
+          const doc = document.getElementById('gei-ip-doc');
+          const builtDoc = !!(doc && doc.textContent.includes('Water heater replacement'));
+          const hasPad = !!document.querySelector('#_gei-ip-ov canvas');
+
+          document.getElementById('gei-ip-pname').value = 'Basement Signer';
+          await _geiConfirmInPerson();
+          const confirmText = document.getElementById('_gei-ip-ov').textContent;
+          document.getElementById('_gei-ip-ov').remove();
+
+          const b = bids.find(x => x.id === id);
+          return {
+            builtDoc, hasPad,
+            confirmed: /contract has been signed/i.test(confirmText),
+            status: b.status,
+            signedAt: !!b.signedAt,
+            queued: !!b.sigPending,
+            snapshot: !!(b.proposalHtml || '').includes('Water heater replacement'),
+            // and the link he texts them is still a real one
+            hubUrl: _geiHubUrlFor(b)
+          };
+        } finally {
+          _supa.from = realFrom;
+          try { _supa.storage = realStorage; } catch (_e) {}
+          if (onlineDesc) Object.defineProperty(navigator, 'onLine', onlineDesc);
+        }
+      });
+      expect(r.builtDoc, 'the document renders from memory, nothing is fetched').toBe(true);
+      expect(r.hasPad).toBe(true);
+      expect(r.confirmed).toBe(true);
+      expect(r.status).toBe('Closed Won');
+      expect(r.signedAt).toBe(true);
+      expect(r.queued, 'the signature waits on the bid for signal').toBe(true);
+      expect(r.snapshot, 'the document they signed is kept, offline included').toBe(true);
+      expect(r.hubUrl).toContain('client.html?t=');
+    });
+
+    test('no console errors across the in-person close', async () => {
+      assertNoErrors(page, 'in-person close');
+    });
+  });
+
 });

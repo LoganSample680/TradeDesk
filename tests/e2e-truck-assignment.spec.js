@@ -76,38 +76,30 @@ test.describe('Truck assignment', () => {
 
   // Drive shop -> job as `empId`, and return the mileage rows and drive legs it
   // produced. This is the unit the whole feature exists to get right.
+  //
+  // The drive is DERIVED now (owner 2026-09-02, js/geo-derive.js): the day
+  // deriver produces the leg from the tape and the fixes, and the vehicle rule
+  // is applied to that leg by _geoDeriveVehicleRows (js/geo-track.js), the
+  // same function the live derive and the boot rebuild go through. So the
+  // test hands it one derived leg, shop to job, and reads back the rows.
   const driveAs = (empId, setup) => page.evaluate(async (a) => {
     const realUser = _supaUser, realEmp = _isEmployee, realRec = _employeeRecord;
-    const realRoute = _routeDistance, realEnq = _geoEnqueue;
-    const legs = [];
     _supaUser = { id: 'u-' + a.empId }; _isEmployee = true;
     _employeeRecord = { id: a.empId, name: a.empId };
-    window._routeDistance = _routeDistance = async () => ({ miles: 10, mins: 18 });
-    const origEnq = _geoEnqueue;
-    _geoEnqueue = (tbl, row) => { legs.push(row); return origEnq(tbl, row); };
-    const before = mileage.length;
     try {
-      _geoPingBusy = false;
-      _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-      _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-      _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-      _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null; _geoLegOrigin = null;
-      _geoHomeDwell = null; _geoWasAtHome = false;
-      try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
-      const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-      await ping(a.SHOP);
-      await ping(a.ROAD);
-      if (_geoDriveStartedAt) _geoDriveStartedAt = new Date(Date.now() - 22 * 60000).toISOString();
-      await ping(a.JOB);
-      await new Promise(r => setTimeout(r, 30));
-      const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+      if (a.setup) eval(a.setup);
+      const day = '2026-09-01', t0 = Date.parse('2026-09-01T13:00:00Z');
+      const from = { id: 'shop', kind: 'shop', name: 'Shop', lat: a.SHOP.lat, lng: a.SHOP.lon };
+      const to = { id: 'job-1', kind: 'job', name: 'Job', jobId: 1, lat: a.JOB.lat, lng: a.JOB.lon };
+      const res = { day, dwells: [], legs: [{ id: 'j-' + a.empId, from, to, startTs: t0, endTs: t0 + 22 * 60000,
+        minutes: 22, miles: 10, milesFrom: 'path', collapsed: false, stops: 0 }] };
+      const rows = _geoDeriveVehicleRows(geoDeriveRows(res, { contractorId: 'owner', employeeId: _supaUser.id }));
       return {
-        trips: rows.map(m => ({ veh: m.vehicleId, miles: m.miles, reimbursable: !!m.reimbursable })),
-        drives: legs.filter(l => /^drive/.test(l.source || '')).map(l => ({ source: l.source, minutes: l.minutes })),
+        trips: rows.td_mileage.map(m => ({ veh: m.vehicleId, miles: m.miles, reimbursable: !!m.reimbursable, deductible: m.deductible !== false })),
+        drives: rows.job_time_entries.filter(l => /^drive/.test(l.source || '')).map(l => ({ source: l.source, minutes: l.minutes })),
       };
     } finally {
       _supaUser = realUser; _isEmployee = realEmp; _employeeRecord = realRec;
-      window._routeDistance = _routeDistance = realRoute; _geoEnqueue = realEnq;
     }
   }, { empId, SHOP, JOB, ROAD, setup });
 

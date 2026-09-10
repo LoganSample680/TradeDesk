@@ -19,7 +19,7 @@
 // bounds abuse at worst-case 3 wakes/hour, the same order as organic wakes.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { APNS_HOST, APNS_TOPIC, apnsConfigured, apnsJwt } from "../_shared/apns.ts";
+import { apnsConfigured, apnsJwt, apnsSend } from "../_shared/apns.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -55,24 +55,16 @@ serve(async (req) => {
     let sent = 0;
     await Promise.all(rows.map(async (r) => {
       try {
-        const res = await fetch(`${APNS_HOST}/3/device/${r.token}`, {
-          method: "POST",
-          headers: {
-            authorization: `bearer ${jwt}`,
-            "apns-topic": APNS_TOPIC,
-            // Background pushes MUST be priority 5; Apple rejects 10 for
-            // content-available-only payloads. Expire before the next tick:
-            // a nudge delivered 40 minutes late is the next nudge's job.
-            "apns-push-type": "background",
-            "apns-priority": "5",
-            "apns-expiration": String(Math.floor(Date.now() / 1000) + 1500),
-          },
-          body: payload,
+        // Background pushes MUST be priority 5; Apple rejects 10 for
+        // content-available-only payloads. Expire before the next tick: a
+        // nudge delivered 40 minutes late is the next nudge's job.
+        const out = await apnsSend(jwt, r.token, payload, {
+          "apns-push-type": "background",
+          "apns-priority": "5",
+          "apns-expiration": String(Math.floor(Date.now() / 1000) + 1500),
         });
-        if (res.ok) { sent++; return; }
-        const txt = await res.text();
-        if (res.status === 410 || /BadDeviceToken|Unregistered/i.test(txt)) dead.push(r.token);
-        else console.error(`[push-geo-ping] ${res.status} ${txt.slice(0, 200)}`);
+        if (out.ok) sent++;
+        else if (out.dead) dead.push(r.token);
       } catch (e) {
         console.error(`[push-geo-ping] ${String(e).slice(0, 200)}`);
       }

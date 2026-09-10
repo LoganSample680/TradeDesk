@@ -199,7 +199,7 @@ function _buildClientHubSnapshot(clientId){
     const propKey=b.proposalKey||b.signingKey||(_pendingSignToken?.bidId===b.id?_pendingSignToken.proposalKey:null)||null;
     const signBase=signToken?baseUrl+'sign.html?t='+signToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
     const _hubType=(b.type==='Build Your Own Estimate'?'Custom Estimate':b.type)||'Estimate';
-    const _hubCOs=(b.changeOrders||[]).map(co=>({id:co.id,coNum:co.coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,status:co.status||(co.signedAt?'signed':'pending_client'),sentAt:co.sentAt||'',signedAt:co.signedAt||'',signerName:co.signerName||'',sigData:co.sigData||''}));
+    const _hubCOs=(b.changeOrders||[]).map(co=>({id:co.id,coNum:co.coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,status:co.status||(co.signedAt?'signed':co.declinedAt?'declined':'pending_client'),sentAt:co.sentAt||'',signedAt:co.signedAt||'',declinedAt:co.declinedAt||'',declineNote:co.declineNote||'',signerName:co.signerName||'',sigData:co.sigData||'',overrun:co.overrun||null,lines:co.lines||[],addedDays:co.addedDays||0,photos:co.photos||[]}));
     const _fcDaysElapsed=typeof window._fcTestDays==="number"?window._fcTestDays:Math.floor((Date.now()-new Date(b.completion_date||b.signedAt||Date.now()).getTime())/86400000);
     const _fcDaysOverdue=Math.max(0,_fcDaysElapsed-30);
     const _fcRate=(S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5)/100/30;
@@ -674,6 +674,11 @@ function _commitProposalSent(){
     try{if(typeof logLifecycle==='function')logLifecycle('proposal_sent',{bidId:bid.id,clientId:bid.client_id});}catch(_e){}
     if(!bid.followupStage)bid.followupStage=1;
     bid.followup=addDays(todayKey(),3);
+    // The price-hold date is stamped at the moment it is promised. Paths that
+    // build their own document (generic-estimate) have already set it; this is
+    // the backstop for every other send, and it is never re-stamped, or a
+    // resend would quietly hand the client another full window.
+    if(!bid.validUntil)bid.validUntil=addDays(todayKey(),typeof _estValidDays==='function'?_estValidDays():30);
     // Snapshot the exact proposal HTML the client will sign, required for legal record
     const proposalEl=document.getElementById('est-proposal');
     if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML;
@@ -1337,63 +1342,195 @@ function showWorkflowGate(msg,btnLabel,btnAction){
 }
 // ── Change Order System ───────────────────────────────────────────────────────
 let _coBidId=null,_coClientId=null,_coType=null;
+// The three facts behind a change order that came from a job running long
+// (js/jobs.js _jobOverrun): added hours, added crew, added days. Null for a
+// change order the contractor wrote by hand, which is most of them. Same
+// module-state shape as _coType above rather than a parallel mechanism.
+let _coOverrun=null;
+
+// The job ran long: open the change order already knowing why. The contractor
+// types nothing, he reads it, adjusts the number if he wants, and signs.
+function openOverrunCO(jobId,clientId){
+  const j=(typeof jobs!=='undefined'?jobs:[]).find(x=>x.id===jobId);
+  const o=(typeof _jobOverrun==='function')?_jobOverrun(jobId):null;
+  if(!j||!o||!o.isOver)return;
+  const bidId=j.bid_id;
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  showChangeOrderModal(bidId,clientId==null?b.client_id:clientId);
+  _coOverrun={addedHours:o.overHrs,addedCrew:o.extraCrew,addedDays:o.extraDays,
+    estHours:o.estHrs,actualHours:o.actualHrs,estCrew:o.estCrew,actualCrew:o.actualCrew,
+    estDays:o.estDays,actualDays:o.actualDays,rate:o.rate,jobId};
+  // Deliberately SHORT. The document prints estimated beside actual right
+  // below this (_coOverrunHTML), so restating the same three numbers in prose
+  // reads like padding, and a near-empty line is the invitation for him to
+  // type the real reason the job grew.
+  const d=document.getElementById('co-desc');
+  if(d)d.value='Work beyond the original estimate.';
+  setCOType('add',bidId);
+  const a=document.getElementById('co-amount');
+  // _moneyStr is the app's own pre-fill format for a money input (utils.js),
+  // the same one every other programmatic fill uses. Do not hand-format here.
+  if(a&&o.suggested>0){a.value=_moneyStr(o.suggested);_previewCO(bidId);}
+}
+
+// The contract as it stands, and how it got there. b.amount already rolls
+// forward with every signed change order, so the ORIGINAL number is only
+// recoverable from the first change order's own originalAmount. Without this
+// the client's contract silently becomes a different number than the one he
+// signed, which is the single thing homeowners say makes them fight a change
+// order (research 2026-09-07).
+function _coContractHistory(b){
+  const signed=(b&&b.changeOrders||[]).filter(co=>co&&co.signedAt).sort((a,c)=>(a.coNum||0)-(c.coNum||0));
+  return {
+    original:signed.length?(signed[0].originalAmount||0):(b&&b.amount||0),
+    cos:signed.map(co=>({coNum:co.coNum,delta:co.delta!=null?co.delta:(co.type==='sub'?-(co.amount||0):(co.amount||0))})),
+    current:(b&&b.amount)||0
+  };
+}
+// One line: "Original $2,450 · CO #1 +$1,170". Empty when nothing has changed
+// yet, so a first change order does not print a history of itself.
+function _coHistoryLine(b){
+  const h=_coContractHistory(b);
+  if(!h.cos.length)return '';
+  return 'Original '+fmt(h.original)+' · '+h.cos.map(c=>'CO #'+c.coNum+' '+(c.delta<0?'-':'+')+fmt(Math.abs(c.delta))).join(' · ');
+}
+
+// Optional line breakdown. A single lump sum with no breakdown is the fastest
+// way to make a homeowner suspicious (research 2026-09-07), so the rows are one
+// tap away, and the dollar field becomes their sum the moment any row is used.
+let _coLines=[],_coDays=0,_coPhotoIds=[];
+function _coLinesTotal(){return Math.round(_coLines.reduce((s,l)=>s+(Number(l.amt)||0),0)*100)/100;}
+function _coRenderLines(bidId){
+  const wrap=document.getElementById('co-lines');if(!wrap)return;
+  wrap.innerHTML=_coLines.map((l,i)=>
+    '<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">'+
+      '<input value="'+escHtml(l.desc||'')+'" placeholder="What it is" oninput="_coLines['+i+'].desc=this.value" '+
+        'style="flex:1;min-width:0;font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+
+      '<input value="'+escHtml(l.amt==null?'':String(l.amt))+'" placeholder="0" inputmode="decimal" '+
+        'oninput="_coLines['+i+'].amt=parseFloat(this.value.replace(/,/g,\'\'))||0;_coSyncLines('+bidId+')" '+
+        'style="width:92px;flex-shrink:0;font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;text-align:right">'+
+      '<button onclick="_coRmLine('+i+','+bidId+')" aria-label="Remove line" '+
+        'style="flex-shrink:0;width:34px;height:34px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:16px;cursor:pointer;font-family:inherit;line-height:1">×</button>'+
+    '</div>').join('')+
+    '<button onclick="_coAddLine('+bidId+')" style="width:100%;padding:9px;border-radius:var(--r);border:1px dashed var(--border2);background:none;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">+ Add a line</button>';
+}
+function _coAddLine(bidId){_coLines.push({desc:'',amt:null});_coRenderLines(bidId);_coSyncLines(bidId);}
+function _coRmLine(i,bidId){_coLines.splice(i,1);_coRenderLines(bidId);_coSyncLines(bidId);}
+// Lines own the number once any of them carries one, so the two can never
+// disagree on the document the client signs.
+function _coSyncLines(bidId){
+  const a=document.getElementById('co-amount');if(!a)return;
+  if(_coLines.some(l=>Number(l.amt)>0)){
+    a.value=_moneyStr(_coLinesTotal());
+    a.readOnly=true;a.style.opacity='.75';
+  }else{
+    a.readOnly=false;a.style.opacity='1';
+  }
+  _previewCO(bidId);
+}
+function _coSetDays(n,bidId){
+  _coDays=n;
+  document.querySelectorAll('[data-co-day]').forEach(b=>{
+    const on=Number(b.dataset.coDay)===n;
+    b.style.borderColor=on?'var(--blue)':'var(--border2)';
+    b.style.background=on?'var(--blue-lt)':'var(--bg2)';
+    b.style.color=on?'var(--blue-dk)':'var(--text)';
+    b.style.fontWeight=on?'800':'600';
+  });
+  _previewCO(bidId);
+}
+function _coTogglePhoto(id,el){
+  const i=_coPhotoIds.indexOf(id);
+  if(i>=0)_coPhotoIds.splice(i,1);else _coPhotoIds.push(id);
+  const on=_coPhotoIds.indexOf(id)>=0;
+  el.style.outline=on?'3px solid var(--blue)':'none';
+  el.style.opacity=on?'1':'.55';
+}
+// Every photo already attached to this job, newest first. Nothing is uploaded
+// here: "found this behind the wall" is a photo he already took, and making him
+// take it again is how the feature goes unused.
+function _coJobPhotos(b){
+  const list=(typeof photos!=='undefined'?photos:[]).filter(p=>p&&p.client_id===b.client_id&&(p.thumbUrl||p.url));
+  return list.sort((x,y)=>String(y.uploadedAt||'').localeCompare(String(x.uploadedAt||''))).slice(0,12);
+}
 
 function showChangeOrderModal(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
-  _coBidId=bidId;_coClientId=clientId;_coType=null;
+  _coBidId=bidId;_coClientId=clientId;_coType=null;_coOverrun=null;
+  _coLines=[];_coDays=0;_coPhotoIds=[];
   const c=getClientById(b.client_id)||{name:b.client_name||'Client'};
   const coNum=(b.changeOrders||[]).length+1;
-  // Build original scope summary
-  const surfLines=(b.surfaces||[]).filter(s=>s.qty>0).map(s=>{
-    const t=SURF_TYPES.find(x=>x.v===s.type);
-    return t?t.label+(s.room?' ('+s.room.split(', ')[0]+')':''):'';
-  }).filter(Boolean);
-  const scopeSummary=surfLines.length?surfLines.slice(0,4).join(', ')+(surfLines.length>4?' + '+(surfLines.length-4)+' more':''):'No surfaces recorded';
+  const histLine=_coHistoryLine(b);
+  const jobPhotos=_coJobPhotos(b);
 
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   const box=document.createElement('div');
   box.style.cssText='background:var(--bg);border-radius:var(--rl);width:100%;max-width:500px;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px;box-sizing:border-box';
   box.innerHTML=
-    // Header
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">'+
-      '<div>'+
+      '<div style="min-width:0">'+
         '<div style="font-size:18px;font-weight:800">Change Order #'+coNum+'</div>'+
         '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+escHtml(c.name)+'</div>'+
       '</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text3);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">'+svgIcon('✕',{size:16})+'</button>'+
     '</div>'+
-    // Original contract box
+    // Where the contract stands, and how it got there.
     '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:6px">Original Contract</div>'+
-      '<div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">'+fmt(b.amount)+'</div>'+
-      '<div style="font-size:11px;color:var(--text3);line-height:1.4">'+escHtml(scopeSummary)+'</div>'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:6px">Contract now</div>'+
+      '<div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:'+(histLine?'4px':'0')+'">'+fmt(b.amount)+'</div>'+
+      (histLine?'<div style="font-size:11px;color:var(--text3);line-height:1.4">'+escHtml(histLine)+'</div>':'')+
     '</div>'+
-    // Description
+    // What changed
     '<div class="f" style="margin-bottom:12px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">What changed? <span style="color:#A32D2D">*</span></label>'+
-      '<textarea id="co-desc" placeholder="e.g. Added master bedroom ceiling, client requested accent wall in hallway..." '+
+      '<textarea id="co-desc" placeholder="e.g. Opened the wall and found a corroded stack, replaced 6 ft of cast iron" '+
         'style="width:100%;min-height:72px;font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box;line-height:1.5"></textarea>'+
     '</div>'+
-    // Add / Reduce toggle
+    // Direction
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
-      '<button id="co-add-btn" onclick="setCOType(\'add\','+bidId+')" style="padding:11px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">+ Add work</button>'+
-      '<button id="co-sub-btn" onclick="setCOType(\'sub\','+bidId+')" style="padding:11px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">− Remove work</button>'+
+      '<button id="co-add-btn" onclick="setCOType(\'add\','+bidId+')" style="padding:11px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);min-height:44px">+ Add work</button>'+
+      '<button id="co-sub-btn" onclick="setCOType(\'sub\','+bidId+')" style="padding:11px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);min-height:44px">− Remove work</button>'+
     '</div>'+
-    // Amount input (hidden until type selected)
-    '<div id="co-amount-wrap" style="display:none;margin-bottom:16px">'+
+    // Everything below stays hidden until he picks a direction, so the first
+    // screen is three things, not ten.
+    '<div id="co-amount-wrap" style="display:none">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:6px">Dollar amount <span style="color:#A32D2D">*</span></label>'+
       '<input type="text" id="co-amount" placeholder="0" inputmode="decimal" '+
         'style="font-size:26px;font-weight:800;padding:10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);text-align:center;font-family:inherit" '+
         'oninput="_fmtMoneyInput(this);_previewCO('+bidId+')">'+
       '<div id="co-preview" style="font-size:14px;font-weight:700;text-align:center;min-height:22px;margin-top:10px;padding:10px;background:var(--bg2);border-radius:var(--r)"></div>'+
+      // Line breakdown
+      '<div style="margin-top:14px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Break it into lines <span style="font-weight:600;text-transform:none;letter-spacing:0">(optional, but it is what stops the pushback)</span></div>'+
+        '<div id="co-lines"></div>'+
+      '</div>'+
+      // Schedule impact
+      '<div style="margin-top:16px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Does this add days?</div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+          [0,1,2,3,5].map(d=>'<button data-co-day="'+d+'" onclick="_coSetDays('+d+','+bidId+')" '+
+            'style="flex:1;min-width:56px;padding:10px 6px;border-radius:var(--r);border:2px solid '+(d===0?'var(--blue)':'var(--border2)')+';background:'+(d===0?'var(--blue-lt)':'var(--bg2)')+';color:'+(d===0?'var(--blue-dk)':'var(--text)')+';font-size:13px;font-weight:'+(d===0?'800':'600')+';cursor:pointer;font-family:inherit;min-height:44px">'+(d===0?'None':'+'+d+'d')+'</button>').join('')+
+        '</div>'+
+      '</div>'+
+      // Photos already on the job
+      (jobPhotos.length?
+        '<div style="margin-top:16px">'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Show them why <span style="font-weight:600;text-transform:none;letter-spacing:0">(tap to include)</span></div>'+
+          '<div style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:3px 0 6px">'+
+            jobPhotos.map(p=>'<img src="'+escHtml(_cdnPhoto(p.thumbUrl||p.url))+'" onclick="_coTogglePhoto('+JSON.stringify(String(p.id))+',this)" '+
+              'style="width:74px;height:74px;flex-shrink:0;object-fit:cover;border-radius:var(--r);opacity:.55;cursor:pointer;outline:none" '+
+              'onerror="_imgFallback(this)">').join('')+
+          '</div>'+
+        '</div>'
+      :'')+
     '</div>'+
-    // Buttons
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
-      '<button onclick="_reviewCO('+bidId+','+clientId+')" style="padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Review &amp; Sign →</button>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px">Cancel</button>'+
+      '<button onclick="_reviewCO('+bidId+','+clientId+')" style="padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Review &amp; Sign →</button>'+
     '</div>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  _coRenderLines(bidId);
 }
 
 function setCOType(t,bidId){
@@ -1416,7 +1553,8 @@ function _previewCO(bidId){
   const color=_coType==='add'?'var(--blue)':'#A32D2D';
   pr.innerHTML='<span style="color:var(--text3)">'+fmt(b.amount)+'</span>'+
     ' <span style="color:'+color+'">'+arrow+' '+delta+'</span>'+
-    ' = <span style="font-size:18px;color:var(--text)">'+fmt(newTotal)+'</span>';
+    ' = <span style="font-size:18px;color:var(--text)">'+fmt(newTotal)+'</span>'+
+    (_coDays>0?'<div style="font-size:12px;font-weight:600;color:var(--text3);margin-top:4px">+'+_coDays+' day'+(_coDays===1?'':'s')+' on the schedule</div>':'');
 }
 
 function _reviewCO(bidId,clientId){
@@ -1430,14 +1568,105 @@ function _reviewCO(bidId,clientId){
   const coNum=(b.changeOrders||[]).length+1;
   const delta=_coType==='add'?amt:-amt;
   const newTotal=Math.max(0,Math.round((b.amount+delta)*100)/100);
-  const coData={desc,type:_coType,amount:amt,delta,originalAmount:b.amount,newAmount:newTotal,coNum};
+  const lines=_coLines.filter(l=>l&&(String(l.desc||'').trim()||Number(l.amt)>0))
+    .map(l=>({desc:String(l.desc||'').trim()||'Additional work',amt:Math.round((Number(l.amt)||0)*100)/100}));
+  const photoUrls=_coPhotoIds.map(id=>{
+    const p=(typeof photos!=='undefined'?photos:[]).find(x=>String(x.id)===String(id));
+    return p?(p.thumbUrl||p.url):'';
+  }).filter(Boolean);
+  const coData={desc,type:_coType,amount:amt,delta,originalAmount:b.amount,newAmount:newTotal,coNum,
+    lines,addedDays:_coDays||0,photos:photoUrls,history:_coContractHistory(b),
+    overrun:(_coType==='add'&&_coOverrun)?_coOverrun:null};
   // Show the CO document for signing
   document.querySelector('.zmodal-overlay')?.remove();
   _showCOSignDocument(b,c,coData,clientId);
 }
 
+// Extend the job this contract runs on by the days the client just approved.
+// The active job if there is one, else the next one booked: the same "job in
+// play" rule the Running long card uses, so both features agree on which job
+// a change order is about.
+function _coApplyDays(b,days){
+  const d=Number(days)||0;
+  if(!b||d<=0||typeof jobs==='undefined')return;
+  const tk=typeof todayKey==='function'?todayKey():'';
+  const mine=jobs.filter(j=>j.bid_id===b.id&&j.status!=='canceled'&&j.status!=='completed');
+  const j=mine.filter(x=>(x.start||'')>=tk).sort((x,y)=>(x.start||'').localeCompare(y.start||''))[0]
+    ||mine.sort((x,y)=>(y.start||'').localeCompare(x.start||''))[0];
+  if(!j)return;
+  j.days=(parseInt(j.days)||1)+d;
+  if(typeof renderCalendar==='function')renderCalendar();
+}
+
+// The chain: what he signed, every change order since, where it stands now.
+// Printed only once there IS a chain, so a first change order does not show a
+// one-row history of itself.
+function _coHistoryHTML(h){
+  if(!h||!h.cos||!h.cos.length)return '';
+  return '<div style="font-size:12px;color:#6b7280;line-height:1.7;margin-bottom:6px">'+
+    'Signed '+fmt(h.original)+
+    h.cos.map(c=>' · CO #'+c.coNum+' '+(c.delta<0?'-':'+')+fmt(Math.abs(c.delta))).join('')+
+  '</div>';
+}
+// Itemized change, when he broke it out. Rows carry the sign of the change
+// itself, so a removal reads as money coming off, not as a second charge.
+function _coLinesHTML(lines,color,type){
+  if(!lines||!lines.length)return '';
+  const sign=type==='sub'?'-':'+';
+  return '<div style="margin-bottom:10px">'+
+    lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6">'+
+      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+escHtml(l.desc)+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:#111;white-space:nowrap">'+sign+fmt(l.amt)+'</span>'+
+    '</div>').join('')+
+    '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0 0">'+
+      '<span style="font-size:13px;font-weight:800;color:#111">Adjustment</span>'+
+      '<span style="font-size:16px;font-weight:800;color:'+color+'">'+sign+fmt(lines.reduce((s,l)=>s+(Number(l.amt)||0),0))+'</span>'+
+    '</div>'+
+  '</div>';
+}
+function _coPhotosHTML(urls){
+  if(!urls||!urls.length)return '';
+  return '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:10px">What We Found</div>'+
+    '<div style="display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px">'+
+      urls.map(u=>'<img src="'+escHtml(u)+'" style="width:132px;height:132px;flex-shrink:0;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb">').join('')+
+    '</div>'+
+  '</div>';
+}
+function _coDaysHTML(days){
+  const d=Number(days)||0;
+  if(d<=0)return '';
+  return '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Schedule</div>'+
+    '<div style="font-size:14px;color:#111;line-height:1.5">This change adds <strong>'+d+' working day'+(d===1?'':'s')+'</strong> to the job.</div>'+
+  '</div>';
+}
+
+// Estimated vs actual, three rows, on the client's copy. Printed only for the
+// facts that actually moved: a job that took longer with the same crew on the
+// same days says exactly that, and does not pad itself with two "no change"
+// rows the client has to read past.
+function _coOverrunHTML(o){
+  if(!o)return '';
+  const _h=v=>(typeof _fmtHrsShort==='function')?_fmtHrsShort(v):(Math.round((+v||0)*10)/10)+' hrs';
+  const rows=[];
+  if((+o.addedHours||0)>0)rows.push(['Labor on site',_h(o.estHours),_h(o.actualHours)]);
+  if((+o.addedCrew||0)>0)rows.push(['Crew',(o.estCrew||1)+' on the estimate',(o.actualCrew||0)+' on the job']);
+  if((+o.addedDays||0)>0)rows.push(['Days on site',(o.estDays||1)+' booked',(o.actualDays||0)+' worked']);
+  if(!rows.length)return '';
+  return '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:10px">What changed on site</div>'+
+    rows.map(r=>'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0">'+
+      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+escHtml(r[0])+'</span>'+
+      '<span style="font-size:12px;color:#6b7280;text-decoration:line-through;white-space:nowrap">'+escHtml(String(r[1]))+'</span>'+
+      '<span style="font-size:13px;font-weight:800;color:#111;white-space:nowrap">'+escHtml(String(r[2]))+'</span>'+
+    '</div>').join('')+
+    ((+o.rate||0)>0&&(+o.addedHours||0)>0?'<div style="font-size:11px;color:#6b7280;margin-top:8px">Additional labor billed at $'+(+o.rate)+'/hr.</div>':'')+
+  '</div>';
+}
+
 function _showCOSignDocument(b,c,coData,clientId){
-  const {desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
+  const {desc,type,amount,delta,originalAmount,newAmount,coNum,overrun,lines,addedDays,photos:coPhotos,history}=coData;
   const biz=S.bname||'TradeDesk';
   const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   // Build scope summary from original bid
@@ -1462,21 +1691,37 @@ function _showCOSignDocument(b,c,coData,clientId){
     '<div style="padding:20px 24px">'+
       // CO number badge
       '<div style="display:inline-block;background:#EBF2FB;color:#1a365d;font-size:12px;font-weight:800;padding:4px 12px;border-radius:20px;margin-bottom:18px">CO #'+coNum+'</div>'+
-      // Original contract
+      // The contract as it stands, and every step that got it here.
       '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Original Contract</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">'+((history&&history.cos&&history.cos.length)?'Contract To Date':'Original Contract')+'</div>'+
         '<div style="font-size:24px;font-weight:800;color:#111;margin-bottom:6px">'+fmt(originalAmount)+'</div>'+
+        _coHistoryHTML(history)+
         (surfLines.length?'<div style="font-size:12px;color:#6b7280;line-height:1.5">'+escHtml(surfLines.join(' · '))+'</div>':'')+
       '</div>'+
       // Change description
       '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Change Requested</div>'+
         '<div style="font-size:14px;color:#111;line-height:1.5;margin-bottom:10px">'+escHtml(desc)+'</div>'+
-        '<div style="display:flex;align-items:center;gap:8px">'+
-          '<span style="font-size:13px;color:#6b7280">Adjustment:</span>'+
-          '<span style="font-size:16px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>'+
-        '</div>'+
+        // The breakdown, when he gave one. A lump sum is what a homeowner
+        // argues with; itemized lines are what they read and accept.
+        _coLinesHTML(lines,deltaColor,type)+
+        (lines&&lines.length?'':
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<span style="font-size:13px;color:#6b7280">Adjustment:</span>'+
+            '<span style="font-size:16px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>'+
+          '</div>')+
       '</div>'+
+      // Proof, in the client's own house. Photos he already took on this job.
+      _coPhotosHTML(coPhotos)+
+      // Schedule impact is a contract term, not a footnote: a client agreeing
+      // to more money is also agreeing to a later finish, and saying so here is
+      // what stops the second argument.
+      _coDaysHTML(addedDays)+
+      // WHY the number moved, when the job's own clock is the reason. A client
+      // asked to sign a bigger number deserves the three facts behind it side
+      // by side with what he agreed to, not a sentence asking him to trust it.
+      // Absent on a hand-written change order, which has no clock behind it.
+      (overrun?_coOverrunHTML(overrun):'')+
       // New total
       '<div style="background:#f0fdf4;border:2px solid #86efac;border-radius:10px;padding:14px 18px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center">'+
         '<div style="font-size:13px;font-weight:700;color:#166534">New Contract Total</div>'+
@@ -1519,14 +1764,18 @@ function _submitCOSign(bidId,clientId){
   const ov=document.getElementById('co-sign-canvas')?.closest('[style*=fixed]');
   const coData=ov?.dataset?.coData?JSON.parse(ov.dataset.coData):null;
   if(!coData)return;
-  const{desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
+  const{desc,type,amount,delta,originalAmount,newAmount,coNum,overrun,lines,addedDays,photos:coPhotos}=coData;
   // Save CO
   if(!b.changeOrders)b.changeOrders=[];
   b.changeOrders.push({
     id:_newId(),coNum,date:todayKey(),desc,type,amount,delta,
-    originalAmount,newAmount,
+    originalAmount,newAmount,overrun:overrun||null,
+    lines:lines||[],addedDays:addedDays||0,photos:coPhotos||[],
     signedAt:new Date().toISOString(),signerName,sigData
   });
+  // A signed change order that adds days moves the schedule, or the client
+  // agreed to a date the calendar never heard about.
+  _coApplyDays(b,addedDays);
   b.amount=newAmount;
   saveAll();renderDash();renderJobsPage();
   ov?.remove();
@@ -1543,9 +1792,10 @@ async function _sendCOToHub(bidId,clientId){
   const ov=document.getElementById('co-sign-canvas')?.closest('[style*=fixed]');
   const coData=ov?.dataset?.coData?JSON.parse(ov.dataset.coData):null;
   if(!coData)return;
-  const{desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
+  const{desc,type,amount,delta,originalAmount,newAmount,coNum,overrun,lines,addedDays,photos:coPhotos}=coData;
   if(!b.changeOrders)b.changeOrders=[];
-  const co={id:_newId(),coNum,date:todayKey(),desc,type,amount,delta,originalAmount,newAmount,status:'pending_client',sentAt:new Date().toISOString()};
+  const co={id:_newId(),coNum,date:todayKey(),desc,type,amount,delta,originalAmount,newAmount,overrun:overrun||null,
+    lines:lines||[],addedDays:addedDays||0,photos:coPhotos||[],status:'pending_client',sentAt:new Date().toISOString()};
   b.changeOrders.push(co);
   saveAll();renderDash();renderJobsPage();
   ov?.remove();
@@ -1568,7 +1818,7 @@ async function _sendCOToHub(bidId,clientId){
   // confirmed in the cloud, not merely scheduled.
   try{await _flushSaveNow();}catch(_e){}
   try{
-    const entry={coNum,desc,type,amount,delta,originalAmount,newAmount,sentAt:co.sentAt,signedAt:null,signerName:null,signatureData:null};
+    const entry={coNum,desc,type,amount,delta,originalAmount,newAmount,overrun:overrun||null,lines:lines||[],addedDays:addedDays||0,photos:coPhotos||[],sentAt:co.sentAt,signedAt:null,signerName:null,signatureData:null};
     // One signed_proposals row per bid, append to it, or create it for bids
     // signed before the table existed (in-person/cash signings).
     const{data:rows}=await _supa.from('signed_proposals').select('id,change_orders')

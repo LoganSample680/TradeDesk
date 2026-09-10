@@ -26,7 +26,9 @@ function openEstimateForClient(){
   // request-access popup, never the estimator.
   if(!_canEstimate()){ _showEstimateRequestModal(); return; }
   const c=getClientById(currentClientId);
-  if(!c){showWorkflowGate('Select a client first before starting a proposal.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
+  // No client picked: ask for the name and the address here rather than sending
+  // him to the Clients tab to fill in a form and walk back (see the gate).
+  if(!c){_newClientQuickGate();return;}
   const r=getClientRisk(c.id);
   if(r==='blacklisted'){zAlert('This client is blacklisted. Proposals are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
   if(r==='high_risk'){
@@ -253,24 +255,29 @@ async function _submitEstimateRequest(){
 
 // Trades that categorically never disturb painted surfaces, skip RRP question
 const _RRP_EXEMPT_TRADES=['landscaping'];
-function _rrpGateThenEstimate(c){
+// `pickedAddr` is a property the contractor already chose (the picker below
+// offers a client's saved properties inline). It rides all the way through to
+// _doOpenEstimate so choosing the property IS choosing the client: nothing
+// downstream asks him for an address he already picked. Every existing caller
+// passes nothing and behaves exactly as before.
+function _rrpGateThenEstimate(c,pickedAddr){
   if(!c)return;
-  const _trade=typeof getActiveTrade==='function'?getActiveTrade():'painting';
+  const _trade=typeof getActiveTrade==='function'?getActiveTrade():'general';
   if(c.yearBuilt&&c.yearBuilt<1978&&!_RRP_EXEMPT_TRADES.includes(_trade)){
     if((c.addr||'').trim()){
       // Open estimate picker first so it's the backdrop behind the RRP modal
-      _gateAddressThenEstimate(c);
+      _gateAddressThenEstimate(c,pickedAddr);
       // Force-show picker instantly (skip fade-in) so it's fully visible when RRP modal overlays
       const _spOv=document.getElementById('_style-pick-ov');
       if(_spOv){_spOv.style.transition='none';_spOv.style.opacity='1';_spOv.style.transform='translateY(0)';}
       _showRrpModal(c,()=>{});
     } else {
-      _showRrpModal(c,()=>_gateAddressThenEstimate(c));
+      _showRrpModal(c,()=>_gateAddressThenEstimate(c,pickedAddr));
     }
     return;
   }
   if(typeof _rrpPaintAnswer!=='undefined')_rrpPaintAnswer='no';
-  _gateAddressThenEstimate(c);
+  _gateAddressThenEstimate(c,pickedAddr);
 }
 function _showRrpModal(c,onProceed){
   if(!c)return;
@@ -318,8 +325,203 @@ function _showRrpModal(c,onProceed){
 
   };
 }
-function _gateAddressThenEstimate(c){
+// The single place a brand-new client record becomes real. saveClient() calls
+// it with the record it built from the full form; the quick gate below calls it
+// with a record built from two fields. Anything that has to happen for EVERY new
+// client (the lifecycle stamp, the client token, the hub upload) belongs here
+// and nowhere else, so a second creation path can never quietly skip one.
+function _clientCommitNew(c){
+  clients.push(c);
+  // Top of the funnel: every duration downstream is measured from here.
+  try{if(typeof logLifecycle==='function')logLifecycle('lead_created',{clientId:c.id,meta:{source:c.source||null}});}catch(_e){}
+  _ensureClientToken(c.id);
+  // Auto-generate hub immediately so onboarding link works on first send
+  if(supaEnabled()&&_supaUser)_uploadClientHub(c.id).catch(()=>{});
+  return c;
+}
+
+// Starting a proposal with nobody selected (owner direction 2026-09-06: find
+// the friction and kill it, but stay smart enough to fill in the blanks).
+//
+// It used to bounce him to the Clients tab, where four fields were mandatory
+// before he could save, and then he had to walk back to the proposal. He is
+// standing in a driveway.
+//
+// The question a contractor is actually answering is "who is this for", and
+// most of the time the answer is somebody already in here (owner 2026-09-06).
+// So this is ONE field: he types the name, the people he already has show up
+// under it and a tap goes straight to the estimator. Only when the name is
+// nobody he has does it ask for the address and create the record, which is the
+// difference between this and a form: it asks one question and gets out of the
+// way, instead of assuming the answer is always "somebody new" and quietly
+// making him a second Mike Johnson.
+//
+// Everything downstream (the RRP gate, the multi-property check, the resume
+// chooser, TrueBid's measuring tools) still receives a real client, which is
+// why this is one screen rather than a null-client mode threaded through all
+// of it. Same shell as the address gate directly below, on purpose (7.3).
+let _newcGateOpenId=null;
+function _newcGateMatches(q){
+  const ql=(q||'').trim().toLowerCase();
+  if(!ql)return (clients||[]).slice(-5).reverse();
+  const digits=ql.replace(/\D/g,'');
+  // Same predicate the Clients page search uses (onClientSearch), so "who do I
+  // have" means one thing in this app.
+  return (clients||[]).filter(c=>
+    (c.name||'').toLowerCase().includes(ql)||
+    (c.addr||'').toLowerCase().includes(ql)||
+    (digits&&(c.phone||'').replace(/\D/g,'').includes(digits))
+  ).slice(0,6);
+}
+// Every property this customer has, in the shape the maps picker already uses.
+function _newcGateProps(c){
+  return [{label:'Primary',addr:(c&&c.addr)||''},...((c&&c.extraAddresses)||[])].filter(a=>(a.addr||'').trim());
+}
+function _newcGateRender(){
+  const q=(document.getElementById('_newc-gate-name')?.value||'').trim();
+  const hits=document.getElementById('_newc-gate-hits');
+  const block=document.getElementById('_newc-gate-new');
+  const label=document.getElementById('_newc-gate-newlbl');
+  if(!hits||!block)return;
+  const rows=_newcGateMatches(q);
+  const row=c=>{
+    const props=_newcGateProps(c);
+    const multi=props.length>1;
+    const av='<span class="cc-avatar" style="width:30px;height:30px;font-size:11px;flex-shrink:0;'+(typeof stageAvatar==='function'?stageAvatar(getClientStage(c.id).stage):'')+'">'+initials(c.name)+'</span>';
+    // One property is one tap. Several, and the row opens instead of guessing:
+    // a landlord with four rentals should never have a proposal land on the
+    // wrong house because the app picked the first address it had.
+    const sub=multi?props.length+' properties':(props[0]?props[0].addr:'No address yet');
+    return '<button onclick="'+(multi?'_newcGateToggle('+c.id+')':'_newcGatePick('+c.id+')')+'" '+
+      'style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">'+
+      av+
+      '<span style="flex:1;min-width:0">'+
+        '<span style="display:block;font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name)+'</span>'+
+        '<span style="display:block;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</span>'+
+      '</span>'+
+      (multi?'<span id="_newc-chev-'+c.id+'" style="font-size:11px;color:var(--text3);flex-shrink:0">'+(_newcGateOpenId===c.id?'⌄':'›')+'</span>':'')+
+    '</button>'+
+    (multi&&_newcGateOpenId===c.id?
+      '<div style="margin:-2px 0 8px 12px;padding-left:10px;border-left:2px solid var(--border2)">'+
+        props.map((a,i)=>'<button onclick="_newcGatePick('+c.id+','+i+')" style="width:100%;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:5px">'+
+          '<span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+escHtml(a.label||'Property')+'</span>'+
+          '<span style="display:block;font-size:12px;color:var(--text)">'+escHtml(a.addr)+'</span></button>').join('')+
+      '</div>':'');
+  };
+  hits.innerHTML=rows.length?
+    (q?'':'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin:2px 0 6px">Recent</div>')+
+    rows.map(row).join(''):'';
+  // The create half only appears once the typed name is nobody he already has,
+  // so picking an existing customer never means looking past a form.
+  const exact=q&&(clients||[]).some(c=>(c.name||'').trim().toLowerCase()===q.toLowerCase());
+  const show=!!q&&!exact;
+  block.style.display=show?'':'none';
+  if(show&&label)label.textContent=rows.length?'Nobody above? Add '+q+' as new':'Add '+q+' as a new customer';
+}
+function _newcGateToggle(id){
+  _newcGateOpenId=_newcGateOpenId===id?null:id;
+  _newcGateRender();
+}
+function _newcGatePick(id,propIdx){
+  const c=getClientById(id);if(!c)return;
+  const props=_newcGateProps(c);
+  // Index 0 is the primary address, which _doOpenEstimate would have used
+  // anyway, so only a deliberate pick of another property overrides anything.
+  const picked=(propIdx!=null&&props[propIdx]&&propIdx>0)?props[propIdx].addr:'';
+  document.getElementById('_newc-gate-overlay')?.remove();
+  _newcGateOpenId=null;
+  currentClientId=c.id;
+  _rrpGateThenEstimate(c,picked);
+}
+function _newClientQuickGate(){
+  document.getElementById('_newc-gate-overlay')?.remove();
+  _newcGateOpenId=null;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_newc-gate-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.animation='td-pg-enter .22s cubic-bezier(.22,1,.36,1) both';
+  box.innerHTML=
+    '<div style="font-size:18px;margin-bottom:6px">'+svgIcon('👤')+' Who is it for?</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Start typing. Tap them if they are already in here.</div>'+
+    '<div style="position:relative;margin-bottom:10px">'+
+      '<input id="_newc-gate-name" type="text" placeholder="Name" autocomplete="off" '+
+        'style="width:100%;box-sizing:border-box;padding:11px 44px 11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+    '</div>'+
+    '<div id="_newc-gate-hits" style="max-height:33vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>'+
+    '<div id="_newc-gate-new" style="display:none;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">'+
+      '<div id="_newc-gate-newlbl" style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px"></div>'+
+      '<div style="position:relative;margin-bottom:6px">'+
+        '<input id="_newc-gate-addr" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
+          'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+      '</div>'+
+      '<div id="_newc-gate-err" style="display:none;font-size:12px;color:#A32D2D;margin-bottom:8px"></div>'+
+      '<button id="_newc-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Start proposal</button>'+
+    '</div>'+
+    '<button onclick="document.getElementById(\'_newc-gate-overlay\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:10px">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  const nameEl=document.getElementById('_newc-gate-name');
+  const addrEl=document.getElementById('_newc-gate-addr');
+  // Hold the mic and say the whole thing: "T and M for the Delaneys, about
+  // eight hours, water heater replacement." It resolves against his own
+  // customers and his own price book with no network call (js/estimate-speak.js),
+  // and if what he said was only a name, it stays a name and the screen behaves
+  // exactly as if he had typed it.
+  if(typeof _voiceAttach==='function'){
+    _voiceAttach('_newc-gate-name',{
+      host:nameEl&&nameEl.parentElement,
+      style:'position:absolute;right:8px;top:6px;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border2);background:var(--bg);color:var(--text3)',
+      onDone:(said)=>{
+        const t=String(said||'').trim();
+        if(!t||typeof tdSpeakEstimate!=='function'){_newcGateRender();return;}
+        const plan=tdSpeakEstimate(t);
+        if(plan&&plan.actionable){document.getElementById('_newc-gate-overlay')?.remove();return;}
+        // Not a bid, just a name: put it back in the field and search on it.
+        if(nameEl&&plan&&plan.client)nameEl.value=plan.client.name;
+        _newcGateRender();
+      },
+    });
+  }
+  // Same address autocomplete the address gate uses, so a typed street still
+  // fills in the city, state and zip the property lookup needs.
+  if(addrEl&&typeof _addrAutoFull==='function')_addrAutoFull(addrEl,null);
+  nameEl?.addEventListener('input',_newcGateRender);
+  nameEl?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addrEl?.focus();}});
+  addrEl?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('_newc-gate-ok')?.click();}});
+  document.getElementById('_newc-gate-ok').onclick=_newcGateCreate;
+  _newcGateRender();
+  setTimeout(()=>nameEl?.focus(),100);
+}
+function _newcGateCreate(){
+  const name=(document.getElementById('_newc-gate-name')?.value||'').trim();
+  const addr=(document.getElementById('_newc-gate-addr')?.value||'').trim();
+  const err=document.getElementById('_newc-gate-err');
+  if(!name){if(err){err.textContent='A name, so the paperwork has somewhere to live.';err.style.display='block';}document.getElementById('_newc-gate-name')?.focus();return;}
+  if(!addr){if(err){err.textContent='An address, so we know what property this is.';err.style.display='block';}document.getElementById('_newc-gate-addr')?.focus();return;}
+  const p=_parseAddrParts(addr);
+  const c=_clientCommitNew({id:Date.now(),name,phone:'',email:'',
+    addr,street:p.street||'',city:p.city||'',state:p.state||'',zip:p.zip||'',
+    ptype:'Single family home',partyType:'',source:'',ref:'',notes:'',
+    created:todayKey(),createdAt:new Date().toISOString(),
+    yearBuilt:null,sqft:null,estimatedValue:null,propertyType:null,stories:null,
+    exteriorMaterial:null,lastSaleDate:null,lastSalePrice:null,lotSize:null,
+    roofType:null,garage:null,bedrooms:null,bathrooms:null,isRental:null,
+    assessorUrl:null,propDataSource:null,propDataExact:null,propDataFetchedAt:null,
+    extraAddresses:[],clientToken:'',clientHubKey:''});
+  saveAll();
+  // The blanks fill themselves in from here: year built (which decides the
+  // pre-1978 lead-paint gate), property data, and the geofence warm-up all
+  // key off the address he just typed.
+  if(p.street&&p.city&&typeof _lookupPropertyData==='function')
+    _lookupPropertyData(c.id,{street:p.street,city:p.city,state:p.state||'',zip:p.zip||''});
+  if(typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
+  document.getElementById('_newc-gate-overlay')?.remove();
+  currentClientId=c.id;
+  _rrpGateThenEstimate(c);
+}
+function _gateAddressThenEstimate(c,pickedAddr){
   if(!c)return;
+  // A property was chosen already, so there is nothing to ask for.
+  if((pickedAddr||'').trim()){_checkMultiPropertyThenOpen(c,pickedAddr);return;}
   if(!(c.addr||'').trim()){
     // Lead has no address, must collect before building an estimate
     const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addr-gate-overlay';
@@ -359,7 +561,7 @@ function _gateAddressThenEstimate(c){
   }
   _checkMultiPropertyThenOpen(c);
 }
-function _checkMultiPropertyThenOpen(c){
+function _checkMultiPropertyThenOpen(c,pickedAddr){
   if(!c)return;
   // If client already has any in-progress bid (Pending+draft), offer to resume it
   const activeBids=bids.filter(b=>b.client_id===c.id&&!b.signingToken&&(
@@ -387,7 +589,7 @@ function _checkMultiPropertyThenOpen(c){
        onNo:()=>_askNewPropertyAddress(c)});
     return;
   }
-  _doOpenEstimate(c);
+  _doOpenEstimate(c,pickedAddr||undefined);
 }
 function _askNewPropertyAddress(c){
   // Show inline address prompt before opening estimate for a new property
@@ -920,7 +1122,7 @@ function checkClientDupe(val){
     if(editClientId&&c.id===editClientId)return false;
     return (c.name||'').toLowerCase().replace(/\s+/g,' ')===name;
   });
-  if(match){warn.style.display='';warn.textContent='⚠ '+match.name+' is already in your records, is this a different client?';}
+  if(match){warn.style.display='';warn.textContent=match.name+' is already in your records. A different address makes this a different customer.';}
   else{warn.style.display='none';}
 }
 function openNewClient(){
@@ -961,9 +1163,49 @@ function lookupYearBuilt(){
   const addr=[street,city,state].filter(Boolean).join(', ');
   if(addr)window.open('https://www.google.com/search?q=year+built+'+encodeURIComponent(addr),'_blank');
 }
+// ONE ADDRESS, FOUR FIELDS (owner 2026-09-10, on Save this address: "it puts
+// in the long string, rather than calling Apple Maps to fill the form fields
+// out"). The whole address landed in Street with City, State and Zip left
+// empty, so the one tap that was supposed to save him typing left him typing.
+//
+// This was a single regex ending in [A-Z]{2}\s*\d{5}, and two shapes it meets
+// every day do not match it: a state SPELLED OUT ("..., Topeka, Kansas,
+// 66604", which is exactly what the open reverse geocoder returns) and a
+// comma before the zip. Neither is malformed; the pattern was just narrow,
+// and its failure mode is silent and total, everything into street.
+//
+// Read from the RIGHT instead, which is shape-independent: the zip is the
+// piece that looks like a zip, the state is the piece before it (code or
+// name), the city is the piece before that, and whatever is left is the
+// street, however many commas it has in it.
 function _parseAddrParts(addr){
-  const m=(addr||'').match(/^(.+?),\s*(.+?),?\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)?$/i);
-  return m?{street:m[1].trim(),city:m[2].trim(),state:m[3].toUpperCase(),zip:(m[4]||'').trim()}:{street:(addr||'').trim(),city:'',state:'',zip:''};
+  const raw=String(addr||'').trim();
+  const none={street:'',city:'',state:'',zip:''};
+  if(!raw)return none;
+  const abbr=(typeof _STATE_ABBR!=='undefined'&&_STATE_ABBR)||{};
+  const code=v=>{
+    const s=String(v||'').trim();
+    if(/^[A-Za-z]{2}$/.test(s))return s.toUpperCase();
+    const k=Object.keys(abbr).find(n=>n.toLowerCase()===s.toLowerCase());
+    return k?abbr[k]:'';
+  };
+  const parts=raw.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!parts.length)return none;
+  // A country is not one of the four fields.
+  if(parts.length>1&&/^(united states(?: of america)?|u\.?s\.?a\.?|u\.?s\.?)$/i.test(parts[parts.length-1]))parts.pop();
+  // "KS 66604" arrives as one piece whenever a person typed it.
+  const both=/^(.+?)\s+(\d{5}(?:-\d{4})?)$/.exec(parts[parts.length-1]||'');
+  if(both&&code(both[1])){parts[parts.length-1]=both[1];parts.push(both[2]);}
+  let zip='',state='',city='';
+  if(parts.length>1&&/^\d{5}(?:-\d{4})?$/.test(parts[parts.length-1]))zip=parts.pop();
+  // Only ever taken off a list that still has a street left on it: a bare
+  // "Topeka" or a lone street line keeps its whole self.
+  if(parts.length>1&&code(parts[parts.length-1])){state=code(parts.pop());}
+  // A city has letters in it. Without this a bare "39.0123, -95.7465" (what
+  // a failed reverse geocode resolves to) would be filed as a street in one
+  // box and a longitude in the City box.
+  if(parts.length>1&&/[A-Za-z]/.test(parts[parts.length-1]))city=parts.pop();
+  return{street:parts.join(', ').trim(),city,state,zip};
 }
 function openEditClient(){
   const c=getClientById(currentClientId);if(!c)return;
@@ -1010,15 +1252,24 @@ function saveClient(){
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
   // Clear all field errors first
   ['cf-name','cf-phone','cf-street','cf-source','cf-partytype'].forEach(clearFErr);
-  // Who is this? drives whether the property is shown as theirs (homeowner) or as a
-  // job site they don't own (GC/PM/builder), and how getting-paid tools behave.
+  // ONE required field: the name (owner rule 2026-09-06). The record has to
+  // exist because it is the folder every document is filed in, and a folder
+  // needs a name. Everything else is something we would LIKE to know, and
+  // nothing we would like to know is worth stopping a contractor standing in a
+  // driveway trying to write a customer down.
+  //
+  // Who they are and where the lead came from used to block the save. Both are
+  // optional now and asked for later on the client card: an empty partyType
+  // already reads as "not a GC" everywhere it is consumed (accountOwnsSites in
+  // data.js, the third-party check in dashboard.js), which is the common case
+  // anyway, and the QR intake path has always created clients without either.
   const partyType=v('cf-partytype')||'';
-  if(!partyType){_submitting=false;showFErr('cf-partytype','err-cf-partytype','Tell us who this is, it changes how we handle the property and getting paid.');return;}
   const name=v('cf-name').trim();
   if(!name){_submitting=false;showFErr('cf-name','err-cf-name','Enter a name.');return;}
   const phone=v('cf-phone').trim();
-  if(!phone){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a phone number.');return;}
-  if(phone.replace(/\D/g,'').length<10){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a valid 10-digit phone number.');return;}
+  // Optional, but a half-typed number is a mistake worth catching now instead
+  // of at the moment he tries to text them.
+  if(phone&&phone.replace(/\D/g,'').length<10){_submitting=false;showFErr('cf-phone','err-cf-phone','That phone number is missing a few digits.');return;}
   // Address is optional, leads often come in without one; add later from profile
   const street=v('cf-street').trim();
   const city=v('cf-city').trim();
@@ -1026,15 +1277,33 @@ function saveClient(){
   const zip=v('cf-zip').trim();
   const addr=[street,city,[state,zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const source=v('cf-source')||'';
-  if(!source){_submitting=false;showFErr('cf-source','err-cf-source','Select a lead source, this tracks what\'s working.');return;}
   const isNew=!editClientId;
   if(isNew){
     const ph=phone.replace(/\D/g,'');
     const nameLow=name.toLowerCase().replace(/\s+/g,' ');
     const realPhone=ph.length===10&&!/^(\d)\1+$/.test(ph);
-    // Name match = hard block (almost certainly a re-entry of the same person)
-    const nameDupe=clients.find(x=>x.id!==editClientId&&(x.name||'').toLowerCase().replace(/\s+/g,' ')===nameLow);
-    if(nameDupe){_submitting=false;showFErr('cf-name','err-cf-name',nameDupe.name+' is already in your list. Is this a different person with the same name?');return;}
+    // A customer is a name AT AN ADDRESS (owner rule 2026-09-06), so that is what
+    // a duplicate is too. Two Mike Johnsons on two different streets are two
+    // customers and always were: comparing the name alone made the second one
+    // impossible to enter, and the message asked a question the form gave no way
+    // to answer. Same name at the same address, or at no address on either
+    // record (the genuinely ambiguous case), is worth a warning and never a
+    // wall, because a father and son at one house are a real pair of customers.
+    const _addrKey=r=>((r&&r.addr)||'').toLowerCase().replace(/\s+/g,' ').trim();
+    const thisAddr=addr.toLowerCase().replace(/\s+/g,' ').trim();
+    const nameDupe=clients.find(x=>x.id!==editClientId
+      &&(x.name||'').toLowerCase().replace(/\s+/g,' ')===nameLow
+      &&_addrKey(x)===thisAddr);
+    if(nameDupe&&!_allowNameDupe){
+      _submitting=false;
+      const errEl=document.getElementById('err-cf-name');
+      if(errEl){
+        errEl.innerHTML=escHtml(nameDupe.name)+(thisAddr?' is already on file at this address.':' is already on file with no address.')+
+          ' Different person? <button onclick="_allowNameDupe=true;saveClient()" style="background:none;border:none;color:var(--blue);font-weight:700;cursor:pointer;padding:0;font-size:inherit;font-family:inherit">save anyway \u2192</button>';
+        errEl.style.display='block';
+      }
+      return;
+    }
     // Phone match = soft warning, two people can share a number (family), allow override
     const phoneDupe=realPhone?clients.find(x=>x.id!==editClientId&&(x.phone||'').replace(/\D/g,'')===ph):null;
     if(phoneDupe&&!_allowPhoneDupe){
@@ -1056,7 +1325,7 @@ function saveClient(){
       }
     }
   }
-  _allowPhoneDupe=false;
+  _allowPhoneDupe=false;_allowNameDupe=false;
   const ref=v('cf-ref')||'';
   const occupation=v('cf-occupation')||'';
   const tier=v('cf-tier')||'';
@@ -1079,21 +1348,21 @@ function saveClient(){
     propDataFetchedAt:_existingClient?.propDataFetchedAt||null,
     extraAddresses:_existingClient?.extraAddresses||[],clientToken:_existingClient?.clientToken||'',clientHubKey:_existingClient?.clientHubKey||''};
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
-  else{
-    clients.push(c);
-    // Top of the funnel: every duration downstream is measured from here.
-    try{if(typeof logLifecycle==='function')logLifecycle('lead_created',{clientId:c.id,meta:{source:c.source||null}});}catch(_e){}
-    _ensureClientToken(c.id);
-    // Auto-generate hub immediately so onboarding link works on first send
-    if(supaEnabled()&&_supaUser)_uploadClientHub(c.id).catch(()=>{});
-  }
+  else _clientCommitNew(c);
   saveAll();
   const _prevAddr=_existingClient?.addr||'';
   const _noPropData=!_existingClient?.propDataFetchedAt;
   if(street&&city&&(addr!==_prevAddr||_noPropData))_lookupPropertyData(c.id,{street,city,state,zip});
   // Warm the nearby-job/geofence cache the moment the address is entered, not
   // on the next passive checkNearbyJob heartbeat (§ eager geocode, js/jobs.js).
-  if(addr&&addr!==_prevAddr&&typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
+  if(addr&&addr!==_prevAddr&&typeof _eagerGeocodeClient==='function'){
+    // SAVE THIS ADDRESS closes the loop here (owner 2026-09-08): once the new
+    // client's address is a geocode, it is a fence, and the traced day this
+    // form was opened for is re-derived so the real leg replaces the traced
+    // row. Nothing to do on an ordinary new lead: the pending marker is only
+    // set by the mileage log's Save button.
+    _eagerGeocodeClient(c.id,addr).catch(()=>{}).then(()=>{try{if(typeof _mileAddressSaved==='function')_mileAddressSaved(c);}catch(_e){}});
+  }
   if(isNew){
     closeClientForm();
     currentClientId=c.id;
@@ -1150,13 +1419,24 @@ function closeImportModal(){
 
 async function _importPhoneContacts(){
   try{
-    const raw=await navigator.contacts.select(['name','tel','email'],{multiple:true});
+    // 'address' was never requested, so this route dropped it even where the
+    // API supports it (owner 2026-08-28). Requested separately and tolerantly:
+    // the property is optional in the spec and a picker that does not offer it
+    // REJECTS the whole call rather than returning the rest, which would take
+    // the entire import down to gain one field.
+    let raw=null;
+    try{raw=await navigator.contacts.select(['name','tel','email','address'],{multiple:true});}
+    catch(_e){raw=await navigator.contacts.select(['name','tel','email'],{multiple:true});}
     if(!raw||!raw.length){showToast('No contacts selected','ℹ️');return;}
     const parsed=raw.map(c=>({
       name:(c.name&&c.name[0])||'',
       phone:(c.tel&&c.tel[0])||'',
       email:(c.email&&c.email[0])||'',
-      addr:'',city:'',state:'',zip:''
+      // ContactAddress, when the picker gave one: its own shape, not ours.
+      addr:((c.address&&c.address[0]&&(c.address[0].addressLine||[])[0])||''),
+      city:((c.address&&c.address[0]&&c.address[0].city)||''),
+      state:((c.address&&c.address[0]&&c.address[0].region)||''),
+      zip:((c.address&&c.address[0]&&c.address[0].postalCode)||'')
     })).filter(c=>c.name&&c.phone);
     _showImportPreview(parsed);
   }catch(e){showToast('Contact access denied','⚠️');}
@@ -1222,22 +1502,94 @@ function _csvRow(line){
   return cols;
 }
 
+// A vCard line longer than 75 octets is CONTINUED on the next line, marked by
+// a single leading space or tab (RFC 6350 folding). Apple Contacts folds every
+// export, so a street address long enough to wrap was being cut off at the
+// fold by a regex that stops at the newline. Unfold before parsing anything.
+function _vcardUnfold(text){
+  return String(text||'').replace(/\r\n/g,'\n').replace(/\n[ \t]/g,'');
+}
+// vCard escapes the characters that would otherwise be structure. A street
+// like "Unit 3, Bldg C" arrives as "Unit 3\, Bldg C".
+function _vcardUnesc(v){
+  return String(v||'').replace(/\\n/gi,' ').replace(/\\([,;\\])/g,'$1').trim();
+}
+// ADR is positional: PO box; extended; street; city; region; postcode; country.
+function _vcardAdrParts(raw){
+  const p=String(raw||'').split(';');
+  return{
+    addr:_vcardUnesc(p[2]),city:_vcardUnesc(p[3]),
+    state:_vcardUnesc(p[4]),zip:_vcardUnesc(p[5])
+  };
+}
+// Apple writes the human label as a SEPARATE line tied to the property by a
+// group prefix:
+//     item1.ADR;type=HOME;type=pref:;;2015 SW Randolph Ave;Topeka;KS;66604;
+//     item1.X-ABLabel:Home
+// so the contractor's own word for the place ("Lake house", "Mom's") is in
+// X-ABLabel, not in TYPE. Prefer it, fall back to TYPE, then to a number.
+function _vcardAdrLabel(card,group,paramStr,used){
+  if(group){
+    const m=String(card||'').match(new RegExp('^'+group.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\.X-ABLabel:(.+)$','mi'));
+    if(m){
+      // Apple wraps its own built-ins in _$!<...>!$_ ; a custom label is bare.
+      const raw=_vcardUnesc(m[1]).replace(/^_\$!<(.*)>!\$_$/,'$1').trim();
+      if(raw)return raw;
+    }
+  }
+  const t=(String(paramStr||'').match(/TYPE="?([A-Za-z]+)/i)||[])[1];
+  const k=t?t.toLowerCase():'';
+  if(k==='home')return 'Home';
+  if(k==='work')return 'Work';
+  return 'Property '+(used+1);
+}
 function _parseVCard(text){
   const contacts=[];
-  const cards=text.split(/BEGIN:VCARD/i).slice(1);
+  const cards=_vcardUnfold(text).split(/BEGIN:VCARD/i).slice(1);
   cards.forEach(card=>{
+    // (?:[A-Za-z0-9-]+\.)? is the whole reason this file changed twice.
+    // Apple Contacts writes any property carrying a custom label as part of a
+    // GROUP: "item1.ADR;type=HOME:..." with "item1.X-ABLabel:Home" beside it.
+    // Anchoring on ^ADR therefore matched nothing on a real Apple export, and
+    // an import of 141 contacts landed 3 addresses (owner's own data,
+    // 2026-08-31). TEL and EMAIL are usually ungrouped, which is exactly why
+    // phone numbers came over fine and hid the problem.
     const get=re=>{const m=card.match(re);return m?(m[1]||'').trim():'';};
-    let name=get(/^FN[^:\r\n]*:(.+)$/m);
+    let name=get(/^(?:[A-Za-z0-9-]+\.)?FN[^:\r\n]*:(.+)$/m);
     if(!name){
-      const n=get(/^N[^:\r\n]*:(.+)$/m);
-      if(n){const p=n.split(';');name=[p[1],p[0]].filter(Boolean).join(' ');}
+      const n=get(/^(?:[A-Za-z0-9-]+\.)?N[^:\r\n]*:(.+)$/m);
+      // N is Family;Given;Middle;Prefix;Suffix, so given goes first to read
+      // as a person's name rather than a filing-cabinet entry.
+      if(n){const p=n.split(';');name=[_vcardUnesc(p[1]),_vcardUnesc(p[0])].filter(Boolean).join(' ');}
     }
-    const phone=get(/^TEL[^:\r\n]*:(.+)$/m);
-    const email=get(/^EMAIL[^:\r\n]*:(.+)$/m);
-    const adr=get(/^ADR[^:\r\n]*:(.+)$/m);
-    let addr='',city='',state='',zip='';
-    if(adr){const p=adr.split(';');addr=(p[2]||'').trim();city=(p[3]||'').trim();state=(p[4]||'').trim();zip=(p[5]||'').trim();}
-    if(name&&phone)contacts.push({name,phone,email,addr,city,state,zip});
+    name=_vcardUnesc(name);
+    const phone=get(/^(?:[A-Za-z0-9-]+\.)?TEL[^:\r\n]*:(.+)$/m);
+    const email=get(/^(?:[A-Za-z0-9-]+\.)?EMAIL[^:\r\n]*:(.+)$/m);
+    // EVERY address, not just the first (owner 2026-09-01: "addresses
+    // especially multiple properties"). card.match with a non-global regex
+    // returns only the first hit, so a client with a home and a rental
+    // silently arrived with one address and the other was dropped on the
+    // floor. The first ADR that carries a street becomes the primary; the
+    // rest become extraAddresses, which is the shape the client detail page
+    // already renders (_renderClientAddresses) and the manual "Additional
+    // property" button already writes.
+    const extras=[];
+    let addr='',city='',state='',zip='',primaryTaken=false;
+    const adrRe=/^([A-Za-z0-9-]+\.)?ADR([^:\r\n]*):(.+)$/gm;
+    let m;
+    while((m=adrRe.exec(card))!==null){
+      const group=m[1]?m[1].slice(0,-1):'';     // "item1." -> "item1"
+      const parts=_vcardAdrParts(m[3]);
+      const oneLine=[parts.addr,parts.city,[parts.state,parts.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      if(!oneLine)continue;                     // an empty ADR line is noise, not a property
+      if(!primaryTaken){
+        addr=parts.addr;city=parts.city;state=parts.state;zip=parts.zip;
+        primaryTaken=true;
+      }else{
+        extras.push({label:_vcardAdrLabel(card,group,m[2],extras.length),addr:oneLine});
+      }
+    }
+    if(name&&phone)contacts.push({name,phone,email,addr,city,state,zip,extras});
   });
   return contacts;
 }
@@ -1258,9 +1610,14 @@ function _showImportPreview(parsed){
   if(!preview)return;
   const hasEmail=toImport.some(c=>c.email);
   const hasAddr=toImport.some(c=>c.addr||c.city);
+  const extraCount=toImport.reduce((n,c)=>n+((c.extras||[]).length),0);
   summary.innerHTML='<strong>'+toImport.length+' contacts ready to import</strong>'+
     (hasEmail?' <span style="color:var(--green-mid)">· Email '+svgIcon('✓')+'</span>':'')+
     (hasAddr?' <span style="color:var(--green-mid)">· Address '+svgIcon('✓')+'</span>':'')+
+    // Named on the preview because a silently-dropped second property is
+    // exactly the failure this fix is about: if the count is wrong, it is
+    // wrong BEFORE the import rather than discovered weeks later.
+    (extraCount?' <span style="color:var(--green-mid)">· '+extraCount+' extra propert'+(extraCount===1?'y':'ies')+' '+svgIcon('✓')+'</span>':'')+
     (skipped?' <span style="color:var(--text3)">· '+skipped+' skipped (already in list)</span>':'');
   list.innerHTML=toImport.slice(0,25).map(c=>
     '<div style="padding:7px 10px;border-bottom:1px solid var(--border2)">'+
@@ -1275,24 +1632,58 @@ function _showImportPreview(parsed){
 
 function _doImport(){
   if(!_importContacts.length)return;
+  // Take the list FIRST. The renderClients crash proved the tail is not
+  // guaranteed to run: it threw before `_importContacts=[]` at the bottom, so
+  // the list stayed loaded, the modal stayed open with no toast, and the
+  // owner tapped Import again. 141 contacts became 281 (his own data,
+  // 2026-08-31 19:04:42 and 19:04:54). Clearing up front means a second tap
+  // has nothing to import no matter what happens below.
+  const batch=_importContacts;
+  _importContacts=[];
   const today=todayKey();
   let added=0;
-  _importContacts.forEach((c,i)=>{
+  batch.forEach((c,i)=>{
     const id=Date.now()+i;
     const addr=[c.addr,c.city,[c.state,c.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
     const nc={id,name:c.name,phone:c.phone,email:c.email||'',
       addr,street:c.addr||'',city:c.city||'',state:c.state||'',zip:c.zip||'',
       source:'Existing Contact',ref:'',notes:'',created:today,ptype:'',
-      extraAddresses:[],clientToken:'',clientHubKey:''};
+      // Carried, not discarded. This was hardcoded to [], so even once the
+      // parser found a second property the import threw it away.
+      extraAddresses:Array.isArray(c.extras)?c.extras.slice():[],
+      clientToken:'',clientHubKey:''};
     clients.push(nc);
     _ensureClientToken(nc.id);
     added++;
   });
   saveAll();
-  renderClients();
+  // renderClientList, not renderClients: the latter has never existed anywhere
+  // in this codebase, so importing a vCard saved every contact and then threw
+  // a ReferenceError on this line, killing the whole tail. The modal stayed
+  // open and no toast fired, so the contractor saw a red error and no
+  // confirmation for an import that had actually worked (owner report,
+  // 2026-09-01, 141 contacts).
+  //
+  // No test caught it because everything after the first line of _doImport is
+  // unreachable with an empty _importContacts, and the only coverage called it
+  // empty, inside a try/catch that would have swallowed the throw anyway.
+  renderClientList();
+  // ...and the page the contractor is actually standing on. Import lives on
+  // BOTH pg-clients (index.html:1923) and pg-leads (index.html:3852), and an
+  // imported contact is a LEAD until it signs something (renderClientList's
+  // CLIENT_STAGES gate), so importing from the Leads page repainted the one
+  // list that by design cannot show the thing just imported. The owner had to
+  // tap the Leads nav button to see 141 contacts the toast had already told
+  // him were in.
+  //
+  // _refreshActivePage (js/navigation.js) is the shared "repaint what is on
+  // screen, navigate nothing" dispatch added for the foreground refresh, so
+  // this covers every entry point rather than hard-coding the second one
+  // (7.3). Skipped on pg-clients because renderClientList above already IS
+  // that page's repaint.
+  if(document.querySelector('.pg.active')?.id!=='pg-clients'&&typeof _refreshActivePage==='function')_refreshActivePage();
   closeImportModal();
   showToast(added+' contact'+(added!==1?'s':'')+' imported','✅');
-  _importContacts=[];
 }
 
 function setCDTab(tab,btn){

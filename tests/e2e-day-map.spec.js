@@ -44,7 +44,7 @@ test.describe('dispatch day map', () => {
     ];
     window._supa = {
       from: () => ({ select() { return this; }, eq() { return this; }, gte() { return this; },
-        order() { return Promise.resolve({ data: window.__pings }); } }),
+        order() { return this; }, limit() { return Promise.resolve({ data: window.__pings }); } }),
       channel() { const c = { on() { return c; }, subscribe() { return c; }, send() {} }; return c; },
       removeChannel() {},
     };
@@ -106,9 +106,15 @@ test.describe('dispatch day map', () => {
     expect(txt).toMatch(/Mike Alvarez/);
     expect(txt, 'six minutes reads as six minutes').toMatch(/6 min ago/);
     expect(txt, 'and over an hour says so rather than rounding to now').toMatch(/1 hour ago/);
-    const note = await page.evaluate(() => document.getElementById('_day-map-body').textContent);
+    // Moved from under the map to the foot of the crew list when the sheet
+    // took over the bottom of the screen. Asserted on the whole surface so the
+    // rule survives the next layout change too: it must be on screen ONCE.
+    const note = await page.evaluate(() => document.querySelector('.dm-wrap').textContent);
     expect(note, 'the honest framing is on screen, not just in our heads')
       .toMatch(/last reported position, not a live trail/);
+    const said = await page.evaluate(() =>
+      (document.querySelector('.dm-wrap').textContent.match(/not a live trail/g) || []).length);
+    expect(said, 'said once, never twice').toBe(1);
   });
 
   test('the newest ping per person wins, older ones are not drawn', async () => {
@@ -201,6 +207,140 @@ test.describe('dispatch day map', () => {
   // Android phone or a Windows desktop it therefore falls back to our own plot,
   // which uses none of Apple's data, rather than drawing tiles we are not
   // licensed to draw there.
+  // ── What the pin carries (owner 2026-09-05, "Life360 but better") ─────────
+  test.describe('a pin carries state, not just position', () => {
+    // Load and paint deliberately, rather than leaning on openDayMap's async
+    // chain: these tests are about what the pin CARRIES, and a shared
+    // _dayMapLoading guard between tests is not the thing under test.
+    const paint = () => page.evaluate(async () => {
+      await _dayMapLoadCrew();
+      setDispatchView('map');
+      renderDayMap();
+    });
+    const seedRich = () => page.evaluate(() => {
+      const now = Date.now();
+      window.__pings = [
+        { employee_user_id: 'u-mike', lat: 41.54, lon: -88.06, ts: new Date(now - 2 * 60000).toISOString(),
+          state: 'site', dest: 'Kitchen repaint, Alvarez', journey_id: null, speed_mph: null, battery: 0.78 },
+        { employee_user_id: 'u-mike', lat: 41.539, lon: -88.061, ts: new Date(now - 40 * 60000).toISOString(),
+          state: 'site', dest: 'Kitchen repaint, Alvarez', journey_id: null, speed_mph: null, battery: 0.8 },
+        { employee_user_id: 'u-jt', lat: 41.501, lon: -88.13, ts: new Date(now - 60000).toISOString(),
+          state: 'drive', dest: 'from TradeDesk shop', journey_id: 'j1', speed_mph: 42, battery: 0.09 },
+        { employee_user_id: 'u-jt', lat: 41.505, lon: -88.14, ts: new Date(now - 3 * 60000).toISOString(),
+          state: 'drive', dest: 'from TradeDesk shop', journey_id: 'j1', speed_mph: 38, battery: 0.1 },
+        { employee_user_id: 'u-jt', lat: 41.51, lon: -88.15, ts: new Date(now - 5 * 60000).toISOString(),
+          state: 'drive', dest: 'from TradeDesk shop', journey_id: 'j1', speed_mph: 31, battery: 0.1 },
+        { employee_user_id: 'u-jt', lat: 41.52, lon: -88.16, ts: new Date(now - 90 * 60000).toISOString(),
+          state: 'shop', dest: 'the shop', journey_id: 'j0', speed_mph: null, battery: 0.2 },
+      ];
+    });
+
+    test('driving shows the speed, on site shows how long', async () => {
+      await seed();
+      await seedRich();
+      await paint();
+      const txt = await page.evaluate(() => document.querySelector('.dm-wrap').textContent);
+      expect(txt, 'the chip names the state').toMatch(/Driving/);
+      expect(txt).toMatch(/On site/);
+      const tags = await page.evaluate(() => [..._dayMapPoints()].filter(p => p.type === 'crew').map(p => p.date));
+      expect(tags.join(' '), 'a truck on the road reads as a speed').toMatch(/42 mph/);
+    });
+
+    test('the trail is this journey only, never a line through the whole day', async () => {
+      await seed();
+      await seedRich();
+      await paint();
+      const t = await page.evaluate(() => (_dayMapCrew.find(c => c.uid === 'u-jt') || {}).trail);
+      expect(t.length, 'three rows on journey j1, and not the shop row before it').toBe(3);
+      expect(t[t.length - 1][0], 'oldest first, so the head of the comet is last').toBeCloseTo(41.501, 3);
+    });
+
+    test('the comet is drawn in fading stretches, brightest at the head', async () => {
+      await seed();
+      await seedRich();
+      await paint();
+      const segs = await page.evaluate(() => _dayMapTrailPaths().map(s => s.opacity));
+      expect(segs.length).toBeGreaterThan(1);
+      expect(Math.max(...segs), 'the newest stretch is the brightest').toBeGreaterThan(Math.min(...segs));
+    });
+
+    test('a phone about to die is flagged on the pin and in the row', async () => {
+      await seed();
+      await seedRich();
+      await paint();
+      const r = await page.evaluate(() => {
+        const jt = _dayMapCrew.find(c => c.uid === 'u-jt');
+        return { pin: _dayMapMarker({ type: 'crew', crew: jt, date: '' }),
+                 row: document.getElementById('_dm-crew-u-jt').innerHTML };
+      });
+      expect(r.pin, 'the pin carries the pip').toMatch(/dm-batt/);
+      expect(r.row, 'and the row says the number').toMatch(/9%/);
+      expect(r.row).toMatch(/dm-b low/);
+    });
+
+    test('a healthy battery gets no pip, only the number', async () => {
+      await seed();
+      await seedRich();
+      await paint();
+      const r = await page.evaluate(() => {
+        const mike = _dayMapCrew.find(c => c.uid === 'u-mike');
+        return { pin: _dayMapMarker({ type: 'crew', crew: mike, date: '' }),
+                 row: document.getElementById('_dm-crew-u-mike').innerHTML };
+      });
+      expect(r.pin).not.toMatch(/dm-batt/);
+      expect(r.row).toMatch(/78%/);
+    });
+
+    test('a row written before the migration still draws, as a plain position', async () => {
+      await seed();               // the original fixture: no state, no battery
+      await paint();
+      const r = await page.evaluate(() => {
+        const mike = _dayMapCrew.find(c => c.uid === 'u-mike');
+        return { state: mike.state, batt: mike.batt, pin: _dayMapMarker({ type: 'crew', crew: mike, date: '6 min ago' }) };
+      });
+      expect(r.state, 'null means "just a position", which is what it was').toBe(null);
+      expect(r.batt).toBe(null);
+      expect(r.pin, 'and it still renders').toMatch(/dm-av/);
+      expect(r.pin).not.toMatch(/dm-batt/);
+    });
+
+    test('on site with no estimated hours gets a plain ring, never an invented fraction', async () => {
+      const html = await page.evaluate(() =>
+        _dayMapMarker({ type: 'crew', date: '', crew: { uid: 'x', name: 'A B', state: 'site', ts: new Date().toISOString() } }));
+      expect(html).toMatch(/dm-prog/);
+      expect(html, 'no dash offset means no number was claimed').not.toMatch(/stroke-dashoffset/);
+    });
+
+    test('a stale pin looks stale and says so', async () => {
+      await seed();
+      await page.evaluate(() => {
+        window.__pings = [{ employee_user_id: 'u-mike', lat: 41.54, lon: -88.06,
+          ts: new Date(Date.now() - 50 * 60000).toISOString(), state: 'site', dest: 'A job' }];
+      });
+      await paint();
+      const r = await page.evaluate(() => ({
+        row: document.getElementById('_dm-crew-u-mike').innerHTML,
+        pin: _dayMapMarker({ type: 'crew', date: '', crew: _dayMapCrew[0] }),
+      }));
+      expect(r.row).toMatch(/Last seen/);
+      expect(r.row).toMatch(/dm-age old/);
+      expect(r.pin, 'and the pin dims rather than pretending').toMatch(/dm-stale/);
+    });
+
+    test('junk rows never throw and never fake a position', async () => {
+      await seed();
+      await page.evaluate(() => {
+        window.__pings = [{ employee_user_id: 'u-mike', lat: null, lon: null, ts: 'nope',
+          state: {}, dest: 12, speed_mph: 'fast', battery: 'full', journey_id: [] }];
+      });
+      await paint();
+      const threw = await page.evaluate(() => {
+        try { _dayMapPoints(); _dayMapCrewStrip(); _dayMapTrailPaths(); return false; } catch (e) { return true; }
+      });
+      expect(threw).toBe(false);
+    });
+  });
+
   test('Apple tiles are refused on non-Apple hardware, and the plot takes over', async () => {
     await seed();
     const r = await page.evaluate(async () => {

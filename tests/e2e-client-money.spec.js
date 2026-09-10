@@ -52,24 +52,29 @@ test.describe('Client management, CRUD and validation', () => {
     expect(errVisible).toBe(true);
   });
 
-  test('saveClient: rejects empty phone', async () => {
-    await page.evaluate(() => {
+  // WAS: a lead could not be saved without a phone number, and that was correct
+  // when the form was the only way a lead got in. NOW (owner rule 2026-09-06):
+  // the only thing a customer record needs is the name it is filed under.
+  // A call taken on a ladder gives you a name before it gives you a number.
+  test('saveClient: a lead with no phone number saves', async () => {
+    const r = await page.evaluate(() => {
+      const uid = 'NoPhone_' + Date.now();
+      const before = clients.length;
       _submitting = false;
-      if (typeof openNewClient === 'function') openNewClient();
-      const n = document.getElementById('cf-name'); if (n) n.value = 'Test Person';
-      const p = document.getElementById('cf-phone'); if (p) p.value = '';
-      const s = document.getElementById('cf-source'); if (s) s.value = 'Word of mouth';
-      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner';
+      openNewClient();
+      document.getElementById('cf-name').value = uid;
+      document.getElementById('cf-phone').value = '';
+      document.getElementById('cf-source').selectedIndex = 0;
+      document.getElementById('cf-partytype').value = '';
+      _submitting = false;
+      saveClient();
+      const saved = clients.find(c => c.name === uid);
+      const errShown = document.getElementById('err-cf-phone')?.style.display !== 'none';
+      if (saved) clients.splice(clients.indexOf(saved), 1);
+      return { added: clients.length === before, saved: !!saved, errShown };
     });
-    await page.waitForTimeout(100);
-    await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
-    await page.waitForTimeout(150);
-
-    const errVisible = await page.evaluate(() => {
-      const err = document.getElementById('err-cf-phone');
-      return err ? (err.style.display !== 'none' && err.textContent.length > 0) : false;
-    });
-    expect(errVisible).toBe(true);
+    expect(r.saved).toBe(true);
+    expect(r.errShown).toBe(false);
   });
 
   test('saveClient: rejects phone shorter than 10 digits', async () => {
@@ -92,27 +97,27 @@ test.describe('Client management, CRUD and validation', () => {
     expect(errVisible).toBe(true);
   });
 
-  test('saveClient: rejects missing lead source', async () => {
-    await page.evaluate(() => {
+  // WAS: "Select a lead source, this tracks what's working" blocked the save.
+  // NOW: optional. Knowing what marketing works is ours to want, not his to owe
+  // us before he can write down the person standing in front of him.
+  test('saveClient: a lead with no source saves', async () => {
+    const r = await page.evaluate(() => {
+      const uid = 'NoSource_' + Date.now();
       _submitting = false;
-      if (typeof openNewClient === 'function') openNewClient();
-      const n = document.getElementById('cf-name'); if (n) n.value = 'No Source Person';
-      const p = document.getElementById('cf-phone'); if (p) p.value = '3165550199';
-      // Force the select back to empty-option (index 0)
-      const s = document.getElementById('cf-source');
-      if (s && s.tagName === 'SELECT') s.selectedIndex = 0;
-      else if (s) s.value = '';
-      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner'; // set so the source check is reached
+      openNewClient();
+      document.getElementById('cf-name').value = uid;
+      document.getElementById('cf-phone').value = '316555' + String(Date.now()).slice(-4);
+      document.getElementById('cf-source').selectedIndex = 0;
+      document.getElementById('cf-partytype').value = '';
+      _allowPhoneDupe = true; _submitting = false;
+      saveClient();
+      const saved = clients.find(c => c.name === uid);
+      const errShown = document.getElementById('err-cf-source')?.style.display !== 'none';
+      if (saved) clients.splice(clients.indexOf(saved), 1);
+      return { saved: !!saved, errShown };
     });
-    await page.waitForTimeout(100);
-    await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
-    await page.waitForTimeout(150);
-
-    const errVisible = await page.evaluate(() => {
-      const err = document.getElementById('err-cf-source');
-      return err ? (err.style.display !== 'none' && err.textContent.length > 0) : false;
-    });
-    expect(errVisible).toBe(true);
+    expect(r.saved).toBe(true);
+    expect(r.errShown).toBe(false);
   });
 
   test('saveClient: saves valid client and increments clients array', async () => {
@@ -152,43 +157,60 @@ test.describe('Client management, CRUD and validation', () => {
     }
   });
 
-  test('saveClient: duplicate name is rejected', async () => {
-    const uid = 'DupeTest_' + Date.now();
-
-    // Fill the form for a client whose name will collide with the seeded dupe
-    await page.evaluate(name => {
+  // WAS: any name collision was a hard block with no way past it, so a second
+  // Mike Johnson could never be entered. NOW: a customer is a name AT AN
+  // ADDRESS, so only the same name at the same address is a duplicate, and even
+  // that offers "save anyway" (father and son at one house are two customers).
+  test('saveClient: same name at a DIFFERENT address is a different customer', async () => {
+    const r = await page.evaluate(() => {
+      const uid = 'DupeName_' + Date.now();
+      clients = clients.filter(c => c.name !== uid);
+      clients.push({ id: 987654321001, name: uid, phone: '3165550001', addr: '1 First St, Wichita, KS 67201' });
       _submitting = false;
-      if (typeof openNewClient === 'function') openNewClient();
-      const n = document.getElementById('cf-name'); if (n) n.value = name;
-      const p = document.getElementById('cf-phone'); if (p) p.value = '3165550002';
-      const s = document.getElementById('cf-source');
-      if (s && s.tagName === 'SELECT') {
-        for (let i = 1; i < s.options.length; i++) {
-          if (s.options[i].value) { s.selectedIndex = i; break; }
-        }
-      } else if (s) { s.value = 'Word of mouth'; }
-      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner'; // required, so the dupe-name check is reached
-    }, uid);
-    await page.waitForTimeout(100);
-    // Seed the duplicate IN THE SAME evaluate that calls saveClient, a late
-    // background cloud load reassigns `clients` on slow WebKit workers, and a
-    // dupe seeded in an earlier evaluate was dropped before the save ran
-    // (task #22 fixture-seeding race). Idempotent: filter-then-push.
-    await page.evaluate(name => {
-      if (typeof clients !== 'undefined') {
-        clients = clients.filter(c => c.name !== name);
-        clients.push({ id: 987654321001, name, phone: '3165550001', source: 'Word of mouth' });
-      }
-      _submitting = false;
-      if (typeof saveClient === 'function') saveClient();
-    }, uid);
-    await page.waitForTimeout(150);
-
-    const errVisible = await page.evaluate(() => {
-      const err = document.getElementById('err-cf-name');
-      return err ? (err.style.display !== 'none' && err.textContent.length > 0) : false;
+      openNewClient();
+      document.getElementById('cf-name').value = uid;
+      document.getElementById('cf-street').value = '2 Second Ave';
+      document.getElementById('cf-city').value = 'Wichita';
+      document.getElementById('cf-state').value = 'KS';
+      _allowPhoneDupe = true; _submitting = false;
+      saveClient();
+      const both = clients.filter(c => c.name === uid);
+      const errShown = document.getElementById('err-cf-name')?.style.display !== 'none';
+      clients = clients.filter(c => c.name !== uid);
+      return { count: both.length, errShown };
     });
-    expect(errVisible).toBe(true);
+    expect(r.count).toBe(2);
+    expect(r.errShown).toBe(false);
+  });
+
+  test('saveClient: same name at the SAME address warns, and save anyway gets through', async () => {
+    const r = await page.evaluate(() => {
+      const uid = 'DupeSame_' + Date.now();
+      const addr = '9 Same St, Wichita, KS 67201';
+      clients = clients.filter(c => c.name !== uid);
+      clients.push({ id: 987654321002, name: uid, phone: '3165550003', addr });
+      _submitting = false;
+      openNewClient();
+      document.getElementById('cf-name').value = uid;
+      document.getElementById('cf-street').value = '9 Same St';
+      document.getElementById('cf-city').value = 'Wichita';
+      document.getElementById('cf-state').value = 'KS';
+      document.getElementById('cf-zip').value = '67201';
+      _allowPhoneDupe = true; _submitting = false;
+      saveClient();
+      const blocked = clients.filter(c => c.name === uid).length === 1;
+      const err = document.getElementById('err-cf-name');
+      const offersOverride = !!(err && err.style.display !== 'none' && /save anyway/i.test(err.innerHTML));
+      // The override the old wall never had.
+      _allowNameDupe = true; _submitting = false;
+      saveClient();
+      const got = clients.filter(c => c.name === uid).length;
+      clients = clients.filter(c => c.name !== uid);
+      return { blocked, offersOverride, got };
+    });
+    expect(r.blocked).toBe(true);
+    expect(r.offersOverride).toBe(true);
+    expect(r.got).toBe(2);
   });
 
   test('renderClientList: populates #client-list with saved clients', async () => {
@@ -2061,6 +2083,18 @@ test.describe('Job completion, price change signature gate', () => {
   const JC_CLIENT_ID = 910002;
   let page;
 
+  // A seeded row has to be a REAL record, not just an entry in the live array.
+  //
+  // cloud.js reassigns clients/bids/jobs wholesale in several places (the
+  // cache-restore blocks in supaInit, _enterOfflineMode and supaLoadFromCloud).
+  // A row pushed only into the array is in no snapshot, so when one of those
+  // lands between this seed and the test body that reads it back, the fixture
+  // is simply gone and `bids.find(...)` is undefined. That is the flake this
+  // file has now been bitten by three times, most recently on webkit shard 1
+  // (ada3a56), and each previous fix pinned one test rather than fixing the
+  // seed. Writing the app's own local cache makes the fixture survive a
+  // reassignment the same way a real record does, which is the actual
+  // difference between the two.
   async function seedJob(bidId, jobId, amount) {
     await page.evaluate(([cid, bId, jId, amt]) => {
       clients = clients.filter(c => c.id !== cid);
@@ -2070,6 +2104,7 @@ test.describe('Job completion, price change signature gate', () => {
       jobs = jobs.filter(j => j.id !== jId);
       jobs.push({ id: jId, client_id: cid, bid_id: bId, name: 'Job complete test', status: 'scheduled', start: '2026-06-05' });
       _adjType = null; _jobDoneCapture = null;
+      if (typeof _writeLocalCache === 'function') _writeLocalCache();
     }, [JC_CLIENT_ID, bidId, jobId, amount]);
   }
 
@@ -2079,6 +2114,10 @@ test.describe('Job completion, price change signature gate', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The other half: a cloud load landing mid-suite replaces the arrays from
+    // SERVER data, which the cache cannot rescue. Nothing here is testing sync,
+    // so the load is turned off for this page rather than raced.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
 
   test.afterAll(async () => { await page.context().close(); });

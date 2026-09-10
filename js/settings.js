@@ -13,6 +13,92 @@ function _openSetDetail(key) {
   if (key === 'integrations') _renderIntegrations();
   if (key === 'branding') _renderBrandSwatches(S.brandColor||'#2D5DA8');
   if (key === 'truerates') loadTrueRatesForm();
+  if (key === 'pricebook') renderPriceBookSettings();
+}
+
+// ── Price book editor ───────────────────────────────────────────────────────
+//
+// The book builds itself out of the estimates he writes (js/generic-estimate.js
+// _pbLearn), which is the whole point: nobody sets up a price book before they
+// are allowed to work. But a book he cannot correct is a book he stops
+// trusting, and one wrong price quietly repeated across ten proposals is worse
+// than no book. So this is a list: tap a price to change it, tap the name to
+// rename it, one X to remove it. Not a wizard, not a spreadsheet.
+let _pbTradeTab=null;
+function _pbSettingsTrades(){
+  const book=(S&&S.priceBook&&typeof S.priceBook==='object')?S.priceBook:{};
+  return Object.keys(book).filter(t=>Array.isArray(book[t])&&book[t].length);
+}
+function renderPriceBookSettings(){
+  const tabs=document.getElementById('pb-trade-tabs');
+  const list=document.getElementById('pb-list');
+  if(!list)return;
+  const trades=_pbSettingsTrades();
+  if(!trades.length){
+    if(tabs)tabs.innerHTML='';
+    list.innerHTML='<div style="padding:22px 4px;font-size:13px;color:var(--text3);line-height:1.6">'+
+      'Nothing here yet, and that is on purpose. Write an estimate and the lines you use twice land here on their own, with what you charged.'+
+      '</div>';
+    return;
+  }
+  if(!_pbTradeTab||!trades.includes(_pbTradeTab))_pbTradeTab=trades[0];
+  if(tabs)tabs.innerHTML=trades.length>1?trades.map(t=>{
+    const on=t===_pbTradeTab;
+    const label=(typeof TRADE_META!=='undefined'&&TRADE_META[t]&&TRADE_META[t].label)||t;
+    return '<button data-t="'+escHtml(t)+'" onclick="_pbPickTrade(this.dataset.t)" class="btn btn-sm" style="white-space:nowrap;'+(on?'background:var(--blue);color:#fff;border-color:var(--blue)':'')+'">'+escHtml(label)+'</button>';
+  }).join(''):'';
+  const rows=(S.priceBook[_pbTradeTab]||[]).slice()
+    .sort((a,b)=>((b.n||1)-(a.n||1))||String(b.last||'').localeCompare(String(a.last||'')));
+  list.innerHTML=rows.map((r,i)=>{
+    const used=(r.n||1)>=2?((r.n||1)+'x'):'once, not offered yet';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<button data-i="'+i+'" onclick="_pbRename(+this.dataset.i)" style="display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;cursor:pointer;font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.desc)+'</button>'+
+        '<div style="font-size:11px;color:var(--text3)">'+escHtml(used)+(r.last?' · '+escHtml(r.last):'')+'</div>'+
+      '</div>'+
+      '<button data-i="'+i+'" onclick="_pbReprice(+this.dataset.i)" style="background:none;border:none;padding:0;font-family:inherit;cursor:pointer;font-size:14px;font-weight:800;color:var(--blue);flex-shrink:0">'+(typeof fmt==='function'?fmt(r.rate):'$'+r.rate)+'</button>'+
+      '<button data-i="'+i+'" onclick="_pbRemove(+this.dataset.i)" aria-label="Remove" style="background:none;border:none;padding:4px 2px;font-family:inherit;cursor:pointer;font-size:15px;color:var(--text3);flex-shrink:0">&times;</button>'+
+    '</div>';
+  }).join('')+
+  '<div style="font-size:11px;color:var(--text3);padding:12px 2px 0;line-height:1.6">A line lands here the second time you use it, so one-off descriptions never clutter it up.</div>';
+}
+function _pbPickTrade(t){_pbTradeTab=t;renderPriceBookSettings();}
+function _pbSettingsRow(i){
+  const rows=(S.priceBook&&S.priceBook[_pbTradeTab])||[];
+  const sorted=rows.slice().sort((a,b)=>((b.n||1)-(a.n||1))||String(b.last||'').localeCompare(String(a.last||'')));
+  return sorted[i]||null;
+}
+function _pbRename(i){
+  const r=_pbSettingsRow(i);if(!r)return;
+  if(typeof zPrompt!=='function')return;
+  zPrompt('What do you call this?',v=>{
+    const name=String(v||'').trim();
+    if(!name)return;
+    r.desc=name;_settingsChanged();renderPriceBookSettings();
+  },{title:'Rename',value:r.desc});
+}
+function _pbReprice(i){
+  const r=_pbSettingsRow(i);if(!r)return;
+  if(typeof zPrompt!=='function')return;
+  zPrompt('What do you charge for this?',v=>{
+    // Strip only the money noise a person types ($ , and spaces), never the
+    // sign: stripping everything non-numeric turned "-40" into 40 and set a
+    // real price from a typo.
+    const n=parseFloat(String(v||'').replace(/[$,\s]/g,''));
+    if(!(n>0))return;
+    r.rate=n;_settingsChanged();renderPriceBookSettings();
+  },{title:r.desc,value:String(r.rate||'')});
+}
+function _pbRemove(i){
+  const r=_pbSettingsRow(i);if(!r)return;
+  const go=()=>{
+    const arr=S.priceBook[_pbTradeTab]||[];
+    const at=arr.indexOf(r);
+    if(at>=0)arr.splice(at,1);
+    _settingsChanged();renderPriceBookSettings();
+  };
+  if(typeof zConfirm==='function')zConfirm('Remove "'+escHtml(r.desc)+'" from your price book? It will come back if you use it twice again.',go,{title:'Remove',yes:'Remove',danger:true});
+  else go();
 }
 
 function _closeSetDetail() {
@@ -34,6 +120,15 @@ function _renderSetIndex() {
     const state = S.state || '';
     const loc = [city, state].filter(Boolean).join(', ');
     bizMeta.innerHTML = name ? `<strong>${escHtml(name)}</strong>${loc ? '<br>' + escHtml(loc) : ''}` : '';
+  }
+  // Price book meta: how many lines are actually being offered to him, which is
+  // the number that matters, not how many rows are stored.
+  const pbMeta = document.getElementById('set-meta-pricebook');
+  if (pbMeta) {
+    const book = (S && S.priceBook && typeof S.priceBook === 'object') ? S.priceBook : {};
+    let n = 0;
+    Object.keys(book).forEach(t => { if (Array.isArray(book[t])) n += book[t].filter(x => (x.n || 1) >= 2).length; });
+    pbMeta.innerHTML = n ? `<strong>${n}</strong><br>${n === 1 ? 'price' : 'prices'}` : '';
   }
   // Branding meta
   const brandMeta = document.getElementById('set-meta-branding');
@@ -790,7 +885,7 @@ function loadSettingsForm(){
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-subdomain',S.subdomain||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-since-year',S.sinceYear||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
-  sf('set-margin',S.margin);sf('set-deposit-pct',S.depositPct!=null?S.depositPct:25);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);
+  sf('set-margin',S.margin);sf('set-deposit-pct',S.depositPct!=null?S.depositPct:25);sf('set-est-valid-days',S.estValidDays!=null?S.estValidDays:30);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);
   sf('set-review-url',S.reviewUrl||'');
   const brandColor=S.brandColor||'#2D5DA8';
   sf('set-brandcolor',brandColor);
@@ -803,6 +898,9 @@ function loadSettingsForm(){
   const powEl=document.getElementById('set-powered-by');if(powEl)powEl.checked=S.poweredBy!==false;
   sf('set-labor-burden',Math.round(((S.laborBurden||1.3)-1)*100));
   const _optEl=document.getElementById('set-owner-pay-type');if(_optEl)_optEl.value=S.ownerPayType||'hourly';sf('set-owner-pay-rate',S.ownerPayRate||'');
+  // Working hours (rule 13, js/geo-derive.js). Defaults are the deriver's own.
+  {const w=S.workHours||{};sf('set-wh-start',w.start||'06:00');sf('set-wh-end',w.end||'20:00');
+   const sat=document.getElementById('set-wh-sat');if(sat)sat.checked=!(Array.isArray(w.days)&&w.days.length)||w.days.indexOf(6)>=0;}
   const ctEl=document.getElementById('set-custom-terms');if(ctEl)ctEl.value=S.customTerms||'';
   const coEl=document.getElementById('set-co-terms');if(coEl)coEl.value=S.coTerms||'';
   const _smsDefaults=_getSmsDefaults();
@@ -847,13 +945,15 @@ function saveSettings(){
     smsReminder:gs('set-sms-reminder')||_smsD.reminder,
     smsSecond:gs('set-sms-second')||_smsD.second,
     smsIntent:gs('set-sms-intent')||_smsD.intent,
-    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,depositPct:gf('set-deposit-pct')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,sinceYear:parseInt(gs('set-since-year'))||0,reviewUrl:gs('set-review-url')||'',brandColor:adaBrand(gs('set-brandcolor'))||'',bwebsite:gs('set-bwebsite')||'',
+    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,depositPct:gf('set-deposit-pct')||25,estValidDays:Math.min(365,Math.max(1,Math.round(gf('set-est-valid-days')||30))),cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,sinceYear:parseInt(gs('set-since-year'))||0,reviewUrl:gs('set-review-url')||'',brandColor:adaBrand(gs('set-brandcolor'))||'',bwebsite:gs('set-bwebsite')||'',
     baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
     teamTracking:true, // crew tracking is always on, a condition of using TradeDesk
     laborBurden:1+((parseFloat(v('set-labor-burden'))||0)/100),
     ownerPayType:gs('set-owner-pay-type')||'hourly',
     ownerPayRate:gf('set-owner-pay-rate')||0,
+    workHours:(()=>{const ok=v=>/^\d{1,2}:\d{2}$/.test(String(v||''));const st=gs('set-wh-start'),en=gs('set-wh-end');
+      const sat=document.getElementById('set-wh-sat');return {start:ok(st)?st:'06:00',end:ok(en)?en:'20:00',days:(!sat||sat.checked)?[1,2,3,4,5,6]:[1,2,3,4,5]};})(),
     customTerms:gs('set-custom-terms')||'',coTerms:gs('set-co-terms')||'',
     acceptCash:document.getElementById('set-accept-cash')?document.getElementById('set-accept-cash').checked:(S.acceptCash!==false),
     acceptCheck:document.getElementById('set-accept-check')?document.getElementById('set-accept-check').checked:(S.acceptCheck!==false),
@@ -1022,6 +1122,81 @@ async function _clearCrewTrackingCloud(){
 async function _clearTeamLinksCloud(){
   if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
   try{await _supa.from('team_members').delete().eq('contractor_user_id',_supaUser.id);}catch(_e){}
+}
+// ── Delete account, for real (App Review 5.1.1(v)) ──────────────────────────
+//
+// "If your app supports account creation, you must also offer account deletion
+// within the app." Factory reset above empties the records and leaves the
+// login standing, which is a different thing and does not satisfy the rule.
+//
+// TWO SENTENCES, because there are two truths and a crew member deserves the
+// one that applies to them. An owner loses the business records. A crew member
+// does NOT get to delete their employer's payroll: their hours stay in that
+// employer's books with the name taken off, and their login, their crew link
+// and every position their phone ever reported are gone. Saying that plainly
+// here is the difference between a promise we keep and one we do not.
+function _delAcctCopy(){
+  const crew=(typeof _isEmployee!=='undefined'&&_isEmployee);
+  return crew
+    ? 'Closes your login and unlinks you from this business. Your locations and device history are deleted. The hours you already worked stay in your employer\'s payroll records with your name removed, because those are their books.'
+    : 'Closes your login and deletes your business: clients, proposals, jobs, mileage, expenses, photos and settings. Anyone you have on the crew keeps their own login and is unlinked from you. This cannot be undone.';
+}
+function _delAcctWord(){
+  // A real speed bump, not a second OK. Typing the word is the only thing in
+  // the app that asks somebody to say what they mean in their own hand.
+  return 'DELETE';
+}
+// Returns a promise that settles when the WHOLE flow is done, including the
+// path where the person cancels. Two nested callback modals otherwise resolve
+// this function long before anything has happened, which makes it untestable
+// and makes any caller that waits on it wrong.
+function deleteMyAccount(){
+  if(typeof _supaUser==='undefined'||!_supaUser){
+    if(typeof zAlert==='function')zAlert('You are signed out already, so there is nothing here to delete.',{title:'Nothing to delete'});
+    return Promise.resolve(false);
+  }
+  const word=_delAcctWord();
+  return new Promise(done=>{
+    zConfirm(_delAcctCopy(),()=>{
+      zPrompt('Type '+word+' to confirm.',(v)=>{
+        if(String(v||'').trim().toUpperCase()!==word){
+          if(typeof zAlert==='function')zAlert('Not deleted. The word did not match, so nothing was touched.',{title:'Cancelled'});
+          done(false);return;
+        }
+        Promise.resolve(_deleteAccountNow()).then(r=>done(r),()=>done(false));
+      },{title:'Last chance',placeholder:word});
+    },{title:'Delete account',yes:'Continue',danger:true,onNo:()=>done(false)});
+  });
+}
+async function _deleteAccountNow(){
+  const btn=document.getElementById('set-del-acct-btn');
+  if(btn){btn.disabled=true;btn.textContent='Deleting\u2026';}
+  try{
+    const {data}=await _supa.auth.getSession();
+    const tok=data&&data.session&&data.session.access_token;
+    if(!tok)throw new Error('You are signed out. Sign in again and retry.');
+    const r=await fetch(_SUPA_DIRECT_URL+'/functions/v1/delete-account',{
+      method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},
+    });
+    const out=await r.json().catch(()=>({}));
+    if(!r.ok||!out.ok)throw new Error(out.error||'Could not delete the account.');
+    // Nothing on this device should outlive the account. Sign-out clears the
+    // session; the wipe below clears the caches and the offline queues, so a
+    // reload cannot restore a snapshot of an account that no longer exists.
+    try{await _supa.auth.signOut();}catch(_e){}
+    try{
+      Object.keys(localStorage).forEach(k=>{
+        if(/^zp3_|^td_geo|^geo_owner_consent$/.test(k))localStorage.removeItem(k);
+      });
+    }catch(_e){}
+    if(typeof zAlert==='function')zAlert('Your account is deleted. Thanks for giving TradeDesk a run.',{title:'Deleted'});
+    setTimeout(()=>{try{location.reload();}catch(_e){}},1200);
+    return true;
+  }catch(e){
+    if(btn){btn.disabled=false;btn.innerHTML='Delete my account';}
+    if(typeof zAlert==='function')zAlert((e&&e.message)||'Could not delete the account. Try again, or email support.',{title:'Not deleted'});
+    return false;
+  }
 }
 function clearAllData(){
   zConfirm('This will permanently delete ALL clients, proposals, jobs, income, expenses, mileage, and your invited team. This cannot be undone.',()=>{
@@ -1521,6 +1696,91 @@ function renderSettingsTrades(){
       '<div style="font-size:11px;color:var(--text3)">All trades active.</div>'
     );
 }
+// ── Code editions ───────────────────────────────────────────────────────────
+//
+// codeEval refuses with reason 'no-edition' until S.codeEditions names one per
+// family, because no public dataset knows which edition a given inspector
+// enforces: Kansas and four other states have no state adoption at all, the
+// city or county decides, and local amendments beat the state either way. So
+// the contractor tells us once, and this is where he does it.
+//
+// Nothing here decides anything. It writes S.codeEditions and saves.
+
+const _CODE_FAMILY_META = {
+  nec: { label: 'Electrical', book: 'National Electrical Code', trades: ['electrical'] },
+  ipc: { label: 'Plumbing (IPC)', book: 'International Plumbing Code', trades: ['plumbing'] },
+  upc: { label: 'Plumbing (UPC)', book: 'Uniform Plumbing Code', trades: ['plumbing'] }
+};
+
+// Only the families this account's trades actually use. A painter never sees
+// a plumbing code picker.
+function _codeFamiliesForAccount() {
+  const lines = (typeof _getTradeLines === 'function') ? _getTradeLines() : [];
+  return Object.keys(_CODE_FAMILY_META).filter(function (f) {
+    return _CODE_FAMILY_META[f].trades.some(function (t) { return lines.indexOf(t) >= 0; });
+  });
+}
+
+function setCodeEdition(family, edition) {
+  if (!S.codeEditions || typeof S.codeEditions !== 'object') S.codeEditions = {};
+  if (edition) S.codeEditions[family] = String(edition);
+  else delete S.codeEditions[family];
+  if (typeof _settingsChanged === 'function') _settingsChanged();
+  if (typeof supaSaveToCloud === 'function') supaSaveToCloud();
+  renderSettingsCodes();
+}
+
+function renderSettingsCodes() {
+  const el = document.getElementById('set-codes-content');
+  const sub = document.getElementById('set-idx-codes-sub');
+  if (!el) return;
+
+  const fams = _codeFamiliesForAccount();
+  const chosen = (S && S.codeEditions) || {};
+
+  if (sub) {
+    const named = fams.filter(function (f) { return chosen[f]; });
+    sub.textContent = !fams.length ? 'No trade here uses a code book yet'
+      : named.length ? named.map(function (f) { return f.toUpperCase() + ' ' + chosen[f]; }).join(', ')
+      : 'Not set, so code answers stay off';
+  }
+
+  if (!fams.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text2);line-height:1.6">' +
+      'None of your trades use a code book yet. Add electrical or plumbing under Your trades ' +
+      'and the edition picker appears here.</div>';
+    return;
+  }
+
+  el.innerHTML =
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">' +
+      'Your inspector enforces one edition, and it is often not the newest one. ' +
+      'Ask the building department if you are not sure. Until this is set, the app ' +
+      'will not answer a code question rather than answer it from the wrong book.' +
+    '</div>' +
+    fams.map(function (f) {
+      const meta = _CODE_FAMILY_META[f];
+      const eds = (typeof codeEditions === 'function') ? codeEditions(f) : [];
+      const cur = chosen[f] || '';
+      const opts = ['<option value="">Not set</option>'].concat(eds.map(function (e) {
+        return '<option value="' + escHtml(e) + '"' + (e === cur ? ' selected' : '') + '>' + escHtml(e) + '</option>';
+      })).join('');
+      return '<div style="padding:12px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">' + escHtml(meta.label) + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">' + escHtml(meta.book) + '</div>' +
+        (eds.length
+          ? '<select onchange="setCodeEdition(\'' + f + '\',this.value)" ' +
+              'style="width:100%;padding:9px 10px;border-radius:var(--r);border:1.5px solid var(--border2);' +
+              'background:var(--bg);color:var(--text);font-size:13px;font-family:inherit">' + opts + '</select>'
+          : '<div style="font-size:11px;color:var(--text3)">No edition of this book has been loaded into the app yet.</div>') +
+      '</div>';
+    }).join('') +
+    '<div style="font-size:11px;color:var(--text3);margin-top:14px;line-height:1.6">' +
+      'Editions never replace each other. An older one stays selectable forever, ' +
+      'because existing work is judged under the code it was permitted under.' +
+    '</div>';
+}
+
 async function addTradeFromSettings(trade){
   if(!_config?.account_id)return;
   const cur=_getTradeLines();
@@ -1531,7 +1791,7 @@ async function addTradeFromSettings(trade){
     if(error){showToast('SQL migration needed, see notes','⚠️');console.error(error);return;}
   }
   _config={..._config,trade_lines:lineStr};
-  renderSettingsTrades();_renderNavTradeSwitcher();_renderSettingsTradeSections();
+  renderSettingsTrades();renderSettingsCodes();_renderNavTradeSwitcher();_renderSettingsTradeSections();
   showToast('Added '+(TRADE_META[trade]?.label||trade),'✓');
 }
 async function removeTradeFromSettings(trade){
@@ -1546,7 +1806,7 @@ async function removeTradeFromSettings(trade){
   }
   _config={..._config,trade_lines:lineStr};
   if(_activeTrade===trade)_activeTrade=newLines[0];
-  renderSettingsTrades();_renderNavTradeSwitcher();_renderSettingsTradeSections();
+  renderSettingsTrades();renderSettingsCodes();_renderNavTradeSwitcher();_renderSettingsTradeSections();
   showToast('Removed '+(TRADE_META[trade]?.label||trade),'✓');
 }
 function _renderSettingsTradeSections(){
@@ -1557,7 +1817,7 @@ function _renderSettingsTradeSections(){
 function _renderDevTradeCard(){
   const _hasFleet=typeof _fleetRoster!=='undefined'&&_fleetRoster&&_fleetRoster.length;
   if(!_config?.is_dev&&!_hasFleet)return;
-  const current=_config?.business_type||'painting';
+  const current=_config?.business_type||'general';
   const trades=[
     {id:'painting',icon:'🎨',label:'Painting'},
     {id:'plumbing',icon:'🔧',label:'Plumbing'},
@@ -1612,7 +1872,7 @@ async function devSwitchTrade(type){
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────
-let _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:'',acceptCash:true,acceptCheck:true,allowPayLater:true,wantCards:true,jobs:[]};
+let _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:'',acceptCash:true,acceptCheck:true,allowPayLater:true,wantCards:true,jobs:[],svcPick:false,svcPicked:[],svcAll:false};
 
 async function showOnboarding(){
   _removeBootOverlay();
@@ -1638,7 +1898,7 @@ function _beginOAuthOnboarding(){
     // flag true forever, blocking every future sign-in (the SIGNED_IN handler returns
     // early on _obInProgress). obSubmit owns _obInProgress during the actual write.
     if(typeof document!=='undefined'&&document.getElementById('onboarding-overlay'))return;
-    _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:'',acceptCash:true,acceptCheck:true,allowPayLater:true,wantCards:true,jobs:[],oauth:true};
+    _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:'',acceptCash:true,acceptCheck:true,allowPayLater:true,wantCards:true,jobs:[],svcPick:false,svcPicked:[],svcAll:false,oauth:true};
     if(typeof _supaUser!=='undefined'&&_supaUser){
       const m=_supaUser.user_metadata||{};
       _ob.name=m.full_name||m.name||m.given_name||'';
@@ -1724,7 +1984,7 @@ function renderObStep(){
 
   const body=document.getElementById('ob-body');
   if(_ob.step===1)obStepAccount(body);
-  else if(_ob.step===2)obStep3(body);   // trade
+  else if(_ob.step===2)(_ob.svcPick?obStepServices(body):obStep3(body));   // trade, then what he does
   else if(_ob.step===3)obStep8(body);   // get paid
 }
 
@@ -1788,10 +2048,14 @@ function obStepAccount(el){
     '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">State</label>'+
     '<select id="ob-state" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+_stateOpts+'</select></div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:12px">By continuing you agree to our <a href="#" onclick="_obShowTos(event)" style="color:var(--blue);text-decoration:underline">Terms of Service</a>, a summary of what TradeDesk is and isn\'t (not tax, legal, or financial advice).</div>'+
+    // The two real documents, not a paraphrase in an alert. Apple asks for a
+    // reachable privacy policy, and a person signing up is entitled to read the
+    // actual terms, so both open as their own public pages (privacy.html,
+    // terms.html) in a new tab and leave the half-filled signup where it was.
+    // The old summary alert is deleted rather than kept alongside them (7).
+    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:12px">By creating an account you agree to our <a href="terms.html" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">Terms of Use</a> and <a href="privacy.html" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">Privacy Policy</a>. TradeDesk is a tool for running your business, not tax, legal or financial advice.</div>'+
     obBtn('Continue','obNextAccount()');
 }
-function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAlert('TradeDesk is an organizational tool for running your trade business, proposals, jobs, payments, mileage, and tax summaries. It is NOT tax, legal, or financial advice: consult a qualified professional for those. You are responsible for authorization to store client data. Data is stored securely via Supabase; keep your own backups of critical records. Provided "as is" with no warranty.',{title:'Terms of Service'});}
 // Owner decision 2026-08-21: Apple/Google sign-in has no reliable way to detect
 // a returning contractor whose provider email doesn't textually match their
 // existing account (a private-relay address, or just a different inbox), that's
@@ -2012,6 +2276,79 @@ function obNext3(){
   const err=document.getElementById('ob-err');
   if(!_ob.tradeLines.length){if(err)err.textContent='Select at least one trade.';return;}
   _ob.businessType=_ob.tradeLines[0];
+  // We already ship 215 priced services across the trades, so a starting price
+  // book is a tapping exercise, not a setup project and not an AI problem.
+  // Skipped entirely for a trade we have no services for.
+  if(!_ob.svcPick&&_obSvcJobs().length){_ob.svcPick=true;renderObStep();return;}
+  _ob.step=3;renderObStep();
+}
+
+// ── "Tap the ones you do" ───────────────────────────────────────────────────
+//
+// The ServiceTitan complaint is that the price book is a project you finish
+// before you are allowed to work. This is the opposite end of it: twelve of his
+// trade's most common jobs, already priced, tap the ones he does, thirty
+// seconds, skippable. Whatever he taps lands in the book already promoted, so
+// it is offered in the estimate builder from his very first proposal instead of
+// waiting for him to use it twice.
+const _OB_SVC_SHOWN=12;
+function _obSvcJobs(){
+  const t=_ob.tradeLines[0]||_ob.businessType;
+  if(!t||typeof TRADE_JOBS==='undefined')return [];
+  const jobs=TRADE_JOBS[t];
+  return Array.isArray(jobs)?jobs.filter(j=>j&&j.name&&!j.custom):[];
+}
+function _obSvcPrice(j){return Math.round((j.labor||0)+(j.mat||0));}
+function obStepServices(el){
+  const jobs=_obSvcJobs();
+  const all=!!_ob.svcAll;
+  const shown=all?jobs:jobs.slice(0,_OB_SVC_SHOWN);
+  _ob.svcPicked=_ob.svcPicked||[];
+  const tLabel=(typeof TRADE_META!=='undefined'&&TRADE_META[_ob.tradeLines[0]]&&TRADE_META[_ob.tradeLines[0]].label)||'your trade';
+  el.innerHTML=
+    '<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🔖',{size:28})+'</div>'+
+    '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">What do you actually do?</div>'+
+    '<div style="font-size:14px;color:var(--text3)">Tap the jobs you take. Prices are a starting point, you can change any of them later, and the app learns the rest as you work.</div></div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">'+
+    shown.map((j,i)=>{
+      const idx=jobs.indexOf(j);
+      const on=_ob.svcPicked.includes(idx);
+      return '<button onclick="obToggleSvc('+idx+')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--r);border:2px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left">'+
+        '<span style="flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name)+'</span>'+
+        '<span style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text3)')+';flex-shrink:0">$'+_obSvcPrice(j).toLocaleString()+'</span>'+
+      '</button>';
+    }).join('')+
+    '</div>'+
+    (!all&&jobs.length>_OB_SVC_SHOWN?'<button onclick="_ob.svcAll=true;renderObStep()" style="width:100%;padding:10px;background:none;border:1px dashed var(--border2);border-radius:var(--r);color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-bottom:14px">Show all '+jobs.length+' '+escHtml(tLabel.toLowerCase())+' jobs</button>':'')+
+    obBtn(_ob.svcPicked.length?'Add '+_ob.svcPicked.length+' to my price book':'Continue','obNextServices()')+
+    obBtn('Skip, I will build it as I go','obNextServices(true)','quiet');
+}
+function obToggleSvc(i){
+  _ob.svcPicked=_ob.svcPicked||[];
+  const at=_ob.svcPicked.indexOf(i);
+  if(at===-1)_ob.svcPicked.push(i);else _ob.svcPicked.splice(at,1);
+  renderObStep();
+}
+function obNextServices(skip){
+  if(!skip&&(_ob.svcPicked||[]).length){
+    const trade=_ob.tradeLines[0]||_ob.businessType||'general';
+    const jobs=_obSvcJobs();
+    if(!S.priceBook||typeof S.priceBook!=='object')S.priceBook={};
+    if(!Array.isArray(S.priceBook[trade]))S.priceBook[trade]=[];
+    const book=S.priceBook[trade];
+    _ob.svcPicked.forEach(i=>{
+      const j=jobs[i];if(!j)return;
+      const rate=_obSvcPrice(j);
+      if(rate<=0)return;
+      if(book.some(x=>String(x.desc||'').trim().toLowerCase()===String(j.name).trim().toLowerCase()))return;
+      // n:2 = already earned its place. He told us he does this job, which is
+      // exactly what using it twice would have told us, so it is offered from
+      // his first proposal rather than after his third.
+      book.push({desc:j.name,unit:j.unit||'ea',rate,n:2,last:todayKey()});
+    });
+    if(typeof _settingsChanged==='function')_settingsChanged();
+  }
+  _ob.svcPick=false;
   _ob.step=3;renderObStep();
 }
 

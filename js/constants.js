@@ -918,19 +918,6 @@ const IRS_EXPENSE_CATS=[
 
 // ── Expense flow ──────────────────────────────────────────────────────
 const STATE_LABOR_MULT={AL:0.58,AK:1.27,AZ:0.73,AR:0.59,CA:1.11,CO:0.70,CT:1.02,DE:0.84,FL:0.60,GA:0.68,HI:1.19,ID:0.77,IL:0.86,IN:0.79,IA:0.72,KS:0.62,KY:0.70,LA:0.65,ME:0.82,MD:0.82,MA:1.19,MI:0.88,MN:1.11,MS:0.60,MO:0.75,MT:0.91,NE:0.62,NV:1.09,NH:0.95,NJ:1.03,NM:0.67,NY:1.04,NC:0.60,ND:1.15,OH:0.81,OK:0.57,OR:1.40,PA:1.08,RI:0.96,SC:0.60,SD:0.69,TN:0.65,TX:0.65,UT:0.74,VT:1.10,VA:0.77,WA:1.31,WV:0.83,WI:0.94,WY:0.73,DC:1.10};
-const GEI_BUNDLES={
-  residential:    ['outlet','gfci','switch','dimmer','afci','ext_outlet','recessed','light','fan','exhaust','smoke','under_cab','chandelier','vanity_bar','pendant','track_light','ballast_swap','led_retrofit','doorbell','motion_sw'],
-  panels_circuits:['breaker','ded_120','ded_240','panel_100','panel_200','sub_panel','afci_bkr','conduit_lf','low_volt'],
-  service_upgrades:['svc_150','svc_400','meter_base','ug_svc','grounding_rod','bond_verify','alum_wire','xfer_man','xfer_auto','gen_hookup'],
-  ev_solar:       ['ev_resi','ev_hw40','surge','hot_tub','xfer_man','xfer_auto','gen_hookup','solar_kw','inverter','battery','bat_kwh','offgrid_design'],
-  outdoor_pool:   ['hot_tub','pool_bond','pool_pump','pool_light','pool_auto','landscape_xfmr','path_light','deck_light','pond_light','deice_cable','xmas_outlet','exterior'],
-  smart_security: ['doorbell','cam_rough','motion_sw','smart_panel','home_auto','intercom','access_ctrl'],
-  appliances:     ['dryer_30a','dryer_50a','range_50a','dishwasher_ckt','disposal_ckt','microwave_ckt','fridge_ckt','wh_elec_ckt','range_hood_ckt'],
-  diagnostics:    ['elec_trouble','elec_insp','load_analysis','permit_pull','gen_hookup','well_pump','sump_pump_ckt','sauna','attic_fan','barn_panel','workshop_panel','tr_outlet'],
-  new_construction:['outlet','gfci','switch','recessed','light','fan','exhaust','smoke','ded_120','ded_240','panel_200','sub_panel','conduit_lf','low_volt','ev_resi','panel_100'],
-  commercial:     ['c_3phase','c_lighting','c_ev_comm','c_panel_comm','c_emerg_light','c_solar_comm','c_sub','c_conduit','c_data','c_motor_disc','c_park_light','c_svc_600','c_svc_1200','c_fire_rough','c_backup_gen_3ph','c_ups_rough','c_submeter','c_arc_flash','c_vfd','c_trans','c_mcc','c_kitchen_hookup','c_medical','c_temp_power','c_tenant_imp','c_lcs','c_sign','c_ev_l3','c_ev_fleet','c_switchgear','c_pole_light','c_struct_cable','c_poe'],
-};
-
 const _PANEL_SLOTS={100:20,150:30,200:40,400:42};
 const _PANEL_GAUGE={15:'14 AWG',20:'12 AWG',30:'10 AWG',40:'8 AWG',50:'8 AWG',60:'6 AWG',100:'3 AWG',150:'1/0',200:'2/0',240:'3/0'};
 const IND_EQUIP_TYPES={

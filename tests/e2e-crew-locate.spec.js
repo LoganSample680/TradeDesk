@@ -219,14 +219,90 @@ test.describe('push to locate', () => {
     const r = await page.evaluate(async () => {
       _crewLocateTeardown();
       // A request with no channel resolves offline rather than hanging forever.
+      // Asked about a PEER: this test is about the channel, and the peer path is
+      // the channel path. Since 2026-09-06 asking about YOURSELF is answered by
+      // this phone directly and needs no channel at all, so it would (rightly)
+      // not be offline here.
       const keep = window._supa;
       window._supa = null;
-      try { return await crewLocateRequest('crew-uid-1'); }
+      try { return await crewLocateRequest('crew-uid-2'); }
       finally { window._supa = keep; }
     });
     expect(r.ok).toBe(false);
     expect(r.reason).toBe('offline');
   });
 
+  test('and your own phone still answers you with no channel at all', async () => {
+    await bus();
+    const r = await page.evaluate(async () => {
+      _crewLocateTeardown();
+      const keep = window._supa;
+      window._supa = null;
+      try { return await crewLocateRequest('crew-uid-1'); }
+      finally { window._supa = keep; }
+    });
+    expect(r.ok, 'the fix is on this device; nothing has to be asked').toBe(true);
+  });
+
   test('no console errors across push to locate', async () => { await assertNoErrors(page); });
+
+  // ── Locating yourself (owner 2026-09-06) ──────────────────────────────────
+  // A solo contractor IS the crew, so a manager asking where he is is the
+  // common case. It used to always time out: the channel does not deliver a
+  // device its own broadcast, and the responder refuses when the asker is the
+  // answerer, so the row claimed his phone was asleep while it was in his hand.
+  test.describe('locating yourself', () => {
+    test('answers from this phone, with no round trip at all', async () => {
+      await bus();
+      const r = await page.evaluate(async () => {
+        window.__bus.sent.length = 0;
+        const res = await crewLocateRequest('crew-uid-1');
+        return { res, sent: window.__bus.sent.length };
+      });
+      expect(r.res.ok, 'his own phone can answer him').toBe(true);
+      expect(r.res.lat).toBeCloseTo(41.52, 2);
+      expect(r.sent, 'nothing goes over the channel to ask yourself').toBe(0);
+    });
+
+    test('the fresh fix becomes the new last-known, same as an answered one', async () => {
+      await bus();
+      const wrote = await page.evaluate(async () => {
+        const seen = [];
+        const real = window._geoWritePing;
+        window._geoWritePing = (here, acc, at) => seen.push({ here, acc, at });
+        await crewLocateRequest('crew-uid-1');
+        window._geoWritePing = real;
+        return seen;
+      });
+      expect(wrote.length, 'written once, to the same place the responder writes').toBe(1);
+      expect(wrote[0].here.lat).toBeCloseTo(41.52, 2);
+      expect(typeof wrote[0].at, 'stamped with the fix moment, not the write moment').toBe('number');
+    });
+
+    test('consent and OS denial still gate it, exactly as for anybody else', async () => {
+      await bus({ teamTracking: false });
+      const off = await page.evaluate(() => crewLocateRequest('crew-uid-1'));
+      expect(off.ok).toBe(false);
+      expect(off.reason).toBe('tracking-off');
+      await bus({ osDenied: true });
+      const denied = await page.evaluate(() => crewLocateRequest('crew-uid-1'));
+      expect(denied.reason).toBe('os-denied');
+    });
+
+    test('no fix says no fix, never "their phone is asleep"', async () => {
+      await bus({ noFix: true });
+      const r = await page.evaluate(() => crewLocateRequest('crew-uid-1'));
+      expect(r.ok).toBe(false);
+      expect(r.reason, 'a phone in your hand is not asleep').toBe('no-fix');
+      const said = await page.evaluate(() => _crewLocateReasonText('no-fix'));
+      expect(said).toMatch(/could not get a fix/);
+    });
+
+    test('asking about somebody else still goes over the channel', async () => {
+      await bus();
+      await page.evaluate(() => { window.__bus.sent.length = 0; crewLocateRequest('crew-uid-2'); });
+      const sent = await page.evaluate(() => window.__bus.sent.map(m => m.event));
+      expect(sent, 'the crew path is untouched').toContain('locate_req');
+    });
+  });
 });

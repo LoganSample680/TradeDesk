@@ -23,15 +23,33 @@ if (!KEY || !KID || !ISS) {
   process.exit(1);
 }
 
+// ENABLING A CAPABILITY IS NOT ASSIGNING THE GROUP TO IT, and that gap is the
+// whole reason the share extension failed to export three times (builds ~19,
+// 2026-08-17, and 37 on 2026-08-26), every one of them "Authentication failed
+// / No profiles for 'app.tradedesk.beta.share' were found".
+//
+// In the portal these are two clicks: tick App Groups, then Edit and tick the
+// group itself. Over the API they are two calls. This script only ever made
+// the first one. The extension's entitlements ask for a SPECIFIC group
+// (group.app.tradedesk.beta, ShareExt.entitlements), and a profile cannot form
+// for a capability that has no group attached, so signing failed with a
+// message that named the profile and never the reason.
+//
+// That also explains why the two manual attempts did not fix it: registering
+// the App Group (attempt 2) and creating the App ID (attempt 3) are both real,
+// and neither one LINKS them.
+const APP_GROUP = 'group.app.tradedesk.beta';
+
 // What must exist, and which capabilities each id's entitlements demand.
 // Capabilities mirror the entitlements the workflow writes: the app carries
 // applesignin + aps-environment + the share App Group; the extensions carry
 // only what their own entitlement files use.
 const WANT = [
   { id: 'app.tradedesk.beta', name: 'TradeDesk Beta',
-    caps: ['PUSH_NOTIFICATIONS', 'APPLE_ID_AUTH', 'APP_GROUPS', 'ASSOCIATED_DOMAINS'] },
+    caps: ['PUSH_NOTIFICATIONS', 'APPLE_ID_AUTH', 'APP_GROUPS', 'ASSOCIATED_DOMAINS'],
+    groups: [APP_GROUP] },
   { id: 'app.tradedesk.beta.share', name: 'TradeDesk Beta Share',
-    caps: ['APP_GROUPS'] },
+    caps: ['APP_GROUPS'], groups: [APP_GROUP] },
   { id: 'app.tradedesk.beta.live', name: 'TradeDesk Beta Live',
     caps: [] },
 ];
@@ -104,5 +122,76 @@ for (const want of WANT) {
     if (e.status === 201 || e.status === 409) console.log(`::notice::asc: ${want.id} ${cap} ensured (${e.status})`);
     else console.warn(`::warning::${want.id}: enabling ${cap} returned ${e.status}: ${e.text.slice(0, 200)}`);
   }
+
+  // ── THE GROUP, NOT JUST THE CAPABILITY ────────────────────────────────────
+  // Read back what is ACTUALLY attached and say so out loud. This is the part
+  // that has never been checked, and a build is expensive enough that finding
+  // out here beats finding out after a 12-minute archive.
+  if (want.groups && want.groups.length) {
+    const gq = await api('GET', `/v1/appGroups?filter[identifier]=${encodeURIComponent(APP_GROUP)}&limit=10`);
+    const grp = gq.status === 200
+      ? (gq.json.data || []).find((g) => g.attributes?.identifier === APP_GROUP)
+      : null;
+    if (!grp) {
+      // NOT proof of anything, and this must never fail the build.
+      //
+      // Build 46 did exactly that: it read a 404 from /v1/appGroups and
+      // reported "the App Group does not exist on this team", and the owner
+      // had the group on screen in the portal while it said so. App Groups are
+      // not exposed through the App Store Connect API the way bundleIds and
+      // bundleIdCapabilities are, so the 404 is the ENDPOINT answering, not the
+      // resource. A check that cannot see the thing it is checking has no
+      // business blocking a build over it.
+      //
+      // So: say what we could not determine, and let SIGNING be the arbiter,
+      // which is the one test that actually knows. If the group is genuinely
+      // missing or unattached, the export fails with "No profiles for
+      // app.tradedesk.beta.share" and the verdict step already routes that to
+      // the share extension.
+      console.log(`::notice::asc: cannot verify ${APP_GROUP} through the API (appGroups lookup ${gq.status}); App Groups are not exposed there. Signing will be the test.`);
+      console.log(`::notice::asc: if the export later fails on profiles, check by hand: Identifiers -> App Groups -> ${APP_GROUP} exists, and ${want.id} -> App Groups -> Edit has it ticked.`);
+    } else {
+      // Which capability record is the APP_GROUPS one for THIS bundle id, and
+      // what groups hang off it.
+      const capQ = await api('GET', `/v1/bundleIds/${rec.id}/bundleIdCapabilities?limit=50`);
+      const capRec = capQ.status === 200
+        ? (capQ.json.data || []).find((c) => c.attributes?.capabilityType === 'APP_GROUPS')
+        : null;
+      let attached = [];
+      if (capRec) {
+        const rel = await api('GET', `/v1/bundleIdCapabilities/${capRec.id}/appGroups?limit=50`);
+        if (rel.status === 200) attached = (rel.json.data || []).map((g) => g.attributes?.identifier).filter(Boolean);
+      }
+      if (attached.includes(APP_GROUP)) {
+        console.log(`::notice::asc: ${want.id} APP_GROUPS -> ${APP_GROUP} attached`);
+      } else {
+        // Best effort to attach it. Apple's write shape for this relationship
+        // is thinly documented and has changed, so a failure here is REPORTED
+        // with the two manual clicks rather than swallowed or guessed past.
+        const patch = capRec
+          ? await api('PATCH', `/v1/bundleIdCapabilities/${capRec.id}`, {
+              data: {
+                type: 'bundleIdCapabilities', id: capRec.id,
+                attributes: { capabilityType: 'APP_GROUPS' },
+                relationships: { appGroups: { data: [{ type: 'appGroups', id: grp.id }] } },
+              },
+            })
+          : { status: 0, text: 'no APP_GROUPS capability record to patch' };
+        const ok = patch.status === 200 || patch.status === 201 || patch.status === 204;
+        if (ok) {
+          console.log(`::notice::asc: ${want.id} APP_GROUPS -> ${APP_GROUP} attached now (${patch.status})`);
+        } else {
+          // Warning, not an error, for the same reason as above: this write
+          // shape is thinly documented and a rejection here does not prove the
+          // portal is wrong. Signing decides.
+          console.warn(`::warning::asc: could not attach ${APP_GROUP} to ${want.id} over the API (${patch.status}): ${String(patch.text).slice(0, 200)}`);
+          console.warn(`::warning::If the export fails on profiles, do it by hand: Identifiers -> ${want.id} -> App Groups -> Edit -> tick ${APP_GROUP} -> Save. Ticking the capability alone is not enough.`);
+        }
+      }
+    }
+  }
+}
+if (hardFail) {
+  console.error('::error::Portal preflight failed. NOTHING was archived, so this cost seconds, not a build.');
 }
 process.exit(hardFail ? 1 : 0);

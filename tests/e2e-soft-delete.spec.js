@@ -171,7 +171,14 @@ test.describe('Shared soft delete', () => {
     const fs = require('fs'), path = require('path');
     const root = path.join(__dirname, '..');
     const files = fs.readdirSync(path.join(root, 'js')).filter(f => f.endsWith('.js')).map(f => 'js/' + f);
-    const pat = /from\('(?:job_time_entries|shop_time_entries)'\)\s*\n?\s*\.select\('[^']*'\)(?!\.is\('deleted_at',\s*null\))/g;
+    // ONE declared exception exists: a read may carry a same-line
+    // `/* deleted-included: <reason> */` marker instead of the filter. That is
+    // for code whose correctness DEPENDS on seeing struck rows, today only
+    // _geoTapeFillSweep, whose no-resurrection interlock reads deleted rows
+    // precisely so it will never write over them. The marker keeps the
+    // exception loud and greppable at the call site; a bare unfiltered read
+    // still fails here exactly as before.
+    const pat = /from\('(?:job_time_entries|shop_time_entries)'\)\s*\n?\s*\.select\('[^']*'\)(?!\.is\('deleted_at',\s*null\)|\s*\/\* deleted-included:)/g;
     const offenders = [];
     files.forEach(rel => {
       const src = fs.readFileSync(path.join(root, rel), 'utf8');
