@@ -80,6 +80,93 @@ test.describe('TdScan web half', () => {
   const withoutBook = () => page.evaluate(() => { window.setCodeEdition('nec', ''); });
   test.afterAll(async () => { await page.context().close(); });
 
+  // ── A REAL floor transform, off the owner's own scan (2026-09-10) ────────
+  // His Aldi GUYS living room: seven good walls, a right perimeter, a right
+  // wall area, and 0 sq ft of floor. RoomPlan hands a surface's polygon in
+  // the surface's LOCAL XY plane with z as the normal, and a floor is that
+  // plane laid flat, so local y is what becomes world z. The parser read
+  // local z and added the translation, and local z is 0 at every corner of a
+  // planar polygon: all six came back on one line at z = -1.9913149, and the
+  // shoelace of a line is nothing. The fixture above happens to use the other
+  // convention with an identity transform, which is why it never caught this.
+  test.describe('the floor polygon comes through its transform', () => {
+    // A floor laid flat: local X stays world X, local Y becomes world -Z, and
+    // the normal (local Z) points up. This is the shape a device sends.
+    const laidFlat = (tx, tz) => [1, 0, 0, 0,  0, 0, -1, 0,  0, 1, 0, 0,  tx, 0, tz, 1];
+    const roomWithFloor = (corners, transform) => {
+      // fabricatedRoom() hands back the JSON STRING the parser takes.
+      const raw = JSON.parse(fabricatedRoom());
+      raw.floors = [{ identifier: 'f-1', category: { floor: {} }, dimensions: [4.84, 0, 3.4],
+                      polygonCorners: corners, transform }];
+      return JSON.stringify(raw);
+    };
+
+    test('a rectangle in the local XY plane keeps its area', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Living');
+        return { sqFt: Math.round(_scanSqFt(room.floorM2)), approx: !!room.floorApprox,
+                 zs: room.poly.map(p => Math.round(p[1] * 100) / 100) };
+      }, roomWithFloor([[-2.42, -1.7, 0], [2.42, -1.7, 0], [2.42, 1.7, 0], [-2.42, 1.7, 0]],
+                       laidFlat(0, 0)));
+      // 4.84 x 3.4 m is 16.46 m2, 177 sq ft. It used to be 0.
+      expect(r.sqFt).toBe(177);
+      expect(r.approx, 'a real polygon is not an approximation').toBe(false);
+      expect(new Set(r.zs).size, 'the corners are not all on one line any more').toBeGreaterThan(1);
+    });
+
+    test('and it lands where the floor actually is, not at the origin', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Living');
+        return { xs: room.poly.map(p => p[0]), zs: room.poly.map(p => p[1]) };
+      }, roomWithFloor([[-2.42, -1.7, 0], [2.42, -1.7, 0], [2.42, 1.7, 0], [-2.42, 1.7, 0]],
+                       laidFlat(4, -1.99)));
+      expect(Math.min(...r.xs)).toBeCloseTo(1.58, 2);
+      expect(Math.max(...r.xs)).toBeCloseTo(6.42, 2);
+      expect(Math.min(...r.zs)).toBeCloseTo(-3.69, 2);
+      expect(Math.max(...r.zs)).toBeCloseTo(-0.29, 2);
+    });
+
+    test('the old convention still parses, so no scan already taken changes', async () => {
+      // Corners in XZ with an identity transform: what the fixture uses and
+      // what the parser assumed. Putting a point through the whole basis is
+      // right for this one too, which is the point of doing it that way.
+      const r = await page.evaluate((raw) => Math.round(_scanSqFt(_scanParseRoom(raw, 'K').floorM2)),
+        roomWithFloor([[-2.42, 0, -1.7], [2.42, 0, -1.7], [2.42, 0, 1.7], [-2.42, 0, 1.7]],
+                      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+      expect(r).toBe(177);
+    });
+
+    // A number that reads like an answer and is not is worse than a number
+    // that admits what it is. 0 sq ft on a bid is something somebody acts on.
+    test('a polygon that encloses nothing falls back to the walls and says so', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Living');
+        return { sqFt: Math.round(_scanSqFt(room.floorM2)), approx: !!room.floorApprox };
+      }, roomWithFloor([[-2.42, 0, 0], [0, 0, 0], [2.42, 0, 0], [0, 0, 0]], laidFlat(0, 0)));
+      expect(r.sqFt, 'a room with walls never reports no floor').toBeGreaterThan(0);
+      expect(r.approx, 'and it admits the hull overstates').toBe(true);
+    });
+
+    test('_scanToWorldXZ: no matrix, a partial one, and junk', async () => {
+      const r = await page.evaluate(() => ({
+        none: _scanToWorldXZ(null, { x: 2, y: 3, z: 4 }),
+        noVec: _scanToWorldXZ(_scanMat([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]), null),
+        identity: _scanToWorldXZ(_scanMat([1,0,0,0, 0,1,0,0, 0,0,1,0, 5,0,7,1]), { x: 2, y: 3, z: 4 }),
+      }));
+      expect(r.none, 'no matrix is the point itself on the ground plane').toEqual([2, 4]);
+      expect(r.noVec).toBeNull();
+      expect(r.identity).toEqual([7, 11]);
+    });
+
+    test('_scanMat carries all four columns now', async () => {
+      const m = await page.evaluate(() => _scanMat([1,2,3,0, 4,5,6,0, 7,8,9,0, 10,11,12,1]));
+      expect(m.col0).toEqual({ x: 1, y: 2, z: 3 });
+      expect(m.col1).toEqual({ x: 4, y: 5, z: 6 });
+      expect(m.col2).toEqual({ x: 7, y: 8, z: 9 });
+      expect(m.col3).toEqual({ x: 10, y: 11, z: 12 });
+    });
+  });
+
   test('parses RoomPlan JSON into honest footage: 120 sq ft floor, 44 ft of wall, 8 ft ceilings', async () => {
     const r = await page.evaluate((raw) => {
       const room = _scanParseRoom(raw, 'Kitchen');

@@ -26,15 +26,30 @@ function _scanVec(v){
   return null;
 }
 function _scanMat(m){
-  // Returns {col0:{x,y,z}, col3:{x,y,z}} (direction + translation), from a
-  // flat 16-array (column-major) or nested [[..4],[..4],[..4],[..4]].
+  // Returns all four columns (the three axes + the translation), from a flat
+  // 16-array (column-major) or nested [[..4],[..4],[..4],[..4]].
+  //
+  // col1 and col2 used to be thrown away, because a WALL only ever needed its
+  // length direction (col0) and its centre (col3). A FLOOR polygon needs the
+  // whole basis, and dropping it silently flattened every room to a line: see
+  // the floor-polygon note below (owner's Aldi GUYS scan, 2026-09-10).
   if(!m)return null;
   let f=null;
   if(Array.isArray(m)&&m.length===16)f=m.map(Number);
   else if(Array.isArray(m)&&m.length===4&&Array.isArray(m[0])){f=[];m.forEach(c=>c.forEach(x=>f.push(+x)));}
   else if(m.columns){f=[];[0,1,2,3].forEach(i=>{const c=_scanVec(m.columns[i]);f.push(c.x,c.y,c.z,0);});}
   if(!f||f.length<16)return null;
-  return {col0:{x:f[0],y:f[1],z:f[2]},col3:{x:f[12],y:f[13],z:f[14]}};
+  return {col0:{x:f[0],y:f[1],z:f[2]},col1:{x:f[4],y:f[5],z:f[6]},
+          col2:{x:f[8],y:f[9],z:f[10]},col3:{x:f[12],y:f[13],z:f[14]}};
+}
+// A point in a surface's own space, put where it really is. The plan only
+// wants the ground plane, so it hands back [worldX, worldZ].
+function _scanToWorldXZ(m,v){
+  if(!v)return null;
+  if(!m)return [v.x,v.z];
+  const c1=m.col1||{x:0,y:1,z:0},c2=m.col2||{x:0,y:0,z:1};
+  return [m.col3.x+m.col0.x*v.x+c1.x*v.y+c2.x*v.z,
+          m.col3.z+m.col0.z*v.x+c1.z*v.y+c2.z*v.z];
 }
 function _scanDims(d){
   // w = width (local x), h = height (local y), d = DEPTH (local z). Walls and
@@ -219,8 +234,22 @@ function _scanParseRoom(rawJson,label){
   let poly=null;
   const fl=(cr.floors||[])[0];
   if(fl&&Array.isArray(fl.polygonCorners)&&fl.polygonCorners.length>=3){
+    // THROUGH THE TRANSFORM, NOT PAST IT (owner's Aldi GUYS scan, 2026-09-10:
+    // a room with seven good walls came out 0 sq ft).
+    //
+    // This read the corner's own x and z and added the floor's translation.
+    // But a RoomPlan surface is a plane in its LOCAL XY, with z as the normal,
+    // and a floor is that plane turned flat: local y is what becomes world z.
+    // Reading local z instead read the same 0 from every corner, so all six
+    // came back on one line, the shoelace of a line is zero, and the room
+    // reported no floor at all while its walls, perimeter and wall area were
+    // all correct. Six corners at z = -1.9913149, every one of them.
+    //
+    // Putting the corner through the whole basis is right whichever local
+    // plane RoomPlan used, because it is no longer a guess about which axis
+    // means what.
     const fm=_scanMat(fl.transform);
-    poly=fl.polygonCorners.map(p=>{const v=_scanVec(p);return [v.x+(fm?fm.col3.x:0),v.z+(fm?fm.col3.z:0)];});
+    poly=fl.polygonCorners.map(p=>_scanToWorldXZ(fm,_scanVec(p))).filter(Boolean);
   }
   // NO FLOOR POLYGON. The plugin is iOS 17 only so RoomPlan normally supplies
   // one, and this fires on a partial or interrupted scan. The fallback is a
@@ -229,6 +258,11 @@ function _scanParseRoom(rawJson,label){
   // number on a bid, so the room is flagged rather than handed over looking
   // like any other.
   let polyFromHull=false;
+  // AND A ROOM WITH WALLS NEVER REPORTS NO FLOOR. Whatever the cause, a
+  // polygon that encloses nothing is not an answer, it is a failure that
+  // reads like an answer: 0 sq ft on a bid is a number somebody could act
+  // on. The hull overstates and says so; zero understates and says nothing.
+  if(poly&&Math.abs(_scanShoelace(poly))<0.5&&walls.length>=3)poly=null;
   if(!poly){
     poly=[];walls.forEach(w=>{poly.push([w.ax,w.az]);poly.push([w.bx,w.bz]);});
     poly=_scanHull(poly);
