@@ -24,6 +24,22 @@
 -- unreachable from outside; the functions are the contract.
 -- ════════════════════════════════════════════════════════════════════════
 
+-- ── 0. A column the migration history never created ─────────────────────────
+-- account_config.trade_lines exists on the live project and in NO migration:
+-- it was added out of band, along with is_dev. Nothing had ever depended on
+-- it, so nothing noticed until this file read it and the Supabase preview,
+-- which builds a database from the migrations alone, failed with
+-- "column ac.trade_lines does not exist".
+--
+-- Declared here, additively and idempotently, so the history can rebuild the
+-- schema this file actually needs. A no-op on every environment that already
+-- has the column, which is all of them today.
+--
+-- is_dev is deliberately NOT added: this file does not read it, and inventing
+-- a definition for a column whose intent I do not know is a worse drift than
+-- the one already there. It is reported to the owner instead.
+alter table account_config add column if not exists trade_lines text;
+
 -- ── 1. Who each account is ──────────────────────────────────────────────────
 -- Not every contractor has an accounts row: an account created before that
 -- table existed, or a signup that never finished, still shows up all over the
