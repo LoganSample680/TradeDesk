@@ -49,6 +49,24 @@ from auth.users
 where email ilike 'tradedeskprosupport%'
 on conflict (user_id) do nothing;
 
+-- ── 0. Which account does a person belong to ────────────────────────────────
+-- td_time_entries and td_mileage are keyed by the PERSON, so a per-contractor
+-- rollup needs the same resolution ingest-telemetry does: a crew member has a
+-- team_members row naming their employer, anybody else is their own account.
+-- A link to yourself is not a crew link, or an owner who added themselves to
+-- their own team gets filed as their own employee.
+create or replace view v_person_account as
+select u.id as employee_user_id,
+       coalesce(tm.cid, u.id) as contractor_user_id,
+       case when tm.cid is not null then 'crew' else 'owner' end as role
+from auth.users u
+left join lateral (
+  select t.contractor_user_id as cid
+  from team_members t
+  where t.employee_user_id = u.id and t.active and t.contractor_user_id <> u.id
+  order by t.created_at desc limit 1
+) tm on true;
+
 -- ── 1. App actives ──────────────────────────────────────────────────────────
 -- A person was ACTIVE on a day if the app itself produced a signal that day.
 -- Two independent sources, unioned rather than picked between: the lifecycle
@@ -172,7 +190,10 @@ create or replace view v_ops_daily as
 select coalesce(a.day, cl.day, mi.day, ti.day, sh.day)                       as day,
        coalesce(a.employee_user_id, cl.employee_user_id, mi.employee_user_id,
                 ti.employee_user_id, sh.employee_user_id)                    as employee_user_id,
-       coalesce(a.contractor_user_id, ti.contractor_user_id, sh.contractor_user_id) as contractor_user_id,
+       -- Resolved for EVERY row, not just the ones whose source table carried
+       -- it: the clock and the mileage tables are keyed by person alone.
+       pa.contractor_user_id,
+       pa.role,
        coalesce(a.opened, false)        as app_opened,
        coalesce(cl.punches, 0)          as clock_punches,
        coalesce(cl.closed, 0)           as clocks_closed,
@@ -188,7 +209,8 @@ from            v_app_active_day a
 full outer join v_clock_day  cl on cl.day = a.day  and cl.employee_user_id = a.employee_user_id
 full outer join v_miles_day  mi on mi.day = coalesce(a.day, cl.day)  and mi.employee_user_id = coalesce(a.employee_user_id, cl.employee_user_id)
 full outer join v_time_day   ti on ti.day = coalesce(a.day, cl.day, mi.day) and ti.employee_user_id = coalesce(a.employee_user_id, cl.employee_user_id, mi.employee_user_id)
-full outer join v_shop_day   sh on sh.day = coalesce(a.day, cl.day, mi.day, ti.day) and sh.employee_user_id = coalesce(a.employee_user_id, cl.employee_user_id, mi.employee_user_id, ti.employee_user_id);
+full outer join v_shop_day   sh on sh.day = coalesce(a.day, cl.day, mi.day, ti.day) and sh.employee_user_id = coalesce(a.employee_user_id, cl.employee_user_id, mi.employee_user_id, ti.employee_user_id)
+left join v_person_account pa on pa.employee_user_id = coalesce(a.employee_user_id, cl.employee_user_id, mi.employee_user_id, ti.employee_user_id, sh.employee_user_id);
 
 comment on view v_ops_daily is
   'One row per person per day: app opened, clock punches, minutes worked, miles, drive/site/shop minutes. The dashboard''s main table. Internal accounts excluded.';
@@ -237,3 +259,59 @@ $$;
 
 comment on function ops_summary(date, date) is
   'The dashboard header, one row. Averages are over days that happened, not over the calendar.';
+
+-- ── 8. The same numbers, per contractor ─────────────────────────────────────
+-- Owner 2026-09-10: "that's overall but want it by contractor." One row per
+-- BUSINESS, with its crew folded in, because a two-truck shop's numbers are
+-- the shop's numbers and not two people's. `people` says how many of them
+-- there were, which is the count that turns a total into a rate.
+create or replace function ops_by_contractor(p_from date, p_to date)
+returns table (
+  contractor_user_id uuid,
+  business           text,   -- the owner's email: settings are not queryable
+  people             int,
+  crew               int,
+  active_days        bigint,
+  clock_punches      bigint,
+  days_clocked       bigint,
+  avg_day_min        numeric,
+  total_miles        numeric,
+  avg_miles_per_day  numeric,
+  drive_min          bigint,
+  site_min           bigint,
+  shop_min           bigint,
+  visits             bigint,
+  avg_visit_min      numeric,
+  unnamed_min        bigint,
+  unnamed_legs       bigint,
+  last_active        date
+)
+language sql stable security definer set search_path = public as $$
+  select d.contractor_user_id,
+         -- The business NAME lives in the settings snapshot, not a table, so
+         -- there is nothing to join to. The owner's email identifies the
+         -- account unambiguously and is enough for an internal screen; the
+         -- dashboard can show a friendlier label once settings are queryable.
+         coalesce(o.email, d.contractor_user_id::text),
+         count(distinct d.employee_user_id)::int,
+         count(distinct d.employee_user_id) filter (where d.role = 'crew')::int,
+         count(*) filter (where d.app_opened),
+         sum(d.clock_punches),
+         count(*) filter (where d.clocks_closed > 0),
+         round(avg(d.worked_min) filter (where d.worked_min > 0), 1),
+         round(sum(d.miles), 1),
+         round(avg(d.miles) filter (where d.miles > 0), 1),
+         sum(d.drive_min), sum(d.site_min), sum(d.shop_min), sum(d.visits),
+         round(sum(d.site_min)::numeric / nullif(sum(d.visits), 0), 1),
+         sum(d.unnamed_min), sum(d.mileage_legs_unnamed),
+         max(d.day) filter (where d.app_opened)
+  from v_ops_daily d
+  left join auth.users o on o.id = d.contractor_user_id
+  where d.day between p_from and p_to
+    and d.contractor_user_id is not null
+  group by d.contractor_user_id, o.email
+  order by count(*) filter (where d.app_opened) desc;
+$$;
+
+comment on function ops_by_contractor(date, date) is
+  'One row per business over a date range, crew folded in. The dashboard''s account list: sorted by active days, so the quiet accounts sink to the bottom where they belong.';
