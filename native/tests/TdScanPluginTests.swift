@@ -311,8 +311,11 @@ final class TdScanPluginTests: XCTestCase {
     func testVisibleBoxRefusesJunkRatherThanPlacingIt() {
         let size = CGSize(width: 390, height: 844)
         XCTAssertNil(TdScanViewController.visibleBox([], size))
-        XCTAssertNil(TdScanViewController.visibleBox([CGPoint(x: .nan, y: .nan)], size))
-        XCTAssertNil(TdScanViewController.visibleBox([CGPoint(x: .infinity, y: 4)], size))
+        // Spelled out rather than inferred: CGPoint takes Int, Double AND
+        // CGFloat, so a bare .infinity beside a bare 4 is three initialisers
+        // deep and the compiler is right to refuse it.
+        XCTAssertNil(TdScanViewController.visibleBox([CGPoint(x: CGFloat.nan, y: CGFloat.nan)], size))
+        XCTAssertNil(TdScanViewController.visibleBox([CGPoint(x: CGFloat.infinity, y: CGFloat(4))], size))
         XCTAssertNil(TdScanViewController.visibleBox([CGPoint(x: 10, y: 10)], .zero))
     }
 
