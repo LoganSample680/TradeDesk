@@ -399,6 +399,80 @@ test.describe('traced trips', () => {
       });
     });
 
+    // ── Apple Maps answers first, and it answers in fields (owner
+    // 2026-09-10: "rather than calling Apple Maps to fill the form fields
+    // out") ────────────────────────────────────────────────────────────────
+    test.describe('the reverse geocode behind it', () => {
+      const withMapKit = (place) => page.evaluate(async (place) => {
+        // _mapkitReady is a script-scope `let`, so window._mapkitReady = true
+        // sets a different variable and the branch never runs. Bare
+        // assignment is what reaches the real binding.
+        const keepReady = _mapkitReady, keepKit = window.mapkit, keepNom = window._nominatimReverse;
+        let nomCalled = false;
+        window._nominatimReverse = async () => { nomCalled = true; return 'fallback st, Topeka, Kansas, 66604'; };
+        _mapkitReady = true;
+        window.mapkit = {
+          Coordinate: function (lat, lng) { this.latitude = lat; this.longitude = lng; },
+          Geocoder: function () { this.reverseLookup = (c, cb) => cb(place ? null : new Error('no'), place ? { results: [place] } : null); },
+        };
+        try { return { parts: await _reverseGeocode(39.0123, -95.7465), nomCalled }; }
+        finally { _mapkitReady = keepReady; window.mapkit = keepKit; window._nominatimReverse = keepNom; }
+      }, place);
+
+      test('Apple gives the pieces already separated, and nothing else is asked', async () => {
+        const r = await withMapKit({ fullThoroughfare: '1530 SW Arvonia Pl', locality: 'Topeka',
+                                     administrativeAreaCode: 'KS', postCode: '66604' });
+        expect(r.parts).toEqual({ street: '1530 SW Arvonia Pl', city: 'Topeka', state: 'KS', zip: '66604',
+                                  addr: '1530 SW Arvonia Pl, Topeka, KS 66604' });
+        expect(r.nomCalled, 'no second lookup once Apple answered').toBe(false);
+      });
+
+      test('a house number and street arriving apart still make one street line', async () => {
+        const r = await withMapKit({ subThoroughfare: '1530', thoroughfare: 'SW Arvonia Pl',
+                                     locality: 'Topeka', administrativeAreaCode: 'KS', postCode: '66604' });
+        expect(r.parts.street).toBe('1530 SW Arvonia Pl');
+      });
+
+      // A pin in the middle of a field has no street to give.
+      test('an Apple answer with only a one-liner is read apart', async () => {
+        const r = await withMapKit({ formattedAddress: '2100 SW Gage Blvd, Topeka, Kansas, 66604' });
+        expect(r.parts).toEqual(expect.objectContaining({ street: '2100 SW Gage Blvd', city: 'Topeka', state: 'KS', zip: '66604' }));
+      });
+
+      test('Apple refusing falls through to the open one, still in fields', async () => {
+        const r = await withMapKit(null);
+        expect(r.nomCalled).toBe(true);
+        expect(r.parts).toEqual(expect.objectContaining({ street: 'fallback st', city: 'Topeka', state: 'KS', zip: '66604' }));
+      });
+
+      test('no geocoder at all, and junk coordinates, answer empty rather than guessing', async () => {
+        const r = await page.evaluate(async () => {
+          const keep = window._nominatimReverse;
+          window._nominatimReverse = async () => null;
+          try {
+            return { none: await _reverseGeocode(39.01, -95.74), nan: await _reverseGeocode('x', null),
+                     undef: await _reverseGeocode() };
+          } finally { window._nominatimReverse = keep; }
+        });
+        const empty = { street: '', city: '', state: '', zip: '', addr: '' };
+        expect([r.none, r.nan, r.undef]).toEqual([empty, empty, empty]);
+      });
+
+      // The owner's actual bug, end to end: one tap, four boxes filled.
+      test('Save this address fills all four boxes, not one long one', async () => {
+        await seed();
+        const r = await page.evaluate(async () => {
+          const keep = window._nominatimReverse;
+          window._nominatimReverse = async () => '1530 Southwest Arvonia Place, Topeka, Kansas, 66604';
+          try {
+            await _mileSaveAddress('j-traced', 'to');
+            return ['cf-street', 'cf-city', 'cf-state', 'cf-zip'].map(id => document.getElementById(id).value);
+          } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
+        });
+        expect(r).toEqual(['1530 Southwest Arvonia Place', 'Topeka', 'KS', '66604']);
+      });
+    });
+
     test('with no reverse geocode the form still opens, empty, on the right day', async () => {
       await seed();
       const r = await page.evaluate(async () => {

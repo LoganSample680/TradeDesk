@@ -2116,10 +2116,58 @@ async function _nominatimReverse(lat,lon){
     if(a.house_number&&a.road)parts.push(a.house_number+' '+a.road);
     else if(a.road)parts.push(a.road);
     if(a.city||a.town||a.village)parts.push(a.city||a.town||a.village);
-    if(a.state)parts.push(a.state);
+    // THE CODE, NOT THE NAME. This pushed "Kansas", and every reader of this
+    // string (the client form's four fields, the trip modal) expects the two
+    // letters an address is written with (owner 2026-09-10). Non-US comes
+    // back as whatever it is, which is still better than nothing.
+    if(a.state)parts.push(_STATE_ABBR[a.state]||a.state);
     if(a.postcode)parts.push(a.postcode);
     return parts.join(', ')||d.display_name||null;
   }catch(e){return null;}
+}
+// ── A COORDINATE TO THE FOUR FIELDS (owner 2026-09-10) ────────────────────
+// The mirror of _geocodeAddress above, deliberately: same order of
+// preference (Apple Maps first, the open fallback second) and the same
+// {street, city, state, zip} out, because every caller wants the fields and
+// only some of them want a sentence.
+//
+// Apple is asked FIRST for the reason the owner gave: it answers with the
+// pieces already separated (fullThoroughfare, locality, administrativeAreaCode,
+// postCode), so there is nothing to take apart afterwards and nothing to get
+// wrong. The fallback comes back as one line and _parseAddrParts reads it.
+//
+// `addr` is the same one-line form the trip modal has always shown, built
+// from the same pieces, so the string callers are unchanged.
+async function _reverseGeocode(lat,lon){
+  const la=Number(lat),ln=Number(lon);
+  const join=p=>[p.street,p.city,[p.state,p.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const none={street:'',city:'',state:'',zip:'',addr:''};
+  if(!isFinite(la)||!isFinite(ln))return none;
+  const split=s=>(typeof _parseAddrParts==='function')?_parseAddrParts(s):{street:s||'',city:'',state:'',zip:''};
+  if(_mapkitReady&&typeof mapkit!=='undefined'){
+    try{
+      const p=await new Promise(resolve=>{
+        const gc=new mapkit.Geocoder({language:'en-US'});
+        gc.reverseLookup(new mapkit.Coordinate(la,ln),(err,data)=>{
+          if(err)console.warn('[MapKit reverse] error:',err);
+          resolve((!err&&data&&data.results&&data.results[0])||null);
+        });
+      });
+      if(p){
+        const out={street:p.fullThoroughfare||[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' ')||'',
+          city:p.locality||'',state:p.administrativeAreaCode||'',zip:p.postCode||''};
+        if(out.street||out.city)return Object.assign(out,{addr:join(out)});
+        // A pin in the middle of a field has no street to give. Apple's own
+        // one-line answer still beats nothing, and the parser reads it.
+        if(p.formattedAddress)return Object.assign(split(p.formattedAddress),{addr:p.formattedAddress});
+      }
+    }catch(_e){}
+  }
+  let s=null;
+  try{if(typeof _nominatimReverse==='function')s=await _nominatimReverse(la,ln);}catch(_e){s=null;}
+  if(!s)return none;
+  const out=split(s);
+  return Object.assign(out,{addr:join(out)||String(s)});
 }
 async function getCurrentLocAddress(){
   return new Promise((resolve,reject)=>{
@@ -2127,30 +2175,12 @@ async function getCurrentLocAddress(){
     const doGet=()=>navigator.geolocation.getCurrentPosition(async pos=>{
       const{latitude:lat,longitude:lon}=pos.coords;
       _tripGpsCoords={lat,lng:lon};
-      if(_mapkitReady){
-        const gc=new mapkit.Geocoder({language:'en-US'});
-        gc.reverseLookup(new mapkit.Coordinate(lat,lon),async(err,data)=>{
-          if(!err&&data?.results?.[0]){
-            const p=data.results[0];
-            const parts=[];
-            if(p.fullThoroughfare)parts.push(p.fullThoroughfare);
-            else if(p.thoroughfare)parts.push([p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' '));
-            if(p.locality)parts.push(p.locality);
-            if(p.administrativeAreaCode)parts.push(p.administrativeAreaCode);
-            if(p.postCode)parts.push(p.postCode);
-            const addr=parts.join(', ')||p.formattedAddress||'';
-            if(addr){resolve(addr);return;}
-            console.warn('[MapKit reverse] empty result for',lat,lon,'→ falling back to Nominatim');
-          } else if(err){
-            console.warn('[MapKit reverse] error:',err);
-          }
-          const nom=await _nominatimReverse(lat,lon);
-          resolve(nom||lat.toFixed(4)+', '+lon.toFixed(4));
-        });
-        return;
-      }
-      const nom=await _nominatimReverse(lat,lon);
-      resolve(nom||lat.toFixed(4)+', '+lon.toFixed(4));
+      // One reverse geocoder for the app (_reverseGeocode, above). This
+      // carried its own copy of the MapKit call and its own Nominatim
+      // fallback; both now live in one place, so the Save-this-address form
+      // and this button can never answer the same coordinate differently.
+      const p=await _reverseGeocode(lat,lon);
+      resolve(p.addr||lat.toFixed(4)+', '+lon.toFixed(4));
     // The address this resolves to is written onto a MILEAGE row, which is a
     // tax record. A five-minute-old approximate fix names the wrong end of the
     // drive (owner rule 2026-08-26, no approximates by default).
@@ -3015,11 +3045,12 @@ async function _mileSaveAddressAt(lat,lng,pend){
   const la=Number(lat),ln=Number(lng);
   if(!isFinite(la)||!isFinite(ln))return false;
   _mileAddressPending=Object.assign({which:'to'},pend||{},{lat:la,lng:ln});
-  let addr=null;
-  try{if(typeof _nominatimReverse==='function')addr=await _nominatimReverse(la,ln);}catch(_e){addr=null;}
+  // Apple Maps hands back the four fields already separated (_reverseGeocode,
+  // above), which is what this form has four boxes for.
+  let parts={street:'',city:'',state:'',zip:''};
+  try{parts=await _reverseGeocode(la,ln)||parts;}catch(_e){}
   try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
   if(typeof openNewClient==='function')openNewClient();
-  const parts=(typeof _parseAddrParts==='function'&&addr)?_parseAddrParts(addr):{street:addr||'',city:'',state:'',zip:''};
   const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};
   set('cf-street',parts.street);set('cf-city',parts.city);set('cf-state',parts.state);set('cf-zip',parts.zip);
   try{if(typeof _updateAddrComputed==='function')_updateAddrComputed();}catch(_e){}

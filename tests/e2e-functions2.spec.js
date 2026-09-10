@@ -768,6 +768,44 @@ test.describe('Utility and helper functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Owner 2026-09-10, on Save this address: the whole address went into the
+  // Street box and City, State and Zip stayed empty. The old pattern ended in
+  // [A-Z]{2}\s*\d{5}, so a state spelled out (what the open reverse geocoder
+  // returns) and a comma before the zip both failed it, silently and totally.
+  test('_parseAddrParts: every shape an address actually arrives in', async () => {
+    const rows = await page.evaluate(() => ([
+      '1530 Southwest Arvonia Place, Topeka, Kansas, 66604',
+      '1530 Southwest Arvonia Place, Topeka, Kansas, 66604, United States',
+      '2100 SW Gage Blvd, Topeka, KS 66604',
+      '2950 SW McClure Rd, Topeka, KS, 66614',
+      '123 Main St, Suite 4, Topeka, KS 66604-1234',
+      '1200 SW Oakley Ave',
+      'Topeka, KS 66604',
+      'Topeka',
+      '39.0123, -95.7465',
+      '', null, undefined, '   ',
+    ].map(a => _parseAddrParts(a))));
+    expect(rows).toEqual([
+      { street: '1530 Southwest Arvonia Place', city: 'Topeka', state: 'KS', zip: '66604' },
+      { street: '1530 Southwest Arvonia Place', city: 'Topeka', state: 'KS', zip: '66604' },
+      { street: '2100 SW Gage Blvd', city: 'Topeka', state: 'KS', zip: '66604' },
+      { street: '2950 SW McClure Rd', city: 'Topeka', state: 'KS', zip: '66614' },
+      // A unit line is part of the street, however many commas it costs.
+      { street: '123 Main St, Suite 4', city: 'Topeka', state: 'KS', zip: '66604-1234' },
+      // Nothing to split: a bare street keeps the whole of itself.
+      { street: '1200 SW Oakley Ave', city: '', state: '', zip: '' },
+      { street: 'Topeka', city: '', state: 'KS', zip: '66604' },
+      { street: 'Topeka', city: '', state: '', zip: '' },
+      // A failed reverse geocode resolves to a coordinate; a longitude is not
+      // a city.
+      { street: '39.0123, -95.7465', city: '', state: '', zip: '' },
+      { street: '', city: '', state: '', zip: '' },
+      { street: '', city: '', state: '', zip: '' },
+      { street: '', city: '', state: '', zip: '' },
+      { street: '', city: '', state: '', zip: '' },
+    ]);
+  });
+
   test('updateYearLookupBtn: updates year lookup button state', async () => {
     const result = await page.evaluate(() => {
       if (typeof updateYearLookupBtn !== 'function') return { skip: true };

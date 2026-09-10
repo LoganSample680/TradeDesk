@@ -1163,9 +1163,49 @@ function lookupYearBuilt(){
   const addr=[street,city,state].filter(Boolean).join(', ');
   if(addr)window.open('https://www.google.com/search?q=year+built+'+encodeURIComponent(addr),'_blank');
 }
+// ONE ADDRESS, FOUR FIELDS (owner 2026-09-10, on Save this address: "it puts
+// in the long string, rather than calling Apple Maps to fill the form fields
+// out"). The whole address landed in Street with City, State and Zip left
+// empty, so the one tap that was supposed to save him typing left him typing.
+//
+// This was a single regex ending in [A-Z]{2}\s*\d{5}, and two shapes it meets
+// every day do not match it: a state SPELLED OUT ("..., Topeka, Kansas,
+// 66604", which is exactly what the open reverse geocoder returns) and a
+// comma before the zip. Neither is malformed; the pattern was just narrow,
+// and its failure mode is silent and total, everything into street.
+//
+// Read from the RIGHT instead, which is shape-independent: the zip is the
+// piece that looks like a zip, the state is the piece before it (code or
+// name), the city is the piece before that, and whatever is left is the
+// street, however many commas it has in it.
 function _parseAddrParts(addr){
-  const m=(addr||'').match(/^(.+?),\s*(.+?),?\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)?$/i);
-  return m?{street:m[1].trim(),city:m[2].trim(),state:m[3].toUpperCase(),zip:(m[4]||'').trim()}:{street:(addr||'').trim(),city:'',state:'',zip:''};
+  const raw=String(addr||'').trim();
+  const none={street:'',city:'',state:'',zip:''};
+  if(!raw)return none;
+  const abbr=(typeof _STATE_ABBR!=='undefined'&&_STATE_ABBR)||{};
+  const code=v=>{
+    const s=String(v||'').trim();
+    if(/^[A-Za-z]{2}$/.test(s))return s.toUpperCase();
+    const k=Object.keys(abbr).find(n=>n.toLowerCase()===s.toLowerCase());
+    return k?abbr[k]:'';
+  };
+  const parts=raw.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!parts.length)return none;
+  // A country is not one of the four fields.
+  if(parts.length>1&&/^(united states(?: of america)?|u\.?s\.?a\.?|u\.?s\.?)$/i.test(parts[parts.length-1]))parts.pop();
+  // "KS 66604" arrives as one piece whenever a person typed it.
+  const both=/^(.+?)\s+(\d{5}(?:-\d{4})?)$/.exec(parts[parts.length-1]||'');
+  if(both&&code(both[1])){parts[parts.length-1]=both[1];parts.push(both[2]);}
+  let zip='',state='',city='';
+  if(parts.length>1&&/^\d{5}(?:-\d{4})?$/.test(parts[parts.length-1]))zip=parts.pop();
+  // Only ever taken off a list that still has a street left on it: a bare
+  // "Topeka" or a lone street line keeps its whole self.
+  if(parts.length>1&&code(parts[parts.length-1])){state=code(parts.pop());}
+  // A city has letters in it. Without this a bare "39.0123, -95.7465" (what
+  // a failed reverse geocode resolves to) would be filed as a street in one
+  // box and a longitude in the City box.
+  if(parts.length>1&&/[A-Za-z]/.test(parts[parts.length-1]))city=parts.pop();
+  return{street:parts.join(', ').trim(),city,state,zip};
 }
 function openEditClient(){
   const c=getClientById(currentClientId);if(!c)return;
