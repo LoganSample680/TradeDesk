@@ -68,7 +68,15 @@ group by g.employee_user_id;
 
 revoke all on v_app_presence_raw from anon, authenticated;
 
-create or replace function app_presence()
+-- DROP FIRST. create or replace function cannot change a return type, and
+-- this adds awake_buckets to the table 20260921 defined, so replacing in
+-- place fails with "cannot change return type of existing function". Same
+-- family as the view error above: both objects only tolerate additions in
+-- the one position Postgres allows, and a function's signature is not one
+-- of them.
+drop function if exists app_presence();
+
+create function app_presence()
 returns table (
   contractor_user_id uuid,
   business           text,
