@@ -3,6 +3,8 @@ import Capacitor
 import CoreLocation
 import CoreMotion
 import UIKit
+// NWPathMonitor: the only way to hear the network come back without polling.
+import Network
 
 // TradeDesk battery-aware geofence engine.
 //
@@ -85,6 +87,35 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // arriving after a relaunch can still advance the watermark.
     private let flushInflightKey = "td_geo_flush_inflight"
     private var flushPending = false
+    // ── A FAILED UPLOAD USED TO WAIT FOR THE NEXT EVENT (owner 2026-09-11) ──
+    //
+    // "everything happening on the phone should flush to the server (supabase)
+    // when connected, then flush from local storage to supabase when connection
+    // resets."
+    //
+    // It did not. The watermark only advances on a 2xx, so a failed upload
+    // correctly left the tail in the buffer, and then nothing ever tried
+    // again: the only thing that called a flush was a NEW event. His own
+    // 13:23 arrival at a client is the whole shape of it. The fence enter
+    // fired on time, the arrival and both motion flips were recorded, the
+    // flush went out, and the data sat on the handset for FIFTY MINUTES
+    // until he opened the app, because he then stood still and the phone had
+    // no further event to produce.
+    //
+    // Three things were missing and all three are below: a retry after a
+    // failure, a flush when the network comes back, and a way out of the
+    // in-flight deadlock that a killed process leaves behind.
+    private var flushRetryGen = 0
+    // Backoff, not a hammer. A background wake is worth about thirty seconds,
+    // so the first two steps are the ones that matter in a wake window and
+    // the rest only run while the app is genuinely alive.
+    private static let flushRetrySteps: [Double] = [4, 12, 40, 120]
+    private var flushRetryStep = 0
+    // The network watcher. Started on every launch, alive as long as the
+    // process is: while the app is dead nothing in here runs, and nothing can,
+    // which is a limit of iOS and not something this can paper over.
+    private var pathMonitor: NWPathMonitor?
+    private var pathWasSatisfied = true
     // When the pending flush is due, and a generation counter so an EARLIER
     // deadline can supersede a later one without leaving the old timer to
     // fire a second time. Both only ever touched on the main thread.
@@ -286,6 +317,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             nc.addObserver(self, selector: #selector(appTerminate), name: UIApplication.willTerminateNotification, object: nil)
             nc.addObserver(self, selector: #selector(silentPush(_:)), name: Notification.Name("TdSilentPush"), object: nil)
         }
+        // Both of these run on EVERY launch, before the armed guard and
+        // regardless of it, for the same reason the observers above do: a
+        // launch with nothing to re-arm may still be holding a buffer that a
+        // dead upload locked, or be the moment the network comes back.
+        startPathMonitor()
+        reconcileInflight()
         let d = UserDefaults.standard
         guard let armed = d.dictionary(forKey: armedKey) else { return }
         countWake("relaunch")
@@ -1392,6 +1429,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     func driveFlushDelaySecForTest() -> Double { driveFlushDelaySec() }
     func driveAccuracyNameForTest() -> String { driveAccuracyName() }
     func flushDelaySecForTest(for type: String) -> Double { flushDelaySec(for: type) }
+    func retryFlushSoonForTest() { retryFlushSoon() }
+    func reconcileInflightForTest() { reconcileInflight() }
+    func startPathMonitorForTest() { startPathMonitor() }
+    var flushRetryStepForTest: Int { flushRetryStep }
+    func setFlushRetryStepForTest(_ n: Int) { flushRetryStep = n }
+    var pathMonitorStartedForTest: Bool { pathMonitor != nil }
+    static var flushRetryStepsForTest: [Double] { flushRetrySteps }
     static var flushDebounceMsForTest: Double { flushDebounceMs }
     static var flushDebounceFloorMsForTest: Double { flushDebounceFloorMs }
     static var flushDebounceCeilingMsForTest: Double { flushDebounceCeilingMs }
@@ -1935,6 +1979,81 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         }
     }
 
+    // A retry that supersedes its own predecessor, same generation trick the
+    // debounce uses, so a burst of failures cannot stack four timers.
+    private func retryFlushSoon() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.retryFlushSoon() }
+            return
+        }
+        let step = min(flushRetryStep, TdGeoPlugin.flushRetrySteps.count - 1)
+        let delay = TdGeoPlugin.flushRetrySteps[step]
+        flushRetryStep = min(flushRetryStep + 1, TdGeoPlugin.flushRetrySteps.count - 1)
+        flushRetryGen += 1
+        let gen = flushRetryGen
+        countWake("flushRetryArmed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard gen == self.flushRetryGen else { return }
+            self.flushUrgently()
+        }
+    }
+
+    // THE BUFFER IS THE QUEUE, and it already survives a kill: record() writes
+    // to UserDefaults synchronously and the watermark only moves on a 2xx. So
+    // "flush from local storage when the connection resets" needs no new queue,
+    // only something that notices. This is that.
+    //
+    // Only a transition counts. NWPathMonitor reports the current path on
+    // start, and treating that first callback as a reconnection would fire a
+    // flush on every single launch for no reason.
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+        let m = NWPathMonitor()
+        m.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            let ok = path.status == .satisfied
+            let was = self.pathWasSatisfied
+            self.pathWasSatisfied = ok
+            guard ok, !was else { return }
+            self.countWake("netBack")
+            // Straight back to the front of the backoff: the reason it was
+            // failing has just gone away.
+            self.flushRetryStep = 0
+            self.flushUrgently()
+        }
+        m.start(queue: DispatchQueue(label: "td.geo.path"))
+        pathMonitor = m
+    }
+
+    // ── A KILLED PROCESS LEAVES A LOCK NOBODY CAN OPEN ──────────────────────
+    //
+    // flushInflight maps taskIdentifier -> the batch's max ts and lives in
+    // UserDefaults so a delegate callback arriving after a relaunch can still
+    // advance the watermark. The guard in flushNow refuses to send a batch
+    // whose max ts is already in flight, which is right, and which becomes a
+    // permanent deadlock the moment a process dies with an entry still in it:
+    // the watermark did not advance, so the next flush builds the SAME batch,
+    // with the SAME max ts, and is refused. Forever, or until a new event
+    // shifts the end of the batch.
+    //
+    // The session is the authority on what is actually running, so ask it.
+    // Anything it does not know about was never going to complete.
+    private func reconcileInflight() {
+        let d = UserDefaults.standard
+        let inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
+        guard !inflight.isEmpty else { return }
+        flushSession.getAllTasks { [weak self] tasks in
+            guard let self = self else { return }
+            let live = Set(tasks.map { String($0.taskIdentifier) })
+            let kept = inflight.filter { live.contains($0.key) }
+            guard kept.count != inflight.count else { return }
+            d.set(kept, forKey: self.flushInflightKey)
+            self.countWake("inflightCleared")
+            // Whatever that stale entry was blocking is still in the buffer.
+            DispatchQueue.main.async { self.flushUrgently() }
+        }
+    }
+
     private func flushNow() {
         let d = UserDefaults.standard
         guard let cfg = d.dictionary(forKey: flushCfgKey) as? [String: String],
@@ -2004,8 +2123,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         if error == nil && status >= 200 && status < 300 {
             if maxTs > d.double(forKey: flushMarkKey) { d.set(maxTs, forKey: flushMarkKey) }
             countWake("flushOk")
+            flushRetryStep = 0
+            flushRetryGen += 1          // cancel a retry armed by an earlier failure
         } else {
             countWake("flushFail")
+            // The tail is still in the buffer and the watermark has not moved.
+            // Something has to come back for it, and until now nothing did.
+            retryFlushSoon()
         }
     }
 
