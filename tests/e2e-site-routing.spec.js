@@ -292,11 +292,23 @@ test.describe('marketing site routing', () => {
   });
 
   test('nested routes resolve the stylesheet in a real browser', async ({ page }) => {
-    // Only the local server is allowed; the runtime's CDN loads are out of
-    // scope here (this proves path resolution, not React hydration).
-    await page.route(/^https?:\/\/(?!127\.0\.0\.1)/, route => route.abort());
+    // Only the local server is real. External requests are answered with an
+    // empty body of the right type rather than aborted: colors_and_type.css
+    // starts with an @import of Google Fonts, and WebKit does not apply the
+    // sheet's own rules until that import settles, so an aborted import left
+    // --ink unset at domcontentloaded (CI shard 3, 2026-09-11) where Chromium
+    // had already applied it. The page runtime is stubbed too: this proves
+    // path resolution from a nested route, not React hydration.
+    await page.route(/^https?:\/\/(?!127\.0\.0\.1)/, route => {
+      const u = route.request().url();
+      const css = /fonts\.googleapis\.com|fonts\.gstatic\.com/.test(u);
+      return route.fulfill({ status: 200, contentType: css ? 'text/css' : 'text/plain', body: '' });
+    });
+    await page.route('**/support.js', route => route.fulfill({ status: 200, contentType: 'text/javascript', body: '' }));
     for (const r of ['/compare/jobber', '/tools/lien-deadlines', '/']) {
-      await page.goto(site.url + r, { waitUntil: 'domcontentloaded' });
+      await page.goto(site.url + r, { waitUntil: 'load' });
+      await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() !== '', null, { timeout: 10000 })
+        .catch(() => {});
       const got = await page.evaluate(() => ({
         ink: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(),
         title: document.title,
