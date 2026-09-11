@@ -102,9 +102,27 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     const real = errs.filter(e => {
       if (/Unhandled Promise Rejection|ResizeObserver|Script error\.?$|apple-mapkit|mapkit|stripe|favicon|status of 4\d\d|cloudflareinsights/i.test(e)) return false;
       if (genericCorsMsg.test(e) && noisyFailedUrls.length) return false; // correlated with a known noisy third-party failure
+      // Chromium reports the same beacon failure as a bare "Failed to load resource:
+      // net::ERR_FAILED" with no URL; requestfailed captured which URL it was.
+      if (/Failed to load resource/i.test(e) && noisyFailedUrls.length) return false;
       return true;
     });
     expect(real, `console errors on boot: ${real.join(' | ')}: failed requests: ${failedRequests.join(' | ') || '(none captured)'}`).toHaveLength(0);
+  });
+
+  // 1b. The "/" gate (functions/index.js) is live: a stranger gets the marketing
+  //     page, a browser carrying the app cookie gets the app. Only a deployed
+  //     origin runs the function, so this is the one place it can be proven.
+  test('the "/" function serves the landing page to a stranger and the app to the cookie', async ({ page }) => {
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    const landing = await page.request.get('/', { failOnStatusCode: false, headers });
+    expect(landing.status(), 'GET / (no cookie)').toBe(200);
+    expect(landing.headers()['x-td-page'], 'the function answered / for a stranger').toBe('landing');
+    expect(await landing.text()).toContain('<link rel="canonical" href="https://tradedeskpro.app/">');
+    const app = await page.request.get('/', { failOnStatusCode: false, headers: { ...headers, cookie: 'td_app=1' } });
+    expect(app.status(), 'GET / (td_app cookie)').toBe(200);
+    expect(app.headers()['x-td-page'], 'the function answered / for an app user').toBe('app');
+    expect(await app.text()).toContain('id="supa-boot-overlay"');
   });
 
   // 2. The Cloudflare `/api` Pages Function is live and reaches Supabase. This worker
