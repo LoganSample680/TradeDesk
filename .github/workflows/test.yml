@@ -107,6 +107,15 @@ jobs:
       - name: The server's deriver is the phone's deriver
         run: node scripts/gen-shared-deriver.mjs --check
 
+      # The one figure the server can never work out as well as the phone: road
+      # miles need a router, and routing is device-only. It rewrote a real
+      # 3.1-mile leg to 2.9 within an hour of going live. 20261002 draws the
+      # line at p_sweep; this proves both sides of it.
+      - name: A partial derive adds legs and never shortens one
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-miles.sql
+
   # ── §12.8 flow-test coverage advisory ───────────────────────────────────────
   # CLAUDE.md §12.8 requires a live flow test (tests/flow/*.spec.js) for every
   # feature/change that touches a real user flow, but until now that rule
