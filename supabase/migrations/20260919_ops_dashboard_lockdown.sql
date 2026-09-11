@@ -33,7 +33,10 @@ alter table analytics_admins enable row level security;
 drop policy if exists analytics_admins_self on analytics_admins;
 create policy analytics_admins_self on analytics_admins
   for select to authenticated
-  using (user_id = auth.uid());
+  -- Both sides cast to text: the repo's convention everywhere auth.uid() is
+  -- compared (a bare uuid = auth.uid() is the text-equals-uuid bug that
+  -- tests/e2e-flow-coverage.spec.js guards against).
+  using (user_id::text = auth.uid()::text);
 
 revoke all on analytics_admins from anon, authenticated;
 grant select on analytics_admins to authenticated;
@@ -45,7 +48,7 @@ on conflict (user_id) do nothing;
 create or replace function is_ops_admin()
 returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from analytics_admins where user_id = auth.uid());
+  select exists (select 1 from analytics_admins where user_id::text = auth.uid()::text);
 $$;
 
 comment on function is_ops_admin() is
