@@ -26,8 +26,19 @@ concurrency:
 
 jobs:
   # ── Migration lint ──────────────────────────────────────────────────────────
-  # Validates every SQL migration file on every PR — never skips, no Supabase
-  # bot dependency. Catches syntax errors and type mismatches before merge.
+  # Validates every SQL migration file on every PR, never skips, no Supabase
+  # bot dependency.
+  #
+  # It used to claim it caught type mismatches and it did not, which is how
+  # five ops rollups shipped and threw on their first ever call (2026-09-11).
+  # Two reasons, both fixed here:
+  #   1. It applied migrations into a bare Postgres with no auth schema, so
+  #      the first migration failed and everything after it landed in a
+  #      half-built database. Bootstrapped now.
+  #   2. It never CALLED anything. A plpgsql function whose declared row type
+  #      disagrees with its query is created happily and only fails when run,
+  #      so applying a migration proves nothing about the functions in it.
+  #      The call step below is the part that actually earns the job's name.
   migration-lint:
     name: Migration lint
     runs-on: ubuntu-latest
@@ -49,6 +60,11 @@ jobs:
           sudo -u postgres psql -c "CREATE USER testuser WITH SUPERUSER PASSWORD 'testpass';"
           sudo -u postgres psql -c "CREATE DATABASE testdb OWNER testuser;"
 
+      - name: Bootstrap the Supabase surface migrations expect
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -v ON_ERROR_STOP=1 -f scripts/ci/supabase-bootstrap.sql
+
       - name: Run all migrations against local Postgres
         env:
           PGPASSWORD: testpass
@@ -58,6 +74,15 @@ jobs:
             psql -h localhost -U testuser -d testdb -f "$f" || exit 1
           done
           echo "✅ All migrations applied cleanly"
+
+      # Applying is not calling. This becomes an ops admin first, on purpose:
+      # the authorization gate returns before the query runs, so proving a
+      # function raises 42501 for a stranger proves nothing about whether the
+      # query underneath it works at all.
+      - name: Call every ops rollup
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/call-ops-rollups.sql
 
   # ── §12.8 flow-test coverage advisory ───────────────────────────────────────
   # CLAUDE.md §12.8 requires a live flow test (tests/flow/*.spec.js) for every
