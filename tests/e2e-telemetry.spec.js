@@ -563,3 +563,77 @@ test.describe('control telemetry: client → ingest → rollup contract', () => 
     expect(mig).toMatch(/revoke all on v_control_event from anon, authenticated;/);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+//  AN UNUSED ACCOUNT IS NOT A CREW MEMBER WHO WENT DARK (owner 2026-09-11)
+//
+//  On a row reading "dark, 20 pings missed": "That's because she's not signed
+//  in anywhere." The ladder had no state for that, so every unused account
+//  fell into `dark` while the 30-minute nudge kept firing at a stale push
+//  token and pings_missed climbed forever. One confusing row at four people;
+//  most of the alert list at forty.
+//
+//  Auth cannot answer it, which is why the signal is activity: the account
+//  above had 3 auth.sessions rows and 3 unrevoked refresh tokens while being
+//  signed in nowhere.
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('app_presence: the dormant state', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const MIG = 'supabase/migrations/20260928_app_presence_dormant.sql';
+  const sql = fs.readFileSync(path.join(__dirname, '..', MIG), 'utf8');
+
+  test('the function is dropped first, because the row type gains columns', () => {
+    // create or replace cannot change a return type. 20260922 learned this the
+    // hard way with a failed deploy; this asserts the lesson stuck.
+    const drop = sql.indexOf('drop function if exists app_presence()');
+    const create = sql.indexOf('create or replace function app_presence()');
+    expect(drop, 'the drop exists').toBeGreaterThan(-1);
+    expect(drop, 'and comes before the create').toBeLessThan(create);
+  });
+
+  test('dormant outranks every silence-based state, and never foreground', () => {
+    const order = ['foreground', 'dormant', 'no-push-token', 'unknown-cron-down',
+                   'background', 'push-blocked', 'back-online', 'force-closed'];
+    const at = order.map((s) => sql.indexOf("'" + s + "'"));
+    at.forEach((pos, i) => expect(pos, order[i] + ' is in the ladder').toBeGreaterThan(-1));
+    for (let i = 1; i < at.length; i++) {
+      expect(at[i], order[i] + ' comes after ' + order[i-1]).toBeGreaterThan(at[i-1]);
+    }
+  });
+
+  test('liveness is activity, never a push the device answered', () => {
+    const m = sql.match(/greatest\(r\.last_open_at, r\.last_write_at, dev\.checked_at\) as alive_at/);
+    expect(m, 'the three signs of life, whichever came last').toBeTruthy();
+    // last_ping_at answering IS the thing in question, so it cannot be evidence.
+    const alive = sql.slice(sql.indexOf('as alive_at') - 200, sql.indexOf('as alive_at'));
+    expect(alive).not.toContain('last_ping_at');
+  });
+
+  test('the threshold is one named constant, not a number buried in the ladder', () => {
+    expect(sql).toMatch(/c_dormant_days constant numeric := 7/);
+    const uses = (sql.match(/c_dormant_days/g) || []).length;
+    expect(uses, 'declared once, then used in the state and the detail').toBeGreaterThanOrEqual(3);
+    expect(sql, 'no hand-written 7-day interval that could drift from it')
+      .not.toMatch(/interval '7 days'/);
+  });
+
+  test('pings_missed stays truthful, the new column is what a reader judges on', () => {
+    // Zeroing it would hide that the push lane is still firing at a device
+    // that will never reply, which is itself worth seeing.
+    expect(sql, 'missed is still the raw clamp, not special-cased for dormant')
+      .toMatch(/greatest\(floor\(extract\(epoch from[\s\S]{0,120}\/ 1800\)::int, 0\) as missed/);
+    expect(sql).toMatch(/last_alive_at timestamptz, dormant_days numeric/);
+  });
+
+  test('a dormant row explains itself, including the stale-token case', () => {
+    expect(sql).toMatch(/never opened the app, written anything, or reported a device/);
+    expect(sql).toMatch(/pings_missed will keep climbing and means nothing/);
+  });
+
+  test('it is still admin-only and still revoked from anon', () => {
+    expect(sql).toMatch(/if not is_ops_admin\(\) then/);
+    expect(sql).toMatch(/revoke all on function app_presence\(\) from anon, authenticated;/);
+  });
+});
