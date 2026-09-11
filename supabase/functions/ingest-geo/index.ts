@@ -4,20 +4,24 @@
 // mileage and time logs land in Supabase the moment a fence trips, app
 // force-closed or not). The phone's native layer (TdGeoPlugin, build 39+)
 // background-POSTs its buffered location events here within seconds of every
-// wake. This function stores the raw events (geo_events) and runs a SMALL,
-// fence-bounded state machine that writes the derived rows the app already
-// reads: job_time_entries, shop_time_entries, td_mileage.
+// wake. This function stores the raw events (geo_events), keeps the device
+// state the push-ping and the live card read, and RUNS THE DERIVER.
 //
 // ── The one design rule: this is NOT a second brain ─────────────────────────
-// js/geo-track.js remains the authority (§7.3: never hand-roll a parallel
-// engine). This function derives only what fence crossings state plainly:
-//   regionExit of a work fence  → the dwell row, true arrive/depart
-//   regionEnter after an exit   → the leg row + a provisional mileage row
-// It ports only the floors that prevent garbage (mins<2, fence-bounce,
-// stale-leg) and NOTHING nuanced: no detour collapse, no walking trim, no
-// visit backdating, no unfenced stops. Every mileage row it writes is marked
-// data.provisional:true, and the client's next real run refines or replaces
-// it by legKey (js/mileage.js _mileServerRefine).
+// It never was allowed to be, and now it is not even shaped like one. The
+// fence-bounded state machine below used to write rows of its own and was
+// stood down on 2026-09-02 for being a third writer of one event. What
+// replaced it (owner 2026-09-11: "why not just point it easily server side so
+// it doesnt need a app active to run it, server runs it as they happen, in
+// real-time") is the actual deriver: geoDeriveDay and geoDeriveRows out of
+// js/geo-derive.js, the same functions the phone runs, generated into
+// _shared/geo-derive.js by scripts/gen-shared-deriver.mjs with CI failing if
+// the copy goes stale. Same rules, same client_key on every row, same
+// geo_replace_day. A rule changed on the phone is changed here in the same
+// commit, because there is only one copy of the rules to change.
+//
+// The one thing the server does differently is that it never sweeps: see
+// _shared/derive-day.mjs for why partial evidence may only ever add.
 //
 // ── Why duplicates cannot happen ────────────────────────────────────────────
 // Keys are minted with the EXACT client derivations:
@@ -28,6 +32,9 @@
 // writes second is a no-op. td_mileage is guarded by a legKey existence
 // check here and by the client's own legKey check + refine sweep there.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Plain ESM, not .ts, so Deno and the Node test harness load the exact same
+// file: tests/e2e-geo-derive-server.spec.js drives this module directly.
+import { daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -536,6 +543,25 @@ Deno.serve(async (req) => {
     // than silent, which is the whole failure this section is about.
     if (!casWon) console.error("geo_device_state: cursor contended, cursor not advanced", { uid, deviceId });
 
+    // ── THE DERIVER RUNS HERE, ON THE EVENTS THAT JUST LANDED ─────────────
+    // After the raw insert, so this batch is part of what it reads, and after
+    // the cursor swap, so a slow derive cannot hold the state machine open.
+    // Bounded to the days the batch actually touches (daysToDerive), and a day
+    // that throws is reported rather than failing the flush: the events are
+    // already stored, the next trigger derives again, and the phone's own
+    // rebuild is still behind all of it.
+    const derivedDays = [];
+    for (const day of daysToDerive(evs, Date.now())) {
+      try { derivedDays.push(await deriveDayServer(svc, cid, uid, day)); }
+      catch (e) { derivedDays.push({ day, wrote: false, reason: String((e as Error)?.message || e) }); }
+    }
+    derived = derivedDays.filter((d) => d.wrote).length;
+    for (const d of derivedDays) {
+      if (!d.wrote && d.reason && d.reason !== "no evidence" && d.reason !== "nothing to add" && d.reason !== "unresolved") {
+        console.error("derive-day", { uid, day: d.day, reason: d.reason });
+      }
+    }
+
     // Fleet & Team liveness for free: the newest fix stamps the device row.
     const newest = [...evs].reverse().find((e) => e.lat != null);
     if (newest) {
@@ -547,7 +573,7 @@ Deno.serve(async (req) => {
       }).eq("user_id", uid).eq("device_id", deviceId).then(() => {}, () => {});
     }
 
-    return json({ ok: true, stored: evs.length, derived });
+    return json({ ok: true, stored: evs.length, derived, days: derivedDays });
   } catch (e) {
     return json({ ok: false, error: String((e as Error)?.message || e) }, 500);
   }
