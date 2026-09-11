@@ -1318,6 +1318,88 @@ test.describe('geo-derive wiring', () => {
       expect(r.last.acc).toBe(7);
     });
 
+    // ── The route cache is shared, because routing is device-only ──────────
+    //
+    // Owner 2026-09-11: everything in a server-side replay of his 10 September
+    // matched the rows his phone wrote except the miles, and the miles could
+    // not match, because MapKit and the Valhalla/OSRM fallback all live on the
+    // handset. 11.3 replayed against the 13.3 he actually drove.
+    //
+    // The phone already has the right number and already caches it; it just
+    // kept it in localStorage. geo_route_miles (20260930) is the same cache in
+    // a place a scheduled job can read, keyed by the SAME _geoRouteKey string,
+    // and these two assertions are the contract: a key the account has already
+    // paid for never reaches the router again, and one it has to route for
+    // itself goes back up.
+    test('a route the account already paid for comes from the cloud; a new one goes back to it', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_routes');
+        const from = { lat: 39.0123292, lng: -95.7464936 }, to = { lat: 39.0307066, lng: -95.7112082 };
+        const far = { lat: 39.0456577, lng: -95.7151106 };
+        const t0 = Date.parse('2026-09-01T17:21:30Z'), t1 = Date.parse('2026-09-01T17:31:24Z');
+        const row = (id, a, b) => ({ id, fromCoord: a, toCoord: b, startedIso: new Date(t0).toISOString(),
+          endedIso: new Date(t1).toISOString(), miles: 2.3, gpsMiles: 0, calc_method: 'derived-straight', path: [] });
+        const known = row('known', from, to), fresh = row('fresh', from, far);
+        // No path on either, so no via points: the key is just the two ends.
+        const knownKey = _geoRouteKey(from, to, []), freshKey = _geoRouteKey(from, far, []);
+        const asked = [], reads = [], writes = [];
+        window._routeDistance = async (a, b) => { asked.push(b.lat); return { miles: 4.4, mins: 12 }; };
+        const realFrom = window._supa.from;
+        window._supa.from = (t) => {
+          if (t !== 'geo_route_miles') return realFrom.call(window._supa, t);
+          const q = {
+            select: () => q, eq: () => q,
+            in: (_c, keys) => { reads.push(keys.slice()); return Promise.resolve({
+              data: keys.filter(k => k === knownKey).map(k => ({ route_key: k, miles: 7.7 })) }); },
+            upsert: (rows) => { writes.push(rows); return Promise.resolve({ error: null }); },
+          };
+          return q;
+        };
+        try { await _geoDeriveRouteMiles([known, fresh]); }
+        finally { window._supa.from = realFrom; }
+        return { known: [known.miles, known.calc_method, known.routeMiles],
+          fresh: [fresh.miles, fresh.calc_method, fresh.routeMiles],
+          asked, reads, writes: writes.map(w => w.map(x => [x.route_key === freshKey ? 'fresh' : x.route_key, x.miles])),
+          readsAreBoth: reads.length === 1 && reads[0].length === 2,
+          cached: Object.keys(JSON.parse(localStorage.getItem('zp3_geo_routes') || '{}')).length };
+      });
+      // One lookup for the whole batch, not one per leg.
+      expect(r.readsAreBoth, 'both keys asked in a single round trip').toBe(true);
+      // The cloud's 7.7 stands and the router is never asked for that pair.
+      expect(r.known).toEqual([7.7, 'derived-routed', 7.7]);
+      expect(r.asked.length, 'only the leg the account had never routed').toBe(1);
+      expect(r.fresh).toEqual([4.4, 'derived-routed', 4.4]);
+      // Only what this run actually routed goes up; the cloud's own answer is
+      // not written straight back to it.
+      expect(r.writes).toEqual([[['fresh', 4.4]]]);
+      // Both land in the local cache, so the next boot needs neither.
+      expect(r.cached).toBe(2);
+    });
+
+    test('the cloud route cache never breaks a derive when it is unreachable', async () => {
+      // Signed out, offline, a table that is not there yet: the router and the
+      // local cache carry on exactly as before. This is the reason both cloud
+      // helpers swallow rather than throw.
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_routes');
+        const from = { lat: 39.0123292, lng: -95.7464936 }, to = { lat: 39.0307066, lng: -95.7112082 };
+        const t0 = Date.parse('2026-09-01T17:21:30Z');
+        const m = { id: 'z', fromCoord: from, toCoord: to, startedIso: new Date(t0).toISOString(),
+          endedIso: new Date(t0 + 600000).toISOString(), miles: 2.3, gpsMiles: 0, calc_method: 'derived-straight', path: [] };
+        window._routeDistance = async () => ({ miles: 5.1, mins: 14 });
+        const realFrom = window._supa.from;
+        window._supa.from = (t) => { if (t === 'geo_route_miles') throw new Error('no such table'); return realFrom.call(window._supa, t); };
+        let threw = null;
+        try { await _geoDeriveRouteMiles([m]); } catch (e) { threw = String(e); }
+        finally { window._supa.from = realFrom; }
+        return { threw, miles: m.miles, cm: m.calc_method,
+          cached: Object.keys(JSON.parse(localStorage.getItem('zp3_geo_routes') || '{}')).length };
+      });
+      expect(r.threw).toBe(null);
+      expect([r.miles, r.cm]).toEqual([5.1, 'derived-routed']);
+      expect(r.cached, 'still cached locally, which is the offline path').toBe(1);
+    });
+
     test('a complete, dense trace is the drive; the router only outranks a thin one or one that woke late', async () => {
       const r = await page.evaluate(async () => {
         window._routeDistance = async () => ({ miles: 3.9, mins: 10 });

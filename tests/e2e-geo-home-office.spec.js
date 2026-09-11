@@ -659,6 +659,96 @@ test.describe('Home office: presence is not work', () => {
       expect(out.b).toBe(0);
     });
 
+    // ── The newest hundred used to be thrown away, every time ──────────────
+    //
+    // ingest-geo keeps the OLDEST 400 events of any one POST (`.slice(0, 400)`,
+    // index.ts). This handed it the newest 500 in one body, ascending, so the
+    // last hundred transitions were dropped on every single sync and only ever
+    // reached the server days later, once newer flips had pushed them back out
+    // of the tail. The days that paid for it were today and yesterday, which
+    // are the only days a live or server-side derive reads: Jack's 9 September
+    // lost the 20:56 flip that ends his shop leg, the owner's 10 September lost
+    // the 22:23 one, and a replay ran that drive home ninety minutes long
+    // because nothing in geo_events said the truck had stopped.
+    test('the whole window goes up in chunks, and the newest flip is in one of them', async () => {
+      const out = await page.evaluate(async () => {
+        const T = Date.now();
+        // 900 flips, a minute apart, ending now: more than one POST can carry.
+        const transitions = [];
+        for (let i = 899; i >= 0; i--) transitions.push({ ts: T - i * 60000, kind: i % 2 ? 'still' : 'driving' });
+        const newest = transitions[transitions.length - 1].ts;
+        const savedPlugin = window._geoTdPlugin, savedFetch = window.fetch;
+        const savedKey = localStorage.getItem('zp3_geo_flush_key');
+        const savedLog = localStorage.getItem('zp3_geo_applog');
+        window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true, transitions }) });
+        localStorage.setItem('zp3_geo_flush_key', 'test-key');
+        // Two visibility changes the web layer is the only witness to.
+        localStorage.setItem('zp3_geo_applog', JSON.stringify([
+          { ts: T - 3600000, kind: 'active' }, { ts: T - 3599000, kind: 'background' }]));
+        const posts = [];
+        window.fetch = async (_u, o) => { posts.push(JSON.parse(o.body)); return { ok: true }; };
+        window._geoTapeSyncRan = false;
+        let sent = 0, threw = null;
+        try { sent = await _geoTapeSync(); }
+        catch (e) { threw = String(e); }
+        finally {
+          window._geoTdPlugin = savedPlugin; window.fetch = savedFetch;
+          if (savedKey) localStorage.setItem('zp3_geo_flush_key', savedKey); else localStorage.removeItem('zp3_geo_flush_key');
+          if (savedLog) localStorage.setItem('zp3_geo_applog', savedLog); else localStorage.removeItem('zp3_geo_applog');
+        }
+        const all = [].concat.apply([], posts.map(p => p.events));
+        return { threw, sent, posts: posts.length,
+          biggest: posts.reduce((n, p) => Math.max(n, p.events.length), 0),
+          hasNewest: all.some(e => e.type === 'motion' && e.ts === newest),
+          motion: all.filter(e => e.type === 'motion').length,
+          app: all.filter(e => String(e.type).indexOf('app-') === 0).map(e => e.type).sort(),
+          ascending: all.every((e, i, a) => i === 0 || e.ts >= a[i - 1].ts),
+          keyed: posts.every(p => p.key === 'test-key' && !!p.device_id && !!p.user_id) };
+      });
+      expect(out.threw).toBe(null);
+      expect(out.motion, 'every flip in the window, not the oldest 400 of it').toBe(900);
+      expect(out.hasNewest, 'the flip that closes the most recent drive').toBe(true);
+      expect(out.biggest, "ingest-geo's own per-POST cap, never exceeded").toBeLessThanOrEqual(400);
+      expect(out.posts).toBe(3);
+      expect(out.sent).toBe(902);
+      // The app log rides the same POST, as the 'app-<kind>' type the plugin
+      // already sends and _geoDeriveServerFixes already reads back. Nothing
+      // has ever flushed it before, which is why rule 10's office minutes
+      // could be proven on the handset and nowhere else.
+      expect(out.app).toEqual(['app-active', 'app-background']);
+      expect(out.ascending).toBe(true);
+      expect(out.keyed).toBe(true);
+    });
+
+    test('a refused chunk stops the run rather than punching a hole in the week', async () => {
+      const out = await page.evaluate(async () => {
+        const T = Date.now();
+        const transitions = [];
+        for (let i = 899; i >= 0; i--) transitions.push({ ts: T - i * 60000, kind: 'still' });
+        const savedPlugin = window._geoTdPlugin, savedFetch = window.fetch;
+        const savedKey = localStorage.getItem('zp3_geo_flush_key');
+        window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true, transitions }) });
+        localStorage.setItem('zp3_geo_flush_key', 'test-key');
+        let n = 0;
+        window.fetch = async () => { n++; return { ok: n === 1 }; };
+        window._geoTapeSyncRan = false;
+        let sent = 0, threw = null;
+        try { sent = await _geoTapeSync(); }
+        catch (e) { threw = String(e); }
+        finally {
+          window._geoTdPlugin = savedPlugin; window.fetch = savedFetch;
+          if (savedKey) localStorage.setItem('zp3_geo_flush_key', savedKey); else localStorage.removeItem('zp3_geo_flush_key');
+        }
+        return { threw, sent, posts: n };
+      });
+      expect(out.threw).toBe(null);
+      // First chunk landed, second refused, third never attempted: the next
+      // boot starts again from the same place and the landed chunk is a free
+      // no-op on the way past.
+      expect(out.sent).toBe(400);
+      expect(out.posts).toBe(2);
+    });
+
 
 
 
