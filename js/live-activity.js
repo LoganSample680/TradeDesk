@@ -104,6 +104,41 @@ function _liveActReport(event, ctx){
   try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('liveact_'+event,String(ctx||'').slice(0,60));}catch(_e){}
 }
 
+// ── ONE SIGNATURE, ONE PLACE ────────────────────────────────────────────────
+// A card is re-asserted from several directions (every dwell publish, every
+// return to the foreground, the replay of a refused start) and an update costs
+// a real ActivityKit round trip, so an unchanged card has to hash to the same
+// string every time. That string was built in TWO places, byte for byte
+// identical and with nothing keeping them that way, which is the shape of a
+// bug that only appears months later when one of them is edited. Now it is
+// built here and read from here.
+//
+// A timer card renders itself, so the TICK is excluded and a running clock
+// spends nothing.
+//
+// ── BUT THE ANCHOR IS NOT THE TICK (owner 2026-09-11) ──────────────────────
+// "app says 3 hours 51 minutes but the lock says 9". He was at one client
+// twice in a day, 8:02 to 12:30 and again from 1:25. The deriver had it right
+// and the in-app card read 3h51m from the second arrival; the lock screen was
+// still counting from the first, five hours out, and was never going to
+// correct itself.
+//
+// Both visits produce the same kind, the same title and the same detail (the
+// client's address), so the second arrival hashed to the signature the first
+// one left behind and the update was suppressed as a no-op. `timer?'T'` threw
+// away the one field that had actually changed.
+//
+// startedAt is WHAT THE CARD SHOWS, not how often it redraws: change it and
+// every number on the lock screen is wrong until the card is torn down. So it
+// belongs in the signature, and so does siteStartedAt whenever the card is
+// drawing two clocks.
+function _liveActSig(payload){
+  const p=payload||{};
+  return [p.kind,p.title,p.detail,
+    p.timer?('T'+p.startedAt+(p.dualTimer?('/'+p.siteStartedAt):'')):p.value,
+    p.tint,p.dualTimer?'D':'',p.nextScopeId,p.isLastScope?'L':''].join('|');
+}
+
 async function _liveActSet(channel,state){
   if(!(await _liveActReady())){
     // No plugin at all is the ordinary web case, not a fault: every desktop
@@ -178,9 +213,7 @@ async function _liveActSet(channel,state){
     // instead of a hardcoded URL that could drift from cloud.js's.
     supaBaseUrl:(typeof SUPA_URL!=='undefined'&&SUPA_URL)?String(SUPA_URL):''
   };
-  // A timer card renders itself; only its LABELS can change, so the tick is
-  // excluded from the signature and a running clock spends nothing.
-  const sig=[payload.kind,payload.title,payload.detail,payload.timer?'T':payload.value,payload.tint,payload.dualTimer?'D':'',payload.nextScopeId,payload.isLastScope?'L':''].join('|');
+  const sig=_liveActSig(payload);
   if(_liveLast[channel]===sig)return true;
   try{
     const started=_liveLast[channel]!=null;
@@ -536,10 +569,9 @@ async function _liveActForeground(){
         const r=await P.start(payload);
         if(r&&r.ok===false){_liveActReport('refused',ch+':'+((r&&r.reason)||'unknown'));continue;}
         _liveActReport('started',ch);
-        // Rebuild the signature the same way _liveActSet does, so the next
-        // unchanged assert is deduped instead of spending another update.
-        _liveLast[ch]=[payload.kind,payload.title,payload.detail,payload.timer?'T':payload.value,
-          payload.tint,payload.dualTimer?'D':'',payload.nextScopeId,payload.isLastScope?'L':''].join('|');
+        // The same signature _liveActSet stores, from the same function, so
+        // the next unchanged assert is deduped instead of spending an update.
+        _liveLast[ch]=_liveActSig(payload);
       }catch(_e){}
     }
     // Re-assert from the live state too: a dwell that was published while the
