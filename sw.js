@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-09.10.26.5';
+const CACHE = 'tradedesk-09.11.26.2';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -52,6 +52,9 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(new Request(e.request.url, {cache: 'no-cache'})).then(r => {
         if (!r.ok) return r;
+        // The marketing page comes back from / for a signed-out browser (functions/index.js
+        // marks it). It must never become the offline fallback for the app.
+        if (r.headers.get('x-td-page') === 'landing') return r;
         // Clone SYNCHRONOUSLY, before `return r` hands the response to the browser
         // and its body is consumed. safeClone inside the async caches.open().then()
         // ran too late: the body was already used, throwing "Response body is already

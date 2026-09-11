@@ -80,7 +80,7 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     });
     page.on('response', res => { if (!res.ok() && NOISY_ORIGINS.test(res.url())) noisyFailedUrls.push(res.url()); });
 
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/?app=1', { waitUntil: 'domcontentloaded' });
     // App shell rendered (the login screen) = the deployed JS actually ran, not a blank
     // page / 500 / wrong-root deploy. Identifier-first gate (2026-08-22): the email
     // input is the always-visible element now, social buttons only appear after
@@ -158,7 +158,7 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
   //    `_mapkitReady` is ALWAYS false on localhost, this is the only place maps are
   //    proven to load with a VALID token for the live domain.
   test('MapKit authorizes and initializes on the deployed hostname', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/?app=1', { waitUntil: 'domcontentloaded' });
     const authorized = await page.evaluate(() => (typeof _mapkitAuthorizedOrigin !== 'undefined') ? _mapkitAuthorizedOrigin : null);
     expect(authorized, 'deployed origin must be a MapKit-authorized host (pages.dev / tradedeskpro.app)').toBe(true);
     // mapkit.js loads from Apple's CDN (index.html) and fires _initMapKit onload; on an

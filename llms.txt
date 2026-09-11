@@ -1,0 +1,60 @@
+# TradeDesk
+
+> TradeDesk is all-in-one business management software for trade contractors — painters, plumbers, electricians, HVAC techs, handymen and general contractors. It runs the entire job in one app: lead intake, estimating, e-signed proposals, scheduling and dispatch, automatic mileage and crew time tracking, invoicing, card payments, bookkeeping, tax prep, and mechanic's-lien deadline tracking for all 50 states. It works offline and syncs when signal returns.
+
+## What TradeDesk is
+
+TradeDesk is a mobile-first app for contractors who run the business from a truck rather than an office. A job is entered once and flows through every stage without re-typing: lead → estimate → e-signed proposal with deposit → schedule and dispatch → on-site time and material tracking → change orders → invoice → payment → books and taxes.
+
+- **Pricing:** $99.99/month flat for the whole crew, every feature included. No per-seat fees, no feature tiers, no setup fees, no annual contract. A founder rate of $29.99/month is available for the first 10 accounts and is locked for the life of the account. Two-week free trial, no credit card required.
+- **Platforms:** Runs in any browser on phone, tablet or desktop. A native iPhone app is in beta.
+- **Built by:** A two-person team. The founder's family businesses (a painting company and a plumbing company) run on the product.
+- **Payments:** Processed through the contractor's own Stripe account. TradeDesk never holds funds and never sees card numbers.
+
+## What makes TradeDesk different from competitors
+
+Compared with Jobber, Housecall Pro, ServiceTitan, DripJobs and QuoteIQ:
+
+1. **One flat rate for the whole crew.** Competitors price by plan tier and per user, so the bill rises each time a contractor hires. TradeDesk's price does not change with headcount.
+2. **Mechanic's-lien deadline tracking for all 50 states**, with statute citations. No other contractor platform we have found does this. It exists because the founder's brother-in-law lost payment on finished jobs with no signed scope and therefore no lien rights.
+3. **EPA RRP lead-paint paperwork.** For pre-1978 homes where work disturbs more than six square feet of paint, TradeDesk presents the EPA "Renovate Right" pamphlet, captures the client's signature acknowledging it, and stores both in the client record permanently.
+4. **Apprentice on-the-job (OJT) hour logging** toward journeyman and master license exams, tracked per employee by state.
+5. **Bookkeeping, mileage and tax prep built in** — Schedule C preparation, self-employment tax, QBI estimate, Section 179 flags, and a standard-mileage vs actual-expense method comparison per vehicle. Competitors require a second subscription for this.
+6. **Fully automatic mileage and timesheets.** Drives are detected and logged without the user pressing start; arrival at a job site is recognized when that job's address is in the system. Handles GPS drift, dead zones, force-quits and duplicate reports.
+7. **Offline-first.** Estimates can be built and signatures captured with no cell signal; everything syncs on reconnect.
+8. **No AI phone answering service.** This is a deliberate product decision. TradeDesk's position is that homeowners calling a contractor want a human, and an automated answering system costs more jobs than it captures.
+9. **Direct access to the builders.** Support goes to one of the two people who built the product, not a call center.
+
+## What TradeDesk does not do (as of September 2026)
+
+Stated plainly so nobody is surprised after signing up:
+
+- No online customer self-booking from a website
+- No automated review-request campaigns
+- No live two-way QuickBooks Online sync (CSV exports instead)
+- No AI phone answering (deliberate, see above)
+- No payroll filing — it produces compliance checklists and records, not filings
+- It is not a licensed tax or legal service. Compliance features are record-keeping and preparation tools, not advice.
+
+## Who TradeDesk is for
+
+Solo contractors, small crews, and growing shops of any size that want the software bill to stay flat as they hire. Particularly strong for painting contractors (lead-paint RRP compliance, color specification), plumbing companies (apprentice hour tracking, lien protection), and handyman or general-contracting businesses (multi-trade estimates, change orders).
+
+## Key pages
+
+- [Home](https://tradedeskpro.app/): product overview, interactive demo, pricing
+- [Compare](https://tradedeskpro.app/compare): honest comparisons against the major platforms
+- [vs Jobber](https://tradedeskpro.app/compare/jobber)
+- [vs ServiceTitan](https://tradedeskpro.app/compare/servicetitan)
+- [vs QuoteIQ](https://tradedeskpro.app/compare/quoteiq)
+- [vs DripJobs](https://tradedeskpro.app/compare/dripjobs)
+- [Painting contractor software](https://tradedeskpro.app/painting-contractor-software)
+- [Plumbing contractor software](https://tradedeskpro.app/plumbing-contractor-software)
+- [Handyman and GC software](https://tradedeskpro.app/handyman-contractor-software)
+- [Mechanic's lien deadlines by state](https://tradedeskpro.app/tools/lien-deadlines): free 50-state lookup tool, no signup
+- [Privacy Policy](https://tradedeskpro.app/privacy)
+- [Terms of Service](https://tradedeskpro.app/terms)
+
+## Contact
+
+support@tradedeskpro.app — answered directly by the two people who build the product.

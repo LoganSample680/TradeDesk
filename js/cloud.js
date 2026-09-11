@@ -82,7 +82,7 @@ async function loadStripeConnectStatus(){
   // _supaUser may be null on first settings open if the app loaded from cache (offline mode).
   // getSession() reads the token from localStorage instantly, no network needed.
   if(!_supaUser&&_supa){
-    try{const{data:{session}}=await _supa.auth.getSession();if(session?.user)_supaUser=session.user;}catch(_e){}
+    try{const{data:{session}}=await _supa.auth.getSession();if(session?.user){_supaUser=session.user;_tdAppCookie(true);}}catch(_e){}
   }
   if(!_supaUser){
     if(el)el.innerHTML=
@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.10.26.5';
+const APP_VERSION='09.11.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2178,7 +2178,7 @@ async function supaInit(){
       }
     }
     if(session){
-      _supaUser=session.user;
+      _supaUser=session.user;_tdAppCookie(true);
       _hlcInit(); // PHASE 0 oplog: load this owner's persisted HLC so it can't go backwards across reloads
       _opDbLoad(); // PHASE 1 oplog: rehydrate the durable op log + field clocks from IndexedDB
       _saveSessionBackup(session);
@@ -2338,7 +2338,7 @@ async function supaInit(){
           // Previous user's settings timestamp must never beat this user's cloud copy
           S.settingsTs=0;
         }
-        _supaUser=session.user;
+        _supaUser=session.user;_tdAppCookie(true);
         _saveSessionBackup(session);
         // "Remember this device" (owner design 2026-08-22): every real sign-in
         // that reaches here (onboarding signups are suppressed by the
@@ -2469,7 +2469,7 @@ async function supaInit(){
         // Token silently refreshed, update user ref. If we were in offline/cache mode,
         // this is the signal that we're back online with a valid session; sync now.
         if(session){
-          _supaUser=session.user;
+          _supaUser=session.user;_tdAppCookie(true);
           _saveSessionBackup(session);
           if(!_supaCloudLoaded||_loadedFromCacheOnly||_mergeOnSignIn)_onReconnect();
           // Re-render Stripe Connect UI if settings is open (was showing "sign in" while session refreshed)
@@ -2477,7 +2477,7 @@ async function supaInit(){
         }
         return;
       } else if(event==='INITIAL_SESSION'){
-        if(session){_supaUser=session.user;_saveSessionBackup(session);}
+        if(session){_supaUser=session.user;_tdAppCookie(true);_saveSessionBackup(session);}
         return;
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
@@ -5727,7 +5727,18 @@ function _mergeOfflinePendingToMemory(){
     }
   }catch(_e){}
 }
+// ── The "/" gate cookie ───────────────────────────────────────────────────
+// tradedeskpro.app/ is both the marketing page and the app. functions/index.js
+// serves the app when this cookie is present (or the request carries a query
+// string or the native shell's user agent) and the marketing page otherwise.
+// Set on every session-backed boot, cleared when the account is wiped.
+function _tdAppCookie(on){
+  try{
+    document.cookie='td_app='+(on?'1; Max-Age=31536000':'; Max-Age=0')+'; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');
+  }catch(_e){}
+}
 function _enterOfflineMode(){
+  _tdAppCookie(true); // an offline boot from cache is still the app, keep / pointed at it
   document.getElementById('supa-login-overlay')?.remove();
   // Load from cache so the app has real data, not an empty shell
   const _cc=localStorage.getItem('zp3_cloud_cache');
@@ -5933,6 +5944,13 @@ async function supaShowLogin(opts={}){
         '</div>';
       })();
   document.body.appendChild(overlay);
+  // ?signup=1 is the marketing site's CTA (landing.html): land in signup
+  // directly, the same path as the "Create your account" button below, and
+  // consume the param so a reload does not reopen the wizard.
+  if(_normalLogin&&typeof showOnboarding==='function'&&new URLSearchParams(location.search).get('signup')==='1'){
+    try{history.replaceState(null,'',location.pathname);}catch(_e){}
+    overlay.remove();showOnboarding();return;
+  }
   // Responsive: dark brand rail on wide screens, branded hero band on phones (matches onboarding).
   const _wide=window.innerWidth>=760;
   const _ll=document.getElementById('login-left');
@@ -6066,7 +6084,7 @@ async function _loginRunTdLock(remembered,session){
 // underlying primitives that branch does, loadAccountData() then
 // supaLoadFromCloud(), rather than inventing a third loading path.
 async function _loginEnterAppWithSession(session){
-  _supaUser=session.user;
+  _supaUser=session.user;_tdAppCookie(true);
   _hlcInit();_opDbLoad();
   _saveSessionBackup(session);
   document.getElementById('supa-login-overlay')?.remove();
@@ -6382,6 +6400,7 @@ function _teardownRealtimeChannels(){
 // account signed in on the same device (bug #39). Idempotent: safe to call from both
 // the SIGNED_OUT handler AND supaSignOut; whichever runs first wins, the other no-ops.
 function _wipeLocalAccountData(){
+  _tdAppCookie(false); // signed out: / shows the marketing page again
   clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
   _teardownRealtimeChannels(); // CRITICAL: close A's live channels so they can't re-deliver A's rows into B
   _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;_dashAwaitingCloud=false;clearTimeout(_dashSkelTimer);_dashSkelTimer=null;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;clearTimeout(_writeCacheTimer);_writeCacheTimer=null;
@@ -6846,7 +6865,7 @@ async function _probeAndSync(){
           }
           if(!_supaUser){
             // Auth event hasn't fired yet, drive reconnect ourselves
-            _supaUser=session.user;
+            _supaUser=session.user;_tdAppCookie(true);
             _saveSessionBackup(session);
             _mergeOnSignIn=false;
             _onReconnect();
@@ -8052,6 +8071,10 @@ function resendProposalLink(bidId){
 }
 async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;
+  // A session-backed boot marks this browser as an app user for the / gate
+  // (functions/index.js): the next plain visit to / opens the app, not the
+  // marketing page. Cleared with the account in _wipeLocalAccountData.
+  _tdAppCookie(true);
   if(_loadInProgress)return _activeLoadPromise; // AWAIT the in-flight load, a silent no-op here lets _supaCloudLoaded flip true before the merge lands (settings-reboot race)
   _loadInProgress=true;
   let _resolveActiveLoad;_activeLoadPromise=new Promise(r=>{_resolveActiveLoad=r;});
