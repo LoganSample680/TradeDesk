@@ -281,10 +281,17 @@ Deno.serve(async (req) => {
         else if (rid.startsWith("client-")) clientIds.add(rid.slice(7));
       }
       const names: Record<string, string> = {};
+      // WHOSE FENCE IS THIS. Tracked separately from the name, because a
+      // record with an empty name is still this account's and must not be
+      // mistaken for another business's. See isOwnRegion below.
+      const owned = new Set<string>();
       const nameFetch = async (tbl: string, ids: Set<string>, prefix: string, pick: (d: any) => string) => {
         if (!ids.size) return;
         const { data } = await svc.from(tbl).select("id,data").eq("user_id", cid).in("id", [...ids]);
-        (data || []).forEach((r) => { const n = pick(r.data || {}); if (n) names[prefix + r.id] = String(n); });
+        (data || []).forEach((r) => {
+          owned.add(prefix + r.id);
+          const n = pick(r.data || {}); if (n) names[prefix + r.id] = String(n);
+        });
       };
       await Promise.all([
         nameFetch("td_jobs", jobIds, "job-", (d) => d.name || d.addr),
@@ -293,6 +300,31 @@ Deno.serve(async (req) => {
       ]);
       const regionName = (rid: string) =>
         rid === "shop" ? "Shop" : (names[rid] || (rid === "fence" ? "Stop" : "Stop"));
+
+      // A FENCE FROM ANOTHER BUSINESS IS NOT A PLACE THIS ONE HAS BEEN.
+      //
+      // Owner 2026-09-10, signed into his second business: "it says I'm at
+      // Tradedesk shop under sample co, should it or is that another bug?"
+      // It is a bug. His Sample Co device state held an open dwell on
+      // place-1787436272279016, which is a place record belonging to
+      // TradeDesk, his OTHER account, four metres from its shop.
+      //
+      // One phone arms the geofences of whichever account is loaded, and
+      // nothing disarms them when he switches. So the coprocessor went on
+      // reporting TradeDesk's regions while Sample Co was signed in, and this
+      // function opened a dwell on an id Sample Co has never owned.
+      //
+      // The names were never leaked, because nameFetch is already scoped by
+      // user_id, which is why his rows came out unnamed rather than saying
+      // "TradeDesk shop". But an unnamed dwell on a foreign fence is still
+      // this business being told it was somewhere it has no record of.
+      //
+      // A record-scoped id (job-, place-, client-) must resolve under THIS
+      // account or it is not ours to stand in. `shop` and `fence` carry no
+      // record to check, so they pass here and are covered on the device
+      // side instead (js/geo-track.js re-arms on a hat switch).
+      const isOwnRegion = (rid: string) =>
+        (rid === "shop" || rid === "fence") ? true : owned.has(rid);
 
       const timeRows: any[] = [];   // job_time_entries upserts
       const shopRows: any[] = [];   // shop_time_entries upserts
@@ -424,7 +456,7 @@ Deno.serve(async (req) => {
         }
         if (e.type === "regionEnter") {
           closeLeg(e.ts, e.lat, e.lng, e.regionId);
-          if (isWorkRegion(e.regionId) && (!dwell || dwell.regionId !== e.regionId)) {
+          if (isWorkRegion(e.regionId) && isOwnRegion(e.regionId) && (!dwell || dwell.regionId !== e.regionId)) {
             if (dwell) closeDwell(e.ts);                             // overlapping fences: old one ends here
             dwell = { regionId: e.regionId, arrivedTs: e.ts, lat: e.lat, lon: e.lng };
           }

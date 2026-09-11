@@ -612,6 +612,77 @@ test.describe('geo-derive wiring', () => {
       }
     });
 
+    test('switching business drops the other account fences from the phone', async () => {
+      // Owner 2026-09-10, signed into his second business: "it says I'm at
+      // Tradedesk shop under sample co." The coprocessor still held the first
+      // account's regions, so his Sample Co session opened a dwell on a
+      // TradeDesk place four metres from its shop.
+      const r = await page.evaluate(() => {
+        const saved = { user: window._supaUser, cid: window._geoCid, td: window._geoTdPlugin, park: _geoParkModeOn };
+        const stops = [];
+        try {
+          localStorage.removeItem('zp3_geo_armed_for');
+          window._geoTdPlugin = () => ({ stopAll: (a) => { stops.push((a && a.reason) || '?'); } });
+          window._supaUser = { id: 'logan' }; window._geoCid = () => 'logan';
+          _geoDisarmIfForeign();                        // first arm on this phone
+          const afterFirst = stops.length;
+          _geoDisarmIfForeign();                        // same account again: no drop
+          const afterSame = stops.length;
+          // He switches. A stale dwell and open entry are sitting there.
+          localStorage.setItem('zp3_geo_dwell', JSON.stringify({ uid: 'logan', d: { name: 'TradeDesk shop' } }));
+          localStorage.setItem('zp3_geo_open', JSON.stringify({ uid: 'logan' }));
+          window._geoOpenDwell = { name: 'TradeDesk shop' };
+          _geoParkModeOn = true;
+          window._supaUser = { id: 'blake' }; window._geoCid = () => 'blake';
+          _geoDisarmIfForeign();
+          return { afterFirst, afterSame, afterSwitch: stops.length, reason: stops[stops.length - 1] || null,
+            dwellGone: localStorage.getItem('zp3_geo_dwell') === null,
+            openGone: localStorage.getItem('zp3_geo_open') === null,
+            liveGone: window._geoOpenDwell === null,
+            parkOff: _geoParkModeOn === false,
+            tag: localStorage.getItem('zp3_geo_armed_for') };
+        } finally {
+          window._supaUser = saved.user; window._geoCid = saved.cid;
+          window._geoTdPlugin = saved.td; _geoParkModeOn = saved.park;
+          localStorage.removeItem('zp3_geo_armed_for');
+          localStorage.removeItem('zp3_geo_dwell'); localStorage.removeItem('zp3_geo_open');
+          window._geoOpenDwell = null;
+        }
+      });
+      expect(r.afterFirst, 'nothing to drop on a phone that has armed nothing yet').toBe(0);
+      expect(r.afterSame, 'the same account booting twice must not disarm itself').toBe(0);
+      expect(r.afterSwitch, 'the other business fences are dropped').toBe(1);
+      expect(r.reason).toBe('account changed');
+      expect(r.dwellGone, 'a dwell named for the old account cannot survive the switch').toBe(true);
+      expect(r.openGone).toBe(true);
+      expect(r.liveGone).toBe(true);
+      expect(r.parkOff, 'park was armed on the old account fences').toBe(true);
+      expect(r.tag).toBe('blake|blake');
+    });
+
+    test('a crew hat and an owner hat on one login are different fence sets', async () => {
+      // Same login, two businesses: the tag is person AND account, because a
+      // crew member's fences are their employer's, not their own.
+      const r = await page.evaluate(() => {
+        const saved = { user: window._supaUser, cid: window._geoCid, td: window._geoTdPlugin };
+        const stops = [];
+        try {
+          localStorage.removeItem('zp3_geo_armed_for');
+          window._geoTdPlugin = () => ({ stopAll: () => { stops.push(1); } });
+          window._supaUser = { id: 'blake' }; window._geoCid = () => 'logan';   // crew hat on TradeDesk
+          _geoDisarmIfForeign();
+          window._geoCid = () => 'blake';                                       // owner hat, Sample Co
+          _geoDisarmIfForeign();
+          return { drops: stops.length, tag: localStorage.getItem('zp3_geo_armed_for') };
+        } finally {
+          window._supaUser = saved.user; window._geoCid = saved.cid; window._geoTdPlugin = saved.td;
+          localStorage.removeItem('zp3_geo_armed_for');
+        }
+      });
+      expect(r.drops, 'the same person changing hats still changes fence sets').toBe(1);
+      expect(r.tag).toBe('blake|blake');
+    });
+
     test('one account on the phone is never treated as shared', async () => {
       const r = await page.evaluate(() => {
         localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');

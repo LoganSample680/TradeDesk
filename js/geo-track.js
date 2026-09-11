@@ -6540,9 +6540,47 @@ let _geoShopDedupBusy=false;
 const _GEO_SHOP_DUP_OVERLAP_MS=240000; // 4 min: a real back-to-back handoff can drift a little
 
 // ── Init + two-layer consent ───────────────────────────────────────────────────
+// WHOSE FENCES ARE ARMED ON THIS PHONE (owner 2026-09-10, signed into his
+// second business: "it says I'm at Tradedesk shop under sample co, should it
+// or is that another bug?").
+//
+// It was. The coprocessor holds whatever regions were last armed, and nothing
+// dropped them when he switched accounts, so TradeDesk's fences went on
+// reporting while Sample Co was signed in. His Sample Co device state ended
+// up with an open dwell on place-1787436272279016, a TradeDesk place four
+// metres from its shop.
+//
+// The server now refuses a record-scoped region that does not belong to the
+// signed-in account (supabase/functions/ingest-geo), which is the guard that
+// holds even if this runs late or not at all. This is the other half: the
+// generic `shop` region carries no record to check, so the only way it can be
+// right is for the wrong account's arm to be dropped when the account
+// changes. The next arm is the incoming account's own.
+const _GEO_ARMED_FOR_KEY='zp3_geo_armed_for';
+function _geoDisarmIfForeign(){
+  try{
+    const me=(_supaUser&&_supaUser.id)||null;
+    const cid=(typeof _geoCid==='function'&&_geoCid())||null;
+    const tag=me&&cid?(me+'|'+cid):null;
+    if(!tag)return;
+    const was=localStorage.getItem(_GEO_ARMED_FOR_KEY)||null;
+    localStorage.setItem(_GEO_ARMED_FOR_KEY,tag);
+    if(!was||was===tag)return;                 // same person, same business: nothing to drop
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(Td&&typeof Td.stopAll==='function')Td.stopAll({reason:'account changed'});
+    // Park state belongs to the account that armed it, and its spot names a
+    // fence the incoming account may not have.
+    _geoParkModeOn=false;
+    try{localStorage.removeItem(_GEO_DWELL_KEY);localStorage.removeItem(_GEO_OPEN_KEY);}catch(_e){}
+    try{window._geoOpenDwell=null;}catch(_e){}
+    _geoParkNote('disarm','account changed: '+was+' -> '+tag);
+  }catch(_e){}
+}
+
 function _geoTrackInit(){
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
+  _geoDisarmIfForeign();                     // drop the other account's fences before arming ours
   _geoTapeClaim();                           // this person owns this phone's tape from now
   _geoDeriveRebuildSoon();
   _geoOnsiteTickStart();
