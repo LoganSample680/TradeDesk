@@ -125,6 +125,33 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     expect(await app.text()).toContain('id="supa-boot-overlay"');
   });
 
+  // 1c. The live demo boots on the real deploy. The marketing page shows the
+  //     app itself rather than pictures of it, so "the demo still runs" is a
+  //     deploy-health fact: if this breaks, every device frame on the home page
+  //     is empty and nothing else would report it.
+  test('the demo boots on the deployed origin and seeds itself', async ({ page }) => {
+    const errs = [];
+    page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+    page.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
+    await page.goto('/?demo=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !document.getElementById('supa-boot-overlay'), null, { timeout: 25000 });
+    const s = await page.evaluate(() => ({
+      demo: !!window.__TD_DEMO,
+      client: typeof clients !== 'undefined' && clients[0] ? clients[0].name : null,
+      biz: typeof S !== 'undefined' ? S.bname : null,
+      supa: typeof supaEnabled === 'function' ? supaEnabled() : null,
+      cookie: document.cookie,
+    }));
+    expect(s.demo, 'the deploy served the demo sandbox').toBe(true);
+    expect(s.client, 'the demo seeded its sample job').toBeTruthy();
+    expect(s.biz).toBeTruthy();
+    // Still no backend and still no app cookie, on the real origin.
+    expect(s.supa).toBe(false);
+    expect(s.cookie).not.toMatch(/td_app=1/);
+    const real = errs.filter(e => !/favicon|Failed to load resource|net::ERR|cloudflareinsights|status of 4\d\d/i.test(e));
+    expect(real, `demo console errors: ${real.join(' | ')}`).toHaveLength(0);
+  });
+
   // 2. The Cloudflare `/api` Pages Function is live and reaches Supabase. This worker
   //    only exists on the deployed origin (localhost uses local-server.js), so it is
   //    UNTESTED until now. Both 200 and 401 prove the proxy reached Supabase auth.

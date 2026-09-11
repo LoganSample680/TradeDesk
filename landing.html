@@ -266,7 +266,7 @@ details[open] [data-chev]{transform:rotate(45deg)}
               <span style="flex:1;font-family:var(--font-display);font-weight:800;font-size:14px;letter-spacing:-.3px;color:var(--text-cream)">{{ flowTitle }}</span>
               <span style="font-size:10px;font-weight:700;color:var(--text-cream-2)">{{ flowStepNum }}</span>
             </div>
-            <div style="flex:none;height:520px;overflow:hidden;position:relative">
+            <div style="flex:none;height:520px;overflow:hidden;position:relative">{{ flowLiveEl }}
               <sc-if value="{{ isStep0 }}" hint-placeholder-val="{{ true }}"><div style="height:760px;padding:15px 15px 0;animation:flow-play 7.5s cubic-bezier(.4,0,.2,1) infinite"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:3px">20 clients · 1 active today</div><div style="font-family:var(--font-display);font-weight:900;font-size:18px;letter-spacing:-.5px;color:var(--text);margin-bottom:11px">New Lead</div><div style="position:relative;background:#fff;border-radius:12px;padding:15px 14px;box-shadow:var(--shadow-card);overflow:hidden"><span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--denim)"></span><div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:12px;padding-bottom:11px;border-bottom:1px solid var(--line)">New lead</div><div style="font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);margin:2px 0 9px">Required</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Full name</div><div style="background:#fff;border:1.5px solid var(--denim);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:500;color:var(--text);box-shadow:0 0 0 3px rgba(45,93,168,.12);animation:flow-tap 7.5s ease-in-out infinite">Sample Client</div></div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Phone</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:400;color:var(--text-3)">XXX-XXX-XXXX</div></div></div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Lead source</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;color:var(--text-2);display:flex;align-items:center;justify-content:space-between"><span>- How did they find you? -</span><span style="color:var(--text-3);font-size:9px">▾</span></div></div><div style="border-top:1px solid var(--line);margin:5px 0 12px"></div><div style="font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);margin:2px 0 9px">Optional · add anytime</div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Street address</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:500;color:var(--text)">1234 Maple St</div></div><div style="display:grid;grid-template-columns:1fr 64px 74px;gap:8px"><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">City</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:500;color:var(--text)">Denver</div></div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">State</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:500;color:var(--text)">CO</div></div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Zip</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:500;color:var(--text)">80203</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Email</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:400;color:var(--text-3)">client@email.com</div></div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Property type</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;color:var(--text-2);display:flex;align-items:center;justify-content:space-between"><span>Single family home</span><span style="color:var(--text-3);font-size:9px">▾</span></div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Year built <span style="color:var(--text-3);font-weight:600;letter-spacing:0;text-transform:none">Pre-1978 = EPA</span></div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:600;color:var(--text);border-color:var(--denim);box-shadow:0 0 0 3px rgba(45,93,168,.12)">1962</div></div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Occupation</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;color:var(--text-2);display:flex;align-items:center;justify-content:space-between"><span>- Unknown -</span><span style="color:var(--text-3);font-size:9px">▾</span></div></div></div><div style="display:flex;align-items:flex-start;gap:9px;background:var(--c-amber-soft);border:1px solid var(--c-amber-edge);border-radius:9px;padding:10px 12px;margin-bottom:11px;animation:flow-tap 7.5s ease-in-out infinite"><span style="flex:none;color:var(--c-amber);display:inline-flex;margin-top:1px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.86L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.86a2 2 0 00-3.4 0z"></path><path d="M12 9v4M12 17h.01"></path></svg></span><span style="font-size:10.5px;font-weight:600;color:var(--text);line-height:1.4"><b style="font-weight:800">Pre-1978 home flagged.</b> RRP lead-paint rules apply. TradeDesk will get the Renovate Right pamphlet signed before work starts.</span></div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Client tier</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;color:var(--text-2);display:flex;align-items:center;justify-content:space-between"><span>- Auto -</span><span style="color:var(--text-3);font-size:9px">▾</span></div></div><div style="margin-bottom:11px"><div style="font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px">Notes</div><div style="background:#fff;border:1.5px solid var(--line-2);border-radius:8px;padding:10px 11px;font-size:12px;font-weight:400;color:var(--text-3)">Anything useful from first contact…</div></div></div><div style="margin-top:6px;width:100%;background:var(--ink);color:#fff;font-weight:700;font-size:13px;padding:13px;border-radius:8px;text-align:center;box-shadow:0 2px 12px rgba(27,22,18,.25)">Save lead</div></div></sc-if>
               <sc-if value="{{ isStep1 }}" hint-placeholder-val="{{ false }}"><div style="height:760px;padding:15px 15px 0;animation:flow-play 7.5s cubic-bezier(.4,0,.2,1) infinite"><div style="font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--denim);text-transform:uppercase;margin-bottom:3px">← Job type</div>
 <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px"><span style="font-family:var(--font-display);font-weight:900;font-size:19px;letter-spacing:-.6px;color:var(--text)">Build Your Own</span><span style="color:var(--text-3);display:inline-flex"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"></path></svg></span></div>
@@ -813,7 +813,7 @@ details[open] [data-chev]{transform:rotate(45deg)}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;pricingMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;early-access&quot;,&quot;paid&quot;],&quot;default&quot;:&quot;early-access&quot;,&quot;tsType&quot;:&quot;'early-access' | 'paid'&quot;,&quot;section&quot;:&quot;Pricing&quot;},&quot;monthlyPrice&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:99,&quot;min&quot;:9,&quot;max&quot;:299,&quot;unit&quot;:&quot;$/mo&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Pricing&quot;},&quot;foundingSpots&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:10,&quot;min&quot;:5,&quot;max&quot;:500,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Pricing&quot;},&quot;phoneShot&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Real screenshots&quot;},&quot;tabletShot&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Real screenshots&quot;},&quot;desktopShot&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Real screenshots&quot;}}">
 class Component extends DCLogic {
-  state = { didx:0, rot:0, anim:true, flow:0 };
+  state = { didx:0, rot:0, anim:true, flow:0, liveHero:false, liveFlow:false };
   componentDidMount(){
     try{ sessionStorage.setItem('td_landing_seen','1'); }catch(e){}
     this._reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -833,7 +833,78 @@ class Component extends DCLogic {
     this._t2=setTimeout(()=>{ this._busy=false; }, 1200);
   }
   pickDevice(t){ clearInterval(this._cTimer); this._flip(t); if(!this._reduce) this._cTimer=setInterval(()=>this._flip((this.state.didx+1)%3),3600); }
-  pickFlow(i){ clearInterval(this._fTimer); this.setState({flow:i}); if(!this._reduce) this._fTimer=setInterval(()=>this.setState(s=>({flow:(s.flow+1)%8})),8200); }
+  pickFlow(i){
+    clearInterval(this._fTimer);
+    this.setState({flow:i});
+    // Live: steer the running app instead of reloading it, so stepping is instant
+    // and whatever the visitor typed on an earlier step is rebuilt, not stranded.
+    if(this.state.liveFlow){ this.tellDemo(i+1); return; }
+    if(!this._reduce) this._fTimer=setInterval(()=>this.setState(s=>({flow:(s.flow+1)%8})),8200);
+  }
+  // ── The live app, in place of the recreations ────────────────────────────
+  // The frames load the SHIPPED app (/?demo=1), same origin, so what a visitor
+  // sees is production as it stands right now: a merge to main rebuilds it and
+  // these frames serve the new app on the next load. Nothing here is a picture.
+  //
+  // It loads on tap, never on first paint: the app is a few hundred KB of HTML
+  // plus its scripts and putting that behind the hero would cost the page its
+  // load time on a phone signal.
+  goLive(which){
+    clearInterval(this._cTimer); clearInterval(this._fTimer);
+    this.setState(which==='hero' ? {liveHero:true} : {liveFlow:true});
+  }
+  tellDemo(step){
+    try{ this._flowFrame && this._flowFrame.contentWindow &&
+      this._flowFrame.contentWindow.postMessage({td:'demo', step}, location.origin); }catch(e){}
+  }
+  // A frame sized to a real viewport and scaled down, rather than a narrow
+  // viewport: the app then lays itself out exactly as it does on that device
+  // instead of reflowing into a shape no real user ever sees. The slot is
+  // measured rather than assumed so the fit survives a change to the mockup.
+  liveEl(kind, step){
+    // The walkthrough frame is the same phone shell as the hero's, so it gets
+    // a phone viewport; only the desktop mockup gets a desktop one.
+    const designW = (kind==='phone'||kind==='flow') ? 390 : kind==='tablet' ? 834 : 1280;
+    const src = '/?demo=1' + (step ? '&step='+step : '');
+    const keep = kind==='flow';
+    const setRef = (host)=>{
+      if(!host || host._tdFit) return;
+      host._tdFit = true;
+      const fit = ()=>{
+        const W = host.clientWidth, H = host.clientHeight, f = host.firstChild;
+        if(!W || !H || !f) return;
+        const k = W / designW;
+        f.style.width = designW + 'px';
+        f.style.height = Math.ceil(H / k) + 'px';
+        f.style.transform = 'scale(' + k + ')';
+        if(keep) this._flowFrame = f;
+      };
+      requestAnimationFrame(fit);
+      window.addEventListener('resize', fit);
+    };
+    return React.createElement('div', {ref:setRef, style:{position:'absolute',inset:0,zIndex:6,overflow:'hidden',background:'var(--paper)'}},
+      React.createElement('iframe', {
+        src, title:'TradeDesk, running live', loading:'lazy',
+        style:{border:0,transformOrigin:'top left',display:'block'}
+      })
+    );
+  }
+  // The recreation stays as the poster frame behind this, so the hero is never
+  // empty: with no JS, on a slow line, or if the frame fails, there is still a
+  // screen there.
+  tryEl(which, label){
+    const onGo = (e)=>{ if(e&&e.preventDefault)e.preventDefault(); this.goLive(which); };
+    return React.createElement('button', {
+      onClick:onGo, type:'button',
+      style:{position:'absolute',inset:0,zIndex:5,border:0,background:'transparent',cursor:'pointer',
+             display:'flex',alignItems:'flex-end',justifyContent:'center',padding:'0 0 18px',
+             font:'inherit',WebkitTapHighlightColor:'transparent'}
+    }, React.createElement('span', {
+      style:{display:'inline-flex',alignItems:'center',gap:'7px',background:'var(--denim)',color:'#fff',
+             fontFamily:'var(--font-ui)',fontWeight:800,fontSize:'13px',letterSpacing:'.01em',
+             padding:'10px 18px',borderRadius:'999px',boxShadow:'0 8px 24px rgba(0,0,0,.34)'}
+    }, label));
+  }
   subscribe(e){
     if(e && e.preventDefault) e.preventDefault();
     const input = e && e.target ? e.target.querySelector('input[type=email]') : null;
@@ -860,9 +931,15 @@ class Component extends DCLogic {
       deviceCaption: caps[didx],
       dot0:dcol(0), dot1:dcol(1), dot2:dcol(2), dw0:dw(0), dw1:dw(1), dw2:dw(2),
       ap0: didx===0 ? 'true' : 'false', ap1: didx===1 ? 'true' : 'false', ap2: didx===2 ? 'true' : 'false',
-      phoneShotEl: this.shotEl(this.props.phoneShot, 'TradeDesk dashboard on an iPhone'),
-      tabletShotEl: this.shotEl(this.props.tabletShot, 'TradeDesk dashboard on an iPad'),
-      desktopShotEl: this.shotEl(this.props.desktopShot, 'TradeDesk dashboard on a desktop monitor'),
+      phoneShotEl: this.state.liveHero ? this.liveEl('phone')
+        : (this.shotEl(this.props.phoneShot, 'TradeDesk dashboard on an iPhone') || this.tryEl('hero','Try it live')),
+      tabletShotEl: this.state.liveHero ? this.liveEl('tablet')
+        : (this.shotEl(this.props.tabletShot, 'TradeDesk dashboard on an iPad') || this.tryEl('hero','Try it live')),
+      desktopShotEl: this.state.liveHero ? this.liveEl('desktop')
+        : (this.shotEl(this.props.desktopShot, 'TradeDesk dashboard on a desktop monitor') || this.tryEl('hero','Try it live')),
+      // The walkthrough's own frame. Mounted once at the step it was started
+      // on; every later step is a postMessage, not a reload.
+      flowLiveEl: this.state.liveFlow ? this.liveEl('flow', f+1) : this.tryEl('flow','Start live demo'),
       onPickPhone:()=>this.pickDevice(0), onPickTablet:()=>this.pickDevice(1), onPickDesktop:()=>this.pickDevice(2),
       flowTitle: titles[f], flowStepNum: (f+1)+' / 8',
       foundingSpots: this.props.foundingSpots ?? 10,

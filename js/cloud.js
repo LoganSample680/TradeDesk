@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.11.26.5';
+const APP_VERSION='09.11.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1742,7 +1742,9 @@ let _loadedDataOwner=null; // user id whose business data is currently in memory
 let _cloudTimersStarted=false; // prevent duplicate setInterval/addEventListener on PTR re-load
 let _checkSigsBusy=false;      // prevent concurrent clawback writes
 let _sessionRestoreInProgress=false;
-function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
+// Demo mode (?demo=1) has no backend at all: supaInit() returns on this, and
+// so does every other cloud entry point that asks the same question.
+function supaEnabled(){return !window.__TD_DEMO&&!!(SUPA_URL&&SUPA_KEY);}
 // Boot waterfall arming, popup-gated. Cards start hidden (boot-hold); ~220ms in
 // we sample for an open popup (boot-time alerts spawn right around overlay
 // removal). None → pour immediately. One up → hold until the LAST popup closes
@@ -5733,6 +5735,8 @@ function _mergeOfflinePendingToMemory(){
 // string or the native shell's user agent) and the marketing page otherwise.
 // Set on every session-backed boot, cleared when the account is wiped.
 function _tdAppCookie(on){
+  // Trying the demo must never turn "/" into the app for that visitor.
+  if(window.__TD_DEMO)return;
   try{
     document.cookie='td_app='+(on?'1; Max-Age=31536000':'; Max-Age=0')+'; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');
   }catch(_e){}

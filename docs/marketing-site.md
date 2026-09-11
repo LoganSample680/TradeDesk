@@ -110,19 +110,16 @@ proves the cookie is set, `?signup=1` opens signup, and the wipe clears it.
 - No App Store links. The hero chip says the iPhone app is in beta because it is
   in TestFlight. Revisit at App Store launch (smart banner too).
 - No phone number or call scheduling. Email only.
-- The hero device mockups are hand-built recreations, not screenshots. The
-  landing page has `phoneShot`, `tabletShot`, `desktopShot` props: set one to an
-  image path to replace the recreation in that frame (phone 524x1224, tablet
+- The hero device mockups are hand-built recreations. They are now the poster
+  frame behind the live demo, shown until a visitor taps "Try it live" and as
+  the no-JS fallback. The `phoneShot`, `tabletShot`, `desktopShot` props still
+  accept an image path if one is ever wanted instead (phone 524x1224, tablet
   744x1120, desktop 988x1090; `object-fit: cover`, top anchored).
 - The landing FAQ JSON-LD must keep matching the visible `<details>` items.
   Markup-only Q&A risks a Google manual action. The spec guards this.
 
-## Later: live demo in the device frames
+## The live demo
 
-Replace the recreations with the real app once the app has a `?demo=1` boot
-path (skips auth, seeds a fake company into localStorage, resets on every boot,
-disables the service worker, deep links per step with `&step=lead|estimate|sign|
-schedule|onsite|change|invoice|collect`, and allows framing from the marketing
-origin via `frame-ancestors`). Page side: keep the recreation as the poster and
-no-JS fallback, swap in a CSS-scaled iframe on a "Try it live" tap, never on
-first paint.
+Built. The device frames and the eight-step walkthrough run the real app
+(`/?demo=1`) rather than showing pictures of it, so they cannot go stale. See
+`docs/demo.md`.
