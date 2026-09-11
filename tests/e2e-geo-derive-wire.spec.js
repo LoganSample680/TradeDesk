@@ -683,6 +683,39 @@ test.describe('geo-derive wiring', () => {
       expect(r.tag).toBe('blake|blake');
     });
 
+    test('the seven-day rebuild is per person, not per phone', async () => {
+      // Owner 2026-09-10: "I'm in my own account now looking at Aldi guys
+      // that's not fixed." The other account on the same handset had booted
+      // the new build first and spent the shared version marker, so his own
+      // account got the two-day window and never re-derived 6 September.
+      const r = await page.evaluate(() => {
+        const saved = { user: window._supaUser, ver: window._geoDeriveAppVer };
+        try {
+          window._geoDeriveAppVer = () => '09.10.26.22';
+          ['logan', 'blake', 'anon'].forEach(u => localStorage.removeItem('zp3_geo_derive_ver_' + u));
+          localStorage.removeItem('zp3_geo_derive_ver');
+          window._supaUser = { id: 'blake' };
+          const blakeFirst = _geoDeriveRebuildDays();                 // never seen it: full
+          localStorage.setItem(_geoDeriveVerSeenKey(), '09.10.26.22'); // blake finishes his rebuild
+          localStorage.setItem('zp3_geo_derive_ver', '09.10.26.22');   // and stamps the device marker
+          const blakeAgain = _geoDeriveRebuildDays();                 // seen: live window
+          window._supaUser = { id: 'logan' };
+          const loganAfter = _geoDeriveRebuildDays();                 // MUST still be full
+          localStorage.setItem(_geoDeriveVerSeenKey(), '09.10.26.22');
+          const loganAgain = _geoDeriveRebuildDays();
+          return { blakeFirst, blakeAgain, loganAfter, loganAgain };
+        } finally {
+          window._supaUser = saved.user; window._geoDeriveAppVer = saved.ver;
+          ['logan', 'blake', 'anon'].forEach(u => localStorage.removeItem('zp3_geo_derive_ver_' + u));
+          localStorage.removeItem('zp3_geo_derive_ver');
+        }
+      });
+      expect(r.blakeFirst, 'a build this account has not derived on rebuilds the week').toBe(7);
+      expect(r.blakeAgain, 'and not again on the next boot').toBe(2);
+      expect(r.loganAfter, 'the other account spending the marker must not cost him his rebuild').toBe(7);
+      expect(r.loganAgain).toBe(2);
+    });
+
     test('one account on the phone is never treated as shared', async () => {
       const r = await page.evaluate(() => {
         localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
@@ -1344,13 +1377,21 @@ test.describe('geo-derive wiring', () => {
         window._geoDeriveDayNow = async (d) => { days.push(d); return { dwells: [], legs: [] }; };
         window._geoDeriveServerFixes = async () => { const o = []; o.appEvents = []; return o; };
         try {
-          localStorage.setItem('zp3_geo_derive_ver', APP_VERSION);
+          // RESTATED 2026-09-10 (CLAUDE.md 10.4). This used to set the
+          // device-wide key, which was right when one marker served the whole
+          // handset. It is per-uid now, because on a shared phone the first
+          // account to boot a new build was spending the other's seven-day
+          // rebuild: the owner's 6 September row was stranded exactly that
+          // way. The device-wide key still exists and still means "this
+          // handset has derived before" for _geoTapeClaim.
+          localStorage.setItem(_geoDeriveVerSeenKey(), APP_VERSION);
           await _geoDeriveRebuild();
           const same = days.length; days.length = 0;
-          localStorage.setItem('zp3_geo_derive_ver', '00.00.00.0');
+          localStorage.setItem(_geoDeriveVerSeenKey(), '00.00.00.0');
           await _geoDeriveRebuild();
           const changed = days.length;
-          const stamped = localStorage.getItem('zp3_geo_derive_ver');
+          const stamped = localStorage.getItem(_geoDeriveVerSeenKey());
+          const stampedDevice = localStorage.getItem('zp3_geo_derive_ver');
           // Coming back after half an hour runs it again; sooner does not.
           window._geoDeriveRebuilt = true; _geoDeriveRebuildT = null;
           _geoDeriveRebuiltAt = Date.now();
@@ -1358,12 +1399,13 @@ test.describe('geo-derive wiring', () => {
           days.length = 0; _geoDeriveRebuiltAt = Date.now() - 31 * 60000;
           const later = _geoDeriveRebuildIfStale();
           await new Promise(res => setTimeout(res, 50));
-          return { same, changed, stamped, soon, later, ran: days.length };
+          return { same, changed, stamped, stampedDevice, soon, later, ran: days.length };
         } finally { window._geoDeriveDayNow = origNow; window._geoDeriveServerFixes = real; }
       });
       expect(r.same).toBe(2);
       expect(r.changed).toBe(7);
       expect(r.stamped).toBe(await page.evaluate(() => APP_VERSION));
+      expect(r.stampedDevice, 'the device-wide marker is still written, for _geoTapeClaim').toBe(await page.evaluate(() => APP_VERSION));
       expect(r.soon).toBe(false);
       expect(r.later).toBe(true);
       expect(r.ran).toBe(2);
@@ -1381,7 +1423,7 @@ test.describe('geo-derive wiring', () => {
         window._geoDeriveDayNow = async (d) => { days.push(d); await new Promise(res => setTimeout(res, 30)); return { dwells: [], legs: [] }; };
         window._geoDeriveServerFixes = async () => { const o = []; o.appEvents = []; return o; };
         try {
-          localStorage.setItem('zp3_geo_derive_ver', APP_VERSION);
+          localStorage.setItem(_geoDeriveVerSeenKey(), APP_VERSION);   // per-uid now, see 10.4 note above
           window._geoDeriveRebuilt = true; _geoDeriveRebuildT = null;
           _geoDeriveRebuiltAt = Date.now() - 31 * 60000;
           const p1 = _geoDeriveRebuild();
@@ -1484,7 +1526,9 @@ test.describe('geo-derive wiring', () => {
         window._geoDeriveDayNow = async (d) => { days.push(d); return { dwells: [], legs: [] }; };
         window._geoDeriveServerFixes = async () => [];
         // A rule change (no stamp for this version) is what reaches back the
-        // full week; a locked week derives two days (the test above).
+        // full week; a locked week derives two days (the test above). The
+        // stamp is per-uid now, see the 10.4 note on the first of these.
+        localStorage.removeItem(_geoDeriveVerSeenKey());
         localStorage.removeItem('zp3_geo_derive_ver');
         try { const n = await _geoDeriveRebuild(); return { n, days }; }
         finally { window._geoDeriveDayNow = orig; }

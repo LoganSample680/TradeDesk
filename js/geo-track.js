@@ -7492,8 +7492,37 @@ const _GEO_DERIVE_VER_KEY='zp3_geo_derive_ver';
 const _GEO_DERIVE_STALE_MS=30*60000;
 let _geoDeriveRebuiltAt=0;
 function _geoDeriveAppVer(){try{return (typeof APP_VERSION!=='undefined'&&APP_VERSION)?String(APP_VERSION):'';}catch(_e){return '';}}
+// THE FULL REBUILD IS PER PERSON, NOT PER PHONE.
+//
+// Owner 2026-09-10, back on his own account: "I'm in my own account now
+// looking at Aldi guys that's not fixed." The seven-day rebuild only runs
+// when the app version has changed since the last one, and the marker that
+// remembered it was a single device-wide key. On a phone two businesses
+// share, whichever account booted the new build first spent the marker, and
+// every other account on that handset got the two-day window instead.
+//
+// That is exactly what stranded his row. His own account rebuilt seven days
+// on 09.10.26.20 at 19:46, minutes BEFORE geo_replace_day's rounding fix
+// went live at 19:59, so 6 September was re-derived through the old
+// function. The roll to 09.10.26.22 would have caught it, but the other
+// account booted first, wrote .22 into the shared marker, and by the time he
+// signed back in the version already looked seen. Two days back does not
+// reach 6 September, so nothing ever touched it again.
+//
+// The device-wide key stays exactly as it was: _geoTapeClaim reads it to ask
+// "has this handset ever derived", which is a question about the phone and
+// not about a person. This adds a second marker beside it, per uid, and only
+// the rebuild window reads it.
+function _geoDeriveVerSeenKey(){
+  const uid=(_supaUser&&_supaUser.id)||'anon';
+  return _GEO_DERIVE_VER_KEY+'_'+uid;
+}
 function _geoDeriveRebuildDays(){
-  try{const seen=localStorage.getItem(_GEO_DERIVE_VER_KEY)||'';const ver=_geoDeriveAppVer();return (ver&&seen===ver)?_GEO_DERIVE_DAYS_LIVE:_GEO_DERIVE_DAYS;}catch(_e){return _GEO_DERIVE_DAYS_LIVE;}
+  try{
+    const seen=localStorage.getItem(_geoDeriveVerSeenKey())||'';
+    const ver=_geoDeriveAppVer();
+    return (ver&&seen===ver)?_GEO_DERIVE_DAYS_LIVE:_GEO_DERIVE_DAYS;
+  }catch(_e){return _GEO_DERIVE_DAYS_LIVE;}
 }
 // One rebuild at a time. _geoDeriveRebuiltAt is stamped when a rebuild
 // FINISHES, so a stale check arriving while one is still running (an
@@ -7523,7 +7552,10 @@ async function _geoDeriveRebuildRun(){
     if(r)n++;
   }
   _geoDeriveRebuiltAt=Date.now();
-  try{const ver=_geoDeriveAppVer();if(ver)localStorage.setItem(_GEO_DERIVE_VER_KEY,ver);}catch(_e){}
+  // Both markers: the per-uid one decides THIS person's next rebuild window,
+  // the device-wide one keeps meaning "this handset has derived before" for
+  // _geoTapeClaim.
+  try{const ver=_geoDeriveAppVer();if(ver){localStorage.setItem(_geoDeriveVerSeenKey(),ver);localStorage.setItem(_GEO_DERIVE_VER_KEY,ver);}}catch(_e){}
   try{_geoParkNote('rebuild',days+'d, '+n+' derived');}catch(_e){}
   return n;
 }
