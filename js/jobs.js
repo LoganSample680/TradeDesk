@@ -1082,23 +1082,45 @@ function _geoRecordClientCoords(clientId,addr,coords){
   }catch(_e){}
 }
 
-// Pour the record's coordinates back into the device cache. A phone that has
-// never geocoded this client, or a fresh install, then resolves the fence on
-// its first boot instead of waiting for a Nominatim call it does not need.
-function _geoSeedClientCache(){
+// Reconcile the two copies, BOTH WAYS, costing no geocode either way.
+//
+// DOWN (record -> cache): a phone that has never geocoded this client, or a
+// fresh install, resolves the fence on its first boot instead of waiting for
+// a Nominatim call it does not need.
+//
+// UP (cache -> record): this is the half that was missing on 2026-09-11 and
+// the reason the first attempt backfilled nothing. _backfillNearbyGeoCache
+// only geocodes clients whose CACHE entry is missing or stale, so on a phone
+// that had already geocoded its book, the uncached list was empty, the sweep
+// did nothing, and the record stayed null forever. Every existing user is in
+// exactly that state, which is the entire population the backfill exists for.
+// The coordinates were already sitting on the device; nothing had to be
+// looked up, only written where the rest of the account can see it.
+//
+// ONE save for the whole pass, not one per client: this runs on every boot
+// and a book of 200 clients must not become 200 cloud round-trips.
+function _geoSyncClientCoords(){
   try{
-    if(typeof clients==='undefined'||!Array.isArray(clients))return 0;
-    const cache=_nearbyGeoCache(); let added=0;
+    if(typeof clients==='undefined'||!Array.isArray(clients))return {down:0,up:0};
+    const cache=_nearbyGeoCache(); let down=0,up=0;
     clients.forEach(c=>{
-      if(!c||c.lat==null||c.lon==null||!c.geoAddr)return;
-      if(c.geoAddr!==c.addr)return;                       // moved since: the record is stale too
-      if(cache[c.id]&&cache[c.id].addr===c.addr)return;   // device already warm
-      cache[c.id]={lat:Number(c.lat),lon:Number(c.lon),addr:c.addr}; added++;
+      if(!c||!c.addr)return;
+      const hit=cache[c.id];
+      const recOk=(c.lat!=null&&c.lon!=null&&c.geoAddr===c.addr);
+      const cacheOk=!!(hit&&hit.addr===c.addr&&hit.lat!=null&&hit.lon!=null);
+      if(recOk&&!cacheOk){
+        cache[c.id]={lat:Number(c.lat),lon:Number(c.lon),addr:c.addr}; down++;
+      }else if(cacheOk&&!recOk){
+        c.lat=Number(hit.lat); c.lon=Number(hit.lon); c.geoAddr=c.addr; up++;
+      }
     });
-    if(added)_saveNearbyGeoCache(cache);
-    return added;
-  }catch(_e){return 0;}
+    if(down)_saveNearbyGeoCache(cache);
+    if(up&&typeof saveAll==='function')saveAll();
+    return {down,up};
+  }catch(_e){return {down:0,up:0};}
 }
+// Kept as the name the boot path and the tests already use.
+function _geoSeedClientCache(){ return _geoSyncClientCoords().down; }
 
 async function _eagerGeocodeClient(clientId,addr){
   if(!addr)return;
@@ -1139,10 +1161,10 @@ async function _backfillNearbyGeoCache(){
   if(_nearbyGeoSweepRunning)return;
   _nearbyGeoSweepRunning=true;
   try{
-    // Free wins first: anything another device already geocoded and wrote to
-    // the record needs no Nominatim call at all, and seeding shrinks the list
-    // this sweep then has to pay for.
-    _geoSeedClientCache();
+    // Free wins first, in both directions: anything already known to either
+    // copy needs no Nominatim call, and reconciling shrinks the list this
+    // sweep then has to pay for.
+    _geoSyncClientCoords();
     const _startCache=_nearbyGeoCache();
     const uncached=clients.filter(c=>c.addr&&(!_startCache[c.id]||_startCache[c.id].addr!==c.addr));
     let budget=_NEARBY_BACKFILL_BUDGET;

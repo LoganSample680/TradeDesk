@@ -681,7 +681,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.11.26.5';
+const APP_VERSION='09.11.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8899,11 +8899,13 @@ async function supaLoadFromCloud({silent=false}={}){
       // common case (client book already geocoded from a prior day) resolve
       // near-instantly, so this only needs to trail the location-permission
       // request above, not pad extra wait time on top of it.
-      // Coordinates another device already paid a geocode for, poured into
-      // this one's cache before anything reads it. Synchronous and free: it
-      // touches no network, so the first nearby check below already has every
-      // client the account has ever located, on a phone that has located none.
-      try{if(typeof _geoSeedClientCache==='function')_geoSeedClientCache();}catch(_e){}
+      // The two copies of every client's coordinates, reconciled both ways
+      // before anything reads either. Synchronous and free: it touches no
+      // network. Down, so a phone that has located nothing still has every
+      // fence the account knows. Up, so a phone that located them years ago
+      // finally tells the account, which is the only way an existing book
+      // ever reaches the backend at all.
+      try{if(typeof _geoSyncClientCoords==='function')_geoSyncClientCoords();}catch(_e){}
       setTimeout(()=>checkNearbyJob(),1500);
       // Warms the nearby-job/geofence cache for every EXISTING client that
       // predates the eager-geocode hook in saveClient (js/clients.js), so the

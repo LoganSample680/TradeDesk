@@ -413,6 +413,84 @@ test.describe('geo-derive wiring', () => {
       expect(r.seeded).toEqual({ lat: 1, lon: 2, addr: 'A St' });
     });
 
+    // THE HALF THAT WAS MISSING (2026-09-11). The first attempt at this
+    // backfilled nothing on the owner's own account, because
+    // _backfillNearbyGeoCache only geocodes clients whose CACHE is missing or
+    // stale. A phone that had already geocoded its book had an empty uncached
+    // list, so the sweep did nothing and the record stayed null forever, on
+    // precisely the population the backfill exists for.
+    test('a warm cache is written UP to a record that has none, with no geocode', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        const realSave = window.saveAll, realGeo = window._geocodeAddr;
+        let saves = 0, geocodes = 0;
+        try {
+          window.saveAll = () => { saves++; };
+          window._geocodeAddr = () => { geocodes++; return Promise.resolve(null); };
+          window.clients = [
+            { id: 701, addr: '1 A St' },                                       // cache only: writes up
+            { id: 702, addr: '2 B St' },                                       // cache only: writes up
+            { id: 703, addr: '3 C St', lat: 9, lon: 9, geoAddr: '3 C St' },    // already both: untouched
+          ];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({
+            701: { addr: '1 A St', lat: 39.1, lon: -95.1 },
+            702: { addr: '2 B St', lat: 39.2, lon: -95.2 },
+            703: { addr: '3 C St', lat: 9, lon: 9 },
+          }));
+          const n = _geoSyncClientCoords();
+          return { n, saves, geocodes, c1: window.clients[0], c3: window.clients[2] };
+        } finally {
+          window.saveAll = realSave; window._geocodeAddr = realGeo;
+          if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo');
+        }
+      });
+      expect(r.n.up, 'two clients had coordinates the account could not see').toBe(2);
+      expect(r.n.down, 'nothing needed pouring the other way').toBe(0);
+      expect(r.geocodes, 'the coordinates were already on the device: no lookup').toBe(0);
+      expect(r.saves, 'one save for the whole pass, not one per client').toBe(1);
+      expect(r.c1.lat).toBeCloseTo(39.1, 5);
+      expect(r.c1.geoAddr).toBe('1 A St');
+      expect(r.c3.lat, 'a client already correct is left alone').toBe(9);
+    });
+
+    test('a stale cache entry is never written up', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        const realSave = window.saveAll; let saves = 0;
+        try {
+          window.saveAll = () => { saves++; };
+          window.clients = [{ id: 711, addr: '9 New Rd' }];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 711: { addr: '4 Old Way', lat: 1, lon: 2 } }));
+          const n = _geoSyncClientCoords();
+          return { n, saves, lat: window.clients[0].lat };
+        } finally {
+          window.saveAll = realSave;
+          if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo');
+        }
+      });
+      expect(r.n.up, 'the client moved, so the cached coordinates are wrong too').toBe(0);
+      expect(r.saves, 'nothing to write means no save at all').toBe(0);
+      expect(r.lat).toBeUndefined();
+    });
+
+    test('a boot with both copies already agreeing writes nothing anywhere', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        const realSave = window.saveAll; let saves = 0;
+        try {
+          window.saveAll = () => { saves++; };
+          window.clients = [{ id: 721, addr: '7 Same St', lat: 5, lon: 6, geoAddr: '7 Same St' }];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 721: { addr: '7 Same St', lat: 5, lon: 6 } }));
+          return { n: _geoSyncClientCoords(), saves };
+        } finally {
+          window.saveAll = realSave;
+          if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo');
+        }
+      });
+      expect(r.n).toEqual({ down: 0, up: 0 });
+      expect(r.saves, 'this runs on every boot: a settled book must be silent').toBe(0);
+    });
+
     test('recording a geocode writes both copies, and writes nothing when already correct', async () => {
       const r = await page.evaluate(() => {
         const saved = localStorage.getItem('zp3_nearby_geo');
