@@ -6247,6 +6247,69 @@ async function _geoTapeSync(){
     return sent;
   }catch(_e){return 0;}
 }
+// ── THE PLUGIN HAS BEEN COUNTING ALL ALONG, AND NOBODY EVER LOOKED ──────────
+//
+// Owner 2026-09-11, before spending an iOS build on a fix: "how can you
+// confirm 100% this was the problem and the actual answer?"
+//
+// The honest answer was that I could not. His arrival at a client that
+// afternoon was recorded on time and reached the server fifty minutes late,
+// and the two candidate causes leave identical fingerprints in geo_events:
+// either the upload was attempted and failed, or it was refused before it was
+// sent (a process killed mid-upload leaves an entry in the in-flight map that
+// nothing clears, and the next flush builds the same batch, with the same max
+// ts, and is refused). One is a network problem, the other is a deadlock, and
+// they want different fixes.
+//
+// TdGeoPlugin.countWake has been counting both since the day it was written:
+// flushSent, flushOk, flushFail, relaunch, regionEnter, regionExit, and the
+// rest. stats() has always returned them. Nothing has ever read them, so the
+// answer to a question we have been guessing at for an afternoon has been
+// sitting in UserDefaults the whole time.
+//
+// DELTAS, NOT TOTALS, after the first read. A total answers "has this ever
+// happened", which is nearly useless once a phone is a week old; a delta says
+// what happened in this window, which is the question actually being asked.
+// The FIRST read has no baseline and reports the running total, which is
+// exactly right: it is the backlog, and on the day this shipped it is the
+// afternoon we are trying to explain.
+//
+// No new table and no new endpoint: one analytics row per counter through the
+// telemetry already built for clicks and dwell, where ctx is the counter's
+// name and value is the count. CLAUDE.md 7.3.
+const _GEO_WAKES_KEY='zp3_geo_wakes_seen';
+async function _geoWakeStatsSync(){
+  try{
+    if(window._geoWakeStatsRan)return 0;
+    window._geoWakeStatsRan=true;
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td||typeof Td.stats!=='function')return 0;
+    const st=await Td.stats();
+    const w=(st&&st.wakes&&typeof st.wakes==='object')?st.wakes:null;
+    if(!w)return 0;
+    const keys=Object.keys(w);
+    if(!keys.length)return 0;
+    let prev={};
+    try{const raw=JSON.parse(localStorage.getItem(_GEO_WAKES_KEY)||'{}');if(raw&&typeof raw==='object')prev=raw;}catch(_e){}
+    let sent=0;
+    keys.forEach(k=>{
+      const now=Number(w[k]);
+      if(!isFinite(now)||now<0)return;
+      const was=Number(prev[k]);
+      // A counter that went BACKWARDS was reset under us: stats({reset:true})
+      // from the shadow comparison, or a reinstall. Report the new total
+      // rather than a negative delta, the same way _geoRadioCheck re-baselines
+      // instead of reporting nonsense.
+      const d=(isFinite(was)&&was>=0&&now>=was)?now-was:now;
+      if(d<=0)return;
+      try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('geo_wake',String(k).slice(0,40),d);}catch(_e2){}
+      sent++;
+    });
+    try{localStorage.setItem(_GEO_WAKES_KEY,JSON.stringify(w));}catch(_e){}
+    return sent;
+  }catch(_e){return 0;}
+}
+
 // ── A drive row is paid for the part that was actually driving ──────────────
 // Owner 2026-08-29: "we go off the background core motion tape for walking
 // still and driving, so why can't this fix it too?"

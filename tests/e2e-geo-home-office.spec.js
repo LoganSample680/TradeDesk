@@ -720,6 +720,136 @@ test.describe('Home office: presence is not work', () => {
       expect(out.keyed).toBe(true);
     });
 
+    // ── The counters that answer "failed, or never sent?" ──────────────────
+    //
+    // Owner 2026-09-11, before spending an iOS build: "how can you confirm 100%
+    // this was the problem and the actual answer?" It could not be confirmed
+    // from the event stream, because an upload that failed and an upload that
+    // was refused before sending leave the same fingerprint there: rows
+    // recorded on time, arriving late. TdGeoPlugin.countWake has been counting
+    // both since it was written and nothing ever read it.
+    test('the wake counters go up as one analytics row each, as deltas after the first read', async () => {
+      const out = await page.evaluate(async () => {
+        const savedPlugin = window._geoTdPlugin, savedSeen = localStorage.getItem('zp3_geo_wakes_seen');
+        const savedObs = window._obs;
+        const rows = [];
+        window._obs = { track: (event, ctx, value) => rows.push([event, ctx, value]) };
+        let wakes = { flushSent: 12, flushOk: 9, flushFail: 3, relaunch: 4, regionEnter: 0 };
+        window._geoTdPlugin = () => ({ stats: async () => ({ wakes }) });
+        localStorage.removeItem('zp3_geo_wakes_seen');
+        let first = 0, second = 0, third = 0, threw = null;
+        try {
+          window._geoWakeStatsRan = false; first = await _geoWakeStatsSync();
+          const firstRows = rows.splice(0);
+          // Second read, nothing has moved: nothing is sent.
+          window._geoWakeStatsRan = false; second = await _geoWakeStatsSync();
+          const quietRows = rows.splice(0);
+          // Third read, two more failures and a relaunch.
+          wakes = { flushSent: 15, flushOk: 9, flushFail: 6, relaunch: 5, regionEnter: 0 };
+          window._geoWakeStatsRan = false; third = await _geoWakeStatsSync();
+          return { first, firstRows, second, quietRows, third, deltaRows: rows.slice(), threw };
+        } catch (e) { return { threw: String(e) }; }
+        finally {
+          window._geoTdPlugin = savedPlugin; window._obs = savedObs;
+          if (savedSeen) localStorage.setItem('zp3_geo_wakes_seen', savedSeen); else localStorage.removeItem('zp3_geo_wakes_seen');
+        }
+      });
+      expect(out.threw).toBe(null);
+      // FIRST READ IS THE BACKLOG, deliberately: no baseline means the running
+      // total, which on the day this shipped is the afternoon being explained.
+      expect(out.first).toBe(4);
+      expect(out.firstRows.sort()).toEqual([
+        ['geo_wake', 'flushFail', 3], ['geo_wake', 'flushOk', 9],
+        ['geo_wake', 'flushSent', 12], ['geo_wake', 'relaunch', 4],
+      ].sort());
+      // A counter sitting at zero is not news.
+      expect(out.firstRows.some((r) => r[1] === 'regionEnter')).toBe(false);
+      // Nothing moved, nothing sent: this runs on every boot and must not
+      // re-report the same backlog forever.
+      expect(out.second).toBe(0);
+      expect(out.quietRows).toEqual([]);
+      // And then deltas, which is the number that answers the question.
+      expect(out.third).toBe(3);
+      expect(out.deltaRows.sort()).toEqual([
+        ['geo_wake', 'flushFail', 3], ['geo_wake', 'flushSent', 3], ['geo_wake', 'relaunch', 1],
+      ].sort());
+    });
+
+    test('a counter reset under us reports the new total, never a negative', async () => {
+      // stats({reset:true}) from the shadow comparison, or a reinstall. The
+      // same re-baselining _geoRadioCheck already does rather than reporting
+      // nonsense.
+      const out = await page.evaluate(async () => {
+        const savedPlugin = window._geoTdPlugin, savedObs = window._obs;
+        const rows = [];
+        window._obs = { track: (e, c, v) => rows.push([e, c, v]) };
+        window._geoTdPlugin = () => ({ stats: async () => ({ wakes: { flushSent: 2 } }) });
+        localStorage.setItem('zp3_geo_wakes_seen', JSON.stringify({ flushSent: 900 }));
+        try { window._geoWakeStatsRan = false; await _geoWakeStatsSync(); return { rows }; }
+        finally {
+          window._geoTdPlugin = savedPlugin; window._obs = savedObs;
+          localStorage.removeItem('zp3_geo_wakes_seen');
+        }
+      });
+      expect(out.rows).toEqual([['geo_wake', 'flushSent', 2]]);
+    });
+
+    test('no plugin, no stats, junk counters and a missing telemetry lane all return 0 without throwing', async () => {
+      // It runs from a boot settle point, so anything it throws takes the
+      // sweeps behind it down too.
+      const out = await page.evaluate(async () => {
+        const savedPlugin = window._geoTdPlugin, savedObs = window._obs;
+        const res = [];
+        try {
+          window._geoTdPlugin = () => null;
+          window._geoWakeStatsRan = false; res.push(await _geoWakeStatsSync());
+          window._geoTdPlugin = () => ({});
+          window._geoWakeStatsRan = false; res.push(await _geoWakeStatsSync());
+          window._geoTdPlugin = () => ({ stats: async () => ({}) });
+          window._geoWakeStatsRan = false; res.push(await _geoWakeStatsSync());
+          window._geoTdPlugin = () => ({ stats: async () => ({ wakes: 'nope' }) });
+          window._geoWakeStatsRan = false; res.push(await _geoWakeStatsSync());
+          window._geoTdPlugin = () => ({ stats: async () => ({ wakes: { a: 'x', b: -4, c: null } }) });
+          localStorage.removeItem('zp3_geo_wakes_seen');
+          window._geoWakeStatsRan = false; res.push(await _geoWakeStatsSync());
+          window._geoTdPlugin = () => ({ stats: async () => { throw new Error('bridge gone'); } });
+          window._geoWakeStatsRan = false; res.push(await _geoWakeStatsSync());
+          // No telemetry lane at all: still counts what it would have sent.
+          window._obs = undefined;
+          window._geoTdPlugin = () => ({ stats: async () => ({ wakes: { flushOk: 5 } }) });
+          localStorage.removeItem('zp3_geo_wakes_seen');
+          window._geoWakeStatsRan = false; res.push(await _geoWakeStatsSync());
+          return { res, threw: null };
+        } catch (e) { return { res, threw: String(e) }; }
+        finally {
+          window._geoTdPlugin = savedPlugin; window._obs = savedObs;
+          localStorage.removeItem('zp3_geo_wakes_seen');
+        }
+      });
+      expect(out.threw).toBe(null);
+      expect(out.res).toEqual([0, 0, 0, 0, 0, 0, 1]);
+    });
+
+    test('the wake counters go up once per session, not once per settle', async () => {
+      const out = await page.evaluate(async () => {
+        const savedPlugin = window._geoTdPlugin, savedObs = window._obs;
+        window._obs = { track: () => {} };
+        window._geoTdPlugin = () => ({ stats: async () => ({ wakes: { flushSent: 7 } }) });
+        localStorage.removeItem('zp3_geo_wakes_seen');
+        try {
+          window._geoWakeStatsRan = false;
+          const a = await _geoWakeStatsSync();
+          const b = await _geoWakeStatsSync();
+          return { a, b };
+        } finally {
+          window._geoTdPlugin = savedPlugin; window._obs = savedObs;
+          localStorage.removeItem('zp3_geo_wakes_seen');
+        }
+      });
+      expect(out.a).toBe(1);
+      expect(out.b).toBe(0);
+    });
+
     test('a refused chunk stops the run rather than punching a hole in the week', async () => {
       const out = await page.evaluate(async () => {
         const T = Date.now();

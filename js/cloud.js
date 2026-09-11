@@ -681,7 +681,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.11.26.14';
+const APP_VERSION='09.11.26.15';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8493,6 +8493,11 @@ async function supaLoadFromCloud({silent=false}={}){
     // then any home-office visit that closed before the load-out rule existed
     // and both no-op without a tape, same as the mileage sweep above.
     try{if(typeof _geoTapeSync==='function')_geoTapeSync();}catch(_e){}
+    // And the plugin's own wake counters, once per session, as analytics rows.
+    // flushSent / flushOk / flushFail is the difference between "the upload
+    // failed" and "the upload was never sent", which is the one thing the raw
+    // event stream cannot tell us (js/geo-track.js _geoWakeStatsSync).
+    try{if(typeof _geoWakeStatsSync==='function')_geoWakeStatsSync();}catch(_e){}
     // And the seven-day re-derive from the same tape (owner 2026-08-29). It
     // runs for everyone automatically, after the home regrade so the two
     // never fight over the same row on the same boot, and it needs no iOS
