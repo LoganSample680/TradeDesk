@@ -1,0 +1,172 @@
+{
+  "note": "ONE fixture, TWO implementations. _geoDeriveFences (js/geo-track.js) runs it in the browser; geo_fences_for (20260929) runs it in Postgres. Both are asserted against `expect` below, so the two cannot drift without a test going red. Day is 2026-09-01: job 9001 is active (Sep 1 to 2), 9002 ended Aug 20, 9003 is canceled, 9004 is done. A job fence is named for its CLIENT, not the job (js/geo-track.js uses _tlJobClientInfo(j.id).clientName, falling back to the job name, then 'Job'); the SQL half got that wrong on its first run and this fixture is what caught it.",
+  "day": "2026-09-01",
+  "settings": {
+    "officeLat": 39.05,
+    "officeLon": -95.7,
+    "bname": "Test Co",
+    "baddr": "1 Shop Rd"
+  },
+  "places": [
+    {
+      "id": "p1",
+      "kind": "supply",
+      "name": "Home Depot",
+      "lat": 39.06,
+      "lon": -95.71,
+      "addr": "2 Supply St"
+    },
+    {
+      "id": "p2",
+      "kind": "home_office",
+      "name": "House",
+      "lat": 39.07,
+      "lon": -95.72,
+      "addr": "3 Home Ln"
+    },
+    {
+      "id": "p3",
+      "kind": "other",
+      "name": "No coords",
+      "addr": "4 Nowhere"
+    }
+  ],
+  "clients": [
+    {
+      "id": "c1",
+      "name": "Scheduled Client",
+      "addr": "10 A St",
+      "lat": 39.1,
+      "lon": -95.8,
+      "geoAddr": "10 A St"
+    },
+    {
+      "id": "c2",
+      "name": "Unscheduled Client",
+      "addr": "11 B St",
+      "lat": 39.11,
+      "lon": -95.81,
+      "geoAddr": "11 B St"
+    },
+    {
+      "id": "c3",
+      "name": "Moved Client",
+      "addr": "12 NEW St",
+      "lat": 39.12,
+      "lon": -95.82,
+      "geoAddr": "12 OLD St"
+    },
+    {
+      "id": "c4",
+      "name": "Never Located",
+      "addr": "13 D St"
+    },
+    {
+      "id": "c5",
+      "name": "No Address",
+      "lat": 39.13,
+      "lon": -95.83,
+      "geoAddr": ""
+    }
+  ],
+  "jobs": [
+    {
+      "id": "9001",
+      "client_id": "c1",
+      "name": "Live job",
+      "start": "2026-09-01",
+      "days": 2,
+      "status": "upcoming",
+      "lat": 39.2,
+      "lon": -95.9,
+      "addr": "20 Job Rd"
+    },
+    {
+      "id": "9002",
+      "client_id": "c2",
+      "name": "Old job",
+      "start": "2026-08-20",
+      "days": 1,
+      "status": "upcoming",
+      "lat": 39.21,
+      "lon": -95.91
+    },
+    {
+      "id": "9003",
+      "client_id": "c2",
+      "name": "Canceled",
+      "start": "2026-09-01",
+      "days": 1,
+      "status": "canceled",
+      "lat": 39.22,
+      "lon": -95.92
+    },
+    {
+      "id": "9004",
+      "client_id": "c2",
+      "name": "Done",
+      "start": "2026-09-01",
+      "days": 1,
+      "status": "done",
+      "lat": 39.23,
+      "lon": -95.93
+    },
+    {
+      "id": "9005",
+      "name": "No coords",
+      "start": "2026-09-01",
+      "days": 1,
+      "status": "upcoming"
+    }
+  ],
+  "expect": [
+    {
+      "id": "shop",
+      "kind": "shop",
+      "name": "Test Co shop",
+      "lat": 39.05,
+      "lng": -95.7,
+      "scheduled": null
+    },
+    {
+      "id": "place-p1",
+      "kind": "supply",
+      "name": "Home Depot",
+      "lat": 39.06,
+      "lng": -95.71,
+      "scheduled": null
+    },
+    {
+      "id": "place-p2",
+      "kind": "home_office",
+      "name": "House",
+      "lat": 39.07,
+      "lng": -95.72,
+      "scheduled": null
+    },
+    {
+      "id": "client-c1",
+      "kind": "client",
+      "name": "Scheduled Client",
+      "lat": 39.1,
+      "lng": -95.8,
+      "scheduled": true
+    },
+    {
+      "id": "client-c2",
+      "kind": "client",
+      "name": "Unscheduled Client",
+      "lat": 39.11,
+      "lng": -95.81,
+      "scheduled": false
+    },
+    {
+      "id": "job-9001",
+      "kind": "job",
+      "name": "Scheduled Client",
+      "lat": 39.2,
+      "lng": -95.9,
+      "scheduled": null
+    }
+  ]
+}

@@ -84,6 +84,19 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/call-ops-rollups.sql
 
+      # ONE fixture, TWO implementations. geoDeriveDay is pure and portable, so
+      # it can run off the phone unchanged; the FENCE LIST cannot, because
+      # _geoDeriveFences reads S, places, clients and jobs off the window. That
+      # makes it the only piece of the deriver that exists twice, and the only
+      # one that can drift. tests/e2e-geo-fences-server.spec.js checks the
+      # browser half against tests/fixtures/geo-fences-case.json; this checks
+      # geo_fences_for against the same file. It caught a real divergence on its
+      # first run: a job fence is named for its CLIENT, not the job.
+      - name: Fence builder matches the browser
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-fences-equivalence.sql
+
   # ── §12.8 flow-test coverage advisory ───────────────────────────────────────
   # CLAUDE.md §12.8 requires a live flow test (tests/flow/*.spec.js) for every
   # feature/change that touches a real user flow, but until now that rule
