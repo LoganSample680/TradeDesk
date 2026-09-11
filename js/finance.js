@@ -4016,7 +4016,9 @@ function renderMoneyPage(){
   // Update eyebrow
   const eyebrowEl=document.getElementById('money-tbar-eyebrow');
   if(eyebrowEl){
-    const overdueCounts=allItems.filter(x=>x.bucket==='overdue');
+    // The overdue BUCKET means completed and still owing, which includes the
+    // day the job finished. Past DUE means a day has actually passed.
+    const overdueCounts=allItems.filter(x=>x.bucket==='overdue'&&(x.daysUnpaid||0)>0);
     if(overdueCounts.length){
       const oldest=Math.max(...overdueCounts.map(x=>x.daysUnpaid||0));
       eyebrowEl.textContent=overdueCounts.length+' account'+(overdueCounts.length!==1?'s':'')+' past due · oldest is '+oldest+'d out';
@@ -4091,7 +4093,7 @@ function renderMoneyPage(){
         '<div style="font-family:var(--font-display);font-size:14px;font-weight:900;color:'+stageColor+';background:'+stageBg+';border:1px solid '+stageBorder+';border-radius:8px;padding:6px 10px;min-width:52px;text-align:center;letter-spacing:-.4px;flex-shrink:0">'+stageLabel+'</div>'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name)+'</div>'+
-          '<div style="font-size:11px;color:var(--text-3);margin-top:1px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(csInfo.label||'Overdue')+(daysUnpaid>0?' · '+daysUnpaid+'d past completion':'')+lienWarn+'</div>'+
+          '<div style="font-size:11px;color:var(--text-3);margin-top:1px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(csInfo.label||(daysUnpaid>0?'Overdue':'Due now'))+(daysUnpaid>0?' · '+daysUnpaid+'d past completion':'')+lienWarn+'</div>'+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
           '<div style="font-family:var(--font-display);font-size:18px;font-weight:900;color:'+(bucket==='paid'?'var(--c-green)':'var(--c-red)')+'">'+fmt(bucket==='paid'?total:balance)+'</div>'+

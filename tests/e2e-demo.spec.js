@@ -250,6 +250,28 @@ test.describe('the live demo', () => {
     await ctx.close();
   });
 
+  test('a balance owed on the day the job finished is due, not overdue', async ({ browser }) => {
+    // Step 7 is a job completed today with nothing sent yet. The collect list
+    // labelled it "Overdue" because that string was the fallback for "no
+    // collection stage recorded", which is a different thing. Nothing is
+    // overdue on the day it is completed, and the demo shows this screen to
+    // every visitor.
+    const { ctx, page } = await openDemo(browser);
+    const t = await page.evaluate(async () => {
+      tdDemoStage(7);
+      await new Promise(r => setTimeout(r, 800));
+      const pg = document.querySelector('.pg.active');
+      return ((pg && pg.innerText) || '').replace(/\s+/g, ' ');
+    });
+    expect(t).toMatch(/Due now/);
+    // Nor does the header call it past due on day zero.
+    expect(t).not.toMatch(/past due/i);
+    // "Overdue" survives only as the name of a filter chip, which is a filter,
+    // not a claim about this job.
+    expect(t).not.toMatch(/Overdue ·/);
+    await ctx.close();
+  });
+
   test('the marketing page offers the live app and swaps the recreation for it', async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
