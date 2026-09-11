@@ -157,8 +157,60 @@
 
   // ── Interaction telemetry (batched, aggregated server-side) ──────────────────
   var _batch = [];
-  function _track(type, page, value, label) {
-    try { if (!_ready()) return; _batch.push({ event: type, ctx: (page != null ? page : (label || _page())), value: (typeof value === 'number' ? value : null) }); if (_batch.length >= 60) _flush(); } catch (_e) {}
+  function _track(type, page, value, label, ctl) {
+    try { if (!_ready()) return; _batch.push({ event: type, ctx: (page != null ? page : (label || _page())), value: (typeof value === 'number' ? value : null), ctl: (ctl || null) }); if (_batch.length >= 60) _flush(); } catch (_e) {}
+    // The page event IS the visit boundary, so the dwell clock rolls here and
+    // no call site has to remember to do it. js/navigation.js already fires
+    // _obs.track('page', id) on every goPg, which is the one and only way a
+    // page becomes active.
+    try { if (type === 'page') _dwellStart(page); } catch (_e) {}
+  }
+
+  // WHICH CONTROL, NOT WHICH WORDS (owner 2026-09-11: "every button needs
+  // tracked"). A click used to record only the page, so `pg-tracker: 757` was
+  // the whole story and nothing said whether those were the Income tab or the
+  // Hiring tab. This names the control.
+  //
+  // The identity is deliberately NOT the button's text, which _ctlSig above
+  // uses and which the dead-button path can afford because it writes to
+  // error_log, an ops table. On a client row or a job card that text is a
+  // CUSTOMER'S NAME, and analytics_events is the table the anonymized hash
+  // exists for. Sending names into it would defeat the hash sitting next to
+  // them. So: the element id when it has one, else the function its onclick
+  // calls, with the ARGUMENTS STRIPPED, because that is where the ids and
+  // names live (openClientProposals(currentClientId) → openClientProposals).
+  // Both are written by us, stable across renders, and bounded in number:
+  // a list of 200 clients is one signature, not 200.
+  function _ctlId(el) {
+    try {
+      if (el.id) return ('#' + el.id).slice(0, 60);
+      var oc = el.getAttribute && el.getAttribute('onclick');
+      if (oc) {
+        var m = String(oc).match(/([A-Za-z_$][\w$]*)\s*\(/);
+        if (m) return m[1].slice(0, 60);
+      }
+      var cls = (el.className && typeof el.className === 'string') ? el.className.trim().split(/\s+/)[0] : '';
+      return ((el.tagName || '?').toLowerCase() + (cls ? '.' + cls : '')).slice(0, 60);
+    } catch (_e) { return null; }
+  }
+
+  // HOW LONG THEY SAT THERE. One dwell row per visit, seconds, closed out by
+  // whatever ends the visit: another page, backgrounding, or the app closing.
+  // Counted from the page becoming active, and paused while the app is hidden,
+  // so a phone left in a pocket overnight does not report a 9-hour visit to
+  // the dashboard.
+  var _dwellPage = null, _dwellAt = 0, _dwellAcc = 0;
+  function _dwellStop() {
+    try {
+      if (_dwellPage == null) return;
+      if (_dwellAt) { _dwellAcc += Date.now() - _dwellAt; _dwellAt = 0; }
+      var secs = Math.round(_dwellAcc / 1000);
+      if (secs > 0) _track('dwell', _dwellPage, secs);
+      _dwellPage = null; _dwellAcc = 0;
+    } catch (_e) {}
+  }
+  function _dwellStart(page) {
+    try { _dwellStop(); _dwellPage = page || _page(); _dwellAcc = 0; _dwellAt = _dwellPage ? Date.now() : 0; } catch (_e) {}
   }
   // WHAT IS DRIVING THE APP. The flow suite drives the DEPLOYED app with a real
   // login, so its steps reach ingest-telemetry exactly like a customer's taps
@@ -171,11 +223,29 @@
     try { if (!_ready() || !_batch.length) return; var events = _batch.splice(0, _batch.length); _send({ session_id: _sid, app_version: _ver(), source: _source, events: events }); } catch (_e) {}
   }
   try {
-    document.addEventListener('click', function () { try { _track('click'); } catch (_x) {} }, true);
+    document.addEventListener('click', function (e) {
+      try {
+        // The page-level count is unchanged, so the ten weeks of existing
+        // click rows keep meaning the same thing and usage_by_screen does not
+        // move. The control rides alongside it.
+        var el = e && e.target && e.target.closest && e.target.closest('button,[onclick],[role="button"],a,input[type="submit"]');
+        _track('click', null, null, null, el ? _ctlId(el) : null);
+      } catch (_x) { try { _track('click'); } catch (_y) {} }
+    }, true);
     var _lastScroll = 0;
     window.addEventListener('scroll', function () { try { var n = Date.now(); if (n - _lastScroll > 1000) { _lastScroll = n; _track('scroll'); } } catch (_x) {} }, true);
-    window.addEventListener('beforeunload', _flush);
-    document.addEventListener('visibilitychange', function () { try { if (document.visibilityState === 'hidden') _flush(); } catch (_x) {} });
+    window.addEventListener('beforeunload', function () { try { _dwellStop(); } catch (_x) {} _flush(); });
+    document.addEventListener('visibilitychange', function () {
+      try {
+        if (document.visibilityState === 'hidden') {
+          // Bank the time so far and stop the clock: a backgrounded app is not
+          // a person reading the page. The visit stays open, so coming back to
+          // the same screen continues it rather than starting a second one.
+          if (_dwellPage != null && _dwellAt) { _dwellAcc += Date.now() - _dwellAt; _dwellAt = 0; }
+          _flush();
+        } else if (_dwellPage != null && !_dwellAt) { _dwellAt = Date.now(); }
+      } catch (_x) {}
+    });
     setInterval(_flush, 30000);
   } catch (_e) {}
 
