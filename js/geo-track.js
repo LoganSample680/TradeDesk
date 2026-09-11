@@ -7062,15 +7062,28 @@ async function _geoDeriveTape(sinceMs){
     const floor=Math.max(Number(sinceMs)||0,_geoTapeSince());
     const r=await Td.motionSince({sinceMs:floor});
     if(!r||!r.available||!Array.isArray(r.transitions))return [];
-    const raw=r.transitions.filter(t=>t&&typeof t.ts==='number'&&t.kind&&t.ts>=floor);
-    // A FLOOR IS NOT ENOUGH ON A SHARED PHONE. _geoTapeSince only says how
-    // far back this person may look; on a phone handed back and forth it can
-    // reach across somebody else's afternoon. Keep only the transitions
-    // inside spans this person actually held, so two accounts on one handset
-    // derive two clean days from one tape instead of each other's.
-    const mine=_geoTapeMine();
-    if(!mine.length||!_geoTapeShared())return raw;
-    return raw.filter(t=>mine.some(w=>t.ts>=w.start&&t.ts<w.end));
+    // THE WHOLE TAPE, NOT JUST THIS ACCOUNT'S SPANS OF IT.
+    //
+    // This used to clip the transitions to the intervals this login held, and
+    // that was wrong in a way the owner caught immediately: "doesn't the
+    // ladder tell us if an on site visit started under one business and
+    // therefore it must end on that business?" It does, and clipping made it
+    // impossible. His 10 September is the proof: he reached John Doe at
+    // 1:26pm on his own account and drove away at 5:14pm on the other one.
+    // Clipped, his account could see the arrival and never the departure, so
+    // the dwell had one end, and rule 5 (both ends or no row) threw the whole
+    // afternoon away. The clip turned a row on the wrong business into no row
+    // at all, which is better and still not right.
+    //
+    // The tape is the DEVICE's motion history. One phone is one body, and
+    // whether a stretch of it belongs to a business is a question about
+    // fences, not about who happened to be logged in while the phone was in a
+    // pocket. So the deriver reads all of it and geoSpanClaim decides what may
+    // be written: a span with no fence this account owns is not claimed
+    // (js/geo-derive.js). The other account derives the same minutes and
+    // claims nothing, because John Doe and the shop are not in its book.
+    // Exactly one account ends up with the row, and it is the right one.
+    return r.transitions.filter(t=>t&&typeof t.ts==='number'&&t.kind&&t.ts>=floor);
   }catch(_e){return [];}
 }
 

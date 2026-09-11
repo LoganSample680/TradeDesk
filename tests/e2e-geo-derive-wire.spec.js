@@ -56,6 +56,13 @@ test.describe('geo-derive wiring', () => {
     await page.evaluate(() => {
       window.__realDrain = _geoDrainQueue;
       window.__realRoute = _routeDistance;   // the specs above stub it; the router test needs the real one
+      // AND THE REAL TAPE READER. 'a no-drive day with app activity at home'
+      // replaces _geoDeriveTape with a stub returning [] and never puts it
+      // back, so every tape test after it in this file was reading the stub:
+      // they assert "nothing came back" and an empty array satisfies that
+      // whatever the code does. Captured here, before any test runs, and
+      // restored by withTape() so those assertions test the function again.
+      window.__realDeriveTape = _geoDeriveTape;
       window.supaLoadFromCloud = async () => {};
       window._supaUser = window._supaUser || { id: '30a2b589-e081-4351-9f18-b1efba238c2d', email: 'o@t.com' };
       localStorage.removeItem('zp3_geo_queue');
@@ -395,6 +402,7 @@ test.describe('geo-derive wiring', () => {
     const withTape = () => page.evaluate((T) => {
       window.__realTd = window._geoTdPlugin;
       window._geoTdPlugin = () => ({ motionSince: async ({ sinceMs }) => ({ available: true, transitions: T.filter(t => t.ts >= (sinceMs || 0)) }) });
+      window._geoDeriveTape = window.__realDeriveTape;   // see the note in beforeAll
     }, TAPE);
     const restore = () => page.evaluate(() => { window._geoTdPlugin = window.__realTd; localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log'); });
 
@@ -561,6 +569,47 @@ test.describe('geo-derive wiring', () => {
       expect(r.openAfter, 'signing out ends your hold on the tape').toBe(0);
       expect(r.kept, 'the span is closed, never deleted: it is what you read back').toBe(1);
       expect(r.stillLen, 'releasing twice adds nothing').toBe(1);
+    });
+
+    test('a visit that starts under one business can still end under it', async () => {
+      // Owner 2026-09-10: "doesn't the ladder tell us if an on site visit
+      // started under one business and therefore it must end on that
+      // business?" It does, and clipping the tape to the signed-in login's
+      // own spans made it impossible. His real day: arrive at John Doe at
+      // 1:26pm on his account, drive away at 5:14pm on the other one. The
+      // departure has to stay readable or rule 5 throws the visit away.
+      const TAPE2 = [
+        { ts: Date.parse('2026-09-10T18:26:00Z'), kind: 'onFoot' },      // arrives, his hat
+        { ts: Date.parse('2026-09-10T22:14:00Z'), kind: 'automotive' },  // leaves, other hat
+      ];
+      await page.evaluate((T) => {
+        window.__realTd2 = window._geoTdPlugin;
+        window._geoTdPlugin = () => ({ motionSince: async ({ sinceMs }) => ({ available: true, transitions: T.filter(t => t.ts >= (sinceMs || 0)) }) });
+        window._geoDeriveTape = window.__realDeriveTape;
+      }, TAPE2);
+      try {
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
+          const savedUser = window._supaUser;
+          const realNow = Date.now; let t = Date.parse('2026-09-10T17:00:00Z');
+          Date.now = () => t;
+          try {
+            window._supaUser = { id: 'logan' }; _geoTapeClaim();   // his morning
+            t = Date.parse('2026-09-10T20:41:00Z');
+            window._supaUser = { id: 'blake' }; _geoTapeClaim();   // hands it over 3:41pm
+            t = Date.parse('2026-09-10T23:30:00Z');
+            window._supaUser = { id: 'logan' };
+            const tape = await _geoDeriveTape(0);
+            return { shared: _geoTapeShared(), seen: tape.map(x => x.kind),
+              hasDeparture: tape.some(x => x.kind === 'automotive') };
+          } finally { window._supaUser = savedUser; Date.now = realNow; }
+        });
+        expect(r.shared, 'two accounts on this handset').toBe(true);
+        expect(r.hasDeparture, 'the departure fell in the other hat and must still be readable, or the visit has one end and is thrown away').toBe(true);
+        expect(r.seen).toEqual(['onFoot', 'automotive']);
+      } finally {
+        await page.evaluate(() => { window._geoTdPlugin = window.__realTd2; });
+      }
     });
 
     test('one account on the phone is never treated as shared', async () => {
