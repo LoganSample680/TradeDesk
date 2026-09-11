@@ -26,6 +26,11 @@ declare
   method text;
   n int;
 begin
+  -- td_mileage.user_id references auth.users, so the person has to exist
+  -- before their drives can. The bootstrap's auth.users is a stub with three
+  -- nullable columns; this is the whole of what it needs.
+  insert into auth.users (id, email) values (u, 'ci-miles@example.test')
+    on conflict (id) do nothing;
   delete from td_mileage where user_id = u;
 
   -- The phone's row: a router answered, so this is the good number.
