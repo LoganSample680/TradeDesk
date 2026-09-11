@@ -58,6 +58,13 @@ async function openDemo(browser, query) {
   await offline(page);
   await page.goto(site.url + (query || '/?demo=1'), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !document.getElementById('supa-boot-overlay'), null, { timeout: 20000 });
+  // Let the deferred work settle before anything is asserted about it. The
+  // client screen schedules a property lookup 500ms after it paints, and the
+  // first version of this check sampled the network before that fired: it
+  // passed on Chromium and failed on WebKit purely on engine speed, which is
+  // the wall clock deciding the result. Waiting past the longest deferred
+  // call the boot can make takes the timing out of the answer.
+  await page.waitForTimeout(1200);
   return { ctx, page, errors, calls };
 }
 
@@ -91,8 +98,11 @@ test.describe('the live demo', () => {
     expect(s.login).toBe(false);
     expect(s.cookie).not.toMatch(/td_app=1/);
     // Nothing reached a backend.
-    const backend = calls.filter(u => /supabase\.co|\/rest\/v1|\/auth\/v1|\/functions\/v1|\/api\//.test(u));
-    expect(backend, `demo called a backend: ${backend.slice(0, 3).join(' ')}`).toEqual([]);
+    // Any call out, not just an obvious backend one: the property lookup that
+    // this caught was a plain same-origin /api/ GET carrying the client's
+    // address, which no demo should ever send anywhere.
+    const out = calls.filter(u => /supabase\.co|\/rest\/v1|\/auth\/v1|\/functions\/v1|\/api\/|version\.json/.test(u));
+    expect(out, `demo called out: ${out.slice(0, 3).join(' ')}`).toEqual([]);
     // The service worker belongs to the real app, not to a throwaway frame.
     expect(calls.filter(u => /\/sw\.js$/.test(u))).toEqual([]);
     expect(realErrors(errors)).toEqual([]);

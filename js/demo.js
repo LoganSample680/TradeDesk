@@ -113,6 +113,14 @@ function _tdDemoSeed(stage) {
     created: _tdDemoDay(-6),
     createdAt: _tdDemoAt(-6, 9, 12),
     yearBuilt: 1994,
+    // Filled in as though the property lookup had already run: the client
+    // screen schedules that lookup 500ms after it paints when this is empty,
+    // and the demo never calls out.
+    propDataFetchedAt: _tdDemoAt(-6, 9, 13),
+    propDataSource: 'demo', propDataExact: true,
+    sqft: 2180, stories: 1, bedrooms: 4, bathrooms: 2,
+    propertyType: 'Single Family', exteriorMaterial: 'Wood siding',
+    roofType: 'Composition shingle', garage: '2 car attached', lotSize: '0.31 ac',
     extraAddresses: [], clientToken: '', clientHubKey: '',
     last_contact_date: _tdDemoDay(has('sign') ? 0 : -4),
   }];
