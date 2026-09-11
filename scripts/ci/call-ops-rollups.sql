@@ -6,7 +6,7 @@ insert into analytics_admins (user_id) values ('00000000-0000-4000-8000-00000000
   on conflict do nothing;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000ad","role":"authenticated"}', false);
 do $$
-declare f record; n bigint; bad int := 0;
+declare f record; n bigint; bad int := 0; found int := 0;
 begin
   for f in
     select p.proname, pg_get_function_arguments(p.oid) as args
@@ -27,6 +27,7 @@ begin
       else
         raise notice 'SKIP % (args: %)', f.proname, f.args; continue;
       end if;
+      found := found + 1;
       raise notice 'ok   % (% rows)', f.proname, n;
     exception when others then
       bad := bad + 1;
@@ -36,4 +37,13 @@ begin
   if bad > 0 then
     raise exception '% ops rollup(s) throw when called. Applying a migration is not calling it.', bad;
   end if;
+  -- A guard that cannot fail is not a guard. Discovery is a query, and a query
+  -- that matches nothing would let this step pass while proving nothing at all,
+  -- which is the exact shape of the bug it exists to catch. 14 is the count on
+  -- the day this was written, so a rollup deleted without updating this is a
+  -- deliberate edit rather than a silent loss of coverage.
+  if found < 14 then
+    raise exception 'only % ops rollup(s) were found and called, expected at least 14. Either migrations did not apply or the discovery query stopped matching.', found;
+  end if;
+  raise notice 'called % ops rollups, all returned', found;
 end $$;
