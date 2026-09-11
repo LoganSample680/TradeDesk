@@ -1023,12 +1023,27 @@ function _geocodeAddr(addr){
 }
 // Nominatim's free tier caps lookups at ~1/sec, so every client's geocoded
 // coords are cached, keyed by client id, in a dedicated localStorage blob,
-// NEVER re-geocoded unless the address text changes. Deliberately NOT stored
-// on the client record / pushed through saveAll(): this is a disposable,
-// device-local optimization, not app data, routing it through the full
-// account-sync engine would fire a cloud round-trip on every newly-seen
-// address from a background heartbeat, for zero benefit (worst case on a
-// cache miss is just one extra geocode later). Brand-new/uncached addresses
+// NEVER re-geocoded unless the address text changes.
+//
+// THE COORDS NOW ALSO LAND ON THE CLIENT RECORD (owner 2026-09-11). This
+// block used to say they were deliberately kept off it: "a disposable,
+// device-local optimization, not app data ... for zero benefit". That was
+// true while the only reader was this device's own fence check. It stopped
+// being true the moment anything server-side needed to know where a client
+// is: on 2026-09-11 all eleven client records held zero coordinates, ten of
+// them had addresses, and a deriver running anywhere but the phone could not
+// have named a single client visit.
+//
+// The old objection is still respected, because it was a good one. The write
+// happens ONCE PER ADDRESS, at the moment a geocode is actually computed,
+// never on the cache checks that run every heartbeat. A warm cache costs
+// nothing and saves nothing, exactly as before.
+//
+// localStorage stays the hot path: it is read on every nearby check and must
+// not become a network call. The record is the durable copy, and _geoSeed
+// below pours it back into the cache on boot, so a phone that has never
+// geocoded a client still knows where it is and never spends a Nominatim
+// call another device already paid for. Brand-new/uncached addresses
 // are throttled to a small budget per call, spaced 1.1s apart, so a large
 // client book backfills over several boots/foreground-resumes instead of
 // bursting the API in one shot. Already-cached clients cost nothing and are
@@ -1043,15 +1058,60 @@ function _saveNearbyGeoCache(cache){try{localStorage.setItem('zp3_nearby_geo',JS
 // (see the comment above checkNearbyJob and _geoClientAt in geo-track.js):
 // a client added same-day, then visited same-day, no longer depends on the
 // dashboard having rendered enough times first to warm the cache.
+// ONE place records a freshly computed geocode, so the cache and the record
+// can never disagree about what was found. Both callers below go through it.
+//
+// geoAddr rides along deliberately: the cache has always checked
+// `entry.addr === c.addr` before trusting a hit, because a client who moves
+// must not keep a fence on the old house. The record needs the same guard or
+// it becomes the one copy nobody validates, so the address the coordinates
+// were derived from is stored next to them and every reader compares it.
+function _geoRecordClientCoords(clientId,addr,coords){
+  try{
+    const fresh=_nearbyGeoCache(); // re-read: a concurrent sweep may have written meanwhile
+    fresh[clientId]={lat:coords.lat,lon:coords.lon,addr};
+    _saveNearbyGeoCache(fresh);
+  }catch(_e){}
+  try{
+    const c=(typeof clients!=='undefined'&&Array.isArray(clients))?clients.find(x=>x&&String(x.id)===String(clientId)):null;
+    if(!c)return;
+    // Already there and still for this address: nothing to write, so no save.
+    if(c.lat===coords.lat&&c.lon===coords.lon&&c.geoAddr===addr)return;
+    c.lat=coords.lat; c.lon=coords.lon; c.geoAddr=addr;
+    if(typeof saveAll==='function')saveAll();
+  }catch(_e){}
+}
+
+// Pour the record's coordinates back into the device cache. A phone that has
+// never geocoded this client, or a fresh install, then resolves the fence on
+// its first boot instead of waiting for a Nominatim call it does not need.
+function _geoSeedClientCache(){
+  try{
+    if(typeof clients==='undefined'||!Array.isArray(clients))return 0;
+    const cache=_nearbyGeoCache(); let added=0;
+    clients.forEach(c=>{
+      if(!c||c.lat==null||c.lon==null||!c.geoAddr)return;
+      if(c.geoAddr!==c.addr)return;                       // moved since: the record is stale too
+      if(cache[c.id]&&cache[c.id].addr===c.addr)return;   // device already warm
+      cache[c.id]={lat:Number(c.lat),lon:Number(c.lon),addr:c.addr}; added++;
+    });
+    if(added)_saveNearbyGeoCache(cache);
+    return added;
+  }catch(_e){return 0;}
+}
+
 async function _eagerGeocodeClient(clientId,addr){
   if(!addr)return;
   const cache=_nearbyGeoCache();
-  if(cache[clientId]&&cache[clientId].addr===addr)return; // already warm for this exact address
+  if(cache[clientId]&&cache[clientId].addr===addr){
+    // Warm here but possibly never written up (a cache from before this
+    // shipped). Cheap to reconcile, and it costs no geocode.
+    _geoRecordClientCoords(clientId,addr,{lat:cache[clientId].lat,lon:cache[clientId].lon});
+    return;
+  }
   const coords=await _geocodeAddr(addr);
   if(!coords)return;
-  const fresh=_nearbyGeoCache(); // re-read: a concurrent sweep may have written meanwhile
-  fresh[clientId]={lat:coords.lat,lon:coords.lon,addr};
-  _saveNearbyGeoCache(fresh);
+  _geoRecordClientCoords(clientId,addr,coords);
 }
 // Shared by every throttled geocode loop that touches zp3_nearby_geo
 // (checkNearbyJob's own uncached-client sweep below, and the backfill sweep
@@ -1079,6 +1139,10 @@ async function _backfillNearbyGeoCache(){
   if(_nearbyGeoSweepRunning)return;
   _nearbyGeoSweepRunning=true;
   try{
+    // Free wins first: anything another device already geocoded and wrote to
+    // the record needs no Nominatim call at all, and seeding shrinks the list
+    // this sweep then has to pay for.
+    _geoSeedClientCache();
     const _startCache=_nearbyGeoCache();
     const uncached=clients.filter(c=>c.addr&&(!_startCache[c.id]||_startCache[c.id].addr!==c.addr));
     let budget=_NEARBY_BACKFILL_BUDGET;
@@ -1086,16 +1150,12 @@ async function _backfillNearbyGeoCache(){
       if(budget<=0)break;
       budget--;
       const coords=await _geocodeAddr(c.addr);
-      if(coords){
-        // Re-read and write ONE entry per client, never a whole-cache snapshot
-        // held across the loop: _eagerGeocodeClient (a client saved mid-sweep)
-        // or checkNearbyJob could otherwise write in between and get clobbered
-        // when this loop's stale copy saves at the end (the exact John Doe
-        // shape this whole PR exists to close).
-        const fresh=_nearbyGeoCache();
-        fresh[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};
-        _saveNearbyGeoCache(fresh);
-      }
+      // Re-reads and writes ONE entry per client, never a whole-cache snapshot
+      // held across the loop: _eagerGeocodeClient (a client saved mid-sweep)
+      // or checkNearbyJob could otherwise write in between and get clobbered
+      // when this loop's stale copy saves at the end (the exact John Doe
+      // shape this whole PR exists to close).
+      if(coords)_geoRecordClientCoords(c.id,c.addr,coords);
       if(budget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
     }
   }finally{

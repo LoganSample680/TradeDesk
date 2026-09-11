@@ -6931,7 +6931,14 @@ function _geoDeriveFences(dayKey){
     const jl=(typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]);
     (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).forEach(c=>{
       if(!c||!c.addr)return;
-      const hit=cache[c.id];
+      // THE RECORD FIRST, the device cache second (owner 2026-09-11). The
+      // cache is per-device, so a phone that has never geocoded this client
+      // used to have no fence for them at all, and neither did anything off
+      // the phone. Both copies carry the address they were derived from, and
+      // both are rejected when the client has moved since.
+      const hit=(c.lat!=null&&c.lon!=null&&c.geoAddr===c.addr)
+        ? {lat:Number(c.lat),lon:Number(c.lon),addr:c.addr}
+        : cache[c.id];
       if(!(hit&&hit.addr===c.addr&&hit.lat!=null))return;
       const scheduled=jl.some(j=>j&&j.status!=='canceled'&&String(j.client_id)===String(c.id)&&
         ((typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true));

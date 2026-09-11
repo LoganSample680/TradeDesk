@@ -337,6 +337,122 @@ test.describe('geo-derive wiring', () => {
       expect(r.off).toEqual([['Mom', false], ['Cust', false]]);
     });
 
+    // ── The coordinates live on the record now (owner 2026-09-11) ─────────
+    //
+    // "so we would need coordinates based on the address entered saved on the
+    // back end?" Yes. They were computed on the device and kept in
+    // localStorage only: on the day this shipped, all eleven client records
+    // held zero coordinates while ten had addresses, so a deriver running
+    // anywhere but that one phone could not name a single client visit.
+    test('a client fence resolves from the record on a phone that has never geocoded', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          localStorage.removeItem('zp3_nearby_geo');          // brand-new device
+          window.clients = [{ id: 611, name: 'Laurie', addr: '9 Elm St', lat: 39.011, lon: -95.78, geoAddr: '9 Elm St' }];
+          window.jobs = [];
+          const f = _geoDeriveFences('2026-09-01').filter(x => x.kind === 'client');
+          return { n: f.length, name: f[0] && f[0].name, lat: f[0] && f[0].lat, lng: f[0] && f[0].lng };
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); }
+      });
+      expect(r.n, 'the fence exists with no device cache at all').toBe(1);
+      expect(r.name).toBe('Laurie');
+      expect(r.lat).toBeCloseTo(39.011, 5);
+      expect(r.lng).toBeCloseTo(-95.78, 5);
+    });
+
+    // A client who moves must not keep a fence on the old house. The cache has
+    // always guarded this with entry.addr === c.addr; the record carries the
+    // same guard or it becomes the one copy nobody validates.
+    test('a record whose address has changed since is refused, not trusted', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          localStorage.removeItem('zp3_nearby_geo');
+          window.clients = [{ id: 612, name: 'Moved', addr: '77 New Rd', lat: 39.011, lon: -95.78, geoAddr: '9 Old St' }];
+          window.jobs = [];
+          return _geoDeriveFences('2026-09-01').filter(x => x.kind === 'client').length;
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); }
+      });
+      expect(r, 'stale coordinates are no fence at all').toBe(0);
+    });
+
+    test('the record wins over a device cache that disagrees', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          window.clients = [{ id: 613, name: 'Both', addr: '5 Main St', lat: 40.0, lon: -96.0, geoAddr: '5 Main St' }];
+          window.jobs = [];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 613: { addr: '5 Main St', lat: 12.34, lon: -56.78 } }));
+          const f = _geoDeriveFences('2026-09-01').filter(x => x.kind === 'client')[0];
+          return { lat: f && f.lat, lng: f && f.lng };
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo'); }
+      });
+      expect(r.lat, 'the durable copy, not this device\'s guess').toBeCloseTo(40.0, 5);
+      expect(r.lng).toBeCloseTo(-96.0, 5);
+    });
+
+    test('seeding pours the record into the cache, skipping moved and already-warm clients', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          window.clients = [
+            { id: 621, addr: 'A St', lat: 1, lon: 2, geoAddr: 'A St' },        // seeds
+            { id: 622, addr: 'B St', lat: 3, lon: 4, geoAddr: 'OLD St' },      // moved: skipped
+            { id: 623, addr: 'C St' },                                          // no coords: skipped
+            { id: 624, addr: 'D St', lat: 5, lon: 6, geoAddr: 'D St' },        // already warm: skipped
+          ];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 624: { addr: 'D St', lat: 5, lon: 6 } }));
+          const added = _geoSeedClientCache();
+          const cache = JSON.parse(localStorage.getItem('zp3_nearby_geo') || '{}');
+          return { added, keys: Object.keys(cache).sort(), seeded: cache['621'] };
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo'); }
+      });
+      expect(r.added, 'one client needed seeding').toBe(1);
+      expect(r.keys).toEqual(['621', '624']);
+      expect(r.seeded).toEqual({ lat: 1, lon: 2, addr: 'A St' });
+    });
+
+    test('recording a geocode writes both copies, and writes nothing when already correct', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        const realSave = window.saveAll;
+        let saves = 0;
+        try {
+          window.saveAll = () => { saves++; };
+          localStorage.removeItem('zp3_nearby_geo');
+          window.clients = [{ id: 631, addr: '2 Oak Ave' }];
+          _geoRecordClientCoords(631, '2 Oak Ave', { lat: 39.5, lon: -95.5 });
+          const afterFirst = saves;
+          _geoRecordClientCoords(631, '2 Oak Ave', { lat: 39.5, lon: -95.5 });  // same again
+          const c = window.clients[0];
+          const cache = JSON.parse(localStorage.getItem('zp3_nearby_geo') || '{}');
+          return { afterFirst, total: saves, lat: c.lat, lon: c.lon, geoAddr: c.geoAddr, cached: cache['631'] };
+        } finally {
+          window.saveAll = realSave;
+          if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo');
+        }
+      });
+      expect(r.afterFirst, 'the first geocode is written up').toBe(1);
+      expect(r.total, 'the second changes nothing, so it must not fire a save').toBe(1);
+      expect(r.lat).toBe(39.5);
+      expect(r.geoAddr, 'the address the coordinates came from rides along').toBe('2 Oak Ave');
+      expect(r.cached).toEqual({ lat: 39.5, lon: -95.5, addr: '2 Oak Ave' });
+    });
+
+    test('a client with no coordinates anywhere still has no fence', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          localStorage.removeItem('zp3_nearby_geo');
+          window.clients = [{ id: 641, name: 'Unlocated', addr: '404 Nowhere' }];
+          window.jobs = [];
+          return _geoDeriveFences('2026-09-01').filter(x => x.kind === 'client').length;
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); }
+      });
+      expect(r).toBe(0);
+    });
+
     test('the clocks are this person\'s own, closed, and touching the day', async () => {
       const r = await page.evaluate(() => {
         const savedTE = window.timeEntries, savedU = window._supaUser, savedE = window._isEmployee;
