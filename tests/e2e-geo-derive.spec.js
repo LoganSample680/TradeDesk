@@ -415,6 +415,61 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.legs, 'held, not deleted, so rule 15 can ask').toBeGreaterThan(0);
     });
 
+    // ── Rule 17: the workday window (owner 2026-09-12) ────────────────────
+    // "We got a business fence to business fence to start the work timer, and
+    // or we got a manual clock in and clock out, and everything in between
+    // those times." Plus the case that decides where it OPENS: "some days Jack
+    // went straight from home to a job site, but he had a manual clock in in
+    // the middle of the day."
+    const SHOPB = { id: 'p-yard', kind: 'shop', name: 'The yard', lat: 39.0501, lng: -95.7301 };
+
+    test('the clock comes 46 minutes after he pulled out: the drive is still inside the day', async () => {
+      // His real 31 August. Out at 7:09, clocked in at 7:55 when he ARRIVED.
+      // A window anchored on the clock throws that 41-minute drive away.
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const r = await page.evaluate((i) => {
+        const res = geoDeriveDay(i);
+        return { legs: res.legs.length, first: res.legs[0] && res.legs[0].to.name };
+      }, gym({ fences: [HOME, SHOPB], clocks: [{ start: t(6, 15), end: t(9) }] }));
+      expect(r.legs, 'the drive that started before the clock is in the day').toBeGreaterThan(0);
+      expect(r.first).toBe('The yard');
+    });
+
+    test('a clock with no drive under it still opens the day', async () => {
+      // The mirror, his 8 September: clocked at 7:58, first drive 13:28.
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const r = await out(gym({ clocks: [{ start: t(5), end: t(7) }] }));
+      expect(r.legs, 'the clock is the only signal and it is enough').toBeGreaterThan(0);
+    });
+
+    test('an evening gym run after a real workday is still not work', async () => {
+      // The case that stops "the day was open" meaning "everything today was
+      // work": the window CLOSES, and the loop falls outside it.
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const r = await page.evaluate((i) => {
+        const res = geoDeriveDay(i);
+        return res.legs.map(l => [l.from.name || 'unsaved', l.to.name || 'unsaved']);
+      }, gym({
+        fences: [HOME, SHOPB],
+        tape: [mo(t(7), 'still'), mo(t(7, 10), 'automotive'), mo(t(7, 30), 'onFoot'),
+          mo(t(15), 'automotive'), mo(t(15, 20), 'onFoot'),
+          mo(t(20), 'automotive'), mo(t(20, 15), 'onFoot'),
+          mo(t(21), 'automotive'), mo(t(21, 15), 'onFoot'), mo(t(21, 30), 'still')],
+        fixes: [fix(t(7, 5), { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(7, 30) + 5000, SHOPB), fix(t(12), SHOPB),
+          fix(t(15, 20) + 5000, { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(20, 15) + 5000, { lat: 39.0801, lng: -95.7701 }),
+          fix(t(20, 40), { lat: 39.0801, lng: -95.7701 }),
+          fix(t(21, 15) + 5000, { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(22), { lat: HOME.lat, lng: HOME.lng })],
+      }));
+      expect(r.some(l => l[1] === 'The yard'), 'the morning run to the yard counts').toBe(true);
+      expect(r.length, 'and the 8pm loop out of the house does not').toBe(2);
+    });
+
     test('a weekday night at a customer, nothing scheduled: held', async () => {
       const r = await held(visit('2026-09-01', 21, 23));
       expect(r.held).toBe(true);

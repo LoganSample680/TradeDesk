@@ -761,10 +761,24 @@ function geoDeriveDay(input) {
     // there is no evidence anywhere in the tape that says otherwise: rule 12
     // keeps the house off the clock and "we make no inferences here."
     const roundTrip = sameSpot && collapsed && !_gdIsHouse(chain.originFence, fences, opts.radiusFt);
-    if ((!sameSpot || roundTrip) && !tooShort) {
+    // RULE 17 amends this: a house loop is suppressed BY THE WINDOW, not here.
+    // Rule 7 refuses a same-spot round trip out of the house because that is
+    // the gym run, and that is still right for a day nobody was working. But
+    // "leaving the house and coming back with nothing saved between" is also
+    // what a real job at an address nobody has saved looks like, and this
+    // decided it before anything knew whether the workday was open. It is
+    // marked now and judged later (_gdDayWindow), so a clocked loop survives
+    // and an unclocked one still does not. A house loop can never OPEN the
+    // window (it touches no business fence), so there is no circularity.
+    const houseLoop = sameSpot && collapsed && !roundTrip;
+    if ((!sameSpot || roundTrip || houseLoop) && !tooShort) {
       const a = chain.originFence, b = toFence;
       let miles, milesFrom;
-      if (roundTrip) {
+      // A house loop is a round trip in every respect but where it started, so
+      // it earns the same treatment: breadcrumb miles, never a routed number,
+      // and traced so no total can claim it until the stop is saved.
+      const loop = roundTrip || houseLoop;
+      if (loop) {
         // Rule 14: the place he actually went was never saved, so there is
         // still no routed number; the breadcrumbs are shown and claimed by
         // nobody. Saving that stop turns this into two real legs.
@@ -784,10 +798,10 @@ function geoDeriveDay(input) {
         startTs: chain.startTs, endTs: j.endTs,
         minutes: Math.round(chain.autoMs / 60000),
         miles: Math.round(miles * 10) / 10, milesFrom,
-        collapsed, stops: chain.stops, roundTrip,
+        collapsed, stops: chain.stops, roundTrip, houseLoop,
         // Rule 14: a round trip through an unsaved stop is a traced row,
         // never a claimed one.
-        traced: roundTrip && miles > 0, unsavedVia: roundTrip,
+        traced: loop && miles > 0, unsavedVia: loop,
         // The held stops, in order, where the truck sat: what a via row's
         // Save button saves.
         via: (chain.via || []).slice(),
@@ -961,9 +975,19 @@ function geoDeriveDay(input) {
   const asked = _gdHeldVisits(ended, inp, dayStart);
   // Rule 15: and the drives between them, using rule 13's own answer.
   const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart);
-  // Rule 16: a day that never reached business at all writes no drives.
-  const realLegs = _gdEmptyDayLegs(askedLegs, asked, inp, open,
-    journeys.some(j => j && j.open));
+  // Rule 17: the workday window, computed ONCE from the two signals the owner
+  // named. Rules 15 and 16 both read it rather than each guessing again.
+  const win = _gdDayWindow(askedLegs, asked, inp, opts, dayEnd);
+  // Everything between the bookends counts: a drive rule 15 could not vouch
+  // for on its own is work if the workday was open around it.
+  const winLegs = win
+    ? askedLegs.map(l => (l && l.held === true && _gdInWindow(win, l))
+        ? Object.assign({}, l, { held: false, inWindow: true }) : l)
+    : askedLegs;
+  // Rule 16: a day that never reached business at all writes no drives. A
+  // house loop (rule 7) survives only inside the window.
+  const realLegs = _gdEmptyDayLegs(winLegs, asked, inp, open,
+    journeys.some(j => j && j.open), win);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -1481,6 +1505,82 @@ function _gdHeldVisits(dwells, inp, dayStart) {
   });
 }
 
+// ── Rule 17: THE WORKDAY WINDOW (owner 2026-09-12) ────────────────────────
+// "We got a business fence to business fence to start the work timer, and or
+// we got a manual clock in and clock out, and everything in between those
+// times." And, on the drive that happens before the clock: "some days Jack
+// went straight from home to a job site, but he had a manual clock in in the
+// middle of the day."
+//
+// Rules 7, 11, 15 and 16 each made their OWN guess about whether the day
+// counted, from different evidence, at different points in the pipeline. That
+// is why a real trip could vanish while a gym run wrote mileage: nothing in
+// the file knew, as one fact, whether the workday was open. This is that fact.
+//
+// OPENS at the EARLIER of the two signals, which is the whole point of his
+// second sentence. Measured on the crew member's own week: he clocks in when
+// he ARRIVES, not when he leaves. 31 August he pulled out at 7:09 and clocked
+// in at 7:55, a 46-minute drive to the yard that a clock-anchored window would
+// have thrown away, and 1 and 9 September are the same by 19 minutes. The
+// mirror case is 8 September: clocked in at 7:58, first drive not until 13:28,
+// a morning at the shop with no drive in it that only the clock can open.
+// Either signal can be first. Whichever is, opens the day.
+//
+// CLOSES at the LATER of the last clock-out or the last business arrival plus
+// the shop wrap (rule 11's number, owner 2026-08-24, already chosen for the
+// phone that sits at the yard all evening). So an evening gym run after a real
+// workday falls OUTSIDE the window and is still not work, which is the case
+// that stops "the day was open" from meaning "everything today was work."
+//
+// WHAT COUNTS AS THE FENCE SIGNAL is rule 15's answer, not a new one: a leg
+// that reaches a business end (a job, the yard, a supply house, or a client
+// the day can stand behind). NOT "business fence to BUSINESS fence" in the
+// literal sense, which was checked against both real accounts and is wrong:
+// only 3 of the crew member's 7 work days pass it, because the other four run
+// house -> yard -> house and his house is one end. 12 September is the proof,
+// 13.9 miles out to the yard and back with no clock, which both-ends deletes.
+// One business end plus the clock classifies all 24 days across both accounts
+// correctly, and kills exactly the four nobody worked.
+//
+// A HOUSE LOOP CAN NEVER OPEN THE WINDOW. It touches no business fence by
+// definition, so rule 7 can mark one and let this judge it without the two
+// ever depending on each other.
+//
+// NOT the same thing as _gdWorkWindow above, which is rule 10's narrower
+// question (first drive to last real work) and exists only to decide when the
+// house may be Office. That one is left exactly as it is: widening it would
+// move Office rows on days nobody asked about.
+function _gdDayWindow(legs, dwells, inp, opts, dayEnd) {
+  let open = Infinity, close = -Infinity;
+  (Array.isArray(inp.clocks) ? inp.clocks : []).forEach((c) => {
+    const a = Number(c && c.start), b = Number(c && c.end);
+    if (a > 0 && b > a) { if (a < open) open = a; if (b > close) close = b; }
+  });
+  const wrap = Number(opts && opts.wrapMin) >= 0
+    ? Number(opts.wrapMin) : GEO_DERIVE_DEFAULTS.wrapMin;
+  (legs || []).forEach((l) => {
+    // Rule 15 has already said which legs reach business; a held one has not.
+    if (!l || l.held === true || l.houseLoop === true) return;
+    if (Number(l.startTs) > 0 && l.startTs < open) open = l.startTs;
+    const end = Number(l.endTs) + wrap * 60000;
+    if (end > close) close = end;
+  });
+  (dwells || []).forEach((d) => {
+    if (!d || _gdIsBaseKind(d.kind) || d.kind === 'office' || d.held === true) return;
+    if (Number(d.startTs) > 0 && d.startTs < open) open = d.startTs;
+    const end = Number(d.endTs) + wrap * 60000;
+    if (end > close) close = end;
+  });
+  if (!isFinite(open) || !(close > open)) return null;
+  return { open, close: Math.min(close, Number(dayEnd) || close) };
+}
+// Inside the window by at least a minute, the same overlap test rule 13 makes
+// of a clock. A drive is in the workday or it is not; no part-credit.
+function _gdInWindow(win, r) {
+  if (!win || !r) return false;
+  return Math.min(Number(r.endTs), win.close) - Math.max(Number(r.startTs), win.open) >= 60000;
+}
+
 // ── Rule 16: a day that never reached business writes no drives ───────────
 // Owner 2026-09-12, on a crew member's unclocked days: "he should only have
 // drives and mileage on the days there was a clock in ... Jack doesn't have
@@ -1513,22 +1613,28 @@ function _gdHeldVisits(dwells, inp, dayStart) {
 //   - a manual clock, the owner's first instinct here and the safety valve
 //     rule 11 was already designed around
 //   - a named visit still holding an open question (rule 13)
-function _gdEmptyDayLegs(legs, dwells, inp, open, driving) {
+function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win) {
   // Mid-drive, or standing at a work fence right now: the day is not over and
   // nothing about it can be called empty yet.
   if (driving) return legs;
   if (open && !_gdIsBaseKind(open.kind) && open.kind !== 'office') return legs;
   const list = legs || [];
   if (!list.length) return list;
+  // RULE 7's HOUSE LOOP, judged here now rather than at build time. Out of the
+  // house and back with nothing saved between is the gym run, unless the
+  // workday was open around it, which is the only evidence that says otherwise
+  // (owner 2026-09-12). Dropped first so it can never hold a dead day open.
+  const kept = list.filter(l => !(l && l.houseLoop === true && !_gdInWindow(win, l)));
+  if (!kept.length) return kept;
   // A leg rule 15 left alone reached business. One is enough for the day.
-  if (list.some(l => l && l.held !== true)) return list;
+  if (kept.some(l => l && l.held !== true)) return kept;
   // The person said they were working. Outranks geography, same as rule 13.
   if ((Array.isArray(inp.clocks) ? inp.clocks : [])
-    .some(c => c && Number(c.start) > 0 && Number(c.end) > Number(c.start))) return list;
+    .some(c => c && Number(c.start) > 0 && Number(c.end) > Number(c.start))) return kept;
   // Real work anywhere, or a named question still open: the day is not empty.
   const named = (d) => !!(d && d.fence && (d.fence.name || d.fence.clientId != null || d.fence.jobId != null));
   if ((dwells || []).some(d => d && !_gdIsBaseKind(d.kind) && d.kind !== 'office' &&
-    (d.held !== true || named(d)))) return list;
+    (d.held !== true || named(d)))) return kept;
   return [];
 }
 
