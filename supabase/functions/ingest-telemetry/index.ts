@@ -132,16 +132,22 @@ serve(async (req) => {
       const stamp = { contractor_hash: ch, contractor_user_id: who.cid,
                       employee_user_id: uid, role: who.role, source,
                       session_id: sid, meta: ver ? { v: ver } : null };
-      const agg: Record<string, { event: string; ctx: string | null; n: number }> = {};
+      // WHICH CONTROL. ctx stays the page; ctl is the button inside it, so
+      // usage_by_screen and ten weeks of existing rows keep meaning exactly
+      // what they meant. It joins the aggregation key, which is what keeps the
+      // volume sane: a session that taps the Mileage tab nine times is still
+      // ONE row, value 9, not nine rows.
+      const agg: Record<string, { event: string; ctx: string | null; ctl: string | null; n: number }> = {};
       const out: Record<string, unknown>[] = [];
       for (const ev of (body.events as any[]).slice(0, 500)) {
         const event = String(ev?.event || "event").slice(0, 40);
         const ctx = ev?.ctx != null ? String(ev.ctx).slice(0, 80) : null;
-        if (typeof ev?.value === "number") { out.push({ ...stamp, event, ctx, value: ev.value }); continue; }
-        const k = event + "|" + (ctx || "");
-        (agg[k] ||= { event, ctx, n: 0 }).n++;
+        const ctl = ev?.ctl != null ? String(ev.ctl).slice(0, 60) : null;
+        if (typeof ev?.value === "number") { out.push({ ...stamp, event, ctx, ctl, value: ev.value }); continue; }
+        const k = event + "|" + (ctx || "") + "|" + (ctl || "");
+        (agg[k] ||= { event, ctx, ctl, n: 0 }).n++;
       }
-      for (const k of Object.keys(agg)) out.push({ ...stamp, event: agg[k].event, ctx: agg[k].ctx, value: agg[k].n });
+      for (const k of Object.keys(agg)) out.push({ ...stamp, event: agg[k].event, ctx: agg[k].ctx, ctl: agg[k].ctl, value: agg[k].n });
       if (out.length) { const { error } = await svc.from("analytics_events").insert(out); if (!error) evtCount = out.length; }
     }
 

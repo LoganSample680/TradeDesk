@@ -4,20 +4,24 @@
 // mileage and time logs land in Supabase the moment a fence trips, app
 // force-closed or not). The phone's native layer (TdGeoPlugin, build 39+)
 // background-POSTs its buffered location events here within seconds of every
-// wake. This function stores the raw events (geo_events) and runs a SMALL,
-// fence-bounded state machine that writes the derived rows the app already
-// reads: job_time_entries, shop_time_entries, td_mileage.
+// wake. This function stores the raw events (geo_events), keeps the device
+// state the push-ping and the live card read, and RUNS THE DERIVER.
 //
 // ── The one design rule: this is NOT a second brain ─────────────────────────
-// js/geo-track.js remains the authority (§7.3: never hand-roll a parallel
-// engine). This function derives only what fence crossings state plainly:
-//   regionExit of a work fence  → the dwell row, true arrive/depart
-//   regionEnter after an exit   → the leg row + a provisional mileage row
-// It ports only the floors that prevent garbage (mins<2, fence-bounce,
-// stale-leg) and NOTHING nuanced: no detour collapse, no walking trim, no
-// visit backdating, no unfenced stops. Every mileage row it writes is marked
-// data.provisional:true, and the client's next real run refines or replaces
-// it by legKey (js/mileage.js _mileServerRefine).
+// It never was allowed to be, and now it is not even shaped like one. The
+// fence-bounded state machine below used to write rows of its own and was
+// stood down on 2026-09-02 for being a third writer of one event. What
+// replaced it (owner 2026-09-11: "why not just point it easily server side so
+// it doesnt need a app active to run it, server runs it as they happen, in
+// real-time") is the actual deriver: geoDeriveDay and geoDeriveRows out of
+// js/geo-derive.js, the same functions the phone runs, generated into
+// _shared/geo-derive.js by scripts/gen-shared-deriver.mjs with CI failing if
+// the copy goes stale. Same rules, same client_key on every row, same
+// geo_replace_day. A rule changed on the phone is changed here in the same
+// commit, because there is only one copy of the rules to change.
+//
+// The one thing the server does differently is that it never sweeps: see
+// _shared/derive-day.mjs for why partial evidence may only ever add.
 //
 // ── Why duplicates cannot happen ────────────────────────────────────────────
 // Keys are minted with the EXACT client derivations:
@@ -28,6 +32,9 @@
 // writes second is a no-op. td_mileage is guarded by a legKey existence
 // check here and by the client's own legKey check + refine sweep there.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Plain ESM, not .ts, so Deno and the Node test harness load the exact same
+// file: tests/e2e-geo-derive-server.spec.js drives this module directly.
+import { daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -281,10 +288,17 @@ Deno.serve(async (req) => {
         else if (rid.startsWith("client-")) clientIds.add(rid.slice(7));
       }
       const names: Record<string, string> = {};
+      // WHOSE FENCE IS THIS. Tracked separately from the name, because a
+      // record with an empty name is still this account's and must not be
+      // mistaken for another business's. See isOwnRegion below.
+      const owned = new Set<string>();
       const nameFetch = async (tbl: string, ids: Set<string>, prefix: string, pick: (d: any) => string) => {
         if (!ids.size) return;
         const { data } = await svc.from(tbl).select("id,data").eq("user_id", cid).in("id", [...ids]);
-        (data || []).forEach((r) => { const n = pick(r.data || {}); if (n) names[prefix + r.id] = String(n); });
+        (data || []).forEach((r) => {
+          owned.add(prefix + r.id);
+          const n = pick(r.data || {}); if (n) names[prefix + r.id] = String(n);
+        });
       };
       await Promise.all([
         nameFetch("td_jobs", jobIds, "job-", (d) => d.name || d.addr),
@@ -293,6 +307,31 @@ Deno.serve(async (req) => {
       ]);
       const regionName = (rid: string) =>
         rid === "shop" ? "Shop" : (names[rid] || (rid === "fence" ? "Stop" : "Stop"));
+
+      // A FENCE FROM ANOTHER BUSINESS IS NOT A PLACE THIS ONE HAS BEEN.
+      //
+      // Owner 2026-09-10, signed into his second business: "it says I'm at
+      // Tradedesk shop under sample co, should it or is that another bug?"
+      // It is a bug. His Sample Co device state held an open dwell on
+      // place-1787436272279016, which is a place record belonging to
+      // TradeDesk, his OTHER account, four metres from its shop.
+      //
+      // One phone arms the geofences of whichever account is loaded, and
+      // nothing disarms them when he switches. So the coprocessor went on
+      // reporting TradeDesk's regions while Sample Co was signed in, and this
+      // function opened a dwell on an id Sample Co has never owned.
+      //
+      // The names were never leaked, because nameFetch is already scoped by
+      // user_id, which is why his rows came out unnamed rather than saying
+      // "TradeDesk shop". But an unnamed dwell on a foreign fence is still
+      // this business being told it was somewhere it has no record of.
+      //
+      // A record-scoped id (job-, place-, client-) must resolve under THIS
+      // account or it is not ours to stand in. `shop` and `fence` carry no
+      // record to check, so they pass here and are covered on the device
+      // side instead (js/geo-track.js re-arms on a hat switch).
+      const isOwnRegion = (rid: string) =>
+        (rid === "shop" || rid === "fence") ? true : owned.has(rid);
 
       const timeRows: any[] = [];   // job_time_entries upserts
       const shopRows: any[] = [];   // shop_time_entries upserts
@@ -424,7 +463,7 @@ Deno.serve(async (req) => {
         }
         if (e.type === "regionEnter") {
           closeLeg(e.ts, e.lat, e.lng, e.regionId);
-          if (isWorkRegion(e.regionId) && (!dwell || dwell.regionId !== e.regionId)) {
+          if (isWorkRegion(e.regionId) && isOwnRegion(e.regionId) && (!dwell || dwell.regionId !== e.regionId)) {
             if (dwell) closeDwell(e.ts);                             // overlapping fences: old one ends here
             dwell = { regionId: e.regionId, arrivedTs: e.ts, lat: e.lat, lon: e.lng };
           }
@@ -504,6 +543,25 @@ Deno.serve(async (req) => {
     // than silent, which is the whole failure this section is about.
     if (!casWon) console.error("geo_device_state: cursor contended, cursor not advanced", { uid, deviceId });
 
+    // ── THE DERIVER RUNS HERE, ON THE EVENTS THAT JUST LANDED ─────────────
+    // After the raw insert, so this batch is part of what it reads, and after
+    // the cursor swap, so a slow derive cannot hold the state machine open.
+    // Bounded to the days the batch actually touches (daysToDerive), and a day
+    // that throws is reported rather than failing the flush: the events are
+    // already stored, the next trigger derives again, and the phone's own
+    // rebuild is still behind all of it.
+    const derivedDays = [];
+    for (const day of daysToDerive(evs, Date.now())) {
+      try { derivedDays.push(await deriveDayServer(svc, cid, uid, day)); }
+      catch (e) { derivedDays.push({ day, wrote: false, reason: String((e as Error)?.message || e) }); }
+    }
+    derived = derivedDays.filter((d) => d.wrote).length;
+    for (const d of derivedDays) {
+      if (!d.wrote && d.reason && d.reason !== "no evidence" && d.reason !== "nothing to add" && d.reason !== "unresolved") {
+        console.error("derive-day", { uid, day: d.day, reason: d.reason });
+      }
+    }
+
     // Fleet & Team liveness for free: the newest fix stamps the device row.
     const newest = [...evs].reverse().find((e) => e.lat != null);
     if (newest) {
@@ -515,7 +573,7 @@ Deno.serve(async (req) => {
       }).eq("user_id", uid).eq("device_id", deviceId).then(() => {}, () => {});
     }
 
-    return json({ ok: true, stored: evs.length, derived });
+    return json({ ok: true, stored: evs.length, derived, days: derivedDays });
   } catch (e) {
     return json({ ok: false, error: String((e as Error)?.message || e) }, 500);
   }

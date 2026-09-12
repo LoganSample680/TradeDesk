@@ -44,6 +44,96 @@ const base = (over) => Object.assign({ day: DAY, dayStart: DAY_START, dayEnd: DA
 const hm = ts => new Date(ts).toISOString().slice(11, 16);
 const _sameId = (a, b) => !!a && !!b && String(a.id) === String(b.id);
 
+// ── Whose row is this: one phone, two businesses ────────────────────────────
+//
+// Owner 2026-09-10, after his own afternoon landed on another company:
+// "I was at John Doe, but John Doe wasn't a client of sample co, only
+// tradedesk, so how could a mileage leg and time land there if that person
+// isn't in the system." It could because nothing asked. geoSpanClaim asks.
+test.describe('geoSpanClaim: an account cannot claim a span it cannot identify', () => {
+  // Same boot as the deriver block below (one context for the describe), so
+  // this block costs one page load rather than one per test.
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const claim = (span, ctx) => page.evaluate(([sp, cx]) => geoSpanClaim(sp, cx), [span, ctx]);
+  const leg = (o) => Object.assign({ startTs: T(13, 26), endTs: T(17, 14) }, o);
+
+  test('the exact pair of drives that went to the wrong business', async () => {
+    // Both ends blank is precisely what those two rows looked like: Sample Co
+    // holds neither John Doe nor the TradeDesk shop, so it resolved neither.
+    const blind = leg({ unsavedFrom: true, unsavedTo: true, from: {}, to: {} });
+    expect(await claim(blind, { shared: true })).toEqual({ claim: false, why: 'none' });
+    // Same drive on the account that DOES hold the shop: one known end is
+    // enough to say whose road it was.
+    const seeing = leg({ from: {}, to: { kind: 'shop', placeId: 'p1', name: 'TradeDesk shop' } });
+    expect(await claim(seeing, { shared: true })).toEqual({ claim: true, why: 'fence' });
+    await assertNoErrors(page);
+  });
+
+  test('a single-account phone is untouched: unsaved addresses still log', async () => {
+    // The save-this-address flow exists for exactly this leg. Refusing it on
+    // a phone with one account would delete real work to fix a problem that
+    // phone does not have.
+    const blind = leg({ unsavedFrom: true, unsavedTo: true, from: {}, to: {} });
+    expect(await claim(blind, { shared: false })).toEqual({ claim: true, why: 'hat' });
+    await assertNoErrors(page);
+  });
+
+  test('the ladder: a job outranks a clock outranks the bare fence', async () => {
+    const at = (o) => leg({ from: {}, to: Object.assign({ kind: 'client', clientId: 9 }, o) });
+    const clocks = [{ start: T(13, 0), end: T(18, 0) }];
+    expect((await claim(at({ jobId: 7 }), { shared: true, clocks })).why).toBe('job');
+    expect((await claim(at({ scheduled: true }), { shared: true, clocks })).why).toBe('job');
+    expect((await claim(at({}), { shared: true, clocks })).why).toBe('clock');
+    expect((await claim(at({}), { shared: true, clocks: [] })).why).toBe('fence');
+    // A clock that does not cover the span is not evidence about the span.
+    expect((await claim(at({}), { shared: true, clocks: [{ start: T(2, 0), end: T(3, 0) }] })).why).toBe('fence');
+    await assertNoErrors(page);
+  });
+
+  test('a dwell is at a fence by construction, so it is always identified', async () => {
+    const d = { fence: { kind: 'client', clientId: 9 }, startTs: T(8, 0), endTs: T(12, 0) };
+    expect((await claim(d, { shared: true })).claim).toBe(true);
+    await assertNoErrors(page);
+  });
+
+  test('null, empty and garbage never throw', async () => {
+    const out = await page.evaluate(() => {
+      const tries = [[null, null], [undefined, undefined], [{}, {}], [{ from: null, to: null }, { shared: true }],
+        [{ from: {}, to: {} }, { shared: true, clocks: 'nope' }], [{ startTs: NaN, endTs: NaN }, { shared: true, clocks: [null] }]];
+      return tries.map(([a, b]) => { try { const r = geoSpanClaim(a, b); return typeof r.claim === 'boolean'; } catch (e) { return 'THREW'; } });
+    });
+    expect(out).toEqual([true, true, true, true, true, true]);
+    await assertNoErrors(page);
+  });
+
+  test('geoDeriveRows holds an unclaimable leg and reports it, writing nothing', async () => {
+    const r = await page.evaluate(() => {
+      const res = { day: '2026-09-10', dwells: [], legs: [{
+        id: 'L1', startTs: 1, endTs: 2, minutes: 9, miles: 3, from: {}, to: {},
+        unsavedFrom: true, unsavedTo: true, drives: [[1, 2, 60000]], roundTrip: false }] };
+      const shared = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e', shared: true });
+      const solo = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+      return { sharedTime: shared.job_time_entries.length, sharedMiles: shared.td_mileage.length,
+        held: shared.held.length, soloTime: solo.job_time_entries.length, soloHeld: solo.held.length };
+    });
+    expect(r.sharedTime, 'no time row on an account that cannot name either end').toBe(0);
+    expect(r.sharedMiles, 'and no mileage row: this is the IRS log').toBe(0);
+    expect(r.held, 'held, so the caller can say the day is short rather than guess').toBe(1);
+    expect(r.soloTime, 'unchanged on a one-account phone').toBeGreaterThan(0);
+    expect(r.soloHeld).toBe(0);
+    await assertNoErrors(page);
+  });
+});
+
 test.describe('geo-derive: the day deriver', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
@@ -134,6 +224,118 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.held).toBe(false);
       expect(r.source).toBe('client');
     });
+    // ── The contact answering in advance (owner 2026-09-12) ──────────────
+    // "Add in ability to mark a contact as family member so time flags itself
+    // as need marked personal or work." The test directly above is the case
+    // the rule's own comment admits it cannot close: a weekday afternoon at a
+    // family member's address, nothing scheduled, counted as work. Marking the
+    // contact takes the working-day witness away and leaves the other two.
+    test('the SAME weekday afternoon at a contact marked family: held', async () => {
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await held(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
+      expect(r.held, 'the working day no longer vouches for this address').toBe(true);
+      expect(r.source).toBe('client-held');
+    });
+    test('a job on the calendar still makes a family address work', async () => {
+      // The one case the flag exists to keep counting: he really does bill
+      // work at that address, and the calendar says so.
+      const DOE_P = Object.assign({}, DOE, { personal: true, scheduled: true });
+      const r = await held(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
+      expect(r.held).toBe(false);
+      expect(r.source).toBe('client');
+    });
+    test('a clock running over it still makes a family address work', async () => {
+      // The person saying, at the time, that they are working.
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const { t } = dayOf('2026-09-01');
+      const r = await held(visit('2026-09-01', 13, 16,
+        { fences: [SHOP, HOME, DOE_P], clocks: [{ start: t(12), end: t(17) }] }));
+      expect(r.held).toBe(false);
+      expect(r.source).toBe('client');
+    });
+    test('marking a contact holds the visit, it never drops it', async () => {
+      // Held is a question on the rail that counts toward nothing and asks on
+      // the card. Dropping it silently would lose the one visit he DOES bill.
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await held(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
+      expect(r.minutes).toBeGreaterThan(100);
+      expect(r.source).toBe('client-held');
+    });
+    test('an unmarked contact is exactly as it was, and so is every other kind', async () => {
+      // personal absent reads as false on every client saved before the flag
+      // existed, which is the whole of the migration story.
+      const noFlag = await held(visit('2026-09-01', 13, 16));
+      const falseFlag = await held(visit('2026-09-01', 13, 16,
+        { fences: [SHOP, HOME, Object.assign({}, DOE, { personal: false })] }));
+      const junk = await held(visit('2026-09-01', 13, 16,
+        { fences: [SHOP, HOME, Object.assign({}, DOE, { personal: 'yes' })] }));
+      expect(noFlag.held).toBe(false);
+      expect(falseFlag.held).toBe(false);
+      // Only a literal true marks a contact: a truthy string is not an answer.
+      expect(junk.held).toBe(false);
+    });
+
+    // ── Rule 15: the drives either side of a held visit ──────────────────
+    // Owner 2026-09-12: "Jack didn't work Thursday or Friday this last week
+    // why do we have mileage and time rows in there?" Rule 13 asked about the
+    // VISIT and never about the drives, so a held Friday at a family member's
+    // address still produced 7.7 claimed business miles either side of it.
+    const legsOf = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+      return { legs: r.legs.map(l => ({ held: !!l.held, to: l.to && l.to.name })),
+        miles: rows.td_mileage.map(m => ({ pending: !!m.pendingPurpose, purpose: m.purpose })) };
+    }, inp);
+
+    test('the drives either side of a held visit are held too', async () => {
+      // JACK'S ACTUAL SHAPE: he works out of his house, so the fence set has
+      // no shop in it at all. Home to a family address and back, which is
+      // where both of his Friday drives came from. (The owner's own fixture
+      // puts a SHOP at the same coordinates as HOME, and a shop end vouches
+      // by definition, which is the test directly below.)
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [HOME, DOE_P] }));
+      expect(r.legs.length).toBeGreaterThan(0);
+      expect(r.legs.every(l => l.held), 'no business end on either drive').toBe(true);
+      expect(r.miles.every(m => m.pending), 'and the rows say so').toBe(true);
+      // 'Business' was the fallback for a destination it could not name, which
+      // is exactly the drive it has no standing to label.
+      expect(r.miles.every(m => m.purpose === '')).toBe(true);
+    });
+
+    test('a drive that touches the shop is business, held visit or not', async () => {
+      // The shop is a business address by definition, so the leg earns its
+      // miles from that end whatever the other one is.
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
+      const toShop = r.legs.filter(l => l.to === SHOP.name);
+      expect(toShop.length).toBeGreaterThan(0);
+      expect(toShop.every(l => !l.held), 'shop end vouches').toBe(true);
+    });
+
+    test('an ordinary client day is completely unchanged', async () => {
+      const r = await legsOf(visit('2026-09-01', 13, 16));
+      expect(r.legs.some(l => l.held), 'nothing is held on a normal work day').toBe(false);
+      expect(r.miles.some(m => m.pending)).toBe(false);
+      expect(r.miles.every(m => m.purpose !== '')).toBe(true);
+    });
+
+    test('a clock running over the drive vouches for it', async () => {
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const { t } = dayOf('2026-09-01');
+      const r = await legsOf(visit('2026-09-01', 13, 16,
+        { fences: [HOME, DOE_P], clocks: [{ start: t(12), end: t(17) }] }));
+      expect(r.legs.every(l => !l.held), 'the person said they were working').toBe(true);
+    });
+
+    test('a job at the address vouches for the drives to it', async () => {
+      // A job is work whoever the client is, which is the case the family
+      // mark exists to keep counting, and the drives to it come with it.
+      const DOE_J = Object.assign({}, DOE, { personal: true, jobId: 'job-1' });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [HOME, DOE_J] }));
+      expect(r.legs.every(l => !l.held)).toBe(true);
+    });
+
     test('a weekday night at a customer, nothing scheduled: held', async () => {
       const r = await held(visit('2026-09-01', 21, 23));
       expect(r.held).toBe(true);

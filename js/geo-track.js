@@ -458,6 +458,7 @@ function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringif
 // data loss with nothing able to put it back. Old queue entries written before
 // this option existed have no flag, so they keep the ignore behaviour.
 function _geoEnqueue(tbl,row,opts){
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   // ONE WRITER (owner 2026-09-02). Automatic time rows come from the day
   // deriver through geo_replace_day now. Every closer in this file that used
   // to enqueue its own row for a fence event still runs (it drives the
@@ -6172,6 +6173,29 @@ const _GEO_STOP_REPAIR_FLAG='td_geo_stop_repair_v1';
 // window._mileMotionHealRan and window._geoOpenRestored: a top-level `let` is
 // not a window property, so nothing outside this file, a test included, can
 // ever reset it.
+//
+// ── THE NEWEST HUNDRED WERE THROWN AWAY, EVERY TIME (fixed 2026-09-11) ──────
+//
+// ingest-geo caps one POST at 400 events, and it is a FLOOR-first slice:
+// `.slice(0, 400)` keeps the OLDEST 400 of whatever arrives (index.ts). This
+// function handed it the newest 500 in a single body, sorted ascending, so
+// the most recent hundred transitions were dropped on every sync and only
+// reached the server days later, once enough new flips had pushed them back
+// out of the tail.
+//
+// The days that paid for it were today and yesterday, which are the only days
+// a live derive or a server-side one ever reads. Measured on the owner's and
+// Jack's accounts the day this was fixed: every day older than two was full
+// (70 to 130 flips, most of them lifted by this function) and the last two ran
+// 25 to 68. Jack's 9 September lost the 20:56 flip that ends his shop leg; the
+// owner's 10 September lost the 22:23 one, and a replay of that day on the
+// server's own evidence ran the drive home on for another ninety minutes and
+// swallowed a stop into it, because nothing in geo_events ever said the truck
+// had stopped.
+//
+// So: chunk it, and send every chunk.
+const _GEO_TAPE_CHUNK=400;    // ingest-geo's own per-POST cap, matched exactly
+const _GEO_TAPE_MAX=2000;     // what one boot may lift, so a settle stays a settle
 async function _geoTapeSync(){
   try{
     if(window._geoTapeSyncRan)return 0;
@@ -6182,20 +6206,111 @@ async function _geoTapeSync(){
     // No key means the plugin's flush was never configured on this device, so
     // there is nothing to authenticate with. A browser lands here too.
     if(!devId||!key)return 0;
-    const tape=await _geoMotionTape(Date.now()-7*86400000,Date.now());
-    if(!Array.isArray(tape)||!tape.length)return 0;
-    // Capped: a week on a busy phone is a few hundred transitions, and an
-    // unbounded POST out of a boot path is how a settle point becomes a stall.
-    // The tail, because recent history is what any re-grade actually needs.
-    const batch=tape.slice(-500).map(t=>({type:'motion',ts:Math.round(t.ts),kind:String(t.kind||'')}));
-    const r=await fetch(_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',{
-      method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({user_id:_supaUser.id,device_id:devId,key,events:batch})
+    const since=Date.now()-7*86400000;
+    const tape=await _geoMotionTape(since,Date.now());
+    const batch=[];
+    (Array.isArray(tape)?tape:[]).forEach(t=>{
+      if(t&&typeof t.ts==='number'&&t.kind)batch.push({type:'motion',ts:Math.round(t.ts),kind:String(t.kind)});
     });
-    _geoParkNote('tape-sync',(r&&r.ok?'sent ':'failed ')+batch.length);
-    return (r&&r.ok)?batch.length:0;
+    // AND THE APP LOG, WHICH HAS NEVER LEFT THE HANDSET AT ALL.
+    //
+    // _geoAppLogPush writes every visibilitychange to localStorage and nothing
+    // has ever flushed it. The native plugin sends its own lifecycle events,
+    // but not the ones the web layer is the only witness to, so rule 10's
+    // office minutes (CLAUDE.md 17) could be proven on the phone and nowhere
+    // else. The owner's 01:51 office row on 10 September is exactly that: a
+    // real row on his phone with no evidence for it anywhere in geo_events.
+    // Same endpoint, same key, same 'app-<kind>' type the plugin already
+    // sends and _geoDeriveServerFixes already reads back.
+    _geoAppLogRead().forEach(e=>{
+      if(e&&typeof e.ts==='number'&&e.ts>=since&&e.kind)batch.push({type:'app-'+String(e.kind),ts:Math.round(e.ts)});
+    });
+    if(!batch.length)return 0;
+    batch.sort((a,b)=>a.ts-b.ts);
+    // If a week is bigger than one boot may carry, carry the NEWEST of it.
+    // That is the half this whole rewrite exists to stop losing, and an older
+    // flip that misses this boot is picked up by the next one.
+    const send=batch.length>_GEO_TAPE_MAX?batch.slice(batch.length-_GEO_TAPE_MAX):batch;
+    let sent=0;
+    for(let i=0;i<send.length;i+=_GEO_TAPE_CHUNK){
+      const part=send.slice(i,i+_GEO_TAPE_CHUNK);
+      const r=await fetch(_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',{
+        method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({user_id:_supaUser.id,device_id:devId,key,events:part})
+      });
+      // A refused chunk ends the run rather than punching a hole through the
+      // middle of the week. The next boot starts again from the same place,
+      // and every chunk that already landed is a free no-op on the way past.
+      if(!(r&&r.ok))break;
+      sent+=part.length;
+    }
+    _geoParkNote('tape-sync',sent+'/'+send.length+(send.length<batch.length?' (of '+batch.length+')':''));
+    return sent;
   }catch(_e){return 0;}
 }
+// ── THE PLUGIN HAS BEEN COUNTING ALL ALONG, AND NOBODY EVER LOOKED ──────────
+//
+// Owner 2026-09-11, before spending an iOS build on a fix: "how can you
+// confirm 100% this was the problem and the actual answer?"
+//
+// The honest answer was that I could not. His arrival at a client that
+// afternoon was recorded on time and reached the server fifty minutes late,
+// and the two candidate causes leave identical fingerprints in geo_events:
+// either the upload was attempted and failed, or it was refused before it was
+// sent (a process killed mid-upload leaves an entry in the in-flight map that
+// nothing clears, and the next flush builds the same batch, with the same max
+// ts, and is refused). One is a network problem, the other is a deadlock, and
+// they want different fixes.
+//
+// TdGeoPlugin.countWake has been counting both since the day it was written:
+// flushSent, flushOk, flushFail, relaunch, regionEnter, regionExit, and the
+// rest. stats() has always returned them. Nothing has ever read them, so the
+// answer to a question we have been guessing at for an afternoon has been
+// sitting in UserDefaults the whole time.
+//
+// DELTAS, NOT TOTALS, after the first read. A total answers "has this ever
+// happened", which is nearly useless once a phone is a week old; a delta says
+// what happened in this window, which is the question actually being asked.
+// The FIRST read has no baseline and reports the running total, which is
+// exactly right: it is the backlog, and on the day this shipped it is the
+// afternoon we are trying to explain.
+//
+// No new table and no new endpoint: one analytics row per counter through the
+// telemetry already built for clicks and dwell, where ctx is the counter's
+// name and value is the count. CLAUDE.md 7.3.
+const _GEO_WAKES_KEY='zp3_geo_wakes_seen';
+async function _geoWakeStatsSync(){
+  try{
+    if(window._geoWakeStatsRan)return 0;
+    window._geoWakeStatsRan=true;
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td||typeof Td.stats!=='function')return 0;
+    const st=await Td.stats();
+    const w=(st&&st.wakes&&typeof st.wakes==='object')?st.wakes:null;
+    if(!w)return 0;
+    const keys=Object.keys(w);
+    if(!keys.length)return 0;
+    let prev={};
+    try{const raw=JSON.parse(localStorage.getItem(_GEO_WAKES_KEY)||'{}');if(raw&&typeof raw==='object')prev=raw;}catch(_e){}
+    let sent=0;
+    keys.forEach(k=>{
+      const now=Number(w[k]);
+      if(!isFinite(now)||now<0)return;
+      const was=Number(prev[k]);
+      // A counter that went BACKWARDS was reset under us: stats({reset:true})
+      // from the shadow comparison, or a reinstall. Report the new total
+      // rather than a negative delta, the same way _geoRadioCheck re-baselines
+      // instead of reporting nonsense.
+      const d=(isFinite(was)&&was>=0&&now>=was)?now-was:now;
+      if(d<=0)return;
+      try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('geo_wake',String(k).slice(0,40),d);}catch(_e2){}
+      sent++;
+    });
+    try{localStorage.setItem(_GEO_WAKES_KEY,JSON.stringify(w));}catch(_e){}
+    return sent;
+  }catch(_e){return 0;}
+}
+
 // ── A drive row is paid for the part that was actually driving ──────────────
 // Owner 2026-08-29: "we go off the background core motion tape for walking
 // still and driving, so why can't this fix it too?"
@@ -6540,9 +6655,52 @@ let _geoShopDedupBusy=false;
 const _GEO_SHOP_DUP_OVERLAP_MS=240000; // 4 min: a real back-to-back handoff can drift a little
 
 // ── Init + two-layer consent ───────────────────────────────────────────────────
+// WHOSE FENCES ARE ARMED ON THIS PHONE (owner 2026-09-10, signed into his
+// second business: "it says I'm at Tradedesk shop under sample co, should it
+// or is that another bug?").
+//
+// It was. The coprocessor holds whatever regions were last armed, and nothing
+// dropped them when he switched accounts, so TradeDesk's fences went on
+// reporting while Sample Co was signed in. His Sample Co device state ended
+// up with an open dwell on place-1787436272279016, a TradeDesk place four
+// metres from its shop.
+//
+// The server now refuses a record-scoped region that does not belong to the
+// signed-in account (supabase/functions/ingest-geo), which is the guard that
+// holds even if this runs late or not at all. This is the other half: the
+// generic `shop` region carries no record to check, so the only way it can be
+// right is for the wrong account's arm to be dropped when the account
+// changes. The next arm is the incoming account's own.
+const _GEO_ARMED_FOR_KEY='zp3_geo_armed_for';
+function _geoDisarmIfForeign(){
+  try{
+    const me=(_supaUser&&_supaUser.id)||null;
+    const cid=(typeof _geoCid==='function'&&_geoCid())||null;
+    const tag=me&&cid?(me+'|'+cid):null;
+    if(!tag)return;
+    const was=localStorage.getItem(_GEO_ARMED_FOR_KEY)||null;
+    localStorage.setItem(_GEO_ARMED_FOR_KEY,tag);
+    if(!was||was===tag)return;                 // same person, same business: nothing to drop
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(Td&&typeof Td.stopAll==='function')Td.stopAll({reason:'account changed'});
+    // Park state belongs to the account that armed it, and its spot names a
+    // fence the incoming account may not have.
+    _geoParkModeOn=false;
+    try{localStorage.removeItem(_GEO_DWELL_KEY);localStorage.removeItem(_GEO_OPEN_KEY);}catch(_e){}
+    try{window._geoOpenDwell=null;}catch(_e){}
+    _geoParkNote('disarm','account changed: '+was+' -> '+tag);
+  }catch(_e){}
+}
+
 function _geoTrackInit(){
+  // Read-only support view (js/ops-view.js): the phone in your hand is not
+  // theirs. Tracking here would prompt the VIEWER for location, watch the
+  // VIEWER's position, and try to write it against the account being looked
+  // at. Looking at somebody's app is not that person working.
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
+  _geoDisarmIfForeign();                     // drop the other account's fences before arming ours
   _geoTapeClaim();                           // this person owns this phone's tape from now
   _geoDeriveRebuildSoon();
   _geoOnsiteTickStart();
@@ -6893,11 +7051,21 @@ function _geoDeriveFences(dayKey){
     const jl=(typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]);
     (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).forEach(c=>{
       if(!c||!c.addr)return;
-      const hit=cache[c.id];
+      // THE RECORD FIRST, the device cache second (owner 2026-09-11). The
+      // cache is per-device, so a phone that has never geocoded this client
+      // used to have no fence for them at all, and neither did anything off
+      // the phone. Both copies carry the address they were derived from, and
+      // both are rejected when the client has moved since.
+      const hit=(c.lat!=null&&c.lon!=null&&c.geoAddr===c.addr)
+        ? {lat:Number(c.lat),lon:Number(c.lon),addr:c.addr}
+        : cache[c.id];
       if(!(hit&&hit.addr===c.addr&&hit.lat!=null))return;
       const scheduled=jl.some(j=>j&&j.status!=='canceled'&&String(j.client_id)===String(c.id)&&
         ((typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true));
-      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled});
+      // Marked family or personal on the contact itself (owner 2026-09-12):
+      // rule 13 then holds the visit unless the calendar or a running clock
+      // vouches for it, instead of letting the working-day window do so.
+      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal});
     });
     (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
       if(!j||j.status==='canceled')return;
@@ -6958,23 +7126,99 @@ function _geoWorkHours(){
 // would be no derive-version key), so it keeps its seven-day window rather
 // than losing last week to the upgrade. Anything with no history starts now.
 const _GEO_TAPE_OWNER_KEY='zp3_geo_tape_owner';
+// A LOG, NOT A VALUE (owner 2026-09-10). The old key held one {uid, since}
+// and every sign-in overwrote it, so on a phone two businesses share, each
+// sign-in blinded the other account to its own past. His 10 September: he
+// signed into a second account at 3:41pm, and his own account's read floor
+// jumped to that instant, which is why the 1:26pm arrival at John Doe could
+// never be closed and why signing back in could not rebuild it. The tape
+// itself is CoreMotion's and spans the whole week; only our permission to
+// read it was being thrown away.
+//
+// So: intervals. Each sign-in closes the open one and opens its own. A person
+// may read the spans they actually held, however many times the phone has
+// changed hands since, and two accounts on one phone each derive their own
+// day from the same tape without seeing each other's.
+const _GEO_TAPE_LOG_KEY='zp3_geo_tape_log';
+function _geoTapeLog(){
+  try{const a=JSON.parse(localStorage.getItem(_GEO_TAPE_LOG_KEY)||'null');return Array.isArray(a)?a.filter(x=>x&&x.uid&&Number(x.from)>0):[];}catch(_e){return [];}
+}
+function _geoTapeLogWrite(log){
+  try{
+    // Nothing older than the derive window can ever be asked for, and an
+    // unbounded log on a shared phone is a slow leak in localStorage.
+    const cut=Date.now()-(_GEO_DERIVE_DAYS+1)*86400000;
+    const keep=log.filter(x=>x&&(x.to==null||Number(x.to)>=cut));
+    localStorage.setItem(_GEO_TAPE_LOG_KEY,JSON.stringify(keep.slice(-40)));
+  }catch(_e){}
+}
 function _geoTapeOwner(){
   try{const o=JSON.parse(localStorage.getItem(_GEO_TAPE_OWNER_KEY)||'null');return (o&&o.uid&&Number(o.since)>0)?o:null;}catch(_e){return null;}
 }
 function _geoTapeClaim(){
   if(!_supaUser||!_supaUser.id)return;
   try{
-    const cur=_geoTapeOwner();
-    if(cur&&cur.uid===_supaUser.id)return;
-    const prior=!cur&&!!localStorage.getItem(_GEO_DERIVE_VER_KEY);
-    const since=prior?Date.now()-_GEO_DERIVE_DAYS*86400000:Date.now();
-    localStorage.setItem(_GEO_TAPE_OWNER_KEY,JSON.stringify({uid:_supaUser.id,since}));
+    const log=_geoTapeLog();
+    const open=log.length?log[log.length-1]:null;
+    if(open&&open.to==null&&open.uid===_supaUser.id){
+      // Same person still holding it. Keep the interval; refresh the account
+      // so a hat switch inside one login is recorded.
+      open.cid=(typeof _geoCid==='function'?_geoCid():null)||open.cid||null;
+      _geoTapeLogWrite(log);
+      return;
+    }
+    const now=Date.now();
+    if(open&&open.to==null)open.to=now;
+    // A phone that was already deriving before any of this shipped is a
+    // single-user phone by construction, so it keeps its seven-day window
+    // rather than losing last week to the upgrade. Carried over from the old
+    // single-claim behaviour, and from the old key when it is the only record.
+    const legacy=_geoTapeOwner();
+    const priorSolo=!log.length&&!!localStorage.getItem(_GEO_DERIVE_VER_KEY);
+    const from=(legacy&&legacy.uid===_supaUser.id&&Number(legacy.since)>0)?Number(legacy.since)
+      :(priorSolo?now-_GEO_DERIVE_DAYS*86400000:now);
+    log.push({uid:_supaUser.id,cid:(typeof _geoCid==='function'?_geoCid():null),from,to:null});
+    _geoTapeLogWrite(log);
+    localStorage.setItem(_GEO_TAPE_OWNER_KEY,JSON.stringify({uid:_supaUser.id,since:from}));
   }catch(_e){}
+}
+// Close the open interval without opening another: signing out, or switching
+// to a hat this device has not claimed yet. Leaving it open would let the
+// next person's derive read minutes that were never theirs.
+function _geoTapeRelease(){
+  try{
+    const log=_geoTapeLog();
+    const open=log.length?log[log.length-1]:null;
+    if(open&&open.to==null){open.to=Date.now();_geoTapeLogWrite(log);}
+  }catch(_e){}
+}
+// Every span of tape this signed-in person may read, oldest first, clipped to
+// the derive window.
+function _geoTapeMine(){
+  if(!_supaUser||!_supaUser.id)return [];
+  const now=Date.now(), cut=now-_GEO_DERIVE_DAYS*86400000;
+  return _geoTapeLog().filter(x=>x.uid===_supaUser.id)
+    .map(x=>({start:Math.max(Number(x.from),cut),end:x.to==null?now:Number(x.to)}))
+    .filter(x=>x.end>x.start);
+}
+// Has this device been signed into more than one account inside the window?
+// The only question geoSpanClaim needs answered, and the only thing that
+// turns the ownership test on.
+function _geoTapeShared(){
+  const cut=Date.now()-_GEO_DERIVE_DAYS*86400000;
+  const ids={};
+  _geoTapeLog().forEach(x=>{if(x.to==null||Number(x.to)>=cut)ids[x.uid]=1;});
+  return Object.keys(ids).length>1;
 }
 // The earliest tape moment this signed-in person may read on this device.
 // No claim at all (a test, a boot that has not reached init) trusts nothing
 // older than this instant, which is the safe way to be wrong.
+//
+// Reads the LOG now, so a person who handed the phone over and got it back
+// still reaches their own morning instead of starting again from now.
 function _geoTapeSince(){
+  const mine=_geoTapeMine();
+  if(mine.length)return mine[0].start;
   const o=_geoTapeOwner();
   if(o&&_supaUser&&o.uid===_supaUser.id)return Number(o.since);
   return Date.now();
@@ -6986,6 +7230,27 @@ async function _geoDeriveTape(sinceMs){
     const floor=Math.max(Number(sinceMs)||0,_geoTapeSince());
     const r=await Td.motionSince({sinceMs:floor});
     if(!r||!r.available||!Array.isArray(r.transitions))return [];
+    // THE WHOLE TAPE, NOT JUST THIS ACCOUNT'S SPANS OF IT.
+    //
+    // This used to clip the transitions to the intervals this login held, and
+    // that was wrong in a way the owner caught immediately: "doesn't the
+    // ladder tell us if an on site visit started under one business and
+    // therefore it must end on that business?" It does, and clipping made it
+    // impossible. His 10 September is the proof: he reached John Doe at
+    // 1:26pm on his own account and drove away at 5:14pm on the other one.
+    // Clipped, his account could see the arrival and never the departure, so
+    // the dwell had one end, and rule 5 (both ends or no row) threw the whole
+    // afternoon away. The clip turned a row on the wrong business into no row
+    // at all, which is better and still not right.
+    //
+    // The tape is the DEVICE's motion history. One phone is one body, and
+    // whether a stretch of it belongs to a business is a question about
+    // fences, not about who happened to be logged in while the phone was in a
+    // pocket. So the deriver reads all of it and geoSpanClaim decides what may
+    // be written: a span with no fence this account owns is not claimed
+    // (js/geo-derive.js). The other account derives the same minutes and
+    // claims nothing, because John Doe and the shop are not in its book.
+    // Exactly one account ends up with the row, and it is the right one.
     return r.transitions.filter(t=>t&&typeof t.ts==='number'&&t.kind&&t.ts>=floor);
   }catch(_e){return [];}
 }
@@ -7049,6 +7314,7 @@ async function _geoDeriveServerFixes(fromMs,toMs){
 }
 
 function _geoEnqueueRpc(dayKey,args){
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   try{
     const key='rpc:'+dayKey;
     const q=_geoQueueRead().filter(x=>!(x&&x.row&&x.row.client_key===key));
@@ -7151,23 +7417,91 @@ function _geoRouteVia(m){
   }catch(_e){return [];}
 }
 function _geoRouteCacheRead(){try{const c=JSON.parse(localStorage.getItem(_GEO_ROUTE_CACHE_KEY)||'{}');return (c&&typeof c==='object')?c:{};}catch(_e){return {};}}
+// ── The cache the phone fills, where everything else can read it ────────────
+//
+// Routing is device-only: MapKit Directions first, then Valhalla and OSRM
+// raced (_routeDistance). Nothing off the handset can ask any of them, so a
+// server-side derive falls back to summing breadcrumbs and comes up short: the
+// owner's 10 September replayed at 11.3 miles against the 13.3 his phone
+// wrote, Jack's drive home at 3.6 against a routed 6.3.
+//
+// The phone already has the right answer and already caches it; it just kept
+// it in localStorage where it died with the device. geo_route_miles
+// (20260930) is the same cache, keyed by the SAME _geoRouteKey string, in the
+// one place both halves can reach. Local stays the fast path and the offline
+// path; the cloud is the shared one.
+async function _geoRouteCloudRead(keys){
+  const out={};
+  try{
+    if(!Array.isArray(keys)||!keys.length)return out;
+    if(typeof _supa==='undefined'||!_supa||!_supaUser||typeof _geoCid!=='function')return out;
+    const cid=_geoCid();
+    if(!cid)return out;
+    // Chunked: a URL carries the `in` list, and a day of legs is small but a
+    // boot rebuild of a week is not.
+    for(let i=0;i<keys.length;i+=100){
+      const{data}=await _supa.from('geo_route_miles').select('route_key,miles')
+        .eq('contractor_user_id',cid).in('route_key',keys.slice(i,i+100));
+      (Array.isArray(data)?data:[]).forEach(r=>{const n=Number(r&&r.miles);if(n>0)out[r.route_key]=n;});
+    }
+  }catch(_e){}
+  return out;
+}
+async function _geoRouteCloudWrite(found){
+  try{
+    const keys=Object.keys(found||{});
+    if(!keys.length)return 0;
+    if(typeof _supa==='undefined'||!_supa||!_supaUser||typeof _geoCid!=='function')return 0;
+    const cid=_geoCid();
+    if(!cid)return 0;
+    const now=new Date().toISOString();
+    const{error}=await _supa.from('geo_route_miles').upsert(
+      keys.map(k=>({contractor_user_id:cid,route_key:k,miles:found[k],updated_at:now})),
+      {onConflict:'contractor_user_id,route_key'});
+    return error?0:keys.length;
+  }catch(_e){return 0;}
+}
 async function _geoDeriveRouteMiles(rows){
   if(!Array.isArray(rows)||typeof _routeDistance!=='function')return rows;
   const cache=_geoRouteCacheRead();
   let dirty=false;
+  // What this batch is about to ask for, decided before anything is asked, so
+  // the cloud lookup is ONE round trip for the whole day instead of one per
+  // leg. The steer is computed here and carried, never recomputed: two
+  // different via lists would mean two different keys for one road.
+  const plan=new Map();
+  for(const m of rows){
+    if(!m||!m.fromCoord||!m.toCoord||!isFinite(m.fromCoord.lat)||!isFinite(m.toCoord.lat))continue;
+    if(m.addressUnknown)continue;
+    try{
+      const steer=(Number(m.collapsedStops)>0)?[]:_geoRouteVia(m);
+      plan.set(m,{steer,k:_geoRouteKey(m.fromCoord,m.toCoord,steer)});
+    }catch(_e){}
+  }
+  const missing=[];
+  plan.forEach(v=>{if(!(Number(cache[v.k])>0)&&missing.indexOf(v.k)<0)missing.push(v.k);});
+  if(missing.length){
+    const cloud=await _geoRouteCloudRead(missing);
+    // Into the local cache as well: a route this account already paid for is
+    // answered from disk on every later boot, online or not.
+    Object.keys(cloud).forEach(k=>{cache[k]=cloud[k];dirty=true;});
+  }
+  // Whatever this run had to route for itself, so it goes up once at the end
+  // rather than one write per leg.
+  const fresh={};
   for(const m of rows){
     try{
-      if(!m||!m.fromCoord||!m.toCoord||!isFinite(m.fromCoord.lat)||!isFinite(m.toCoord.lat))continue;
+      const p=plan.get(m);
       // A ROUTE NEEDS TWO ADDRESSES (rule 14, owner 2026-09-08). A traced row
       // has at least one end nobody saved; routing between its coordinates
       // would hand it exactly the inferred number it exists not to have. It
       // keeps the breadcrumb figure until an address makes it a real leg.
-      if(m.addressUnknown)continue;
+      // No plan entry means this row was one of those, or had no coordinates.
+      if(!p)continue;
       // A leg collapsed through a personal stop is billed at the DIRECT
       // route (rule 6): no breadcrumbs steer that one, they run through the
       // stop. Every other leg's router is steered down the road it drove.
-      const steer=(Number(m.collapsedStops)>0)?[]:_geoRouteVia(m);
-      const k=_geoRouteKey(m.fromCoord,m.toCoord,steer);
+      const steer=p.steer,k=p.k;
       let routed=Number(cache[k]);
       if(!(routed>0)){
         // Bounded: MapKit's directions callback can simply never come
@@ -7175,7 +7509,7 @@ async function _geoDeriveRouteMiles(rows){
         // boot rebuild behind one leg (owner 2026-09-02, the 11:39 reopen).
         const r=await Promise.race([_routeDistance(m.fromCoord,m.toCoord,steer),new Promise(res=>setTimeout(()=>res(null),_GEO_ROUTE_TIMEOUT_MS))]);
         routed=(r&&Number(r.miles)>0)?Math.round(Number(r.miles)*10)/10:0;
-        if(routed>0){cache[k]=routed;dirty=true;}
+        if(routed>0){cache[k]=routed;fresh[k]=routed;dirty=true;}
       }
       if(!(routed>0))continue;
       m.routeMiles=routed;
@@ -7201,6 +7535,10 @@ async function _geoDeriveRouteMiles(rows){
       localStorage.setItem(_GEO_ROUTE_CACHE_KEY,JSON.stringify(cache));
     }catch(_e){}
   }
+  // Last, and never in the way of the paint: the rows are already correct by
+  // the time this runs, and a failed write only costs the next derive one
+  // more router call.
+  await _geoRouteCloudWrite(fresh);
   return rows;
 }
 
@@ -7271,7 +7609,16 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       try{_geoParkNote('derive-skip',dayKey+': '+res.journeys.length+' drives on the tape, none resolved');}catch(_e){}
       return null;
     }
-    const rows=_geoDeriveVehicleRows(geoDeriveRows(res,{contractorId:_geoCid(),employeeId:_supaUser.id}));
+    // shared + clocks are what geoSpanClaim needs to decide whose rows these
+    // are (js/geo-derive.js). On a single-account phone shared is false and
+    // nothing about this call changes.
+    const rows=_geoDeriveVehicleRows(geoDeriveRows(res,{
+      contractorId:_geoCid(),employeeId:_supaUser.id,
+      shared:_geoTapeShared(),clocks:_geoDeriveClocks(b.start,b.end),
+    }));
+    if(rows.held&&rows.held.length){
+      try{_geoParkNote('derive-held',dayKey+': '+rows.held.length+' span(s) this account cannot identify either end of, left to whoever can');}catch(_e){}
+    }
     // The legs show the moment the day is derived (owner 2026-09-02: "the
     // drives themselves weren't instant"); the road miles are a lookup that
     // can take seconds per new pair, so they land as a second paint.
@@ -7348,8 +7695,37 @@ const _GEO_DERIVE_VER_KEY='zp3_geo_derive_ver';
 const _GEO_DERIVE_STALE_MS=30*60000;
 let _geoDeriveRebuiltAt=0;
 function _geoDeriveAppVer(){try{return (typeof APP_VERSION!=='undefined'&&APP_VERSION)?String(APP_VERSION):'';}catch(_e){return '';}}
+// THE FULL REBUILD IS PER PERSON, NOT PER PHONE.
+//
+// Owner 2026-09-10, back on his own account: "I'm in my own account now
+// looking at Aldi guys that's not fixed." The seven-day rebuild only runs
+// when the app version has changed since the last one, and the marker that
+// remembered it was a single device-wide key. On a phone two businesses
+// share, whichever account booted the new build first spent the marker, and
+// every other account on that handset got the two-day window instead.
+//
+// That is exactly what stranded his row. His own account rebuilt seven days
+// on 09.10.26.20 at 19:46, minutes BEFORE geo_replace_day's rounding fix
+// went live at 19:59, so 6 September was re-derived through the old
+// function. The roll to 09.10.26.22 would have caught it, but the other
+// account booted first, wrote .22 into the shared marker, and by the time he
+// signed back in the version already looked seen. Two days back does not
+// reach 6 September, so nothing ever touched it again.
+//
+// The device-wide key stays exactly as it was: _geoTapeClaim reads it to ask
+// "has this handset ever derived", which is a question about the phone and
+// not about a person. This adds a second marker beside it, per uid, and only
+// the rebuild window reads it.
+function _geoDeriveVerSeenKey(){
+  const uid=(_supaUser&&_supaUser.id)||'anon';
+  return _GEO_DERIVE_VER_KEY+'_'+uid;
+}
 function _geoDeriveRebuildDays(){
-  try{const seen=localStorage.getItem(_GEO_DERIVE_VER_KEY)||'';const ver=_geoDeriveAppVer();return (ver&&seen===ver)?_GEO_DERIVE_DAYS_LIVE:_GEO_DERIVE_DAYS;}catch(_e){return _GEO_DERIVE_DAYS_LIVE;}
+  try{
+    const seen=localStorage.getItem(_geoDeriveVerSeenKey())||'';
+    const ver=_geoDeriveAppVer();
+    return (ver&&seen===ver)?_GEO_DERIVE_DAYS_LIVE:_GEO_DERIVE_DAYS;
+  }catch(_e){return _GEO_DERIVE_DAYS_LIVE;}
 }
 // One rebuild at a time. _geoDeriveRebuiltAt is stamped when a rebuild
 // FINISHES, so a stale check arriving while one is still running (an
@@ -7379,7 +7755,10 @@ async function _geoDeriveRebuildRun(){
     if(r)n++;
   }
   _geoDeriveRebuiltAt=Date.now();
-  try{const ver=_geoDeriveAppVer();if(ver)localStorage.setItem(_GEO_DERIVE_VER_KEY,ver);}catch(_e){}
+  // Both markers: the per-uid one decides THIS person's next rebuild window,
+  // the device-wide one keeps meaning "this handset has derived before" for
+  // _geoTapeClaim.
+  try{const ver=_geoDeriveAppVer();if(ver){localStorage.setItem(_geoDeriveVerSeenKey(),ver);localStorage.setItem(_GEO_DERIVE_VER_KEY,ver);}}catch(_e){}
   try{_geoParkNote('rebuild',days+'d, '+n+' derived');}catch(_e){}
   return n;
 }

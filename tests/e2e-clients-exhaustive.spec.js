@@ -101,6 +101,7 @@ test.describe('clients.js: exhaustive coverage', () => {
       ensureEl('cf-ref', 'input');
       ensureEl('cf-notes', 'textarea');
       ensureEl('cf-ptype', 'select');
+      ensureEl('cf-personal', 'input');
       ensureEl('cf-source', 'select');
       ensureEl('cf-search', 'input');
       ensureEl('cf-search-wrap');
@@ -2602,6 +2603,61 @@ test.describe('clients.js: exhaustive coverage', () => {
       });
       expect(r.blankType).toBe('');   // saved, not blocked
       expect(r.partyType).toBe('gc'); // still persisted on the client record
+    });
+
+    // ── Marking a contact family (owner 2026-09-12) ──────────────────────
+    // "Add in ability to mark a contact as family member so time flags itself
+    // as need marked personal or work, thought we did that but don't see it on
+    // lead record." Rule 13 (js/geo-derive.js) has inferred this since
+    // 2026-09-04 and its own comment names the case it cannot close: a weekday
+    // afternoon at a family member's address, nothing scheduled, counts. The
+    // flag is him answering that in advance, so it has to survive a save, come
+    // back on an edit, and never leak onto the NEXT lead.
+    test('the family flag saves, reloads on edit, and does not carry to the next lead', async () => {
+      const r = await page.evaluate(() => {
+        const box = () => document.getElementById('cf-personal');
+        openNewClient();
+        window.editClientId = null;
+        document.getElementById('cf-name').value = 'Mom';
+        document.getElementById('cf-phone').value = '316-555-0141';
+        box().checked = true;
+        _submitting = false; _allowPhoneDupe = true; _allowNameDupe = true;
+        saveClient();
+        const mom = clients.find(c => c.name === 'Mom');
+        const saved = mom ? mom.personal : null;
+
+        // An ordinary lead saved right after must not inherit it.
+        openNewClient();
+        const freshBox = box().checked;
+        window.editClientId = null;
+        document.getElementById('cf-name').value = 'Ordinary Client';
+        document.getElementById('cf-phone').value = '316-555-0142';
+        _submitting = false; _allowPhoneDupe = true; _allowNameDupe = true;
+        saveClient();
+        const ord = clients.find(c => c.name === 'Ordinary Client');
+        const ordinary = ord ? ord.personal : null;
+
+        // Opening Mom again shows it ticked; opening the ordinary one does not.
+        // openEditClient reads currentClientId rather than taking an argument.
+        const open = (id) => { window.currentClientId = id; openEditClient(); return box().checked; };
+        const reopened = mom ? open(mom.id) : null;
+        const reopenedOrdinary = ord ? open(ord.id) : null;
+
+        // A client saved before the flag existed has no property at all, and
+        // must read as not-family rather than undefined-and-truthy anywhere.
+        const legacy = { id: 987654321, name: 'Legacy Client' };
+        clients.push(legacy);
+        const legacyBox = open(legacy.id);
+
+        [mom, ord, legacy].forEach((c) => { const i = clients.indexOf(c); if (i >= 0) clients.splice(i, 1); });
+        return { saved, ordinary, freshBox, reopened, reopenedOrdinary, legacyBox };
+      });
+      expect(r.saved, 'marked on the record').toBe(true);
+      expect(r.freshBox, 'a new lead starts unticked').toBe(false);
+      expect(r.ordinary, 'and saves as not-family').toBe(false);
+      expect(r.reopened, 'editing Mom shows it ticked').toBe(true);
+      expect(r.reopenedOrdinary).toBe(false);
+      expect(r.legacyBox, 'a client saved before the flag existed').toBe(false);
     });
 
     test('shows client-form-wrap', async () => {

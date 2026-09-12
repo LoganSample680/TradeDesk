@@ -309,12 +309,59 @@ async function loadAccountData(){
     const _hatPickCrew=await(async()=>{
       if(!(u&&u.account_id))return false;
       window._hatOwnsBusiness=true;
+      // AN OWNER CLAIMS THEIR OWN INVITES TOO (owner report 2026-09-10).
+      //
+      // Blake owns Sample Co, was invited onto TradeDesk as a manager, opened
+      // the link three minutes later, and got no switcher and no crew hat. His
+      // roster row still read employee_user_id null, active false.
+      //
+      // Root cause: the links query below only ever counted rows that were
+      // ALREADY linked, and the owner branch underneath this returns before
+      // the CREW LINKING block, so the claim that lives in that block never
+      // ran for a login that owns a business. A dual-hat user could be invited
+      // and stay unlinked forever, which is 9.10's entire case, and it landed
+      // on the first real one we had.
+      //
+      // Both claim paths, in the order the crew block already uses them: the
+      // forge-proof token while the invite link is still stashed, then the
+      // email match. The email match is what makes this RETROACTIVE and is the
+      // reason it is not gated on a stash: Blake has none left, and
+      // claim_crew_by_email reads his address off auth.users rather than from
+      // the client, so every invite sitting unclaimed against a login that
+      // owns a business links itself on that login's next boot with nothing
+      // for the contractor to re-send.
+      //
+      // Claiming is not switching. The hat still has to be chosen below, and
+      // an unchosen hat still lands them in their own business exactly as
+      // before. All this does is make the link exist so the switcher can offer
+      // it, which is why it is safe to run on every owner boot.
+      try{
+        const _tok=(()=>{try{return (JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null')||{}).tok||null;}catch(_e2){return null;}})();
+        if(_tok){
+          const{data:_ct}=await _supa.rpc('claim_crew_invite',{tok:_tok});
+          if(_ct&&_ct.ok){try{localStorage.removeItem('_pendingEmpInvite');}catch(_e2){}}
+        }
+        await _supa.rpc('claim_crew_by_email');
+      }catch(_e){}
+      // NAMED, not just counted. The plain select below can only ever return
+      // team_members.name, which is the CREW MEMBER's name and not the
+      // business's, so the switcher had nothing to print and said "Crew".
+      // accounts.business_name is unreachable to a crew member under RLS, so
+      // crew_hat_links (definer) is what carries it. Falls back to the plain
+      // select on a stack where the RPC is not deployed, the same
+      // hosted-compat pattern the claim paths above use.
       let _links=[];
       try{
-        const{data:_hr}=await _supa.from('team_members').select('contractor_user_id,name,role').eq('employee_user_id',_supaUser.id).eq('active',true);
-        _links=_hr||[];
-      }catch(_e){}
-      window._hatCrewLinks=_links.map(r=>({contractor_user_id:r.contractor_user_id,name:r.name,role:r.role}));
+        const{data:_hl,error:_hlErr}=await _supa.rpc('crew_hat_links');
+        if(!_hlErr&&Array.isArray(_hl))_links=_hl;
+        else throw new Error('fallback');
+      }catch(_e){
+        try{
+          const{data:_hr}=await _supa.from('team_members').select('contractor_user_id,name,role').eq('employee_user_id',_supaUser.id).eq('active',true);
+          _links=(_hr||[]).filter(r=>String(r.contractor_user_id)!==String(_supaUser.id));
+        }catch(_e2){}
+      }
+      window._hatCrewLinks=_links.map(r=>({contractor_user_id:r.contractor_user_id,name:r.name,role:r.role,business_name:r.business_name}));
       let _hat=null;try{_hat=localStorage.getItem('zp3_hat_'+_supaUser.id);}catch(_e){}
       if(!_hat||_hat.indexOf('crew:')!==0)return false;
       const _cid=_hat.slice(5);
@@ -634,7 +681,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.12.26.2';
+const APP_VERSION='09.12.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1370,7 +1417,7 @@ window._tdSoftDelete=_tdSoftDelete;
 // and old records auto-archive (kept forever). The ONE exception is the dev/owner
 // purging a rare duplicate via the hidden 3s long-press (below). is_dev comes from
 // the account config; dev-support mode counts too (only is_dev accounts can enter it).
-function _canDelete(){try{if(window._e2eAllowDelete)return true;return !!((typeof _config!=='undefined'&&_config&&_config.is_dev)||(typeof _devSupportMode!=='undefined'&&_devSupportMode));}catch(_e){return false;}}
+function _canDelete(){try{if(typeof opsReadOnly==='function'&&opsReadOnly())return false;if(window._e2eAllowDelete)return true;return !!((typeof _config!=='undefined'&&_config&&_config.is_dev)||(typeof _devSupportMode!=='undefined'&&_devSupportMode));}catch(_e){return false;}}
 window._canDelete=_canDelete;
 
 // A dev deletion HARD-removes the actual DB row (for dupe cleanup, "delete the
@@ -1548,6 +1595,10 @@ window.switchHat=async function(hat){
     // deleting it here could drop unsaved records the other hat still owns.
     localStorage.removeItem('zp3_cloud_cache');
     localStorage.removeItem('zp3_delta_meta');
+    // Close this hat's span of the phone's motion tape. The boot after the
+    // reload opens the incoming hat's own span, so the two never overlap and
+    // neither can derive minutes the other held.
+    try{if(typeof _geoTapeRelease==='function')_geoTapeRelease();}catch(_e){}
     // Teachable moment: the boot after the switch confirms it worked AND names
     // the surface ("tap the business name"), so the switcher teaches itself the
     // first time it's used (owner ask 2026-08-18: "how do we make it so they
@@ -2482,6 +2533,12 @@ async function supaInit(){
         if(session){_supaUser=session.user;_tdAppCookie(true);_saveSessionBackup(session);}
         return;
       } else if(event==='SIGNED_OUT'){
+        // Stop owning this phone's tape at the moment you leave it, not at
+        // the moment the next person signs in. Deliberately BEFORE _supaUser
+        // is cleared: _geoTapeRelease only closes the interval already open,
+        // and the log is what lets each account read back its own spans
+        // later (js/geo-track.js).
+        try{if(typeof _geoTapeRelease==='function')_geoTapeRelease();}catch(_e){}
         _supaUser=null;_user=null;_account=null;_config=null;
         // Only wipe local data when the user explicitly clicked sign out.
         // Supabase fires SIGNED_OUT on token refresh failures too (e.g. offline, network blip).
@@ -6698,6 +6755,7 @@ function supaSaveDebounced(){
 // (e.g. pull-to-refresh) can await it before reloading from cloud.
 let _pendingSavePromise=null;
 function _flushSaveNow(){
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
   _pendingSavePromise=supaSaveToCloud().finally(()=>{_pendingSavePromise=null;});
   return _pendingSavePromise;
@@ -6997,6 +7055,7 @@ function _paintCacheForDelta(uid){
   }catch(_e){return false;}
 }
 function _writeLocalCache(){
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   try{
     // _owner = the LOGIN this cache belongs to (identity comparisons at boot).
     // _dataOwner = the BUSINESS whose rows it holds: the contractor's uid for a
@@ -7022,6 +7081,9 @@ function _writeLocalCache(){
 }
 
 async function supaSaveToCloud(){
+  // Read-only support view (js/ops-view.js): the account in memory is not this
+  // login's, so a push here would write one account's rows into another's.
+  if(typeof opsReadOnly==='function'&&opsReadOnly()){_logSave('skip','ops read-only view');return;}
   if(_deliberateSignOut){_logSave('skip','deliberate sign-out in progress');return;}
   if(!_supa||!_supaUser){
     if(_mergeOnSignIn){
@@ -8463,6 +8525,11 @@ async function supaLoadFromCloud({silent=false}={}){
     // then any home-office visit that closed before the load-out rule existed
     // and both no-op without a tape, same as the mileage sweep above.
     try{if(typeof _geoTapeSync==='function')_geoTapeSync();}catch(_e){}
+    // And the plugin's own wake counters, once per session, as analytics rows.
+    // flushSent / flushOk / flushFail is the difference between "the upload
+    // failed" and "the upload was never sent", which is the one thing the raw
+    // event stream cannot tell us (js/geo-track.js _geoWakeStatsSync).
+    try{if(typeof _geoWakeStatsSync==='function')_geoWakeStatsSync();}catch(_e){}
     // And the seven-day re-derive from the same tape (owner 2026-08-29). It
     // runs for everyone automatically, after the home regrade so the two
     // never fight over the same row on the same boot, and it needs no iOS
@@ -8869,6 +8936,13 @@ async function supaLoadFromCloud({silent=false}={}){
       // common case (client book already geocoded from a prior day) resolve
       // near-instantly, so this only needs to trail the location-permission
       // request above, not pad extra wait time on top of it.
+      // The two copies of every client's coordinates, reconciled both ways
+      // before anything reads either. Synchronous and free: it touches no
+      // network. Down, so a phone that has located nothing still has every
+      // fence the account knows. Up, so a phone that located them years ago
+      // finally tells the account, which is the only way an existing book
+      // ever reaches the backend at all.
+      try{if(typeof _geoSyncClientCoords==='function')_geoSyncClientCoords();}catch(_e){}
       setTimeout(()=>checkNearbyJob(),1500);
       // Warms the nearby-job/geofence cache for every EXISTING client that
       // predates the eager-geocode hook in saveClient (js/clients.js), so the

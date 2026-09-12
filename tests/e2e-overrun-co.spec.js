@@ -204,10 +204,16 @@ test.describe('a job running long becomes a change order', () => {
   });
 
   test('a job with no bid at all is not over', async () => {
+    // Cleans up after itself. This used to leave job 86999 and its time entry
+    // in the arrays for every test that followed, and the Running long card
+    // scans ALL jobs, not just the one under test.
     const o = await page.evaluate(() => {
       jobs = jobs.filter(j => j.id !== 86999).concat([{ id: 86999, client_id: 86001, bid_id: null, name: 'Loose', start: '2026-06-05', days: 1 }]);
       timeEntries = (timeEntries || []).concat([{ id: 872000, job_id: 86999, date: '2026-06-05', minutes: 600, logged_by_uid: 'u1', open: false }]);
-      return _jobOverrun(86999);
+      const out = _jobOverrun(86999);
+      jobs = jobs.filter(j => j.id !== 86999);
+      timeEntries = (timeEntries || []).filter(e => e.job_id !== 86999);
+      return out;
     });
     expect(o.isOver).toBe(false);
     expect(o.estHrs).toBe(0);
@@ -379,10 +385,23 @@ test.describe('a job running long becomes a change order', () => {
         originalAmount: 2000, newAmount: 2240, overrun: { jobId: jid, addedHours: 4 }, signedAt: new Date().toISOString() }];
       openJobSheet(cid);
       const has = /Running long/.test(document.body.textContent || '');
+      // WHICH job kept the card up. This has failed twice in CI and passed
+      // every local run, in isolation and in file order, so the next failure
+      // has to carry its own cause rather than send anyone guessing. The card
+      // scans every job, so a stray one left by another test shows here.
+      const blame = has ? (typeof jobs !== 'undefined' ? jobs : []).filter(j => {
+        try {
+          const o = _jobOverrun(j.id); if (!o || !o.isOver) return false;
+          const jb = j.bid_id ? bids.find(x => x.id === j.bid_id) : null;
+          return !((jb && jb.changeOrders || []).some(co => co && co.overrun && co.overrun.jobId === j.id));
+        } catch (e) { return false; }
+      }).map(j => ({ id: j.id, name: j.name, start: j.start, bid: j.bid_id })) : [];
       document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
-      return has;
+      return { has, blame, jobCount: (typeof jobs !== 'undefined' ? jobs.length : -1) };
     }, { cid: OR_CLIENT, bid: OR_BID, jid: OR_JOB });
-    expect(after, 'nagging him after the conversation happened is how a useful card becomes noise').toBe(false);
+    expect(after.has,
+      'nagging him after the conversation happened is how a useful card becomes noise. Still over and uncovered: '
+      + JSON.stringify(after.blame) + ' (of ' + after.jobCount + ' jobs)').toBe(false);
   });
 
   test('every save path stamps the promise, not just the autosave', async () => {

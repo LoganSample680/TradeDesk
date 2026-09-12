@@ -1130,14 +1130,17 @@ function unaddressedTrips(list){
   return (list||[]).filter(m=>m&&m.addressUnknown);
 }
 // pendingReceipt rows are HELD supply runs awaiting the receipt card's answer;
-// personal rows were answered "not business". Both stay in the log (unbroken
-// odometer story) and out of every money total, and this filter is the single
-// choke point every total already flows through.
+// pendingPurpose rows are rule 15's: a drive with no business end, where
+// nothing about the day vouched for it (owner 2026-09-12, a crew member's
+// Friday at a family member's address with three claimed drives either side
+// of it); personal rows were answered "not business". All three stay in the
+// log (unbroken odometer story) and out of every money total, and this filter
+// is the single choke point every total already flows through.
 function deductibleTrips(list){
-  return addressedTrips(list).filter(m=>!m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.personal);
+  return addressedTrips(list).filter(m=>!m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.pendingPurpose&&!m.personal);
 }
 function reimbursableTrips(list){
-  return addressedTrips(list).filter(m=>m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.personal);
+  return addressedTrips(list).filter(m=>m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.pendingPurpose&&!m.personal);
 }
 // ── Receipt-gated supply runs (owner design 2026-08-17) ─────────────────────
 // The held legs of one store visit, grouped for the dashboard card.
@@ -2753,7 +2756,8 @@ function _milRenderTripList(shown,yr){
       const stateBadge=r.addressUnknown?'<div style="font-size:10px;font-weight:800;color:#B45309">Not on the books · no address</div>'
         :(r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
         :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'
-        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>':'')));
+        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>'
+        :(r.pendingPurpose?'<div style="font-size:10px;font-weight:700;color:var(--amber)">Work or personal? · not counted yet</div>':''))));
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+

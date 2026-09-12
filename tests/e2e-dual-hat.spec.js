@@ -60,7 +60,11 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
           }};
         return c;
       };
-      return {from:(t)=>chain(t),rpc:()=>Promise.resolve({data:null,error:null})};
+      window.__rpcCalls=[];
+      return {from:(t)=>chain(t),rpc:(n,a)=>{window.__rpcCalls.push(n);
+        if(window.__claimLinks&&n==='claim_crew_by_email'){teamRows.push(window.__claimLinks);window.__claimLinks=null;
+          return Promise.resolve({data:{ok:true},error:null});}
+        return Promise.resolve({data:null,error:null});}};
     })()`;
   }
 
@@ -90,6 +94,107 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     expect(r.owns, 'login is flagged as owning a business').toBe(true);
     expect(r.links, 'the crew link is surfaced for the switcher').toBe(1);
     expect(r.isEmployee, 'no stored hat means the owner hat wins, same as before the feature').toBe(false);
+  });
+
+  // ── An owner claims their own invites (owner report 2026-09-10) ────────────
+  // Blake owns Sample Co, was invited onto TradeDesk, opened the link three
+  // minutes later, and got nothing: his roster row stayed employee_user_id
+  // null / active false and no switcher ever appeared. The links query only
+  // counted rows that were ALREADY linked, and the owner branch returns before
+  // the crew-linking block, so the claim never ran for a login that owns a
+  // business. Every dual-hat user would have hit this.
+  test('an owner with an UNCLAIMED invite claims it on sign-in and gets the switcher', async () => {
+    const r = await page.evaluate(async ({ supaSrc }) => {
+      const saved = { supa: _supa, user: window._supaUser, isEmp: _isEmployee, cid: _contractorUserId, rec: _employeeRecord, u: _user, links: window._hatCrewLinks, owns: window._hatOwnsBusiness };
+      try {
+        localStorage.removeItem('zp3_hat_blake-1');
+        _supa = eval(supaSrc);
+        // What the claim links: the row exists on the roster but is unclaimed,
+        // which is exactly Blake's state, so team_members returns NOTHING until
+        // claim_crew_by_email has run.
+        window.__claimLinks = { contractor_user_id: 'td-1', name: 'Blake Sample', role: 'manager', active: true, id: 'tm-blake' };
+        window._supaUser = { id: 'blake-1', email: 'blakesample57@gmail.com' };
+        const ok = await loadAccountData();
+        return { ok, owns: window._hatOwnsBusiness, links: (window._hatCrewLinks || []).length,
+                 isEmployee: _isEmployee, rpcs: window.__rpcCalls };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _isEmployee = saved.isEmp;
+        _contractorUserId = saved.cid; _employeeRecord = saved.rec; _user = saved.u;
+        window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns;
+        window.__claimLinks = null;
+        localStorage.removeItem('zp3_hat_blake-1'); localStorage.removeItem('zp3_acct_blake-1');
+        applyPermissions();
+      }
+    }, { supaSrc: fakeSupaFor({ id: 'blake-1', account_id: 'acct-1' }, []) });
+    expect(r.rpcs, 'the email claim runs on the OWNER path, which is the whole fix')
+      .toContain('claim_crew_by_email');
+    expect(r.links, 'and the freshly claimed link is surfaced to the switcher').toBe(1);
+    expect(r.owns, 'he still owns his own business').toBe(true);
+    expect(r.isEmployee, 'claiming is not switching: no chosen hat still lands in his own business').toBe(false);
+  });
+
+  test('the stashed token is claimed first, and cleared so the crew block cannot re-handle it', async () => {
+    const r = await page.evaluate(async ({ supaSrc }) => {
+      const saved = { supa: _supa, user: window._supaUser, isEmp: _isEmployee, cid: _contractorUserId, rec: _employeeRecord, u: _user, links: window._hatCrewLinks, owns: window._hatOwnsBusiness };
+      try {
+        localStorage.setItem('_pendingEmpInvite', JSON.stringify({ cid: 'td-1', eid: 'e1', tok: 'tok-abc' }));
+        _supa = eval(supaSrc);
+        window._supaUser = { id: 'blake-2', email: 'blakesample57@gmail.com' };
+        await loadAccountData();
+        return { rpcs: window.__rpcCalls, stash: localStorage.getItem('_pendingEmpInvite') };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _isEmployee = saved.isEmp;
+        _contractorUserId = saved.cid; _employeeRecord = saved.rec; _user = saved.u;
+        window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns;
+        localStorage.removeItem('_pendingEmpInvite');
+        localStorage.removeItem('zp3_hat_blake-2'); localStorage.removeItem('zp3_acct_blake-2');
+        applyPermissions();
+      }
+    }, { supaSrc: fakeSupaFor({ id: 'blake-2', account_id: 'acct-1' }, []) });
+    expect(r.rpcs[0], 'the forge-proof token is tried before the email match').toBe('claim_crew_invite');
+    expect(r.rpcs, 'and the email match still runs, because the token may be spent').toContain('claim_crew_by_email');
+  });
+
+  test('an owner with nothing pending is unchanged: one quiet call, no link, no switcher', async () => {
+    const r = await page.evaluate(async ({ supaSrc }) => {
+      const saved = { supa: _supa, user: window._supaUser, isEmp: _isEmployee, cid: _contractorUserId, rec: _employeeRecord, u: _user, links: window._hatCrewLinks, owns: window._hatOwnsBusiness };
+      try {
+        _supa = eval(supaSrc);
+        window._supaUser = { id: 'solo-1', email: 'solo@test.com' };
+        const ok = await loadAccountData();
+        return { ok, links: (window._hatCrewLinks || []).length, isEmployee: _isEmployee, rpcs: window.__rpcCalls };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _isEmployee = saved.isEmp;
+        _contractorUserId = saved.cid; _employeeRecord = saved.rec; _user = saved.u;
+        window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns;
+        localStorage.removeItem('zp3_acct_solo-1');
+        applyPermissions();
+      }
+    }, { supaSrc: fakeSupaFor({ id: 'solo-1', account_id: 'acct-1' }, []) });
+    expect(r.ok).toBe(true);
+    expect(r.links, 'nothing to claim, nothing to offer').toBe(0);
+    expect(r.isEmployee, 'and a plain owner is still a plain owner').toBe(false);
+    expect(r.rpcs.filter(n => n === 'claim_crew_invite').length,
+      'no stash means the token path is not called at all').toBe(0);
+  });
+
+  test('a claim that throws never breaks the owner sign-in', async () => {
+    const ok = await page.evaluate(async ({ supaSrc }) => {
+      const saved = { supa: _supa, user: window._supaUser, isEmp: _isEmployee, cid: _contractorUserId, rec: _employeeRecord, u: _user, links: window._hatCrewLinks, owns: window._hatOwnsBusiness };
+      try {
+        _supa = eval(supaSrc);
+        _supa.rpc = () => { throw new Error('rpc not deployed'); };
+        window._supaUser = { id: 'solo-2', email: 'solo2@test.com' };
+        return await loadAccountData();
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _isEmployee = saved.isEmp;
+        _contractorUserId = saved.cid; _employeeRecord = saved.rec; _user = saved.u;
+        window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns;
+        localStorage.removeItem('zp3_acct_solo-2');
+        applyPermissions();
+      }
+    }, { supaSrc: fakeSupaFor({ id: 'solo-2', account_id: 'acct-1' }, []) });
+    expect(ok, 'an old stack with no RPC signs the owner in exactly as before').toBe(true);
   });
 
   test('a stored crew hat routes the SAME login through the standard crew-linking path', async () => {
@@ -304,7 +409,7 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     const r = await page.evaluate(() => {
       const saved = { links: window._hatCrewLinks, owns: window._hatOwnsBusiness, isEmp: _isEmployee };
       try {
-        window._hatCrewLinks = [{ contractor_user_id: 'boss-1', name: 'BIL', role: 'plumber' }];
+        window._hatCrewLinks = [{ contractor_user_id: 'boss-1', name: 'BIL', role: 'plumber', business_name: 'TradeDesk' }];
         window._hatOwnsBusiness = true;
         _isEmployee = false;
         _hatSwitcherMenu();
@@ -313,7 +418,13 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         const out = {
           open: !!ov,
           hasOwner: html.includes('Owner'),
-          hasCrew: html.includes('Crew'),
+          // OLD: the crew row printed the literal string 'Crew' and named no
+          // business, so two crews read "Crew" twice and neither could be told
+          // apart. NEW (owner 2026-09-10): the business on top, the real role
+          // underneath.
+          hasBusiness: html.includes('TradeDesk'),
+          hasRole: html.includes('Plumber'),
+          literalCrew: /&gt;Crew&lt;|>Crew</.test(html),
           currentMarked: html.includes('CURRENT'),
           routesToSwitchHat: html.includes("switchHat('boss-1')"),
         };
@@ -325,9 +436,54 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     });
     expect(r.open).toBe(true);
     expect(r.hasOwner).toBe(true);
-    expect(r.hasCrew).toBe(true);
+    expect(r.hasBusiness, 'the crew hat names the business it belongs to').toBe(true);
+    expect(r.hasRole, 'and says what he is to it, capitalised').toBe(true);
+    expect(r.literalCrew, 'never the bare word "Crew" standing in for a name').toBe(false);
     expect(r.currentMarked, 'the active hat reads as current, not tappable').toBe(true);
     expect(r.routesToSwitchHat).toBe(true);
+  });
+
+  test('an old link with no business name still reads as something, never blank', async () => {
+    const html = await page.evaluate(() => {
+      const saved = { links: window._hatCrewLinks, owns: window._hatOwnsBusiness, isEmp: _isEmployee };
+      try {
+        // A link built by the fallback select (RPC not deployed) carries the
+        // crew member's name and no business name at all.
+        window._hatCrewLinks = [{ contractor_user_id: 'boss-2', name: 'BIL', role: '' }];
+        window._hatOwnsBusiness = true; _isEmployee = false;
+        _hatSwitcherMenu();
+        const ov = document.getElementById('_hat-switch-ov');
+        const out = ov ? ov.innerHTML : '';
+        ov?.remove();
+        return out;
+      } finally { window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns; _isEmployee = saved.isEmp; }
+    });
+    expect(html.includes('BIL'), 'it falls back to whatever name it has').toBe(true);
+    expect(html.includes('Crew'), 'and an empty role still says what the hat is').toBe(true);
+  });
+
+  test('a self-link is never offered as a hat by the fallback select', async () => {
+    const n = await page.evaluate(async ({ supaSrc }) => {
+      const saved = { supa: _supa, user: window._supaUser, isEmp: _isEmployee, cid: _contractorUserId, rec: _employeeRecord, u: _user, links: window._hatCrewLinks, owns: window._hatOwnsBusiness };
+      try {
+        _supa = eval(supaSrc);
+        // No RPC on this stack, so the fallback select runs and returns a row
+        // the owner made on their OWN roster. Offering it would let them switch
+        // into their own business as crew and strip their own permissions.
+        _supa.rpc = () => Promise.resolve({ data: null, error: { message: 'not deployed' } });
+        window._supaUser = { id: 'self-1', email: 'self@test.com' };
+        await loadAccountData();
+        return (window._hatCrewLinks || []).length;
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _isEmployee = saved.isEmp;
+        _contractorUserId = saved.cid; _employeeRecord = saved.rec; _user = saved.u;
+        window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns;
+        localStorage.removeItem('zp3_acct_self-1');
+        applyPermissions();
+      }
+    }, { supaSrc: fakeSupaFor({ id: 'self-1', account_id: 'acct-1' },
+        [{ contractor_user_id: 'self-1', name: 'Me', role: 'owner', active: true, id: 'tm-self' }]) });
+    expect(n, 'your own business is the owner hat, never also a crew hat').toBe(0);
   });
 
   test('employee sign-out menu offers "Switch to my business" only for dual-hat logins', async () => {

@@ -2564,6 +2564,127 @@ extension TdGeoPluginTests {
         d.removeObject(forKey: plugin.bufferKeyForTest)
     }
 
+    // ── THE DATA REACHES THE SERVER, OR SOMETHING COMES BACK FOR IT ────────
+    //
+    // Owner 2026-09-11: "everything happening on the phone should flush to the
+    // server (supabase) when connected, then flush from local storage to
+    // supabase when connection resets."
+    //
+    // Measured that afternoon, on his own arrival at a client with the app
+    // force-quit: the fence enter fired on time at 13:23:48, the arrival and
+    // both motion flips were recorded, the flush went out, and every one of
+    // those rows sat on the handset until he opened the app FIFTY MINUTES
+    // later. The recording was never the problem. Nothing came back for the
+    // buffer, because the only thing that had ever triggered a flush was a
+    // new event, and he was standing still.
+
+    func testReconcileInflight_aStaleEntryFromAKilledProcessStopsBlockingTheBuffer() {
+        // THE DEADLOCK. flushInflight lives in UserDefaults so a delegate
+        // callback after a relaunch can still advance the watermark, and
+        // flushNow refuses a batch whose max ts is already in flight. Kill the
+        // process mid-upload and that entry never clears: the watermark did
+        // not advance, so the next flush builds the same batch with the same
+        // max ts and is refused, forever, until a new event shifts the end.
+        seedFlushConfig()
+        let d = UserDefaults.standard
+        let ghost = "999999"          // a task id no session ever issued
+        d.set([ghost: 1_700_000_000_000.0], forKey: plugin.flushInflightKeyForTest)
+
+        plugin.flushNowForTest()
+        let blocked = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(blocked.count, 1, "the stale entry refuses the resend, which is the bug")
+        XCTAssertNotNil(blocked[ghost])
+
+        let settled = expectation(description: "reconciled against the session's real tasks")
+        plugin.reconcileInflightForTest()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { settled.fulfill() }
+        wait(for: [settled], timeout: 20)
+
+        let after = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertNil(after[ghost], "the session does not know that task, so it was never going to complete")
+
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.removeObject(forKey: plugin.flushCfgKeyForTest)
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+    }
+
+    func testReconcileInflight_withNothingInFlightIsANoOpAndNeverThrows() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        plugin.reconcileInflightForTest()
+        XCTAssertNil(d.dictionary(forKey: plugin.flushInflightKeyForTest))
+        // And junk in the slot is not a crash either: a corrupt default must
+        // never take a launch down with it.
+        d.set("not a dictionary", forKey: plugin.flushInflightKeyForTest)
+        plugin.reconcileInflightForTest()
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+    }
+
+    func testFlushRetry_backsOffThroughItsStepsAndCaps() {
+        // A background wake is worth about thirty seconds, so the first two
+        // steps are the ones that can actually run inside one, and the rest
+        // only matter while the app is genuinely alive. What is asserted is
+        // that it advances and then stops advancing, never that a real timer
+        // fired: waiting on 120 seconds would put 120 seconds under the suite.
+        plugin.setFlushRetryStepForTest(0)
+        let steps = TdGeoPlugin.flushRetryStepsForTest
+        XCTAssertFalse(steps.isEmpty)
+        XCTAssertEqual(steps, steps.sorted(), "a backoff that does not back off is a hammer")
+        for expected in 1...(steps.count + 3) {
+            plugin.retryFlushSoonForTest()
+            XCTAssertEqual(plugin.flushRetryStepForTest, min(expected, steps.count - 1),
+                           "the step advances to the cap and then stays there")
+        }
+        plugin.setFlushRetryStepForTest(0)
+    }
+
+    func testFlushRetry_aSuccessfulUploadPutsTheBackoffBack() {
+        // Otherwise one bad patch of signal leaves every later failure waiting
+        // two minutes for the rest of the shift.
+        seedFlushConfig()
+        plugin.setFlushRetryStepForTest(3)
+        plugin.flushNowForTest()
+        let d = UserDefaults.standard
+        let inflight = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        guard let tid = inflight.keys.first, let task = makeCompletedTask(id: tid) else {
+            // No way to mint a task with a chosen identifier on this runtime:
+            // skip rather than assert something the test did not prove.
+            d.removeObject(forKey: plugin.flushInflightKeyForTest)
+            d.removeObject(forKey: plugin.flushCfgKeyForTest)
+            d.removeObject(forKey: plugin.bufferKeyForTest)
+            plugin.setFlushRetryStepForTest(0)
+            return
+        }
+        plugin.urlSession(plugin.flushSessionForTest, task: task,
+                          didCompleteWithError: NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
+        XCTAssertEqual(plugin.flushRetryStepForTest, 1, "a failure arms a retry and advances the backoff")
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.removeObject(forKey: plugin.flushCfgKeyForTest)
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        plugin.setFlushRetryStepForTest(0)
+    }
+
+    func testPathMonitor_startsOnceAndSurvivesRepeatedStarts() {
+        // load() calls this on every launch, including launches that have
+        // nothing to re-arm, so starting twice has to be free.
+        plugin.startPathMonitorForTest()
+        XCTAssertTrue(plugin.pathMonitorStartedForTest)
+        plugin.startPathMonitorForTest()
+        plugin.startPathMonitorForTest()
+        XCTAssertTrue(plugin.pathMonitorStartedForTest, "a second start must not replace a live monitor")
+    }
+
+    // A URLSessionTask whose identifier a test can choose does not exist in
+    // the public API; this returns one only where the runtime allows it, and
+    // nil otherwise so the caller can skip honestly instead of asserting
+    // against something it never built.
+    private func makeCompletedTask(id: String) -> URLSessionTask? {
+        guard let n = Int(id) else { return nil }
+        let t = plugin.flushSessionForTest.uploadTask(with: URLRequest(url: URL(string: "http://127.0.0.1:9/x")!),
+                                                      fromFile: URL(fileURLWithPath: "/dev/null"))
+        return t.taskIdentifier == n ? t : nil
+    }
+
     func testBackgroundSessionEvents_returnTheSystemsCompletionHandlerOnce() {
         let called = expectation(description: "completion returned to the system")
         called.expectedFulfillmentCount = 1

@@ -214,9 +214,86 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r.toasts).toEqual([]);
   });
 
+  // ── THE SAME CLIENT TWICE IN A DAY ─────────────────────────────────────
+  //
+  // Owner 2026-09-11, standing at a client he had already worked at that
+  // morning: "app says 3 hours 51 minutes but the lock says 9". He was there
+  // 8:02 to 12:30 and again from 1:25. The deriver had it right and the in-app
+  // card read from the second arrival; the lock screen was still counting from
+  // the first, five hours out, and was never going to correct itself.
+  //
+  // Both visits produce the same kind, the same title and the same detail (the
+  // client's address), so the second arrival hashed to the signature the first
+  // one left behind and the update was dropped as a no-op. `timer?'T'` threw
+  // away the one field that had changed.
+  test('a second visit to the same client re-anchors the timer instead of deduping away', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const doe = (sinceTs) => ({ id: 'd-doe-' + sinceTs, name: 'John Doe', kind: 'client',
+        sinceTs, atHome: false, fence: { addr: '2950 SW McClure Rd' } });
+      const morning = Date.parse('2026-09-11T13:02:00.000Z');
+      const afternoon = Date.parse('2026-09-11T18:25:00.000Z');
+      _liveActOnSite(doe(morning)); await new Promise((r) => setTimeout(r, 60));
+      const first = window.__td.calls.slice();
+      window.__td.calls.length = 0;
+      // Left, came back. Same client, same address, different arrival.
+      _liveActOnSite(doe(afternoon)); await new Promise((r) => setTimeout(r, 60));
+      const second = window.__td.calls.slice();
+      window.__td.calls.length = 0;
+      // And asserting the SAME arrival again still costs nothing, which is the
+      // whole reason the tick is left out of the signature.
+      _liveActOnSite(doe(afternoon)); await new Promise((r) => setTimeout(r, 60));
+      const third = window.__td.calls.slice();
+      return {
+        firstStarted: first.filter((c) => c.name === 'start').length,
+        firstAnchor: (first.find((c) => c.name === 'start') || {}).args,
+        secondSpent: second.filter((c) => c.name === 'start' || c.name === 'update').length,
+        secondAnchor: (second.find((c) => c.name === 'start' || c.name === 'update') || {}).args,
+        thirdSpent: third.filter((c) => c.name === 'start' || c.name === 'update').length,
+        morning: Math.floor(morning / 1000), afternoon: Math.floor(afternoon / 1000),
+      };
+    });
+    expect(r.firstStarted).toBe(1);
+    expect(r.firstAnchor.startedAt).toBe(r.morning);
+    // THE BUG: this was 0, and the lock screen kept the morning's anchor.
+    expect(r.secondSpent, 'the second arrival must reach the card').toBe(1);
+    expect(r.secondAnchor.startedAt).toBe(r.afternoon);
+    expect(r.thirdSpent, 'an unchanged anchor still spends nothing').toBe(0);
+  });
+
+  test('the signature is built in exactly one place, and the tick is still not in it', async () => {
+    // It used to be built twice, byte for byte, with nothing keeping the two
+    // copies together: the shape of a bug that shows up months later when one
+    // of them is edited. And the economy it exists for still has to hold, or
+    // every geo ping spends an ActivityKit update.
+    const r = await page.evaluate(() => {
+      const base = { kind: 'ON SITE', title: 'John Doe', detail: '2950 SW McClure Rd',
+        timer: true, startedAt: 1000, siteStartedAt: 1000, tint: '#F2A93B' };
+      const sig = (o) => _liveActSig(Object.assign({}, base, o));
+      return {
+        same: sig({}) === sig({}),
+        // A tick is not a change: value moves, the card redraws itself.
+        tick: sig({ value: '12.4 mi' }) === sig({ value: '31.9 mi' }),
+        anchor: sig({ startedAt: 1000 }) !== sig({ startedAt: 2000 }),
+        // The second clock only counts when the card is drawing two.
+        siteIgnored: sig({ siteStartedAt: 5 }) === sig({ siteStartedAt: 9 }),
+        siteCounts: sig({ dualTimer: true, siteStartedAt: 5 }) !== sig({ dualTimer: true, siteStartedAt: 9 }),
+        // A card with no timer is unchanged by any of this.
+        noTimer: sig({ timer: false, value: 'a', startedAt: 1 }) === sig({ timer: false, value: 'a', startedAt: 2 }),
+        noTimerValue: sig({ timer: false, value: 'a' }) !== sig({ timer: false, value: 'b' }),
+        label: sig({ title: 'John Doe' }) !== sig({ title: 'Aldi GUYS' }),
+        junk: typeof _liveActSig(null) === 'string' && typeof _liveActSig(undefined) === 'string',
+      };
+    });
+    expect(r).toEqual({
+      same: true, tick: true, anchor: true, siteIgnored: true, siteCounts: true,
+      noTimer: true, noTimerValue: true, label: true, junk: true,
+    });
+  });
+
   // Owner 2026-09-03, home for the evening with the card still up: "I need it
   // to go away or be very small, right now it's wasted space running when I'm
-  // home and done working."
+  // home and done working.""
   test('no on-site card at the house, and an existing one ends on arrival there', async () => {
     const r = await page.evaluate(async () => {
       await _liveActEndAll(); window.__td.calls.length = 0;

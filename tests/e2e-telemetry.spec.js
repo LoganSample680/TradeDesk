@@ -59,19 +59,32 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
   const fs = require('fs');
   const path = require('path');
 
+  // The listener capture and the clock are ADDITIVE: every field this returned
+  // before it returned still means the same thing, so the error-policy tests
+  // below are untouched by the interaction tests above them.
   function loadSandbox() {
     const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
     const invocations = [];
+    const listeners = { window: {}, document: {} };
     const thenable = { then() { return thenable; } };
     const consoleObj = { error() {}, log() {}, warn() {} };
-    const windowObj = { addEventListener() {}, open() {} };
-    const documentObj = { addEventListener() {}, querySelector: () => null, body: {}, visibilityState: 'visible' };
+    const windowObj = { addEventListener(t, f) { (listeners.window[t] ||= []).push(f); }, open() {} };
+    const documentObj = {
+      addEventListener(t, f) { (listeners.document[t] ||= []).push(f); },
+      querySelector: () => null, body: {}, visibilityState: 'visible',
+    };
     const locationObj = { hostname: 'tradedeskpro.app', href: 'https://tradedeskpro.app/' };
     const supa = { functions: { invoke: (name, opts) => { invocations.push({ name, body: opts && opts.body }); return thenable; } } };
+    // A controllable clock. Dwell is arithmetic on Date.now(), so a test that
+    // let the wall clock decide would assert on whatever the runner took to
+    // get there (CLAUDE.md 5.2.2: never let the clock decide an outcome).
+    let nowMs = 1_700_000_000_000;
+    const DateStub = function () { return new Date(nowMs); };
+    DateStub.now = () => nowMs;
     const run = new Function(
       'window', 'location', 'document', 'console', 'performance',
       'setInterval', 'setTimeout', 'MutationObserver', 'XMLHttpRequest',
-      '_supa', '_supaUser',
+      '_supa', '_supaUser', 'Date',
       src
     );
     run(
@@ -80,9 +93,21 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
       () => 0, () => 0,
       function () { return { observe() {}, disconnect() {} }; },
       function XMLHttpRequestStub() {},
-      supa, { id: 'obs-test-user' }
+      supa, { id: 'obs-test-user' }, DateStub
     );
-    return { consoleObj, invocations, windowObj };
+    const fire = (target, type, ev) => (listeners[target][type] || []).forEach((f) => f(ev));
+    return {
+      consoleObj, invocations, windowObj, documentObj, listeners, fire,
+      advance: (ms) => { nowMs += ms; },
+      // A click on a control shaped the way the app's controls are shaped.
+      click: (el) => fire('document', 'click', { target: { closest: () => el } }),
+      lastEvents: () => {
+        for (let i = invocations.length - 1; i >= 0; i--) {
+          if (invocations[i].body && invocations[i].body.events) return invocations[i].body.events;
+        }
+        return null;
+      },
+    };
   }
 
   test('sandbox installs the hooks (console wrapper + _obs) under a production hostname', () => {
@@ -198,5 +223,417 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
     consoleObj.error('Failed to construct ResizeObserver: callback is not a function');
     expect(invocations.length).toBe(1);
     expect(invocations[0].body.errors[0].message).toContain('Failed to construct ResizeObserver');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  EVERY BUTTON, AND HOW LONG THEY SAT THERE (owner 2026-09-11)
+//
+//  "every button needs tracked and needs telemetry we can see, I need clicks,
+//   I need to know how long they were on that page"
+//
+//  Before this, a click recorded only the page. `pg-tracker: 757 clicks` was
+//  the whole story and nothing said whether those were the Income tab or the
+//  Hiring tab. Two things are under test and one of them is a privacy rule:
+//
+//   1. The control is identified by ID or by the FUNCTION its onclick calls,
+//      arguments stripped. Never by its text. On a client row that text is a
+//      customer's name, and analytics_events is the table the anonymized
+//      contractor hash exists to protect. A name landing in it would defeat
+//      the hash sitting in the next column.
+//   2. Dwell is real elapsed time on a screen, paused while the app is in the
+//      background, so a phone in a pocket overnight cannot report a 9-hour
+//      visit.
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('control-level click + dwell telemetry', () => {
+  const fs = require('fs');
+  const path = require('path');
+
+  function loadSandbox() {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
+    const invocations = [];
+    const listeners = { window: {}, document: {} };
+    const thenable = { then() { return thenable; } };
+    const consoleObj = { error() {}, log() {}, warn() {} };
+    const windowObj = { addEventListener(t, f) { (listeners.window[t] ||= []).push(f); }, open() {} };
+    // _page() reads the active .pg, which is how a click learns which screen it
+    // happened on. A stub that always answers null would make every ctx in
+    // here null and quietly prove nothing about the real thing.
+    let curPage = null;
+    const documentObj = {
+      addEventListener(t, f) { (listeners.document[t] ||= []).push(f); },
+      querySelector: (sel) => (sel === '.pg.active' && curPage ? { id: curPage } : null),
+      body: {}, visibilityState: 'visible',
+    };
+    const locationObj = { hostname: 'tradedeskpro.app', href: 'https://tradedeskpro.app/' };
+    const supa = { functions: { invoke: (name, opts) => { invocations.push({ name, body: opts && opts.body }); return thenable; } } };
+    let nowMs = 1_700_000_000_000;
+    const DateStub = function () { return new Date(nowMs); };
+    DateStub.now = () => nowMs;
+    const run = new Function(
+      'window', 'location', 'document', 'console', 'performance',
+      'setInterval', 'setTimeout', 'MutationObserver', 'XMLHttpRequest',
+      '_supa', '_supaUser', 'Date',
+      src
+    );
+    run(
+      windowObj, locationObj, documentObj, consoleObj,
+      { now: () => 1234 }, () => 0, () => 0,
+      function () { return { observe() {}, disconnect() {} }; },
+      function XMLHttpRequestStub() {},
+      supa, { id: 'obs-test-user' }, DateStub
+    );
+    const fire = (target, type, ev) => (listeners[target][type] || []).forEach((f) => f(ev));
+    return {
+      windowObj, documentObj, invocations, fire,
+      advance: (ms) => { nowMs += ms; },
+      // Navigate the way the app does: js/navigation.js sets the active page
+      // and fires the page event, so the sandbox does both too.
+      page: (id) => { curPage = id; windowObj._obs.track('page', id); },
+      click: (el) => fire('document', 'click', { target: { closest: () => el } }),
+      hide: () => { documentObj.visibilityState = 'hidden'; fire('document', 'visibilitychange'); },
+      show: () => { documentObj.visibilityState = 'visible'; fire('document', 'visibilitychange'); },
+      events: () => {
+        for (let i = invocations.length - 1; i >= 0; i--) {
+          if (invocations[i].body && invocations[i].body.events) return invocations[i].body.events;
+        }
+        return [];
+      },
+    };
+  }
+
+  const btn = (attrs) => ({
+    id: attrs.id || '',
+    className: attrs.className || '',
+    tagName: attrs.tagName || 'BUTTON',
+    textContent: attrs.text || '',
+    getAttribute: (k) => (k === 'onclick' ? (attrs.onclick || null) : null),
+  });
+
+  // ── Identity ──────────────────────────────────────────────────────────────
+
+  test('a control with an id is recorded by its id, and the page is unchanged', () => {
+    const s = loadSandbox();
+    s.page('pg-tracker');
+    s.click(btn({ id: 'tr-t-mileage', text: 'Mileage' }));
+    s.windowObj._obs.flush();
+    const click = s.events().find((e) => e.event === 'click');
+    expect(click, 'the click was recorded at all').toBeTruthy();
+    expect(click.ctl, 'the control inside the page').toBe('#tr-t-mileage');
+    expect(click.ctx, 'ctx is still the page, so usage_by_screen is untouched').toBe('pg-tracker');
+  });
+
+  test('a control with no id is recorded by the function it calls', () => {
+    const s = loadSandbox();
+    s.page('pg-clients');
+    s.click(btn({ onclick: 'saveClient()', text: 'Save' }));
+    s.windowObj._obs.flush();
+    expect(s.events().find((e) => e.event === 'click').ctl).toBe('saveClient');
+  });
+
+  test('the arguments are stripped, which is where the customer ids live', () => {
+    const s = loadSandbox();
+    s.page('pg-client-detail');
+    s.click(btn({ onclick: "openClientProposals(currentClientId, 'acct-9931')", text: 'Proposals' }));
+    s.windowObj._obs.flush();
+    const ctl = s.events().find((e) => e.event === 'click').ctl;
+    expect(ctl).toBe('openClientProposals');
+    expect(ctl).not.toContain('acct-9931');
+    expect(ctl).not.toContain('(');
+  });
+
+  // THE PRIVACY RULE. This is the test that has to hold: a button's visible
+  // label is frequently a person's name, and none of it may reach the table.
+  test("a customer's name is on the button and reaches nothing in the payload", () => {
+    const s = loadSandbox();
+    s.page('pg-clients');
+    s.click(btn({ onclick: 'openClient(4471)', text: 'Marcy Ruiz, 118 Oak St' }));
+    s.windowObj._obs.flush();
+    const wire = JSON.stringify(s.invocations[s.invocations.length - 1].body);
+    expect(wire).not.toContain('Marcy');
+    expect(wire).not.toContain('Ruiz');
+    expect(wire).not.toContain('Oak St');
+    expect(wire).not.toContain('4471');
+    expect(wire, 'the control itself is still named').toContain('openClient');
+  });
+
+  test('a control with neither id nor onclick falls back to tag and class, never text', () => {
+    const s = loadSandbox();
+    s.page('pg-dash');
+    s.click(btn({ className: 'qa qa-p', text: 'Blake Sample' }));
+    s.windowObj._obs.flush();
+    const ctl = s.events().find((e) => e.event === 'click').ctl;
+    expect(ctl).toBe('button.qa');
+    expect(ctl).not.toContain('Blake');
+  });
+
+  test('a click on nothing clickable is still counted for the page, with no control', () => {
+    const s = loadSandbox();
+    s.page('pg-dash');
+    s.click(null);
+    s.windowObj._obs.flush();
+    const click = s.events().find((e) => e.event === 'click');
+    expect(click, 'the page-level count is preserved, that is the old number').toBeTruthy();
+    expect(click.ctl).toBe(null);
+  });
+
+  test('a malformed control does not throw and does not lose the click', () => {
+    const s = loadSandbox();
+    s.page('pg-dash');
+    // No getAttribute, no tagName: nothing the identity ladder expects.
+    expect(() => s.click({})).not.toThrow();
+    s.windowObj._obs.flush();
+    expect(s.events().some((e) => e.event === 'click')).toBe(true);
+  });
+
+  test('ten taps on one control are ONE event carrying the count, not ten rows', () => {
+    const s = loadSandbox();
+    s.page('pg-tracker');
+    for (let i = 0; i < 10; i++) s.click(btn({ id: 'tr-t-income' }));
+    s.windowObj._obs.flush();
+    const clicks = s.events().filter((e) => e.event === 'click');
+    expect(clicks.length, 'the server aggregates on event|ctx|ctl').toBe(10);
+    expect(clicks.every((c) => c.ctl === '#tr-t-income')).toBe(true);
+  });
+
+  // ── Dwell ─────────────────────────────────────────────────────────────────
+
+  test('leaving a page reports how long they were on it', () => {
+    const s = loadSandbox();
+    s.page('pg-tracker');
+    s.advance(47_000);
+    s.page('pg-dash');
+    s.windowObj._obs.flush();
+    const dwell = s.events().find((e) => e.event === 'dwell');
+    expect(dwell.ctx).toBe('pg-tracker');
+    expect(dwell.value).toBe(47);
+  });
+
+  test('the page event still fires alongside the dwell, so page views do not move', () => {
+    const s = loadSandbox();
+    s.page('pg-leads');
+    s.advance(5_000);
+    s.page('pg-jobs');
+    s.windowObj._obs.flush();
+    const pages = s.events().filter((e) => e.event === 'page').map((e) => e.ctx);
+    expect(pages).toEqual(['pg-leads', 'pg-jobs']);
+  });
+
+  test('a phone in a pocket does not report a nine-hour visit', () => {
+    const s = loadSandbox();
+    s.page('pg-timelog');
+    s.advance(20_000);
+    s.hide();
+    s.advance(9 * 3600 * 1000);   // overnight, app backgrounded
+    s.show();
+    s.advance(10_000);
+    s.page('pg-dash');
+    s.windowObj._obs.flush();
+    const dwell = s.events().find((e) => e.event === 'dwell');
+    expect(dwell.value, 'only the seconds the app was actually in front of them').toBe(30);
+  });
+
+  test('coming back to the same screen continues the visit, it is not a second one', () => {
+    const s = loadSandbox();
+    s.page('pg-est-generic');
+    s.advance(30_000);
+    s.hide(); s.advance(60_000); s.show();
+    s.advance(30_000);
+    s.page('pg-dash');
+    s.windowObj._obs.flush();
+    const dwells = s.events().filter((e) => e.event === 'dwell');
+    expect(dwells.length, 'one visit, not two').toBe(1);
+    expect(dwells[0].value).toBe(60);
+  });
+
+  test('closing the app closes the open visit', () => {
+    const s = loadSandbox();
+    s.page('pg-money');
+    s.advance(12_000);
+    s.fire('window', 'beforeunload');
+    const dwell = s.events().find((e) => e.event === 'dwell');
+    expect(dwell.ctx).toBe('pg-money');
+    expect(dwell.value).toBe(12);
+  });
+
+  test('a glance too short to measure reports nothing', () => {
+    const s = loadSandbox();
+    s.page('pg-gallery');
+    s.advance(400);                       // under a second
+    s.page('pg-dash');
+    s.windowObj._obs.flush();
+    expect(s.events().some((e) => e.event === 'dwell')).toBe(false);
+  });
+
+  test('the same page twice in a row closes the first visit rather than merging them', () => {
+    const s = loadSandbox();
+    s.page('pg-dash');
+    s.advance(10_000);
+    s.page('pg-dash');
+    s.advance(10_000);
+    s.fire('window', 'beforeunload');
+    const dwells = s.events().filter((e) => e.event === 'dwell');
+    expect(dwells.length).toBe(2);
+    expect(dwells.every((d) => d.value === 10)).toBe(true);
+  });
+
+  test('closing twice does not report the visit twice', () => {
+    const s = loadSandbox();
+    s.page('pg-taxes');
+    s.advance(8_000);
+    s.fire('window', 'beforeunload');
+    s.advance(8_000);
+    s.fire('window', 'beforeunload');
+    expect(s.events().filter((e) => e.event === 'dwell').length).toBe(1);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  THE PIPE FROM THE BUTTON TO THE ROLLUP
+//
+//  The client can name a control perfectly and it still reaches nothing if the
+//  edge function drops the field or the rollup counts CI as a customer. These
+//  assert the contract across the three files that have to agree, the same way
+//  e2e-geo-ingest-contract guards the geo pipe.
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('control telemetry: client → ingest → rollup contract', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+  const MIG = 'supabase/migrations/20260926_analytics_control_usage.sql';
+
+  test('ingest-telemetry carries ctl through, and aggregates on it', () => {
+    const src = read('supabase/functions/ingest-telemetry/index.ts');
+    expect(src, 'the field is read off the event').toMatch(/ctl\s*=\s*ev\?\.ctl/);
+    expect(src, 'and it is part of the aggregation key, or nine taps become nine rows')
+      .toMatch(/const k = event \+ "\|" \+ \(ctx \|\| ""\) \+ "\|" \+ \(ctl \|\| ""\)/);
+    // Both write paths have to carry it: the aggregated one and the one that
+    // bypasses aggregation because the event came with its own number (dwell).
+    const writes = src.match(/\{ \.\.\.stamp, event[^}]*\}/g) || [];
+    expect(writes.length, 'two insert shapes exist').toBeGreaterThanOrEqual(2);
+    expect(writes.every((w) => /\bctl\b/.test(w)), 'every one of them carries ctl').toBe(true);
+  });
+
+  test('ctl is additive: the column is nullable and usage_by_screen is not touched', () => {
+    const mig = read(MIG);
+    expect(mig).toMatch(/alter table analytics_events add column if not exists ctl text;/);
+    expect(mig, 'no NOT NULL, which would reject ten weeks of existing rows').not.toMatch(/ctl text not null/i);
+    expect(mig, 'the existing screen rollup is left alone').not.toMatch(/create or replace function usage_by_screen/i);
+  });
+
+  test('all three levels exist, and all three refuse a non-admin', () => {
+    const mig = read(MIG);
+    for (const fn of ['control_usage_summary', 'control_usage_by_trade', 'control_usage_by_contractor']) {
+      expect(mig, fn + ' is defined').toMatch(new RegExp('create or replace function ' + fn));
+      expect(mig, fn + ' is revoked from anon').toMatch(new RegExp('revoke all on function ' + fn + '\\(date, date\\)\\s+from anon'));
+    }
+    const gates = mig.match(/if not is_ops_admin\(\) then raise exception/g) || [];
+    expect(gates.length, 'one gate per function, none of them skipped').toBe(3);
+  });
+
+  test('the flow suite is not a customer: the spine drops source=test', () => {
+    const mig = read(MIG);
+    expect(mig).toMatch(/create or replace view v_control_event/);
+    expect(mig).toMatch(/coalesce\(e\.source, 'app'\) <> 'test'/);
+    expect(mig, 'and internal accounts are out too').toMatch(/analytics_internal_accounts/);
+  });
+
+  test('a trade is the average of its businesses, not one loud shop', () => {
+    const mig = read(MIG);
+    expect(mig).toMatch(/clicks_per_business/);
+    expect(mig).toMatch(/dwell_min_per_business/);
+  });
+
+  test('every screen the app can show has a name, and none of them is the code name', () => {
+    const mig = read(MIG);
+    const named = new Set([...mig.matchAll(/\('(pg-[a-z0-9-]+)',\s*'([^']+)'/g)].map((m) => m[1]));
+    const html = read('index.html');
+    const shown = [...html.matchAll(/<div class="pg"[^>]*id="(pg-[a-z0-9-]+)"/g)].map((m) => m[1]);
+    const missing = shown.filter((id) => !named.has(id));
+    expect(missing, 'a page with no label renders as its code name on the chart').toEqual([]);
+    // pg-tracker is the one that started this: it says Books on screen.
+    expect(mig).toMatch(/\('pg-tracker',\s*'Books'/);
+  });
+
+  test('the name table is not readable by the app, same as every other ops object', () => {
+    const mig = read(MIG);
+    expect(mig).toMatch(/revoke all on analytics_screen_names from anon, authenticated;/);
+    expect(mig).toMatch(/revoke all on v_control_event from anon, authenticated;/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  AN UNUSED ACCOUNT IS NOT A CREW MEMBER WHO WENT DARK (owner 2026-09-11)
+//
+//  On a row reading "dark, 20 pings missed": "That's because she's not signed
+//  in anywhere." The ladder had no state for that, so every unused account
+//  fell into `dark` while the 30-minute nudge kept firing at a stale push
+//  token and pings_missed climbed forever. One confusing row at four people;
+//  most of the alert list at forty.
+//
+//  Auth cannot answer it, which is why the signal is activity: the account
+//  above had 3 auth.sessions rows and 3 unrevoked refresh tokens while being
+//  signed in nowhere.
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('app_presence: the dormant state', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const MIG = 'supabase/migrations/20260928_app_presence_dormant.sql';
+  const sql = fs.readFileSync(path.join(__dirname, '..', MIG), 'utf8');
+
+  test('the function is dropped first, because the row type gains columns', () => {
+    // create or replace cannot change a return type. 20260922 learned this the
+    // hard way with a failed deploy; this asserts the lesson stuck.
+    const drop = sql.indexOf('drop function if exists app_presence()');
+    const create = sql.indexOf('create or replace function app_presence()');
+    expect(drop, 'the drop exists').toBeGreaterThan(-1);
+    expect(drop, 'and comes before the create').toBeLessThan(create);
+  });
+
+  test('dormant outranks every silence-based state, and never foreground', () => {
+    const order = ['foreground', 'dormant', 'no-push-token', 'unknown-cron-down',
+                   'background', 'push-blocked', 'back-online', 'force-closed'];
+    const at = order.map((s) => sql.indexOf("'" + s + "'"));
+    at.forEach((pos, i) => expect(pos, order[i] + ' is in the ladder').toBeGreaterThan(-1));
+    for (let i = 1; i < at.length; i++) {
+      expect(at[i], order[i] + ' comes after ' + order[i-1]).toBeGreaterThan(at[i-1]);
+    }
+  });
+
+  test('liveness is activity, never a push the device answered', () => {
+    const m = sql.match(/greatest\(r\.last_open_at, r\.last_write_at, dev\.checked_at\) as alive_at/);
+    expect(m, 'the three signs of life, whichever came last').toBeTruthy();
+    // last_ping_at answering IS the thing in question, so it cannot be evidence.
+    const alive = sql.slice(sql.indexOf('as alive_at') - 200, sql.indexOf('as alive_at'));
+    expect(alive).not.toContain('last_ping_at');
+  });
+
+  test('the threshold is one named constant, not a number buried in the ladder', () => {
+    expect(sql).toMatch(/c_dormant_days constant numeric := 7/);
+    const uses = (sql.match(/c_dormant_days/g) || []).length;
+    expect(uses, 'declared once, then used in the state and the detail').toBeGreaterThanOrEqual(3);
+    expect(sql, 'no hand-written 7-day interval that could drift from it')
+      .not.toMatch(/interval '7 days'/);
+  });
+
+  test('pings_missed stays truthful, the new column is what a reader judges on', () => {
+    // Zeroing it would hide that the push lane is still firing at a device
+    // that will never reply, which is itself worth seeing.
+    expect(sql, 'missed is still the raw clamp, not special-cased for dormant')
+      .toMatch(/greatest\(floor\(extract\(epoch from[\s\S]{0,120}\/ 1800\)::int, 0\) as missed/);
+    expect(sql).toMatch(/last_alive_at timestamptz, dormant_days numeric/);
+  });
+
+  test('a dormant row explains itself, including the stale-token case', () => {
+    expect(sql).toMatch(/never opened the app, written anything, or reported a device/);
+    expect(sql).toMatch(/pings_missed will keep climbing and means nothing/);
+  });
+
+  test('it is still admin-only and still revoked from anon', () => {
+    expect(sql).toMatch(/if not is_ops_admin\(\) then/);
+    expect(sql).toMatch(/revoke all on function app_presence\(\) from anon, authenticated;/);
   });
 });

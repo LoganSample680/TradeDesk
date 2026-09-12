@@ -56,6 +56,13 @@ test.describe('geo-derive wiring', () => {
     await page.evaluate(() => {
       window.__realDrain = _geoDrainQueue;
       window.__realRoute = _routeDistance;   // the specs above stub it; the router test needs the real one
+      // AND THE REAL TAPE READER. 'a no-drive day with app activity at home'
+      // replaces _geoDeriveTape with a stub returning [] and never puts it
+      // back, so every tape test after it in this file was reading the stub:
+      // they assert "nothing came back" and an empty array satisfies that
+      // whatever the code does. Captured here, before any test runs, and
+      // restored by withTape() so those assertions test the function again.
+      window.__realDeriveTape = _geoDeriveTape;
       window.supaLoadFromCloud = async () => {};
       window._supaUser = window._supaUser || { id: '30a2b589-e081-4351-9f18-b1efba238c2d', email: 'o@t.com' };
       localStorage.removeItem('zp3_geo_queue');
@@ -330,6 +337,200 @@ test.describe('geo-derive wiring', () => {
       expect(r.off).toEqual([['Mom', false], ['Cust', false]]);
     });
 
+    // ── The coordinates live on the record now (owner 2026-09-11) ─────────
+    //
+    // "so we would need coordinates based on the address entered saved on the
+    // back end?" Yes. They were computed on the device and kept in
+    // localStorage only: on the day this shipped, all eleven client records
+    // held zero coordinates while ten had addresses, so a deriver running
+    // anywhere but that one phone could not name a single client visit.
+    test('a client fence resolves from the record on a phone that has never geocoded', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          localStorage.removeItem('zp3_nearby_geo');          // brand-new device
+          window.clients = [{ id: 611, name: 'Laurie', addr: '9 Elm St', lat: 39.011, lon: -95.78, geoAddr: '9 Elm St' }];
+          window.jobs = [];
+          const f = _geoDeriveFences('2026-09-01').filter(x => x.kind === 'client');
+          return { n: f.length, name: f[0] && f[0].name, lat: f[0] && f[0].lat, lng: f[0] && f[0].lng };
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); }
+      });
+      expect(r.n, 'the fence exists with no device cache at all').toBe(1);
+      expect(r.name).toBe('Laurie');
+      expect(r.lat).toBeCloseTo(39.011, 5);
+      expect(r.lng).toBeCloseTo(-95.78, 5);
+    });
+
+    // A client who moves must not keep a fence on the old house. The cache has
+    // always guarded this with entry.addr === c.addr; the record carries the
+    // same guard or it becomes the one copy nobody validates.
+    test('a record whose address has changed since is refused, not trusted', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          localStorage.removeItem('zp3_nearby_geo');
+          window.clients = [{ id: 612, name: 'Moved', addr: '77 New Rd', lat: 39.011, lon: -95.78, geoAddr: '9 Old St' }];
+          window.jobs = [];
+          return _geoDeriveFences('2026-09-01').filter(x => x.kind === 'client').length;
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); }
+      });
+      expect(r, 'stale coordinates are no fence at all').toBe(0);
+    });
+
+    test('the record wins over a device cache that disagrees', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          window.clients = [{ id: 613, name: 'Both', addr: '5 Main St', lat: 40.0, lon: -96.0, geoAddr: '5 Main St' }];
+          window.jobs = [];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 613: { addr: '5 Main St', lat: 12.34, lon: -56.78 } }));
+          const f = _geoDeriveFences('2026-09-01').filter(x => x.kind === 'client')[0];
+          return { lat: f && f.lat, lng: f && f.lng };
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo'); }
+      });
+      expect(r.lat, 'the durable copy, not this device\'s guess').toBeCloseTo(40.0, 5);
+      expect(r.lng).toBeCloseTo(-96.0, 5);
+    });
+
+    test('seeding pours the record into the cache, skipping moved and already-warm clients', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          window.clients = [
+            { id: 621, addr: 'A St', lat: 1, lon: 2, geoAddr: 'A St' },        // seeds
+            { id: 622, addr: 'B St', lat: 3, lon: 4, geoAddr: 'OLD St' },      // moved: skipped
+            { id: 623, addr: 'C St' },                                          // no coords: skipped
+            { id: 624, addr: 'D St', lat: 5, lon: 6, geoAddr: 'D St' },        // already warm: skipped
+          ];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 624: { addr: 'D St', lat: 5, lon: 6 } }));
+          const added = _geoSeedClientCache();
+          const cache = JSON.parse(localStorage.getItem('zp3_nearby_geo') || '{}');
+          return { added, keys: Object.keys(cache).sort(), seeded: cache['621'] };
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo'); }
+      });
+      expect(r.added, 'one client needed seeding').toBe(1);
+      expect(r.keys).toEqual(['621', '624']);
+      expect(r.seeded).toEqual({ lat: 1, lon: 2, addr: 'A St' });
+    });
+
+    // THE HALF THAT WAS MISSING (2026-09-11). The first attempt at this
+    // backfilled nothing on the owner's own account, because
+    // _backfillNearbyGeoCache only geocodes clients whose CACHE is missing or
+    // stale. A phone that had already geocoded its book had an empty uncached
+    // list, so the sweep did nothing and the record stayed null forever, on
+    // precisely the population the backfill exists for.
+    test('a warm cache is written UP to a record that has none, with no geocode', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        const realSave = window.saveAll, realGeo = window._geocodeAddr;
+        let saves = 0, geocodes = 0;
+        try {
+          window.saveAll = () => { saves++; };
+          window._geocodeAddr = () => { geocodes++; return Promise.resolve(null); };
+          window.clients = [
+            { id: 701, addr: '1 A St' },                                       // cache only: writes up
+            { id: 702, addr: '2 B St' },                                       // cache only: writes up
+            { id: 703, addr: '3 C St', lat: 9, lon: 9, geoAddr: '3 C St' },    // already both: untouched
+          ];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({
+            701: { addr: '1 A St', lat: 39.1, lon: -95.1 },
+            702: { addr: '2 B St', lat: 39.2, lon: -95.2 },
+            703: { addr: '3 C St', lat: 9, lon: 9 },
+          }));
+          const n = _geoSyncClientCoords();
+          return { n, saves, geocodes, c1: window.clients[0], c3: window.clients[2] };
+        } finally {
+          window.saveAll = realSave; window._geocodeAddr = realGeo;
+          if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo');
+        }
+      });
+      expect(r.n.up, 'two clients had coordinates the account could not see').toBe(2);
+      expect(r.n.down, 'nothing needed pouring the other way').toBe(0);
+      expect(r.geocodes, 'the coordinates were already on the device: no lookup').toBe(0);
+      expect(r.saves, 'one save for the whole pass, not one per client').toBe(1);
+      expect(r.c1.lat).toBeCloseTo(39.1, 5);
+      expect(r.c1.geoAddr).toBe('1 A St');
+      expect(r.c3.lat, 'a client already correct is left alone').toBe(9);
+    });
+
+    test('a stale cache entry is never written up', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        const realSave = window.saveAll; let saves = 0;
+        try {
+          window.saveAll = () => { saves++; };
+          window.clients = [{ id: 711, addr: '9 New Rd' }];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 711: { addr: '4 Old Way', lat: 1, lon: 2 } }));
+          const n = _geoSyncClientCoords();
+          return { n, saves, lat: window.clients[0].lat };
+        } finally {
+          window.saveAll = realSave;
+          if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo');
+        }
+      });
+      expect(r.n.up, 'the client moved, so the cached coordinates are wrong too').toBe(0);
+      expect(r.saves, 'nothing to write means no save at all').toBe(0);
+      expect(r.lat).toBeUndefined();
+    });
+
+    test('a boot with both copies already agreeing writes nothing anywhere', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        const realSave = window.saveAll; let saves = 0;
+        try {
+          window.saveAll = () => { saves++; };
+          window.clients = [{ id: 721, addr: '7 Same St', lat: 5, lon: 6, geoAddr: '7 Same St' }];
+          localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 721: { addr: '7 Same St', lat: 5, lon: 6 } }));
+          return { n: _geoSyncClientCoords(), saves };
+        } finally {
+          window.saveAll = realSave;
+          if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo');
+        }
+      });
+      expect(r.n).toEqual({ down: 0, up: 0 });
+      expect(r.saves, 'this runs on every boot: a settled book must be silent').toBe(0);
+    });
+
+    test('recording a geocode writes both copies, and writes nothing when already correct', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        const realSave = window.saveAll;
+        let saves = 0;
+        try {
+          window.saveAll = () => { saves++; };
+          localStorage.removeItem('zp3_nearby_geo');
+          window.clients = [{ id: 631, addr: '2 Oak Ave' }];
+          _geoRecordClientCoords(631, '2 Oak Ave', { lat: 39.5, lon: -95.5 });
+          const afterFirst = saves;
+          _geoRecordClientCoords(631, '2 Oak Ave', { lat: 39.5, lon: -95.5 });  // same again
+          const c = window.clients[0];
+          const cache = JSON.parse(localStorage.getItem('zp3_nearby_geo') || '{}');
+          return { afterFirst, total: saves, lat: c.lat, lon: c.lon, geoAddr: c.geoAddr, cached: cache['631'] };
+        } finally {
+          window.saveAll = realSave;
+          if (saved) localStorage.setItem('zp3_nearby_geo', saved); else localStorage.removeItem('zp3_nearby_geo');
+        }
+      });
+      expect(r.afterFirst, 'the first geocode is written up').toBe(1);
+      expect(r.total, 'the second changes nothing, so it must not fire a save').toBe(1);
+      expect(r.lat).toBe(39.5);
+      expect(r.geoAddr, 'the address the coordinates came from rides along').toBe('2 Oak Ave');
+      expect(r.cached).toEqual({ lat: 39.5, lon: -95.5, addr: '2 Oak Ave' });
+    });
+
+    test('a client with no coordinates anywhere still has no fence', async () => {
+      const r = await page.evaluate(() => {
+        const saved = localStorage.getItem('zp3_nearby_geo');
+        try {
+          localStorage.removeItem('zp3_nearby_geo');
+          window.clients = [{ id: 641, name: 'Unlocated', addr: '404 Nowhere' }];
+          window.jobs = [];
+          return _geoDeriveFences('2026-09-01').filter(x => x.kind === 'client').length;
+        } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); }
+      });
+      expect(r).toBe(0);
+    });
+
     test('the clocks are this person\'s own, closed, and touching the day', async () => {
       const r = await page.evaluate(() => {
         const savedTE = window.timeEntries, savedU = window._supaUser, savedE = window._isEmployee;
@@ -395,14 +596,15 @@ test.describe('geo-derive wiring', () => {
     const withTape = () => page.evaluate((T) => {
       window.__realTd = window._geoTdPlugin;
       window._geoTdPlugin = () => ({ motionSince: async ({ sinceMs }) => ({ available: true, transitions: T.filter(t => t.ts >= (sinceMs || 0)) }) });
+      window._geoDeriveTape = window.__realDeriveTape;   // see the note in beforeAll
     }, TAPE);
-    const restore = () => page.evaluate(() => { window._geoTdPlugin = window.__realTd; localStorage.removeItem('zp3_geo_tape_owner'); });
+    const restore = () => page.evaluate(() => { window._geoTdPlugin = window.__realTd; localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log'); });
 
     test('a brand-new device has no usable history for yesterday, and today from now on', async () => {
       await withTape();
       try {
         const r = await page.evaluate(async () => {
-          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_derive_ver');
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log'); localStorage.removeItem('zp3_geo_derive_ver');
           const savedUser = window._supaUser; window._supaUser = { id: 'jack' };
           try {
             const before = await _geoDeriveTape(0);       // no claim yet: trusts nothing older than now
@@ -423,7 +625,7 @@ test.describe('geo-derive wiring', () => {
       await withTape();
       try {
         const r = await page.evaluate(async () => {
-          localStorage.removeItem('zp3_geo_tape_owner');
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
           localStorage.setItem('zp3_geo_derive_ver', 'older-build');
           const savedUser = window._supaUser; window._supaUser = { id: 'jack' };
           try {
@@ -445,25 +647,54 @@ test.describe('geo-derive wiring', () => {
       await withTape();
       try {
         const r = await page.evaluate(async () => {
-          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_derive_ver');
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log'); localStorage.removeItem('zp3_geo_derive_ver');
           const savedUser = window._supaUser;
           try {
+            // A HANDOVER TAKES TIME. Three claims in the same millisecond make
+            // zero-length spans, which the reader drops as the nothing they
+            // are, so the clock has to move the way a real day does.
+            const realNow = Date.now; let t = realNow.call(Date);
+            Date.now = () => t;
+            const later = ms => { t += ms; };
             window._supaUser = { id: 'jack' }; _geoTapeClaim();
             const jack1 = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            later(3600000);
             window._supaUser = { id: 'dad' }; _geoTapeClaim();
             const dad = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            later(3600000);
             // Jack again, later: a fresh claim, never the old one back.
             window._supaUser = { id: 'jack' }; _geoTapeClaim();
             const jack2 = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
-            // and a signed-in person who is NOT the owner reads no tape at all
+            later(3600000);
+            Date.now = realNow;
+            // Dad is no longer holding the phone, but the log remembers the
+            // span he DID hold, and that span is his to read. See the
+            // assertion note below: this is the behaviour that changed.
             window._supaUser = { id: 'dad' };
-            const dadReads = (await _geoDeriveTape(0)).length;
-            return { jack1: jack1.uid, dad: dad.uid, jack2: jack2.uid, fresh: jack2.since >= dad.since, dadReads };
+            const dadWindows = _geoTapeMine().length;
+            const dadReadsJacksTape = (await _geoDeriveTape(0)).some(t => t.ts > jack2.since);
+            const shared = _geoTapeShared();
+            return { jack1: jack1.uid, dad: dad.uid, jack2: jack2.uid, fresh: jack2.since >= dad.since,
+              dadWindows, dadReadsJacksTape, shared };
           } finally { window._supaUser = savedUser; }
         });
         expect([r.jack1, r.dad, r.jack2]).toEqual(['jack', 'dad', 'jack']);
         expect(r.fresh, 'a new claim, not the old one resurrected').toBe(true);
-        expect(r.dadReads, 'not the owner, not their tape').toBe(0);
+        // ASSERTION RESTATED 2026-09-10, and the old one was right when it
+        // was written. With a single {uid, since} slot there was no record of
+        // who had held the phone when, so "you are not the current owner"
+        // was the only safe answer and dad read nothing.
+        //
+        // It is wrong now, and it is wrong in a way that cost the owner an
+        // afternoon: on a phone two businesses share, that rule means every
+        // sign-in permanently blinds the other account to its own history.
+        // His 1:26pm arrival at John Doe could not be closed and could not be
+        // rebuilt afterwards, because signing back in started his read floor
+        // at that instant. The claim is a log now, so a person reads the
+        // spans they actually held and nobody else's.
+        expect(r.dadWindows, 'dad held the phone once, so he has one span to read').toBe(1);
+        expect(r.dadReadsJacksTape, 'his own span only, never the minutes jack holds now').toBe(false);
+        expect(r.shared, 'two accounts on one handset inside the window').toBe(true);
       } finally { await restore(); }
     });
 
@@ -471,7 +702,7 @@ test.describe('geo-derive wiring', () => {
       await withTape();
       try {
         const r = await page.evaluate(async () => {
-          localStorage.removeItem('zp3_geo_tape_owner');
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
           const savedUser = window._supaUser; window._supaUser = null;
           try { _geoTapeClaim(); return { key: localStorage.getItem('zp3_geo_tape_owner'), n: (await _geoDeriveTape(0)).length }; }
           finally { window._supaUser = savedUser; }
@@ -481,6 +712,219 @@ test.describe('geo-derive wiring', () => {
       } finally { await restore(); }
     });
 
+    test('the log survives a handover and back: each account reads its own spans', async () => {
+      await withTape();
+      try {
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
+          localStorage.removeItem('zp3_geo_derive_ver');
+          const savedUser = window._supaUser;
+          try {
+            // His real 10 September, compressed: his own morning, four hours
+            // on the other account, then back. Each step needs real elapsed
+            // time or the spans are zero-length and mean nothing.
+            const realNow = Date.now; let t = realNow.call(Date);
+            Date.now = () => t;
+            const later = ms => { t += ms; };
+            window._supaUser = { id: 'logan' }; _geoTapeClaim();
+            const loganFirst = _geoTapeSince();
+            later(8 * 3600000);
+            window._supaUser = { id: 'blake' }; _geoTapeClaim();
+            later(4 * 3600000);
+            window._supaUser = { id: 'logan' }; _geoTapeClaim();
+            later(60000);
+            // THE WHOLE POINT: back on his own account, he can still reach
+            // the morning he actually held, not just this instant.
+            const out = { reachesMorning: _geoTapeSince() <= loganFirst, spans: _geoTapeMine().length };
+            Date.now = realNow;
+            return out;
+          } finally { window._supaUser = savedUser; }
+        });
+        expect(r.reachesMorning, 'signing back in must not throw away his own morning').toBe(true);
+        expect(r.spans, 'two separate spells holding the phone').toBe(2);
+      } finally { await restore(); }
+    });
+
+    test('release closes the span without opening another', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
+        const savedUser = window._supaUser;
+        try {
+          window._supaUser = { id: 'logan' }; _geoTapeClaim();
+          const openBefore = JSON.parse(localStorage.getItem('zp3_geo_tape_log')).filter(x => x.to == null).length;
+          _geoTapeRelease();
+          const log = JSON.parse(localStorage.getItem('zp3_geo_tape_log'));
+          _geoTapeRelease();   // idempotent: nothing open to close
+          return { openBefore, openAfter: log.filter(x => x.to == null).length, kept: log.length,
+            stillLen: JSON.parse(localStorage.getItem('zp3_geo_tape_log')).length };
+        } finally { window._supaUser = savedUser; }
+      });
+      expect(r.openBefore).toBe(1);
+      expect(r.openAfter, 'signing out ends your hold on the tape').toBe(0);
+      expect(r.kept, 'the span is closed, never deleted: it is what you read back').toBe(1);
+      expect(r.stillLen, 'releasing twice adds nothing').toBe(1);
+    });
+
+    test('a visit that starts under one business can still end under it', async () => {
+      // Owner 2026-09-10: "doesn't the ladder tell us if an on site visit
+      // started under one business and therefore it must end on that
+      // business?" It does, and clipping the tape to the signed-in login's
+      // own spans made it impossible. His real day: arrive at John Doe at
+      // 1:26pm on his account, drive away at 5:14pm on the other one. The
+      // departure has to stay readable or rule 5 throws the visit away.
+      const TAPE2 = [
+        { ts: Date.parse('2026-09-10T18:26:00Z'), kind: 'onFoot' },      // arrives, his hat
+        { ts: Date.parse('2026-09-10T22:14:00Z'), kind: 'automotive' },  // leaves, other hat
+      ];
+      await page.evaluate((T) => {
+        window.__realTd2 = window._geoTdPlugin;
+        window._geoTdPlugin = () => ({ motionSince: async ({ sinceMs }) => ({ available: true, transitions: T.filter(t => t.ts >= (sinceMs || 0)) }) });
+        window._geoDeriveTape = window.__realDeriveTape;
+      }, TAPE2);
+      try {
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
+          const savedUser = window._supaUser;
+          const realNow = Date.now; let t = Date.parse('2026-09-10T17:00:00Z');
+          Date.now = () => t;
+          try {
+            window._supaUser = { id: 'logan' }; _geoTapeClaim();   // his morning
+            t = Date.parse('2026-09-10T20:41:00Z');
+            window._supaUser = { id: 'blake' }; _geoTapeClaim();   // hands it over 3:41pm
+            t = Date.parse('2026-09-10T23:30:00Z');
+            window._supaUser = { id: 'logan' };
+            const tape = await _geoDeriveTape(0);
+            return { shared: _geoTapeShared(), seen: tape.map(x => x.kind),
+              hasDeparture: tape.some(x => x.kind === 'automotive') };
+          } finally { window._supaUser = savedUser; Date.now = realNow; }
+        });
+        expect(r.shared, 'two accounts on this handset').toBe(true);
+        expect(r.hasDeparture, 'the departure fell in the other hat and must still be readable, or the visit has one end and is thrown away').toBe(true);
+        expect(r.seen).toEqual(['onFoot', 'automotive']);
+      } finally {
+        await page.evaluate(() => { window._geoTdPlugin = window.__realTd2; });
+      }
+    });
+
+    test('switching business drops the other account fences from the phone', async () => {
+      // Owner 2026-09-10, signed into his second business: "it says I'm at
+      // Tradedesk shop under sample co." The coprocessor still held the first
+      // account's regions, so his Sample Co session opened a dwell on a
+      // TradeDesk place four metres from its shop.
+      const r = await page.evaluate(() => {
+        const saved = { user: window._supaUser, cid: window._geoCid, td: window._geoTdPlugin, park: _geoParkModeOn };
+        const stops = [];
+        try {
+          localStorage.removeItem('zp3_geo_armed_for');
+          window._geoTdPlugin = () => ({ stopAll: (a) => { stops.push((a && a.reason) || '?'); } });
+          window._supaUser = { id: 'logan' }; window._geoCid = () => 'logan';
+          _geoDisarmIfForeign();                        // first arm on this phone
+          const afterFirst = stops.length;
+          _geoDisarmIfForeign();                        // same account again: no drop
+          const afterSame = stops.length;
+          // He switches. A stale dwell and open entry are sitting there.
+          localStorage.setItem('zp3_geo_dwell', JSON.stringify({ uid: 'logan', d: { name: 'TradeDesk shop' } }));
+          localStorage.setItem('zp3_geo_open', JSON.stringify({ uid: 'logan' }));
+          window._geoOpenDwell = { name: 'TradeDesk shop' };
+          _geoParkModeOn = true;
+          window._supaUser = { id: 'blake' }; window._geoCid = () => 'blake';
+          _geoDisarmIfForeign();
+          return { afterFirst, afterSame, afterSwitch: stops.length, reason: stops[stops.length - 1] || null,
+            dwellGone: localStorage.getItem('zp3_geo_dwell') === null,
+            openGone: localStorage.getItem('zp3_geo_open') === null,
+            liveGone: window._geoOpenDwell === null,
+            parkOff: _geoParkModeOn === false,
+            tag: localStorage.getItem('zp3_geo_armed_for') };
+        } finally {
+          window._supaUser = saved.user; window._geoCid = saved.cid;
+          window._geoTdPlugin = saved.td; _geoParkModeOn = saved.park;
+          localStorage.removeItem('zp3_geo_armed_for');
+          localStorage.removeItem('zp3_geo_dwell'); localStorage.removeItem('zp3_geo_open');
+          window._geoOpenDwell = null;
+        }
+      });
+      expect(r.afterFirst, 'nothing to drop on a phone that has armed nothing yet').toBe(0);
+      expect(r.afterSame, 'the same account booting twice must not disarm itself').toBe(0);
+      expect(r.afterSwitch, 'the other business fences are dropped').toBe(1);
+      expect(r.reason).toBe('account changed');
+      expect(r.dwellGone, 'a dwell named for the old account cannot survive the switch').toBe(true);
+      expect(r.openGone).toBe(true);
+      expect(r.liveGone).toBe(true);
+      expect(r.parkOff, 'park was armed on the old account fences').toBe(true);
+      expect(r.tag).toBe('blake|blake');
+    });
+
+    test('a crew hat and an owner hat on one login are different fence sets', async () => {
+      // Same login, two businesses: the tag is person AND account, because a
+      // crew member's fences are their employer's, not their own.
+      const r = await page.evaluate(() => {
+        const saved = { user: window._supaUser, cid: window._geoCid, td: window._geoTdPlugin };
+        const stops = [];
+        try {
+          localStorage.removeItem('zp3_geo_armed_for');
+          window._geoTdPlugin = () => ({ stopAll: () => { stops.push(1); } });
+          window._supaUser = { id: 'blake' }; window._geoCid = () => 'logan';   // crew hat on TradeDesk
+          _geoDisarmIfForeign();
+          window._geoCid = () => 'blake';                                       // owner hat, Sample Co
+          _geoDisarmIfForeign();
+          return { drops: stops.length, tag: localStorage.getItem('zp3_geo_armed_for') };
+        } finally {
+          window._supaUser = saved.user; window._geoCid = saved.cid; window._geoTdPlugin = saved.td;
+          localStorage.removeItem('zp3_geo_armed_for');
+        }
+      });
+      expect(r.drops, 'the same person changing hats still changes fence sets').toBe(1);
+      expect(r.tag).toBe('blake|blake');
+    });
+
+    test('the seven-day rebuild is per person, not per phone', async () => {
+      // Owner 2026-09-10: "I'm in my own account now looking at Aldi guys
+      // that's not fixed." The other account on the same handset had booted
+      // the new build first and spent the shared version marker, so his own
+      // account got the two-day window and never re-derived 6 September.
+      const r = await page.evaluate(() => {
+        const saved = { user: window._supaUser, ver: window._geoDeriveAppVer };
+        try {
+          window._geoDeriveAppVer = () => '09.10.26.22';
+          ['logan', 'blake', 'anon'].forEach(u => localStorage.removeItem('zp3_geo_derive_ver_' + u));
+          localStorage.removeItem('zp3_geo_derive_ver');
+          window._supaUser = { id: 'blake' };
+          const blakeFirst = _geoDeriveRebuildDays();                 // never seen it: full
+          localStorage.setItem(_geoDeriveVerSeenKey(), '09.10.26.22'); // blake finishes his rebuild
+          localStorage.setItem('zp3_geo_derive_ver', '09.10.26.22');   // and stamps the device marker
+          const blakeAgain = _geoDeriveRebuildDays();                 // seen: live window
+          window._supaUser = { id: 'logan' };
+          const loganAfter = _geoDeriveRebuildDays();                 // MUST still be full
+          localStorage.setItem(_geoDeriveVerSeenKey(), '09.10.26.22');
+          const loganAgain = _geoDeriveRebuildDays();
+          return { blakeFirst, blakeAgain, loganAfter, loganAgain };
+        } finally {
+          window._supaUser = saved.user; window._geoDeriveAppVer = saved.ver;
+          ['logan', 'blake', 'anon'].forEach(u => localStorage.removeItem('zp3_geo_derive_ver_' + u));
+          localStorage.removeItem('zp3_geo_derive_ver');
+        }
+      });
+      expect(r.blakeFirst, 'a build this account has not derived on rebuilds the week').toBe(7);
+      expect(r.blakeAgain, 'and not again on the next boot').toBe(2);
+      expect(r.loganAfter, 'the other account spending the marker must not cost him his rebuild').toBe(7);
+      expect(r.loganAgain).toBe(2);
+    });
+
+    test('one account on the phone is never treated as shared', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
+        const savedUser = window._supaUser;
+        try {
+          window._supaUser = { id: 'logan' }; _geoTapeClaim(); _geoTapeClaim(); _geoTapeClaim();
+          const solo = _geoTapeShared();
+          window._supaUser = { id: 'blake' }; _geoTapeClaim();
+          return { solo, shared: _geoTapeShared() };
+        } finally { window._supaUser = savedUser; }
+      });
+      expect(r.solo, 'signing in repeatedly is still one person').toBe(false);
+      expect(r.shared).toBe(true);
+    });
+
     test('junk in the claim slot is ignored, never a throw', async () => {
       const r = await page.evaluate(async () => {
         const out = [];
@@ -488,7 +932,7 @@ test.describe('geo-derive wiring', () => {
           localStorage.setItem('zp3_geo_tape_owner', junk);
           try { out.push(_geoTapeOwner() === null && typeof _geoTapeSince() === 'number'); } catch (e) { out.push('THREW'); }
         }
-        localStorage.removeItem('zp3_geo_tape_owner');
+        localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_tape_log');
         return out;
       });
       expect(r).toEqual([true, true, true, true, true]);
@@ -527,6 +971,9 @@ test.describe('geo-derive wiring', () => {
       // This phone has been this person's since long before the day: the
       // normal case, and the one in which a sweep is allowed at all.
       localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: OWNED_SINCE }));
+      // One account has ever held this phone, so the ownership guard
+      // (geoSpanClaim) is off and these tests read the single-account path.
+      localStorage.removeItem('zp3_geo_tape_log');
       window._geoDrainQueue = () => {};   // hold the queue so it can be inspected
       window._routeDistance = async () => ({ miles: 0, mins: 0 });   // no router unless a test brings one
       _geoFixLogPush(T[0], SHOP.lat, SHOP.lng, 5);
@@ -871,6 +1318,88 @@ test.describe('geo-derive wiring', () => {
       expect(r.last.acc).toBe(7);
     });
 
+    // ── The route cache is shared, because routing is device-only ──────────
+    //
+    // Owner 2026-09-11: everything in a server-side replay of his 10 September
+    // matched the rows his phone wrote except the miles, and the miles could
+    // not match, because MapKit and the Valhalla/OSRM fallback all live on the
+    // handset. 11.3 replayed against the 13.3 he actually drove.
+    //
+    // The phone already has the right number and already caches it; it just
+    // kept it in localStorage. geo_route_miles (20260930) is the same cache in
+    // a place a scheduled job can read, keyed by the SAME _geoRouteKey string,
+    // and these two assertions are the contract: a key the account has already
+    // paid for never reaches the router again, and one it has to route for
+    // itself goes back up.
+    test('a route the account already paid for comes from the cloud; a new one goes back to it', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_routes');
+        const from = { lat: 39.0123292, lng: -95.7464936 }, to = { lat: 39.0307066, lng: -95.7112082 };
+        const far = { lat: 39.0456577, lng: -95.7151106 };
+        const t0 = Date.parse('2026-09-01T17:21:30Z'), t1 = Date.parse('2026-09-01T17:31:24Z');
+        const row = (id, a, b) => ({ id, fromCoord: a, toCoord: b, startedIso: new Date(t0).toISOString(),
+          endedIso: new Date(t1).toISOString(), miles: 2.3, gpsMiles: 0, calc_method: 'derived-straight', path: [] });
+        const known = row('known', from, to), fresh = row('fresh', from, far);
+        // No path on either, so no via points: the key is just the two ends.
+        const knownKey = _geoRouteKey(from, to, []), freshKey = _geoRouteKey(from, far, []);
+        const asked = [], reads = [], writes = [];
+        window._routeDistance = async (a, b) => { asked.push(b.lat); return { miles: 4.4, mins: 12 }; };
+        const realFrom = window._supa.from;
+        window._supa.from = (t) => {
+          if (t !== 'geo_route_miles') return realFrom.call(window._supa, t);
+          const q = {
+            select: () => q, eq: () => q,
+            in: (_c, keys) => { reads.push(keys.slice()); return Promise.resolve({
+              data: keys.filter(k => k === knownKey).map(k => ({ route_key: k, miles: 7.7 })) }); },
+            upsert: (rows) => { writes.push(rows); return Promise.resolve({ error: null }); },
+          };
+          return q;
+        };
+        try { await _geoDeriveRouteMiles([known, fresh]); }
+        finally { window._supa.from = realFrom; }
+        return { known: [known.miles, known.calc_method, known.routeMiles],
+          fresh: [fresh.miles, fresh.calc_method, fresh.routeMiles],
+          asked, reads, writes: writes.map(w => w.map(x => [x.route_key === freshKey ? 'fresh' : x.route_key, x.miles])),
+          readsAreBoth: reads.length === 1 && reads[0].length === 2,
+          cached: Object.keys(JSON.parse(localStorage.getItem('zp3_geo_routes') || '{}')).length };
+      });
+      // One lookup for the whole batch, not one per leg.
+      expect(r.readsAreBoth, 'both keys asked in a single round trip').toBe(true);
+      // The cloud's 7.7 stands and the router is never asked for that pair.
+      expect(r.known).toEqual([7.7, 'derived-routed', 7.7]);
+      expect(r.asked.length, 'only the leg the account had never routed').toBe(1);
+      expect(r.fresh).toEqual([4.4, 'derived-routed', 4.4]);
+      // Only what this run actually routed goes up; the cloud's own answer is
+      // not written straight back to it.
+      expect(r.writes).toEqual([[['fresh', 4.4]]]);
+      // Both land in the local cache, so the next boot needs neither.
+      expect(r.cached).toBe(2);
+    });
+
+    test('the cloud route cache never breaks a derive when it is unreachable', async () => {
+      // Signed out, offline, a table that is not there yet: the router and the
+      // local cache carry on exactly as before. This is the reason both cloud
+      // helpers swallow rather than throw.
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_routes');
+        const from = { lat: 39.0123292, lng: -95.7464936 }, to = { lat: 39.0307066, lng: -95.7112082 };
+        const t0 = Date.parse('2026-09-01T17:21:30Z');
+        const m = { id: 'z', fromCoord: from, toCoord: to, startedIso: new Date(t0).toISOString(),
+          endedIso: new Date(t0 + 600000).toISOString(), miles: 2.3, gpsMiles: 0, calc_method: 'derived-straight', path: [] };
+        window._routeDistance = async () => ({ miles: 5.1, mins: 14 });
+        const realFrom = window._supa.from;
+        window._supa.from = (t) => { if (t === 'geo_route_miles') throw new Error('no such table'); return realFrom.call(window._supa, t); };
+        let threw = null;
+        try { await _geoDeriveRouteMiles([m]); } catch (e) { threw = String(e); }
+        finally { window._supa.from = realFrom; }
+        return { threw, miles: m.miles, cm: m.calc_method,
+          cached: Object.keys(JSON.parse(localStorage.getItem('zp3_geo_routes') || '{}')).length };
+      });
+      expect(r.threw).toBe(null);
+      expect([r.miles, r.cm]).toEqual([5.1, 'derived-routed']);
+      expect(r.cached, 'still cached locally, which is the offline path').toBe(1);
+    });
+
     test('a complete, dense trace is the drive; the router only outranks a thin one or one that woke late', async () => {
       const r = await page.evaluate(async () => {
         window._routeDistance = async () => ({ miles: 3.9, mins: 10 });
@@ -1124,13 +1653,21 @@ test.describe('geo-derive wiring', () => {
         window._geoDeriveDayNow = async (d) => { days.push(d); return { dwells: [], legs: [] }; };
         window._geoDeriveServerFixes = async () => { const o = []; o.appEvents = []; return o; };
         try {
-          localStorage.setItem('zp3_geo_derive_ver', APP_VERSION);
+          // RESTATED 2026-09-10 (CLAUDE.md 10.4). This used to set the
+          // device-wide key, which was right when one marker served the whole
+          // handset. It is per-uid now, because on a shared phone the first
+          // account to boot a new build was spending the other's seven-day
+          // rebuild: the owner's 6 September row was stranded exactly that
+          // way. The device-wide key still exists and still means "this
+          // handset has derived before" for _geoTapeClaim.
+          localStorage.setItem(_geoDeriveVerSeenKey(), APP_VERSION);
           await _geoDeriveRebuild();
           const same = days.length; days.length = 0;
-          localStorage.setItem('zp3_geo_derive_ver', '00.00.00.0');
+          localStorage.setItem(_geoDeriveVerSeenKey(), '00.00.00.0');
           await _geoDeriveRebuild();
           const changed = days.length;
-          const stamped = localStorage.getItem('zp3_geo_derive_ver');
+          const stamped = localStorage.getItem(_geoDeriveVerSeenKey());
+          const stampedDevice = localStorage.getItem('zp3_geo_derive_ver');
           // Coming back after half an hour runs it again; sooner does not.
           window._geoDeriveRebuilt = true; _geoDeriveRebuildT = null;
           _geoDeriveRebuiltAt = Date.now();
@@ -1138,12 +1675,13 @@ test.describe('geo-derive wiring', () => {
           days.length = 0; _geoDeriveRebuiltAt = Date.now() - 31 * 60000;
           const later = _geoDeriveRebuildIfStale();
           await new Promise(res => setTimeout(res, 50));
-          return { same, changed, stamped, soon, later, ran: days.length };
+          return { same, changed, stamped, stampedDevice, soon, later, ran: days.length };
         } finally { window._geoDeriveDayNow = origNow; window._geoDeriveServerFixes = real; }
       });
       expect(r.same).toBe(2);
       expect(r.changed).toBe(7);
       expect(r.stamped).toBe(await page.evaluate(() => APP_VERSION));
+      expect(r.stampedDevice, 'the device-wide marker is still written, for _geoTapeClaim').toBe(await page.evaluate(() => APP_VERSION));
       expect(r.soon).toBe(false);
       expect(r.later).toBe(true);
       expect(r.ran).toBe(2);
@@ -1161,7 +1699,7 @@ test.describe('geo-derive wiring', () => {
         window._geoDeriveDayNow = async (d) => { days.push(d); await new Promise(res => setTimeout(res, 30)); return { dwells: [], legs: [] }; };
         window._geoDeriveServerFixes = async () => { const o = []; o.appEvents = []; return o; };
         try {
-          localStorage.setItem('zp3_geo_derive_ver', APP_VERSION);
+          localStorage.setItem(_geoDeriveVerSeenKey(), APP_VERSION);   // per-uid now, see 10.4 note above
           window._geoDeriveRebuilt = true; _geoDeriveRebuildT = null;
           _geoDeriveRebuiltAt = Date.now() - 31 * 60000;
           const p1 = _geoDeriveRebuild();
@@ -1264,7 +1802,9 @@ test.describe('geo-derive wiring', () => {
         window._geoDeriveDayNow = async (d) => { days.push(d); return { dwells: [], legs: [] }; };
         window._geoDeriveServerFixes = async () => [];
         // A rule change (no stamp for this version) is what reaches back the
-        // full week; a locked week derives two days (the test above).
+        // full week; a locked week derives two days (the test above). The
+        // stamp is per-uid now, see the 10.4 note on the first of these.
+        localStorage.removeItem(_geoDeriveVerSeenKey());
         localStorage.removeItem('zp3_geo_derive_ver');
         try { const n = await _geoDeriveRebuild(); return { n, days }; }
         finally { window._geoDeriveDayNow = orig; }

@@ -953,6 +953,8 @@ function geoDeriveDay(input) {
   const ended = _gdEndOfDay(housed, fences, opts, open, journeys.some(j => j && j.open), legs);
   // Rule 13: a visit the day cannot vouch for is a question, not a row.
   const asked = _gdHeldVisits(ended, inp, dayStart);
+  // Rule 15: and the drives between them, using rule 13's own answer.
+  const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -963,7 +965,7 @@ function geoDeriveDay(input) {
   return {
     day: inp.day || '',
     dwells: asked.filter(d => d.minutes >= 1),
-    legs,
+    legs: askedLegs,
     open,
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
@@ -1422,8 +1424,83 @@ function _gdHeldVisits(dwells, inp, dayStart) {
   return (dwells || []).map(d => {
     if (!d || d.kind !== 'client' || !d.fence || d.fence.scheduled === true) return d;
     if (clocks.some(c => overlaps(d, c.a, c.b))) return d;
+    // ── THE CONTACT ANSWERING IN ADVANCE (owner 2026-09-12) ───────────────
+    // "Add in ability to mark a contact as family member so time flags itself
+    // as need marked personal or work."
+    //
+    // This is the hole the paragraph above names and could not close: a
+    // genuinely personal WEEKDAY AFTERNOON at a client with nothing scheduled
+    // looks exactly like work, because the working-day window is the widest
+    // of the three witnesses and it was only ever meant to cover the
+    // forgetful contractor for free.
+    //
+    // Marking the contact takes that one witness away and leaves the other
+    // two, which is the whole change. An explicit signal still vouches: a job
+    // ON THE CALENDAR at a family member's address is work, and so is a
+    // manual clock running over the visit, because that is the person saying
+    // they are working right now. What no longer counts as evidence is
+    // merely being there on a Tuesday.
+    //
+    // Deliberately held rather than dropped. "Personal" is still the owner's
+    // answer to give, not this function's to assume, and a held visit already
+    // counts toward nothing and asks on the card. Dropping it silently would
+    // lose the one case he DOES bill for at that address.
+    if (d.fence.personal === true) return Object.assign({}, d, { held: true });
     if (workDay && whB > whA && overlaps(d, dayStart + whA, dayStart + whB)) return d;
     return Object.assign({}, d, { held: true });
+  });
+}
+
+// ── Rule 15: a drive the day cannot vouch for is a question too ───────────
+// Owner 2026-09-12, on a crew member's week: "Jack didn't work Thursday or
+// Friday this last week why do we have mileage and time rows in there?"
+//
+// Rule 13 has asked that question about VISITS since 2026-09-04 and never
+// once about the drives between them, so a held visit still produced claimed
+// business miles either side of it. On his Friday: 266 minutes at Laurie
+// Schonfeldt (the crew member is Jack SCHONFELDT) plus three drives to and
+// from her address, 7.7 miles, all of it counted.
+//
+// The two ends are not symmetrical and that is the whole rule. A leg earns
+// its miles from a BUSINESS END:
+//   - a job fence: a job is work, whoever the client is
+//   - the shop, or a supply place: a business address by definition
+//   - a client whose visit that day was not itself held (rule 13 already
+//     asked, and this reuses its answer rather than asking again)
+// Anything else vouches for nothing: the house, a home office, and above all
+// an end nobody ever saved (rule 14's `unsaved`).
+//
+// A manual clock running over the drive vouches for it too, same as rule 13:
+// the person saying at the time that they are working outranks geography.
+//
+// HELD, NOT DROPPED, exactly like rule 13 and like a receipt-gated supply
+// run. The row keeps its miles, its route and its place in the odometer
+// story, and stays out of every money total until somebody answers. Losing
+// the drive would break the log; claiming it would put a number on a tax
+// return that nothing on the phone can stand behind.
+function _gdHeldLegs(legs, dwells, inp, dayStart) {
+  const heldClients = new Set();
+  (dwells || []).forEach(d => {
+    if (d && d.held && d.fence && d.fence.clientId != null) heldClients.add(String(d.fence.clientId));
+  });
+  const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
+    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .filter(c => c && c.a > 0 && c.b > c.a);
+  const vouches = (e) => {
+    if (!e || e.unsaved === true) return false;
+    if (e.jobId != null) return true;
+    if (e.kind === 'shop' || e.kind === 'supply') return true;
+    // A client end is only as good as rule 13's answer about that visit. A
+    // contact marked family never vouches: the whole point of the mark is
+    // that being at that address is not evidence of work (rule 13).
+    if (e.clientId != null) return e.personal !== true && !heldClients.has(String(e.clientId));
+    return false;
+  };
+  return (legs || []).map(l => {
+    if (!l || l.held) return l;
+    if (vouches(l.from) || vouches(l.to)) return l;
+    if (clocks.some(c => Math.min(l.endTs, c.b) - Math.max(l.startTs, c.a) >= 60000)) return l;
+    return Object.assign({}, l, { held: true });
   });
 }
 
@@ -1453,13 +1530,91 @@ function _gdDwell(fence, startTs, endTs, journeyId, open) {
 //   leg                   -> job_time_entries source 'drive' + td_mileage (gps)
 //
 // client_key carries the journey id, so a rebuild upserts onto its own rows.
+/**
+ * geoSpanClaim(span, ctx) -> { claim, why }
+ *
+ * ONE PHONE, TWO BUSINESSES: which account may write this row.
+ *
+ * Owner 2026-09-10, after four of his own rows landed on the wrong company:
+ * "I was at John Doe, but John Doe wasn't a client of sample co, only
+ * tradedesk, so how could a mileage leg and time land there if that person
+ * isn't in the system."
+ *
+ * They landed because nothing ever asked. Fence resolution decides a stop's
+ * NAME; the OWNER of the row was whatever _geoCid() happened to be at derive
+ * time. So an afternoon at a TradeDesk client, driven back to the TradeDesk
+ * shop, was written to Sample Co with both ends blank, because Sample Co
+ * cannot see either fence. The blanks were the evidence and nobody read them.
+ *
+ * The rule, in his terms: an account has no claim on a span it cannot
+ * identify either end of. Since _geoDeriveFences builds only from the
+ * signed-in account's own places, clients and jobs, "resolved to a fence" and
+ * "owned by this account" are the same fact, which is what makes this
+ * decidable without ever reading another business's data.
+ *
+ * WHY `shared` GATES IT. A single-account phone drives to unsaved addresses
+ * constantly, and those legs are the whole point of the save-this-address
+ * flow. Refusing them there would delete real work to solve a problem that
+ * phone does not have. So the test only bites once more than one account has
+ * claimed this device's tape inside the derive window.
+ *
+ * THE LADDER, for a span both accounts CAN see (the same client in both
+ * books). Geography is silent there, so the tie-break is evidence, strongest
+ * first:
+ *   job    a job or estimate on the calendar at that fence that day. Intent,
+ *          recorded before the ambiguity existed.
+ *   clock  a manual clock open over the span. The person said they were
+ *          working, and for whom.
+ *   fence  the place is in this account's book and nothing stronger applies.
+ *   hat    nothing resolved, single-account phone. Today's behaviour, kept.
+ *
+ * HONEST RESIDUAL, stated rather than hidden: when both accounts hold the
+ * same client AND the same rung, both will claim, because neither can read
+ * the other's books to break the tie. That writes a duplicate the Time Log
+ * shows, which is a visible, fixable wrong answer. The failure it replaces
+ * was a silent one in the wrong company's IRS log. Do not "solve" this by
+ * having one account guess about the other's data; it cannot see it.
+ *
+ * span  a leg ({unsavedFrom, unsavedTo, from, to, startTs, endTs}) or a
+ *       dwell ({fence, startTs, endTs}).
+ * ctx   {shared, clocks:[{start,end}]}
+ */
+function geoSpanClaim(span, ctx) {
+  const c = ctx || {};
+  const sp = span || {};
+  // A dwell is at a fence by construction: reaching one is what opens it.
+  // A leg is identified when EITHER end is, because one known end is enough
+  // to say whose road this was.
+  const fence = sp.fence || null;
+  const ends = [sp.from, sp.to].filter(Boolean);
+  const identified = !!fence || ends.some(e => e && (e.clientId != null || e.jobId != null ||
+    e.placeId != null || e.kind === 'shop' || e.kind === 'home_office' || e.kind === 'supply'));
+  if (!identified) return { claim: !c.shared, why: c.shared ? 'none' : 'hat' };
+
+  const scheduled = (fence && (fence.jobId != null || fence.scheduled === true)) ||
+    ends.some(e => e && (e.jobId != null || e.scheduled === true));
+  if (scheduled) return { claim: true, why: 'job' };
+
+  const a = Number(sp.startTs), b = Number(sp.endTs);
+  const clocked = Array.isArray(c.clocks) && a > 0 && b > a &&
+    c.clocks.some(k => k && Number(k.start) < b && Number(k.end) > a);
+  return { claim: true, why: clocked ? 'clock' : 'fence' };
+}
+
 function geoDeriveRows(result, ids) {
   const cid = ids && ids.contractorId, uid = ids && ids.employeeId;
   const iso = ms => new Date(ms).toISOString();
   const time = [], shop = [], miles = [];
+  // Whose row is this (geoSpanClaim above). Defaults keep every existing
+  // caller and every existing test on the old path exactly: a phone with one
+  // account claims everything it derives, as it always has.
+  const claimCtx = { shared: !!(ids && ids.shared), clocks: (ids && ids.clocks) || [] };
+  const held = [];
   for (const d of (result && result.dwells) || []) {
     const base = { contractor_user_id: cid, employee_user_id: uid,
       arrived_at: iso(d.startTs), departed_at: iso(d.endTs), minutes: d.minutes, client_key: d.id };
+    const dClaim = geoSpanClaim(d, claimCtx);
+    if (!dClaim.claim) { held.push({ kind: 'dwell', id: d.id, startTs: d.startTs, endTs: d.endTs }); continue; }
     if (d.kind === 'shop') { shop.push(base); continue; }
     const f = d.fence || {};
     time.push(Object.assign(base, {
@@ -1479,6 +1634,15 @@ function geoDeriveRows(result, ids) {
     }));
   }
   for (const l of (result && result.legs) || []) {
+    // NOT THIS ACCOUNT'S ROAD. A leg with neither end resolvable on a phone
+    // more than one business has signed into is exactly the shape of the two
+    // drives that landed on Sample Co: John Doe out, TradeDesk shop back,
+    // both ends blank because that account holds neither place. Held here,
+    // which leaves the stretch uncovered, and js/timelog.js already renders
+    // an uncovered stretch as a question. A question beats a row in the wrong
+    // company's mileage log.
+    const lClaim = geoSpanClaim(l, claimCtx);
+    if (!lClaim.claim) { held.push({ kind: 'leg', id: l.id, startTs: l.startTs, endTs: l.endTs }); continue; }
     // ONE ROW PER DRIVE, NOT ONE PER CHAIN (owner 2026-09-04: "right, in
     // between it logs the time as a unsaved job site").
     //
@@ -1615,7 +1779,19 @@ function geoDeriveRows(result, ids) {
       client_name: l.to.clientId != null ? (l.to.name || '') : '',
       purpose: l.to.kind === 'shop' ? 'Shop' : (l.to.kind === 'supply' ? 'Supply run' : (l.to.clientId != null || l.to.jobId != null ? 'Client Consult' : 'Business')),
       notes: '', start: 0, end: 0, vehicle: '',
-    }, l.to.kind === 'supply' ? {
+    }, l.held ? {
+      // ── RULE 15: nothing vouched for this drive ────────────────────────
+      // Held, not dropped: the row keeps its miles, its route and its place
+      // in the odometer story, and stays out of every money total until
+      // somebody answers. The same shape a receipt-gated supply run has used
+      // since 2026-08-17, and the same choke point reads both
+      // (deductibleTrips / reimbursableTrips, js/mileage.js).
+      //
+      // The purpose is emptied deliberately. 'Business' was the fallback for
+      // a destination the deriver could not name, which is precisely the
+      // drive it has no standing to label.
+      pendingPurpose: true, purpose: '',
+    } : {}, l.to.kind === 'supply' ? {
       // THE RECEIPT IS THE PROOF, NOT THE DESTINATION (owner design
       // 2026-08-17, and owner 2026-09-05: "the receipt thing didn't stay
       // alive from my Home Depot run"). A leg that ends at a supply place is
@@ -1631,5 +1807,8 @@ function geoDeriveRows(result, ids) {
       calc_method: 'derived-traced', gpsMiles: l.miles,
     } : {}));
   }
-  return { job_time_entries: time, shop_time_entries: shop, td_mileage: miles };
+  // `held` is the spans this account declined, so the caller can say so
+  // rather than the day quietly coming up short. Never written anywhere: the
+  // whole point is that this account has no standing to write them.
+  return { job_time_entries: time, shop_time_entries: shop, td_mileage: miles, held };
 }

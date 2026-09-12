@@ -266,7 +266,7 @@ function _buildStateBrackets(data,status){
 // from the Settings UI; calling it from anywhere else wipes every saved value
 // with whatever happens to be in the (usually empty) form inputs.
 function _settingsChanged(){S.settingsTs=Date.now();saveAll();}
-function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){supaSaveDebounced();return;}try{
+function saveAll(){if(typeof opsReadOnly==='function'&&opsReadOnly())return;if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){supaSaveDebounced();return;}try{
   // Settings are the most critical local write, if quota is blown, evict the
   // bulky image caches (rebuilt from cloud on demand) and retry rather than
   // silently losing every settings change until the next successful cloud save.
