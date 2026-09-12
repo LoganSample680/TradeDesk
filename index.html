@@ -76,7 +76,10 @@
     return;
   }
   var step=parseInt(q.get('step'),10);
-  window.__TD_DEMO={ step:(step>=1&&step<=8)?step:1 };
+  // ?scene= names a screen ('present' is the client's own view of the
+  // proposal); ?step= is the older 1-8 index. Both boot the same demo.
+  var scene=(q.get('scene')||'').replace(/[^a-z]/g,'');
+  window.__TD_DEMO={ step:(step>=1&&step<=8)?step:1, scene:scene||null };
 })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">

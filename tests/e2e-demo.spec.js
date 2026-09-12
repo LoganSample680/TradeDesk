@@ -69,8 +69,15 @@ async function openDemo(browser, query) {
 }
 
 // A 404 for a missing icon is not the app failing; a real error is.
+//
+// navigator.vibrate is the other one, and it is the browser's rule rather than
+// ours: Chromium refuses haptics in a frame nobody has tapped yet and logs it
+// as an error. The call site (_tdHaptic, js/utils.js) is feature-checked and
+// inside a try, so it cannot throw, and a real visitor reaches these screens
+// BY tapping, so the gesture exists and the message never appears for them.
 const realErrors = errs => errs.filter(e =>
-  !/favicon|Failed to load resource|net::ERR|status of 4\d\d/i.test(e));
+  !/favicon|Failed to load resource|net::ERR|status of 4\d\d/i.test(e) &&
+  !/Blocked call to navigator\.vibrate/i.test(e));
 
 test.describe('the live demo', () => {
   test.beforeAll(async () => { site = await start(0); });
@@ -282,29 +289,97 @@ test.describe('the live demo', () => {
     await ctx.close();
   });
 
-  test('the marketing page offers the live app and swaps the recreation for it', async ({ browser }) => {
+  // The demo used to run inside the decorative device mockups: a 390px app
+  // scaled into a 260px picture of a phone, with no way out. This is what
+  // replaced it, so what has to hold is that the frame opens over the page at
+  // native size, that there is a way out, and that the tour is the owner's
+  // five chapters rather than eight numbered steps.
+  test('the marketing page opens the app in a full-screen theater with a way out', async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
     await offline(page);
     await page.goto(site.url + '/landing', { waitUntil: 'domcontentloaded' });
-    // The page runtime hydrates from a CDN that is blocked here, so drive the
-    // static markup's promise instead: the buttons and the frames are what the
-    // component renders, and the component itself is covered by its own parse.
+    // The page runtime hydrates from a CDN that is blocked here, so the static
+    // markup's promise is what can be driven; the component's own behaviour is
+    // covered by the scene tests below, which need no CDN.
     const html = await page.content();
     expect(html).toContain('Try it live');
+    expect(html, 'the tour is offered by name').toContain('Play the guided tour');
 
-    // The component's two live frames, from the source, not a screenshot:
     const src = await (await request.newContext({ baseURL: site.url })).get('/landing');
     const text = await src.text();
-    expect(text, 'hero frames get the live app').toMatch(/liveHero \? this\.liveEl\('phone'\)/);
-    expect(text, 'the walkthrough gets its own frame').toMatch(/flowLiveEl: this\.state\.liveFlow/);
-    expect(text, 'the frames load the real app').toContain("'/?demo=1'");
-    // Stepping steers the running frame instead of reloading it.
-    expect(text).toContain('tellDemo(i+1)');
-    expect(text).toMatch(/postMessage\(\{td:'demo', step\}, location\.origin\)/);
-    // The recreation stays behind it as the poster, so the hero is never empty
-    // before the tap, with no JS, or if the frame fails.
+
+    // The owner's five chapters, in his words and his order.
+    for (const t of ['Enter the lead', 'Build the proposal', 'The client signs', 'Schedule the work', 'Get paid']) {
+      expect(text, `chapter "${t}"`).toContain(t);
+    }
+    expect(text, 'five chapters, not eight steps').toMatch(/onChapter0[\s\S]*onChapter4/);
+    expect(text, 'the eight-step list is gone, not hidden (7.1)').not.toContain('onStep7');
+    expect(text, 'and so is the frame it used to steer').not.toContain('flowLiveEl');
+
+    // Full screen, at native size. A transform on the frame is what made the
+    // old one unreadable, so its absence is the assertion.
+    expect(text, 'the theater is a full-viewport overlay').toMatch(/position:'fixed',inset:0,zIndex:9999/);
+    expect(text, 'the frame is not scaled').not.toMatch(/transformOrigin:'top left'/);
+    expect(text).toContain("'/?demo=1&scene='");
+
+    // A way out: a labelled button AND Escape.
+    expect(text, 'a labelled close button').toMatch(/'Close the demo', \(\)=>this\.closeTheater\(\)/);
+    expect(text, 'Escape closes it').toMatch(/e\.key==='Escape'/);
+    expect(text, 'and the page behind stops scrolling while it is open').toContain("document.body.style.overflow='hidden'");
+
+    // Steering a running frame, never reloading it.
+    expect(text).toMatch(/postMessage\(\{td:'demo', scene:b\.scene\}, location\.origin\)/);
+    // The recreation stays behind it as the poster.
     expect(text).toContain('{{ phoneShotEl }}');
+    await ctx.close();
+  });
+
+  // The chapter the owner named specifically: "what it looks like for clients
+  // to sign". That is not the contractor's bid detail, it is presentation
+  // mode, the screen he turns around and hands across the kitchen table.
+  test('the client-signs scene shows the customer\'s own view, not the contractor\'s', async ({ browser }) => {
+    const { ctx, page, errors } = await openDemo(browser, '/?demo=1&scene=present');
+    const r = await page.evaluate(() => {
+      const ov = document.getElementById('_gei-present-ov');
+      return {
+        open: !!ov,
+        canSign: !!document.getElementById('present-sign'),
+        text: ov ? ov.innerText : '',
+        // Seeded UNSIGNED: the moment being shown is the one before signature.
+        signed: !!(bids[0] && bids[0].signedAt),
+      };
+    });
+    expect(r.open, 'presentation mode is open').toBe(true);
+    expect(r.canSign, 'and Approve & sign is a live button').toBe(true);
+    expect(r.text, 'the business letterhead').toContain('Hollow Creek Painting');
+    expect(r.text, 'the customer').toContain('Dana Whitfield');
+    expect(r.signed, 'the proposal is not yet signed at this beat').toBe(false);
+    expect(realErrors(errors)).toEqual([]);
+    await ctx.close();
+  });
+
+  test('a scene message steers a running demo without reloading it', async ({ browser }) => {
+    const { ctx, page, errors } = await openDemo(browser, '/?demo=1&scene=lead');
+    const before = await page.evaluate(() => window.__TD_DEMO.scene);
+    expect(before).toBe('lead');
+
+    // Exactly what the theater posts, from this origin.
+    await page.evaluate(() => window.postMessage({ td: 'demo', scene: 'collect' }, location.origin));
+    await page.waitForFunction(() => window.__TD_DEMO.scene === 'collect', null, { timeout: 5000 });
+    const after = await page.evaluate(() => ({
+      scene: window.__TD_DEMO.scene,
+      page: document.querySelector('.pg.active') && document.querySelector('.pg.active').id,
+      // Every scene the theater can ask for has to exist, or a chapter dead-ends.
+      known: ['lead','estimate','present','signed','schedule','onsite','change','invoice','collect']
+        .filter(k => !_TD_DEMO_SCENES[k]),
+    }));
+    expect(after.scene).toBe('collect');
+    expect(after.known, 'every scene the tour names is defined').toEqual([]);
+    // Moving on closes the previous scene's overlay rather than drawing under it.
+    const leftover = await page.evaluate(() => !!document.getElementById('_gei-present-ov'));
+    expect(leftover).toBe(false);
+    expect(realErrors(errors)).toEqual([]);
     await ctx.close();
   });
 
