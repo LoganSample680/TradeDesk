@@ -458,6 +458,7 @@ function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringif
 // data loss with nothing able to put it back. Old queue entries written before
 // this option existed have no flag, so they keep the ignore behaviour.
 function _geoEnqueue(tbl,row,opts){
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   // ONE WRITER (owner 2026-09-02). Automatic time rows come from the day
   // deriver through geo_replace_day now. Every closer in this file that used
   // to enqueue its own row for a fence event still runs (it drives the
@@ -6692,6 +6693,11 @@ function _geoDisarmIfForeign(){
 }
 
 function _geoTrackInit(){
+  // Read-only support view (js/ops-view.js): the phone in your hand is not
+  // theirs. Tracking here would prompt the VIEWER for location, watch the
+  // VIEWER's position, and try to write it against the account being looked
+  // at. Looking at somebody's app is not that person working.
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
   _geoDisarmIfForeign();                     // drop the other account's fences before arming ours
@@ -7335,6 +7341,7 @@ async function _geoDeriveServerFixes(fromMs,toMs){
 }
 
 function _geoEnqueueRpc(dayKey,args){
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   try{
     const key='rpc:'+dayKey;
     const q=_geoQueueRead().filter(x=>!(x&&x.row&&x.row.client_key===key));

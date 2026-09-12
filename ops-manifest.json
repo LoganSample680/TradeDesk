@@ -1,0 +1,15 @@
+{
+  "name": "TradeDesk Ops",
+  "short_name": "Ops",
+  "description": "Internal ops portal: the numbers, and a read-only view of any account.",
+  "start_url": "/ops.html",
+  "scope": "/ops.html",
+  "display": "standalone",
+  "background_color": "#0F0D0B",
+  "theme_color": "#7C3D0A",
+  "icons": [
+    { "src": "/icons/ops-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/ops-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/ops-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

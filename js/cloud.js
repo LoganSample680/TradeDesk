@@ -681,7 +681,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.12.26.1';
+const APP_VERSION='09.12.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1417,7 +1417,7 @@ window._tdSoftDelete=_tdSoftDelete;
 // and old records auto-archive (kept forever). The ONE exception is the dev/owner
 // purging a rare duplicate via the hidden 3s long-press (below). is_dev comes from
 // the account config; dev-support mode counts too (only is_dev accounts can enter it).
-function _canDelete(){try{if(window._e2eAllowDelete)return true;return !!((typeof _config!=='undefined'&&_config&&_config.is_dev)||(typeof _devSupportMode!=='undefined'&&_devSupportMode));}catch(_e){return false;}}
+function _canDelete(){try{if(typeof opsReadOnly==='function'&&opsReadOnly())return false;if(window._e2eAllowDelete)return true;return !!((typeof _config!=='undefined'&&_config&&_config.is_dev)||(typeof _devSupportMode!=='undefined'&&_devSupportMode));}catch(_e){return false;}}
 window._canDelete=_canDelete;
 
 // A dev deletion HARD-removes the actual DB row (for dupe cleanup, "delete the
@@ -6755,6 +6755,7 @@ function supaSaveDebounced(){
 // (e.g. pull-to-refresh) can await it before reloading from cloud.
 let _pendingSavePromise=null;
 function _flushSaveNow(){
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
   _pendingSavePromise=supaSaveToCloud().finally(()=>{_pendingSavePromise=null;});
   return _pendingSavePromise;
@@ -7054,6 +7055,7 @@ function _paintCacheForDelta(uid){
   }catch(_e){return false;}
 }
 function _writeLocalCache(){
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   try{
     // _owner = the LOGIN this cache belongs to (identity comparisons at boot).
     // _dataOwner = the BUSINESS whose rows it holds: the contractor's uid for a
@@ -7079,6 +7081,9 @@ function _writeLocalCache(){
 }
 
 async function supaSaveToCloud(){
+  // Read-only support view (js/ops-view.js): the account in memory is not this
+  // login's, so a push here would write one account's rows into another's.
+  if(typeof opsReadOnly==='function'&&opsReadOnly()){_logSave('skip','ops read-only view');return;}
   if(_deliberateSignOut){_logSave('skip','deliberate sign-out in progress');return;}
   if(!_supa||!_supaUser){
     if(_mergeOnSignIn){

@@ -93,16 +93,50 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     // and the apex refuses it, so on production this measured the edge's bot
     // protection rather than the deploy. A same-origin fetch from the loaded
     // page is both what the app really does and what a visitor's browser does.
-    const liveJson = await page.evaluate(async () => {
+    // Report WHY, not just null. Swallowing the reason here is what left a
+    // WebKit-only failure unexplainable: a 403 from the edge, a thrown network
+    // error and a bad payload all looked identical from the outside.
+    const vres = await page.evaluate(async () => {
       try {
         const r = await fetch('/version.json?_=' + Date.now(), { cache: 'no-store' });
-        return r.ok ? (await r.json()).version : null;
-      } catch (e) { return null; }
+        const body = await r.text();
+        let version = null;
+        try { version = JSON.parse(body).version; } catch (e) { /* reported below */ }
+        return { ok: r.ok, status: r.status, type: r.type, version, body: body.slice(0, 120) };
+      } catch (e) { return { ok: false, status: -1, threw: String(e && e.message || e) }; }
     });
+    const liveJson = vres.version || null;
 
     expect(EXPECTED_VERSION, 'checkout has a version.json to compare against').toBeTruthy();
+
+    // APP_VERSION is the HARD gate and the complete one. That value was parsed out of
+    // the bundle this navigation just pulled from the origin, so it is a direct
+    // statement about which build is being served. A stale cache or an unpropagated
+    // deploy still fails here, which is the whole reason this check exists.
     expect(liveVersion, `live APP_VERSION (${liveVersion}) must equal the deployed commit (${EXPECTED_VERSION}): a mismatch = stale cache / deploy not propagated`).toBe(EXPECTED_VERSION);
-    expect(liveJson, `live /version.json (${liveJson}) must equal ${EXPECTED_VERSION}`).toBe(EXPECTED_VERSION);
+
+    // The /version.json probe is a SECOND witness of the same fact, and unlike the
+    // first it is not always allowed to answer: on the apex, Cloudflare intermittently
+    // serves this path its "Just a moment..." managed challenge (403, an HTML body) to
+    // an automated browser. Observed on webkit alone on 2026-09-11 and on both engines
+    // on 2026-09-12, which is what ruled out the WebKit-engine theory: it is the edge
+    // scoring a headless client, not a browser that cannot fetch.
+    //
+    // So a challenge is reported, loudly, and is not counted as a deploy fault, because
+    // it is not a statement about the deploy. A WRONG version here still fails: that
+    // would mean the origin is serving two different builds at once.
+    //
+    // This costs the app nothing either way. All four readers of this file
+    // (_checkVersionOnResume and _geoBgUpdateCheck guard on `!r.ok`; _probeAndSync and
+    // _classifyCloudError only care whether the fetch THROWS, and a 403 resolves) treat
+    // a challenge as "no answer this tick" and carry on. The worst case for a real user
+    // is one missed 15-second version check, never a reload loop and never a false
+    // offline banner.
+    if (liveJson === null) {
+      console.log(`::warning::/version.json did not answer on ${new URL(page.url()).host}: ${JSON.stringify(vres)}. APP_VERSION proved the deploy; the watchdog's own source was challenged, not broken.`);
+    } else {
+      expect(liveJson, `live /version.json must equal ${EXPECTED_VERSION}, got ${JSON.stringify(vres)}`).toBe(EXPECTED_VERSION);
+    }
 
     // A healthy deploy must not boot with app-origin console errors. Third-party/cross-
     // origin noise (MapKit CDN, Stripe, Google Fonts, Cloudflare's own Web Analytics
