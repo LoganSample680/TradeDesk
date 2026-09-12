@@ -112,10 +112,23 @@ async function _opsLoadIdentity(){
 function _opsRefuse(msg){
   window._OPS_BOOT=null; window._opsView=null; window._opsArming=false;
   try{
-    document.body.innerHTML='<div style="font:14px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;'+
-      'padding:40px 24px;text-align:center;color:#4a4a4a">'+
-      '<div style="font-size:16px;font-weight:800;margin-bottom:6px">Support view unavailable</div>'+
-      _opsEsc(msg)+'</div>';
+    // COVERS the page, and hangs off documentElement rather than body. Emptying
+    // the body was the first cut and CI caught both of its faults: the boot
+    // sequence carries on after this returns and threw on the first element it
+    // expected to find (dash-greet, webkit), and the app's own render put a
+    // fresh body underneath, taking the notice with it.
+    let el=document.getElementById('ops-refused');
+    if(!el){
+      el=document.createElement('div');
+      el.id='ops-refused';
+      el.style.cssText='position:fixed;inset:0;z-index:2147483647;background:#fff;color:#4a4a4a;'+
+        'font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;'+
+        'display:flex;flex-direction:column;align-items:center;justify-content:center;'+
+        'padding:40px 24px;text-align:center';
+      document.documentElement.appendChild(el);
+    }
+    el.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:6px">Support view unavailable</div>'+
+      '<div style="max-width:420px">'+_opsEsc(msg)+'</div>';
   }catch(_e){}
 }
 

@@ -108,6 +108,7 @@ test.describe('A support view boots as the target', () => {
     await seed(page);
     await page.goto(`/?ops=1&t=${TARGET}&p=${PERSON}`, { waitUntil: 'domcontentloaded' });
 
+    await page.waitForFunction(() => typeof _supa !== 'undefined' && _supa && _supaUser, null, { timeout: 15000 });
     const r = await page.evaluate(async () => {
       const ok = await _opsLoadIdentity();
       return {
@@ -139,6 +140,7 @@ test.describe('A support view boots as the target', () => {
     await mockAllExternal(page);
     await seed(page);
     await page.goto(`/?ops=1&t=${TARGET}&p=${PERSON}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof _supa !== 'undefined' && _supa && _supaUser, null, { timeout: 15000 });
     await page.evaluate(() => _opsLoadIdentity());
     await page.waitForTimeout(600);
 
@@ -165,13 +167,23 @@ test.describe('A support view boots as the target', () => {
     await seed(page, { roster: [] });          // not on the allowlist, or the account is gone
     await page.goto(`/?ops=1&t=${TARGET}&p=${PERSON}`, { waitUntil: 'domcontentloaded' });
 
+    await page.waitForFunction(() => typeof _supa !== 'undefined' && _supa && _supaUser, null, { timeout: 15000 });
+    await page.waitForFunction(() => typeof _supa !== 'undefined' && _supa && _supaUser, null, { timeout: 15000 });
     const r = await page.evaluate(async () => {
       const ok = await _opsLoadIdentity();
-      return { ok, body: document.body.innerText, dash: !!document.querySelector('#pg-dash.active'), view: window._opsView };
+      const cover = document.getElementById('ops-refused');
+      // What matters is what a person can SEE and touch, not whether the app
+      // finished booting underneath: the refusal covers the viewport, so the
+      // element under the middle of the screen is the notice and nothing else.
+      const mid = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+      return { ok, covered: !!cover, text: cover ? cover.innerText : '',
+               onTop: !!(cover && mid && (mid === cover || cover.contains(mid))),
+               view: window._opsView };
     });
     expect(r.ok).toBe(false);
-    expect(r.body).toContain('Support view unavailable');
-    expect(r.dash).toBe(false);
+    expect(r.covered).toBe(true);
+    expect(r.text).toContain('Support view unavailable');
+    expect(r.onTop).toBe(true);
     expect(r.view).toBe(null);
     await ctx.close();
   });
@@ -182,8 +194,9 @@ test.describe('A support view boots as the target', () => {
     await mockAllExternal(page);
     await seed(page);
     await page.goto(`/?ops=1&t=${TARGET}&p=${PERSON}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof _supa !== 'undefined' && _supa && _supaUser, null, { timeout: 15000 });
     await page.evaluate(() => _opsLoadIdentity());
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(1200);
     assertNoErrors(page, 'ops boot as target');
     await ctx.close();
   });
