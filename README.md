@@ -13,8 +13,8 @@ $99.99/month flat for the whole crew, every feature included. No per-seat fees, 
 feature tiers. Two-week free trial, no credit card. A founder rate of $29.99/month
 is open to the first 10 accounts and is locked for the life of the account.
 
-Runs in any browser on phone, tablet or desktop. On iPhone: Safari, Share, Add to
-Home Screen. A native iPhone app is in beta.
+There is a native iPhone app, in beta now. It also runs in any browser on phone,
+tablet or desktop, so the truck and the office see the same data either way.
 
 ---
 

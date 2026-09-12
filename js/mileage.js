@@ -479,6 +479,10 @@ function _initMapKit(){
   _mapkitReady=true;
   _retryPendingTrips();
 }
+// If the CDN script loaded before this file ran, its onload could not call a
+// function that did not exist yet, so it left a flag (index.html). Honor it
+// here, once, at the first moment the call is possible.
+if(typeof window!=='undefined'&&window.__mapkitLoaded){window.__mapkitLoaded=0;_initMapKit();}
 // The wheels cannot beat the road (owner report 2026-08-11: Home Depot to the
 // shop "in 3 minutes", which that route cannot be driven in). A leg picked up
 // mid-drive (webview crash, app relaunch, late first fix) opens its clock
