@@ -325,6 +325,28 @@ test.describe('marketing site routing', () => {
     expect(html['/']).toContain('href="/?app=1"');
   });
 
+  test('no page tells a crawler the product is a browser-only PWA', () => {
+    // A live search on 2026-09-12 came back describing TradeDesk as "a PWA, no
+    // install, no app store needed". Half of that was another product with a
+    // similar name, but our own FAQ handed it the phrase: it opened with
+    // "there is nothing to install to get started" and mentioned the iPhone
+    // app second. The owner's correction: there IS an iPhone app, and leading
+    // with the browser reads as though there is not.
+    //
+    // The web app is real and stays: what is banned is copy that frames the
+    // product as browser-only, which is what a crawler quotes back.
+    for (const r of ROUTES) {
+      expect(html[r], `${r} does not claim there is nothing to install`)
+        .not.toMatch(/nothing to install/i);
+      expect(html[r], `${r} does not claim there is no app store`)
+        .not.toMatch(/no app ?store|without.{0,20}app ?store/i);
+    }
+    // And the landing page still says the app exists, in both the copy a
+    // person reads and the schema a machine reads.
+    expect(html['/'], 'the iPhone app is named on the landing page')
+      .toMatch(/native iPhone app/);
+  });
+
   test('landing FAQ JSON-LD matches the 19 visible <details> items', async () => {
     const h = html['/'];
     const ldBlocks = [...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => JSON.parse(m[1]));
