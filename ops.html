@@ -40,6 +40,9 @@
   --bar:44px;
 }
 *{box-sizing:border-box}
+/* .rows and .tiles set display, which beats the browser's own [hidden] rule, so
+   a hidden section stayed on screen. Everything here hides when told to. */
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
 header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
@@ -147,8 +150,8 @@ form.signin input{background:#120F0D;border:1px solid var(--line2);color:var(--t
   </div>
 
   <main id="main" hidden>
-    <!-- LEVEL 1: everything. Search covers businesses and people; the list pages
-         itself so four hundred accounts do not put four hundred rows in the DOM. -->
+    <!-- LEVEL 1: the trades. Search still reaches every business and person, so
+         the hierarchy never gets in the way of knowing where you want to go. -->
     <section id="lvl-all">
       <div class="section-title" style="margin-top:6px">Activity</div>
       <div class="range" id="range" style="margin-bottom:10px">
@@ -158,24 +161,36 @@ form.signin input{background:#120F0D;border:1px solid var(--line2);color:var(--t
       </div>
       <div class="tiles" id="tiles"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
 
-      <div class="section-title">Accounts</div>
+      <div class="section-title">Trades</div>
       <div class="searchbar">
         <input id="q" type="search" placeholder="Search a business or a person" autocomplete="off" spellcheck="false">
-        <select id="sort" aria-label="Sort">
-          <option value="active">Last active</option>
-          <option value="name">Name</option>
-          <option value="people">People</option>
-          <option value="miles">Miles</option>
-        </select>
       </div>
       <div class="count" id="count"></div>
-      <div class="rows" id="list"></div>
+      <div class="rows" id="trades"></div>
+      <div class="rows" id="results" hidden></div>
       <button id="more" hidden>Show more</button>
     </section>
 
-    <!-- LEVEL 2: one business. Its numbers for the range, then its people. -->
+    <!-- LEVEL 2: the businesses in one trade, ordered by how hard they use it. -->
+    <section id="lvl-trade" hidden>
+      <button class="back" id="trade-back">‹ All trades</button>
+      <div class="biz-title" id="trade-name"></div>
+      <div class="muted" id="trade-sub" style="margin-bottom:12px"></div>
+      <div class="searchbar">
+        <select id="sort" aria-label="Sort">
+          <option value="active-desc">Most active first</option>
+          <option value="active-asc">Least active first</option>
+          <option value="miles-desc">Most miles</option>
+          <option value="name">Name</option>
+        </select>
+      </div>
+      <div class="rows" id="trade-biz"></div>
+      <button id="trade-more" hidden>Show more</button>
+    </section>
+
+    <!-- LEVEL 3: one business. Its numbers for the range, then its people. -->
     <section id="lvl-biz" hidden>
-      <button class="back" id="biz-back">‹ All accounts</button>
+      <button class="back" id="biz-back">‹ Back</button>
       <div class="biz-title" id="biz-name"></div>
       <div class="muted" id="biz-sub" style="margin-bottom:14px"></div>
       <div class="tiles" id="biz-tiles"></div>
@@ -219,9 +234,12 @@ function num(v){
 }
 
 let PEOPLE=[];                       // one row per person, straight from the roster
-let BIZ=[];                          // one row per business, built from PEOPLE + the rollup
+let BIZ=[];                          // one row per business
+let TRADES=[];                       // one row per trade, built from BIZ
 let STATS=new Map();                 // contractor_user_id -> ops_by_contractor row
-let DAYS=30, SHOWN=PAGE, QUERY='', SORT='active', OPEN=null;
+let DAYS=30, QUERY='', SORT='active-desc';
+let SHOWN=PAGE, TSHOWN=PAGE;
+let TRADE=null, OPEN=null;           // the trade and the business being looked at
 
 /* ── Boot ─────────────────────────────────────────────────────────────────── */
 (async function boot(){
@@ -245,8 +263,7 @@ async function load(){
   const {data,error}=await sb.rpc('ops_view_roster');
   // An ERROR and an EMPTY roster are different answers and used to render the
   // same denial card, which sent you hunting for a permissions problem when the
-  // network was the actual fault. Error says so; empty means not on the ops
-  // allowlist, which is what the RPC returns for everyone else.
+  // network was at fault. Error says so; empty means not on the ops allowlist.
   if(error){
     $('denied').hidden=false;
     $('denied-title').textContent='Could not load';
@@ -259,22 +276,39 @@ async function load(){
   if(!Array.isArray(data)||!data.length){ $('denied').hidden=false; return; }
   PEOPLE=data;
   $('main').hidden=false;
-  buildBiz();
-  renderList();
+  build();
+  renderTrades();
   refreshStats();
 }
 
-// One row per business, from the people roster. The rollup fills in activity
-// when it lands; the list is usable before it does.
-function buildBiz(){
+// Businesses from the people roster, then trades from the businesses. The trade
+// is whatever the contractor picked in settings (account_config.business_type),
+// carried on every roster row.
+function build(){
   const m=new Map();
   PEOPLE.forEach(p=>{
     let b=m.get(p.contractor_user_id);
-    if(!b){ b={id:p.contractor_user_id,name:p.business||'Unknown',people:[]}; m.set(p.contractor_user_id,b); }
+    if(!b){ b={id:p.contractor_user_id,name:p.business||'Unknown',trade:p.trade||'unknown',lines:p.trade_lines||'',people:[]}; m.set(p.contractor_user_id,b); }
     b.people.push(p);
   });
   BIZ=[...m.values()];
+  const t=new Map();
+  BIZ.forEach(b=>{
+    let e=t.get(b.trade);
+    if(!e){ e={trade:b.trade,biz:[],people:0}; t.set(b.trade,e); }
+    e.biz.push(b); e.people+=b.people.length;
+  });
+  TRADES=[...t.values()].sort((x,y)=>y.biz.length-x.biz.length||x.trade.localeCompare(y.trade));
 }
+
+// Title case, except the trades that are acronyms and read wrong that way.
+const TRADE_CAPS={hvac:'HVAC',gc:'GC',ac:'AC'};
+const TRADE_LABEL=t=>{
+  if(!t||t==='unknown')return 'Not set';
+  return t.replace(/[-_]/g,' ').split(' ')
+    .map(w=>TRADE_CAPS[w.toLowerCase()]||w.charAt(0).toUpperCase()+w.slice(1))
+    .join(' ');
+};
 
 /* ── Range and numbers ────────────────────────────────────────────────────── */
 $('range').addEventListener('click',e=>{
@@ -282,9 +316,7 @@ $('range').addEventListener('click',e=>{
   if(!b)return;
   DAYS=+b.dataset.days;
   [...$('range').children].forEach(c=>c.classList.toggle('on',c===b));
-  renderTiles();
   refreshStats();
-  if(OPEN)renderBiz(OPEN);
 });
 
 function rangeIso(){
@@ -311,82 +343,74 @@ async function renderTiles(){
 }
 const tile=(v,k)=>`<div class="tile"><div class="tile-v">${v==null?'—':esc(typeof v==='number'||/^[\d.]+$/.test(String(v))?num(v):v)}</div><div class="tile-k">${esc(k)}</div></div>`;
 
-// Per-business activity, one call for every account in the range. Feeds the
-// sort and each row's right-hand number, so a search result is not just a name.
+// Per-business activity for the range: the sort key for "top user to least",
+// and each row's number.
 async function refreshStats(){
   const {from,to}=rangeIso();
   renderTiles();
   const {data,error}=await sb.rpc('ops_by_contractor',{p_from:from,p_to:to});
-  if(error||!Array.isArray(data))return;
-  STATS=new Map(data.map(r=>[r.contractor_user_id,r]));
-  renderList();
+  if(!error&&Array.isArray(data))STATS=new Map(data.map(r=>[r.contractor_user_id,r]));
+  renderTrades();
+  if(TRADE)renderTrade(TRADE);
   if(OPEN)renderBiz(OPEN);
 }
+const use=b=>{ const s=STATS.get(b.id)||{}; return Number(s.active_days||0); };
 
-/* ── Level 1: search, sort, page ──────────────────────────────────────────── */
-$('q').addEventListener('input',e=>{ QUERY=e.target.value.trim().toLowerCase(); SHOWN=PAGE; renderList(); });
-$('sort').addEventListener('change',e=>{ SORT=e.target.value; renderList(); });
-$('more').addEventListener('click',()=>{ SHOWN+=PAGE; renderList(); });
-// "/" focuses the search from anywhere, the one shortcut worth having on a page
-// whose whole job is finding one account out of hundreds.
+/* ── Level 1: trades, or search results ───────────────────────────────────── */
+$('q').addEventListener('input',e=>{ QUERY=e.target.value.trim().toLowerCase(); SHOWN=PAGE; renderTrades(); });
+$('more').addEventListener('click',()=>{ SHOWN+=PAGE; renderTrades(); });
 document.addEventListener('keydown',e=>{
   if(e.key==='/'&&document.activeElement!==$('q')&&!$('view').classList.contains('on')){ e.preventDefault(); $('q').focus(); }
 });
 
-function matches(){
-  // No query: every business. With a query: businesses whose name matches, plus
-  // PEOPLE whose name or email matches, so "jack" finds the person even when
-  // you cannot remember which business he is on.
-  if(!QUERY)return BIZ.map(b=>({kind:'biz',biz:b}));
-  const out=[];
-  BIZ.forEach(b=>{ if(b.name.toLowerCase().includes(QUERY))out.push({kind:'biz',biz:b}); });
-  const hitBiz=new Set(out.map(o=>o.biz.id));
+function renderTrades(){
+  if(QUERY)return renderResults();
+  $('results').hidden=true; $('trades').hidden=false; $('more').hidden=true;
+  $('count').textContent=`${TRADES.length} ${TRADES.length===1?'trade':'trades'}, ${BIZ.length} businesses, ${PEOPLE.length} people`;
+  $('trades').innerHTML=TRADES.map(t=>{
+    const active=t.biz.filter(b=>use(b)>0).length;
+    return `<button class="row" data-trade="${esc(t.trade)}">
+      <span class="row-main">
+        <span class="row-name">${esc(TRADE_LABEL(t.trade))}</span>
+        <span class="row-sub">${t.people} ${t.people===1?'person':'people'}${active?' · '+active+' active in range':' · none active in range'}</span>
+      </span>
+      <span class="row-stat"><b>${t.biz.length}</b>${t.biz.length===1?'business':'businesses'}</span>
+      <span class="chev">›</span>
+    </button>`;
+  }).join('');
+}
+
+// Search never stops at the trade level: a business name matches the business,
+// a person name or email matches the person, tagged with where they work.
+function renderResults(){
+  $('trades').hidden=true; $('results').hidden=false;
+  const rows=[];
+  BIZ.forEach(b=>{ if(b.name.toLowerCase().includes(QUERY))rows.push({kind:'biz',biz:b}); });
+  const hit=new Set(rows.map(r=>r.biz.id));
   PEOPLE.forEach(p=>{
     const hay=((p.person_name||'')+' '+(p.person_email||'')).toLowerCase();
-    if(hay.includes(QUERY)&&!hitBiz.has(p.contractor_user_id))out.push({kind:'person',person:p});
+    if(hay.includes(QUERY)&&!hit.has(p.contractor_user_id))rows.push({kind:'person',person:p});
   });
-  return out;
-}
-
-function sortRows(rows){
-  const stat=b=>STATS.get(b.id)||{};
-  const cmp={
-    name:(a,b)=>label(a).localeCompare(label(b)),
-    people:(a,b)=>(size(b)-size(a))||label(a).localeCompare(label(b)),
-    miles:(a,b)=>((stat(b.biz||{}).total_miles||0)-(stat(a.biz||{}).total_miles||0)),
-    active:(a,b)=>{
-      const la=a.kind==='biz'?(stat(a.biz).last_active||''):'';
-      const lb=b.kind==='biz'?(stat(b.biz).last_active||''):'';
-      return lb.localeCompare(la)||label(a).localeCompare(label(b));
-    }
-  }[SORT];
-  return rows.sort(cmp);
-  function label(r){ return r.kind==='biz'?r.biz.name:(r.person.person_name||r.person.person_email||''); }
-  function size(r){ return r.kind==='biz'?r.biz.people.length:1; }
-}
-
-function renderList(){
-  const rows=sortRows(matches());
   const page=rows.slice(0,SHOWN);
-  $('count').textContent=QUERY
-    ? `${rows.length} ${rows.length===1?'match':'matches'} for "${QUERY}"`
-    : `${BIZ.length} ${BIZ.length===1?'business':'businesses'}, ${PEOPLE.length} people`;
-  $('list').innerHTML=page.map(r=>r.kind==='biz'?bizRow(r.biz):personRow(r.person)).join('')
+  $('count').textContent=`${rows.length} ${rows.length===1?'match':'matches'} for "${QUERY}"`;
+  $('results').innerHTML=page.map(r=>r.kind==='biz'?bizRow(r.biz,true):personRow(r.person)).join('')
     || `<div class="card muted">Nothing matches "${esc(QUERY)}".</div>`;
   $('more').hidden=rows.length<=SHOWN;
   $('more').textContent=`Show ${Math.min(PAGE,rows.length-SHOWN)} more of ${rows.length}`;
 }
 
-function bizRow(b){
+function bizRow(b,withTrade){
   const s=STATS.get(b.id)||{};
   const crew=b.people.filter(p=>p.role!=='owner').length;
-  const last=s.last_active?relDay(s.last_active):'no activity';
+  const bits=[`${b.people.length} ${b.people.length===1?'person':'people'}${crew?' · '+crew+' crew':''}`,
+              s.last_active?relDay(s.last_active):'no activity'];
+  if(withTrade)bits.unshift(TRADE_LABEL(b.trade));
   return `<button class="row" data-biz="${esc(b.id)}">
     <span class="row-main">
       <span class="row-name">${esc(b.name)}</span>
-      <span class="row-sub">${b.people.length} ${b.people.length===1?'person':'people'}${crew?' · '+crew+' crew':''} · ${esc(last)}</span>
+      <span class="row-sub">${esc(bits.join(' · '))}</span>
     </span>
-    ${s.total_miles!=null?`<span class="row-stat"><b>${esc(num(s.total_miles))}</b>miles</span>`:''}
+    <span class="row-stat"><b>${s.active_days!=null?esc(num(s.active_days)):'0'}</b>days used</span>
     <span class="chev">›</span>
   </button>`;
 }
@@ -410,10 +434,14 @@ function relDay(d){
   return 'last active '+d;
 }
 
-$('list').addEventListener('click',e=>{
+$('trades').addEventListener('click',e=>{
+  const el=e.target.closest('[data-trade]');
+  if(el)openTrade(TRADES.find(t=>t.trade===el.dataset.trade));
+});
+$('results').addEventListener('click',e=>{
   const el=e.target.closest('[data-biz]');
   if(!el)return;
-  if(el.dataset.person){                         // a person hit: straight in
+  if(el.dataset.person){
     const p=PEOPLE.find(x=>x.person_user_id===el.dataset.person&&x.contractor_user_id===el.dataset.biz);
     if(p)openView(p);
     return;
@@ -422,26 +450,65 @@ $('list').addEventListener('click',e=>{
   if(b)openBiz(b);
 });
 
-/* ── Level 2: one business ────────────────────────────────────────────────── */
+/* ── Level 2: the businesses in one trade ─────────────────────────────────── */
+function openTrade(t){
+  if(!t)return;
+  TRADE=t; TSHOWN=PAGE;
+  show('lvl-trade');
+  renderTrade(t);
+}
+$('trade-back').addEventListener('click',()=>{ TRADE=null; show('lvl-all'); });
+$('sort').addEventListener('change',e=>{ SORT=e.target.value; if(TRADE)renderTrade(TRADE); });
+$('trade-more').addEventListener('click',()=>{ TSHOWN+=PAGE; if(TRADE)renderTrade(TRADE); });
+
+function renderTrade(t){
+  const s=b=>STATS.get(b.id)||{};
+  const sorted=[...t.biz].sort({
+    'active-desc':(a,b)=>use(b)-use(a)||a.name.localeCompare(b.name),
+    'active-asc':(a,b)=>use(a)-use(b)||a.name.localeCompare(b.name),
+    'miles-desc':(a,b)=>Number(s(b).total_miles||0)-Number(s(a).total_miles||0),
+    'name':(a,b)=>a.name.localeCompare(b.name)
+  }[SORT]);
+  const page=sorted.slice(0,TSHOWN);
+  $('trade-name').textContent=TRADE_LABEL(t.trade);
+  $('trade-sub').textContent=`${t.biz.length} ${t.biz.length===1?'business':'businesses'} · ${t.people} people · ${t.biz.filter(b=>use(b)>0).length} active in this range`;
+  $('trade-biz').innerHTML=page.map(b=>bizRow(b,false)).join('');
+  $('trade-more').hidden=sorted.length<=TSHOWN;
+  $('trade-more').textContent=`Show ${Math.min(PAGE,sorted.length-TSHOWN)} more of ${sorted.length}`;
+}
+
+$('trade-biz').addEventListener('click',e=>{
+  const el=e.target.closest('[data-biz]');
+  if(!el)return;
+  const b=BIZ.find(x=>x.id===el.dataset.biz);
+  if(b)openBiz(b);
+});
+
+/* ── Level 3: one business ────────────────────────────────────────────────── */
+function show(id){
+  ['lvl-all','lvl-trade','lvl-biz'].forEach(l=>{ $(l).hidden=(l!==id); });
+  window.scrollTo({top:0,behavior:'instant'});
+}
+
 function openBiz(b){
   OPEN=b;
-  $('lvl-all').hidden=true;
-  $('lvl-biz').hidden=false;
+  show('lvl-biz');
   renderBiz(b);
-  window.scrollTo({top:0,behavior:'instant'});
 }
 $('biz-back').addEventListener('click',()=>{
   OPEN=null;
-  $('lvl-biz').hidden=true;
-  $('lvl-all').hidden=false;
+  // Back goes where you came from: the trade if you drilled through it, the
+  // top level if you arrived from a search.
+  show(TRADE?'lvl-trade':'lvl-all');
 });
 
 function renderBiz(b){
   const s=STATS.get(b.id)||{};
   const owner=b.people.find(p=>p.role==='owner');
   $('biz-name').textContent=b.name;
-  $('biz-sub').textContent=[owner&&owner.person_email,s.last_active?relDay(s.last_active):'no activity in this range']
-    .filter(Boolean).join(' · ');
+  $('biz-sub').textContent=[TRADE_LABEL(b.trade)+(b.lines&&b.lines!==b.trade?' ('+b.lines+')':''),
+                            owner&&owner.person_email,
+                            s.last_active?relDay(s.last_active):'no activity in this range'].filter(Boolean).join(' · ');
   $('biz-tiles').innerHTML=[
     tile(s.people,'People'),
     tile(s.active_days,'Days opened'),
