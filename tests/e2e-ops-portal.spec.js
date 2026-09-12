@@ -78,6 +78,67 @@ test.describe('Ops portal: the support view, embedded', () => {
     await ctx.close();
   });
 
+  test('a roster that ERRORS says so, and does not claim you lack permission', async ({ browser }) => {
+    // These were one card, which sent you hunting for a permissions problem when
+    // the network was at fault. Empty means not on the allowlist; an error is an
+    // error.
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
+    const page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.addInitScript(() => {
+      let held;
+      Object.defineProperty(window, 'supabase', {
+        configurable: true,
+        get() { return held; },
+        set(v) {
+          held = { createClient: (u, k, o) => {
+            const c = v.createClient(u, k, o);
+            c.rpc = (fn) => fn === 'ops_view_roster'
+              ? Promise.resolve({ data: null, error: { message: 'network is down' } })
+              : Promise.resolve({ data: null, error: null });
+            return c;
+          } };
+        }
+      });
+    });
+    await page.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#denied')).toBeVisible();
+    await expect(page.locator('#denied')).toContainText('Could not load');
+    await expect(page.locator('#denied')).toContainText('network is down');
+    await expect(page.locator('#denied')).not.toContainText('not on the ops allowlist');
+    await ctx.close();
+  });
+
+  test('four hundred businesses: pages instead of rendering them all', async ({ browser }) => {
+    const many = [];
+    for (let i = 0; i < 400; i++) {
+      const id = 'biz-' + i;
+      many.push({ contractor_user_id: id, business: 'Business ' + i, person_user_id: id + '-o', person_name: 'Owner ' + i, person_email: 'o' + i + '@x.com', role: 'owner', permissions: {}, active: true });
+      many.push({ contractor_user_id: id, business: 'Business ' + i, person_user_id: id + '-c', person_name: 'Crew ' + i, person_email: 'c' + i + '@x.com', role: 'crew', permissions: {}, active: true });
+    }
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
+    const page = await ctx.newPage();
+    await mockAllExternal(page);
+    await stubRpc(page, { roster: many });
+    await page.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+    await page.locator('#list .row').first().waitFor();
+
+    // 400 businesses and 800 people exist; the DOM holds one page of rows.
+    await expect(page.locator('#count')).toContainText('400 businesses, 800 people');
+    expect(await page.locator('#list .row').count()).toBeLessThanOrEqual(40);
+    await expect(page.locator('#more')).toBeVisible();
+    await page.locator('#more').click();
+    expect(await page.locator('#list .row').count()).toBe(80);
+
+    // Search reaches past the rendered page: business 399 is nowhere near it.
+    await page.locator('#q').fill('Business 399');
+    await expect(page.locator('#list .row')).toHaveCount(1);
+    await page.locator('#q').fill('Crew 250');
+    await expect(page.locator('#list .row')).toHaveCount(1);
+    await expect(page.locator('#list .row')).toContainText('Business 250');
+    await ctx.close();
+  });
+
   test.describe('with a roster', () => {
     let ctx, page;
 
@@ -87,16 +148,50 @@ test.describe('Ops portal: the support view, embedded', () => {
       await mockAllExternal(page);
       await stubRpc(page);
       await page.goto('/ops.html', { waitUntil: 'domcontentloaded' });
-      await page.locator('.person').first().waitFor();
+      await page.locator('#list .row').first().waitFor();
     });
 
     test.afterAll(async () => { await ctx.close(); });
 
-    test('every business and every person on it is listed', async () => {
-      await expect(page.locator('.biz')).toHaveCount(2);
-      await expect(page.locator('.person')).toHaveCount(3);
-      await expect(page.locator('.biz-name').first()).toHaveText('Sample Plumbing');
-      await expect(page.locator('.person', { hasText: 'Jack Rivera' })).toHaveCount(1);
+    test('the top level lists businesses, not every person', async () => {
+      // Two businesses, three people: the list shows the two, because at four
+      // hundred accounts a flat list of everybody is unusable.
+      await expect(page.locator('#list .row')).toHaveCount(2);
+      await expect(page.locator('#count')).toContainText('2 businesses, 3 people');
+      await expect(page.locator('#list .row').first()).toContainText('Sample Plumbing');
+    });
+
+    test('searching a person finds them without knowing the business', async () => {
+      await page.locator('#q').fill('jack');
+      await expect(page.locator('#list .row')).toHaveCount(1);
+      await expect(page.locator('#list .row')).toContainText('Jack Rivera');
+      await expect(page.locator('#list .row .kind')).toHaveText('Person');
+      await expect(page.locator('#count')).toContainText('1 match');
+      await page.locator('#q').fill('');
+    });
+
+    test('searching a business matches the business, not each of its people', async () => {
+      await page.locator('#q').fill('sample');
+      await expect(page.locator('#list .row')).toHaveCount(1);
+      await expect(page.locator('#list .row .kind')).toHaveCount(0);
+      await page.locator('#q').fill('');
+    });
+
+    test('a search that matches nothing says so', async () => {
+      await page.locator('#q').fill('zzzz');
+      await expect(page.locator('#list')).toContainText('Nothing matches');
+      await page.locator('#q').fill('');
+    });
+
+    test('drilling into a business shows its numbers and its people', async () => {
+      await page.locator('#list .row', { hasText: 'Sample Plumbing' }).click();
+      await expect(page.locator('#lvl-biz')).toBeVisible();
+      await expect(page.locator('#lvl-all')).toBeHidden();
+      await expect(page.locator('#biz-name')).toHaveText('Sample Plumbing');
+      await expect(page.locator('#biz-people .row')).toHaveCount(2);
+      await expect(page.locator('#biz-tiles .tile').first()).toBeVisible();
+      await page.locator('#biz-back').click();
+      await expect(page.locator('#lvl-all')).toBeVisible();
     });
 
     test('the activity tiles read from ops_summary', async () => {
@@ -106,7 +201,8 @@ test.describe('Ops portal: the support view, embedded', () => {
     });
 
     test('picking a person opens the frame on that person, read only', async () => {
-      await page.locator('.person', { hasText: 'Jack Rivera' }).click();
+      await page.locator('#list .row', { hasText: 'Sample Plumbing' }).click();
+      await page.locator('#biz-people .row', { hasText: 'Jack Rivera' }).click();
       await expect(page.locator('#view')).toHaveClass(/on/);
       const src = await page.locator('#view-frame').getAttribute('src');
       expect(src).toContain('index.html?ops=1');
@@ -140,7 +236,9 @@ test.describe('Ops portal: the support view, embedded', () => {
     });
 
     test('Escape closes it too', async () => {
-      await page.locator('.person', { hasText: 'Zach Miller' }).click();
+      await page.locator('#biz-back').click();
+      await page.locator('#list .row', { hasText: 'Zach Painting' }).click();
+      await page.locator('#biz-people .row', { hasText: 'Zach Miller' }).click();
       await expect(page.locator('#view')).toHaveClass(/on/);
       await page.keyboard.press('Escape');
       await expect(page.locator('#view')).not.toHaveClass(/on/);
