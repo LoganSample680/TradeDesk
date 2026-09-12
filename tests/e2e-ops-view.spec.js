@@ -224,20 +224,6 @@ test.describe('Ops support view: read only, both directions', () => {
     expect(r.cleared).toBe(true);
   });
 
-  test('a direct ?ops=1 link does not enter while the view is closed', async () => {
-    const r = await page.evaluate(async () => {
-      window.__opsForceView = undefined;          // as it ships
-      window._opsArming = true;                   // as the link sets it
-      await opsViewBoot();
-      const out = { view: window._opsView, arming: !!window._opsArming, ro: opsReadOnly() };
-      window._opsArming = false;
-      return out;
-    });
-    expect(r.view).toBe(null);      // never entered
-    expect(r.arming).toBe(false);   // and the lock let go, so the app is the viewer's own again
-    expect(r.ro).toBe(false);
-  });
-
   // ── 4. Exit ─────────────────────────────────────────────────────────────────
 
   test('exit clears every cache that could hold their rows', async () => {

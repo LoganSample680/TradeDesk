@@ -50,7 +50,86 @@ function _opsTell(type, extra){
 // that would answer with the VIEWER's own data and quietly mix two accounts.
 const _OPS_RPC_OK = new Set(['ops_view_roster','ops_view_open']);
 
-/* ── Entering ─────────────────────────────────────────────────────────────── */
+/* ── Booting AS the target ────────────────────────────────────────────────── */
+// Called by loadAccountData (js/cloud.js) instead of the normal owner/crew
+// resolution when the page was opened as a support view. It answers one
+// question: whose app is this? Everything downstream, the rows, the settings,
+// the branding, the permissions, follows from that, which is why the old
+// approach of booting the viewer and swapping rows in afterwards could never be
+// made right.
+async function _opsLoadIdentity(){
+  const boot=window._OPS_BOOT;
+  if(!boot||!boot.target)return false;
+  // The roster is the authorization probe, exactly as it is for the portal.
+  const roster=await opsViewRoster();
+  const person=roster.find(r=>r.contractor_user_id===boot.target&&r.person_user_id===boot.person)
+            || roster.find(r=>r.contractor_user_id===boot.target&&r.role==='owner');
+  if(!person){ _opsTell('denied'); _opsRefuse('This login is not allowed to view that account.'); return false; }
+
+  window._opsRoster=roster;
+  window._opsView={
+    target:person.contractor_user_id, personUid:person.person_user_id,
+    personName:person.person_name||person.person_email||'Unknown',
+    business:person.business, role:person.role, perms:person.permissions||{}
+  };
+  window._opsArming=false;           // _opsView is the read-only lock from here
+  _opsSealClient();
+  _opsStopSync();
+
+  // Their identity, so getBusinessName() and every branded surface answer with
+  // THEIR name rather than falling back to the viewer's account row.
+  try{
+    const{data:acct}=await _supa.from('accounts').select('*').eq('owner_id',person.contractor_user_id).maybeSingle();
+    if(acct){ _account=acct; }
+  }catch(_e){}
+  try{
+    const{data:team}=await _supa.from('team_members').select('*').eq('contractor_user_id',person.contractor_user_id);
+    window._opsTeam=team||[];
+  }catch(_e){ window._opsTeam=[]; }
+
+  // Every screen reads the account through _contractorUserId, so a support view
+  // is an "employee" of the target whatever the person's role: the owner view
+  // simply carries every permission.
+  _isEmployee=true;
+  _contractorUserId=person.contractor_user_id;
+  const row=(window._opsTeam||[]).find(r=>r.employee_user_id===person.person_user_id);
+  _employeeRecord=(person.role==='owner')
+    ? {contractor_user_id:person.contractor_user_id,employee_user_id:person.person_user_id,
+       name:person.person_name,role:'owner',active:true,
+       permissions:{team:true,financials:true,estimate:true,payroll:true,schedule:true,clients:true,jobs:true}}
+    : (row||{contractor_user_id:person.contractor_user_id,employee_user_id:person.person_user_id,
+             name:person.person_name,role:person.role,permissions:person.permissions||{},active:true});
+
+  try{await _supa.rpc('ops_view_open',{p_target:person.contractor_user_id,p_person:person.person_user_id});}catch(_e){}
+  _opsTell('entered',{target:person.contractor_user_id,person:person.person_user_id,
+                      name:window._opsView.personName,business:window._opsView.business,role:person.role});
+  _opsPaintChrome();
+  return true;
+}
+
+// A view that cannot load says so and shows nothing. It must never fall through
+// to the viewer's own app wearing somebody else's label.
+function _opsRefuse(msg){
+  window._OPS_BOOT=null; window._opsView=null; window._opsArming=false;
+  try{
+    document.body.innerHTML='<div style="font:14px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;'+
+      'padding:40px 24px;text-align:center;color:#4a4a4a">'+
+      '<div style="font-size:16px;font-weight:800;margin-bottom:6px">Support view unavailable</div>'+
+      _opsEsc(msg)+'</div>';
+  }catch(_e){}
+}
+
+// The name in the chrome comes from _account, which is now theirs; these are the
+// surfaces that painted before the account resolved.
+function _opsPaintChrome(){
+  try{
+    const name=(typeof getBusinessName==='function')?getBusinessName():(window._opsView&&window._opsView.business);
+    document.querySelectorAll('#nav-user-name,#mobile-topbar-brand .brand-name,#boot-biz-name').forEach(el=>{ el.textContent=name; });
+    if(typeof applyPermissions==='function')applyPermissions();
+  }catch(_e){}
+}
+
+/* ── Switching person inside the account already loaded ───────────────────── */
 
 // The roster is also the authorization probe, same trick fleet_support_roster
 // already uses (js/cloud.js:549): rows back means the server said yes. Zero rows
@@ -68,153 +147,35 @@ async function opsViewRoster(){
 // tab survives a navigation within the session.
 // Closed with the portal (see ops.html): a direct ?ops=1 link must not enter
 // either, or the same bleed happens with no portal chrome to explain it.
-function _opsViewOpen(){ return (typeof window.__opsForceView!=='undefined')?!!window.__opsForceView:false; }
-
-async function opsViewBoot(){
-  if(!_opsViewOpen()){ window._opsArming=false; _opsTell('closed'); return; }
-  let want=false, wantTarget=null, wantPerson=null;
-  try{
-    const p=new URLSearchParams(location.search);
-    if(p.get('ops')==='1')want=true;
-    if(sessionStorage.getItem('zp3_ops_open')==='1')want=true;
-    // The portal names who to open, so an embedded view never shows a picker
-    // inside the frame: the portal already asked that question.
-    wantTarget=p.get('t');wantPerson=p.get('p');
-  }catch(_e){}
-  if(!want)return;
-  const roster=await opsViewRoster();
-  if(!roster.length){window._opsArming=false;_opsTell('denied');return;}   // not on the allowlist: as if the param was never there
-  window._opsRoster=roster;
-  if(wantTarget){
-    const asked=roster.find(r=>r.contractor_user_id===wantTarget&&(!wantPerson||r.person_user_id===wantPerson))
-             || roster.find(r=>r.contractor_user_id===wantTarget&&r.role==='owner');
-    if(asked)return opsViewEnter(asked);
-    _opsTell('not-found');
-    if(_opsEmbedded())return;
-  }
-  const saved=(()=>{try{return JSON.parse(sessionStorage.getItem('zp3_ops_person')||'null');}catch(_e){return null;}})();
-  const match=saved&&roster.find(r=>r.person_user_id===saved.person_user_id&&r.contractor_user_id===saved.contractor_user_id);
-  if(match)return opsViewEnter(match);
-  opsViewPicker();
-}
-
-// Who is on this roster, grouped by business. Built on .zmodal-overlay, the
-// app's centered-prompt convention (§7.3), not a hand-rolled sheet.
-function opsViewPicker(){
-  _opsInjectCss();
-  const roster=window._opsRoster||[];
-  const byBiz=new Map();
-  roster.forEach(r=>{ if(!byBiz.has(r.contractor_user_id))byBiz.set(r.contractor_user_id,[]); byBiz.get(r.contractor_user_id).push(r); });
-  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const groups=[...byBiz.values()].map(people=>`
-    <div class="ops-pick-biz">
-      <div class="ops-pick-biz-name">${esc(people[0].business)}</div>
-      ${people.map(p=>`<button class="ops-pick-person" data-cid="${esc(p.contractor_user_id)}" data-pid="${esc(p.person_user_id)}">
-        <span class="ops-pick-who">${esc(p.person_name||p.person_email||'Unknown')}</span>
-        <span class="ops-pick-role">${esc(p.role==='owner'?'Owner':(p.role||'crew'))}${p.active===false?' · inactive':''}</span>
-      </button>`).join('')}
-    </div>`).join('');
-  const ov=document.createElement('div');
-  ov.className='zmodal-overlay';
-  ov.id='ops-picker';
-  ov.innerHTML=`<div class="zmodal" style="max-width:420px;width:100%">
-    <div class="ops-pick-title">Support view</div>
-    <div class="ops-pick-sub">Read only. Pick whose app you want to see.</div>
-    <div class="ops-pick-list">${groups||'<div class="ops-pick-sub">No accounts.</div>'}</div>
-    <button class="ops-pick-cancel" id="ops-pick-cancel">Cancel</button>
-  </div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{
-    const btn=e.target.closest('.ops-pick-person');
-    if(btn){
-      const row=(window._opsRoster||[]).find(r=>r.contractor_user_id===btn.dataset.cid&&r.person_user_id===btn.dataset.pid);
-      if(row){ov.remove();opsViewEnter(row);}
-      return;
-    }
-    if(e.target.id==='ops-pick-cancel'||e.target===ov)ov.remove();
-  });
-}
-
-// Open one person's app.
-async function opsViewEnter(person){
-  if(!person||!person.contractor_user_id)return;
-  const switching=!!window._opsView;
-  window._opsView={
-    target:person.contractor_user_id,
-    personUid:person.person_user_id,
-    personName:person.person_name||person.person_email||'Unknown',
-    business:person.business,
-    role:person.role,
-    perms:person.permissions||{}
-  };
-  try{sessionStorage.setItem('zp3_ops_open','1');
-      sessionStorage.setItem('zp3_ops_person',JSON.stringify({contractor_user_id:person.contractor_user_id,person_user_id:person.person_user_id}));}catch(_e){}
-
-  // Stop the app writing anything, before a single row of theirs is in memory.
-  _opsStopSync();
-  _opsSealClient();
-
-  // On the record: who looked, whose account, whose view. Logged before the read
-  // so a look is recorded even if the load then fails.
-  try{await _supa.rpc('ops_view_open',{p_target:person.contractor_user_id,p_person:person.person_user_id});}catch(_e){}
-
-  // Switching PEOPLE inside one business is only a permission change: the rows
-  // are already in memory, so no reload and no second read.
-  if(!switching||_opsView.target!==window._opsLoadedTarget){
-    const ok=await _opsLoadAccount(person.contractor_user_id);
-    if(!ok){ if(typeof showToast==='function')showToast('Could not load that account','❌'); return; }
-    window._opsLoadedTarget=person.contractor_user_id;
-  }
-  window._opsArming=false;   // _opsView is the lock from here on
-  _opsApplyPerson();
-  if(_opsEmbedded())_opsTell('entered',{target:_opsView.target,person:_opsView.personUid,name:_opsView.personName,business:_opsView.business,role:_opsView.role});
-  else _opsChrome();
-  _opsRepaint();
-}
-
-// Their rows, into the arrays the app already renders from. Deliberately its own
-// read rather than a call into _devLoadUserAccount (js/cloud.js:568): that one
-// snapshots and restores the viewer's own state in memory, which is precisely
-// the cross-account path this mode refuses to have. Exit here is a hard reload.
-async function _opsLoadAccount(uid){
-  try{
-    const[tableResults,settingsResult,teamResult]=await Promise.all([
-      Promise.all(_TD_TABLES.map(({t})=>_supa.from(t).select('id,data').eq('user_id',uid).is('deleted_at',null))),
-      _supa.from('zj_data').select('settings,checks_state').eq('user_id',uid).maybeSingle(),
-      _supa.from('team_members').select('*').eq('contractor_user_id',uid)
-    ]);
-    if(tableResults.some(r=>r&&r.error))return false;
-    for(let i=0;i<_TD_TABLES.length;i++){
-      const{t,set}=_TD_TABLES[i];
-      set((tableResults[i].data||[]).map(r=>r.data));
-      // The sync bookkeeping is emptied, not filled: nothing in this session may
-      // ever compare their rows against the viewer's account and decide to write.
-      // (_lastKnownIds/_syncedHash are top-level `let`s in cloud.js, so they are
-      // reachable by name across scripts but never as window properties.)
-      try{_lastKnownIds[t]=new Set();}catch(_e){}
-      try{_syncedHash[t]=new Map();}catch(_e){}
-    }
-    if(settingsResult&&settingsResult.data&&settingsResult.data.settings){
-      try{Object.assign(S,JSON.parse(settingsResult.data.settings));}catch(_e){}
-    }
-    window._opsTeam=(teamResult&&teamResult.data)||[];
-    return true;
-  }catch(_e){return false;}
-}
-
-// Render as this person. Crew see the app through _isEmployee plus their
-// permissions (js/clients.js:15 and friends read exactly these two), so the
-// support view sets the same two globals rather than inventing a parallel mask.
 function _opsApplyPerson(){
   const v=window._opsView;if(!v)return;
+  // Always an "employee" of the target, whatever the role: that is what points
+  // every screen at their account rather than the viewer's. An owner view simply
+  // carries every permission.
+  _isEmployee=true;
+  _contractorUserId=v.target;
   if(v.role==='owner'){
-    _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+    _employeeRecord={contractor_user_id:v.target,employee_user_id:v.personUid,name:v.personName,role:'owner',active:true,
+      permissions:{team:true,financials:true,estimate:true,payroll:true,schedule:true,clients:true,jobs:true}};
   }else{
     const row=(window._opsTeam||[]).find(r=>r.employee_user_id===v.personUid);
-    _isEmployee=true;
-    _contractorUserId=v.target;
     _employeeRecord=row||{contractor_user_id:v.target,employee_user_id:v.personUid,name:v.personName,role:v.role,permissions:v.perms,active:true};
   }
+}
+
+// Switching between people on the SAME account is a permission change: the rows
+// on screen belong to the business, not the person. A different account is a
+// different boot, and the portal reloads the frame for it.
+function opsViewSwitchPerson(person){
+  if(!window._opsView||!person||person.contractor_user_id!==window._opsView.target)return false;
+  window._opsView.personUid=person.person_user_id;
+  window._opsView.personName=person.person_name||person.person_email||'Unknown';
+  window._opsView.role=person.role;
+  window._opsView.perms=person.permissions||{};
+  _opsApplyPerson();
+  _opsPaintChrome();
+  _opsRepaint();
+  return true;
 }
 
 function _opsRepaint(){
@@ -235,58 +196,6 @@ function _opsRepaint(){
 // The picker and the strip share one stylesheet, injected on first use by
 // either of them: the picker is drawn BEFORE any strip exists, and building the
 // CSS inside the strip left the first picker unstyled.
-function _opsInjectCss(){
-  if(document.getElementById('ops-view-css'))return;
-  const st=document.createElement('style');
-  st.id='ops-view-css';
-    st.textContent=`
-      :root{--ops-h:30px}
-      #ops-strip{position:fixed;top:0;left:0;right:0;z-index:100001;height:calc(var(--ops-h) + env(safe-area-inset-top,0px));padding:0 10px;padding-top:env(safe-area-inset-top,0px);background:#7C3D0A;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:700;box-shadow:0 1px 0 rgba(0,0,0,.25)}
-      #ops-strip .ops-who{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      #ops-strip .ops-tag{background:rgba(255,255,255,.18);border-radius:5px;padding:1px 6px;font-size:10px;letter-spacing:.4px}
-      #ops-strip button{border:0;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:800;cursor:pointer;background:rgba(255,255,255,.18);color:#fff;transition:background .15s ease}
-      #ops-strip button:active{background:rgba(255,255,255,.32)}
-      #ops-strip .ops-exit{background:#fff;color:#7C3D0A}
-      body.ops-view #app{padding-top:calc(var(--ops-h) + env(safe-area-inset-top,0px))}
-      body.ops-view #nav{top:calc(var(--ops-h) + env(safe-area-inset-top,0px))}
-      body.ops-view #clock-banner{top:calc(var(--ops-h) + env(safe-area-inset-top,0px))}
-      @media(max-width:900px){
-        body.ops-view #mobile-topbar{top:calc(var(--ops-h) + env(safe-area-inset-top,0px));padding-top:0;height:56px}
-        body.ops-view #app{padding-top:calc(56px + var(--ops-h) + env(safe-area-inset-top,0px))}
-        body.ops-view .drive-banner{top:calc(56px + var(--ops-h) + env(safe-area-inset-top,0px))}
-      }
-      .ops-pick-title{font-size:18px;font-weight:800;letter-spacing:-.2px}
-      .ops-pick-sub{font-size:12px;color:var(--text3);margin-top:2px}
-      .ops-pick-list{margin-top:14px;display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow-y:auto}
-      .ops-pick-biz-name{font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);margin-bottom:5px}
-      .ops-pick-person{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;margin-bottom:6px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;text-align:left;transition:transform .15s cubic-bezier(.22,1,.36,1),border-color .15s ease}
-      .ops-pick-person:active{transform:scale(.99);border-color:#7C3D0A}
-      .ops-pick-who{font-size:14px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .ops-pick-role{font-size:11px;color:var(--text3);flex-shrink:0}
-      .ops-pick-cancel{margin-top:14px;width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:transparent;font-size:13px;font-weight:700;cursor:pointer}
-  `;
-  document.head.appendChild(st);
-}
-
-function _opsChrome(){
-  const v=window._opsView;if(!v)return;
-  _opsInjectCss();
-  let bar=document.getElementById('ops-strip');
-  if(!bar){
-    bar=document.createElement('div');
-    bar.id='ops-strip';
-    document.body.appendChild(bar);
-    bar.addEventListener('click',e=>{
-      if(e.target.closest('.ops-exit'))return opsViewExit();
-      if(e.target.closest('.ops-switch'))return opsViewPicker();
-    });
-  }
-  const who=(v.role==='owner'?'Owner':(v.role||'crew'));
-  bar.innerHTML=`<span class="ops-who"><span class="ops-tag">READ ONLY</span> ${_opsEsc(v.personName)} · ${_opsEsc(v.business)} <span class="ops-tag">${_opsEsc(who)}</span></span>
-    <span style="display:flex;gap:6px;flex-shrink:0"><button class="ops-switch">Switch</button><button class="ops-exit">Exit</button></span>`;
-  document.body.classList.add('ops-view');
-}
-
 function _opsEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
 /* ── Leaving ──────────────────────────────────────────────────────────────── */
@@ -359,27 +268,11 @@ function _opsSealObject(c){
   c.__opsSealed=true;
 }
 
-/* ── Arming ───────────────────────────────────────────────────────────────── */
-// Deliberately NOT wired into the boot sequence: the waiter only exists when the
-// ops link asked for it, so a normal boot carries zero extra work and the boot
-// path keeps exactly the shape it has today.
-(function(){
-  let want=false;
-  try{
-    want=new URLSearchParams(location.search).get('ops')==='1'
-       ||sessionStorage.getItem('zp3_ops_open')==='1';
-  }catch(_e){}
-  if(!want)return;
-  window._opsArming=true;    // read-only from this instant, not from when the roster answers
-  let tries=0;
-  const t=setInterval(()=>{
-    if(++tries>120){clearInterval(t);window._opsArming=false;return;}   // 60s, then give up quietly
-    if(typeof _supa!=='undefined'&&_supa&&_supaUser&&_supaCloudLoaded){
-      clearInterval(t);
-      opsViewBoot();
-    }
-  },500);
-})();
+// Arming and entry now happen at the top of the page (the inline block in
+// index.html) and in _opsLoadIdentity, which loadAccountData calls instead of
+// resolving this login's own account. The old waiter that entered a view AFTER
+// boot is deleted, not disabled: entering late is exactly what let this device's
+// state render under somebody else's name.
 
 /* ── The way in from inside the app ───────────────────────────────────────── */
 // A row in Settings > Developer that opens the portal, shown only to an ops
@@ -414,7 +307,7 @@ window.addEventListener('message',ev=>{
   if(!d||d.source!=='td-ops-portal')return;
   if(d.type==='switch'&&d.person_user_id){
     const row=(window._opsRoster||[]).find(r=>r.person_user_id===d.person_user_id&&r.contractor_user_id===d.contractor_user_id);
-    if(row)opsViewEnter(row);
+    if(row&&!opsViewSwitchPerson(row))_opsTell('needs-reload');
     return;
   }
   if(d.type==='exit'){
