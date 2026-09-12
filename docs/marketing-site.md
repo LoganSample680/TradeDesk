@@ -144,6 +144,51 @@ confusion at the source. If it does not, the defensive signals above are the
 whole of the fix. No `sameAs` is claimed in the structured data because no
 verified profile URLs were available.
 
+## Getting a recrawl, rather than waiting for one
+
+The noindex above was the right fix and it did nothing on the day it shipped,
+because a noindex only takes effect when the crawler comes back and reads it.
+A live search hours after the merge still returned a summary written from the
+app's internals (paint pricing, proposal terms, the client portal). On a
+crawler's own schedule that wait is weeks, and meanwhile the stale entry is
+what every AI assistant repeats, because they read the search index, not the
+site.
+
+Three things shorten it:
+
+- **IndexNow** (`scripts/indexnow.js`, `.github/workflows/indexnow.yml`). One
+  POST asks the participating engines to recrawl, in hours rather than weeks:
+  Bing, Yandex, Seznam, Naver. **Bing is the one that matters most, because it
+  is what ChatGPT's search reads.** It fires on a push to `main` that touches
+  any page, and only after waiting for Cloudflare to actually serve that
+  version, or the crawlers are invited to look at the old build. The submission
+  is the sitemap's URLs **plus** the six noindexed pages, which is the point: a
+  crawler has to fetch those again to see the noindex and drop them.
+  **Google does not participate in IndexNow** and still needs Search Console.
+- **`lastmod` in `sitemap.xml`** (`scripts/sitemap-lastmod.js`, run by the
+  pre-commit hook next to `bump-version.js`). Each date is the page's own last
+  commit, or today when the commit in hand is what changes it. It is derived
+  rather than typed on purpose: Google honours lastmod only while a site is
+  consistently honest about it, and discounts it for good once a site is caught
+  stamping today on everything. The routing spec fails on a future date.
+- **`X-Robots-Tag` in `_headers`**, alongside each page's meta tag. A crawler
+  that fetches without parsing the HTML still gets the header, and Cloudflare
+  serves these at the clean URL (`/sign`) while the app links to them by
+  filename (`/sign.html?t=...`), so both spellings carry the rule. The spec
+  also asserts the mirror case: `/` must never pick one up, since that is the
+  marketing page.
+
+**The IndexNow key is public by design.** It authenticates by proving whoever
+submits controls the site: the engine fetches `https://tradedeskpro.app/<key>.txt`
+and checks it contains the key. It is not a secret and must stay committed.
+Rotating it means replacing that one file; `scripts/indexnow.js` finds whichever
+`<hex>.txt` is at the repo root.
+
+**Still needs a human, and it is the fastest lever for Google:** Search Console
+and Bing Webmaster Tools. Submit the sitemap, and use Search Console's **URL
+removal** tool on `/index.html`, `/sign` and `/client` to purge the stale
+entries in days instead of waiting for the recrawl to do it.
+
 ## The apex challenges /version.json sometimes
 
 Cloudflare intermittently answers `/version.json` on `tradedeskpro.app` with its

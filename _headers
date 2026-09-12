@@ -6,3 +6,48 @@
 
 /version.json
   Cache-Control: no-store, must-revalidate
+
+# The app and the per-customer links, as an HTTP header as well as the meta tag
+# each page carries. Two reasons it is worth saying twice: a crawler that
+# fetches without parsing the HTML still gets this one, and Cloudflare serves
+# these at the clean URL (/sign) while the app links to them by filename
+# (/sign.html?t=...), so both spellings have to say it.
+#
+# NOT a robots.txt Disallow. A disallowed page is never fetched, so the crawler
+# never reads the directive, and anything already indexed stays indexed forever.
+# noindex is the one that removes them.
+/index.html
+  X-Robots-Tag: noindex, nofollow
+
+/sign
+  X-Robots-Tag: noindex, nofollow
+/sign.html
+  X-Robots-Tag: noindex, nofollow
+
+/client
+  X-Robots-Tag: noindex, nofollow
+/client.html
+  X-Robots-Tag: noindex, nofollow
+
+/intake
+  X-Robots-Tag: noindex, nofollow
+/intake.html
+  X-Robots-Tag: noindex, nofollow
+
+/contract-sign
+  X-Robots-Tag: noindex, nofollow
+/contract-sign.html
+  X-Robots-Tag: noindex, nofollow
+
+/timesheet
+  X-Robots-Tag: noindex, nofollow
+/timesheet.html
+  X-Robots-Tag: noindex, nofollow
+
+# The ops portal (#77) renders a customer's own app read-only, so it is the
+# most sensitive page here. It carries the meta tag already; this is the same
+# belt the rest of them get.
+/ops
+  X-Robots-Tag: noindex, nofollow
+/ops.html
+  X-Robots-Tag: noindex, nofollow
