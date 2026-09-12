@@ -35,6 +35,7 @@ const ROUTES = [
   '/painting-contractor-software',
   '/plumbing-contractor-software',
   '/handyman-contractor-software',
+  '/ai-answering-service-for-contractors',
   '/tools/lien-deadlines',
   '/privacy',
   '/terms',
@@ -409,6 +410,50 @@ test.describe('marketing site routing', () => {
     expect(t, 'says it is not painting-only').toMatch(/not painting-only/i);
     expect(t, 'says it is not an answering service').toMatch(/not an AI call-answering/i);
     expect(t, 'no em dashes (CLAUDE.md)').not.toMatch(/\u2014/);
+  });
+
+  // Markup-only Q&A that does not match what a visitor sees risks a Google
+  // manual action, which is why the landing page's FAQ is guarded the same way.
+  // This page targets a question query, so its FAQ schema is the point of it.
+  test('the AI answering page\'s FAQ schema matches its visible questions', async () => {
+    const h = html['/ai-answering-service-for-contractors'];
+    const blocks = [...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => JSON.parse(m[1]));
+    const nodes = blocks.flatMap(b => b['@graph'] || [b]);
+    const faq = nodes.find(n => n['@type'] === 'FAQPage');
+    expect(faq, 'FAQPage node present').toBeTruthy();
+
+    const summaries = [...h.matchAll(/<summary>([\s\S]*?)<\/summary>/g)].map(m => decode(m[1]));
+    const answers = [...h.matchAll(/<\/summary><p>([\s\S]*?)<\/p>/g)].map(m => decode(m[1]));
+    expect(summaries.length, 'visible questions').toBe(5);
+    expect(faq.mainEntity.length, 'schema questions').toBe(summaries.length);
+    expect(faq.mainEntity.map(q => q.name)).toEqual(summaries);
+    expect(faq.mainEntity.map(q => decode(q.acceptedAnswer.text))).toEqual(answers);
+
+    // It argues the category. Naming a competitor here is how a near-identical
+    // name turns into a letter from somebody's lawyer (owner call 2026-09-12).
+    expect(h.toLowerCase()).not.toContain('tradedeskpro.net');
+
+    // The whole point is sending readers to the product.
+    expect(h, 'links home').toMatch(/href="\/"/);
+    expect(h, 'and to signup').toContain('/?signup=1');
+
+    const art = nodes.find(n => n['@type'] === 'Article');
+    expect(art && art.publisher).toEqual({ '@id': PUBLIC + '/#org' });
+  });
+
+  // Found live on 2026-09-12: seven marketing pages carried an EMPTY
+  // <script data-dc-script> block, and the runtime rejects that by painting a
+  // red error box over the page. support.js renders logicError with no
+  // environment gate (support.js:1013), so every visitor to those pages saw
+  // it. A page with no dynamic bindings simply has no such block, which is
+  // what compare/jobber.html, privacy.html and terms.html already did (7.3).
+  test('no page ships an empty dc-script block, which the runtime paints as an error', async () => {
+    const bad = [];
+    for (const r of ROUTES) {
+      const m = html[r].match(/<script type="text\/x-dc"[^>]*data-dc-script[^>]*>([\s\S]*?)<\/script>/);
+      if (m && !m[1].trim()) bad.push(r);
+    }
+    expect(bad, `these render a red error banner: ${bad.join(', ')}`).toEqual([]);
   });
 
   test('legal docs carry the operator mailing address, not the launch placeholder', async () => {
