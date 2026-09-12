@@ -18,6 +18,63 @@
 <link rel="apple-touch-icon" href="/icons/icon-180.png">
 <link rel="manifest" href="/manifest.json">
 <title>TradeDesk</title>
+<!-- ── Demo mode sandbox ──────────────────────────────────────────────────────
+     ?demo=1 boots this same app as the live demo embedded in the marketing
+     page (landing.html). There is NO separate copy of the app: a merge to main
+     rebuilds production and the frames serve the new app on the next load.
+
+     The demo runs SAME-ORIGIN inside that page, so the real localStorage here
+     is the owner's own account data. Everything below must therefore run
+     before any other script parses: js/cloud.js reads localStorage at parse
+     time (the _supaMode / SUPA_URL block) and js/data.js loads settings from
+     it. An in-memory store means the demo cannot read the real data, cannot
+     write over it, gets a private copy per frame and per tab (so any number of
+     visitors can play at once without touching each other), and resets itself
+     on every load because memory starts empty.
+
+     If the sandbox cannot be installed the demo REFUSES to boot rather than
+     running against real storage. See js/demo.js and docs/demo.md. -->
+<script>
+(function(){
+  var q; try{ q=new URLSearchParams(location.search); }catch(e){ return; }
+  if(q.get('demo')!=='1') return;
+  // Storage that looks like Storage: stored keys are real own enumerable
+  // properties (js/cloud.js:278 does Object.keys(localStorage)), the methods
+  // are not, so enumeration returns keys exactly like the real thing.
+  function memStore(){
+    var s={};
+    function def(n,v){ Object.defineProperty(s,n,{value:v,enumerable:false,writable:false}); }
+    def('getItem',function(k){ k=String(k); return Object.prototype.hasOwnProperty.call(s,k)?s[k]:null; });
+    def('setItem',function(k,v){ s[String(k)]=String(v); });
+    def('removeItem',function(k){ delete s[String(k)]; });
+    def('clear',function(){ Object.keys(s).forEach(function(k){ delete s[k]; }); });
+    def('key',function(i){ var ks=Object.keys(s); return i<ks.length?ks[i]:null; });
+    Object.defineProperty(s,'length',{get:function(){ return Object.keys(s).length; },enumerable:false});
+    return s;
+  }
+  var ok=true;
+  ['localStorage','sessionStorage'].forEach(function(name){
+    try{
+      Object.defineProperty(window,name,{value:memStore(),configurable:true,writable:false});
+      window[name].setItem('__td_probe','1');
+      if(window[name].getItem('__td_probe')!=='1') ok=false;
+      window[name].removeItem('__td_probe');
+    }catch(e){ ok=false; }
+  });
+  // The cloud op queue is the one other durable store on this origin. It
+  // already degrades when indexedDB is absent (js/cloud.js:956), so removing
+  // it is enough; nothing in the demo ever reaches a save anyway.
+  try{ Object.defineProperty(window,'indexedDB',{value:undefined,configurable:true}); }catch(e){}
+  if(!ok){
+    document.documentElement.innerHTML='<body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font:600 15px/1.5 -apple-system,system-ui,sans-serif;background:#1B1612;color:#F5EFE2;text-align:center;padding:24px">'
+      +'<div>The demo could not start safely in this browser.<br><a href="/?signup=1" style="color:#7FAAE8">Start a free trial instead</a></div></body>';
+    window.__TD_DEMO_BLOCKED=true;
+    return;
+  }
+  var step=parseInt(q.get('step'),10);
+  window.__TD_DEMO={ step:(step>=1&&step<=8)?step:1 };
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;700;800;900&family=Inter+Tight:wght@500;600;700;800;900&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
@@ -4242,6 +4299,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/e2e.js"></script>
 <script src="js/ops-view.js"></script>
 <script src="js/pwa.js"></script>
+<script src="js/demo.js"></script>
 <script>
 // Persistent, actionable replacement for the old "press Ctrl+Shift+R" toast:
 // that instruction is a dead end on a phone with no keyboard, so this gives
@@ -4262,7 +4320,9 @@ function _showUpdateToast(){
   document.body.appendChild(t);
 }
 // ── Service Worker, always-current version enforcement ───────────────────
-if('serviceWorker' in navigator){
+// Demo mode registers nothing: the demo is a throwaway frame on the marketing
+// page and must not install or update a worker for the real app's origin.
+if('serviceWorker' in navigator&&!window.__TD_DEMO){
   navigator.serviceWorker.register('/sw.js').catch(()=>{});
   navigator.serviceWorker.addEventListener('message',e=>{
     if(e.data?.type==='SW_UPDATED') _autoSaveAndReload();
@@ -4296,6 +4356,9 @@ if('serviceWorker' in navigator){
 
 
 loadAll();applySettings();registerDevice();applyBrandLogo();
+// The demo seeds itself over the (empty, sandboxed) local state and paints;
+// supaEnabled() is false in demo mode so no cloud boot ever follows.
+if(window.__TD_DEMO&&typeof tdDemoBoot==='function')tdDemoBoot();
 setTimeout(()=>{if(typeof _initTabBarDrag==='function')_initTabBarDrag();},0);
 setTimeout(showDailyBriefing,1200);
 setTimeout(checkStripeConnectReturn,800);

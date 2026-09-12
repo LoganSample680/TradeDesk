@@ -3568,7 +3568,7 @@ function openBidDetail(bidId,view){
       '<div style="font-size:12px;opacity:.7;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">'+escHtml(c.name)+'</div>'+
       '<div style="font-size:17px;font-weight:800">'+escHtml(b.type||b.trade_type||'Proposal')+'</div>'+
       (b.addr?'<div style="font-size:12px;opacity:.7;margin-top:2px">'+escHtml(b.addr)+'</div>':'')+
-      '<div style="font-size:12px;opacity:.7;margin-top:4px">'+(dateStr?'Signed '+dateStr+' · ':'')+fmt(b.amount)+'</div>'+
+      '<div style="font-size:12px;opacity:.7;margin-top:4px">'+(dateStr?(b.signedAt?'Signed ':'')+dateStr+' · ':'')+fmt(b.amount)+'</div>'+
     '</div>'+
     '<div id="bdd-bid-pane" style="padding:16px;max-width:680px;margin:0 auto"></div>'+
     '<div id="bdd-proposal-pane" style="padding:16px;max-width:680px;margin:0 auto;display:none"></div>';

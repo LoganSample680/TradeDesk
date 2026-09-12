@@ -18,11 +18,21 @@ const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = requir
 
 const PAGES = ['/privacy.html', '/terms.html'];
 
+// The legal pages are marketing-site pages now: static <x-dc> markup that
+// /support.js hydrates with React pulled from unpkg. The offline shard never
+// reaches a CDN, so the runtime is stubbed to an empty script and the static
+// markup (which is what a crawler and a no-JS reader get) is what is asserted.
+// Routes registered after mockAllExternal's catch-all take precedence.
+async function bareSite(page) {
+  await mockAllExternal(page);
+  await page.route('**/support.js', route => route.fulfill({ status: 200, contentType: 'text/javascript', body: '' }));
+}
+
 test.describe('legal pages', () => {
 
   test('both load anonymously with no console errors', async ({ page }) => {
     for (const url of PAGES) {
-      await mockAllExternal(page);
+      await bareSite(page);
       const resp = await page.goto(url, { waitUntil: 'domcontentloaded' });
       expect(resp && resp.status(), url).toBeLessThan(400);
       // No app, no Supabase, no login: these are flat files on purpose.
@@ -33,17 +43,17 @@ test.describe('legal pages', () => {
   });
 
   test('the stylesheet actually applies', async ({ page }) => {
-    // A missing legal.css would still render readable text, which is exactly
-    // why it needs asserting: the page would look broken and nobody's test
-    // would fail. The masthead is dark only if the sheet loaded.
-    await mockAllExternal(page);
+    // A missing design-system sheet would still render readable text, which is
+    // exactly why it needs asserting: the page would look broken and nobody's
+    // test would fail. The palette tokens exist only if the sheet loaded.
+    await bareSite(page);
     await page.goto('/privacy.html', { waitUntil: 'load' });
-    const bg = await page.evaluate(() => getComputedStyle(document.querySelector('.mast')).backgroundColor);
-    expect(bg).toBe('rgb(27, 22, 18)');
+    const ink = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim());
+    expect(ink).not.toBe('');
   });
 
   test('privacy says the things a reviewer looks for', async ({ page }) => {
-    await mockAllExternal(page);
+    await bareSite(page);
     await page.goto('/privacy.html', { waitUntil: 'domcontentloaded' });
     const txt = (await page.textContent('body')).replace(/\s+/g, ' ');
     // Deletion, with the in-app path spelled out (5.1.1(v)).
@@ -59,30 +69,30 @@ test.describe('legal pages', () => {
     for (const co of ['Supabase', 'Stripe', 'Apple', 'Cloudflare', 'Anthropic']) {
       expect(txt, co).toContain(co);
     }
-    expect(await page.locator('a[href="terms.html"]').count()).toBeGreaterThan(0);
+    expect(await page.locator('a[href="/terms"]').count()).toBeGreaterThan(0);
   });
 
   test('terms carry the Apple clauses and the renewal disclosure', async ({ page }) => {
-    await mockAllExternal(page);
+    await bareSite(page);
     await page.goto('/terms.html', { waitUntil: 'domcontentloaded' });
     const txt = (await page.textContent('body')).replace(/\s+/g, ' ');
     // Apple's minimum EULA terms. Missing the beneficiary clause is a known
     // rejection, and it is one line, so it is asserted rather than trusted.
-    expect(txt).toMatch(/third party beneficiaries of this agreement/i);
-    expect(txt).toMatch(/between you and TradeDesk only, not Apple/i);
+    expect(txt).toMatch(/third[ -]party beneficiaries of this agreement/i);
+    expect(txt).toMatch(/between you and (us|TradeDesk) only, not (with )?Apple/i);
     expect(txt).toMatch(/refund the purchase price/i);
     // Auto-renew, in the words the App Store requires.
     expect(txt).toMatch(/renews automatically/i);
     expect(txt).toMatch(/24 hours before/i);
     // The employer's own obligation, since we hand them a tracking tool.
-    expect(txt).toMatch(/responsibilities as the employer/i);
-    expect(await page.locator('a[href="privacy.html"]').count()).toBeGreaterThan(0);
+    expect(txt).toMatch(/you are the employer and you are responsible/i);
+    expect(await page.locator('a[href="/privacy"]').count()).toBeGreaterThan(0);
   });
 
   test('neither page bleeds off a phone screen', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     for (const url of PAGES) {
-      await mockAllExternal(page);
+      await bareSite(page);
       await page.goto(url, { waitUntil: 'load' });
       const bleed = await page.evaluate(() => ({
         doc: document.documentElement.scrollWidth,
@@ -98,10 +108,10 @@ test.describe('legal pages', () => {
   });
 
   test('the website footer links to both', async ({ page }) => {
-    await mockAllExternal(page);
+    await bareSite(page);
     await page.goto('/landing.html', { waitUntil: 'domcontentloaded' });
-    expect(await page.locator('footer a[href="/privacy.html"]').count()).toBe(1);
-    expect(await page.locator('footer a[href="/terms.html"]').count()).toBe(1);
+    expect(await page.locator('footer a[href="/privacy"]').count()).toBeGreaterThan(0);
+    expect(await page.locator('footer a[href="/terms"]').count()).toBeGreaterThan(0);
   });
 
   test('the app links to both, and the old summary alert is gone', async ({ page }) => {
