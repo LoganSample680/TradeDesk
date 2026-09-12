@@ -9,7 +9,9 @@ mkdir -p "$HOOKS_DIR"
 
 cat > "$HOOK_FILE" << 'HOOK'
 #!/usr/bin/env bash
-node "$(git rev-parse --show-toplevel)/scripts/bump-version.js"
+ROOT="$(git rev-parse --show-toplevel)"
+node "$ROOT/scripts/bump-version.js"
+node "$ROOT/scripts/sitemap-lastmod.js"
 HOOK
 
 chmod +x "$HOOK_FILE"

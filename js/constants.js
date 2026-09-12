@@ -365,14 +365,14 @@ const COLL_SMS={
 // filing_deadline_days: days from last day of work to file lien
 const LIEN_RULES={
   AL:{notice_days:10,filing_deadline_days:120},  // Ala. Code §35-11-215
-  AK:{notice_days:10,filing_deadline_days:120},  // AS §34.35.070
+  AK:{notice_days:10,filing_deadline_days:90},  // AS §34.35.070
   AZ:{notice_days:20,filing_deadline_days:120},  // A.R.S. §33-993 (20d prelim notice subs)
   AR:{notice_days:10,filing_deadline_days:120},  // Ark. Code §18-44-117
   CA:{notice_days:20,filing_deadline_days:90},   // Civ. Code §8412 (20d prelim notice req'd)
   CO:{notice_days:10,filing_deadline_days:120},  // C.R.S. §38-22-109
   CT:{notice_days:10,filing_deadline_days:90},   // Conn. Gen. Stat. §49-34
   DC:{notice_days:10,filing_deadline_days:90},   // D.C. Code §40-303.13
-  DE:{notice_days:10,filing_deadline_days:180},  // Del. Code §27-2712
+  DE:{notice_days:10,filing_deadline_days:120},  // Del. Code §27-2712
   FL:{notice_days:45,filing_deadline_days:90},   // Fla. Stat. §713.08 (45d notice to owner)
   GA:{notice_days:10,filing_deadline_days:90},   // Ga. Code §44-14-361
   HI:{notice_days:10,filing_deadline_days:45},   // H.R.S. §507-42
@@ -388,14 +388,14 @@ const LIEN_RULES={
   MA:{notice_days:10,filing_deadline_days:90},   // Mass. Gen. Laws §254-2
   MI:{notice_days:10,filing_deadline_days:90},   // MCL §570.1111
   MN:{notice_days:10,filing_deadline_days:120},  // Minn. Stat. §514.08
-  MS:{notice_days:10,filing_deadline_days:365},  // Miss. Code §85-7-131
+  MS:{notice_days:10,filing_deadline_days:90},  // Miss. Code §85-7-131
   MO:{notice_days:10,filing_deadline_days:180},  // §429.080 RSMo
   MT:{notice_days:10,filing_deadline_days:90},   // Mont. Code §71-3-535
   NE:{notice_days:10,filing_deadline_days:120},  // Neb. Rev. Stat. §52-137
   NV:{notice_days:10,filing_deadline_days:90},   // NRS §108.226
   NH:{notice_days:10,filing_deadline_days:120},  // RSA §447:9
   NJ:{notice_days:10,filing_deadline_days:90},   // N.J.S.A. §2A:44A-6
-  NM:{notice_days:10,filing_deadline_days:120},  // NMSA §48-2-7
+  NM:{notice_days:10,filing_deadline_days:90},  // NMSA §48-2-7
   NY:{notice_days:10,filing_deadline_days:240},  // NY Lien Law §10 (8 months)
   NC:{notice_days:10,filing_deadline_days:120},  // N.C.G.S. §44A-12
   ND:{notice_days:10,filing_deadline_days:90},   // N.D.C.C. §35-27-02
@@ -414,7 +414,7 @@ const LIEN_RULES={
   WA:{notice_days:60,filing_deadline_days:90},   // RCW §60.04.091 (60d prelim notice req'd)
   WV:{notice_days:10,filing_deadline_days:100},  // W. Va. Code §38-2-7
   WI:{notice_days:10,filing_deadline_days:180},  // Wis. Stat. §779.06
-  WY:{notice_days:10,filing_deadline_days:150},  // Wyo. Stat. §29-1-202
+  WY:{notice_days:10,filing_deadline_days:120},  // Wyo. Stat. §29-1-202
   default:{notice_days:10,filing_deadline_days:90}
 };
 

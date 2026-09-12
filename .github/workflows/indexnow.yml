@@ -1,0 +1,61 @@
+name: IndexNow (ask for a recrawl)
+
+# A noindex only takes effect when the crawler comes back and reads it, and on
+# its own schedule that is weeks. Until then the stale entry is what search
+# returns and what every AI assistant repeats. This asks the participating
+# engines to come back now: Bing (which is what ChatGPT's search reads), Yandex,
+# Seznam, Naver. Google does not participate and still needs Search Console.
+#
+# Production only. A preview URL is not what anyone should be asked to index.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'landing.html'
+      - 'compare.html'
+      - 'compare/**'
+      - '*-contractor-software.html'
+      - 'tools/**'
+      - 'privacy.html'
+      - 'terms.html'
+      - 'sitemap.xml'
+      - 'llms.txt'
+      - 'robots.txt'
+      # The app and customer pages: a change to their noindex is exactly the
+      # thing a recrawl needs to see.
+      - 'index.html'
+      - 'sign.html'
+      - 'client.html'
+      - 'intake.html'
+      - 'contract-sign.html'
+      - 'timesheet.html'
+  workflow_dispatch: {}
+
+# One submission at a time; a newer push supersedes an in-flight one.
+concurrency:
+  group: indexnow
+  cancel-in-progress: true
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cloudflare has to have published the new build before the crawlers are
+      # invited to look at it, or they fetch the old one and this made things
+      # worse rather than better.
+      - name: Wait for the deploy to carry this commit
+        run: |
+          want=$(node -p "require('./version.json').version")
+          echo "waiting for tradedeskpro.app to serve $want"
+          for i in $(seq 1 40); do
+            live=$(curl -s --max-time 10 "https://tradedeskpro.app/version.json?_=$RANDOM" | node -pe 'try{JSON.parse(require("fs").readFileSync(0,"utf8")).version}catch(e){""}' || true)
+            [ "$live" = "$want" ] && { echo "live at $want"; exit 0; }
+            echo "  serving '${live:-?}' …"; sleep 15
+          done
+          echo "::warning::deploy did not reach $want within ~10min; submitting anyway"
+
+      - name: Submit
+        run: node scripts/indexnow.js
