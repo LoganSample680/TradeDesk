@@ -39,7 +39,12 @@ concurrency:
 jobs:
   submit:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # MUST exceed the wait loop below, which is WAIT_TRIES * WAIT_SLEEP seconds
+    # (10 minutes), plus checkout. The first run of this workflow was killed at
+    # exactly 5m08s in the middle of waiting and the Submit step was SKIPPED, so
+    # nothing reached Bing and the job reported "cancelled" rather than failing.
+    # tests/e2e-indexnow-workflow.spec.js now fails if these drift apart again.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -47,15 +52,18 @@ jobs:
       # invited to look at it, or they fetch the old one and this made things
       # worse rather than better.
       - name: Wait for the deploy to carry this commit
+        env:
+          WAIT_TRIES: 40
+          WAIT_SLEEP: 15    # 40 * 15s = 10 minutes; job timeout above must exceed this
         run: |
           want=$(node -p "require('./version.json').version")
           echo "waiting for tradedeskpro.app to serve $want"
-          for i in $(seq 1 40); do
+          for i in $(seq 1 "$WAIT_TRIES"); do
             live=$(curl -s --max-time 10 "https://tradedeskpro.app/version.json?_=$RANDOM" | node -pe 'try{JSON.parse(require("fs").readFileSync(0,"utf8")).version}catch(e){""}' || true)
             [ "$live" = "$want" ] && { echo "live at $want"; exit 0; }
-            echo "  serving '${live:-?}' …"; sleep 15
+            echo "  serving '${live:-?}' …"; sleep "$WAIT_SLEEP"
           done
-          echo "::warning::deploy did not reach $want within ~10min; submitting anyway"
+          echo "::warning::deploy did not reach $want in time; submitting anyway"
 
       - name: Submit
         run: node scripts/indexnow.js

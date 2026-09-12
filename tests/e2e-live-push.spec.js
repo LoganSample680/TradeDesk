@@ -36,6 +36,17 @@ async function fakeNative(page) {
       registerPlugin: (n) => (n === 'TdLive' ? TdLive : n === 'TdPush' ? TdPush : {}),
       Plugins: { TdLive, TdPush },
     };
+
+    // Swapping window._supa for a one-method fake breaks every OTHER caller for
+    // as long as it is installed, and the app keeps doing background cloud work
+    // on its own schedule: supaLoadFromCloud reads zj_data roughly 5s after a
+    // mocked boot. CI caught exactly that (shard 3, webkit): "_supa.from(
+    // 'zj_data').select is not a function", reported as an app console error by
+    // a test that had nothing to do with zj_data. So an override intercepts the
+    // ONE table it is testing and hands every other table back to the real shim.
+    window.__supaOnly = (prev, table, impl) => Object.assign({}, prev, {
+      from: (t) => (t === table ? impl : prev.from(t)),
+    });
   });
 }
 
@@ -602,7 +613,7 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       window._supaUser = { id: 'crew-1' };
       window._contractorUserId = 'boss-1';
       const prev = window._supa;
-      window._supa = Object.assign({}, prev, { from: () => ({ upsert: (row, opts) => { rows.push({ row, opts }); return Promise.resolve({ error: null }); } }) });
+      window._supa = window.__supaOnly(prev, 'live_activity_tokens', { upsert: (row, opts) => { rows.push({ row, opts }); return Promise.resolve({ error: null }); } });
       const cb = window.__td.liveListeners && window.__td.liveListeners.activityToken;
       if (cb) { cb({ channel: 'clock', token: 'act-tok-1' }); cb({ channel: 'clock', token: 'act-tok-2' }); }
       await new Promise(r => setTimeout(r, 40));
@@ -771,7 +782,7 @@ test.describe('Remote push: token handling and tap routing', () => {
       window._supaUser = { id: 'user-abc' };
       window._contractorUserId = 'boss-xyz';     // an employee on their boss's account
       const prev = window._supa;
-      window._supa = Object.assign({}, prev, { from: () => ({ upsert: (row, opts) => { rows.push({ row, opts }); return Promise.resolve({ error: null }); } }) });
+      window._supa = window.__supaOnly(prev, 'device_tokens', { upsert: (row, opts) => { rows.push({ row, opts }); return Promise.resolve({ error: null }); } });
       const ok = await _pushSaveToken('devtok-1');
       window._supa = prev;
       return { ok, rows, cached: localStorage.getItem('zp3_push_token') };
@@ -793,7 +804,7 @@ test.describe('Remote push: token handling and tap routing', () => {
       window._supaUser = { id: 'owner-1' };
       window._contractorUserId = null;           // owners have no separate account id
       const prev = window._supa;
-      window._supa = Object.assign({}, prev, { from: () => ({ upsert: (x) => { row = x; return Promise.resolve({ error: null }); } }) });
+      window._supa = window.__supaOnly(prev, 'device_tokens', { upsert: (x) => { row = x; return Promise.resolve({ error: null }); } });
       await _pushSaveToken('devtok-2');
       window._supa = prev;
       return row;
@@ -805,7 +816,7 @@ test.describe('Remote push: token handling and tap routing', () => {
     const r = await page.evaluate(async () => {
       const prevU = window._supaUser, prevS = window._supa;
       let called = 0;
-      window._supa = Object.assign({}, prevS, { from: () => ({ upsert: () => { called++; return Promise.resolve({ error: null }); } }) });
+      window._supa = window.__supaOnly(prevS, 'device_tokens', { upsert: () => { called++; return Promise.resolve({ error: null }); } });
       window._supaUser = { id: 'u' };
       const empty = await _pushSaveToken('');
       window._supaUser = null;
@@ -823,7 +834,7 @@ test.describe('Remote push: token handling and tap routing', () => {
       localStorage.setItem('zp3_push_token', 'devtok-3');
       const deleted = [];
       const prev = window._supa;
-      window._supa = Object.assign({}, prev, { from: () => ({ delete: () => ({ eq: (col, val) => { deleted.push([col, val]); return Promise.resolve({ error: null }); } }) }) });
+      window._supa = window.__supaOnly(prev, 'device_tokens', { delete: () => ({ eq: (col, val) => { deleted.push([col, val]); return Promise.resolve({ error: null }); } }) });
       await _pushForget();
       window._supa = prev;
       return { deleted, cached: localStorage.getItem('zp3_push_token') };
