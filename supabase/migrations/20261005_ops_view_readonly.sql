@@ -51,10 +51,30 @@ grant  execute on function public.ops_view_target(uuid) to authenticated;
 -- took the whole migration down with it (Supabase preview, 42703). Whichever of
 -- the three owner columns a table actually carries is the one its policy uses,
 -- and a table carrying none is skipped instead of raising.
+--
+-- AND SO IS ITS TYPE (2026-09-12). The lookup above fixed the column NAME and
+-- still assumed the type, which took the whole migration down a second time in
+-- the same place: ops_view_target takes uuid, proposal_views.contractor_user_id
+-- is text on the live project, so the policy asked for ops_view_target(text)
+-- and Postgres has no such overload (42883). Every deploy since the portal
+-- merged has failed on it, which is why the portal shipped with no read
+-- policies at all.
+--
+-- It passed the migration lint because the lint is right and PRODUCTION has
+-- drifted: 20200101000000_initial_schema.sql and 20260527 both declare that
+-- column uuid, so a database built from this repo's own history has the type
+-- the function wants and the live one does not. A lint cannot catch a schema
+-- that disagrees with the migrations that built it.
+--
+-- So the type is looked up the same way the name is, and the value is cast
+-- only when it is not already uuid. That is correct against both shapes, which
+-- is what a migration facing a drifted database has to be. The cast is safe
+-- here: all 546 rows hold a well-formed uuid and none is null.
 do $$
 declare
-  t   text;
-  col text;
+  t    text;
+  col  text;
+  ctyp text;
 begin
   foreach t in array array[
     -- the per-record sync fabric plus the settings blob
@@ -71,7 +91,7 @@ begin
     if to_regclass('public.' || t) is null then
       continue;
     end if;
-    select c.column_name into col
+    select c.column_name, c.data_type into col, ctyp
       from information_schema.columns c
      where c.table_schema = 'public'
        and c.table_name = t
@@ -84,8 +104,8 @@ begin
     end if;
     execute format('drop policy if exists "ops_view_read" on %I', t);
     execute format(
-      'create policy "ops_view_read" on %I for select to authenticated using (public.ops_view_target(%I))',
-      t, col);
+      'create policy "ops_view_read" on %I for select to authenticated using (public.ops_view_target(%I%s))',
+      t, col, case when ctyp = 'uuid' then '' else '::uuid' end);
   end loop;
 end $$;
 
