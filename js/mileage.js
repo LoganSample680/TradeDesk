@@ -479,6 +479,11 @@ function _initMapKit(){
   _mapkitReady=true;
   _retryPendingTrips();
 }
+// THE OTHER SIDE OF THAT RACE (index.html, the mapkit script tag). Its onload
+// can fire before this file has been evaluated, in which case it only set the
+// flag and could not call anything. Whichever of the two lands second starts
+// MapKit, so neither ordering leaves it uninitialised and neither throws.
+try{if(typeof window!=='undefined'&&window._mapkitLoaded)_initMapKit();}catch(_e){}
 // The wheels cannot beat the road (owner report 2026-08-11: Home Depot to the
 // shop "in 3 minutes", which that route cannot be driven in). A leg picked up
 // mid-drive (webview crash, app relaunch, late first fix) opens its clock
