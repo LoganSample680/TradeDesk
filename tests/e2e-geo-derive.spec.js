@@ -178,15 +178,21 @@ test.describe('geo-derive: the day deriver', () => {
       const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
       return { ds, t };
     };
+    // `baseAt` is where the truck starts and ends the day, SHOP unless a test
+    // says otherwise. It is a fixture knob, not deriver input, so it never
+    // reaches the returned object.
     const visit = (iso, hFrom, hTo, over) => {
       const { ds, t } = dayOf(iso);
+      const o = Object.assign({}, over || {});
+      const at = o.baseAt || SHOP;
+      delete o.baseAt;
       const tape = [mo(t(hFrom - 1), 'onFoot'), mo(t(hFrom, 0), 'automotive'), mo(t(hFrom, 20), 'onFoot'),
         mo(t(hTo, 0), 'automotive'), mo(t(hTo, 20), 'onFoot')];
-      const fixes = [fix(t(hFrom - 1, 30), { lat: SHOP.lat, lng: SHOP.lng }),
+      const fixes = [fix(t(hFrom - 1, 30), { lat: at.lat, lng: at.lng }),
         fix(t(hFrom, 20) + 5000, { lat: DOE.lat, lng: DOE.lng }), fix(t(hTo, 0) - 60000, { lat: DOE.lat, lng: DOE.lng }),
-        fix(t(hTo, 20) + 5000, { lat: SHOP.lat, lng: SHOP.lng }), fix(t(hTo + 1), { lat: SHOP.lat, lng: SHOP.lng })];
+        fix(t(hTo, 20) + 5000, { lat: at.lat, lng: at.lng }), fix(t(hTo + 1), { lat: at.lat, lng: at.lng })];
       return Object.assign({ day: iso, dayStart: ds, dayEnd: ds + 86400000, personId: 'p', tape, fixes,
-        fences: [SHOP, HOME, DOE], nowMs: ds + 86400000 + 3600000 }, over || {});
+        fences: [SHOP, HOME, DOE], nowMs: ds + 86400000 + 3600000 }, o);
     };
     const held = (inp) => page.evaluate((i) => {
       const r = geoDeriveDay(i);
@@ -304,13 +310,30 @@ test.describe('geo-derive: the day deriver', () => {
     });
 
     test('a drive that touches the shop is business, held visit or not', async () => {
-      // The shop is a business address by definition, so the leg earns its
+      // A REAL yard is a business address by definition, so the leg earns its
       // miles from that end whatever the other one is.
+      //
+      // AMENDED 2026-09-12 (10.4). This used the base SHOP, which sits 20 ft
+      // from the base HOME because it models the owner's real account, where
+      // the yard and the house are the same building. That is now the one shop
+      // that does NOT vouch: coming home is not arriving at work, and treating
+      // it as such is why his day could never end. The claim being tested is
+      // about a yard, so the fixture now uses one.
+      const YARD = { id: 'place-yard', kind: 'shop', name: 'The yard', lat: 39.0605, lng: -95.7702 };
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [YARD, HOME, DOE_P], baseAt: YARD }));
+      const toYard = r.legs.filter(l => l.to === YARD.name);
+      expect(toYard.length).toBeGreaterThan(0);
+      expect(toYard.every(l => !l.held), 'a yard that is not your house vouches').toBe(true);
+    });
+
+    test('but the same shop AT his own house does not: that is coming home', async () => {
+      // The other half, and the whole reason his day could not end.
       const DOE_P = Object.assign({}, DOE, { personal: true });
       const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
       const toShop = r.legs.filter(l => l.to === SHOP.name);
       expect(toShop.length).toBeGreaterThan(0);
-      expect(toShop.every(l => !l.held), 'shop end vouches').toBe(true);
+      expect(toShop.every(l => l.held), 'a shop 20 ft from the home office is the house').toBe(true);
     });
 
     test('an ordinary client day is completely unchanged', async () => {
@@ -706,7 +729,12 @@ test.describe('geo-derive: the day deriver', () => {
       // traced leg, off every total, with its far end named as unsaved.
       const t3 = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(9, 40), 'driving'), mo(T(10, 0), 'onFoot')];
       const f3 = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), GAS), fix(T(9, 40, 5), GAS), fix(T(10, 0, 5), { lat: 39.05, lng: -95.70 })];
-      const r = await run(page, base({ tape: t3, fixes: f3 }));
+      // Clocked, for rules 16/17. Since 2026-09-12 the base SHOP is the
+      // owner's own house, so a day that only leaves it and never lands
+      // anywhere has no business end at all and writes nothing. The clock is
+      // his own safety valve for exactly that, and it leaves this test's
+      // subject, the shape of the traced leg, untouched.
+      const r = await run(page, base({ tape: t3, fixes: f3, clocks: [{ start: T(8, 0), end: T(11, 0) }] }));
       expect(r.legs.length).toBe(1);
       expect(r.legs[0].traced).toBe(true);
       expect(r.legs[0].unsavedTo).toBe(true);
@@ -1421,6 +1449,57 @@ test.describe('geo-derive: the day deriver', () => {
         ['TradeDesk shop', 'John Doe', false], ['John Doe', 'TradeDesk shop', false], ['TradeDesk shop', '', true],
       ]);
       expect(r.legs[2].unsavedTo).toBe(true);
+    });
+
+    // ── HIS REAL 11 SEPTEMBER, pinned ────────────────────────────────────
+    // The evening shape that keeps coming up: home from the last customer at
+    // 17:39, straight back out, home again at 20:58. His shop and his home
+    // office are 4 metres apart (the same building), so every one of those
+    // arrivals is an arrival at a shop fence.
+    //
+    // These two do NOT prove the shop-is-not-a-shop fix below them; both pass
+    // without it, because rule 7 already marks a house loop and rule 17
+    // already refuses to let one open the workday. They are here to PIN that
+    // behaviour on his real day, so the next change to the window has to say
+    // out loud that it is moving it.
+    const sep11 = (loopOutHour, loopOutMin) => {
+      const tape = [mo(T(7, 40), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 2), 'onFoot'),
+        mo(T(12, 30), 'driving'), mo(T(12, 41), 'onFoot'),
+        mo(T(13, 17), 'driving'), mo(T(13, 25), 'onFoot'),
+        mo(T(17, 23), 'driving'), mo(T(17, 39), 'onFoot'),
+        mo(T(loopOutHour, loopOutMin), 'driving'), mo(T(loopOutHour, loopOutMin + 20), 'onFoot'),
+        mo(T(20, 48), 'driving'), mo(T(20, 58), 'onFoot')];
+      const fixes = [fix(T(7, 52, 5), SHOP), fix(T(8, 2, 5), DOE), fix(T(12, 30, 5), DOE),
+        fix(T(12, 41, 5), SHOP), fix(T(13, 17, 5), SHOP), fix(T(13, 25, 5), DOE),
+        fix(T(17, 23, 5), DOE), fix(T(17, 39, 5), SHOP),
+        fix(T(loopOutHour, loopOutMin, 5), SHOP), fix(T(loopOutHour, loopOutMin + 20, 5), GAS),
+        fix(T(20, 48, 5), GAS), fix(T(20, 58, 5), SHOP), fix(T(21, 30), SHOP)];
+      return base({ tape, fixes });
+    };
+
+    test('his real 11 September: the evening run inside the wrap still counts', async () => {
+      // Out again at 17:45, six minutes after getting home, which overlaps
+      // the window (last customer 17:23 plus the 30-minute wrap = 17:53). The
+      // workday was still open, so every drive stands.
+      const r = await run(page, sep11(17, 45));
+      const rows = await page.evaluate(i => geoDeriveRows(geoDeriveDay(i),
+        { contractorId: 'c', employeeId: 'e' }), sep11(17, 45));
+      expect(r.legs.filter(l => l.held === true).length, 'nothing held on a day that stayed open').toBe(0);
+      expect(rows.td_mileage.length).toBe(5);
+    });
+
+    test('the same evening run 40 minutes later is his own time, and the day is over', async () => {
+      // Out at 18:20, past the wrap. The workday closed at 17:53 (last
+      // customer 17:23 plus the 30-minute wrap) and a loop out of the house
+      // and back proves nothing, so it is his own time and writes nothing.
+      const r = await run(page, sep11(18, 20));
+      const rows = await page.evaluate(i => geoDeriveRows(geoDeriveDay(i),
+        { contractorId: 'c', employeeId: 'e' }), sep11(18, 20));
+      const evening = r.legs.filter(l => Number(l.startTs) >= T(18, 0));
+      expect(evening.length, 'the evening loop is gone entirely').toBe(0);
+      // The four real drives to and from the customer are untouched.
+      expect(rows.td_mileage.length).toBe(4);
+      expect(rows.td_mileage.every(m => !m.pendingPurpose)).toBe(true);
     });
 
     test('a real shop after the last job keeps the unloading, capped, and nothing past it', async () => {

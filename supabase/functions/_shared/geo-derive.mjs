@@ -1029,7 +1029,7 @@ function geoDeriveDay(input) {
   // Rule 13: a visit the day cannot vouch for is a question, not a row.
   const asked = _gdHeldVisits(ended, inp, dayStart);
   // Rule 15: and the drives between them, using rule 13's own answer.
-  const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart);
+  const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart, fences, opts);
   // Rule 17: the workday window, computed ONCE from the two signals the owner
   // named. Rules 15 and 16 both read it rather than each guessing again.
   const win = _gdDayWindow(askedLegs, asked, inp, opts, dayEnd);
@@ -1720,7 +1720,7 @@ function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win) {
 // story, and stays out of every money total until somebody answers. Losing
 // the drive would break the log; claiming it would put a number on a tax
 // return that nothing on the phone can stand behind.
-function _gdHeldLegs(legs, dwells, inp, dayStart) {
+function _gdHeldLegs(legs, dwells, inp, dayStart, fences, opts) {
   const heldClients = new Set();
   (dwells || []).forEach(d => {
     if (d && d.held && d.fence && d.fence.clientId != null) heldClients.add(String(d.fence.clientId));
@@ -1731,7 +1731,25 @@ function _gdHeldLegs(legs, dwells, inp, dayStart) {
   const vouches = (e) => {
     if (!e || e.unsaved === true) return false;
     if (e.jobId != null) return true;
-    if (e.kind === 'shop' || e.kind === 'supply') return true;
+    if (e.kind === 'supply') return true;
+    // ── A SHOP THAT IS YOUR HOUSE IS YOUR HOUSE (owner 2026-09-12) ───────
+    // "How does a day with automatic drives end? Right now they can't and my
+    // own account is proof."
+    //
+    // It couldn't, and this line is why. His shop fence sits 20 ft from his
+    // home office, well inside the 600 ft radius, and the shop OUTRANKS the
+    // home office, so every time he pulled into his own driveway the deriver
+    // recorded an arrival at a business address. Rule 17 closes the workday at
+    // the last business arrival plus the wrap, so coming home pushed the end
+    // of the day out by another half hour, every time, forever. His 11
+    // September: last real work at John Doe ended 17:23, and the evening that
+    // followed sat inside the workday as 2h43m of on-site time.
+    //
+    // _gdShopIsHome has known the difference since 2026-09-04. Rule 7 asks it
+    // before calling a round trip a round trip, rule 11 asks it before calling
+    // a day a shift, and the live card asks it before drawing anything at all.
+    // This was the one place that took `kind` at face value.
+    if (e.kind === 'shop') return !_gdShopIsHome(e, fences, (opts && opts.radiusFt));
     // A client end is only as good as rule 13's answer about that visit. A
     // contact marked family does not vouch on its own: the whole point of the
     // mark is that being at that address is not evidence of work (rule 13).
