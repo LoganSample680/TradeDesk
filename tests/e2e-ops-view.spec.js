@@ -165,6 +165,65 @@ test.describe('Ops support view: read only, both directions', () => {
     expect(r.readOk).toBe(true);
   });
 
+  // ── 3b. Embedded in the portal ──────────────────────────────────────────────
+
+  test('the arming flag locks writes before the roster has even answered', async () => {
+    const r = await page.evaluate(() => {
+      const out = {};
+      out.before = opsReadOnly();
+      window._opsArming = true;                 // what the ops link sets at load
+      out.armed = opsReadOnly();
+      out.deleteLocked = _canDelete() === false;
+      window._opsArming = false;
+      out.after = opsReadOnly();
+      return out;
+    });
+    expect(r.before).toBe(false);
+    expect(r.armed).toBe(true);
+    expect(r.deleteLocked).toBe(true);
+    expect(r.after).toBe(false);
+  });
+
+  test('geo tracking never starts in a support view: it would track the VIEWER', async () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+    const init = src.slice(src.indexOf('function _geoTrackInit(){'), src.indexOf('function _geoTrackInit(){') + 600);
+    expect(init).toContain('opsReadOnly()');
+    // The enqueue paths are guarded too, so a stray closer writes nothing.
+    expect(src.slice(src.indexOf('function _geoEnqueue(tbl'), src.indexOf('function _geoEnqueue(tbl') + 300)).toContain('opsReadOnly()');
+  });
+
+  test('the portal can switch people and hand back, and nothing else', async () => {
+    const r = await page.evaluate(async () => {
+      window._opsRoster = [
+        { contractor_user_id: 'c1', person_user_id: 'p1', person_name: 'One', role: 'owner', permissions: {}, business: 'B' },
+        { contractor_user_id: 'c1', person_user_id: 'p2', person_name: 'Two', role: 'crew', permissions: { estimate: true }, business: 'B' }
+      ];
+      window._opsView = { target: 'c1', personUid: 'p1', personName: 'One', business: 'B', role: 'owner', perms: {} };
+      window._opsLoadedTarget = 'c1';
+      const out = {};
+      // A message from anything but the portal is ignored.
+      window.postMessage({ source: 'someone-else', type: 'exit' }, location.origin);
+      await new Promise(r => setTimeout(r, 60));
+      out.survivedStranger = !!window._opsView;
+      // Switching person keeps the account and applies their permissions.
+      window.postMessage({ source: 'td-ops-portal', type: 'switch', contractor_user_id: 'c1', person_user_id: 'p2' }, location.origin);
+      await new Promise(r => setTimeout(r, 250));
+      out.person = window._opsView && window._opsView.personUid;
+      out.isEmployee = _isEmployee;
+      out.perm = !!(_employeeRecord && _employeeRecord.permissions && _employeeRecord.permissions.estimate);
+      // Handing back clears the view without navigating: the portal drops the frame.
+      window.postMessage({ source: 'td-ops-portal', type: 'exit' }, location.origin);
+      await new Promise(r => setTimeout(r, 120));
+      out.cleared = window._opsView === null;
+      return out;
+    });
+    expect(r.survivedStranger).toBe(true);
+    expect(r.person).toBe('p2');
+    expect(r.isEmployee).toBe(true);
+    expect(r.perm).toBe(true);
+    expect(r.cleared).toBe(true);
+  });
+
   // ── 4. Exit ─────────────────────────────────────────────────────────────────
 
   test('exit clears every cache that could hold their rows', async () => {

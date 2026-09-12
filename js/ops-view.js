@@ -26,7 +26,24 @@
 // The view, or null. Read by opsReadOnly() everywhere else in the app.
 window._opsView = null;
 
-function opsReadOnly(){ return !!window._opsView; }
+function opsReadOnly(){ return !!window._opsView || !!window._opsArming; }
+
+// _opsArming is set SYNCHRONOUSLY at load when the ops link asked for a view,
+// before the roster call has answered. Boot-time work that must never run in a
+// support view (geo tracking prompting the VIEWER for location, js/geo-track.js)
+// starts long before that answer arrives, so the lock has to lead it. It clears
+// the moment the server says no, and a page nobody opened with ?ops=1 never sets
+// it at all.
+
+// Embedded in the ops portal (ops.html) rather than opened directly. The portal
+// owns the chrome in that case: it draws the header, the person switcher and the
+// exit, so this module draws none of them and takes its orders by postMessage.
+function _opsEmbedded(){ try{ return window.parent && window.parent !== window; }catch(_e){ return false; } }
+
+function _opsTell(type, extra){
+  if(!_opsEmbedded())return;
+  try{ window.parent.postMessage(Object.assign({source:'td-ops-view', type}, extra||{}), location.origin); }catch(_e){}
+}
 
 // Reads the support view is allowed to make. Everything else the app might call
 // while a view is open is either a write (blocked) or an auth.uid()-scoped read
@@ -50,16 +67,26 @@ async function opsViewRoster(){
 // Boot hook. The link (?ops=1) opens the picker; a person already chosen in this
 // tab survives a navigation within the session.
 async function opsViewBoot(){
-  let want=false;
+  let want=false, wantTarget=null, wantPerson=null;
   try{
     const p=new URLSearchParams(location.search);
     if(p.get('ops')==='1')want=true;
     if(sessionStorage.getItem('zp3_ops_open')==='1')want=true;
+    // The portal names who to open, so an embedded view never shows a picker
+    // inside the frame: the portal already asked that question.
+    wantTarget=p.get('t');wantPerson=p.get('p');
   }catch(_e){}
   if(!want)return;
   const roster=await opsViewRoster();
-  if(!roster.length)return;               // not authorized: behave as if the param was never there
+  if(!roster.length){window._opsArming=false;_opsTell('denied');return;}   // not on the allowlist: as if the param was never there
   window._opsRoster=roster;
+  if(wantTarget){
+    const asked=roster.find(r=>r.contractor_user_id===wantTarget&&(!wantPerson||r.person_user_id===wantPerson))
+             || roster.find(r=>r.contractor_user_id===wantTarget&&r.role==='owner');
+    if(asked)return opsViewEnter(asked);
+    _opsTell('not-found');
+    if(_opsEmbedded())return;
+  }
   const saved=(()=>{try{return JSON.parse(sessionStorage.getItem('zp3_ops_person')||'null');}catch(_e){return null;}})();
   const match=saved&&roster.find(r=>r.person_user_id===saved.person_user_id&&r.contractor_user_id===saved.contractor_user_id);
   if(match)return opsViewEnter(match);
@@ -133,8 +160,10 @@ async function opsViewEnter(person){
     if(!ok){ if(typeof showToast==='function')showToast('Could not load that account','❌'); return; }
     window._opsLoadedTarget=person.contractor_user_id;
   }
+  window._opsArming=false;   // _opsView is the lock from here on
   _opsApplyPerson();
-  _opsChrome();
+  if(_opsEmbedded())_opsTell('entered',{target:_opsView.target,person:_opsView.personUid,name:_opsView.personName,business:_opsView.business,role:_opsView.role});
+  else _opsChrome();
   _opsRepaint();
 }
 
@@ -336,15 +365,37 @@ function _opsSealObject(c){
        ||sessionStorage.getItem('zp3_ops_open')==='1';
   }catch(_e){}
   if(!want)return;
+  window._opsArming=true;    // read-only from this instant, not from when the roster answers
   let tries=0;
   const t=setInterval(()=>{
-    if(++tries>120){clearInterval(t);return;}          // 60s, then give up quietly
+    if(++tries>120){clearInterval(t);window._opsArming=false;return;}   // 60s, then give up quietly
     if(typeof _supa!=='undefined'&&_supa&&_supaUser&&_supaCloudLoaded){
       clearInterval(t);
       opsViewBoot();
     }
   },500);
 })();
+
+/* ── Remote control from the portal ───────────────────────────────────────── */
+// ops.html drives the frame: switch to another person on the same account, or
+// hand back. Same-origin only, and only the two verbs, so the frame can never be
+// steered into anything the portal does not already offer.
+window.addEventListener('message',ev=>{
+  if(ev.origin!==location.origin)return;
+  const d=ev.data;
+  if(!d||d.source!=='td-ops-portal')return;
+  if(d.type==='switch'&&d.person_user_id){
+    const row=(window._opsRoster||[]).find(r=>r.person_user_id===d.person_user_id&&r.contractor_user_id===d.contractor_user_id);
+    if(row)opsViewEnter(row);
+    return;
+  }
+  if(d.type==='exit'){
+    // Clearing is the point; the reload is the portal's to do by dropping the frame.
+    opsViewClearTraces();
+    window._opsView=null;
+    _opsTell('exited');
+  }
+});
 
 // Test hook: the seal is the layer a spec can actually exercise without a real
 // Supabase client, so it is reachable by name (tests/e2e-ops-view.spec.js).

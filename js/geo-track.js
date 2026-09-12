@@ -6693,6 +6693,11 @@ function _geoDisarmIfForeign(){
 }
 
 function _geoTrackInit(){
+  // Read-only support view (js/ops-view.js): the phone in your hand is not
+  // theirs. Tracking here would prompt the VIEWER for location, watch the
+  // VIEWER's position, and try to write it against the account being looked
+  // at. Looking at somebody's app is not that person working.
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
   _geoDisarmIfForeign();                     // drop the other account's fences before arming ours
