@@ -1428,6 +1428,28 @@ function _gdHeldVisits(dwells, inp, dayStart) {
   return (dwells || []).map(d => {
     if (!d || d.kind !== 'client' || !d.fence || d.fence.scheduled === true) return d;
     if (clocks.some(c => overlaps(d, c.a, c.b))) return d;
+    // ── THE CONTACT ANSWERING IN ADVANCE (owner 2026-09-12) ───────────────
+    // "Add in ability to mark a contact as family member so time flags itself
+    // as need marked personal or work."
+    //
+    // This is the hole the paragraph above names and could not close: a
+    // genuinely personal WEEKDAY AFTERNOON at a client with nothing scheduled
+    // looks exactly like work, because the working-day window is the widest
+    // of the three witnesses and it was only ever meant to cover the
+    // forgetful contractor for free.
+    //
+    // Marking the contact takes that one witness away and leaves the other
+    // two, which is the whole change. An explicit signal still vouches: a job
+    // ON THE CALENDAR at a family member's address is work, and so is a
+    // manual clock running over the visit, because that is the person saying
+    // they are working right now. What no longer counts as evidence is
+    // merely being there on a Tuesday.
+    //
+    // Deliberately held rather than dropped. "Personal" is still the owner's
+    // answer to give, not this function's to assume, and a held visit already
+    // counts toward nothing and asks on the card. Dropping it silently would
+    // lose the one case he DOES bill for at that address.
+    if (d.fence.personal === true) return Object.assign({}, d, { held: true });
     if (workDay && whB > whA && overlaps(d, dayStart + whA, dayStart + whB)) return d;
     return Object.assign({}, d, { held: true });
   });

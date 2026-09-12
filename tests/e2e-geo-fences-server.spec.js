@@ -48,6 +48,7 @@ test.describe('geo fences: the browser half of the equivalence', () => {
         return _geoDeriveFences(c.day).map((f) => ({
           id: f.id, kind: f.kind, name: f.name, lat: f.lat, lng: f.lng,
           scheduled: f.scheduled === undefined ? null : !!f.scheduled,
+          personal: f.personal === undefined ? null : !!f.personal,
         }));
       } finally { if (savedGeo) localStorage.setItem('zp3_nearby_geo', savedGeo); }
     }, CASE);
@@ -78,6 +79,21 @@ test.describe('geo fences: the browser half of the equivalence', () => {
     expect(got.find(f => f.id === 'client-c1').scheduled, 'job 9001 runs Sep 1 to 2').toBe(true);
     expect(got.find(f => f.id === 'client-c2').scheduled,
       'its jobs are an old one, a canceled one and a done one').toBe(false);
+  });
+
+  // ── Marking the contact (owner 2026-09-12) ────────────────────────────
+  // "Add in ability to mark a contact as family member so time flags itself as
+  // need marked personal or work." c6 is identical to c2 in every way except
+  // the flag, so a half that drops `personal` fails on that one row and
+  // nothing else.
+  test('rule 13: a contact marked family carries it onto the fence, and nobody else does', async () => {
+    const got = await build();
+    expect(got.find(f => f.id === 'client-c6').personal, 'Mom, marked on the record').toBe(true);
+    expect(got.find(f => f.id === 'client-c2').personal, 'an ordinary client is not').toBe(false);
+    // Only a client can be family. A job is work whoever the client is, which
+    // is the case the flag exists to keep counting, so a job fence must not
+    // carry an answer at all.
+    expect(got.filter(f => f.kind !== 'client').every(f => f.personal === null)).toBe(true);
   });
 
   test('a canceled, a done and an ended job are not fences; a live one is', async () => {

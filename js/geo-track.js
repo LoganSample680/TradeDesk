@@ -7056,7 +7056,10 @@ function _geoDeriveFences(dayKey){
       if(!(hit&&hit.addr===c.addr&&hit.lat!=null))return;
       const scheduled=jl.some(j=>j&&j.status!=='canceled'&&String(j.client_id)===String(c.id)&&
         ((typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true));
-      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled});
+      // Marked family or personal on the contact itself (owner 2026-09-12):
+      // rule 13 then holds the visit unless the calendar or a running clock
+      // vouches for it, instead of letting the working-day window do so.
+      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal});
     });
     (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
       if(!j||j.status==='canceled')return;

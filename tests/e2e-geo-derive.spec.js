@@ -224,6 +224,57 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.held).toBe(false);
       expect(r.source).toBe('client');
     });
+    // ── The contact answering in advance (owner 2026-09-12) ──────────────
+    // "Add in ability to mark a contact as family member so time flags itself
+    // as need marked personal or work." The test directly above is the case
+    // the rule's own comment admits it cannot close: a weekday afternoon at a
+    // family member's address, nothing scheduled, counted as work. Marking the
+    // contact takes the working-day witness away and leaves the other two.
+    test('the SAME weekday afternoon at a contact marked family: held', async () => {
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await held(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
+      expect(r.held, 'the working day no longer vouches for this address').toBe(true);
+      expect(r.source).toBe('client-held');
+    });
+    test('a job on the calendar still makes a family address work', async () => {
+      // The one case the flag exists to keep counting: he really does bill
+      // work at that address, and the calendar says so.
+      const DOE_P = Object.assign({}, DOE, { personal: true, scheduled: true });
+      const r = await held(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
+      expect(r.held).toBe(false);
+      expect(r.source).toBe('client');
+    });
+    test('a clock running over it still makes a family address work', async () => {
+      // The person saying, at the time, that they are working.
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const { t } = dayOf('2026-09-01');
+      const r = await held(visit('2026-09-01', 13, 16,
+        { fences: [SHOP, HOME, DOE_P], clocks: [{ start: t(12), end: t(17) }] }));
+      expect(r.held).toBe(false);
+      expect(r.source).toBe('client');
+    });
+    test('marking a contact holds the visit, it never drops it', async () => {
+      // Held is a question on the rail that counts toward nothing and asks on
+      // the card. Dropping it silently would lose the one visit he DOES bill.
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await held(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
+      expect(r.minutes).toBeGreaterThan(100);
+      expect(r.source).toBe('client-held');
+    });
+    test('an unmarked contact is exactly as it was, and so is every other kind', async () => {
+      // personal absent reads as false on every client saved before the flag
+      // existed, which is the whole of the migration story.
+      const noFlag = await held(visit('2026-09-01', 13, 16));
+      const falseFlag = await held(visit('2026-09-01', 13, 16,
+        { fences: [SHOP, HOME, Object.assign({}, DOE, { personal: false })] }));
+      const junk = await held(visit('2026-09-01', 13, 16,
+        { fences: [SHOP, HOME, Object.assign({}, DOE, { personal: 'yes' })] }));
+      expect(noFlag.held).toBe(false);
+      expect(falseFlag.held).toBe(false);
+      // Only a literal true marks a contact: a truthy string is not an answer.
+      expect(junk.held).toBe(false);
+    });
+
     test('a weekday night at a customer, nothing scheduled: held', async () => {
       const r = await held(visit('2026-09-01', 21, 23));
       expect(r.held).toBe(true);

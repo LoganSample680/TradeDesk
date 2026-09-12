@@ -1135,6 +1135,7 @@ function openNewClient(){
   const csrc=document.getElementById('cf-source');if(csrc)csrc.value='';
   const crw=document.getElementById('cf-ref-wrap');if(crw)crw.style.display='none';
   document.getElementById('cf-ptype').value='Single family home';
+  {const _cp=document.getElementById('cf-personal');if(_cp)_cp.checked=false;}
   {const _pt=document.getElementById('cf-partytype');if(_pt)_pt.value='';} // force an explicit pick on every new lead
   document.getElementById('client-list').style.display='none';
   const sw=document.getElementById('cf-search-wrap');if(sw)sw.style.display='none';
@@ -1220,6 +1221,7 @@ function openEditClient(){
   document.getElementById('cf-state').value=c.state||_ep.state||'';
   document.getElementById('cf-zip').value=c.zip||_ep.zip||'';
   document.getElementById('cf-ptype').value=c.ptype||'Single family home';
+  {const _cp=document.getElementById('cf-personal');if(_cp)_cp.checked=!!c.personal;}
   {const _pt=document.getElementById('cf-partytype');if(_pt)_pt.value=c.partyType||'homeowner';} // legacy clients predate the field, treat as homeowner
   document.getElementById('cf-email').value=c.email||'';
   document.getElementById('cf-ref').value=c.ref||'';
@@ -1334,6 +1336,11 @@ function saveClient(){
   const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),
     addr,street,city,state,zip,
     ptype:v('cf-ptype'),partyType,source,ref,notes:v('cf-notes'),created:todayKey(),
+    // Family or personal (owner 2026-09-12). Rule 13 (js/geo-derive.js) then
+    // holds every visit to this address as a question unless the calendar or
+    // a running clock vouches for it, instead of counting it as work just for
+    // falling inside the working day.
+    personal:!!document.getElementById('cf-personal')?.checked,
     // Exact creation moment for the audit trail; `created` is only a day key.
     createdAt:_existingClient?.createdAt||new Date().toISOString(),
     yearBuilt:_ybRaw||_existingClient?.yearBuilt||null,

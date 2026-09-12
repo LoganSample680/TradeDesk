@@ -1856,6 +1856,13 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="fg fg2">
           <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com" autocomplete="off"></div>
           <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
+          <div class="f" style="grid-column:1/-1">
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600">
+              <input type="checkbox" id="cf-personal" style="width:18px;height:18px;flex:0 0 auto;margin:0;accent-color:var(--amber)">
+              <span>Family or personal contact</span>
+            </label>
+            <div style="font-size:11px;color:var(--text3);margin-top:5px;line-height:1.45">Time at this address is never counted as work on its own. It waits for you to mark it, unless a job is scheduled or your clock is running.</div>
+          </div>
           <div class="f" id="cf-year-built-wrap"><label>Year built <span style="font-weight:400;color:var(--text3);font-size:10px">Pre-1978 = EPA disclosure</span></label>
             <div style="display:flex;gap:8px;align-items:center">
               <input id="cf-year-built" type="number" min="1800" max="2030" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
