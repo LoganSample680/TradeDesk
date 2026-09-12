@@ -309,12 +309,21 @@ test.describe('the live demo', () => {
     const src = await (await request.newContext({ baseURL: site.url })).get('/landing');
     const text = await src.text();
 
-    // The owner's five chapters, in his words and his order.
-    for (const t of ['Enter the lead', 'Build the proposal', 'The client signs', 'Schedule the work', 'Get paid']) {
+    // All eight stages of the job, each its own chapter, in order.
+    const CHAPTERS = ['Enter the lead', 'Build the proposal', 'The client signs', 'Schedule the work',
+                      'On the job', 'Change order', 'Invoice', 'Get paid'];
+    let at = -1;
+    for (const t of CHAPTERS) {
+      const i = text.indexOf('aria-label="Play chapter', at + 1);
+      expect(i, `a button for chapter "${t}"`).toBeGreaterThan(at);
+      at = i;
       expect(text, `chapter "${t}"`).toContain(t);
     }
-    expect(text, 'five chapters, not eight steps').toMatch(/onChapter0[\s\S]*onChapter4/);
-    expect(text, 'the eight-step list is gone, not hidden (7.1)').not.toContain('onStep7');
+    expect(text, 'eight chapters').toMatch(/onChapter0[\s\S]*onChapter7/);
+    expect(text, 'and not a ninth').not.toContain('onChapter8');
+    // The eight NUMBERED STEPS and their hand-built recreations are what these
+    // replaced; they are deleted, not hidden (7.1).
+    expect(text, 'the old step list is gone').not.toContain('onStep7');
     expect(text, 'and so is the frame it used to steer').not.toContain('flowLiveEl');
 
     // Full screen, at native size. A transform on the frame is what made the
@@ -373,9 +382,14 @@ test.describe('the live demo', () => {
       // Every scene the theater can ask for has to exist, or a chapter dead-ends.
       known: ['lead','estimate','present','signed','schedule','onsite','change','invoice','collect']
         .filter(k => !_TD_DEMO_SCENES[k]),
+      // and every stage of the job is reachable as a scene, so no chapter can
+      // name a screen the seed cannot build.
+      stagesCovered: _TD_DEMO_STAGES.filter(st =>
+        !Object.keys(_TD_DEMO_SCENES).some(k => _TD_DEMO_SCENES[k].stage === st)),
     }));
     expect(after.scene).toBe('collect');
     expect(after.known, 'every scene the tour names is defined').toEqual([]);
+    expect(after.stagesCovered, 'every one of the eight stages has a scene').toEqual([]);
     // Moving on closes the previous scene's overlay rather than drawing under it.
     const leftover = await page.evaluate(() => !!document.getElementById('_gei-present-ov'));
     expect(leftover).toBe(false);

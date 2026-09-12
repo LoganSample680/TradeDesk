@@ -22,20 +22,24 @@ Both the hero's "Try it live" and the walkthrough's "Play the guided tour" open
 the theater. Neither loads anything until it is tapped: the app is a few hundred
 KB and putting that behind the hero would cost the page its load on a phone.
 
-## The tour: five chapters, played like a video
+## The tour: eight chapters, played like a video
 
-The narration strip runs the chapters the owner named, in his order:
+One chapter per stage of the job, in order:
 
 | # | Chapter | Beats |
 |---|---|---|
 | 1 | Enter the lead | the client record, then the property it pulled |
 | 2 | Build the proposal | the estimate, twice |
 | 3 | The client signs | **presentation mode**, then the signed job |
-| 4 | Schedule the work | the calendar, then the time log |
-| 5 | Get paid | change order, invoice, paid |
+| 4 | Schedule the work | the calendar, then the crew's view of it |
+| 5 | On the job | drive time, then time on site |
+| 6 | Change order | the extra work, then the moved contract total |
+| 7 | Invoice | off the finished job, then the balance |
+| 8 | Get paid | payment in, then the lien deadline |
 
-Each beat runs 6.5 seconds and names a **scene**. The strip shows the chapter
-chips, the line for the beat, a bar that fills over it, and prev/play/next.
+Sixteen beats at 6.5 seconds each, so about two minutes end to end. The
+narration strip shows the chapter chips, the line for the beat, a bar that
+fills over it, and prev/play/next.
 
 Chapter 3 beat 1 is the one worth knowing about. "What it looks like for clients
 to sign" is not the contractor's bid detail, it is `_presentOpen`
@@ -119,10 +123,15 @@ different ones.
 ## Tests
 
 `tests/e2e-demo.spec.js` (offline shards) proves the sandbox keeps the demo out
-of real account data, that two demos never see each other, that all eight steps
-land on their screen with that step's record and no console errors, and that
-the money adds up. `tests/preview-smoke` proves the demo boots on the real
-deploy, which is the one thing only a live origin can show.
+of real account data, that two demos never see each other, that all eight
+stages land on their screen with that stage's record and no console errors, and
+that the money adds up. It also holds the theater to its shape: a full-viewport
+overlay with both ways out, a frame that is never scaled, eight chapters in
+order with the old step list deleted rather than hidden, the client-signs scene
+opening presentation mode on an unsigned proposal, and a scene message steering
+a running frame with no reload and no overlay left behind.
+`tests/preview-smoke` proves the demo boots on the real deploy, which is the one
+thing only a live origin can show.
 
 The demo has no backend by design, so there is deliberately no `tests/flow`
 spec for it: a live-backend test of a backend-free feature would prove nothing.
@@ -137,5 +146,6 @@ screenshot of the app any more.
 
 The eight numbered steps went with them. They were a list of abstract stages
 beside a phone picture, and the walkthrough that drove them put the app in a
-frame too small to read. Five narrated chapters replaced them because that is
-what the owner asked for and what a visitor can actually follow.
+frame too small to read. The same eight stages are now eight narrated chapters
+in the theater, which is the part that changed: not how many, but that each one
+opens the real screen full size with a line of narration over it.
