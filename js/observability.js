@@ -28,7 +28,8 @@
   var _sid = (function () { try { return 's' + Math.abs((Date.now() ^ Math.floor((performance && performance.now ? performance.now() : 0) * 1000))).toString(36); } catch (_e) { return 's0'; } })();
 
   function _send(payload) {
-    try { if (!_ready()) return; _supa.functions.invoke('ingest-telemetry', { body: payload }).then(function () {}, function () {}); } catch (_e) {}
+    try { if (typeof opsReadOnly === 'function' && opsReadOnly()) return;
+      if (!_ready()) return; _supa.functions.invoke('ingest-telemetry', { body: payload }).then(function () {}, function () {}); } catch (_e) {}
   }
 
   // ── Error capture (flushed immediately, deduped) ─────────────────────────────
