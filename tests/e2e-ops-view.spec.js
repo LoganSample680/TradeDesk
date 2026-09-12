@@ -280,6 +280,12 @@ test.describe('Ops support view: read only, both directions', () => {
     // contractor_user_id, not user_id).
     expect(sql).toContain('information_schema.columns');
     expect(/'contractor_user_id','user_id','owner_id'/.test(sql)).toBe(true);
+    // …and the call is cast, not left to the column's declared type. Without
+    // this the policy on a text-typed owner column (device_status.user_id on the
+    // real database) resolves to ops_view_target(text) and the whole migration
+    // fails with 42883, which is what took the first deploy down.
+    expect(sql).toContain('ops_view_target(%I::text)');
+    expect(sql).toContain('create or replace function public.ops_view_target(target text)');
   });
 
   test('zero console errors across the suite', async () => {
