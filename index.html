@@ -17,6 +17,10 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="/icons/icon-180.png">
 <link rel="manifest" href="/manifest.json">
+<!-- Not a search result: the app itself. The marketing home is landing.html, served at "/" by
+     functions/index.js. Letting a crawler index the app shell instead means an
+     AI summarising TradeDesk describes the estimator it happened to land on. -->
+<meta name="robots" content="noindex,nofollow">
 <title>TradeDesk</title>
 <!-- ── Demo mode sandbox ──────────────────────────────────────────────────────
      ?demo=1 boots this same app as the live demo embedded in the marketing

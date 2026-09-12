@@ -102,6 +102,48 @@ landing guard, and that the landing FAQ JSON-LD matches the 19 visible
 `<details>` items. Its second half boots the real app on the offline harness and
 proves the cookie is set, `?signup=1` opens signup, and the wipe clears it.
 
+## What an AI says TradeDesk is
+
+An AI asked about contractor apps in September 2026 described tradedeskpro.app
+as "a proposal/estimating tool aimed at painters, with Sherwin-Williams pricing,
+e-signature proposals with ESIGN/UETA disclosures, client project portals and
+lien deadline tracking," and listed two similarly-named products as if one of
+them might also be us.
+
+That summary was not written from the marketing page. It is `sign.html` plus
+`client.html` plus the app's estimator. Those pages, and `index.html`,
+`intake.html` and `contract-sign.html`, were fully crawlable with no meta
+description, no canonical and no robots directive, so a crawler landing on one
+had nothing to summarise but body text, and the body text of a painting proposal
+is a painting proposal. Only `timesheet.html` was marked noindex.
+
+All six now carry `<meta name="robots" content="noindex,nofollow">`. They are the
+app and per-customer links, never pages search should rank, and an indexed
+proposal or project hub is a privacy problem regardless of branding.
+
+**noindex, deliberately not a robots.txt `Disallow`.** A disallowed page is never
+fetched, so the crawler never reads the directive and anything already indexed
+stays indexed. noindex is the one that removes them.
+
+Two smaller signals went with it:
+
+- The landing page declared **two** Organization nodes for one company: a full
+  one at `#org` and an inline duplicate as the SoftwareApplication's publisher.
+  The publisher now references `#org`, and the Organization and WebSite nodes
+  carry `alternateName` so "TradeDesk" and "TradeDesk Pro" resolve to one entity.
+- `llms.txt` opens with a "Which TradeDesk this is" section naming the one
+  domain and denying the two descriptions that have actually been produced: that
+  it is painting-only, and that it is an AI call-answering service.
+
+`tests/e2e-site-routing.spec.js` guards all three, including the mirror case: a
+noindex must never leak onto a page we want ranked.
+
+Still open, needs the owner: whether TradeDesk owns the other domains using the
+name. If it does, they should 301 to tradedeskpro.app, which collapses the
+confusion at the source. If it does not, the defensive signals above are the
+whole of the fix. No `sameAs` is claimed in the structured data because no
+verified profile URLs were available.
+
 ## The apex challenges /version.json sometimes
 
 Cloudflare intermittently answers `/version.json` on `tradedeskpro.app` with its
