@@ -102,6 +102,26 @@ landing guard, and that the landing FAQ JSON-LD matches the 19 visible
 `<details>` items. Its second half boots the real app on the offline harness and
 proves the cookie is set, `?signup=1` opens signup, and the wipe clears it.
 
+## The apex challenges /version.json sometimes
+
+Cloudflare intermittently answers `/version.json` on `tradedeskpro.app` with its
+"Just a moment..." managed challenge (403, an HTML body) when the client scores
+as a bot. The preview smoke's headless browsers hit it: webkit alone on
+2026-09-11, both engines on 2026-09-12. There is no engine bug here; the CI WAF
+bypass header skips the custom WAF rules but not Cloudflare's bot protection.
+
+The app is unaffected. Every reader of that file handles a non-answer:
+`_checkVersionOnResume` and `_geoBgUpdateCheck` (js/cloud.js, js/geo-track.js)
+return on `!r.ok`, and `_probeAndSync` and `_classifyCloudError` only care
+whether the fetch throws, which a 403 does not. The worst case is one missed
+15-second version check.
+
+The smoke therefore gates on `APP_VERSION` (parsed from the bundle the origin
+just served, which proves the deploy outright) and reports a challenged
+`/version.json` as a warning instead of a deploy failure. A wrong version there
+still fails. To make it answer in CI, the WAF skip rule for `x-e2e-bypass` has
+to skip bot protection too, which is a Cloudflare dashboard change.
+
 ## Deliberate gaps (do not "fix")
 
 - No `og:image` on any page: the 1200x630 asset does not exist yet. When it
