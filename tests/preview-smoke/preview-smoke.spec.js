@@ -80,7 +80,7 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     });
     page.on('response', res => { if (!res.ok() && NOISY_ORIGINS.test(res.url())) noisyFailedUrls.push(res.url()); });
 
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/?app=1', { waitUntil: 'domcontentloaded' });
     // App shell rendered (the login screen) = the deployed JS actually ran, not a blank
     // page / 500 / wrong-root deploy. Identifier-first gate (2026-08-22): the email
     // input is the always-visible element now, social buttons only appear after
@@ -102,9 +102,54 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     const real = errs.filter(e => {
       if (/Unhandled Promise Rejection|ResizeObserver|Script error\.?$|apple-mapkit|mapkit|stripe|favicon|status of 4\d\d|cloudflareinsights/i.test(e)) return false;
       if (genericCorsMsg.test(e) && noisyFailedUrls.length) return false; // correlated with a known noisy third-party failure
+      // Chromium reports the same beacon failure as a bare "Failed to load resource:
+      // net::ERR_FAILED" with no URL; requestfailed captured which URL it was.
+      if (/Failed to load resource/i.test(e) && noisyFailedUrls.length) return false;
       return true;
     });
     expect(real, `console errors on boot: ${real.join(' | ')}: failed requests: ${failedRequests.join(' | ') || '(none captured)'}`).toHaveLength(0);
+  });
+
+  // 1b. The "/" gate (functions/index.js) is live: a stranger gets the marketing
+  //     page, a browser carrying the app cookie gets the app. Only a deployed
+  //     origin runs the function, so this is the one place it can be proven.
+  test('the "/" function serves the landing page to a stranger and the app to the cookie', async ({ page }) => {
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    const landing = await page.request.get('/', { failOnStatusCode: false, headers });
+    expect(landing.status(), 'GET / (no cookie)').toBe(200);
+    expect(landing.headers()['x-td-page'], 'the function answered / for a stranger').toBe('landing');
+    expect(await landing.text()).toContain('<link rel="canonical" href="https://tradedeskpro.app/">');
+    const app = await page.request.get('/', { failOnStatusCode: false, headers: { ...headers, cookie: 'td_app=1' } });
+    expect(app.status(), 'GET / (td_app cookie)').toBe(200);
+    expect(app.headers()['x-td-page'], 'the function answered / for an app user').toBe('app');
+    expect(await app.text()).toContain('id="supa-boot-overlay"');
+  });
+
+  // 1c. The live demo boots on the real deploy. The marketing page shows the
+  //     app itself rather than pictures of it, so "the demo still runs" is a
+  //     deploy-health fact: if this breaks, every device frame on the home page
+  //     is empty and nothing else would report it.
+  test('the demo boots on the deployed origin and seeds itself', async ({ page }) => {
+    const errs = [];
+    page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+    page.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
+    await page.goto('/?demo=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !document.getElementById('supa-boot-overlay'), null, { timeout: 25000 });
+    const s = await page.evaluate(() => ({
+      demo: !!window.__TD_DEMO,
+      client: typeof clients !== 'undefined' && clients[0] ? clients[0].name : null,
+      biz: typeof S !== 'undefined' ? S.bname : null,
+      supa: typeof supaEnabled === 'function' ? supaEnabled() : null,
+      cookie: document.cookie,
+    }));
+    expect(s.demo, 'the deploy served the demo sandbox').toBe(true);
+    expect(s.client, 'the demo seeded its sample job').toBeTruthy();
+    expect(s.biz).toBeTruthy();
+    // Still no backend and still no app cookie, on the real origin.
+    expect(s.supa).toBe(false);
+    expect(s.cookie).not.toMatch(/td_app=1/);
+    const real = errs.filter(e => !/favicon|Failed to load resource|net::ERR|cloudflareinsights|status of 4\d\d/i.test(e));
+    expect(real, `demo console errors: ${real.join(' | ')}`).toHaveLength(0);
   });
 
   // 2. The Cloudflare `/api` Pages Function is live and reaches Supabase. This worker
@@ -158,7 +203,7 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
   //    `_mapkitReady` is ALWAYS false on localhost, this is the only place maps are
   //    proven to load with a VALID token for the live domain.
   test('MapKit authorizes and initializes on the deployed hostname', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/?app=1', { waitUntil: 'domcontentloaded' });
     const authorized = await page.evaluate(() => (typeof _mapkitAuthorizedOrigin !== 'undefined') ? _mapkitAuthorizedOrigin : null);
     expect(authorized, 'deployed origin must be a MapKit-authorized host (pages.dev / tradedeskpro.app)').toBe(true);
     // mapkit.js loads from Apple's CDN (index.html) and fires _initMapKit onload; on an

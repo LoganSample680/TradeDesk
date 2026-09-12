@@ -4,9 +4,12 @@
   "webDir": "www",
   "server": {
     "url": "https://uat.tradedesk-cyp.pages.dev",
-    "allowNavigation": ["uat.tradedesk-cyp.pages.dev"]
+    "allowNavigation": [
+      "uat.tradedesk-cyp.pages.dev"
+    ]
   },
   "ios": {
     "contentInset": "never"
-  }
+  },
+  "appendUserAgent": "TradeDeskShell"
 }

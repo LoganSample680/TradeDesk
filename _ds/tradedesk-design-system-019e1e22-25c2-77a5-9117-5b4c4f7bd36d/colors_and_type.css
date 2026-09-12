@@ -1,0 +1,143 @@
+/* TradeDesk Design System — Colors & Type · v2 "Workwear Modern"
+   ----------------------------------------------------------------
+   The redesign palette: warm cream paper, charcoal chrome,
+   terracotta primary, denim secondary, sage tertiary.
+   Sharper semantic colors than v1; meant to compete visually
+   with ServiceTitan / Jobber / DripJobs / QuoteIQ.
+*/
+
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap");
+
+:root {
+  /* ── BRAND CHROME ── warm darks instead of #000 */
+  --ink:        #1B1612;   /* warm charcoal — app chrome, nav, headlines */
+  --ink-soft:   #3A3128;   /* secondary dark on dark surfaces */
+  --ink-line:   rgba(255,238,210,.08);
+  --ink-line-2: rgba(255,238,210,.14);
+
+  /* ── PAPER SURFACES ── clean white + cool grey */
+  --paper:      #F4F5F7;   /* app body */
+  --cream:      #ECEEF2;   /* recessed panels, readonly */
+  --bg-card:    #FFFFFF;   /* cards */
+  --line:       #E2E5EB;   /* hairline borders */
+  --line-2:     #CFD4DC;   /* stronger borders, inputs */
+
+  /* ── PRIMARY ACCENT — denim blue ── the workwear-blue, not corporate-blue */
+  --denim:      #2D5DA8;
+  --denim-deep: #1B3F7A;
+  --denim-soft: #DCE8FA;
+  --denim-edge: #B7CDED;
+  --denim-glow: rgba(45,93,168,.32);
+
+  /* ── SECONDARY — terracotta ── sparingly: hot tags, alert accents; never UI chrome */
+  --terra:      #B8512A;
+  --terra-deep: #7E351A;
+  --terra-soft: #FAD7C5;
+  --terra-edge: #F1B596;
+
+  /* ── SEMANTIC COLORS — sharper than v1 */
+  --c-green:    #117841;   --c-green-deep:#0B5430;  --c-green-soft:#D4ECDC; --c-green-edge:#A8D5B7;
+  --c-amber:    #9F5B00;   --c-amber-deep:#704000;  --c-amber-soft:#FBE2BB; --c-amber-edge:#EDC783;
+  --c-red:      #B22A20;   --c-red-deep: #7E1B14;   --c-red-soft: #FAD6CF;  --c-red-edge:#EAB1A4;
+  --c-deep:     #2C0707;   --c-deep-soft:#FFB8AE;   /* lien / hard danger */
+  --c-gray:     #544D44;   --c-gray-soft:#EEE7D8;   --c-gray-edge:#CFC4AC;
+
+  /* ── TYPE COLORS ── */
+  --text:       #161A1F;
+  --text-2:     #4B5563;
+  --text-3:     #8A92A0;
+  --text-cream: #F5EFE2;   /* primary on dark */
+  --text-cream-2: rgba(245,239,226,.62);  /* secondary on dark */
+  --text-cream-3: rgba(245,239,226,.42);  /* tertiary on dark */
+
+  /* ── RADII ── slightly tighter than v1 */
+  --r-xs:  4px;
+  --r-sm:  6px;
+  --r:     8px;             /* buttons, inputs, badges */
+  --r-md: 10px;
+  --r-lg: 12px;             /* cards */
+  --r-xl: 16px;             /* modals */
+  --r-pill: 999px;
+  --r-mark: 9px;            /* the mark-square shape */
+
+  /* ── ELEVATION ── */
+  --shadow-card:    0 1px 2px rgba(27,22,18,.04), 0 0 0 1px var(--line);
+  --shadow-hover:   0 3px 12px rgba(27,22,18,.08), 0 0 0 1px var(--line);
+  --shadow-lift:    0 4px 16px rgba(27,22,18,.18);
+  --shadow-modal:   0 16px 48px rgba(27,22,18,.22), 0 2px 8px rgba(27,22,18,.08);
+  --shadow-btn-p:   0 1px 0 rgba(27,63,122,.45) inset, 0 -1px 0 rgba(255,255,255,.16) inset, 0 2px 6px rgba(45,93,168,.28);
+  --shadow-btn-pop: 0 1px 0 rgba(0,0,0,.18) inset, 0 -1px 0 rgba(255,255,255,.12) inset;
+
+  /* ── BRAND GRADIENT — denim wash on warm charcoal ── */
+  --grad-brand:    radial-gradient(120% 80% at 0% 100%, rgba(45,93,168,.36) 0%, transparent 55%), linear-gradient(155deg, #1B1612 0%, #1F2230 100%);
+  --grad-mark:     linear-gradient(155deg, #2D5DA8 0%, #1B3F7A 100%);
+  --grad-warm-mesh:radial-gradient(60% 80% at 15% 15%, rgba(45,93,168,.10) 0%, transparent 60%), var(--paper);
+
+  /* ── SPACING ── */
+  --s-1: 4px;  --s-2: 6px;  --s-3: 8px;  --s-4: 10px;
+  --s-5: 12px; --s-6: 14px; --s-7: 16px; --s-8: 20px; --s-9: 24px;
+
+  /* ── TYPE ── */
+  /* Brand display (wordmarks, hero metrics): Geist 900 */
+  --font-display: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+  /* UI text (everything else): Inter Tight */
+  --font-ui:      "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --fz-root: 14px;
+  --fz-micro: 10px;  --fw-micro: 800;  --ls-micro: .08em;
+  --fz-meta-xs: 10px;
+  --fz-meta: 11px;
+  --fz-body: 13px;
+  --fz-input: 14px;
+  --fz-card-hd: 13px;
+  --fz-h4: 14px;
+  --fz-h3: 16px;
+  --fz-h2: 22px;
+  --fz-h1: 28px;
+  --fz-hero: 56px;
+}
+
+html { font-size: var(--fz-root); -webkit-text-size-adjust: 100%; }
+body {
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  font-feature-settings: "ss01", "cv11", "tnum";
+}
+
+/* ── SEMANTIC TYPE ROLES ── */
+.td-display, .td-hero { font-family: var(--font-display); font-weight: 900; letter-spacing: -2px; line-height: .92; color: var(--text); }
+.td-h1     { font-family: var(--font-display); font-weight: 800; font-size: var(--fz-h1); letter-spacing: -.8px; line-height: 1.05; color: var(--text); }
+.td-h2     { font-family: var(--font-ui); font-weight: 800; font-size: var(--fz-h2); letter-spacing: -.5px; line-height: 1.1; color: var(--text); }
+.td-h3     { font-family: var(--font-ui); font-weight: 800; font-size: var(--fz-h3); letter-spacing: -.2px; color: var(--text); }
+.td-h4     { font-family: var(--font-ui); font-weight: 700; font-size: var(--fz-h4); color: var(--text); }
+.td-body   { font-size: var(--fz-body); color: var(--text); }
+.td-meta   { font-size: var(--fz-meta); color: var(--text-3); }
+.td-micro  { font-size: var(--fz-micro); font-weight: var(--fw-micro); text-transform: uppercase; letter-spacing: var(--ls-micro); color: var(--text-3); }
+.td-metric { font-family: var(--font-display); font-weight: 800; font-size: 22px; line-height: 1; letter-spacing: -.6px; color: var(--text); }
+
+/* ── DARK MODE (unchanged structure, new warm tokens) ── */
+body.dark {
+  --paper:   #14110E;
+  --cream:   #1C1814;
+  --bg-card: #221C16;
+  --line:    #2E2620;
+  --line-2:  #3A302A;
+
+  --text:    #F5EFE2;
+  --text-2:  #C8BFB0;
+  --text-3:  #7E7466;
+
+  --terra-soft: #2A1812;
+  --denim-soft: #122035;
+  --c-green-soft: #0F1F14;
+  --c-amber-soft: #211A09;
+  --c-red-soft:   #2A100D;
+  --c-gray-soft:  #1E1A14;
+
+  --shadow-card:  0 0 0 1px var(--line);
+  --shadow-hover: 0 3px 12px rgba(0,0,0,.4), 0 0 0 1px var(--line);
+}

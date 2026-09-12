@@ -534,6 +534,7 @@ function getClientIncome(cid){return income.filter(i=>i.client_id===cid);}
 // ── Property lookup (Redfin via Cloudflare Tunnel proxy) ─────────────────────
 const _propLookupTimers={};
 async function _lookupProperty(addr,cardId){
+  if(window.__TD_DEMO)return; // the demo makes no network calls (js/demo.js)
   clearTimeout(_propLookupTimers[cardId]);
   const card=document.getElementById('prop-card-'+cardId);
   if(!card)return;
