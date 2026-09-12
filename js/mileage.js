@@ -1144,52 +1144,6 @@ function reimbursableTrips(list){
 }
 // ── Receipt-gated supply runs (owner design 2026-08-17) ─────────────────────
 // The held legs of one store visit, grouped for the dashboard card.
-// ── Rule 15's drives, and the door to answer them (owner 2026-09-12) ───────
-// Rule 15 has held a drive with no business end since 2026-09-12, rule 16 and
-// rule 17 both read that answer, and the row said "Work or personal? · not
-// counted yet" with NO WAY ANYWHERE TO ANSWER IT. A visit has two buttons on
-// the home card, a store run has three, and a drive had a label. The app asked
-// a question it gave no way to reply to.
-//
-// So drives get the same door, in the same card, built the same way
-// (CLAUDE.md 7.3). The answer is written onto the mileage row itself and needs
-// no new table and no migration: geo_replace_day's keep block already carries
-// `personal` and `purpose` across every rebuild, and 20261004 drops
-// pendingPurpose the moment either is set. A person's answer outranks the
-// re-guess, exactly as it does for a visit.
-function pendingPurposeTrips(){
-  return (mileage||[]).filter(m=>m&&m.pendingPurpose&&!m.personal&&!m.deleted_at)
-    .map(m=>({id:m.id,date:m.date||'',at:m.startedIso||m.created_at||'',
-      from:m.from_name||'',to:m.to_name||'',miles:Number(m.miles)||0,
-      unknown:!!m.addressUnknown}))
-    .sort((a,b)=>String(b.at||b.date).localeCompare(String(a.at||a.date)));
-}
-// One drive, answered. 'personal' keeps it in the log and off every total, the
-// same mark the supply card's Personal door writes; 'working' gives it a real
-// purpose, which is what clears the hold. Neither deletes anything: the drive
-// happened either way and the odometer story stays whole.
-function resolvePurposeTrip(id,mode){
-  const m=(mileage||[]).find(x=>x&&String(x.id)===String(id)&&x.pendingPurpose);
-  if(!m)return 0;
-  delete m.pendingPurpose;
-  if(mode==='personal'){m.personal=true;m.purpose='Personal';}
-  else{m.purpose=m.purpose||_milePurposeFor(m);}
-  saveAll();
-  try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}
-  try{if(typeof renderDash==='function')renderDash();}catch(_e){}
-  try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
-  return 1;
-}
-// What a drive answered "Working" is FOR. The deriver emptied the purpose on
-// purpose (rule 15: 'Business' was the fallback for a destination it could not
-// name), so the answer supplies one from the ends it does know, and falls back
-// to plain Business only when it knows neither.
-function _milePurposeFor(m){
-  const to=String((m&&m.to_name)||'').trim(), from=String((m&&m.from_name)||'').trim();
-  if(to&&!m.unsavedTo)return 'Client Consult';
-  if(from&&!m.unsavedFrom)return 'Business';
-  return 'Business';
-}
 function pendingSupplyRuns(){
   const by={};
   (mileage||[]).forEach(m=>{

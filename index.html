@@ -618,7 +618,7 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .td-hold-sec{padding:12px 16px 4px}
 .td-hold-sec-t{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text2)}
 .td-hold-sec-s{font-size:11px;color:var(--text3);margin-top:4px}
-#dash-supply-hold[style*="block"]+#dash-visit-hold,#dash-visit-hold[style*="block"]+#dash-drive-hold,#dash-drive-hold[style*="block"]+#dash-ts-hold,#dash-supply-hold[style*="block"]+#dash-visit-hold[style*="none"]+#dash-drive-hold,#dash-visit-hold[style*="block"]+#dash-drive-hold[style*="none"]+#dash-ts-hold{border-top:1px solid var(--border)}
+#dash-supply-hold[style*="block"]+#dash-visit-hold,#dash-visit-hold[style*="block"]+#dash-ts-hold,#dash-supply-hold[style*="block"]+#dash-visit-hold[style*="none"]+#dash-ts-hold{border-top:1px solid var(--border)}
 /* The timesheet review sheet (js/timesheet.js): a .zmodal with the week's
    days as doors, the total, and one dark Submit. */
 .ts-sheet{padding:18px 18px 14px}
@@ -1704,7 +1704,6 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div id="dash-supply-hold" style="display:none"></div>
       <div id="dash-visit-hold" style="display:none"></div>
-      <div id="dash-drive-hold" style="display:none"></div>
       <div id="dash-ts-hold" style="display:none"></div>
     </div>
   </div>

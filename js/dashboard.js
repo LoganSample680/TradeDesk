@@ -349,7 +349,7 @@ function _renderDashSupplyHold(){
 function _dashHoldSync(){
   const shell=document.getElementById('dash-hold');
   if(!shell)return 0;
-  const n=['dash-supply-hold','dash-visit-hold','dash-drive-hold','dash-ts-hold'].reduce((sum,id)=>{
+  const n=['dash-supply-hold','dash-visit-hold','dash-ts-hold'].reduce((sum,id)=>{
     const e=document.getElementById(id);
     return sum+((e&&e.style.display!=='none')?(Number(e.dataset.n)||0):0);
   },0);
@@ -451,53 +451,6 @@ async function _visitHoldAnswer(id,mode){
     if(typeof showToast==='function')showToast('Could not save that answer, try again');
     if(el)_renderDashVisitHold();
   }
-}
-// ── The third section: drives (owner 2026-09-12) ─────────────────────────
-// Rules 15, 16 and 17 all hold a drive the day cannot vouch for, and until now
-// the row said "Work or personal?" with nothing to tap. Same card, same shape
-// as the Visits section above, same two answers. The only difference is where
-// the answer is written: a visit's lives on job_time_entries through
-// geo_answer_visit, a drive's lives on the mileage row itself, which
-// geo_replace_day already carries across every rebuild.
-function _renderDashDriveHold(){
-  const el=document.getElementById('dash-drive-hold');
-  if(!el)return;
-  if(typeof pendingPurposeTrips!=='function'){el.style.display='none';el.innerHTML='';el.dataset.n='0';_dashHoldSync();return;}
-  const list=pendingPurposeTrips();
-  if(!list.length){el.style.display='none';el.innerHTML='';el.dataset.n='0';_dashHoldSync();return;}
-  el.style.display='block';
-  el.dataset.n=String(list.length);
-  const when=(r)=>{
-    let w=r.date;
-    try{const d=new Date((r.date||'')+'T12:00:00');if(isFinite(d))w=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(_e){}
-    if(r.at){try{const t=bizTime(r.at).replace(/\s/g,'').replace('AM','a').replace('PM','p');if(t)w+=' · '+t;}catch(_e){}}
-    return w;
-  };
-  // An end nobody saved is named as such rather than left blank: "to nowhere"
-  // reads as a bug, "an address you have not saved" reads as the question it is.
-  const end=(v)=>String(v||'').trim()||'an unsaved address';
-  el.innerHTML=
-    '<div class="td-hold-sec">'+
-      '<div class="td-hold-sec-t">'+svgIcon('🚗',{size:13})+'<span>Drives</span></div>'+
-      '<div class="td-hold-sec-s">Neither end of these is a job, the yard or a supply house, so they count toward nothing until you answer.</div>'+
-    '</div>'+
-    list.map(r=>
-      '<div class="td-supply-visit td-hold-visit">'+
-        '<div style="font-size:13px;font-weight:800;color:var(--text)">'+escHtml(end(r.from))+' → '+escHtml(end(r.to))+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(when(r))+(r.miles?' · '+escHtml(r.miles.toFixed(1))+' mi':'')+'</div>'+
-        '<div style="display:flex;gap:8px;margin-top:8px">'+
-          '<button onclick="_driveHoldAnswer(\''+escHtml(String(r.id))+'\',\'personal\')" class="btn btn-sm" style="flex:1">Personal</button>'+
-          '<button onclick="_driveHoldAnswer(\''+escHtml(String(r.id))+'\',\'working\')" class="btn btn-sm btn-p" style="flex:1">Working</button>'+
-        '</div>'+
-      '</div>').join('');
-  _dashHoldSync();
-}
-function _driveHoldAnswer(id,mode){
-  const m=(mode==='working')?'working':'personal';
-  if(typeof resolvePurposeTrip!=='function')return;
-  const n=resolvePurposeTrip(id,m);
-  if(!n)return;
-  if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🚗');
 }
 // Store accordion toggle. Takes the clicked header, not an id: a store's
 // name can contain characters that would need escaping into an id/selector,
@@ -1208,7 +1161,6 @@ function renderDash(){
   _renderDashSetupTodo();
   _renderDashSupplyHold();
   _renderDashVisitHold();
-  _renderDashDriveHold();
   try{if(typeof _renderDashTsHold==='function')_renderDashTsHold();}catch(_e){}
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
