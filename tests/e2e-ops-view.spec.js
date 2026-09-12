@@ -224,6 +224,20 @@ test.describe('Ops support view: read only, both directions', () => {
     expect(r.cleared).toBe(true);
   });
 
+  test('a direct ?ops=1 link does not enter while the view is closed', async () => {
+    const r = await page.evaluate(async () => {
+      window.__opsForceView = undefined;          // as it ships
+      window._opsArming = true;                   // as the link sets it
+      await opsViewBoot();
+      const out = { view: window._opsView, arming: !!window._opsArming, ro: opsReadOnly() };
+      window._opsArming = false;
+      return out;
+    });
+    expect(r.view).toBe(null);      // never entered
+    expect(r.arming).toBe(false);   // and the lock let go, so the app is the viewer's own again
+    expect(r.ro).toBe(false);
+  });
+
   // ── 4. Exit ─────────────────────────────────────────────────────────────────
 
   test('exit clears every cache that could hold their rows', async () => {
@@ -268,6 +282,20 @@ test.describe('Ops support view: read only, both directions', () => {
     const code = sql.split('\n').filter(l => !/^\s*--/.test(l)).join('\n')
       .replace(/\(auth\.uid\(\)::text\)::uuid/g, '');
     expect(/=\s*auth\.uid\(\)(?!::text)/.test(code)).toBe(false);
+  });
+
+  test('every table the portal reads ends up with a policy, including the four the first run missed', () => {
+    // 20261005's loop aborted partway on the shared database and left
+    // account_config, deposit_caps, inbound_leads and job_assignments with no
+    // policy at all. 20261007 re-runs the whole list; this pins that it does.
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261007_ops_view_missing_policies.sql'), 'utf8');
+    ['account_config', 'deposit_caps', 'inbound_leads', 'job_assignments']
+      .forEach(t => expect(sql).toContain(`'${t}'`));
+    expect(/for\s+(insert|update|delete|all)\b/i.test(sql)).toBe(false);
+    // account_config resolves through a definer function, never a subquery on
+    // accounts: without the grant that subquery fails the whole read.
+    expect(sql).toContain('ops_view_account(account_id)');
+    expect(sql).toContain('security definer');
   });
 
   test('the geo and time tables the support view reads are all covered', async () => {

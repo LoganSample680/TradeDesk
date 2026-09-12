@@ -66,7 +66,12 @@ async function opsViewRoster(){
 
 // Boot hook. The link (?ops=1) opens the picker; a person already chosen in this
 // tab survives a navigation within the session.
+// Closed with the portal (see ops.html): a direct ?ops=1 link must not enter
+// either, or the same bleed happens with no portal chrome to explain it.
+function _opsViewOpen(){ return (typeof window.__opsForceView!=='undefined')?!!window.__opsForceView:false; }
+
 async function opsViewBoot(){
+  if(!_opsViewOpen()){ window._opsArming=false; _opsTell('closed'); return; }
   let want=false, wantTarget=null, wantPerson=null;
   try{
     const p=new URLSearchParams(location.search);

@@ -36,8 +36,11 @@ const SUMMARY = { days: 30, people: 3, accounts: 2, active_days: 40, days_clocke
 // The page builds its client the moment the vendor script defines window.supabase.
 // Intercepting that assignment is the only seam that exists before boot runs, and
 // it keeps the stub inside this spec instead of in shared helpers (§10.3).
-function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY } = {}) {
-  return page.addInitScript(({ roster, summary, by }) => {
+function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, viewOpen = true } = {}) {
+  return page.addInitScript(({ roster, summary, by, viewOpen }) => {
+    // The support view ships CLOSED after the data-bleed incident; these specs
+    // exercise the machinery behind the gate, and one test below pins the gate.
+    window.__opsForceView = viewOpen;
     let held;
     Object.defineProperty(window, 'supabase', {
       configurable: true,
@@ -58,7 +61,7 @@ function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY } = {}) {
         };
       }
     });
-  }, { roster, summary, by });
+  }, { roster, summary, by, viewOpen });
 }
 
 test.describe('Ops portal: the support view, embedded', () => {
@@ -83,6 +86,25 @@ test.describe('Ops portal: the support view, embedded', () => {
     await page.goto('/ops.html', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#denied')).toBeVisible();
     await expect(page.locator('#main')).toBeHidden();
+    await ctx.close();
+  });
+
+  test('with the gate as it ships, opening a person refuses and says why', async ({ browser }) => {
+    // The default, with no test hook: the frame is never given a src, so nothing
+    // of this device can render under somebody else's name.
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
+    const page = await ctx.newPage();
+    await mockAllExternal(page);
+    await stubRpc(page, { viewOpen: false });
+    await page.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+    await page.locator('#trades .row').first().waitFor();
+    await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+    await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+    await page.locator('#biz-people .row', { hasText: 'Jack Rivera' }).click();
+    await expect(page.locator('#view')).toHaveClass(/on/);
+    await expect(page.locator('#view-note')).toContainText('Support view is closed');
+    await expect(page.locator('#view-note')).toContainText('Nothing was written');
+    expect(await page.locator('#view-frame').getAttribute('src')).toBe(null);
     await ctx.close();
   });
 

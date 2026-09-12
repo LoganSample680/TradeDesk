@@ -223,6 +223,18 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const PAGE=40;                       // rows rendered at a time
 
+// ── The support view is CLOSED (owner, 2026-09-12) ─────────────────────────
+// Opening an account showed the owner's own on-site card and timesheet stitched
+// into that account's screens: the frame boots the viewer's session first and
+// only then swaps data in, so this device's caches and live geo state render
+// under somebody else's name. Nothing was ever written to the account being
+// looked at (the database grants an ops admin SELECT and nothing else, and the
+// row counts confirmed it), but a view you cannot trust is worse than no view.
+// The numbers and the roster stay open; opening a person is refused until the
+// frame boots AS the target instead of as the viewer.
+// __opsForceView is the test hook, and the only way past this.
+const VIEW_OPEN=(typeof window.__opsForceView!=='undefined')?!!window.__opsForceView:false;
+
 // Numbers arrive from Postgres as strings or floats depending on the column, and
 // a raw float renders as 993.5999999999999. One formatter, used everywhere a
 // number reaches the page: at most one decimal, thousands separated.
@@ -539,6 +551,22 @@ $('biz-people').addEventListener('click',e=>{
 let VIEW=null;
 
 function openView(row){
+  if(!VIEW_OPEN){
+    $('view-note').hidden=false;
+    $('view-note').textContent='';
+    $('view').classList.add('on');
+    $('view').setAttribute('aria-hidden','false');
+    document.body.style.overflow='hidden';
+    VIEW=row;
+    paintBar();
+    $('view-frame').removeAttribute('src');
+    $('view-note').hidden=false;
+    $('view-note').innerHTML='<div style="max-width:420px;text-align:center;line-height:1.6">'+
+      '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:6px">Support view is closed</div>'+
+      'It was showing your own on-site card and timesheet inside somebody else\'s account. '+
+      'Nothing was written to their data. It reopens once the frame boots as them rather than as you.</div>';
+    return;
+  }
   VIEW=row;
   $('view-frame').src='index.html?ops=1&t='+encodeURIComponent(row.contractor_user_id)+'&p='+encodeURIComponent(row.person_user_id);
   $('view').classList.add('on');
