@@ -17,6 +17,10 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="/icons/icon-180.png">
 <link rel="manifest" href="/manifest.json">
+<!-- Not a search result: the app itself. The marketing home is landing.html, served at "/" by
+     functions/index.js. Letting a crawler index the app shell instead means an
+     AI summarising TradeDesk describes the estimator it happened to land on. -->
+<meta name="robots" content="noindex,nofollow">
 <title>TradeDesk</title>
 <!-- ── Demo mode sandbox ──────────────────────────────────────────────────────
      ?demo=1 boots this same app as the live demo embedded in the marketing
@@ -72,7 +76,10 @@
     return;
   }
   var step=parseInt(q.get('step'),10);
-  window.__TD_DEMO={ step:(step>=1&&step<=8)?step:1 };
+  // ?scene= names a screen ('present' is the client's own view of the
+  // proposal); ?step= is the older 1-8 index. Both boot the same demo.
+  var scene=(q.get('scene')||'').replace(/[^a-z]/g,'');
+  window.__TD_DEMO={ step:(step>=1&&step<=8)?step:1, scene:scene||null };
 })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">

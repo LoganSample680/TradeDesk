@@ -37,6 +37,24 @@ var _TD_DEMO_JOB = 9000003;
 // Stage names, in the order of the eight steps on the marketing page.
 var _TD_DEMO_STAGES = ['lead', 'estimate', 'sign', 'schedule', 'onsite', 'change', 'invoice', 'collect'];
 
+// A SCENE is what the walkthrough asks for: the stage to seed, plus the screen
+// to land on. The marketing page names a scene ('present') instead of an index
+// into _TD_DEMO_STAGES, so the narration can say "this is what the client sees"
+// and get the client's actual screen rather than the nearest numbered step.
+var _TD_DEMO_SCENES = {
+  lead:     { stage: 'lead' },
+  estimate: { stage: 'estimate' },
+  // Seeded UNSIGNED on purpose: presentation mode is the moment before the
+  // signature, so "Approve & sign" has to still be a live button.
+  present:  { stage: 'estimate', show: 'present' },
+  signed:   { stage: 'sign' },
+  schedule: { stage: 'schedule' },
+  onsite:   { stage: 'onsite' },
+  change:   { stage: 'change' },
+  invoice:  { stage: 'invoice' },
+  collect:  { stage: 'collect' },
+};
+
 var _TD_DEMO_BASE = 2300;      // the signed contract
 var _TD_DEMO_CO = 480;         // the change order on top of it
 var _TD_DEMO_DEPOSIT = 575;    // 25%, the app's default deposit
@@ -308,6 +326,11 @@ function _tdDemoShow(stage) {
   try {
     document.querySelectorAll('[data-bdov]').forEach(function (el) { el.remove(); });
     document.querySelectorAll('.zmodal-overlay').forEach(function (el) { el.remove(); });
+    // Presentation mode and the client-preview overlay are their own fixed
+    // shells, above the page. A scene that left one up would draw underneath it.
+    try { if (typeof _presentClose === 'function') _presentClose(); } catch (e) {}
+    var pv = document.getElementById('_prop-preview-ov'); if (pv) pv.remove();
+    var ps = document.getElementById('_gei-present-ov'); if (ps) ps.remove();
   } catch (e) {}
   var go = function (pg) { try { if (typeof goPg === 'function') goPg(pg); } catch (e) {} };
   var clientDetail = function () {
@@ -328,6 +351,17 @@ function _tdDemoShow(stage) {
       case 'estimate':
       case 'sign':
       case 'change':
+        if (typeof openBidDetail === 'function') { openBidDetail(_TD_DEMO_BID); return; }
+        return go('pg-proposals');
+      case 'present':
+        // Presentation mode (js/generic-estimate.js) is the screen a contractor
+        // turns around and hands across the kitchen table, so it IS what the
+        // customer sees before they sign, rendered from this proposal by the
+        // app's own writer. Async, and it opens the estimate itself when that
+        // is not already the current one.
+        try {
+          if (typeof _presentOpen === 'function') { _presentOpen(_TD_DEMO_BID); return; }
+        } catch (e) {}
         if (typeof openBidDetail === 'function') { openBidDetail(_TD_DEMO_BID); return; }
         return go('pg-proposals');
       case 'schedule': return go('pg-cal');
@@ -364,12 +398,32 @@ function tdDemoStage(step) {
   return stage;
 }
 
+// Rebuild at a NAMED scene. Same seed rule as a step (everything up to the
+// scene's stage exists, nothing after it), but the screen is the scene's, which
+// is how 'present' can seed an unsigned proposal and still land on the client's
+// view of it rather than the contractor's.
+function tdDemoScene(key) {
+  var sc = _TD_DEMO_SCENES[key];
+  if (!sc) return tdDemoStage(1);
+  _tdDemoSeed(sc.stage);
+  _tdDemoRepaint();
+  _tdDemoShow(sc.show || sc.stage);
+  if (window.__TD_DEMO) {
+    window.__TD_DEMO.scene = key;
+    window.__TD_DEMO.step = _TD_DEMO_STAGES.indexOf(sc.stage) + 1;
+  }
+  return key;
+}
+
 // Boot. Called from index.html after loadAll(), which in demo mode has just
 // read an empty sandboxed store, so there is nothing of anyone's to clear.
 function tdDemoBoot() {
   if (!window.__TD_DEMO) return;
   document.documentElement.setAttribute('data-td-demo', '1');
-  try { tdDemoStage(window.__TD_DEMO.step); }
+  try {
+    if (window.__TD_DEMO.scene) tdDemoScene(window.__TD_DEMO.scene);
+    else tdDemoStage(window.__TD_DEMO.step);
+  }
   catch (e) { try { console.error('demo seed failed', e); } catch (e2) {} }
   // The boot overlay is there to cover a real sign-in. A demo waits for nothing.
   try { if (typeof _removeBootOverlay === 'function') _removeBootOverlay(true); } catch (e) {}
@@ -384,6 +438,7 @@ function tdDemoBoot() {
     if (e.origin !== location.origin) return;
     var d = e.data;
     if (!d || d.td !== 'demo') return;
+    if (d.scene) { tdDemoScene(d.scene); return; }
     tdDemoStage(d.step);
   });
   try { if (window.parent !== window) window.parent.postMessage({ td: 'demo-ready' }, location.origin); } catch (e) {}

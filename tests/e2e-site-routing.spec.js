@@ -235,7 +235,8 @@ test.describe('marketing site routing', () => {
 
     const llms = await api.get('/llms.txt');
     expect(llms.status()).toBe(200);
-    const urls = [...new Set([...(await llms.text()).matchAll(/https:\/\/tradedeskpro\.app[^\s)]*/g)].map(m => m[0]))];
+    const urls = [...new Set([...(await llms.text()).matchAll(/https:\/\/tradedeskpro\.app[^\s)]*/g)]
+      .map(m => m[0].replace(/[.,;:*\]]+$/, '')))];
     expect(urls.length).toBeGreaterThan(5);
     for (const u of urls) {
       const p = u.slice(PUBLIC.length) || '/';
@@ -282,6 +283,68 @@ test.describe('marketing site routing', () => {
     expect(details).toBe(19);
     expect(summaries.length).toBe(19);
     expect([...names].sort()).toEqual([...summaries].sort());
+  });
+
+  // An AI asked about TradeDesk in September 2026 came back describing it as a
+  // proposal tool "aimed at painters" with e-signature disclosures and client
+  // project portals. That is not the marketing page, it is a summary assembled
+  // from sign.html, client.html and the app shell, which were fully crawlable
+  // with no description of their own. They are per-customer links and the app,
+  // not pages search should rank, and indexing a customer's proposal or project
+  // hub is a privacy problem on its own.
+  //
+  // Deliberately noindex and NOT robots.txt Disallow: a disallowed page is never
+  // fetched, so the crawler never reads the directive and anything already
+  // indexed stays indexed. noindex is the one that removes them.
+  test('the app and every customer link are noindex, the marketing pages are not', async () => {
+    const PRIVATE = ['index.html', 'sign.html', 'client.html', 'intake.html', 'contract-sign.html', 'timesheet.html'];
+    for (const f of PRIVATE) {
+      const src = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+      const tag = src.match(/<meta name="robots" content="([^"]+)"/);
+      expect(tag, `${f} carries a robots meta`).toBeTruthy();
+      expect(tag[1], `${f} robots value`).toMatch(/noindex/);
+      // It must be in the head, before the crawler gives up reading.
+      expect(src.indexOf('<meta name="robots"'), `${f} robots tag is in <head>`)
+        .toBeLessThan(src.indexOf('</head>'));
+    }
+    // The mirror image: noindex must never leak onto a page we want ranked.
+    for (const r of ROUTES) {
+      expect(html[r], `${r} must stay indexable`).not.toMatch(/<meta name="robots"[^>]*noindex/);
+    }
+  });
+
+  // The same confusion, one layer down: the page used to declare two
+  // Organization nodes for one company (a full one at #org, plus an inline
+  // duplicate as the app's publisher). One company, one entity, referenced by id.
+  test('TradeDesk is one Organization in the structured data, not two', async () => {
+    const h = html['/'];
+    const blocks = [...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => JSON.parse(m[1]));
+    const nodes = blocks.flatMap(b => b['@graph'] || [b]);
+
+    const orgs = nodes.filter(n => n['@type'] === 'Organization');
+    expect(orgs.length, 'exactly one Organization node').toBe(1);
+    expect(orgs[0]['@id']).toBe(PUBLIC + '/#org');
+    expect(orgs[0].url).toBe(PUBLIC + '/');
+    // "TradeDesk" and "TradeDesk Pro" have to resolve to the same company.
+    expect(orgs[0].alternateName, 'the other spelling of the name').toContain('TradeDesk Pro');
+
+    const app = nodes.find(n => n['@type'] === 'SoftwareApplication');
+    expect(app, 'SoftwareApplication node present').toBeTruthy();
+    expect(app.publisher, 'publisher references the one Organization').toEqual({ '@id': PUBLIC + '/#org' });
+    expect(app.url).toBe(PUBLIC + '/');
+  });
+
+  // llms.txt is the file an AI reads to describe the product. It has to say
+  // plainly which product this is and which two descriptions are wrong, because
+  // both of those wrong descriptions have actually been produced.
+  test('llms.txt states the one domain and denies the two wrong descriptions', async () => {
+    const res = await api.get('/llms.txt');
+    expect(res.status()).toBe(200);
+    const t = await res.text();
+    expect(t).toContain('https://tradedeskpro.app');
+    expect(t, 'says it is not painting-only').toMatch(/not painting-only/i);
+    expect(t, 'says it is not an answering service').toMatch(/not an AI call-answering/i);
+    expect(t, 'no em dashes (CLAUDE.md)').not.toMatch(/\u2014/);
   });
 
   test('legal docs carry the operator mailing address, not the launch placeholder', async () => {
