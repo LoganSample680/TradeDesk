@@ -6,6 +6,16 @@
 <meta name="robots" content="noindex,nofollow">
 <title>TradeDesk Ops</title>
 <link rel="icon" href="favicon.ico">
+<!-- Its own manifest and icon, deliberately not the app's. Added to a home
+     screen this installs as a separate standalone icon called Ops, so the two
+     never get confused on a phone, and opening it lands here rather than in
+     the app's "/" gate. -->
+<link rel="manifest" href="ops-manifest.json">
+<meta name="theme-color" content="#7C3D0A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ops">
+<link rel="apple-touch-icon" href="icons/ops-192.png">
 <!--
   ops.html: the internal ops portal. Two halves of one page.
 

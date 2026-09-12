@@ -15,7 +15,9 @@
 //   4. Switching people repaints the chrome without reopening the frame.
 //   5. Exit and Escape both close it and blank the frame.
 //   6. No horizontal bleed at 390 (§15.3).
-const { test, expect, mockAllExternal, assertNoErrors } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
 const ROSTER = [
   { contractor_user_id: 'biz-a', business: 'Sample Plumbing', person_user_id: 'u-logan', person_name: 'Logan Sample', person_email: 'l@x.com', role: 'owner', permissions: {}, active: true },
@@ -155,5 +157,64 @@ test.describe('Ops portal: the support view, embedded', () => {
     test('zero console errors', async () => {
       assertNoErrors(page, 'ops portal');
     });
+  });
+
+  // ── Getting back to it ──────────────────────────────────────────────────────
+  // Two ways in, both of which have to keep working: a home-screen icon of its
+  // own, and a row inside the app for a device already signed in.
+
+  test('the portal installs as its own icon, not the app\'s', async () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'ops.html'), 'utf8');
+    expect(html).toContain('rel="manifest" href="ops-manifest.json"');
+    expect(html).toContain('apple-touch-icon');
+    const mf = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'ops-manifest.json'), 'utf8'));
+    expect(mf.start_url).toBe('/ops.html');
+    expect(mf.display).toBe('standalone');
+    // A distinct name and icon: the whole point is not confusing it with the app
+    // on a home screen while looking at somebody's data.
+    expect(mf.short_name).not.toBe('TradeDesk');
+    mf.icons.forEach(i => {
+      expect(i.src).toContain('/icons/ops-');
+      expect(fs.existsSync(path.join(__dirname, '..', i.src.replace(/^\//, '')))).toBe(true);
+    });
+    // noindex stays: this page is never something search should rank.
+    expect(html).toContain('name="robots" content="noindex,nofollow"');
+  });
+
+  test('the Settings row appears only when is_ops_admin says yes', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    const page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForAppBoot(page);
+
+    // Default: hidden, and hidden is the state a customer's session lands in.
+    expect(await page.locator('#ops-portal-row').isVisible()).toBe(false);
+
+    // The server says no.
+    await page.evaluate(async () => {
+      const r = _supa.rpc.bind(_supa);
+      _supa.rpc = (fn, a) => fn === 'is_ops_admin' ? Promise.resolve({ data: false, error: null }) : r(fn, a);
+      goPg('pg-settings');                           // the row lives on the settings page
+      _openSetDetail('dev');
+      await new Promise(res => setTimeout(res, 250));
+    });
+    expect(await page.locator('#ops-portal-row').isVisible()).toBe(false);
+
+    // The server says yes.
+    await page.evaluate(async () => {
+      window._opsAdminAnswer = null;                 // forget the cached no
+      const r = _supa.rpc.bind(_supa);
+      _supa.rpc = (fn, a) => fn === 'is_ops_admin' ? Promise.resolve({ data: true, error: null }) : r(fn, a);
+      goPg('pg-settings');
+      _openSetDetail('dev');                         // the panel has to be the open one
+      await _opsAdminRow();
+      await new Promise(res => setTimeout(res, 100));
+    });
+    const row = page.locator('#ops-portal-row');
+    expect(await row.isVisible()).toBe(true);
+    expect(await row.getAttribute('href')).toBe('ops.html');
+    assertNoErrors(page, 'ops row in settings');
+    await ctx.close();
   });
 });

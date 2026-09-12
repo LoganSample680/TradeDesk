@@ -14,6 +14,7 @@ function _openSetDetail(key) {
   if (key === 'branding') _renderBrandSwatches(S.brandColor||'#2D5DA8');
   if (key === 'truerates') loadTrueRatesForm();
   if (key === 'pricebook') renderPriceBookSettings();
+  if (key === 'dev' && typeof _opsAdminRow === 'function') _opsAdminRow();
 }
 
 // ── Price book editor ───────────────────────────────────────────────────────

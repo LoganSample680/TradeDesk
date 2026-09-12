@@ -376,6 +376,29 @@ function _opsSealObject(c){
   },500);
 })();
 
+/* ── The way in from inside the app ───────────────────────────────────────── */
+// A row in Settings > Developer that opens the portal, shown only to an ops
+// admin. is_ops_admin() is the same gate the portal and every ops_* function
+// use, so this cannot show a row that leads anywhere the caller is not allowed.
+// Called when the Developer panel opens (js/settings.js), never at boot: a
+// customer's session must not spend a round trip on a question about us.
+// The answer is cached for the session (on window, so it can be inspected and
+// cleared): the question does not change while somebody is signed in.
+window._opsAdminAnswer=null;
+async function _opsAdminRow(){
+  const row=document.getElementById('ops-portal-row');
+  if(!row)return;
+  if(window._opsAdminAnswer===null){
+    try{
+      if(typeof _supa==='undefined'||!_supa||!_supaUser)return;
+      const{data,error}=await _supa.rpc('is_ops_admin');
+      window._opsAdminAnswer=!error&&data===true;
+    }catch(_e){window._opsAdminAnswer=false;}
+  }
+  row.hidden=!window._opsAdminAnswer;
+  row.style.display=window._opsAdminAnswer?'flex':'none';
+}
+
 /* ── Remote control from the portal ───────────────────────────────────────── */
 // ops.html drives the frame: switch to another person on the same account, or
 // hand back. Same-origin only, and only the two verbs, so the frame can never be

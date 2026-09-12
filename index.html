@@ -3749,6 +3749,17 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Dev account only, changes business_type in DB immediately.</div>
       <div id="dev-support-section" style="margin-bottom:14px"></div>
 
+      <!-- Ops portal. Hidden until is_ops_admin() says yes (js/ops-view.js
+           _opsAdminRow), so it never appears for a customer even on a dev
+           account. The portal itself is gated server-side regardless. -->
+      <a id="ops-portal-row" href="ops.html" hidden style="display:none;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;margin-bottom:14px;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit">
+        <div style="min-width:0">
+          <div style="font-size:14px;font-weight:700">Ops portal</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">The numbers, and a read-only view of any account</div>
+        </div>
+        <span style="font-size:12px;font-weight:800;color:var(--text3);flex-shrink:0">Open ›</span>
+      </a>
+
       <!-- Location engine tools. Dev accounts only (this whole panel), and the
            buttons unhide only inside the app, where the engines actually run. -->
       <div id="dev-geo-tools" style="display:none;border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px">
