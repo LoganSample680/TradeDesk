@@ -275,6 +275,67 @@ test.describe('geo-derive: the day deriver', () => {
       expect(junk.held).toBe(false);
     });
 
+    // ── Rule 15: the drives either side of a held visit ──────────────────
+    // Owner 2026-09-12: "Jack didn't work Thursday or Friday this last week
+    // why do we have mileage and time rows in there?" Rule 13 asked about the
+    // VISIT and never about the drives, so a held Friday at a family member's
+    // address still produced 7.7 claimed business miles either side of it.
+    const legsOf = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+      return { legs: r.legs.map(l => ({ held: !!l.held, to: l.to && l.to.name })),
+        miles: rows.td_mileage.map(m => ({ pending: !!m.pendingPurpose, purpose: m.purpose })) };
+    }, inp);
+
+    test('the drives either side of a held visit are held too', async () => {
+      // JACK'S ACTUAL SHAPE: he works out of his house, so the fence set has
+      // no shop in it at all. Home to a family address and back, which is
+      // where both of his Friday drives came from. (The owner's own fixture
+      // puts a SHOP at the same coordinates as HOME, and a shop end vouches
+      // by definition, which is the test directly below.)
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [HOME, DOE_P] }));
+      expect(r.legs.length).toBeGreaterThan(0);
+      expect(r.legs.every(l => l.held), 'no business end on either drive').toBe(true);
+      expect(r.miles.every(m => m.pending), 'and the rows say so').toBe(true);
+      // 'Business' was the fallback for a destination it could not name, which
+      // is exactly the drive it has no standing to label.
+      expect(r.miles.every(m => m.purpose === '')).toBe(true);
+    });
+
+    test('a drive that touches the shop is business, held visit or not', async () => {
+      // The shop is a business address by definition, so the leg earns its
+      // miles from that end whatever the other one is.
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
+      const toShop = r.legs.filter(l => l.to === SHOP.name);
+      expect(toShop.length).toBeGreaterThan(0);
+      expect(toShop.every(l => !l.held), 'shop end vouches').toBe(true);
+    });
+
+    test('an ordinary client day is completely unchanged', async () => {
+      const r = await legsOf(visit('2026-09-01', 13, 16));
+      expect(r.legs.some(l => l.held), 'nothing is held on a normal work day').toBe(false);
+      expect(r.miles.some(m => m.pending)).toBe(false);
+      expect(r.miles.every(m => m.purpose !== '')).toBe(true);
+    });
+
+    test('a clock running over the drive vouches for it', async () => {
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const { t } = dayOf('2026-09-01');
+      const r = await legsOf(visit('2026-09-01', 13, 16,
+        { fences: [HOME, DOE_P], clocks: [{ start: t(12), end: t(17) }] }));
+      expect(r.legs.every(l => !l.held), 'the person said they were working').toBe(true);
+    });
+
+    test('a job at the address vouches for the drives to it', async () => {
+      // A job is work whoever the client is, which is the case the family
+      // mark exists to keep counting, and the drives to it come with it.
+      const DOE_J = Object.assign({}, DOE, { personal: true, jobId: 'job-1' });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [HOME, DOE_J] }));
+      expect(r.legs.every(l => !l.held)).toBe(true);
+    });
+
     test('a weekday night at a customer, nothing scheduled: held', async () => {
       const r = await held(visit('2026-09-01', 21, 23));
       expect(r.held).toBe(true);

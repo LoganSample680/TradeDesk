@@ -959,6 +959,8 @@ function geoDeriveDay(input) {
   const ended = _gdEndOfDay(housed, fences, opts, open, journeys.some(j => j && j.open), legs);
   // Rule 13: a visit the day cannot vouch for is a question, not a row.
   const asked = _gdHeldVisits(ended, inp, dayStart);
+  // Rule 15: and the drives between them, using rule 13's own answer.
+  const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -969,7 +971,7 @@ function geoDeriveDay(input) {
   return {
     day: inp.day || '',
     dwells: asked.filter(d => d.minutes >= 1),
-    legs,
+    legs: askedLegs,
     open,
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
@@ -1455,6 +1457,59 @@ function _gdHeldVisits(dwells, inp, dayStart) {
   });
 }
 
+// ── Rule 15: a drive the day cannot vouch for is a question too ───────────
+// Owner 2026-09-12, on a crew member's week: "Jack didn't work Thursday or
+// Friday this last week why do we have mileage and time rows in there?"
+//
+// Rule 13 has asked that question about VISITS since 2026-09-04 and never
+// once about the drives between them, so a held visit still produced claimed
+// business miles either side of it. On his Friday: 266 minutes at Laurie
+// Schonfeldt (the crew member is Jack SCHONFELDT) plus three drives to and
+// from her address, 7.7 miles, all of it counted.
+//
+// The two ends are not symmetrical and that is the whole rule. A leg earns
+// its miles from a BUSINESS END:
+//   - a job fence: a job is work, whoever the client is
+//   - the shop, or a supply place: a business address by definition
+//   - a client whose visit that day was not itself held (rule 13 already
+//     asked, and this reuses its answer rather than asking again)
+// Anything else vouches for nothing: the house, a home office, and above all
+// an end nobody ever saved (rule 14's `unsaved`).
+//
+// A manual clock running over the drive vouches for it too, same as rule 13:
+// the person saying at the time that they are working outranks geography.
+//
+// HELD, NOT DROPPED, exactly like rule 13 and like a receipt-gated supply
+// run. The row keeps its miles, its route and its place in the odometer
+// story, and stays out of every money total until somebody answers. Losing
+// the drive would break the log; claiming it would put a number on a tax
+// return that nothing on the phone can stand behind.
+function _gdHeldLegs(legs, dwells, inp, dayStart) {
+  const heldClients = new Set();
+  (dwells || []).forEach(d => {
+    if (d && d.held && d.fence && d.fence.clientId != null) heldClients.add(String(d.fence.clientId));
+  });
+  const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
+    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .filter(c => c && c.a > 0 && c.b > c.a);
+  const vouches = (e) => {
+    if (!e || e.unsaved === true) return false;
+    if (e.jobId != null) return true;
+    if (e.kind === 'shop' || e.kind === 'supply') return true;
+    // A client end is only as good as rule 13's answer about that visit. A
+    // contact marked family never vouches: the whole point of the mark is
+    // that being at that address is not evidence of work (rule 13).
+    if (e.clientId != null) return e.personal !== true && !heldClients.has(String(e.clientId));
+    return false;
+  };
+  return (legs || []).map(l => {
+    if (!l || l.held) return l;
+    if (vouches(l.from) || vouches(l.to)) return l;
+    if (clocks.some(c => Math.min(l.endTs, c.b) - Math.max(l.startTs, c.a) >= 60000)) return l;
+    return Object.assign({}, l, { held: true });
+  });
+}
+
 // Rule 14: the end of a traced leg that no fence could name. Shaped like a
 // fence so the leg carries coordinates for the map and for the Save flow,
 // and NOTHING else: no name, no address, no kind that any total could read
@@ -1730,7 +1785,19 @@ function geoDeriveRows(result, ids) {
       client_name: l.to.clientId != null ? (l.to.name || '') : '',
       purpose: l.to.kind === 'shop' ? 'Shop' : (l.to.kind === 'supply' ? 'Supply run' : (l.to.clientId != null || l.to.jobId != null ? 'Client Consult' : 'Business')),
       notes: '', start: 0, end: 0, vehicle: '',
-    }, l.to.kind === 'supply' ? {
+    }, l.held ? {
+      // ── RULE 15: nothing vouched for this drive ────────────────────────
+      // Held, not dropped: the row keeps its miles, its route and its place
+      // in the odometer story, and stays out of every money total until
+      // somebody answers. The same shape a receipt-gated supply run has used
+      // since 2026-08-17, and the same choke point reads both
+      // (deductibleTrips / reimbursableTrips, js/mileage.js).
+      //
+      // The purpose is emptied deliberately. 'Business' was the fallback for
+      // a destination the deriver could not name, which is precisely the
+      // drive it has no standing to label.
+      pendingPurpose: true, purpose: '',
+    } : {}, l.to.kind === 'supply' ? {
       // THE RECEIPT IS THE PROOF, NOT THE DESTINATION (owner design
       // 2026-08-17, and owner 2026-09-05: "the receipt thing didn't stay
       // alive from my Home Depot run"). A leg that ends at a supply place is
