@@ -2443,6 +2443,60 @@ test.describe('geo-derive: the day deriver', () => {
   // ── Rule 14: a drive with an unsaved end is still a drive (owner 2026-09-08)
   // "only things with addresses saved should update any totals, if a address
   // gets added it can add the mileage back on the deriver."
+  // ── Where the truck actually sat (owner 2026-09-12) ──────────────────────
+  // His 11 September evening came back as "3600 SW Lincolnshire". He was at
+  // 6812 SW Finsbury, 0.84 miles away. Four fixes across 2h43m parked: a pair
+  // identical to five decimals 4,415 ft out, then a pair 27 ft from where the
+  // tape says he went still. The first pair is one cached reading replayed and
+  // contradicted forty seconds later, and it won only by being first.
+  test.describe('_gdStopFix: the position the dwell agrees on', () => {
+    const f = (ts, lat, lng, acc) => ({ ts, lat, lng, acc: acc == null ? null : acc });
+    const pick = (fixes, a, b) => page.evaluate(
+      ([fx, from, to]) => { const r = _gdStopFix(fx, from, to, 100, fx[0]); return r && [r.lat, r.lng]; },
+      [fixes, a, b]);
+
+    test('his real stop: the frozen pair loses to the corroborated one', async () => {
+      const got = await pick([f(1000, 39.00232315, -95.76750946), f(2000, 39.00232315, -95.76750946),
+        f(3000, 39.01050, -95.77900), f(4000, 39.01050, -95.77900)], 0, 9999);
+      expect(got, 'a cache replays the past; on a tie the later reading is the live one').toEqual([39.01050, -95.77900]);
+    });
+
+    test('weight of evidence beats recency', async () => {
+      // Three readings agreeing against one later straggler: the three win.
+      const got = await pick([f(1000, 39.05, -95.75), f(2000, 39.05, -95.75),
+        f(3000, 39.05, -95.75), f(4000, 39.09, -95.71)], 0, 9999);
+      expect(got).toEqual([39.05, -95.75]);
+    });
+
+    test('a single fix is still the answer, and an inaccurate one is not', async () => {
+      expect(await pick([f(1000, 39.05, -95.75)], 0, 9999)).toEqual([39.05, -95.75]);
+      const got = await pick([f(1000, 39.05, -95.75), f(2000, 39.09, -95.71, 5000),
+        f(3000, 39.09, -95.71, 5000)], 0, 9999);
+      expect(got, 'two agreeing readings are worth nothing if both are junk').toEqual([39.05, -95.75]);
+    });
+
+    test('outside the dwell does not count, and an empty dwell falls back', async () => {
+      const got = await pick([f(10, 39.09, -95.71), f(20, 39.09, -95.71), f(3000, 39.05, -95.75)], 1000, 9999);
+      expect(got, 'the pair is before the stop began').toEqual([39.05, -95.75]);
+      const back = await page.evaluate(() => {
+        const fb = { lat: 1, lng: 2 };
+        const r = _gdStopFix([], 0, 10, 100, fb); return r === fb;
+      });
+      expect(back, 'no fixes in the dwell: the arrival fix still answers').toBe(true);
+    });
+
+    test('junk never throws', async () => {
+      const ok = await page.evaluate(() => {
+        try {
+          _gdStopFix(null, 0, 1, 100, null);
+          _gdStopFix([null, {}, { ts: 'x', lat: 1, lng: 2 }, { ts: 1, lat: null, lng: 2 }], 0, 9, 100, null);
+          return true;
+        } catch (e) { return false; }
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
   test.describe('rule 14: traced legs', () => {
     const GAS2 = { lat: 39.0350, lng: -95.7000 };   // also not saved
     const rowsOf = (inp) => page.evaluate((i) => {

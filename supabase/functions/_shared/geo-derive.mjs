@@ -240,6 +240,55 @@ function _gdParkedFixBefore(fixes, ts, notBeforeTs, maxAgeMs, maxAccM) {
 }
 // The arrival's mirror: the first good fix after the walking flip and before
 // the next drive, for a phone that only woke once it had parked.
+// ── WHERE THE TRUCK ACTUALLY SAT (owner 2026-09-12) ────────────────────────
+// His 11 September evening, an unsaved stop offered for saving as "3600 SW
+// Lincolnshire". He was at 6812 SW Finsbury, 0.84 miles away.
+//
+// Across the whole 2h43m he was parked, the phone logged four fixes:
+//   19:03:33  39.00232,-95.76751     4,415 ft from where he parked
+//   19:06:04  39.00232,-95.76751     identical, to five decimals
+//   19:06:45  39.01050,-95.77900        27 ft from where he parked
+//   19:08:35  39.01050,-95.77900     identical
+// He went still at 18:05 at 39.01046,-95.77908 and drove off at 20:48 from
+// 39.01396,-95.78085. Both agree with the SECOND pair. The first pair is one
+// cached reading replayed twice and contradicted forty seconds later.
+//
+// _gdSettledFixAfter already refuses two shapes of stale reading: a fix
+// repeating the one immediately before it, and a fix repeating any reading
+// taken on the drive that just ended. This pair defeats both. Its predecessor
+// is a road fix from 18:05, and the coordinate itself never appears on that
+// drive, so it is simply the first eligible candidate and it wins.
+//
+// THE REAL PROBLEM IS THAT ONE FIX WAS ANSWERING TWO QUESTIONS. Which fence
+// the stop is in has to be decided near the ARRIVAL, and _gdSettledFixAfter is
+// right for that, timing and all. Where the truck sat, which is what the Save
+// button on an unsaved stop writes into a new client record, is a question
+// about the whole dwell, and the first reading in it is no more authoritative
+// than any other.
+//
+// So this asks the dwell as a whole and takes the position its fixes AGREE on,
+// which is the same posture as _gdStopProved ("no evidence means no stop") one
+// question over. On a tie the LATER group wins, because a stale cache is by
+// definition a replay of an older reading: the live one cannot be the one that
+// was already on file. Fence resolution is untouched.
+function _gdStopFix(fixes, fromTs, toTs, maxAccM, fallback) {
+  const groups = new Map();
+  (fixes || []).forEach((f) => {
+    if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') return;
+    if (f.acc != null && Number(f.acc) > maxAccM) return;
+    if (f.ts < fromTs || f.ts > toTs) return;
+    const k = f.lat + ',' + f.lng;
+    const g = groups.get(k);
+    if (!g) groups.set(k, { n: 1, last: f });
+    else { g.n += 1; if (f.ts > g.last.ts) g.last = f; }
+  });
+  let best = null;
+  groups.forEach((g) => {
+    if (!best || g.n > best.n || (g.n === best.n && g.last.ts > best.last.ts)) best = g;
+  });
+  return best ? best.last : fallback;
+}
+
 function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM, sinceTs) {
   // A REPEAT IS NOT A NEW READING (owner 2026-09-04, his 2 September 1:00pm
   // drive: "I know the drive leg should be a lot longer then that").
@@ -726,7 +775,13 @@ function geoDeriveDay(input) {
       // row can say where the truck actually went and the lead form opens
       // there.
       chain.stops += 1;
-      if (endFix) (chain.via = chain.via || []).push({ lat: Number(endFix.lat), lng: Number(endFix.lng), ts: j.endTs });
+      // NOT endFix. That one is chosen for the ARRIVAL, to decide which fence
+      // the stop is in, and the first reading of a dwell is no authority on
+      // where the truck sat (owner 2026-09-12, 3600 SW Lincolnshire). This is
+      // the position the whole dwell agrees on, and it is what the Save button
+      // writes into a new client record.
+      const stopFix = _gdStopFix(fixes, j.endTs, nextStart, opts.maxFixAccM, endFix);
+      if (stopFix) (chain.via = chain.via || []).push({ lat: Number(stopFix.lat), lng: Number(stopFix.lng), ts: j.endTs });
       continue;
     }
 
