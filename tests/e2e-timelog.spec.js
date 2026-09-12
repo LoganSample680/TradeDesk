@@ -1757,6 +1757,36 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).not.toContain('LONG SHIFT');
     });
 
+    // ── THE DAY HAS TO BE ABLE TO END (owner 2026-09-12) ───────────────
+    // An open dwell has no departure, so it runs to this moment forever. At
+    // his own house, past the end of the workday, this card was the day
+    // refusing to end: "On site now" at the shop, all evening, every evening.
+    // The deriver answers it (atHome plus counts:false); this card asks.
+    test('home for the night: no "On site now" card, but a customer still gets one', async () => {
+      const r = await page.evaluate(() => {
+        const keep = window._geoOpenDwell, keepU = window._supaUser, keepE = window._isEmployee;
+        window._isEmployee = false; window._supaUser = { id: 'me-uid' };
+        const since = Date.now() - 200 * 60000;
+        const mk = (over) => Object.assign({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
+          sinceTs: since, sinceIso: new Date(since).toISOString(), atHome: true, counts: false,
+          fence: { addr: '2015 SW Randolph Ave' } }, over || {});
+        const paint = (d) => { window._geoOpenDwell = d; _tlRenderOpenBanner();
+          const el = document.getElementById('tl-open'); return { display: el.style.display, html: el.innerHTML }; };
+        try {
+          return { over: paint(mk()), midday: paint(mk({ counts: true })),
+            client: paint(mk({ atHome: false, kind: 'client', name: 'John Doe' })) };
+        } finally { window._geoOpenDwell = keep; window._supaUser = keepU; window._isEmployee = keepE; }
+      });
+      // Nothing else was open, so the card has nothing left to draw at all.
+      expect(r.over.display).toBe('none');
+      expect(r.over.html).toBe('');
+      // Home at lunch is still the workday.
+      expect(r.midday.html).toContain('TradeDesk shop');
+      // Not counting at a customer's address is still worth saying out loud.
+      expect(r.client.html).toContain('John Doe');
+      expect(r.client.html).toContain('NOT COUNTED');
+    });
+
     test('employee without payroll permission, cannot see someone else\'s open entry', async () => {
       const r = await page.evaluate((id) => {
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else' });

@@ -1637,9 +1637,25 @@ test.describe('geo-derive: the day deriver', () => {
                   mo(T(11, 0), 'driving'), mo(T(11, 20), 'onFoot')];
       const f2 = [fix(T(6, 30, 5), SHOP), fix(T(6, 50, 5), DOE), fix(T(9, 0), DOE), fix(T(11, 0, 5), DOE),
                   fix(T(11, 20, 5), SHOP), fix(T(12, 0), SHOP)];
-      const worked = await run(page, base({ tape: t2, fixes: f2, nowMs: T(13, 0) }));
+      // Same spot, same day, but asked while the workday is still open: home
+      // at 11:20, the window runs to 11:50 (last work 11:00 plus the wrap),
+      // so at 11:40 he is between jobs and it counts.
+      //
+      // AMENDED 2026-09-12 (10.4). This used to ask at 13:00 and expect true,
+      // and that was the bug: getting home ended nothing, so the answer was
+      // still true at 13:00, at 20:00, and at 3am. The old assertion was
+      // right that a real work day makes the house count; it was never right
+      // that it counts forever. The clock the question is asked at is now
+      // part of the question.
+      const worked = await run(page, base({ tape: t2, fixes: f2, nowMs: T(11, 40) }));
       expect(worked.open && worked.open.atHome).toBe(true);
       expect(worked.open && worked.open.counts).toBe(true);
+
+      // The same day, same open dwell, asked that evening: the workday closed
+      // at 11:50 and he never left, so it is his own house and his own time.
+      const evening = await run(page, base({ tape: t2, fixes: f2, nowMs: T(19, 0) }));
+      expect(evening.open && evening.open.atHome).toBe(true);
+      expect(evening.open && evening.open.counts).toBe(false);
 
       // Standing at a client: always counts, house rules never apply.
       const t3 = [mo(T(6, 0), 'onFoot'), mo(T(6, 30), 'driving'), mo(T(6, 50), 'onFoot')];
@@ -1647,6 +1663,38 @@ test.describe('geo-derive: the day deriver', () => {
       const onsite = await run(page, base({ tape: t3, fixes: f3, nowMs: T(12, 0) }));
       expect(onsite.open && onsite.open.name).toBe('John Doe');
       expect(onsite.open && onsite.open.counts).toBe(true);
+      // And still at 10pm: the end of the workday is a rule about the HOUSE.
+      // Somebody standing at a customer's address at 22:00 is either working
+      // or has a problem, and neither is the app's to decide silently.
+      const late = await run(page, base({ tape: t3, fixes: f3, nowMs: T(22, 0) }));
+      expect(late.open && late.open.counts).toBe(true);
+    });
+
+    test('driving out again re-opens the day: nothing here can strand a day that was not over', async () => {
+      // Home at 11:20, the workday closes at 11:50, and at 13:00 he is off
+      // the clock. Then he drives back out to Doe at 14:00 and home again at
+      // 17:00, and the evening at the house is judged against THAT day, not
+      // against the morning. Asked at 16:00, standing at Doe's, it counts.
+      const tape = [mo(T(6, 0), 'onFoot'), mo(T(6, 30), 'driving'), mo(T(6, 50), 'onFoot'),
+                    mo(T(11, 0), 'driving'), mo(T(11, 20), 'onFoot'),
+                    mo(T(14, 0), 'driving'), mo(T(14, 20), 'onFoot')];
+      const fixes = [fix(T(6, 30, 5), SHOP), fix(T(6, 50, 5), DOE), fix(T(9, 0), DOE), fix(T(11, 0, 5), DOE),
+                     fix(T(11, 20, 5), SHOP), fix(T(13, 0), SHOP), fix(T(14, 0, 5), SHOP),
+                     fix(T(14, 20, 5), DOE), fix(T(16, 0), DOE)];
+      const r = await run(page, base({ tape, fixes, nowMs: T(16, 30) }));
+      expect(r.open && r.open.name).toBe('John Doe');
+      expect(r.open && r.open.counts).toBe(true);
+    });
+
+    test('a day with no work in it never starts counting, whatever time it is asked', async () => {
+      // The other direction, unchanged: no window exists at all, so the
+      // nowMs test never comes into it and the old rule still decides.
+      const tape = [mo(T(5, 30), 'driving'), mo(T(6, 0), 'onFoot')];
+      const fixes = [fix(T(6, 0, 5), SHOP), fix(T(7, 0), SHOP), fix(T(8, 0), SHOP)];
+      for (const at of [T(9, 0), T(14, 0), T(23, 0)]) {
+        const r = await run(page, base({ tape, fixes, nowMs: at }));
+        expect(r.open && r.open.counts).toBe(false);
+      }
     });
 
     // The other half of that line: a day whose only fences are a REAL yard and

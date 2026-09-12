@@ -1048,7 +1048,7 @@ function geoDeriveDay(input) {
   // so a man standing in his own kitchen read as time on the clock at the shop
   // (owner 2026-09-06). It still reports where he is; it now also says whether
   // that is work, and the rail can stop calling it time.
-  if (open) open.counts = _gdOpenCounts(open, asked);
+  if (open) open.counts = _gdOpenCounts(open, asked, win, nowMs);
 
   return {
     day: inp.day || '',
@@ -1355,9 +1355,28 @@ function _gdIsHouse(fence, fences, radiusFt) {
 // address is not time until the day lands in real work. Same test the writer
 // uses, read off the dwells that survived it, so the rail and the row can
 // never disagree.
-function _gdOpenCounts(open, dwells) {
+// ── AND THE DAY HAS TO BE ABLE TO END (owner 2026-09-12) ──────────────────
+// "How does a day with automatic drives end? Right now they can't and my own
+// account is proof." It could not, and this is where.
+//
+// An open dwell has no departure yet, so it runs to this moment by
+// definition. At his own house, on any day that reached real work, the test
+// below said it counted, and it went on saying so all evening and all night,
+// because nothing about a man sitting in his kitchen ever changes. The
+// screens drew "On site now" against it until he drove somewhere.
+//
+// Rule 17 already worked out when the workday closed (the last real work plus
+// the wrap, or the last clock-out) and nobody asked it. Now it does: past
+// that, at your own address, you are home. Drive out again and a new journey
+// re-opens the window, so this can never strand a day that was not over.
+//
+// Deliberately measured against NOW and not against the arrival: getting home
+// at 17:39 does not end a workday that runs to 18:09, and the half-hourly
+// re-derive is what flips it once it does.
+function _gdOpenCounts(open, dwells, win, nowMs) {
   if (!open) return false;
   if (!open.atHome) return true;
+  if (win && Number(nowMs) > Number(win.close)) return false;
   return (dwells || []).some(d => d && !_gdIsBaseKind(d.kind) && d.kind !== 'office');
 }
 function _gdHouseOffTheClock(dwells) {
