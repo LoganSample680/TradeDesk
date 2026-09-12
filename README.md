@@ -1,12 +1,32 @@
-# TradeDesk, All-in-One Contractor Business Suite
+# TradeDesk
 
-A complete mobile-first business management app for solo and small contractors. Built as a progressive web app, no install, no app store, runs entirely in the browser. Add to iPhone home screen for a native app experience.
+**All-in-one business software for trade contractors.** Painters, plumbers,
+electricians, HVAC techs, handymen and general contractors. It runs the whole job
+in one app: lead intake, estimating, e-signed proposals, scheduling and dispatch,
+automatic mileage and crew time tracking, change orders, invoicing, card payments,
+bookkeeping, tax prep, and mechanic's-lien deadline tracking for all 50 states.
+Mobile-first, and it works offline.
 
-## Live App
+### Product site and sign-up: **https://tradedeskpro.app**
 
-**https://tradedeskpro.app**
+$99.99/month flat for the whole crew, every feature included. No per-seat fees, no
+feature tiers. Two-week free trial, no credit card. A founder rate of $29.99/month
+is open to the first 10 accounts and is locked for the life of the account.
 
-Safari → Share → Add to Home Screen
+Runs in any browser on phone, tablet or desktop. On iPhone: Safari, Share, Add to
+Home Screen. A native iPhone app is in beta.
+
+---
+
+## About this repository
+
+This is the source for a commercial product. It is public so the project can use
+GitHub's free CI and macOS build runners, not as a self-hosting kit.
+
+The setup notes below are for the people who build TradeDesk. A working deployment
+also needs its own Supabase project, Stripe account, Apple MapKit credentials and
+signing infrastructure, none of which are in here. **To use TradeDesk, start a free
+trial at https://tradedeskpro.app.**
 
 ---
 
@@ -128,15 +148,18 @@ See [`supabase-setup/README.md`](supabase-setup/README.md).
 
 See [`signing-setup/README.md`](signing-setup/README.md).
 
-DocuSeal (self-hosted free on Railway) + ntfy push notifications. Zero monthly cost.
+DocuSeal on Railway plus ntfy push notifications. This is about the SIGNING
+stack only: it adds nothing to the hosting bill. It is not the product's price,
+which is at https://tradedeskpro.app.
 
 ---
 
 ## Deploying
 
-Hosted on Cloudflare Pages. Every push to `main` goes live automatically at **https://tradedeskpro.app**.
-
-To self-host, serve the HTML files as static files. The app calls Supabase directly from the browser, no backend required.
+Hosted on Cloudflare Pages. Every push to `main` goes live automatically at
+**https://tradedeskpro.app**. The app calls Supabase directly from the browser,
+with a Cloudflare Pages Function at `/api` as a fallback for networks that
+cannot resolve Supabase.
 
 ---
 
@@ -157,5 +180,11 @@ To self-host, serve the HTML files as static files. The app calls Supabase direc
 ## Legal
 
 Tax estimates are not a substitute for a licensed CPA.
-Lien deadlines based on KS K.S.A. 60-1105, verify with a Kansas attorney before filing.
-Electronic signatures comply with the Kansas Uniform Electronic Transactions Act (UETA).
+
+Lien deadlines cover all 50 states and DC with statute citations, and they are a
+record-keeping and reminder aid, not legal advice. Deadlines turn on your role on
+the job, the property type and facts the app cannot see. Verify with an attorney in
+your state before filing.
+
+Electronic signatures are captured under the Uniform Electronic Transactions Act
+(UETA) and the federal ESIGN Act.
