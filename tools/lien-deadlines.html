@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="/_ds/tradedesk-design-system-019e1e22-25c2-77a5-9117-5b4c4f7bd36d/colors_and_type.css">
+<title>Mechanic&#39;s Lien Deadlines by State | TradeDesk</title>
+<meta name="description" content="Free lookup: mechanic&#39;s lien filing deadlines and preliminary notice rules for all 50 states, with the statute cited. No signup required.">
+<link rel="canonical" href="https://tradedeskpro.app/tools/lien-deadlines">
+<meta name="theme-color" content="#1B1612">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Mechanic&#39;s Lien Deadlines by State | TradeDesk">
+<meta property="og:description" content="Free lookup: mechanic&#39;s lien filing deadlines and preliminary notice rules for all 50 states, with the statute cited. No signup required.">
+<meta property="og:url" content="https://tradedeskpro.app/tools/lien-deadlines">
+<meta property="og:site_name" content="TradeDesk">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Mechanic&#39;s Lien Deadlines by State | TradeDesk">
+<meta name="twitter:description" content="Free lookup: mechanic&#39;s lien filing deadlines and preliminary notice rules for all 50 states, with the statute cited. No signup required.">
+<style>
+html{scroll-behavior:smooth}
+body{margin:0;font-family:var(--font-ui);background:var(--paper);color:var(--text);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--denim-deep)}a:hover{color:var(--denim)}
+a:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid var(--denim);outline-offset:2px;border-radius:4px}
+@media (max-width:820px){[data-wrap]{padding-left:20px!important;padding-right:20px!important}h1{font-size:31px!important}h2{font-size:23px!important}[data-g]{grid-template-columns:1fr!important}}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"TradeDesk","item":"https://tradedeskpro.app/"},{"@type":"ListItem","position":2,"name":"Mechanic's Lien Deadlines by State","item":"https://tradedeskpro.app/tools/lien-deadlines"}]}</script>
+</helmet>
+
+<header style="background:var(--ink);padding:16px 0">
+  <div data-wrap="1" style="max-width:900px;margin:0 auto;padding:0 32px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+    <a href="/" style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:var(--text-cream)">
+      <span style="width:30px;height:30px;border-radius:var(--r-mark);background:var(--grad-mark);display:flex;align-items:center;justify-content:center" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="rgba(245,239,226,.92)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"></path></svg></span>
+      <span style="font-family:var(--font-display);font-weight:900;font-size:17px;letter-spacing:-.6px">TradeDesk</span>
+    </a>
+    <a href="/?signup=1" style="display:inline-flex;align-items:center;background:var(--denim);color:#fff;font-weight:700;font-size:14px;padding:10px 18px;border-radius:var(--r-md);text-decoration:none">Start free</a>
+  </div>
+</header>
+
+<main>
+<section style="background:var(--grad-brand);color:var(--text-cream);padding:64px 0 56px">
+  <div data-wrap="1" style="max-width:900px;margin:0 auto;padding:0 32px">
+    <p style="margin:0 0 14px;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#9FBCEA">Free tool &middot; no signup</p>
+    <h1 style="margin:0 0 18px;font-family:var(--font-display);font-weight:900;font-size:40px;letter-spacing:-1.5px;line-height:1.06;color:#fff">Mechanic's lien deadlines, by state</h1>
+    <p style="margin:0;font-size:18px;color:rgba(245,239,226,.75);line-height:1.6;max-width:620px;text-wrap:pretty">A lien is the strongest claim you have on work you already did, and it dies on a deadline most contractors never hear about. Pick your state.</p>
+  </div>
+</section>
+
+<section style="padding:52px 0 24px">
+  <div data-wrap="1" style="max-width:900px;margin:0 auto;padding:0 32px">
+    <label for="state-pick" style="display:block;margin-bottom:8px;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--text-2)">Your state</label>
+    <select id="state-pick" onChange="{{ onPick }}" style="width:100%;max-width:420px;background:#fff;border:1.5px solid var(--line-2);border-radius:var(--r-md);padding:15px 16px;font-family:var(--font-ui);font-size:16.5px;font-weight:600;color:var(--text)">
+      <sc-for list="{{ stateList }}" as="st" hint-placeholder-count="8">
+        <option value="{{ st.code }}">{{ st.name }}</option>
+      </sc-for>
+    </select>
+
+    <div style="margin-top:28px;background:var(--bg-card);border-radius:20px;padding:32px 30px;box-shadow:var(--shadow-card)">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--terra)">{{ pickedName }}</p>
+      <h2 style="margin:0 0 22px;font-family:var(--font-display);font-weight:900;font-size:28px;letter-spacing:-.9px;color:var(--text)">{{ pickedHeadline }}</h2>
+      <div data-g="1" style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+        <div style="background:var(--cream);border-radius:14px;padding:20px 22px">
+          <p style="margin:0 0 7px;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--text-2)">Deadline to file</p>
+          <p style="margin:0 0 5px;font-family:var(--font-display);font-weight:900;font-size:30px;letter-spacing:-1px;color:var(--text)">{{ pickedDays }}</p>
+          <p style="margin:0;font-size:13.5px;color:var(--text-2);line-height:1.5">{{ pickedFrom }}</p>
+        </div>
+        <div style="background:var(--cream);border-radius:14px;padding:20px 22px">
+          <p style="margin:0 0 7px;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--text-2)">Preliminary notice</p>
+          <p style="margin:0 0 5px;font-family:var(--font-display);font-weight:900;font-size:30px;letter-spacing:-1px;color:var(--text)">{{ pickedNotice }}</p>
+          <p style="margin:0;font-size:13.5px;color:var(--text-2);line-height:1.5">{{ pickedNoticeNote }}</p>
+        </div>
+      </div>
+      <p style="margin:20px 0 0;font-size:13.5px;color:var(--text-2);line-height:1.6">Statute reference: {{ pickedStatute }}</p>
+    </div>
+
+    <div style="margin-top:20px;display:flex;align-items:flex-start;gap:11px;background:var(--c-amber-soft);border:1px solid var(--c-amber-edge);border-radius:var(--r-lg);padding:16px 18px">
+      <span aria-hidden="true" style="flex:none;color:var(--c-amber-deep);display:inline-flex;margin-top:1px"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.86L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.86a2 2 0 00-3.4 0z"></path><path d="M12 9v4M12 17h.01"></path></svg></span>
+      <p style="margin:0;font-size:14px;color:var(--text-2);line-height:1.6">This is a reference tool, not legal advice, and we are not a law firm. Lien law changes, varies by project type, and turns on facts we cannot see. <b style="color:var(--text)">Confirm your deadline with an attorney before you rely on it.</b></p>
+    </div>
+  </div>
+</section>
+
+<section style="padding:40px 0 64px">
+  <div data-wrap="1" style="max-width:900px;margin:0 auto;padding:0 32px">
+    <h2 style="margin:0 0 14px;font-family:var(--font-display);font-weight:900;font-size:28px;letter-spacing:-.9px;color:var(--text)">The part that catches people</h2>
+    <p style="margin:0 0 16px;font-size:16.5px;color:var(--text-2);line-height:1.7">The deadline is not the first thing that kills a lien. The paperwork is. In most states a lien depends on a documented, signed scope of work existing <b style="color:var(--text)">before</b> the work happened. Start on a handshake and there may be nothing to attach a lien to, no matter how fast you file.</p>
+    <p style="margin:0;font-size:16.5px;color:var(--text-2);line-height:1.7">That is the whole reason TradeDesk exists. Every job starts with an e-signed scope, the deposit lands at signing, and the lien clock starts tracking on the day the job completes, so you are not looking up deadlines after the fact.</p>
+  </div>
+</section>
+
+<section style="background:var(--grad-brand);color:var(--text-cream);text-align:center;padding:72px 0">
+  <div data-wrap="1" style="max-width:900px;margin:0 auto;padding:0 32px">
+    <h2 style="margin:0 0 16px;font-family:var(--font-display);font-weight:900;font-size:32px;letter-spacing:-1.1px;line-height:1.1;color:#fff">Stop looking this up after the fact</h2>
+    <p style="margin:0 auto 28px;font-size:17px;color:rgba(245,239,226,.72);max-width:520px;line-height:1.6">TradeDesk tracks the clock on every job automatically, in all 50 states.</p>
+    <a href="/?signup=1" style="display:inline-flex;align-items:center;gap:9px;background:var(--denim);color:#fff;font-weight:700;font-size:16.5px;padding:16px 30px;border-radius:var(--r-md);text-decoration:none;box-shadow:0 4px 16px var(--denim-glow)">Start free <span aria-hidden="true">&rarr;</span></a>
+    <p style="margin:18px 0 0;font-size:14px;color:rgba(245,239,226,.6)">Two weeks free &middot; no card &middot; $29.99/mo founder rate after</p>
+  </div>
+</section>
+</main>
+
+<footer style="background:#141009;color:rgba(245,239,226,.62);padding:32px 0">
+  <div data-wrap="1" style="max-width:900px;margin:0 auto;padding:0 32px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:13.5px">
+    <span>&copy; 2026 TradeDesk. Reference only, not legal advice.</span>
+    <span style="display:flex;gap:20px;flex-wrap:wrap"><a href="/compare" style="color:rgba(245,239,226,.62);text-decoration:none">Compare</a><a href="/privacy" style="color:rgba(245,239,226,.62);text-decoration:none">Privacy</a><a href="/" style="color:rgba(245,239,226,.62);text-decoration:none">Home</a></span>
+  </div>
+</footer>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const STATES = {
+  AL:['Alabama','6 months','from last work or materials furnished','Required','Notice before filing for some claimants','Ala. Code § 35-11-210 et seq.'],
+  AK:['Alaska','90 days','from completion of your work','Recommended','Notice of right to lien strengthens the claim','AS 34.35.050 et seq.'],
+  AZ:['Arizona','120 days','from completion of the project','Required','Within 20 days of first furnishing','A.R.S. § 33-981 et seq.'],
+  AR:['Arkansas','120 days','from last work or materials','Required','Pre-construction notice on residential','Ark. Code § 18-44-101 et seq.'],
+  CA:['California','90 days','from completion or cessation of work','Required','20-day preliminary notice','Cal. Civ. Code § 8000 et seq.'],
+  CO:['Colorado','4 months','from last work (2 months for laborers)','Required','Notice of intent 10 days before filing','C.R.S. § 38-22-101 et seq.'],
+  CT:['Connecticut','90 days','from cessation of your work','Required','Notice to owner for subcontractors','Conn. Gen. Stat. § 49-33 et seq.'],
+  DE:['Delaware','120 days','from completion of your work','Not required','No preliminary notice statute','25 Del. C. § 2701 et seq.'],
+  FL:['Florida','90 days','from last furnishing of work','Required','Notice to owner within 45 days','Fla. Stat. § 713.001 et seq.'],
+  GA:['Georgia','90 days','from last work or materials','Recommended','Notice of commencement affects rights','O.C.G.A. § 44-14-360 et seq.'],
+  HI:['Hawaii','45 days','from completion of the project','Not required','Application to circuit court required','HRS § 507-41 et seq.'],
+  ID:['Idaho','90 days','from last work or materials','Not required','No preliminary notice statute','Idaho Code § 45-501 et seq.'],
+  IL:['Illinois','4 months','from completion of your work','Required','90-day notice on owner-occupied homes','770 ILCS 60/1 et seq.'],
+  IN:['Indiana','90 days','from last work (60 days residential)','Required','Pre-lien notice on residential','Ind. Code § 32-28-3 et seq.'],
+  IA:['Iowa','90 days','to post to the MNLR registry','Required','Registry posting on residential','Iowa Code § 572.1 et seq.'],
+  KS:['Kansas','4 months','from last work or materials furnished','Required','Warning statement in residential contracts','K.S.A. § 60-1101 et seq.'],
+  KY:['Kentucky','6 months','from last work or materials','Required','Notice to owner within 75 or 120 days','KRS § 376.010 et seq.'],
+  LA:['Louisiana','60 days','from filing notice of termination','Required','Notice of contract for some projects','La. R.S. § 9:4801 et seq.'],
+  ME:['Maine','90 days','from last work or materials','Not required','No general preliminary notice','10 M.R.S. § 3251 et seq.'],
+  MD:['Maryland','180 days','from last work or materials','Required','Notice within 120 days for subs','Md. Real Prop. § 9-101 et seq.'],
+  MA:['Massachusetts','90 days','from filing notice of substantial completion','Required','Notice of contract must be recorded','M.G.L. c. 254 § 1 et seq.'],
+  MI:['Michigan','90 days','from last work or materials','Required','Notice of furnishing within 20 days','MCL § 570.1101 et seq.'],
+  MN:['Minnesota','120 days','from last work or materials','Required','Pre-lien notice within 45 days','Minn. Stat. § 514.01 et seq.'],
+  MS:['Mississippi','90 days','from last work or materials','Required','Notice of intent 30 days prior','Miss. Code § 85-7-401 et seq.'],
+  MO:['Missouri','6 months','from last work or materials','Required','Notice to owner before payment','Mo. Rev. Stat. § 429.010 et seq.'],
+  MT:['Montana','90 days','from last work or materials','Required','Notice of right to claim before work','Mont. Code § 71-3-521 et seq.'],
+  NE:['Nebraska','120 days','from last work or materials','Not required','Notice required on residential','Neb. Rev. Stat. § 52-125 et seq.'],
+  NV:['Nevada','90 days','from completion of the project','Required','Notice of right to lien on residential','NRS § 108.221 et seq.'],
+  NH:['New Hampshire','120 days','from last work or materials','Required','Notice of intent for subcontractors','N.H. Rev. Stat. § 447:1 et seq.'],
+  NJ:['New Jersey','90 days','from last work or materials','Required','NOU required on residential','N.J.S.A. § 2A:44A-1 et seq.'],
+  NM:['New Mexico','90 days','from completion of the project','Not required','Contractor licensing affects rights','N.M. Stat. § 48-2-1 et seq.'],
+  NY:['New York','8 months','from completion (4 months single-family)','Not required','No general preliminary notice','N.Y. Lien Law § 3 et seq.'],
+  NC:['North Carolina','120 days','from last work or materials','Required','Notice to lien agent','N.C.G.S. § 44A-7 et seq.'],
+  ND:['North Dakota','90 days','notice before recording','Required','10-day notice of intention','N.D.C.C. § 35-27-01 et seq.'],
+  OH:['Ohio','75 days','from last work (60 residential)','Required','Notice of furnishing to owner','Ohio Rev. Code § 1311.01 et seq.'],
+  OK:['Oklahoma','4 months','from last work or materials','Required','Pre-lien notice within 75 days','12 Okla. Stat. § 141 et seq.'],
+  OR:['Oregon','75 days','from last work or completion','Required','Notice of right to lien within 8 days','ORS § 87.001 et seq.'],
+  PA:['Pennsylvania','6 months','from completion of your work','Required','Formal notice for subcontractors','49 Pa. Stat. § 1101 et seq.'],
+  RI:['Rhode Island','200 days','from last work or materials','Required','Notice of intention must be mailed','R.I. Gen. Laws § 34-28-1 et seq.'],
+  SC:['South Carolina','90 days','from last work or materials','Not required','Notice of project commencement optional','S.C. Code § 29-5-10 et seq.'],
+  SD:['South Dakota','120 days','from last work or materials','Not required','No general preliminary notice','S.D.C.L. § 44-9-1 et seq.'],
+  TN:['Tennessee','90 days','from completion of the project','Required','Notice of nonpayment for subs','Tenn. Code § 66-11-101 et seq.'],
+  TX:['Texas','15th day of the 4th month','after the month your work ended','Required','Monthly fund-trapping notices','Tex. Prop. Code § 53.001 et seq.'],
+  UT:['Utah','90 days','from completion of the project','Required','Preliminary notice within 20 days','Utah Code § 38-1a-101 et seq.'],
+  VT:['Vermont','180 days','from last work or materials','Not required','Notice of contract may be recorded','9 V.S.A. § 1921 et seq.'],
+  VA:['Virginia','90 days','from last day of the month work ended','Not required','No general preliminary notice','Va. Code § 43-1 et seq.'],
+  WA:['Washington','90 days','from last work or materials','Required','Notice to owner within 60 days','RCW § 60.04.011 et seq.'],
+  WV:['West Virginia','100 days','from last work or materials','Required','Notice of intent to owner','W. Va. Code § 38-2-1 et seq.'],
+  WI:['Wisconsin','6 months','from last work or materials','Required','Preliminary notice within 60 days','Wis. Stat. § 779.01 et seq.'],
+  WY:['Wyoming','120 days','from last work (90 for subs)','Required','Notice of right to lien before work','Wyo. Stat. § 29-1-201 et seq.'],
+  DC:['District of Columbia','90 days','from completion of the project','Not required','No general preliminary notice','D.C. Code § 40-301.01 et seq.']
+};
+
+class Component extends DCLogic {
+  state = { code: 'KS' };
+  renderVals() {
+    const codes = Object.keys(STATES).sort((a,b)=>STATES[a][0].localeCompare(STATES[b][0]));
+    const s = STATES[this.state.code] || STATES.KS;
+    return {
+      stateList: codes.map(c=>({ code:c, name:STATES[c][0] })),
+      onPick: (e)=>this.setState({ code: e.target.value }),
+      pickedName: s[0],
+      pickedHeadline: 'You have ' + s[1] + ' to file',
+      pickedDays: s[1],
+      pickedFrom: s[2],
+      pickedNotice: s[3],
+      pickedNoticeNote: s[4],
+      pickedStatute: s[5]
+    };
+  }
+}
+</script>
+</body>
+</html>

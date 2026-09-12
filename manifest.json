@@ -1,7 +1,7 @@
 {
   "name": "TradeDesk Pro",
   "short_name": "TradeDesk",
-  "start_url": "/",
+  "start_url": "/?app=1",
   "display": "standalone",
   "background_color": "#1B1612",
   "theme_color": "#1B1612",

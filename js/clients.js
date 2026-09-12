@@ -3507,6 +3507,9 @@ function _addrPickSaveNew(){
 
 // ── Property data auto-lookup ───────────────────────────────────────────────
 async function _lookupPropertyData(clientId,addrParts){
+  // The demo makes no network calls at all (js/demo.js). Its sample client
+  // ships with its property data already filled in.
+  if(window.__TD_DEMO)return;
   try{
     const addr=[addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
     const _ctrl=new AbortController();

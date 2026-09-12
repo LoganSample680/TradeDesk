@@ -80,7 +80,7 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     });
     page.on('response', res => { if (!res.ok() && NOISY_ORIGINS.test(res.url())) noisyFailedUrls.push(res.url()); });
 
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/?app=1', { waitUntil: 'domcontentloaded' });
     // App shell rendered (the login screen) = the deployed JS actually ran, not a blank
     // page / 500 / wrong-root deploy. Identifier-first gate (2026-08-22): the email
     // input is the always-visible element now, social buttons only appear after
@@ -88,8 +88,17 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     await expect(page.locator('#login-email')).toBeVisible({ timeout: 20000 });
 
     const liveVersion = await page.evaluate(() => (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null));
-    const jsonRes = await page.request.get('/version.json');
-    const liveJson = jsonRes.ok() ? (await jsonRes.json()).version : null;
+    // Fetched from INSIDE the page, which is what the version watchdog does.
+    // page.request is a bare API client: it carries none of a browser's headers
+    // and the apex refuses it, so on production this measured the edge's bot
+    // protection rather than the deploy. A same-origin fetch from the loaded
+    // page is both what the app really does and what a visitor's browser does.
+    const liveJson = await page.evaluate(async () => {
+      try {
+        const r = await fetch('/version.json?_=' + Date.now(), { cache: 'no-store' });
+        return r.ok ? (await r.json()).version : null;
+      } catch (e) { return null; }
+    });
 
     expect(EXPECTED_VERSION, 'checkout has a version.json to compare against').toBeTruthy();
     expect(liveVersion, `live APP_VERSION (${liveVersion}) must equal the deployed commit (${EXPECTED_VERSION}): a mismatch = stale cache / deploy not propagated`).toBe(EXPECTED_VERSION);
@@ -102,21 +111,85 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     const real = errs.filter(e => {
       if (/Unhandled Promise Rejection|ResizeObserver|Script error\.?$|apple-mapkit|mapkit|stripe|favicon|status of 4\d\d|cloudflareinsights/i.test(e)) return false;
       if (genericCorsMsg.test(e) && noisyFailedUrls.length) return false; // correlated with a known noisy third-party failure
+      // Chromium reports the same beacon failure as a bare "Failed to load resource:
+      // net::ERR_FAILED" with no URL; requestfailed captured which URL it was.
+      if (/Failed to load resource/i.test(e) && noisyFailedUrls.length) return false;
       return true;
     });
     expect(real, `console errors on boot: ${real.join(' | ')}: failed requests: ${failedRequests.join(' | ') || '(none captured)'}`).toHaveLength(0);
+  });
+
+  // 1b. The "/" gate (functions/index.js) is live: a stranger gets the marketing
+  //     page, a browser carrying the app cookie gets the app. Only a deployed
+  //     origin runs the function, so this is the one place it can be proven.
+  //
+  //     Driven as a real navigation, not an API request. A visitor arrives with
+  //     a browser, the gate reads that request's cookie and user agent, and the
+  //     header it sets comes back on the navigation response. An API client is
+  //     refused at the apex before the function ever sees it, which is a fact
+  //     about the edge and tells us nothing about the gate.
+  test('the "/" function serves the landing page to a stranger and the app to the cookie', async ({ page }) => {
+    const asStranger = await page.goto('/', { waitUntil: 'domcontentloaded' });
+    expect(asStranger.status(), 'GET / as a first-time visitor').toBe(200);
+    expect(asStranger.headers()['x-td-page'], 'the function answered / for a stranger').toBe('landing');
+    // APP_VERSION only exists in the app, so it tells the two pages apart no
+    // matter how far either has hydrated.
+    expect(await page.evaluate(() => typeof APP_VERSION), 'a stranger must not get the app').toBe('undefined');
+    expect(await page.evaluate(() => {
+      const c = document.querySelector('link[rel="canonical"]');
+      return c ? c.getAttribute('href') : null;
+    })).toBe('https://tradedeskpro.app/');
+
+    // Same URL, same browser, now carrying the cookie the app sets on sign-in.
+    await page.context().addCookies([{ name: 'td_app', value: '1', url: new URL(page.url()).origin }]);
+    const asUser = await page.goto('/', { waitUntil: 'domcontentloaded' });
+    expect(asUser.status(), 'GET / carrying td_app').toBe(200);
+    expect(asUser.headers()['x-td-page'], 'the function answered / for an app user').toBe('app');
+    await expect(page.locator('#login-email')).toBeVisible({ timeout: 20000 });
+    await page.context().clearCookies();
+  });
+
+  // 1c. The live demo boots on the real deploy. The marketing page shows the
+  //     app itself rather than pictures of it, so "the demo still runs" is a
+  //     deploy-health fact: if this breaks, every device frame on the home page
+  //     is empty and nothing else would report it.
+  test('the demo boots on the deployed origin and seeds itself', async ({ page }) => {
+    const errs = [];
+    page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+    page.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
+    await page.goto('/?demo=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !document.getElementById('supa-boot-overlay'), null, { timeout: 25000 });
+    const s = await page.evaluate(() => ({
+      demo: !!window.__TD_DEMO,
+      client: typeof clients !== 'undefined' && clients[0] ? clients[0].name : null,
+      biz: typeof S !== 'undefined' ? S.bname : null,
+      supa: typeof supaEnabled === 'function' ? supaEnabled() : null,
+      cookie: document.cookie,
+    }));
+    expect(s.demo, 'the deploy served the demo sandbox').toBe(true);
+    expect(s.client, 'the demo seeded its sample job').toBeTruthy();
+    expect(s.biz).toBeTruthy();
+    // Still no backend and still no app cookie, on the real origin.
+    expect(s.supa).toBe(false);
+    expect(s.cookie).not.toMatch(/td_app=1/);
+    const real = errs.filter(e => !/favicon|Failed to load resource|net::ERR|cloudflareinsights|status of 4\d\d/i.test(e));
+    expect(real, `demo console errors: ${real.join(' | ')}`).toHaveLength(0);
   });
 
   // 2. The Cloudflare `/api` Pages Function is live and reaches Supabase. This worker
   //    only exists on the deployed origin (localhost uses local-server.js), so it is
   //    UNTESTED until now. Both 200 and 401 prove the proxy reached Supabase auth.
   test('the /api Pages Function proxies to Supabase', async ({ page }) => {
-    // page.request is a separate APIRequestContext, it does NOT go through the
-    // context.route() interceptor above, so the bypass header (needed for this
-    // same-origin relative path) is passed explicitly here instead.
-    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
-    const res = await page.request.get('/api/auth/v1/health', { failOnStatusCode: false, headers });
-    expect([200, 401], `/api/auth/v1/health returned ${res.status()}: the /api proxy worker is down or not reaching Supabase`).toContain(res.status());
+    // From inside the page, for the same reason as the version check above: the
+    // app reaches this worker as a same-origin fetch from a loaded document, and
+    // that is the only path worth proving. A bare API client gets refused at the
+    // apex before the worker is ever consulted.
+    await page.goto('/?app=1', { waitUntil: 'domcontentloaded' });
+    const status = await page.evaluate(async () => {
+      try { const r = await fetch('/api/auth/v1/health'); return r.status; }
+      catch (e) { return -1; }
+    });
+    expect([200, 401], `/api/auth/v1/health returned ${status}: the /api proxy worker is down or not reaching Supabase`).toContain(status);
   });
 
   // Apple's crawler fetches this exact path before Apple Pay may appear on the
@@ -158,7 +231,7 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
   //    `_mapkitReady` is ALWAYS false on localhost, this is the only place maps are
   //    proven to load with a VALID token for the live domain.
   test('MapKit authorizes and initializes on the deployed hostname', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/?app=1', { waitUntil: 'domcontentloaded' });
     const authorized = await page.evaluate(() => (typeof _mapkitAuthorizedOrigin !== 'undefined') ? _mapkitAuthorizedOrigin : null);
     expect(authorized, 'deployed origin must be a MapKit-authorized host (pages.dev / tradedeskpro.app)').toBe(true);
     // mapkit.js loads from Apple's CDN (index.html) and fires _initMapKit onload; on an
