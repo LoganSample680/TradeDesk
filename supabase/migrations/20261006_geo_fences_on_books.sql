@@ -1,5 +1,12 @@
 -- geo_fences_for, revision 3: rule 13's THIRD WITNESS (owner 2026-09-12).
 --
+-- Numbered 20261006, not 20261005: the ops portal's own migration took that
+-- version on main while this branch was open, and Supabase keys
+-- supabase_migrations.schema_migrations on the VERSION, so two files claiming
+-- one number is a hard failure on the second to apply, not a merge conflict
+-- anything would have flagged. Neither had reached the shared project yet;
+-- theirs was already on main, so this one moved.
+--
 -- "except for Laurie which we now tag as family and flag the question if it's
 -- work or personal if there's no active job or proposal that's open on the
 -- books."

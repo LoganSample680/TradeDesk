@@ -168,7 +168,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
     // geo_fences_for without ever being mapped HERE, so the server counted a
     // visit to a family address as work while the phone held it: the same day
     // derived two different ways depending on which side got there first.
-    // `onBooks` (20261005) is its reprieve and has to travel with it.
+    // `onBooks` (20261006) is its reprieve and has to travel with it.
     // Neither may be dropped: this mapping is the whole contract between the
     // SQL fence list and the deriver's shape.
     personal: f.personal ?? undefined,
