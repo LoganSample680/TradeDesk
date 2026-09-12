@@ -237,6 +237,82 @@ test.describe('Receipt-gated supply runs', () => {
     });
   });
 
+  // ── The third door: drives that need an answer (rules 15/16/17) ─────────
+  // Rule 15 has held a drive with no business end since 2026-09-12 and the row
+  // said "Work or personal? · not counted yet" with nothing anywhere to tap.
+  test.describe('drives need an answer', () => {
+    const seed = () => page.evaluate(() => {
+      mileage.length = 0;
+      mileage.push({ id: 'd1', date: '2026-09-10', startedIso: '2026-09-10T12:00:00Z',
+        from_name: '', to_name: '2015 SW Randolph Ave', miles: 2.2,
+        pendingPurpose: true, purpose: '', addressUnknown: true, unsavedFrom: true, gps: true });
+      mileage.push({ id: 'd2', date: '2026-09-09', startedIso: '2026-09-09T12:00:00Z',
+        from_name: 'John Doe', to_name: 'Mom', miles: 4.0, pendingPurpose: true, purpose: '', gps: true });
+      mileage.push({ id: 'ok', date: '2026-09-09', from_name: 'A', to_name: 'B', miles: 1, purpose: 'Shop', gps: true });
+      _renderDashDriveHold();
+    });
+
+    test('every held drive gets a row with both doors, and a settled one does not', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const el = document.getElementById('dash-drive-hold');
+        return { display: el.style.display,
+          rows: [...el.querySelectorAll('.td-supply-visit')].map(v => v.firstElementChild.textContent),
+          doors: [...el.querySelectorAll('button')].map(b => b.textContent.trim()),
+          n: el.dataset.n, held: document.getElementById('dash-hold-count').textContent,
+          shell: document.getElementById('dash-hold').style.display };
+      });
+      expect(r.display).toBe('block');
+      expect(r.n, 'the settled trip is not a question').toBe('2');
+      expect(r.rows[0], 'an unsaved end is named, not left blank').toContain('an unsaved address');
+      expect(r.doors).toEqual(['Personal', 'Working', 'Personal', 'Working']);
+      expect(r.held).toContain('held');
+      expect(r.shell).toBe('block');
+    });
+
+    test('Personal keeps the drive and takes it off every total', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        _driveHoldAnswer('d1', 'personal');
+        const m = mileage.find(x => x.id === 'd1');
+        return { still: !!m, pending: !!m.pendingPurpose, personal: !!m.personal,
+          deductible: deductibleTrips(mileage).some(x => x.id === 'd1'),
+          gone: !document.getElementById('dash-drive-hold').textContent.includes('an unsaved address') };
+      });
+      expect(r.still, 'the drive happened: it is never deleted').toBe(true);
+      expect(r.pending).toBe(false);
+      expect(r.personal).toBe(true);
+      expect(r.deductible, 'off the deduction').toBe(false);
+      expect(r.gone, 'and off the card').toBe(true);
+    });
+
+    test('Working clears the hold and gives the drive a real purpose', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        _driveHoldAnswer('d2', 'working');
+        const m = mileage.find(x => x.id === 'd2');
+        return { pending: !!m.pendingPurpose, personal: !!m.personal, purpose: m.purpose };
+      });
+      expect(r.pending).toBe(false);
+      expect(r.personal).toBe(false);
+      expect(r.purpose, 'the deriver emptied it on purpose; the answer supplies one').toBeTruthy();
+    });
+
+    test('answering the last one hides the section, and junk never throws', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        _driveHoldAnswer('d1', 'personal'); _driveHoldAnswer('d2', 'working');
+        const el = document.getElementById('dash-drive-hold');
+        let ok = true;
+        try { _driveHoldAnswer('nope', 'personal'); _driveHoldAnswer(null, 'x'); resolvePurposeTrip(undefined); } catch (e) { ok = false; }
+        return { hidden: el.style.display === 'none' && el.innerHTML === '', n: el.dataset.n, ok };
+      });
+      expect(r.hidden).toBe(true);
+      expect(r.n).toBe('0');
+      expect(r.ok, 'an id that is not there is a no-op, not a throw').toBe(true);
+    });
+  });
+
   // ── The receipt card's sibling: visits that need an answer (rule 13) ────
   test.describe('visits need an answer', () => {
     const ROWS = [
