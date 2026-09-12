@@ -306,6 +306,30 @@ test.describe('Ops portal: the support view, embedded', () => {
       await page.setViewportSize({ width: 1280, height: 800 });
     });
 
+    test('there is a way back to your own app that is not signing out', async () => {
+      // Sign out was the only exit and it dropped you at a login screen, which
+      // is not what "go back" means (owner, on a phone).
+      const link = page.locator('#to-app');
+      await expect(link).toBeVisible();
+      expect(await link.getAttribute('href')).toBe('index.html?app=1');
+      // ?app=1 matters: the "/" gate reads a query string as "the app, please",
+      // so this cannot land on the marketing page.
+      await expect(page.locator('#signout')).toBeVisible();     // still there, just not the only door
+    });
+
+    test('the header clears the notch on a phone', async () => {
+      // viewport-fit=cover plus a translucent status bar draws the page behind
+      // the notch; the wrap has to reserve the inset or the header is cut off.
+      const pad = await page.evaluate(() => {
+        const el = document.querySelector('.wrap');
+        return { top: getComputedStyle(el).paddingTop, css: [...document.styleSheets]
+          .flatMap(sh => { try { return [...sh.cssRules].map(r => r.cssText); } catch (e) { return []; } })
+          .filter(t => t.includes('.wrap')).join(' ') };
+      });
+      expect(pad.css).toContain('safe-area-inset-top');
+      expect(parseFloat(pad.top)).toBeGreaterThanOrEqual(20);
+    });
+
     test('zero console errors', async () => {
       assertNoErrors(page, 'ops portal');
     });
