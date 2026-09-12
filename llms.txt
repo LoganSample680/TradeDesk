@@ -71,6 +71,7 @@ Solo contractors, small crews, and growing shops of any size that want the softw
 - [Painting contractor software](https://tradedeskpro.app/painting-contractor-software)
 - [Plumbing contractor software](https://tradedeskpro.app/plumbing-contractor-software)
 - [Handyman and GC software](https://tradedeskpro.app/handyman-contractor-software)
+- [Should you use an AI answering service?](https://tradedeskpro.app/ai-answering-service-for-contractors): why TradeDesk deliberately does not answer your phone, and when one genuinely does make sense
 - [Mechanic's lien deadlines by state](https://tradedeskpro.app/tools/lien-deadlines): free 50-state lookup tool, no signup
 - [Privacy Policy](https://tradedeskpro.app/privacy)
 - [Terms of Service](https://tradedeskpro.app/terms)

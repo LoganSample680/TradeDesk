@@ -35,6 +35,7 @@ const ROUTES = [
   '/painting-contractor-software',
   '/plumbing-contractor-software',
   '/handyman-contractor-software',
+  '/ai-answering-service-for-contractors',
   '/tools/lien-deadlines',
   '/privacy',
   '/terms',
@@ -244,6 +245,70 @@ test.describe('marketing site routing', () => {
     }
   });
 
+  // A noindex only takes effect when the crawler comes back and reads it, and
+  // on its own schedule that is weeks. These three are what shorten the wait.
+  test('every sitemap URL carries an honest lastmod', async () => {
+    const sm = await (await api.get('/sitemap.xml')).text();
+    const blocks = [...sm.matchAll(/<url>[\s\S]*?<\/url>/g)].map(m => m[0]);
+    expect(blocks.length).toBe(ROUTES.length);
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    for (const b of blocks) {
+      const loc = b.match(/<loc>([^<]+)<\/loc>/)[1];
+      const mod = b.match(/<lastmod>([^<]+)<\/lastmod>/);
+      expect(mod, `${loc} has a lastmod`).toBeTruthy();
+      expect(mod[1], `${loc} lastmod is a W3C date`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // Google discounts lastmod for good once a site is caught stamping dates
+      // it cannot justify, so a future date is worse than none at all.
+      expect(mod[1] <= today, `${loc} lastmod ${mod[1]} is not in the future`).toBe(true);
+    }
+  });
+
+  test('the IndexNow key is published and self-consistent', async () => {
+    const root = path.join(__dirname, '..');
+    const keyFile = fs.readdirSync(root).find(f => /^[0-9a-f]{8,128}\.txt$/.test(f));
+    expect(keyFile, 'a key file at the repo root').toBeTruthy();
+    // IndexNow authenticates by fetching https://host/<key>.txt and checking it
+    // contains the key, so the file has to be served AND name itself.
+    const res = await api.get('/' + keyFile);
+    expect(res.status(), `GET /${keyFile}`).toBe(200);
+    expect((await res.text()).trim()).toBe(path.basename(keyFile, '.txt'));
+  });
+
+  test('the recrawl submission covers the sitemap and the pages being purged', async () => {
+    const out = require('child_process')
+      .execSync('node scripts/indexnow.js', { cwd: path.join(__dirname, '..'), env: { ...process.env, DRY_RUN: '1' } })
+      .toString();
+    const body = JSON.parse(out);
+    expect(body.host).toBe('tradedeskpro.app');
+    expect(body.keyLocation).toBe(`https://tradedeskpro.app/${body.key}.txt`);
+    for (const r of ROUTES) {
+      expect(body.urlList, `submits ${r}`).toContain(PUBLIC + r);
+    }
+    // The wrongly-indexed pages are submitted precisely BECAUSE they are
+    // noindex now: a crawler has to fetch them again to see it and drop them.
+    for (const p of ['/index.html', '/sign', '/client', '/intake', '/contract-sign', '/timesheet']) {
+      expect(body.urlList, `asks for a recrawl of ${p}`).toContain(PUBLIC + p);
+    }
+    expect(new Set(body.urlList).size, 'no duplicates').toBe(body.urlList.length);
+  });
+
+  test('_headers says noindex over HTTP too, at both spellings of every private path', async () => {
+    const h = fs.readFileSync(path.join(__dirname, '..', '_headers'), 'utf8');
+    // Cloudflare serves these at the clean URL while the app links to them by
+    // filename, so a rule on only one spelling covers only half the requests.
+    for (const p of ['/sign', '/client', '/intake', '/contract-sign', '/timesheet', '/ops']) {
+      for (const spelling of [p, p + '.html']) {
+        const block = h.match(new RegExp('^' + spelling.replace(/[.]/g, '\\.') + '$\\n(  .+\\n)+', 'm'));
+        expect(block, `a rule for ${spelling}`).toBeTruthy();
+        expect(block[0], `${spelling} is noindex`).toMatch(/X-Robots-Tag: *noindex/);
+      }
+    }
+    expect(h, 'the app itself').toMatch(/^\/index\.html$\n  X-Robots-Tag: *noindex/m);
+    // The mirror image: "/" is the marketing page for a crawler and must never
+    // pick up a noindex from a rule meant for the app.
+    expect(h).not.toMatch(/^\/$\n(  .+\n)*  X-Robots-Tag/m);
+  });
+
   test('signup CTAs and Log in point at the app through the "/" gate, in exactly one form each', async () => {
     let signup = 0, login = 0;
     for (const r of ROUTES) {
@@ -297,7 +362,7 @@ test.describe('marketing site routing', () => {
   // fetched, so the crawler never reads the directive and anything already
   // indexed stays indexed. noindex is the one that removes them.
   test('the app and every customer link are noindex, the marketing pages are not', async () => {
-    const PRIVATE = ['index.html', 'sign.html', 'client.html', 'intake.html', 'contract-sign.html', 'timesheet.html'];
+    const PRIVATE = ['index.html', 'sign.html', 'client.html', 'intake.html', 'contract-sign.html', 'timesheet.html', 'ops.html'];
     for (const f of PRIVATE) {
       const src = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
       const tag = src.match(/<meta name="robots" content="([^"]+)"/);
@@ -345,6 +410,50 @@ test.describe('marketing site routing', () => {
     expect(t, 'says it is not painting-only').toMatch(/not painting-only/i);
     expect(t, 'says it is not an answering service').toMatch(/not an AI call-answering/i);
     expect(t, 'no em dashes (CLAUDE.md)').not.toMatch(/\u2014/);
+  });
+
+  // Markup-only Q&A that does not match what a visitor sees risks a Google
+  // manual action, which is why the landing page's FAQ is guarded the same way.
+  // This page targets a question query, so its FAQ schema is the point of it.
+  test('the AI answering page\'s FAQ schema matches its visible questions', async () => {
+    const h = html['/ai-answering-service-for-contractors'];
+    const blocks = [...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => JSON.parse(m[1]));
+    const nodes = blocks.flatMap(b => b['@graph'] || [b]);
+    const faq = nodes.find(n => n['@type'] === 'FAQPage');
+    expect(faq, 'FAQPage node present').toBeTruthy();
+
+    const summaries = [...h.matchAll(/<summary>([\s\S]*?)<\/summary>/g)].map(m => decode(m[1]));
+    const answers = [...h.matchAll(/<\/summary><p>([\s\S]*?)<\/p>/g)].map(m => decode(m[1]));
+    expect(summaries.length, 'visible questions').toBe(5);
+    expect(faq.mainEntity.length, 'schema questions').toBe(summaries.length);
+    expect(faq.mainEntity.map(q => q.name)).toEqual(summaries);
+    expect(faq.mainEntity.map(q => decode(q.acceptedAnswer.text))).toEqual(answers);
+
+    // It argues the category. Naming a competitor here is how a near-identical
+    // name turns into a letter from somebody's lawyer (owner call 2026-09-12).
+    expect(h.toLowerCase()).not.toContain('tradedeskpro.net');
+
+    // The whole point is sending readers to the product.
+    expect(h, 'links home').toMatch(/href="\/"/);
+    expect(h, 'and to signup').toContain('/?signup=1');
+
+    const art = nodes.find(n => n['@type'] === 'Article');
+    expect(art && art.publisher).toEqual({ '@id': PUBLIC + '/#org' });
+  });
+
+  // Found live on 2026-09-12: seven marketing pages carried an EMPTY
+  // <script data-dc-script> block, and the runtime rejects that by painting a
+  // red error box over the page. support.js renders logicError with no
+  // environment gate (support.js:1013), so every visitor to those pages saw
+  // it. A page with no dynamic bindings simply has no such block, which is
+  // what compare/jobber.html, privacy.html and terms.html already did (7.3).
+  test('no page ships an empty dc-script block, which the runtime paints as an error', async () => {
+    const bad = [];
+    for (const r of ROUTES) {
+      const m = html[r].match(/<script type="text\/x-dc"[^>]*data-dc-script[^>]*>([\s\S]*?)<\/script>/);
+      if (m && !m[1].trim()) bad.push(r);
+    }
+    expect(bad, `these render a red error banner: ${bad.join(', ')}`).toEqual([]);
   });
 
   test('legal docs carry the operator mailing address, not the launch placeholder', async () => {
