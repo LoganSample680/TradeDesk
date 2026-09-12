@@ -955,6 +955,9 @@ function geoDeriveDay(input) {
   const asked = _gdHeldVisits(ended, inp, dayStart);
   // Rule 15: and the drives between them, using rule 13's own answer.
   const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart);
+  // Rule 16: a day that never reached business at all writes no drives.
+  const realLegs = _gdEmptyDayLegs(askedLegs, asked, inp, open,
+    journeys.some(j => j && j.open));
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -965,7 +968,7 @@ function geoDeriveDay(input) {
   return {
     day: inp.day || '',
     dwells: asked.filter(d => d.minutes >= 1),
-    legs: askedLegs,
+    legs: realLegs,
     open,
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
@@ -1445,10 +1448,82 @@ function _gdHeldVisits(dwells, inp, dayStart) {
     // answer to give, not this function's to assume, and a held visit already
     // counts toward nothing and asks on the card. Dropping it silently would
     // lose the one case he DOES bill for at that address.
-    if (d.fence.personal === true) return Object.assign({}, d, { held: true });
+    //
+    // ── THE THIRD WITNESS: OPEN ON THE BOOKS (owner 2026-09-12) ──────────
+    // "flag the question if it's work or personal if there's no active job
+    // or proposal that's open on the books."
+    //
+    // The calendar witness above is DATE-BOUND: `scheduled` means a job whose
+    // dates cover this very day. That is too narrow for the way the work
+    // actually arrives. A live job at a family member's address is business
+    // whether or not today is one of its scheduled days, and a proposal still
+    // sitting out there unanswered is a reason to be at the address at all:
+    // walking the job, measuring, chasing the signature.
+    //
+    // So the fence carries `onBooks` (js/geo-track.js _geoDeriveFences and
+    // geo_fences_for, the one pair that has to agree): a job not canceled,
+    // complete or done, or a bid still open (Pending, sent, opportunity, or
+    // won and not yet closed out). A DRAFT never counts: nothing has been put
+    // in front of the client, so it is not evidence of anything.
+    //
+    // It vouches for the visit exactly the way the calendar does, and it
+    // vouches ONLY for a family contact's benefit here; an ordinary client
+    // never needed it, because the working-day window already covered them.
+    if (d.fence.personal === true && d.fence.onBooks !== true) return Object.assign({}, d, { held: true });
     if (workDay && whB > whA && overlaps(d, dayStart + whA, dayStart + whB)) return d;
     return Object.assign({}, d, { held: true });
   });
+}
+
+// ── Rule 16: a day that never reached business writes no drives ───────────
+// Owner 2026-09-12, on a crew member's unclocked days: "he should only have
+// drives and mileage on the days there was a clock in ... Jack doesn't have
+// two back to back fences going all the way back to the shop on those days he
+// doesn't have a clock does he?"
+//
+// He does not, and that is the rule. Checked against every day the crew member
+// has on record: all six of his clocked days open with a leg from his house to
+// the yard or to a real customer, and not one of the four unclocked days
+// touches a business address anywhere. Two of them are the same gym run a week
+// apart, out at 5:25 and home by 6:21, both ends unsaved.
+//
+// So this is rule 11's test, finally applied to the legs. Rule 11 already
+// throws away a day's base dwells when nothing in it landed in real work
+// ("Jack's do: home, the gym, home"). It never did the same for the drives,
+// and that asymmetry is why the gym ran up mileage rows on a day the time log
+// correctly showed as empty.
+//
+// IT ASKS BEFORE IT DELETES, and that is the half the owner added by name:
+// "except for Laurie which we now tag as family and flag the question if it's
+// work or personal." A day holding a NAMED held visit still has something to
+// ask about, and the drives either side of it are part of the question, so
+// they stay and rule 15's amber row asks. Only a day with nothing nameable in
+// it at all, no business end, no named visit, no clock, is thrown away. The
+// gym has no fence and nobody to name; there is no question to put to anybody.
+//
+// The three ways a day proves it happened, any one of which keeps every leg:
+//   - a leg rule 15 vouched for (a job, the yard, a supply place, a client the
+//     day can stand behind), which is a business end by definition
+//   - a manual clock, the owner's first instinct here and the safety valve
+//     rule 11 was already designed around
+//   - a named visit still holding an open question (rule 13)
+function _gdEmptyDayLegs(legs, dwells, inp, open, driving) {
+  // Mid-drive, or standing at a work fence right now: the day is not over and
+  // nothing about it can be called empty yet.
+  if (driving) return legs;
+  if (open && !_gdIsBaseKind(open.kind) && open.kind !== 'office') return legs;
+  const list = legs || [];
+  if (!list.length) return list;
+  // A leg rule 15 left alone reached business. One is enough for the day.
+  if (list.some(l => l && l.held !== true)) return list;
+  // The person said they were working. Outranks geography, same as rule 13.
+  if ((Array.isArray(inp.clocks) ? inp.clocks : [])
+    .some(c => c && Number(c.start) > 0 && Number(c.end) > Number(c.start))) return list;
+  // Real work anywhere, or a named question still open: the day is not empty.
+  const named = (d) => !!(d && d.fence && (d.fence.name || d.fence.clientId != null || d.fence.jobId != null));
+  if ((dwells || []).some(d => d && !_gdIsBaseKind(d.kind) && d.kind !== 'office' &&
+    (d.held !== true || named(d)))) return list;
+  return [];
 }
 
 // ── Rule 15: a drive the day cannot vouch for is a question too ───────────
@@ -1491,9 +1566,13 @@ function _gdHeldLegs(legs, dwells, inp, dayStart) {
     if (e.jobId != null) return true;
     if (e.kind === 'shop' || e.kind === 'supply') return true;
     // A client end is only as good as rule 13's answer about that visit. A
-    // contact marked family never vouches: the whole point of the mark is
-    // that being at that address is not evidence of work (rule 13).
-    if (e.clientId != null) return e.personal !== true && !heldClients.has(String(e.clientId));
+    // contact marked family does not vouch on its own: the whole point of the
+    // mark is that being at that address is not evidence of work (rule 13).
+    // It gets rule 13's own reprieve and no other: an open job or proposal on
+    // the books is a reason to be there, so the drives come with it.
+    if (e.clientId != null) {
+      return (e.personal !== true || e.onBooks === true) && !heldClients.has(String(e.clientId));
+    }
     return false;
   };
   return (legs || []).map(l => {
