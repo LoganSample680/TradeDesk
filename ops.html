@@ -11,7 +11,8 @@
      never get confused on a phone, and opening it lands here rather than in
      the app's "/" gate. -->
 <link rel="manifest" href="ops-manifest.json">
-<meta name="theme-color" content="#7C3D0A">
+<meta name="theme-color" content="#EEF2F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B1015" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Ops">
@@ -34,64 +35,144 @@
 <script src="js/vendor/supabase-js-2.112.3.min.js"></script>
 <style>
 :root{
-  --bg:#0F0D0B;--panel:#1A1613;--line:#2C2620;--line2:#3A322A;
-  --text:#F5F1EA;--text2:#B9AFA1;--text3:#8A8073;
-  --accent:#C2703C;--accent-deep:#7C3D0A;--ok:#4E9A5B;
+  /* LIGHT IS THE BASE, and the phone's own setting picks (owner 2026-09-13,
+     "follow my phone"). Every colour is a token so the dark block below only
+     has to restate the palette, never the layout.
+     Measured, not eyeballed, against the surface each one sits on:
+     text 16.6:1, muted 4.7:1, accent 5.1:1, and every status colour past 4.7. */
+  --bg:#EEF2F5;--panel:#FFFFFF;--panel2:#F6F9FB;--line:#D7E0E7;--line2:#BCCAD5;
+  --text:#0B1418;--text2:#3A4F5C;--text3:#5A6E7B;
+  --accent:#0A6E93;--accent-deep:#064B66;--ok:#177A3F;--warn:#8A5A00;
+  /* What sits ON the accent, and the surfaces that are not simply --panel. */
+  --on-accent:#FFFFFF;--on-bar:#FFFFFF;--field:#FFFFFF;--shimmer:#E4EBF1;
+  --live-ok:#177A3F;--live-bg:#8A5A00;--live-off:#C2262B;
+  --ok-ring:rgba(23,122,63,.16);--bg-ring:rgba(138,90,0,.16);--off-ring:rgba(194,38,43,.16);
   --bar:44px;
 }
+/* The phone decides. Nothing here but colour: every size, weight and rule
+   above is shared, so the two themes cannot drift apart. Measured on this
+   ground: text 16.8:1, muted 5.9:1, accent 10.4:1. */
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0B1015;--panel:#141C24;--panel2:#1B242E;--line:#26333F;--line2:#35485A;
+    --text:#EAF4FA;--text2:#B4CBD9;--text3:#8AA3B3;
+    --accent:#5FDCFF;--accent-deep:#0A5A78;--ok:#3FD97F;--warn:#FFB020;
+    --on-accent:#08121A;--on-bar:#FFFFFF;--field:#0E151C;--shimmer:#1D2833;
+    --live-ok:#3FD97F;--live-bg:#FFB020;--live-off:#FF5A5F;
+    --ok-ring:rgba(63,217,127,.16);--bg-ring:rgba(255,176,32,.16);--off-ring:rgba(255,90,95,.16);
+  }
+}
 *{box-sizing:border-box}
+/* .rows and .tiles set display, which beats the browser's own [hidden] rule, so
+   a hidden section stayed on screen. Everything here hides when told to. */
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--accent)}
-.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
-header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.wrap{max-width:1180px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(60px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+/* viewport-fit=cover plus a translucent status bar means the page draws
+   behind the notch: every screen here reserves the inset itself, or the
+   header sits under the clock (owner, on a phone). */
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .brand{display:flex;align-items:center;gap:10px;min-width:0}
 .brand-mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-deep));display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
 .brand-name{font-size:17px;font-weight:800;letter-spacing:-.3px}
 .brand-sub{font-size:11px;color:var(--text3)}
 .who{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:8px}
-.btn{border:1px solid var(--line2);background:transparent;color:var(--text);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.btn{border:1px solid var(--line2);background:transparent;color:var(--text);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;transition:border-color .15s ease}
 .btn:hover{border-color:var(--accent)}
-.btn-primary{background:var(--accent);border-color:var(--accent);color:#1A1613}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
-.section-title{font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text3);margin:26px 0 10px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
-.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 14px;min-width:0}
-.tile-v{font-size:22px;font-weight:800;letter-spacing:-.6px}
-.tile-k{font-size:11px;color:var(--text3);margin-top:2px}
+.section-title{font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--accent);margin:22px 0 10px}
+.muted{color:var(--text3);font-size:13px}
+.warn{color:var(--warn)}
+/* Four things made an earlier pass hard to read, and none of them was
+   contrast (owner 2026-09-13, and the ratios were fine every time I measured
+   them). Thin type optically thins further on a dark ground; tiles with no
+   background stopped grouping a number with its label; uppercase micro-labels
+   are slower to read than sentence case; and a tile row stretched to 1280px
+   put a foot of travel between a label and the next number. So: heavy
+   numbers, real tiles, sentence case, and a capped column. */
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:700px){.tiles{grid-template-columns:repeat(auto-fit,minmax(150px,200px));justify-content:start}}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;min-width:0}
+.tile-v{font-size:24px;font-weight:800;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+.tile-k{font-size:12px;font-weight:600;color:var(--text3);margin-top:3px}
+
+/* The reason you clicked into a business is to see their screen, so that action
+   sits above every number, not buried under them. */
+.open-app{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:13px 14px;margin:14px 0 2px}
+.btn-open{background:var(--accent);border:0;color:var(--on-accent);border-radius:9px;padding:11px 17px;font-size:14px;font-weight:800;cursor:pointer;flex-shrink:0}
+.btn-open:hover{filter:brightness(1.08)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.chip{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.chip:hover{border-color:var(--accent)}
+/* One stage per line, longest bar is the slowest step in their chain. */
+.stage{display:grid;grid-template-columns:1fr auto;gap:3px 10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.stage:last-child{border-bottom:0}
+.stage-k{font-size:14px;font-weight:700;min-width:0}
+.stage-v{font-size:14px;font-weight:800;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stage-bar{grid-column:1/3;height:5px;border-radius:3px;background:var(--line);overflow:hidden}
+.stage-bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.stage-n{grid-column:1/3;font-size:12px;color:var(--text3)}
+.hint{font-weight:600;letter-spacing:0;text-transform:none;color:var(--text3);opacity:.8}
+/* Is their app open right now. Red is an inference, so it never travels
+   without the time it went quiet next to it. */
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block}
+.dot-active{background:var(--live-ok);box-shadow:0 0 0 3px var(--ok-ring)}
+.dot-background{background:var(--live-bg);box-shadow:0 0 0 3px var(--bg-ring)}
+.dot-closed{background:var(--live-off);box-shadow:0 0 0 3px var(--off-ring)}
+.dot-unknown{background:var(--line2)}
+.chip .dot{margin-right:6px;vertical-align:1px}
+/* The selected chip is the accent colour, and a red dot on orange is nearly
+   invisible. A ring in the chip's own background separates the two. */
+.chip.on .dot{box-shadow:0 0 0 2px var(--accent)}
+.row-live{display:block;font-size:13px;color:var(--text3);margin-top:3px;line-height:1.45}
+.row-live .dot{margin-right:7px;vertical-align:1px}
 .range{display:flex;gap:6px;flex-wrap:wrap}
 .range button{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer}
-.range button.on{background:var(--accent);border-color:var(--accent);color:#1A1613}
-.biz{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
-.biz-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
-.biz-name{font-size:15px;font-weight:800;letter-spacing:-.2px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.biz-meta{font-size:11px;color:var(--text3);flex-shrink:0}
-.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
-.person{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid var(--line2);border-radius:10px;background:transparent;color:var(--text);cursor:pointer;text-align:left;transition:transform .15s cubic-bezier(.22,1,.36,1),border-color .15s ease;min-width:0}
-.person:hover{border-color:var(--accent)}
-.person:active{transform:scale(.99)}
-.person-name{font-size:13px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.person-role{font-size:10px;color:var(--text3);flex-shrink:0;text-transform:uppercase;letter-spacing:.4px}
-.muted{color:var(--text3);font-size:13px}
-.skel{height:64px;border-radius:12px;background:linear-gradient(90deg,var(--panel) 0%,#231D18 50%,var(--panel) 100%);background-size:200% 100%;animation:sk 1.1s linear infinite}
+.range button.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.skel{height:64px;border-radius:12px;background:linear-gradient(90deg,var(--panel) 0%,var(--shimmer) 50%,var(--panel) 100%);background-size:200% 100%;animation:sk 1.1s linear infinite}
 @keyframes sk{from{background-position:200% 0}to{background-position:-200% 0}}
 form.signin{display:flex;flex-direction:column;gap:10px;max-width:340px}
-form.signin input{background:#120F0D;border:1px solid var(--line2);color:var(--text);border-radius:9px;padding:11px 12px;font-size:14px}
+form.signin input{background:var(--field);border:1px solid var(--line2);color:var(--text);border-radius:9px;padding:11px 12px;font-size:14px}
 
-/* ── The embedded support view ─────────────────────────────────────────────
-   Near full screen by design: one 44px bar of chrome, the real app underneath
-   it. The bar RESERVES its height (the frame is calc(100% - var(--bar))), it
-   never floats over the app. */
+/* ── Search and the list ────────────────────────────────────────────────────
+   Built for four hundred businesses, not four: one search box over every
+   business AND every person, a sort, and a list that renders a page at a time
+   so the DOM never holds more rows than a screen can use. */
+.searchbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+#q{flex:1;min-width:180px;background:var(--field);border:1px solid var(--line2);color:var(--text);border-radius:10px;padding:11px 13px;font-size:14px}
+#q:focus{outline:none;border-color:var(--accent)}
+#sort{background:var(--field);border:1px solid var(--line2);color:var(--text2);border-radius:10px;padding:11px;font-size:13px}
+.count{font-size:12px;color:var(--text3);margin-bottom:8px}
+.rows{display:flex;flex-direction:column;gap:6px}
+.row{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:inherit;cursor:pointer;text-align:left;transition:border-color .15s ease,transform .15s cubic-bezier(.22,1,.36,1)}
+.row:hover{border-color:var(--accent)}
+.row:active{transform:scale(.995)}
+.row-main{flex:1;min-width:0}
+.row-name{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-sub{font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-stat{font-size:12px;color:var(--text2);flex-shrink:0;text-align:right}
+.row-stat b{display:block;font-size:14px;color:var(--text);font-weight:800}
+.chev{color:var(--text3);flex-shrink:0;font-weight:800}
+.kind{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);flex-shrink:0}
+#more{width:100%;margin-top:10px;padding:12px;border:1px dashed var(--line2);border-radius:11px;background:transparent;color:var(--text2);font-size:13px;font-weight:700;cursor:pointer}
+.back{display:inline-flex;align-items:center;gap:6px;background:none;border:0;color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;padding:0;margin-bottom:12px}
+.back:hover{color:var(--accent)}
+.biz-title{font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:2px}
+
+/* ── The embedded support view ───────────────────────────────────────────── */
 #view{position:fixed;inset:0;z-index:9000;background:var(--bg);display:none;flex-direction:column}
 #view.on{display:flex}
-#view-bar{height:calc(var(--bar) + env(safe-area-inset-top,0px));padding:0 10px;padding-top:env(safe-area-inset-top,0px);background:var(--accent-deep);color:#fff;display:flex;align-items:center;gap:8px;flex-shrink:0}
+#view-bar{height:calc(var(--bar) + env(safe-area-inset-top,0px));padding:0 10px;padding-top:env(safe-area-inset-top,0px);background:var(--accent-deep);color:var(--on-bar);display:flex;align-items:center;gap:8px;flex-shrink:0}
 #view-who{display:flex;align-items:center;gap:7px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;font-weight:700}
 .tag{background:rgba(255,255,255,.18);border-radius:5px;padding:2px 7px;font-size:10px;font-weight:800;letter-spacing:.4px;flex-shrink:0}
 #view-people{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;margin-left:auto;padding-left:8px}
 #view-people::-webkit-scrollbar{display:none}
-#view-people button{border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:5px 11px;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
-#view-people button.on{background:#fff;color:var(--accent-deep)}
-#view-exit{border:0;background:#fff;color:var(--accent-deep);border-radius:8px;padding:6px 13px;font-size:12px;font-weight:800;cursor:pointer;flex-shrink:0}
-#view-frame{flex:1;width:100%;border:0;background:#fff}
+#view-people button{border:0;background:rgba(255,255,255,.16);color:var(--on-bar);border-radius:999px;padding:5px 11px;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
+#view-people button.on{background:var(--on-bar);color:var(--accent-deep)}
+#view-exit{border:0;background:var(--on-bar);color:var(--accent-deep);border-radius:8px;padding:6px 13px;font-size:12px;font-weight:800;cursor:pointer;flex-shrink:0}
+#view-frame{flex:1;width:100%;border:0;background:var(--bg)}
 #view-note{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:13px;color:var(--text2)}
 @media(max-width:640px){
   #view-who .biz-part{display:none}
@@ -111,41 +192,99 @@ form.signin input{background:#120F0D;border:1px solid var(--line2);color:var(--t
         <div class="brand-sub">Internal. Read only.</div>
       </div>
     </div>
-    <div class="who"><span id="who-txt"></span><button class="btn" id="signout" hidden>Sign out</button></div>
+    <div class="who">
+      <span id="who-txt"></span>
+      <!-- Out of ops and back into your own app, WITHOUT signing out. Sign out
+           was the only way off this page and it dropped you at a login screen,
+           which is not what "go back" means. -->
+      <a class="btn btn-primary" id="to-app" href="index.html?app=1">My app ›</a>
+      <button class="btn" id="signout" hidden>Sign out</button>
+    </div>
   </header>
 
   <div id="gate" hidden>
     <div class="card">
       <div style="font-size:16px;font-weight:800;margin-bottom:4px">Sign in</div>
-      <div class="muted" style="margin-bottom:12px">Use the account on the ops allowlist.</div>
+      <div class="muted" style="margin-bottom:12px">Use the account on the ops allowlist, or <a href="index.html?app=1" style="color:var(--accent)">go to the app</a>.</div>
       <form class="signin" id="signin-form">
         <input type="email" id="email" placeholder="Email" autocomplete="username" required>
         <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
         <button class="btn btn-primary" type="submit">Sign in</button>
-        <div class="muted" id="signin-err" style="color:#D9705B"></div>
+        <div class="muted" id="signin-err" style="color:var(--live-off)"></div>
       </form>
     </div>
   </div>
 
   <div id="denied" hidden>
     <div class="card">
-      <div style="font-size:16px;font-weight:800;margin-bottom:4px">Not authorized</div>
-      <div class="muted">This login is not on the ops allowlist, so there is nothing to show. Every ops function returns empty for anyone else.</div>
+      <div id="denied-title" style="font-size:16px;font-weight:800;margin-bottom:4px">Not authorized</div>
+      <div id="denied-body" class="muted">This login is not on the ops allowlist, so there is nothing to show. Every ops function returns empty for anyone else. <a href="index.html?app=1" style="color:var(--accent)">Go to the app</a>.</div>
     </div>
   </div>
 
   <main id="main" hidden>
-    <div class="section-title" style="margin-top:6px">Activity</div>
-    <div class="range" id="range" style="margin-bottom:10px">
-      <button data-days="7">7 days</button>
-      <button data-days="30" class="on">30 days</button>
-      <button data-days="90">90 days</button>
-    </div>
-    <div class="tiles" id="tiles"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    <!-- LEVEL 1: the trades. Search still reaches every business and person, so
+         the hierarchy never gets in the way of knowing where you want to go. -->
+    <section id="lvl-all">
+      <div class="section-title" style="margin-top:6px">Activity</div>
+      <div class="range" id="range" style="margin-bottom:10px">
+        <button data-days="7">7 days</button>
+        <button data-days="30" class="on">30 days</button>
+        <button data-days="90">90 days</button>
+      </div>
+      <div class="tiles" id="tiles"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
 
-    <div class="section-title">Accounts</div>
-    <div class="muted" style="margin-bottom:10px">Pick a person to open their app, exactly as they see it. Read only.</div>
-    <div id="roster"><div class="skel" style="height:120px"></div></div>
+      <div class="section-title">Trades</div>
+      <div class="searchbar">
+        <input id="q" type="search" placeholder="Search a business or a person" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="count" id="count"></div>
+      <div class="rows" id="trades"></div>
+      <div class="rows" id="results" hidden></div>
+      <button id="more" hidden>Show more</button>
+    </section>
+
+    <!-- LEVEL 2: the businesses in one trade, ordered by how hard they use it. -->
+    <section id="lvl-trade" hidden>
+      <button class="back" id="trade-back">‹ All trades</button>
+      <div class="biz-title" id="trade-name"></div>
+      <div class="muted" id="trade-sub" style="margin-bottom:12px"></div>
+      <div class="searchbar">
+        <select id="sort" aria-label="Sort">
+          <option value="active-desc">Most active first</option>
+          <option value="active-asc">Least active first</option>
+          <option value="miles-desc">Most miles</option>
+          <option value="name">Name</option>
+        </select>
+      </div>
+      <div class="rows" id="trade-biz"></div>
+      <button id="trade-more" hidden>Show more</button>
+    </section>
+
+    <!-- LEVEL 3: one business. Its numbers for the range, then its people. -->
+    <section id="lvl-biz" hidden>
+      <button class="back" id="biz-back">‹ Back</button>
+      <div class="biz-title" id="biz-name"></div>
+      <div class="muted" id="biz-sub" style="margin-bottom:14px"></div>
+
+      <!-- Their screen first. Pick the person, then open it. -->
+      <div class="open-app">
+        <button class="btn-open" id="biz-open">Open their app &rsaquo;</button>
+        <div class="chips" id="biz-chips"></div>
+      </div>
+
+      <!-- Every metric section, drawn from what ops_metric_defs names. Adding a
+           metric is a row in that function, not an edit here. -->
+      <div id="biz-sections"></div>
+
+      <div class="section-title">How long each step takes <span class="hint">median</span></div>
+      <div class="card" id="biz-timing"></div>
+
+      <div class="section-title">People</div>
+      <div class="rows" id="biz-people"></div>
+
+      <button class="btn" id="biz-copy" style="margin-top:16px">Copy the brief as JSON</button>
+    </section>
   </main>
 </div>
 
@@ -165,13 +304,31 @@ form.signin input{background:#120F0D;border:1px solid var(--line2);color:var(--t
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
 // Same storage key as the app, so a session already signed in on this origin is
-// the session this page uses. There is no second login to keep track of, and the
-// frame below boots into that same session.
+// the session this page uses. The frame below boots into that same session.
 const sb=supabase.createClient(SUPA_URL,SUPA_KEY);
 
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let ROSTER=[], DAYS=30;
+const PAGE=40;                       // rows rendered at a time
+
+
+// Numbers arrive from Postgres as strings or floats depending on the column, and
+// a raw float renders as 993.5999999999999. One formatter, used everywhere a
+// number reaches the page: at most one decimal, thousands separated.
+function num(v){
+  if(v==null||v==='')return null;
+  const n=Number(v);
+  if(!isFinite(n))return String(v);
+  return n.toLocaleString('en-US',{maximumFractionDigits:1});
+}
+
+let PEOPLE=[];                       // one row per person, straight from the roster
+let BIZ=[];                          // one row per business
+let TRADES=[];                       // one row per trade, built from BIZ
+let STATS=new Map();                 // contractor_user_id -> ops_by_contractor row
+let DAYS=30, QUERY='', SORT='active-desc';
+let SHOWN=PAGE, TSHOWN=PAGE;
+let TRADE=null, OPEN=null;           // the trade and the business being looked at
 
 /* ── Boot ─────────────────────────────────────────────────────────────────── */
 (async function boot(){
@@ -191,78 +348,485 @@ $('signin-form').addEventListener('submit',async e=>{
 });
 $('signout').addEventListener('click',async()=>{ await sb.auth.signOut(); location.reload(); });
 
-// The roster doubles as the authorization probe: the RPC returns zero rows for
-// anyone off the allowlist, so "no rows" is the denial, not an error to show.
 async function load(){
   const {data,error}=await sb.rpc('ops_view_roster');
-  if(error||!Array.isArray(data)||!data.length){ $('denied').hidden=false; return; }
-  ROSTER=data;
+  // An ERROR and an EMPTY roster are different answers and used to render the
+  // same denial card, which sent you hunting for a permissions problem when the
+  // network was at fault. Error says so; empty means not on the ops allowlist.
+  if(error){
+    $('denied').hidden=false;
+    $('denied-title').textContent='Could not load';
+    $('denied-body').innerHTML='The roster call failed: '+esc(error.message)+
+      '. That is a connection or server problem, not a permissions one. '+
+      '<button class="btn" id="retry" style="margin-top:10px;display:block">Try again</button>';
+    $('retry').addEventListener('click',()=>location.reload());
+    return;
+  }
+  if(!Array.isArray(data)||!data.length){ $('denied').hidden=false; return; }
+  PEOPLE=data;
   $('main').hidden=false;
-  renderRoster();
-  renderTiles();
+  build();
+  renderTrades();
+  refreshStats();
 }
 
-function renderRoster(){
-  const byBiz=new Map();
-  ROSTER.forEach(r=>{ if(!byBiz.has(r.contractor_user_id))byBiz.set(r.contractor_user_id,[]); byBiz.get(r.contractor_user_id).push(r); });
-  $('roster').innerHTML=[...byBiz.entries()].map(([cid,people])=>{
-    const crew=people.filter(p=>p.role!=='owner').length;
-    return `<div class="biz">
-      <div class="biz-head">
-        <div class="biz-name">${esc(people[0].business)}</div>
-        <div class="biz-meta">${people.length} ${people.length===1?'person':'people'}${crew?' · '+crew+' crew':''}</div>
-      </div>
-      <div class="people">${people.map(p=>`
-        <button class="person" data-cid="${esc(cid)}" data-pid="${esc(p.person_user_id)}">
-          <span class="person-name">${esc(p.person_name||p.person_email||'Unknown')}</span>
-          <span class="person-role">${esc(p.role==='owner'?'Owner':(p.role||'crew'))}${p.active===false?' · off':''}</span>
-        </button>`).join('')}</div>
-    </div>`;
-  }).join('');
+// Businesses from the people roster, then trades from the businesses. The trade
+// is whatever the contractor picked in settings (account_config.business_type),
+// carried on every roster row.
+function build(){
+  const m=new Map();
+  PEOPLE.forEach(p=>{
+    let b=m.get(p.contractor_user_id);
+    if(!b){ b={id:p.contractor_user_id,name:p.business||'Unknown',trade:p.trade||'unknown',lines:p.trade_lines||'',people:[]}; m.set(p.contractor_user_id,b); }
+    b.people.push(p);
+  });
+  BIZ=[...m.values()];
+  const t=new Map();
+  BIZ.forEach(b=>{
+    let e=t.get(b.trade);
+    if(!e){ e={trade:b.trade,biz:[],people:0}; t.set(b.trade,e); }
+    e.biz.push(b); e.people+=b.people.length;
+  });
+  TRADES=[...t.values()].sort((x,y)=>y.biz.length-x.biz.length||x.trade.localeCompare(y.trade));
 }
 
-$('roster').addEventListener('click',e=>{
-  const b=e.target.closest('.person');
-  if(!b)return;
-  const row=ROSTER.find(r=>r.contractor_user_id===b.dataset.cid&&r.person_user_id===b.dataset.pid);
-  if(row)openView(row);
-});
+// Title case, except the trades that are acronyms and read wrong that way.
+const TRADE_CAPS={hvac:'HVAC',gc:'GC',ac:'AC'};
+const TRADE_LABEL=t=>{
+  if(!t||t==='unknown')return 'Not set';
+  return t.replace(/[-_]/g,' ').split(' ')
+    .map(w=>TRADE_CAPS[w.toLowerCase()]||w.charAt(0).toUpperCase()+w.slice(1))
+    .join(' ');
+};
 
-/* ── Activity tiles ───────────────────────────────────────────────────────── */
+/* ── Range and numbers ────────────────────────────────────────────────────── */
 $('range').addEventListener('click',e=>{
   const b=e.target.closest('button[data-days]');
   if(!b)return;
   DAYS=+b.dataset.days;
   [...$('range').children].forEach(c=>c.classList.toggle('on',c===b));
-  renderTiles();
+  refreshStats();
 });
 
-async function renderTiles(){
-  const to=new Date(), from=new Date(Date.now()-(DAYS-1)*86400000);
+function rangeIso(){
   const iso=d=>d.toISOString().slice(0,10);
-  const {data,error}=await sb.rpc('ops_summary',{p_from:iso(from),p_to:iso(to)});
+  return {from:iso(new Date(Date.now()-(DAYS-1)*86400000)),to:iso(new Date())};
+}
+
+async function renderTiles(){
+  const {from,to}=rangeIso();
+  const {data,error}=await sb.rpc('ops_summary',{p_from:from,p_to:to});
   const r=Array.isArray(data)?data[0]:data;
-  if(error||!r){ $('tiles').innerHTML='<div class="tile"><div class="tile-v">—</div><div class="tile-k">No activity in range</div></div>'; return; }
-  const tile=(v,k)=>`<div class="tile"><div class="tile-v">${v==null?'—':v}</div><div class="tile-k">${k}</div></div>`;
+  if(error){ $('tiles').innerHTML=tile('—','Could not load activity'); return; }
+  if(!r||!r.people){ $('tiles').innerHTML=tile('0','Nothing happened in this range'); return; }
   $('tiles').innerHTML=[
     tile(r.people,'People active'),
     tile(r.accounts,'Businesses'),
     tile(r.active_days,'Days the app was opened'),
     tile(r.days_clocked,'Days clocked'),
-    tile(r.avg_day_min!=null?Math.round(r.avg_day_min/60*10)/10+'h':null,'Average day'),
+    tile(r.avg_day_min!=null?Math.round(r.avg_day_min/60*10)/10+'h':'—','Average day'),
     tile(r.total_miles,'Miles'),
-    tile(r.avg_visit_min!=null?Math.round(r.avg_visit_min)+'m':null,'Average visit'),
+    tile(r.avg_visit_min!=null?Math.round(r.avg_visit_min)+'m':'—','Average visit'),
     tile(r.unnamed_legs,'Unnamed drives')
   ].join('');
 }
+const tile=(v,k)=>`<div class="tile"><div class="tile-v">${v==null?'—':esc(typeof v==='number'||/^[\d.]+$/.test(String(v))?num(v):v)}</div><div class="tile-k">${esc(k)}</div></div>`;
+
+// Per-business activity for the range: the sort key for "top user to least",
+// and each row's number.
+async function refreshStats(){
+  const {from,to}=rangeIso();
+  renderTiles();
+  const {data,error}=await sb.rpc('ops_by_contractor',{p_from:from,p_to:to});
+  if(!error&&Array.isArray(data))STATS=new Map(data.map(r=>[r.contractor_user_id,r]));
+  renderTrades();
+  if(TRADE)renderTrade(TRADE);
+  if(OPEN)renderBiz(OPEN);
+}
+const use=b=>{ const s=STATS.get(b.id)||{}; return Number(s.active_days||0); };
+
+/* ── Level 1: trades, or search results ───────────────────────────────────── */
+$('q').addEventListener('input',e=>{ QUERY=e.target.value.trim().toLowerCase(); SHOWN=PAGE; renderTrades(); });
+$('more').addEventListener('click',()=>{ SHOWN+=PAGE; renderTrades(); });
+document.addEventListener('keydown',e=>{
+  if(e.key==='/'&&document.activeElement!==$('q')&&!$('view').classList.contains('on')){ e.preventDefault(); $('q').focus(); }
+});
+
+function renderTrades(){
+  if(QUERY)return renderResults();
+  $('results').hidden=true; $('trades').hidden=false; $('more').hidden=true;
+  $('count').textContent=`${TRADES.length} ${TRADES.length===1?'trade':'trades'}, ${BIZ.length} businesses, ${PEOPLE.length} people`;
+  $('trades').innerHTML=TRADES.map(t=>{
+    const active=t.biz.filter(b=>use(b)>0).length;
+    return `<button class="row" data-trade="${esc(t.trade)}">
+      <span class="row-main">
+        <span class="row-name">${esc(TRADE_LABEL(t.trade))}</span>
+        <span class="row-sub">${t.people} ${t.people===1?'person':'people'}${active?' · '+active+' active in range':' · none active in range'}</span>
+      </span>
+      <span class="row-stat"><b>${t.biz.length}</b>${t.biz.length===1?'business':'businesses'}</span>
+      <span class="chev">›</span>
+    </button>`;
+  }).join('');
+}
+
+// Search never stops at the trade level: a business name matches the business,
+// a person name or email matches the person, tagged with where they work.
+function renderResults(){
+  $('trades').hidden=true; $('results').hidden=false;
+  const rows=[];
+  BIZ.forEach(b=>{ if(b.name.toLowerCase().includes(QUERY))rows.push({kind:'biz',biz:b}); });
+  const hit=new Set(rows.map(r=>r.biz.id));
+  PEOPLE.forEach(p=>{
+    const hay=((p.person_name||'')+' '+(p.person_email||'')).toLowerCase();
+    if(hay.includes(QUERY)&&!hit.has(p.contractor_user_id))rows.push({kind:'person',person:p});
+  });
+  const page=rows.slice(0,SHOWN);
+  $('count').textContent=`${rows.length} ${rows.length===1?'match':'matches'} for "${QUERY}"`;
+  $('results').innerHTML=page.map(r=>r.kind==='biz'?bizRow(r.biz,true):personRow(r.person)).join('')
+    || `<div class="card muted">Nothing matches "${esc(QUERY)}".</div>`;
+  $('more').hidden=rows.length<=SHOWN;
+  $('more').textContent=`Show ${Math.min(PAGE,rows.length-SHOWN)} more of ${rows.length}`;
+}
+
+function bizRow(b,withTrade){
+  const s=STATS.get(b.id)||{};
+  const crew=b.people.filter(p=>p.role!=='owner').length;
+  const bits=[`${b.people.length} ${b.people.length===1?'person':'people'}${crew?' · '+crew+' crew':''}`,
+              s.last_active?relDay(s.last_active):'no activity'];
+  if(withTrade)bits.unshift(TRADE_LABEL(b.trade));
+  return `<button class="row" data-biz="${esc(b.id)}">
+    <span class="row-main">
+      <span class="row-name">${esc(b.name)}</span>
+      <span class="row-sub">${esc(bits.join(' · '))}</span>
+    </span>
+    <span class="row-stat"><b>${s.active_days!=null?esc(num(s.active_days)):'0'}</b>days used</span>
+    <span class="chev">›</span>
+  </button>`;
+}
+
+function personRow(p){
+  return `<button class="row" data-biz="${esc(p.contractor_user_id)}" data-person="${esc(p.person_user_id)}">
+    <span class="kind">Person</span>
+    <span class="row-main">
+      <span class="row-name">${esc(p.person_name||p.person_email||'Unknown')}</span>
+      <span class="row-sub">${esc(p.role==='owner'?'Owner':(p.role||'crew'))} · ${esc(p.business)}</span>
+    </span>
+    <span class="chev">›</span>
+  </button>`;
+}
+
+function relDay(d){
+  const days=Math.round((Date.now()-Date.parse(d+'T12:00:00Z'))/86400000);
+  if(days<=0)return 'active today';
+  if(days===1)return 'active yesterday';
+  if(days<14)return 'active '+days+' days ago';
+  return 'last active '+d;
+}
+
+$('trades').addEventListener('click',e=>{
+  const el=e.target.closest('[data-trade]');
+  if(el)openTrade(TRADES.find(t=>t.trade===el.dataset.trade));
+});
+$('results').addEventListener('click',e=>{
+  const el=e.target.closest('[data-biz]');
+  if(!el)return;
+  if(el.dataset.person){
+    const p=PEOPLE.find(x=>x.person_user_id===el.dataset.person&&x.contractor_user_id===el.dataset.biz);
+    if(p)openView(p);
+    return;
+  }
+  const b=BIZ.find(x=>x.id===el.dataset.biz);
+  if(b)openBiz(b);
+});
+
+/* ── Level 2: the businesses in one trade ─────────────────────────────────── */
+function openTrade(t){
+  if(!t)return;
+  TRADE=t; TSHOWN=PAGE;
+  show('lvl-trade');
+  renderTrade(t);
+}
+$('trade-back').addEventListener('click',()=>{ TRADE=null; show('lvl-all'); });
+$('sort').addEventListener('change',e=>{ SORT=e.target.value; if(TRADE)renderTrade(TRADE); });
+$('trade-more').addEventListener('click',()=>{ TSHOWN+=PAGE; if(TRADE)renderTrade(TRADE); });
+
+function renderTrade(t){
+  const s=b=>STATS.get(b.id)||{};
+  const sorted=[...t.biz].sort({
+    'active-desc':(a,b)=>use(b)-use(a)||a.name.localeCompare(b.name),
+    'active-asc':(a,b)=>use(a)-use(b)||a.name.localeCompare(b.name),
+    'miles-desc':(a,b)=>Number(s(b).total_miles||0)-Number(s(a).total_miles||0),
+    'name':(a,b)=>a.name.localeCompare(b.name)
+  }[SORT]);
+  const page=sorted.slice(0,TSHOWN);
+  $('trade-name').textContent=TRADE_LABEL(t.trade);
+  $('trade-sub').textContent=`${t.biz.length} ${t.biz.length===1?'business':'businesses'} · ${t.people} people · ${t.biz.filter(b=>use(b)>0).length} active in this range`;
+  $('trade-biz').innerHTML=page.map(b=>bizRow(b,false)).join('');
+  $('trade-more').hidden=sorted.length<=TSHOWN;
+  $('trade-more').textContent=`Show ${Math.min(PAGE,sorted.length-TSHOWN)} more of ${sorted.length}`;
+}
+
+$('trade-biz').addEventListener('click',e=>{
+  const el=e.target.closest('[data-biz]');
+  if(!el)return;
+  const b=BIZ.find(x=>x.id===el.dataset.biz);
+  if(b)openBiz(b);
+});
+
+/* ── Level 3: one business ────────────────────────────────────────────────── */
+function show(id){
+  ['lvl-all','lvl-trade','lvl-biz'].forEach(l=>{ $(l).hidden=(l!==id); });
+  window.scrollTo({top:0,behavior:'instant'});
+}
+
+function openBiz(b){
+  OPEN=b;
+  WHO=null;                          // a new business picks its own owner again
+  show('lvl-biz');
+  renderBiz(b);
+}
+$('biz-back').addEventListener('click',()=>{
+  OPEN=null;
+  // Back goes where you came from: the trade if you drilled through it, the
+  // top level if you arrived from a search.
+  show(TRADE?'lvl-trade':'lvl-all');
+});
+
+// A duration reads as a person would say it. 240 minutes is four hours, not 240.
+function dur(m){
+  if(m==null||m==='')return '—';
+  const n=Number(m);
+  if(!isFinite(n))return '—';
+  if(n<1)return 'under a minute';
+  if(n<90)return Math.round(n)+' min';
+  const h=n/60;
+  if(h<48)return (Math.round(h*10)/10)+' hours';
+  return (Math.round(h/24*10)/10)+' days';
+}
+const pct=v=>v==null?'—':num(v)+'%';
+const usd=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
+
+// The person the app opens as. The owner unless you pick someone else, because
+// the owner's screen is the one that shows everything.
+let WHO=null;
+
+function renderBiz(b){
+  const s=STATS.get(b.id)||{};
+  const owner=b.people.find(p=>p.role==='owner');
+  if(!WHO||!b.people.some(p=>p.person_user_id===WHO))WHO=(owner||b.people[0]||{}).person_user_id||null;
+  $('biz-name').textContent=b.name;
+  $('biz-sub').textContent=[TRADE_LABEL(b.trade)+(b.lines&&b.lines!==b.trade?' ('+b.lines+')':''),
+                            owner&&owner.person_email,
+                            s.last_active?relDay(s.last_active):'no activity in this range',
+                            'last '+DAYS+' days'].filter(Boolean).join(' · ');
+
+  // One chip per person, so "see it as the crew sees it" is one tap from here
+  // and not a trip down to the People list.
+  $('biz-chips').innerHTML=b.people.map(p=>`<button class="chip${p.person_user_id===WHO?' on':''}" data-who="${esc(p.person_user_id)}"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc((p.person_name||p.person_email||'Unknown').split(' ')[0])}${p.role==='owner'?'':' · crew'}</button>`).join('');
+
+  $('biz-people').innerHTML=b.people.map(p=>`<button class="row" data-person="${esc(p.person_user_id)}">
+    <span class="row-main">
+      <span class="row-name">${esc(p.person_name||p.person_email||'Unknown')}</span>
+      <span class="row-sub">${esc(p.role==='owner'?'Owner':(p.role||'crew'))}${p.active===false?' · inactive':''}</span>
+      <span class="row-live" title="${esc(liveTitle(p.person_user_id))}"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc(liveLabel(p.person_user_id))}</span>
+    </span>
+    <span class="row-stat">Open ›</span>
+  </button>`).join('');
+
+  loadBrief(b);
+  loadLive(b);
+}
+
+$('biz-chips').addEventListener('click',e=>{
+  const el=e.target.closest('[data-who]');
+  if(!el)return;
+  WHO=el.dataset.who;
+  if(OPEN)renderBiz(OPEN);
+});
+$('biz-open').addEventListener('click',()=>{
+  if(!OPEN)return;
+  const p=OPEN.people.find(x=>x.person_user_id===WHO)||OPEN.people[0];
+  if(p)openView(p);
+});
+
+/* ── Is their app open right now ───────────────────────────────────────────── */
+// Four lights, and the rule behind them lives in ops_live_status, not here, so
+// a person reading this page and an agent asked the same question cannot
+// disagree. Red means nothing is running: iOS gives a webview no termination
+// callback, so a force quit leaves no event and silence on both channels past
+// the push-ping window is the only evidence there ever is. That is why the row
+// says how long it has been quiet: the light is a reading, the time is why.
+let LIVE=new Map();                  // person_user_id -> row from ops_live_status
+let LIVE_TIMER=null;
+
+const liveState=uid=>(LIVE.get(uid)||{}).state||'unknown';
+
+// A day and a clock time, never a bare "3h ago". Owner 2026-09-13: on a
+// backgrounded phone he wants to know when they last had it open, and on a
+// closed one both edges, dated, because that pair IS the session.
+function stamp(t){
+  if(!t)return null;
+  const d=new Date(t);
+  if(isNaN(d))return null;
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+', '+
+         d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
+const agoMin=q=>q==null?'':(q<1?'just now':q<60?q+'m':q<1440?(Math.round(q/60*10)/10)+'h':Math.round(q/1440)+'d');
+
+function liveLabel(uid){
+  const r=LIVE.get(uid);
+  if(!r)return '';
+  // These times are the PHONE's own events (TdGeoPlugin records app-active,
+  // app-background and app-terminate), so they are reported without hedging.
+  const opened=stamp(r.last_open), bg=stamp(r.last_bg);
+  const openTxt=opened?'opened '+opened:null;
+  const bgTxt=bg?'backgrounded '+bg:null;
+  const quiet=r.quiet_min==null?null:'quiet '+agoMin(r.quiet_min);
+  if(r.state==='active')return 'Open now';
+  if(r.state==='background'){
+    // Same colour, different problem: still running, just not taking silent
+    // pushes. Flattening that into "background" sends you debugging the user.
+    const head=r.presence==='push-blocked'?'Running, not taking pushes':'In the background';
+    return [head,openTxt].filter(Boolean).join(' · ');
+  }
+  if(r.state==='closed')return ['Force closed',openTxt,bgTxt,quiet].filter(Boolean).join(' · ');
+  if(r.presence==='no-push-token')  return 'No push token yet · silence proves nothing';
+  if(r.presence==='unknown-cron-down')return 'Ping cron is down · silence proves nothing';
+  // A week of total silence is an account that stopped, not an app that was
+  // shut a minute ago, and it must not wear the same light as one.
+  if(r.presence==='dormant')return 'Dormant · nothing from this phone in a week';
+  return ['Nothing reporting',quiet].filter(Boolean).join(' · ');
+}
+// The full sentence app_presence wrote, on hover, for the states that have one.
+const liveTitle=uid=>(LIVE.get(uid)||{}).detail||'';
+
+async function loadLive(b){
+  const {data,error}=await sb.rpc('ops_live_status',{p_target:b.id});
+  if(!OPEN||OPEN.id!==b.id)return;
+  if(error||!Array.isArray(data))return;   // a light that cannot load stays grey
+  LIVE=new Map(data.map(r=>[r.person_user_id,r]));
+  paintLive();
+}
+
+// Repaint the lights in place. Never re-render the business: a repaint every
+// half minute would fight whatever the person is doing on the page.
+function paintLive(){
+  if(!OPEN)return;
+  OPEN.people.forEach(p=>{
+    const st=liveState(p.person_user_id);
+    const chip=document.querySelector(`#biz-chips [data-who="${CSS.escape(p.person_user_id)}"] .dot`);
+    if(chip)chip.className='dot dot-'+st;
+    const row=document.querySelector(`#biz-people [data-person="${CSS.escape(p.person_user_id)}"] .row-live`);
+    if(row){ row.title=liveTitle(p.person_user_id); row.innerHTML=`<span class="dot dot-${st}"></span>${esc(liveLabel(p.person_user_id))}`; }
+  });
+}
+
+// Only while a business is on screen and the tab is in front. A portal left
+// open on a second monitor should not poll all night.
+function liveTick(){
+  if(LIVE_TIMER)clearInterval(LIVE_TIMER);
+  LIVE_TIMER=setInterval(()=>{
+    if(document.hidden||!OPEN||$('lvl-biz').hidden)return;
+    loadLive(OPEN);
+  },30000);
+}
+liveTick();
+
+/* ── The brief: every number for one business, in one call ────────────────── */
+// The page and an agent both read ops_account_brief, so a human looking at this
+// screen and an agent answering "how well is J's Solutions using TradeDesk"
+// cannot end up with different numbers (§7.3).
+let BRIEF=null;                      // the last brief loaded, for the copy button
+const BRIEF_CACHE=new Map();         // id|days -> brief, so re-entering is instant
+
+async function loadBrief(b){
+  const {from,to}=rangeIso();
+  const key=b.id+'|'+DAYS;
+  const seen=BRIEF_CACHE.get(key);
+  if(seen){ BRIEF=seen; paintBrief(seen); return; }
+  $('biz-sections').innerHTML='<div class="tiles">'+'<div class="skel"></div>'.repeat(8)+'</div>';
+  $('biz-timing').innerHTML='<div class="skel"></div>';
+  const {data,error}=await sb.rpc('ops_account_brief',{p_target:b.id,p_from:from,p_to:to});
+  if(!OPEN||OPEN.id!==b.id)return;   // they moved on while it was in flight
+  if(error||!data){
+    BRIEF=null;
+    $('biz-sections').innerHTML='<div class="tiles">'+tile('—','Could not load')+'</div>';
+    $('biz-timing').innerHTML='<div class="muted">'+esc(error?error.message:'No answer')+'</div>';
+    return;
+  }
+  BRIEF_CACHE.set(key,data);
+  BRIEF=data;
+  paintBrief(data);
+}
+
+// One formatter per format name the brief carries. The page never decides what
+// a number means: ops_metric_defs said, and this only says it out loud.
+const FMT = {
+  int:  v => num(v),
+  num:  v => num(v),
+  pct:  v => v==null?null:num(v)+'%',
+  usd:  v => v==null?null:'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}),
+  hours:v => v==null?null:(Math.round(Number(v)/60*10)/10)+'h',
+  mins: v => v==null?null:Math.round(Number(v))+'m',
+  text: v => v==null||v===''?null:String(v),
+  ago:  v => v==null?null:relDay(String(v).slice(0,10)).replace(/^(last )?active /,''),
+};
+
+// Sections come from the answer, not from this file. A metric added to
+// ops_metric_defs appears here with no change on this page (owner 2026-09-13:
+// new RPCs and analytics have to land globally).
+function paintBrief(d){
+  const secs=Array.isArray(d.sections)?d.sections:[];
+  $('biz-sections').innerHTML=secs.map(sec=>{
+    const tiles=(sec.metrics||[]).map(m=>{
+      const f=FMT[m.fmt]||FMT.text;
+      let v=null;
+      try{ v=f(m.value); }catch(_){ v=null; }
+      return tile(v==null?'—':v, m.label);
+    }).join('');
+    return `<div class="section-title">${esc(sec.label)}</div><div class="tiles">${tiles}</div>`;
+  }).join('');
+  paintTiming(d.timing||[]);
+}
+
+// Timing is the one section a table would bury: the point is which step is the
+// slow one, and a bar answers that before you have read a single number.
+function paintTiming(rows){
+  if(!rows.length){ $('biz-timing').innerHTML='<div class="muted">No completed steps in this range.</div>'; return; }
+  const max=Math.max(...rows.map(r=>Number(r.median_min)||0),1);
+  $('biz-timing').innerHTML=rows.map(r=>{
+    const med=Number(r.median_min)||0;
+    return `<div class="stage">
+      <div class="stage-k">${esc(r.stage)}</div>
+      <div class="stage-v">${esc(dur(r.median_min))}</div>
+      <div class="stage-bar"><i style="width:${Math.max(2,Math.round(med/max*100))}%"></i></div>
+      <div class="stage-n">${esc(String(r.n))} ${Number(r.n)===1?'time':'times'} · middle half ${esc(dur(r.p25_min))} to ${esc(dur(r.p75_min))}</div>
+    </div>`;
+  }).join('');
+}
+
+// The same JSON an agent gets, on the clipboard, so a question can be handed to
+// one without the agent needing its own database credentials.
+$('biz-copy').addEventListener('click',async e=>{
+  if(!BRIEF)return;
+  try{ await navigator.clipboard.writeText(JSON.stringify(BRIEF,null,2)); e.target.textContent='Copied'; }
+  catch(_){ e.target.textContent='Could not copy'; }
+  setTimeout(()=>{ e.target.textContent='Copy the brief as JSON'; },1600);
+});
+
+$('biz-people').addEventListener('click',e=>{
+  const el=e.target.closest('[data-person]');
+  if(!el||!OPEN)return;
+  const p=OPEN.people.find(x=>x.person_user_id===el.dataset.person);
+  if(p)openView(p);
+});
 
 /* ── The support view ─────────────────────────────────────────────────────── */
 let VIEW=null;
 
 function openView(row){
   VIEW=row;
-  const url='index.html?ops=1&t='+encodeURIComponent(row.contractor_user_id)+'&p='+encodeURIComponent(row.person_user_id);
-  $('view-frame').src=url;
+  $('view-frame').src='index.html?ops=1&t='+encodeURIComponent(row.contractor_user_id)+'&p='+encodeURIComponent(row.person_user_id);
   $('view').classList.add('on');
   $('view').setAttribute('aria-hidden','false');
   document.body.style.overflow='hidden';
@@ -272,29 +836,33 @@ function openView(row){
 function paintBar(){
   if(!VIEW)return;
   $('view-who').innerHTML=`${esc(VIEW.person_name||VIEW.person_email||'Unknown')}<span class="biz-part"> · ${esc(VIEW.business)}</span>`;
-  const people=ROSTER.filter(r=>r.contractor_user_id===VIEW.contractor_user_id);
-  // One chip per person on this account: switching is the point of the portal,
-  // and inside one business it costs no reload (js/ops-view.js re-renders with
-  // that person's permissions against rows it already holds).
+  const people=PEOPLE.filter(r=>r.contractor_user_id===VIEW.contractor_user_id);
+  // One chip per person on this account: switching inside a business costs no
+  // reload, the frame already holds its rows.
   $('view-people').innerHTML=people.map(p=>`<button data-pid="${esc(p.person_user_id)}" class="${p.person_user_id===VIEW.person_user_id?'on':''}">${esc((p.person_name||p.person_email||'?').split(' ')[0])}</button>`).join('');
 }
 
 $('view-people').addEventListener('click',e=>{
   const b=e.target.closest('button[data-pid]');
   if(!b||!VIEW)return;
-  const row=ROSTER.find(r=>r.contractor_user_id===VIEW.contractor_user_id&&r.person_user_id===b.dataset.pid);
+  const row=PEOPLE.find(r=>r.contractor_user_id===VIEW.contractor_user_id&&r.person_user_id===b.dataset.pid);
   if(!row)return;
+  const sameAccount=VIEW.contractor_user_id===row.contractor_user_id;
   VIEW=row;
   paintBar();
-  $('view-frame').contentWindow.postMessage({source:'td-ops-portal',type:'switch',contractor_user_id:row.contractor_user_id,person_user_id:row.person_user_id},location.origin);
+  if(sameAccount){
+    $('view-frame').contentWindow.postMessage({source:'td-ops-portal',type:'switch',contractor_user_id:row.contractor_user_id,person_user_id:row.person_user_id},location.origin);
+  }else{
+    $('view-frame').src='index.html?ops=1&t='+encodeURIComponent(row.contractor_user_id)+'&p='+encodeURIComponent(row.person_user_id);
+  }
 });
 
 $('view-exit').addEventListener('click',closeView);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('view').classList.contains('on'))closeView(); });
 
 function closeView(){
-  // Tell the frame to clear what it cached of theirs, then drop the frame
-  // entirely. Dropping it IS the reset: nothing of that account survives it.
+  // Tell the frame to clear what it cached of theirs, then drop the frame.
+  // Dropping it IS the reset: nothing of that account survives it.
   try{ $('view-frame').contentWindow.postMessage({source:'td-ops-portal',type:'exit'},location.origin); }catch(_e){}
   setTimeout(()=>{ $('view-frame').src='about:blank'; },60);
   $('view').classList.remove('on');
@@ -310,6 +878,10 @@ window.addEventListener('message',ev=>{
   if(d.type==='denied'){ $('view-note').hidden=false; $('view-note').textContent='That session is not on the ops allowlist.'; }
   if(d.type==='not-found'){ $('view-note').hidden=false; $('view-note').textContent='That account is no longer in the roster.'; }
   if(d.type==='entered'){ $('view-note').hidden=true; }
+  // The frame said it cannot switch in place (a different account); reload it.
+  if(d.type==='needs-reload'&&VIEW){
+    $('view-frame').src='index.html?ops=1&t='+encodeURIComponent(VIEW.contractor_user_id)+'&p='+encodeURIComponent(VIEW.person_user_id);
+  }
 });
 </script>
 </body>

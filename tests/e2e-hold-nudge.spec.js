@@ -121,6 +121,26 @@ test.describe('Needs an answer: the nudge', () => {
       expect(await sched()).toEqual([]);
     });
 
+    // CI, midnight clock, 2026-09-13: this named the same two stores in the
+    // other order. Two runs recorded in the same millisecond compared equal on
+    // latestAt and the order fell through to whatever pendingSupplyRuns
+    // returned. The sort has a name tiebreak now, so a tie is still an order.
+    test('two stores recorded in the same millisecond still name in one order', async () => {
+      const r = await page.evaluate(() => {
+        const stamp = new Date().toISOString();          // the tie, exactly
+        ['Home Depot', 'Ferguson'].forEach(name => {
+          mileage.push({ id: _newId(), gps: true, date: todayKey(), miles: 1, pendingReceipt: true,
+                         supplyRunKey: todayKey() + '|' + name, purpose: 'Supply run', created_at: stamp });
+        });
+        const once = pendingSupplyStores().map(s2 => s2.name);
+        // Same input, reversed in the array: the answer may not change.
+        mileage.reverse();
+        return { once, again: pendingSupplyStores().map(s2 => s2.name) };
+      });
+      expect(r.once).toEqual(r.again);
+      expect(r.once).toEqual(['Ferguson', 'Home Depot']);
+    });
+
     test('two stores on one run: one buzz names both', async () => {
       await seedRun('Home Depot');
       await seedRun('Ferguson');

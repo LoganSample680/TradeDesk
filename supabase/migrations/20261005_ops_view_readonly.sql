@@ -35,8 +35,28 @@ $$;
 comment on function public.ops_view_target(uuid) is
   'True when the caller is an ops admin and the target is a real user. The only gate on the read-only support view.';
 
+-- The SAME rule, taking text, because the owner column is not uuid on every
+-- table: device_status.user_id is text on the real database, and a policy built
+-- as ops_view_target(user_id) there resolves to a function signature that does
+-- not exist (42883, the shared project, 2026-09-12). Every policy below binds
+-- THIS overload explicitly with ::text, so the column's declared type stops
+-- deciding anything. Same ::text-both-sides convention as the rest of the repo
+-- (20260701, 20260923). A column holding something that is not a uuid simply
+-- matches no user, which is the correct answer rather than an error.
+create or replace function public.ops_view_target(target text)
+returns boolean
+language sql stable security definer set search_path = public, auth as $$
+  select public.is_ops_admin()
+     and exists (select 1 from auth.users u where u.id::text = target);
+$$;
+
+comment on function public.ops_view_target(text) is
+  'ops_view_target(uuid) for tables whose owner column is text. The policies bind this one.';
+
 revoke execute on function public.ops_view_target(uuid) from public, anon;
+revoke execute on function public.ops_view_target(text) from public, anon;
 grant  execute on function public.ops_view_target(uuid) to authenticated;
+grant  execute on function public.ops_view_target(text) to authenticated;
 
 -- ── 2. Read policies, one per table the app actually reads ──────────────────
 -- Anything missed here does not break the view, it renders that screen empty,
@@ -50,7 +70,9 @@ grant  execute on function public.ops_view_target(uuid) to authenticated;
 -- (ops_view_target(user_id))` failed on a column that table does not have and
 -- took the whole migration down with it (Supabase preview, 42703). Whichever of
 -- the three owner columns a table actually carries is the one its policy uses,
--- and a table carrying none is skipped instead of raising.
+-- and a table carrying none is skipped instead of raising. The column is cast to
+-- text at the call site so a text-typed owner column (device_status) and a uuid
+-- one (everything else) both bind the same function.
 do $$
 declare
   t   text;
@@ -84,7 +106,7 @@ begin
     end if;
     execute format('drop policy if exists "ops_view_read" on %I', t);
     execute format(
-      'create policy "ops_view_read" on %I for select to authenticated using (public.ops_view_target(%I))',
+      'create policy "ops_view_read" on %I for select to authenticated using (public.ops_view_target(%I::text))',
       t, col);
   end loop;
 end $$;
