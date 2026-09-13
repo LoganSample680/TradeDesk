@@ -157,6 +157,16 @@ Object.defineProperty(window,'_employeeRecord',{get:()=>_employeeRecord,set:v=>{
 // (employees have no users/account_config row), payments from crew-sent links could
 // never reach the owner. Owner → self; crew → the boss; dev-support → the target.
 function _effectiveUid(){
+  // THE OPS SUPPORT VIEW, first, because it is the case that broke the rest.
+  // _isEmployee used to answer two different questions at once: "my rows live
+  // on another account" and "I am crew, draw the crew screens". The support
+  // view forced them apart: viewing an OWNER has to read their account AND
+  // draw the owner screens. It was pinned true for everybody, so every owner
+  // rendered as crew with no tiles (owner 2026-09-13). _isEmployee is the role
+  // now, and whose data we read is decided here, once.
+  try{
+    if(window._OPS_BOOT&&window._opsView&&window._opsView.target)return window._opsView.target;
+  }catch(_e){}
   try{
     if(typeof _devSupportMode!=='undefined'&&_devSupportMode&&typeof _DEV_SUPPORT_USERS!=='undefined'){
       const u=Object.values(_DEV_SUPPORT_USERS).find(x=>x.name===_devSupportName)?.userId;

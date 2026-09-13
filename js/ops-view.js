@@ -87,10 +87,15 @@ async function _opsLoadIdentity(){
     window._opsTeam=team||[];
   }catch(_e){ window._opsTeam=[]; }
 
-  // Every screen reads the account through _contractorUserId, so a support view
-  // is an "employee" of the target whatever the person's role: the owner view
-  // simply carries every permission.
-  _isEmployee=true;
+  // _isEmployee is the ROLE, not the account pointer. This used to be pinned
+  // true for everybody on the theory that the owner "simply carries every
+  // permission", and that was wrong: the dashboard does not gate the owner
+  // surfaces on permissions, it gates them on this flag. dashboard.js swaps
+  // the KPI tiles for the crew day panel and skips the pipeline whenever it is
+  // set, so every owner opened as a crew member with no tiles (owner
+  // 2026-09-13). Whose rows we read is _effectiveUid's job now (js/data.js),
+  // and it answers with the target in ops mode whatever this says.
+  _isEmployee=(person.role!=='owner');
   _contractorUserId=person.contractor_user_id;
   const row=(window._opsTeam||[]).find(r=>r.employee_user_id===person.person_user_id);
   _employeeRecord=(person.role==='owner')
@@ -162,10 +167,10 @@ async function opsViewRoster(){
 // either, or the same bleed happens with no portal chrome to explain it.
 function _opsApplyPerson(){
   const v=window._opsView;if(!v)return;
-  // Always an "employee" of the target, whatever the role: that is what points
-  // every screen at their account rather than the viewer's. An owner view simply
-  // carries every permission.
-  _isEmployee=true;
+  // The role, same as the first boot: the crew screens are for crew. What
+  // points every screen at THEIR account is _effectiveUid (js/data.js), which
+  // reads the ops target directly and does not consult this flag.
+  _isEmployee=(v.role!=='owner');
   _contractorUserId=v.target;
   if(v.role==='owner'){
     _employeeRecord={contractor_user_id:v.target,employee_user_id:v.personUid,name:v.personName,role:'owner',active:true,
