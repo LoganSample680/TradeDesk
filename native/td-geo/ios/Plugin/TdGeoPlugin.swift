@@ -1510,6 +1510,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     func flushNowForTest() { flushNow() }
     var flushInflightKeyForTest: String { flushInflightKey }
     var flushSessionForTest: URLSession { flushSession }
+    var liveSessionForTest: URLSession { liveSession }
+    func inflightKeyForTest(_ s: URLSession, _ t: URLSessionTask) -> String { inflightKey(s, t) }
+    func hasLiveRuntimeForTest() -> Bool { hasLiveRuntime() }
     #endif
 
     private func record(_ ev: [String: Any]) {
@@ -1851,6 +1854,65 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
     }()
 
+    // ── TO THE SECOND, WHEN THE PROCESS IS ACTUALLY RUNNING ─────────────────
+    // Owner 2026-09-13: "I want real time to the second."
+    //
+    // isDiscretionary = false above is not the guarantee it reads as. Apple
+    // honours it for a transfer STARTED while the app is in the foreground and
+    // ignores it for one started in the background, where the system decides
+    // when the transfer is worth performing. Measured on the owner's phone
+    // 2026-09-11: 191 events recorded in the 8pm hour, one delivered; the rest
+    // arrived in a single dump at 2:43am. The uploader was not broken and was
+    // not deadlocked (13,067 sent, 13,019 ok, 48 failed, zero stale in-flight
+    // entries over the week). iOS was holding the bytes.
+    //
+    // AND THE APP WAS AWAKE THE WHOLE TIME. A drive runs the standard location
+    // service with allowsBackgroundLocationUpdates, which is continuous
+    // runtime, not a brief wake. So every drive, arrival and departure already
+    // happens in a live process that could have POSTed in milliseconds, and we
+    // were handing the bytes to a queue built for the opposite problem.
+    //
+    // A default session sends NOW. It is used whenever the process genuinely
+    // has runtime: the app is on screen, a drive is sampling, or we are inside
+    // flushUrgently's background-task assertion. The background session keeps
+    // the one job it was right for, a transfer that has to survive the process
+    // being suspended or killed mid-flight, and that is now the fallback
+    // rather than the default.
+    //
+    // Short timeouts on purpose: a POST that cannot complete inside the
+    // runtime we have should fail fast and leave the tail in the buffer for
+    // the retry ladder, which is exactly what the delegate already does.
+    private lazy var liveSession: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 25
+        cfg.waitsForConnectivity = false
+        cfg.allowsCellularAccess = true
+        return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+    }()
+
+    // True only while flushUrgently holds its assertion, so a background flush
+    // triggered by a wake still counts as having runtime.
+    private var flushAssertionHeld = false
+
+    // Does this process have runtime right now? Main-thread only: reading
+    // UIApplication.shared.applicationState anywhere else is not allowed, and
+    // every caller of flushNow is already on main.
+    private func hasLiveRuntime() -> Bool {
+        guard Thread.isMainThread else { return false }
+        if UIApplication.shared.applicationState == .active { return true }
+        return flushAssertionHeld || driveSamplingOn()
+    }
+
+    // ONE IN-FLIGHT MAP, TWO SESSIONS. taskIdentifier is unique per session,
+    // not per process, so the two can collide on the same number and one
+    // completion would consume the other's entry. The key carries its session.
+    // A bare key is from a build before this split: unmatchable, so
+    // reconcileInflight treats it as stale, which it is.
+    private func inflightKey(_ session: URLSession, _ task: URLSessionTask) -> String {
+        return (session === liveSession ? "L:" : "B:") + String(task.taskIdentifier)
+    }
+
     // Debounced so one wake's burst of events becomes one POST.
     //
     // FOREGROUND ONLY, and that qualifier is the whole fix. A backgrounded app
@@ -1970,7 +2032,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         bg = UIApplication.shared.beginBackgroundTask(withName: "td.geo.flush") {
             if bg != .invalid { UIApplication.shared.endBackgroundTask(bg); bg = .invalid }
         }
+        // The assertion IS runtime, so the flush it wraps may go out live.
+        // Held across flushNow only: the transport is chosen inside it.
+        let hadAssertion = flushAssertionHeld
+        flushAssertionHeld = (bg != .invalid)
         flushNow()
+        flushAssertionHeld = hadAssertion
         // Deliberately not immediate: the upload task is handed to the system
         // asynchronously, and ending the assertion in the same run loop turn
         // can suspend the process before that handover completes.
@@ -2042,15 +2109,20 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let d = UserDefaults.standard
         let inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
         guard !inflight.isEmpty else { return }
-        flushSession.getAllTasks { [weak self] tasks in
+        // BOTH sessions, or the live one's running tasks look dead and get
+        // cleared out from under an upload that is still on the wire.
+        flushSession.getAllTasks { [weak self] bgTasks in
             guard let self = self else { return }
-            let live = Set(tasks.map { String($0.taskIdentifier) })
-            let kept = inflight.filter { live.contains($0.key) }
-            guard kept.count != inflight.count else { return }
-            d.set(kept, forKey: self.flushInflightKey)
-            self.countWake("inflightCleared")
-            // Whatever that stale entry was blocking is still in the buffer.
-            DispatchQueue.main.async { self.flushUrgently() }
+            self.liveSession.getAllTasks { liveTasks in
+                var alive = Set(bgTasks.map { "B:" + String($0.taskIdentifier) })
+                for t in liveTasks { alive.insert("L:" + String(t.taskIdentifier)) }
+                let kept = inflight.filter { alive.contains($0.key) }
+                guard kept.count != inflight.count else { return }
+                d.set(kept, forKey: self.flushInflightKey)
+                self.countWake("inflightCleared")
+                // Whatever that stale entry was blocking is still in the buffer.
+                DispatchQueue.main.async { self.flushUrgently() }
+            }
         }
     }
 
@@ -2076,19 +2148,33 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         ]
         guard JSONSerialization.isValidJSONObject(payload),
               let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        // Background upload tasks require a file, not a data body.
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("td-geo-flush-\(Int(maxTs)).json")
-        do { try body.write(to: tmp) } catch { return }
         var req = URLRequest(url: target)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let task = flushSession.uploadTask(with: req, fromFile: tmp)
+        // Live when the process is running, background when it is not. The
+        // background session is the only one that needs a file on disk; a
+        // default session takes the body directly, which also skips a write
+        // and a temp file per flush.
+        let live = hasLiveRuntime()
+        let session: URLSession
+        let task: URLSessionTask
+        if live {
+            session = liveSession
+            task = liveSession.uploadTask(with: req, from: body)
+        } else {
+            // Background upload tasks require a file, not a data body.
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("td-geo-flush-\(Int(maxTs)).json")
+            do { try body.write(to: tmp) } catch { return }
+            session = flushSession
+            task = flushSession.uploadTask(with: req, fromFile: tmp)
+        }
         var inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
-        inflight[String(task.taskIdentifier)] = maxTs
+        inflight[inflightKey(session, task)] = maxTs
         d.set(inflight, forKey: flushInflightKey)
         task.resume()
         countWake("flushSent")
+        countWake(live ? "flushLive" : "flushDeferred")
     }
 
     // Watermark advances ONLY on a server 2xx. Anything else leaves the tail
@@ -2115,9 +2201,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let d = UserDefaults.standard
         var inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
-        let tid = String(task.taskIdentifier)
-        guard let maxTs = inflight[tid] else { return }
+        // The namespaced key first, then the bare one a pre-split build wrote:
+        // an upgrade must still be able to retire its own last batch.
+        let tid = inflightKey(session, task)
+        let bare = String(task.taskIdentifier)
+        guard let maxTs = inflight[tid] ?? inflight[bare] else { return }
         inflight.removeValue(forKey: tid)
+        inflight.removeValue(forKey: bare)
         d.set(inflight, forKey: flushInflightKey)
         let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
         if error == nil && status >= 200 && status < 300 {
