@@ -597,7 +597,7 @@ function renderBiz(b){
     <span class="row-main">
       <span class="row-name">${esc(p.person_name||p.person_email||'Unknown')}</span>
       <span class="row-sub">${esc(p.role==='owner'?'Owner':(p.role||'crew'))}${p.active===false?' · inactive':''}</span>
-      <span class="row-live"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc(liveLabel(p.person_user_id))}</span>
+      <span class="row-live" title="${esc(liveTitle(p.person_user_id))}"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc(liveLabel(p.person_user_id))}</span>
     </span>
     <span class="row-stat">Open ›</span>
   </button>`).join('');
@@ -645,16 +645,29 @@ const agoMin=q=>q==null?'':(q<1?'just now':q<60?q+'m':q<1440?(Math.round(q/60*10
 function liveLabel(uid){
   const r=LIVE.get(uid);
   if(!r)return '';
-  // "opened" is a claim about what the phone did. Say it only when the phone
-  // said it; otherwise name what we actually have, which is telemetry.
+  // These times are the PHONE's own events (TdGeoPlugin records app-active,
+  // app-background and app-terminate), so they are reported without hedging.
   const opened=stamp(r.last_open), bg=stamp(r.last_bg);
-  const openTxt=opened?((r.open_reported?'opened ':'first activity ')+opened):null;
-  const bgTxt  =bg?((r.bg_reported?'backgrounded ':'last used ')+bg):null;
+  const openTxt=opened?'opened '+opened:null;
+  const bgTxt=bg?'backgrounded '+bg:null;
+  const quiet=r.quiet_min==null?null:'quiet '+agoMin(r.quiet_min);
   if(r.state==='active')return 'Open now';
-  if(r.state==='background')return ['In the background',openTxt].filter(Boolean).join(' · ');
-  if(r.state==='closed')return ['Force closed',openTxt,bgTxt,'quiet '+agoMin(r.quiet_min)].filter(Boolean).join(' · ');
-  return 'No recent data';
+  if(r.state==='background'){
+    // Same colour, different problem: still running, just not taking silent
+    // pushes. Flattening that into "background" sends you debugging the user.
+    const head=r.presence==='push-blocked'?'Running, not taking pushes':'In the background';
+    return [head,openTxt].filter(Boolean).join(' · ');
+  }
+  if(r.state==='closed')return ['Force closed',openTxt,bgTxt,quiet].filter(Boolean).join(' · ');
+  if(r.presence==='no-push-token')  return 'No push token yet · silence proves nothing';
+  if(r.presence==='unknown-cron-down')return 'Ping cron is down · silence proves nothing';
+  // A week of total silence is an account that stopped, not an app that was
+  // shut a minute ago, and it must not wear the same light as one.
+  if(r.presence==='dormant')return 'Dormant · nothing from this phone in a week';
+  return ['Nothing reporting',quiet].filter(Boolean).join(' · ');
 }
+// The full sentence app_presence wrote, on hover, for the states that have one.
+const liveTitle=uid=>(LIVE.get(uid)||{}).detail||'';
 
 async function loadLive(b){
   const {data,error}=await sb.rpc('ops_live_status',{p_target:b.id});
@@ -673,7 +686,7 @@ function paintLive(){
     const chip=document.querySelector(`#biz-chips [data-who="${CSS.escape(p.person_user_id)}"] .dot`);
     if(chip)chip.className='dot dot-'+st;
     const row=document.querySelector(`#biz-people [data-person="${CSS.escape(p.person_user_id)}"] .row-live`);
-    if(row)row.innerHTML=`<span class="dot dot-${st}"></span>${esc(liveLabel(p.person_user_id))}`;
+    if(row){ row.title=liveTitle(p.person_user_id); row.innerHTML=`<span class="dot dot-${st}"></span>${esc(liveLabel(p.person_user_id))}`; }
   });
 }
 

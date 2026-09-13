@@ -276,17 +276,48 @@ test.describe('Ops support view: read only, both directions', () => {
     });
   });
 
-  test('what the four lights mean is decided in SQL, not in the page', () => {
+  test('the lights read app_presence, they do not re-decide what a state is', () => {
     const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations',
       '20261009_ops_metrics_global.sql'), 'utf8');
-    expect(sql).toMatch(/create or replace function public\.ops_live_status\(p_target uuid\)/);
-    ['active', 'background', 'closed', 'unknown'].forEach(st =>
-      expect(sql, st + ' is a state the function returns').toContain("'" + st + "'"));
-    // Test traffic must never light somebody up as active.
-    expect(sql, 'flow-test events excluded').toMatch(/coalesce\(e\.source, 'app'\) <> 'test'/);
-    // The page reads the state; it must not re-derive one from timestamps.
+    // The first cut of this built its own state machine off raw events, which
+    // would have called a dead ping cron a fleet of force quits. app_presence
+    // has answered this since 20260921 and judges staleness against the cron
+    // watermark. So the portal reads it and maps, it never re-derives (§7.3).
+    expect(sql, 'the source is app_presence').toMatch(/from public\.app_presence\(\) p/);
+    ['foreground', 'background', 'push-blocked', 'force-closed'].forEach(st =>
+      expect(sql, st + ' is mapped, not recomputed').toContain("when '" + st + "'"));
+    // Nothing may look at raw events to decide a light.
+    const live = sql.slice(sql.indexOf('function public.ops_live_status'));
+    expect(live, 'no raw telemetry in the light').not.toMatch(/from analytics_events/);
+    expect(live, 'no raw geo events in the light').not.toMatch(/from geo_events/);
+    // Only positive evidence earns red. Cron down and no token are grey, and
+    // the two are why: silence there is not evidence of anything.
+    expect(sql).toMatch(/when 'force-closed' then 'closed'/);
+    ['no-push-token', 'unknown-cron-down', 'dark', 'dormant'].forEach(st =>
+      expect(sql, st + ' must not map to closed').not.toMatch(
+        new RegExp("when '" + st + "' *then 'closed'")));
+
+    // The page shows the light and carries the reason; it decides neither.
     const html = fs.readFileSync(path.join(__dirname, '..', 'ops.html'), 'utf8');
     expect(html, 'the page reads the state as given').toMatch(/\(LIVE\.get\(uid\)\|\|\{\}\)\.state/);
+    expect(html, 'and carries the explanation').toMatch(/\.detail\|\|''/);
+  });
+
+  test('app_presence gained the background edge rather than a caller re-deriving it', () => {
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations',
+      '20261009_ops_metrics_global.sql'), 'utf8');
+    // A red row has to show when the app went behind, and that column was
+    // already sitting in app_presence's own CTE unreturned. Widened there, so
+    // every reader gets it, not just this one (owner 2026-09-13: global).
+    expect(sql).toMatch(/drop function if exists app_presence\(\);/);
+    expect(sql).toMatch(/last_bg_at timestamptz/);
+    expect(sql, 'and the light passes it straight through').toMatch(/p\.last_bg_at,/);
+    // 20260928 added the dormant state and the awake-buckets evidence. This
+    // migration widens THAT definition by one column; a hand-retyped one based
+    // on the original would silently roll both back, which is the mistake this
+    // pins against.
+    expect(sql, 'the dormant state survived the widen').toMatch(/dormant_days numeric/);
+    expect(sql, 'and its evidence column too').toMatch(/awake_buckets bigint/);
   });
 
   test('the migration grants SELECT and nothing else', async () => {

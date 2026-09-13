@@ -241,54 +241,193 @@ grant  execute on function public.ops_account_brief(uuid, date, date) to authent
 
 -- ── 3. Is their app open right now? ─────────────────────────────────────────
 -- Owner asked for four lights: open, backgrounded, force closed, nothing.
--- Three of them are observed. The fourth is inferred, and the inference is
--- written here rather than in the page so the portal and an agent cannot
--- disagree about what red means.
 --
--- WHAT THE PHONE ACTUALLY TELLS US:
---   • analytics_events: a tap, screen or scroll. Flushed every 30s while the
---     app is in front, and once more the instant it backgrounds. So a
---     telemetry row inside the last two minutes means somebody is holding it.
---   • geo_events: fixes, region crossings, and (since the app log started
---     uploading) 'app-active' / 'app-background', the phone's own word for
---     the transition. Background location keeps flowing under Always, so
---     these keep arriving while the app sits behind other apps.
+-- The first version of this read analytics_events and geo_events directly and
+-- built its own state machine. That was wrong, and app_presence()
+-- (20260921) is why: it has answered this exact question since September,
+-- from the SAME evidence, and better in the two ways that matter.
 --
--- WHY FORCE CLOSED IS AN INFERENCE. iOS hands a webview no termination
--- callback: a force-quit fires nothing at all. What it DOES do is kill the
--- background watcher, so the fixes stop. Silence on both channels past the
--- 30-minute push-ping window is therefore the only evidence a force-quit ever
--- leaves. A dead battery, airplane mode and a phone in a basement look exactly
--- the same, which is why every red row carries the moment it went quiet: the
--- state is a reading, and the evidence is on screen next to it.
+--   1. THE PHONE REPORTS ALL THREE. TdGeoPlugin observes willResignActive,
+--      didBecomeActive and willTerminate and records 'app-background',
+--      'app-active' and 'app-terminate' into geo_events, flushing urgently on
+--      background because that is the last moment iOS reliably gives it. So
+--      force closed is not only an inference from silence: when the phone gets
+--      the notification off, it is the phone's own word.
+--   2. STALENESS IS JUDGED AGAINST THE PING CRON, NOT THE WALL CLOCK. If the
+--      geo-ping cron stops, nobody was asked, so nobody failed to answer, and
+--      calling that a fleet of force quits would be the most misleading thing
+--      the portal could do. My version would have done exactly that.
 --
--- And silence is only meaningful for a phone that was recently alive. A person
--- who has reported nothing for a day is 'unknown', not force closed: the app
--- being shut overnight is not a fact worth a red light.
--- Dropped first: widening a returns-table is a type change, and Postgres
--- refuses to replace one in place (the lesson from 20261006).
+-- It also separates 'push-blocked' (a phone still writing its own fixes but
+-- not taking silent pushes: Background App Refresh or Low Power Mode, not the
+-- user) from 'force-closed', which is the distinction that keeps a red light
+-- worth trusting.
+--
+-- So this is now a thin per-account read of it, mapping seven honest states
+-- onto the owner's four lights and carrying the detail sentence through, and
+-- app_presence stays the one place the rule lives (§7.3).
+
+-- app_presence had every edge except the one a red row needs to show: WHEN it
+-- went behind. It is already in the function's own CTE, so it is RETURNED now
+-- rather than re-derived by a caller, and every reader gets it, not just this
+-- one. Everything else below is 20260928's definition verbatim, including the
+-- dormant state and the awake-buckets evidence: this is that function plus one
+-- column, never a rewrite of it. Widening a returns-table is a type change,
+-- hence the drop (the 20261006 lesson).
+
+drop function if exists app_presence();
+
+create or replace function app_presence()
+returns table (
+  contractor_user_id uuid, business text, employee_user_id uuid, person text,
+  role text, state text, state_detail text,
+  last_open_at timestamptz, last_bg_at timestamptz,
+  minutes_since_open numeric, opens_today bigint,
+  last_heard_at timestamptz, minutes_since_heard numeric,
+  last_ping_at timestamptz, pings_missed integer, awake_buckets bigint,
+  last_terminate_at timestamptz, app_version text, battery_level numeric,
+  has_push_token boolean, cron_ran_at timestamptz,
+  last_alive_at timestamptz, dormant_days numeric
+)
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_cron timestamptz;
+  -- A week of total silence. Named once so the number is arguable in one place.
+  c_dormant_days constant numeric := 7;
+begin
+  if not is_ops_admin() then
+    raise exception 'ops dashboard: not authorized' using errcode = '42501';
+  end if;
+
+  select cw.ran_at into v_cron from cron_watermarks cw where cw.name = 'geo-ping';
+
+  return query
+  with tok as (
+    select dt.user_id, count(*) as n
+    from device_tokens dt where dt.invalid_at is null group by dt.user_id
+  ),
+  dev as (
+    select distinct on (ds.user_id) ds.user_id, ds.app_version, ds.battery_level, ds.checked_at
+    from device_status ds order by ds.user_id, ds.checked_at desc
+  ),
+  s as (
+    select d.contractor_user_id, d.business, pd.employee_user_id, pd.person, pd.role,
+           r.last_open_at, r.last_bg_at, r.last_terminate_at, r.last_relaunch_at,
+           r.last_ping_at, r.last_write_at, r.self_writes_40m,
+           coalesce(r.buckets_alive_since_ping, 0) as awake,
+           r.opens_today,
+           coalesce(tok.n, 0) > 0 as has_token,
+           dev.app_version, dev.battery_level,
+           -- Any sign of life, whichever came last. A push the device answered
+           -- is deliberately NOT one of these: the whole question is what to
+           -- believe when those have stopped.
+           greatest(r.last_open_at, r.last_write_at, dev.checked_at) as alive_at,
+           -- Negative when the device answered more recently than the last
+           -- recorded tick, which is normal; clamp so it reads as zero.
+           greatest(floor(extract(epoch from
+             (v_cron - coalesce(r.last_ping_at, v_cron))) / 1800)::int, 0) as missed
+    from v_app_presence_raw r
+    join v_person_dim pd on pd.employee_user_id = r.employee_user_id
+    join v_account_dim d on d.contractor_user_id = pd.contractor_user_id
+    left join tok on tok.user_id = r.employee_user_id
+    left join dev on dev.user_id = r.employee_user_id
+  ),
+  t as (
+    select s.*,
+           case when s.alive_at is null then null
+                else round(extract(epoch from (now() - s.alive_at)) / 86400.0, 1) end as quiet_days
+    from s
+  )
+  select t.contractor_user_id, t.business, t.employee_user_id, t.person, t.role,
+         case
+           when t.last_open_at is not null
+                and t.last_open_at >= coalesce(t.last_bg_at, t.last_open_at)
+                and now() - t.last_open_at < interval '3 minutes'      then 'foreground'
+           -- Dormant outranks every silence-based state below it. Nothing the
+           -- device did or did not do can be read when nobody is using the
+           -- account at all.
+           when t.alive_at is null
+             or t.quiet_days >= c_dormant_days                          then 'dormant'
+           when not t.has_token                                         then 'no-push-token'
+           when v_cron is null
+             or now() - v_cron > interval '45 minutes'                  then 'unknown-cron-down'
+           when t.missed <= 1                                           then 'background'
+           -- Awake for essentially every half hour it skipped a nudge.
+           when t.missed >= 2 and t.awake >= t.missed - 1               then 'push-blocked'
+           -- Writing now, but it cannot yet be shown it was here during the
+           -- gap. The next nudge decides between background and push-blocked.
+           when t.self_writes_40m > 0                                   then 'back-online'
+           when coalesce(t.last_terminate_at, '-infinity') > coalesce(t.last_ping_at, '-infinity')
+             or coalesce(t.last_relaunch_at, '-infinity') > coalesce(t.last_ping_at, '-infinity')
+                                                                        then 'force-closed'
+           else 'dark'
+         end,
+         case
+           when t.alive_at is null
+             then 'This account has never opened the app, written anything, or reported a device. '
+                  || case when t.has_token then 'A push token is registered, so the nudge is firing at a device that will never answer.'
+                          else 'Nothing was ever sent to it.' end
+           when t.quiet_days >= c_dormant_days
+             then 'Nothing from this account for ' || t.quiet_days || ' days: no foreground, no writes, no device report. '
+                  || case when t.has_token then 'The nudge is still firing at a stale token, so pings_missed will keep climbing and means nothing.'
+                          else 'No push token either.' end
+           when not t.has_token
+             then 'No registered device token, so no push was ever sent. Silence here means nothing.'
+           when v_cron is null or now() - v_cron > interval '45 minutes'
+             then 'The geo-ping cron has not run recently. Nobody was asked, so nobody failing to answer proves anything.'
+           when t.missed >= 2 and t.awake >= t.missed - 1
+             then 'Device was awake and writing through ' || t.awake || ' of the ' || t.missed
+                  || ' half-hours it skipped a nudge. It is running and not taking silent pushes: check Background App Refresh and Low Power Mode, not the user.'
+           when t.missed >= 2 and t.self_writes_40m > 0
+             then 'Device went quiet after its last answered nudge and has just started writing again. Next tick confirms whether pushes are landing.'
+           when coalesce(t.last_terminate_at, '-infinity') > coalesce(t.last_ping_at, '-infinity')
+             then 'App reported its own termination after the last push it answered.'
+           else null
+         end,
+         t.last_open_at,
+         t.last_bg_at,
+         round(extract(epoch from (now() - t.last_open_at)) / 60, 1),
+         t.opens_today,
+         t.last_write_at,
+         round(extract(epoch from (now() - t.last_write_at)) / 60, 1),
+         t.last_ping_at,
+         t.missed,
+         t.awake,
+         t.last_terminate_at,
+         t.app_version,
+         t.battery_level,
+         t.has_token,
+         v_cron,
+         t.alive_at,
+         t.quiet_days
+  from t
+  order by t.contractor_user_id, t.last_write_at desc nulls last;
+end;
+$$;
+
+revoke all on function app_presence() from anon, authenticated;
+grant execute on function app_presence() to authenticated;
+
 drop function if exists public.ops_live_status(uuid);
 create or replace function public.ops_live_status(p_target uuid)
 returns table (
   person_user_id uuid,
+  -- The light: active, background, closed, unknown. Four, because that is what
+  -- a person reads at a glance.
   state          text,
-  last_ui        timestamptz,
-  last_geo       timestamptz,
-  last_event     text,
-  since          timestamptz,
-  quiet_min      int,
-  -- When the app last came to the front, and when it last went behind. On a
-  -- backgrounded phone the first answers "how long ago did they actually look
-  -- at it"; on a closed one the pair brackets the whole session, which is the
-  -- only account of a force quit that exists.
+  -- What app_presence actually said, and why. The portal shows the light and
+  -- carries these two so nothing is flattened away: 'push-blocked' and
+  -- 'background' are the same colour and NOT the same problem.
+  presence       text,
+  detail         text,
   last_open      timestamptz,
   last_bg        timestamptz,
-  -- Whether each of those is the PHONE's own word ('app-active'/'app-background'
-  -- uploaded from its lifecycle log) or read off the telemetry session. An
-  -- inferred time is close but it is not a report, and a screen that says
-  -- "backgrounded" about a guess is lying in small print.
-  open_reported  boolean,
-  bg_reported    boolean
+  last_terminate timestamptz,
+  last_heard     timestamptz,
+  quiet_min      int,
+  opens_today    bigint,
+  app_version    text,
+  battery_level  numeric
 )
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -297,118 +436,37 @@ begin
   end if;
 
   return query
-  with people as (
-    select r.person_user_id as uid from public.ops_view_roster() r
-     where r.contractor_user_id = p_target
-  ),
-  ui as (
-    select e.employee_user_id as uid, max(e.ts) as ts
-      from analytics_events e
-     where e.employee_user_id in (select uid from people)
-       and e.ts > now() - interval '2 days'
-       and e.event in ('page', 'click', 'scroll')
-       and coalesce(e.source, 'app') <> 'test'
-     group by 1
-  ),
-  geo as (
-    select g.employee_user_id as uid, max(g.ts) as ts
-      from geo_events g
-     where g.employee_user_id in (select uid from people)
-       and g.ts > now() - interval '2 days'
-     group by 1
-  ),
-  -- The phone's own last word about being in front or behind, when it has one.
-  life as (
-    select distinct on (g.employee_user_id)
-           g.employee_user_id as uid, g.type as kind, g.ts
-      from geo_events g
-     where g.employee_user_id in (select uid from people)
-       and g.ts > now() - interval '2 days'
-       and g.type in ('app-active', 'app-background')
-     order by g.employee_user_id, g.ts desc
-  ),
-  -- The two edges, from the lifecycle log. A week rather than two days: a
-  -- phone that has been shut since Thursday should still be able to say when
-  -- Thursday was, which is exactly the question a red light raises.
-  edges as (
-    select g.employee_user_id as uid,
-           max(g.ts) filter (where g.type = 'app-active')     as opened_at,
-           max(g.ts) filter (where g.type = 'app-background') as bg_at
-      from geo_events g
-     where g.employee_user_id in (select uid from people)
-       and g.ts > now() - interval '7 days'
-       and g.type in ('app-active', 'app-background')
-     group by 1
-  ),
-  -- The fallback, for a phone too old to upload a lifecycle log. Its most
-  -- recent telemetry session starts when they opened it and ends within thirty
-  -- seconds of them putting it down, because the app flushes on the way out.
-  sess as (
-    select uid, first_ts, last_ts from (
-      select e.employee_user_id as uid,
-             min(e.ts) as first_ts, max(e.ts) as last_ts,
-             row_number() over (partition by e.employee_user_id order by max(e.ts) desc) as rn
-        from analytics_events e
-       where e.employee_user_id in (select uid from people)
-         and e.ts > now() - interval '7 days'
-         and e.event in ('page', 'click', 'scroll')
-         and coalesce(e.source, 'app') <> 'test'
-         and e.session_id is not null
-       group by e.employee_user_id, e.session_id
-    ) q where q.rn = 1
-  ),
-  m as (
-    select p.uid,
-           ui.ts  as ui_ts,
-           geo.ts as geo_ts,
-           life.kind as life_kind,
-           greatest(coalesce(ui.ts, 'epoch'::timestamptz),
-                    coalesce(geo.ts, 'epoch'::timestamptz)) as any_ts,
-           edges.opened_at,
-           edges.bg_at,
-           sess.first_ts as sess_open,
-           sess.last_ts  as sess_close
-      from people p
-      left join ui  on ui.uid  = p.uid
-      left join geo on geo.uid = p.uid
-      left join life on life.uid = p.uid
-      left join edges on edges.uid = p.uid
-      left join sess on sess.uid = p.uid
-  )
-  select m.uid,
-         case
-           -- In front of them: a tap or screen inside two minutes, or the
-           -- phone's own 'came to the front' with nothing since to contradict.
-           when m.ui_ts  > now() - interval '2 minutes' then 'active'
-           when m.life_kind = 'app-active'
-                and m.any_ts > now() - interval '2 minutes' then 'active'
-           -- Running behind other apps: no taps, but the location layer is
-           -- still reporting, which only a live app can do.
-           when m.geo_ts > now() - interval '35 minutes' then 'background'
-           -- Both channels silent past the push-ping window, on a phone that
-           -- was alive within the day. Nothing is running.
-           when m.any_ts > now() - interval '12 hours' then 'closed'
+  select p.employee_user_id,
+         case p.state
+           when 'foreground'   then 'active'
+           when 'background'   then 'background'
+           -- Still running, just not answering pushes. A live app is amber,
+           -- and the detail says which kind of amber it is.
+           when 'push-blocked' then 'background'
+           when 'force-closed' then 'closed'
+           -- dark, no-push-token and unknown-cron-down are all "we do not
+           -- know", and none of them earns a red light: two of them mean the
+           -- silence proves nothing at all.
            else 'unknown'
          end,
-         m.ui_ts,
-         m.geo_ts,
-         m.life_kind,
-         nullif(m.any_ts, 'epoch'::timestamptz),
-         case when m.any_ts > 'epoch'::timestamptz
-              then floor(extract(epoch from (now() - m.any_ts)) / 60)::int end,
-         coalesce(m.opened_at, m.sess_open),
-         -- Only call it a background once they are not holding it: the close of
-         -- a session still in progress is just the last tap.
-         case when m.bg_at is not null then m.bg_at
-              when m.ui_ts <= now() - interval '2 minutes' then m.sess_close end,
-         m.opened_at is not null,
-         m.bg_at is not null
-    from m;
+         p.state,
+         p.state_detail,
+         p.last_open_at,
+         p.last_bg_at,
+         p.last_terminate_at,
+         p.last_heard_at,
+         case when p.minutes_since_heard is not null
+              then floor(p.minutes_since_heard)::int end,
+         p.opens_today,
+         p.app_version,
+         p.battery_level
+    from public.app_presence() p
+   where p.contractor_user_id = p_target;
 end;
 $$;
 
 comment on function public.ops_live_status(uuid) is
-  'Per person on one account: active (taps within 2 min), background (no taps but location still reporting within 35 min), closed (both channels silent past the push-ping window on a phone alive within 12 hours), unknown (nothing recent). Closed is an inference, iOS gives a webview no termination callback, so every row carries when it went quiet, when the app was last opened and when it last went behind, plus whether each of those times is the phone''s own word or read off the telemetry session.';
+  'The ops portal''s four lights for one account, read straight from app_presence: active, background, closed, unknown. Carries app_presence''s own seven-state answer and its explanation alongside, because push-blocked and background share a colour and not a cause. The rule lives in app_presence, never here and never in the page.';
 
 revoke execute on function public.ops_live_status(uuid) from public, anon;
 grant  execute on function public.ops_live_status(uuid) to authenticated;

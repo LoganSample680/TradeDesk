@@ -77,10 +77,10 @@ const BRIEF = {
 // ops_live_status. Four lights, one per person, so the spec can prove each
 // class renders and that red never appears without its evidence.
 const LIVE = [
-  { person_user_id: 'u-logan', state: 'active', last_ui: '2026-09-13T15:00:00Z', last_geo: null, last_event: null, since: '2026-09-13T15:00:00Z', quiet_min: 0,
-    last_open: '2026-09-13T14:30:00Z', last_bg: null, open_reported: true, bg_reported: false },
-  { person_user_id: 'u-jack',  state: 'background', last_ui: null, last_geo: '2026-09-13T14:50:00Z', last_event: 'app-background', since: '2026-09-13T14:50:00Z', quiet_min: 12,
-    last_open: '2026-09-13T12:05:00Z', last_bg: null, open_reported: true, bg_reported: false },
+  { person_user_id: 'u-logan', state: 'active', presence: 'foreground', detail: null,
+    last_open: '2026-09-13T14:30:00Z', last_bg: null, last_terminate: null, quiet_min: 0 },
+  { person_user_id: 'u-jack', state: 'background', presence: 'background', detail: null,
+    last_open: '2026-09-13T12:05:00Z', last_bg: '2026-09-13T12:40:00Z', last_terminate: null, quiet_min: 12 },
 ];
 const SUMMARY = { days: 30, people: 3, accounts: 2, active_days: 40, days_clocked: 22, avg_day_min: 480, total_miles: 512.4, avg_visit_min: 63, unnamed_legs: 4 };
 
@@ -371,10 +371,11 @@ test.describe('Ops portal: the support view, embedded', () => {
       // Two people on Sample Plumbing; a third state and a fourth need their own
       // rows, so this stub answers for both and omits nobody.
       await stubRpc(p2, { live: [
-        { person_user_id: 'u-logan', state: 'closed', quiet_min: 187, last_event: 'app-background',
-          last_open: '2026-09-12T13:02:00Z', last_bg: '2026-09-12T16:48:00Z', open_reported: true, bg_reported: true },
-        { person_user_id: 'u-jack',  state: 'active', quiet_min: 0,
-          last_open: '2026-09-13T14:59:00Z', last_bg: null, open_reported: true, bg_reported: false },
+        { person_user_id: 'u-logan', state: 'closed', presence: 'force-closed', quiet_min: 187,
+          detail: 'App reported its own termination after the last push it answered.',
+          last_open: '2026-09-12T13:02:00Z', last_bg: '2026-09-12T16:48:00Z', last_terminate: '2026-09-12T16:48:00Z' },
+        { person_user_id: 'u-jack', state: 'active', presence: 'foreground', quiet_min: 0,
+          last_open: '2026-09-13T14:59:00Z', last_bg: null, last_terminate: null },
       ] });
       await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
       await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
@@ -397,25 +398,52 @@ test.describe('Ops portal: the support view, embedded', () => {
       await c.close();
     });
 
-    test('a time the phone did not report is not called a background', async ({ browser }) => {
+    // app_presence separates these two and the portal must not flatten them: a
+    // phone still writing its own fixes is RUNNING, and a missing silent push
+    // there is a delivery problem, not somebody closing the app.
+    test('push-blocked is amber and says it is still running, not backgrounded', async ({ browser }) => {
       const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
       const p2 = await c.newPage();
       await mockAllExternal(p2);
-      // A handset too old to upload a lifecycle log: the times come off the
-      // telemetry session, so the row must not claim the phone said anything.
       await stubRpc(p2, { live: [
-        { person_user_id: 'u-logan', state: 'closed', quiet_min: 400,
-          last_open: '2026-09-12T13:02:00Z', last_bg: '2026-09-12T16:48:00Z',
-          open_reported: false, bg_reported: false },
+        { person_user_id: 'u-logan', state: 'background', presence: 'push-blocked', quiet_min: 50,
+          detail: 'Device is still writing on its own but is not taking silent pushes. Check Background App Refresh and Low Power Mode, not the user.',
+          last_open: '2026-09-13T12:05:00Z', last_bg: '2026-09-13T12:40:00Z', last_terminate: null },
       ] });
       await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
       await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
       await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
       const logan = p2.locator('#biz-people .row', { hasText: 'Logan Sample' });
-      await expect(logan).toContainText('first activity');
-      await expect(logan).toContainText('last used');
-      await expect(logan).not.toContainText('opened ');
-      await expect(logan).not.toContainText('backgrounded ');
+      await expect(logan.locator('.dot')).toHaveClass(/dot-background/);
+      await expect(logan).toContainText('Running, not taking pushes');
+      await expect(logan).not.toContainText('In the background');
+      // The whole explanation is carried, not summarised away.
+      await expect(logan.locator('.row-live')).toHaveAttribute('title', /Background App Refresh/);
+      await c.close();
+    });
+
+    // The two states where silence is not evidence of anything. Neither may
+    // ever go red, or the red light stops meaning what it says.
+    test('a dead ping cron and a missing push token are grey, never red', async ({ browser }) => {
+      const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+      const p2 = await c.newPage();
+      await mockAllExternal(p2);
+      await stubRpc(p2, { live: [
+        { person_user_id: 'u-logan', state: 'unknown', presence: 'unknown-cron-down', quiet_min: 900,
+          detail: 'The geo-ping cron has not run recently.', last_open: null, last_bg: null },
+        { person_user_id: 'u-jack', state: 'unknown', presence: 'no-push-token', quiet_min: null,
+          detail: 'No registered device token.', last_open: null, last_bg: null },
+      ] });
+      await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+      await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      const logan = p2.locator('#biz-people .row', { hasText: 'Logan Sample' });
+      const jack  = p2.locator('#biz-people .row', { hasText: 'Jack Rivera' });
+      await expect(logan.locator('.dot')).toHaveClass(/dot-unknown/);
+      await expect(jack.locator('.dot')).toHaveClass(/dot-unknown/);
+      await expect(logan).toContainText('Ping cron is down');
+      await expect(logan).toContainText('silence proves nothing');
+      await expect(jack).toContainText('No push token');
       await c.close();
     });
 
