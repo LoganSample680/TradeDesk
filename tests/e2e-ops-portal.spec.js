@@ -77,8 +77,10 @@ const BRIEF = {
 // ops_live_status. Four lights, one per person, so the spec can prove each
 // class renders and that red never appears without its evidence.
 const LIVE = [
-  { person_user_id: 'u-logan', state: 'active',     last_ui: '2026-09-13T15:00:00Z', last_geo: null, last_event: null, since: '2026-09-13T15:00:00Z', quiet_min: 0 },
-  { person_user_id: 'u-jack',  state: 'background', last_ui: null, last_geo: '2026-09-13T14:50:00Z', last_event: 'app-background', since: '2026-09-13T14:50:00Z', quiet_min: 12 },
+  { person_user_id: 'u-logan', state: 'active', last_ui: '2026-09-13T15:00:00Z', last_geo: null, last_event: null, since: '2026-09-13T15:00:00Z', quiet_min: 0,
+    last_open: '2026-09-13T14:30:00Z', last_bg: null, open_reported: true, bg_reported: false },
+  { person_user_id: 'u-jack',  state: 'background', last_ui: null, last_geo: '2026-09-13T14:50:00Z', last_event: 'app-background', since: '2026-09-13T14:50:00Z', quiet_min: 12,
+    last_open: '2026-09-13T12:05:00Z', last_bg: null, open_reported: true, bg_reported: false },
 ];
 const SUMMARY = { days: 30, people: 3, accounts: 2, active_days: 40, days_clocked: 22, avg_day_min: 480, total_miles: 512.4, avg_visit_min: 63, unnamed_legs: 4 };
 
@@ -369,8 +371,10 @@ test.describe('Ops portal: the support view, embedded', () => {
       // Two people on Sample Plumbing; a third state and a fourth need their own
       // rows, so this stub answers for both and omits nobody.
       await stubRpc(p2, { live: [
-        { person_user_id: 'u-logan', state: 'closed', quiet_min: 187, last_event: 'app-background' },
-        { person_user_id: 'u-jack',  state: 'active', quiet_min: 0 },
+        { person_user_id: 'u-logan', state: 'closed', quiet_min: 187, last_event: 'app-background',
+          last_open: '2026-09-12T13:02:00Z', last_bg: '2026-09-12T16:48:00Z', open_reported: true, bg_reported: true },
+        { person_user_id: 'u-jack',  state: 'active', quiet_min: 0,
+          last_open: '2026-09-13T14:59:00Z', last_bg: null, open_reported: true, bg_reported: false },
       ] });
       await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
       await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
@@ -382,10 +386,36 @@ test.describe('Ops portal: the support view, embedded', () => {
       // Red never travels alone: the row says how long it has been quiet,
       // because a force quit leaves no event and the time IS the evidence.
       await expect(logan).toContainText('Force closed');
-      await expect(logan).toContainText('3.1h ago');
+      // Owner 2026-09-13: a red light has to carry BOTH edges, dated, because
+      // that pair is the whole account of the session that ended.
+      await expect(logan).toContainText(/opened \w{3} \d{1,2}, \d{1,2}:\d{2}\s?(AM|PM)/);
+      await expect(logan).toContainText(/backgrounded \w{3} \d{1,2}, \d{1,2}:\d{2}\s?(AM|PM)/);
+      await expect(logan).toContainText('quiet 3.1h');
       await expect(jack).toContainText('Open now');
       // The chips carry the same light.
       await expect(p2.locator('#biz-chips .chip', { hasText: 'Logan' }).locator('.dot')).toHaveClass(/dot-closed/);
+      await c.close();
+    });
+
+    test('a time the phone did not report is not called a background', async ({ browser }) => {
+      const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+      const p2 = await c.newPage();
+      await mockAllExternal(p2);
+      // A handset too old to upload a lifecycle log: the times come off the
+      // telemetry session, so the row must not claim the phone said anything.
+      await stubRpc(p2, { live: [
+        { person_user_id: 'u-logan', state: 'closed', quiet_min: 400,
+          last_open: '2026-09-12T13:02:00Z', last_bg: '2026-09-12T16:48:00Z',
+          open_reported: false, bg_reported: false },
+      ] });
+      await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+      await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      const logan = p2.locator('#biz-people .row', { hasText: 'Logan Sample' });
+      await expect(logan).toContainText('first activity');
+      await expect(logan).toContainText('last used');
+      await expect(logan).not.toContainText('opened ');
+      await expect(logan).not.toContainText('backgrounded ');
       await c.close();
     });
 
@@ -408,6 +438,8 @@ test.describe('Ops portal: the support view, embedded', () => {
       const jack = page.locator('#biz-people .row', { hasText: 'Jack Rivera' });
       await expect(jack.locator('.dot')).toHaveClass(/dot-background/);
       await expect(jack).toContainText('In the background');
+      // Backgrounded needs the last time they actually had it open.
+      await expect(jack).toContainText(/opened \w{3} \d{1,2}, \d{1,2}:\d{2}\s?(AM|PM)/);
       await page.locator('#biz-back').click();
       await page.locator('#trade-back').click();
     });

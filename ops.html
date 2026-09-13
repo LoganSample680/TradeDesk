@@ -95,7 +95,8 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 /* The selected chip is the accent colour, and a red dot on orange is nearly
    invisible. A ring in the chip's own background separates the two. */
 .chip.on .dot{box-shadow:0 0 0 2px #1A1613}
-.row-live{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text3);white-space:nowrap}
+.row-live{display:block;font-size:12px;color:var(--text3);margin-top:3px;line-height:1.45}
+.row-live .dot{margin-right:7px;vertical-align:1px}
 .range{display:flex;gap:6px;flex-wrap:wrap}
 .range button{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .range button.on{background:var(--accent);border-color:var(--accent);color:#1A1613}
@@ -596,8 +597,8 @@ function renderBiz(b){
     <span class="row-main">
       <span class="row-name">${esc(p.person_name||p.person_email||'Unknown')}</span>
       <span class="row-sub">${esc(p.role==='owner'?'Owner':(p.role||'crew'))}${p.active===false?' · inactive':''}</span>
+      <span class="row-live"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc(liveLabel(p.person_user_id))}</span>
     </span>
-    <span class="row-live"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc(liveLabel(p.person_user_id))}</span>
     <span class="row-stat">Open ›</span>
   </button>`).join('');
 
@@ -628,14 +629,30 @@ let LIVE=new Map();                  // person_user_id -> row from ops_live_stat
 let LIVE_TIMER=null;
 
 const liveState=uid=>(LIVE.get(uid)||{}).state||'unknown';
+
+// A day and a clock time, never a bare "3h ago". Owner 2026-09-13: on a
+// backgrounded phone he wants to know when they last had it open, and on a
+// closed one both edges, dated, because that pair IS the session.
+function stamp(t){
+  if(!t)return null;
+  const d=new Date(t);
+  if(isNaN(d))return null;
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+', '+
+         d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
+const agoMin=q=>q==null?'':(q<1?'just now':q<60?q+'m':q<1440?(Math.round(q/60*10)/10)+'h':Math.round(q/1440)+'d');
+
 function liveLabel(uid){
   const r=LIVE.get(uid);
   if(!r)return '';
-  const q=r.quiet_min==null?null:Number(r.quiet_min);
-  const ago=q==null?'':(q<1?'just now':q<60?q+'m ago':q<1440?(Math.round(q/60*10)/10)+'h ago':Math.round(q/1440)+'d ago');
+  // "opened" is a claim about what the phone did. Say it only when the phone
+  // said it; otherwise name what we actually have, which is telemetry.
+  const opened=stamp(r.last_open), bg=stamp(r.last_bg);
+  const openTxt=opened?((r.open_reported?'opened ':'first activity ')+opened):null;
+  const bgTxt  =bg?((r.bg_reported?'backgrounded ':'last used ')+bg):null;
   if(r.state==='active')return 'Open now';
-  if(r.state==='background')return 'In the background · '+ago;
-  if(r.state==='closed')return 'Force closed · quiet '+ago;
+  if(r.state==='background')return ['In the background',openTxt].filter(Boolean).join(' · ');
+  if(r.state==='closed')return ['Force closed',openTxt,bgTxt,'quiet '+agoMin(r.quiet_min)].filter(Boolean).join(' · ');
   return 'No recent data';
 }
 

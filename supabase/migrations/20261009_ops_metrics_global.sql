@@ -25,6 +25,9 @@
 --   int   a count            pct   already 0-100      usd   dollars
 --   num   one decimal        hours minutes as hours   mins  minutes as "70m"
 --   text  as-is              date  a day              ago   a timestamp, said as "today"
+-- Dropped first: widening a returns-table is a type change, and Postgres
+-- refuses to replace one in place (the lesson from 20261006).
+drop function if exists public.ops_metric_defs();
 create or replace function public.ops_metric_defs()
 returns table (
   section       text,
@@ -262,6 +265,9 @@ grant  execute on function public.ops_account_brief(uuid, date, date) to authent
 -- And silence is only meaningful for a phone that was recently alive. A person
 -- who has reported nothing for a day is 'unknown', not force closed: the app
 -- being shut overnight is not a fact worth a red light.
+-- Dropped first: widening a returns-table is a type change, and Postgres
+-- refuses to replace one in place (the lesson from 20261006).
+drop function if exists public.ops_live_status(uuid);
 create or replace function public.ops_live_status(p_target uuid)
 returns table (
   person_user_id uuid,
@@ -270,7 +276,19 @@ returns table (
   last_geo       timestamptz,
   last_event     text,
   since          timestamptz,
-  quiet_min      int
+  quiet_min      int,
+  -- When the app last came to the front, and when it last went behind. On a
+  -- backgrounded phone the first answers "how long ago did they actually look
+  -- at it"; on a closed one the pair brackets the whole session, which is the
+  -- only account of a force quit that exists.
+  last_open      timestamptz,
+  last_bg        timestamptz,
+  -- Whether each of those is the PHONE's own word ('app-active'/'app-background'
+  -- uploaded from its lifecycle log) or read off the telemetry session. An
+  -- inferred time is close but it is not a report, and a screen that says
+  -- "backgrounded" about a guess is lying in small print.
+  open_reported  boolean,
+  bg_reported    boolean
 )
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -309,17 +327,53 @@ begin
        and g.type in ('app-active', 'app-background')
      order by g.employee_user_id, g.ts desc
   ),
+  -- The two edges, from the lifecycle log. A week rather than two days: a
+  -- phone that has been shut since Thursday should still be able to say when
+  -- Thursday was, which is exactly the question a red light raises.
+  edges as (
+    select g.employee_user_id as uid,
+           max(g.ts) filter (where g.type = 'app-active')     as opened_at,
+           max(g.ts) filter (where g.type = 'app-background') as bg_at
+      from geo_events g
+     where g.employee_user_id in (select uid from people)
+       and g.ts > now() - interval '7 days'
+       and g.type in ('app-active', 'app-background')
+     group by 1
+  ),
+  -- The fallback, for a phone too old to upload a lifecycle log. Its most
+  -- recent telemetry session starts when they opened it and ends within thirty
+  -- seconds of them putting it down, because the app flushes on the way out.
+  sess as (
+    select uid, first_ts, last_ts from (
+      select e.employee_user_id as uid,
+             min(e.ts) as first_ts, max(e.ts) as last_ts,
+             row_number() over (partition by e.employee_user_id order by max(e.ts) desc) as rn
+        from analytics_events e
+       where e.employee_user_id in (select uid from people)
+         and e.ts > now() - interval '7 days'
+         and e.event in ('page', 'click', 'scroll')
+         and coalesce(e.source, 'app') <> 'test'
+         and e.session_id is not null
+       group by e.employee_user_id, e.session_id
+    ) q where q.rn = 1
+  ),
   m as (
     select p.uid,
            ui.ts  as ui_ts,
            geo.ts as geo_ts,
            life.kind as life_kind,
            greatest(coalesce(ui.ts, 'epoch'::timestamptz),
-                    coalesce(geo.ts, 'epoch'::timestamptz)) as any_ts
+                    coalesce(geo.ts, 'epoch'::timestamptz)) as any_ts,
+           edges.opened_at,
+           edges.bg_at,
+           sess.first_ts as sess_open,
+           sess.last_ts  as sess_close
       from people p
       left join ui  on ui.uid  = p.uid
       left join geo on geo.uid = p.uid
       left join life on life.uid = p.uid
+      left join edges on edges.uid = p.uid
+      left join sess on sess.uid = p.uid
   )
   select m.uid,
          case
@@ -341,13 +395,20 @@ begin
          m.life_kind,
          nullif(m.any_ts, 'epoch'::timestamptz),
          case when m.any_ts > 'epoch'::timestamptz
-              then floor(extract(epoch from (now() - m.any_ts)) / 60)::int end
+              then floor(extract(epoch from (now() - m.any_ts)) / 60)::int end,
+         coalesce(m.opened_at, m.sess_open),
+         -- Only call it a background once they are not holding it: the close of
+         -- a session still in progress is just the last tap.
+         case when m.bg_at is not null then m.bg_at
+              when m.ui_ts <= now() - interval '2 minutes' then m.sess_close end,
+         m.opened_at is not null,
+         m.bg_at is not null
     from m;
 end;
 $$;
 
 comment on function public.ops_live_status(uuid) is
-  'Per person on one account: active (taps within 2 min), background (no taps but location still reporting within 35 min), closed (both channels silent past the push-ping window on a phone alive within 12 hours), unknown (nothing recent). Closed is an inference, iOS gives a webview no termination callback, so every row carries when it went quiet as the evidence.';
+  'Per person on one account: active (taps within 2 min), background (no taps but location still reporting within 35 min), closed (both channels silent past the push-ping window on a phone alive within 12 hours), unknown (nothing recent). Closed is an inference, iOS gives a webview no termination callback, so every row carries when it went quiet, when the app was last opened and when it last went behind, plus whether each of those times is the phone''s own word or read off the telemetry session.';
 
 revoke execute on function public.ops_live_status(uuid) from public, anon;
 grant  execute on function public.ops_live_status(uuid) to authenticated;
