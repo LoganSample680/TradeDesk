@@ -4935,6 +4935,75 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+  // ── A HELD DRIVE READS AS A DRIVE AND PAYS LIKE NOTHING ──────────────────
+  // Rule 18 (js/geo-derive.js, owner 2026-09-13): the deriver writes the
+  // drives and stops of a trip it cannot vouch for as 'drive-held' and
+  // 'unsaved-held'. The rail must say what they WERE, because the person
+  // reading it knows where he went and "Visit" would be a lie about a drive;
+  // and no total may claim a minute of them.
+  test.describe('a held drive is still a drive, and still earns nothing', () => {
+    // The reader is exercised through the two pure functions the rail is made
+    // of, rather than a whole fake day: what a row is (_tlRailKind) and how it
+    // draws (_tlRailRow). Same door the held-visit block above uses.
+    const kindOf = (r) => page.evaluate((x) => _tlRailKind(x), r);
+    const render = (r) => page.evaluate((x) => String(_tlRailRow(x)), r);
+    const DRIVE = { source: 'auto', rawSource: 'drive-held', clientName: 'Destination not saved',
+      destUnsaved: true, rawId: 'srv-501', unpaid: true, minutes: 20, date: '2026-09-11',
+      personUid: null, detail: 'Drive time',
+      startTime: '2026-09-11T22:45:00Z', endTime: '2026-09-11T23:05:00Z' };
+    const STOP = Object.assign({}, DRIVE, { rawSource: 'unsaved-held', clientName: 'Unsaved address',
+      destUnsaved: false, rawId: 'srv-502', clientKey: 'leg-1:s0', detail: 'Address not saved' });
+
+    test('a held drive is a drive, and a held stop is a stop', async () => {
+      expect(await kindOf(DRIVE), 'the badge says what it was').toBe('drive');
+      expect(await kindOf(STOP)).toBe('site');
+      // Not a Visit: "Visit" is rule 13's word for standing at a client and
+      // means something different from being on the road.
+      expect(await render(DRIVE)).not.toMatch(/Visit/);
+    });
+
+    test('the friendly label is the plain one, not a new string to learn', async () => {
+      const words = await page.evaluate(() => [
+        _tlSourceLabel('drive-held'), _tlSourceLabel('unsaved-held'),
+        _tlSourceLabel('drive'), _tlSourceLabel('unsaved'),
+      ]);
+      expect(words).toEqual(['Drive time', 'Address not saved', 'Drive time', 'Address not saved']);
+    });
+
+    test('and it never asks a question it was designed not to ask', async () => {
+      // The owner's whole rule for this class: "I don't want to ask, I want
+      // this to be fully automatic when addresses are put in." A held drive
+      // is uncounted silently. Only rule 13's client visit asks.
+      expect(await render(DRIVE)).not.toMatch(/_visitHoldAnswer/);
+      expect(await render(DRIVE)).not.toMatch(/Were you working here\?/);
+    });
+
+    test('a held stop still offers Save this address, which is how it stops being held', async () => {
+      // Saving the address re-derives the day into two real legs, which is
+      // the whole correction path for an under-counted trip.
+      expect(await render(STOP)).toMatch(/_mileSaveStopAddress/);
+    });
+
+    test('the hours record never counts one', async () => {
+      const mins = await page.evaluate(() => {
+        const rows = [
+          { source: 'auto', rawSource: 'drive', minutes: 60, unpaid: false, date: '2026-09-11' },
+          { source: 'auto', rawSource: 'drive-held', minutes: 60, unpaid: true, date: '2026-09-11' },
+          { source: 'auto', rawSource: 'unsaved-held', minutes: 60, unpaid: true, date: '2026-09-11' },
+        ];
+        return rows.filter(r => !r.unpaid).reduce((n, r) => n + r.minutes, 0);
+      });
+      expect(mins, 'only the vouched drive is paid').toBe(60);
+    });
+
+    test('_timeLogRows marks every held source unpaid, whatever the family', async () => {
+      const out = await page.evaluate(() => ['drive-held', 'unsaved-held', 'client-held', 'drive', 'unsaved']
+        .map(s => [s, _geoIsHeldSource(s)]));
+      expect(out).toEqual([['drive-held', true], ['unsaved-held', true], ['client-held', true],
+        ['drive', false], ['unsaved', false]]);
+    });
+  });
+
   // ── A stop nobody saved can be answered from the rail (owner 2026-09-09) ──
   // The mileage log has offered this since 2026-09-08; the rail stated the
   // same fact with no way to act on it. Same chip, same door.

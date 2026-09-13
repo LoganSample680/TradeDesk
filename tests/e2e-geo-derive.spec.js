@@ -525,6 +525,162 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── Rule 18: a loop's two ends are one end, counted twice ────────────────
+  // Owner 2026-09-13, reading his own 11 September off the rail: "tradedesk
+  // shop to shop can't display that way so that's wrong, would have to be
+  // tradedesk shop to unsaved address then unsaved address to tradedesk shop."
+  //
+  // He is describing the hole in the founding rule. Section 17 opens with
+  // "both ends saved or no leg" and a round trip does not break that, it
+  // SATISFIES it: rule 7 collapses the loop into one leg whose from and to are
+  // the same saved fence, and the only place he actually went is buried in the
+  // middle as a collapsed stop that nothing ever looks at.
+  //
+  // And the gates that did exist all guarded MILEAGE. His two evenings cost
+  // him 193 minutes of hours while the miles under them were correctly kept
+  // out of his deduction, because the time rows were written before any of the
+  // tests ran.
+  test.describe('rule 18: a loop is vouched by nobody, and its time is gated like its miles', () => {
+    // A real yard, nowhere near anybody's house, so rule 7 calls this a round
+    // trip rather than a house loop and the two rules cannot be confused.
+    const YARD = { id: 'place-y18', kind: 'shop', name: 'The yard', lat: 39.0600, lng: -95.6500, addr: '1 Yard Rd' };
+    const YF = { lat: YARD.lat, lng: YARD.lng };
+    // Out of the yard at 9:00, an hour at an address nobody saved, back at
+    // 11:10. Then, if `after` is set, a real drive to a customer.
+    const loopDay = (over) => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 20), 'onFoot'),
+        mo(T(10, 50), 'automotive'), mo(T(11, 10), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), YF), fix(T(9, 20, 5), GAS), fix(T(10, 30), GAS),
+        fix(T(10, 50, 5), GAS), fix(T(11, 10, 5), YF), fix(T(12, 0), YF)];
+      return base(Object.assign({ tape, fixes, fences: [YARD, DOE], nowMs: T(14, 0) }, over || {}));
+    };
+    const rowsOf = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      return JSON.parse(JSON.stringify({ legs: r.legs, rows: geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' }) }));
+    }, inp);
+
+    test('the yard at both ends vouches for nothing: the loop is held', async () => {
+      const { legs } = await rowsOf(loopDay());
+      expect(legs.length, 'held is not deleted: the drive is still on the log').toBe(1);
+      expect(legs[0].roundTrip).toBe(true);
+      expect(legs[0].held, 'one fence read twice is not two business ends').toBe(true);
+      // And the day is not thrown away with it. Rule 16 asks whether anything
+      // reached business, which this plainly did; it just cannot be claimed.
+      expect(legs[0].business).toBe(true);
+    });
+
+    test('the same trip with a clock over it counts in full', async () => {
+      // The person saying at the time that they are working outranks
+      // geography, exactly as rules 13 and 15 already have it.
+      const { legs, rows } = await rowsOf(loopDay({ clocks: [{ start: T(8, 30), end: T(12, 0) }] }));
+      expect(legs[0].held).toBeFalsy();
+      expect(rows.job_time_entries.every(t => !/-held$/.test(t.source))).toBe(true);
+    });
+
+    test('the drives and the stop are written HELD, not written and counted', async () => {
+      const { rows } = await rowsOf(loopDay());
+      const t = rows.job_time_entries;
+      // Two drives out and back, one stop in the middle: every row the trip
+      // produced is still there, and not one of them is claimable.
+      expect(t.map(x => x.source)).toEqual(['drive-held', 'drive-held', 'unsaved-held']);
+      expect(t.map(x => [x.arrived_at.slice(11, 16), x.departed_at.slice(11, 16)])).toEqual([
+        ['14:00', '14:20'], ['15:50', '16:10'], ['14:20', '15:50'],
+      ]);
+      // The mileage side is unchanged: rule 14 already refused to claim it.
+      expect(rows.td_mileage.map(m => !!m.addressUnknown)).toEqual([true]);
+    });
+
+    test('a real drive to a customer in the same day is untouched', async () => {
+      // The under-counting guard. Holding a loop must not spill onto the legs
+      // around it: the trip to Doe has a business end of its own.
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 20), 'onFoot'),
+        mo(T(10, 50), 'automotive'), mo(T(11, 10), 'onFoot'),
+        mo(T(12, 0), 'automotive'), mo(T(12, 20), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), YF), fix(T(9, 20, 5), GAS), fix(T(10, 30), GAS),
+        fix(T(10, 50, 5), GAS), fix(T(11, 10, 5), YF), fix(T(11, 40), YF),
+        fix(T(12, 0, 5), YF), fix(T(12, 20, 5), DOE), fix(T(13, 30), DOE)];
+      const { rows } = await rowsOf(base({ tape, fixes, fences: [YARD, DOE], nowMs: T(14, 0) }));
+      const drives = rows.job_time_entries.filter(x => /^drive/.test(x.source));
+      expect(drives.map(x => x.source)).toEqual(['drive-held', 'drive-held', 'drive']);
+      expect(rows.td_mileage.map(m => [m.to_name, !!m.addressUnknown]))
+        .toEqual([['The yard', true], ['John Doe', false]]);
+    });
+
+    // ── The wrap is for unloading, so it only exists where you unload ──────
+    // Rule 11's half hour is for putting the truck away at a yard. It was
+    // added to the end of every leg and every dwell, which includes pulling
+    // into your own driveway, and on the owner's account that is the same
+    // coordinate as the yard: his shop fence sits 4 m from his home office.
+    // So the workday stretched another thirty minutes past the moment he
+    // stopped working, every single evening.
+    test('arriving home does not buy another half hour of workday', async () => {
+      // Last customer until 16:00, home at 16:20, and he never leaves again.
+      // The day closes at 16:30, which is the CUSTOMER's own wrap and nothing
+      // to do with the house. Under the old rule it closed at 16:50.
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 20), 'onFoot'),
+        mo(T(16, 0), 'automotive'), mo(T(16, 20), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(16, 0, 5), DOE),
+        fix(T(16, 20, 5), { lat: SHOP.lat, lng: SHOP.lng }), fix(T(17, 0), { lat: SHOP.lat, lng: SHOP.lng })];
+      const at = async (nowMs) => {
+        const r = await run(page, base({ tape, fixes, nowMs }));
+        return r.open && r.open.counts;
+      };
+      // Ten past four, still inside the customer's wrap: between jobs.
+      expect(await at(T(16, 25))).toBe(true);
+      // Five minutes later the day is over. It used to run to 16:50 purely
+      // because he had driven home, which is the opposite of what the arrival
+      // means.
+      expect(await at(T(16, 35))).toBe(false);
+    });
+
+    // ── Inside the window means inside it, not touching it ────────────────
+    // This passed on one minute of OVERLAP and the comment above it called
+    // that "no part-credit", which it was not: his 11 September loop ran
+    // 17:45 to 20:58 against a window that closed at 18:09 and came in whole
+    // on 24 minutes of contact.
+    test('_gdInWindow: containment, both ends, not a minute of contact', async () => {
+      const w = { open: 1000000, close: 2000000 };
+      const inw = (a, b) => page.evaluate(([win, s2, e2]) =>
+        _gdInWindow(win, { startTs: s2, endTs: e2 }), [w, a, b]);
+      expect(await inw(1200000, 1800000), 'wholly inside').toBe(true);
+      expect(await inw(1000000, 2000000), 'exactly the window').toBe(true);
+      expect(await inw(1800000, 5000000), 'starts inside, runs for hours past the close').toBe(false);
+      expect(await inw(500000, 1200000), 'started before the day opened').toBe(false);
+      expect(await inw(500000, 5000000), 'swallows the window whole').toBe(false);
+      expect(await inw(2000001, 2100000), 'entirely after').toBe(false);
+      // Junk never throws and never passes (11.1).
+      const junk = await page.evaluate(() => [
+        _gdInWindow(null, { startTs: 1, endTs: 2 }), _gdInWindow({ open: 0, close: 9 }, null),
+        _gdInWindow({ open: 0, close: 9 }, {}), _gdInWindow({ open: 0, close: 9 }, { startTs: 'a', endTs: 'b' }),
+        _gdInWindow({ open: 0, close: 9 }, { startTs: 5, endTs: 2 }),
+      ]);
+      expect(junk).toEqual([false, false, false, false, false]);
+    });
+
+    test('the evening loop stays held even when the workday closed while it was running', async () => {
+      // Out of the yard at 17:45 after a day that ended there at 17:30, so the
+      // window runs to 18:15 and the loop overlaps it by half an hour. Under
+      // the old overlap test that half hour dragged the whole three-hour trip
+      // into the workday. Rule 18 and containment both refuse it now, and they
+      // refuse it for the same reason: nothing about the trip is evidence of
+      // work, least of all the half hour of it that happened before six.
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 20), 'onFoot'),
+        mo(T(17, 10), 'automotive'), mo(T(17, 30), 'onFoot'),
+        mo(T(17, 45), 'automotive'), mo(T(18, 5), 'onFoot'),
+        mo(T(20, 48), 'automotive'), mo(T(20, 58), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), YF), fix(T(9, 20, 5), DOE), fix(T(17, 10, 5), DOE),
+        fix(T(17, 30, 5), YF), fix(T(17, 45, 5), YF), fix(T(18, 5, 5), GAS),
+        fix(T(20, 0), GAS), fix(T(20, 48, 5), GAS), fix(T(20, 58, 5), YF), fix(T(21, 30), YF)];
+      const { legs, rows } = await rowsOf(base({ tape, fixes, fences: [YARD, DOE], nowMs: T(23, 0) }));
+      const evening = legs.filter(l => Number(l.startTs) >= T(17, 40));
+      expect(evening.length, 'held is not deleted: it is still on the log').toBe(1);
+      expect(evening[0].held).toBe(true);
+      // The day's two real drives are plain; nothing from the evening is.
+      expect(rows.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
+      expect(rows.job_time_entries.filter(t => /-held$/.test(t.source)).length).toBe(3);
+    });
+  });
+
   test('it exists, it is pure, and junk in is empty out, never a throw', async () => {
     const r = await page.evaluate(() => {
       const out = [];
@@ -717,7 +873,15 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dwells.map(d => [d.name, hm(d.startTs), hm(d.endTs)])).toEqual([['The yard', '15:00', '16:00']]);
       const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
       // Two drive rows out of the round trip, one out of the leg to Doe.
-      expect(rows.job_time_entries.filter(t => t.source === 'drive').length).toBe(3);
+      //
+      // AMENDED 2026-09-13 (10.4) for rule 18. The three rows still exist and
+      // that was never in question; what changed is that the two belonging to
+      // the round trip are now written 'drive-held'. Nothing in that trip
+      // vouched for it: its two ends are the yard read twice, and the only
+      // place it actually reached was never saved. The leg to Doe is a real
+      // drive to a real customer and stays plain 'drive'.
+      const dr = rows.job_time_entries.filter(t => /^drive/.test(t.source));
+      expect(dr.map(d => d.source)).toEqual(['drive-held', 'drive-held', 'drive']);
       // Two mileage rows: the round trip is a TRACED row now (rule 14), on no
       // total, and the leg to Doe is the one real row. Order is by departure.
       expect(rows.td_mileage.map(m => [m.to_name, !!m.addressUnknown])).toEqual([['The yard', true], ['John Doe', false]]);
@@ -917,7 +1081,13 @@ test.describe('geo-derive: the day deriver', () => {
         expect(r.legs.map(l => [l.from.kind, l.to.kind, !!l.roundTrip, !!l.traced, l.miles > 0]))
           .toEqual(house ? [] : [[from, from, true, true, true]]);
         const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
-        expect(rows.job_time_entries.filter(t2 => t2.source === 'drive').length).toBe(house ? 0 : 2);
+        // AMENDED 2026-09-13 (10.4) for rule 18: both drives are still
+        // written for every fence kind, and every one of them is now HELD.
+        // A loop has one real destination, it was never saved, and the fence
+        // at the kerb cannot vouch for it by being read twice.
+        const drv = rows.job_time_entries.filter(t2 => /^drive/.test(t2.source));
+        expect(drv.length).toBe(house ? 0 : 2);
+        expect(drv.every(d => d.source === 'drive-held')).toBe(true);
         // One traced, unclaimed row (rule 14); none at all from the house.
         expect(rows.td_mileage.map(m => [!!m.addressUnknown, !!m.unsavedVia])).toEqual(house ? [] : [[true, true]]);
       });
@@ -1457,11 +1627,11 @@ test.describe('geo-derive: the day deriver', () => {
     // office are 4 metres apart (the same building), so every one of those
     // arrivals is an arrival at a shop fence.
     //
-    // These two do NOT prove the shop-is-not-a-shop fix below them; both pass
-    // without it, because rule 7 already marks a house loop and rule 17
-    // already refuses to let one open the workday. They are here to PIN that
-    // behaviour on his real day, so the next change to the window has to say
-    // out loud that it is moving it.
+    // These two used to be a PIN rather than a proof: both passed before the
+    // shop-is-not-a-shop fix, because rule 7 already marked a house loop and
+    // rule 17 already refused to let one open the workday. The pin said the
+    // next change to the window would have to say out loud that it was moving
+    // it. On 2026-09-13 it moved, and this is that sentence.
     const sep11 = (loopOutHour, loopOutMin) => {
       const tape = [mo(T(7, 40), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 2), 'onFoot'),
         mo(T(12, 30), 'driving'), mo(T(12, 41), 'onFoot'),
@@ -1477,15 +1647,39 @@ test.describe('geo-derive: the day deriver', () => {
       return base({ tape, fixes });
     };
 
-    test('his real 11 September: the evening run inside the wrap still counts', async () => {
-      // Out again at 17:45, six minutes after getting home, which overlaps
-      // the window (last customer 17:23 plus the 30-minute wrap = 17:53). The
-      // workday was still open, so every drive stands.
+    test('his real 11 September: the evening run six minutes after he got home is his own time', async () => {
+      // AMENDED 2026-09-13 (10.4). This used to be called "the evening run
+      // inside the wrap still counts" and it asserted the opposite of what it
+      // does now: nothing held, five mileage rows. Both halves of that were
+      // right under the rules as they stood and both were wrong about his
+      // day, which is what he said when he read it: "day ended before all
+      // those were added and calculated."
+      //
+      // Three things moved and any one of them alone decides this fixture:
+      //
+      //   The wrap. Last customer 17:23 plus thirty minutes ran the window to
+      //   17:53, so a 17:45 departure overlapped it. That half hour is for
+      //   putting the truck away at a yard, and the fence he arrived at is
+      //   his own driveway (his shop and his home office are 4 m apart), so
+      //   it no longer exists there. The day now closes at 17:23.
+      //
+      //   Containment. Even with the wrap, the overlap was eight minutes of a
+      //   trip that ran to 20:58, and one minute of contact used to be enough.
+      //
+      //   Rule 18. Out of the house, somewhere nobody saved, back to the
+      //   house: its two ends are one fence read twice, so nothing vouched for
+      //   it whatever the clock said.
+      //
+      // What is left is the four real drives to and from the customer. The
+      // evening is on the log, held, earning nothing.
       const r = await run(page, sep11(17, 45));
       const rows = await page.evaluate(i => geoDeriveRows(geoDeriveDay(i),
         { contractorId: 'c', employeeId: 'e' }), sep11(17, 45));
-      expect(r.legs.filter(l => l.held === true).length, 'nothing held on a day that stayed open').toBe(0);
-      expect(rows.td_mileage.length).toBe(5);
+      expect(r.legs.filter(l => Number(l.startTs) >= T(17, 40)).length,
+        'the evening loop out of the house is not in the day at all').toBe(0);
+      expect(rows.td_mileage.length).toBe(4);
+      // And the day's real work is untouched: four drives, all plain.
+      expect(rows.job_time_entries.filter(t => t.source === 'drive').length).toBe(4);
     });
 
     test('the same evening run 40 minutes later is his own time, and the day is over', async () => {
@@ -1638,8 +1832,9 @@ test.describe('geo-derive: the day deriver', () => {
       const f2 = [fix(T(6, 30, 5), SHOP), fix(T(6, 50, 5), DOE), fix(T(9, 0), DOE), fix(T(11, 0, 5), DOE),
                   fix(T(11, 20, 5), SHOP), fix(T(12, 0), SHOP)];
       // Same spot, same day, but asked while the workday is still open: home
-      // at 11:20, the window runs to 11:50 (last work 11:00 plus the wrap),
-      // so at 11:40 he is between jobs and it counts.
+      // at 11:20, the window runs to 11:30 (the customer's own dwell ends at
+      // 11:00 and carries the wrap), so at 11:25 he is between jobs and it
+      // counts.
       //
       // AMENDED 2026-09-12 (10.4). This used to ask at 13:00 and expect true,
       // and that was the bug: getting home ended nothing, so the answer was
@@ -1647,12 +1842,20 @@ test.describe('geo-derive: the day deriver', () => {
       // right that a real work day makes the house count; it was never right
       // that it counts forever. The clock the question is asked at is now
       // part of the question.
-      const worked = await run(page, base({ tape: t2, fixes: f2, nowMs: T(11, 40) }));
+      //
+      // AMENDED AGAIN 2026-09-13 (10.4), from 11:40 to 11:25. The wrap is for
+      // unloading and it now only exists where there is something to unload
+      // at, which his own driveway is not, so arriving home no longer pushes
+      // the end of the day out another half hour. The window still runs to
+      // 11:30 because the customer he left at 11:00 carries the wrap himself,
+      // and the point this test is making, that a real workday makes the
+      // house count while it is open, is unchanged.
+      const worked = await run(page, base({ tape: t2, fixes: f2, nowMs: T(11, 25) }));
       expect(worked.open && worked.open.atHome).toBe(true);
       expect(worked.open && worked.open.counts).toBe(true);
 
       // The same day, same open dwell, asked that evening: the workday closed
-      // at 11:50 and he never left, so it is his own house and his own time.
+      // at 11:30 and he never left, so it is his own house and his own time.
       const evening = await run(page, base({ tape: t2, fixes: f2, nowMs: T(19, 0) }));
       expect(evening.open && evening.open.atHome).toBe(true);
       expect(evening.open && evening.open.counts).toBe(false);
@@ -2527,15 +2730,23 @@ test.describe('geo-derive: the day deriver', () => {
         const r = geoDeriveDay(inp);
         return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
       }, base({ tape: t3, fixes: f3, fences: F, nowMs: T(14, 0) }));
-      const drives = rows.job_time_entries.filter(t => t.source === 'drive');
+      // AMENDED 2026-09-13 (10.4) for rule 18: the two drives and the hour
+      // between them are still written, exactly as this test has always
+      // required, and all three are now held. The shop is both ends of this
+      // trip and the place he spent the hour was never saved, so nothing in
+      // it can be claimed until somebody saves that address.
+      const drives = rows.job_time_entries.filter(t => /^drive/.test(t.source));
       expect(drives.map(d => [d.arrived_at.slice(11, 16), d.departed_at.slice(11, 16)])).toEqual([
         ['14:17', '14:48'], ['15:51', '16:20'],
       ]);
+      expect(drives.every(d => d.source === 'drive-held')).toBe(true);
       // The first ends at a stop nobody saved; the second genuinely reaches
       // the shop, which is saved, so it says so.
       expect(drives.map(d => d.dest_place)).toEqual([null, '1200 SW Oakley Ave']);
-      // The hour he stood out there is its own row between them.
-      const stops = rows.job_time_entries.filter(t => t.source === 'unsaved');
+      // The hour he stood out there is its own row between them, held with
+      // the drives either side of it and for the same reason.
+      const stops = rows.job_time_entries.filter(t => /^unsaved/.test(t.source));
+      expect(stops.every(t => t.source === 'unsaved-held')).toBe(true);
       expect(stops.map(t => [t.arrived_at.slice(11, 16), t.departed_at.slice(11, 16)]))
         .toEqual([['14:48', '15:51']]);
       // And nothing is CLAIMED for a trip with no saved far end: rule 14

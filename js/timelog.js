@@ -105,7 +105,7 @@ function _tlSourceLabel(source){
   // A stop between two drives that no fence could name. The label states the
   // fact and nothing more: the app knows he got out of the truck and knows
   // for how long, and it does not know where.
-  if(s==='unsaved')return 'Address not saved';
+  if(/^unsaved/.test(s))return 'Address not saved';
   if(s==='manual')return 'GPS clock';
   // "Unaccounted", not "Unpaid" (owner, 2026-09-01: "skip the paid versus
   // unpaid stuff out"). The app does not know whether this gets paid and is
@@ -441,7 +441,7 @@ function _tlBlendManual(rows){
       // evidence of work. An unsaved stop is evidence of nothing but that the
       // truck was parked, so the clock is the only thing that could have made
       // it work, and he ended it.
-      if(r.rawSource==='unsaved')return true;
+      if(/^unsaved/.test(String(r.rawSource||'')))return true;
       if(typeof _geoIsDriveSource!=='function'||!_geoIsDriveSource(r.rawSource))return false;
       return _headingHome(r);
     };
@@ -728,9 +728,11 @@ async function _timeLogRows(sinceISO){
     const _es=String(e.source||'');
     // Rule 13, unanswered: on the rail as a question, in no total, and the
     // dashboard card is where it gets answered.
-    const _held=_es==='client-held';
+    // Rules 13, 15 and 18: anything the day could not vouch for. One predicate
+  // (js/geo-track.js) rather than a string this file has to keep in step.
+  const _held=(typeof _geoIsHeldSource==='function')?_geoIsHeldSource(_es):_es==='client-held';
     const _unnamedDrive=/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
-    const clientName=_es==='unsaved'?'Unsaved address'
+    const clientName=/^unsaved/.test(_es)?'Unsaved address'
       :_unnamedDrive?'Destination not saved'
       :(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
@@ -1262,7 +1264,7 @@ function _tlRailKind(r){
   if(r.rawSource==='place-load')return 'load';
   if(r.rawSource==='place-office')return 'office';
   if(r.rawSource==='place-home')return 'home';
-  if(r.rawSource==='site'||r.rawSource==='unsaved')return 'site';
+  if(r.rawSource==='site'||/^unsaved/.test(String(r.rawSource||'')))return 'site';
   // RULE 13'S QUESTION IS NOT MANUAL TIME (owner 2026-09-10, on his Sunday
   // rail: a 14-minute visit to a client he had just saved came back reading
   // "MANUAL TIME · UNPAID"). Nothing about it is manual, nobody typed it,
@@ -1480,7 +1482,7 @@ function _tlRailRow(r){
         '<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+a+'\',\'personal\')">Personal</button>'+
         '</div>';
     }
-    if(kind==='site'&&r.rawSource==='unsaved'&&r.clientKey&&_tlRowIsMine(r)){
+    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)){
       body+='<div class="tl-rail-chips">'+
         '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
         escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
@@ -1616,7 +1618,7 @@ function _tlRowMenu(btn){
     }else{
       acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\')','Not work',
         'Keeps it off your hours and your miles. Just this one, not the place.',true);
-      if(raw==='unsaved'&&d.rowKey){
+      if(/^unsaved/.test(raw)&&d.rowKey){
         acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
           'Save this address','Then it names itself here and everywhere after');
       }

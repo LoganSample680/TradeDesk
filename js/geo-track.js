@@ -2085,6 +2085,19 @@ function _geoIsDriveSource(s){return /^drive/.test(String(s||''));}
 // Time outside every fence that is not driving: lunch, an errand, waiting on a
 // gate. Neither job labor nor drive time, and never silently folded into either.
 function _geoIsOffJobSource(s){return String(s||'')==='stop';}
+// ── SHOWN, NEVER CLAIMED ──────────────────────────────────────────────────
+// A `-held` suffix means the deriver wrote this row but nothing in the day
+// vouched for it (js/geo-derive.js rules 13, 15 and 18): a visit at a family
+// address, a drive out to somewhere nobody saved, the stop at the far end of
+// it. The row exists so the log has no hole in it and so the map can draw
+// where the truck went; it earns no minutes anywhere.
+//
+// A SUFFIX, so it composes with the prefix families rather than replacing
+// them. 'drive-held' is still a drive to _geoIsDriveSource and still reads
+// "Drive time" on the rail, which is what it was; it is simply not paid.
+// 'client-held' has been in this family since rule 13 shipped and now has a
+// name for what it is instead of one string every reader had to memorise.
+function _geoIsHeldSource(s){return /-held$/.test(String(s||''));}
 // A stop that spans Central midnight is an END-OF-DAY PARK (truck home for
 // the night), never an unpaid leg of a workday, and writing it is exactly
 // what let single days total more than 24 hours (owner rule 2026-08-24: "it's
