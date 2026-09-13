@@ -565,9 +565,15 @@ function tdMapRenderKit(o){
         const pts2=(seg&&Array.isArray(seg.path))?seg.path.filter(q=>Array.isArray(q)&&isFinite(q[0])&&isFinite(q[1])):null;
         if(!pts2||pts2.length<2)return;
         try{
+          // DASHED MEANS INFERRED (owner 2026-09-13). A stretch the phone did
+          // not watch, filled in by the router, must never draw as the same
+          // line as one it did. Solid is evidence; dashed is our best guess at
+          // the road between two things we do know.
+          const _st={lineWidth:(+seg.width||4),lineJoin:'round',lineCap:'round',
+            strokeColor:(seg.color||'#2D5DA8'),strokeOpacity:(seg.opacity==null?0.85:+seg.opacity)};
+          if(Array.isArray(seg.dash)&&seg.dash.length)_st.lineDash=seg.dash.map(Number);
           st.obj.addOverlay(new mapkit.PolylineOverlay(pts2.map(q=>new mapkit.Coordinate(q[0],q[1])),{
-            style:new mapkit.Style({lineWidth:(+seg.width||4),lineJoin:'round',lineCap:'round',
-              strokeColor:(seg.color||'#2D5DA8'),strokeOpacity:(seg.opacity==null?0.85:+seg.opacity)}),
+            style:new mapkit.Style(_st),
           }));
         }catch(_es){}
       });
@@ -667,9 +673,13 @@ function tdMapRenderFallback(o){
         const y=100-((q[0]-minLat)/spanLat)*100;
         return x.toFixed(2)+','+y.toFixed(2);
       }).join(' ');
+      // The same dashed-is-inferred rule as the tile path above, so the two
+      // renderers cannot disagree about which stretch was watched (7.3).
+      const dash=(Array.isArray(seg.dash)&&seg.dash.length)
+        ? ' stroke-dasharray="'+seg.dash.map(Number).join(' ')+'"' : '';
       return '<polyline points="'+poly+'" fill="none" stroke="'+(seg.color||'#2D5DA8')+'" '+
         'stroke-width="'+(+seg.width||4)+'" stroke-linejoin="round" stroke-linecap="round" '+
-        'vector-effect="non-scaling-stroke" opacity="'+(seg.opacity==null?0.85:+seg.opacity)+'"/>';
+        'vector-effect="non-scaling-stroke" opacity="'+(seg.opacity==null?0.85:+seg.opacity)+'"'+dash+'/>';
     }).join('');
     if(segs)routeSvg+='<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" '+
       'style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">'+segs+'</svg>';

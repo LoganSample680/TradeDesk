@@ -1517,7 +1517,17 @@ test.describe('geo-derive wiring', () => {
       expect(osrm[0].u).toContain('/driving/-95.7462,39.0132;-95.7401,39.01245;-95.72357,39.02946;-95.7112,39.0308?');
       expect(osrm[1].u).toContain('/driving/-95.7462,39.0132;-95.7112,39.0308?');
       expect(r.legs).toEqual([[39.0132, 39.01245], [39.01245, 39.02946], [39.02946, 39.0308]]);
-      expect(r.c).toEqual({ miles: 1.9, mins: 6 });
+      // AMENDED 2026-09-13 (10.4). _routeDistance used to return the distance
+      // and the time and throw MapKit's geometry away, and this asserted that
+      // exact pair. The route map now needs the line as well, to draw a
+      // force-close hole as the road instead of a straight edge through town,
+      // so a third field rides along. The two numbers are unchanged.
+      expect(r.c.miles).toBe(1.9);
+      expect(r.c.mins).toBe(6);
+      // This stub's routes carry no polyline, which is the shape a future
+      // MapKit rename would also produce: an empty line, never a throw inside
+      // a directions callback.
+      expect(r.c.path).toEqual([]);
     });
 
     test('the legs paint the moment the day is derived; the road miles are a second paint', async () => {

@@ -1556,6 +1556,61 @@ function _poiPlaceKind(category){
 // via: optional waypoints ({lat,lng}) the route must pass through, in order.
 // The deriver hands it the breadcrumbs of a thin trace so the router
 // measures the road the truck took, not the fastest one it would suggest.
+// ── THE LINE, NOT JUST THE NUMBER (owner 2026-09-13) ───────────────────────
+// MapKit hands back a full route and this file used to keep the distance and
+// throw the geometry away. Where the phone was force-closed there is a hole in
+// the breadcrumbs, and the map drew one straight line across it: the mileage
+// was already routed and correct (_geoTraceComplete sends a gapped trace to
+// the router), but the picture said the truck drove through the middle of
+// town. This reads the road back out so the hole can be drawn as the road.
+//
+// Defensive about shape on purpose. MapKit JS has moved the geometry around
+// between versions and index.html pins "5.x.x", so a build that renames this
+// must degrade to no line rather than throw inside a directions callback.
+function _routePolyline(route){
+  try{
+    const pl=route&&route.polyline;
+    const raw=(pl&&(pl.points||pl.coordinates))||route&&route.path||null;
+    if(!Array.isArray(raw))return [];
+    const out=[];
+    for(const c of raw){
+      if(!c)continue;
+      const la=Number(c.latitude!=null?c.latitude:(Array.isArray(c)?c[0]:NaN));
+      const ln=Number(c.longitude!=null?c.longitude:(Array.isArray(c)?c[1]:NaN));
+      if(isFinite(la)&&isFinite(ln))out.push([la,ln]);
+    }
+    return out;
+  }catch(_e){return [];}
+}
+
+// A HOLE WORTH DRAWING. Not every skipped breadcrumb is a gap: the receiver
+// duty-cycles, a tunnel eats a minute, and drawing a dashed guess over those
+// would call ordinary GPS an outage. A force-close is minutes AND miles, so
+// both have to be true before the router is asked.
+const _MILE_GAP_MS=90*1000;
+const _MILE_GAP_FT=1320;        // a quarter mile
+function _mileGaps(r){
+  const out=[];
+  try{
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2||typeof _geoDistFt!=='function')return out;
+    for(let i=1;i<p.length;i++){
+      const a=p[i-1],b=p[i];
+      if(!Array.isArray(a)||!Array.isArray(b))continue;
+      const alat=+a[0],alon=+a[1],blat=+b[0],blon=+b[1];
+      if(!isFinite(alat)||!isFinite(alon)||!isFinite(blat)||!isFinite(blon))continue;
+      // The third slot is the fix's ms. A path written without it cannot be
+      // judged on time, so distance alone decides.
+      const at=Number(a[2]),bt=Number(b[2]);
+      const dt=(isFinite(at)&&isFinite(bt)&&bt>at)?(bt-at):0;
+      const ft=_geoDistFt({lat:alat,lng:alon},{lat:blat,lng:blon});
+      const timeOk=dt?dt>=_MILE_GAP_MS:true;
+      if(timeOk&&ft>=_MILE_GAP_FT)out.push({i,from:{lat:alat,lng:alon},to:{lat:blat,lng:blon},ft,ms:dt});
+    }
+  }catch(_e){}
+  return out;
+}
+
 async function _routeDistance(fromCoords,toCoords,via){
   const stops=[fromCoords].concat(Array.isArray(via)?via.filter(v=>v&&isFinite(v.lat)&&isFinite(v.lng)):[],[toCoords]);
   // MapKit Directions, primary. MapKit JS routes one origin to one
@@ -1572,12 +1627,17 @@ async function _routeDistance(fromCoords,toCoords,via){
         },(err,data)=>{
           if(err||!data?.routes?.[0]){reject(new Error('mapkit'));return;}
           const r=data.routes[0];
-          resolve({m:Number(r.distance)||0,s:Number(r.expectedTravelTime)||0});
+          resolve({m:Number(r.distance)||0,s:Number(r.expectedTravelTime)||0,path:_routePolyline(r)});
         });
       });
       const parts=await Promise.all(stops.slice(1).map((b,i)=>seg(stops[i],b)));
       const m=parts.reduce((t,p)=>t+p.m,0),s=parts.reduce((t,p)=>t+p.s,0);
-      return {miles:Math.round(m/1609.344*10)/10,mins:Math.round(s/60)};
+      // The drawn line, concatenated across waypoints in the same order the
+      // distance was summed. Callers that only want a number ignore it; the
+      // route map uses it to draw the stretch the phone never watched.
+      const path=[];
+      parts.forEach(pt=>{ if(Array.isArray(pt.path)) pt.path.forEach(c=>path.push(c)); });
+      return {miles:Math.round(m/1609.344*10)/10,mins:Math.round(s/60),path};
     }catch(e){}
   }
   // Fallback: Valhalla + OSRM in parallel
@@ -2996,18 +3056,103 @@ function openMileageRoute(id){
         gps+'Logged '+_mi+' mi</div>')+
     _trNote+
     _csNote+
+    // Filled in only if a routed stretch actually gets drawn. It lives in the
+    // modal rather than in the map's own hint because the fallback plot writes
+    // its own hint line and would drop it, and this sentence is the difference
+    // between a picture and a claim on a tax record.
+    '<div id="_mil-route-fillnote"></div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
+  const _kit=(typeof tdAppleHardware==='function')?tdAppleHardware():false;
+  const _st=tdMapState();
+  const _draw=(paths)=>{
+    try{
+      tdMapRender(Object.assign({
+        body:document.getElementById('_mil-route-body'),
+        pts,
+        style:{start:{c:'#0E6B39',label:'Start',glyph:'A'},end:{c:'#dc2626',label:'End',glyph:'B'}},
+        st:_st,hostId:'_mil-route-canvas',height:300,
+        allowKit:_kit,
+      }, paths?{paths}:{path:r.path}));
+    }catch(_e){}
+  };
+  // Paint what was actually watched FIRST, every time. The routed fill is a
+  // network round trip and the map must never wait on one to appear (8.3: a
+  // waiting surface gets content now and repaints once, never a delay).
+  _draw(null);
+  // ── THE HOLE, DRAWN AS THE ROAD (owner 2026-09-13) ──────────────────────
+  // "If app is force closed, should the route call MapKit and route out what
+  // the most direct way would be and that's our mileage route on the map? I
+  // think so."
+  //
+  // The MILEAGE already works that way: a gapped trace fails
+  // _geoTraceComplete, so the router's distance wins and the row is stamped
+  // derived-routed. Only the LINE was still lying, drawing one straight edge
+  // across a stretch the truck spent on real roads.
+  //
+  // Fetched when the map opens rather than stored on the row (owner's call):
+  // nothing new is written and nothing new syncs, and a drive row stays the
+  // size it is. The cost is that it needs a connection to draw, which is why
+  // the observed trace is already on screen before this runs and a failure
+  // here simply leaves it as it was.
+  _mileRouteFill(r).then(paths=>{
+    // The overlay is only worth a repaint if something came back, and only if
+    // this map is still the one on screen.
+    if(!paths||!paths.length)return;
+    // Still the map on screen? The OVERLAY is the test, not the canvas: the
+    // fallback plot (every non-Apple device, and CI) never creates an element
+    // with the host id, so keying on that skipped the repaint everywhere the
+    // tiles are not licensed. Caught in the step 0.5 screenshot.
+    if(!document.getElementById('_mil-route-ov'))return;
+    _draw(paths);
+    const note=document.getElementById('_mil-route-fillnote');
+    if(note)note.innerHTML='<div style="display:flex;align-items:center;gap:7px;font-size:11px;'+
+      'color:var(--text3);line-height:1.5;margin-bottom:12px">'+
+      '<span style="flex:0 0 22px;height:0;border-top:3px dashed '+_MILE_FILL_COLOR+';border-radius:2px"></span>'+
+      '<span>Dashed is routed, not recorded. The app was closed here, so the phone logged no position and this is the road between the two points it did see.</span></div>';
+  }).catch(()=>{});
+}
+
+// Solid for what the phone watched, dashed for what the router filled in.
+// Returns null when there is nothing to fill or nothing came back, and the
+// caller then leaves the plain trace alone.
+const _MILE_TRACE_COLOR='#2D5DA8';
+const _MILE_FILL_COLOR='#B45309';
+async function _mileRouteFill(r){
   try{
-    tdMapRender({
-      body:document.getElementById('_mil-route-body'),
-      pts,
-      path:r.path,
-      style:{start:{c:'#0E6B39',label:'Start',glyph:'A'},end:{c:'#dc2626',label:'End',glyph:'B'}},
-      st:tdMapState(),hostId:'_mil-route-canvas',height:300,
-      allowKit:(typeof tdAppleHardware==='function')?tdAppleHardware():false,
-    });
-  }catch(_e){}
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2)return null;
+    const gaps=(typeof _mileGaps==='function')?_mileGaps(r):[];
+    if(!gaps.length)return null;
+    const fills=[];
+    for(const g of gaps){
+      const got=await Promise.race([
+        _routeDistance(g.from,g.to,[]),
+        new Promise(res=>setTimeout(()=>res(null),_GEO_ROUTE_TIMEOUT_MS||8000))
+      ]).catch(()=>null);
+      const line=(got&&Array.isArray(got.path)&&got.path.length>=2)?got.path:null;
+      // No road came back: the straight edge the observed trace already draws
+      // is still the honest answer, so this gap contributes nothing.
+      if(line)fills.push({i:g.i,path:line});
+    }
+    if(!fills.length)return null;
+    // The observed trace, cut at every gap that was filled, so a dashed road
+    // never runs underneath a solid line claiming the same stretch.
+    const cut=new Set(fills.map(f=>f.i));
+    const out=[];
+    let run=[p[0]];
+    for(let i=1;i<p.length;i++){
+      if(cut.has(i)){
+        if(run.length>=2)out.push({path:run,color:_MILE_TRACE_COLOR,width:4});
+        run=[p[i]];
+        continue;
+      }
+      run.push(p[i]);
+    }
+    if(run.length>=2)out.push({path:run,color:_MILE_TRACE_COLOR,width:4});
+    fills.forEach(f=>out.push({path:f.path,color:_MILE_FILL_COLOR,width:4,opacity:.9,dash:[7,6]}));
+    return out;
+  }catch(_e){return null;}
 }
 // ── ONE TRIP NUMBER, TWO SCREENS (owner 2026-09-08) ─────────────────────────
 // "list trip numbers on timesheet and on mileage log." The day's trips in

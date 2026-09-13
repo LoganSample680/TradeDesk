@@ -5145,6 +5145,147 @@ test.describe('a recorded path outranks a routed guess', () => {
     return pts;
   };
 
+  // ── THE HOLE A FORCE-CLOSE LEAVES (owner 2026-09-13) ────────────────────
+  // "If app is force closed, should the route call MapKit and route out what
+  // the most direct way would be and that's our mileage route on the map? I
+  // think so."
+  //
+  // The mileage already routes a gapped leg (_geoTraceComplete sends it to the
+  // router). The LINE did not: it drew one straight edge across the hole, which
+  // on his own drives runs through the middle of town. _mileGaps is what finds
+  // a hole worth drawing as a road, and its whole job is telling a force-close
+  // apart from ordinary GPS breathing.
+  test('_mileGaps: minutes AND miles, never one or the other', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const A = [39.0257, -95.7939], B = [39.0457, -95.7151];   // ~4.5 mi apart
+      const near = [39.0258, -95.7940];                          // ~40 ft
+      const t = (m) => 1757700000000 + m * 60000;
+      return {
+        // Four and a half miles with six minutes between the fixes: a hole.
+        hole: _mileGaps({ path: [[A[0], A[1], t(0)], [B[0], B[1], t(6)]] }).length,
+        // The same distance covered in 30 seconds is not a hole, it is a
+        // motorway, and the breadcrumbs either side are real.
+        fast: _mileGaps({ path: [[A[0], A[1], t(0)], [B[0], B[1], t(0.5)]] }).length,
+        // Ten minutes parked 40 feet from where you were is not a hole either.
+        parked: _mileGaps({ path: [[A[0], A[1], t(0)], [near[0], near[1], t(10)]] }).length,
+        // A path with no timestamps can only be judged on distance, and that
+        // is the right fallback: an old row still draws its gap.
+        noStamp: _mileGaps({ path: [[A[0], A[1]], [B[0], B[1]]] }).length,
+        // Two holes in one leg are two fills, and the index says where.
+        two: _mileGaps({ path: [[A[0], A[1], t(0)], [B[0], B[1], t(6)],
+                                [A[0], A[1], t(14)]] }).map(g => g.i),
+        none: _mileGaps({ path: [[A[0], A[1], t(0)], [near[0], near[1], t(1)]] }).length,
+        // Nothing here may throw: this runs inside a map open.
+        nul: _mileGaps(null).length,
+        empty: _mileGaps({}).length,
+        one: _mileGaps({ path: [[A[0], A[1], t(0)]] }).length,
+        junk: _mileGaps({ path: [['x', 'y', 1], [B[0], B[1], t(9)]] }).length,
+        notArray: _mileGaps({ path: 'nope' }).length,
+      };
+    });
+    expect(r.hole).toBe(1);
+    expect(r.fast).toBe(0);
+    expect(r.parked).toBe(0);
+    expect(r.noStamp).toBe(1);
+    expect(r.two).toEqual([1, 2]);
+    expect(r.none).toBe(0);
+    expect(r.nul).toBe(0);
+    expect(r.empty).toBe(0);
+    expect(r.one).toBe(0);
+    expect(r.junk).toBe(0);
+    expect(r.notArray).toBe(0);
+  });
+
+  test('_mileRouteFill asks for nothing when there is no hole, and survives a router that never answers', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const A = [39.0257, -95.7939], B = [39.0457, -95.7151];
+      const t = (m) => 1757700000000 + m * 60000;
+      const tight = { path: [[A[0], A[1], t(0)], [39.0258, -95.7940, t(1)]] };
+      const gapped = { path: [[A[0], A[1], t(0)], [B[0], B[1], t(6)]] };
+      const keep = window._routeDistance, keepT = window._GEO_ROUTE_TIMEOUT_MS;
+      try {
+        // No hole: the router is never called at all.
+        let asked = 0;
+        window._routeDistance = () => { asked++; return Promise.resolve({ miles: 4.5, path: [] }); };
+        const noHole = await _mileRouteFill(tight);
+        const askedForTight = asked;
+        // A hole, but the router comes back with no road: the observed trace
+        // is still the honest picture, so nothing is drawn over it.
+        window._routeDistance = () => Promise.resolve({ miles: 4.5, path: [] });
+        const noRoad = await _mileRouteFill(gapped);
+        // A hole and a router that throws.
+        window._routeDistance = () => Promise.reject(new Error('offline'));
+        const threw = await _mileRouteFill(gapped);
+        // A hole and a router that never answers: the race times out.
+        window._GEO_ROUTE_TIMEOUT_MS = 50;
+        window._routeDistance = () => new Promise(() => {});
+        const hung = await _mileRouteFill(gapped);
+        return { noHole, askedForTight, noRoad, threw, hung };
+      } finally { window._routeDistance = keep; window._GEO_ROUTE_TIMEOUT_MS = keepT; }
+    });
+    expect(r.noHole).toBe(null);
+    expect(r.askedForTight).toBe(0);
+    expect(r.noRoad).toBe(null);
+    expect(r.threw).toBe(null);
+    expect(r.hung).toBe(null);
+  });
+
+  test('_mileRouteFill cuts the observed trace at the hole and dashes only the fill', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const t = (m) => 1757700000000 + m * 60000;
+      // Two watched stretches with a four-mile hole between them.
+      const path = [
+        [39.0257, -95.7939, t(0)], [39.0260, -95.7930, t(1)],
+        [39.0457, -95.7151, t(8)], [39.0460, -95.7140, t(9)],
+      ];
+      const keep = window._routeDistance;
+      window._routeDistance = () => Promise.resolve({
+        miles: 4.6, path: [[39.0260, -95.7930], [39.0350, -95.7500], [39.0457, -95.7151]],
+      });
+      try { return await _mileRouteFill({ path }); }
+      finally { window._routeDistance = keep; }
+    });
+    expect(Array.isArray(r)).toBe(true);
+    const solid = r.filter(s => !s.dash);
+    const dashed = r.filter(s => Array.isArray(s.dash) && s.dash.length);
+    // The watched trace is cut in two, so no solid line crosses the hole.
+    expect(solid.length).toBe(2);
+    expect(solid.every(s => s.path.length === 2)).toBe(true);
+    // And exactly one dashed road fills it.
+    expect(dashed.length).toBe(1);
+    expect(dashed[0].path.length).toBe(3);
+    // Different colours, because "watched" and "guessed" must not read alike.
+    expect(dashed[0].color).not.toBe(solid[0].color);
+  });
+
+  test('the dashed style reaches the drawn line, tiles or no tiles', async ({ page }) => {
+    // The fallback plot is what renders in CI (no MapKit on an unauthorized
+    // origin), and it is also what every Android and Windows user sees, so the
+    // dash has to survive that path too, not just Apple's.
+    const html = await page.evaluate(() => {
+      const host = document.createElement('div');
+      host.id = '_dash-probe-body';
+      document.body.appendChild(host);
+      try {
+        tdMapRender({
+          body: host, hostId: '_dash-probe', height: 120, allowKit: false,
+          st: tdMapState(),
+          pts: [{ lat: 39.0257, lon: -95.7939, type: 'start', label: 'A' },
+                { lat: 39.0457, lon: -95.7151, type: 'end', label: 'B' }],
+          style: { start: { c: '#0E6B39', glyph: 'A' }, end: { c: '#dc2626', glyph: 'B' } },
+          paths: [
+            { path: [[39.0257, -95.7939], [39.0260, -95.7930]], color: '#2D5DA8', width: 4 },
+            { path: [[39.0260, -95.7930], [39.0457, -95.7151]], color: '#B45309', width: 4, dash: [7, 6] },
+          ],
+        });
+        return host.innerHTML;
+      } finally { host.remove(); }
+    });
+    expect(html).toContain('stroke-dasharray="7 6"');
+    // Exactly one of the two is dashed: the watched stretch stays solid.
+    expect((html.match(/stroke-dasharray/g) || []).length).toBe(1);
+  });
+
   test('_milePathMiles measures the line that was actually driven', async ({ page }) => {
     const r = await page.evaluate((path) => ({
       real: _milePathMiles({ path }),
