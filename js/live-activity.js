@@ -80,6 +80,32 @@ const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C',onsite:'#F2A93B'};
 // card actually changes (every fix, versus every tenth of a mile).
 const _liveLast={};
 
+// ── A CARD OUTLIVES THE APP, AND _liveLast DOES NOT (owner 2026-09-12) ──────
+// "Why is my gps Dynamic Island still running?" Because nothing could end it.
+//
+// Every "there should be no card now" path asked `if(_liveLast[ch]!=null)`
+// before ending, which reads as "only bother if we put one up". But _liveLast
+// is plain memory: a force-quit, a relaunch, or the version watchdog's reload
+// wipes it, while the ActivityKit card sails straight through all three. So
+// after any relaunch the app looks at an empty map, concludes it never started
+// anything, and leaves a card it can no longer see running forever. His drive
+// card went up at 15:29 on the 11th and was still there a day later.
+//
+// The fix is to stop asking whether WE started it and start asking whether
+// THIS LAUNCH has already told ActivityKit to end it. Ending is idempotent and
+// a no-op when nothing is live, so the worst case is one wasted native call
+// per channel per launch, and the best case is the island going dark the way
+// it always should have.
+//
+// Not a native change (3.2): the plugin already exposes end(). This is a UAT
+// roll, never a build.
+const _liveEnded={};
+function _liveActEndIfLive(channel){
+  if(_liveEnded[channel])return false;
+  _liveActEnd(channel);
+  return true;
+}
+
 // Payloads iOS refused to START because the app was backgrounded, held until
 // it is on screen again. Keyed by channel, so a newer state simply replaces an
 // older one rather than queueing a stale card.
@@ -256,12 +282,16 @@ async function _liveActSet(channel,state){
     // fixes, and from a chat message they look identical.
     _liveActReport(started?'updated':'started',channel);
     _liveLast[channel]=sig;
+    delete _liveEnded[channel];   // there is a card again; the next end is real
     return true;
   }catch(_e){_liveActReport('threw',channel+':'+((_e&&_e.message)||'?'));return false;}
 }
 
 async function _liveActEnd(channel){
   delete _liveLast[channel];
+  // This launch has now asked ActivityKit to end this channel, so the polling
+  // paths above can stop asking until something starts one again.
+  _liveEnded[channel]=true;
   _liveActDropToken(channel);
   const P=_liveActPlugin();
   if(!P||typeof P.end!=='function')return;
@@ -326,6 +356,7 @@ function _liveActRemoteEnd(targetUid,channel){
 // lock exists to prevent.
 async function _liveActEndAll(){
   Object.keys(_liveLast).forEach(k=>delete _liveLast[k]);
+  ['drive','clock','onsite'].forEach(k=>{_liveEnded[k]=true;});
   _liveActDropToken(null);   // all channels: the session is over
   const P=_liveActPlugin();
   if(!P||typeof P.endAll!=='function')return;
@@ -421,7 +452,7 @@ function _liveActClockIn(t){
   const nextInfo=_liveActNextScopeInfo(t.jobId,t.scopeId);
   // One timer for one spot: the clock card carries the site clock, so the
   // on-site card steps aside (it comes back on clock-out, see below).
-  if(_liveLast.onsite!=null)_liveActEnd('onsite');
+  _liveActEndIfLive('onsite');
   _liveActSet('clock',{
     kind:'CLOCKED IN',
     title:who,
@@ -463,7 +494,7 @@ function _liveActDrive(){
   // comes down when the window closes, not two minutes of banner-fade later.
   try{if(!driving&&typeof _geoDriveWindowOn==='function'&&_geoDriveWindowOn())driving=true;}catch(_e){}
   if(!driving){
-    if(_liveLast.drive!=null)_liveActEnd('drive');
+    _liveActEndIfLive('drive');
     return;
   }
   let miles=0,steps=0;
@@ -517,11 +548,11 @@ function _liveActOnSite(dwell){
   // about nothing. A clock-in at home still shows, because that is the person
   // saying they ARE working, and it comes through the clock channel.
   if(d&&d.atHome){
-    if(_liveLast.onsite!=null)_liveActEnd('onsite');
+    _liveActEndIfLive('onsite');
     return false;
   }
   if(!d||!(Number(d.sinceTs)>0)||_liveLast.clock!=null){
-    if(_liveLast.onsite!=null)_liveActEnd('onsite');
+    _liveActEndIfLive('onsite');
     return false;
   }
   const kind=String(d.kind||'');
@@ -572,6 +603,7 @@ async function _liveActForeground(){
         // The same signature _liveActSet stores, from the same function, so
         // the next unchanged assert is deduped instead of spending an update.
         _liveLast[ch]=_liveActSig(payload);
+        delete _liveEnded[ch];
       }catch(_e){}
     }
     // Re-assert from the live state too: a dwell that was published while the

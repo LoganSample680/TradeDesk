@@ -178,15 +178,21 @@ test.describe('geo-derive: the day deriver', () => {
       const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
       return { ds, t };
     };
+    // `baseAt` is where the truck starts and ends the day, SHOP unless a test
+    // says otherwise. It is a fixture knob, not deriver input, so it never
+    // reaches the returned object.
     const visit = (iso, hFrom, hTo, over) => {
       const { ds, t } = dayOf(iso);
+      const o = Object.assign({}, over || {});
+      const at = o.baseAt || SHOP;
+      delete o.baseAt;
       const tape = [mo(t(hFrom - 1), 'onFoot'), mo(t(hFrom, 0), 'automotive'), mo(t(hFrom, 20), 'onFoot'),
         mo(t(hTo, 0), 'automotive'), mo(t(hTo, 20), 'onFoot')];
-      const fixes = [fix(t(hFrom - 1, 30), { lat: SHOP.lat, lng: SHOP.lng }),
+      const fixes = [fix(t(hFrom - 1, 30), { lat: at.lat, lng: at.lng }),
         fix(t(hFrom, 20) + 5000, { lat: DOE.lat, lng: DOE.lng }), fix(t(hTo, 0) - 60000, { lat: DOE.lat, lng: DOE.lng }),
-        fix(t(hTo, 20) + 5000, { lat: SHOP.lat, lng: SHOP.lng }), fix(t(hTo + 1), { lat: SHOP.lat, lng: SHOP.lng })];
+        fix(t(hTo, 20) + 5000, { lat: at.lat, lng: at.lng }), fix(t(hTo + 1), { lat: at.lat, lng: at.lng })];
       return Object.assign({ day: iso, dayStart: ds, dayEnd: ds + 86400000, personId: 'p', tape, fixes,
-        fences: [SHOP, HOME, DOE], nowMs: ds + 86400000 + 3600000 }, over || {});
+        fences: [SHOP, HOME, DOE], nowMs: ds + 86400000 + 3600000 }, o);
     };
     const held = (inp) => page.evaluate((i) => {
       const r = geoDeriveDay(i);
@@ -304,13 +310,30 @@ test.describe('geo-derive: the day deriver', () => {
     });
 
     test('a drive that touches the shop is business, held visit or not', async () => {
-      // The shop is a business address by definition, so the leg earns its
+      // A REAL yard is a business address by definition, so the leg earns its
       // miles from that end whatever the other one is.
+      //
+      // AMENDED 2026-09-12 (10.4). This used the base SHOP, which sits 20 ft
+      // from the base HOME because it models the owner's real account, where
+      // the yard and the house are the same building. That is now the one shop
+      // that does NOT vouch: coming home is not arriving at work, and treating
+      // it as such is why his day could never end. The claim being tested is
+      // about a yard, so the fixture now uses one.
+      const YARD = { id: 'place-yard', kind: 'shop', name: 'The yard', lat: 39.0605, lng: -95.7702 };
+      const DOE_P = Object.assign({}, DOE, { personal: true });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [YARD, HOME, DOE_P], baseAt: YARD }));
+      const toYard = r.legs.filter(l => l.to === YARD.name);
+      expect(toYard.length).toBeGreaterThan(0);
+      expect(toYard.every(l => !l.held), 'a yard that is not your house vouches').toBe(true);
+    });
+
+    test('but the same shop AT his own house does not: that is coming home', async () => {
+      // The other half, and the whole reason his day could not end.
       const DOE_P = Object.assign({}, DOE, { personal: true });
       const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [SHOP, HOME, DOE_P] }));
       const toShop = r.legs.filter(l => l.to === SHOP.name);
       expect(toShop.length).toBeGreaterThan(0);
-      expect(toShop.every(l => !l.held), 'shop end vouches').toBe(true);
+      expect(toShop.every(l => l.held), 'a shop 20 ft from the home office is the house').toBe(true);
     });
 
     test('an ordinary client day is completely unchanged', async () => {
@@ -334,6 +357,140 @@ test.describe('geo-derive: the day deriver', () => {
       const DOE_J = Object.assign({}, DOE, { personal: true, jobId: 'job-1' });
       const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [HOME, DOE_J] }));
       expect(r.legs.every(l => !l.held)).toBe(true);
+    });
+
+    // ── Rule 13's third witness: open on the books (owner 2026-09-12) ─────
+    // "flag the question if it's work or personal if there's no active job or
+    // proposal that's open on the books." The calendar witness is date-bound;
+    // this one is not. A live job or an unanswered proposal is a reason to be
+    // at a family member's address, whatever the date.
+    test('a family contact with an open job on the books is work again', async () => {
+      const MOM = Object.assign({}, DOE, { personal: true, onBooks: true });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [HOME, MOM] }));
+      expect(r.legs.every(l => !l.held), 'the books vouch, the way the calendar does').toBe(true);
+    });
+
+    test('the same contact with nothing on the books still asks', async () => {
+      const MOM = Object.assign({}, DOE, { personal: true, onBooks: false });
+      const r = await legsOf(visit('2026-09-01', 13, 16, { fences: [HOME, MOM] }));
+      expect(r.legs.every(l => l.held), 'family, and nothing open anywhere').toBe(true);
+    });
+
+    test('on the books is only a family contact\'s reprieve, never a new hold', async () => {
+      // An ordinary client never needed it: the working-day window already
+      // covers them. So its absence must not take anything away.
+      const r = await legsOf(visit('2026-09-01', 13, 16,
+        { fences: [HOME, Object.assign({}, DOE, { onBooks: false })] }));
+      expect(r.legs.some(l => l.held)).toBe(false);
+    });
+
+    // ── Rule 16: a day that never reached business writes no drives ───────
+    // Owner 2026-09-12, checked against every day the crew member has on
+    // record. All six of his CLOCKED days open home -> the yard or a real
+    // customer. Not one of his four unclocked days touches a business address:
+    // two are the same gym run a week apart (out 5:25, home 6:21, both ends
+    // unsaved), two are a family address. These four fixtures are those days.
+    const gym = (over) => {
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const GYM = { lat: 39.0501, lng: -95.7301 };   // nobody ever saved it
+      return Object.assign({
+        day: '2026-09-10', dayStart: ds, dayEnd: ds + 86400000, personId: 'p',
+        tape: [mo(t(5, 20), 'still'), mo(t(5, 25), 'automotive'), mo(t(5, 33), 'onFoot'),
+          mo(t(6, 21), 'automotive'), mo(t(6, 29), 'onFoot'), mo(t(6, 35), 'still')],
+        fixes: [fix(t(5, 22), { lat: 39.0210, lng: -95.7500 }),
+          fix(t(5, 33) + 5000, GYM), fix(t(6, 10), GYM),
+          fix(t(6, 29) + 5000, { lat: HOME.lat, lng: HOME.lng }), fix(t(7, 30), { lat: HOME.lat, lng: HOME.lng })],
+        fences: [HOME], nowMs: ds + 86400000 + 3600000,
+      }, over || {});
+    };
+    const out = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+      return { legs: r.legs.length, miles: rows.td_mileage.length, time: rows.job_time_entries.length };
+    }, inp);
+
+    test('the gym run: unsaved to unsaved to home, no clock, writes nothing', async () => {
+      const r = await out(gym());
+      expect(r.legs, 'nothing in the day reached business').toBe(0);
+      expect(r.miles).toBe(0);
+    });
+
+    test('the same day with a clock is claimed in full', async () => {
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const r = await out(gym({ clocks: [{ start: ds + 5 * 3600000, end: ds + 7 * 3600000 }] }));
+      expect(r.legs, 'the person said they were working').toBeGreaterThan(0);
+    });
+
+    test('one leg touching the yard keeps the whole day', async () => {
+      const SHOP2 = { id: 'p-shop', kind: 'shop', name: 'JS Solutions shop', lat: 39.0501, lng: -95.7301 };
+      const r = await out(gym({ fences: [HOME, SHOP2] }));
+      expect(r.legs, 'a business end anywhere proves the day happened').toBeGreaterThan(0);
+    });
+
+    test('a family address still ASKS: the drives stay so the question can be answered', async () => {
+      // The owner's own carve-out: "except for Laurie which we now tag as
+      // family and flag the question if it's work or personal." A named visit
+      // is something to ask about; the gym is not.
+      const FAM = { id: 'client-9', kind: 'client', name: 'Laurie', clientId: 9,
+        personal: true, lat: 39.0501, lng: -95.7301, addr: '6712 SW Finsbury Ave' };
+      const r = await out(gym({ fences: [HOME, FAM] }));
+      expect(r.legs, 'held, not deleted, so rule 15 can ask').toBeGreaterThan(0);
+    });
+
+    // ── Rule 17: the workday window (owner 2026-09-12) ────────────────────
+    // "We got a business fence to business fence to start the work timer, and
+    // or we got a manual clock in and clock out, and everything in between
+    // those times." Plus the case that decides where it OPENS: "some days Jack
+    // went straight from home to a job site, but he had a manual clock in in
+    // the middle of the day."
+    const SHOPB = { id: 'p-yard', kind: 'shop', name: 'The yard', lat: 39.0501, lng: -95.7301 };
+
+    test('the clock comes 46 minutes after he pulled out: the drive is still inside the day', async () => {
+      // His real 31 August. Out at 7:09, clocked in at 7:55 when he ARRIVED.
+      // A window anchored on the clock throws that 41-minute drive away.
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const r = await page.evaluate((i) => {
+        const res = geoDeriveDay(i);
+        return { legs: res.legs.length, first: res.legs[0] && res.legs[0].to.name };
+      }, gym({ fences: [HOME, SHOPB], clocks: [{ start: t(6, 15), end: t(9) }] }));
+      expect(r.legs, 'the drive that started before the clock is in the day').toBeGreaterThan(0);
+      expect(r.first).toBe('The yard');
+    });
+
+    test('a clock with no drive under it still opens the day', async () => {
+      // The mirror, his 8 September: clocked at 7:58, first drive 13:28.
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const r = await out(gym({ clocks: [{ start: t(5), end: t(7) }] }));
+      expect(r.legs, 'the clock is the only signal and it is enough').toBeGreaterThan(0);
+    });
+
+    test('an evening gym run after a real workday is still not work', async () => {
+      // The case that stops "the day was open" meaning "everything today was
+      // work": the window CLOSES, and the loop falls outside it.
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const r = await page.evaluate((i) => {
+        const res = geoDeriveDay(i);
+        return res.legs.map(l => [l.from.name || 'unsaved', l.to.name || 'unsaved']);
+      }, gym({
+        fences: [HOME, SHOPB],
+        tape: [mo(t(7), 'still'), mo(t(7, 10), 'automotive'), mo(t(7, 30), 'onFoot'),
+          mo(t(15), 'automotive'), mo(t(15, 20), 'onFoot'),
+          mo(t(20), 'automotive'), mo(t(20, 15), 'onFoot'),
+          mo(t(21), 'automotive'), mo(t(21, 15), 'onFoot'), mo(t(21, 30), 'still')],
+        fixes: [fix(t(7, 5), { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(7, 30) + 5000, SHOPB), fix(t(12), SHOPB),
+          fix(t(15, 20) + 5000, { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(20, 15) + 5000, { lat: 39.0801, lng: -95.7701 }),
+          fix(t(20, 40), { lat: 39.0801, lng: -95.7701 }),
+          fix(t(21, 15) + 5000, { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(22), { lat: HOME.lat, lng: HOME.lng })],
+      }));
+      expect(r.some(l => l[1] === 'The yard'), 'the morning run to the yard counts').toBe(true);
+      expect(r.length, 'and the 8pm loop out of the house does not').toBe(2);
     });
 
     test('a weekday night at a customer, nothing scheduled: held', async () => {
@@ -572,7 +729,12 @@ test.describe('geo-derive: the day deriver', () => {
       // traced leg, off every total, with its far end named as unsaved.
       const t3 = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(9, 40), 'driving'), mo(T(10, 0), 'onFoot')];
       const f3 = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), GAS), fix(T(9, 40, 5), GAS), fix(T(10, 0, 5), { lat: 39.05, lng: -95.70 })];
-      const r = await run(page, base({ tape: t3, fixes: f3 }));
+      // Clocked, for rules 16/17. Since 2026-09-12 the base SHOP is the
+      // owner's own house, so a day that only leaves it and never lands
+      // anywhere has no business end at all and writes nothing. The clock is
+      // his own safety valve for exactly that, and it leaves this test's
+      // subject, the shape of the traced leg, untouched.
+      const r = await run(page, base({ tape: t3, fixes: f3, clocks: [{ start: T(8, 0), end: T(11, 0) }] }));
       expect(r.legs.length).toBe(1);
       expect(r.legs[0].traced).toBe(true);
       expect(r.legs[0].unsavedTo).toBe(true);
@@ -1289,6 +1451,57 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.legs[2].unsavedTo).toBe(true);
     });
 
+    // ── HIS REAL 11 SEPTEMBER, pinned ────────────────────────────────────
+    // The evening shape that keeps coming up: home from the last customer at
+    // 17:39, straight back out, home again at 20:58. His shop and his home
+    // office are 4 metres apart (the same building), so every one of those
+    // arrivals is an arrival at a shop fence.
+    //
+    // These two do NOT prove the shop-is-not-a-shop fix below them; both pass
+    // without it, because rule 7 already marks a house loop and rule 17
+    // already refuses to let one open the workday. They are here to PIN that
+    // behaviour on his real day, so the next change to the window has to say
+    // out loud that it is moving it.
+    const sep11 = (loopOutHour, loopOutMin) => {
+      const tape = [mo(T(7, 40), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 2), 'onFoot'),
+        mo(T(12, 30), 'driving'), mo(T(12, 41), 'onFoot'),
+        mo(T(13, 17), 'driving'), mo(T(13, 25), 'onFoot'),
+        mo(T(17, 23), 'driving'), mo(T(17, 39), 'onFoot'),
+        mo(T(loopOutHour, loopOutMin), 'driving'), mo(T(loopOutHour, loopOutMin + 20), 'onFoot'),
+        mo(T(20, 48), 'driving'), mo(T(20, 58), 'onFoot')];
+      const fixes = [fix(T(7, 52, 5), SHOP), fix(T(8, 2, 5), DOE), fix(T(12, 30, 5), DOE),
+        fix(T(12, 41, 5), SHOP), fix(T(13, 17, 5), SHOP), fix(T(13, 25, 5), DOE),
+        fix(T(17, 23, 5), DOE), fix(T(17, 39, 5), SHOP),
+        fix(T(loopOutHour, loopOutMin, 5), SHOP), fix(T(loopOutHour, loopOutMin + 20, 5), GAS),
+        fix(T(20, 48, 5), GAS), fix(T(20, 58, 5), SHOP), fix(T(21, 30), SHOP)];
+      return base({ tape, fixes });
+    };
+
+    test('his real 11 September: the evening run inside the wrap still counts', async () => {
+      // Out again at 17:45, six minutes after getting home, which overlaps
+      // the window (last customer 17:23 plus the 30-minute wrap = 17:53). The
+      // workday was still open, so every drive stands.
+      const r = await run(page, sep11(17, 45));
+      const rows = await page.evaluate(i => geoDeriveRows(geoDeriveDay(i),
+        { contractorId: 'c', employeeId: 'e' }), sep11(17, 45));
+      expect(r.legs.filter(l => l.held === true).length, 'nothing held on a day that stayed open').toBe(0);
+      expect(rows.td_mileage.length).toBe(5);
+    });
+
+    test('the same evening run 40 minutes later is his own time, and the day is over', async () => {
+      // Out at 18:20, past the wrap. The workday closed at 17:53 (last
+      // customer 17:23 plus the 30-minute wrap) and a loop out of the house
+      // and back proves nothing, so it is his own time and writes nothing.
+      const r = await run(page, sep11(18, 20));
+      const rows = await page.evaluate(i => geoDeriveRows(geoDeriveDay(i),
+        { contractorId: 'c', employeeId: 'e' }), sep11(18, 20));
+      const evening = r.legs.filter(l => Number(l.startTs) >= T(18, 0));
+      expect(evening.length, 'the evening loop is gone entirely').toBe(0);
+      // The four real drives to and from the customer are untouched.
+      expect(rows.td_mileage.length).toBe(4);
+      expect(rows.td_mileage.every(m => !m.pendingPurpose)).toBe(true);
+    });
+
     test('a real shop after the last job keeps the unloading, capped, and nothing past it', async () => {
       const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(16, 0), 'driving'), mo(T(16, 20), 'onFoot'), mo(T(18, 0), 'driving'), mo(T(18, 20), 'onFoot')];
       const fixes = [fix(T(9, 0, 5), YFIX), fix(T(9, 20, 5), DOE), fix(T(16, 0, 5), DOE), fix(T(16, 20, 5), YFIX), fix(T(17, 0), YFIX), fix(T(18, 0, 5), YFIX), fix(T(18, 20, 5), HFIX), fix(T(19, 0), HFIX)];
@@ -1424,9 +1637,25 @@ test.describe('geo-derive: the day deriver', () => {
                   mo(T(11, 0), 'driving'), mo(T(11, 20), 'onFoot')];
       const f2 = [fix(T(6, 30, 5), SHOP), fix(T(6, 50, 5), DOE), fix(T(9, 0), DOE), fix(T(11, 0, 5), DOE),
                   fix(T(11, 20, 5), SHOP), fix(T(12, 0), SHOP)];
-      const worked = await run(page, base({ tape: t2, fixes: f2, nowMs: T(13, 0) }));
+      // Same spot, same day, but asked while the workday is still open: home
+      // at 11:20, the window runs to 11:50 (last work 11:00 plus the wrap),
+      // so at 11:40 he is between jobs and it counts.
+      //
+      // AMENDED 2026-09-12 (10.4). This used to ask at 13:00 and expect true,
+      // and that was the bug: getting home ended nothing, so the answer was
+      // still true at 13:00, at 20:00, and at 3am. The old assertion was
+      // right that a real work day makes the house count; it was never right
+      // that it counts forever. The clock the question is asked at is now
+      // part of the question.
+      const worked = await run(page, base({ tape: t2, fixes: f2, nowMs: T(11, 40) }));
       expect(worked.open && worked.open.atHome).toBe(true);
       expect(worked.open && worked.open.counts).toBe(true);
+
+      // The same day, same open dwell, asked that evening: the workday closed
+      // at 11:50 and he never left, so it is his own house and his own time.
+      const evening = await run(page, base({ tape: t2, fixes: f2, nowMs: T(19, 0) }));
+      expect(evening.open && evening.open.atHome).toBe(true);
+      expect(evening.open && evening.open.counts).toBe(false);
 
       // Standing at a client: always counts, house rules never apply.
       const t3 = [mo(T(6, 0), 'onFoot'), mo(T(6, 30), 'driving'), mo(T(6, 50), 'onFoot')];
@@ -1434,6 +1663,38 @@ test.describe('geo-derive: the day deriver', () => {
       const onsite = await run(page, base({ tape: t3, fixes: f3, nowMs: T(12, 0) }));
       expect(onsite.open && onsite.open.name).toBe('John Doe');
       expect(onsite.open && onsite.open.counts).toBe(true);
+      // And still at 10pm: the end of the workday is a rule about the HOUSE.
+      // Somebody standing at a customer's address at 22:00 is either working
+      // or has a problem, and neither is the app's to decide silently.
+      const late = await run(page, base({ tape: t3, fixes: f3, nowMs: T(22, 0) }));
+      expect(late.open && late.open.counts).toBe(true);
+    });
+
+    test('driving out again re-opens the day: nothing here can strand a day that was not over', async () => {
+      // Home at 11:20, the workday closes at 11:50, and at 13:00 he is off
+      // the clock. Then he drives back out to Doe at 14:00 and home again at
+      // 17:00, and the evening at the house is judged against THAT day, not
+      // against the morning. Asked at 16:00, standing at Doe's, it counts.
+      const tape = [mo(T(6, 0), 'onFoot'), mo(T(6, 30), 'driving'), mo(T(6, 50), 'onFoot'),
+                    mo(T(11, 0), 'driving'), mo(T(11, 20), 'onFoot'),
+                    mo(T(14, 0), 'driving'), mo(T(14, 20), 'onFoot')];
+      const fixes = [fix(T(6, 30, 5), SHOP), fix(T(6, 50, 5), DOE), fix(T(9, 0), DOE), fix(T(11, 0, 5), DOE),
+                     fix(T(11, 20, 5), SHOP), fix(T(13, 0), SHOP), fix(T(14, 0, 5), SHOP),
+                     fix(T(14, 20, 5), DOE), fix(T(16, 0), DOE)];
+      const r = await run(page, base({ tape, fixes, nowMs: T(16, 30) }));
+      expect(r.open && r.open.name).toBe('John Doe');
+      expect(r.open && r.open.counts).toBe(true);
+    });
+
+    test('a day with no work in it never starts counting, whatever time it is asked', async () => {
+      // The other direction, unchanged: no window exists at all, so the
+      // nowMs test never comes into it and the old rule still decides.
+      const tape = [mo(T(5, 30), 'driving'), mo(T(6, 0), 'onFoot')];
+      const fixes = [fix(T(6, 0, 5), SHOP), fix(T(7, 0), SHOP), fix(T(8, 0), SHOP)];
+      for (const at of [T(9, 0), T(14, 0), T(23, 0)]) {
+        const r = await run(page, base({ tape, fixes, nowMs: at }));
+        expect(r.open && r.open.counts).toBe(false);
+      }
     });
 
     // The other half of that line: a day whose only fences are a REAL yard and
@@ -1659,7 +1920,14 @@ test.describe('geo-derive: the day deriver', () => {
     test('with no fix after the flip at all, nothing is invented: the far end is unsaved, not the shop', async () => {
       const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 11, 28), 'automotive'), mo(T(7, 50, 34), 'onFoot')];
       const fixes = [fix(T(7, 0), JF), fix(T(7, 11, 28), JF), fix(T(7, 48, 18), NEARLY)];
-      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(9, 0) }));
+      // The clock is here for RULE 16, not for this test's subject. Its day is
+      // house to somewhere unsaved and nothing else, which since 2026-09-12 is
+      // an empty day and writes no legs at all. The clock is the owner's own
+      // safety valve for exactly that ("he uses the manual clock in"), and it
+      // leaves the question this test asks untouched: does the far end resolve
+      // to unsaved, or get snapped to the shop.
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(9, 0),
+        clocks: [{ start: T(7, 0), end: T(8, 0) }] }));
       // The guard is the same: no arrival is invented at the shop. Since rule
       // 14 the drive itself is a traced leg ending somewhere unsaved.
       expect(r.legs.length).toBe(1);
@@ -2302,6 +2570,60 @@ test.describe('geo-derive: the day deriver', () => {
   // ── Rule 14: a drive with an unsaved end is still a drive (owner 2026-09-08)
   // "only things with addresses saved should update any totals, if a address
   // gets added it can add the mileage back on the deriver."
+  // ── Where the truck actually sat (owner 2026-09-12) ──────────────────────
+  // His 11 September evening came back as "3600 SW Lincolnshire". He was at
+  // 6812 SW Finsbury, 0.84 miles away. Four fixes across 2h43m parked: a pair
+  // identical to five decimals 4,415 ft out, then a pair 27 ft from where the
+  // tape says he went still. The first pair is one cached reading replayed and
+  // contradicted forty seconds later, and it won only by being first.
+  test.describe('_gdStopFix: the position the dwell agrees on', () => {
+    const f = (ts, lat, lng, acc) => ({ ts, lat, lng, acc: acc == null ? null : acc });
+    const pick = (fixes, a, b) => page.evaluate(
+      ([fx, from, to]) => { const r = _gdStopFix(fx, from, to, 100, fx[0]); return r && [r.lat, r.lng]; },
+      [fixes, a, b]);
+
+    test('his real stop: the frozen pair loses to the corroborated one', async () => {
+      const got = await pick([f(1000, 39.00232315, -95.76750946), f(2000, 39.00232315, -95.76750946),
+        f(3000, 39.01050, -95.77900), f(4000, 39.01050, -95.77900)], 0, 9999);
+      expect(got, 'a cache replays the past; on a tie the later reading is the live one').toEqual([39.01050, -95.77900]);
+    });
+
+    test('weight of evidence beats recency', async () => {
+      // Three readings agreeing against one later straggler: the three win.
+      const got = await pick([f(1000, 39.05, -95.75), f(2000, 39.05, -95.75),
+        f(3000, 39.05, -95.75), f(4000, 39.09, -95.71)], 0, 9999);
+      expect(got).toEqual([39.05, -95.75]);
+    });
+
+    test('a single fix is still the answer, and an inaccurate one is not', async () => {
+      expect(await pick([f(1000, 39.05, -95.75)], 0, 9999)).toEqual([39.05, -95.75]);
+      const got = await pick([f(1000, 39.05, -95.75), f(2000, 39.09, -95.71, 5000),
+        f(3000, 39.09, -95.71, 5000)], 0, 9999);
+      expect(got, 'two agreeing readings are worth nothing if both are junk').toEqual([39.05, -95.75]);
+    });
+
+    test('outside the dwell does not count, and an empty dwell falls back', async () => {
+      const got = await pick([f(10, 39.09, -95.71), f(20, 39.09, -95.71), f(3000, 39.05, -95.75)], 1000, 9999);
+      expect(got, 'the pair is before the stop began').toEqual([39.05, -95.75]);
+      const back = await page.evaluate(() => {
+        const fb = { lat: 1, lng: 2 };
+        const r = _gdStopFix([], 0, 10, 100, fb); return r === fb;
+      });
+      expect(back, 'no fixes in the dwell: the arrival fix still answers').toBe(true);
+    });
+
+    test('junk never throws', async () => {
+      const ok = await page.evaluate(() => {
+        try {
+          _gdStopFix(null, 0, 1, 100, null);
+          _gdStopFix([null, {}, { ts: 'x', lat: 1, lng: 2 }, { ts: 1, lat: null, lng: 2 }], 0, 9, 100, null);
+          return true;
+        } catch (e) { return false; }
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
   test.describe('rule 14: traced legs', () => {
     const GAS2 = { lat: 39.0350, lng: -95.7000 };   // also not saved
     const rowsOf = (inp) => page.evaluate((i) => {
@@ -2313,7 +2635,10 @@ test.describe('geo-derive: the day deriver', () => {
       const t = [mo(T(7, 0), 'onFoot'), mo(T(8, 12), 'automotive'), mo(T(8, 41), 'onFoot')];
       const f = [fix(T(8, 11), GAS), fix(T(8, 12, 5), GAS), fix(T(8, 25), { lat: 39.028, lng: -95.715 }),
         fix(T(8, 41, 5), GAS2), fix(T(9, 0), GAS2)];
-      const { res, rows } = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+      // Clocked, for rule 16: both ends unsaved with nothing else in the day is
+      // an empty day now. This test is about the ROW SHAPE either way.
+      const { res, rows } = await rowsOf(base({ tape: t, fixes: f, nowMs: T(12, 0),
+        clocks: [{ start: T(8, 0), end: T(9, 30) }] }));
       expect(res.legs.length).toBe(1);
       const m = rows.td_mileage[0];
       expect(m.addressUnknown).toBe(true);

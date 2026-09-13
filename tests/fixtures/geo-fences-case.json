@@ -1,5 +1,5 @@
 {
-  "note": "ONE fixture, TWO implementations. _geoDeriveFences (js/geo-track.js) runs it in the browser; geo_fences_for (20260929) runs it in Postgres. Both are asserted against `expect` below, so the two cannot drift without a test going red. Day is 2026-09-01: job 9001 is active (Sep 1 to 2), 9002 ended Aug 20, 9003 is canceled, 9004 is done. A job fence is named for its CLIENT, not the job (js/geo-track.js uses _tlJobClientInfo(j.id).clientName, falling back to the job name, then 'Job'); the SQL half got that wrong on its first run and this fixture is what caught it. c6 is marked family (owner 2026-09-12): identical to c2 in every way except the flag, so a half that drops `personal` fails on that one row alone.",
+  "note": "ONE fixture, TWO implementations. _geoDeriveFences (js/geo-track.js) runs it in the browser; geo_fences_for (20260929) runs it in Postgres. Both are asserted against `expect` below, so the two cannot drift without a test going red. Day is 2026-09-01: job 9001 is active (Sep 1 to 2), 9002 ended Aug 20, 9003 is canceled, 9004 is done. A job fence is named for its CLIENT, not the job (js/geo-track.js uses _tlJobClientInfo(j.id).clientName, falling back to the job name, then 'Job'); the SQL half got that wrong on its first run and this fixture is what caught it. c6 is marked family (owner 2026-09-12): identical to c2 in every way except the flag, so a half that drops `personal` fails on that one row alone. Rule 13 third witness (2026-09-12): c6 is family with only a DRAFT bid and must ask; c7 is identical but carries a Pending proposal and counts as work. c2 shows the whole point of the witness: its job 9002 is still 'upcoming' but dated Aug 20, so scheduled is FALSE (wrong day) and on_books is TRUE (still open work). c6 carries both a Draft and a Closed Lost and stays off the books.",
   "day": "2026-09-01",
   "settings": {
     "officeLat": 39.05,
@@ -76,6 +76,15 @@
       "lon": -95.84,
       "geoAddr": "14 F St",
       "personal": true
+    },
+    {
+      "id": "c7",
+      "name": "Dad, mid-job",
+      "addr": "14 F St",
+      "lat": 39.14,
+      "lon": -95.84,
+      "geoAddr": "14 F St",
+      "personal": true
     }
   ],
   "jobs": [
@@ -136,7 +145,8 @@
       "lat": 39.05,
       "lng": -95.7,
       "scheduled": null,
-      "personal": null
+      "personal": null,
+      "on_books": null
     },
     {
       "id": "place-p1",
@@ -145,7 +155,8 @@
       "lat": 39.06,
       "lng": -95.71,
       "scheduled": null,
-      "personal": null
+      "personal": null,
+      "on_books": null
     },
     {
       "id": "place-p2",
@@ -154,7 +165,8 @@
       "lat": 39.07,
       "lng": -95.72,
       "scheduled": null,
-      "personal": null
+      "personal": null,
+      "on_books": null
     },
     {
       "id": "client-c1",
@@ -163,7 +175,8 @@
       "lat": 39.1,
       "lng": -95.8,
       "scheduled": true,
-      "personal": false
+      "personal": false,
+      "on_books": true
     },
     {
       "id": "client-c2",
@@ -172,7 +185,8 @@
       "lat": 39.11,
       "lng": -95.81,
       "scheduled": false,
-      "personal": false
+      "personal": false,
+      "on_books": true
     },
     {
       "id": "job-9001",
@@ -181,7 +195,8 @@
       "lat": 39.2,
       "lng": -95.9,
       "scheduled": null,
-      "personal": null
+      "personal": null,
+      "on_books": null
     },
     {
       "id": "client-c6",
@@ -190,7 +205,35 @@
       "lat": 39.14,
       "lng": -95.84,
       "scheduled": false,
-      "personal": true
+      "personal": true,
+      "on_books": false
+    },
+    {
+      "id": "client-c7",
+      "kind": "client",
+      "name": "Dad, mid-job",
+      "lat": 39.14,
+      "lng": -95.84,
+      "scheduled": false,
+      "personal": true,
+      "on_books": true
+    }
+  ],
+  "bids": [
+    {
+      "id": "b1",
+      "client_id": "c7",
+      "status": "Pending"
+    },
+    {
+      "id": "b2",
+      "client_id": "c6",
+      "status": "Draft"
+    },
+    {
+      "id": "b3",
+      "client_id": "c6",
+      "status": "Closed Lost"
     }
   ]
 }

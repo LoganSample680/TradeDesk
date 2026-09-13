@@ -827,6 +827,91 @@ final class TdGeoPluginTests: XCTestCase {
         d.removeObject(forKey: "td_geo_flush_inflight")
     }
 
+    // ── THE LIVE LANE (owner 2026-09-13: "real time to the second") ────────
+    // A background URLSession is discretionary for any transfer started while
+    // the app is backgrounded, whatever isDiscretionary says, which is why 191
+    // events recorded in one evening hour arrived in a dump at 2:43am. The
+    // plugin now sends through a default session whenever the process actually
+    // has runtime. These pin the parts of that split that can go wrong without
+    // a device in hand.
+
+    func testLiveAndBackgroundSessionsAreDistinct() {
+        XCTAssertFalse(plugin.liveSessionForTest === plugin.flushSessionForTest,
+                       "the live lane must not be the background session under another name")
+        XCTAssertNil(plugin.liveSessionForTest.configuration.identifier,
+                     "a default session has no identifier; a background one does")
+        XCTAssertEqual(plugin.flushSessionForTest.configuration.identifier, "td.geo.flush")
+        XCTAssertFalse(plugin.liveSessionForTest.configuration.waitsForConnectivity,
+                       "waiting for connectivity is the deferral this exists to avoid")
+    }
+
+    func testInflightKeysCannotCollideAcrossSessions() {
+        // taskIdentifier is unique per SESSION, not per process, so the two
+        // lanes can hand out the same number. Keyed bare, one completion would
+        // consume the other's entry and retire a batch that never landed.
+        let live = plugin.liveSessionForTest
+        let bg = plugin.flushSessionForTest
+        let a = live.dataTask(with: URL(string: "https://x.invalid/a")!)
+        let b = bg.dataTask(with: URL(string: "https://x.invalid/b")!)
+        let ka = plugin.inflightKeyForTest(live, a)
+        let kb = plugin.inflightKeyForTest(bg, b)
+        XCTAssertTrue(ka.hasPrefix("L:"), "the live lane is tagged")
+        XCTAssertTrue(kb.hasPrefix("B:"), "the background lane is tagged")
+        XCTAssertNotEqual(ka, kb, "two lanes, two keys, even on the same identifier")
+        a.cancel(); b.cancel()
+    }
+
+    func testDelegateStillRetiresABareKeyFromAnOlderBuild() {
+        // The upgrade case: a build before the split wrote a bare identifier
+        // and died. Its completion must still advance the watermark rather
+        // than orphan the entry forever.
+        let d = UserDefaults.standard
+        d.set(1000.0, forKey: "td_geo_flush_ts")
+        let task = URLSession.shared.dataTask(with: URL(string: "https://x.invalid/old")!)
+        d.set([String(task.taskIdentifier): 7000.0], forKey: "td_geo_flush_inflight")
+        plugin.urlSession(URLSession.shared, task: task, didCompleteWithError: nil)
+        let inflight = (d.dictionary(forKey: "td_geo_flush_inflight") as? [String: Double]) ?? [:]
+        XCTAssertNil(inflight[String(task.taskIdentifier)],
+                     "a bare entry is consumed, not stranded")
+        // Status 0 is the failure branch, so the watermark is untouched: the
+        // point here is only that the entry was FOUND.
+        XCTAssertEqual(d.double(forKey: "td_geo_flush_ts"), 1000.0)
+        d.removeObject(forKey: "td_geo_flush_ts")
+        d.removeObject(forKey: "td_geo_flush_inflight")
+        task.cancel()
+    }
+
+    func testDelegateOnOneLaneLeavesTheOtherLanesEntryAlone() {
+        let d = UserDefaults.standard
+        d.set(1000.0, forKey: "td_geo_flush_ts")
+        let live = plugin.liveSessionForTest
+        let task = live.dataTask(with: URL(string: "https://x.invalid/live")!)
+        let mine = plugin.inflightKeyForTest(live, task)
+        let theirs = "B:" + String(task.taskIdentifier)
+        d.set([mine: 5000.0, theirs: 9000.0], forKey: "td_geo_flush_inflight")
+        plugin.urlSession(live, task: task, didCompleteWithError: nil)
+        let inflight = (d.dictionary(forKey: "td_geo_flush_inflight") as? [String: Double]) ?? [:]
+        XCTAssertNil(inflight[mine], "its own entry is consumed")
+        XCTAssertEqual(inflight[theirs], 9000.0,
+                       "the other lane's identically numbered task is untouched")
+        d.removeObject(forKey: "td_geo_flush_ts")
+        d.removeObject(forKey: "td_geo_flush_inflight")
+        task.cancel()
+    }
+
+    func testHasLiveRuntimeIsFalseOffTheMainThread() {
+        // UIApplication.applicationState is main-thread only. Asking anywhere
+        // else must answer "no runtime" rather than trip the main-thread
+        // checker, which would crash a background wake.
+        let done = expectation(description: "answered off-main")
+        DispatchQueue.global().async {
+            XCTAssertFalse(self.plugin.hasLiveRuntimeForTest(),
+                           "off the main thread the honest answer is no")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+    }
+
     func testFlushDelegateUnknownTaskIsANoOp() {
         // A callback for a task this plugin never sent (another library's
         // background session, a stale identifier) must change nothing.

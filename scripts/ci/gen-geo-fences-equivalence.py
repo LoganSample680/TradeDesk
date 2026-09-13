@@ -16,16 +16,18 @@ uid = '00000000-0000-4000-8000-0000000000fe'
 q = lambda o: json.dumps(o).replace("'", "''")
 
 seed = [f"insert into zj_data(user_id, settings) values ('{uid}', '{q(case['settings'])}');"]
-for t, key in (('td_places', 'places'), ('td_clients', 'clients'), ('td_jobs', 'jobs')):
+for t, key in (('td_places', 'places'), ('td_clients', 'clients'), ('td_jobs', 'jobs'),
+               ('td_bids', 'bids')):
     for r in case[key]:
         seed.append(f"insert into {t}(id,user_id,data) values ('{r['id']}','{uid}','{q(r)}');")
 
 exp = ",\n    ".join(
-    "('{id}','{kind}','{name}',{lat}::double precision,{lng}::double precision,{sch},{per})".format(
+    "('{id}','{kind}','{name}',{lat}::double precision,{lng}::double precision,{sch},{per},{bok})".format(
         id=f['id'], kind=f['kind'], name=f['name'].replace("'", "''"),
         lat=f['lat'], lng=f['lng'],
         sch='null::boolean' if f['scheduled'] is None else str(f['scheduled']).lower(),
-        per='null::boolean' if f.get('personal') is None else str(f['personal']).lower())
+        per='null::boolean' if f.get('personal') is None else str(f['personal']).lower(),
+        bok='null::boolean' if f.get('on_books') is None else str(f['on_books']).lower())
     for f in sorted(case['expect'], key=lambda f: f['id']))
 
 out = f"""\\set ON_ERROR_STOP on
@@ -43,7 +45,7 @@ insert into auth.users(id, email) values ('{uid}','fixture@geo-fences.test')
   on conflict (id) do nothing;
 create temp table _fx_expect(id text, kind text, name text, lat double precision,
                              lng double precision, scheduled boolean,
-                             personal boolean) on commit drop;
+                             personal boolean, on_books boolean) on commit drop;
 insert into _fx_expect values
     {exp};
 
@@ -60,6 +62,7 @@ begin
      and round(g.lng::numeric,6) = round(e.lng::numeric,6)
      and g.scheduled is not distinct from e.scheduled
      and g.personal is not distinct from e.personal
+     and g.on_books is not distinct from e.on_books
     where g.id is null) z;
   select string_agg(id, ', ' order by id) into extra from (
     select g.id from geo_fences_for('{uid}','{case['day']}') g

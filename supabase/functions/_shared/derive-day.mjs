@@ -163,6 +163,16 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
     clientId: f.client_id ?? undefined,
     jobId: f.job_id ?? undefined,
     scheduled: f.scheduled ?? undefined,
+    // ── RULE 13'S OTHER TWO WITNESSES ────────────────────────────────────
+    // `personal` shipped with the family flag (20261003) and was added to
+    // geo_fences_for without ever being mapped HERE, so the server counted a
+    // visit to a family address as work while the phone held it: the same day
+    // derived two different ways depending on which side got there first.
+    // `onBooks` (20261006) is its reprieve and has to travel with it.
+    // Neither may be dropped: this mapping is the whole contract between the
+    // SQL fence list and the deriver's shape.
+    personal: f.personal ?? undefined,
+    onBooks: f.on_books ?? undefined,
   }));
 
   // This person's closed manual clocks touching the day (rule 13). The owner's

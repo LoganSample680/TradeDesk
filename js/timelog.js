@@ -2502,7 +2502,11 @@ function _tlRenderOpenBanner(){
   try{
     const od=window._geoOpenDwell;
     const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
-    if(od&&od.sinceTs>0&&me){
+    // Home, and the workday is over: nothing to put on an "On site now" card
+    // (owner 2026-09-12). The day rail below still draws where he is, marked
+    // as not counted, because that is the day's shape rather than a claim
+    // that the day is still running.
+    if(od&&od.sinceTs>0&&me&&!(od.atHome&&od.counts===false)){
       visible=visible.concat([{rawId:null,geo:true,notCounted:od.counts===false,personName:(typeof getOwnerName==='function'&&getOwnerName())||'Me',personUid:me,
         clientName:od.name||'On site',jobName:'',startTime:od.sinceIso,startMs:od.sinceTs,elapsedMin:Math.max(0,Math.round((Date.now()-od.sinceTs)/60000))}]);
     }

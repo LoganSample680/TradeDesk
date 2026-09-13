@@ -13,15 +13,16 @@ insert into auth.users(id, email) values ('00000000-0000-4000-8000-0000000000fe'
   on conflict (id) do nothing;
 create temp table _fx_expect(id text, kind text, name text, lat double precision,
                              lng double precision, scheduled boolean,
-                             personal boolean) on commit drop;
+                             personal boolean, on_books boolean) on commit drop;
 insert into _fx_expect values
-    ('client-c1','client','Scheduled Client',39.1::double precision,-95.8::double precision,true,false),
-    ('client-c2','client','Unscheduled Client',39.11::double precision,-95.81::double precision,false,false),
-    ('client-c6','client','Mom',39.14::double precision,-95.84::double precision,false,true),
-    ('job-9001','job','Scheduled Client',39.2::double precision,-95.9::double precision,null::boolean,null::boolean),
-    ('place-p1','supply','Home Depot',39.06::double precision,-95.71::double precision,null::boolean,null::boolean),
-    ('place-p2','home_office','House',39.07::double precision,-95.72::double precision,null::boolean,null::boolean),
-    ('shop','shop','Test Co shop',39.05::double precision,-95.7::double precision,null::boolean,null::boolean);
+    ('client-c1','client','Scheduled Client',39.1::double precision,-95.8::double precision,true,false,true),
+    ('client-c2','client','Unscheduled Client',39.11::double precision,-95.81::double precision,false,false,true),
+    ('client-c6','client','Mom',39.14::double precision,-95.84::double precision,false,true,false),
+    ('client-c7','client','Dad, mid-job',39.14::double precision,-95.84::double precision,false,true,true),
+    ('job-9001','job','Scheduled Client',39.2::double precision,-95.9::double precision,null::boolean,null::boolean,null::boolean),
+    ('place-p1','supply','Home Depot',39.06::double precision,-95.71::double precision,null::boolean,null::boolean,null::boolean),
+    ('place-p2','home_office','House',39.07::double precision,-95.72::double precision,null::boolean,null::boolean,null::boolean),
+    ('shop','shop','Test Co shop',39.05::double precision,-95.7::double precision,null::boolean,null::boolean,null::boolean);
 
 insert into zj_data(user_id, settings) values ('00000000-0000-4000-8000-0000000000fe', '{"officeLat": 39.05, "officeLon": -95.7, "bname": "Test Co", "baddr": "1 Shop Rd"}');
 insert into td_places(id,user_id,data) values ('p1','00000000-0000-4000-8000-0000000000fe','{"id": "p1", "kind": "supply", "name": "Home Depot", "lat": 39.06, "lon": -95.71, "addr": "2 Supply St"}');
@@ -33,11 +34,15 @@ insert into td_clients(id,user_id,data) values ('c3','00000000-0000-4000-8000-00
 insert into td_clients(id,user_id,data) values ('c4','00000000-0000-4000-8000-0000000000fe','{"id": "c4", "name": "Never Located", "addr": "13 D St"}');
 insert into td_clients(id,user_id,data) values ('c5','00000000-0000-4000-8000-0000000000fe','{"id": "c5", "name": "No Address", "lat": 39.13, "lon": -95.83, "geoAddr": ""}');
 insert into td_clients(id,user_id,data) values ('c6','00000000-0000-4000-8000-0000000000fe','{"id": "c6", "name": "Mom", "addr": "14 F St", "lat": 39.14, "lon": -95.84, "geoAddr": "14 F St", "personal": true}');
+insert into td_clients(id,user_id,data) values ('c7','00000000-0000-4000-8000-0000000000fe','{"id": "c7", "name": "Dad, mid-job", "addr": "14 F St", "lat": 39.14, "lon": -95.84, "geoAddr": "14 F St", "personal": true}');
 insert into td_jobs(id,user_id,data) values ('9001','00000000-0000-4000-8000-0000000000fe','{"id": "9001", "client_id": "c1", "name": "Live job", "start": "2026-09-01", "days": 2, "status": "upcoming", "lat": 39.2, "lon": -95.9, "addr": "20 Job Rd"}');
 insert into td_jobs(id,user_id,data) values ('9002','00000000-0000-4000-8000-0000000000fe','{"id": "9002", "client_id": "c2", "name": "Old job", "start": "2026-08-20", "days": 1, "status": "upcoming", "lat": 39.21, "lon": -95.91}');
 insert into td_jobs(id,user_id,data) values ('9003','00000000-0000-4000-8000-0000000000fe','{"id": "9003", "client_id": "c2", "name": "Canceled", "start": "2026-09-01", "days": 1, "status": "canceled", "lat": 39.22, "lon": -95.92}');
 insert into td_jobs(id,user_id,data) values ('9004','00000000-0000-4000-8000-0000000000fe','{"id": "9004", "client_id": "c2", "name": "Done", "start": "2026-09-01", "days": 1, "status": "done", "lat": 39.23, "lon": -95.93}');
 insert into td_jobs(id,user_id,data) values ('9005','00000000-0000-4000-8000-0000000000fe','{"id": "9005", "name": "No coords", "start": "2026-09-01", "days": 1, "status": "upcoming"}');
+insert into td_bids(id,user_id,data) values ('b1','00000000-0000-4000-8000-0000000000fe','{"id": "b1", "client_id": "c7", "status": "Pending"}');
+insert into td_bids(id,user_id,data) values ('b2','00000000-0000-4000-8000-0000000000fe','{"id": "b2", "client_id": "c6", "status": "Draft"}');
+insert into td_bids(id,user_id,data) values ('b3','00000000-0000-4000-8000-0000000000fe','{"id": "b3", "client_id": "c6", "status": "Closed Lost"}');
 
 do $chk$
 declare missing text; extra text; n int;
@@ -50,6 +55,7 @@ begin
      and round(g.lng::numeric,6) = round(e.lng::numeric,6)
      and g.scheduled is not distinct from e.scheduled
      and g.personal is not distinct from e.personal
+     and g.on_books is not distinct from e.on_books
     where g.id is null) z;
   select string_agg(id, ', ' order by id) into extra from (
     select g.id from geo_fences_for('00000000-0000-4000-8000-0000000000fe','2026-09-01') g

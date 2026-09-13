@@ -1214,7 +1214,16 @@ function renderDash(){
     // I've been here down to the minute on the on-site banner"). The deriver
     // reports the open dwell (js/geo-track.js _geoOpenDwellPublish); this
     // card shows it with the arrival stamp and a figure that ticks.
-    const _openDwell=(!_onClock&&!_driving&&window._geoOpenDwell&&window._geoOpenDwell.sinceTs>0)?window._geoOpenDwell:null;
+    // ...UNLESS THE DAY IS OVER AND THIS IS HIS OWN HOUSE (owner 2026-09-12:
+    // "how does a day with automatic drives end? Right now they can't").
+    // The deriver's `counts` is the answer (rule 14, now asking rule 17 as
+    // well): at his own address past the end of the workday it is false, and
+    // a banner counting the evening up is the day refusing to end. Only the
+    // two together suppress it: not counting at a CLIENT is still worth
+    // showing, and being home at noon is still the workday.
+    const _odw=window._geoOpenDwell;
+    const _odwHome=!!(_odw&&_odw.atHome&&_odw.counts===false);
+    const _openDwell=(!_onClock&&!_driving&&_odw&&_odw.sinceTs>0&&!_odwHome)?_odw:null;
     // Styles hoisted OUT of the live branch: the optimistic snapshot card
     // below needs the same keyframes before any live state exists.
     if(!document.getElementById('_td-nearby-anim-style')){

@@ -7034,6 +7034,20 @@ function _geoDayBounds(dayKey){
 
 // The saved locations, as the deriver wants them. Same sources as the park
 // regions (shop, places, clients, that day's jobs) so the fence the phone
+// ── WHAT "OPEN ON THE BOOKS" MEANS (owner 2026-09-12, rule 13's third witness)
+// Two vocabularies, named once, because geo_fences_for has to say the SAME
+// thing in SQL and tests/fixtures/geo-fences-case.json is what stops the two
+// drifting apart. Counted from the live data, every status either table
+// actually holds.
+//
+// A job is open while it is still work to be done. 'complete' and 'done' are
+// both in use and both mean finished; 'canceled' never happened.
+const _GEO_OPEN_JOB={upcoming:1,active:1,'in progress':1,scheduled:1};
+// A bid is open while the client still owes an answer, or owes the work. A
+// Draft has never been put in front of them, so it is evidence of nothing,
+// and Closed Lost / Abandoned are answered.
+const _GEO_OPEN_BID={Pending:1,sent:1,Sent:1,opportunity:1,Won:1,'Closed Won':1};
+
 // armed and the fence the deriver resolves are the same set.
 function _geoDeriveFences(dayKey){
   const out=[];
@@ -7062,10 +7076,23 @@ function _geoDeriveFences(dayKey){
       if(!(hit&&hit.addr===c.addr&&hit.lat!=null))return;
       const scheduled=jl.some(j=>j&&j.status!=='canceled'&&String(j.client_id)===String(c.id)&&
         ((typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true));
+      // OPEN ON THE BOOKS (owner 2026-09-12): rule 13's third witness, and the
+      // ONE thing that lets a contact marked family count as work again.
+      // Deliberately NOT date-bound the way `scheduled` is: a live job is
+      // business whether or not today is one of its days, and a proposal still
+      // sitting out there unanswered is itself the reason to be at the address
+      // (walking it, measuring, chasing the signature).
+      // A Draft never counts: nothing has been put in front of the client yet,
+      // so it is evidence of nothing. Neither does a job already finished or a
+      // bid already lost.
+      const onBooks=jl.some(j=>j&&String(j.client_id)===String(c.id)&&
+          _GEO_OPEN_JOB[String(j.status||'')]===1)||
+        (typeof bids!=='undefined'&&Array.isArray(bids)?bids:[]).some(b=>b&&
+          String(b.client_id)===String(c.id)&&_GEO_OPEN_BID[String(b.status||'')]===1);
       // Marked family or personal on the contact itself (owner 2026-09-12):
       // rule 13 then holds the visit unless the calendar or a running clock
       // vouches for it, instead of letting the working-day window do so.
-      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal});
+      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks});
     });
     (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
       if(!j||j.status==='canceled')return;

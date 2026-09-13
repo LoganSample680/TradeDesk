@@ -1410,6 +1410,41 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).toContain('Proposal');
     });
 
+    // ── THE DAY HAS TO BE ABLE TO END (owner 2026-09-12) ───────────────
+    // "How does a day with automatic drives end? Right now they can't and my
+    // own account is proof." His shop and his home office are the same
+    // building, so the evening at home came back as an open dwell at the shop
+    // and this card counted it up all night. The deriver now says so
+    // (atHome plus counts:false, js/geo-derive.js _gdOpenCounts); the card
+    // has to listen.
+    test('home for the night: the on-site card goes away instead of counting the evening', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer, origDwell = window._geoOpenDwell;
+        _activeTimer = null; _nearbyJob = null;
+        const since = Date.now() - 190 * 60000;
+        const mk = (over) => Object.assign({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop', sinceTs: since,
+          sinceIso: new Date(since).toISOString(), journeyId: 'j2', atHome: true, counts: false,
+          fence: { id: 'shop', kind: 'shop', name: 'TradeDesk shop', jobId: null, clientId: null, addr: '2015 SW Randolph Ave' } }, over || {});
+        const paint = (d) => { window._geoOpenDwell = d; renderDash();
+          const el = document.getElementById('dash-nearby'); return el ? el.innerHTML : ''; };
+        try {
+          return { ok: true,
+            over: paint(mk()),
+            // Still inside the workday: home at lunch is still the workday.
+            midday: paint(mk({ counts: true })),
+            // Not counting at a CUSTOMER's address is a different fact and
+            // still worth showing: only the house is suppressed.
+            client: paint(mk({ atHome: false, counts: false, kind: 'client', name: 'John Doe' })) };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; window._geoOpenDwell = origDwell; }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.over).not.toContain('data-onsite-since');
+      expect(r.over).not.toContain('TradeDesk shop');
+      expect(r.midday).toContain('data-onsite-since');
+      expect(r.client).toContain('data-onsite-since');
+    });
+
     test('no job scheduled today, Clock in falls back to the client\'s nearest open job', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
