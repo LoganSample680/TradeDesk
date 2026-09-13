@@ -1827,6 +1827,146 @@ test.describe('Crew location permission', () => {
     expect(out).toBe(false);
   });
 
+  // ── 5c. Live Activities: the one permission that used to shout ────────────
+  // Owner 2026-09-13, from a crew member's telemetry: roughly forty toasts
+  // reading "Live Activity: disabled in Settings" in twenty-five minutes of
+  // driving, one every drive ping, because the not-ready answer is
+  // deliberately never cached. He got no lock screen card and no Dynamic
+  // Island the whole time and no way to find out why that he could act on.
+  //
+  // The toast is gone and this is where it asks instead, alongside location,
+  // motion and notifications, which is the surface built for exactly this.
+  //
+  // ITS OWN PAGE, unlike everything else in this file. These tests drive the
+  // setup checklist's render path, and a render re-primes the location cache,
+  // which can WRITE a permission row. On the page every other test here
+  // shares, that was enough to make 'the foreground re-report waits for the
+  // native read instead of racing it' fail 200 lines below, for reasons that
+  // had nothing to do with what it was testing. One context, one boot, and
+  // nothing this block does can reach anybody else's assertions.
+  test.describe('live activities on the setup checklist', () => {
+    let page;
+    test.beforeAll(async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+      page = await ctx.newPage();
+      await mockAllExternal(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(page);
+    });
+    test.afterAll(async () => { await page.context().close(); });
+
+  test('live activities: only a switched-OFF phone gets a card', async () => {
+      const out = await page.evaluate(() => {
+        const r = {};
+        ['on', 'off', 'unsupported'].forEach(s => { _liveActCache = s; r[s] = _liveActDone(); });
+        // Never probed yet: silent, so the card cannot flash on a cold boot
+        // before the plugin has answered.
+        _liveActCache = null; r.unknown = _liveActDone();
+        return r;
+      });
+      expect(out.off, 'the only one anybody can fix').toBe(false);
+      expect(out.on).toBe(true);
+      // An iPhone older than 16.1 cannot do this at all. A card nobody can act
+      // on is nagging, so unsupported counts as done, exactly as motion treats
+      // its own 'unsupported'.
+      expect(out.unsupported).toBe(true);
+      expect(out.unknown).toBe(true);
+    });
+
+    test('live activities: the three answers the plugin can give, and what each becomes', async () => {
+      const out = await page.evaluate(async () => {
+        const real = window._liveActPlugin;
+        const probe = async (r) => {
+          _liveActCache = null;
+          window._liveActPlugin = () => ({ isSupported: () => Promise.resolve(r) });
+          _liveActRefreshCache();
+          await new Promise(x => setTimeout(x, 20));
+          return _liveActState();
+        };
+        const res = {
+          on: await probe({ supported: true, enabled: true }),
+          off: await probe({ supported: true, enabled: false }),
+          old: await probe({ supported: false, enabled: false }),
+        };
+        // No native shell at all: a browser, and the whole offline suite.
+        _liveActCache = null;
+        window._liveActPlugin = () => null;
+        _liveActRefreshCache();
+        await new Promise(x => setTimeout(x, 20));
+        res.web = _liveActState();
+        window._liveActPlugin = real;
+        return res;
+      });
+      expect(out).toEqual({ on: 'on', off: 'off', old: 'unsupported', web: 'unsupported' });
+    });
+
+    test('live activities: the card goes straight to Settings, because nothing else can turn it on', async () => {
+      const out = await page.evaluate(async () => {
+        _liveActCache = 'off';
+        let openedSettings = false;
+        const realGeo = window._geoTdPlugin;
+        window._geoTdPlugin = () => ({
+          openSettings: () => { openedSettings = true; return Promise.resolve({ opened: true }); },
+        });
+        _setupTodoGo('liveact');
+        // The tap schedules a re-check 1.2s out, so the card can clear the
+        // moment they come back from Settings. WAIT FOR IT rather than
+        // returning while it is still pending: every test in this file shares
+        // one page, and a stray timer landing inside a later test's window
+        // makes that test fail for reasons that have nothing to do with it.
+        // Which is exactly what happened, to 'the foreground re-report waits
+        // for the native read instead of racing it', 200 lines below.
+        await new Promise(r => setTimeout(r, 1400));
+        window._geoTdPlugin = realGeo;
+        return openedSettings;
+      });
+      expect(out).toBe(true);
+    });
+
+    test('live activities: tapping with no native shell at all is a safe no-op', async () => {
+      const out = await page.evaluate(() => {
+        const realGeo = window._geoTdPlugin;
+        window._geoTdPlugin = () => null;
+        let threw = false;
+        try { _setupTodoGo('liveact'); } catch (e) { threw = true; }
+        window._geoTdPlugin = realGeo;
+        return threw;
+      });
+      expect(out).toBe(false);
+    });
+
+    test('live activities: junk from the plugin never throws and never nags', async () => {
+      const out = await page.evaluate(async () => {
+        const real = window._liveActPlugin;
+        const probe = async (impl) => {
+          _liveActCache = null;
+          window._liveActPlugin = impl;
+          try { _liveActRefreshCache(); } catch (e) { return 'THREW ' + e.message; }
+          await new Promise(x => setTimeout(x, 20));
+          return _liveActState();
+        };
+        const res = [
+          await probe(() => ({ isSupported: () => Promise.reject(new Error('no')) })),
+          await probe(() => ({ isSupported: () => Promise.resolve(null) })),
+          await probe(() => ({ isSupported: () => { throw new Error('sync'); } })),
+          await probe(() => ({})),
+          await probe(() => { throw new Error('plugin lookup threw'); }),
+        ];
+        window._liveActPlugin = real;
+        // Settled and invisible, so this block hands the shared page back in
+        // the state it found it.
+        _liveActCache = 'unsupported';
+        return res;
+      });
+      // A rejection leaves the cache alone (still unknown, which reads as
+      // unsupported and draws nothing); everything else resolves to a state
+      // that draws nothing either. Not one of them may throw.
+      expect(out.every(x => typeof x === 'string' && x.indexOf('THREW') !== 0)).toBe(true);
+      expect(out.every(x => x !== 'off')).toBe(true);
+    });
+
+  });
+
   // ── 6. Employees never leak into another account's roster ──────────────────
 
   test('the crew status cache is keyed per account and resets on switch', async () => {

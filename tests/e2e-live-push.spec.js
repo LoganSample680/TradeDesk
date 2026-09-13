@@ -251,6 +251,101 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r.toasts).toEqual([]);
   });
 
+  // ── FORTY TOASTS AT THE WHEEL (owner 2026-09-13) ───────────────────────
+  //
+  // A crew member drove twenty-five minutes with Live Activities switched off
+  // for TradeDesk and got roughly forty toasts reading "Live Activity:
+  // disabled in Settings", one per drive ping, plus forty rows of telemetry.
+  //
+  // The cause is right and must stay: _liveActReady caches only a YES, because
+  // the switch lives in Settings and a person can flip it back at any moment,
+  // so the app has to keep asking. What was wrong was answering out loud every
+  // time it asked.
+  //
+  // The toast is gone rather than throttled, because it was the wrong surface:
+  // it is fixed in Settings, it appeared while he was driving, and it was gone
+  // before he could have acted on it. The dashboard setup checklist asks now
+  // (js/dashboard.js, the 'liveact' item, tested in e2e-geo-permission).
+  //
+  // ITS OWN PAGE. "Once" is remembered in a module-level object for the life
+  // of the page, which is the entire point of it, so a test asserting a count
+  // of one cannot share a page with anything else that might already have
+  // spent it. One context, one boot, a memo nobody has touched.
+  test.describe('the phone that cannot draw a card says so once', () => {
+    let page;
+    test.beforeAll(async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+      page = await ctx.newPage();
+      await mockAllExternal(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(page);
+    });
+    test.afterAll(async () => { await page.context().close(); });
+
+    test('a phone with the switch off is told once, not once per ping', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const toasts = [];
+        const realToast = window._toast;
+        const reports = [];
+        const realReport = window._liveActReport;
+        window._toast = (m) => { toasts.push(String(m)); };
+        window._liveActReport = (kind, why) => { reports.push(kind + '|' + why); };
+        // supported, but the person switched it off: the exact shape his phone
+        // reported ('drive:disabled'), and the only case worth saying anything
+        // about at all.
+        window.Capacitor = { isNativePlatform: () => true, Plugins: {},
+          registerPlugin: () => ({ isSupported: () => Promise.resolve({ supported: true, enabled: false }) }) };
+        try {
+          const keep = window._liveSupported; window._liveSupported = undefined;
+          // Fifty pings, which is two drives' worth.
+          for (let i = 0; i < 50; i++) await _liveActSet('drive', { kind: 'DRIVING', title: 'On the road' });
+          window._liveSupported = keep;
+          return { toasts, reports };
+        } finally { window.Capacitor = realCap; window._toast = realToast; window._liveActReport = realReport; }
+      });
+      // Not one toast, at any count. This is the whole fix.
+      expect(r.toasts).toEqual([]);
+      // And the telemetry says it once, so it stays a signal rather than a log
+      // of how long somebody drove.
+      expect(r.reports).toEqual(['notready|drive:disabled']);
+    });
+
+    test('a different channel is its own answer, and a different reason is too', async () => {
+      // Once per channel per reason, not once per app. The drive card being off
+      // and the clock card being off are two facts, and an old iPhone that
+      // cannot do this at all is a third.
+      //
+      // NOTE WHAT IS MISSING from the expectation below, because it is the
+      // point rather than an oversight: 'drive:disabled' does not appear. The
+      // test above already spent it on this page, and the memo lives as long
+      // as the page does. Fifty pings in one test and four calls in the next
+      // still produce one line about the drive card being off, which is
+      // exactly the promise.
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const realReport = window._liveActReport;
+        const reports = [];
+        window._liveActReport = (kind, why) => { reports.push(why); };
+        let answer = { supported: true, enabled: false };
+        window.Capacitor = { isNativePlatform: () => true, Plugins: {},
+          registerPlugin: () => ({ isSupported: () => Promise.resolve(answer) }) };
+        try {
+          const keep = window._liveSupported; window._liveSupported = undefined;
+          await _liveActSet('drive', { kind: 'DRIVING', title: 'a' });
+          await _liveActSet('drive', { kind: 'DRIVING', title: 'b' });
+          await _liveActSet('clock', { kind: 'CLOCKED', title: 'c' });
+          answer = { supported: false, enabled: false };
+          await _liveActSet('drive', { kind: 'DRIVING', title: 'd' });
+          window._liveSupported = keep;
+          return reports;
+        } finally { window.Capacitor = realCap; window._liveActReport = realReport; }
+      });
+      expect(r).toEqual(['clock:disabled', 'drive:unsupported']);
+    });
+
+  });
+
   // ── THE SAME CLIENT TWICE IN A DAY ─────────────────────────────────────
   //
   // Owner 2026-09-11, standing at a client he had already worked at that

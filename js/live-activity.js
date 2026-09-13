@@ -165,22 +165,44 @@ function _liveActSig(payload){
     p.tint,p.dualTimer?'D':'',p.nextScopeId,p.isLastScope?'L':''].join('|');
 }
 
+// ── SAID ONCE, NOT FORTY TIMES (owner 2026-09-13) ────────────────────────
+// A crew member drove for twenty-five minutes with Live Activities switched
+// off for TradeDesk, and got roughly forty toasts reading "Live Activity:
+// disabled in Settings", one every thirty seconds, at the wheel. Forty rows
+// of telemetry went with them.
+//
+// The cause was that the not-ready answer is deliberately never cached (see
+// _liveActReady: only a yes is remembered, because the person can change
+// their mind in Settings and the app must notice), and this ran on every
+// drive ping.
+//
+// The toast is gone entirely rather than throttled, because a toast was the
+// wrong surface for it: it is a thing you fix in Settings, it appears while
+// somebody is driving, and it is gone before they could act on it even if
+// they were not. The dashboard setup checklist is where the app asks for a
+// permission it needs, alongside location, motion and notifications, and it
+// is where this asks now (js/dashboard.js, the 'liveact' item).
+//
+// The telemetry stays, once per channel per reason per session, which is what
+// makes it a signal rather than a log of how long somebody drove.
+const _liveNotReadySaid={};
 async function _liveActSet(channel,state){
   if(!(await _liveActReady())){
     // No plugin at all is the ordinary web case, not a fault: every desktop
     // and mobile browser, and the whole offline test suite, has no Capacitor.
-    // Saying anything here would pop a toast on every arrival for every web
-    // user, and it put a floating element over the Home card mid-measurement
-    // in CI. Stay silent unless we are ON a device and the device said no,
-    // which is the only case a person can actually act on (turn Live
-    // Activities back on in Settings).
+    // Nothing to report and nobody who could act on it.
     const P2=_liveActPlugin();
     if(!P2)return false;
     try{
       const diag=await P2.isSupported().catch(()=>({err:'call failed'}));
-      _liveActReport('notready',channel+':'+(diag&&diag.supported?'disabled':'unsupported'));
-      if(typeof _toast==='function')_toast('Live Activity: '+((diag&&diag.supported)?'disabled in Settings':'not supported on this phone'));
-    }catch(_e){_liveActReport('notready',channel+':threw');}
+      const why=channel+':'+(diag&&diag.supported?'disabled':'unsupported');
+      if(!_liveNotReadySaid[why]){_liveNotReadySaid[why]=1;_liveActReport('notready',why);}
+      // The checklist owns telling them. Refresh it so the card appears on
+      // the first ping that finds the switch off, rather than on next boot.
+      if(diag&&diag.supported&&typeof _liveActRefreshCache==='function')_liveActRefreshCache();
+    }catch(_e){
+      if(!_liveNotReadySaid[channel+':threw']){_liveNotReadySaid[channel+':threw']=1;_liveActReport('notready',channel+':threw');}
+    }
     return false;
   }
   const P=_liveActPlugin();

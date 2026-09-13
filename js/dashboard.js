@@ -119,6 +119,7 @@ function _renderDashSetupTodo(){
   _geoRefreshPermCache();
   _motionRefreshPermCache();
   _notifyRefreshPermCache();
+  _liveActRefreshCache();
   // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
   // from day one and drops off the moment it's done (or the contractor skips an
   // optional one); the whole card collapses once nothing's left. Copy is money/
@@ -210,6 +211,16 @@ function _renderDashSetupTodo(){
         ?'Motion access is off, so drive start/stop times may run a little softer. Takes two taps in your phone settings.'
         :'Times exactly when a drive starts and stops, using the motion coprocessor already running on your phone.',
       cta:_motionPermState()==='denied'?'Fix it':'Allow'},
+    // Live Activities: skippable, and it only ever appears for somebody who
+    // has switched it OFF (see _liveActDone). Nothing about tracking depends
+    // on it, which is why the copy sells what he loses rather than warning
+    // about something breaking: the card on the lock screen and in the
+    // Dynamic Island that says a drive is running, without unlocking the
+    // phone. Same Settings deep link as motion and location.
+    {id:'liveact',done:_liveActDone(),icon:'🔓',
+      title:'Get the lock screen card back',
+      sub:'Live Activities are switched off for TradeDesk, so drives and job time show nothing on your lock screen or in the Dynamic Island. Takes two taps in your phone settings.',
+      cta:'Fix it'},
     // Notifications: skippable (Apple 4.5.4, see _notifyPermDone). The copy
     // leads with the silent-failure problem because that is the whole point:
     // tracking stopping is invisible until payroll, and this is the only
@@ -675,6 +686,65 @@ function _motionPermDone(){const s=_motionPermState();return s==='granted'||s===
 function _motionReport(){
   try{if(typeof _geoReportPermission==='function')_geoReportPermission(_geoPermState());}catch(_e){}
 }
+// ── Live Activities: the lock-screen card, and whether it can draw ───────
+// Owner 2026-09-13, after a crew member's telemetry: forty "disabled in
+// Settings" toasts in twenty-five minutes of driving, and no Dynamic Island
+// and no lock screen card the whole time. The toast is gone (js/live-
+// activity.js) because it fired while he was at the wheel and was gone before
+// he could act on it. This is where it asks instead, next to the three other
+// permissions the app already asks for here.
+//
+// Same cache-then-render shape as motion above, backed by TdLive.isSupported.
+// Three answers and only one of them is worth a card:
+//   supported:false  an iPhone older than 16.1, or no native shell at all.
+//                    Nothing anybody can do, so it counts as done and is
+//                    never mentioned, exactly how motion treats 'unsupported'.
+//   enabled:false    the switch is off for TradeDesk in Settings. This is the
+//                    one a person can fix, and the only one that draws.
+//   enabled:true     working.
+let _liveActCache=null;
+function _liveActState(){return _liveActCache||'unsupported';}
+// Unsupported is DONE, not skipped: a card nobody can act on is nagging.
+function _liveActDone(){const s=_liveActState();return s!=='off';}
+function _liveActRefreshCache(){
+  // The LOOKUP is inside the try too, not just the call. _liveActPlugin reads
+  // window.Capacitor and calls registerPlugin on it, which is somebody else's
+  // code running during boot; if it throws, this function is on the render
+  // path and would take the whole setup checklist down with it.
+  let P=null;
+  try{P=(typeof _liveActPlugin==='function')?_liveActPlugin():null;}catch(_e){P=null;}
+  // ONLY WHEN THE CARD ITSELF WOULD CHANGE, which is not what motion and
+  // location do above, and the difference is deliberate.
+  //
+  // Those two re-render on every state transition because every one of their
+  // states writes different copy onto a card that is always there. This one
+  // has a single visible state: switched off. null, 'unsupported' and 'on'
+  // all draw exactly nothing, so re-rendering as the probe settles from one
+  // invisible state to another is a paint nobody can see.
+  //
+  // It is not merely wasteful. _renderDashSetupTodo re-primes the location
+  // cache on every paint, and that can WRITE a permission row; an extra paint
+  // early in boot put a derived row (one guessed before iOS answered) into a
+  // table keyed on (user_id, device_id), where it overwrites the real answer.
+  // Caught by 'the foreground re-report waits for the native read instead of
+  // racing it' the moment this was added.
+  const settle=(st)=>{
+    if(st===_liveActCache)return;
+    const was=_liveActDone();
+    _liveActCache=st;
+    if(_liveActDone()!==was)_renderDashSetupTodo();
+  };
+  if(!P||typeof P.isSupported!=='function'){
+    // Deferred, not a synchronous stomp, for the same reason motion's is:
+    // a caller that pins the cache then renders in the same tick must see
+    // its own value honored for that render.
+    Promise.resolve().then(()=>settle('unsupported'));
+    return;
+  }
+  try{
+    P.isSupported().then(r=>settle(!(r&&r.supported)?'unsupported':(r.enabled?'on':'off'))).catch(()=>{});
+  }catch(_e){}
+}
 function _motionRefreshPermCache(){
   const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
   if(!Td||typeof Td.motionPermStatus!=='function'){
@@ -845,6 +915,16 @@ function _setupTodoGo(id){
     if(typeof Td.motionSince==='function'){
       Td.motionSince({}).then(()=>{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}).catch(()=>{});
     }
+    return;
+  }
+  if(id==='liveact'){
+    // There is no script that can re-enable Live Activities, the same way
+    // there is none for a denied location: it is a switch in Settings, so
+    // this goes straight there rather than being a dead button. Re-check on
+    // the way back so the card clears the moment they flip it.
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(Td&&typeof Td.openSettings==='function')Td.openSettings().catch(()=>{});
+    setTimeout(()=>{if(typeof _liveActRefreshCache==='function')_liveActRefreshCache();},1200);
     return;
   }
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
