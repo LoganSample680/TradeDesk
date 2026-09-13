@@ -451,6 +451,22 @@ test.describe('Ops portal: the support view, embedded', () => {
     test('zero console errors', async () => {
       assertNoErrors(page, 'ops portal');
     });
+
+    // The failure that test caught on 2026-09-12 (shard 3, webkit): the frame
+    // threw "Can't find variable: _initMapKit". index.html's MapKit tag called
+    // it straight from onload, and the CDN request is stubbed offline, so the
+    // load event can beat js/mileage.js to defining it. Static, because the
+    // race only shows up on the timing of the day and a guard that only fires
+    // when it does is no guard at all.
+    test('the MapKit script cannot call into the app before the app exists', () => {
+      const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+      const tag = (idx.match(/<script[^>]*apple-mapkit[^>]*><\/script>/) || [])[0];
+      expect(tag, 'the MapKit script tag is still there').toBeTruthy();
+      expect(tag, 'onload does not call a bare _initMapKit()').not.toMatch(/onload="_initMapKit\(\)"/);
+      expect(tag, 'it checks the function exists first').toMatch(/window\._initMapKit/);
+      const mil = fs.readFileSync(path.join(__dirname, '..', 'js', 'mileage.js'), 'utf8');
+      expect(mil, 'mileage.js honors the flag the onload leaves').toMatch(/__mapkitLoaded/);
+    });
   });
 
   // ── Getting back to it ──────────────────────────────────────────────────────
