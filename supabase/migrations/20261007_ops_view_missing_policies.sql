@@ -10,7 +10,42 @@
 -- 20261006 fixed the cause. This closes the hole it left, and it is written to
 -- be safe whatever state a given database is in: it re-runs the same loop over
 -- the same list, so a database that already has all 36 simply gets them again.
+--
+-- AND IT CARRIES ITS OWN OVERLOAD NOW, which is the second half of the same
+-- story. Two files claimed version 20261005 on two branches, with two
+-- different fixes for the type mismatch: this branch added a text overload and
+-- bound the policy as ops_view_target(col::text); main looked the column type
+-- up and cast to uuid at the call site. Supabase keys schema_migrations on the
+-- VERSION, so the shared database recorded main's and this branch's copy can
+-- never run there. Every statement below that says ::text then resolves to a
+-- signature that does not exist, and the push dies on the first one:
+--
+--   ERROR: function public.ops_view_target(text) does not exist (SQLSTATE 42883)
+--
+-- Reproduced before fixing, on a scratch database built from this repo's full
+-- history with main's 20261005 substituted in, which is exactly the shape the
+-- shared project is in.
+--
+-- So this file no longer assumes an overload it did not create. Defining it
+-- here is additive and idempotent: a database that already has it gets the
+-- same body again, and one that does not gains it. The comparison is the
+-- ::text-both-sides form the repo already uses everywhere auth.uid() is
+-- compared, so a column holding something that is not a uuid matches no user,
+-- which is the right answer rather than an error.
 -- ════════════════════════════════════════════════════════════════════════
+
+create or replace function public.ops_view_target(target text)
+returns boolean
+language sql stable security definer set search_path = public, auth as $$
+  select public.is_ops_admin()
+     and exists (select 1 from auth.users u where u.id::text = target);
+$$;
+
+comment on function public.ops_view_target(text) is
+  'ops_view_target(uuid) for tables whose owner column is text. The policies bind this one.';
+
+revoke execute on function public.ops_view_target(text) from public, anon;
+grant  execute on function public.ops_view_target(text) to authenticated;
 
 -- account_config hangs off accounts.id rather than a login, so its policy has to
 -- resolve the account's owner. It does that through a definer function, NOT a

@@ -320,6 +320,42 @@ test.describe('Ops support view: read only, both directions', () => {
     expect(sql, 'and its evidence column too').toMatch(/awake_buckets bigint/);
   });
 
+  // The shared database refused this branch's migrations, and the reason was
+  // not in any of them individually. Two files claimed version 20261005 on two
+  // branches with two different fixes for the same type mismatch: this one
+  // added a text overload, main's cast to uuid at the call site. Supabase keys
+  // schema_migrations on the VERSION, so the shared project recorded main's and
+  // this branch's copy can never run there, leaving every ::text call site
+  // pointing at a signature that does not exist.
+  //
+  // So a migration may not depend on an overload a DIFFERENT file created,
+  // because "a different file" can quietly mean "a file that will never run
+  // here". This is the guard: anything binding ops_view_target(...::text) has
+  // to define that overload itself.
+  test('a migration that binds the text overload also defines it', () => {
+    const dir = path.join(__dirname, '..', 'supabase', 'migrations');
+    fs.readdirSync(dir).filter(f => f.endsWith('.sql')).forEach(f => {
+      const sql = fs.readFileSync(path.join(dir, f), 'utf8');
+      if (!/ops_view_target\(%I::text\)/.test(sql)) return;
+      expect(sql, f + ' binds the text overload without creating it')
+        .toMatch(/create or replace function public\.ops_view_target\(target text\)/);
+    });
+  });
+
+  // And the two definitions have to agree. Two copies of one function that
+  // differ is a worse bug than the one the second copy was added to fix.
+  test('every copy of the text overload has the same body', () => {
+    const dir = path.join(__dirname, '..', 'supabase', 'migrations');
+    const bodies = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).flatMap(f => {
+      const m = fs.readFileSync(path.join(dir, f), 'utf8')
+        .match(/create or replace function public\.ops_view_target\(target text\)([\s\S]*?)\$\$;/);
+      return m ? [[f, m[1].replace(/\s+/g, ' ').trim()]] : [];
+    });
+    expect(bodies.length, 'the overload is defined somewhere').toBeGreaterThan(1);
+    const [, first] = bodies[0];
+    bodies.forEach(([f, b]) => expect(b, f + ' defines a different body').toBe(first));
+  });
+
   test('the migration grants SELECT and nothing else', async () => {
     const sql = fs.readFileSync(MIGRATION, 'utf8');
     // Each policy plus the ~220 characters that follow it: enough to carry the
