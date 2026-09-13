@@ -580,6 +580,71 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(page.locator('#view')).not.toHaveClass(/on/);
     });
 
+    // Owner 2026-09-13 picked "follow my phone", so BOTH palettes ship and the
+    // device chooses. The risk that buys is drift: a colour written straight
+    // into a rule looks right in whichever theme it was written for and wrong
+    // in the other. So nothing may hold a literal colour but the token blocks.
+    test('every colour is a token, so neither theme can be half-styled', () => {
+      const html = fs.readFileSync(path.join(__dirname, '..', 'ops.html'), 'utf8');
+      const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+      // Strip the two palette blocks: they are the only place a literal belongs.
+      const rules = css.replace(/:root\s*\{[\s\S]*?\}/g, '')
+                       .replace(/@media \(prefers-color-scheme[\s\S]*?\n\}\n/g, '');
+      const literals = (rules.match(/#[0-9A-Fa-f]{3,8}\b/g) || []);
+      expect(literals, 'colours outside the palette blocks: ' + literals.join(', ')).toEqual([]);
+      // And the palette actually has a dark half.
+      expect(css).toMatch(/@media \(prefers-color-scheme: dark\)/);
+      // The browser chrome follows too, or the notch stays the old colour.
+      expect(html).toMatch(/theme-color[^>]*prefers-color-scheme: dark/);
+    });
+
+    test('the dark palette defines every token the light one does', () => {
+      const html = fs.readFileSync(path.join(__dirname, '..', 'ops.html'), 'utf8');
+      const names = b => [...b.matchAll(/(--[a-z0-9-]+)\s*:/g)].map(m => m[1]);
+      const light = names(html.slice(html.indexOf(':root{'), html.indexOf('@media (prefers-color-scheme: dark)')));
+      const darkBlock = html.slice(html.indexOf('@media (prefers-color-scheme: dark)'));
+      const dark = names(darkBlock.slice(0, darkBlock.indexOf('\n}\n')));
+      // --bar is a size, not a colour, and is deliberately shared.
+      const missing = light.filter(n => n !== '--bar' && !dark.includes(n));
+      expect(missing, 'tokens with no dark value: ' + missing.join(', ')).toEqual([]);
+    });
+
+    test('the phone\'s setting is what picks, on the real page', async ({ browser }) => {
+      const read = async (scheme) => {
+        const c = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true, colorScheme: scheme });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        await stubRpc(p2);
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        const v = await p2.evaluate(() => getComputedStyle(document.body).backgroundColor);
+        await c.close();
+        return v;
+      };
+      const light = await read('light'), dark = await read('dark');
+      expect(light).not.toBe(dark);
+      // Light really is light and dark really is dark, rather than two tints
+      // of the same thing that happen to differ.
+      const lum = rgb => { const [r, g, b] = rgb.match(/\d+/g).map(Number); return (r + g + b) / 3; };
+      expect(lum(light)).toBeGreaterThan(200);
+      expect(lum(dark)).toBeLessThan(40);
+    });
+
+    test('tiles stay two-up on a phone instead of one long column', async ({ browser }) => {
+      const c = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+      const p2 = await c.newPage();
+      await mockAllExternal(p2);
+      await stubRpc(p2);
+      await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+      await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      // A 200px cap is a laptop concern; on a phone it halved the columns and
+      // doubled the page height. Two tiles must share the first row.
+      const tops = await p2.locator('#biz-sections .tiles').first().locator('.tile')
+        .evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().top)));
+      expect(tops.filter(t => t === tops[0]).length).toBeGreaterThanOrEqual(2);
+      await c.close();
+    });
+
     test('no horizontal bleed at 390', async () => {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.waitForTimeout(150);
