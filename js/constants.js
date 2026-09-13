@@ -360,10 +360,104 @@ const COLL_SMS={
 // Collection, risk, lien, and county helpers moved to bids.js (load-order fix)
 
 
-// ── State-based lien timing rules ─────────────────────────────────────────
-// notice_days: days after last work to send demand/notice (statutory where req'd, else 10)
-// filing_deadline_days: days from last day of work to file lien
-const LIEN_RULES={
+// ── Lien law, by jurisdiction ────────────────────────────────────────────
+// WHY THIS IS SHAPED LIKE THIS. Until 2026-09-13 this was one number per state
+// plus a statute cite in a comment, and both were wrong in ways that cost
+// money rather than tidiness:
+//
+//   * Kansas was cited to K.S.A. 60-1105. That is the ENFORCEMENT statute, one
+//     year from filing the lien statement. The filing deadlines are 60-1102
+//     (prime, four months) and 60-1103 (sub, three months). A Kansas sub sent
+//     to 60-1105 is reading a clock eight months longer than the one that
+//     binds them.
+//   * One number cannot express this law at all. The deadline moves with the
+//     ROLE (Kansas 4mo/3mo, Oklahoma 4mo/90d, New Mexico 120/90, Wyoming
+//     150/120, Delaware 180/120, Alabama 6mo/4mo/30d), with the ANCHOR
+//     (Virginia runs from the last day of the MONTH, Vermont from when payment
+//     became DUE, Louisiana from a recording the contractor may never see),
+//     and with CONDITIONS (a recorded notice of completion cuts California to
+//     60 days, Nevada to 40, Alaska to 15).
+//
+// So: LIEN_LAW carries what was actually verified against primary statutory
+// text, with the source that was read. LIEN_RULES below is derived from it and
+// keeps the old shape, so every existing caller keeps working.
+//
+// Anchors: last = the claimant's own last furnishing. complete = completion or
+// abandonment of the improvement. contract_complete = completion of that
+// claimant's contract. month_end = the last day of the month of last work.
+// payment_due = when payment fell due. project_end = completion or termination
+// of the whole project. filing = the date the lien was filed.
+const LIEN_LAW={
+  KS:{prime:{d:120,txt:'4 months',anchor:'last'},sub:{d:90,txt:'3 months'},enf:{d:365,txt:'1 year',anchor:'filing'},cite:'K.S.A. 60-1102 / 60-1103 / 60-1105',src:'ksrevisor.gov',note:'Filing a notice of extension inside the window buys 5 months on non-residential property.'},
+  CT:{prime:{d:90,txt:'90 days',anchor:'last'},sub:null,enf:{d:365,txt:'1 year',anchor:'filing'},cite:'49-34 / 49-35 / 49-39',src:'findlaw',note:'Serve a copy on the owner within 30 days of lodging.'},
+  DE:{prime:{d:180,txt:'180 days',anchor:'complete'},sub:{d:120,txt:'120 days'},enf:null,cite:'25 Del. C. 2711(a) / 2711(b) / 2714',src:'delcode.delaware.gov',note:'Prime rate applies only to a direct contract covering BOTH labor and material. No enforcement deadline exists in the chapter: ask a lawyer.'},
+  ME:{prime:{d:120,txt:'120 days (suit, nothing is recorded)',anchor:'last'},sub:{d:90,txt:'90 days to record'},enf:{d:120,txt:'120 days',anchor:'last'},cite:'10 M.R.S. 3253 / 3255',src:'legislature.maine.gov',note:'A prime in privity with the owner records nothing and preserves the lien only by suing.'},
+  MD:{prime:{d:180,txt:'180 days',anchor:'last'},sub:null,enf:{d:365,txt:'1 year',anchor:'filing'},cite:'Md. Real Prop. 9-105 / 9-104 / 9-109',src:'mgaleg.maryland.gov',note:'Court petition, nothing is recorded. Sub notice to owner within 120 days, single-family included.'},
+  MA:{prime:{d:90,txt:'earliest of 60d after notice of substantial completion, 90d after termination, 90d after last work',anchor:'special'},sub:null,enf:{d:90,txt:'90 days',anchor:'statement_of_account'},cite:'M.G.L. c.254 s.2 / s.4 / s.8 / s.11',src:'malegislature.gov',note:'Two filings: Notice of Contract then Statement of Account.'},
+  NH:{prime:{d:120,txt:'120 days',anchor:'last'},sub:null,enf:{d:120,txt:'120 days (the attachment IS the perfection)',anchor:'last'},cite:'N.H. RSA 447:9 / 447:10 / 447:5',src:'gc.nh.gov',note:'Nothing is recorded. Secure by court attachment inside the 120 days.'},
+  NJ:{prime:{d:90,txt:'90 days non-residential, 120 days residential',anchor:'last'},sub:null,enf:{d:365,txt:'1 year, or 30 days after a written demand',anchor:'last'},cite:'N.J.S.A. 2A:44A-6 / -14 / -21',src:'findlaw',note:'Residential requires a Notice of Unpaid Balance within 60 days as a condition precedent, then arbitration.'},
+  NY:{prime:{d:240,txt:'8 months, 4 months on a single-family dwelling',anchor:'complete'},sub:null,enf:{d:365,txt:'1 year',anchor:'filing'},cite:'N.Y. Lien Law 10 / 17',src:'nysenate.gov',note:'A single-family lien can only be extended by court order.'},
+  PA:{prime:{d:180,txt:'6 months',anchor:'complete'},sub:null,enf:{d:730,txt:'2 years',anchor:'filing'},cite:'49 P.S. 1502 / 1501 / 1501.3 / 1701',src:'findlaw',note:'Serve notice of the filing on the owner within 1 month. Subs: 30-day notice of intention, plus a 45-day Notice of Furnishing on searchable projects.'},
+  RI:{prime:{d:200,txt:'200 days',anchor:'last'},sub:null,enf:{d:40,txt:'40 days',anchor:'notice_of_intention'},cite:'R.I.G.L. 34-28-4 / 34-28-4.1 / 34-28-10',src:'rilegislature.gov',note:'ENFORCEMENT IS 40 DAYS. Complaint and lis pendens both, or the lien is void and wholly lost.'},
+  VT:{prime:{d:180,txt:'180 days',anchor:'payment_due'},sub:null,enf:{d:180,txt:'180 days',anchor:'filing'},cite:'9 V.S.A. 1921(b) / 1921(c) / 1924',src:'findlaw',note:'Runs from when payment became DUE, not from the last day of work.'},
+  VA:{prime:{d:90,txt:'90 days from the last day of the month of last work, and never later than 90 days from completion',anchor:'month_end'},sub:null,enf:{d:180,txt:'6 months from recording or 60 days from completion, whichever is later',anchor:'special'},cite:'Va. Code 43-4 / 43-4.01 / 43-17',src:'law.lis.virginia.gov',note:'150-day look-back: a memorandum cannot include sums furnished more than 150 days before your last day.'},
+  DC:{prime:{d:90,txt:'90 days',anchor:'project_end'},sub:null,enf:{d:180,txt:'180 days',anchor:'notice_of_intent'},cite:'D.C. Code 40-301.02 / 40-303.13',src:'code.dccouncil.gov',note:'Anchor is the earlier of completion or termination of the PROJECT, not your own last day.'},
+  AL:{prime:{d:180,txt:'6 months',anchor:'last'},sub:{d:120,txt:'4 months (30 days for journeymen and day laborers)'},enf:{d:180,txt:'6 months',anchor:'debt_maturity'},cite:'Ala. Code 35-11-215 / 35-11-218 / 35-11-221',src:'lawserver',note:'Non-primes must notify the owner BEFORE filing. The statute sets no day count for it.'},
+  AR:{prime:{d:120,txt:'120 days',anchor:'last'},sub:null,enf:{d:450,txt:'15 months',anchor:'filing'},cite:'Ark. Code 18-44-117 / 18-44-114 / 18-44-115',src:'findlaw',note:'Everyone owes the owner 10 days notice before filing. Residential: the contractor notifies for everyone or loses his own lien.'},
+  FL:{prime:{d:90,txt:'90 days',anchor:'last'},sub:null,enf:{d:365,txt:'1 year',anchor:'filing'},cite:'Fla. Stat. 713.08 / 713.06 / 713.22',src:'flsenate.gov',note:'If the contract is terminated under 713.07(4) it is the EARLIER of 90 days from termination or from final furnishing. Non-primes: 45-day Notice to Owner or the lien is unenforceable.'},
+  GA:{prime:{d:90,txt:'90 days',anchor:'complete'},sub:null,enf:{d:365,txt:'365 days',anchor:'filing'},cite:'O.C.G.A. 44-14-361.1 / 44-14-361.5',src:'findlaw',note:'File a notice with the clerk within 30 days of commencing the action or the lien dies.'},
+  KY:{prime:{d:180,txt:'6 months',anchor:'last'},sub:null,enf:{d:365,txt:'12 months',anchor:'filing'},cite:'KRS 376.080 / 376.090 / 376.010(4),(5)',src:'lawserver',note:'EVERY claimant must mail the owner a copy within 7 days of filing or the lien dissolves.'},
+  LA:{prime:{d:60,txt:'60 days by default, 7 months only if a notice of contract was filed',anchor:'project_end'},sub:{d:30,txt:'30 days after a notice of termination, or 6 months'},enf:{d:365,txt:'1 year',anchor:'filing'},cite:'La. R.S. 9:4822 / 9:4823',src:'legis.la.gov',note:'The 75-day supplier notice was REPEALED in 2019. No mandatory preliminary notice now.'},
+  MS:{prime:{d:90,txt:'90 days',anchor:'last'},sub:null,enf:{d:180,txt:'180 days',anchor:'filing'},cite:'Miss. Code 85-7-405 / 85-7-407 / 85-7-409',src:'findlaw',note:'Non-residential non-privity: 30-day notice to the contractor or the lien is forfeit. Single-family: 10-day pre-lien notice to the owner instead.'},
+  NC:{prime:{d:120,txt:'120 days',anchor:'last'},sub:null,enf:{d:180,txt:'180 days',anchor:'last'},cite:'N.C.G.S. 44A-12 / 44A-13 / 44A-11.2 / 44A-23',src:'ncleg.gov',note:'Enforcement runs from last furnishing, NOT from filing. Notice to Lien Agent within 15 days of first furnishing.'},
+  SC:{prime:{d:90,txt:'90 days, and you must SERVE the owner as well as file',anchor:'last'},sub:null,enf:{d:180,txt:'6 months',anchor:'ceasing_labor'},cite:'S.C. Code 29-5-90 / 29-5-120 / 29-5-20',src:'scstatehouse.gov',note:'ENFORCEMENT RUNS FROM CEASING TO LABOUR, not from filing. File late and most of the window is already gone.'},
+  TN:{prime:{d:90,txt:'90 days (this preserves PRIORITY, it does not kill the lien against the owner)',anchor:'complete'},sub:null,enf:{d:365,txt:'1 year',anchor:'complete'},cite:'Tenn. Code 66-11-112 / 66-11-106 / 66-11-115 / 66-11-145',src:'lawserver',note:'Remote contractors must serve a notice of nonpayment within 90 days of the last day of EACH month or lose the lien.'},
+  WV:{prime:{d:100,txt:'100 days',anchor:'contract_complete'},sub:{d:100,txt:'100 days from completion of the subcontract'},enf:{d:180,txt:'6 months',anchor:'filing'},cite:'W. Va. Code 38-2-8 / 38-2-9 / 38-2-11 / 38-2-34',src:'code.wvlegislature.gov',note:'No mandatory preliminary notice: 38-2-20 is permissive. Non-primes must serve the owner AND record inside the 100 days.'},
+  OH:{prime:{d:75,txt:'75 days, 60 days on a one or two family dwelling',anchor:'last'},sub:null,enf:{d:2190,txt:'6 years, or 60 days after a notice to commence suit',anchor:'filing'},cite:'O.R.C. 1311.06 / 1311.05 / 1311.13 / 1311.11',src:'codes.ohio.gov',note:'Subs owe a 21-day notice of furnishing only if a notice of commencement was recorded.'},
+  IL:{prime:{d:120,txt:'4 months for priority; 2 years against the owner alone',anchor:'complete'},sub:null,enf:{d:730,txt:'2 years',anchor:'complete'},cite:'770 ILCS 60/7 / 60/9 / 60/24',src:'findlaw',note:'Missing 4 months costs PRIORITY against other creditors and purchasers, it does not kill the lien against the owner. Subcontractor filing period is not stated in the sections read: do not rely on a sub number here.'},
+  IN:{prime:{d:90,txt:'90 days, 60 days on a Class 2 structure',anchor:'last'},sub:null,enf:{d:365,txt:'1 year',anchor:'recording'},cite:'IC 32-28-3-3 / 32-28-3-6 / 32-28-3-1',src:'findlaw',note:'Non-direct claimants on a 1-2 family dwelling owe notice within 30 days (repair) or 60 days (new build). It is a condition precedent to any lien.'},
+  IA:{prime:{d:90,txt:'90 days for a full-strength lien',anchor:'last'},sub:null,enf:{d:820,txt:'2 years from the end of the 90 days',anchor:'last'},cite:'Iowa Code 572.9 / 572.10 / 572.11 / 572.27',src:'legis.iowa.gov',note:'A lien posted after 90 days is still good but is capped at the balance the owner still owes the GC. Outer limit is 2 years and 90 days.'},
+  MI:{prime:{d:90,txt:'90 days',anchor:'last'},sub:null,enf:{d:365,txt:'1 year',anchor:'recording'},cite:'MCL 570.1111 / 570.1117 / 570.1109',src:'findlaw',note:'Sub notice of furnishing within 20 days of first furnishing. Late notice CAPS the lien rather than voiding it.'},
+  MN:{prime:{d:120,txt:'120 days',anchor:'last'},sub:null,enf:{d:365,txt:'1 year',anchor:'last_item'},cite:'Minn. Stat. 514.08 / 514.011 / 514.12',src:'revisor.mn.gov',note:'Contractor notice in the contract or within 10 days, else no lien. Sub notice to owner within 45 days is a prerequisite to any claim.'},
+  MO:{prime:{d:180,txt:'6 months',anchor:'debt_accrued'},sub:null,enf:{d:180,txt:'6 months',anchor:'filing'},cite:'RSMo 429.080 / 429.170 / 429.012 / 429.100',src:'revisor.mo.gov',note:'Six months for original contractors, day laborers and every other person alike. The old 4-month figure for non-primes is superseded. Rented equipment is 60 days.'},
+  NE:{prime:{d:120,txt:'120 days',anchor:'last'},sub:null,enf:{d:730,txt:'2 years, or 30 days after a written demand',anchor:'recording'},cite:'Neb. Rev. Stat. 52-137 / 52-140 / 52-135 / 52-136',src:'nebraskalegislature.gov',note:'Preliminary notice is OPTIONAL. Against a protected-party owner its absence caps the lien rather than voiding it.'},
+  ND:{prime:{d:90,txt:'90 days',anchor:'last'},sub:null,enf:{d:1095,txt:'3 years, and a lis pendens must be recorded too',anchor:'recording'},cite:'N.D.C.C. 35-27-13 / 35-27-14 / 35-27-25 / 35-27-02',src:'ndlegis.gov',note:'Missing 90 days does not defeat the lien except against good-faith purchasers and payments already made. Separate outer bar: no filing more than 3 years after the FIRST item.'},
+  OK:{prime:{d:120,txt:'4 months',anchor:'last'},sub:{d:90,txt:'90 days'},enf:{d:365,txt:'1 year',anchor:'filing'},cite:'42 O.S. 142 / 143 / 142.6 / 172',src:'oklahoma.gov',note:'Non-primes owe a pre-lien notice within 75 days of last supply. Always required on an owner-occupied dwelling or the lien is invalid.'},
+  SD:{prime:{d:120,txt:'120 days',anchor:'last'},sub:null,enf:{d:2190,txt:'6 years',anchor:'last_item'},cite:'SDCL 44-9-15 / 44-9-24 / 44-9-53',src:'sdlegislature.gov',note:'Enforcement runs from the last item of the claim, not from filing. Notice of furnishing only applies if a notice of project commencement was filed.'},
+  WI:{prime:{d:180,txt:'6 months',anchor:'last'},sub:null,enf:{d:730,txt:'2 years',anchor:'filing'},cite:'Wis. Stat. 779.06 / 779.02',src:'docs.legis.wisconsin.gov',note:'Non-primes must give notice within 60 days of first furnishing or there is no lien. All claimants owe a 30-day notice of intent before filing.'},
+  AK:{prime:{d:120,txt:'120 days',anchor:'last'},sub:null,enf:{d:180,txt:'6 months',anchor:'recording'},cite:'AS 34.35.068 / 34.35.080 / 34.35.064',src:'akleg.gov',note:'If the owner records a notice of completion the window collapses to 15 days, unless you recorded a notice of right to lien first. That notice is what protects the 120 days.'},
+  AZ:{prime:{d:120,txt:'120 days',anchor:'complete'},sub:null,enf:{d:180,txt:'6 months',anchor:'recording'},cite:'A.R.S. 33-993 / 33-992.01 / 33-998 / 33-1002',src:'azleg.gov',note:'A recorded notice of completion cuts EVERYONE to 60 days. The 20-day preliminary notice is required of the general contractor too, and no sub can lien an owner-occupied home without a written contract with the owner (33-1002).'},
+  CA:{prime:{d:90,txt:'90 days',anchor:'complete'},sub:null,enf:{d:90,txt:'90 days',anchor:'recording'},cite:'Cal. Civ. Code 8412 / 8414 / 8200 / 8460',src:'leginfo.legislature.ca.gov',note:'A recorded notice of completion cuts the prime to 60 days and everyone else to 30. Enforcement is only 90 days from recording the lien, then it expires by operation of law.'},
+  CO:{prime:{d:120,txt:'4 months',anchor:'last'},sub:{d:60,txt:'2 months for day or piece labour'},enf:{d:180,txt:'6 months',anchor:'complete'},cite:'C.R.S. 38-22-109 / 38-22-110',src:'law.resource.org (2012 CRS)',note:'Serve a notice of intent on the owner and the prime at least 10 days before filing. Enforcement runs from completion or last work, NOT from recording the lien.'},
+  HI:{prime:{d:45,txt:'45 days',anchor:'complete'},sub:null,enf:{d:90,txt:'3 months after the order directing the lien to attach',anchor:'court_order'},cite:'HRS 507-43',src:'capitol.hawaii.gov',note:'The clock starts when a notice of completion is PUBLISHED and filed. If none is ever published the date of completion is deemed one year after actual completion, so the real window can run past a year.'},
+  ID:{prime:{d:90,txt:'90 days',anchor:'last'},sub:null,enf:{d:180,txt:'6 months',anchor:'filing'},cite:'Idaho Code 45-507 / 45-510 / 45-525',src:'legislature.idaho.gov',note:'The statute does not say whose completion starts the 90 days. Treat it as your own last work and do not rely on the longer reading.'},
+  MT:{prime:{d:90,txt:'90 days',anchor:'last'},sub:null,enf:{d:730,txt:'2 years',anchor:'filing'},cite:'MCA 71-3-535 / 71-3-531 / 71-3-562',src:'archive.legmt.gov',note:'An original contractor furnishing directly to the owner is exempt from the 20-day notice, as is any partly or wholly commercial job.'},
+  NV:{prime:{d:90,txt:'90 days',anchor:'complete'},sub:null,enf:{d:180,txt:'6 months',anchor:'recording'},cite:'NRS 108.226 / 108.245 / 108.233',src:'leg.state.nv.us',note:'A recorded and served notice of completion cuts it to 40 days. On residential work a 15-day notice of intent is required and serving it EXTENDS your recording deadline by 15 days.'},
+  NM:{prime:{d:120,txt:'120 days',anchor:'contract_complete'},sub:{d:90,txt:'90 days'},enf:{d:730,txt:'2 years',anchor:'filing'},cite:'NMSA 1978 48-2-6 / 48-2-2.1 / 48-2-10',src:'lawserver (NM compilation is a JS viewer)',note:'Sourced one tier below the other states: the official New Mexico compilation could not be read directly.'},
+  OR:{prime:{d:75,txt:'75 days',anchor:'last'},sub:null,enf:{d:120,txt:'120 days, and never more than 2 years',anchor:'filing'},cite:'ORS 87.035 / 87.021 / 87.093 / 87.055',src:'oregonlegislature.gov',note:'An original contractor on a residential job over $2,000 who does not hand over the Information Notice to Owner at signing may not claim any lien at all.'},
+  TX:{prime:{d:75,txt:'the 15th day of the 3rd month after the month your work ended (residential) or the 4th month (non-residential)',anchor:'special'},sub:null,enf:{d:365,txt:'1 year from the last day you could have filed',anchor:'special'},cite:'Tex. Prop. Code 53.052 / 53.056 / 53.158',src:'statutes.capitol.texas.gov',note:'NOT a day count. The 75 here is the earliest that window can close, so a warning fires in time. 53.053 and 53.252 were REPEALED by HB 2237 effective 2022; the sub notice is now the 15th of the 3rd month non-residential, 2nd month residential.'},
+  UT:{prime:{d:180,txt:'180 days',anchor:'contract_complete'},sub:null,enf:{d:180,txt:'180 days, with a notice of pendency recorded too',anchor:'filing'},cite:'Utah Code 38-1a-502 / 38-1a-501 / 38-1a-701',src:'le.utah.gov',note:'A preliminary notice in the State Construction Registry within 20 days of starting is required of EVERYONE, original contractors included, or there is no lien. A filed notice of completion cuts it to 90 days.'},
+  WA:{prime:{d:90,txt:'90 days',anchor:'last'},sub:null,enf:{d:240,txt:'8 months',anchor:'recording'},cite:'RCW 60.04.091 / 60.04.031 / 60.04.141',src:'app.leg.wa.gov',note:'No preliminary notice if you contract directly with the owner or with the prime. For everyone else it is a lookback, protecting only what was supplied in the 60 days before it was sent (10 days on a new single-family home).'},
+  WY:{prime:{d:150,txt:'150 days',anchor:'last'},sub:{d:120,txt:'120 days'},enf:{d:180,txt:'180 days',anchor:'filing'},cite:'Wyo. Stat. 29-2-106 / 29-2-112 / 29-2-107 / 29-2-109',src:'wyoleg.gov',note:'THE CONTRACTOR MUST SEND NOTICE BEFORE TAKING ANY PAYMENT, advances included, or the lien is barred outright. Subs and materialmen: within 30 days of first providing.'},
+};
+
+// Derived, and deliberately CONSERVATIVE: where a state splits by role we take
+// the SHORTEST filing window in the state, because a warning that fires early
+// costs a contractor nothing and one that fires late costs them the lien.
+// States absent from LIEN_LAW keep the value they have always had and are not
+// marked verified, so the UI can tell a contractor which is which.
+const LIEN_RULES=(function(legacy){
+  const out={};
+  for(const k in legacy) out[k]=legacy[k];
+  for(const k in LIEN_LAW){
+    const L=LIEN_LAW[k];
+    const shortest=Math.min(L.prime.d, L.sub?L.sub.d:L.prime.d);
+    out[k]=Object.assign({},out[k]||legacy.default,{
+      filing_deadline_days:shortest, cite:L.cite, verified:true
+    });
+  }
+  return out;
+})({
   AL:{notice_days:10,filing_deadline_days:120},  // Ala. Code §35-11-215
   AK:{notice_days:10,filing_deadline_days:90},  // AS §34.35.070
   AZ:{notice_days:20,filing_deadline_days:120},  // A.R.S. §33-993 (20d prelim notice subs)
@@ -416,7 +510,7 @@ const LIEN_RULES={
   WI:{notice_days:10,filing_deadline_days:180},  // Wis. Stat. §779.06
   WY:{notice_days:10,filing_deadline_days:120},  // Wyo. Stat. §29-1-202
   default:{notice_days:10,filing_deadline_days:90}
-};
+});
 
 // ── State-level filing info (county recorder name varies; use Maps link to find exact office) ──
 const STATE_FILING_INFO={
@@ -436,7 +530,7 @@ const STATE_FILING_INFO={
   IL:{office:'Circuit Court Clerk',cite:'770 ILCS 60/7',notes:['File with Circuit Court Clerk in county where property is located','Deadline: 4 months (120 days) from last day of work','Serve copy on owner within 90 days of filing']},
   IN:{office:'Circuit / Superior Court Clerk',cite:'Ind. Code §32-28-3-3',notes:['File with Clerk of Circuit or Superior Court','Deadline: 90 days from last day of work']},
   IA:{office:'District Court Clerk',cite:'Iowa Code §572.8',notes:['File with Clerk of District Court','Deadline: 90 days from last day of work']},
-  KS:{office:'Register of Deeds',cite:'K.S.A. 60-1105',notes:['Serve notice on property owner','File with County Register of Deeds','Deadline: 120 days from last day of work','Bring 2 notarized copies, retain stamped copy']},
+  KS:{office:'Register of Deeds',cite:'K.S.A. 60-1102 (prime) / 60-1103 (sub)',notes:['File with the District Court clerk in the county where the property sits','Prime contractor: 4 months from the date you last furnished. Subcontractor or supplier: 3 months','A notice of extension filed inside that window buys 5 months on non-residential property','Subs on residential owe the owner a warning statement (K.S.A. 60-1103a)','You then have 1 year from filing to bring the foreclosure suit (K.S.A. 60-1105)']},
   KY:{office:'Circuit Court Clerk',cite:'KRS §376.080',notes:['File with Clerk of Circuit Court','Deadline: 6 months (180 days) from last day of work','Notarization required']},
   LA:{office:'Parish Clerk of Court',cite:'La. R.S. §9:4822',notes:['File with Parish Clerk of Court','Deadline: 60 days from last day of work, one of the shortest in the US','Notarization required, act quickly']},
   ME:{office:'Registry of Deeds',cite:'Me. Rev. Stat. §38-3251',notes:['File True Statement with Registry of Deeds in county where property is located','Deadline: 90 days from last day of work','Notarization required']},

@@ -36,6 +36,7 @@ const ROUTES = [
   '/plumbing-contractor-software',
   '/handyman-contractor-software',
   '/ai-answering-service-for-contractors',
+  '/beta',
   '/tools/lien-deadlines',
   '/privacy',
   '/terms',
@@ -323,6 +324,24 @@ test.describe('marketing site routing', () => {
     // The landing page's hero and header both carry a CTA.
     expect(html['/']).toContain('href="/?signup=1"');
     expect(html['/']).toContain('href="/?app=1"');
+  });
+
+  test('no served page carries an em dash', () => {
+    // CLAUDE.md's standing rule, and it had been broken in the place it shows
+    // most: the landing page's <title>, which is the single string Google
+    // prints under your result, plus og:title and twitter:title. Caught
+    // 2026-09-13 while reading the page Google had actually crawled.
+    for (const r of ROUTES) {
+      const hits = (html[r].match(/&mdash;|\u2014/g) || []).length;
+      expect(hits, `${r} carries ${hits} em dash(es)`).toBe(0);
+    }
+    // intake.html is noindexed, so it is not a ROUTE, but a contractor's own
+    // client reads it. It counts as app copy.
+    const intake = fs.readFileSync(path.join(__dirname, '..', 'intake.html'), 'utf8');
+    expect((intake.match(/&mdash;|\u2014/g) || []).length, 'intake.html').toBe(0);
+    // ops.html is deliberately NOT checked: its em dashes are the empty-cell
+    // placeholder in a data table, a symbol rather than prose, and the rule is
+    // about writing that reads machine-written.
   });
 
   test('no page tells a crawler the product is a browser-only PWA', () => {

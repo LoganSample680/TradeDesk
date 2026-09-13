@@ -45,8 +45,19 @@ test.describe('the lien datasets agree with each other', () => {
   const app = fs.readFileSync(path.join(root, 'js', 'constants.js'), 'utf8');
   const tool = fs.readFileSync(path.join(root, 'tools', 'lien-deadlines.html'), 'utf8');
 
-  const RULES = Object.fromEntries([...app.matchAll(
-    /^  ([A-Z]{2}):\{notice_days:(\d+),filing_deadline_days:(\d+)\}/gm)].map(m => [m[1], +m[3]]));
+  // Evaluate the real block rather than regexing the literal. Since 2026-09-13
+  // LIEN_RULES is DERIVED: a verified state's value comes from LIEN_LAW (the
+  // shortest window in that state), and the literal underneath it is only the
+  // fallback for states nobody has verified yet. Reading the literal would test
+  // a number the app no longer uses, which is worse than not testing at all.
+  const _block = (() => {
+    const a = app.indexOf('const LIEN_LAW=');
+    const b = app.indexOf('})(', a);
+    return app.slice(a, app.indexOf(');', b) + 2);
+  })();
+  const { LIEN_LAW, LIEN_RULES: _R } = new Function(_block + '; return {LIEN_LAW, LIEN_RULES};')();
+  const RULES = Object.fromEntries(
+    Object.entries(_R).filter(([k]) => /^[A-Z]{2}$/.test(k)).map(([k, v]) => [k, v.filing_deadline_days]));
   const TOOL = Object.fromEntries([...tool.matchAll(
     /^  ([A-Z]{2}):\['([^']*)','([^']*)'/gm)].map(m => [m[1], { name: m[2], deadline: m[3] }]));
 
@@ -60,8 +71,12 @@ test.describe('the lien datasets agree with each other', () => {
     const conflicts = [];
     for (const st of Object.keys(RULES)) {
       if (NOT_A_DAY_COUNT.includes(st)) continue;
-      const days = toDays(TOOL[st].deadline);
-      expect(days, `${st}: the tool's "${TOOL[st].deadline}" must be a parseable span`).not.toBeNull();
+      // A role-split state shows both windows ("4 months (prime) / 3 months
+      // (sub)"). The app deliberately carries the SHORTER one, so compare
+      // against the shortest span the tool shows rather than the first.
+      const spans = TOOL[st].deadline.split('/').map(x => toDays(x.trim())).filter(n => n !== null);
+      expect(spans.length, `${st}: the tool's "${TOOL[st].deadline}" must contain a parseable span`).toBeGreaterThan(0);
+      const days = Math.min(...spans);
       if (days !== RULES[st]) conflicts.push(`${st}: app ${RULES[st]}d vs tool "${TOOL[st].deadline}"`);
     }
     expect(conflicts, `the app and the public tool disagree:\n  ${conflicts.join('\n  ')}`).toEqual([]);
@@ -77,8 +92,46 @@ test.describe('the lien datasets agree with each other', () => {
   });
 
   test('every state still cites a statute, so a claim can be checked', () => {
-    const block = app.slice(app.indexOf('const LIEN_RULES={'));
-    const cited = (block.slice(0, block.indexOf('\n};')).match(/\/\/.*§/g) || []).length;
-    expect(cited, 'states carrying a statute citation').toBeGreaterThanOrEqual(49);
+    // Two ways a state can carry a cite now: a verified LIEN_LAW entry, or the
+    // legacy comment on its fallback line. Both count; neither may vanish.
+    const legacy = (app.match(/\/\/ *[A-Z][^\n]*§/g) || []).length;
+    const verified = Object.keys(LIEN_LAW).length;
+    expect(legacy + verified, 'states carrying a statute citation').toBeGreaterThanOrEqual(49);
+  });
+
+  test('a verified state names the statute it was actually read from', () => {
+    // The Kansas defect this whole model came out of: the app cited K.S.A.
+    // 60-1105, which is the one-year ENFORCEMENT clock, as though it were the
+    // filing deadline. Verified entries carry the section that was read, and
+    // the source it was read from, so the claim can be checked by a person.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      expect(L.cite, `${st} cite`).toBeTruthy();
+      expect(L.src, `${st} source`).toBeTruthy();
+      expect(L.prime && L.prime.d, `${st} prime deadline`).toBeGreaterThan(0);
+      expect(L.prime.anchor, `${st} anchor`).toBeTruthy();
+    }
+    expect(LIEN_LAW.KS.cite, 'Kansas cites the filing statutes, not 60-1105 alone')
+      .toContain('60-1102');
+    expect(RULES.KS, 'Kansas takes the shorter of prime 4 months and sub 3 months').toBe(90);
+  });
+
+  test('every jurisdiction was read from a statute, none left on a guess', () => {
+    // On 2026-09-13 all 51 were verified against primary statutory text. This
+    // test is the ratchet: a new jurisdiction, or one whose cite or source gets
+    // dropped in a refactor, fails here rather than quietly shipping a number
+    // nobody can check.
+    const states = Object.keys(RULES);
+    const missing = states.filter(st => !LIEN_LAW[st]);
+    expect(missing, `jurisdictions with no verified entry: ${missing.join(', ')}`).toEqual([]);
+    expect(states.length).toBe(51);
+  });
+
+  test('a role-split state takes the SHORTER window, never the longer', () => {
+    // Filing early costs nothing. Filing late loses the money.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      if (!L.sub) continue;
+      expect(RULES[st], `${st} must use the shorter of ${L.prime.d} and ${L.sub.d}`)
+        .toBe(Math.min(L.prime.d, L.sub.d));
+    }
   });
 });
