@@ -228,6 +228,48 @@ test.describe('manual clock over a derived day', () => {
     expect(r.cleared).toBe('none');
   });
 
+  // ── HIS 10h43m AT THE SHOP (owner 2026-09-13) ──────────────────────────
+  // "Says I arrived 10:14, why is it still going and counting?" Because an
+  // open dwell has no departure, so this row is now minus the arrival with no
+  // ceiling, and he had not left the house since that morning.
+  //
+  // The day-end work the night before stopped the Home card and the open
+  // banner and left this row alone, on the reasoning that the rail draws the
+  // day's shape and the row was labelled "not counted". He found it within
+  // hours. A number that size on a timesheet reads as a claim whatever the
+  // caption says.
+  test('home with the workday over: the rail stops drawing the live row, and only then', async () => {
+    const r = await page.evaluate(async () => {
+      const keepT = timeEntries.slice(), keepF = window._fetchCrewLabor, keepD = window._geoOpenDwell;
+      window.timeEntries = [];
+      window._fetchCrewLabor = async () => ({ name: {}, entries: [], shopEntries: [] });
+      const dayStart = _geoDayBounds(_geoDayKeyOf(Date.now(), 'America/Chicago')).start;
+      const since = Math.max(dayStart + 60000, Date.now() - 10 * 3600000 - 43 * 60000);
+      const mk = (over) => Object.assign({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
+        sinceTs: since, sinceIso: new Date(since).toISOString(), journeyId: 'h',
+        atHome: true, counts: false, fence: { addr: '2015 SW Randolph Ave' } }, over || {});
+      const live = async (d) => { window._geoOpenDwell = d;
+        return (await _timeLogRows(null)).filter(x => x.live); };
+      try {
+        return {
+          // His case: at his own address, the workday over.
+          over: (await live(mk())).length,
+          // Home at lunch, workday still open: the rail still draws it.
+          midday: (await live(mk({ counts: true }))).map(x => [x.clientName, x.detail]),
+          // A customer's address never takes this rule, at any hour, counted
+          // or not: that one is a real question about a real visit.
+          client: (await live(mk({ atHome: false, kind: 'client', name: 'John Doe' })))
+            .map(x => [x.clientName, x.detail]),
+        };
+      } finally { window.timeEntries = keepT; window._fetchCrewLabor = keepF; window._geoOpenDwell = keepD; }
+    });
+    expect(r.over, 'nothing is drawn once he is home and the day is done').toBe(0);
+    expect(r.midday.length).toBe(1);
+    expect(r.midday[0][1]).toBe('On site now');
+    expect(r.client.length).toBe(1);
+    expect(r.client[0]).toEqual(['John Doe', 'Here now, not counted']);
+  });
+
   test('the reader is two passes and nothing else', async () => {
     // What the blend is allowed to do is the whole reader now: no round trip
     // withdrawal, no gap absorption, no duplicate drop, no repair pass.

@@ -629,7 +629,26 @@ async function _timeLogRows(sinceISO){
       const today=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):dateKey(new Date());
       const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(od.sinceTs)):dateKey(new Date(od.sinceTs));
       const mins=Math.max(0,Math.round((Date.now()-od.sinceTs)/60000));
-      if(day===today&&mins>=1&&!(sinceISO&&od.sinceIso<sinceISO)){
+      // ── AND IT HAS TO STOP (owner 2026-09-13) ───────────────────────
+      // "Says I arrived 10:14, why is it still going and counting?" Because
+      // an open dwell has no departure by definition, so this row is now
+      // minus the arrival with no ceiling, and he had not left the house
+      // since 10:14 that morning. By the evening the rail was drawing 10h43m
+      // at the shop.
+      //
+      // The day-end fix earlier the same night stopped the Home card and the
+      // Time Log banner and deliberately left this one, on the reasoning that
+      // the rail draws the day's SHAPE rather than a claim and the row was
+      // labelled "not counted". That was wrong and he found it within hours:
+      // a number that size on a timesheet reads as a claim whatever caption
+      // sits beside it. He reads the number.
+      //
+      // Same rule as the other two now, and only that rule: at his own
+      // address with the workday over. Home at lunch still draws, because
+      // then it really is the shape of the day, and nothing changes at a
+      // customer's address at any hour.
+      const _over=!!(od.atHome&&od.counts===false);
+      if(day===today&&mins>=1&&!_over&&!(sinceISO&&od.sinceIso<sinceISO)){
         const kind=od.kind==='shop'?'shop':od.kind==='job'?'geofence':od.kind==='client'?'client':'place';
         rows.push({
           id:'open-'+(od.id||od.sinceTs),rawId:null,source:kind==='shop'?'shop':'auto',rawSource:kind,date:day,minutes:mins,
