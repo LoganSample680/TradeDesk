@@ -134,6 +134,87 @@ test.describe('A support view boots as the target', () => {
     await ctx.close();
   });
 
+  // Owner 2026-09-13: "I don't see tiles and it looks like I'm just viewing
+  // from an employee view." _isEmployee was pinned true for everybody, and the
+  // dashboard gates the owner surfaces on that flag rather than on permissions,
+  // so every owner opened as crew. It is the ROLE now.
+  test('opening the owner draws the owner app, not the crew one', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    const page = await ctx.newPage();
+    await mockAllExternal(page);
+    await seed(page, { roster: [{
+      contractor_user_id: TARGET, business: "Jack's Plumbing", trade: 'plumbing', trade_lines: null,
+      person_user_id: TARGET, person_name: 'Jack Rivera', person_email: 'jack@x.com',
+      role: 'owner', permissions: {}, active: true
+    }] });
+    await page.goto(`/?ops=1&t=${TARGET}&p=${TARGET}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof _supa !== 'undefined' && _supa && _supaUser, null, { timeout: 15000 });
+    const r = await page.evaluate(async () => {
+      const ok = await _opsLoadIdentity();
+      return {
+        ok,
+        isEmployee: _isEmployee,
+        role: window._opsView && window._opsView.role,
+        // The owner sees the money. That is the whole complaint.
+        canSeeFinancials: typeof _canSeeFinancials === 'function' ? _canSeeFinancials() : null,
+        isOwner: typeof isOwner === 'function' ? isOwner() : null,
+        readOnly: opsReadOnly(),
+      };
+    });
+    expect(r.ok).toBe(true);
+    expect(r.role).toBe('owner');
+    expect(r.isEmployee).toBe(false);        // was true, and that was the bug
+    expect(r.canSeeFinancials).toBe(true);
+    expect(r.readOnly).toBe(true);           // still read only, both directions
+    await ctx.close();
+  });
+
+  // The reason the flag could not simply be flipped: it was ALSO what pointed
+  // every read at their account. Eight places asked "am I an employee?" to
+  // decide whose rows to load, so an owner view would have silently scoped to
+  // the VIEWER, which is the bleed this suite exists for. Whose data we read is
+  // _effectiveUid's job now, and it must answer with the target for both roles.
+  test('an owner view still reads THEIR account, not the viewer\'s', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    const page = await ctx.newPage();
+    await mockAllExternal(page);
+    for (const role of ['owner', 'crew']) {
+      await seed(page, { roster: [{
+        contractor_user_id: TARGET, business: "Jack's Plumbing", trade: 'plumbing', trade_lines: null,
+        person_user_id: PERSON, person_name: 'Jack Rivera', person_email: 'jack@x.com',
+        role, permissions: { estimate: true }, active: true
+      }] });
+    }
+    await page.goto(`/?ops=1&t=${TARGET}&p=${PERSON}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof _supa !== 'undefined' && _supa && _supaUser, null, { timeout: 15000 });
+    const r = await page.evaluate(async () => {
+      const out = [];
+      for (const role of ['owner', 'crew']) {
+        window._opsView = null;
+        window._OPS_BOOT = { target: '11111111-1111-1111-1111-111111111111', person: '22222222-2222-2222-2222-222222222222' };
+        await _opsLoadIdentity();
+        window._opsView.role = role;
+        _isEmployee = (role !== 'owner');
+        out.push({
+          role,
+          isEmployee: _isEmployee,
+          effective: _effectiveUid(),                                  // every read scopes through this
+          geoCid: typeof _geoCid === 'function' ? _geoCid() : null,    // and geo through this
+          mine: _supaUser.id,
+        });
+      }
+      return out;
+    });
+    r.forEach(x => {
+      expect(x.effective, x.role + ' read the viewer instead of the target').toBe(TARGET);
+      expect(x.geoCid, x.role + ' geo read the viewer instead of the target').toBe(TARGET);
+      expect(x.effective).not.toBe(x.mine);
+    });
+    expect(r[0].isEmployee).toBe(false);
+    expect(r[1].isEmployee).toBe(true);
+    await ctx.close();
+  });
+
   test('nothing the viewer\'s device remembers can appear inside the view', async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
     const page = await ctx.newPage();

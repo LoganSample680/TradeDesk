@@ -1297,7 +1297,7 @@ let _opSyncRunning=false;
 async function _opSyncOps(){
   if(!window._opLogShadow||!_supa||!_supaUser||_opSyncRunning)return;
   if(_devSupportMode)return;
-  const _opUid=_isEmployee?_contractorUserId:_supaUser.id;
+  const _opUid=_effectiveUid();
   if(!_opUid)return;
   _opSyncRunning=true;
   try{
@@ -7149,9 +7149,7 @@ async function supaSaveToCloud(){
     else localStorage.removeItem('zp3_rcpt_imgs');
   }catch(_e){}
 
-  const uid=_devSupportMode
-    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-    :(_isEmployee?_contractorUserId:_supaUser.id);
+  const uid=_effectiveUid();
 
   try{
     const ts=new Date().toISOString();
@@ -8183,9 +8181,7 @@ async function supaLoadFromCloud({silent=false}={}){
   // ReferenceError and the load-failure cache fallback silently painted NOTHING
   // for every signed-in user (caught by the dual-hat regression test's warn
   // trace: "Cache load failed: uid is not defined").
-  const uid=_devSupportMode
-    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-    :(_isEmployee?_contractorUserId:_supaUser.id);
+  const uid=_effectiveUid();
   try{
     // ── CURSOR READ-FIRST, the other half of the read-skew fix ──
     // The save writes tables FIRST, cursor LAST ("cursor moved ⇒ all data committed").
@@ -8845,7 +8841,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(!_supaUser||_loadInProgress||_reconcileTimer)return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
         try{
-          const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
+          const _puid=_effectiveUid();
           if(_isEmployee&&!_devSupportMode){
             // Crew can't SELECT zj_data, the cursor RPC is their heartbeat probe.
             const{data:_ec}=await _supa.rpc('get_account_cursor',{target:_puid});
@@ -9167,9 +9163,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // into B's arrays even in that race. The expected owner is B's uid (contractor's uid for
   // an employee, the dev-support target while in support mode).
   if(fromRealtime){
-    const _curOwner=_devSupportMode
-      ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId)
-      :(_isEmployee?_contractorUserId:(_supaUser&&_supaUser.id));
+    const _curOwner=_effectiveUid();
     const _recOwner=(payload.new&&payload.new.user_id)||(payload.old&&payload.old.user_id);
     // Drop ONLY when BOTH owners are known and differ (a genuine foreign-account row).
     // Never drop on a transient-null _curOwner: on an offline worker's reconnect _supaUser
