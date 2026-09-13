@@ -1621,18 +1621,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // tests/e2e-timelog-team-bars.spec.js ('the 3-second hold moved onto the
   // rail row'). Everything else asserted markup that no longer exists.
 
-  test.describe('_lpDoDelete(type="timelog"): long-press delete dispatch', () => {
-    // Every other [data-lp-id] type is DEV-ONLY (gated on _canDelete()): see
-    // tests/e2e-features.spec.js "long-press delete is DEV-ONLY". timelog is
-    // the deliberate exception: real contractors/employees use this gesture,
-    // so these tests prove it works WITHOUT the dev bypass flag.
+  // RETARGETED 2026-09-13 (10.4). These proved the long-press DISPATCH reached
+  // deleteTimeEntry without the dev flag. The dispatch is gone: the three-dot
+  // menu calls deleteTimeEntry directly (_tlRowMenuDo, js/timelog.js) and the
+  // hold is deleted, asserted absent in 'every row can be answered'. What
+  // these tests were really protecting is deleteTimeEntry's OWN permission
+  // check, which is still the only thing standing between a crew member and
+  // somebody else's hours, so they now call it the way the menu does.
+  test.describe('deleteTimeEntry: what the row menu reaches, and its own gate', () => {
     test('deletes a manual entry the caller owns, with NO _e2eAllowDelete / dev flag set', async () => {
       const r = await page.evaluate(() => {
         const id = 8990301;
         const savedFlag = window._e2eAllowDelete;
         window._e2eAllowDelete = false; // explicitly simulate a real, non-dev account
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
-        try { _lpDoDelete(String(id), 'timelog'); return { gone: !timeEntries.find(e => e.id === id) }; }
+        try { _tlRowMenuDo('delete', String(id)); return { gone: !timeEntries.find(e => e.id === id) }; }
         finally { window._e2eAllowDelete = savedFlag; timeEntries = timeEntries.filter(e => e.id !== id); }
       });
       expect(r.gone).toBe(true);
@@ -1645,7 +1648,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._employeeRecord = { permissions: { payroll: false } };
         window._supaUser = { id: 'emp-test-uid' };
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else', open: false });
-        try { _lpDoDelete(String(id), 'timelog'); return { stillThere: !!timeEntries.find(e => e.id === id) }; }
+        try { _tlRowMenuDo('delete', String(id)); return { stillThere: !!timeEntries.find(e => e.id === id) }; }
         finally {
           window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
           timeEntries = timeEntries.filter(e => e.id !== id);
@@ -1656,7 +1659,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => {
-        try { _lpDoDelete('999999', 'timelog'); return true; } catch (e) { return false; }
+        try { _tlRowMenuDo('delete', '999999'); return true; } catch (e) { return false; }
       });
       expect(r).toBe(true);
     });
@@ -2126,8 +2129,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // greps the rendered time finds nothing. The ids are the same in every
         // zone, and the ordering rule is about position, not about what the
         // clock says.
+        // AMENDED 2026-09-13 (10.4). This read data-lp-id, the long-press
+        // attribute, purely as a per-row handle. The hold is gone and the
+        // three-dot carries the id now. The CLAIM is untouched: a day reads
+        // top to bottom in the order it happened.
         const ids = [...document.querySelectorAll('.tl-rail-row')]
-          .map(li => li.getAttribute('data-lp-id'));
+          .map(li => { const b = li.querySelector('.tl-rail-more');
+                       return b ? b.getAttribute('data-row-id') : null; });
         timeEntries = timeEntries.filter(e => e.id !== 8990201 && e.id !== 8990202);
         _tlScope = origScope;
         _tlDrill = { level: 'month', mo: null, wk: null, day: null, uid: null };
@@ -4930,6 +4938,114 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // ── A stop nobody saved can be answered from the rail (owner 2026-09-09) ──
   // The mileage log has offered this since 2026-09-08; the rail stated the
   // same fact with no way to act on it. Same chip, same door.
+  // ── THE ROW MENU (owner 2026-09-13) ──────────────────────────────────────
+  // The crew member was seen on a Friday night holding a timesheet entry
+  // trying to get rid of it. He had the right gesture: a 3-second hold DID
+  // delete a row. It was wired only to manual rows (_tlCanEdit refuses
+  // anything else), and the row he was holding was automatic, so nothing
+  // happened and there was no way for him to find out why.
+  //
+  // Every row carries a three-dot now, and the hold is gone (§7). Every row,
+  // because the deriver knows where somebody was and never why: "there are
+  // times he could go to his dads shop and it not be work related, just
+  // visiting his old man" is a row the machine is completely confident about
+  // and completely wrong about.
+  test.describe('every row can be answered, and the hold is gone', () => {
+    const AUTO = { source: 'auto', rawSource: 'shop', clientName: 'JS Solutions shop',
+                   rawId: 'srv-901', minutes: 120, date: '2026-09-12', personUid: null,
+                   startTime: '2026-09-12T14:00:00Z', endTime: '2026-09-12T16:00:00Z' };
+    const row = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, AUTO, over));
+
+    test('the three-second hold is gone from every rail row', async () => {
+      // §7.1: the deleted entry point is ASSERTED absent, not just unused.
+      const h = await Promise.all([
+        row(), row({ source: 'manual', rawSource: 'manual' }),
+        row({ rawSource: 'client-held' }), row({ rawSource: 'unsaved' }),
+      ]);
+      h.forEach(x => {
+        expect(x, 'no long-press attributes survive').not.toContain('data-lp-id');
+        expect(x).not.toContain('data-lp-type');
+      });
+      // And the handler no longer makes an exception for time log rows.
+      const stillSpecialCased = await page.evaluate(() =>
+        typeof _lpDoDelete === 'function' && /timelog/.test(String(_lpDoDelete)));
+      expect(stillSpecialCased, 'the timelog branch is deleted, not orphaned').toBe(false);
+    });
+
+    test('an automatic row at a real business fence still offers the menu', async () => {
+      // The dad case. The deriver is certain he was at the shop; certainty
+      // about geography is not certainty about work.
+      const h = await row();
+      expect(h).toContain('tl-rail-more');
+      expect(h).toContain('_tlRowMenu(this)');
+      expect(h).toContain('data-row-src="auto"');
+    });
+
+    test('a live row has nothing to answer yet', async () => {
+      const h = await row({ live: true, endTime: null });
+      expect(h).not.toContain('tl-rail-more');
+    });
+
+    test('a row with no id behind it offers nothing', async () => {
+      const h = await row({ rawId: null });
+      expect(h).not.toContain('tl-rail-more');
+    });
+
+    test('the menu says delete for a manual row and never for a derived one', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (src, raw) => {
+          const b = document.createElement('button');
+          Object.assign(b.dataset, { rowId: 'x1', rowSrc: src, rowRaw: raw || '',
+            rowKey: 'k', rowDate: '2026-09-12', rowLabel: 'A place' });
+          document.body.appendChild(b);
+          try { _tlRowMenu(b); const o = document.getElementById('_tl-row-menu');
+            const html = o ? o.innerHTML : ''; o?.remove(); return html; }
+          finally { b.remove(); }
+        };
+        return { manual: mk('manual'), auto: mk('auto', 'shop'), unsaved: mk('auto', 'unsaved') };
+      });
+      // A manual clock is the person's own record. Delete is real.
+      expect(r.manual).toContain('Delete');
+      expect(r.manual).toContain('Edit');
+      expect(r.manual).not.toContain('Not work');
+      // A derived row would be written again tomorrow, so "delete" would be a
+      // lie. It is answered instead, and the word says so.
+      expect(r.auto).toContain('Not work');
+      expect(r.auto, 'the word that would promise the wrong thing').not.toContain('Delete');
+      // And per row, never per place: the copy has to say that out loud,
+      // because teaching it that the shop is personal would stop his pay.
+      expect(r.auto).toContain('not the place');
+      // An unsaved stop can also be named, which answers it forever.
+      expect(r.unsaved).toContain('Save this address');
+      expect(r.auto, 'a named fence has nothing to save').not.toContain('Save this address');
+    });
+
+    test('Not work goes through the one door that already survives a rebuild', async () => {
+      const r = await page.evaluate(async () => {
+        const seen = [];
+        const keep = window._visitHoldAnswer;
+        window._visitHoldAnswer = (id, mode) => { seen.push([id, mode]); };
+        try { await _tlRowMenuDo('notwork', 'srv-901'); return seen; }
+        finally { window._visitHoldAnswer = keep; }
+      });
+      // geo_answer_visit writes dismissed + fixed_at, and geo_replace_day
+      // keeps an answered source across every rebuild after that.
+      expect(r).toEqual([['srv-901', 'personal']]);
+    });
+
+    test('nothing here throws on junk', async () => {
+      const ok = await page.evaluate(async () => {
+        try {
+          _tlRowMenu(null); _tlRowMenu({}); _tlRowMenu({ dataset: {} });
+          await _tlRowMenuDo('nope', 'x'); await _tlRowMenuDo(null, null);
+          document.getElementById('_tl-row-menu')?.remove();
+          return true;
+        } catch (e) { return String(e && e.message); }
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
   test.describe('saving an unsaved stop from the rail', () => {
     const STOP = { source: 'auto', rawSource: 'unsaved', clientName: 'Unsaved address',
                    clientKey: 'j-abc:s0', date: '2026-09-09', minutes: 95, personUid: null,

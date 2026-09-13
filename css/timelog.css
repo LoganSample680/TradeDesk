@@ -412,3 +412,23 @@ body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
    the review so the week can be fixed and submitted again. */
 .tl-wbar-stamp.ok{background:var(--c-green-soft,#E6F4EA);color:var(--c-green-deep,#1B6E3A);border-color:transparent}
 .tl-wbar-stamp.back{background:var(--amber-lt);color:var(--amber);border-color:transparent}
+
+/* ── The row menu (owner 2026-09-13) ──────────────────────────────────────
+   Replaces the three-second hold, which was invisible, absent for VoiceOver,
+   and wired only to manual rows. 44px of target because it sits beside a
+   number the thumb is already near. */
+.tl-rail-end{display:flex;align-items:flex-start;gap:2px}
+.tl-rail-more{flex:0 0 auto;min-width:32px;min-height:44px;padding:0 6px;border:none;
+  background:transparent;color:var(--text3);font-size:17px;line-height:1;cursor:pointer;
+  font-family:inherit;border-radius:8px;-webkit-tap-highlight-color:transparent}
+.tl-rail-more:hover{background:var(--bg2);color:var(--text)}
+.tl-rail-more:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.tl-menu-acts{display:flex;flex-direction:column;gap:8px}
+.tl-menu-act{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;
+  min-height:52px;padding:10px 13px;border:1.5px solid var(--line-2);background:var(--bg);
+  border-radius:10px;cursor:pointer;font-family:inherit;text-align:left}
+.tl-menu-act:hover{background:var(--bg2)}
+.tl-menu-act.is-danger{border-color:var(--c-red-edge,#e5b4b4)}
+.tl-menu-act.is-danger .tl-menu-act-t{color:var(--c-red-deep,#A32D2D)}
+.tl-menu-act-t{font-size:14px;font-weight:800}
+.tl-menu-act-s{font-size:11px;color:var(--text3);line-height:1.4}

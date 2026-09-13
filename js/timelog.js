@@ -1113,10 +1113,10 @@ async function _saveFixedAutoEntry(rowId){
 // bars (see _tlEmpAccHtml). With the table gone it had no caller at all.
 //
 // It carried ONE capability nothing else had: the 3-second hold-to-delete
-// gesture on a time entry. That did not go with it (§7.2). The same
-// data-lp-* attributes, under the same _tlCanEdit gate, are now on the rail
-// row in _tlRailRow, which is where the Edit button already moved for
-// exactly this reason. Everything else it drew (the clock times, the
+// gesture on a time entry. That did not go with it (§7.2), it moved to the
+// rail row, and on 2026-09-13 it was replaced outright by the three-dot menu
+// there: a hold nobody can see is not a control, and that one only ever
+// worked on manual rows anyway. Everything else it drew (the clock times, the
 // address, the drive from/to, the OT and unpaid flags) the rail row was
 // already drawing better.
 // ── Adding a hole to the day (owner 2026-08-29) ────────────────────────────
@@ -1527,17 +1527,132 @@ function _tlRailRow(r){
   // losing the only way to delete a time entry was not part of removing it.
   // Same attributes, same _tlCanEdit gate, same handler in js/cloud.js, which
   // re-checks permission again on its own.
-  const lp=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
-    ?' data-lp-id="'+escHtml(String(r.rawId))+'" data-lp-type="timelog"'+
-     ' data-lp-label="'+escHtml(String(r.personName||'')+' · '+
-        String(r.clientName||r.addr||m.word))+'"'
-    :'';
+  // ── A MENU, NOT A GESTURE (owner 2026-09-13) ────────────────────────────
+  // The delete used to be a three-second hold, and it was wired ONLY to manual
+  // rows (_tlCanEdit refuses anything else). The crew member was seen holding
+  // an AUTOMATIC row on a Friday night trying to get rid of it: right gesture,
+  // wrong kind of row, nothing happened, and no way to find that out. A hold
+  // is also invisible to anybody who has not been told it exists, and it does
+  // not exist at all for VoiceOver.
+  //
+  // So it is a three-dot now, on EVERY row, and the hold is gone (7: deleted,
+  // not hidden). Every row, because the deriver knows where somebody was and
+  // never why: it can be completely certain he was at the shop for two hours
+  // and still be wrong, because visiting his dad and working look identical
+  // from the outside. The only source of truth about intent is the person, so
+  // the control cannot be hidden on the rows the machine feels sure about.
+  const menu=_tlRowMenuable(r)
+    ? '<button type="button" class="tl-rail-more" aria-label="Options for this entry" '+
+      'onclick="event.stopPropagation();_tlRowMenu(this)" '+
+      'data-row-id="'+escHtml(String(r.rawId))+'" '+
+      'data-row-src="'+escHtml(String(r.source||''))+'" '+
+      'data-row-raw="'+escHtml(String(r.rawSource||''))+'" '+
+      'data-row-key="'+escHtml(String(r.clientKey||''))+'" '+
+      'data-row-date="'+escHtml(String(r.date||''))+'" '+
+      'data-row-label="'+escHtml(String(r.clientName||r.addr||m.word))+'">'+
+      '<span aria-hidden="true">\u22ef</span></button>'
+    : '';
+  const lp='';
   return '<li class="tl-rail-row" data-kind="'+kind+'"'+lp+' style="--rail:'+m.c+'">'+
     '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
     '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
     '<div class="tl-rail-body">'+tag+body+'</div>'+
-    dur+
+    (menu?'<div class="tl-rail-end">'+dur+menu+'</div>':dur)+
   '</li>';
+}
+// WHICH ROWS GET THE MENU. Anything with a row id behind it: a manual clock
+// (its own record, really deletable) or a derived row (answerable, never
+// deletable, because the deriver would write it again tomorrow). A live row
+// still running has no id and nothing to act on yet.
+function _tlRowMenuable(r){
+  try{
+    if(!r||r.rawId==null||r.live)return false;
+    if(typeof _tlReadOnly==='function'&&_tlReadOnly())return false;
+    if(String(r.source||'')==='manual')return typeof _tlCanEdit==='function'&&_tlCanEdit(r);
+    return typeof _tlRowIsMine==='function'?_tlRowIsMine(r):true;
+  }catch(_e){return false;}
+}
+
+// ── THE ROW MENU ────────────────────────────────────────────────────────────
+// Two kinds of row, two different truths about what removing one means, and
+// the words have to say which.
+//
+// A MANUAL clock is the person's own record. Delete is real and it is gone.
+//
+// A DERIVED row is the deriver's reading of the tape, and the tape does not
+// change because somebody disagreed with it. Deleting one is a lie: the next
+// rebuild produces it again, which is exactly the "why did it come back" bug
+// this is meant to end. What settles it is geo_answer_visit, which writes
+// source='dismissed' and stamps fixed_at, and geo_replace_day keeps an
+// answered source across every rebuild after that. So the word is "Not work",
+// because that is what actually happens to it.
+//
+// PER ROW, NEVER PER PLACE (owner 2026-09-13, on visiting his dad at the
+// shop). If answering one visit taught the app that the shop is personal, he
+// would stop being paid for the shop. fixed_at is already per-row; the next
+// visit derives normally. Anything broader is its own deliberate action, the
+// way the family tag on a contact is.
+function _tlRowMenu(btn){
+  try{
+    if(!btn||!btn.dataset)return;
+    const d=btn.dataset;
+    const id=d.rowId, src=String(d.rowSrc||''), raw=String(d.rowRaw||'');
+    const label=String(d.rowLabel||'this entry');
+    const manual=src==='manual';
+    document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+    const ov=document.createElement('div');
+    ov.className='zmodal-overlay';ov.id='_tl-row-menu';
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+    const box=document.createElement('div');
+    box.className='zmodal';box.style.maxWidth='320px';
+    const act=(fn,txt,sub,danger)=>
+      '<button type="button" class="tl-menu-act'+(danger?' is-danger':'')+'" onclick="'+fn+'">'+
+        '<span class="tl-menu-act-t">'+escHtml(txt)+'</span>'+
+        (sub?'<span class="tl-menu-act-s">'+escHtml(sub)+'</span>':'')+'</button>';
+    let acts='';
+    if(manual){
+      acts+=act('_tlRowMenuDo(\'edit\',\''+escHtml(String(id))+'\')','Edit','Change the times or the job');
+      acts+=act('_tlRowMenuDo(\'delete\',\''+escHtml(String(id))+'\')','Delete','Removes this entry for good',true);
+    }else{
+      acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\')','Not work',
+        'Keeps it off your hours and your miles. Just this one, not the place.',true);
+      if(raw==='unsaved'&&d.rowKey){
+        acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
+          'Save this address','Then it names itself here and everywhere after');
+      }
+    }
+    box.innerHTML='<div style="font-size:15px;font-weight:800;margin-bottom:2px">'+escHtml(label)+'</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+
+        escHtml(manual?'You entered this by hand.':'Recorded automatically.')+'</div>'+
+      '<div class="tl-menu-acts">'+acts+'</div>'+
+      '<button type="button" class="btn" style="width:100%;margin-top:12px" '+
+        'onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>';
+    ov.appendChild(box);document.body.appendChild(ov);
+  }catch(_e){}
+}
+// One door per action, and every one of them is a function that already
+// existed and already re-checks permission for itself (7.3).
+async function _tlRowMenuDo(what,a,b){
+  try{
+    document.getElementById('_tl-row-menu')?.remove();
+    if(what==='edit'){
+      if(typeof _openEditTimeEntry==='function')_openEditTimeEntry(parseInt(a,10));
+      return;
+    }
+    if(what==='delete'){
+      if(typeof deleteTimeEntry==='function')deleteTimeEntry(parseInt(a,10));
+      return;
+    }
+    if(what==='save'){
+      if(typeof _mileSaveStopAddress==='function')_mileSaveStopAddress(a,b||'');
+      return;
+    }
+    if(what==='notwork'){
+      // The SAME door the held-visit chips use, so one definition of what an
+      // answer means still serves both (7.3).
+      if(typeof _visitHoldAnswer==='function'){await _visitHoldAnswer(String(a),'personal');return;}
+    }
+  }catch(_e){}
 }
 // The day's headline: total, the same split bar the employee card draws, and
 // a legend whose DOT carries the colour so the bar is readable by anyone who
@@ -1623,14 +1738,17 @@ function _tlClockCapHtml(r,which){
   // MARK ON THE SPINE saying when he started and when he stopped, and it needs
   // no arithmetic of its own. The argument went with the number (§7): both
   // callers stop computing something nothing reads.
-  // AND SO DOES THE LONG-PRESS DELETE (§7.2). It lived on the manual row this
-  // cap replaces, and moving where a clock is drawn was never a decision to
-  // remove the only way to delete one. Same attributes, same handler, on the
-  // opening cap beside Edit so both controls stay on the end people reach for.
-  const lp=(isIn&&typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
-    ?' data-lp-id="'+escHtml(String(r.rawId))+'" data-lp-type="timelog"'+
-     ' data-lp-label="'+escHtml(String(r.personName||'')+' · Clocked in')+'"'
-    :'';
+  // AND THE MENU RIDES THE OPENING CAP (owner 2026-09-13). The long-press that
+  // used to live here is gone with the rest of them; the cap carries the same
+  // three-dot every other row has, beside Edit, on the end people reach for.
+  const capMenu=(isIn&&typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ? '<button type="button" class="tl-rail-more" aria-label="Options for this entry" '+
+      'onclick="event.stopPropagation();_tlRowMenu(this)" '+
+      'data-row-id="'+escHtml(String(r.rawId))+'" data-row-src="manual" '+
+      'data-row-label="'+escHtml(String(r.personName||'')+' \u00b7 Clocked in')+'">'+
+      '<span aria-hidden="true">\u22ef</span></button>'
+    : '';
+  const lp='';
   return '<li class="tl-rail-row tl-rail-cap" data-kind="clock-'+which+'"'+lp+' '+
       'style="--rail:var(--text3)">'+
     '<div class="tl-rail-time"><span>'+escHtml(t)+'</span></div>'+
@@ -1644,7 +1762,8 @@ function _tlClockCapHtml(r,which){
         escHtml(isIn?'Clocked in':'Clocked out')+'</span>'+
       (edit?'<div class="tl-rail-sub">'+edit+'</div>':'')+
     '</div>'+
-    '<div class="tl-rail-dur"></div>'+
+    (capMenu?'<div class="tl-rail-end"><div class="tl-rail-dur"></div>'+capMenu+'</div>'
+            :'<div class="tl-rail-dur"></div>')+
   '</li>';
 }
 function _tlDayRailHtml(rows){
