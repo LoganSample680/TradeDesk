@@ -31,13 +31,31 @@ const BY = [
   { contractor_user_id: 'biz-c', business: 'Rivera Plumbing', people: 1, active_days: 3, days_clocked: 2, avg_day_min: 300, total_miles: 40, visits: 4, avg_visit_min: 50, unnamed_legs: 0, last_active: new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10) },
   { contractor_user_id: 'biz-b', business: 'Zach Painting', people: 1, active_days: 11, days_clocked: 9, avg_day_min: 420, total_miles: 210, visits: 12, avg_visit_min: 61, unnamed_legs: 1, last_active: new Date(Date.now() - 1 * 86400000).toISOString().slice(0, 10) },
 ];
+// ops_account_brief is the one call the business page (and any agent) reads for
+// everything about a single account, so the stub carries every section it paints.
+const BRIEF = {
+  contractor_user_id: 'biz-a', business: 'Sample Plumbing', trade: 'plumbing',
+  range: { from: '2026-08-14', to: '2026-09-13', days: 31 },
+  work: { people: 2, crew: 1, active_days: 22, days_clocked: 18, avg_day_min: 500, total_miles: 900.55, visits: 30, avg_visit_min: 70, unnamed_legs: 2, last_active: '2026-09-13' },
+  usage: { sessions: 88, active_days: 22, page_views: 640, clicks: 1900, avg_session_min: 7.4, avg_screens: 7.3, clicks_per_session: 21.6, last_version: '09.13.26.2', last_seen: '2026-09-13T15:00:00Z' },
+  funnel: { leads: 40, bids_sent: 31, sent_opened: 26, sent_signed: 14, signed_total: 14, signed_paid: 9, open_rate: 83.9, close_rate: 45.2, signed_value: 92400, avg_ticket: 6600 },
+  money: { signed_count: 14, signed_value: 92400, avg_ticket: 6600, median_ticket: 5200, deposits: 18000, stripe_fees: 812.44, paid_count: 9, pending_count: 5, declined: 1, cancelled: 0, by_cash: 2, by_check: 3, by_card: 9 },
+  timing: [
+    { stage: 'lead to proposal', n: 22, median_min: 190, p25_min: 60, p75_min: 1440 },
+    { stage: 'writing the proposal', n: 22, median_min: 34, p25_min: 18, p75_min: 70 },
+    { stage: 'saved to sent', n: 31, median_min: 12, p25_min: 3, p75_min: 300 },
+    { stage: 'sent to opened', n: 26, median_min: 46, p25_min: 9, p75_min: 400 },
+    { stage: 'opened to signed', n: 14, median_min: 2880, p25_min: 300, p75_min: 8000 },
+    { stage: 'signed to paid', n: 9, median_min: 4320, p25_min: 1440, p75_min: 10080 },
+  ],
+};
 const SUMMARY = { days: 30, people: 3, accounts: 2, active_days: 40, days_clocked: 22, avg_day_min: 480, total_miles: 512.4, avg_visit_min: 63, unnamed_legs: 4 };
 
 // The page builds its client the moment the vendor script defines window.supabase.
 // Intercepting that assignment is the only seam that exists before boot runs, and
 // it keeps the stub inside this spec instead of in shared helpers (§10.3).
-function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY } = {}) {
-  return page.addInitScript(({ roster, summary, by }) => {
+function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BRIEF } = {}) {
+  return page.addInitScript(({ roster, summary, by, brief }) => {
     let held;
     Object.defineProperty(window, 'supabase', {
       configurable: true,
@@ -51,6 +69,7 @@ function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY } = {}) {
               if (fn === 'ops_view_roster') return Promise.resolve({ data: roster, error: null });
               if (fn === 'ops_summary') return Promise.resolve({ data: [summary], error: null });
               if (fn === 'ops_by_contractor') return Promise.resolve({ data: by, error: null });
+              if (fn === 'ops_account_brief') return Promise.resolve({ data: brief, error: null });
               return realRpc(fn, args);
             };
             return c;
@@ -58,7 +77,7 @@ function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY } = {}) {
         };
       }
     });
-  }, { roster, summary, by });
+  }, { roster, summary, by, brief });
 }
 
 test.describe('Ops portal: the support view, embedded', () => {
@@ -243,6 +262,105 @@ test.describe('Ops portal: the support view, embedded', () => {
       await page.locator('#biz-back').click();
       await expect(page.locator('#lvl-trade')).toBeVisible();
       await page.locator('#trade-back').click();
+    });
+
+    test('the way into their app sits above every number, on the owner by default', async () => {
+      await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      // The open button is the first interactive thing under the title, above
+      // the metrics: clicking in to see their screen is the point of the page.
+      const openBox = await page.locator('#biz-open').boundingBox();
+      const tileBox = await page.locator('#biz-tiles .tile').first().boundingBox();
+      expect(openBox.y).toBeLessThan(tileBox.y);
+      // One chip per person, the owner pre-selected.
+      await expect(page.locator('#biz-chips .chip')).toHaveCount(2);
+      await expect(page.locator('#biz-chips .chip.on')).toHaveText('Logan');
+      await page.locator('#biz-open').click();
+      await expect(page.locator('#view')).toHaveClass(/on/);
+      expect(await page.locator('#view-frame').getAttribute('src')).toContain('p=u-logan');
+      await page.locator('#view-exit').click();
+      await page.locator('#biz-back').click();
+      await page.locator('#trade-back').click();
+    });
+
+    test('a crew chip opens the app as the crew member, not the owner', async () => {
+      await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      await page.locator('#biz-chips .chip', { hasText: 'Jack' }).click();
+      await expect(page.locator('#biz-chips .chip.on')).toHaveText('Jack · crew');
+      await page.locator('#biz-open').click();
+      expect(await page.locator('#view-frame').getAttribute('src')).toContain('p=u-jack');
+      await page.locator('#view-exit').click();
+      await page.locator('#biz-back').click();
+      await page.locator('#trade-back').click();
+    });
+
+    test('one call fills every section: work, proposals, money, usage', async () => {
+      await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      await expect(page.locator('#biz-funnel')).toContainText('83.9%');       // open rate
+      await expect(page.locator('#biz-funnel')).toContainText('45.2%');       // close rate
+      await expect(page.locator('#biz-funnel')).toContainText('$92,400');
+      await expect(page.locator('#biz-money')).toContainText('$5,200');       // median ticket
+      await expect(page.locator('#biz-money')).toContainText('Awaiting payment');
+      await expect(page.locator('#biz-usage')).toContainText('09.13.26.2');
+      await expect(page.locator('#biz-usage')).toContainText('21.6');         // taps per session
+      // Raw floats never reach the page (§ the 993.5999999999999 lesson).
+      await expect(page.locator('#lvl-biz')).not.toContainText('.55999');
+      await page.locator('#biz-back').click();
+      await page.locator('#trade-back').click();
+    });
+
+    test('timing names every stage in plain time, longest bar is the slowest step', async () => {
+      await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      const stages = page.locator('#biz-timing .stage');
+      await expect(stages).toHaveCount(6);
+      // The two stages that were logged but never had a reader.
+      await expect(page.locator('#biz-timing')).toContainText('lead to proposal');
+      await expect(page.locator('#biz-timing')).toContainText('writing the proposal');
+      // 34 minutes reads as minutes, 4320 as days, never as a raw number.
+      await expect(stages.nth(1)).toContainText('34 min');
+      await expect(stages.nth(5)).toContainText('3 days');
+      await expect(stages.nth(0)).toContainText('22 times');
+      // Slowest stage owns the full bar; the fastest is a sliver.
+      const widths = await page.locator('#biz-timing .stage-bar i').evaluateAll(
+        els => els.map(e => e.getBoundingClientRect().width));
+      expect(Math.max(...widths)).toBe(widths[5]);
+      expect(widths[2]).toBeLessThan(widths[5]);
+      await page.locator('#biz-back').click();
+      await page.locator('#trade-back').click();
+    });
+
+    test('the brief copies as the same JSON an agent would read', async () => {
+      await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      const copied = await page.evaluate(async () => {
+        let got = null;
+        navigator.clipboard.writeText = async t => { got = t; };
+        document.getElementById('biz-copy').click();
+        await new Promise(r => setTimeout(r, 40));
+        return got;
+      });
+      const parsed = JSON.parse(copied);
+      expect(parsed.business).toBe('Sample Plumbing');
+      expect(parsed.funnel.close_rate).toBe(45.2);
+      expect(parsed.timing).toHaveLength(6);
+      await page.locator('#biz-back').click();
+      await page.locator('#trade-back').click();
+    });
+
+    test('a brief that fails says so instead of showing stale numbers', async ({ browser }) => {
+      const c = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
+      const p2 = await c.newPage();
+      await mockAllExternal(p2);
+      await stubRpc(p2, { brief: null });
+      await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+      await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+      await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+      await expect(p2.locator('#biz-funnel')).toContainText('Could not load');
+      await expect(p2.locator('#biz-timing')).toContainText('No answer');
+      await c.close();
     });
 
     test('the activity tiles read from ops_summary', async () => {

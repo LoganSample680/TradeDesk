@@ -65,6 +65,25 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 14px;min-width:0}
 .tile-v{font-size:22px;font-weight:800;letter-spacing:-.6px}
 .tile-k{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* The reason you clicked into a business is to see their screen, so that action
+   sits above every number, not buried under them. */
+.open-app{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:13px 14px;margin:14px 0 2px}
+.btn-open{background:var(--accent);border:0;color:#1A1613;border-radius:9px;padding:11px 17px;font-size:14px;font-weight:800;cursor:pointer;flex-shrink:0}
+.btn-open:hover{filter:brightness(1.08)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.chip{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#1A1613}
+.chip:hover{border-color:var(--accent)}
+/* One stage per line, longest bar is the slowest step in their chain. */
+.stage{display:grid;grid-template-columns:1fr auto;gap:3px 10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.stage:last-child{border-bottom:0}
+.stage-k{font-size:13px;font-weight:700;min-width:0}
+.stage-v{font-size:13px;font-weight:800;text-align:right;white-space:nowrap}
+.stage-bar{grid-column:1/3;height:5px;border-radius:3px;background:var(--line);overflow:hidden}
+.stage-bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.stage-n{grid-column:1/3;font-size:11px;color:var(--text3)}
+.hint{font-weight:600;letter-spacing:0;text-transform:none;color:var(--text3);opacity:.8}
 .range{display:flex;gap:6px;flex-wrap:wrap}
 .range button{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .range button.on{background:var(--accent);border-color:var(--accent);color:#1A1613}
@@ -203,9 +222,32 @@ form.signin input{background:#120F0D;border:1px solid var(--line2);color:var(--t
       <button class="back" id="biz-back">‹ Back</button>
       <div class="biz-title" id="biz-name"></div>
       <div class="muted" id="biz-sub" style="margin-bottom:14px"></div>
+
+      <!-- Their screen first. Pick the person, then open it. -->
+      <div class="open-app">
+        <button class="btn-open" id="biz-open">Open their app &rsaquo;</button>
+        <div class="chips" id="biz-chips"></div>
+      </div>
+
+      <div class="section-title">Work <span class="hint" id="biz-range-lbl"></span></div>
       <div class="tiles" id="biz-tiles"></div>
+
+      <div class="section-title">Proposals</div>
+      <div class="tiles" id="biz-funnel"></div>
+
+      <div class="section-title">How long each step takes <span class="hint">median</span></div>
+      <div class="card" id="biz-timing"></div>
+
+      <div class="section-title">Money</div>
+      <div class="tiles" id="biz-money"></div>
+
+      <div class="section-title">App usage</div>
+      <div class="tiles" id="biz-usage"></div>
+
       <div class="section-title">People</div>
       <div class="rows" id="biz-people"></div>
+
+      <button class="btn" id="biz-copy" style="margin-top:16px">Copy the brief as JSON</button>
     </section>
   </main>
 </div>
@@ -503,6 +545,7 @@ function show(id){
 
 function openBiz(b){
   OPEN=b;
+  WHO=null;                          // a new business picks its own owner again
   show('lvl-biz');
   renderBiz(b);
 }
@@ -513,23 +556,38 @@ $('biz-back').addEventListener('click',()=>{
   show(TRADE?'lvl-trade':'lvl-all');
 });
 
+// A duration reads as a person would say it. 240 minutes is four hours, not 240.
+function dur(m){
+  if(m==null||m==='')return '—';
+  const n=Number(m);
+  if(!isFinite(n))return '—';
+  if(n<1)return 'under a minute';
+  if(n<90)return Math.round(n)+' min';
+  const h=n/60;
+  if(h<48)return (Math.round(h*10)/10)+' hours';
+  return (Math.round(h/24*10)/10)+' days';
+}
+const pct=v=>v==null?'—':num(v)+'%';
+const usd=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
+
+// The person the app opens as. The owner unless you pick someone else, because
+// the owner's screen is the one that shows everything.
+let WHO=null;
+
 function renderBiz(b){
   const s=STATS.get(b.id)||{};
   const owner=b.people.find(p=>p.role==='owner');
+  if(!WHO||!b.people.some(p=>p.person_user_id===WHO))WHO=(owner||b.people[0]||{}).person_user_id||null;
   $('biz-name').textContent=b.name;
   $('biz-sub').textContent=[TRADE_LABEL(b.trade)+(b.lines&&b.lines!==b.trade?' ('+b.lines+')':''),
                             owner&&owner.person_email,
                             s.last_active?relDay(s.last_active):'no activity in this range'].filter(Boolean).join(' · ');
-  $('biz-tiles').innerHTML=[
-    tile(s.people,'People'),
-    tile(s.active_days,'Days opened'),
-    tile(s.days_clocked,'Days clocked'),
-    tile(s.avg_day_min!=null?Math.round(s.avg_day_min/60*10)/10+'h':'—','Average day'),
-    tile(s.total_miles,'Miles'),
-    tile(s.visits,'Visits'),
-    tile(s.avg_visit_min!=null?Math.round(s.avg_visit_min)+'m':'—','Average visit'),
-    tile(s.unnamed_legs,'Unnamed drives')
-  ].join('');
+  $('biz-range-lbl').textContent='last '+DAYS+' days';
+
+  // One chip per person, so "see it as the crew sees it" is one tap from here
+  // and not a trip down to the People list.
+  $('biz-chips').innerHTML=b.people.map(p=>`<button class="chip${p.person_user_id===WHO?' on':''}" data-who="${esc(p.person_user_id)}">${esc((p.person_name||p.person_email||'Unknown').split(' ')[0])}${p.role==='owner'?'':' · crew'}</button>`).join('');
+
   $('biz-people').innerHTML=b.people.map(p=>`<button class="row" data-person="${esc(p.person_user_id)}">
     <span class="row-main">
       <span class="row-name">${esc(p.person_name||p.person_email||'Unknown')}</span>
@@ -537,7 +595,118 @@ function renderBiz(b){
     </span>
     <span class="row-stat">Open ›</span>
   </button>`).join('');
+
+  loadBrief(b);
 }
+
+$('biz-chips').addEventListener('click',e=>{
+  const el=e.target.closest('[data-who]');
+  if(!el)return;
+  WHO=el.dataset.who;
+  if(OPEN)renderBiz(OPEN);
+});
+$('biz-open').addEventListener('click',()=>{
+  if(!OPEN)return;
+  const p=OPEN.people.find(x=>x.person_user_id===WHO)||OPEN.people[0];
+  if(p)openView(p);
+});
+
+/* ── The brief: every number for one business, in one call ────────────────── */
+// The page and an agent both read ops_account_brief, so a human looking at this
+// screen and an agent answering "how well is J's Solutions using TradeDesk"
+// cannot end up with different numbers (§7.3).
+let BRIEF=null;                      // the last brief loaded, for the copy button
+const BRIEF_CACHE=new Map();         // id|days -> brief, so re-entering is instant
+
+async function loadBrief(b){
+  const {from,to}=rangeIso();
+  const key=b.id+'|'+DAYS;
+  const seen=BRIEF_CACHE.get(key);
+  if(seen){ BRIEF=seen; paintBrief(seen); return; }
+  ['biz-funnel','biz-money','biz-usage'].forEach(id=>{ $(id).innerHTML='<div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>'; });
+  $('biz-timing').innerHTML='<div class="skel"></div>';
+  const {data,error}=await sb.rpc('ops_account_brief',{p_target:b.id,p_from:from,p_to:to});
+  if(!OPEN||OPEN.id!==b.id)return;   // they moved on while it was in flight
+  if(error||!data){
+    BRIEF=null;
+    ['biz-funnel','biz-money','biz-usage'].forEach(id=>{ $(id).innerHTML=tile('—','Could not load'); });
+    $('biz-timing').innerHTML='<div class="muted">'+esc(error?error.message:'No answer')+'</div>';
+    return;
+  }
+  BRIEF_CACHE.set(key,data);
+  BRIEF=data;
+  paintBrief(data);
+}
+
+function paintBrief(d){
+  const w=d.work||{}, f=d.funnel||{}, m=d.money||{}, u=d.usage||{};
+  $('biz-tiles').innerHTML=[
+    tile(w.people,'People'),
+    tile(w.active_days,'Days opened'),
+    tile(w.days_clocked,'Days clocked'),
+    tile(w.avg_day_min!=null?Math.round(w.avg_day_min/60*10)/10+'h':'—','Average day'),
+    tile(w.total_miles,'Miles'),
+    tile(w.visits,'Visits'),
+    tile(w.avg_visit_min!=null?Math.round(w.avg_visit_min)+'m':'—','Average visit'),
+    tile(w.unnamed_legs,'Unnamed drives')
+  ].join('');
+  $('biz-funnel').innerHTML=[
+    tile(f.leads,'Leads'),
+    tile(f.bids_sent,'Proposals sent'),
+    tile(f.sent_opened,'Opened'),
+    tile(pct(f.open_rate),'Open rate'),
+    tile(f.signed_total,'Signed'),
+    tile(pct(f.close_rate),'Close rate'),
+    tile(usd(f.signed_value),'Signed value'),
+    tile(usd(f.avg_ticket),'Average ticket')
+  ].join('');
+  $('biz-money').innerHTML=[
+    tile(usd(m.signed_value),'Signed'),
+    tile(usd(m.median_ticket),'Median ticket'),
+    tile(m.paid_count,'Paid'),
+    tile(m.pending_count,'Awaiting payment'),
+    tile(usd(m.deposits),'Deposits'),
+    tile(usd(m.stripe_fees),'Stripe fees'),
+    tile(m.declined,'Declined'),
+    tile(m.cancelled,'Cancelled')
+  ].join('');
+  $('biz-usage').innerHTML=[
+    tile(u.sessions,'Sessions'),
+    tile(u.avg_session_min!=null?Math.round(u.avg_session_min)+'m':'—','Average session'),
+    tile(u.page_views,'Screens'),
+    tile(u.clicks,'Taps'),
+    tile(u.clicks_per_session,'Taps per session'),
+    tile(u.avg_screens,'Screens per session'),
+    tile(u.last_version||'—','Version'),
+    tile(u.last_seen?relDay(String(u.last_seen).slice(0,10)).replace(/^(last )?active /,''):'—','Last seen')
+  ].join('');
+  paintTiming(d.timing||[]);
+}
+
+// Timing is the one section a table would bury: the point is which step is the
+// slow one, and a bar answers that before you have read a single number.
+function paintTiming(rows){
+  if(!rows.length){ $('biz-timing').innerHTML='<div class="muted">No completed steps in this range.</div>'; return; }
+  const max=Math.max(...rows.map(r=>Number(r.median_min)||0),1);
+  $('biz-timing').innerHTML=rows.map(r=>{
+    const med=Number(r.median_min)||0;
+    return `<div class="stage">
+      <div class="stage-k">${esc(r.stage)}</div>
+      <div class="stage-v">${esc(dur(r.median_min))}</div>
+      <div class="stage-bar"><i style="width:${Math.max(2,Math.round(med/max*100))}%"></i></div>
+      <div class="stage-n">${esc(String(r.n))} ${Number(r.n)===1?'time':'times'} · middle half ${esc(dur(r.p25_min))} to ${esc(dur(r.p75_min))}</div>
+    </div>`;
+  }).join('');
+}
+
+// The same JSON an agent gets, on the clipboard, so a question can be handed to
+// one without the agent needing its own database credentials.
+$('biz-copy').addEventListener('click',async e=>{
+  if(!BRIEF)return;
+  try{ await navigator.clipboard.writeText(JSON.stringify(BRIEF,null,2)); e.target.textContent='Copied'; }
+  catch(_){ e.target.textContent='Could not copy'; }
+  setTimeout(()=>{ e.target.textContent='Copy the brief as JSON'; },1600);
+});
 
 $('biz-people').addEventListener('click',e=>{
   const el=e.target.closest('[data-person]');
