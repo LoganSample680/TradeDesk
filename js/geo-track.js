@@ -913,7 +913,9 @@ function _geoDistFt(a,b){return _haversineMiles(a,b)*5280;} // a,b = {lat,lng}
 
 // Who owns the time rows this device writes. For an employee it's their
 // contractor; for the owner working a job themselves, it's their own account.
-function _geoCid(){ return _isEmployee ? _contractorUserId : (_supaUser && _supaUser.id); }
+// Same question, same answer: _effectiveUid decides whose account this is,
+// including the ops support view (js/data.js).
+function _geoCid(){ return _effectiveUid(); }
 
 // ── Jobs this device should fence against today + their coordinates ─────────────
 // Employees: only the jobs dispatched to them. Owner: any of today's active jobs,

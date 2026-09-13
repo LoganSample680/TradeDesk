@@ -686,7 +686,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.12.26.25';
+const APP_VERSION='09.13.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1297,7 +1297,7 @@ let _opSyncRunning=false;
 async function _opSyncOps(){
   if(!window._opLogShadow||!_supa||!_supaUser||_opSyncRunning)return;
   if(_devSupportMode)return;
-  const _opUid=_isEmployee?_contractorUserId:_supaUser.id;
+  const _opUid=_effectiveUid();
   if(!_opUid)return;
   _opSyncRunning=true;
   try{
@@ -7153,9 +7153,7 @@ async function supaSaveToCloud(){
     else localStorage.removeItem('zp3_rcpt_imgs');
   }catch(_e){}
 
-  const uid=_devSupportMode
-    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-    :(_isEmployee?_contractorUserId:_supaUser.id);
+  const uid=_effectiveUid();
 
   try{
     const ts=new Date().toISOString();
@@ -8187,9 +8185,7 @@ async function supaLoadFromCloud({silent=false}={}){
   // ReferenceError and the load-failure cache fallback silently painted NOTHING
   // for every signed-in user (caught by the dual-hat regression test's warn
   // trace: "Cache load failed: uid is not defined").
-  const uid=_devSupportMode
-    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-    :(_isEmployee?_contractorUserId:_supaUser.id);
+  const uid=_effectiveUid();
   try{
     // ── CURSOR READ-FIRST, the other half of the read-skew fix ──
     // The save writes tables FIRST, cursor LAST ("cursor moved ⇒ all data committed").
@@ -8849,7 +8845,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(!_supaUser||_loadInProgress||_reconcileTimer)return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
         try{
-          const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
+          const _puid=_effectiveUid();
           if(_isEmployee&&!_devSupportMode){
             // Crew can't SELECT zj_data, the cursor RPC is their heartbeat probe.
             const{data:_ec}=await _supa.rpc('get_account_cursor',{target:_puid});
@@ -9171,9 +9167,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // into B's arrays even in that race. The expected owner is B's uid (contractor's uid for
   // an employee, the dev-support target while in support mode).
   if(fromRealtime){
-    const _curOwner=_devSupportMode
-      ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId)
-      :(_isEmployee?_contractorUserId:(_supaUser&&_supaUser.id));
+    const _curOwner=_effectiveUid();
     const _recOwner=(payload.new&&payload.new.user_id)||(payload.old&&payload.old.user_id);
     // Drop ONLY when BOTH owners are known and differ (a genuine foreign-account row).
     // Never drop on a transient-null _curOwner: on an offline worker's reconnect _supaUser
