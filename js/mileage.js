@@ -1174,7 +1174,8 @@ function pendingSupplyStores(){
     const visits=by[name].slice().sort((a,b)=>(a.at||a.date).localeCompare(b.at||b.date));
     const latestAt=visits[visits.length-1].at||visits[visits.length-1].date;
     return {name,visits,count:visits.length,latestAt};
-  }).sort((a,b)=>(b.latestAt||'').localeCompare(a.latestAt||''));
+  }).sort((a,b)=>(b.latestAt||'').localeCompare(a.latestAt||'')
+              || String(a.name||'').localeCompare(String(b.name||'')));
 }
 // The shared "off the books" path for held rows. AMENDED 2026-09-05: it used
 // to DELETE (owner 2026-08-17, "Personal clears the trip from the log

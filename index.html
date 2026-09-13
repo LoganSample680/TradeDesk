@@ -94,6 +94,38 @@
      Same-origin means the SW caches it like any other app script and an
      offline boot signs in from the local session exactly like an online one.
      Pinned 2.112.3; bump deliberately, never floating. -->
+<!-- ── Support view: decided BEFORE anything else loads ────────────────────────
+     A support view used to be entered AFTER the app had booted the viewer's own
+     account, and swapping the rows in afterwards left everything the rows do not
+     carry: this device's live geo state, its manual clock, its cached settings,
+     and _account itself. The owner opened three accounts and saw his own on-site
+     card and timesheet inside them (2026-09-12).
+     So the decision moves to the first line of the page. Two things happen here
+     and nowhere else:
+       1. the target is recorded before any script can read a cache, and
+       2. every zp3_* key this device holds becomes invisible for the life of the
+          page, so the app boots as if it had never run on this machine.
+     Auth storage (sb-*) is untouched, so the ops admin stays signed in. -->
+<script>
+(function(){
+  try{
+    var p=new URLSearchParams(location.search);
+    if(p.get('ops')!=='1')return;
+    window._OPS_BOOT={target:p.get('t')||'',person:p.get('p')||''};
+    window._opsArming=true;                 // read-only from the very first line
+    var ls=window.localStorage, get=ls.getItem.bind(ls), set=ls.setItem.bind(ls), rm=ls.removeItem.bind(ls);
+    var mine=function(k){return typeof k==='string'&&k.indexOf('zp3_')===0;};
+    Object.defineProperty(window,'localStorage',{configurable:true,value:{
+      getItem:function(k){return mine(k)?null:get(k);},
+      setItem:function(k,v){if(!mine(k))set(k,v);},
+      removeItem:function(k){if(!mine(k))rm(k);},
+      key:function(i){return ls.key(i);},
+      clear:function(){},
+      get length(){return ls.length;}
+    }});
+  }catch(_e){}
+})();
+</script>
 <script src="js/vendor/supabase-js-2.112.3.min.js" async id="supabase-sdk"></script>
 <!-- The CDN script can finish BEFORE js/mileage.js has run, and then this
      onload calls a function that does not exist yet: "Can't find variable:

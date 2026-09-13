@@ -35,8 +35,28 @@ $$;
 comment on function public.ops_view_target(uuid) is
   'True when the caller is an ops admin and the target is a real user. The only gate on the read-only support view.';
 
+-- The SAME rule, taking text, because the owner column is not uuid on every
+-- table: device_status.user_id is text on the real database, and a policy built
+-- as ops_view_target(user_id) there resolves to a function signature that does
+-- not exist (42883, the shared project, 2026-09-12). Every policy below binds
+-- THIS overload explicitly with ::text, so the column's declared type stops
+-- deciding anything. Same ::text-both-sides convention as the rest of the repo
+-- (20260701, 20260923). A column holding something that is not a uuid simply
+-- matches no user, which is the correct answer rather than an error.
+create or replace function public.ops_view_target(target text)
+returns boolean
+language sql stable security definer set search_path = public, auth as $$
+  select public.is_ops_admin()
+     and exists (select 1 from auth.users u where u.id::text = target);
+$$;
+
+comment on function public.ops_view_target(text) is
+  'ops_view_target(uuid) for tables whose owner column is text. The policies bind this one.';
+
 revoke execute on function public.ops_view_target(uuid) from public, anon;
+revoke execute on function public.ops_view_target(text) from public, anon;
 grant  execute on function public.ops_view_target(uuid) to authenticated;
+grant  execute on function public.ops_view_target(text) to authenticated;
 
 -- ── 2. Read policies, one per table the app actually reads ──────────────────
 -- Anything missed here does not break the view, it renders that screen empty,
@@ -50,31 +70,13 @@ grant  execute on function public.ops_view_target(uuid) to authenticated;
 -- (ops_view_target(user_id))` failed on a column that table does not have and
 -- took the whole migration down with it (Supabase preview, 42703). Whichever of
 -- the three owner columns a table actually carries is the one its policy uses,
--- and a table carrying none is skipped instead of raising.
---
--- AND SO IS ITS TYPE (2026-09-12). The lookup above fixed the column NAME and
--- still assumed the type, which took the whole migration down a second time in
--- the same place: ops_view_target takes uuid, proposal_views.contractor_user_id
--- is text on the live project, so the policy asked for ops_view_target(text)
--- and Postgres has no such overload (42883). Every deploy since the portal
--- merged has failed on it, which is why the portal shipped with no read
--- policies at all.
---
--- It passed the migration lint because the lint is right and PRODUCTION has
--- drifted: 20200101000000_initial_schema.sql and 20260527 both declare that
--- column uuid, so a database built from this repo's own history has the type
--- the function wants and the live one does not. A lint cannot catch a schema
--- that disagrees with the migrations that built it.
---
--- So the type is looked up the same way the name is, and the value is cast
--- only when it is not already uuid. That is correct against both shapes, which
--- is what a migration facing a drifted database has to be. The cast is safe
--- here: all 546 rows hold a well-formed uuid and none is null.
+-- and a table carrying none is skipped instead of raising. The column is cast to
+-- text at the call site so a text-typed owner column (device_status) and a uuid
+-- one (everything else) both bind the same function.
 do $$
 declare
-  t    text;
-  col  text;
-  ctyp text;
+  t   text;
+  col text;
 begin
   foreach t in array array[
     -- the per-record sync fabric plus the settings blob
@@ -91,7 +93,7 @@ begin
     if to_regclass('public.' || t) is null then
       continue;
     end if;
-    select c.column_name, c.data_type into col, ctyp
+    select c.column_name into col
       from information_schema.columns c
      where c.table_schema = 'public'
        and c.table_name = t
@@ -104,8 +106,8 @@ begin
     end if;
     execute format('drop policy if exists "ops_view_read" on %I', t);
     execute format(
-      'create policy "ops_view_read" on %I for select to authenticated using (public.ops_view_target(%I%s))',
-      t, col, case when ctyp = 'uuid' then '' else '::uuid' end);
+      'create policy "ops_view_read" on %I for select to authenticated using (public.ops_view_target(%I::text))',
+      t, col);
   end loop;
 end $$;
 
