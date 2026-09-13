@@ -270,6 +270,20 @@ test.describe('Ops support view: read only, both directions', () => {
     expect(/=\s*auth\.uid\(\)(?!::text)/.test(code)).toBe(false);
   });
 
+  test('every table the portal reads ends up with a policy, including the four the first run missed', () => {
+    // 20261005's loop aborted partway on the shared database and left
+    // account_config, deposit_caps, inbound_leads and job_assignments with no
+    // policy at all. 20261007 re-runs the whole list; this pins that it does.
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261007_ops_view_missing_policies.sql'), 'utf8');
+    ['account_config', 'deposit_caps', 'inbound_leads', 'job_assignments']
+      .forEach(t => expect(sql).toContain(`'${t}'`));
+    expect(/for\s+(insert|update|delete|all)\b/i.test(sql)).toBe(false);
+    // account_config resolves through a definer function, never a subquery on
+    // accounts: without the grant that subquery fails the whole read.
+    expect(sql).toContain('ops_view_account(account_id)');
+    expect(sql).toContain('security definer');
+  });
+
   test('the geo and time tables the support view reads are all covered', async () => {
     const sql = fs.readFileSync(MIGRATION, 'utf8');
     ['job_time_entries','location_pings','geo_events','geo_route_miles','device_status',
@@ -280,6 +294,12 @@ test.describe('Ops support view: read only, both directions', () => {
     // contractor_user_id, not user_id).
     expect(sql).toContain('information_schema.columns');
     expect(/'contractor_user_id','user_id','owner_id'/.test(sql)).toBe(true);
+    // …and the call is cast, not left to the column's declared type. Without
+    // this the policy on a text-typed owner column (device_status.user_id on the
+    // real database) resolves to ops_view_target(text) and the whole migration
+    // fails with 42883, which is what took the first deploy down.
+    expect(sql).toContain('ops_view_target(%I::text)');
+    expect(sql).toContain('create or replace function public.ops_view_target(target text)');
   });
 
   test('zero console errors across the suite', async () => {

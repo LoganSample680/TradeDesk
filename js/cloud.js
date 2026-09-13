@@ -291,6 +291,11 @@ function _restoreIdentityFromCache(){
 }
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
+  // SUPPORT VIEW: load the TARGET's account, not this login's (js/ops-view.js).
+  // This is the whole fix for the bleed: the app never learns the viewer's own
+  // account at all, so there is nothing of his to show under somebody else's
+  // name, and _account, the settings and the branding are theirs from boot.
+  if(window._OPS_BOOT&&typeof _opsLoadIdentity==='function')return await _opsLoadIdentity();
   // Reset per-login switcher state so a previous account's hats can't leak into
   // this session's UI (same shared-global reasoning as _isEmployee below).
   window._hatOwnsBusiness=false;window._hatCrewLinks=[];
@@ -681,7 +686,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.12.26.16';
+const APP_VERSION='09.12.26.19';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8312,7 +8317,10 @@ async function supaLoadFromCloud({silent=false}={}){
       }
     }
     if(!_isDelta){
-      if(_isEmployee&&!_devSupportMode){
+      // A support view reads the target's rows through the ops SELECT policies,
+      // not through the crew-redacting RPC (which answers for the CALLER's own
+      // crew link and would return nothing here).
+      if(_isEmployee&&!_devSupportMode&&!window._OPS_BOOT){
         const{data:_red,error:_rpcErr}=await _supa.rpc('load_account_data',{target_uid:uid});
         if(_rpcErr&&(_isMissingTableErr(_rpcErr)||_rpcErr.code==='PGRST202'||/function|does not exist/i.test(_rpcErr.message||''))){
           console.warn('[cloud] load_account_data RPC unavailable, falling back to raw load (save guard still active)');
