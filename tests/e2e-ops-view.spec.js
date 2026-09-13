@@ -252,6 +252,43 @@ test.describe('Ops support view: read only, both directions', () => {
 
   // ── 5. The database half of the promise ─────────────────────────────────────
 
+  // ── The metric list is the contract ─────────────────────────────────────────
+  // Owner 2026-09-13: a new RPC or metric has to land globally, not in one page.
+  // These pin the indirection that makes that true, because the moment the page
+  // hard-codes a metric again the property is silently gone.
+  test('every metric is defined once, and the brief renders from that list', () => {
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations',
+      '20261009_ops_metrics_global.sql'), 'utf8');
+    expect(sql, 'the list exists').toMatch(/create or replace function public\.ops_metric_defs\(\)/);
+    // The brief builds its sections BY JOINING that function, never by naming
+    // labels of its own: a label written into the brief is a second source.
+    expect(sql, 'the brief reads the list').toMatch(/from public\.ops_metric_defs\(\) d/);
+    expect(sql, 'sections carry label and format for an agent').toMatch(/'label', d\.label, 'fmt', d\.fmt/);
+    // The flat objects are read from the same computed map, not recomputed.
+    expect(sql, 'flat sections are read from the value map')
+      .toMatch(/'work',\s+v_vals -> 'work'/);
+
+    // And the page must not have gone back to a hard-coded grid.
+    const html = fs.readFileSync(path.join(__dirname, '..', 'ops.html'), 'utf8');
+    expect(html, 'one container, filled from the answer').toMatch(/id="biz-sections"/);
+    ['biz-funnel', 'biz-money', 'biz-usage'].forEach(id => {
+      expect(html, id + ' is gone: sections come from the answer now').not.toContain(id);
+    });
+  });
+
+  test('what the four lights mean is decided in SQL, not in the page', () => {
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations',
+      '20261009_ops_metrics_global.sql'), 'utf8');
+    expect(sql).toMatch(/create or replace function public\.ops_live_status\(p_target uuid\)/);
+    ['active', 'background', 'closed', 'unknown'].forEach(st =>
+      expect(sql, st + ' is a state the function returns').toContain("'" + st + "'"));
+    // Test traffic must never light somebody up as active.
+    expect(sql, 'flow-test events excluded').toMatch(/coalesce\(e\.source, 'app'\) <> 'test'/);
+    // The page reads the state; it must not re-derive one from timestamps.
+    const html = fs.readFileSync(path.join(__dirname, '..', 'ops.html'), 'utf8');
+    expect(html, 'the page reads the state as given').toMatch(/\(LIVE\.get\(uid\)\|\|\{\}\)\.state/);
+  });
+
   test('the migration grants SELECT and nothing else', async () => {
     const sql = fs.readFileSync(MIGRATION, 'utf8');
     // Each policy plus the ~220 characters that follow it: enough to carry the

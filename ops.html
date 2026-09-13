@@ -84,6 +84,18 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .stage-bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
 .stage-n{grid-column:1/3;font-size:11px;color:var(--text3)}
 .hint{font-weight:600;letter-spacing:0;text-transform:none;color:var(--text3);opacity:.8}
+/* Is their app open right now. Red is an inference, so it never travels
+   without the time it went quiet next to it. */
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block}
+.dot-active{background:#3FB950;box-shadow:0 0 0 3px rgba(63,185,80,.18)}
+.dot-background{background:#D99A2B;box-shadow:0 0 0 3px rgba(217,154,43,.16)}
+.dot-closed{background:#E5484D;box-shadow:0 0 0 3px rgba(229,72,77,.16)}
+.dot-unknown{background:var(--line2)}
+.chip .dot{margin-right:6px;vertical-align:1px}
+/* The selected chip is the accent colour, and a red dot on orange is nearly
+   invisible. A ring in the chip's own background separates the two. */
+.chip.on .dot{box-shadow:0 0 0 2px #1A1613}
+.row-live{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text3);white-space:nowrap}
 .range{display:flex;gap:6px;flex-wrap:wrap}
 .range button{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .range button.on{background:var(--accent);border-color:var(--accent);color:#1A1613}
@@ -229,20 +241,12 @@ form.signin input{background:#120F0D;border:1px solid var(--line2);color:var(--t
         <div class="chips" id="biz-chips"></div>
       </div>
 
-      <div class="section-title">Work <span class="hint" id="biz-range-lbl"></span></div>
-      <div class="tiles" id="biz-tiles"></div>
-
-      <div class="section-title">Proposals</div>
-      <div class="tiles" id="biz-funnel"></div>
+      <!-- Every metric section, drawn from what ops_metric_defs names. Adding a
+           metric is a row in that function, not an edit here. -->
+      <div id="biz-sections"></div>
 
       <div class="section-title">How long each step takes <span class="hint">median</span></div>
       <div class="card" id="biz-timing"></div>
-
-      <div class="section-title">Money</div>
-      <div class="tiles" id="biz-money"></div>
-
-      <div class="section-title">App usage</div>
-      <div class="tiles" id="biz-usage"></div>
 
       <div class="section-title">People</div>
       <div class="rows" id="biz-people"></div>
@@ -581,22 +585,24 @@ function renderBiz(b){
   $('biz-name').textContent=b.name;
   $('biz-sub').textContent=[TRADE_LABEL(b.trade)+(b.lines&&b.lines!==b.trade?' ('+b.lines+')':''),
                             owner&&owner.person_email,
-                            s.last_active?relDay(s.last_active):'no activity in this range'].filter(Boolean).join(' · ');
-  $('biz-range-lbl').textContent='last '+DAYS+' days';
+                            s.last_active?relDay(s.last_active):'no activity in this range',
+                            'last '+DAYS+' days'].filter(Boolean).join(' · ');
 
   // One chip per person, so "see it as the crew sees it" is one tap from here
   // and not a trip down to the People list.
-  $('biz-chips').innerHTML=b.people.map(p=>`<button class="chip${p.person_user_id===WHO?' on':''}" data-who="${esc(p.person_user_id)}">${esc((p.person_name||p.person_email||'Unknown').split(' ')[0])}${p.role==='owner'?'':' · crew'}</button>`).join('');
+  $('biz-chips').innerHTML=b.people.map(p=>`<button class="chip${p.person_user_id===WHO?' on':''}" data-who="${esc(p.person_user_id)}"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc((p.person_name||p.person_email||'Unknown').split(' ')[0])}${p.role==='owner'?'':' · crew'}</button>`).join('');
 
   $('biz-people').innerHTML=b.people.map(p=>`<button class="row" data-person="${esc(p.person_user_id)}">
     <span class="row-main">
       <span class="row-name">${esc(p.person_name||p.person_email||'Unknown')}</span>
       <span class="row-sub">${esc(p.role==='owner'?'Owner':(p.role||'crew'))}${p.active===false?' · inactive':''}</span>
     </span>
+    <span class="row-live"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc(liveLabel(p.person_user_id))}</span>
     <span class="row-stat">Open ›</span>
   </button>`).join('');
 
   loadBrief(b);
+  loadLive(b);
 }
 
 $('biz-chips').addEventListener('click',e=>{
@@ -611,6 +617,60 @@ $('biz-open').addEventListener('click',()=>{
   if(p)openView(p);
 });
 
+/* ── Is their app open right now ───────────────────────────────────────────── */
+// Four lights, and the rule behind them lives in ops_live_status, not here, so
+// a person reading this page and an agent asked the same question cannot
+// disagree. Red means nothing is running: iOS gives a webview no termination
+// callback, so a force quit leaves no event and silence on both channels past
+// the push-ping window is the only evidence there ever is. That is why the row
+// says how long it has been quiet: the light is a reading, the time is why.
+let LIVE=new Map();                  // person_user_id -> row from ops_live_status
+let LIVE_TIMER=null;
+
+const liveState=uid=>(LIVE.get(uid)||{}).state||'unknown';
+function liveLabel(uid){
+  const r=LIVE.get(uid);
+  if(!r)return '';
+  const q=r.quiet_min==null?null:Number(r.quiet_min);
+  const ago=q==null?'':(q<1?'just now':q<60?q+'m ago':q<1440?(Math.round(q/60*10)/10)+'h ago':Math.round(q/1440)+'d ago');
+  if(r.state==='active')return 'Open now';
+  if(r.state==='background')return 'In the background · '+ago;
+  if(r.state==='closed')return 'Force closed · quiet '+ago;
+  return 'No recent data';
+}
+
+async function loadLive(b){
+  const {data,error}=await sb.rpc('ops_live_status',{p_target:b.id});
+  if(!OPEN||OPEN.id!==b.id)return;
+  if(error||!Array.isArray(data))return;   // a light that cannot load stays grey
+  LIVE=new Map(data.map(r=>[r.person_user_id,r]));
+  paintLive();
+}
+
+// Repaint the lights in place. Never re-render the business: a repaint every
+// half minute would fight whatever the person is doing on the page.
+function paintLive(){
+  if(!OPEN)return;
+  OPEN.people.forEach(p=>{
+    const st=liveState(p.person_user_id);
+    const chip=document.querySelector(`#biz-chips [data-who="${CSS.escape(p.person_user_id)}"] .dot`);
+    if(chip)chip.className='dot dot-'+st;
+    const row=document.querySelector(`#biz-people [data-person="${CSS.escape(p.person_user_id)}"] .row-live`);
+    if(row)row.innerHTML=`<span class="dot dot-${st}"></span>${esc(liveLabel(p.person_user_id))}`;
+  });
+}
+
+// Only while a business is on screen and the tab is in front. A portal left
+// open on a second monitor should not poll all night.
+function liveTick(){
+  if(LIVE_TIMER)clearInterval(LIVE_TIMER);
+  LIVE_TIMER=setInterval(()=>{
+    if(document.hidden||!OPEN||$('lvl-biz').hidden)return;
+    loadLive(OPEN);
+  },30000);
+}
+liveTick();
+
 /* ── The brief: every number for one business, in one call ────────────────── */
 // The page and an agent both read ops_account_brief, so a human looking at this
 // screen and an agent answering "how well is J's Solutions using TradeDesk"
@@ -623,13 +683,13 @@ async function loadBrief(b){
   const key=b.id+'|'+DAYS;
   const seen=BRIEF_CACHE.get(key);
   if(seen){ BRIEF=seen; paintBrief(seen); return; }
-  ['biz-funnel','biz-money','biz-usage'].forEach(id=>{ $(id).innerHTML='<div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>'; });
+  $('biz-sections').innerHTML='<div class="tiles">'+'<div class="skel"></div>'.repeat(8)+'</div>';
   $('biz-timing').innerHTML='<div class="skel"></div>';
   const {data,error}=await sb.rpc('ops_account_brief',{p_target:b.id,p_from:from,p_to:to});
   if(!OPEN||OPEN.id!==b.id)return;   // they moved on while it was in flight
   if(error||!data){
     BRIEF=null;
-    ['biz-funnel','biz-money','biz-usage'].forEach(id=>{ $(id).innerHTML=tile('—','Could not load'); });
+    $('biz-sections').innerHTML='<div class="tiles">'+tile('—','Could not load')+'</div>';
     $('biz-timing').innerHTML='<div class="muted">'+esc(error?error.message:'No answer')+'</div>';
     return;
   }
@@ -638,48 +698,33 @@ async function loadBrief(b){
   paintBrief(data);
 }
 
+// One formatter per format name the brief carries. The page never decides what
+// a number means: ops_metric_defs said, and this only says it out loud.
+const FMT = {
+  int:  v => num(v),
+  num:  v => num(v),
+  pct:  v => v==null?null:num(v)+'%',
+  usd:  v => v==null?null:'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}),
+  hours:v => v==null?null:(Math.round(Number(v)/60*10)/10)+'h',
+  mins: v => v==null?null:Math.round(Number(v))+'m',
+  text: v => v==null||v===''?null:String(v),
+  ago:  v => v==null?null:relDay(String(v).slice(0,10)).replace(/^(last )?active /,''),
+};
+
+// Sections come from the answer, not from this file. A metric added to
+// ops_metric_defs appears here with no change on this page (owner 2026-09-13:
+// new RPCs and analytics have to land globally).
 function paintBrief(d){
-  const w=d.work||{}, f=d.funnel||{}, m=d.money||{}, u=d.usage||{};
-  $('biz-tiles').innerHTML=[
-    tile(w.people,'People'),
-    tile(w.active_days,'Days opened'),
-    tile(w.days_clocked,'Days clocked'),
-    tile(w.avg_day_min!=null?Math.round(w.avg_day_min/60*10)/10+'h':'—','Average day'),
-    tile(w.total_miles,'Miles'),
-    tile(w.visits,'Visits'),
-    tile(w.avg_visit_min!=null?Math.round(w.avg_visit_min)+'m':'—','Average visit'),
-    tile(w.unnamed_legs,'Unnamed drives')
-  ].join('');
-  $('biz-funnel').innerHTML=[
-    tile(f.leads,'Leads'),
-    tile(f.bids_sent,'Proposals sent'),
-    tile(f.sent_opened,'Opened'),
-    tile(pct(f.open_rate),'Open rate'),
-    tile(f.signed_total,'Signed'),
-    tile(pct(f.close_rate),'Close rate'),
-    tile(usd(f.signed_value),'Signed value'),
-    tile(usd(f.avg_ticket),'Average ticket')
-  ].join('');
-  $('biz-money').innerHTML=[
-    tile(usd(m.signed_value),'Signed'),
-    tile(usd(m.median_ticket),'Median ticket'),
-    tile(m.paid_count,'Paid'),
-    tile(m.pending_count,'Awaiting payment'),
-    tile(usd(m.deposits),'Deposits'),
-    tile(usd(m.stripe_fees),'Stripe fees'),
-    tile(m.declined,'Declined'),
-    tile(m.cancelled,'Cancelled')
-  ].join('');
-  $('biz-usage').innerHTML=[
-    tile(u.sessions,'Sessions'),
-    tile(u.avg_session_min!=null?Math.round(u.avg_session_min)+'m':'—','Average session'),
-    tile(u.page_views,'Screens'),
-    tile(u.clicks,'Taps'),
-    tile(u.clicks_per_session,'Taps per session'),
-    tile(u.avg_screens,'Screens per session'),
-    tile(u.last_version||'—','Version'),
-    tile(u.last_seen?relDay(String(u.last_seen).slice(0,10)).replace(/^(last )?active /,''):'—','Last seen')
-  ].join('');
+  const secs=Array.isArray(d.sections)?d.sections:[];
+  $('biz-sections').innerHTML=secs.map(sec=>{
+    const tiles=(sec.metrics||[]).map(m=>{
+      const f=FMT[m.fmt]||FMT.text;
+      let v=null;
+      try{ v=f(m.value); }catch(_){ v=null; }
+      return tile(v==null?'—':v, m.label);
+    }).join('');
+    return `<div class="section-title">${esc(sec.label)}</div><div class="tiles">${tiles}</div>`;
+  }).join('');
   paintTiming(d.timing||[]);
 }
 
