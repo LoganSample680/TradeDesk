@@ -453,7 +453,14 @@ const LIEN_RULES=(function(legacy){
     const L=LIEN_LAW[k];
     const shortest=Math.min(L.prime.d, L.sub?L.sub.d:L.prime.d);
     out[k]=Object.assign({},out[k]||legacy.default,{
-      filing_deadline_days:shortest, cite:L.cite, verified:true
+      filing_deadline_days:shortest, cite:L.cite, verified:true,
+      url:L.url||'', src:L.src||'',
+      // confirm = the statute sets the length of the window but does NOT say what
+      // starts it. Idaho is the type case: 45-507(2) reads "within ninety (90)
+      // days after the completion of the labor or services" and never says whose
+      // completion. The number is right and the DATE is unknowable from the code
+      // alone, so anything that prints a specific calendar date must refuse to.
+      confirm:!!L.confirm
     });
   }
   return out;

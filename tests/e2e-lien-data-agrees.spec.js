@@ -126,6 +126,58 @@ test.describe('the lien datasets agree with each other', () => {
     expect(states.length).toBe(51);
   });
 
+  // ── The anchor, added 2026-09-14 ─────────────────────────────────────────
+  //
+  // A deadline is two facts, not one: how long the window is, and what opens it.
+  // We had been publishing the first as though it settled the second. Idaho 45-507(2)
+  // gives ninety days "after the completion of the labor or services" and never says
+  // whose completion, and on a job of any size the distance between the claimant's
+  // own last day and the project's last day is months. Where the statute leaves that
+  // open the state carries confirm:true, and everything that would print a calendar
+  // date has to decline.
+  test('an unresolved anchor is flagged, not hidden behind a number', () => {
+    // Idaho is the type case. 45-507(2) reads "within ninety (90) days after the
+    // completion of the labor or services, or furnishing of materials" and never
+    // says WHOSE completion. Ninety is certain; the calendar date is not, and the
+    // gap between "your last day" and "the project's last day" is months on a
+    // job of any size. A state in that position carries confirm:true and owes the
+    // reader an explanation of what they have to go find out.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      if (!L.confirm) continue;
+      expect(L.note, `${st} is flagged confirm but explains nothing`).toBeTruthy();
+      expect(L.note.length, `${st} note is too short to be useful`).toBeGreaterThan(30);
+    }
+  });
+
+  test('a flagged state still carries its window, it is the DATE that is unknown', () => {
+    // confirm:true must never degrade into "we do not know anything." The number
+    // of days is in the statute and stays gated by the same sanity range.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      if (!L.confirm) continue;
+      expect(RULES[st], `${st} still needs a day count`).toBeGreaterThanOrEqual(30);
+      expect(RULES[st], `${st} still needs a day count`).toBeLessThanOrEqual(400);
+    }
+  });
+
+  test('the confirm flag reaches the app, not just the research file', () => {
+    // LIEN_RULES is what js/dashboard.js actually reads when it prints a Notice
+    // of Intent. If the flag stops at LIEN_LAW the document still prints a
+    // confident date and the whole exercise bought nothing.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      expect(_R[st].confirm, `${st} confirm flag did not survive derivation`).toBe(!!L.confirm);
+      expect(_R[st].url, `${st} URL did not survive derivation`).toBe(L.url || '');
+    }
+  });
+
+  test('the Notice of Intent refuses to print a date it cannot stand behind', () => {
+    // The guard itself, read from source: printNoticeOfIntent must gate the
+    // computed calendar date on the flag. A printed legal document is read as a
+    // statement of fact, so a guessed date on one is worse than no date at all.
+    const dash = fs.readFileSync(path.join(root, 'js', 'dashboard.js'), 'utf8');
+    expect(dash, 'printNoticeOfIntent must read the confirm flag').toMatch(/lienUnsure\s*=\s*!!\(rules&&rules\.confirm\)/);
+    expect(dash, 'the computed deadline must be gated on it').toMatch(/fileDeadline=\(rules&&!lienUnsure\)/);
+  });
+
   test('a role-split state takes the SHORTER window, never the longer', () => {
     // Filing early costs nothing. Filing late loses the money.
     for (const [st, L] of Object.entries(LIEN_LAW)) {
