@@ -4745,6 +4745,175 @@ test.describe('A settled stop never strands the leg origin', () => {
     expect(r).toEqual([false, false, false, false]);
   });
 
+
+  // ── THE DASHED STRETCH HAS MILES ON IT (owner 2026-09-14) ─────────────────
+  //
+  // "the routed version with dashes traced the right roads but only logged a
+  // fraction of the trace, seems were missing the dashed line to run its
+  // mileage route through mapkits."
+  //
+  // His 14 September drive: four GPS fixes for six minutes of driving, a map
+  // drawn on exactly the right streets, and 2.4 miles logged for a 3.4 mile
+  // trip. _mileRouteFill had asked the router for the hole, kept the road and
+  // thrown the distance away.
+  test.describe('a hole in the trace is priced at the road, not the straight line', () => {
+    // One fixture, four points. Two short hops the phone genuinely watched and
+    // one hole wide enough and long enough to be a real gap between them.
+    const FIX = () => {
+      const t0 = 1789000000000;
+      return {
+        id: 'gapfix', date: '2026-09-14', gps: true,
+        path: [
+          [39.0000, -95.7000, t0],
+          [39.0010, -95.7000, t0 + 10000],     // ~365ft, 10s: watched
+          [39.0200, -95.7000, t0 + 200000],    // ~6900ft, 190s: THE HOLE
+          [39.0210, -95.7000, t0 + 210000],    // ~365ft, 10s: watched
+        ],
+      };
+    };
+
+    test('the hole is one gap, and the short hops either side are not', async () => {
+      const r = await page.evaluate((m) => {
+        const g = _mileGaps(m);
+        return { n: g.length, at: g.map(x => x.i) };
+      }, FIX());
+      expect(r.n).toBe(1);
+      expect(r.at).toEqual([2]);
+    });
+
+    test('the road across the hole is what gets counted, and the watched hops keep their own length', async () => {
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => ({ miles: 2.0, mins: 4, path: [[39.00, -95.70], [39.02, -95.70]] });
+        try {
+          const straight = _milePathMiles(m);
+          const gf = await _mileGapFill(m);
+          return { straight, miles: gf.miles, watched: gf.watched, asked: gf.asked, filled: gf.filled, fills: gf.fills.length };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.asked).toBe(1);
+      expect(r.filled).toBe(1);
+      // The watched hops are two short edges, nowhere near the hole's width.
+      expect(r.watched).toBeLessThan(0.2);
+      // watched + the routed road, NOT watched + the straight line over it.
+      expect(r.miles).toBeCloseTo(Math.round((r.watched + 2.0) * 10) / 10, 5);
+      // And it beats what the straight line would have said, which is the bug.
+      expect(r.miles).toBeGreaterThan(r.straight);
+      expect(r.fills).toBe(1);
+    });
+
+    test('a router that answers with no line still fixes the number', async () => {
+      // Valhalla and OSRM are asked with overview=false: distance, no geometry.
+      // Off Apple hardware that is the only answer there is, and the miles
+      // must not be gated on being able to draw them.
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => ({ miles: 2.0, mins: 4 });
+        try {
+          const gf = await _mileGapFill(m);
+          return { miles: gf.miles, filled: gf.filled, fills: gf.fills.length, straight: _milePathMiles(m) };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.filled).toBe(1);
+      expect(r.fills).toBe(0);                    // nothing to draw
+      expect(r.miles).toBeGreaterThan(r.straight); // still counted
+    });
+
+    test('a router that cannot answer keeps the straight edge, so a dead network never shrinks a trip', async () => {
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => { throw new Error('offline'); };
+        try {
+          const gf = await _mileGapFill(m);
+          return { miles: gf.miles, filled: gf.filled, straight: Math.round(_milePathMiles(m) * 10) / 10 };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.filled).toBe(0);
+      expect(r.miles).toBe(r.straight);
+    });
+
+    test('a shorter road than the straight line is still the road', async () => {
+      // A straight line between two fixes can be LONGER than the drive when the
+      // trace is so thin the two points sit either side of a bend. The router
+      // is still the better answer; the rule is not "always bigger".
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => ({ miles: 0.4, mins: 1 });
+        try {
+          const gf = await _mileGapFill(m);
+          return { miles: gf.miles, watched: gf.watched };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.miles).toBeCloseTo(Math.round((r.watched + 0.4) * 10) / 10, 5);
+    });
+
+    test('a trace with no holes never asks the router and keeps every watched foot', async () => {
+      const r = await page.evaluate(async () => {
+        const t0 = 1789000000000;
+        const m = { id: 'nogap', path: [
+          [39.0000, -95.7000, t0],
+          [39.0010, -95.7000, t0 + 10000],
+          [39.0020, -95.7000, t0 + 20000],
+        ] };
+        const orig = window._routeDistance;
+        let asked = 0;
+        window._routeDistance = async () => { asked++; return { miles: 99, mins: 1 }; };
+        try {
+          const gf = await _mileGapFill(m);
+          return { asked, calls: asked, miles: gf.miles, straight: Math.round(_milePathMiles(m) * 10) / 10 };
+        } finally { window._routeDistance = orig; }
+      });
+      expect(r.calls).toBe(0);
+      expect(r.miles).toBe(r.straight);
+    });
+
+    test('the hole is never counted twice', async () => {
+      // The straight edge across the hole is skipped in the watched pass and
+      // priced once below it. Watched plus the hole's own straight length must
+      // come back to the plain path total.
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => null;     // no answer: straight edge kept
+        try {
+          const gf = await _mileGapFill(m);
+          return { miles: gf.miles, straight: Math.round(_milePathMiles(m) * 10) / 10 };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.miles).toBe(r.straight);
+    });
+
+    test('null, junk and a one-point path do not throw', async () => {
+      const r = await page.evaluate(async () => {
+        const out = [];
+        for (const m of [null, undefined, {}, { path: null }, { path: [] }, { path: [[1, 2, 3]] },
+                         { path: 'nope' }, { path: [['a', 'b'], ['c', 'd']] }]) {
+          try { const g = await _mileGapFill(m); out.push(g.miles); } catch (e) { out.push('THREW:' + e.message); }
+        }
+        return out;
+      });
+      expect(r.every(x => x === 0)).toBe(true);
+    });
+
+    test('the map and the number are the same arithmetic', async () => {
+      // _mileRouteFill draws it, _mileGapFill counts it, and after 2026-09-14
+      // there is one function under both: the line can never claim a road the
+      // mileage did not count.
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => ({ miles: 2.0, mins: 4, path: [[39.00, -95.70], [39.02, -95.70]] });
+        try {
+          const gf = await _mileGapFill(m);
+          const segs = await _mileRouteFill(m);
+          const dashed = (segs || []).filter(s => s.dash);
+          return { filled: gf.filled, dashed: dashed.length, solid: (segs || []).filter(s => !s.dash).length };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.dashed).toBe(r.filled);
+      // The observed trace is cut at the hole, so two solid runs either side.
+      expect(r.solid).toBe(2);
+    });
+  });
+
   assertNoErrors(() => page);
 });
 
