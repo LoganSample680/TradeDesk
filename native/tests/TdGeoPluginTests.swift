@@ -3043,10 +3043,15 @@ extension TdGeoPluginTests {
     // makes one, and the delegate closure is not drivable from a test. So the
     // DECISION was moved into motionEvent() where it can be reached, and this
     // is what guards it.
-    func testMotionEventCarriesTheActivityStart_notTheDeliveryMoment() {
+    func testMotionEventCarriesTheActivityStart_notTheDeliveryMoment() throws {
         let started = Date().timeIntervalSince1970 * 1000 - 118_000   // his 118s
         let ev = plugin.motionEvent(startMs: started, kind: "automotive", prev: "walking")
-        XCTAssertEqual(ev["ts"] as? Double, started, accuracy: 0.001,
+        // Unwrapped first: XCTAssertEqual(_:_:accuracy:) is constrained to
+        // FloatingPoint and an Optional<Double> does not conform, so the
+        // as?-with-accuracy form does not compile. CI said so before this line
+        // ever ran.
+        let ts = try XCTUnwrap(ev["ts"] as? Double)
+        XCTAssertEqual(ts, started, accuracy: 0.001,
                        "ts IS the flip instant; a delivery time here shortens every drive")
         XCTAssertEqual(ev["kind"] as? String, "automotive")
         XCTAssertEqual(ev["prevKind"] as? String, "walking")
