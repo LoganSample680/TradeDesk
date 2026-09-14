@@ -18,7 +18,12 @@
 # conflict between two sessions and a person has to decide.
 set -uo pipefail
 BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD)}"
-STAMPED="version.json sw.js"
+# EXACTLY what scripts/bump-version.js rewrites, and it is three files, not
+# two. js/cloud.js carries `const APP_VERSION=` and the hook stamps it on every
+# commit on both sides, so it conflicts on every roll just like the other two.
+# Missing it here meant this script stopped on a false conflict the very first
+# time it ran for real (owner 2026-09-14, rolling the day's work).
+STAMPED="version.json sw.js js/cloud.js"
 
 if [ "$BRANCH" = "uat" ]; then
   echo "uat-roll: name the branch to roll, not uat itself." >&2; exit 1
@@ -26,6 +31,26 @@ fi
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "uat-roll: working tree is dirty. Commit or stash first." >&2; exit 1
 fi
+
+# True when every conflicted hunk in the file is only the version stamp.
+# Reads the conflict markers rather than trusting the filename, so a genuine
+# change to js/cloud.js can never be silently resolved away in favour of one
+# side.
+stamp_only() {
+  awk '
+    /^<<<<<<< /   { inc = 1; next }
+    /^=======$/   { next }
+    /^>>>>>>> /   { inc = 0; next }
+    inc {
+      if ($0 ~ /^[[:space:]]*$/) next
+      if ($0 ~ /APP_VERSION/) next
+      if ($0 ~ /CACHE/) next
+      if ($0 ~ /"version"/) next
+      bad = 1
+    }
+    END { exit bad ? 1 : 0 }
+  ' "$1"
+}
 
 START="$(git rev-parse --abbrev-ref HEAD)"
 restore() { git checkout -q "$START" 2>/dev/null || true; }
@@ -36,7 +61,20 @@ git checkout -q -B uat origin/uat || { echo "uat-roll: cannot check out uat." >&
 if ! git merge --no-edit -q "$BRANCH"; then
   # Only the stamped files may be resolved automatically.
   UNMERGED="$(git diff --name-only --diff-filter=U)"
-  REAL="$(echo "$UNMERGED" | tr ' ' '\n' | grep -v -x -F -e version.json -e sw.js || true)"
+  REAL=""
+  for f in $UNMERGED; do
+    case " $STAMPED " in
+      *" $f "*)
+        # js/cloud.js is a REAL code file that happens to carry the stamp, so it
+        # is not resolved on its name alone. Every conflicted hunk in it has to
+        # be nothing but the version line; anything else is two sessions editing
+        # the same code and belongs to a person.
+        if stamp_only "$f"; then continue; fi
+        ;;
+    esac
+    REAL="$REAL$f"$'\n'
+  done
+  REAL="$(printf '%s' "$REAL" | sed '/^$/d')"
   if [ -n "$REAL" ]; then
     echo "" >&2
     echo "uat-roll: STOPPED. Real conflicts between two sessions:" >&2
