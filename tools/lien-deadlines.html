@@ -76,7 +76,17 @@ a:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid var(
         </div>
       </div>
       <p style="margin:20px 0 0;font-size:13.5px;color:var(--text-2);line-height:1.6">Statute reference: {{ pickedStatute }}</p>
+      <sc-if value="{{ hasSource }}" hint-placeholder-val="{{ true }}">
+        <p style="margin:8px 0 0;font-size:13.5px;line-height:1.6"><a href="{{ pickedUrl }}" target="_blank" rel="noopener" style="color:var(--terra);font-weight:700;text-decoration:none">Read it on {{ pickedSrc }}</a></p>
+      </sc-if>
     </div>
+
+    <sc-if value="{{ needsAnchorCheck }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:20px;display:flex;align-items:flex-start;gap:11px;background:var(--cream);border:1px solid var(--line-2);border-radius:var(--r-lg);padding:16px 18px">
+        <span aria-hidden="true" style="flex:none;color:var(--text-2);display:inline-flex;margin-top:1px"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 16v-4M12 8h.01"></path></svg></span>
+        <p style="margin:0;font-size:13.5px;color:var(--text-2);line-height:1.6"><strong style="color:var(--text)">Check what starts the clock.</strong> {{ pickedAnchorWarn }}</p>
+      </div>
+    </sc-if>
 
     <div style="margin-top:20px;display:flex;align-items:flex-start;gap:11px;background:var(--c-amber-soft);border:1px solid var(--c-amber-edge);border-radius:var(--r-lg);padding:16px 18px">
       <span aria-hidden="true" style="flex:none;color:var(--c-amber-deep);display:inline-flex;margin-top:1px"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.86L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.86a2 2 0 00-3.4 0z"></path><path d="M12 9v4M12 17h.01"></path></svg></span>
@@ -179,7 +189,14 @@ class Component extends DCLogic {
       pickedFrom: s[2],
       pickedNotice: s[3],
       pickedNoticeNote: s[4],
-      pickedStatute: s[5]
+      pickedStatute: s[5],
+      // s[6] is the official URL the row was read from, s[7] the note a reader
+      // needs when the statute fixes the LENGTH of the window but not its start.
+      pickedUrl: s[6] || '',
+      pickedSrc: s[6] ? (s[6].split('/')[2] || '').replace(/^www\./, '') : '',
+      hasSource: !!s[6],
+      needsAnchorCheck: !!s[7],
+      pickedAnchorWarn: s[7] || ''
     };
   }
 }
