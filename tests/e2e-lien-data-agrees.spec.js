@@ -178,6 +178,43 @@ test.describe('the lien datasets agree with each other', () => {
     expect(dash, 'the computed deadline must be gated on it').toMatch(/fileDeadline=\(rules&&!lienUnsure\)/);
   });
 
+  // The tool carries its own copy of the rows, so every field added to one side
+  // is a new way for the two to drift. The original seven-state drift was caught
+  // by comparing deadlines; these compare the rest.
+  // The comma is optional on purpose: the last row in the literal has none, and
+  // requiring it silently dropped DC from every comparison below.
+  const TOOLROW = Object.fromEntries([...tool.matchAll(/^  ([A-Z]{2}):\[(.*?)\],?$/gm)]
+    .map(m => [m[1], new Function('return [' + m[2] + ']')()]));
+
+  test('where the app links a statute, the tool links the same one', () => {
+    const drift = [];
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      const toolUrl = TOOLROW[st] && TOOLROW[st][6];
+      if (!L.url && !toolUrl) continue;
+      if ((L.url || '') !== (toolUrl || '')) drift.push(`${st}: app "${L.url || '(none)'}" vs tool "${toolUrl || '(none)'}"`);
+    }
+    expect(drift, `the two surfaces cite different pages:\n  ${drift.join('\n  ')}`).toEqual([]);
+  });
+
+  test('a state the app flags, the tool explains', () => {
+    // If the app declines to print a date but the public tool still shows a
+    // confident one, we have moved the problem rather than fixed it.
+    const silent = Object.entries(LIEN_LAW)
+      .filter(([st, L]) => L.confirm && !(TOOLROW[st] && TOOLROW[st][7]))
+      .map(([st]) => st);
+    expect(silent, `flagged in the app, unexplained in the tool: ${silent.join(', ')}`).toEqual([]);
+  });
+
+  test('no em dash reaches either lien surface', () => {
+    // The house rule, and these notes are long enough to forget it in.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      expect(L.note || '', `${st} note`).not.toContain('\u2014');
+    }
+    for (const [st, row] of Object.entries(TOOLROW)) {
+      expect(row.join(' '), `${st} tool row`).not.toContain('\u2014');
+    }
+  });
+
   test('a role-split state takes the SHORTER window, never the longer', () => {
     // Filing early costs nothing. Filing late loses the money.
     for (const [st, L] of Object.entries(LIEN_LAW)) {
