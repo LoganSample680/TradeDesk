@@ -339,7 +339,12 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(secs).toContainText('45.2%');
       await expect(secs).toContainText('$92,400');      // usd
       await expect(secs).toContainText('$5,200');
-      await expect(secs).toContainText('8.3h');         // hours, from 500 minutes
+      // 10.4: this read '8.3h' until 2026-09-14. Owner: "average visit time is
+      // in minutes and can say something like 269 minutes, I want it broken to
+      // minutes then hours and minutes if it goes over 60." One formatter now
+      // says every duration on the page, so 500 minutes reads the way the app
+      // has always said it (_fmtMin, js/jobs.js). Same number, plainer words.
+      await expect(secs).toContainText('8h 20m');       // hours, from 500 minutes
       await expect(secs).toContainText('09.13.26.2');   // text
       await expect(secs).toContainText('21.6');         // num
       // Raw floats never reach the page (the 993.5999999999999 lesson).
@@ -481,7 +486,8 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(page.locator('#biz-timing')).toContainText('lead to proposal');
       await expect(page.locator('#biz-timing')).toContainText('writing the proposal');
       // 34 minutes reads as minutes, 4320 as days, never as a raw number.
-      await expect(stages.nth(1)).toContainText('34 min');
+      // '34 min' until 2026-09-14, see the note above: one formatter, one shape.
+      await expect(stages.nth(1)).toContainText('34m');
       await expect(stages.nth(5)).toContainText('3 days');
       await expect(stages.nth(0)).toContainText('22 times');
       // Slowest stage owns the full bar; the fastest is a sliver.
@@ -531,6 +537,15 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(page.locator('#tiles .tile').first()).toBeVisible();
       await expect(page.locator('#tiles')).toContainText('512.4');
       await expect(page.locator('#tiles')).toContainText('Businesses');
+      // Owner 2026-09-14: "average visit time is in minutes and can say
+      // something like 269 minutes, I want it broken to minutes then hours and
+      // minutes if it goes over 60." 63 minutes is an hour and three, and 480
+      // is a flat eight hours with no stray '0m' hanging off it.
+      await expect(page.locator('#tiles')).toContainText('1h 3m');   // avg_visit_min 63
+      await expect(page.locator('#tiles')).toContainText('8h');      // avg_day_min 480
+      // The raw minute count never reaches the screen again.
+      await expect(page.locator('#tiles')).not.toContainText('63m');
+      await expect(page.locator('#tiles')).not.toContainText('480');
     });
 
     test('picking a person opens the frame on that person, read only', async () => {
@@ -662,6 +677,38 @@ test.describe('Ops portal: the support view, embedded', () => {
       // ?app=1 matters: the "/" gate reads a query string as "the app, please",
       // so this cannot land on the marketing page.
       await expect(page.locator('#signout')).toBeVisible();     // still there, just not the only door
+    });
+
+    // Owner 2026-09-14, with a screenshot: "the portal view is fucking zoomed in
+    // massively and not scaled to mobile." Nothing had reflowed. The tile grid
+    // was still two-up and every gap and radius was magnified by one factor, so
+    // the page had ZOOMED, and it was scrolled right, which cut the left edge
+    // off every row. A double-tap does that, and nothing put it back.
+    //
+    // This page was the only app-facing screen whose viewport allowed it.
+    // The guard is permanent because the symptom is invisible in CI: a page
+    // that CAN zoom renders identically to one that cannot, right up until a
+    // thumb lands on it (13 step 4).
+    test('the page cannot be zoomed, the same way no other app screen can', async () => {
+      const vp = await page.evaluate(() =>
+        document.querySelector('meta[name=viewport]')?.content || '');
+      expect(vp).toContain('width=device-width');
+      expect(vp).toContain('maximum-scale=1.0');
+      expect(vp).toContain('user-scalable=no');
+      // viewport-fit must survive the edit, or the notch test above starts
+      // passing for the wrong reason.
+      expect(vp).toContain('viewport-fit=cover');
+      // The half the viewport tag cannot do: kill double-tap, and stop iOS
+      // inflating type. Straight off index.html.
+      const t = await page.evaluate(() => ({
+        html: getComputedStyle(document.documentElement).touchAction,
+        body: getComputedStyle(document.body).touchAction,
+        adjust: getComputedStyle(document.documentElement).webkitTextSizeAdjust,
+        ox: getComputedStyle(document.body).overflowX,
+      }));
+      expect(t.html).toBe('pan-y');
+      expect(t.body).toBe('pan-y');
+      expect(t.ox).toBe('hidden');
     });
 
     test('the header clears the notch on a phone', async () => {

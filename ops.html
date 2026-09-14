@@ -2,7 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- THE SAME VIEWPORT THE APP USES, and it is not a style choice (owner
+     2026-09-14, with a screenshot: "the portal view is fucking zoomed in
+     massively and not scaled to mobile").
+     Nothing was broken in the layout. The two-up tile grid in his screenshot is
+     intact and every gap and corner radius is magnified by the same factor, so
+     the page had not reflowed, it had ZOOMED, and it was scrolled right, which
+     is why the left edge of every row was cut off. A double-tap on a tile does
+     that, and nothing here ever put it back.
+     index.html, client.html, sign.html, intake.html and contract-sign.html all
+     carry maximum-scale + user-scalable=no. This page was the one app-facing
+     screen that did not, so it was the one screen that could zoom (7.3: match
+     the existing pattern, do not invent a second one). -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <title>TradeDesk Ops</title>
 <link rel="icon" href="favicon.ico">
@@ -63,10 +75,17 @@
   }
 }
 *{box-sizing:border-box}
+/* The other half of the same fix. Safari honours user-scalable=no in a
+   home-screen app, which is how the owner opens this, but touch-action is what
+   kills the double-tap that zoomed it in the first place, and
+   -webkit-text-size-adjust stops iOS inflating the type on rotate. Straight off
+   index.html, same values, for the same reason. overflow-x guarantees the page
+   can never be dragged sideways even if something one day overflows. */
+html{-webkit-text-size-adjust:100%;touch-action:pan-y}
 /* .rows and .tiles set display, which beats the browser's own [hidden] rule, so
    a hidden section stayed on screen. Everything here hides when told to. */
 [hidden]{display:none!important}
-body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;overflow-x:hidden;touch-action:pan-y;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1180px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(60px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 /* viewport-fit=cover plus a translucent status bar means the page draws
    behind the notch: every screen here reserves the inset itself, or the
@@ -424,9 +443,9 @@ async function renderTiles(){
     tile(r.accounts,'Businesses'),
     tile(r.active_days,'Days the app was opened'),
     tile(r.days_clocked,'Days clocked'),
-    tile(r.avg_day_min!=null?Math.round(r.avg_day_min/60*10)/10+'h':'—','Average day'),
+    tile(dur(r.avg_day_min),'Average day'),
     tile(r.total_miles,'Miles'),
-    tile(r.avg_visit_min!=null?Math.round(r.avg_visit_min)+'m':'—','Average visit'),
+    tile(dur(r.avg_visit_min),'Average visit'),
     tile(r.unnamed_legs,'Unnamed drives')
   ].join('');
 }
@@ -592,16 +611,30 @@ $('biz-back').addEventListener('click',()=>{
   show(TRADE?'lvl-trade':'lvl-all');
 });
 
-// A duration reads as a person would say it. 240 minutes is four hours, not 240.
+// A duration reads as a person would say it, and it reads the SAME here as it
+// does in the app. _fmtMin (js/jobs.js) is the shape every screen already uses:
+// minutes on their own up to an hour, then hours and minutes. Copied rather
+// than imported because this page loads none of the app's bundles, and matching
+// the existing shape exactly is the point (CLAUDE.md 7.3).
+//
+// Owner 2026-09-14: "average visit time is in minutes and can say something
+// like 269 minutes, I want it broken to minutes then hours and minutes if it
+// goes over 60." 269 now reads 4h 29m.
+//
+// Every duration on this page goes through here. There is no second opinion
+// about what a minute count looks like.
 function dur(m){
   if(m==null||m==='')return '—';
-  const n=Number(m);
+  const n=Math.round(Number(m));
   if(!isFinite(n))return '—';
-  if(n<1)return 'under a minute';
-  if(n<90)return Math.round(n)+' min';
-  const h=n/60;
-  if(h<48)return (Math.round(h*10)/10)+' hours';
-  return (Math.round(h/24*10)/10)+' days';
+  if(n<1)return '0m';
+  // Past two days, hours stop meaning anything: a proposal that sat for 4320
+  // minutes is three days, not 72h. This tier predates the owner's rule and
+  // his rule was about a VISIT, so it is kept rather than flattened.
+  if(n>=48*60)return (Math.round(n/1440*10)/10)+' days';
+  const h=Math.floor(n/60),rem=n%60;
+  if(!h)return rem+'m';
+  return rem?h+'h '+rem+'m':h+'h';
 }
 const pct=v=>v==null?'—':num(v)+'%';
 const usd=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
@@ -766,8 +799,8 @@ const FMT = {
   num:  v => num(v),
   pct:  v => v==null?null:num(v)+'%',
   usd:  v => v==null?null:'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}),
-  hours:v => v==null?null:(Math.round(Number(v)/60*10)/10)+'h',
-  mins: v => v==null?null:Math.round(Number(v))+'m',
+  hours:v => v==null?null:dur(v),
+  mins: v => v==null?null:dur(v),
   text: v => v==null||v===''?null:String(v),
   ago:  v => v==null?null:relDay(String(v).slice(0,10)).replace(/^(last )?active /,''),
 };

@@ -1312,6 +1312,84 @@ extension TdGeoPluginTests {
             "the freshness window is the whole guard against inventing a place")
     }
 
+    // ── EVERY WAKE RECOVERS HISTORY, NOT ONLY A CROSSING (owner 2026-09-14)
+    // "I want it live, it should be live by the second."
+    //
+    // backfillMotionHistory() ran on region crossings only, so a
+    // significant-location wake posted its fix and went back to sleep with
+    // every motion flip since the last crossing still in the coprocessor.
+    // Measured on both handsets over four days: the phone was awake within
+    // 0 to 3 minutes of nearly every late drive flip. The 13 September 10:30
+    // automotive flip had a wake 0 minutes after it and took 137 minutes to
+    // reach the server.
+    //
+    // The simulator has no coprocessor, so as the file header says, these
+    // assert the CONTRACT: the wake records what it was woken for, the
+    // backfill is reached, and neither can crash the process.
+
+    func testLocationWakeRecordsTheFixAndDoesNotCrash() {
+        // The significant-change wake, which is the one that was dropping
+        // flips. The fix must land whatever the motion query does after it.
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        plugin.locationManager(CLLocationManager(), didUpdateLocations: [
+            CLLocation(latitude: 39.03, longitude: -95.71)])
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertTrue(buf.contains { ($0["type"] as? String) == "fix" },
+            "the fix is the fact we were woken for and must be buffered")
+    }
+
+    // THERE IS NO VISIT-WAKE TEST HERE, DELIBERATELY (7: deleted, not hidden).
+    //
+    // Two attempts, and CI was right both times. The first asserted the visit
+    // landed in the buffer and failed; I read that as UserDefaults refusing to
+    // serialise the event and weakened the assertion. The second CRASHED the
+    // test runner, took the whole xctest process with it, and dragged an
+    // unrelated passing test into the failure list on the restart.
+    //
+    // The real reason is simpler than either diagnosis: CLVisit is created by
+    // CoreLocation and by nothing else. Its properties are read-only and a
+    // hand-constructed CLVisit() is not a half-filled visit, it is an object
+    // whose internals were never initialised, so reading coordinate or
+    // horizontalAccuracy off it is undefined. The delegate is fine. The
+    // fixture cannot exist.
+    //
+    // WHAT COVERS THE VISIT PATH INSTEAD. The change to didVisit is one line,
+    // the same backfillMotionHistory() call didUpdateLocations got, and that
+    // call has five tests of its own above (the mark never rewinds, it floors
+    // at seven days, it survives garbage, it never throws without a
+    // coprocessor, the freshness window is bounded). The wake-reaches-backfill
+    // shape is covered by testLocationWakeRecordsTheFixAndDoesNotCrash, where
+    // the fixture is a CLLocation and CAN be built properly.
+    //
+    // Do not re-add a CLVisit() test. It does not fail, it takes the suite
+    // down.
+
+    func testEmptyLocationWakeIsASafeNoOp() {
+        // didUpdateLocations with nothing in it returns before anything else,
+        // so it must not reach the backfill or buffer a fix.
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        plugin.locationManager(CLLocationManager(), didUpdateLocations: [])
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertFalse(buf.contains { ($0["type"] as? String) == "fix" },
+            "no location, no fix, and no crash")
+    }
+
+    func testRepeatedLocationWakesNeverCrashOrRewindTheMark() {
+        // A drive delivers a fix every few seconds and each one now reaches
+        // the backfill. The mark must only ever advance, or every wake
+        // re-sends the same days, and none of them may crash: iOS terminates
+        // a process that touches CoreMotion wrong, and a background wake is
+        // exactly when nobody is watching.
+        let future = Date().timeIntervalSince1970 * 1000
+        UserDefaults.standard.set(future, forKey: markKey)
+        for _ in 0..<10 {
+            plugin.locationManager(CLLocationManager(), didUpdateLocations: [
+                CLLocation(latitude: 39.03, longitude: -95.71)])
+        }
+        XCTAssertGreaterThanOrEqual(UserDefaults.standard.double(forKey: markKey), future,
+            "ten wakes in a row must never move the mark backwards")
+    }
+
     func testRegionWakeRecordsTheCrossingBeforeTheBackfill() {
         // Order matters on a cold wake: the crossing is the fact we were woken
         // for and must be buffered even if the motion query never calls back.
@@ -2947,5 +3025,76 @@ extension TdGeoPluginTests {
             XCTAssertFalse(((r["trigger"] as? String) ?? "").isEmpty)
             XCTAssertEqual(r["source"] as? String, "native")
         }
+    }
+
+    // ── THE FLIP'S OWN INSTANT, NOT THE MOMENT IT REACHED US ──────────────
+    //
+    // Owner 2026-09-14. He started driving at 7:46; CoreMotion delivered the
+    // automotive activity at 7:48:16 and the drive was logged as starting
+    // then. Two minutes off the front of every leg, and worse, a DUPLICATE:
+    // motionSince and backfillMotionHistory both report a.startDate, so the
+    // same physical flip reached the server under two instants, the journey
+    // id is minted from the flip instant, and the phone and the server
+    // derived two different journeys for one drive. 6.6 miles logged for a
+    // 3.4 mile trip.
+    //
+    // CMMotionActivity cannot be constructed by hand, the same wall CLVisit
+    // put up above: read-only properties, CoreMotion is the only thing that
+    // makes one, and the delegate closure is not drivable from a test. So the
+    // DECISION was moved into motionEvent() where it can be reached, and this
+    // is what guards it.
+    func testMotionEventCarriesTheActivityStart_notTheDeliveryMoment() throws {
+        let started = Date().timeIntervalSince1970 * 1000 - 118_000   // his 118s
+        let ev = plugin.motionEvent(startMs: started, kind: "automotive", prev: "walking")
+        // Unwrapped first: XCTAssertEqual(_:_:accuracy:) is constrained to
+        // FloatingPoint and an Optional<Double> does not conform, so the
+        // as?-with-accuracy form does not compile. CI said so before this line
+        // ever ran.
+        let ts = try XCTUnwrap(ev["ts"] as? Double)
+        XCTAssertEqual(ts, started, accuracy: 0.001,
+                       "ts IS the flip instant; a delivery time here shortens every drive")
+        XCTAssertEqual(ev["kind"] as? String, "automotive")
+        XCTAssertEqual(ev["prevKind"] as? String, "walking")
+        // The delivery moment is kept, because the gap between the two is the
+        // detection latency and that is the number worth watching.
+        let delivered = ev["deliveredAtMs"] as? Double
+        XCTAssertNotNil(delivered)
+        XCTAssertGreaterThan(delivered ?? 0, started,
+                             "delivery cannot precede the activity it delivers")
+        XCTAssertEqual((delivered ?? 0) - started, 118_000, accuracy: 5_000)
+    }
+
+    // The duplicate, stated as the invariant that prevents it: one instant in,
+    // the same instant out, every time. Two reads of one flip must agree or
+    // the deriver mints two journey ids for one drive.
+    func testTheSameFlipInstantAlwaysProducesTheSameStamp() {
+        let t = 1_789_000_000_000.0
+        let a = plugin.motionEvent(startMs: t, kind: "automotive", prev: "still")
+        let b = plugin.motionEvent(startMs: t, kind: "automotive", prev: "still")
+        XCTAssertEqual(a["ts"] as? Double, b["ts"] as? Double)
+        // The flip id is per-event by design: it identifies the REPORT, not the
+        // flip, and nothing downstream may key a journey on it.
+        XCTAssertNotEqual(a["flipId"] as? String, b["flipId"] as? String)
+    }
+
+    func testMotionEventSurvivesJunkInput() {
+        for (ms, kind, prev) in [(0.0, "", ""), (-1.0, "automotive", ""), (Double.greatestFiniteMagnitude, "x", "y")] {
+            let ev = plugin.motionEvent(startMs: ms, kind: kind, prev: prev)
+            XCTAssertEqual(ev["type"] as? String, "motion")
+            XCTAssertEqual(ev["ts"] as? Double, ms)
+            XCTAssertNotNil(ev["deliveredAtMs"] as? Double)
+            XCTAssertFalse(((ev["flipId"] as? String) ?? "").isEmpty)
+        }
+    }
+
+    // Every field ingest-geo stores, present and the right type, so a rename
+    // on either side fails here rather than silently dropping a column.
+    func testMotionEventHasTheShapeIngestGeoStores() {
+        let ev = plugin.motionEvent(startMs: 1_789_000_000_000.0, kind: "still", prev: "automotive")
+        XCTAssertEqual(ev["type"] as? String, "motion")
+        XCTAssertNotNil(ev["ts"] as? Double)
+        XCTAssertNotNil(ev["kind"] as? String)
+        XCTAssertNotNil(ev["prevKind"] as? String)
+        XCTAssertNotNil(ev["flipId"] as? String)
     }
 }

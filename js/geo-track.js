@@ -7554,6 +7554,10 @@ function _geoTraceComplete(m){
   }catch(_e){return false;}
 }
 let _GEO_ROUTE_TIMEOUT_MS=8000;
+// One request per hole, so a leg the phone barely watched cannot turn a boot
+// rebuild into a hundred round trips. Past this the endpoint route below is
+// the cheaper answer and still better than a straight line.
+const _GEO_GAPFILL_MAX=6;
 const _GEO_ROUTE_CACHE_KEY='zp3_geo_routes';
 const _GEO_ROUTE_CACHE_MAX=400;
 function _geoRouteKey(a,b,via){const r=v=>Math.round(Number(v)*1e4)/1e4;return r(a.lat)+','+r(a.lng)+'>'+(Array.isArray(via)&&via.length?via.map(v=>r(v.lat)+','+r(v.lng)).join('>')+'>':'')+r(b.lat)+','+r(b.lng);}
@@ -7681,8 +7685,7 @@ async function _geoDeriveRouteMiles(rows){
         routed=(r&&Number(r.miles)>0)?Math.round(Number(r.miles)*10)/10:0;
         if(routed>0){cache[k]=routed;fresh[k]=routed;dirty=true;}
       }
-      if(!(routed>0))continue;
-      m.routeMiles=routed;
+      if(routed>0)m.routeMiles=routed;
       // A trace that runs fence to fence with a breadcrumb every few seconds
       // IS the drive (owner 2026-09-02: his 3.0 against the router's 3.9).
       // The router only outranks a thin one, or one that starts down the
@@ -7693,9 +7696,69 @@ async function _geoDeriveRouteMiles(rows){
       // actually driven through the detour. When the trace spans fence to
       // fence, the driven path caps the router (owner 2026-09-02: 3.9 from
       // the router for a leg the truck drove in 3.3 with the stop in it).
-      const via=(Number(m.collapsedStops)>0&&_geoTraceSpans(m)&&typeof _milePathMiles==='function')?_milePathMiles(m):0;
-      const direct=(via>0&&routed>via)?Math.round(via*10)/10:routed;
-      if(direct>(Number(m.miles)||0)){m.miles=direct;m.calc_method=direct===routed?'derived-routed':'derived-via';}
+      let best=0,how='';
+      if(routed>0){
+        const via=(Number(m.collapsedStops)>0&&_geoTraceSpans(m)&&typeof _milePathMiles==='function')?_milePathMiles(m):0;
+        const direct=(via>0&&routed>via)?Math.round(via*10)/10:routed;
+        best=direct;how=direct===routed?'derived-routed':'derived-via';
+      }
+      // ── THE HOLES ARE PRICED AT THE ROAD, NOT THE STRAIGHT LINE ────────
+      // Owner 2026-09-14: "the routed version with dashes traced the right
+      // roads but only logged a fraction of the trace."
+      //
+      // The map already asked the router for every hole in the trace and drew
+      // the answer dashed. It just never counted it. Same question, same
+      // function now (_mileGapFill, js/mileage.js), so the picture and the
+      // number are the same arithmetic and cannot disagree.
+      //
+      // LAST, and only when it is BIGGER, which is deliberate. My first cut
+      // ran this before the endpoint route and returned on it, and four
+      // deriver-wire tests went red in the same minute: every leg that used to
+      // read derived-routed came back derived-gapfill with no routeMiles on
+      // it. Those tests are not in the way, they are the rules. A dense trace
+      // still wins (rule above), a leg collapsed through a personal stop is
+      // still billed at the DIRECT route (rule 6) and is skipped here for
+      // exactly that reason, and the endpoint route still stands where it
+      // already stood. This only closes the case the owner reported: a drive
+      // whose holes were being counted as the straight line across them.
+      //
+      // Bounded because each hole is one request and a boot rebuild does a
+      // week of them; rule 14 already kept unsaved-end rows out of this loop.
+      //
+      // AND ONLY WHERE THE LEG ROUTE COULD NOT BE HAD. Scoped down after two
+      // deriver-wire tests stayed red on REQUEST COUNT, not on a wrong number:
+      // they assert one router call per distinct pair of ends, and a boot
+      // rebuild of a week pays for every call, so that assertion is a cost
+      // rule and not an incidental expectation. Holes are one request each.
+      // The owner's 14 September drive is the case this exists for and it is
+      // exactly this case: the endpoint router returned NOTHING, so the row
+      // kept the straight line at 2.4 for a 3.4 mile trip. Where the leg
+      // route does answer, it already answers, steered through the very
+      // breadcrumbs gap-filling would have used (_geoRouteVia).
+      if(best>0)                       { /* the leg route answered; it stands */ }
+      else if(Number(m.collapsedStops)>0){ /* rule 6: the direct route, never the driven one */ }
+      else if(typeof _mileGapFill==='function'){
+        try{
+          // GAP-FILL ONLY EARNS ITS NAME WHEN THERE IS EVIDENCE TO KEEP.
+          // Its whole claim over the endpoint route is that it preserves the
+          // stretches the phone watched. A trace that is ALL hole (two fixes,
+          // one edge, nothing observed in between) has nothing to preserve, so
+          // it is not a better answer, it is the same answer at N times the
+          // cost. The deriver-wire tests assert one router call per leg and
+          // they are right to: a boot rebuild of a week pays for every one.
+          const edges=(Array.isArray(m.path)?m.path.length:1)-1;
+          const holes=(typeof _mileGaps==='function')?_mileGaps(m).length:0;
+          const watchedEdges=edges-holes;
+          if(holes>0&&holes<=_GEO_GAPFILL_MAX&&watchedEdges>0){
+            const gf=await _mileGapFill(m);
+            if(gf&&gf.filled>0&&Number(gf.miles)>best){
+              best=Number(gf.miles);how='derived-gapfill';
+              m.gapMiles=best;m.watchedMiles=Math.round(gf.watched*10)/10;
+            }
+          }
+        }catch(_e){}
+      }
+      if(best>(Number(m.miles)||0)){m.miles=best;m.calc_method=how;}
     }catch(_e){}
   }
   if(dirty){

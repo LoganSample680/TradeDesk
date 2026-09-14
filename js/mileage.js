@@ -3114,28 +3114,82 @@ function openMileageRoute(id){
   }).catch(()=>{});
 }
 
+// ── THE DASHED STRETCH HAS MILES ON IT (owner 2026-09-14) ──────────────────
+//
+// "the routed version with dashes traced the right roads but only logged a
+// fraction of the trace, seems were missing the dashed line to run its
+// mileage route through mapkits."
+//
+// He was right and it was one discarded value. This asked the router for
+// every hole in the trace, kept the ROAD it came back with, drew it dashed,
+// and threw the DISTANCE away. So the picture knew the truck had driven a
+// real road across the hole and the number still counted the straight line
+// over it. His 14 September: four fixes for a six-minute drive, a map drawn
+// on the right streets, and 2.4 miles logged for a 3.4 mile trip.
+//
+// ONE function answers both now, so the line and the number can never
+// disagree about the same drive (7.3):
+//   • every edge the phone actually WATCHED keeps its real breadcrumb length,
+//     because that is evidence and no router improves on it
+//   • every hole is billed at the road the router found, which is the same
+//     road already being drawn dashed
+//   • a hole the router cannot answer keeps its straight edge, exactly as
+//     before, so a dead network can never shrink a trip
+//
+// The fallback routers matter here more than anywhere else in the app.
+// MapKit returns a line AND a distance; Valhalla and OSRM are asked with
+// overview=false and return a distance only. So off Apple hardware the
+// dashed line cannot be drawn and THE MILES STILL COME BACK. Fixing the
+// number is not gated on being able to draw it.
+const _MILE_TRACE_COLOR='#2D5DA8';
+const _MILE_FILL_COLOR='#B45309';
+async function _mileGapFill(r){
+  const out={miles:0,watched:0,fills:[],asked:0,filled:0,gaps:0};
+  try{
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2||typeof _geoDistFt!=='function')return out;
+    const gaps=(typeof _mileGaps==='function')?_mileGaps(r):[];
+    out.gaps=gaps.length;
+    const holes=new Set(gaps.map(g=>g.i));
+    // The watched edges, at their real length. A gap edge is skipped here and
+    // priced below, so nothing is ever counted twice.
+    let ft=0;
+    for(let i=1;i<p.length;i++){
+      if(holes.has(i))continue;
+      const a=p[i-1],b=p[i];
+      if(!Array.isArray(a)||!Array.isArray(b))continue;
+      const alat=+a[0],alon=+a[1],blat=+b[0],blon=+b[1];
+      if(!isFinite(alat)||!isFinite(alon)||!isFinite(blat)||!isFinite(blon))continue;
+      ft+=_geoDistFt({lat:alat,lng:alon},{lat:blat,lng:blon});
+    }
+    out.watched=ft/5280;
+    out.miles=out.watched;
+    if(typeof _routeDistance!=='function'){out.miles=Math.round(out.miles*10)/10;return out;}
+    for(const g of gaps){
+      out.asked++;
+      const got=await Promise.race([
+        _routeDistance(g.from,g.to,[]),
+        new Promise(res=>setTimeout(()=>res(null),(typeof _GEO_ROUTE_TIMEOUT_MS!=='undefined'&&_GEO_ROUTE_TIMEOUT_MS)||8000))
+      ]).catch(()=>null);
+      const mi=(got&&Number(got.miles)>0)?Number(got.miles):0;
+      const line=(got&&Array.isArray(got.path)&&got.path.length>=2)?got.path:null;
+      if(mi>0){out.miles+=mi;out.filled++;}
+      else out.miles+=(Number(g.ft)||0)/5280;
+      if(line)out.fills.push({i:g.i,path:line});
+    }
+    out.miles=Math.round(out.miles*10)/10;
+  }catch(_e){}
+  return out;
+}
 // Solid for what the phone watched, dashed for what the router filled in.
 // Returns null when there is nothing to fill or nothing came back, and the
 // caller then leaves the plain trace alone.
-const _MILE_TRACE_COLOR='#2D5DA8';
-const _MILE_FILL_COLOR='#B45309';
 async function _mileRouteFill(r){
   try{
     const p=r&&r.path;
     if(!Array.isArray(p)||p.length<2)return null;
-    const gaps=(typeof _mileGaps==='function')?_mileGaps(r):[];
-    if(!gaps.length)return null;
-    const fills=[];
-    for(const g of gaps){
-      const got=await Promise.race([
-        _routeDistance(g.from,g.to,[]),
-        new Promise(res=>setTimeout(()=>res(null),_GEO_ROUTE_TIMEOUT_MS||8000))
-      ]).catch(()=>null);
-      const line=(got&&Array.isArray(got.path)&&got.path.length>=2)?got.path:null;
-      // No road came back: the straight edge the observed trace already draws
-      // is still the honest answer, so this gap contributes nothing.
-      if(line)fills.push({i:g.i,path:line});
-    }
+    const got=await _mileGapFill(r);
+    const fills=got.fills;
     if(!fills.length)return null;
     // The observed trace, cut at every gap that was filled, so a dashed road
     // never runs underneath a solid line claiming the same stretch.
