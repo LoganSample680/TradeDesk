@@ -424,9 +424,9 @@ async function renderTiles(){
     tile(r.accounts,'Businesses'),
     tile(r.active_days,'Days the app was opened'),
     tile(r.days_clocked,'Days clocked'),
-    tile(r.avg_day_min!=null?Math.round(r.avg_day_min/60*10)/10+'h':'—','Average day'),
+    tile(dur(r.avg_day_min),'Average day'),
     tile(r.total_miles,'Miles'),
-    tile(r.avg_visit_min!=null?Math.round(r.avg_visit_min)+'m':'—','Average visit'),
+    tile(dur(r.avg_visit_min),'Average visit'),
     tile(r.unnamed_legs,'Unnamed drives')
   ].join('');
 }
@@ -592,16 +592,30 @@ $('biz-back').addEventListener('click',()=>{
   show(TRADE?'lvl-trade':'lvl-all');
 });
 
-// A duration reads as a person would say it. 240 minutes is four hours, not 240.
+// A duration reads as a person would say it, and it reads the SAME here as it
+// does in the app. _fmtMin (js/jobs.js) is the shape every screen already uses:
+// minutes on their own up to an hour, then hours and minutes. Copied rather
+// than imported because this page loads none of the app's bundles, and matching
+// the existing shape exactly is the point (CLAUDE.md 7.3).
+//
+// Owner 2026-09-14: "average visit time is in minutes and can say something
+// like 269 minutes, I want it broken to minutes then hours and minutes if it
+// goes over 60." 269 now reads 4h 29m.
+//
+// Every duration on this page goes through here. There is no second opinion
+// about what a minute count looks like.
 function dur(m){
   if(m==null||m==='')return '—';
-  const n=Number(m);
+  const n=Math.round(Number(m));
   if(!isFinite(n))return '—';
-  if(n<1)return 'under a minute';
-  if(n<90)return Math.round(n)+' min';
-  const h=n/60;
-  if(h<48)return (Math.round(h*10)/10)+' hours';
-  return (Math.round(h/24*10)/10)+' days';
+  if(n<1)return '0m';
+  // Past two days, hours stop meaning anything: a proposal that sat for 4320
+  // minutes is three days, not 72h. This tier predates the owner's rule and
+  // his rule was about a VISIT, so it is kept rather than flattened.
+  if(n>=48*60)return (Math.round(n/1440*10)/10)+' days';
+  const h=Math.floor(n/60),rem=n%60;
+  if(!h)return rem+'m';
+  return rem?h+'h '+rem+'m':h+'h';
 }
 const pct=v=>v==null?'—':num(v)+'%';
 const usd=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
@@ -766,8 +780,8 @@ const FMT = {
   num:  v => num(v),
   pct:  v => v==null?null:num(v)+'%',
   usd:  v => v==null?null:'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}),
-  hours:v => v==null?null:(Math.round(Number(v)/60*10)/10)+'h',
-  mins: v => v==null?null:Math.round(Number(v))+'m',
+  hours:v => v==null?null:dur(v),
+  mins: v => v==null?null:dur(v),
   text: v => v==null||v===''?null:String(v),
   ago:  v => v==null?null:relDay(String(v).slice(0,10)).replace(/^(last )?active /,''),
 };
