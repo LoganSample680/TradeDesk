@@ -3117,7 +3117,13 @@ async function _fetchCrewLabor(sinceISO){
     // (js/timelog.js _tlStopAnchored): a shop session is one of the "real
     // location events" an unpaid stop must sit between. Additive, every
     // other consumer ignores it.
-    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
+    // id and client_key ride along so the Time Log's row menu can attach to a
+    // shop row at all (owner 2026-09-13, on his own rail: the 12:41 shop block
+    // was the one row on the page with no three-dot). _tlRowMenuable refuses a
+    // row with no rawId behind it, correctly, because there would be nothing
+    // for an action to act ON; this select simply never asked for one, so every
+    // shop row in the app has arrived id-less since the rail was built.
+    let sq=_supa.from('shop_time_entries').select('id,client_key,employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
     const{data:se}=await sq;
     out.shopEntries=se||[];

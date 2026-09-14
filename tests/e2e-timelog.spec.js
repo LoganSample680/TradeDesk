@@ -1015,11 +1015,33 @@ test.describe('timelog.js: exhaustive coverage', () => {
       window._canViewComp = () => true;
       try {
         const auto = (typeof _tlRailRow === 'function') ? String(_tlRailRow(R({}))) : '';
-        return { auto, hasFix: /\bFix<\/button>/.test(auto), hasEdit: /\bEdit<\/button>/.test(auto) };
+        // AMENDED 2026-09-13 (10.4). This used to read the words off the ROW,
+        // because the control was a chip in the row's right column. It is the
+        // first action in the row menu now (owner: "looks disorganized" at
+        // three stacked controls), so the row carries the flag that says the
+        // action exists and the menu carries the word. Both are checked: the
+        // flag here, the word below, which is more than the old assertion did.
+        const menu = (typeof _tlRowMenu === 'function')
+          ? (() => {
+              document.body.insertAdjacentHTML('beforeend', '<ol>' + auto + '</ol>');
+              const btn = document.body.lastElementChild.querySelector('.tl-rail-more');
+              if (btn) _tlRowMenu(btn);
+              const ov = document.getElementById('_tl-row-menu');
+              const html = ov ? ov.innerHTML : '';
+              if (ov) ov.remove();
+              document.body.lastElementChild.remove();
+              return html;
+            })()
+          : '';
+        return { auto, menu, fixFlag: /data-row-fix="1"/.test(auto),
+                 chip: /tl-rail-edit/.test(auto),
+                 hasFix: /\bFix\b/.test(menu), hasEdit: />Edit</.test(menu) };
       } finally { window._canViewComp = saved; }
     });
     if (out.auto) {
-      expect(out.hasFix, 'the word "Fix" is gone from the rail').toBe(false);
+      expect(out.chip, 'the chip is deleted, not hidden (7)').toBe(false);
+      expect(out.fixFlag, 'the row still says the action exists').toBe(true);
+      expect(out.hasFix, 'the word "Fix" is gone').toBe(false);
       expect(out.hasEdit, 'and the control reads Edit, like a manual clock').toBe(true);
     }
     // The dialog says the same thing the manual one does.
@@ -2203,8 +2225,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r.found, 'the fixture day must land in a week').toBe(true);
       expect(r.html, 'the rail is what renders a day now').toContain('tl-rail-row');
+      // AMENDED 2026-09-13 (10.4). The Edit chip left the row's right column
+      // on the same principle that moved it there in the first place (7.2:
+      // the capability survives, the UI carrying it may not). It is the first
+      // action in the row menu now, so what the rail must still contain is
+      // the menu button; the handler is asserted where it now lives, in the
+      // 'the menu says delete for a manual row' test below.
+      expect(r.html, 'the chip is deleted, not hidden (7)').not.toContain('tl-rail-edit');
       expect(r.html, 'and editing a manual clock has to still be reachable')
-        .toContain('_openEditTimeEntry(');
+        .toContain('tl-rail-more');
     });
 
 
@@ -4153,9 +4182,19 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }, [[A('place', [9, 0], [10, 0], 60)], CLOCK([8, 0], [16, 0], 480)]);
       const inCap = html.slice(html.indexOf('data-kind="clock-in"'));
       const outCap = html.slice(html.indexOf('data-kind="clock-out"'));
-      expect(inCap.slice(0, inCap.indexOf('</li>'))).toContain('tl-rail-edit');
+      // AMENDED 2026-09-13 (10.4). The owner's rule here is unchanged and is
+      // the whole point of the test: BOTH ends reach the editor. What changed
+      // is which control carries it. The Edit chip is deleted from the caps
+      // (7) and the menu is on both of them instead, where it used to be on
+      // the opening cap only, so this now asserts something the old shape
+      // could not: the two ends are finally identical.
+      expect(inCap.slice(0, inCap.indexOf('</li>'))).not.toContain('tl-rail-edit');
+      expect(inCap.slice(0, inCap.indexOf('</li>'))).toContain('tl-rail-more');
       expect(outCap.slice(0, outCap.indexOf('</li>')),
-        'a wrong clock-out is as common as a wrong clock-in').toContain('tl-rail-edit');
+        'a wrong clock-out is as common as a wrong clock-in').toContain('tl-rail-more');
+      expect(outCap.slice(0, outCap.indexOf('</li>')),
+        'and it is the clock-OUT cap that opens it, not a stale clock-in label')
+        .toContain('Clocked out');
     });
 
     // ── The clock-out is a hard cutoff ────────────────────────────────────
@@ -5001,6 +5040,198 @@ test.describe('timelog.js: exhaustive coverage', () => {
         .map(s => [s, _geoIsHeldSource(s)]));
       expect(out).toEqual([['drive-held', true], ['unsaved-held', true], ['client-held', true],
         ['drive', false], ['unsaved', false]]);
+    });
+  });
+
+  // ── ONE CONTROL PER ROW (owner 2026-09-13) ───────────────────────────────
+  // "Looks disorganized." An On Site row stacked a duration, an Edit chip and
+  // a three-dot in its right column, three deep, while a drive row carried
+  // one, so no two rows were the same height and the column had no edge. Edit
+  // is the first action in the menu now and the chip is gone (7: deleted,
+  // never hidden). 7.1 wants the proof that it is gone, not just that the new
+  // one works.
+  test.describe('the Edit chip is deleted and the menu carries it', () => {
+    test('no rail row draws the old chip, whatever kind it is', async () => {
+      const kinds = await page.evaluate(() => {
+        const saved = window._canViewComp; window._canViewComp = () => true;
+        const R = (o) => Object.assign({ source: 'auto', rawId: 'x1', unpaid: false, minutes: 30,
+          date: '2026-09-13', personUid: null, clientName: 'A place' }, o);
+        const out = [
+          String(_tlRailRow(R({ rawSource: 'place' }))),
+          String(_tlRailRow(R({ rawSource: 'geofence' }))),
+          String(_tlRailRow(R({ rawSource: 'drive' }))),
+          String(_tlRailRow(R({ rawSource: 'shop', source: 'shop' }))),
+          String(_tlRailRow(R({ source: 'manual', rawSource: '' }))),
+        ];
+        window._canViewComp = saved;
+        return out;
+      });
+      for (const h of kinds) {
+        expect(h, 'the chip class is gone from the markup').not.toContain('tl-rail-edit');
+        expect(h, 'and so is its wrapper').not.toContain('tl-rail-editwrap');
+      }
+    });
+
+    test('the stylesheet does not still carry the rules for it', async () => {
+      // Dead CSS is the other half of 7: a class nothing renders is still a
+      // class the next person has to reason about.
+      const css = await page.evaluate(async () => {
+        const r = await fetch('/css/timelog.css'); return await r.text();
+      });
+      expect(css).not.toMatch(/^\.tl-rail-edit\{/m);
+      expect(css).not.toMatch(/^\.tl-rail-editwrap\{/m);
+    });
+
+    test('a tracked row offers Edit in the menu, and an unpaid one does not', async () => {
+      const r = await page.evaluate(() => {
+        const saved = window._canViewComp; window._canViewComp = () => true;
+        const R = (o) => Object.assign({ source: 'auto', rawId: 'x1', unpaid: false, minutes: 30,
+          date: '2026-09-13', personUid: null, clientName: 'A place' }, o);
+        const flag = (o) => /data-row-fix="1"/.test(String(_tlRailRow(R(o))));
+        const out = {
+          place: flag({ rawSource: 'place' }),
+          geofence: flag({ rawSource: 'geofence' }),
+          // A drive's times are the tape's, not a clock somebody set, and the
+          // fix dialog was never offered for one. Unchanged.
+          drive: flag({ rawSource: 'drive' }),
+          // Held rows count nothing, so there is nothing to correct.
+          held: flag({ rawSource: 'place', unpaid: true }),
+        };
+        window._canViewComp = saved;
+        return out;
+      });
+      expect(r).toEqual({ place: true, geofence: true, drive: false, held: false });
+    });
+
+    test('and the flag is what the menu reads, so the two can never disagree', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (fix) => {
+          const b = document.createElement('button');
+          b.dataset.rowId = 'x1'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'place';
+          b.dataset.rowFix = fix; b.dataset.rowLabel = 'A place';
+          document.body.appendChild(b);
+          _tlRowMenu(b);
+          const ov = document.getElementById('_tl-row-menu');
+          const html = ov ? ov.innerHTML : '';
+          if (ov) ov.remove();
+          b.remove();
+          return html;
+        };
+        return { on: mk('1'), off: mk('') };
+      });
+      expect(r.on).toContain('fixauto');
+      expect(r.on).toContain('>Edit<');
+      expect(r.off, 'no flag, no Edit').not.toContain('fixauto');
+      // Not work is on both: that never depended on the row being fixable.
+      expect(r.off).toContain('notwork');
+    });
+
+    test('Edit from a tracked row opens the tracked-row dialog, not the manual one', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const realFix = window._openFixAutoEntry, realEdit = window._openEditTimeEntry;
+        window._openFixAutoEntry = (id) => { calls.push(['auto', id]); };
+        window._openEditTimeEntry = (id) => { calls.push(['manual', id]); };
+        await _tlRowMenuDo('fixauto', 'srv-77');
+        await _tlRowMenuDo('edit', '1788872335123');
+        window._openFixAutoEntry = realFix; window._openEditTimeEntry = realEdit;
+        return calls;
+      });
+      expect(r).toEqual([['auto', 'srv-77'], ['manual', 1788872335123]]);
+    });
+  });
+
+  // ── THE SHOP ROW, which had no three-dot at all ──────────────────────────
+  // Owner 2026-09-13, looking at his own Saturday: "not all rows have the
+  // dots." The 12:41 shop block was the only row on the page without one, and
+  // for a reason nothing on the screen could show: the query that loads shop
+  // entries (js/finance.js) never selected `id`, so every shop row in the app
+  // has arrived with rawId null since the rail was built, and _tlRowMenuable
+  // correctly refuses a row with nothing behind it to act on.
+  //
+  // The other half is that the menu had to WORK once it appeared. A shop dwell
+  // lives in shop_time_entries, geo_answer_visit only ever reads
+  // job_time_entries, so "Not work" on a shop row would have thrown.
+  test.describe('a shop row is answerable like every other automatic row', () => {
+    const SHOP = { source: 'shop', rawSource: 'shop', clientName: 'TradeDesk', rawId: 'srv-shop-1',
+      minutes: 36, date: '2026-09-13', personUid: null, detail: 'Shop time',
+      startTime: '2026-09-13T17:41:00Z', endTime: '2026-09-13T18:17:00Z' };
+    const render = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, SHOP, over));
+
+    test('it has a menu now, and loses it again if the id goes missing', async () => {
+      expect(await render()).toMatch(/tl-rail-more/);
+      // The exact state every shop row was in before js/finance.js asked for
+      // the column. Still refused, and that refusal is right: a button with
+      // no row behind it can only fail.
+      expect(await render({ rawId: null })).not.toMatch(/tl-rail-more/);
+    });
+
+    test('the button carries the raw source, which is what picks the table', async () => {
+      const h = await render();
+      expect(h).toMatch(/data-row-raw="shop"/);
+    });
+
+    test('Not work on a shop row goes through the shop door, not the visit one', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const realShop = window._shopHoldAnswer, realVisit = window._visitHoldAnswer;
+        window._shopHoldAnswer = (id, m) => { calls.push(['shop', id, m]); return Promise.resolve(true); };
+        window._visitHoldAnswer = (id, m) => { calls.push(['visit', id, m]); return Promise.resolve(true); };
+        await _tlRowMenuDo('notwork', 'srv-shop-1', 'shop');
+        await _tlRowMenuDo('notwork', 'srv-vis-1', 'client-held');
+        // A drive is a job_time_entries row too: only 'shop' forks.
+        await _tlRowMenuDo('notwork', 'srv-drv-1', 'drive-held');
+        window._shopHoldAnswer = realShop; window._visitHoldAnswer = realVisit;
+        return calls;
+      });
+      expect(r).toEqual([
+        ['shop', 'srv-shop-1', 'personal'],
+        ['visit', 'srv-vis-1', 'personal'],
+        ['visit', 'srv-drv-1', 'personal'],
+      ]);
+    });
+
+    test('the shop answer calls the shop RPC and refreshes the log', async () => {
+      const r = await page.evaluate(async () => {
+        const rpc = [];
+        let refreshed = false;
+        const realSupa = window._supa, realRefresh = window._tlLiveRefresh, realToast = window.showToast;
+        window._supa = { rpc: (fn, args) => { rpc.push([fn, args]); return Promise.resolve({ error: null }); } };
+        window._tlLiveRefresh = () => { refreshed = true; };
+        window.showToast = () => {};
+        const ok = await _shopHoldAnswer('srv-shop-1', 'personal');
+        window._supa = realSupa; window._tlLiveRefresh = realRefresh; window.showToast = realToast;
+        return { ok, rpc, refreshed };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.rpc).toEqual([['geo_answer_shop', { p_id: 'srv-shop-1', p_mode: 'personal' }]]);
+      expect(r.refreshed, 'the row has to leave the rail without a reload').toBe(true);
+    });
+
+    test('a server refusal says so and changes nothing', async () => {
+      const r = await page.evaluate(async () => {
+        const toasts = [];
+        const realSupa = window._supa, realToast = window.showToast;
+        window._supa = { rpc: () => Promise.resolve({ error: { message: 'nope' } }) };
+        window.showToast = (m) => { toasts.push(String(m)); };
+        const ok = await _shopHoldAnswer('srv-shop-1', 'personal');
+        window._supa = realSupa; window.showToast = realToast;
+        return { ok, toasts };
+      });
+      expect(r.ok).toBe(false);
+      expect(r.toasts.join(' ')).toMatch(/try again/i);
+    });
+
+    test('no _supa at all is a quiet no-op, never a throw', async () => {
+      const r = await page.evaluate(async () => {
+        const realSupa = window._supa, realToast = window.showToast;
+        window._supa = null; window.showToast = () => {};
+        let threw = false, ok = null;
+        try { ok = await _shopHoldAnswer('x', 'personal'); } catch (e) { threw = true; }
+        window._supa = realSupa; window.showToast = realToast;
+        return { threw, ok };
+      });
+      expect(r.threw).toBe(false);
     });
   });
 

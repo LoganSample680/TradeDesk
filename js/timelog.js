@@ -1502,28 +1502,20 @@ function _tlRailRow(r){
     // A held visit carries no "unpaid": it is not counted YET, and the row
     // says so in words and offers the two answers underneath.
     (r.unpaid&&!isGap&&kind!=='held'&&!r.clockPaid?' · unpaid':'')+'</span>';
-  // EDIT LIVES HERE NOW. The entries table was the only place a manual clock
-  // could be fixed, and the owner cut it off the week view as clutter
-  // (2026-08-30). Losing the ability to correct an entry was not part of that
-  // ask, so the control moved to the row it belongs to instead of disappearing
-  // with the table (§7.2: verify the capability survives before removing the
-  // UI that carried it). Same gate and the same modal as the table used, so
-  // there is still exactly one edit experience (§7.3).
-  const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
-    ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
-    // ONE WORD, NOT TWO (owner 2026-09-04: "for anything marked as a fix can
-    // we remove the fix code and just do edit like we do for manual clock ins
-    // and outs?"). A GPS row lives in job_time_entries and a manual clock in
-    // the local timeEntries array, so the two handlers cannot become one, but
-    // none of that is the person's problem. On the rail they are the same row
-    // with the same control, and calling one of them "Fix" made correcting a
-    // tracked visit read like owning up to a fault rather than editing an
-    // entry. Same word, same dialog title, same field labels.
-    :(typeof _tlCanFixAuto==='function'&&_tlCanFixAuto(r)&&r.rawId!=null)
-    ?'<button type="button" class="tl-rail-edit" onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')">Edit</button>'
-    :'';
-  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+(r.live?'':escHtml(fm(r.minutes||0)))+
-    (edit?'<span class="tl-rail-editwrap">'+edit+'</span>':'')+'</div>';
+  // EDIT USED TO LIVE HERE. It does not any more: it is the first action in
+  // the row menu, for both kinds of row (7, deleted rather than hidden).
+  //
+  // Owner 2026-09-13, on his own Saturday: "looks disorganized." He was right,
+  // and this chip was most of why. An On Site row carried a duration, an Edit
+  // button and a three-dot stacked in the right column, three controls deep,
+  // while a drive row carried one, so no two rows were the same height and the
+  // column had no edge. One button per row and the rail lines up.
+  //
+  // NOTHING IS LOST, which 7.2 requires proving rather than assuming. Both
+  // handlers the chip reached are on the menu now: _openEditTimeEntry for a
+  // manual clock and _openFixAutoEntry for a tracked row, chosen by the same
+  // _tlCanEdit / _tlCanFixAuto gates, opening the same two dialogs.
+  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+(r.live?'':escHtml(fm(r.minutes||0)))+'</div>';
   // AND SO DOES DELETE, for the same reason and by the same rule (§7.2). The
   // 3-second hold lived on the table row _tlRow drew; that table is gone, and
   // losing the only way to delete a time entry was not part of removing it.
@@ -1551,6 +1543,12 @@ function _tlRailRow(r){
       'data-row-raw="'+escHtml(String(r.rawSource||''))+'" '+
       'data-row-key="'+escHtml(String(r.clientKey||''))+'" '+
       'data-row-date="'+escHtml(String(r.date||''))+'" '+
+      // ASKED HERE, WHERE THE REAL ROW IS. _tlCanFixAuto reads four fields
+      // (source, rawSource, rawId, unpaid) and the menu only ever sees the
+      // dataset, so rebuilding a row object over there to ask the question
+      // would be a second, quietly different row that drifts the first time
+      // that gate learns a fifth field. One answer, carried.
+      'data-row-fix="'+((typeof _tlCanFixAuto==='function'&&_tlCanFixAuto(r))?'1':'')+'" '+
       'data-row-label="'+escHtml(String(r.clientName||r.addr||m.word))+'">'+
       '<span aria-hidden="true">\u22ef</span></button>'
     : '';
@@ -1616,7 +1614,17 @@ function _tlRowMenu(btn){
       acts+=act('_tlRowMenuDo(\'edit\',\''+escHtml(String(id))+'\')','Edit','Change the times or the job');
       acts+=act('_tlRowMenuDo(\'delete\',\''+escHtml(String(id))+'\')','Delete','Removes this entry for good',true);
     }else{
-      acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\')','Not work',
+      // A TRACKED ROW CAN BE WRONG ABOUT ITS TIMES as well as about its
+      // meaning (owner rule 2026-08-24). This is the chip that used to sit in
+      // the right column beside the duration; it opens the same dialog it
+      // always did, from the row's one control instead of its third.
+      if(d.rowFix==='1'){
+        acts+=act('_tlRowMenuDo(\'fixauto\',\''+escHtml(String(id))+'\')','Edit','Change the times on this entry');
+      }
+      // The raw source rides along as the second argument: it is what tells
+      // the dispatcher which of the two tables this row lives in, and the
+      // button is the only thing that knows.
+      acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
         'Keeps it off your hours and your miles. Just this one, not the place.',true);
       if(/^unsaved/.test(raw)&&d.rowKey){
         acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
@@ -1645,11 +1653,30 @@ async function _tlRowMenuDo(what,a,b){
       if(typeof deleteTimeEntry==='function')deleteTimeEntry(parseInt(a,10));
       return;
     }
+    // A TRACKED row's times. Same dialog the rail's Edit chip opened before it
+    // moved in here; a different handler from the manual one above because the
+    // two rows live in different stores, which is not the person's problem and
+    // is why both say "Edit" (owner 2026-09-04).
+    if(what==='fixauto'){
+      if(typeof _openFixAutoEntry==='function')_openFixAutoEntry(String(a));
+      return;
+    }
     if(what==='save'){
       if(typeof _mileSaveStopAddress==='function')_mileSaveStopAddress(a,b||'');
       return;
     }
     if(what==='notwork'){
+      // TWO TABLES, TWO DOORS, and which one is not a detail this function
+      // gets to guess at. A shop dwell lives in shop_time_entries and every
+      // other automatic row lives in job_time_entries, and the two say "this
+      // did not count" differently because they are shaped differently: one
+      // has a `source` column to write 'dismissed' into and the other has
+      // only soft deletion (see 20261013). b carries the raw source, which
+      // the button already knew.
+      if(String(b||'')==='shop'){
+        if(typeof _shopHoldAnswer==='function'){await _shopHoldAnswer(String(a),'personal');return;}
+        return;
+      }
       // The SAME door the held-visit chips use, so one definition of what an
       // answer means still serves both (7.3).
       if(typeof _visitHoldAnswer==='function'){await _visitHoldAnswer(String(a),'personal');return;}
@@ -1718,16 +1745,13 @@ function _tlRailHeadHtml(rows,label,noTotal){
 function _tlClockCapHtml(r,which){
   const isIn=which==='in';
   const t=_tlFmtTime(isIn?r.startTime:r.endTime)||'—';
-  // The same edit control the clock row carried, kept on the OPENING cap: a
-  // wrong clock-in is the thing people actually need to fix, and losing the
-  // way to fix it was never part of moving where it is drawn (§7.2).
-  // ON BOTH CAPS (owner 2026-09-04: "clock out also needs a edit button").
-  // A wrong clock-OUT is just as common as a wrong clock-in, and the editor it
-  // opens is the same one for the same entry: it edits the clock, not the end
-  // of it, so there was never a reason for only one end to reach it.
-  const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
-    ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
-    :'';
+  // THE EDIT CHIP IS GONE FROM HERE TOO, and the menu took its place on BOTH
+  // caps rather than only the opening one (owner 2026-09-04: "clock out also
+  // needs a edit button"; owner 2026-09-13: "looks disorganized"). Both asks
+  // are served by the same change, because the menu's first action IS Edit and
+  // it opens the same dialog for the same entry from either end: it edits the
+  // clock, not the end of it, which is why only one end ever needed to reach
+  // it in the first place.
   // NEITHER CAP CARRIES A NUMBER (owner 2026-09-04: "we dont have a time on
   // clocked in calculated, dont think we should show a clocked out time stamp
   // either, the day total is at the top under the data").
@@ -1743,11 +1767,11 @@ function _tlClockCapHtml(r,which){
   // AND THE MENU RIDES THE OPENING CAP (owner 2026-09-13). The long-press that
   // used to live here is gone with the rest of them; the cap carries the same
   // three-dot every other row has, beside Edit, on the end people reach for.
-  const capMenu=(isIn&&typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+  const capMenu=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
     ? '<button type="button" class="tl-rail-more" aria-label="Options for this entry" '+
       'onclick="event.stopPropagation();_tlRowMenu(this)" '+
       'data-row-id="'+escHtml(String(r.rawId))+'" data-row-src="manual" '+
-      'data-row-label="'+escHtml(String(r.personName||'')+' \u00b7 Clocked in')+'">'+
+      'data-row-label="'+escHtml(String(r.personName||'')+' \u00b7 '+(isIn?'Clocked in':'Clocked out'))+'">'+
       '<span aria-hidden="true">\u22ef</span></button>'
     : '';
   const lp='';
@@ -1762,7 +1786,6 @@ function _tlClockCapHtml(r,which){
       // is what distinguishes the two ends anyway (1.4.1).
       '<span class="tl-rail-tag">'+svgIcon('▶',{size:10})+' '+
         escHtml(isIn?'Clocked in':'Clocked out')+'</span>'+
-      (edit?'<div class="tl-rail-sub">'+edit+'</div>':'')+
     '</div>'+
     (capMenu?'<div class="tl-rail-end"><div class="tl-rail-dur"></div>'+capMenu+'</div>'
             :'<div class="tl-rail-dur"></div>')+

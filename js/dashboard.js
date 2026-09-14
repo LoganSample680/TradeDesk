@@ -463,6 +463,35 @@ async function _visitHoldAnswer(id,mode){
     if(el)_renderDashVisitHold();
   }
 }
+// ── The same answer, for the other table (owner 2026-09-13) ────────────────
+// "There are times he could go to his dads shop and it not be work related,
+// just visiting his old man." That row is a shop dwell, and a shop dwell is
+// not in job_time_entries, so _visitHoldAnswer above could never reach it.
+//
+// Deliberately NOT a mode flag on that function. The two tables express "this
+// did not count" differently, because they are shaped differently: a job row
+// becomes source='dismissed' and stays on the log as an answered row, while
+// shop_time_entries has no source column and can only be soft deleted. Same
+// door, same words to the person, two different sentences underneath, and the
+// server owns both (geo_answer_shop, 20261013, which also stamps fixed_at so
+// the next rebuild cannot hand the dwell back).
+//
+// No card to repaint, unlike the held-visit version: a shop row is never a
+// question on the Home screen, it is only ever answered from the row itself.
+// So this refreshes the Time Log and nothing else.
+async function _shopHoldAnswer(id,mode){
+  const m=(mode==='working')?'working':'personal';
+  try{
+    if(window._supa){const{error}=await _supa.rpc('geo_answer_shop',{p_id:String(id),p_mode:m});
+      if(error)throw error;}
+    if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🏠');
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+    return true;
+  }catch(_e){
+    if(typeof showToast==='function')showToast('Could not save that answer, try again');
+    return false;
+  }
+}
 // Store accordion toggle. Takes the clicked header, not an id: a store's
 // name can contain characters that would need escaping into an id/selector,
 // and the element itself is all the toggle needs (mirrors the day/month

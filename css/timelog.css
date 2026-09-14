@@ -78,14 +78,10 @@
 .tl-rail-dur{font-size:13px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;
   padding:9px 0 0 8px;white-space:nowrap}
 .tl-rail-dur.mute{font-weight:700;color:var(--text3)}
-/* Edit moved onto the row when the entries table left the week view. Right
-   column, under the duration, so it never competes with the clock for the eye
-   and never widens the row. 28px clears the 24px target minimum (2.5.8). */
-.tl-rail-editwrap{display:block;margin-top:4px}
-.tl-rail-edit{min-height:28px;padding:0 9px;border-radius:6px;border:1px solid var(--border2);
-  background:var(--bg-card);color:var(--text);font-family:inherit;font-size:11px;font-weight:700;
-  cursor:pointer;white-space:nowrap}
-.tl-rail-edit:hover{border-color:var(--ink)}
+/* .tl-rail-edit and .tl-rail-editwrap were DELETED 2026-09-13 (7: deleted,
+   never hidden). Edit is the first action in the row menu now, for a manual
+   clock and a tracked row alike, so the right column carries a duration and
+   one button instead of a stack of three. */
 /* A hole is the SHAPE OF A HOLE: dashed line, nothing measured. */
 .tl-rail-row[data-kind="gap"] .tl-rail-spine i{
   background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px)}
@@ -415,13 +411,34 @@ body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
 
 /* ── The row menu (owner 2026-09-13) ──────────────────────────────────────
    Replaces the three-second hold, which was invisible, absent for VoiceOver,
-   and wired only to manual rows. 44px of target because it sits beside a
-   number the thumb is already near. */
-.tl-rail-end{display:flex;align-items:flex-start;gap:2px}
-.tl-rail-more{flex:0 0 auto;min-width:32px;min-height:44px;padding:0 6px;border:none;
-  background:transparent;color:var(--text3);font-size:17px;line-height:1;cursor:pointer;
-  font-family:inherit;border-radius:8px;-webkit-tap-highlight-color:transparent}
-.tl-rail-more:hover{background:var(--bg2);color:var(--text)}
+   and wired only to manual rows.
+
+   BOXED, AND UNDER THE DURATION, NOT BESIDE IT (owner 2026-09-13, on his own
+   rail: "looks disorganized"). It shipped as a bare glyph on the same line as
+   the number, and it cost twice.
+
+   Three loose dots floating at the right edge with nothing around them read
+   as a smudge rather than a control, which is why they were easy to miss on
+   the rows that had them. A 1.5px box is the same border the rail's own chips
+   already wear, so it reads as a button by matching something on the screen
+   that is one.
+
+   And a control on the SAME LINE as the number takes its width from the
+   title. Every drive title on his day is "A to B", the longest strings on the
+   page, and a kebab beside the duration wrapped three of the seven onto a
+   second line. Stacked, the title gets that width back and the rows come out
+   the same height. Both were rendered and compared before this was written.
+
+   32px square rather than the 44px it used to claim: it is a corner target
+   with 6px of gap around it, it clears WCAG 2.5.8's 24px minimum with room,
+   and the old 44px was tall enough to drag the row's own height around. */
+.tl-rail-end{display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding:9px 0 0}
+.tl-rail-end .tl-rail-dur{padding:0}
+.tl-rail-more{flex:0 0 auto;width:32px;height:32px;padding:0;
+  border:1.5px solid var(--line-2);border-radius:8px;background:var(--bg-card);
+  color:var(--text3);font-size:15px;line-height:1;cursor:pointer;font-family:inherit;
+  display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+.tl-rail-more:hover{border-color:var(--ink);color:var(--text)}
 .tl-rail-more:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
 .tl-menu-acts{display:flex;flex-direction:column;gap:8px}
 .tl-menu-act{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;
