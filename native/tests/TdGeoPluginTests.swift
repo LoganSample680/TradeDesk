@@ -1338,25 +1338,31 @@ extension TdGeoPluginTests {
             "the fix is the fact we were woken for and must be buffered")
     }
 
-    func testVisitWakeDoesNotCrash() {
-        // AMENDED after CI (10.4): this asserted the visit landed in the
-        // buffer, and it does not, because a bare CLVisit() is not a visit.
-        // Its properties are read-only and iOS is the only thing that can
-        // fill them, so a default one carries a zero coordinate and an
-        // accuracy UserDefaults will not serialise, and the buffer write is
-        // dropped whole. The object is the problem, not the delegate.
-        //
-        // So this asserts the half that is real on a simulator, which is the
-        // same bargain the rest of this file strikes (see its header): the
-        // wake path runs end to end, reaches the backfill, and cannot take
-        // the process down. iOS terminates an app that touches CoreMotion
-        // wrong and a background wake is exactly when nobody is watching.
-        // What the visit event CONTAINS is already covered by the events
-        // contract tests, which build the dictionary directly.
-        plugin.locationManager(CLLocationManager(), didVisit: CLVisit())
-        plugin.locationManager(CLLocationManager(), didVisit: CLVisit())
-        XCTAssertTrue(true, "two visit wakes in a row did not crash the process")
-    }
+    // THERE IS NO VISIT-WAKE TEST HERE, DELIBERATELY (7: deleted, not hidden).
+    //
+    // Two attempts, and CI was right both times. The first asserted the visit
+    // landed in the buffer and failed; I read that as UserDefaults refusing to
+    // serialise the event and weakened the assertion. The second CRASHED the
+    // test runner, took the whole xctest process with it, and dragged an
+    // unrelated passing test into the failure list on the restart.
+    //
+    // The real reason is simpler than either diagnosis: CLVisit is created by
+    // CoreLocation and by nothing else. Its properties are read-only and a
+    // hand-constructed CLVisit() is not a half-filled visit, it is an object
+    // whose internals were never initialised, so reading coordinate or
+    // horizontalAccuracy off it is undefined. The delegate is fine. The
+    // fixture cannot exist.
+    //
+    // WHAT COVERS THE VISIT PATH INSTEAD. The change to didVisit is one line,
+    // the same backfillMotionHistory() call didUpdateLocations got, and that
+    // call has five tests of its own above (the mark never rewinds, it floors
+    // at seven days, it survives garbage, it never throws without a
+    // coprocessor, the freshness window is bounded). The wake-reaches-backfill
+    // shape is covered by testLocationWakeRecordsTheFixAndDoesNotCrash, where
+    // the fixture is a CLLocation and CAN be built properly.
+    //
+    // Do not re-add a CLVisit() test. It does not fail, it takes the suite
+    // down.
 
     func testEmptyLocationWakeIsASafeNoOp() {
         // didUpdateLocations with nothing in it returns before anything else,
