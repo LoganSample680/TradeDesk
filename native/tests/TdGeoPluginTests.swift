@@ -3026,4 +3026,70 @@ extension TdGeoPluginTests {
             XCTAssertEqual(r["source"] as? String, "native")
         }
     }
+
+    // ── THE FLIP'S OWN INSTANT, NOT THE MOMENT IT REACHED US ──────────────
+    //
+    // Owner 2026-09-14. He started driving at 7:46; CoreMotion delivered the
+    // automotive activity at 7:48:16 and the drive was logged as starting
+    // then. Two minutes off the front of every leg, and worse, a DUPLICATE:
+    // motionSince and backfillMotionHistory both report a.startDate, so the
+    // same physical flip reached the server under two instants, the journey
+    // id is minted from the flip instant, and the phone and the server
+    // derived two different journeys for one drive. 6.6 miles logged for a
+    // 3.4 mile trip.
+    //
+    // CMMotionActivity cannot be constructed by hand, the same wall CLVisit
+    // put up above: read-only properties, CoreMotion is the only thing that
+    // makes one, and the delegate closure is not drivable from a test. So the
+    // DECISION was moved into motionEvent() where it can be reached, and this
+    // is what guards it.
+    func testMotionEventCarriesTheActivityStart_notTheDeliveryMoment() {
+        let started = Date().timeIntervalSince1970 * 1000 - 118_000   // his 118s
+        let ev = plugin.motionEvent(startMs: started, kind: "automotive", prev: "walking")
+        XCTAssertEqual(ev["ts"] as? Double, started, accuracy: 0.001,
+                       "ts IS the flip instant; a delivery time here shortens every drive")
+        XCTAssertEqual(ev["kind"] as? String, "automotive")
+        XCTAssertEqual(ev["prevKind"] as? String, "walking")
+        // The delivery moment is kept, because the gap between the two is the
+        // detection latency and that is the number worth watching.
+        let delivered = ev["deliveredAtMs"] as? Double
+        XCTAssertNotNil(delivered)
+        XCTAssertGreaterThan(delivered ?? 0, started,
+                             "delivery cannot precede the activity it delivers")
+        XCTAssertEqual((delivered ?? 0) - started, 118_000, accuracy: 5_000)
+    }
+
+    // The duplicate, stated as the invariant that prevents it: one instant in,
+    // the same instant out, every time. Two reads of one flip must agree or
+    // the deriver mints two journey ids for one drive.
+    func testTheSameFlipInstantAlwaysProducesTheSameStamp() {
+        let t = 1_789_000_000_000.0
+        let a = plugin.motionEvent(startMs: t, kind: "automotive", prev: "still")
+        let b = plugin.motionEvent(startMs: t, kind: "automotive", prev: "still")
+        XCTAssertEqual(a["ts"] as? Double, b["ts"] as? Double)
+        // The flip id is per-event by design: it identifies the REPORT, not the
+        // flip, and nothing downstream may key a journey on it.
+        XCTAssertNotEqual(a["flipId"] as? String, b["flipId"] as? String)
+    }
+
+    func testMotionEventSurvivesJunkInput() {
+        for (ms, kind, prev) in [(0.0, "", ""), (-1.0, "automotive", ""), (Double.greatestFiniteMagnitude, "x", "y")] {
+            let ev = plugin.motionEvent(startMs: ms, kind: kind, prev: prev)
+            XCTAssertEqual(ev["type"] as? String, "motion")
+            XCTAssertEqual(ev["ts"] as? Double, ms)
+            XCTAssertNotNil(ev["deliveredAtMs"] as? Double)
+            XCTAssertFalse(((ev["flipId"] as? String) ?? "").isEmpty)
+        }
+    }
+
+    // Every field ingest-geo stores, present and the right type, so a rename
+    // on either side fails here rather than silently dropping a column.
+    func testMotionEventHasTheShapeIngestGeoStores() {
+        let ev = plugin.motionEvent(startMs: 1_789_000_000_000.0, kind: "still", prev: "automotive")
+        XCTAssertEqual(ev["type"] as? String, "motion")
+        XCTAssertNotNil(ev["ts"] as? Double)
+        XCTAssertNotNil(ev["kind"] as? String)
+        XCTAssertNotNil(ev["prevKind"] as? String)
+        XCTAssertNotNil(ev["flipId"] as? String)
+    }
 }
