@@ -2317,6 +2317,25 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // different things to a route. Reported, never acted on here.
         if drive { ev["drive"] = true }
         record(ev)
+        // ── AND RECOVER WHAT COREMOTION HELD WHILE WE WERE ASLEEP ─────────
+        // Owner 2026-09-14: "I want it live, it should be live by the second."
+        //
+        // backfillMotionHistory() used to run on region crossings only, so a
+        // significant-change wake did exactly what you see above: posted a
+        // fix and went back to sleep, leaving every motion flip since the
+        // last crossing sitting in the coprocessor.
+        //
+        // Measured on both handsets over four days: the phone was awake
+        // within 0 to 3 minutes of nearly every late drive flip. His
+        // 13 September 10:30 automotive flip had a wake 0 minutes after it
+        // and did not reach the server for 137 minutes; 10:38 had one at +2
+        // minutes and took 130. The wake was never the problem.
+        //
+        // Cheap by construction: queryActivityStarting reads from a
+        // persisted mark, so a wake with nothing new since the last one
+        // returns immediately and records nothing. It is the same call the
+        // region path has always made on every crossing.
+        backfillMotionHistory()
     }
 
     // A VISIT is the whole point of the new engine: iOS hands back the arrival
@@ -2339,6 +2358,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             ev["departureTs"] = Double(visit.departureDate.timeIntervalSince1970 * 1000)
         }
         record(ev)
+        // A visit is a wake like any other, and the arrival it reports is
+        // exactly the moment a dwell's flips are worth having.
+        backfillMotionHistory()
     }
 
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

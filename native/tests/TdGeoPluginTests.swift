@@ -1312,6 +1312,66 @@ extension TdGeoPluginTests {
             "the freshness window is the whole guard against inventing a place")
     }
 
+    // ── EVERY WAKE RECOVERS HISTORY, NOT ONLY A CROSSING (owner 2026-09-14)
+    // "I want it live, it should be live by the second."
+    //
+    // backfillMotionHistory() ran on region crossings only, so a
+    // significant-location wake posted its fix and went back to sleep with
+    // every motion flip since the last crossing still in the coprocessor.
+    // Measured on both handsets over four days: the phone was awake within
+    // 0 to 3 minutes of nearly every late drive flip. The 13 September 10:30
+    // automotive flip had a wake 0 minutes after it and took 137 minutes to
+    // reach the server.
+    //
+    // The simulator has no coprocessor, so as the file header says, these
+    // assert the CONTRACT: the wake records what it was woken for, the
+    // backfill is reached, and neither can crash the process.
+
+    func testLocationWakeRecordsTheFixAndDoesNotCrash() {
+        // The significant-change wake, which is the one that was dropping
+        // flips. The fix must land whatever the motion query does after it.
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        plugin.locationManager(CLLocationManager(), didUpdateLocations: [
+            CLLocation(latitude: 39.03, longitude: -95.71)])
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertTrue(buf.contains { ($0["type"] as? String) == "fix" },
+            "the fix is the fact we were woken for and must be buffered")
+    }
+
+    func testVisitWakeRecordsTheVisitAndDoesNotCrash() {
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        plugin.locationManager(CLLocationManager(), didVisit: CLVisit())
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertTrue(buf.contains { ($0["type"] as? String) == "visit" },
+            "the visit must land whatever the coprocessor does afterwards")
+    }
+
+    func testEmptyLocationWakeIsASafeNoOp() {
+        // didUpdateLocations with nothing in it returns before anything else,
+        // so it must not reach the backfill or buffer a fix.
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        plugin.locationManager(CLLocationManager(), didUpdateLocations: [])
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertFalse(buf.contains { ($0["type"] as? String) == "fix" },
+            "no location, no fix, and no crash")
+    }
+
+    func testRepeatedLocationWakesNeverCrashOrRewindTheMark() {
+        // A drive delivers a fix every few seconds and each one now reaches
+        // the backfill. The mark must only ever advance, or every wake
+        // re-sends the same days, and none of them may crash: iOS terminates
+        // a process that touches CoreMotion wrong, and a background wake is
+        // exactly when nobody is watching.
+        let future = Date().timeIntervalSince1970 * 1000
+        UserDefaults.standard.set(future, forKey: markKey)
+        for _ in 0..<10 {
+            plugin.locationManager(CLLocationManager(), didUpdateLocations: [
+                CLLocation(latitude: 39.03, longitude: -95.71)])
+        }
+        XCTAssertGreaterThanOrEqual(UserDefaults.standard.double(forKey: markKey), future,
+            "ten wakes in a row must never move the mark backwards")
+    }
+
     func testRegionWakeRecordsTheCrossingBeforeTheBackfill() {
         // Order matters on a cold wake: the crossing is the fact we were woken
         // for and must be buffered even if the motion query never calls back.
