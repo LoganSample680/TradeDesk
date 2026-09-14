@@ -5333,6 +5333,26 @@ async function _geoTdEvent(ev,replay){
     // odometer, because a push-ping's fix is whatever cached position
     // CLLocationManager happened to be holding.
     if(!replay&&ev.type==='push-ping'){const _v=_geoDriveConfirm(ev);if(_v)_geoParkNote('drive-confirm',_v);}
+    // ── AND THE TAPE RIDES IT TOO (owner 2026-09-14) ──────────────────────
+    // "I want this to run to the exact second, no issues."
+    //
+    // The plugin pushes a flip live when something wakes it, and those land
+    // sub-second. What it does not push waits for _geoTapeSync, which ran
+    // once per page load, so it waited for somebody to OPEN THE APP. On his
+    // 13 September that was five hours for the 13:10 flip and an hour for the
+    // 19:01 one, with eight of these pings going past in between.
+    //
+    // This wake is already up, already doing a version check and a location
+    // confirm, so it carries the tape as well rather than growing a timer of
+    // its own (7.3). Bounded to what is new since the last sweep landed, so
+    // it is a handful of flips, not a week.
+    //
+    // Not awaited: the ping's own work must not wait on an upload, and a
+    // failure here is already a no-op that the next ping or the next boot
+    // picks up.
+    if(!replay&&ev.type==='push-ping'&&typeof _geoTapeSync==='function'){
+      try{Promise.resolve(_geoTapeSync('ping')).catch(()=>{});}catch(_e){}
+    }
     // THE UPDATE RIDES THE WAKE (owner 2026-08-28). Until now new web code
     // reached a phone only when somebody opened the app: the version check
     // fires on foreground resume (js/cloud.js _checkVersionOnResume), so a
@@ -6211,17 +6231,68 @@ const _GEO_STOP_REPAIR_FLAG='td_geo_stop_repair_v1';
 // So: chunk it, and send every chunk.
 const _GEO_TAPE_CHUNK=400;    // ingest-geo's own per-POST cap, matched exactly
 const _GEO_TAPE_MAX=2000;     // what one boot may lift, so a settle stays a settle
-async function _geoTapeSync(){
+// ── AND IT RUNS ON THE PING NOW, NOT ONLY AT BOOT (owner 2026-09-14) ────────
+// "I want this to run to the exact second, no issues."
+//
+// It nearly does, and the half that did not was this function's latch.
+//
+// Measured on his own Saturday: every flip the native plugin pushed at a wake
+// reached the server IN THE SAME SECOND. 10:30:19, 10:45:33, 12:12:12,
+// 12:20:14, 12:43:54, 12:55:43, all sub-second, and fixes, visits and fence
+// crossings run about a second too. The live path was never the problem.
+//
+// But this is the ONLY producer of a `motion` row, it was called from exactly
+// one place (js/cloud.js, at boot), and it latched on window._geoTapeSyncRan,
+// so it ran once per PAGE LOAD. Any flip the plugin did not push live then sat
+// on the handset until somebody opened the app. Same day: flips at 13:10 and
+// 13:33 did not land until 18:13, five hours later, and 19:01 to 19:04 not
+// until 20:01. Both arrival times are app opens. Eight push-pings went by in
+// between (14:38, 15:00, 15:34, 16:00, 16:30, 17:07, 17:35, 18:02) and carried
+// none of it, because nothing on that path had a way to.
+//
+// The ping already wakes the app every half hour and already does work while
+// it is up. So the sweep rides it (7.3: no second timer), and the only new
+// thing is that this function can be asked to run again.
+//
+// BOUNDED, because the boot sweep and the ping sweep are different jobs. Boot
+// lifts a week so a phone that has been shut off catches up. A ping only has
+// to carry what has happened since the last time anything went up, which on a
+// working day is a handful of flips, so it reads from the high-water mark and
+// caps small. A phone that has been quiet for hours still only sends the flips
+// that actually occurred.
+const _GEO_TAPE_PING_MAX=200; // one ping's worth; the boot sweep owns the rest
+const _GEO_TAPE_MARK='zp3_geo_tape_hw';
+function _geoTapeHighWater(){
+  try{const v=Number(localStorage.getItem(_GEO_TAPE_MARK));return v>0?v:0;}catch(_e){return 0;}
+}
+function _geoTapeSetHighWater(ts){
+  try{if(Number(ts)>_geoTapeHighWater())localStorage.setItem(_GEO_TAPE_MARK,String(Math.round(ts)));}catch(_e){}
+}
+// `why` is 'boot' (the once-per-load week sweep) or 'ping' (the light one).
+async function _geoTapeSync(why){
   try{
-    if(window._geoTapeSyncRan)return 0;
-    window._geoTapeSyncRan=true;
+    const ping=String(why||'')==='ping';
+    if(ping){
+      // Not the boot latch: two pings must not overlap, but a ping must be
+      // able to run again in half an hour, which is the entire point.
+      if(window._geoTapePingBusy)return 0;
+      window._geoTapePingBusy=true;
+    }else{
+      if(window._geoTapeSyncRan)return 0;
+      window._geoTapeSyncRan=true;
+    }
+    try{
     if(!_supa||!_supaUser||typeof _SUPA_DIRECT_URL==='undefined')return 0;
     const devId=(typeof _initDeviceId==='function')?_initDeviceId():null;
     let key=null;try{key=localStorage.getItem('zp3_geo_flush_key');}catch(_e){}
     // No key means the plugin's flush was never configured on this device, so
     // there is nothing to authenticate with. A browser lands here too.
     if(!devId||!key)return 0;
-    const since=Date.now()-7*86400000;
+    // A ping carries only what is new; a boot carries the week.
+    const hw0=ping?_geoTapeHighWater():0;
+    const since=ping
+      ? Math.max(hw0+1,Date.now()-7*86400000)
+      : Date.now()-7*86400000;
     const tape=await _geoMotionTape(since,Date.now());
     const batch=[];
     (Array.isArray(tape)?tape:[]).forEach(t=>{
@@ -6242,10 +6313,20 @@ async function _geoTapeSync(){
     });
     if(!batch.length)return 0;
     batch.sort((a,b)=>a.ts-b.ts);
+    // THE MARK IS ENFORCED HERE, not left to the plugin's floor.
+    // _geoMotionTape asks motionSince for `sinceMs - 120000`, deliberately, so
+    // a flip on the boundary is never missed. That back-off also hands back
+    // the last flip already sent, so a ping every half hour would re-upload it
+    // forever: harmless on the server, which dedups, and a lie in the logs
+    // about how much is still pending. Caught by 'the next ping carries only
+    // what is new'.
+    const fresh=hw0?batch.filter(e=>e.ts>hw0):batch;
+    if(!fresh.length)return 0;
     // If a week is bigger than one boot may carry, carry the NEWEST of it.
     // That is the half this whole rewrite exists to stop losing, and an older
     // flip that misses this boot is picked up by the next one.
-    const send=batch.length>_GEO_TAPE_MAX?batch.slice(batch.length-_GEO_TAPE_MAX):batch;
+    const cap=ping?_GEO_TAPE_PING_MAX:_GEO_TAPE_MAX;
+    const send=fresh.length>cap?fresh.slice(fresh.length-cap):fresh;
     let sent=0;
     for(let i=0;i<send.length;i+=_GEO_TAPE_CHUNK){
       const part=send.slice(i,i+_GEO_TAPE_CHUNK);
@@ -6258,10 +6339,16 @@ async function _geoTapeSync(){
       // and every chunk that already landed is a free no-op on the way past.
       if(!(r&&r.ok))break;
       sent+=part.length;
+      // MOVED ONLY BY A CHUNK THE SERVER ACCEPTED. A refused chunk ends the
+      // run (above) and the mark stays where it was, so the next sweep starts
+      // from the last thing that actually landed rather than from what was
+      // merely attempted.
+      _geoTapeSetHighWater(part[part.length-1].ts);
     }
-    _geoParkNote('tape-sync',sent+'/'+send.length+(send.length<batch.length?' (of '+batch.length+')':''));
+    _geoParkNote('tape-sync',(ping?'ping ':'')+sent+'/'+send.length+(send.length<fresh.length?' (of '+fresh.length+')':''));
     return sent;
-  }catch(_e){return 0;}
+    }finally{ if(ping) window._geoTapePingBusy=false; }
+  }catch(_e){try{if(String(why||'')==='ping')window._geoTapePingBusy=false;}catch(_e2){}return 0;}
 }
 // ── THE PLUGIN HAS BEEN COUNTING ALL ALONG, AND NOBODY EVER LOOKED ──────────
 //
