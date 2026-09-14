@@ -305,5 +305,154 @@ test.describe('manual clock over a derived day', () => {
     expect(r.paid).toBe(120);
   });
 
+  // ── THE VIEWER IS NOT THE PERSON (owner report 2026-09-14) ──────────────
+  //
+  // Every test above stamps the automatic rows with the SAME uid the session
+  // is signed in as, so the null-uid clock and the fences always landed in
+  // one bucket and the blend always ran. That is the fixture agreeing with
+  // the code, which is the exact failure the 2026-09-01 note at the top of
+  // _tlBlendManual warned about, one layer up.
+  //
+  // Read a day that belongs to somebody else (the support view: the login is
+  // the owner's, the account on screen is Jack's) and the two came apart. His
+  // clock carries logged_by_uid null and folded under the VIEWER; his drives
+  // and visits carry his own uid and folded under HIM; the bucket with his
+  // rows in it had no clock, so the blend returned before it did anything.
+  // 509 clocked minutes then counted in full on top of the 479 minutes of
+  // driving and site time they already contain.
+  //
+  // His real 14 September, to the minute.
+  test('a day read through the support view still blends: the clock is the bracket, not an extra shift', async () => {
+    const JACK = '987ebc83-1567-49e1-9dd3-b89b0cf9121b';
+    const r = await page.evaluate(async ([JACK, DAY, DAY_START]) => {
+      const T = (h, m) => new Date(DAY_START + h * 3600000 + m * 60000).toISOString();
+      const keepT = timeEntries.slice(), keepF = window._fetchCrewLabor;
+      const keepU = window._supaUser, keepB = window._OPS_BOOT, keepV = window._opsView;
+      const mk = (id, source, a, b, dest) => ({ id, source, job_id: null, client_key: 'd-' + id,
+        employee_user_id: JACK, contractor_user_id: JACK, arrived_at: a, departed_at: b,
+        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), dest_place: dest || null });
+      const entries = [
+        mk('l1', 'drive', T(7, 24), T(7, 48), 'JS Solutions shop'),
+        mk('l2', 'drive', T(7, 59), T(8, 14), 'Bill Lorson'),
+        mk('d1', 'client', T(8, 14), T(9, 22), 'Bill Lorson'),
+        mk('l3', 'drive', T(9, 22), T(9, 42), 'JS Solutions shop'),
+        mk('l4', 'drive', T(9, 55), T(10, 10)),
+        mk('s0', 'unsaved', T(10, 10), T(10, 39)),
+        mk('l5', 'drive', T(10, 39), T(11, 20), 'Bill Lorson'),
+        mk('d2', 'client', T(11, 20), T(15, 43), 'Bill Lorson'),
+      ];
+      const shop = [mk('sh1', 'shop', T(7, 48), T(7, 59)), mk('sh2', 'shop', T(9, 42), T(9, 55))];
+      // The login is the owner; the account being read is Jack's.
+      window._supaUser = { id: 'viewer-owner-uid', email: 'o@t.com' };
+      window._OPS_BOOT = true; window._opsView = { target: JACK };
+      // Exactly how the table holds an employee's clock: no logged_by_uid.
+      window.timeEntries = [{ id: 901, job_id: null, date: DAY, start_time: T(7, 44), end_time: T(16, 13),
+        minutes: 509, logged_by_uid: null, logged_by_name: 'Jack Schonfeldt', open: false }];
+      window._fetchCrewLabor = async () => ({ name: { [JACK]: 'Jack Schonfeldt' }, entries, shopEntries: shop });
+      try {
+        const rows = (await _timeLogRows(null)).filter(x => x.date === DAY);
+        const clock = rows.find(x => x.source === 'manual');
+        return {
+          acting: _tlActingUid(),
+          uids: Array.from(new Set(rows.map(x => String(x.personUid || '')))).sort(),
+          blended: clock ? clock.blendedMin || 0 : -1,
+          clockMin: clock ? clock.minutes : -1,
+          site: rows.filter(x => x.rawSource === 'site').reduce((n, x) => n + x.minutes, 0),
+          paid: rows.reduce((n, x) => n + (x.unpaid ? 0 : x.minutes), 0),
+        };
+      } finally {
+        window.timeEntries = keepT; window._fetchCrewLabor = keepF;
+        window._supaUser = keepU; window._OPS_BOOT = keepB; window._opsView = keepV;
+      }
+    }, [JACK, DAY, DAY_START]);
+    // The identity the page buckets under is the BUSINESS on screen, never
+    // the login. This is the assertion that actually fails without the fix.
+    expect(r.acting).toBe(JACK);
+    // And nothing folded under the viewer: his clock carries no uid, so it
+    // has to land on him.
+    expect(r.uids).toEqual(['', JACK]);
+    // 07:44 to 15:43 is covered end to end by his own rows, so the clock
+    // hands over 479 of its 509 minutes.
+    expect(r.blended).toBe(479);
+    // The 30 minutes after his last row and before he clocked out are the
+    // remainder, named rather than left on the clock (2026-09-04).
+    expect(r.clockMin + r.site).toBe(30);
+    // THE WHOLE POINT. 499 minutes of tracked rows plus the 30 the clock
+    // still explains. Not 988, which is what a clock that never blended
+    // gives: 509 + 479 counted twice over the same afternoon.
+    expect(r.paid).toBe(529);
+  });
+
+  // HIS ACTUAL DAY, ROW FOR ROW OUT OF THE TABLES, duplicate included.
+  // The owner opened it and the Time Log read 19h06m. That is the clock plus
+  // every automatic row with nothing subtracted anywhere.
+  //
+  // THE ANSWER IS THE FENCES, NOT THE CLOCK (owner 2026-09-01: "the fences
+  // are what happened; the clock adds nothing"). His rows start twenty
+  // minutes before he clocked in and run to 15:43 while he clocked out at
+  // 16:13, so what they cover already exceeds the clock: the remainder floors
+  // at zero and the day is the automatic total. A day that comes out at the
+  // CLOCK here would be just as wrong in the other direction.
+  test('Jack\'s 14 September through the support view: the day is his rows, not his rows plus his clock', async () => {
+    const JACK = '987ebc83-1567-49e1-9dd3-b89b0cf9121b';
+    const D = '2026-09-14';
+    const r = await page.evaluate(async ([JACK, D]) => {
+      const keepT = timeEntries.slice(), keepF = window._fetchCrewLabor;
+      const keepU = window._supaUser, keepB = window._OPS_BOOT, keepV = window._opsView;
+      const mk = (key, source, a, b, min, dest) => ({ id: key, source, job_id: null, client_key: key,
+        employee_user_id: JACK, contractor_user_id: JACK,
+        arrived_at: D + 'T' + a + 'Z', departed_at: D + 'T' + b + 'Z', minutes: min,
+        dest_place: dest || null });
+      const entries = [
+        mk('j-mu17spln', 'drive', '12:24:03.226', '12:48:00.805', 24, 'JS Solutions shop'),
+        mk('j-mu1925w4', 'drive', '12:59:23.859', '13:14:01.076', 15, 'Bill Lorson'),
+        // The duplicate, exactly as the table holds it: one physical stop
+        // under two keys, because one derive run split the journey there and
+        // a later one did not. Left in on purpose. The blend has to be right
+        // about the day even while the rows under it are wrong.
+        mk('j-mu1925w4:s0', 'client', '13:14:01.076', '14:22:44.957', 69, 'Bill Lorson'),
+        mk('d-j-mu1925w4', 'client', '13:14:01.076', '14:22:44.957', 69, 'Bill Lorson'),
+        mk('j-mu1c1crh', 'drive', '14:22:44.957', '14:42:25.106', 20, 'JS Solutions shop'),
+        mk('j-mu1d7p2e:0', 'drive', '14:55:40.454', '15:10:09.800', 14, null),
+        mk('j-mu1d7p2e:s0', 'unsaved', '15:10:09.800', '15:39:49.184', 30, null),
+        mk('j-mu1d7p2e:1', 'drive', '15:39:49.184', '16:20:26.286', 41, 'Bill Lorson'),
+        mk('d-j-mu1ffssg', 'client', '16:20:26.286', '20:43:12.679', 263, 'Bill Lorson'),
+      ];
+      const shop = [
+        mk('d-j-mu17x5hf', 'shop', '12:48:00.805', '12:59:23.860', 11),
+        mk('d-j-mu1c1crh', 'shop', '14:42:25.107', '14:55:40.454', 13),
+      ];
+      window._supaUser = { id: 'viewer-owner-uid', email: 'o@t.com' };
+      window._OPS_BOOT = true; window._opsView = { target: JACK };
+      window.timeEntries = [{ id: 1789389874109, job_id: null, date: D,
+        start_time: D + 'T12:44:34.110Z', end_time: D + 'T21:13:31.312Z',
+        minutes: 509, logged_by_uid: null, logged_by_name: 'Jack Schonfeldt', open: false }];
+      window._fetchCrewLabor = async () => ({ name: { [JACK]: 'Jack Schonfeldt' }, entries, shopEntries: shop });
+      try {
+        const rows = (await _timeLogRows(null)).filter(x => x.date === D);
+        const clock = rows.find(x => x.source === 'manual');
+        return {
+          autoSum: entries.concat(shop).reduce((n, e) => n + e.minutes, 0),
+          clockMin: clock ? clock.minutes : -1,
+          blended: clock ? clock.blendedMin || 0 : -1,
+          paid: rows.reduce((n, x) => n + (x.unpaid ? 0 : x.minutes), 0),
+        };
+      } finally {
+        window.timeEntries = keepT; window._fetchCrewLabor = keepF;
+        window._supaUser = keepU; window._OPS_BOOT = keepB; window._opsView = keepV;
+      }
+    }, [JACK, D]);
+    // The rows on the table, as they stand, duplicate and all.
+    expect(r.autoSum).toBe(569);
+    // The clock hands over everything it can and keeps nothing: his rows
+    // already cover more of it than it has minutes.
+    expect(r.clockMin).toBe(0);
+    // The day is what the phone watched. NOT 569 + 509 = 1078, which is what
+    // a blend that never ran produces, and not 509 either.
+    expect(r.paid).toBe(r.autoSum);
+    expect(r.paid).toBe(569);
+    expect(r.paid).not.toBe(569 + 509);
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'blend'); });
 });

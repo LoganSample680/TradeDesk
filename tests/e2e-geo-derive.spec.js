@@ -2247,6 +2247,64 @@ test.describe('geo-derive: the day deriver', () => {
       expect(rows.td_mileage[0].calc_method).toContain('derived-');
     });
 
+    // ── EACH SEGMENT NAMES ITS OWN ENDS (owner report 2026-09-14) ───────
+    //
+    // Jack's Sunday. Journey j-987ebc83-mu1d7p2e split at a stop nobody had
+    // saved, so the rail drew two drive rows, and BOTH read "JS Solutions
+    // shop to Bill Lorson": once at 9:55 and again at 10:39, with the
+    // half-hour stop sitting between them saying it was an unsaved address.
+    // One trip, claimed twice, and neither row was it.
+    //
+    // The labels came off the mileage row, which is deliberately ONE row for
+    // the whole collapsed leg (rule 6, directly above), so its from_name and
+    // to_name are the JOURNEY's ends and describe no segment of a split one.
+    // The deriver names them here instead.
+    test('a split leg carries the ends of each segment, not the journey\'s twice over', async () => {
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape, fixes, fences: F, nowMs: T(18, 0) }));
+      const leg = rows.td_mileage[0];
+      // Five drives, five pairs of ends, in the order the drives happened.
+      expect(leg.segEnds).toEqual([
+        { from: '1200 SW Oakley Ave', to: '' },
+        { from: '', to: '' },
+        { from: '', to: '' },
+        { from: '', to: '' },
+        { from: '', to: '7402 SW 22nd Ct' },
+      ]);
+      // The journey's own ends are unchanged, and so are the miles: this adds
+      // a fact, it does not move one.
+      expect([leg.from_name, leg.to_name]).toEqual(['1200 SW Oakley Ave', '7402 SW 22nd Ct']);
+      // N indexes the same way the ':N' drive rows do, which is what lets the
+      // rail read them without guessing.
+      const drives = rows.job_time_entries.filter(t => t.source === 'drive')
+        .sort((a, b) => Date.parse(a.arrived_at) - Date.parse(b.arrived_at));
+      expect(drives.map(d => d.client_key)).toEqual([0, 1, 2, 3, 4].map(i => leg.legKey + ':' + i));
+      // Only the end that IS the destination carries its name, exactly as
+      // dest_place already does on the rows themselves.
+      expect(drives.map(d => d.dest_place)).toEqual(
+        leg.segEnds.map(e => e.to || null));
+    });
+
+    // An unsplit leg has one segment, and its ends ARE from_name and to_name.
+    // Saying so twice would be two places to keep in step for no gain.
+    test('a leg that never split carries no segment ends at all', async () => {
+      const t = [mo(T(11, 0), 'onFoot'), mo(T(12, 4), 'automotive'), mo(T(12, 40), 'onFoot')];
+      const f = [fix(T(12, 4, 5), { lat: DS.lat, lng: DS.lng }),
+        fix(T(12, 40, 5), { lat: JH.lat, lng: JH.lng }), fix(T(13, 30), { lat: JH.lat, lng: JH.lng })];
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+      expect(rows.td_mileage).toHaveLength(1);
+      expect(rows.td_mileage[0].segEnds).toBeUndefined();
+      const drives = rows.job_time_entries.filter(x => x.source === 'drive');
+      expect(drives).toHaveLength(1);
+      // No ':N' on a single-segment leg, so nothing to index.
+      expect(drives[0].client_key).toBe(rows.td_mileage[0].legKey);
+    });
+
     // ── A stop must be still ────────────────────────────────────────────
     // Owner 2026-09-04: "no way somebody ever hops from a drive to a damn
     // bike lol."
