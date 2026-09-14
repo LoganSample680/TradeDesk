@@ -5356,6 +5356,21 @@ async function _geoTdEvent(ev,replay){
   }
   if(ev.type==='sampling'){
     if(ev.mode!=='drive'&&_geoDriveWinAt){_geoDriveWinAt=0;_geoDriveWinWhy='';_geoDriveWinAskedAt=0;}
+    // AND THE PLUGIN CAN OPEN ONE NOW, TOO (owner 2026-09-14). It arms the
+    // dense window itself on an automotive flip, because a backgrounded
+    // WebView on iOS is a SUSPENDED one and JS was not there to ask. If JS
+    // kept believing nothing was open, nothing on this side would ever close
+    // it: the 30-minute confirmer and every park path key off _geoDriveWinAt,
+    // so the window would run all the way to the plugin's safety cap even
+    // though the truck parked ten minutes in. A live row is adopted here; a
+    // relaunch that missed the row entirely is caught by samplingState() in
+    // _geoTdInit. A REPLAY is history and must never re-open anything.
+    if(!replay&&ev.mode==='drive'&&!_geoDriveWinAt){
+      _geoDriveWinAt=Number(ev.ts)||Date.now();
+      _geoDriveWinWhy='native';
+      _geoDriveWinAskedAt=_geoDriveWinAt;
+      _geoParkNote('drive-window-adopt','native flip');
+    }
     if(!replay)_geoParkNote('sampling',String(ev.mode||'')+(ev.reason?' ('+ev.reason+')':''));
     return;
   }
@@ -5827,6 +5842,30 @@ function _geoTdInit(){
   // Anything that fired while the WebView was asleep or the app was dead
   // (region monitoring relaunches a killed app) replays oldest-first, awaited
   // one at a time so the fence machine sees them in order.
+  // ── A WINDOW THIS SIDE DID NOT OPEN (owner 2026-09-14) ───────────────────
+  // The plugin arms the drive window on its own now, so JS can boot, or come
+  // back from a WebView reload, into a radio that is already up. Without this
+  // it would believe nothing was open and never close it, because every close
+  // path (park, the 30-minute confirmer, the leg) keys off _geoDriveWinAt.
+  //
+  // samplingState() was built for exactly this question and already answers
+  // it in one call (7.3): no new state, no second source of truth. Anchored
+  // at the window's REAL start, from the cap it was given and what is left of
+  // it, so the cap and the re-assert throttle both measure from when the
+  // radio actually came up rather than from this boot.
+  try{
+    if(typeof Td.samplingState==='function'){
+      Promise.resolve(Td.samplingState()).then(st=>{
+        if(!st||st.mode!=='drive'||_geoDriveWinAt)return;
+        const cap=Number(st.maxMs)||_GEO_DRIVE_WIN_CAP_MS;
+        const left=Math.max(0,Math.min(cap,Number(st.remainingMs)||0));
+        _geoDriveWinAt=Date.now()-(cap-left);
+        _geoDriveWinWhy='native';
+        _geoDriveWinAskedAt=_geoDriveWinAt;
+        _geoParkNote('drive-window-adopt','native, '+Math.round(left/60000)+'m left');
+      },()=>{});
+    }
+  }catch(_e){}
   try{
     if(typeof Td.drainBuffer==='function'){
       Promise.resolve(Td.drainBuffer()).then(r=>{

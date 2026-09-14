@@ -978,7 +978,8 @@ final class TdGeoPluginTests: XCTestCase {
 
     // ── App lifecycle + silent push (owner 2026-08-27) ──────────────────────
 
-    private func bufferCount(ofType t: String) -> Int {
+    // Not private: read from the extensions at the end of this file too.
+    func bufferCount(ofType t: String) -> Int {
         let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
         return buf.filter { ($0["type"] as? String) == t }.count
     }
@@ -2882,10 +2883,12 @@ extension TdGeoPluginTests {
     // reason, trigger, source), because a ledger the server cannot read is
     // no better than the counters it replaces.
 
-    private func radio(_ session: String) -> [[String: Any]] {
+    // Not private: the self-arm extension at the end of this file reads the
+    // same two helpers rather than growing its own copies (7.3).
+    func radio(_ session: String) -> [[String: Any]] {
         plugin.radioRowsForTest().filter { ($0["session"] as? String) == session }
     }
-    private func onOff(_ rows: [[String: Any]]) -> [Bool] {
+    func onOff(_ rows: [[String: Any]]) -> [Bool] {
         rows.compactMap { $0["on"] as? Bool }
     }
 
@@ -3096,5 +3099,304 @@ extension TdGeoPluginTests {
         XCTAssertNotNil(ev["kind"] as? String)
         XCTAssertNotNil(ev["prevKind"] as? String)
         XCTAssertNotNil(ev["flipId"] as? String)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE FLIP ARMS THE RADIO ITSELF (owner 2026-09-14)
+//
+// He drove 7:48:16 to 7:54:20 and the trip produced four GPS fixes and not
+// one radio row. Nothing was broken: arming the dense window was a JS
+// decision, and on iOS "backgrounded" means SUSPENDED, so the WebView never
+// ran and never asked. The plugin had the automotive flip in its hand at
+// 12:48:16.133 and had it on the server by 12:48:16.527, then went back to
+// sleep because nobody told it to stream.
+//
+// The TRIGGER is now native and NOTHING ELSE IS (§3.2). What a drive costs
+// is still whatever JS last pushed through setSampling, kept in
+// driveCfgKey; when a drive ENDS is still entirely JS's call; and a device
+// that has never been told either does nothing at all. These tests are
+// mostly about that second half, because a plugin that quietly invents its
+// own thresholds is the failure mode §3.2 exists to prevent.
+//
+// The live CoreMotion closure that calls selfArmDrive cannot be driven from
+// a test: CMMotionActivity's properties are read-only and CoreMotion is the
+// only thing that makes one, the same wall CLVisit put up further up this
+// file. So the DECISION is a plain function and the tests call it, exactly
+// the shape motionEvent(startMs:kind:prev:) already uses.
+// ═══════════════════════════════════════════════════════════════════════════
+extension TdGeoPluginTests {
+
+    private var driveCfgKey: String { plugin.driveCfgKeyForTest }
+    private var armedKeyForSelfArm: String { "td_geo_armed" }
+
+    /// The real-world state the self-arm exists for: tracking armed, a recipe
+    /// JS has pushed at some point, and no window open right now.
+    private func seedDriveRecipe(maxMs: Double = 45 * 60_000, filter: Double = 30,
+                                 flushMs: Double = 20_000, accuracy: String = "ten") {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        let on = expectation(description: "js arms the window once")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "maxMs": maxMs,
+                                              "distanceFilter": filter, "flushMs": flushMs,
+                                              "accuracy": accuracy, "reason": "seed"],
+                                    onSuccess: { _ in on.fulfill() }))
+        wait(for: [on], timeout: 30)
+        let off = expectation(description: "and closes it again")
+        plugin.setSampling(makeCall(options: ["mode": "coarse", "reason": "seed done"],
+                                    onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+    }
+
+    private func clearSelfArmState() {
+        UserDefaults.standard.removeObject(forKey: armedKeyForSelfArm)
+    }
+
+    // ── The golden path ──────────────────────────────────────────────────────
+
+    func testSelfArm_opensTheWindowOnJsTermsAndSaysNativeOnTheLedger() {
+        // Spelled out as Double constants and compared against the same
+        // constants: a bare numeric literal on the right of an XCTAssertEqual
+        // against a Double? is exactly the kind of inference argument that
+        // costs a ten-minute macOS run to discover.
+        let maxMs: Double = 40 * 60_000
+        let filter: Double = 45
+        let flushMs: Double = 25_000
+        seedDriveRecipe(maxMs: maxMs, filter: filter, flushMs: flushMs, accuracy: "ten")
+        XCTAssertFalse(plugin.driveSamplingOnForTest(), "the seed must leave the window closed")
+        plugin.clearBufferForTest()
+
+        plugin.selfArmDriveForTest(kind: "automotive")
+
+        XCTAssertTrue(plugin.driveSamplingOnForTest(),
+                      "an automotive flip with a recipe on file must open the window with nobody asking")
+        let rows = radio("drive")
+        XCTAssertEqual(onOff(rows), [true], "one flip, one ON row")
+        XCTAssertEqual(rows.first?["trigger"] as? String, "native",
+                       "the whole point of the row: which side armed the radio")
+        XCTAssertEqual(rows.first?["source"] as? String, "native")
+        XCTAssertEqual(rows.first?["reason"] as? String, "motion: automotive")
+        XCTAssertEqual(rows.first?["accuracy"] as? String, "ten",
+                       "the tier JS chose, never a tier Swift picked")
+
+        // And the window itself runs on JS's numbers, not on the plugin's.
+        let st = expectation(description: "samplingState")
+        plugin.samplingState(makeCall(onSuccess: { data in
+            XCTAssertEqual(data?["maxMs"] as? Double, maxMs)
+            XCTAssertEqual(data?["distanceFilter"] as? Double, filter)
+            XCTAssertEqual(data?["flushMs"] as? Double, flushMs)
+            XCTAssertEqual(data?["accuracy"] as? String, "ten")
+            st.fulfill()
+        }))
+        wait(for: [st], timeout: 30)
+        clearSelfArmState()
+    }
+
+    // ── No recipe, no invention ─────────────────────────────────────────────
+
+    func testSelfArm_withNothingEverPushedDoesNothingAtAll() {
+        // The §3.2 line in one test. A shell that has never been told what a
+        // drive costs must not guess one, because a guess here is a number
+        // nobody can tune without a 15-minute macOS build.
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        UserDefaults.standard.removeObject(forKey: driveCfgKey)
+        plugin.clearBufferForTest()
+
+        plugin.selfArmDriveForTest(kind: "automotive")
+
+        XCTAssertFalse(plugin.driveSamplingOnForTest(), "no recipe means no window")
+        XCTAssertTrue(radio("drive").isEmpty, "and no ledger row for a window that never opened")
+        clearSelfArmState()
+    }
+
+    func testSelfArm_junkRecipeIsRefusedRatherThanPartlyBelieved() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        let junk: [[String: Any]] = [
+            ["maxMs": "soon", "filter": "far", "flushMs": "later", "accuracy": 9],
+            ["accuracy": "ten"],                                   // nothing numeric at all
+            ["maxMs": 40 * 60_000.0, "filter": 30.0],              // flushMs missing
+            [:]
+        ]
+        for bad in junk {
+            UserDefaults.standard.set(bad, forKey: driveCfgKey)
+            plugin.clearBufferForTest()
+            plugin.selfArmDriveForTest(kind: "automotive")
+            XCTAssertFalse(plugin.driveSamplingOnForTest(),
+                           "a half-written recipe is not a recipe: \(bad)")
+            XCTAssertTrue(radio("drive").isEmpty)
+        }
+        UserDefaults.standard.removeObject(forKey: driveCfgKey)
+        clearSelfArmState()
+    }
+
+    func testDriveRecipe_isReClampedOnTheWayOutOfDefaults() throws {
+        // UserDefaults is not a contract. It holds whatever an older build, a
+        // migration, or a corrupted write left behind, so every number is
+        // bounded again on read rather than trusted because it was bounded
+        // once on write.
+        let high: [String: Any] = ["maxMs": 999_999_999_999.0, "filter": 9999.0,
+                                   "flushMs": 1.0, "accuracy": "ten"]
+        UserDefaults.standard.set(high, forKey: driveCfgKey)
+        let cfg = try XCTUnwrap(plugin.driveCfgForTest())
+        XCTAssertEqual(cfg.maxMs, TdGeoPlugin.samplingCapCeilingMsForTest,
+                       "a week-long window is the exact failure the cap exists to prevent")
+        XCTAssertEqual(cfg.filter, 200)
+        XCTAssertEqual(cfg.flushMs, TdGeoPlugin.flushDebounceFloorMsForTest)
+        XCTAssertEqual(cfg.accuracy, "ten")
+
+        let lowCfg: [String: Any] = ["maxMs": 1.0, "filter": 0.0, "flushMs": 999_999_999.0,
+                                     "accuracy": 7]
+        UserDefaults.standard.set(lowCfg, forKey: driveCfgKey)
+        let low = try XCTUnwrap(plugin.driveCfgForTest())
+        XCTAssertEqual(low.maxMs, TdGeoPlugin.samplingCapFloorMsForTest)
+        XCTAssertEqual(low.filter, 5)
+        XCTAssertEqual(low.flushMs, TdGeoPlugin.flushDebounceCeilingMsForTest)
+        XCTAssertEqual(low.accuracy, "best", "an accuracy that is not a string falls back, never crashes")
+        UserDefaults.standard.removeObject(forKey: driveCfgKey)
+    }
+
+    // ── Only a drive is a drive ─────────────────────────────────────────────
+
+    func testSelfArm_onlyAutomotiveArmsAnything() {
+        seedDriveRecipe()
+        plugin.clearBufferForTest()
+        // "driving" and "onFoot" are the HISTORY query's vocabulary
+        // (motionSince); the live stream says "automotive" and "walking". Two
+        // spellings for one fact is how the server once ended up able to see
+        // that a transition happened and never what it was, so the self-arm
+        // matches exactly the one the live stream emits.
+        for kind in ["walking", "still", "cycling", "running", "onFoot", "driving",
+                     "", "AUTOMOTIVE", "automotive ", "unknown"] {
+            plugin.selfArmDriveForTest(kind: kind)
+            XCTAssertFalse(plugin.driveSamplingOnForTest(), "\(kind) is not a drive")
+        }
+        XCTAssertTrue(radio("drive").isEmpty, "and none of them touched the ledger")
+        clearSelfArmState()
+    }
+
+    // ── Never twice ─────────────────────────────────────────────────────────
+
+    func testSelfArm_cannotDoubleArmAWindowJsAlreadyOpened() {
+        // The race that matters in the field: JS IS awake, it armed the window
+        // on the same flip, and the plugin must not open a second one behind
+        // it. One window, one ON row, one cap.
+        seedDriveRecipe()
+        let js = expectation(description: "js arms on the flip")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "reason": "motion walking->automotive"],
+                                    onSuccess: { _ in js.fulfill() }))
+        wait(for: [js], timeout: 30)
+        plugin.clearBufferForTest()
+
+        for _ in 0..<10 { plugin.selfArmDriveForTest(kind: "automotive") }
+
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "the window JS opened is still open")
+        XCTAssertTrue(radio("drive").isEmpty,
+                      "ten flips against an open window wrote nothing: the ledger is what the radio DID")
+        clearSelfArmState()
+    }
+
+    func testSelfArm_repeatedFlipsAreOneWindowNotAStack() {
+        // Same guard-race shape as §11.2, from the other side: the plugin
+        // arming itself N times must leave ONE window and ONE cap.
+        seedDriveRecipe()
+        plugin.clearBufferForTest()
+        for _ in 0..<10 { plugin.selfArmDriveForTest(kind: "automotive") }
+        XCTAssertEqual(onOff(radio("drive")), [true], "ten flips, one window, one row")
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+
+        // And JS's close still ends it, however it was opened.
+        let off = expectation(description: "js closes a window it did not open")
+        plugin.setSampling(makeCall(options: ["mode": "coarse", "reason": "park"],
+                                    onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+        XCTAssertEqual(onOff(radio("drive")), [true, false])
+        clearSelfArmState()
+    }
+
+    // ── Tracking off means tracking off ─────────────────────────────────────
+
+    func testSelfArm_afterStopAllDoesNothing() {
+        seedDriveRecipe()
+        let stopped = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(options: ["reason": "sign out"], onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        plugin.clearBufferForTest()
+
+        plugin.selfArmDriveForTest(kind: "automotive")
+
+        XCTAssertFalse(plugin.driveSamplingOnForTest(),
+                       "a stray CoreMotion callback after sign-out must never turn the receiver back on")
+        XCTAssertTrue(radio("drive").isEmpty)
+    }
+
+    // ── The recipe outlives everything ──────────────────────────────────────
+
+    func testDriveRecipe_survivesTheWindowClosingAndTheCapFiringAndAStopAll() {
+        // If the recipe died with the window, the self-arm would work exactly
+        // once per app launch and then silently stop, which is the kind of
+        // half-working nobody notices for a week.
+        seedDriveRecipe()
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+        XCTAssertTrue(plugin.driveCfgStoredForTest(), "a closed window must not take the recipe with it")
+
+        plugin.expireSamplingCapForTest()
+        XCTAssertTrue(plugin.driveCfgStoredForTest(), "nor may the safety cap")
+
+        let stopped = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        XCTAssertTrue(plugin.driveCfgStoredForTest(), "nor may a sign-out")
+    }
+
+    func testSelfArm_worksAgainAfterTheWindowItOpenedHasClosed() {
+        // Drive, park, drive again. The second flip must be as good as the
+        // first without JS ever waking up in between.
+        seedDriveRecipe()
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+        plugin.expireSamplingCapForTest()
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+
+        plugin.selfArmDriveForTest(kind: "automotive")
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "the second drive of the day is not a special case")
+        XCTAssertEqual(onOff(radio("drive")), [true, false, true])
+        clearSelfArmState()
+    }
+
+    // ── The half-hourly ping pulls the tape (owner 2026-09-14) ──────────────
+    // Every other wake already pulled the coprocessor's history on the way
+    // past. This one did not, and it is the only wake that arrives on a
+    // schedule rather than on movement. It merely looked fine because a BLIND
+    // ping buys a burst whose fixes reach didUpdateLocations; a phone holding
+    // a fresh position bought no burst and pulled nothing.
+    //
+    // The simulator has no coprocessor (see the file header), so what is
+    // asserted is the contract: the ping still records what it was woken for,
+    // it reaches the backfill, and running it five times in a row can neither
+    // rewind the mark nor crash the process.
+    func testSilentPush_pullsTheTapeWithoutRewindingTheMarkOrCrashing() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        plugin.load()
+        let mark = plugin.motionMarkKeyForTest
+        let future = Date().timeIntervalSince1970 * 1000
+        UserDefaults.standard.set(future, forKey: mark)
+        let before = bufferCount(ofType: "push-ping")
+
+        for _ in 0..<5 {
+            NotificationCenter.default.post(name: Notification.Name("TdSilentPush"),
+                                            object: nil, userInfo: ["td": "geo-ping"])
+        }
+
+        let settled = expectation(description: "five pings settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            XCTAssertGreaterThan(self.bufferCount(ofType: "push-ping"), before,
+                                 "the ping is still a liveness row first")
+            XCTAssertGreaterThanOrEqual(UserDefaults.standard.double(forKey: mark), future,
+                                        "the tape pull must never re-send history a previous wake already took")
+            settled.fulfill()
+        }
+        wait(for: [settled], timeout: 30)
+        clearSelfArmState()
     }
 }

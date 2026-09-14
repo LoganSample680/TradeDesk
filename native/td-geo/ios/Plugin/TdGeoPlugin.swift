@@ -175,6 +175,18 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     //
     // {mode:"drive", startedAtMs, maxMs, filter}. Absent means coarse.
     private let samplingKey = "td_geo_sampling"
+    // ── WHAT A DRIVE COSTS, AS JS LAST DEFINED IT (owner 2026-09-14) ────────
+    // samplingKey above is the window that is OPEN right now and is deleted
+    // the moment it closes. This is the recipe, and it outlives every window:
+    // {maxMs, filter, flushMs, accuracy, atMs}, exactly the numbers the last
+    // setSampling({mode:"drive"}) carried.
+    //
+    // It exists so the plugin can re-open a window on its own (selfArmDrive)
+    // without ever inventing a threshold of its own (3.2). Every number in it
+    // came from js/geo-track.js and is still tunable from there with a UAT
+    // roll; only the TRIGGER moved into Swift. No recipe, no self-arm: a shell
+    // that has never been told what a drive costs does not get to guess.
+    private let driveCfgKey = "td_geo_drive_cfg"
     private var samplingCapTimer: Timer?
     // When the CURRENT process started paying for the drive window. Separate
     // from startedAtMs above: that one anchors the cap across relaunches, this
@@ -674,41 +686,123 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let accuracy = (call.getString("accuracy") ?? "best").lowercased()
         let reason = reasonOf(call)
         DispatchQueue.main.async {
-            let d = UserDefaults.standard
-            let already = self.driveSamplingOn()
-            // The cap is refreshed from NOW on every re-assert, which is the
-            // whole point of JS re-asserting: a drive that is still happening
-            // keeps buying itself more window, a drive that stopped does not.
-            d.set(["mode": "drive",
-                   "startedAtMs": Date().timeIntervalSince1970 * 1000,
-                   "maxMs": maxMs,
-                   "filter": filter,
-                   "flushMs": flushMs,
-                   "accuracy": accuracy], forKey: self.samplingKey)
-            if !already {
-                self.driveRadioStartedAt = Date()
-                self.countWake("drive-on")
-                // On the tape like everything else, so the server can see the
-                // window open and close and nobody has to trust a comment.
-                self.record(["type": "sampling", "mode": "drive",
-                             "ts": Double(Date().timeIntervalSince1970 * 1000)])
-                self.radioLog("drive", on: true, accuracy: accuracy, reason: reason, trigger: "js")
-                // The window owns the radio now; the wake bounds stand down.
-                self.wakeCancelTimers()
-            }
-            let m = self.mgr()
-            // A burst already owns the receiver at Best accuracy; leave it, and
-            // endBurst will hand over to the window rather than going dark.
-            if self.burstStartedAt == nil {
-                m.desiredAccuracy = TdGeoPlugin.accuracyConstant(accuracy)
-                m.distanceFilter = filter
-                m.startUpdatingLocation()
-            }
-            self.armSamplingCap(maxMs)
+            // The recipe outlives the window. Written on every drive assert,
+            // never cleared when one closes, and read by nothing but
+            // selfArmDrive. See driveCfgKey.
+            UserDefaults.standard.set(["maxMs": maxMs, "filter": filter,
+                                       "flushMs": flushMs, "accuracy": accuracy,
+                                       "atMs": Date().timeIntervalSince1970 * 1000],
+                                      forKey: self.driveCfgKey)
+            self.armDrive(maxMs: maxMs, filter: filter, flushMs: flushMs,
+                          accuracy: accuracy, reason: reason, trigger: "js")
             call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": maxMs,
                           "distanceFilter": filter, "flushMs": flushMs,
                           "accuracy": accuracy])
         }
+    }
+
+    // ── ONE ARMING PATH, TWO TRIGGERS (7.3) ─────────────────────────────────
+    // Everything about HOW the window behaves is identical whoever opened it:
+    // same persisted state, same ledger row, same cap, same idempotence. The
+    // only difference is `trigger`, which says which side moved, so the owner
+    // can read straight off geo_events whether JS was awake for a given drive
+    // or the plugin armed itself.
+    //
+    // Idempotent for the same reason setSampling always was: JS re-asserts a
+    // live window every few minutes to refresh the cap, and a re-assert must
+    // never restart the radio clock or stack a second timer.
+    private func armDrive(maxMs: Double, filter: Double, flushMs: Double,
+                          accuracy: String, reason: String, trigger: String) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async {
+                self.armDrive(maxMs: maxMs, filter: filter, flushMs: flushMs,
+                              accuracy: accuracy, reason: reason, trigger: trigger)
+            }
+            return
+        }
+        let d = UserDefaults.standard
+        let already = driveSamplingOn()
+        // The cap is refreshed from NOW on every re-assert, which is the
+        // whole point of JS re-asserting: a drive that is still happening
+        // keeps buying itself more window, a drive that stopped does not.
+        d.set(["mode": "drive",
+               "startedAtMs": Date().timeIntervalSince1970 * 1000,
+               "maxMs": maxMs,
+               "filter": filter,
+               "flushMs": flushMs,
+               "accuracy": accuracy], forKey: samplingKey)
+        if !already {
+            driveRadioStartedAt = Date()
+            countWake("drive-on")
+            // Counted separately as well, so stats() can say how many of a
+            // day's drives the plugin caught on its own.
+            if trigger == "native" { countWake("drive-on-native") }
+            // On the tape like everything else, so the server can see the
+            // window open and close and nobody has to trust a comment.
+            record(["type": "sampling", "mode": "drive",
+                    "ts": Double(Date().timeIntervalSince1970 * 1000)])
+            radioLog("drive", on: true, accuracy: accuracy, reason: reason, trigger: trigger)
+            // The window owns the radio now; the wake bounds stand down.
+            wakeCancelTimers()
+        }
+        let m = mgr()
+        // A burst already owns the receiver at Best accuracy; leave it, and
+        // endBurst will hand over to the window rather than going dark.
+        if burstStartedAt == nil {
+            m.desiredAccuracy = TdGeoPlugin.accuracyConstant(accuracy)
+            m.distanceFilter = filter
+            m.startUpdatingLocation()
+        }
+        armSamplingCap(maxMs)
+    }
+
+    // The recipe, re-clamped on the way out. UserDefaults is not a contract:
+    // it can hold whatever an older build wrote, so every number is bounded
+    // again here rather than trusted because it was bounded once.
+    // Returns nil when JS has never asked for a drive window on this device.
+    private func driveCfg() -> (maxMs: Double, filter: Double, flushMs: Double, accuracy: String)? {
+        guard let c = UserDefaults.standard.dictionary(forKey: driveCfgKey),
+              let rawMax = num(c["maxMs"]),
+              let rawFilter = num(c["filter"]),
+              let rawFlush = num(c["flushMs"]) else { return nil }
+        return (min(max(rawMax, TdGeoPlugin.samplingCapFloorMs), TdGeoPlugin.samplingCapCeilingMs),
+                min(max(rawFilter, 5), 200),
+                min(max(rawFlush, TdGeoPlugin.flushDebounceFloorMs), TdGeoPlugin.flushDebounceCeilingMs),
+                (c["accuracy"] as? String) ?? "best")
+    }
+
+    // ── THE FLIP ARMS THE RADIO ITSELF (owner 2026-09-14) ───────────────────
+    // He drove 7:48:16 to 7:54:20 and the whole trip produced FOUR fixes and
+    // not one radio row. Nothing was broken. Arming the dense window was a JS
+    // decision, every radio row in geo_events reads trigger "js", and on iOS
+    // "backgrounded" means SUSPENDED: the WebView was not running, so
+    // _geoTdEvent never saw the automotive flip and never asked for the
+    // receiver. The plugin had the flip in its hand at 12:48:16.133 and
+    // flushed it at 12:48:16.527, a third of a second, and then went back to
+    // sleep because nobody told it to stream.
+    //
+    // So the TRIGGER moves here and nothing else does. No threshold is
+    // invented: what a drive costs is whatever JS last pushed (driveCfgKey),
+    // when a drive ENDS is still entirely JS's call, and a device that has
+    // never been told either does nothing at all rather than guessing.
+    //
+    // Deliberately only the LIVE stream, never backfillMotionHistory: a
+    // recovered flip is by definition in the past, and deciding how old is
+    // still "driving" is a threshold, which is JS's (_geoTapeSaysDriving
+    // already holds that number).
+    private func selfArmDrive(kind: String) {
+        guard kind == "automotive" else { return }
+        // Tracking off means tracking off. stopAll stops the activity stream,
+        // but stopActivityUpdates does not promise there is no callback
+        // already dispatched to main behind it, and a sign-out that turns the
+        // receiver back on is the one outcome nobody could explain.
+        guard trackingArmed() else { return }
+        // JS is awake and got here first, or we already did. Either way the
+        // window is open and re-arming would only churn UserDefaults.
+        guard !driveSamplingOn() else { return }
+        guard let c = driveCfg() else { return }
+        armDrive(maxMs: c.maxMs, filter: c.filter, flushMs: c.flushMs,
+                 accuracy: c.accuracy, reason: "motion: automotive", trigger: "native")
     }
 
     // samplingState() : what the radio is actually doing, for a JS layer that
@@ -1445,6 +1539,15 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // runs, without waiting for either.
     var samplingKeyForTest: String { samplingKey }
     func driveSamplingOnForTest() -> Bool { driveSamplingOn() }
+    // The self-arm. The live CoreMotion closure that calls it cannot be driven
+    // from a test (CMMotionActivity has read-only properties and CoreMotion is
+    // the only thing that makes one, the same wall CLVisit put up), so the
+    // DECISION is a plain function and this is how the tests reach it, exactly
+    // the shape motionEvent(startMs:kind:prev:) already uses.
+    var driveCfgKeyForTest: String { driveCfgKey }
+    func selfArmDriveForTest(kind: String) { selfArmDrive(kind: kind) }
+    func driveCfgStoredForTest() -> Bool { driveCfg() != nil }
+    func driveCfgForTest() -> (maxMs: Double, filter: Double, flushMs: Double, accuracy: String)? { driveCfg() }
     func expireSamplingCapForTest() { endDriveSampling(reason: "cap") }
     func restoreSamplingWindowForTest() { restoreSamplingWindow() }
     var heartbeatKeepaliveForTest: Bool { heartbeatKeepalive }
@@ -1655,6 +1758,28 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // record() persists and schedules the flush; the AppDelegate holds
         // the completion handler open long enough for the upload to start.
         record(ev)
+        // ── AND THE PING PULLS THE TAPE (owner 2026-09-14) ────────────────
+        // Measured over five days: of 280 motion flips only 17 reached the
+        // server inside five seconds, and 208 of the late ones landed within
+        // ninety seconds of an app-active row, meaning they waited for him to
+        // OPEN THE APP. The flush was never the holdup. CoreMotion does not
+        // deliver a live activity update to a suspended process, so the flip
+        // is not recorded at all until something gives this process runtime;
+        // once it is recorded it goes out in under a second (measured on his
+        // phone 2026-09-14: recorded 12:48:16.133, sent 12:48:16.527, while
+        // backgrounded).
+        //
+        // Every other wake already pulls the coprocessor's history on the way
+        // past (region crossings, significant-change fixes, visits). This one
+        // did not, and it is the ONLY wake that arrives on a schedule rather
+        // than on movement: half-hourly, from push-geo-ping, whether the truck
+        // moved or not. It only appeared to work because a BLIND ping buys a
+        // burst, whose fixes reach didUpdateLocations; a phone holding a fresh
+        // cached position buys no burst and so pulled nothing.
+        //
+        // Cheap by construction: queryActivityStarting reads from a persisted
+        // mark, so a ping with nothing new since the last one records nothing.
+        backfillMotionHistory()
     }
     private static let blindPingBurstSec: Double = 4
     private static let blindPingStaleMs: Double = 5 * 60_000
@@ -1853,6 +1978,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 ev["fixAgeMs"] = Date().timeIntervalSince(l.timestamp) * 1000
             }
             self.countWake("motion-" + kind)
+            // THE RADIO, BEFORE THE ROW. An automotive flip reaching this
+            // closure means the process is running right now, which is the
+            // only moment the receiver can be turned up at all; the tape row
+            // goes out in the same flush either way. See selfArmDrive.
+            self.selfArmDrive(kind: kind)
             self.record(ev)
         }
     }

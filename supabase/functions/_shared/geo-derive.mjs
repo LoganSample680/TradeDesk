@@ -2054,6 +2054,33 @@ function geoDeriveRows(result, ids) {
     // nothing. Shown, never claimed, which is the same answer rule 14 gives
     // on the mileage side, in the same words.
     const hs = l.held === true ? '-held' : '';
+    // ── EACH SEGMENT NAMES ITS OWN ENDS (owner report 2026-09-14) ─────────
+    // Jack's Sunday read "JS Solutions shop to Bill Lorson" at 9:55 and then
+    // again at 10:39, for the two halves of one journey that split at a stop
+    // nobody saved. Neither row was that drive. The first ran shop to the
+    // stop, the second stop to Bill Lorson, and the half-hour between them
+    // was already sitting on the rail as its own Unsaved address row saying
+    // so. The same trip, claimed three times, twice under the wrong ends.
+    //
+    // Nothing in this file was wrong about the DRIVE: `dest_place` above is
+    // already per segment, null for one that ends at a stop. The labels came
+    // from the mileage row, which is deliberately ONE row for the whole
+    // collapsed leg (rule 6, the direct route through a personal stop), so
+    // its from_name and to_name are the JOURNEY's ends and describe no
+    // segment but a single-segment leg's. The reader had nothing else to
+    // read, so it read the wrong thing.
+    //
+    // So the deriver says it, once, here: the ordered ends of every segment,
+    // on the leg the reader already has in hand. An interior end is '' and
+    // means exactly what the stop row between the two drives means, that
+    // nobody saved it. The MILES are untouched: still one collapsed leg at
+    // the direct route between the two saved fences, which is rule 6 and is
+    // correct. Only the time rows stop borrowing labels that were never
+    // theirs.
+    const segEnds = segs.map((sg, i) => ({
+      from: i === 0 ? (l.from.name || '') : '',
+      to: i === segs.length - 1 ? (l.to.name || '') : '',
+    }));
     segs.forEach((sg, i) => {
       const a = Number(sg[0]), b = Number(sg[1]);
       if (!(a > 0 && b > a)) return;
@@ -2112,7 +2139,13 @@ function geoDeriveRows(result, ids) {
       id: l.id, legKey: l.id, gps: true, date: result.day,
       from: l.from.addr || l.from.name || '', from_name: l.from.name || '',
       to: l.to.addr || l.to.name || '', to_name: l.to.name || '',
-    }, l.traced ? {
+    }, segs.length > 1 ? {
+      // The ends of each drive segment, in order (see segEnds above). Only
+      // on a leg that actually split: a single-segment leg's ends ARE
+      // from_name and to_name, and the rail already reads those. N indexes
+      // the same way the ':N' drive rows and ':sN' stop rows do.
+      segEnds,
+    } : {}, l.traced ? {
       // THE ROW IS SHOWN, THE MILES ARE NOT CLAIMED (owner 2026-09-08: "only
       // things with addresses saved should update any totals"). Every total
       // in the app goes through addressedTrips (js/mileage.js), which drops

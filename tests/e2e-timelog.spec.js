@@ -5112,6 +5112,59 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // 'unsaved-held'. The rail must say what they WERE, because the person
   // reading it knows where he went and "Visit" would be a lie about a drive;
   // and no total may claim a minute of them.
+  // ── EACH SEGMENT OF A SPLIT DRIVE NAMES ITS OWN ENDS ────────────────────
+  // Owner report 2026-09-14, Jack's Sunday: journey j-987ebc83-mu1d7p2e split
+  // at a stop nobody had saved, and the rail drew "JS Solutions shop to Bill
+  // Lorson" at 9:55 AND again at 10:39, with the half-hour stop between them
+  // saying it was an unsaved address. One trip, claimed twice, and neither row
+  // was that trip.
+  //
+  // The labels came off the mileage row. There is deliberately ONE of those
+  // per leg (rule 6: a collapsed leg is the direct route through a personal
+  // stop), so its from_name and to_name are the JOURNEY's ends. The deriver
+  // now writes segEnds alongside them (js/geo-derive.js); this reads it.
+  test.describe('a split drive says where each half actually went', () => {
+    const render = (r, legs) => page.evaluate(([x, L]) => {
+      const keep = window.mileage;
+      window.mileage = L;
+      try { return String(_tlRailRow(x)); } finally { window.mileage = keep; }
+    }, [r, legs]);
+    const DRIVE = (over) => Object.assign({ source: 'auto', rawSource: 'drive', minutes: 15,
+      date: '2026-09-14', personUid: null, detail: 'Drive time', rawId: 'srv-1',
+      clientName: 'Destination not saved', destUnsaved: true,
+      startTime: '2026-09-14T14:55:00Z', endTime: '2026-09-14T15:10:00Z' }, over || {});
+    const LEG = { legKey: 'j-mu1d7p2e', date: '2026-09-14',
+      from_name: 'JS Solutions shop', to_name: 'Bill Lorson',
+      segEnds: [{ from: 'JS Solutions shop', to: '' }, { from: '', to: 'Bill Lorson' }] };
+
+    test('the two halves read shop to the stop, then the stop to the client', async () => {
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e:0' }), [LEG]);
+      const second = await render(DRIVE({ clientKey: 'j-mu1d7p2e:1', clientName: 'Bill Lorson',
+        destUnsaved: false, rawId: 'srv-2' }), [LEG]);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+      expect(second).toContain('Unsaved address → Bill Lorson');
+      // The bug, stated as the assertion: neither half may claim the whole.
+      expect(first).not.toContain('JS Solutions shop → Bill Lorson');
+      expect(second).not.toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('a leg that never split is untouched: its ends ARE the row\'s ends', async () => {
+      const plain = await render(DRIVE({ clientKey: 'j-mu1d7p2e', clientName: 'Bill Lorson',
+        destUnsaved: false }), [LEG]);
+      expect(plain).toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('a segment written before segEnds existed borrows nothing', async () => {
+      // Every row already on the table. The leg's ends are the journey's, so
+      // the row says what it knows about itself until the next derive of that
+      // day rewrites the leg.
+      const old = Object.assign({}, LEG); delete old.segEnds;
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e:0' }), [old]);
+      expect(first).not.toContain('→');
+      expect(first).toContain('Destination not saved');
+    });
+  });
+
   test.describe('a held drive is still a drive, and still earns nothing', () => {
     // The reader is exercised through the two pure functions the rail is made
     // of, rather than a whole fake day: what a row is (_tlRailKind) and how it

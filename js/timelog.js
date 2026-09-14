@@ -353,7 +353,15 @@ function _tlBlendManual(rows){
   // reason (_tlEmpWeekAgg and _tlEmpAccHtml follow the same rule); it reads
   // _tlLastCid, which is only set at render time, so this resolves the same
   // fact from the session instead. Same rule, one place earlier (7.3).
-  const _me=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)?String(_supaUser.id):'owner';
+  //
+  // AND IT IS THE BUSINESS, NOT THE LOGIN (owner report 2026-09-14). This
+  // read _supaUser.id, which is the person holding the phone, not the account
+  // the page is showing. Reading a crew member's day through the support view
+  // put his null-uid clock under the VIEWER and his GPS rows under HIM, two
+  // buckets, no manual row in his, and the early return below meant the blend
+  // never ran at all: 509 clocked minutes counted in full on top of the 479
+  // minutes of drives and site time they contain. See _tlActingUid.
+  const _me=String(_tlActingUid()||'owner');
   const byPerson={};
   rows.forEach(r=>{
     if(!r||!r.startTime||!r.endTime)return;
@@ -1509,6 +1517,16 @@ function _tlRailRow(r){
     const _legId=r.clientKey?String(r.clientKey).replace(/:\d+$/,''):'';
     const leg=isDrive&&_legId&&typeof mileage!=='undefined'&&Array.isArray(mileage)
       ?mileage.find(x=>x&&String(x.legKey)===_legId):null;
+    // WHICH SEGMENT THIS IS, AND WHAT THE DERIVER CALLED ITS ENDS (owner
+    // report 2026-09-14). A leg that split at an unsaved stop is still ONE
+    // mileage row, so from_name and to_name are the whole journey's ends and
+    // every segment was titled with them: Jack's Sunday said "shop to Bill
+    // Lorson" at 9:55 and again at 10:39 for two halves of one trip. The
+    // deriver names each segment's own ends now (js/geo-derive.js, segEnds);
+    // this reads them. An interior end comes back '' and is the same unsaved
+    // stop the row between the two drives already says it is.
+    const _segM=r.clientKey?String(r.clientKey).match(/:(\d+)$/):null;
+    const _segE=(leg&&_segM&&Array.isArray(leg.segEnds))?leg.segEnds[Number(_segM[1])]:null;
     // A manual clock against no job has nothing to name, and _tlJobClientInfo
     // returns the bare '-' placeholder for that. A row whose title is a hyphen
     // tells the reader nothing about the one row on the day they created by
@@ -1533,9 +1551,20 @@ function _tlRailRow(r){
     // anywhere admitting the address was never saved. An audit turns on
     // exactly that distinction: 'On site' over a saved client, this over a
     // stretch the clock vouched for and no fence could name.
-    const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
-                 :(kind==='site'?''
+    const _fallTtl=(kind==='site'?''
                  :(_bareName||r.addr||(r.source==='manual'?'Clocked in':m.word)));
+    // '' from the deriver means nobody saved that end, which is the same word
+    // the stop row sitting between two segments already shows.
+    const _arrow=(a,b)=>(a||'—')+' → '+(b||'—');
+    const ttl=_segE?_arrow(_segE.from||'Unsaved address',_segE.to||'Unsaved address')
+             // A leg the deriver did NOT split: its two ends are the row's two
+             // ends, which is what this always was.
+             :(leg&&!_segM)?_arrow(leg.from_name,leg.to_name||r.clientName)
+             // A segment written before segEnds existed. The leg's ends are
+             // the journey's, not this row's, so the row says what it knows
+             // about itself instead of borrowing them. The next derive of that
+             // day rewrites the leg and the arrow comes back.
+             :_fallTtl;
     // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
     // put tradedesk shop under the sub title that already says it ... can
     // just do the start and end time under there").
@@ -2555,6 +2584,27 @@ function _tlDrillPerson(uid,wk){
 // clicked long after the render that drew them.
 let _tlLastCid=null;
 function _tlRowUid(r){return String((r&&r.personUid)||_tlLastCid);}
+// ── WHOSE BUSINESS IS THIS SESSION LOOKING AT ─────────────────────────────
+// A manual clock carries logged_by_uid null and folds under "the account",
+// so every screen that buckets rows has to answer that question, and until
+// now two of them answered it with the raw auth uid. That is the one thing
+// js/data.js _effectiveUid exists to stop ("never raw _supaUser.id"): an
+// owner reading another account through the support or ops view has his OWN
+// auth uid while every row on the page belongs to somebody else's business.
+// The clock then bucketed under the viewer and the GPS rows under the person
+// the day is about, so the blend found no clock in that person's bucket and
+// returned before it ran. The clock sat at its full value beside the fences
+// it was supposed to absorb: Jack's 14 September, a 509-minute clock on top
+// of 479 minutes of tracked rows, 988 minutes for an 8h29m day.
+//
+// _effectiveUid returns the identical value in every ordinary session (an
+// owner's own uid, a crew login's employer), so this changes nothing except
+// the case it is for. One function, asked once, used by both.
+function _tlActingUid(){
+  return (typeof _effectiveUid==='function'&&_effectiveUid())||
+         (typeof _contractorUserId!=='undefined'&&_contractorUserId)||
+         (typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+}
 function _tlDrillUp(){
   if(_tlDrill.level==='day')_tlDrillTo('week',_tlDrill.wk);
   else if(_tlDrill.level==='week')_tlDrillTo('month',_tlDrill.mo);
@@ -3428,7 +3478,10 @@ async function renderTimeLog(opts){
   _tlSkelShown=true;
   const canComp=typeof _canViewComp==='function'&&_canViewComp();
   const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
-  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+  // The same identity the blend folds a null-uid clock under (_tlActingUid):
+  // asked once, so the rail and the blend can never disagree about whose row
+  // a clock is.
+  const cid=_tlActingUid();
   // "You," for filtering Me scope and tagging your own row in Team scope:
   // your real auth uid if you're an employee, else the contractor/owner id
   // (manual owner rows carry personUid:null, which _tlEmpWeekAgg already
