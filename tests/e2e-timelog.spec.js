@@ -1044,15 +1044,140 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(out.hasFix, 'the word "Fix" is gone').toBe(false);
       expect(out.hasEdit, 'and the control reads Edit, like a manual clock').toBe(true);
     }
-    // The dialog says the same thing the manual one does.
-    const src = await page.evaluate(() => String(_openFixAutoEntry));
-    expect(src).toContain('Edit time entry');
-    expect(src).not.toContain('Fix clock times');
-    expect(src).toContain('>Start</label>');
-    expect(src).toContain('>End</label>');
+    // AMENDED 2026-09-14 (10.4). This read the tracked dialog's source and
+    // checked it said the same things the manual one did, because there were
+    // two of them and keeping their words in step was a standing hazard. They
+    // are one function now, so "the same" is true by construction and reading
+    // the source proves nothing about it. What is still worth pinning is the
+    // WORDS themselves, so this asserts them on the merged function.
+    // RENDERED, not read off the source. The two fields are built by a helper
+    // now, so the old substring check would have passed on a function that
+    // drew nothing at all. Opening it proves the labels reach the screen.
+    const dlg = await page.evaluate(async () => {
+      const id = 7770001;
+      timeEntries.push({ id, job_id: null, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z',
+        end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null,
+        logged_by_name: 'Owner (me)', open: false });
+      try {
+        await _tlEditEntry('manual', id);
+        const ov = document.querySelector('.zmodal-overlay');
+        const html = ov ? ov.innerHTML : '';
+        if (ov) ov.remove();
+        return html;
+      } finally { timeEntries = timeEntries.filter(e => e.id !== id); }
+    });
+    expect(dlg).toContain('Edit time entry');
+    expect(dlg).not.toContain('Fix clock times');
+    expect(dlg).toContain('>Start</label>');
+    expect(dlg).toContain('>End</label>');
+    // And there is genuinely only one: the two old names are gone, not
+    // wrappers left behind (7).
+    const gone = await page.evaluate(() => ({
+      openEdit: typeof window._openEditTimeEntry,
+      openFix: typeof window._openFixAutoEntry,
+      saveEdit: typeof window._saveEditedTimeEntry,
+      saveFix: typeof window._saveFixedAutoEntry,
+    }));
+    expect(gone).toEqual({ openEdit: 'undefined', openFix: 'undefined',
+      saveEdit: 'undefined', saveFix: 'undefined' });
   });
 
-  test.describe('_tlCanFixAuto / _openFixAutoEntry', () => {
+  // ── THE BUG THE MERGE FIXED (owner 2026-09-14) ───────────────────────────
+  // The manual editor prefilled and parsed with getTimezoneOffset, which is
+  // the DEVICE's zone. The tracked one used business time and its comment said
+  // why: "prefilling in the device's zone would hand someone a wrong baseline
+  // to correct from the moment they left the state." Merging them settled it
+  // the tracked one's way for both.
+  //
+  // The clock pin (5.2.2) makes this testable at all: the page's idea of now
+  // is pinned, so business time and the runner's zone are a known distance
+  // apart rather than whatever the board's machine happens to be set to.
+  test.describe('an edited clock is business time, never the device\'s', () => {
+    const open = (id, startIso, endIso) => page.evaluate(async ([i, s2, e2]) => {
+      timeEntries.push({ id: i, job_id: null, date: '2026-01-01', start_time: s2, end_time: e2,
+        minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+      try {
+        await _tlEditEntry('manual', i);
+        const v = {
+          start: document.getElementById('tle-start').value,
+          end: document.getElementById('tle-end').value,
+          expectStart: _tlBizInputValue(s2),
+          expectEnd: _tlBizInputValue(e2),
+        };
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return v;
+      } finally { timeEntries = timeEntries.filter(x => x.id !== i); }
+    }, [id, startIso, endIso]);
+
+    test('a manual clock prefills in business time, like a tracked row always did', async () => {
+      const v = await open(7770010, '2026-01-01T15:00:00.000Z', '2026-01-01T19:30:00.000Z');
+      expect(v.start).toBe(v.expectStart);
+      expect(v.end).toBe(v.expectEnd);
+    });
+
+    test('what it prefills is what it reads back, so a save with no edit changes nothing', async () => {
+      // The round trip is the part that actually protects a payroll record: if
+      // the field is filled in one clock and parsed in another, opening an
+      // entry and pressing Save moves it, without anybody typing a thing.
+      const r = await page.evaluate(async () => {
+        const id = 7770011;
+        const startIso = '2026-01-01T15:00:00.000Z', endIso = '2026-01-01T19:30:00.000Z';
+        timeEntries.push({ id, job_id: null, date: '2026-01-01', start_time: startIso, end_time: endIso,
+          minutes: 270, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+        const realSave = window.saveAll, realRender = window.renderTimeLog;
+        window.saveAll = () => {}; window.renderTimeLog = () => {};
+        try {
+          await _tlEditEntry('manual', id);
+          await _tlSaveEntry('manual', id);
+          const e = timeEntries.find(x => x.id === id);
+          return { start: e.start_time, end: e.end_time, minutes: e.minutes,
+                   wantStart: startIso, wantEnd: endIso };
+        } finally {
+          timeEntries = timeEntries.filter(x => x.id !== id);
+          window.saveAll = realSave; window.renderTimeLog = realRender;
+          document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        }
+      });
+      expect(r.start).toBe(r.wantStart);
+      expect(r.end).toBe(r.wantEnd);
+      expect(r.minutes).toBe(270);
+    });
+
+    test('an overnight manual clock is allowed; a tracked row that crosses midnight is not', async () => {
+      // The one rule that stayed kind-specific, and deliberately. A derived
+      // row is produced a day at a time, so one spanning two days is a typo.
+      // A manual clock on at 10pm and off at 6am is an ordinary call-out.
+      const r = await page.evaluate(() => ({
+        manual: _tlEditValidate(new Date('2026-01-01T04:00:00Z'), new Date('2026-01-01T12:00:00Z'), 'manual'),
+        auto: _tlEditValidate(new Date('2026-01-01T04:00:00Z'), new Date('2026-01-01T12:00:00Z'), 'auto'),
+      }));
+      // 22:00 to 06:00 Central, which is one calendar day apart.
+      expect(r.manual.ok, 'an overnight shift is real work').toBe(true);
+      expect(r.auto.ok, 'a derived row spanning two days is a typo').toBeUndefined();
+      expect(r.auto.msg).toMatch(/same day/);
+    });
+
+    test('over 24 hours is refused for both, which never was kind-specific', async () => {
+      const r = await page.evaluate(() => ({
+        manual: _tlEditValidate(new Date('2026-01-01T00:00:00Z'), new Date('2026-01-02T01:00:00Z'), 'manual'),
+        auto: _tlEditValidate(new Date('2026-01-01T00:00:00Z'), new Date('2026-01-02T01:00:00Z'), 'auto'),
+      }));
+      expect(r.manual.msg).toMatch(/24 hours/);
+      expect(r.auto.msg).toMatch(/24 hours/);
+    });
+
+    test('junk times are refused rather than saved, for either kind', async () => {
+      const r = await page.evaluate(() => [
+        _tlEditValidate(null, null, 'manual'),
+        _tlEditValidate(new Date('x'), new Date('y'), 'manual'),
+        _tlEditValidate(new Date('2026-01-01T10:00:00Z'), new Date('2026-01-01T10:00:00Z'), 'auto'),
+        _tlEditValidate(new Date('2026-01-01T11:00:00Z'), new Date('2026-01-01T10:00:00Z'), 'auto'),
+      ].map(x => !!x.ok));
+      expect(r).toEqual([false, false, false, false]);
+    });
+  });
+
+  test.describe('_tlCanFixAuto / _tlEditEntry on a tracked row', () => {
     const withComp = (fn) => page.evaluate(async (body) => {
       const saved = window._canViewComp;
       window._canViewComp = () => true;
@@ -1115,15 +1240,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }) };
       window.showToast = () => {}; window.renderTimeLog = () => {};
       try {
-        await _openFixAutoEntry(row.id);
-        const opened = !!document.getElementById('tlf-start');
+        await _tlEditEntry('auto',row.id);
+        const opened = !!document.getElementById('tle-start');
         // Typed in BUSINESS time, which is what the dialog reads now and what
         // a person sitting in the truck actually types. Filling the field via
         // the runner's own zone was the same assumption that shifted the
         // owner's log an hour when he flew to Denver.
-        if (endIso) document.getElementById('tlf-end').value = _tlBizInputValue(endIso);
-        await _saveFixedAutoEntry(row.id);
-        const err = document.getElementById('tlf-err');
+        if (endIso) document.getElementById('tle-end').value = _tlBizInputValue(endIso);
+        await _tlSaveEntry('auto',row.id);
+        const err = document.getElementById('tle-err');
         const out = { opened, updates, errShown: !!(err && err.style.display === 'block'), errMsg: err ? err.textContent : '' };
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         return out;
@@ -2443,7 +2568,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
           await renderTimeLog();
           const bannerHtml = document.getElementById('tl-open').innerHTML;
           const listHtml = document.getElementById('tl-list').innerHTML;
-          return { inBanner: bannerHtml.includes('Currently clocked in'), inHistory: listHtml.includes('_openEditTimeEntry(' + id + ')') };
+          // AMENDED 2026-09-14 (10.4). This used to look for the edit handler
+          // in the rendered history, which worked while every editable row
+          // carried an inline onclick. The rail draws one three-dot per row
+          // and builds the menu on the click instead, so there is no handler
+          // in the markup to look for and that test would now pass for the
+          // wrong reason. The entry's own id is the honest thing to search
+          // for: the open entry must not be drawn as a row anywhere.
+          return { inBanner: bannerHtml.includes('Currently clocked in'), inHistory: listHtml.includes(String(id)) };
         } finally { timeEntries = timeEntries.filter(e => e.id !== id); }
       });
       expect(r.inBanner).toBe(true);
@@ -5126,17 +5258,24 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.off).toContain('notwork');
     });
 
-    test('Edit from a tracked row opens the tracked-row dialog, not the manual one', async () => {
+    // AMENDED 2026-09-14 (10.4). There were two functions when this was
+    // written and the test's whole job was proving the menu picked the right
+    // ONE. There is one now (_tlEditEntry), so the same question is whether
+    // the menu tells it the right KIND, which is the only thing that still
+    // decides where the row is read and written.
+    test('Edit tells the one editor which kind of row it is', async () => {
       const r = await page.evaluate(async () => {
         const calls = [];
-        const realFix = window._openFixAutoEntry, realEdit = window._openEditTimeEntry;
-        window._openFixAutoEntry = (id) => { calls.push(['auto', id]); };
-        window._openEditTimeEntry = (id) => { calls.push(['manual', id]); };
+        const real = window._tlEditEntry;
+        window._tlEditEntry = (kind, id) => { calls.push([kind, id]); return Promise.resolve(); };
         await _tlRowMenuDo('fixauto', 'srv-77');
         await _tlRowMenuDo('edit', '1788872335123');
-        window._openFixAutoEntry = realFix; window._openEditTimeEntry = realEdit;
+        window._tlEditEntry = real;
         return calls;
       });
+      // A tracked row's id is a uuid and stays a string; a manual one is a
+      // number in the local array and the dataset hands back a string, hence
+      // the parseInt on that branch only.
       expect(r).toEqual([['auto', 'srv-77'], ['manual', 1788872335123]]);
     });
   });

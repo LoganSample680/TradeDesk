@@ -1024,67 +1024,181 @@ function _tlCanFixAuto(r){
   if(!(/^(geofence|place)$/.test(s)||/^(geofence|place)-/.test(s)))return false;
   return !!(typeof _canViewComp==='function'&&_canViewComp());
 }
-// Correct a GPS row's clock. Same modal shape and the same validation as
-// _openEditTimeEntry (js/jobs.js) for manual rows (§7.3, one edit experience,
-// not two), but this row lives in job_time_entries on the server rather than
-// in the local timeEntries array, so it is read and written directly.
-// Values are re-read from the server on open rather than trusted from the
-// rendered table, which may be a sweep behind.
-async function _openFixAutoEntry(rowId){
-  if(!(typeof _canViewComp==='function'&&_canViewComp()))return;
-  if(!window._supa||!window._supaUser)return;
+// ── ONE EDITOR FOR BOTH KINDS OF ROW (owner 2026-09-14) ────────────────────
+// "Can we combine the three dots and the edit in one function?"
+//
+// There used to be two: _openEditTimeEntry (js/jobs.js) for a manual clock and
+// _openFixAutoEntry here for a tracked row. They drew the same dialog, said
+// the same words and validated nearly the same rules, in two copies, and the
+// comment on each of them said the two "cannot become one" because a manual
+// clock lives in the local timeEntries array and a tracked row lives in
+// job_time_entries on the server.
+//
+// That was true about WHERE THE ROW IS and false about everything else, and
+// the copies had already drifted three ways in the app's favour exactly
+// nowhere:
+//
+//   1. THE TIMEZONE, which is a live bug and the reason this is worth doing.
+//      The tracked dialog prefills and parses in BUSINESS time and says why:
+//      "prefilling in the device's zone would hand someone a wrong baseline to
+//      correct from the moment they left the state." The manual one used
+//      getTimezoneOffset, which is the device's zone, so editing a clock from
+//      out of state silently moved it by the difference.
+//   2. The tracked one refused an entry that starts and ends on different
+//      days. The manual one let one through, which is how a clock becomes two
+//      days at once.
+//   3. Two different sentences for the same over-24-hours refusal.
+//
+// So the dialog, the validation and the clock are ONE function, and the only
+// thing that forks is the two lines that know where a row is read and where it
+// is written. `kind` is 'manual' or 'auto' and nothing else branches on it
+// except those two, plus Delete, which stays manual-only for the reason it
+// always was: a derived row is rewritten by the next rebuild, so a delete
+// button on one would look like it worked and then quietly undo itself.
+//
+// The ids are the manual pair's (tle-*) rather than the tracked pair's, for no
+// better reason than that they had the wider test coverage already.
+const _TL_EDIT_IDS={start:'tle-start',end:'tle-end',err:'tle-err'};
+// Business time, never the device's. See divergence 1 above.
+function _tlEditToInput(iso){
+  return (typeof _tlBizInputValue==='function')?_tlBizInputValue(iso):'';
+}
+// The rules an edited entry has to satisfy. Returns {ok} or {msg}, never
+// throws, never touches the DOM.
+//
+// ONE OF THEM IS KIND-SPECIFIC, and it is the one thing about these two
+// dialogs that was NOT drift. Merging them, the tracked editor's same-day rule
+// looked like a check the manual one was simply missing. It is not: the two
+// rows mean different things by a span that crosses midnight.
+//
+// A DERIVED row is produced one day at a time by the deriver, so a corrected
+// one that starts on Tuesday and ends on Wednesday is a typo by construction,
+// and the rule catches it. A MANUAL clock is a person saying when they worked,
+// and an overnight call-out, on at 10pm and off at 6am, is ordinary work in
+// every trade this app serves. Refusing that would have been a new restriction
+// on payroll entry smuggled in under a refactor, so it stays where it was.
+//
+// Caught by 'accepts a span of exactly 24 hours (boundary, not over)', which
+// is nine months older than either of these dialogs.
+function _tlEditValidate(start,end,kind){
+  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start){
+    return {msg:'End must be after start.'};
+  }
+  const mins=Math.round((end.getTime()-start.getTime())/60000);
+  // The physical-impossibility rule the Time Log flags days by (owner rule
+  // 2026-08-24), and this one IS shared: a hand-typed correction must not be
+  // able to create the very thing the flag exists to catch, in either store.
+  if(mins>1440)return {msg:'That\'s over 24 hours for one entry, check the dates.'};
+  if(kind!=='manual'&&typeof _bizDateStr==='function'&&_bizDateStr(start)!==_bizDateStr(end)){
+    return {msg:'An entry has to start and end on the same day.'};
+  }
+  return {ok:true,mins:Math.max(1,mins)};
+}
+// Read what is in the two fields, as business time.
+function _tlEditRead(){
+  const sEl=document.getElementById(_TL_EDIT_IDS.start),eEl=document.getElementById(_TL_EDIT_IDS.end);
+  const toIso=v=>(typeof _tlBizInputToIso==='function')?_tlBizInputToIso(v):v;
+  const sIso=sEl?toIso(sEl.value):null,eIso=eEl?toIso(eEl.value):null;
+  return {start:sIso?new Date(sIso):null,end:eIso?new Date(eIso):null};
+}
+function _tlEditErr(msg){
+  const el=document.getElementById(_TL_EDIT_IDS.err);
+  if(el){el.textContent=msg;el.style.display='block';}
+}
+// WHERE A ROW IS. The only thing `kind` decides, besides Delete.
+async function _tlEditLoad(kind,id){
+  if(kind==='manual'){
+    const list=(typeof timeEntries!=='undefined'&&Array.isArray(timeEntries))?timeEntries:[];
+    const e=list.find(x=>x&&x.id===id);
+    if(!e)return null;
+    // Still running: clock out first, then edit. A half-open entry has no end
+    // to correct.
+    if(e.open)return null;
+    if(!(typeof _isMyTimeEntry==='function'&&_isMyTimeEntry(e))&&
+       !(typeof _canViewComp==='function'&&_canViewComp()))return null;
+    return {start:e.start_time,end:e.end_time,who:String(e.logged_by_name||''),sub:''};
+  }
+  if(!(typeof _canViewComp==='function'&&_canViewComp()))return null;
+  if(!window._supa||!window._supaUser)return null;
   let row=null;
   try{
     const{data,error}=await _supa.from('job_time_entries')
-      .select('id,arrived_at,departed_at,job_id,dest_place').is('deleted_at',null).eq('id',String(rowId)).maybeSingle();
+      .select('id,arrived_at,departed_at,job_id,dest_place').is('deleted_at',null).eq('id',String(id)).maybeSingle();
     if(!error)row=data;
   }catch(_e){}
-  if(!row||!row.arrived_at){if(typeof showToast==='function')showToast('Could not load that entry');return;}
+  if(!row||!row.arrived_at)return null;
   const info=(typeof _tlJobClientInfo==='function')?_tlJobClientInfo(row.job_id):{clientName:'-'};
   const who=(info&&info.clientName&&info.clientName!=='-')?info.clientName:(row.dest_place||'this visit');
+  // The subtitle is the one thing the tracked dialog says that the manual one
+  // does not, and it earns its place: it says where these times came from.
+  return {start:row.arrived_at,end:row.departed_at||row.arrived_at,who,sub:', tracked by GPS'};
+}
+async function _tlEditEntry(kind,id){
+  const k=(kind==='manual')?'manual':'auto';
+  const row=await _tlEditLoad(k,id);
+  if(!row){
+    // Only the server path can fail in a way worth saying out loud; a manual
+    // row that is missing, still running or not this person's is a control
+    // that should never have been drawn, and a toast about it would be noise.
+    if(k==='auto'&&typeof showToast==='function')showToast('Could not load that entry');
+    return;
+  }
   document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
-  // Business time, not the phone's: prefilling in the device's zone would hand
-  // someone a wrong baseline to "correct" from the moment they left the state.
-  const toLocalInput=iso=>_tlBizInputValue(iso);
-  // Titled and labelled exactly like the manual dialog (js/jobs.js
-  // _openEditTimeEntry) so the two read as one screen. Only the subtitle
-  // differs, and it earns its place: it says where these times came from.
-  // No Delete here, deliberately, and it is not an oversight: a derived row
-  // is rewritten by the next rebuild, so a delete button would look like it
-  // worked and then quietly undo itself. The way to remove one is to correct
-  // the day it came from.
+  const fld=(lab,fid,val)=>
+    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">'+lab+'</label>'+
+      '<input type="datetime-local" id="'+fid+'" value="'+val+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Edit time entry</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(who)+', tracked by GPS</div>'+
-    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Start</label>'+
-      '<input type="datetime-local" id="tlf-start" value="'+toLocalInput(row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">End</label>'+
-      '<input type="datetime-local" id="tlf-end" value="'+toLocalInput(row.departed_at||row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div id="tlf-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(row.who)+escHtml(row.sub)+'</div>'+
+    fld('Start',_TL_EDIT_IDS.start,_tlEditToInput(row.start))+
+    fld('End',_TL_EDIT_IDS.end,_tlEditToInput(row.end))+
+    '<div id="'+_TL_EDIT_IDS.err+'" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
-      '<button onclick="_saveFixedAutoEntry(\''+escHtml(String(rowId))+'\')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
-    '</div>';
+      '<button onclick="_tlSaveEntry(\''+k+'\',\''+escHtml(String(id))+'\')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>'+
+    // Owner 2026-08-31: "add a delete button to the edit button on manual
+    // clock out things". On its OWN row, below the pair, with a rule above it,
+    // never a third column beside Save: the two are one thumb-width apart on a
+    // phone and one of them destroys a payroll record (15.1).
+    //
+    // MANUAL ONLY, and not an oversight: a derived row is rewritten by the
+    // next rebuild, so a delete here would look like it worked and then
+    // quietly undo itself. The way to remove one is "Not work" in the menu,
+    // which the server actually keeps.
+    (k==='manual'
+      ? '<div style="border-top:1px solid var(--border2);margin-top:14px;padding-top:12px">'+
+        '<button onclick="_deleteTimeEntryFromModal('+id+')" style="width:100%;padding:11px;border-radius:var(--r);border:1px solid var(--c-red-edge,#E3B7B7);background:transparent;color:#A32D2D;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">'+svgIcon('🗑',{size:14})+' Delete this entry</button>'+
+      '</div>'
+      : '');
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
 }
-async function _saveFixedAutoEntry(rowId){
-  const startEl=document.getElementById('tlf-start'),endEl=document.getElementById('tlf-end');
-  const errEl=document.getElementById('tlf-err');
-  // Read as business time. new Date('...T17:00') parses in the DEVICE's zone,
-  // so a correction typed in Denver would have landed an hour off in Topeka.
-  const sIso=startEl?_tlBizInputToIso(startEl.value):null,eIso=endEl?_tlBizInputToIso(endEl.value):null;
-  const start=sIso?new Date(sIso):null,end=eIso?new Date(eIso):null;
-  const bad=m=>{if(errEl){errEl.textContent=m;errEl.style.display='block';}};
-  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start)return bad('End must be after start.');
-  // The same physical-impossibility rule the Time Log already flags days by
-  // (owner rule 2026-08-24): a hand-typed correction must not be able to
-  // create the very thing the flag exists to catch.
-  const mins=Math.round((end.getTime()-start.getTime())/60000);
-  if(mins>1440)return bad('One entry cannot be longer than 24 hours.');
-  if(typeof _bizDateStr==='function'&&_bizDateStr(start)!==_bizDateStr(end))return bad('An entry has to start and end on the same day.');
-  if(!window._supa||!window._supaUser)return bad('Not connected.');
+async function _tlSaveEntry(kind,id){
+  const k=(kind==='manual')?'manual':'auto';
+  const{start,end}=_tlEditRead();
+  const v=_tlEditValidate(start,end,k);
+  if(!v.ok)return _tlEditErr(v.msg);
+  if(k==='manual'){
+    const list=(typeof timeEntries!=='undefined'&&Array.isArray(timeEntries))?timeEntries:[];
+    const e=list.find(x=>x&&String(x.id)===String(id));
+    if(!e)return _tlEditErr('Could not save, try again.');
+    e.start_time=start.toISOString();e.end_time=end.toISOString();
+    e.minutes=v.mins;
+    // The BUSINESS day, matching the times above and every other day key in
+    // the app. dateKey is the local-day fallback if load order ever changes.
+    e.date=(typeof _bizDateStr==='function')?_bizDateStr(start):dateKey(start);
+    if(typeof _tlLoggedByInfo==='function'){
+      const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+      e.edited_by_uid=loggedByUid;e.edited_by_name=loggedByName;e.edited_at=new Date().toISOString();
+    }
+    if(typeof saveAll==='function')saveAll();
+    document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+    if(typeof renderTimeLog==='function')renderTimeLog();
+    return;
+  }
+  if(!window._supa||!window._supaUser)return _tlEditErr('Not connected.');
   try{
     // THE ROW KEEPS ITS IDENTITY (owner 2026-09-04: "we need to merge manual
     // and automatic and it fits").
@@ -1102,10 +1216,10 @@ async function _saveFixedAutoEntry(rowId){
     // it already carries a hand-set vehicle and purpose across a re-derived
     // mileage leg. The correction sticks and the evidence still lands.
     const{error}=await _supa.from('job_time_entries')
-      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:mins,fixed_at:new Date().toISOString()})
-      .eq('id',String(rowId));
-    if(error)return bad('Could not save, try again.');
-  }catch(_e){return bad('Could not save, try again.');}
+      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:v.mins,fixed_at:new Date().toISOString()})
+      .eq('id',String(id));
+    if(error)return _tlEditErr('Could not save, try again.');
+  }catch(_e){return _tlEditErr('Could not save, try again.');}
   closeTopModal();
   if(typeof showToast==='function')showToast('Clock times updated');
   if(typeof renderTimeLog==='function')renderTimeLog();
@@ -1512,9 +1626,9 @@ function _tlRailRow(r){
   // column had no edge. One button per row and the rail lines up.
   //
   // NOTHING IS LOST, which 7.2 requires proving rather than assuming. Both
-  // handlers the chip reached are on the menu now: _openEditTimeEntry for a
-  // manual clock and _openFixAutoEntry for a tracked row, chosen by the same
-  // _tlCanEdit / _tlCanFixAuto gates, opening the same two dialogs.
+  // handlers the chip reached are on the menu now, and since 2026-09-14 they
+  // are one: _tlEditEntry, told 'manual' or 'auto', chosen by the same
+  // _tlCanEdit / _tlCanFixAuto gates that chose between the two chips.
   const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+(r.live?'':escHtml(fm(r.minutes||0)))+'</div>';
   // AND SO DOES DELETE, for the same reason and by the same rule (§7.2). The
   // 3-second hold lived on the table row _tlRow drew; that table is gone, and
@@ -1646,7 +1760,11 @@ async function _tlRowMenuDo(what,a,b){
   try{
     document.getElementById('_tl-row-menu')?.remove();
     if(what==='edit'){
-      if(typeof _openEditTimeEntry==='function')_openEditTimeEntry(parseInt(a,10));
+      // parseInt because a manual entry's id is a NUMBER in the local array
+      // and the dataset hands back a string; the tracked branch below keeps
+      // its uuid as a string. That is the whole of the difference between the
+      // two kinds at this level.
+      if(typeof _tlEditEntry==='function')_tlEditEntry('manual',parseInt(a,10));
       return;
     }
     if(what==='delete'){
@@ -1658,7 +1776,7 @@ async function _tlRowMenuDo(what,a,b){
     // two rows live in different stores, which is not the person's problem and
     // is why both say "Edit" (owner 2026-09-04).
     if(what==='fixauto'){
-      if(typeof _openFixAutoEntry==='function')_openFixAutoEntry(String(a));
+      if(typeof _tlEditEntry==='function')_tlEditEntry('auto',String(a));
       return;
     }
     if(what==='save'){

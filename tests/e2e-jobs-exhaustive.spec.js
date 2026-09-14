@@ -1287,11 +1287,11 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('_openEditTimeEntry on a still-open entry, refuses (must clock out first)', async () => {
-      const r = await page.evaluate(() => {
+      const r = await page.evaluate(async () => {
         timeEntries = timeEntries.filter(e => e.id !== 9990104);
         timeEntries.push({ id: 9990104, job_id: 77701, date: todayKey(), start_time: new Date().toISOString(), end_time: null, minutes: null, logged_by_uid: null, open: true });
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
-        try { _openEditTimeEntry(9990104); return { ok: true, modalShown: !!document.querySelector('.zmodal-overlay') }; }
+        try { await _tlEditEntry('manual',9990104); return { ok: true, modalShown: !!document.querySelector('.zmodal-overlay') }; }
         catch (err) { return { ok: false, err: err.message }; }
         finally { timeEntries = timeEntries.filter(e => e.id !== 9990104); document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); }
       });
@@ -1300,16 +1300,16 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('_openEditTimeEntry / _saveEditedTimeEntry: golden path updates start/end/minutes and marks who edited it', async () => {
-      const r = await page.evaluate(() => {
+      const r = await page.evaluate(async () => {
         timeEntries = timeEntries.filter(e => e.id !== 9990105);
         timeEntries.push({ id: 9990105, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         try {
-          _openEditTimeEntry(9990105);
+          await _tlEditEntry('manual',9990105);
           const startEl = document.getElementById('tle-start'), endEl = document.getElementById('tle-end');
           startEl.value = '2026-01-01T09:00';
           endEl.value = '2026-01-01T11:30'; // extend by 90 minutes
-          _saveEditedTimeEntry(9990105);
+          await _tlSaveEntry('manual',9990105);
           const e = timeEntries.find(x => x.id === 9990105);
           return { ok: true, minutes: e.minutes, hasEditedBy: !!e.edited_by_name, hasEditedAt: !!e.edited_at, modalClosed: !document.querySelector('.zmodal-overlay') };
         } catch (err) { return { ok: false, err: err.message }; }
@@ -1323,15 +1323,15 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('_saveEditedTimeEntry rejects end time before/equal to start, leaves the entry unchanged', async () => {
-      const r = await page.evaluate(() => {
+      const r = await page.evaluate(async () => {
         timeEntries = timeEntries.filter(e => e.id !== 9990106);
         timeEntries.push({ id: 9990106, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, open: false });
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         try {
-          _openEditTimeEntry(9990106);
+          await _tlEditEntry('manual',9990106);
           document.getElementById('tle-start').value = '2026-01-01T11:00';
           document.getElementById('tle-end').value = '2026-01-01T10:00'; // before start, invalid
-          _saveEditedTimeEntry(9990106);
+          await _tlSaveEntry('manual',9990106);
           const e = timeEntries.find(x => x.id === 9990106);
           return { ok: true, minutesUnchanged: e.minutes === 60, errShown: document.getElementById('tle-err')?.style.display === 'block' };
         } catch (err) { return { ok: false, err: err.message }; }
@@ -1343,15 +1343,15 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('_saveEditedTimeEntry rejects a single entry spanning over 24 hours, leaves the entry unchanged', async () => {
-      const r = await page.evaluate(() => {
+      const r = await page.evaluate(async () => {
         timeEntries = timeEntries.filter(e => e.id !== 9990107);
         timeEntries.push({ id: 9990107, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, open: false });
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         try {
-          _openEditTimeEntry(9990107);
+          await _tlEditEntry('manual',9990107);
           document.getElementById('tle-start').value = '2026-01-01T09:00';
           document.getElementById('tle-end').value = '2026-01-03T10:00'; // 49 hours later, impossible for one entry
-          _saveEditedTimeEntry(9990107);
+          await _tlSaveEntry('manual',9990107);
           const e = timeEntries.find(x => x.id === 9990107);
           return { ok: true, minutesUnchanged: e.minutes === 60, errShown: document.getElementById('tle-err')?.style.display === 'block', errText: document.getElementById('tle-err')?.textContent };
         } catch (err) { return { ok: false, err: err.message }; }
@@ -1364,15 +1364,15 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('_saveEditedTimeEntry accepts a span of exactly 24 hours (boundary, not over)', async () => {
-      const r = await page.evaluate(() => {
+      const r = await page.evaluate(async () => {
         timeEntries = timeEntries.filter(e => e.id !== 9990108);
         timeEntries.push({ id: 9990108, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, open: false });
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         try {
-          _openEditTimeEntry(9990108);
+          await _tlEditEntry('manual',9990108);
           document.getElementById('tle-start').value = '2026-01-01T09:00';
           document.getElementById('tle-end').value = '2026-01-02T09:00'; // exactly 24h later
-          _saveEditedTimeEntry(9990108);
+          await _tlSaveEntry('manual',9990108);
           const e = timeEntries.find(x => x.id === 9990108);
           return { ok: true, minutes: e ? e.minutes : null };
         } catch (err) { return { ok: false, err: err.message }; }
@@ -1383,8 +1383,8 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('_openEditTimeEntry / deleteTimeEntry on a nonexistent id, do not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _openEditTimeEntry(999999); _saveEditedTimeEntry(999999); deleteTimeEntry(999999); return true; }
+      const r = await page.evaluate(async () => {
+        try { await _tlEditEntry('manual',999999); await _tlSaveEntry('manual',999999); deleteTimeEntry(999999); return true; }
         catch (e) { return false; }
       });
       expect(r).toBe(true);
@@ -1417,15 +1417,22 @@ test.describe('jobs.js: exhaustive coverage', () => {
     // ABOUT the dialog, so they put the real one back for their own duration
     // and restore the stub after; anything else would be asserting against the
     // stub and proving nothing.
+    // AWAITS THE BODY BEFORE IT RESTORES THE STUB. The try/finally here was
+    // written when every body was synchronous; _tlEditEntry became async when
+    // the two editors merged (2026-09-14), so `finally` fired the moment the
+    // body returned its PROMISE, putting the auto-accept stub back while the
+    // body was still mid-await. The confirm this test exists to inspect got
+    // accepted for it, and the entry was gone before the assertions ran.
     const seedThenReal = (id, body) => page.evaluate(
       new Function('ID',
+        'return (async () => {\n' +
         'const _stub = window.zConfirm; if (window._origZConfirm) window.zConfirm = window._origZConfirm;\n' +
-        'try {' + SEED_SRC.split('ID').join('ID') + '\nreturn (' + body.toString() + ')();' +
-        '} finally { window.zConfirm = _stub; }'), id);
+        'try {' + SEED_SRC.split('ID').join('ID') + '\nreturn await (' + body.toString() + ')();' +
+        '} finally { window.zConfirm = _stub; } })();'), id);
 
     test('the edit modal carries a Delete button, wired to the confirm path', async () => {
-      const r = await seedThen(9990140, () => {
-        _openEditTimeEntry(ID);
+      const r = await seedThen(9990140, async () => {
+        await _tlEditEntry('manual',ID);
         const box = document.querySelector('.zmodal-overlay .zmodal');
         return { html: box ? box.innerHTML : '' };
       });
@@ -1437,8 +1444,8 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('Delete is on its own row, never a third column beside Save', async () => {
-      const r = await seedThen(9990141, () => {
-        _openEditTimeEntry(ID);
+      const r = await seedThen(9990141, async () => {
+        await _tlEditEntry('manual',ID);
         const del = [...document.querySelectorAll('.zmodal button')].find(b => /Delete this entry/.test(b.textContent));
         const save = [...document.querySelectorAll('.zmodal button')].find(b => b.textContent.trim() === 'Save');
         if (!del || !save) return { found: false };
@@ -1460,8 +1467,8 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('it asks before it deletes, and names what is being destroyed', async () => {
-      const r = await seedThenReal(9990142, () => {
-        _openEditTimeEntry(ID);
+      const r = await seedThenReal(9990142, async () => {
+        await _tlEditEntry('manual',ID);
         _deleteTimeEntryFromModal(ID);
         const overlays = [...document.querySelectorAll('.zmodal-overlay')];
         const confirm = overlays[overlays.length - 1];
@@ -1481,8 +1488,8 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('confirming deletes the row and closes the modal', async () => {
-      const r = await seedThenReal(9990143, () => {
-        _openEditTimeEntry(ID);
+      const r = await seedThenReal(9990143, async () => {
+        await _tlEditEntry('manual',ID);
         _deleteTimeEntryFromModal(ID);
         document.querySelector('#zmodal-yes').click();
         return { gone: !timeEntries.find(e => e.id === ID), overlays: document.querySelectorAll('.zmodal-overlay').length };
@@ -1493,8 +1500,8 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
 
     test('cancelling the confirm leaves the entry exactly alone', async () => {
-      const r = await seedThenReal(9990144, () => {
-        _openEditTimeEntry(ID);
+      const r = await seedThenReal(9990144, async () => {
+        await _tlEditEntry('manual',ID);
         _deleteTimeEntryFromModal(ID);
         [...document.querySelectorAll('.zmodal-overlay')].pop().querySelector('.zmodal-cancel').click();
         const e = timeEntries.find(x => x.id === ID);
