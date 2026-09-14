@@ -679,6 +679,38 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(page.locator('#signout')).toBeVisible();     // still there, just not the only door
     });
 
+    // Owner 2026-09-14, with a screenshot: "the portal view is fucking zoomed in
+    // massively and not scaled to mobile." Nothing had reflowed. The tile grid
+    // was still two-up and every gap and radius was magnified by one factor, so
+    // the page had ZOOMED, and it was scrolled right, which cut the left edge
+    // off every row. A double-tap does that, and nothing put it back.
+    //
+    // This page was the only app-facing screen whose viewport allowed it.
+    // The guard is permanent because the symptom is invisible in CI: a page
+    // that CAN zoom renders identically to one that cannot, right up until a
+    // thumb lands on it (13 step 4).
+    test('the page cannot be zoomed, the same way no other app screen can', async () => {
+      const vp = await page.evaluate(() =>
+        document.querySelector('meta[name=viewport]')?.content || '');
+      expect(vp).toContain('width=device-width');
+      expect(vp).toContain('maximum-scale=1.0');
+      expect(vp).toContain('user-scalable=no');
+      // viewport-fit must survive the edit, or the notch test above starts
+      // passing for the wrong reason.
+      expect(vp).toContain('viewport-fit=cover');
+      // The half the viewport tag cannot do: kill double-tap, and stop iOS
+      // inflating type. Straight off index.html.
+      const t = await page.evaluate(() => ({
+        html: getComputedStyle(document.documentElement).touchAction,
+        body: getComputedStyle(document.body).touchAction,
+        adjust: getComputedStyle(document.documentElement).webkitTextSizeAdjust,
+        ox: getComputedStyle(document.body).overflowX,
+      }));
+      expect(t.html).toBe('pan-y');
+      expect(t.body).toBe('pan-y');
+      expect(t.ox).toBe('hidden');
+    });
+
     test('the header clears the notch on a phone', async () => {
       // viewport-fit=cover plus a translucent status bar draws the page behind
       // the notch; the wrap has to reserve the inset or the header is cut off.
