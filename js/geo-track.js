@@ -5271,8 +5271,49 @@ function _geoDiagPanel(){
 // of ONE physical exit/arrival, seconds apart, mint two different legKeys.
 // Always honoring ev.ts removes the second clock entirely: live and replay
 // can now only ever agree.
+// ── EVERY WAKE CARRIES THE TAPE, NOT JUST THE PING (owner 2026-09-14) ──────
+// "I want it live, it should be live by the second."
+//
+// Measured across four days: the phone was awake within 0 to 3 minutes of
+// nearly every late drive flip, sent a location, and left the flip behind.
+// His 13 September 10:30 automotive flip had a wake 0 minutes later and did
+// not upload for 137 minutes; 10:38 had one at +2 minutes and took 130.
+//
+// The reason is native: TdGeoPlugin calls backfillMotionHistory() from
+// didEnterRegion and didExitRegion and nowhere else, so a significant-change
+// wake recovers nothing. That is fixed properly in the plugin, which costs a
+// build. This is the half that costs nothing: when one of those wakes reaches
+// the web layer at all, sweep from here.
+//
+// It is a BEST EFFORT and not the real fix, deliberately. On a wake where iOS
+// never resumes the webview this code does not run, which is exactly the case
+// the native change exists for. Where the webview IS alive it turns a 30
+// minute wait into a one second one, and it ships tonight instead of after a
+// build.
+//
+// THROTTLED, because fixes arrive every few seconds during a drive and each
+// sweep is a plugin query plus a POST. Sixty seconds is far below the gap it
+// is closing and far above the rate a drive produces.
+// On window, like the two latches this feature already keeps there
+// (_geoTapeSyncRan, _geoTapePingBusy), so the throttle is inspectable on a
+// real handset and resettable by a test. A module-level `let` is invisible to
+// both, and a test that cannot reset it silently measures the previous test.
+const _GEO_TAPE_WAKE_MS=60000;
+function _geoTapeWakeSweep(type){
+  if(!/^(fix|visit|regionEnter|regionExit)$/.test(String(type||'')))return;
+  const now=Date.now();
+  if(now-(Number(window._geoTapeWakeAt)||0)<_GEO_TAPE_WAKE_MS)return;
+  window._geoTapeWakeAt=now;
+  try{
+    if(typeof _geoTapeSync==='function')Promise.resolve(_geoTapeSync('ping')).catch(()=>{});
+  }catch(_e){}
+}
 async function _geoTdEvent(ev,replay){
   if(!ev||typeof ev!=='object')return;
+  // Before anything else decides what this event MEANS: it proves the app is
+  // awake, and that is all the sweep needs. A replay is history being re-read
+  // and never evidence of a live wake.
+  if(!replay)_geoTapeWakeSweep(ev.type);
   // The shadow engine (js/geo-shadow.js) sees the SAME raw event, so any
   // difference in what the two engines conclude is genuinely the engine and
   // not the sensor. It can only ever write to its own local journal.

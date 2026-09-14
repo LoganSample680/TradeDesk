@@ -730,6 +730,75 @@ test.describe('Home office: presence is not work', () => {
         expect(r.hwAfterFirst).toBe(r.want[r.want.length - 1]);
       });
 
+      // ── AND EVERY OTHER WAKE SWEEPS TOO (owner 2026-09-14) ─────────────
+      // The phone was awake within 0 to 3 minutes of nearly every late drive
+      // flip and left it behind, because only region crossings recover
+      // history natively. Where the webview is alive on that wake, this is
+      // what closes it without a build.
+      test.describe('any wake sweeps, throttled', () => {
+        const drive = (types) => page.evaluate(async (ts2) => {
+          const calls = [];
+          const real = window._geoTapeSync;
+          window._geoTapeSync = (why) => { calls.push(why); return Promise.resolve(0); };
+          window._geoTapeWakeAt = 0;
+          for (const t of ts2) { try { await _geoTdEvent({ type: t, ts: Date.now() }, false); } catch (e) {} }
+          window._geoTapeSync = real;
+          return calls;
+        }, types);
+
+        test('a location wake sweeps, which is the one that was dropping flips', async () => {
+          // A `fix` is the significant-change wake. Natively it recovers
+          // nothing, which is the whole bug.
+          expect(await drive(['fix'])).toEqual(['ping']);
+        });
+
+        test('a visit wake sweeps too', async () => {
+          expect(await drive(['visit'])).toEqual(['ping']);
+        });
+
+        test('an event that proves nothing about being awake does not', async () => {
+          // A motion flip is the thing being recovered, not a wake, and a
+          // heartbeat returns before any of this. Sweeping on them would be
+          // a query per flip for no new information.
+          expect(await drive(['motion'])).toEqual([]);
+          expect(await drive(['heartbeat'])).toEqual([]);
+        });
+
+        test('a drive does not sweep on every fix: sixty seconds between', async () => {
+          // Fixes arrive every few seconds with the radio up. Without the
+          // throttle this is a plugin query and a POST per fix.
+          expect(await drive(['fix', 'fix', 'fix', 'visit', 'fix'])).toEqual(['ping']);
+        });
+
+        test('a replay is history, not a wake', async () => {
+          const calls = await page.evaluate(async () => {
+            const out = [];
+            const real = window._geoTapeSync;
+            window._geoTapeSync = (why) => { out.push(why); return Promise.resolve(0); };
+            window._geoTapeWakeAt = 0;
+            try { await _geoTdEvent({ type: 'fix', ts: Date.now() }, true); } catch (e) {}
+            window._geoTapeSync = real;
+            return out;
+          });
+          expect(calls).toEqual([]);
+        });
+
+        test('a sweep that throws never reaches the event handler', async () => {
+          // This runs first in _geoTdEvent. A throw here would take every
+          // fence decision on the wake down with it.
+          const ok = await page.evaluate(async () => {
+            const real = window._geoTapeSync;
+            window._geoTapeSync = () => { throw new Error('boom'); };
+            window._geoTapeWakeAt = 0;
+            let threw = false;
+            try { await _geoTdEvent({ type: 'fix', ts: Date.now() }, false); } catch (e) { threw = true; }
+            window._geoTapeSync = real;
+            return !threw;
+          });
+          expect(ok).toBe(true);
+        });
+      });
+
       test('two pings at once do not both upload', async () => {
         const out = await page.evaluate(async () => {
           window._geoTapePingBusy = true;    // one already in flight
