@@ -35,6 +35,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Plain ESM, not .ts, so Deno and the Node test harness load the exact same
 // file: tests/e2e-geo-derive-server.spec.js drives this module directly.
 import { daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
+import { appleMapsConfigured, appleRoute, type Pt } from "../_shared/apple-maps.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -550,9 +551,46 @@ Deno.serve(async (req) => {
     // that throws is reported rather than failing the flush: the events are
     // already stored, the next trigger derives again, and the phone's own
     // rebuild is still behind all of it.
+    // ── ONE ROAD, ONE LOOKUP, AND THE CACHE IS NOT AN OPTIMISATION ────────
+    // Apple's free tier is 25,000 service calls a day PER TEAM and MapKit JS
+    // on every phone draws from the same bucket, so the owner's
+    // server-first-phone-second ordering asks for each road twice by design.
+    // geo_route_miles answers the second one for free, forever, because a road
+    // is a fact about the map and not about the drive.
+    //
+    // Keyed exactly like the phone's _geoRouteKey (js/geo-track.js): four
+    // decimal places, about eleven metres, tighter than any fence and coarse
+    // enough that two arrivals at one driveway share a row.
+    const r4 = (v: number) => Math.round(Number(v) * 1e4) / 1e4;
+    const routeKey = (a: Pt, b: Pt) => r4(a.lat) + "," + r4(a.lng) + ">" + r4(b.lat) + "," + r4(b.lng);
+    const memo = new Map<string, { miles: number; path: number[][] } | null>();
+    const route = !appleMapsConfigured() ? null : async (from: Pt, to: Pt) => {
+      const key = routeKey(from, to);
+      if (memo.has(key)) return memo.get(key);
+      const { data } = await svc.from("geo_route_miles")
+        .select("miles,path").eq("contractor_user_id", cid).eq("route_key", key).maybeSingle();
+      if (data && Number(data.miles) > 0) {
+        const hit = { miles: Number(data.miles), path: (data.path as number[][]) || [] };
+        memo.set(key, hit);
+        return hit;
+      }
+      const r = await appleRoute(from, to);
+      // A road nobody could fetch is not zero miles, and it is not cached
+      // either: a transient failure must not become this account's permanent
+      // answer for that pair of ends.
+      if (!r || !(r.miles > 0)) { memo.set(key, null); return null; }
+      await svc.from("geo_route_miles").upsert({
+        contractor_user_id: cid, route_key: key, miles: r.miles,
+        path: r.path.length ? r.path : null, updated_at: new Date().toISOString(),
+      }, { onConflict: "contractor_user_id,route_key" });
+      const got = { miles: r.miles, path: r.path };
+      memo.set(key, got);
+      return got;
+    };
+
     const derivedDays = [];
     for (const day of daysToDerive(evs, Date.now())) {
-      try { derivedDays.push(await deriveDayServer(svc, cid, uid, day)); }
+      try { derivedDays.push(await deriveDayServer(svc, cid, uid, day, Date.now(), route)); }
       catch (e) { derivedDays.push({ day, wrote: false, reason: String((e as Error)?.message || e) }); }
     }
     derived = derivedDays.filter((d) => d.wrote).length;

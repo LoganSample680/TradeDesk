@@ -100,7 +100,62 @@ async function pageAll(build) {
 // held? }: enough for the caller to log why a day produced nothing without
 // having to guess.
 // One person, one Central day, end to end.
-export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
+// ── THE ROAD, BEFORE THE ROWS ARE WRITTEN (owner 2026-09-14) ───────────────
+//
+// "I want this build to finally write the correct mileage", and "server side
+// first, phone second."
+//
+// A derived leg leaves geoDeriveRows with whatever the breadcrumbs measured,
+// which off the phone is a straight line between however few fixes rode a
+// wake: his 14 September drive was four fixes and 2.4 miles for a trip Apple
+// routes at 3.2. This is where that gets fixed, before geo_replace_day sees
+// the rows, so the number is right the moment the drive closes rather than
+// whenever he next opens the app.
+//
+// `route` is injected rather than imported so this file stays plumbing and the
+// caller owns the credentials and the cache (ingest-geo/index.ts). Passing
+// nothing is the old behaviour exactly.
+//
+// THE COORDINATES ARE THE TRAP. Ask with the fence CROSSING points and Apple
+// answers honestly for a shorter trip: 2.7 against the 3.2 the same pair of
+// real addresses returns, because a geofence trips a few hundred feet short at
+// both ends. Half a mile on a three mile trip. fromCoord and toCoord off the
+// row are the addresses; the event coordinates are not.
+const ROUTE_MAX_LEGS = 12;
+
+async function routeRows(rows, route) {
+  if (typeof route !== "function" || !Array.isArray(rows)) return 0;
+  let asked = 0;
+  for (const m of rows) {
+    if (asked >= ROUTE_MAX_LEGS) break;
+    try {
+      // A ROUTE NEEDS TWO ADDRESSES (rule 14). A traced leg has an end nobody
+      // saved, and routing between its coordinates would hand it exactly the
+      // inferred number it exists not to have.
+      if (!m || m.addressUnknown) continue;
+      const f = m.fromCoord, t = m.toCoord;
+      if (!f || !t || !isFinite(Number(f.lat)) || !isFinite(Number(t.lat))) continue;
+      asked++;
+      const r = await route(f, t);
+      if (!r || !(Number(r.miles) > 0)) continue;
+      m.routeMiles = Number(r.miles);
+      // The road is an INFERENCE and `path` is EVIDENCE. They do not share a
+      // field: the map draws the observed trace solid and this one dashed, and
+      // collapsing them would let a router quietly overwrite breadcrumbs.
+      if (Array.isArray(r.path) && r.path.length >= 2) m.routePath = r.path;
+      // Never shrink. A trace that measured more than the road is a trace of a
+      // longer drive than the road, which is the detour case, and the road is
+      // not evidence that it did not happen.
+      if (Number(r.miles) > (Number(m.miles) || 0)) {
+        m.miles = Number(r.miles);
+        m.calc_method = "derived-routed";
+      }
+    } catch { /* one leg cannot take the day down */ }
+  }
+  return asked;
+}
+
+export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), route = null) {
   const b = centralDayBounds(day);
   if (!b) return { day, wrote: false, reason: "bad day" };
   const fromIso = new Date(b.start - TWO_HOURS).toISOString();
@@ -218,6 +273,11 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
   // with a round trip attached.
   if (nothing) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length };
 
+  // Before the write, not after: geo_replace_day is the only writer and a
+  // second pass to correct a number it just stored would be the reconciler
+  // CLAUDE.md 17 exists to forbid.
+  const routed = await routeRows(rows.td_mileage, route);
+
   const { error } = await svc.rpc("geo_replace_day", {
     p_contractor: cid, p_employee: uid, p_day: day,
     p_day_start: new Date(b.start).toISOString(),
@@ -231,6 +291,6 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
     day, wrote: true,
     dwells: res.dwells.length, legs: res.legs.length,
     time: rows.job_time_entries.length, shop: rows.shop_time_entries.length,
-    miles: rows.td_mileage.length, held: rows.held.length,
+    miles: rows.td_mileage.length, held: rows.held.length, routed,
   };
 }
