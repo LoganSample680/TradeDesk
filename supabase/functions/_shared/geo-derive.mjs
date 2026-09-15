@@ -1125,8 +1125,14 @@ function geoDeriveDay(input) {
     : askedLegs;
   // Rule 16: a day that never reached business at all writes no drives. A
   // house loop (rule 7) survives only inside the window.
-  const realLegs = _gdEmptyDayLegs(winLegs, asked, inp, open,
+  const laddered = _gdEmptyDayLegs(winLegs, asked, inp, open,
     journeys.some(j => j && j.open), win, fences, opts.radiusFt);
+  // Rule 20: the commute is marked, not deleted. The leg is a real drive and
+  // the map, the route and every structural rule above still need it; what it
+  // must never do is bill. geoDeriveRows writes no mileage row and no drive
+  // time row for it, which is where "no hours, no miles" actually lives.
+  const realLegs = laddered.map(l => (l && _gdIsCommuteLeg(l, fences, opts.radiusFt))
+    ? Object.assign({}, l, { commute: true }) : l);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -1950,6 +1956,12 @@ function _gdReportsHere(fence, fences, radiusFt) {
 }
 function _gdIsCommuteLeg(l, fences, radiusFt) {
   if (!l || !l.from || !l.to) return false;
+  // A CHAIN IS NOT A COMMUTE, however it ends. A leg that stopped anywhere on
+  // the way is the shop, four customers and then the house (his 1 September),
+  // and refusing the whole chain because its last end is home would delete the
+  // four customer stops and the five drives inside it. The commute is the
+  // drive with nothing in it: door to door, no stops.
+  if (Array.isArray(l.drives) && l.drives.length > 1) return false;
   const a = l.from, b = l.to;
   if (a.unsaved === true || b.unsaved === true) return false;
   const house = (e) => _gdIsHouse(e, fences, radiusFt);
@@ -1961,7 +1973,7 @@ function _gdIsCommuteLeg(l, fences, radiusFt) {
 }
 
 function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win, fences, radiusFt) {
-  const list = (legs || []).filter(l => !_gdIsCommuteLeg(l, fences, radiusFt));
+  const list = (legs || []);
   if (!list.length) return list;
   const { whA, whB, workDay } = _gdDayShape(inp);
   const ds = Number(inp && inp.dayStart);
@@ -2277,6 +2289,12 @@ function geoDeriveRows(result, ids) {
     // company's mileage log.
     const lClaim = geoSpanClaim(l, claimCtx);
     if (!lClaim.claim) { held.push({ kind: 'leg', id: l.id, startTs: l.startTs, endTs: l.endTs }); continue; }
+    // RULE 20: THE COMMUTE BILLS NOTHING. Marked upstream, refused here, once,
+    // for both outputs: no mileage row and no drive time row. It is the same
+    // line the IRS deduction draws, and doing it here rather than by deleting
+    // the leg keeps the drive on the record and re-derivable the day the flag
+    // changes.
+    if (l.commute === true) continue;
     // ONE ROW PER DRIVE, NOT ONE PER CHAIN (owner 2026-09-04: "right, in
     // between it logs the time as a unsaved job site").
     //
