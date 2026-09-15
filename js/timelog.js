@@ -588,7 +588,37 @@ function _tlBlendManual(rows){
 async function _timeLogRows(sinceISO){
   const rows=[];
   timeEntries.forEach(e=>{
-    if(e.open)return; // still running, shown separately, see _tlOpenEntries
+    // ── A RUNNING CLOCK IS STILL THE DAY (owner 2026-09-15) ───────────────
+    // "I'm looking at Jack's timesheet and not seeing the 7:54 am clock in
+    // anymore." It had never been there. This line dropped every open entry
+    // before the rail could see one, while _tlRailClocks below says in its own
+    // comment that an entry still running "stays an ordinary row". Two halves
+    // of this file disagreeing, and the half that wins is the one that deletes.
+    //
+    // It rides the same live-row path the open DWELL already uses (below):
+    // startTime and no end, so `live` draws it as "7:54 -", minutes 0 so no
+    // total can claim it, and no endTime so _tlRailClocks cannot draw a
+    // half-open bracket (which its comment is right about). The moment it is
+    // clocked out it becomes an ordinary manual row with both caps, exactly as
+    // every closed clock always has.
+    if(e.open){
+      if(!e.start_time)return;
+      const _st=Date.parse(e.start_time);
+      if(!(_st>0))return;
+      if(sinceISO&&e.start_time<sinceISO)return;
+      const _day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(_st)):dateKey(new Date(_st));
+      const _oi=_tlJobClientInfo(e.job_id);
+      rows.push({
+        id:'m'+e.id,rawId:e.id,source:'manual',date:_day,minutes:0,live:true,
+        personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
+        personUid:e.logged_by_uid||null,
+        clientName:e.job_id==null?'General time':_oi.clientName,
+        addr:e.job_id==null?'':_oi.addr,jobName:e.job_id==null?'':_oi.jobName,
+        detail:'Clocked in, still running',unpaid:false,dismissed:false,
+        startTime:e.start_time,endTime:null
+      });
+      return;
+    }
     if(sinceISO&&e.start_time&&e.start_time<sinceISO)return;
     // A MIS-TAP IS NOT A CLOCK (owner 2026-09-04, on Jack's 31 August: "got
     // two clock ins at 755 am and 1243 pm, 1243 should go away"). That second
@@ -1980,7 +2010,12 @@ function _tlDayRailHtml(rows){
   // cap to draw and a half-open bracket is worse than no bracket.
   const clocks=list.filter(r=>r&&r.source==='manual'&&r.startTime&&r.endTime&&
     Date.parse(r.startTime)>0&&Date.parse(r.endTime)>Date.parse(r.startTime));
-  if(!clocks.length)return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
+  // A RUNNING clock has no closing end and so is not in `clocks`, but it is
+  // still a cap: it opens the day and nothing closes it yet. Counted here so
+  // the shortcut below cannot skip the loop on a day whose only punch is the
+  // one still going, which is every day between clock-in and clock-out.
+  const liveClock=(r)=>!!(r&&r.live&&r.source==='manual'&&r.startTime&&!r.endTime&&Date.parse(r.startTime)>0);
+  if(!clocks.length&&!list.some(liveClock))return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
   const out=[];
   const open=[];   // clocks whose closing cap is still owed, newest first
   const closeDue=(beforeMs)=>{
@@ -2001,6 +2036,15 @@ function _tlDayRailHtml(rows){
       out.push(_tlClockCapHtml(r,'in'));
       open.push(r);
       return;   // the clock itself is the bracket; it is never a row too
+    }
+    // A RUNNING CLOCK OPENS THE DAY AND NOTHING ELSE (owner 2026-09-15: "clock
+    // in and clock out has always rendered"). It has, for every clock that was
+    // closed. A live one reads as CLOCKED IN with no closing cap, because
+    // there is no clock-out to draw and a fake one would be a lie about the
+    // day. It is not pushed to `open`, so closeDue can never invent it.
+    if(liveClock(r)){
+      out.push(_tlClockCapHtml(r,'in'));
+      return;
     }
     out.push(_tlRailRow(r));
   });
