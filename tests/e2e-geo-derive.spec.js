@@ -1251,7 +1251,14 @@ test.describe('geo-derive: the day deriver', () => {
   // owning the yard he reports to is incidental.
   test.describe('rule 20: the commute', () => {
     const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
-    const YARD = { id: 'shop', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106, commute: true };
+    // No flag on it. The shop IS the place you report to (owner 2026-09-15:
+    // "globally the process will be employees drive to the shop don't get
+    // logged, but anything from the shop out to the next job does"), so his
+    // account needed no setup at all: his dad's yard is already his shop.
+    const YARD = { id: 'shop', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106 };
+    // A second yard that is NOT the registered shop: this is what the checkbox
+    // is for, and the only case that still needs one.
+    const OTHER = { id: 'place-9', kind: 'other', name: 'Second yard', lat: 39.0456577, lng: -95.7151106 };
     const CUST = { id: 'client-1', kind: 'client', name: 'Bill Lorson', clientId: 1, lat: 39.10721, lng: -95.6650246 };
     // Home 07:24, yard 07:48, out to the customer 07:59, back 15:43, home 16:35.
     const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 24), 'automotive'), mo(T(7, 48), 'onFoot'),
@@ -1286,25 +1293,37 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dwells.filter(d => d[0] === 'shop').length).toBeGreaterThan(0);
     });
 
-    test('without the flag it is four drives, exactly as before', async () => {
-      const r = await run20([JHOME, Object.assign({}, YARD, { commute: undefined }), CUST]);
-      expect(r.legs).toEqual([
-        ['7402 SW 22nd Ct', 'JS Solutions shop'],
-        ['JS Solutions shop', 'Bill Lorson'],
-        ['Bill Lorson', 'JS Solutions shop'],
-        ['JS Solutions shop', '7402 SW 22nd Ct'],
-      ]);
-      expect(r.drives).toBe(4);
+    // WAS: "without the flag it is four drives." That was the first shape of
+    // this rule, where the box was the whole mechanism. The owner's global
+    // process makes the shop itself the trigger, so an account that ticks
+    // nothing gets the right answer, and the box only speaks for a yard that
+    // is not the shop.
+    test('no flag anywhere: the shop alone is enough', async () => {
+      const r = await run20([JHOME, YARD, CUST]);
+      expect(r.legs).toEqual([['JS Solutions shop', 'Bill Lorson'],
+                              ['Bill Lorson', 'JS Solutions shop']]);
+      expect(r.drives).toBe(2);
+    });
+
+    test('a yard that is not the shop needs the box, and then it counts', async () => {
+      const off = await run20([JHOME, OTHER, CUST]);
+      expect(off.drives, 'an unmarked "other" place is an ordinary stop').toBe(4);
+      const on = await run20([JHOME, Object.assign({}, OTHER, { commute: true }), CUST]);
+      expect(on.legs).toEqual([['Second yard', 'Bill Lorson'], ['Bill Lorson', 'Second yard']]);
+      expect(on.drives).toBe(2);
     });
 
     // ONE BUILDING, SEVERAL FENCES. His yard is registered twice on his own
     // account, the Settings shop and the td_places row migrated from it, same
     // coordinate. Ticking the box on either one has to work, which is what
     // rule 15's first attempt got wrong about the same duplicate.
-    test('the flag works on any of the fences standing at that spot', async () => {
-      const twin = { id: 'place-dup', kind: 'shop', name: '1200 SW Oakley Ave',
+    test('any of the fences standing at that spot answers for the building', async () => {
+      // His yard IS registered twice this way, and on the day this shipped the
+      // duplicate was a `shop` place migrated from the Settings shop. Either
+      // one being a shop, or either one carrying the box, has to be enough.
+      const twin = { id: 'place-dup', kind: 'other', name: '1200 SW Oakley Ave',
         lat: YARD.lat, lng: YARD.lng, commute: true };
-      const plain = Object.assign({}, YARD, { commute: undefined });
+      const plain = Object.assign({}, YARD, { kind: 'other', commute: undefined });
       const r = await run20([JHOME, plain, twin, CUST]);
       expect(r.legs.length, 'the commute is still recognised').toBe(2);
       expect(r.drives).toBe(2);
@@ -1327,16 +1346,25 @@ test.describe('geo-derive: the day deriver', () => {
       // office. A drive between a spot and itself is not a commute, and rule 7
       // already refuses to call it anything.
       const both = { id: 'shop', kind: 'shop', name: 'TradeDesk shop',
-        lat: JHOME.lat, lng: JHOME.lng, commute: true };
+        lat: JHOME.lat, lng: JHOME.lng };
       const r = await run20([JHOME, both, CUST]);
       expect(r.legs.map(l => l[1])).toContain('Bill Lorson');
     });
 
     test('junk on the flag changes nothing', async () => {
       for (const v of [undefined, null, false, 0, 'true', 1]) {
-        const r = await run20([JHOME, Object.assign({}, YARD, { commute: v }), CUST]);
-        // Only a real boolean true is the flag; anything else is four drives.
+        const r = await run20([JHOME, Object.assign({}, OTHER, { commute: v }), CUST]);
+        // Only a real boolean true is the flag; anything else is an ordinary
+        // place and the day is four drives.
         expect(r.drives, String(v)).toBe(4);
+      }
+    });
+
+    // The shop is a KIND, not a name or a guess: a junk kind is not a shop.
+    test('only a real shop kind anchors it', async () => {
+      for (const k of ['Shop', 'SHOP', 'shoppe', '', null, undefined]) {
+        const r = await run20([JHOME, Object.assign({}, YARD, { kind: k }), CUST]);
+        expect(r.drives, String(k)).toBe(4);
       }
     });
   });

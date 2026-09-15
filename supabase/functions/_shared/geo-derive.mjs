@@ -1897,11 +1897,25 @@ function _gdInWindow(win, r) {
 // to own the shop he reports to is incidental; an employee of any contractor
 // on this app has the same two drives every day.
 //
-// A fence marked `commute` is that regular place. A leg with a HOUSE at one
-// end and a commute fence at the other, in either direction, is the commute:
-// no time row, no mileage row, nothing on the rail. Arrival is where the day
-// starts, which is what the owner asked for, and the dwell at the shop is
-// untouched because being there IS the work.
+// THE SHOP IS THE REGULAR PLACE, and no box has to be ticked to say so (owner
+// 2026-09-15: "globally the process will be employees drive to the shop don't
+// get logged, but anything from the shop out to the next job does. The trigger
+// would be shop to address and/or clock in"). The account already says where
+// the shop is, so the rule needs no setup and is right on day one for every
+// account: the checkbox is the EXCEPTION, for a second yard somebody reports
+// to that is not the registered shop.
+//
+// A leg with a HOUSE at one end and that place at the other, in either
+// direction, is the commute: no time row, no mileage row, nothing on the rail.
+// Arrival is where the day starts, which is what the owner asked for, and the
+// dwell at the shop is untouched because being there IS the work.
+//
+// A HOME OFFICE DOES NOT EXEMPT IT, and that is deliberate rather than an
+// oversight. The tax code would let a genuine principal-place-of-business home
+// office claim that first drive; the owner's rule is that the day runs from
+// arrival at the shop or the clock, whichever comes first, and his own house
+// is a home_office place. Naming it here so the next reader knows the narrower
+// reading was chosen, not missed.
 //
 // EVERY OTHER LEG OUT OF THAT PLACE IS WORK, unchanged. Shop to a customer,
 // shop to a supply house, customer back to the shop: all still claimed. Only
@@ -1921,11 +1935,17 @@ function _gdInWindow(win, r) {
 // Same shape _gdShopIsHome already uses for the other duplicate-registration
 // question ("is there a home office standing at this shop"), so there is one
 // idiom for "what else is at this spot" rather than two.
+// The shop, or anywhere the box was ticked. A house that happens to be a shop
+// is not caught here: _gdIsCommuteLeg refuses a leg whose ends are both the
+// house, which is the owner's own account (his shop fence sits on his desk).
+function _gdReportsKind(f) {
+  return !!f && (f.commute === true || String(f.kind) === 'shop');
+}
 function _gdReportsHere(fence, fences, radiusFt) {
   if (!fence || fence.lat == null || fence.lng == null) return false;
-  if (fence.commute === true) return true;
+  if (_gdReportsKind(fence)) return true;
   const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
-  return (fences || []).some(f => f && f.commute === true && f.lat != null && f.lng != null &&
+  return (fences || []).some(f => _gdReportsKind(f) && f.lat != null && f.lng != null &&
     _gdMiles(fence, f) * 5280 <= r);
 }
 function _gdIsCommuteLeg(l, fences, radiusFt) {

@@ -966,9 +966,11 @@ test.describe('Places, drive attribution and the map', () => {
         places.length = 0;
         document.getElementById('place-modal')?.remove();
         openPlaceModal(null, 5, 6);
-        document.getElementById('place-name').value = "Dad's yard";
+        // A SECOND yard, not the registered shop: the shop is the rule's own
+        // anchor and is not offered the box at all.
+        document.getElementById('place-name').value = "Dad's other yard";
         const sel = document.getElementById('place-kind');
-        sel.value = 'shop'; _placeKindChanged('shop');
+        sel.value = 'other'; _placeKindChanged('other');
         document.getElementById('place-commute').checked = true;
         _savePlaceFromModal(null);
         const on = !!places[0].commute, id = places[0].id;
@@ -989,7 +991,7 @@ test.describe('Places, drive attribution and the map', () => {
       expect(out.n, 'still one place, this is an edit').toBe(1);
     });
 
-    test('a home office is never offered it: that is the other end of the drive', async () => {
+    test('neither end of the commute is offered the box: the house, nor the shop', async () => {
       const out = await openFresh(() => {
         document.getElementById('place-modal')?.remove();
         openPlaceModal(null, 5, 6);
@@ -1003,7 +1005,10 @@ test.describe('Places, drive attribution and the map', () => {
         document.getElementById('place-modal')?.remove();
         return { onShop, onHome, onSupply };
       });
-      expect(out.onShop).toBe('flex');
+      // WAS 'flex' for a shop, when the box was the whole mechanism. The shop
+      // is now the rule's own anchor, so an unticked box beside a rule that is
+      // already running would be a lie about what the app does.
+      expect(out.onShop, 'the shop reports to itself').toBe('none');
       expect(out.onHome, 'the house is where the commute starts, not where it ends').toBe('none');
       expect(out.onSupply, 'a yard is not the only thing somebody reports to').toBe('flex');
     });
@@ -1016,7 +1021,7 @@ test.describe('Places, drive attribution and the map', () => {
         document.getElementById('place-modal')?.remove();
         openPlaceModal(null, 5, 6);
         document.getElementById('place-name').value = 'My house';
-        document.getElementById('place-kind').value = 'shop'; _placeKindChanged('shop');
+        document.getElementById('place-kind').value = 'supply'; _placeKindChanged('supply');
         document.getElementById('place-commute').checked = true;
         document.getElementById('place-kind').value = 'home_office'; _placeKindChanged('home_office');
         _savePlaceFromModal(null);
@@ -1031,7 +1036,7 @@ test.describe('Places, drive attribution and the map', () => {
       const out = await openFresh(() => {
         document.getElementById('place-modal')?.remove();
         openPlaceModal(null, 5, 6);
-        _placeKindChanged('shop');
+        _placeKindChanged('supply');
         const t = document.getElementById('place-commute-row').textContent;
         document.getElementById('place-modal')?.remove();
         return t;
