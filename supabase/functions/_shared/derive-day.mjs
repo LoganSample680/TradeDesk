@@ -243,19 +243,34 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // SQL fence list and the deriver's shape.
     personal: f.personal ?? undefined,
     onBooks: f.on_books ?? undefined,
+    // Rule 20: the place this person reports to. A leg between it and their
+    // own house is the commute, and writes nothing.
+    commute: f.commute === true || undefined,
   }));
 
   // This person's closed manual clocks touching the day (rule 13). The owner's
   // own rows carry logged_by_uid null; a crew member's carry their uid, which
   // is the same test _geoDeriveClocks makes.
   const clocks = [];
+  // Rule 19: the same punches, ALL of them, as minutes after their own local
+  // midnight, so the deriver can learn when this person actually works. The
+  // Central maths lives here rather than there on purpose: a DST day is 23 or
+  // 25 hours long and a modulo against the clock would be wrong twice a year.
+  const clockHistory = [];
+  const minOfDay = (ms) => Math.round(((centralParts(ms) % 86400_000) + 86400_000) % 86400_000 / 60000);
   for (const r of (Array.isArray(clockRes?.data) ? clockRes.data : [])) {
     const d = r?.data || {};
     if (d.open || !d.start_time || !d.end_time) continue;
     const owner = d.logged_by_uid ? String(d.logged_by_uid) === uid : uid === cid;
     if (!owner) continue;
     const s = Date.parse(d.start_time), e = Date.parse(d.end_time);
-    if (s > 0 && e > s && e > b.start && s < b.end) clocks.push({ start: s, end: e });
+    if (!(s > 0 && e > s)) continue;
+    if (e > b.start && s < b.end) clocks.push({ start: s, end: e });
+    const inMin = minOfDay(s), outMin = minOfDay(e);
+    // A clock that ran past midnight ends "before" it began in minutes-of-day.
+    // Its OUT time says nothing about when this person's day closes, so only
+    // the in time is kept, by pushing the out to the end of its own day.
+    clockHistory.push({ day: centralDayKey(s), inMin, outMin: outMin > inMin ? outMin : 24 * 60 });
   }
 
   let workHours = { start: "06:00", end: "20:00", days: [1, 2, 3, 4, 5, 6] };
@@ -273,7 +288,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
 
   const res = geoDeriveDay({
     day, dayStart: b.start, dayEnd: b.end, personId: uid,
-    tape, fixes, appEvents, regions, fences, nowMs, clocks, workHours,
+    tape, fixes, appEvents, regions, fences, nowMs, clocks, clockHistory, workHours,
   });
 
   // ── WHEN A REBUILD MAY RETIRE A ROW (owner 2026-09-15) ──────────────────

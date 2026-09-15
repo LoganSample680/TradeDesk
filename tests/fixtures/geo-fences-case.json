@@ -29,6 +29,15 @@
       "kind": "other",
       "name": "No coords",
       "addr": "4 Nowhere"
+    },
+    {
+      "id": "p4",
+      "kind": "other",
+      "name": "Dad shop",
+      "lat": 39.08,
+      "lon": -95.73,
+      "addr": "5 Yard Rd",
+      "commute": true
     }
   ],
   "clients": [
@@ -146,7 +155,8 @@
       "lng": -95.7,
       "scheduled": null,
       "personal": null,
-      "on_books": null
+      "on_books": null,
+      "commute": false
     },
     {
       "id": "place-p1",
@@ -156,7 +166,8 @@
       "lng": -95.71,
       "scheduled": null,
       "personal": null,
-      "on_books": null
+      "on_books": null,
+      "commute": false
     },
     {
       "id": "place-p2",
@@ -166,7 +177,8 @@
       "lng": -95.72,
       "scheduled": null,
       "personal": null,
-      "on_books": null
+      "on_books": null,
+      "commute": false
     },
     {
       "id": "client-c1",
@@ -176,7 +188,8 @@
       "lng": -95.8,
       "scheduled": true,
       "personal": false,
-      "on_books": true
+      "on_books": true,
+      "commute": false
     },
     {
       "id": "client-c2",
@@ -186,7 +199,8 @@
       "lng": -95.81,
       "scheduled": false,
       "personal": false,
-      "on_books": true
+      "on_books": true,
+      "commute": false
     },
     {
       "id": "job-9001",
@@ -196,7 +210,8 @@
       "lng": -95.9,
       "scheduled": null,
       "personal": null,
-      "on_books": null
+      "on_books": null,
+      "commute": false
     },
     {
       "id": "client-c6",
@@ -206,7 +221,8 @@
       "lng": -95.84,
       "scheduled": false,
       "personal": true,
-      "on_books": false
+      "on_books": false,
+      "commute": false
     },
     {
       "id": "client-c7",
@@ -216,7 +232,19 @@
       "lng": -95.84,
       "scheduled": false,
       "personal": true,
-      "on_books": true
+      "on_books": true,
+      "commute": false
+    },
+    {
+      "id": "place-p4",
+      "kind": "other",
+      "name": "Dad shop",
+      "lat": 39.08,
+      "lng": -95.73,
+      "scheduled": null,
+      "personal": null,
+      "on_books": null,
+      "commute": true
     }
   ],
   "bids": [

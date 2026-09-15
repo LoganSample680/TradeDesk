@@ -51,6 +51,11 @@ test.describe('geo fences: the browser half of the equivalence', () => {
           scheduled: f.scheduled === undefined ? null : !!f.scheduled,
           personal: f.personal === undefined ? null : !!f.personal,
           on_books: f.onBooks === undefined ? null : !!f.onBooks,
+          // Rule 20. Both halves answer the same yes/no, so both are read as a
+          // plain boolean: the browser leaves it undefined where it is not set
+          // and the SQL writes false, and neither difference means anything to
+          // _gdReportsHere, which asks `=== true`.
+          commute: f.commute === true,
         }));
       } finally { if (savedGeo) localStorage.setItem('zp3_nearby_geo', savedGeo); }
     }, CASE);
@@ -96,6 +101,18 @@ test.describe('geo fences: the browser half of the equivalence', () => {
     // is the case the flag exists to keep counting, so a job fence must not
     // carry an answer at all.
     expect(got.filter(f => f.kind !== 'client').every(f => f.personal === null)).toBe(true);
+  });
+
+  // ── RULE 20: THE COMMUTE (owner 2026-09-15) ──────────────────────────
+  // "He doesn't get paid for his drive to his dads shop or when he goes home."
+  // p4 is an ordinary place in every way except the box being ticked, so a
+  // half that drops the flag fails on that one row and nothing else. The whole
+  // rule hangs off it: without the flag the leg is billable work again.
+  test('rule 20: a place marked "I report here" carries the flag, and nobody else does', async () => {
+    const got = await build();
+    expect(got.find(f => f.id === 'place-p4').commute, 'the yard he reports to').toBe(true);
+    expect(got.filter(f => f.id !== 'place-p4').every(f => f.commute === false),
+      'every other fence, of every kind').toBe(true);
   });
 
   test('a canceled, a done and an ended job are not fences; a live one is', async () => {

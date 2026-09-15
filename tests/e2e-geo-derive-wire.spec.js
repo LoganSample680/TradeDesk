@@ -37,7 +37,25 @@ const centralParts = (ms) => {
 const centralOff = (ms) => centralParts(ms) - ms;
 const centralDayKey = (ms) => new Date(centralParts(ms)).toISOString().slice(0, 10);
 const centralMidnight = (key) => { const u = Date.parse(key + 'T00:00:00Z'); return u - centralOff(u - centralOff(u)); };
-const DAY = centralDayKey(Date.now() - 2 * 86400000);
+// ── A SUNDAY IS NOT A WORKING DAY, AND THIS SPEC IS ABOUT WORK (2026-09-15) ─
+// This was `Date.now() - 2 days`, full stop, and it went red the morning that
+// landed on a Sunday: the default working week is Monday to Saturday, so a day
+// outside it holds the visit and the queue carried 'client-held' where the
+// assertion says 'client'. Nothing was wrong with the deriver or the test, the
+// CALENDAR decided the result, which is the class CLAUDE.md 5.2.2 exists to
+// stop (the clock pin fixes the hour and deliberately never moves the date).
+//
+// The day still has to be relative: the tape window is seven days and a fixed
+// date would age out of it. So it steps back past any non-working day instead,
+// which says out loud what the fixture always assumed.
+const WORK_DAYS = [1, 2, 3, 4, 5, 6];            // the deriver's own default
+const centralDow = (ms) => new Date(new Intl.DateTimeFormat('en-CA', { timeZone: CENTRAL,
+  year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms)) + 'T12:00:00Z').getUTCDay();
+const workingDayBefore = (ms) => {
+  for (let i = 0; i < 8; i++, ms -= 86400000) if (WORK_DAYS.includes(centralDow(ms))) return ms;
+  return ms;
+};
+const DAY = centralDayKey(workingDayBefore(Date.now() - 2 * 86400000));
 const DAY_START = centralMidnight(DAY);
 const DAY_END = centralMidnight(centralDayKey(DAY_START + 36 * 3600000));
 const PREV_DAY = centralDayKey(DAY_START - 12 * 3600000);

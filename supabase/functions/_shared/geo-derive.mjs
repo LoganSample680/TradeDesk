@@ -1125,8 +1125,14 @@ function geoDeriveDay(input) {
     : askedLegs;
   // Rule 16: a day that never reached business at all writes no drives. A
   // house loop (rule 7) survives only inside the window.
-  const realLegs = _gdEmptyDayLegs(winLegs, asked, inp, open,
-    journeys.some(j => j && j.open), win);
+  const laddered = _gdEmptyDayLegs(winLegs, asked, inp, open,
+    journeys.some(j => j && j.open), win, fences, opts.radiusFt);
+  // Rule 20: the commute is marked, not deleted. The leg is a real drive and
+  // the map, the route and every structural rule above still need it; what it
+  // must never do is bill. geoDeriveRows writes no mileage row and no drive
+  // time row for it, which is where "no hours, no miles" actually lives.
+  const realLegs = laddered.map(l => (l && _gdIsCommuteLeg(l, fences, opts.radiusFt))
+    ? Object.assign({}, l, { commute: true }) : l);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -1599,18 +1605,90 @@ function _gdPath(fixes, a, b, maxAccM, endpoints, max, maxMph) {
 // fires on the odd-hours visits, which are the family ones. What it still
 // cannot know, and no competitor can either: a genuinely personal weekday
 // afternoon at a client with nothing scheduled counts.
-function _gdHeldVisits(dwells, inp, dayStart) {
-  const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
-    .map(c => c && { a: Number(c.start), b: Number(c.end) })
-    .filter(c => c && c.a > 0 && c.b > c.a);
-  const wh = inp.workHours || {};
+// ── RULE 19: THE DAY LEARNS WHEN THIS PERSON USUALLY WORKS ────────────────
+// Owner 2026-09-15: "Jack's day is 8 am to 5 pm really but sometimes gets off
+// before that, we know his clock in and clock out behavior so how do we run
+// this ladder off the times we know he usually works? This could be global."
+//
+// The company's Settings hours are one number for everybody, and they exist to
+// cover the forgetful contractor for free (rule 13). They cannot tell a crew
+// member who starts at 7:45 from an owner who invoices at 10pm, and the
+// question this now has to answer is exactly that: was this drive part of THIS
+// person's working day.
+//
+// His own clock punches answer it, and far more sharply than a setting could.
+// Jack's seven clocked days, Central: in at 7:42, 7:44, 7:44, 7:45, 7:54,
+// 7:55, 7:58, and out between 15:00 and 19:30. A sixteen-minute band on the
+// in. The 5:29am gym run is more than two hours before the earliest he has
+// ever started; that is not a close call, it is a different part of the day.
+//
+// THE EDGES ARE THE EXTREMES, PADDED, NOT THE MEDIAN, and the asymmetry is
+// deliberate: missing a real job costs the owner money, while letting one gym
+// trip through costs a greyed row he can dismiss. So the window is as wide as
+// the person has ever been, plus an hour each way, minus the single most
+// extreme sample on each side so one 4am start cannot poison it forever.
+//
+// ONLY CLOCKS ON OR BEFORE THE DAY BEING DERIVED. A day's rows must not change
+// because of a punch from three weeks later; re-deriving September 1st next
+// month has to reach the same answer it reached then.
+//
+// UNDER FIVE CLOCKED DAYS THERE IS NO PATTERN, only a couple of points, so the
+// company setting stands. A new hire is covered from day one, just loosely.
+//
+// input.clockHistory is [{day, inMin, outMin}], minutes after that day's local
+// midnight, resolved by the caller: it already owns the Central day maths and
+// this file must not grow a second copy of it (a DST day is 23 or 25 hours and
+// a modulo would be wrong twice a year).
+const GEO_LEARNED_MIN_DAYS = 5;
+const GEO_LEARNED_PAD_MS = 3600000;
+function _gdLearnedHours(inp) {
+  const day = String((inp && inp.day) || '');
+  const rows = (Array.isArray(inp && inp.clockHistory) ? inp.clockHistory : [])
+    .filter(r => r && typeof r.inMin === 'number' && typeof r.outMin === 'number'
+      && r.outMin > r.inMin && String(r.day || '') && String(r.day) <= day);
+  if (rows.length < GEO_LEARNED_MIN_DAYS) return null;
+  const ins = rows.map(r => r.inMin).sort((a, b) => a - b);
+  const outs = rows.map(r => r.outMin).sort((a, b) => a - b);
+  // Drop the one outlier at each end. With exactly the minimum that still
+  // leaves three days either side of the edge being chosen.
+  const a = ins[1], b = outs[outs.length - 2];
+  if (!(a >= 0 && b > a)) return null;
+  return { a: a * 60000 - GEO_LEARNED_PAD_MS, b: b * 60000 + GEO_LEARNED_PAD_MS };
+}
+// The working day, as one answer: its bounds in ms after local midnight, and
+// whether this is a working day at all. One definition, because rule 13 asks
+// it about visits and rule 16 asks it about drives, and they cannot disagree.
+function _gdDayShape(inp) {
+  const wh = (inp && inp.workHours) || {};
   const hm = v => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '')); return m ? (Number(m[1]) * 60 + Number(m[2])) * 60000 : NaN; };
   let whA = hm(wh.start), whB = hm(wh.end);
   if (!Number.isFinite(whA)) whA = 6 * 3600000;
   if (!Number.isFinite(whB)) whB = 20 * 3600000;
+  // Rule 19: what this person actually does REPLACES what the company wrote
+  // down, because it is measured rather than guessed and it is already padded
+  // by an hour each way with its outliers trimmed off. The setting is the
+  // fallback for anybody too new to have a pattern, not a floor under one.
+  //
+  // Replacing can make the window narrower than the company's, and that is the
+  // point: Jack has never once started before 7:42, so the company's 6am tells
+  // us nothing about his morning. What keeps that safe is where this window is
+  // USED. A drive between two saved fences counts at any hour, and so does one
+  // a clock covers; the window only ever arbitrates a drive that can vouch for
+  // neither, which is the ambiguous loop through somewhere nobody saved. The
+  // worst it can do is drop one of those, and the whole reason it exists is
+  // that one of those is a gym run.
+  const learned = _gdLearnedHours(inp);
+  if (learned) { whA = learned.a; whB = learned.b; }
   const days = Array.isArray(wh.days) ? wh.days.map(Number) : [1, 2, 3, 4, 5, 6];
-  const dow = new Date(String(inp.day || '') + 'T12:00:00Z').getUTCDay();
-  const workDay = Number.isFinite(dow) && days.indexOf(dow) >= 0;
+  const dow = new Date(String((inp && inp.day) || '') + 'T12:00:00Z').getUTCDay();
+  return { whA, whB, learned: !!learned, workDay: Number.isFinite(dow) && days.indexOf(dow) >= 0 };
+}
+
+function _gdHeldVisits(dwells, inp, dayStart) {
+  const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
+    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .filter(c => c && c.a > 0 && c.b > c.a);
+  const { whA, whB, workDay } = _gdDayShape(inp);
   const overlaps = (d, a, b) => Math.min(d.endTs, b) - Math.max(d.startTs, a) >= 60000;
   return (dwells || []).map(d => {
     if (!d || d.kind !== 'client' || !d.fence || d.fence.scheduled === true) return d;
@@ -1782,50 +1860,140 @@ function _gdInWindow(win, r) {
 // and that asymmetry is why the gym ran up mileage rows on a day the time log
 // correctly showed as empty.
 //
-// IT ASKS BEFORE IT DELETES, and that is the half the owner added by name:
-// "except for Laurie which we now tag as family and flag the question if it's
-// work or personal." A day holding a NAMED held visit still has something to
-// ask about, and the drives either side of it are part of the question, so
-// they stay and rule 15's amber row asks. Only a day with nothing nameable in
-// it at all, no business end, no named visit, no clock, is thrown away. The
-// gym has no fence and nobody to name; there is no question to put to anybody.
+// ── THE LADDER, AS THE OWNER STATED IT (2026-09-15) ───────────────────────
+// "In order to start the day, we need back to back fence stops aligned with
+// core motion or a manual clock in to happen." Then, having spotted the hole
+// in his own rule: "What if the first stop of the day isn't a saved address
+// nor is the clock in button hit, then we have missing rows."
 //
-// The three ways a day proves it happened, any one of which keeps every leg:
-//   - a leg rule 15 vouched for (a job, the yard, a supply place, a client the
-//     day can stand behind), which is a business end by definition
-//   - a manual clock, the owner's first instinct here and the safety valve
-//     rule 11 was already designed around
-//   - a named visit still holding an open question (rule 13)
-function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win) {
-  // Mid-drive, or standing at a work fence right now: the day is not over and
-  // nothing about it can be called empty yet.
-  if (driving) return legs;
-  if (open && !_gdIsBaseKind(open.kind) && open.kind !== 'office') return legs;
-  const list = legs || [];
+// He is right, and the hole is not fixable by looking harder at the tape: a
+// gym run and a first job at an address nobody saved are THE SAME DATA. Leave
+// the house, stop somewhere unsaved, come home. No rule reading only the
+// breadcrumbs can separate them, so any rule that kills one kills the other.
+//
+// What separates them is WHEN. So the day-start question is answered by the
+// witness ladder rule 13 already uses for visits, applied to drives, with rule
+// 19's learned hours in place of the company setting:
+//
+//   1. the drive vouches for itself: two different saved fences, off the tape
+//   2. a manual clock covers it
+//   3. it sits wholly inside this person's working day (rule 19)
+//   4. none of those: it is not written
+//
+// Rungs 1 and 2 are his rule, unchanged and unconditional on the hour. Rung 3
+// is the answer to his catch-22: a 9am run to a customer nobody has saved is
+// written, greyed, earning nothing, with the Save button on it, so the row is
+// there to be named and nothing goes missing. Rung 4 is the gym, out at 5:29
+// and home by 6:27, two hours before Jack has ever clocked in.
+//
+// WHOLLY inside, not touching: his gym run ends at 6:27 and would overlap a
+// 6am company window by 27 minutes. Same rule _gdInWindow already states for
+// the workday ("inside the window means inside it, not touching it").
+//
+// A leg that is NOT held reached business on its own and is rung 1 by
+// definition, so it never has to ask the hour.
+// ── RULE 20: THE COMMUTE IS NOT WORK, AND IT IS NOT MILEAGE ───────────────
+// Owner 2026-09-15: "He doesn't get paid for his drive to his dads shop or
+// when he goes home, his time runs on arrival to the shop and or clock in time
+// and out time, we dont want to show his mileage to his dads or from home."
+//
+// This is the IRS commuting rule and that is why it is global rather than one
+// man's exception: travel between your home and your regular place of work is
+// never claimable, and everything from arrival onward is. Jack happening not
+// to own the shop he reports to is incidental; an employee of any contractor
+// on this app has the same two drives every day.
+//
+// THE SHOP IS THE REGULAR PLACE, and no box has to be ticked to say so (owner
+// 2026-09-15: "globally the process will be employees drive to the shop don't
+// get logged, but anything from the shop out to the next job does. The trigger
+// would be shop to address and/or clock in"). The account already says where
+// the shop is, so the rule needs no setup and is right on day one for every
+// account: the checkbox is the EXCEPTION, for a second yard somebody reports
+// to that is not the registered shop.
+//
+// A leg with a HOUSE at one end and that place at the other, in either
+// direction, is the commute: no time row, no mileage row, nothing on the rail.
+// Arrival is where the day starts, which is what the owner asked for, and the
+// dwell at the shop is untouched because being there IS the work.
+//
+// A HOME OFFICE DOES NOT EXEMPT IT, and that is deliberate rather than an
+// oversight. The tax code would let a genuine principal-place-of-business home
+// office claim that first drive; the owner's rule is that the day runs from
+// arrival at the shop or the clock, whichever comes first, and his own house
+// is a home_office place. Naming it here so the next reader knows the narrower
+// reading was chosen, not missed.
+//
+// EVERY OTHER LEG OUT OF THAT PLACE IS WORK, unchanged. Shop to a customer,
+// shop to a supply house, customer back to the shop: all still claimed. Only
+// the two ends of the commute itself are refused, which is exactly the line
+// the deduction draws.
+//
+// It is dropped BEFORE the ladder rather than inside it, and unconditionally:
+// a commute covered by a manual clock is still a commute. The clock says he
+// was working, not that the drive was billable, and rule 16's rungs are about
+// whether a drive can be PLACED, which this one can, precisely.
+// ONE BUILDING ANSWERS TO SEVERAL FENCES, and this rule cannot be the third
+// thing to forget it. His yard is registered twice on his own account: the
+// built-in Settings shop and the td_places row migrated from it, same
+// coordinate, same rank, so which one a leg's end carries is decided by
+// nothing better than list order. Ticking the box on one of them has to work.
+//
+// Same shape _gdShopIsHome already uses for the other duplicate-registration
+// question ("is there a home office standing at this shop"), so there is one
+// idiom for "what else is at this spot" rather than two.
+// The shop, or anywhere the box was ticked. A house that happens to be a shop
+// is not caught here: _gdIsCommuteLeg refuses a leg whose ends are both the
+// house, which is the owner's own account (his shop fence sits on his desk).
+function _gdReportsKind(f) {
+  return !!f && (f.commute === true || String(f.kind) === 'shop');
+}
+function _gdReportsHere(fence, fences, radiusFt) {
+  if (!fence || fence.lat == null || fence.lng == null) return false;
+  if (_gdReportsKind(fence)) return true;
+  const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  return (fences || []).some(f => _gdReportsKind(f) && f.lat != null && f.lng != null &&
+    _gdMiles(fence, f) * 5280 <= r);
+}
+function _gdIsCommuteLeg(l, fences, radiusFt) {
+  if (!l || !l.from || !l.to) return false;
+  // A CHAIN IS NOT A COMMUTE, however it ends. A leg that stopped anywhere on
+  // the way is the shop, four customers and then the house (his 1 September),
+  // and refusing the whole chain because its last end is home would delete the
+  // four customer stops and the five drives inside it. The commute is the
+  // drive with nothing in it: door to door, no stops.
+  if (Array.isArray(l.drives) && l.drives.length > 1) return false;
+  const a = l.from, b = l.to;
+  if (a.unsaved === true || b.unsaved === true) return false;
+  const house = (e) => _gdIsHouse(e, fences, radiusFt);
+  const reports = (e) => _gdReportsHere(e, fences, radiusFt);
+  // A place that is BOTH the house and the place you report to is one place,
+  // and the drive between a spot and itself is not a commute, it is nothing.
+  if (house(a) && house(b)) return false;
+  return (house(a) && reports(b)) || (reports(a) && house(b));
+}
+
+function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win, fences, radiusFt) {
+  const list = (legs || []);
   if (!list.length) return list;
-  // RULE 7's HOUSE LOOP, judged here now rather than at build time. Out of the
-  // house and back with nothing saved between is the gym run, unless the
-  // workday was open around it, which is the only evidence that says otherwise
-  // (owner 2026-09-12). Dropped first so it can never hold a dead day open.
-  const kept = list.filter(l => !(l && l.houseLoop === true && !_gdInWindow(win, l)));
-  if (!kept.length) return kept;
-  // A leg that reached business. One is enough for the day.
-  //
-  // NOT "a leg rule 15 left alone", which is what this said until rule 18
-  // (2026-09-13). A loop out of the yard and back is held now, because its two
-  // ends are one fence read twice and the place it went was never saved, but
-  // it plainly reached a business address and the day plainly happened. Held
-  // means shown and uncounted; it must never mean deleted, and reading `held`
-  // here is what made it mean deleted.
-  if (kept.some(l => l && (l.held !== true || l.business === true))) return kept;
-  // The person said they were working. Outranks geography, same as rule 13.
-  if ((Array.isArray(inp.clocks) ? inp.clocks : [])
-    .some(c => c && Number(c.start) > 0 && Number(c.end) > Number(c.start))) return kept;
-  // Real work anywhere, or a named question still open: the day is not empty.
+  const { whA, whB, workDay } = _gdDayShape(inp);
+  const ds = Number(inp && inp.dayStart);
+  const clocks = (Array.isArray(inp && inp.clocks) ? inp.clocks : [])
+    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .filter(c => c && c.a > 0 && c.b > c.a);
+  const covered = (l) => clocks.some(c => Math.min(l.endTs, c.b) - Math.max(l.startTs, c.a) >= 60000);
+  const inHours = (l) => workDay && ds > 0 &&
+    Number(l.startTs) >= ds + whA && Number(l.endTs) <= ds + whB;
+  // IT ASKS BEFORE IT DELETES, kept from the rule this replaces and named by
+  // the owner himself: "except for Laurie which we now tag as family and flag
+  // the question if it's work or personal." A day holding a NAMED held visit
+  // still has something to ask about, and the drives either side of it are
+  // part of the question, so they stay and rule 15's amber row asks. The gym
+  // has no fence and nobody to name; there is no question to put to anybody,
+  // which is exactly why this does not save it.
   const named = (d) => !!(d && d.fence && (d.fence.name || d.fence.clientId != null || d.fence.jobId != null));
-  if ((dwells || []).some(d => d && !_gdIsBaseKind(d.kind) && d.kind !== 'office' &&
-    (d.held !== true || named(d)))) return kept;
-  return [];
+  const asking = (dwells || []).some(d => d && d.held === true && named(d) &&
+    !_gdIsBaseKind(d.kind) && d.kind !== 'office');
+  return list.filter(l => !!l && (l.held !== true || covered(l) || inHours(l) || asking));
 }
 
 // ── Rule 15: a drive the day cannot vouch for is a question too ───────────
@@ -2121,6 +2289,12 @@ function geoDeriveRows(result, ids) {
     // company's mileage log.
     const lClaim = geoSpanClaim(l, claimCtx);
     if (!lClaim.claim) { held.push({ kind: 'leg', id: l.id, startTs: l.startTs, endTs: l.endTs }); continue; }
+    // RULE 20: THE COMMUTE BILLS NOTHING. Marked upstream, refused here, once,
+    // for both outputs: no mileage row and no drive time row. It is the same
+    // line the IRS deduction draws, and doing it here rather than by deleting
+    // the leg keeps the drive on the record and re-derivable the day the flag
+    // changes.
+    if (l.commute === true) continue;
     // ONE ROW PER DRIVE, NOT ONE PER CHAIN (owner 2026-09-04: "right, in
     // between it logs the time as a unsaved job site").
     //

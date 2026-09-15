@@ -876,12 +876,28 @@ async function loadBrief(b){
   const {from,to}=rangeIso();
   const key=b.id+'|'+DAYS;
   const seen=BRIEF_CACHE.get(key);
-  if(seen){ BRIEF=seen; paintBrief(seen); return; }
-  $('biz-sections').innerHTML='<div class="tiles">'+'<div class="skel"></div>'.repeat(8)+'</div>';
-  $('biz-timing').innerHTML='<div class="skel"></div>';
+  // SHOW WHAT WE HAVE, THEN GO AND CHECK (owner 2026-09-15: "why does jacks
+  // view in ops portal say its on 09.14.26.19 but ops portal says 09.14.26.11
+  // with last seen yesterday when he clocked in this morning").
+  //
+  // Both numbers were right about their own source and one of them was old.
+  // The live view reads the app, which had updated; this brief came out of a
+  // cache that was FINAL, so a portal tab open since yesterday answered with
+  // yesterday's brief forever and no amount of clicking around refreshed it.
+  // His 8:01am session was in the database the whole time.
+  //
+  // Instant on re-entry is worth keeping, so the cached copy still paints
+  // first; it is simply no longer the last word. A failed refresh leaves what
+  // was on screen rather than replacing a real answer with an error.
+  if(seen){ BRIEF=seen; paintBrief(seen); }
+  else{
+    $('biz-sections').innerHTML='<div class="tiles">'+'<div class="skel"></div>'.repeat(8)+'</div>';
+    $('biz-timing').innerHTML='<div class="skel"></div>';
+  }
   const {data,error}=await sb.rpc('ops_account_brief',{p_target:b.id,p_from:from,p_to:to});
   if(!OPEN||OPEN.id!==b.id)return;   // they moved on while it was in flight
   if(error||!data){
+    if(seen)return;                  // keep the answer already on screen
     BRIEF=null;
     $('biz-sections').innerHTML='<div class="tiles">'+tile('—','Could not load')+'</div>';
     $('biz-timing').innerHTML='<div class="muted">'+esc(error?error.message:'No answer')+'</div>';
