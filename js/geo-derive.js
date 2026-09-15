@@ -1120,7 +1120,7 @@ function geoDeriveDay(input) {
   // Rule 16: a day that never reached business at all writes no drives. A
   // house loop (rule 7) survives only inside the window.
   const realLegs = _gdEmptyDayLegs(winLegs, asked, inp, open,
-    journeys.some(j => j && j.open), win);
+    journeys.some(j => j && j.open), win, fences, opts.radiusFt);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -1880,8 +1880,62 @@ function _gdInWindow(win, r) {
 //
 // A leg that is NOT held reached business on its own and is rung 1 by
 // definition, so it never has to ask the hour.
-function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win) {
-  const list = legs || [];
+// ── RULE 20: THE COMMUTE IS NOT WORK, AND IT IS NOT MILEAGE ───────────────
+// Owner 2026-09-15: "He doesn't get paid for his drive to his dads shop or
+// when he goes home, his time runs on arrival to the shop and or clock in time
+// and out time, we dont want to show his mileage to his dads or from home."
+//
+// This is the IRS commuting rule and that is why it is global rather than one
+// man's exception: travel between your home and your regular place of work is
+// never claimable, and everything from arrival onward is. Jack happening not
+// to own the shop he reports to is incidental; an employee of any contractor
+// on this app has the same two drives every day.
+//
+// A fence marked `commute` is that regular place. A leg with a HOUSE at one
+// end and a commute fence at the other, in either direction, is the commute:
+// no time row, no mileage row, nothing on the rail. Arrival is where the day
+// starts, which is what the owner asked for, and the dwell at the shop is
+// untouched because being there IS the work.
+//
+// EVERY OTHER LEG OUT OF THAT PLACE IS WORK, unchanged. Shop to a customer,
+// shop to a supply house, customer back to the shop: all still claimed. Only
+// the two ends of the commute itself are refused, which is exactly the line
+// the deduction draws.
+//
+// It is dropped BEFORE the ladder rather than inside it, and unconditionally:
+// a commute covered by a manual clock is still a commute. The clock says he
+// was working, not that the drive was billable, and rule 16's rungs are about
+// whether a drive can be PLACED, which this one can, precisely.
+// ONE BUILDING ANSWERS TO SEVERAL FENCES, and this rule cannot be the third
+// thing to forget it. His yard is registered twice on his own account: the
+// built-in Settings shop and the td_places row migrated from it, same
+// coordinate, same rank, so which one a leg's end carries is decided by
+// nothing better than list order. Ticking the box on one of them has to work.
+//
+// Same shape _gdShopIsHome already uses for the other duplicate-registration
+// question ("is there a home office standing at this shop"), so there is one
+// idiom for "what else is at this spot" rather than two.
+function _gdReportsHere(fence, fences, radiusFt) {
+  if (!fence || fence.lat == null || fence.lng == null) return false;
+  if (fence.commute === true) return true;
+  const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  return (fences || []).some(f => f && f.commute === true && f.lat != null && f.lng != null &&
+    _gdMiles(fence, f) * 5280 <= r);
+}
+function _gdIsCommuteLeg(l, fences, radiusFt) {
+  if (!l || !l.from || !l.to) return false;
+  const a = l.from, b = l.to;
+  if (a.unsaved === true || b.unsaved === true) return false;
+  const house = (e) => _gdIsHouse(e, fences, radiusFt);
+  const reports = (e) => _gdReportsHere(e, fences, radiusFt);
+  // A place that is BOTH the house and the place you report to is one place,
+  // and the drive between a spot and itself is not a commute, it is nothing.
+  if (house(a) && house(b)) return false;
+  return (house(a) && reports(b)) || (reports(a) && house(b));
+}
+
+function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win, fences, radiusFt) {
+  const list = (legs || []).filter(l => !_gdIsCommuteLeg(l, fences, radiusFt));
   if (!list.length) return list;
   const { whA, whB, workDay } = _gdDayShape(inp);
   const ds = Number(inp && inp.dayStart);

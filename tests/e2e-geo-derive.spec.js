@@ -1239,6 +1239,108 @@ test.describe('geo-derive: the day deriver', () => {
   // reverted the same evening. Both of the things that broke it are cases
   // here: one building answering to three region ids, and an enter with no
   // exit. Those are his real ids and his real timestamps.
+  // ── RULE 20: the commute is not work, and it is not mileage ──────────────
+  //
+  // Owner 2026-09-15: "He doesn't get paid for his drive to his dads shop or
+  // when he goes home, his time runs on arrival to the shop and or clock in
+  // time and out time, we dont want to show his mileage to his dads or from
+  // home." And on hiding it rather than greying it: "Hide it."
+  //
+  // The IRS commuting rule, which is why it is global: home to your regular
+  // workplace is never claimable, everything from arrival onward is. Him not
+  // owning the yard he reports to is incidental.
+  test.describe('rule 20: the commute', () => {
+    const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const YARD = { id: 'shop', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106, commute: true };
+    const CUST = { id: 'client-1', kind: 'client', name: 'Bill Lorson', clientId: 1, lat: 39.10721, lng: -95.6650246 };
+    // Home 07:24, yard 07:48, out to the customer 07:59, back 15:43, home 16:35.
+    const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 24), 'automotive'), mo(T(7, 48), 'onFoot'),
+      mo(T(7, 59), 'automotive'), mo(T(8, 24), 'onFoot'),
+      mo(T(15, 43), 'automotive'), mo(T(16, 3), 'onFoot'),
+      mo(T(16, 35), 'automotive'), mo(T(16, 53), 'onFoot')];
+    const fixes = [fix(T(7, 24, 5), JHOME), fix(T(7, 48, 5), YARD), fix(T(7, 55), YARD),
+      fix(T(7, 59, 5), YARD), fix(T(8, 24, 5), CUST), fix(T(12, 0), CUST),
+      fix(T(15, 43, 5), CUST), fix(T(16, 3, 5), YARD), fix(T(16, 20), YARD),
+      fix(T(16, 35, 5), YARD), fix(T(16, 53, 5), JHOME), fix(T(18, 0), JHOME)];
+    const run20 = (fences) => page.evaluate((inp) => {
+      const r = geoDeriveDay(inp);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+      return JSON.parse(JSON.stringify({
+        legs: r.legs.map(l => [l.from.name, l.to.name]),
+        dwells: r.dwells.map(d => [d.kind, d.name]),
+        miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
+        drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
+      }));
+    }, base({ tape, fixes, fences, nowMs: T(20, 0) }));
+
+    test('his day: the two commutes are gone, the work drives are not', async () => {
+      const r = await run20([JHOME, YARD, CUST]);
+      expect(r.legs, 'yard to the customer and back, and nothing else')
+        .toEqual([['JS Solutions shop', 'Bill Lorson'], ['Bill Lorson', 'JS Solutions shop']]);
+      expect(r.miles).toEqual([['JS Solutions shop', 'Bill Lorson'], ['Bill Lorson', 'JS Solutions shop']]);
+      expect(r.drives).toBe(2);
+    });
+
+    test('and his time at the yard is untouched: being there IS the work', async () => {
+      const r = await run20([JHOME, YARD, CUST]);
+      expect(r.dwells.filter(d => d[0] === 'shop').length).toBeGreaterThan(0);
+    });
+
+    test('without the flag it is four drives, exactly as before', async () => {
+      const r = await run20([JHOME, Object.assign({}, YARD, { commute: undefined }), CUST]);
+      expect(r.legs).toEqual([
+        ['7402 SW 22nd Ct', 'JS Solutions shop'],
+        ['JS Solutions shop', 'Bill Lorson'],
+        ['Bill Lorson', 'JS Solutions shop'],
+        ['JS Solutions shop', '7402 SW 22nd Ct'],
+      ]);
+      expect(r.drives).toBe(4);
+    });
+
+    // ONE BUILDING, SEVERAL FENCES. His yard is registered twice on his own
+    // account, the Settings shop and the td_places row migrated from it, same
+    // coordinate. Ticking the box on either one has to work, which is what
+    // rule 15's first attempt got wrong about the same duplicate.
+    test('the flag works on any of the fences standing at that spot', async () => {
+      const twin = { id: 'place-dup', kind: 'shop', name: '1200 SW Oakley Ave',
+        lat: YARD.lat, lng: YARD.lng, commute: true };
+      const plain = Object.assign({}, YARD, { commute: undefined });
+      const r = await run20([JHOME, plain, twin, CUST]);
+      expect(r.legs.length, 'the commute is still recognised').toBe(2);
+      expect(r.drives).toBe(2);
+    });
+
+    test('a clock over the commute does not make it billable', async () => {
+      // The clock says he was working, not that the drive was claimable. Rule
+      // 16's rungs are about whether a drive can be PLACED; this one can be,
+      // precisely, which is why it is refused before the ladder runs.
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        return res.legs.map(l => [l.from.name, l.to.name]);
+      }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0),
+        clocks: [{ start: T(7, 0), end: T(18, 0) }] }));
+      expect(r).toEqual([['JS Solutions shop', 'Bill Lorson'], ['Bill Lorson', 'JS Solutions shop']]);
+    });
+
+    test('a place that is both the house and the yard has no commute to hide', async () => {
+      // The owner's own account: his shop fence sits 20 ft from his home
+      // office. A drive between a spot and itself is not a commute, and rule 7
+      // already refuses to call it anything.
+      const both = { id: 'shop', kind: 'shop', name: 'TradeDesk shop',
+        lat: JHOME.lat, lng: JHOME.lng, commute: true };
+      const r = await run20([JHOME, both, CUST]);
+      expect(r.legs.map(l => l[1])).toContain('Bill Lorson');
+    });
+
+    test('junk on the flag changes nothing', async () => {
+      for (const v of [undefined, null, false, 0, 'true', 1]) {
+        const r = await run20([JHOME, Object.assign({}, YARD, { commute: v }), CUST]);
+        // Only a real boolean true is the flag; anything else is four drives.
+        expect(r.drives, String(v)).toBe(4);
+      }
+    });
+  });
+
   // ── RULE 19: the day learns when this person usually works ───────────────
   //
   // Owner 2026-09-15: "Jack's day is 8 am to 5 pm really but sometimes gets off

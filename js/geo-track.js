@@ -7276,10 +7276,14 @@ function _geoDeriveFences(dayKey){
   const out=[];
   try{
     if(typeof S!=='undefined'&&S&&S.officeLat!=null&&S.officeLon!=null)
+      // The built-in Settings shop carries no rule-20 flag of its own. It is
+      // lifted into a real place by _migrateShopToPlaces (js/places.js), which
+      // is where the box is ticked, and _gdReportsHere reads any fence at that
+      // spot as the same building.
       out.push({id:'shop',kind:'shop',name:(S.bname?S.bname+' shop':'Shop'),lat:Number(S.officeLat),lng:Number(S.officeLon),addr:S.baddr||''});
     (typeof places!=='undefined'&&Array.isArray(places)?places:[]).forEach(pl=>{
       if(!pl||pl.lat==null||pl.lon==null)return;
-      out.push({id:'place-'+pl.id,kind:String(pl.kind||'other'),name:pl.name||'',lat:Number(pl.lat),lng:Number(pl.lon),addr:pl.addr||'',placeId:pl.id,radiusFt:pl.fenceFt||undefined});
+      out.push({id:'place-'+pl.id,kind:String(pl.kind||'other'),name:pl.name||'',lat:Number(pl.lat),lng:Number(pl.lon),addr:pl.addr||'',placeId:pl.id,radiusFt:pl.fenceFt||undefined,commute:pl.commute===true||undefined});
     });
     const cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
     // A client fence says whether the calendar vouches for it that day

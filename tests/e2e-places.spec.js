@@ -953,6 +953,95 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.shown, 'no onchange has fired yet, the note has to reflect the SAVED kind on open').toBe(true);
   });
 
+  // ── RULE 20: the place you report to (owner 2026-09-15) ──────────────────
+  // "He doesn't get paid for his drive to his dads shop or when he goes home,
+  // his time runs on arrival." The IRS commuting rule: home to your regular
+  // workplace is never claimable. The flag lives on the place; the deriver
+  // (js/geo-derive.js) decides what it means.
+  test.describe('I report here', () => {
+    const openFresh = (fn) => page.evaluate(fn);
+
+    test('saving it on, then off, actually clears it', async () => {
+      const out = await openFresh(() => {
+        places.length = 0;
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 5, 6);
+        document.getElementById('place-name').value = "Dad's yard";
+        const sel = document.getElementById('place-kind');
+        sel.value = 'shop'; _placeKindChanged('shop');
+        document.getElementById('place-commute').checked = true;
+        _savePlaceFromModal(null);
+        const on = !!places[0].commute, id = places[0].id;
+        // Re-open, untick, save. An undefined key means "not changing this" to
+        // savePlace, so the flag has to be written as a real false or it can
+        // never be turned off.
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(id);
+        const openedChecked = document.getElementById('place-commute').checked;
+        document.getElementById('place-commute').checked = false;
+        _savePlaceFromModal(id);
+        document.getElementById('place-modal')?.remove();
+        return { on, openedChecked, off: places[0].commute, n: places.length };
+      });
+      expect(out.on, 'ticked and saved').toBe(true);
+      expect(out.openedChecked, 'and it opens ticked, off the saved record').toBe(true);
+      expect(out.off, 'unticking clears it rather than leaving the old answer').toBe(false);
+      expect(out.n, 'still one place, this is an edit').toBe(1);
+    });
+
+    test('a home office is never offered it: that is the other end of the drive', async () => {
+      const out = await openFresh(() => {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 5, 6);
+        const row = () => document.getElementById('place-commute-row').style.display;
+        _placeKindChanged('shop');
+        const onShop = row();
+        _placeKindChanged('home_office');
+        const onHome = row();
+        _placeKindChanged('supply');
+        const onSupply = row();
+        document.getElementById('place-modal')?.remove();
+        return { onShop, onHome, onSupply };
+      });
+      expect(out.onShop).toBe('flex');
+      expect(out.onHome, 'the house is where the commute starts, not where it ends').toBe('none');
+      expect(out.onSupply, 'a yard is not the only thing somebody reports to').toBe('flex');
+    });
+
+    test('a home office cannot carry it even if the box was ticked first', async () => {
+      // Tick it on a shop, then switch the type to home office and save. The
+      // row is hidden by then, so the checkbox is still ticked in the DOM.
+      const out = await openFresh(() => {
+        places.length = 0;
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 5, 6);
+        document.getElementById('place-name').value = 'My house';
+        document.getElementById('place-kind').value = 'shop'; _placeKindChanged('shop');
+        document.getElementById('place-commute').checked = true;
+        document.getElementById('place-kind').value = 'home_office'; _placeKindChanged('home_office');
+        _savePlaceFromModal(null);
+        document.getElementById('place-modal')?.remove();
+        return { kind: places[0].kind, commute: places[0].commute };
+      });
+      expect(out.kind).toBe('home_office');
+      expect(out.commute).toBe(false);
+    });
+
+    test('it says what it does in plain words, and names the tax rule it is', async () => {
+      const out = await openFresh(() => {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 5, 6);
+        _placeKindChanged('shop');
+        const t = document.getElementById('place-commute-row').textContent;
+        document.getElementById('place-modal')?.remove();
+        return t;
+      });
+      expect(out).toContain('I report here');
+      expect(out, 'both halves: what stops, and what does not').toContain('no hours, no miles');
+      expect(out).toContain('counts from the moment you arrive');
+    });
+  });
+
   // ── Type is asked, never assumed ───────────────────────────────────────────
   // Owner 2026-08-31: "when we add a place it always pre fills with supply
   // house, make that grey but required, dont want to pre fill things in."

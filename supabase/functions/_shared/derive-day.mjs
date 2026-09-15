@@ -243,6 +243,9 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // SQL fence list and the deriver's shape.
     personal: f.personal ?? undefined,
     onBooks: f.on_books ?? undefined,
+    // Rule 20: the place this person reports to. A leg between it and their
+    // own house is the commute, and writes nothing.
+    commute: f.commute === true || undefined,
   }));
 
   // This person's closed manual clocks touching the day (rule 13). The owner's
