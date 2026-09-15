@@ -279,25 +279,15 @@ test.describe('geo-derive wiring', () => {
   });
 
   // ── The region log (rule 15) ──────────────────────────────────────────────
-  // The OS's fence crossings, kept the way the lifecycle edges are so the
-  // deriver gets the same evidence on the phone that it gets on the server.
-  // Its own log rather than two more kinds in the app log, because rule 10
-  // reads that one for app-open minutes and a fence crossing is not the app
-  // being open.
   test.describe('the region log (rule 15)', () => {
     test('a crossing lands in it from the router, and its POSITION never becomes a fix', async () => {
       const r = await page.evaluate(async () => {
         localStorage.removeItem('zp3_geo_reglog'); localStorage.removeItem('zp3_geo_fixlog');
         const t0 = Date.now() - 5000;
-        // A region row carries the plugin's last-known location. Rule 15 reads
-        // the edge and the id; the coordinate is exactly what it exists not to
-        // trust, so it must not reach the trace.
         await _geoTdEvent({ type: 'regionEnter', ts: t0, regionId: 'place-9', lat: 39.02, lng: -95.68, acc: 5 }, false).catch(() => {});
         await _geoTdEvent({ type: 'regionExit', ts: t0 + 60000, regionId: 'place-9', lat: 39.02, lng: -95.68, acc: 5 }, false).catch(() => {});
-        return {
-          reg: _geoRegLogRead().map(e => [e.id, e.enter]),
-          fix: _geoFixLogRead().some(f => f.lat === 39.02 && f.lng === -95.68),
-        };
+        return { reg: _geoRegLogRead().map(e => [e.id, e.enter]),
+                 fix: _geoFixLogRead().some(f => f.lat === 39.02 && f.lng === -95.68) };
       });
       expect(r.reg).toEqual([['place-9', true], ['place-9', false]]);
       expect(r.fix, 'a crossing is not a fix').toBe(false);
@@ -310,7 +300,7 @@ test.describe('geo-derive wiring', () => {
         _geoRegLogPush(t0, 'place-9', true);
         _geoRegLogPush(t0 + 1, 'place-9', true);        // the live row and its replay
         _geoRegLogPush(t0 + 2000, 'place-9', true);     // two seconds on: a real re-entry
-        _geoRegLogPush(t0 + 3000, 'place-9', false);    // the other edge, same second window
+        _geoRegLogPush(t0 + 3000, 'place-9', false);
         _geoRegLogPush('junk', 'place-9', true); _geoRegLogPush(t0 + 4000, '', true);
         _geoRegLogPush(t0 + 5000, null, false);
         return _geoRegLogRead().map(e => [e.ts - t0, e.id, e.enter]);
@@ -1379,11 +1369,11 @@ test.describe('geo-derive wiring', () => {
       // the moment of the tap, which is exactly the test this filter applies.
       // A fence row, a motion row and a push-ping still never qualify.
       //
-      // AMENDED 2026-09-15 (rule 15): a SECOND `in` now rides along, asking
+      // AMENDED 2026-09-15 (rule 15): a SECOND `in` rides along now, asking
       // geo_events for the fence crossings. It is not a fix source and must
-      // never become one, which is exactly what this assertion pins: the trace
-      // fetch still asks for the three fresh types and nothing else, and the
-      // crossing fetch asks only for the two region types.
+      // never become one, which is what this pins: the trace fetch still asks
+      // for the three fresh types and nothing else, and the crossing fetch
+      // asks only for the two region types.
       const ins = r.calls.filter(c => c[0] === 'in');
       expect(ins.length).toBeGreaterThan(0);
       const shapes = [...new Set(ins.map(c => JSON.stringify(c[2])))].sort();

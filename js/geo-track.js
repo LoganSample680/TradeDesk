@@ -7138,9 +7138,9 @@ const _GEO_DERIVE_DAYS=7;
 
 const _GEO_APPLOG_KEY='zp3_geo_applog';
 // Rule 15 (js/geo-derive.js): the OS's own fence crossings, kept exactly the
-// way the lifecycle edges are. Its own log rather than a couple of extra kinds
-// in the app log, because rule 10 reads that one for app-open minutes and a
-// fence crossing is not the app being open.
+// way the lifecycle edges are. Its own log rather than two more kinds in the
+// app log, because rule 10 reads that one for app-open minutes and a fence
+// crossing is not the app being open.
 const _GEO_REGLOG_KEY='zp3_geo_reglog';
 // Fewer local fixes than this inside a day means the log does not know the
 // day: a real drive alone is a hundred.

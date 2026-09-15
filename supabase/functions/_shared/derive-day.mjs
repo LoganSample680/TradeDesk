@@ -182,9 +182,9 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   const fixes = [];
   const appEvents = [];
   // Rule 15: the OS's own fence crossings. Deliberately NOT a fix source (a
-  // region row carries the last-known position, which is the thing rule 15
-  // exists to stop trusting); only the edge and the region id are read, and
-  // those are exact.
+  // region row carries the plugin's last-known position, the very thing rule
+  // 15 exists to stop trusting); only the edge and the region id are read,
+  // and those are exact.
   const regions = [];
   for (const e of evRows) {
     const ts = Date.parse(e.ts);
