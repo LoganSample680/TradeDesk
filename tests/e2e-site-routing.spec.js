@@ -264,6 +264,30 @@ test.describe('marketing site routing', () => {
     }
   });
 
+  // Shard 6, 2026-09-15. The sitemap published a lastmod one day in the FUTURE.
+  //
+  // scripts/sitemap-lastmod.js had two clocks in it. A file changed by the
+  // current commit got Central ("today"), but a file changed earlier was read
+  // with `git log %cs`, and %cs reports the date in the commit's own timezone,
+  // which on this runner is UTC. So every commit between 7pm Central and
+  // midnight recorded tomorrow, and the sitemap claimed a page was modified on a
+  // day that had not happened yet.
+  //
+  // The test above catches it, but only for the five hours a day it is true, and
+  // only after the pre-commit hook has already written the file, which is after
+  // the local test run. This one is deterministic: it names the instant.
+  test('a commit made in the Central evening is dated that evening, not tomorrow', () => {
+    const { centralDate } = require('../scripts/sitemap-lastmod.js');
+
+    // 01:42:28Z is 8:42pm Central the previous day. This is the exact commit
+    // that shipped the bad stamp.
+    expect(centralDate(Date.parse('2026-09-15T01:42:28Z'))).toBe('2026-09-14');
+    // 11:59pm Central, the last minute that still belongs to the 14th.
+    expect(centralDate(Date.parse('2026-09-15T04:59:00Z'))).toBe('2026-09-14');
+    // 12:10am Central, the first minute that does not.
+    expect(centralDate(Date.parse('2026-09-15T05:10:00Z'))).toBe('2026-09-15');
+  });
+
   test('the IndexNow key is published and self-consistent', async () => {
     const root = path.join(__dirname, '..');
     const keyFile = fs.readdirSync(root).find(f => /^[0-9a-f]{8,128}\.txt$/.test(f));
