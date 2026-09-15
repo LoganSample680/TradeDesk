@@ -3226,9 +3226,33 @@ function _mileTripNumbers(dayKey,rows){
 }
 function _mileTripNumberForLeg(dayKey,clientKey){
   if(!clientKey)return null;
-  const key=String(clientKey).replace(/:\d+$/,'');
   const nos=_mileTripNumbers(dayKey);
-  return nos['leg:'+key]||null;
+  const ls=_mileLegSeg(clientKey,dayKey);
+  if(ls)return nos['leg:'+String(ls.leg.legKey!=null?ls.leg.legKey:ls.leg.id)]||null;
+  return nos['leg:'+String(clientKey).replace(/:\d+$/,'')]||null;
+}
+// ── WHICH LEG A DRIVE ROW BELONGS TO, AND WHICH SEGMENT OF IT ──────────────
+// One place knows how a time row's key relates to a mileage leg, because two
+// screens ask (the rail's title and its trip number, js/timelog.js; the trip
+// number above). The deriver keys a drive row by the journey that started it
+// (js/geo-derive.js, the identity rule), which for a leg that never split IS
+// the leg's own key and for one that did is listed on the leg as segKeys.
+//
+// The ':N' arm is not a second answer, it is the same answer for a day nobody
+// can re-derive: the tape is seven days long, so a row written under the old
+// shape keeps it forever and still has to draw.
+function _mileLegSeg(clientKey,dayKey){
+  const key=String(clientKey||'');
+  if(!key||typeof mileage==='undefined'||!Array.isArray(mileage))return null;
+  const on=x=>x&&(!dayKey||x.date===dayKey);
+  let leg=mileage.find(x=>on(x)&&Array.isArray(x.segKeys)&&x.segKeys.indexOf(key)>=0);
+  if(leg)return {leg,ix:leg.segKeys.indexOf(key),split:true};
+  leg=mileage.find(x=>on(x)&&String(x.legKey!=null?x.legKey:x.id)===key);
+  if(leg)return {leg,ix:0,split:false};
+  const m=/^(.*):(\d+)$/.exec(key);
+  if(!m)return null;
+  leg=mileage.find(x=>on(x)&&String(x.legKey!=null?x.legKey:x.id)===m[1]);
+  return leg?{leg,ix:Number(m[2]),split:true}:null;
 }
 // ── SAVE THIS ADDRESS → the new-lead form (owner 2026-09-08) ─────────────────
 // "save this address should popup the enter lead." Not a bare address field:
@@ -3281,25 +3305,39 @@ async function _mileSaveAddress(id,which){
 // fact the mileage log shows as "Unsaved address", so it gets the same
 // button, and neither screen owns the behaviour.
 //
-// A rail stop carries its leg id with ':sN' on it (js/geo-derive.js writes
-// both), which names the trip it belongs to AND which of that trip's stops
-// this is, so the coordinate comes straight off the leg's viaStops. No new
-// lookup, no second source of truth: the leg the mileage log is already
-// drawing is the leg this reads.
+// A rail stop is an ARRIVAL, so it carries the id of the drive that ended
+// there (js/geo-derive.js, the identity rule) and the leg lists the same key
+// beside the coordinate on viaStops. Matching on the key rather than counting
+// positions is the point: a leg drops an interior segment too short to be a
+// drive, and the count would then open the lead form at the wrong stop.
+// No new lookup, no second source of truth: the leg the mileage log is
+// already drawing is the leg this reads.
 async function _mileSaveStopAddress(clientKey,day){
-  const m=/^(.*):s(\d+)$/.exec(String(clientKey||''));
-  if(!m)return false;
-  const legKey=m[1],ix=Number(m[2]);
-  const r=(typeof mileage!=='undefined'?mileage:[]).find(x=>x&&String(x.legKey||x.id)===legKey&&(!day||x.date===day));
-  if(!r)return false;
-  // viaStops is the answer; viaCoord is the same stop on an older row
-  // written before the array existed, so a day nobody has re-derived yet
-  // still answers its first stop instead of doing nothing.
-  const c=(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null;
+  const key=String(clientKey||'');
+  if(!key)return false;
+  const list=(typeof mileage!=='undefined'?mileage:[]);
+  const on=x=>x&&(!day||x.date===day);
+  let r=list.find(x=>on(x)&&Array.isArray(x.viaStops)&&x.viaStops.some(v=>v&&v.key===key));
+  let c=null,ix=0;
+  if(r){ix=r.viaStops.findIndex(v=>v&&v.key===key);c=r.viaStops[ix];}
+  else{
+    // A day too old to re-derive keeps the old ':sN' shape forever, and its
+    // viaStops carry no key. Position is all there is, so position it is.
+    const m=/^(.*):s(\d+)$/.exec(key);
+    if(!m)return false;
+    ix=Number(m[2]);
+    r=list.find(x=>on(x)&&String(x.legKey||x.id)===m[1]);
+    if(!r)return false;
+    // viaCoord is the same stop on an older row written before the array
+    // existed, so a day nobody has re-derived yet still answers its first
+    // stop instead of doing nothing.
+    c=(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null;
+  }
   if(!c)return false;
   // WHICH stop, not just which leg: the fallback below names one rail row and
-  // a leg can carry several.
-  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to',stop:ix});
+  // a leg can carry several. The row's own key rides along so naming it never
+  // has to rebuild one.
+  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to',stopKey:key});
 }
 // Called by saveClient once the new client's address has been geocoded (so
 // the fence exists). Re-derives the traced day; the real leg lands under the
@@ -3372,20 +3410,35 @@ async function _mileNameUnsaved(p,client){
   try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
   return true;
 }
-// The Time Log rail's own row for that same stop. The deriver writes it with
-// no name on purpose (an unsaved stop is never given one) and keeps it out of
-// every total; naming it is the same answer `geo_answer_visit` records for a
-// held visit, so it lands in the same shape: the client's name, source
-// 'client', and the fixed_at stamp that makes it a person's answer.
+// The Time Log rail's own row for that same stop, on a day nothing can
+// rebuild. The deriver writes the row with no name on purpose (an unsaved
+// stop is never given one) and keeps it out of every total; once the address
+// is a client, a day with tape left re-derives and the deriver names it
+// itself, under the same key, because the stop and the visit are the same
+// arrival. This is for the day past the tape's seven, where that will never
+// happen: it writes the name onto the row that is already there.
+//
+// NO fixed_at, and that is the whole point (owner 2026-09-14: "saving an
+// address is creating a CLIENT, not hand-correcting a row"). The stamp used
+// to be how this work survived a rebuild, and it is what made Jack's 13:14
+// stop permanent: the sweep skips a stamped row, so when the deriver settled
+// on 13:24:58 and wrote the arrival under its own key, the 13:14 guess could
+// not be retired and sat on top of both the drive and the visit. The key is
+// the protection now. A stamp here would also freeze the row's TIMES, since
+// geo_replace_day reads a fixed row's own span back over the derive, so the
+// one thing a rebuild is for could never reach it.
 async function _mileNameStopRow(p,client){
-  if(p.stop==null||!window._supa||!window._supaUser)return false;
+  // The rail row's own key, exactly as it was read off the row. Rebuilding it
+  // from a leg id and a position is how a key shape gets a second author.
+  const key=p&&p.stopKey?String(p.stopKey):'';
+  if(!key||!window._supa||!window._supaUser)return false;
   const nm=String(client.name||client.addr||'').trim();
   if(!nm)return false;
   try{
     const{error}=await _supa.from('job_time_entries')
-      .update({dest_place:nm,source:'client',fixed_at:new Date().toISOString()})
+      .update({dest_place:nm,source:'client'})
       .eq('employee_user_id',_supaUser.id)
-      .eq('client_key',String(p.legKey)+':s'+p.stop);
+      .eq('client_key',key);
     if(error)return false;
   }catch(_e){return false;}
   try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}

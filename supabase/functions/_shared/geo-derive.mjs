@@ -202,6 +202,54 @@ function geoFenceAt(pt, fences, radiusFt) {
   return best;
 }
 
+// ── RULE 15: WHICH FENCE THE OS SAYS WE ARE IN, AT ANY INSTANT ────────────
+// Region monitoring is the only observer in this system that watches a
+// boundary instead of sampling a position. iOS runs it below the app, so a
+// crossing fires while the process is suspended, and it fires ONCE, on the
+// edge: there is nothing to average, nothing to outvote, and nothing to go
+// stale. A regionEnter followed by the matching regionExit is a closed span
+// of "the phone was inside this fence", and an enter with no exit yet runs to
+// now.
+//
+// Built from input.regions, which both callers read off the same geo_events
+// rows the fixes come from (js/geo-track.js on the phone, derive-day.mjs on
+// the server). An id with no matching fence is skipped rather than guessed
+// at: a fence the account deleted since is not evidence about anything.
+//
+// Returns a lookup, ts -> fence | null. Overlapping spans rank exactly the
+// way geoFenceAt ranks overlapping circles (job over client over the rest),
+// so one fence precedence governs the whole file. On a tie the span that
+// STARTED later wins: entering B while still inside A is standing in B.
+function _gdRegionSpans(regions, fences, nowMs) {
+  const byId = new Map();
+  (Array.isArray(fences) ? fences : []).forEach(f => { if (f && f.id != null) byId.set(String(f.id), f); });
+  const rows = (Array.isArray(regions) ? regions : [])
+    .filter(r => r && typeof r.ts === 'number' && r.id != null && byId.has(String(r.id)))
+    .sort((a, b) => a.ts - b.ts);
+  const open = new Map(), spans = [];
+  for (const r of rows) {
+    const id = String(r.id);
+    if (r.enter) { if (!open.has(id)) open.set(id, r.ts); continue; }
+    const from = open.get(id);
+    if (from == null) continue;
+    open.delete(id);
+    if (r.ts > from) spans.push({ from, to: r.ts, f: byId.get(id) });
+  }
+  open.forEach((from, id) => { if (nowMs > from) spans.push({ from, to: nowMs, f: byId.get(id) }); });
+  if (!spans.length) return () => null;
+  return (ts) => {
+    if (typeof ts !== 'number') return null;
+    let best = null, bestRank = Infinity, bestFrom = -Infinity;
+    for (const s of spans) {
+      if (ts < s.from || ts > s.to) continue;
+      const rank = GEO_FENCE_RANK[String(s.f.kind || 'other')];
+      const rk = rank == null ? GEO_FENCE_RANK.other : rank;
+      if (rk < bestRank || (rk === bestRank && s.from > bestFrom)) { best = s.f; bestRank = rk; bestFrom = s.from; }
+    }
+    return best;
+  };
+}
+
 function _gdSameFence(a, b) {
   if (!a || !b) return false;
   return String(a.id) === String(b.id);
@@ -587,6 +635,7 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
  *                 straight line, and the leg says which it got.
  * input.appEvents [{ts, kind}] app-active | app-background | app-terminate |
  *                 app-relaunch (the plugin's own lifecycle events), for rule 10
+ * input.regions   [{ts, id, enter}] the OS's own fence crossings, for rule 15
  * input.opts      overrides for GEO_DERIVE_DEFAULTS
  */
 function geoDeriveDay(input) {
@@ -603,7 +652,30 @@ function geoDeriveDay(input) {
   const journeys = _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
+  const inside = _gdRegionSpans(inp.regions, fences, nowMs);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;
+  // RULE 15: THE OS ALREADY ANSWERED (owner 2026-09-15: "fix stale cache it
+  // should correct"). Where a fix only suggests which fence a stop is in, a
+  // region crossing STATES it. CoreLocation watches the boundary itself, in
+  // the kernel, whether or not this app has runtime, so a regionEnter with no
+  // matching exit yet is the strongest evidence in the file about where the
+  // phone is, and the deriver was throwing it away and re-guessing from
+  // coordinates.
+  //
+  // Jack's 14 September, 4:01pm. The app was suspended from 4:01 to 4:36, so
+  // the only four fixes in the whole dwell are one cached coordinate restated
+  // verbatim, 39.0421524 / -95.71497344, 1,279 ft from his own shop against a
+  // 300 ft fence. Nothing about counting them can tell a restatement from a
+  // measurement: two GPS reads of a still phone never match to fourteen
+  // decimals, but neither do a cache's twins tell you whether the cache was
+  // right. Meanwhile the shop's own regionEnter fired at 15:58 and its exit at
+  // 16:36, the clock-out at 16:13 sat 13 ft from the door, and 34 minutes at
+  // his yard derived as an unsaved address.
+  //
+  // So the crossing wins over the fix, and ONLY where the crossing actually
+  // speaks: a fix inside some other fence is left alone, and a stop with no
+  // enclosing span resolves exactly as it always did.
+  const fenceAt = (fix, ts) => inside(ts) || fenceOf(fix);
 
   // The chain: the first saved origin and the automotive minutes since it.
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
@@ -619,7 +691,7 @@ function geoDeriveDay(input) {
     const parkedFix = _gdParkedFixBefore(fixes, j.startTs, prevEnd, opts.parkedFixMaxMs, opts.maxFixAccM);
     const nearFix = at(j.startTs);
     const startFix = (parkedFix && fenceOf(parkedFix)) ? parkedFix : (nearFix || parkedFix);
-    const depFence = fenceOf(startFix);
+    const depFence = fenceAt(startFix, j.startTs);
     // The departure ping labels the dwell that just ended. If it is missing,
     // the arrival that opened the dwell still knows where it was.
     const fromFence = depFence || (arrived && arrived.fence) || null;
@@ -697,7 +769,7 @@ function geoDeriveDay(input) {
     // is its mirror. `at()` stays as the fallback for a journey with nothing
     // after it at all.
     const endFix = _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM, j.startTs) || at(j.endTs);
-    const toFence = fenceOf(endFix);
+    const toFence = fenceAt(endFix, j.endTs);
     const autoMs = j.endTs - j.startTs;
 
     if (!chain) {
@@ -717,7 +789,7 @@ function geoDeriveDay(input) {
               miles: Math.round(miles * 10) / 10, milesFrom: p > 0 ? 'path' : 'straight',
               collapsed: false, stops: 0, roundTrip: false,
               traced: true, unsavedFrom: true, unsavedTo: !toFence,
-              drives: [[j.startTs, j.endTs, autoMs]],
+              drives: [[j.startTs, j.endTs, autoMs, j.id, j.id]],
               path: _gdPath(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax, opts.maxMph),
             });
           }
@@ -759,10 +831,11 @@ function geoDeriveDay(input) {
       chain.autoMs += j.endTs - prevSeg[1];
       prevSeg[1] = j.endTs;
       prevSeg[2] = prevSeg[1] - prevSeg[0];
+      prevSeg[4] = j.id;
       if (chain.stops > 0) { chain.stops -= 1; if (chain.via) chain.via.pop(); }
     } else {
       chain.autoMs += autoMs;
-      chain.drives.push([j.startTs, j.endTs, autoMs]);
+      chain.drives.push([j.startTs, j.endTs, autoMs, j.id, j.id]);
     }
 
     if (!toFence) {
@@ -781,7 +854,7 @@ function geoDeriveDay(input) {
       // the position the whole dwell agrees on, and it is what the Save button
       // writes into a new client record.
       const stopFix = _gdStopFix(fixes, j.endTs, nextStart, opts.maxFixAccM, endFix);
-      if (stopFix) (chain.via = chain.via || []).push({ lat: Number(stopFix.lat), lng: Number(stopFix.lng), ts: j.endTs });
+      if (stopFix) (chain.via = chain.via || []).push({ lat: Number(stopFix.lat), lng: Number(stopFix.lng), ts: j.endTs, key: 'd-' + j.id });
       continue;
     }
 
@@ -997,6 +1070,15 @@ function geoDeriveDay(input) {
       // Nothing after it to corroborate with either: an unconfirmed last
       // reading does not get to end a day that may still be running.
       if (!next) continue;
+      // RULE 15 AGAIN: A CROSSING IS WHAT LEAVING LOOKS LIKE. A fix drifting
+      // outside is the weakest possible evidence that somebody left, and it is
+      // the evidence this rule has always had to make do with. When the OS is
+      // still holding the enter for this very fence open, it is not a guess
+      // any more: the boundary has not been crossed back, so nobody left, and
+      // whatever the fix says it is a reading the phone could not take from
+      // inside the building. Jack's 4:01pm is exactly this shape, one cached
+      // coordinate 1,279 ft out while the shop's regionEnter stood from 15:58.
+      if (_gdSameFence(inside(later[i].ts), arrived.fence)) continue;
       left = true; break;
     }
     if (left) {
@@ -1886,7 +1968,44 @@ function _gdDwell(fence, startTs, endTs, journeyId, open) {
 //   job / client / place  -> job_time_entries (source geofence | client | place)
 //   leg                   -> job_time_entries source 'drive' + td_mileage (gps)
 //
-// client_key carries the journey id, so a rebuild upserts onto its own rows.
+// ── A ROW IS KEYED BY ITS JOURNEY, NEVER BY THE STRUCTURE AROUND IT ───────
+// Owner 2026-09-14: "a row's identity should not depend on a guess the app
+// can change its mind about."
+//
+// Every automatic row names ONE journey, and a journey id is minted from the
+// CoreMotion flip (who and when, _gdJourneys). That is a fact off the tape,
+// not a reading of it, so the same flip mints the same id forever:
+//
+//   drive segment   the journey that STARTED it            'j-<uid>-<n>'
+//   stop / dwell    the journey that ENDED there         'd-j-<uid>-<n>'
+//   office          the fence and the window it carved   'o-<place>-<n>'
+//   mileage leg     the chain's first journey (one row per leg, rule 6)
+//
+// WHY THIS, AND NOT THE OLD ':N' / ':sN'. Both of those indexed a row by the
+// deriver's own inference: which chain a drive fell into, and how many stops
+// it had decided were in front of it. Both are revisable, and both revised.
+// Jack's 14 September, from the rows themselves:
+//
+//   14:42 derive   j-987ebc83-mu1925w4:0    drive 12:59:23 -> 13:14:01
+//                  j-987ebc83-mu1925w4:s0   stop  13:14:01 -> 14:22:44
+//                  j-987ebc83-mu1925w4:1    drive 14:22:44 -> 14:42:25
+//   16:16 derive   j-987ebc83-mu1925w4      drive 12:59:23 -> 13:24:58
+//                  d-j-987ebc83-mu1925w4    visit 13:24:58 -> 14:22:44
+//                  j-987ebc83-mu1c1crh      drive 14:22:44 -> 14:42:25
+//
+// Three rows re-keyed for three drives nothing was wrong about. The ':1' and
+// the 'mu1c1crh' rows are the SAME drive, minuted the same, named the same,
+// under two keys; the sweep retired one and the day was right by luck. When
+// the sweep cannot reach one (a `fixed_at` stamp, a derive with no tape) the
+// old key survives as a GHOST, and his 13:14 stop sat on top of both the
+// drive and the visit for the rest of the day.
+//
+// Under this rule both derives key that drive 'j-987ebc83-mu1925w4' and that
+// stop 'd-j-987ebc83-mu1925w4', so the second derive UPDATES the first's
+// rows. The stop and the visit are the same key on purpose: they are the
+// same arrival, and the only difference between them is whether the place
+// was saved yet. Saving the address is what turns one into the other, and it
+// must not turn one row into two.
 /**
  * geoSpanClaim(span, ctx) -> { claim, why }
  *
@@ -2023,7 +2142,15 @@ function geoDeriveRows(result, ids) {
     // here, this app was built to survive a IRS audit"). Time and mileage stop
     // being the same row, which is the whole change.
     const segsRaw = (Array.isArray(l.drives) && l.drives.length) ? l.drives
-      : [[l.startTs, l.endTs, (l.minutes || 0) * 60000]];
+      : [[l.startTs, l.endTs, (l.minutes || 0) * 60000, l.id, l.id]];
+    // A segment entry is [startTs, endTs, autoMs, startJourney, endJourney].
+    // The drive is keyed by the flip that began it and the stop after it by
+    // the flip that ended it, which is the same id the dwell would carry if
+    // that place were saved (see the identity rule at the top of this
+    // section). A single-segment leg's drive key is the leg id, exactly as
+    // it has always been, because the chain's first journey IS that segment.
+    const segKey = sg => String((sg && sg[3]) || l.id);
+    const stopKey = sg => 'd-' + String((sg && sg[4]) || l.id);
     // A MINUTE IS NOT A DRIVE EITHER. The same floor that refuses to write a
     // one-minute stop refuses to write a one-minute drive BETWEEN two stops:
     // his 2 September, 8:17 to 8:18am, with the phone at one coordinate from
@@ -2092,7 +2219,30 @@ function geoDeriveRows(result, ids) {
         // eventually ended up would be the inference this rule exists to
         // avoid.
         dest_place: (i === segs.length - 1) ? (l.to.name || null) : null,
-        client_key: segs.length > 1 ? (l.id + ':' + i) : l.id, source: 'drive' + hs });
+        // ── AND THE ROW NAMES WHERE IT STARTED (owner 2026-09-15) ────────
+        // "The way it's titled is wrong, we should have fixed the title a
+        // long time ago rather than last night."
+        //
+        // He is right, and the reason it took so long is the shape, not the
+        // day it was noticed. A drive row has always carried only where it
+        // ENDED, so a rail that wanted to say "shop to Bill Lorson" had to go
+        // find the mileage leg, work out which segment this was, and read the
+        // other end off THAT. Two tables to title one row. Everything that
+        // followed came out of the join: the leg's from_name is the whole
+        // journey's, so a split drive borrowed ends that were never its own
+        // (fixed 2026-09-14 with segEnds, which is still a join); a day
+        // derived before segEnds existed has nothing to read, so every one of
+        // Jack's 14 September drives fell back to naming only its
+        // destination, which is the report that prompted this; and a screen
+        // holding time rows without mileage rows could never title them at
+        // all.
+        //
+        // A row that describes a drive knows both of its ends. It says both.
+        // Same rule as dest_place directly above, mirrored: only the FIRST
+        // segment actually left the origin, and the ones after it start at a
+        // stop nobody saved, which the row between them already says.
+        origin_place: (i === 0) ? (l.from.name || null) : null,
+        client_key: segKey(sg), source: 'drive' + hs });
     });
     // EVERY STOP IS A ROW (owner 2026-09-04): "we should be logging every flip
     // to onsite unsaved address and every drive with times in between."
@@ -2127,7 +2277,7 @@ function geoDeriveRows(result, ids) {
       time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
         arrived_at: iso(a), departed_at: iso(b),
         minutes: Math.round((b - a) / 60000),
-        dest_place: null, client_key: l.id + ':s' + i, source: 'unsaved' + hs });
+        dest_place: null, client_key: stopKey(segs[i]), source: 'unsaved' + hs });
     }
     // A round trip writes time but never mileage (rule 7 as amended): both of
     // its endpoints are the same fence, and the place between them was never
@@ -2142,9 +2292,14 @@ function geoDeriveRows(result, ids) {
     }, segs.length > 1 ? {
       // The ends of each drive segment, in order (see segEnds above). Only
       // on a leg that actually split: a single-segment leg's ends ARE
-      // from_name and to_name, and the rail already reads those. N indexes
-      // the same way the ':N' drive rows and ':sN' stop rows do.
+      // from_name and to_name, and the rail already reads those.
       segEnds,
+      // WHICH ROW IS WHICH SEGMENT. The rail row for a segment carries that
+      // segment's own journey id, which no longer says the leg's id out
+      // loud, so the leg says the segments' ids instead: same order as
+      // segEnds, and how a drive row finds the trip it belongs to
+      // (_mileLegSeg, js/mileage.js). One list, read by both screens.
+      segKeys: segs.map(segKey),
     } : {}, l.traced ? {
       // THE ROW IS SHOWN, THE MILES ARE NOT CLAIMED (owner 2026-09-08: "only
       // things with addresses saved should update any totals"). Every total
@@ -2163,7 +2318,11 @@ function geoDeriveRows(result, ids) {
       // on the Time Log rail, and the Save button there needs somewhere to
       // send the lead form. The rail's row is keyed ':sN' against this same
       // leg (see the stop rows above), so N indexes straight into this.
-      viaStops: l.via.map(v => ({ lat: v.lat, lng: v.lng, at: iso(v.ts) })),
+      // `key` is the stop row's own client_key on the Time Log rail, so the
+      // Save button matches on it instead of counting positions: a leg drops
+      // an interior segment too short to be a drive, and a count would then
+      // name the wrong stop.
+      viaStops: l.via.map(v => ({ lat: v.lat, lng: v.lng, at: iso(v.ts), key: v.key || '' })),
     }, l.unsavedVia ? {
       // The MILEAGE row's own Save button and the stamp beside its "Unsaved
       // address": a round trip's two ends are the same fence, so the stop is

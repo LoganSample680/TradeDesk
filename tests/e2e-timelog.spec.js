@@ -5163,6 +5163,93 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(first).not.toContain('→');
       expect(first).toContain('Destination not saved');
     });
+
+    // ── AND THE SEGMENT IS NAMED BY ITS OWN JOURNEY (owner 2026-09-14) ────
+    // ':0' and ':1' counted the segments in front of this one, which is the
+    // deriver's own reading of the day and moves when it revises one. Each
+    // drive row carries the id of the journey that started it now, and the
+    // leg lists them in segEnds order as segKeys. The rail reads the pair
+    // through _mileLegSeg (js/mileage.js), so both screens agree by
+    // construction rather than by both remembering the same trick.
+    const KEYED = Object.assign({}, LEG, { segKeys: ['j-mu1d7p2e', 'j-mu1ffssg'] });
+
+    test('each half reads its own ends when the rows are keyed by journey', async () => {
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e' }), [KEYED]);
+      const second = await render(DRIVE({ clientKey: 'j-mu1ffssg', clientName: 'Bill Lorson',
+        destUnsaved: false, rawId: 'srv-2' }), [KEYED]);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+      expect(second).toContain('Unsaved address → Bill Lorson');
+      // The first segment's key IS the leg's key, and it must still read as a
+      // SEGMENT: this is the row that would otherwise borrow the journey's
+      // two ends and claim the whole trip.
+      expect(first).not.toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('a drive belonging to no leg on the day says only what it knows', async () => {
+      const orphan = await render(DRIVE({ clientKey: 'j-nothing' }), [KEYED]);
+      expect(orphan).not.toContain('→');
+      expect(orphan).toContain('Destination not saved');
+    });
+
+    // ── AND NOW THE ROW TITLES ITSELF (owner 2026-09-15) ─────────────────
+    // "The way it's titled is wrong, we should have fixed the title a long
+    // time ago rather than last night." Every arm above is a JOIN to the
+    // mileage leg, and every way this title has ever been wrong came out of
+    // the join. The deriver writes both ends onto the drive row itself now
+    // (origin_place beside dest_place), so these rows title correctly with no
+    // mileage in the page at all.
+    test('both ends come off the row, with no mileage leg anywhere', async () => {
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e',
+        originPlace: 'JS Solutions shop', destPlace: '' }), []);
+      const second = await render(DRIVE({ clientKey: 'j-mu1ffssg', rawId: 'srv-2',
+        clientName: 'Bill Lorson', destUnsaved: false,
+        originPlace: '', destPlace: 'Bill Lorson' }), []);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+      expect(second).toContain('Unsaved address → Bill Lorson');
+      expect(first).not.toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('an unsplit drive reads both its ends off itself', async () => {
+      const plain = await render(DRIVE({ clientKey: 'j-mu1d7p2e', clientName: 'Bill Lorson',
+        destUnsaved: false, originPlace: 'JS Solutions shop', destPlace: 'Bill Lorson' }), []);
+      expect(plain).toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    // Jack's 14 September, which is the report this came from: those rows were
+    // derived before segEnds existed, so the leg has nothing to read and the
+    // rail could only ever say where the drive ended. With the ends on the row
+    // it reads correctly whatever the leg does or does not carry.
+    test("Jack's 14 September: a leg with no segEnds cannot spoil it", async () => {
+      const bare = Object.assign({}, LEG); delete bare.segEnds;
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e:0',
+        originPlace: 'JS Solutions shop', destPlace: '' }), [bare]);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+    });
+
+    test('the row wins over the leg when they disagree', async () => {
+      // The leg describes the whole journey and the row describes itself, so
+      // there is no case where the leg is the better answer for a drive row.
+      const r = await render(DRIVE({ clientKey: 'j-mu1d7p2e', clientName: 'Bill Lorson',
+        destUnsaved: false, originPlace: 'The Home Depot', destPlace: 'Bill Lorson' }), [KEYED]);
+      expect(r).toContain('The Home Depot → Bill Lorson');
+      expect(r).not.toContain('JS Solutions shop →');
+    });
+
+    test('a row with neither end named still falls back rather than drawing two dashes', async () => {
+      const r = await render(DRIVE({ clientKey: 'j-nothing', originPlace: '', destPlace: '' }), []);
+      expect(r).not.toContain('→');
+      expect(r).toContain('Destination not saved');
+    });
+
+    test('only a DRIVE row is titled this way', async () => {
+      // A visit carries dest_place too. It is one place, not two, and titling
+      // it with an arrow would invent a journey.
+      const visit = await render(DRIVE({ clientKey: 'd-j-mu1d7p2e', rawSource: 'client',
+        clientName: 'Bill Lorson', destUnsaved: false, detail: 'On site',
+        originPlace: '', destPlace: 'Bill Lorson' }), []);
+      expect(visit).not.toContain('→');
+      expect(visit).toContain('Bill Lorson');
+    });
   });
 
   test.describe('a held drive is still a drive, and still earns nothing', () => {
