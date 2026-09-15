@@ -196,54 +196,6 @@ function geoFenceAt(pt, fences, radiusFt) {
   return best;
 }
 
-// ── RULE 15: WHICH FENCE THE OS SAYS WE ARE IN, AT ANY INSTANT ────────────
-// Region monitoring is the only observer in this system that watches a
-// boundary instead of sampling a position. iOS runs it below the app, so a
-// crossing fires while the process is suspended, and it fires ONCE, on the
-// edge: there is nothing to average, nothing to outvote, and nothing to go
-// stale. A regionEnter followed by the matching regionExit is a closed span
-// of "the phone was inside this fence", and an enter with no exit yet runs to
-// now.
-//
-// Built from input.regions, which both callers read off the same geo_events
-// rows the fixes come from (js/geo-track.js on the phone, derive-day.mjs on
-// the server). An id with no matching fence is skipped rather than guessed
-// at: a fence the account deleted since is not evidence about anything.
-//
-// Returns a lookup, ts -> fence | null. Overlapping spans rank exactly the
-// way geoFenceAt ranks overlapping circles (job over client over the rest),
-// so one fence precedence governs the whole file. On a tie the span that
-// STARTED later wins: entering B while still inside A is standing in B.
-function _gdRegionSpans(regions, fences, nowMs) {
-  const byId = new Map();
-  (Array.isArray(fences) ? fences : []).forEach(f => { if (f && f.id != null) byId.set(String(f.id), f); });
-  const rows = (Array.isArray(regions) ? regions : [])
-    .filter(r => r && typeof r.ts === 'number' && r.id != null && byId.has(String(r.id)))
-    .sort((a, b) => a.ts - b.ts);
-  const open = new Map(), spans = [];
-  for (const r of rows) {
-    const id = String(r.id);
-    if (r.enter) { if (!open.has(id)) open.set(id, r.ts); continue; }
-    const from = open.get(id);
-    if (from == null) continue;
-    open.delete(id);
-    if (r.ts > from) spans.push({ from, to: r.ts, f: byId.get(id) });
-  }
-  open.forEach((from, id) => { if (nowMs > from) spans.push({ from, to: nowMs, f: byId.get(id) }); });
-  if (!spans.length) return () => null;
-  return (ts) => {
-    if (typeof ts !== 'number') return null;
-    let best = null, bestRank = Infinity, bestFrom = -Infinity;
-    for (const s of spans) {
-      if (ts < s.from || ts > s.to) continue;
-      const rank = GEO_FENCE_RANK[String(s.f.kind || 'other')];
-      const rk = rank == null ? GEO_FENCE_RANK.other : rank;
-      if (rk < bestRank || (rk === bestRank && s.from > bestFrom)) { best = s.f; bestRank = rk; bestFrom = s.from; }
-    }
-    return best;
-  };
-}
-
 function _gdSameFence(a, b) {
   if (!a || !b) return false;
   return String(a.id) === String(b.id);
@@ -629,7 +581,6 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
  *                 straight line, and the leg says which it got.
  * input.appEvents [{ts, kind}] app-active | app-background | app-terminate |
  *                 app-relaunch (the plugin's own lifecycle events), for rule 10
- * input.regions   [{ts, id, enter}] the OS's own fence crossings, for rule 15
  * input.opts      overrides for GEO_DERIVE_DEFAULTS
  */
 function geoDeriveDay(input) {
@@ -646,31 +597,7 @@ function geoDeriveDay(input) {
   const journeys = _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
-  const inside = _gdRegionSpans(inp.regions, fences, nowMs);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;
-  // RULE 15: THE OS ALREADY ANSWERED (owner 2026-09-15: "fix stale cache it
-  // should correct"). Where a fix only suggests which fence a stop is in, a
-  // region crossing STATES it. CoreLocation watches the boundary itself, in
-  // the kernel, whether or not this app has runtime, so a regionEnter with no
-  // matching exit yet is the strongest evidence in the file about where the
-  // phone is, and the deriver was throwing it away and re-guessing from
-  // coordinates.
-  //
-  // Jack's 14 September, 4:01pm. The app was suspended from 4:01 to 4:36, so
-  // the only four fixes in the whole dwell are one cached coordinate restated
-  // verbatim, 39.0421524 / -95.71497344, 1,279 ft from his own shop against a
-  // 300 ft fence. Nothing about counting them can tell a restatement from a
-  // measurement: two GPS reads of a still phone never match to fourteen
-  // decimals, but neither do a cache's twins tell you whether the cache was
-  // right. Meanwhile the shop's own regionEnter fired at 15:58 and its exit at
-  // 16:36, the clock-out at 16:13 sat 13 ft from the door, and 34 minutes at
-  // his yard derived as an unsaved address.
-  //
-  // So the crossing wins over the fix, and ONLY where the crossing actually
-  // speaks: a fix inside some other fence is left alone, and a stop with no
-  // enclosing span resolves exactly as it always did.
-  const fenceAt = (fix, ts) => inside(ts) || fenceOf(fix);
-
   // The chain: the first saved origin and the automotive minutes since it.
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
   let arrived = null;        // {fence, ts, journeyId}: an open dwell awaiting its departure
@@ -685,7 +612,7 @@ function geoDeriveDay(input) {
     const parkedFix = _gdParkedFixBefore(fixes, j.startTs, prevEnd, opts.parkedFixMaxMs, opts.maxFixAccM);
     const nearFix = at(j.startTs);
     const startFix = (parkedFix && fenceOf(parkedFix)) ? parkedFix : (nearFix || parkedFix);
-    const depFence = fenceAt(startFix, j.startTs);
+    const depFence = fenceOf(startFix);
     // The departure ping labels the dwell that just ended. If it is missing,
     // the arrival that opened the dwell still knows where it was.
     const fromFence = depFence || (arrived && arrived.fence) || null;
@@ -763,7 +690,7 @@ function geoDeriveDay(input) {
     // is its mirror. `at()` stays as the fallback for a journey with nothing
     // after it at all.
     const endFix = _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM, j.startTs) || at(j.endTs);
-    const toFence = fenceAt(endFix, j.endTs);
+    const toFence = fenceOf(endFix);
     const autoMs = j.endTs - j.startTs;
 
     if (!chain) {
@@ -1064,15 +991,6 @@ function geoDeriveDay(input) {
       // Nothing after it to corroborate with either: an unconfirmed last
       // reading does not get to end a day that may still be running.
       if (!next) continue;
-      // RULE 15 AGAIN: A CROSSING IS WHAT LEAVING LOOKS LIKE. A fix drifting
-      // outside is the weakest possible evidence that somebody left, and it is
-      // the evidence this rule has always had to make do with. When the OS is
-      // still holding the enter for this very fence open, it is not a guess
-      // any more: the boundary has not been crossed back, so nobody left, and
-      // whatever the fix says it is a reading the phone could not take from
-      // inside the building. Jack's 4:01pm is exactly this shape, one cached
-      // coordinate 1,279 ft out while the shop's regionEnter stood from 15:58.
-      if (_gdSameFence(inside(later[i].ts), arrived.fence)) continue;
       left = true; break;
     }
     if (left) {
