@@ -87,8 +87,9 @@ const SUMMARY = { days: 30, people: 3, accounts: 2, active_days: 40, days_clocke
 // The page builds its client the moment the vendor script defines window.supabase.
 // Intercepting that assignment is the only seam that exists before boot runs, and
 // it keeps the stub inside this spec instead of in shared helpers (§10.3).
-function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BRIEF, live = LIVE, invoke = null } = {}) {
-  return page.addInitScript(({ roster, summary, by, brief, live, invoke }) => {
+function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BRIEF, live = LIVE, invoke = null, liveHang = false, liveError = null } = {}) {
+  return page.addInitScript(({ roster, summary, by, brief, live, invoke, liveHang, liveError }) => {
+    window.__rpcLive = 0;
     // Every functions.invoke the page makes, recorded, so a test can assert
     // WHAT it asked for as well as what it did with the answer. The reply is
     // whatever `invoke` names for that function, defaulting to a plain success.
@@ -107,7 +108,12 @@ function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BR
               if (fn === 'ops_summary') return Promise.resolve({ data: [summary], error: null });
               if (fn === 'ops_by_contractor') return Promise.resolve({ data: by, error: null });
               if (fn === 'ops_account_brief') return Promise.resolve({ data: brief, error: null });
-              if (fn === 'ops_live_status') return Promise.resolve({ data: live, error: null });
+              if (fn === 'ops_live_status') {
+                window.__rpcLive++;
+                if (liveHang) return new Promise(() => {});
+                if (liveError) return Promise.resolve({ data: null, error: { message: liveError } });
+                return Promise.resolve({ data: live, error: null });
+              }
               return realRpc(fn, args);
             };
             c.functions = {
@@ -125,7 +131,7 @@ function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BR
         };
       }
     });
-  }, { roster, summary, by, brief, live, invoke });
+  }, { roster, summary, by, brief, live, invoke, liveHang, liveError });
 }
 
 test.describe('Ops portal: the support view, embedded', () => {
@@ -543,6 +549,80 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(logan).toContainText('silence proves nothing');
       await expect(jack).toContainText('No push token');
       await c.close();
+    });
+
+    // ── The lights arrive, and until they do they say so (owner 2026-09-15) ──
+    // "The person status based on app active background or force closed, it
+    // takes forever to show a state and defaults to black." Two separate
+    // faults. The query was one of them (a correlated subquery inside a FILTER
+    // ran once per event row: 10.5s down to 51ms in
+    // 20261016_app_presence_one_watermark.sql). The rest is here.
+    test.describe('before the first answer', () => {
+      test('every light is asked for ONCE, at boot, not once per business', async ({ browser }) => {
+        // app_presence() computes every person however it is asked, so
+        // narrowing it to one account saved nothing and cost a round trip on
+        // every business opened. Opening one is a repaint now.
+        const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        await stubRpc(p2);
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        await expect(p2.locator('#biz-people .row').first().locator('.dot')).toHaveClass(/dot-/);
+        await p2.locator('#biz-back').click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        // Opened twice, and the count has not moved off its single boot call.
+        expect(await p2.evaluate(() => window.__rpcLive || 0)).toBe(1);
+        await c.close();
+      });
+
+      test('a light with no answer yet reads as still asking, not as nobody reporting', async ({ browser }) => {
+        const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        // The call never answers, which is the state the owner was staring at.
+        await stubRpc(p2, { liveHang: true });
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        const first = p2.locator('#biz-people .row').first();
+        await expect(first.locator('.dot')).toHaveClass(/dot-loading/);
+        await expect(first).toContainText('Checking');
+        // And it must not be mistaken for any of the four real answers.
+        await expect(first.locator('.dot')).not.toHaveClass(/dot-unknown/);
+        await expect(first.locator('.dot')).not.toHaveClass(/dot-closed/);
+        await c.close();
+      });
+
+      test('a call that FAILS keeps asking rather than asserting nobody is there', async ({ browser }) => {
+        // A network blip must not be reported as four dead phones.
+        const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        await stubRpc(p2, { liveError: 'network is down' });
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        await expect(p2.locator('#biz-people .row').first().locator('.dot')).toHaveClass(/dot-loading/);
+        await c.close();
+      });
+
+      test('once the answer lands, a person it did not mention IS unknown', async ({ browser }) => {
+        // The other side of the same distinction: after an answer, silence
+        // about somebody is itself the answer.
+        const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        await stubRpc(p2, { live: [] });
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        const first = p2.locator('#biz-people .row').first();
+        await expect(first.locator('.dot')).toHaveClass(/dot-unknown/);
+        await expect(first).not.toContainText('Checking');
+        await c.close();
+      });
     });
 
     test('a person the live call says nothing about stays grey, not green', async ({ browser }) => {
