@@ -277,8 +277,17 @@ test.describe('Ops support view: read only, both directions', () => {
   });
 
   test('the lights read app_presence, they do not re-decide what a state is', () => {
-    const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations',
-      '20261009_ops_metrics_global.sql'), 'utf8');
+    // THE NEWEST definition, found rather than named. This used to point at
+    // 20261009 by filename and went stale the moment ops_live_status was
+    // replaced (2026-09-15, when p_target went optional so the portal could
+    // ask for every light in one call). A guard that names a file guards the
+    // file; this one guards the function.
+    const dir = path.join(__dirname, '..', 'supabase', 'migrations');
+    const file = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort()
+      .filter(f => /function public\.ops_live_status/.test(fs.readFileSync(path.join(dir, f), 'utf8')))
+      .pop();
+    expect(file, 'some migration defines ops_live_status').toBeTruthy();
+    const sql = fs.readFileSync(path.join(dir, file), 'utf8');
     // The first cut of this built its own state machine off raw events, which
     // would have called a dead ping cron a fleet of force quits. app_presence
     // has answered this since 20260921 and judges staleness against the cron
@@ -298,8 +307,21 @@ test.describe('Ops support view: read only, both directions', () => {
         new RegExp("when '" + st + "' *then 'closed'")));
 
     // The page shows the light and carries the reason; it decides neither.
+    //
+    // AMENDED 2026-09-15. This used to pin the exact one-liner
+    // `(LIVE.get(uid)||{}).state`, which was right until liveState grew a
+    // second case: a person with no answer YET is not the same as a person the
+    // answer said nothing about, and the page has to tell those apart to stop
+    // showing a dead grey dot while it is still asking. That is a distinction
+    // about whether a state has arrived, not about what a state IS, so the
+    // rule this guards is unchanged and is asserted as the rule: the state is
+    // read off the row, and nothing here rebuilds one from raw fields.
     const html = fs.readFileSync(path.join(__dirname, '..', 'ops.html'), 'utf8');
-    expect(html, 'the page reads the state as given').toMatch(/\(LIVE\.get\(uid\)\|\|\{\}\)\.state/);
+    const liveState = html.slice(html.indexOf('const liveState='),
+                                 html.indexOf('function liveLabel'));
+    expect(liveState, 'the state is read off the row').toMatch(/\br\.state\b/);
+    ['foreground', 'push-blocked', 'force-closed', 'last_ping', 'quiet_days'].forEach(raw =>
+      expect(liveState, raw + ' is app_presence\'s business, not the page\'s').not.toContain(raw));
     expect(html, 'and carries the explanation').toMatch(/\.detail\|\|''/);
   });
 
