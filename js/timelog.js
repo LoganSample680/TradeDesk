@@ -105,7 +105,7 @@ function _tlSourceLabel(source){
   // A stop between two drives that no fence could name. The label states the
   // fact and nothing more: the app knows he got out of the truck and knows
   // for how long, and it does not know where.
-  if(s==='unsaved')return 'Address not saved';
+  if(/^unsaved/.test(s))return 'Address not saved';
   if(s==='manual')return 'GPS clock';
   // "Unaccounted", not "Unpaid" (owner, 2026-09-01: "skip the paid versus
   // unpaid stuff out"). The app does not know whether this gets paid and is
@@ -353,7 +353,15 @@ function _tlBlendManual(rows){
   // reason (_tlEmpWeekAgg and _tlEmpAccHtml follow the same rule); it reads
   // _tlLastCid, which is only set at render time, so this resolves the same
   // fact from the session instead. Same rule, one place earlier (7.3).
-  const _me=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)?String(_supaUser.id):'owner';
+  //
+  // AND IT IS THE BUSINESS, NOT THE LOGIN (owner report 2026-09-14). This
+  // read _supaUser.id, which is the person holding the phone, not the account
+  // the page is showing. Reading a crew member's day through the support view
+  // put his null-uid clock under the VIEWER and his GPS rows under HIM, two
+  // buckets, no manual row in his, and the early return below meant the blend
+  // never ran at all: 509 clocked minutes counted in full on top of the 479
+  // minutes of drives and site time they contain. See _tlActingUid.
+  const _me=String(_tlActingUid()||'owner');
   const byPerson={};
   rows.forEach(r=>{
     if(!r||!r.startTime||!r.endTime)return;
@@ -441,7 +449,7 @@ function _tlBlendManual(rows){
       // evidence of work. An unsaved stop is evidence of nothing but that the
       // truck was parked, so the clock is the only thing that could have made
       // it work, and he ended it.
-      if(r.rawSource==='unsaved')return true;
+      if(/^unsaved/.test(String(r.rawSource||'')))return true;
       if(typeof _geoIsDriveSource!=='function'||!_geoIsDriveSource(r.rawSource))return false;
       return _headingHome(r);
     };
@@ -580,7 +588,37 @@ function _tlBlendManual(rows){
 async function _timeLogRows(sinceISO){
   const rows=[];
   timeEntries.forEach(e=>{
-    if(e.open)return; // still running, shown separately, see _tlOpenEntries
+    // ── A RUNNING CLOCK IS STILL THE DAY (owner 2026-09-15) ───────────────
+    // "I'm looking at Jack's timesheet and not seeing the 7:54 am clock in
+    // anymore." It had never been there. This line dropped every open entry
+    // before the rail could see one, while _tlRailClocks below says in its own
+    // comment that an entry still running "stays an ordinary row". Two halves
+    // of this file disagreeing, and the half that wins is the one that deletes.
+    //
+    // It rides the same live-row path the open DWELL already uses (below):
+    // startTime and no end, so `live` draws it as "7:54 -", minutes 0 so no
+    // total can claim it, and no endTime so _tlRailClocks cannot draw a
+    // half-open bracket (which its comment is right about). The moment it is
+    // clocked out it becomes an ordinary manual row with both caps, exactly as
+    // every closed clock always has.
+    if(e.open){
+      if(!e.start_time)return;
+      const _st=Date.parse(e.start_time);
+      if(!(_st>0))return;
+      if(sinceISO&&e.start_time<sinceISO)return;
+      const _day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(_st)):dateKey(new Date(_st));
+      const _oi=_tlJobClientInfo(e.job_id);
+      rows.push({
+        id:'m'+e.id,rawId:e.id,source:'manual',date:_day,minutes:0,live:true,
+        personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
+        personUid:e.logged_by_uid||null,
+        clientName:e.job_id==null?'General time':_oi.clientName,
+        addr:e.job_id==null?'':_oi.addr,jobName:e.job_id==null?'':_oi.jobName,
+        detail:'Clocked in, still running',unpaid:false,dismissed:false,
+        startTime:e.start_time,endTime:null
+      });
+      return;
+    }
     if(sinceISO&&e.start_time&&e.start_time<sinceISO)return;
     // A MIS-TAP IS NOT A CLOCK (owner 2026-09-04, on Jack's 31 August: "got
     // two clock ins at 755 am and 1243 pm, 1243 should go away"). That second
@@ -629,7 +667,26 @@ async function _timeLogRows(sinceISO){
       const today=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):dateKey(new Date());
       const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(od.sinceTs)):dateKey(new Date(od.sinceTs));
       const mins=Math.max(0,Math.round((Date.now()-od.sinceTs)/60000));
-      if(day===today&&mins>=1&&!(sinceISO&&od.sinceIso<sinceISO)){
+      // ── AND IT HAS TO STOP (owner 2026-09-13) ───────────────────────
+      // "Says I arrived 10:14, why is it still going and counting?" Because
+      // an open dwell has no departure by definition, so this row is now
+      // minus the arrival with no ceiling, and he had not left the house
+      // since 10:14 that morning. By the evening the rail was drawing 10h43m
+      // at the shop.
+      //
+      // The day-end fix earlier the same night stopped the Home card and the
+      // Time Log banner and deliberately left this one, on the reasoning that
+      // the rail draws the day's SHAPE rather than a claim and the row was
+      // labelled "not counted". That was wrong and he found it within hours:
+      // a number that size on a timesheet reads as a claim whatever caption
+      // sits beside it. He reads the number.
+      //
+      // Same rule as the other two now, and only that rule: at his own
+      // address with the workday over. Home at lunch still draws, because
+      // then it really is the shape of the day, and nothing changes at a
+      // customer's address at any hour.
+      const _over=!!(od.atHome&&od.counts===false);
+      if(day===today&&mins>=1&&!_over&&!(sinceISO&&od.sinceIso<sinceISO)){
         const kind=od.kind==='shop'?'shop':od.kind==='job'?'geofence':od.kind==='client'?'client':'place';
         rows.push({
           id:'open-'+(od.id||od.sinceTs),rawId:null,source:kind==='shop'?'shop':'auto',rawSource:kind,date:day,minutes:mins,
@@ -709,9 +766,11 @@ async function _timeLogRows(sinceISO){
     const _es=String(e.source||'');
     // Rule 13, unanswered: on the rail as a question, in no total, and the
     // dashboard card is where it gets answered.
-    const _held=_es==='client-held';
+    // Rules 13, 15 and 18: anything the day could not vouch for. One predicate
+  // (js/geo-track.js) rather than a string this file has to keep in step.
+  const _held=(typeof _geoIsHeldSource==='function')?_geoIsHeldSource(_es):_es==='client-held';
     const _unnamedDrive=/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
-    const clientName=_es==='unsaved'?'Unsaved address'
+    const clientName=/^unsaved/.test(_es)?'Unsaved address'
       :_unnamedDrive?'Destination not saved'
       :(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
@@ -728,6 +787,12 @@ async function _timeLogRows(sinceISO){
       // corrected in place (owner rule 2026-08-24). rawSource is the raw
       // column, unlike `detail` which is the friendly label.
       rawId:e.id!=null?e.id:null,rawSource:e.source||'',
+      // BOTH ENDS, OFF THE ROW ITSELF (owner 2026-09-15). The title used to be
+      // assembled by joining to the mileage leg and counting segments; the
+      // deriver writes both ends onto the drive row now (js/geo-derive.js), so
+      // the rail reads one row to title one row. Null on a row written before
+      // the column existed, which is what the leg fallback below is for.
+      originPlace:e.origin_place||'',destPlace:e.dest_place||'',
       // A RAW FACT, NOT THE LABEL. The clock-out cutoff asks "was he heading
       // home" and used to answer it by looking at clientName, which was empty
       // on a drive nobody could name. Naming that drive "Destination not
@@ -1003,67 +1068,181 @@ function _tlCanFixAuto(r){
   if(!(/^(geofence|place)$/.test(s)||/^(geofence|place)-/.test(s)))return false;
   return !!(typeof _canViewComp==='function'&&_canViewComp());
 }
-// Correct a GPS row's clock. Same modal shape and the same validation as
-// _openEditTimeEntry (js/jobs.js) for manual rows (§7.3, one edit experience,
-// not two), but this row lives in job_time_entries on the server rather than
-// in the local timeEntries array, so it is read and written directly.
-// Values are re-read from the server on open rather than trusted from the
-// rendered table, which may be a sweep behind.
-async function _openFixAutoEntry(rowId){
-  if(!(typeof _canViewComp==='function'&&_canViewComp()))return;
-  if(!window._supa||!window._supaUser)return;
+// ── ONE EDITOR FOR BOTH KINDS OF ROW (owner 2026-09-14) ────────────────────
+// "Can we combine the three dots and the edit in one function?"
+//
+// There used to be two: _openEditTimeEntry (js/jobs.js) for a manual clock and
+// _openFixAutoEntry here for a tracked row. They drew the same dialog, said
+// the same words and validated nearly the same rules, in two copies, and the
+// comment on each of them said the two "cannot become one" because a manual
+// clock lives in the local timeEntries array and a tracked row lives in
+// job_time_entries on the server.
+//
+// That was true about WHERE THE ROW IS and false about everything else, and
+// the copies had already drifted three ways in the app's favour exactly
+// nowhere:
+//
+//   1. THE TIMEZONE, which is a live bug and the reason this is worth doing.
+//      The tracked dialog prefills and parses in BUSINESS time and says why:
+//      "prefilling in the device's zone would hand someone a wrong baseline to
+//      correct from the moment they left the state." The manual one used
+//      getTimezoneOffset, which is the device's zone, so editing a clock from
+//      out of state silently moved it by the difference.
+//   2. The tracked one refused an entry that starts and ends on different
+//      days. The manual one let one through, which is how a clock becomes two
+//      days at once.
+//   3. Two different sentences for the same over-24-hours refusal.
+//
+// So the dialog, the validation and the clock are ONE function, and the only
+// thing that forks is the two lines that know where a row is read and where it
+// is written. `kind` is 'manual' or 'auto' and nothing else branches on it
+// except those two, plus Delete, which stays manual-only for the reason it
+// always was: a derived row is rewritten by the next rebuild, so a delete
+// button on one would look like it worked and then quietly undo itself.
+//
+// The ids are the manual pair's (tle-*) rather than the tracked pair's, for no
+// better reason than that they had the wider test coverage already.
+const _TL_EDIT_IDS={start:'tle-start',end:'tle-end',err:'tle-err'};
+// Business time, never the device's. See divergence 1 above.
+function _tlEditToInput(iso){
+  return (typeof _tlBizInputValue==='function')?_tlBizInputValue(iso):'';
+}
+// The rules an edited entry has to satisfy. Returns {ok} or {msg}, never
+// throws, never touches the DOM.
+//
+// ONE OF THEM IS KIND-SPECIFIC, and it is the one thing about these two
+// dialogs that was NOT drift. Merging them, the tracked editor's same-day rule
+// looked like a check the manual one was simply missing. It is not: the two
+// rows mean different things by a span that crosses midnight.
+//
+// A DERIVED row is produced one day at a time by the deriver, so a corrected
+// one that starts on Tuesday and ends on Wednesday is a typo by construction,
+// and the rule catches it. A MANUAL clock is a person saying when they worked,
+// and an overnight call-out, on at 10pm and off at 6am, is ordinary work in
+// every trade this app serves. Refusing that would have been a new restriction
+// on payroll entry smuggled in under a refactor, so it stays where it was.
+//
+// Caught by 'accepts a span of exactly 24 hours (boundary, not over)', which
+// is nine months older than either of these dialogs.
+function _tlEditValidate(start,end,kind){
+  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start){
+    return {msg:'End must be after start.'};
+  }
+  const mins=Math.round((end.getTime()-start.getTime())/60000);
+  // The physical-impossibility rule the Time Log flags days by (owner rule
+  // 2026-08-24), and this one IS shared: a hand-typed correction must not be
+  // able to create the very thing the flag exists to catch, in either store.
+  if(mins>1440)return {msg:'That\'s over 24 hours for one entry, check the dates.'};
+  if(kind!=='manual'&&typeof _bizDateStr==='function'&&_bizDateStr(start)!==_bizDateStr(end)){
+    return {msg:'An entry has to start and end on the same day.'};
+  }
+  return {ok:true,mins:Math.max(1,mins)};
+}
+// Read what is in the two fields, as business time.
+function _tlEditRead(){
+  const sEl=document.getElementById(_TL_EDIT_IDS.start),eEl=document.getElementById(_TL_EDIT_IDS.end);
+  const toIso=v=>(typeof _tlBizInputToIso==='function')?_tlBizInputToIso(v):v;
+  const sIso=sEl?toIso(sEl.value):null,eIso=eEl?toIso(eEl.value):null;
+  return {start:sIso?new Date(sIso):null,end:eIso?new Date(eIso):null};
+}
+function _tlEditErr(msg){
+  const el=document.getElementById(_TL_EDIT_IDS.err);
+  if(el){el.textContent=msg;el.style.display='block';}
+}
+// WHERE A ROW IS. The only thing `kind` decides, besides Delete.
+async function _tlEditLoad(kind,id){
+  if(kind==='manual'){
+    const list=(typeof timeEntries!=='undefined'&&Array.isArray(timeEntries))?timeEntries:[];
+    const e=list.find(x=>x&&x.id===id);
+    if(!e)return null;
+    // Still running: clock out first, then edit. A half-open entry has no end
+    // to correct.
+    if(e.open)return null;
+    if(!(typeof _isMyTimeEntry==='function'&&_isMyTimeEntry(e))&&
+       !(typeof _canViewComp==='function'&&_canViewComp()))return null;
+    return {start:e.start_time,end:e.end_time,who:String(e.logged_by_name||''),sub:''};
+  }
+  if(!(typeof _canViewComp==='function'&&_canViewComp()))return null;
+  if(!window._supa||!window._supaUser)return null;
   let row=null;
   try{
     const{data,error}=await _supa.from('job_time_entries')
-      .select('id,arrived_at,departed_at,job_id,dest_place').is('deleted_at',null).eq('id',String(rowId)).maybeSingle();
+      .select('id,arrived_at,departed_at,job_id,dest_place').is('deleted_at',null).eq('id',String(id)).maybeSingle();
     if(!error)row=data;
   }catch(_e){}
-  if(!row||!row.arrived_at){if(typeof showToast==='function')showToast('Could not load that entry');return;}
+  if(!row||!row.arrived_at)return null;
   const info=(typeof _tlJobClientInfo==='function')?_tlJobClientInfo(row.job_id):{clientName:'-'};
   const who=(info&&info.clientName&&info.clientName!=='-')?info.clientName:(row.dest_place||'this visit');
+  // The subtitle is the one thing the tracked dialog says that the manual one
+  // does not, and it earns its place: it says where these times came from.
+  return {start:row.arrived_at,end:row.departed_at||row.arrived_at,who,sub:', tracked by GPS'};
+}
+async function _tlEditEntry(kind,id){
+  const k=(kind==='manual')?'manual':'auto';
+  const row=await _tlEditLoad(k,id);
+  if(!row){
+    // Only the server path can fail in a way worth saying out loud; a manual
+    // row that is missing, still running or not this person's is a control
+    // that should never have been drawn, and a toast about it would be noise.
+    if(k==='auto'&&typeof showToast==='function')showToast('Could not load that entry');
+    return;
+  }
   document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
-  // Business time, not the phone's: prefilling in the device's zone would hand
-  // someone a wrong baseline to "correct" from the moment they left the state.
-  const toLocalInput=iso=>_tlBizInputValue(iso);
-  // Titled and labelled exactly like the manual dialog (js/jobs.js
-  // _openEditTimeEntry) so the two read as one screen. Only the subtitle
-  // differs, and it earns its place: it says where these times came from.
-  // No Delete here, deliberately, and it is not an oversight: a derived row
-  // is rewritten by the next rebuild, so a delete button would look like it
-  // worked and then quietly undo itself. The way to remove one is to correct
-  // the day it came from.
+  const fld=(lab,fid,val)=>
+    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">'+lab+'</label>'+
+      '<input type="datetime-local" id="'+fid+'" value="'+val+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Edit time entry</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(who)+', tracked by GPS</div>'+
-    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Start</label>'+
-      '<input type="datetime-local" id="tlf-start" value="'+toLocalInput(row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">End</label>'+
-      '<input type="datetime-local" id="tlf-end" value="'+toLocalInput(row.departed_at||row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div id="tlf-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(row.who)+escHtml(row.sub)+'</div>'+
+    fld('Start',_TL_EDIT_IDS.start,_tlEditToInput(row.start))+
+    fld('End',_TL_EDIT_IDS.end,_tlEditToInput(row.end))+
+    '<div id="'+_TL_EDIT_IDS.err+'" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
-      '<button onclick="_saveFixedAutoEntry(\''+escHtml(String(rowId))+'\')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
-    '</div>';
+      '<button onclick="_tlSaveEntry(\''+k+'\',\''+escHtml(String(id))+'\')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>'+
+    // Owner 2026-08-31: "add a delete button to the edit button on manual
+    // clock out things". On its OWN row, below the pair, with a rule above it,
+    // never a third column beside Save: the two are one thumb-width apart on a
+    // phone and one of them destroys a payroll record (15.1).
+    //
+    // MANUAL ONLY, and not an oversight: a derived row is rewritten by the
+    // next rebuild, so a delete here would look like it worked and then
+    // quietly undo itself. The way to remove one is "Not work" in the menu,
+    // which the server actually keeps.
+    (k==='manual'
+      ? '<div style="border-top:1px solid var(--border2);margin-top:14px;padding-top:12px">'+
+        '<button onclick="_deleteTimeEntryFromModal('+id+')" style="width:100%;padding:11px;border-radius:var(--r);border:1px solid var(--c-red-edge,#E3B7B7);background:transparent;color:#A32D2D;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">'+svgIcon('🗑',{size:14})+' Delete this entry</button>'+
+      '</div>'
+      : '');
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
 }
-async function _saveFixedAutoEntry(rowId){
-  const startEl=document.getElementById('tlf-start'),endEl=document.getElementById('tlf-end');
-  const errEl=document.getElementById('tlf-err');
-  // Read as business time. new Date('...T17:00') parses in the DEVICE's zone,
-  // so a correction typed in Denver would have landed an hour off in Topeka.
-  const sIso=startEl?_tlBizInputToIso(startEl.value):null,eIso=endEl?_tlBizInputToIso(endEl.value):null;
-  const start=sIso?new Date(sIso):null,end=eIso?new Date(eIso):null;
-  const bad=m=>{if(errEl){errEl.textContent=m;errEl.style.display='block';}};
-  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start)return bad('End must be after start.');
-  // The same physical-impossibility rule the Time Log already flags days by
-  // (owner rule 2026-08-24): a hand-typed correction must not be able to
-  // create the very thing the flag exists to catch.
-  const mins=Math.round((end.getTime()-start.getTime())/60000);
-  if(mins>1440)return bad('One entry cannot be longer than 24 hours.');
-  if(typeof _bizDateStr==='function'&&_bizDateStr(start)!==_bizDateStr(end))return bad('An entry has to start and end on the same day.');
-  if(!window._supa||!window._supaUser)return bad('Not connected.');
+async function _tlSaveEntry(kind,id){
+  const k=(kind==='manual')?'manual':'auto';
+  const{start,end}=_tlEditRead();
+  const v=_tlEditValidate(start,end,k);
+  if(!v.ok)return _tlEditErr(v.msg);
+  if(k==='manual'){
+    const list=(typeof timeEntries!=='undefined'&&Array.isArray(timeEntries))?timeEntries:[];
+    const e=list.find(x=>x&&String(x.id)===String(id));
+    if(!e)return _tlEditErr('Could not save, try again.');
+    e.start_time=start.toISOString();e.end_time=end.toISOString();
+    e.minutes=v.mins;
+    // The BUSINESS day, matching the times above and every other day key in
+    // the app. dateKey is the local-day fallback if load order ever changes.
+    e.date=(typeof _bizDateStr==='function')?_bizDateStr(start):dateKey(start);
+    if(typeof _tlLoggedByInfo==='function'){
+      const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+      e.edited_by_uid=loggedByUid;e.edited_by_name=loggedByName;e.edited_at=new Date().toISOString();
+    }
+    if(typeof saveAll==='function')saveAll();
+    document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+    if(typeof renderTimeLog==='function')renderTimeLog();
+    return;
+  }
+  if(!window._supa||!window._supaUser)return _tlEditErr('Not connected.');
   try{
     // THE ROW KEEPS ITS IDENTITY (owner 2026-09-04: "we need to merge manual
     // and automatic and it fits").
@@ -1081,10 +1260,10 @@ async function _saveFixedAutoEntry(rowId){
     // it already carries a hand-set vehicle and purpose across a re-derived
     // mileage leg. The correction sticks and the evidence still lands.
     const{error}=await _supa.from('job_time_entries')
-      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:mins,fixed_at:new Date().toISOString()})
-      .eq('id',String(rowId));
-    if(error)return bad('Could not save, try again.');
-  }catch(_e){return bad('Could not save, try again.');}
+      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:v.mins,fixed_at:new Date().toISOString()})
+      .eq('id',String(id));
+    if(error)return _tlEditErr('Could not save, try again.');
+  }catch(_e){return _tlEditErr('Could not save, try again.');}
   closeTopModal();
   if(typeof showToast==='function')showToast('Clock times updated');
   if(typeof renderTimeLog==='function')renderTimeLog();
@@ -1094,10 +1273,10 @@ async function _saveFixedAutoEntry(rowId){
 // bars (see _tlEmpAccHtml). With the table gone it had no caller at all.
 //
 // It carried ONE capability nothing else had: the 3-second hold-to-delete
-// gesture on a time entry. That did not go with it (§7.2). The same
-// data-lp-* attributes, under the same _tlCanEdit gate, are now on the rail
-// row in _tlRailRow, which is where the Edit button already moved for
-// exactly this reason. Everything else it drew (the clock times, the
+// gesture on a time entry. That did not go with it (§7.2), it moved to the
+// rail row, and on 2026-09-13 it was replaced outright by the three-dot menu
+// there: a hold nobody can see is not a control, and that one only ever
+// worked on manual rows anyway. Everything else it drew (the clock times, the
 // address, the drive from/to, the OT and unpaid flags) the rail row was
 // already drawing better.
 // ── Adding a hole to the day (owner 2026-08-29) ────────────────────────────
@@ -1243,7 +1422,7 @@ function _tlRailKind(r){
   if(r.rawSource==='place-load')return 'load';
   if(r.rawSource==='place-office')return 'office';
   if(r.rawSource==='place-home')return 'home';
-  if(r.rawSource==='site'||r.rawSource==='unsaved')return 'site';
+  if(r.rawSource==='site'||/^unsaved/.test(String(r.rawSource||'')))return 'site';
   // RULE 13'S QUESTION IS NOT MANUAL TIME (owner 2026-09-10, on his Sunday
   // rail: a 14-minute visit to a client he had just saved came back reading
   // "MANUAL TIME · UNPAID"). Nothing about it is manual, nobody typed it,
@@ -1368,12 +1547,22 @@ function _tlRailRow(r){
     body=_tlRailGapBody(r);
   }else{
     const isDrive=kind==='drive';
-    // A segment of a split drive carries the leg id with ':n' on it; the leg
-    // row carries the bare id. Match on the bare id so a chain through
-    // unsaved stops still names its leg (and its trip number, below).
-    const _legId=r.clientKey?String(r.clientKey).replace(/:\d+$/,''):'';
-    const leg=isDrive&&_legId&&typeof mileage!=='undefined'&&Array.isArray(mileage)
-      ?mileage.find(x=>x&&String(x.legKey)===_legId):null;
+    // WHICH LEG THIS DRIVE ROW BELONGS TO. A drive row carries the id of the
+    // journey that started it, which for a leg that never split is the leg's
+    // own key and for one that did is listed on the leg as segKeys. One place
+    // knows that mapping (_mileLegSeg, js/mileage.js) because the trip number
+    // below asks the same question.
+    const _ls=isDrive&&r.clientKey&&typeof _mileLegSeg==='function'?_mileLegSeg(r.clientKey,r.date):null;
+    const leg=_ls?_ls.leg:null;
+    // WHICH SEGMENT THIS IS, AND WHAT THE DERIVER CALLED ITS ENDS (owner
+    // report 2026-09-14). A leg that split at an unsaved stop is still ONE
+    // mileage row, so from_name and to_name are the whole journey's ends and
+    // every segment was titled with them: Jack's Sunday said "shop to Bill
+    // Lorson" at 9:55 and again at 10:39 for two halves of one trip. The
+    // deriver names each segment's own ends now (js/geo-derive.js, segEnds);
+    // this reads them. An interior end comes back '' and is the same unsaved
+    // stop the row between the two drives already says it is.
+    const _segE=(_ls&&_ls.split&&Array.isArray(leg.segEnds))?leg.segEnds[_ls.ix]:null;
     // A manual clock against no job has nothing to name, and _tlJobClientInfo
     // returns the bare '-' placeholder for that. A row whose title is a hyphen
     // tells the reader nothing about the one row on the day they created by
@@ -1398,9 +1587,42 @@ function _tlRailRow(r){
     // anywhere admitting the address was never saved. An audit turns on
     // exactly that distinction: 'On site' over a saved client, this over a
     // stretch the clock vouched for and no fence could name.
-    const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
-                 :(kind==='site'?''
+    const _fallTtl=(kind==='site'?''
                  :(_bareName||r.addr||(r.source==='manual'?'Clocked in':m.word)));
+    // '' from the deriver means nobody saved that end, which is the same word
+    // the stop row sitting between two segments already shows.
+    const _arrow=(a,b)=>(a||'—')+' → '+(b||'—');
+    // ── THE ROW TITLES ITSELF (owner 2026-09-15) ──────────────────────────
+    // "The way it's titled is wrong, we should have fixed the title a long
+    // time ago rather than last night."
+    //
+    // Every arm below this one is a JOIN: find the mileage leg, work out which
+    // segment this row is, read the ends off that. Every way this title has
+    // ever been wrong came out of the join. A collapsed leg's from_name is the
+    // whole journey's, so a split drive wore ends that were never its own; a
+    // day derived before segEnds existed has nothing to read, which is why all
+    // of Jack's 14 September drives showed only a destination; and a screen
+    // with the time rows but not the mileage rows could not title them at all.
+    //
+    // The deriver writes both ends onto the drive row now (js/geo-derive.js,
+    // origin_place beside dest_place), so one row titles one row. An end the
+    // deriver left null on a drive is a stop nobody saved, exactly as the stop
+    // row between two segments already says.
+    const _ends=isDrive&&(r.originPlace||r.destPlace)
+      ?_arrow(r.originPlace||'Unsaved address',r.destPlace||'Unsaved address'):'';
+    // Below here is history: rows written before origin_place existed, on days
+    // past the tape's seven that nothing will ever re-derive. They keep the
+    // join, and they are the only reason it is still here.
+    const ttl=_ends?_ends
+             :_segE?_arrow(_segE.from||'Unsaved address',_segE.to||'Unsaved address')
+             // A leg the deriver did NOT split: its two ends are the row's two
+             // ends, which is what this always was.
+             :(leg&&_ls&&!_ls.split)?_arrow(leg.from_name,leg.to_name||r.clientName)
+             // A segment written before segEnds existed. The leg's ends are
+             // the journey's, not this row's, so the row says what it knows
+             // about itself instead of borrowing them. The next derive of that
+             // day rewrites the leg and the arrow comes back.
+             :_fallTtl;
     // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
     // put tradedesk shop under the sub title that already says it ... can
     // just do the start and end time under there").
@@ -1461,7 +1683,7 @@ function _tlRailRow(r){
         '<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+a+'\',\'personal\')">Personal</button>'+
         '</div>';
     }
-    if(kind==='site'&&r.rawSource==='unsaved'&&r.clientKey&&_tlRowIsMine(r)){
+    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)){
       body+='<div class="tl-rail-chips">'+
         '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
         escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
@@ -1481,44 +1703,190 @@ function _tlRailRow(r){
     // A held visit carries no "unpaid": it is not counted YET, and the row
     // says so in words and offers the two answers underneath.
     (r.unpaid&&!isGap&&kind!=='held'&&!r.clockPaid?' · unpaid':'')+'</span>';
-  // EDIT LIVES HERE NOW. The entries table was the only place a manual clock
-  // could be fixed, and the owner cut it off the week view as clutter
-  // (2026-08-30). Losing the ability to correct an entry was not part of that
-  // ask, so the control moved to the row it belongs to instead of disappearing
-  // with the table (§7.2: verify the capability survives before removing the
-  // UI that carried it). Same gate and the same modal as the table used, so
-  // there is still exactly one edit experience (§7.3).
-  const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
-    ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
-    // ONE WORD, NOT TWO (owner 2026-09-04: "for anything marked as a fix can
-    // we remove the fix code and just do edit like we do for manual clock ins
-    // and outs?"). A GPS row lives in job_time_entries and a manual clock in
-    // the local timeEntries array, so the two handlers cannot become one, but
-    // none of that is the person's problem. On the rail they are the same row
-    // with the same control, and calling one of them "Fix" made correcting a
-    // tracked visit read like owning up to a fault rather than editing an
-    // entry. Same word, same dialog title, same field labels.
-    :(typeof _tlCanFixAuto==='function'&&_tlCanFixAuto(r)&&r.rawId!=null)
-    ?'<button type="button" class="tl-rail-edit" onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')">Edit</button>'
-    :'';
-  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+(r.live?'':escHtml(fm(r.minutes||0)))+
-    (edit?'<span class="tl-rail-editwrap">'+edit+'</span>':'')+'</div>';
+  // EDIT USED TO LIVE HERE. It does not any more: it is the first action in
+  // the row menu, for both kinds of row (7, deleted rather than hidden).
+  //
+  // Owner 2026-09-13, on his own Saturday: "looks disorganized." He was right,
+  // and this chip was most of why. An On Site row carried a duration, an Edit
+  // button and a three-dot stacked in the right column, three controls deep,
+  // while a drive row carried one, so no two rows were the same height and the
+  // column had no edge. One button per row and the rail lines up.
+  //
+  // NOTHING IS LOST, which 7.2 requires proving rather than assuming. Both
+  // handlers the chip reached are on the menu now, and since 2026-09-14 they
+  // are one: _tlEditEntry, told 'manual' or 'auto', chosen by the same
+  // _tlCanEdit / _tlCanFixAuto gates that chose between the two chips.
+  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+(r.live?'':escHtml(fm(r.minutes||0)))+'</div>';
   // AND SO DOES DELETE, for the same reason and by the same rule (§7.2). The
   // 3-second hold lived on the table row _tlRow drew; that table is gone, and
   // losing the only way to delete a time entry was not part of removing it.
   // Same attributes, same _tlCanEdit gate, same handler in js/cloud.js, which
   // re-checks permission again on its own.
-  const lp=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
-    ?' data-lp-id="'+escHtml(String(r.rawId))+'" data-lp-type="timelog"'+
-     ' data-lp-label="'+escHtml(String(r.personName||'')+' · '+
-        String(r.clientName||r.addr||m.word))+'"'
-    :'';
+  // ── A MENU, NOT A GESTURE (owner 2026-09-13) ────────────────────────────
+  // The delete used to be a three-second hold, and it was wired ONLY to manual
+  // rows (_tlCanEdit refuses anything else). The crew member was seen holding
+  // an AUTOMATIC row on a Friday night trying to get rid of it: right gesture,
+  // wrong kind of row, nothing happened, and no way to find that out. A hold
+  // is also invisible to anybody who has not been told it exists, and it does
+  // not exist at all for VoiceOver.
+  //
+  // So it is a three-dot now, on EVERY row, and the hold is gone (7: deleted,
+  // not hidden). Every row, because the deriver knows where somebody was and
+  // never why: it can be completely certain he was at the shop for two hours
+  // and still be wrong, because visiting his dad and working look identical
+  // from the outside. The only source of truth about intent is the person, so
+  // the control cannot be hidden on the rows the machine feels sure about.
+  const menu=_tlRowMenuable(r)
+    ? '<button type="button" class="tl-rail-more" aria-label="Options for this entry" '+
+      'onclick="event.stopPropagation();_tlRowMenu(this)" '+
+      'data-row-id="'+escHtml(String(r.rawId))+'" '+
+      'data-row-src="'+escHtml(String(r.source||''))+'" '+
+      'data-row-raw="'+escHtml(String(r.rawSource||''))+'" '+
+      'data-row-key="'+escHtml(String(r.clientKey||''))+'" '+
+      'data-row-date="'+escHtml(String(r.date||''))+'" '+
+      // ASKED HERE, WHERE THE REAL ROW IS. _tlCanFixAuto reads four fields
+      // (source, rawSource, rawId, unpaid) and the menu only ever sees the
+      // dataset, so rebuilding a row object over there to ask the question
+      // would be a second, quietly different row that drifts the first time
+      // that gate learns a fifth field. One answer, carried.
+      'data-row-fix="'+((typeof _tlCanFixAuto==='function'&&_tlCanFixAuto(r))?'1':'')+'" '+
+      'data-row-label="'+escHtml(String(r.clientName||r.addr||m.word))+'">'+
+      '<span aria-hidden="true">\u22ef</span></button>'
+    : '';
+  const lp='';
   return '<li class="tl-rail-row" data-kind="'+kind+'"'+lp+' style="--rail:'+m.c+'">'+
     '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
     '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
     '<div class="tl-rail-body">'+tag+body+'</div>'+
-    dur+
+    (menu?'<div class="tl-rail-end">'+dur+menu+'</div>':dur)+
   '</li>';
+}
+// WHICH ROWS GET THE MENU. Anything with a row id behind it: a manual clock
+// (its own record, really deletable) or a derived row (answerable, never
+// deletable, because the deriver would write it again tomorrow). A live row
+// still running has no id and nothing to act on yet.
+function _tlRowMenuable(r){
+  try{
+    if(!r||r.rawId==null||r.live)return false;
+    if(typeof _tlReadOnly==='function'&&_tlReadOnly())return false;
+    if(String(r.source||'')==='manual')return typeof _tlCanEdit==='function'&&_tlCanEdit(r);
+    return typeof _tlRowIsMine==='function'?_tlRowIsMine(r):true;
+  }catch(_e){return false;}
+}
+
+// ── THE ROW MENU ────────────────────────────────────────────────────────────
+// Two kinds of row, two different truths about what removing one means, and
+// the words have to say which.
+//
+// A MANUAL clock is the person's own record. Delete is real and it is gone.
+//
+// A DERIVED row is the deriver's reading of the tape, and the tape does not
+// change because somebody disagreed with it. Deleting one is a lie: the next
+// rebuild produces it again, which is exactly the "why did it come back" bug
+// this is meant to end. What settles it is geo_answer_visit, which writes
+// source='dismissed' and stamps fixed_at, and geo_replace_day keeps an
+// answered source across every rebuild after that. So the word is "Not work",
+// because that is what actually happens to it.
+//
+// PER ROW, NEVER PER PLACE (owner 2026-09-13, on visiting his dad at the
+// shop). If answering one visit taught the app that the shop is personal, he
+// would stop being paid for the shop. fixed_at is already per-row; the next
+// visit derives normally. Anything broader is its own deliberate action, the
+// way the family tag on a contact is.
+function _tlRowMenu(btn){
+  try{
+    if(!btn||!btn.dataset)return;
+    const d=btn.dataset;
+    const id=d.rowId, src=String(d.rowSrc||''), raw=String(d.rowRaw||'');
+    const label=String(d.rowLabel||'this entry');
+    const manual=src==='manual';
+    document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+    const ov=document.createElement('div');
+    ov.className='zmodal-overlay';ov.id='_tl-row-menu';
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+    const box=document.createElement('div');
+    box.className='zmodal';box.style.maxWidth='320px';
+    const act=(fn,txt,sub,danger)=>
+      '<button type="button" class="tl-menu-act'+(danger?' is-danger':'')+'" onclick="'+fn+'">'+
+        '<span class="tl-menu-act-t">'+escHtml(txt)+'</span>'+
+        (sub?'<span class="tl-menu-act-s">'+escHtml(sub)+'</span>':'')+'</button>';
+    let acts='';
+    if(manual){
+      acts+=act('_tlRowMenuDo(\'edit\',\''+escHtml(String(id))+'\')','Edit','Change the times or the job');
+      acts+=act('_tlRowMenuDo(\'delete\',\''+escHtml(String(id))+'\')','Delete','Removes this entry for good',true);
+    }else{
+      // A TRACKED ROW CAN BE WRONG ABOUT ITS TIMES as well as about its
+      // meaning (owner rule 2026-08-24). This is the chip that used to sit in
+      // the right column beside the duration; it opens the same dialog it
+      // always did, from the row's one control instead of its third.
+      if(d.rowFix==='1'){
+        acts+=act('_tlRowMenuDo(\'fixauto\',\''+escHtml(String(id))+'\')','Edit','Change the times on this entry');
+      }
+      // The raw source rides along as the second argument: it is what tells
+      // the dispatcher which of the two tables this row lives in, and the
+      // button is the only thing that knows.
+      acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
+        'Keeps it off your hours and your miles. Just this one, not the place.',true);
+      if(/^unsaved/.test(raw)&&d.rowKey){
+        acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
+          'Save this address','Then it names itself here and everywhere after');
+      }
+    }
+    box.innerHTML='<div style="font-size:15px;font-weight:800;margin-bottom:2px">'+escHtml(label)+'</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+
+        escHtml(manual?'You entered this by hand.':'Recorded automatically.')+'</div>'+
+      '<div class="tl-menu-acts">'+acts+'</div>'+
+      '<button type="button" class="btn" style="width:100%;margin-top:12px" '+
+        'onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>';
+    ov.appendChild(box);document.body.appendChild(ov);
+  }catch(_e){}
+}
+// One door per action, and every one of them is a function that already
+// existed and already re-checks permission for itself (7.3).
+async function _tlRowMenuDo(what,a,b){
+  try{
+    document.getElementById('_tl-row-menu')?.remove();
+    if(what==='edit'){
+      // parseInt because a manual entry's id is a NUMBER in the local array
+      // and the dataset hands back a string; the tracked branch below keeps
+      // its uuid as a string. That is the whole of the difference between the
+      // two kinds at this level.
+      if(typeof _tlEditEntry==='function')_tlEditEntry('manual',parseInt(a,10));
+      return;
+    }
+    if(what==='delete'){
+      if(typeof deleteTimeEntry==='function')deleteTimeEntry(parseInt(a,10));
+      return;
+    }
+    // A TRACKED row's times. Same dialog the rail's Edit chip opened before it
+    // moved in here; a different handler from the manual one above because the
+    // two rows live in different stores, which is not the person's problem and
+    // is why both say "Edit" (owner 2026-09-04).
+    if(what==='fixauto'){
+      if(typeof _tlEditEntry==='function')_tlEditEntry('auto',String(a));
+      return;
+    }
+    if(what==='save'){
+      if(typeof _mileSaveStopAddress==='function')_mileSaveStopAddress(a,b||'');
+      return;
+    }
+    if(what==='notwork'){
+      // TWO TABLES, TWO DOORS, and which one is not a detail this function
+      // gets to guess at. A shop dwell lives in shop_time_entries and every
+      // other automatic row lives in job_time_entries, and the two say "this
+      // did not count" differently because they are shaped differently: one
+      // has a `source` column to write 'dismissed' into and the other has
+      // only soft deletion (see 20261013). b carries the raw source, which
+      // the button already knew.
+      if(String(b||'')==='shop'){
+        if(typeof _shopHoldAnswer==='function'){await _shopHoldAnswer(String(a),'personal');return;}
+        return;
+      }
+      // The SAME door the held-visit chips use, so one definition of what an
+      // answer means still serves both (7.3).
+      if(typeof _visitHoldAnswer==='function'){await _visitHoldAnswer(String(a),'personal');return;}
+    }
+  }catch(_e){}
 }
 // The day's headline: total, the same split bar the employee card draws, and
 // a legend whose DOT carries the colour so the bar is readable by anyone who
@@ -1582,16 +1950,13 @@ function _tlRailHeadHtml(rows,label,noTotal){
 function _tlClockCapHtml(r,which){
   const isIn=which==='in';
   const t=_tlFmtTime(isIn?r.startTime:r.endTime)||'—';
-  // The same edit control the clock row carried, kept on the OPENING cap: a
-  // wrong clock-in is the thing people actually need to fix, and losing the
-  // way to fix it was never part of moving where it is drawn (§7.2).
-  // ON BOTH CAPS (owner 2026-09-04: "clock out also needs a edit button").
-  // A wrong clock-OUT is just as common as a wrong clock-in, and the editor it
-  // opens is the same one for the same entry: it edits the clock, not the end
-  // of it, so there was never a reason for only one end to reach it.
-  const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
-    ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
-    :'';
+  // THE EDIT CHIP IS GONE FROM HERE TOO, and the menu took its place on BOTH
+  // caps rather than only the opening one (owner 2026-09-04: "clock out also
+  // needs a edit button"; owner 2026-09-13: "looks disorganized"). Both asks
+  // are served by the same change, because the menu's first action IS Edit and
+  // it opens the same dialog for the same entry from either end: it edits the
+  // clock, not the end of it, which is why only one end ever needed to reach
+  // it in the first place.
   // NEITHER CAP CARRIES A NUMBER (owner 2026-09-04: "we dont have a time on
   // clocked in calculated, dont think we should show a clocked out time stamp
   // either, the day total is at the top under the data").
@@ -1604,14 +1969,17 @@ function _tlClockCapHtml(r,which){
   // MARK ON THE SPINE saying when he started and when he stopped, and it needs
   // no arithmetic of its own. The argument went with the number (§7): both
   // callers stop computing something nothing reads.
-  // AND SO DOES THE LONG-PRESS DELETE (§7.2). It lived on the manual row this
-  // cap replaces, and moving where a clock is drawn was never a decision to
-  // remove the only way to delete one. Same attributes, same handler, on the
-  // opening cap beside Edit so both controls stay on the end people reach for.
-  const lp=(isIn&&typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
-    ?' data-lp-id="'+escHtml(String(r.rawId))+'" data-lp-type="timelog"'+
-     ' data-lp-label="'+escHtml(String(r.personName||'')+' · Clocked in')+'"'
-    :'';
+  // AND THE MENU RIDES THE OPENING CAP (owner 2026-09-13). The long-press that
+  // used to live here is gone with the rest of them; the cap carries the same
+  // three-dot every other row has, beside Edit, on the end people reach for.
+  const capMenu=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ? '<button type="button" class="tl-rail-more" aria-label="Options for this entry" '+
+      'onclick="event.stopPropagation();_tlRowMenu(this)" '+
+      'data-row-id="'+escHtml(String(r.rawId))+'" data-row-src="manual" '+
+      'data-row-label="'+escHtml(String(r.personName||'')+' \u00b7 '+(isIn?'Clocked in':'Clocked out'))+'">'+
+      '<span aria-hidden="true">\u22ef</span></button>'
+    : '';
+  const lp='';
   return '<li class="tl-rail-row tl-rail-cap" data-kind="clock-'+which+'"'+lp+' '+
       'style="--rail:var(--text3)">'+
     '<div class="tl-rail-time"><span>'+escHtml(t)+'</span></div>'+
@@ -1623,9 +1991,9 @@ function _tlClockCapHtml(r,which){
       // is what distinguishes the two ends anyway (1.4.1).
       '<span class="tl-rail-tag">'+svgIcon('▶',{size:10})+' '+
         escHtml(isIn?'Clocked in':'Clocked out')+'</span>'+
-      (edit?'<div class="tl-rail-sub">'+edit+'</div>':'')+
     '</div>'+
-    '<div class="tl-rail-dur"></div>'+
+    (capMenu?'<div class="tl-rail-end"><div class="tl-rail-dur"></div>'+capMenu+'</div>'
+            :'<div class="tl-rail-dur"></div>')+
   '</li>';
 }
 function _tlDayRailHtml(rows){
@@ -1642,7 +2010,12 @@ function _tlDayRailHtml(rows){
   // cap to draw and a half-open bracket is worse than no bracket.
   const clocks=list.filter(r=>r&&r.source==='manual'&&r.startTime&&r.endTime&&
     Date.parse(r.startTime)>0&&Date.parse(r.endTime)>Date.parse(r.startTime));
-  if(!clocks.length)return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
+  // A RUNNING clock has no closing end and so is not in `clocks`, but it is
+  // still a cap: it opens the day and nothing closes it yet. Counted here so
+  // the shortcut below cannot skip the loop on a day whose only punch is the
+  // one still going, which is every day between clock-in and clock-out.
+  const liveClock=(r)=>!!(r&&r.live&&r.source==='manual'&&r.startTime&&!r.endTime&&Date.parse(r.startTime)>0);
+  if(!clocks.length&&!list.some(liveClock))return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
   const out=[];
   const open=[];   // clocks whose closing cap is still owed, newest first
   const closeDue=(beforeMs)=>{
@@ -1663,6 +2036,15 @@ function _tlDayRailHtml(rows){
       out.push(_tlClockCapHtml(r,'in'));
       open.push(r);
       return;   // the clock itself is the bracket; it is never a row too
+    }
+    // A RUNNING CLOCK OPENS THE DAY AND NOTHING ELSE (owner 2026-09-15: "clock
+    // in and clock out has always rendered"). It has, for every clock that was
+    // closed. A live one reads as CLOCKED IN with no closing cap, because
+    // there is no clock-out to draw and a fake one would be a lie about the
+    // day. It is not pushed to `open`, so closeDue can never invent it.
+    if(liveClock(r)){
+      out.push(_tlClockCapHtml(r,'in'));
+      return;
     }
     out.push(_tlRailRow(r));
   });
@@ -2274,6 +2656,27 @@ function _tlDrillPerson(uid,wk){
 // clicked long after the render that drew them.
 let _tlLastCid=null;
 function _tlRowUid(r){return String((r&&r.personUid)||_tlLastCid);}
+// ── WHOSE BUSINESS IS THIS SESSION LOOKING AT ─────────────────────────────
+// A manual clock carries logged_by_uid null and folds under "the account",
+// so every screen that buckets rows has to answer that question, and until
+// now two of them answered it with the raw auth uid. That is the one thing
+// js/data.js _effectiveUid exists to stop ("never raw _supaUser.id"): an
+// owner reading another account through the support or ops view has his OWN
+// auth uid while every row on the page belongs to somebody else's business.
+// The clock then bucketed under the viewer and the GPS rows under the person
+// the day is about, so the blend found no clock in that person's bucket and
+// returned before it ran. The clock sat at its full value beside the fences
+// it was supposed to absorb: Jack's 14 September, a 509-minute clock on top
+// of 479 minutes of tracked rows, 988 minutes for an 8h29m day.
+//
+// _effectiveUid returns the identical value in every ordinary session (an
+// owner's own uid, a crew login's employer), so this changes nothing except
+// the case it is for. One function, asked once, used by both.
+function _tlActingUid(){
+  return (typeof _effectiveUid==='function'&&_effectiveUid())||
+         (typeof _contractorUserId!=='undefined'&&_contractorUserId)||
+         (typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+}
 function _tlDrillUp(){
   if(_tlDrill.level==='day')_tlDrillTo('week',_tlDrill.wk);
   else if(_tlDrill.level==='week')_tlDrillTo('month',_tlDrill.mo);
@@ -2502,7 +2905,11 @@ function _tlRenderOpenBanner(){
   try{
     const od=window._geoOpenDwell;
     const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
-    if(od&&od.sinceTs>0&&me){
+    // Home, and the workday is over: nothing to put on an "On site now" card
+    // (owner 2026-09-12). The day rail below still draws where he is, marked
+    // as not counted, because that is the day's shape rather than a claim
+    // that the day is still running.
+    if(od&&od.sinceTs>0&&me&&!(od.atHome&&od.counts===false)){
       visible=visible.concat([{rawId:null,geo:true,notCounted:od.counts===false,personName:(typeof getOwnerName==='function'&&getOwnerName())||'Me',personUid:me,
         clientName:od.name||'On site',jobName:'',startTime:od.sinceIso,startMs:od.sinceTs,elapsedMin:Math.max(0,Math.round((Date.now()-od.sinceTs)/60000))}]);
     }
@@ -3143,7 +3550,10 @@ async function renderTimeLog(opts){
   _tlSkelShown=true;
   const canComp=typeof _canViewComp==='function'&&_canViewComp();
   const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
-  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+  // The same identity the blend folds a null-uid clock under (_tlActingUid):
+  // asked once, so the rail and the blend can never disagree about whose row
+  // a clock is.
+  const cid=_tlActingUid();
   // "You," for filtering Me scope and tagging your own row in Team scope:
   // your real auth uid if you're an employee, else the contractor/owner id
   // (manual owner rows carry personUid:null, which _tlEmpWeekAgg already

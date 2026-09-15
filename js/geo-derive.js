@@ -196,6 +196,118 @@ function geoFenceAt(pt, fences, radiusFt) {
   return best;
 }
 
+// ── RULE 15: A CLOSED FENCE CROSSING SAYS WHERE THE PHONE WAS ─────────────
+// Owner 2026-09-15: "I just want the stale cache fixed from his phone to
+// close out the day right."
+//
+// A fix SAMPLES a position; region monitoring watches the BOUNDARY, in the
+// kernel, and fires on the edge whether or not this app has runtime. That is
+// the one observer a suspended phone cannot degrade, and it is what answers
+// Jack's 4:01pm: the app was suspended from 4:01 to 4:36, so the only four
+// fixes in the dwell are one cached coordinate restated verbatim 1,279 ft
+// from his own yard, while the yard's crossing pair sat right across it.
+//
+// This is the SECOND attempt. The first shipped and was reverted the same
+// evening because it got two things wrong, and both are fixed here by
+// construction rather than by conditions bolted on:
+//
+// 1. IT NAMED THE FENCE FROM THE CROSSING'S ID, and one building answers to
+//    several. Jack's yard fired all three of these on one morning:
+//      07:43:00  regionEnter  place-1788216906515011
+//      07:43:00  regionEnter  shop
+//      07:43:14  regionEnter  place:1788216906515011
+//    The settings shop, a td_places row at the identical coordinate, and a
+//    third id with a colon where the others have a hyphen. Keying on the id
+//    renamed every drive of his day off "JS Solutions shop" onto "1200 SW
+//    Oakley Ave". So the id is used ONLY to find where the crossing happened;
+//    the fence is then named by geoFenceAt at that position, exactly as a fix
+//    would be. Three ids for one place give one answer, and the file keeps
+//    one definition of which circle wins.
+//
+// 2. IT TRUSTED AN ENTER WITH NO EXIT, and ran it to now. Jack's 'shop'
+//    crossing entered at 07:43 and never exited, so that span swallowed the
+//    whole day and put his 10:10 stop, three miles east, at the yard. An
+//    unpaired enter is not a span: the app may have been dead when the exit
+//    fired, the fence may have been unregistered mid-day, the id may be one
+//    of the duplicates above. Only a CLOSED pair is evidence, which on his
+//    real day leaves exactly the three that are true (07:43-07:59,
+//    09:37-09:56, 15:58-16:36) and drops exactly the two that are not.
+//
+// Overlapping spans rank the way geoFenceAt ranks overlapping circles, so one
+// precedence governs the file; on a tie the span that STARTED later wins,
+// because entering B while still inside A is standing in B.
+// ── RULE 21: THE CROSSING KNOWS WHEN HE ARRIVED (owner 2026-09-15) ────────
+// "I shouldn't be babysitting his day and telling you what happened."
+//
+// His 15 September: the phone crossed his mother's fence at 07:59:25 and
+// CoreMotion did not drop out of automotive until 08:30:53, thirty-one minutes
+// later, because the app was terminated at 08:01 and nothing sampled a fix in
+// between. A journey ends on that flip, so a five-minute drive was written as
+// thirty-six and her house did not start until 08:30. Every minute of it was
+// on the wrong row.
+//
+// The OS was watching the fence the whole time and said so. When a CLOSED
+// crossing pair opens inside a journey and is still open when the tape finally
+// flips, he was already there: the journey ends at the crossing. It is the
+// same evidence rule 15 already trusts for WHERE, used for WHEN, and it is
+// only ever allowed to make a drive SHORTER, never to invent one.
+//
+// A drive that passes THROUGH a fence is untouched, because its crossing
+// closes before the journey does.
+function _gdRegionSpanList(regions, fences, radiusFt) {
+  const byId = new Map();
+  (Array.isArray(fences) ? fences : []).forEach(f => { if (f && f.id != null) byId.set(String(f.id), f); });
+  const rows = (Array.isArray(regions) ? regions : [])
+    .filter(r => r && typeof r.ts === 'number' && r.id != null && byId.has(String(r.id)))
+    .sort((a, b) => a.ts - b.ts);
+  const open = new Map(), spans = [];
+  for (const r of rows) {
+    const id = String(r.id);
+    if (r.enter) { if (!open.has(id)) open.set(id, r.ts); continue; }
+    const from = open.get(id);
+    if (from == null) continue;
+    open.delete(id);
+    const at = byId.get(id);
+    // The crossing says WHERE, geoFenceAt says WHICH. See 1 above.
+    const f = geoFenceAt(at, fences, radiusFt);
+    if (f && r.ts > from) spans.push({ from, to: r.ts, f });
+  }
+  // Whatever is left in `open` never closed, and is dropped. See 2 above.
+  return spans;
+}
+function _gdRegionSpans(regions, fences, radiusFt) {
+  const spans = _gdRegionSpanList(regions, fences, radiusFt);
+  if (!spans.length) return () => null;
+  return (ts) => {
+    if (typeof ts !== 'number') return null;
+    let best = null, bestRank = Infinity, bestFrom = -Infinity;
+    for (const s of spans) {
+      if (ts < s.from || ts > s.to) continue;
+      const rank = GEO_FENCE_RANK[String(s.f.kind || 'other')];
+      const rk = rank == null ? GEO_FENCE_RANK.other : rank;
+      if (rk < bestRank || (rk === bestRank && s.from > bestFrom)) { best = s.f; bestRank = rk; bestFrom = s.from; }
+    }
+    return best;
+  };
+}
+
+// Rule 21, applied to the journey list before anything reads it, so the leg
+// and the dwell after it move together: one boundary, not two.
+function _gdArrivalTrim(journeys, spans) {
+  if (!Array.isArray(journeys) || !Array.isArray(spans) || !spans.length) return journeys;
+  return journeys.map((j) => {
+    if (!j || typeof j.endTs !== 'number' || typeof j.startTs !== 'number') return j;
+    let arrival = null;
+    for (const s of spans) {
+      // Entered after this drive began, before the tape said it ended, and
+      // still inside at that moment: he was parked in there the whole time.
+      if (!(s.from > j.startTs && s.from < j.endTs && s.to >= j.endTs)) continue;
+      if (arrival == null || s.from < arrival) arrival = s.from;
+    }
+    return arrival == null ? j : Object.assign({}, j, { endTs: arrival });
+  });
+}
+
 function _gdSameFence(a, b) {
   if (!a || !b) return false;
   return String(a.id) === String(b.id);
@@ -234,6 +346,55 @@ function _gdParkedFixBefore(fixes, ts, notBeforeTs, maxAgeMs, maxAccM) {
 }
 // The arrival's mirror: the first good fix after the walking flip and before
 // the next drive, for a phone that only woke once it had parked.
+// ── WHERE THE TRUCK ACTUALLY SAT (owner 2026-09-12) ────────────────────────
+// His 11 September evening, an unsaved stop offered for saving as "3600 SW
+// Lincolnshire". He was at 6812 SW Finsbury, 0.84 miles away.
+//
+// Across the whole 2h43m he was parked, the phone logged four fixes:
+//   19:03:33  39.00232,-95.76751     4,415 ft from where he parked
+//   19:06:04  39.00232,-95.76751     identical, to five decimals
+//   19:06:45  39.01050,-95.77900        27 ft from where he parked
+//   19:08:35  39.01050,-95.77900     identical
+// He went still at 18:05 at 39.01046,-95.77908 and drove off at 20:48 from
+// 39.01396,-95.78085. Both agree with the SECOND pair. The first pair is one
+// cached reading replayed twice and contradicted forty seconds later.
+//
+// _gdSettledFixAfter already refuses two shapes of stale reading: a fix
+// repeating the one immediately before it, and a fix repeating any reading
+// taken on the drive that just ended. This pair defeats both. Its predecessor
+// is a road fix from 18:05, and the coordinate itself never appears on that
+// drive, so it is simply the first eligible candidate and it wins.
+//
+// THE REAL PROBLEM IS THAT ONE FIX WAS ANSWERING TWO QUESTIONS. Which fence
+// the stop is in has to be decided near the ARRIVAL, and _gdSettledFixAfter is
+// right for that, timing and all. Where the truck sat, which is what the Save
+// button on an unsaved stop writes into a new client record, is a question
+// about the whole dwell, and the first reading in it is no more authoritative
+// than any other.
+//
+// So this asks the dwell as a whole and takes the position its fixes AGREE on,
+// which is the same posture as _gdStopProved ("no evidence means no stop") one
+// question over. On a tie the LATER group wins, because a stale cache is by
+// definition a replay of an older reading: the live one cannot be the one that
+// was already on file. Fence resolution is untouched.
+function _gdStopFix(fixes, fromTs, toTs, maxAccM, fallback) {
+  const groups = new Map();
+  (fixes || []).forEach((f) => {
+    if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') return;
+    if (f.acc != null && Number(f.acc) > maxAccM) return;
+    if (f.ts < fromTs || f.ts > toTs) return;
+    const k = f.lat + ',' + f.lng;
+    const g = groups.get(k);
+    if (!g) groups.set(k, { n: 1, last: f });
+    else { g.n += 1; if (f.ts > g.last.ts) g.last = f; }
+  });
+  let best = null;
+  groups.forEach((g) => {
+    if (!best || g.n > best.n || (g.n === best.n && g.last.ts > best.last.ts)) best = g;
+  });
+  return best ? best.last : fallback;
+}
+
 function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM, sinceTs) {
   // A REPEAT IS NOT A NEW READING (owner 2026-09-04, his 2 September 1:00pm
   // drive: "I know the drive leg should be a lot longer then that").
@@ -530,6 +691,7 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
  * input.nowMs     for the open tail; defaults to Date.now()
  * input.directMiles(a,b) optional sync resolver for a collapsed leg; default
  *                 straight line, and the leg says which it got.
+ * input.regions   [{ts, id, enter}] the OS's own fence crossings, for rule 15
  * input.appEvents [{ts, kind}] app-active | app-background | app-terminate |
  *                 app-relaunch (the plugin's own lifecycle events), for rule 10
  * input.opts      overrides for GEO_DERIVE_DEFAULTS
@@ -545,11 +707,19 @@ function geoDeriveDay(input) {
   if (!(dayStart > 0 && dayEnd > dayStart)) return empty;
   const directMiles = typeof inp.directMiles === 'function' ? inp.directMiles : null;
 
-  const journeys = _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes);
+  // Rule 15 and rule 21 read the same crossings: one says which fence an
+  // instant belongs to, the other says when a drive into it actually ended.
+  const regionSpans = _gdRegionSpanList(inp.regions, fences, opts.radiusFt);
+  const journeys = _gdArrivalTrim(
+    _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes), regionSpans);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;
-
+  // Rule 15 (above): where a CLOSED crossing pair covers the instant, the
+  // boundary the OS watched beats the position this app happened to sample.
+  // Where none does, nothing changes: fenceAt IS fenceOf.
+  const inside = _gdRegionSpans(inp.regions, fences, opts.radiusFt);   // same crossings, read for WHERE
+  const fenceAt = (fix, ts) => inside(ts) || fenceOf(fix);
   // The chain: the first saved origin and the automotive minutes since it.
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
   let arrived = null;        // {fence, ts, journeyId}: an open dwell awaiting its departure
@@ -564,7 +734,7 @@ function geoDeriveDay(input) {
     const parkedFix = _gdParkedFixBefore(fixes, j.startTs, prevEnd, opts.parkedFixMaxMs, opts.maxFixAccM);
     const nearFix = at(j.startTs);
     const startFix = (parkedFix && fenceOf(parkedFix)) ? parkedFix : (nearFix || parkedFix);
-    const depFence = fenceOf(startFix);
+    const depFence = fenceAt(startFix, j.startTs);
     // The departure ping labels the dwell that just ended. If it is missing,
     // the arrival that opened the dwell still knows where it was.
     const fromFence = depFence || (arrived && arrived.fence) || null;
@@ -642,7 +812,7 @@ function geoDeriveDay(input) {
     // is its mirror. `at()` stays as the fallback for a journey with nothing
     // after it at all.
     const endFix = _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM, j.startTs) || at(j.endTs);
-    const toFence = fenceOf(endFix);
+    const toFence = fenceAt(endFix, j.endTs);
     const autoMs = j.endTs - j.startTs;
 
     if (!chain) {
@@ -662,7 +832,7 @@ function geoDeriveDay(input) {
               miles: Math.round(miles * 10) / 10, milesFrom: p > 0 ? 'path' : 'straight',
               collapsed: false, stops: 0, roundTrip: false,
               traced: true, unsavedFrom: true, unsavedTo: !toFence,
-              drives: [[j.startTs, j.endTs, autoMs]],
+              drives: [[j.startTs, j.endTs, autoMs, j.id, j.id]],
               path: _gdPath(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax, opts.maxMph),
             });
           }
@@ -704,10 +874,11 @@ function geoDeriveDay(input) {
       chain.autoMs += j.endTs - prevSeg[1];
       prevSeg[1] = j.endTs;
       prevSeg[2] = prevSeg[1] - prevSeg[0];
+      prevSeg[4] = j.id;
       if (chain.stops > 0) { chain.stops -= 1; if (chain.via) chain.via.pop(); }
     } else {
       chain.autoMs += autoMs;
-      chain.drives.push([j.startTs, j.endTs, autoMs]);
+      chain.drives.push([j.startTs, j.endTs, autoMs, j.id, j.id]);
     }
 
     if (!toFence) {
@@ -720,7 +891,13 @@ function geoDeriveDay(input) {
       // row can say where the truck actually went and the lead form opens
       // there.
       chain.stops += 1;
-      if (endFix) (chain.via = chain.via || []).push({ lat: Number(endFix.lat), lng: Number(endFix.lng), ts: j.endTs });
+      // NOT endFix. That one is chosen for the ARRIVAL, to decide which fence
+      // the stop is in, and the first reading of a dwell is no authority on
+      // where the truck sat (owner 2026-09-12, 3600 SW Lincolnshire). This is
+      // the position the whole dwell agrees on, and it is what the Save button
+      // writes into a new client record.
+      const stopFix = _gdStopFix(fixes, j.endTs, nextStart, opts.maxFixAccM, endFix);
+      if (stopFix) (chain.via = chain.via || []).push({ lat: Number(stopFix.lat), lng: Number(stopFix.lng), ts: j.endTs, key: 'd-' + j.id });
       continue;
     }
 
@@ -755,10 +932,24 @@ function geoDeriveDay(input) {
     // there is no evidence anywhere in the tape that says otherwise: rule 12
     // keeps the house off the clock and "we make no inferences here."
     const roundTrip = sameSpot && collapsed && !_gdIsHouse(chain.originFence, fences, opts.radiusFt);
-    if ((!sameSpot || roundTrip) && !tooShort) {
+    // RULE 17 amends this: a house loop is suppressed BY THE WINDOW, not here.
+    // Rule 7 refuses a same-spot round trip out of the house because that is
+    // the gym run, and that is still right for a day nobody was working. But
+    // "leaving the house and coming back with nothing saved between" is also
+    // what a real job at an address nobody has saved looks like, and this
+    // decided it before anything knew whether the workday was open. It is
+    // marked now and judged later (_gdDayWindow), so a clocked loop survives
+    // and an unclocked one still does not. A house loop can never OPEN the
+    // window (it touches no business fence), so there is no circularity.
+    const houseLoop = sameSpot && collapsed && !roundTrip;
+    if ((!sameSpot || roundTrip || houseLoop) && !tooShort) {
       const a = chain.originFence, b = toFence;
       let miles, milesFrom;
-      if (roundTrip) {
+      // A house loop is a round trip in every respect but where it started, so
+      // it earns the same treatment: breadcrumb miles, never a routed number,
+      // and traced so no total can claim it until the stop is saved.
+      const loop = roundTrip || houseLoop;
+      if (loop) {
         // Rule 14: the place he actually went was never saved, so there is
         // still no routed number; the breadcrumbs are shown and claimed by
         // nobody. Saving that stop turns this into two real legs.
@@ -778,10 +969,10 @@ function geoDeriveDay(input) {
         startTs: chain.startTs, endTs: j.endTs,
         minutes: Math.round(chain.autoMs / 60000),
         miles: Math.round(miles * 10) / 10, milesFrom,
-        collapsed, stops: chain.stops, roundTrip,
+        collapsed, stops: chain.stops, roundTrip, houseLoop,
         // Rule 14: a round trip through an unsaved stop is a traced row,
         // never a claimed one.
-        traced: roundTrip && miles > 0, unsavedVia: roundTrip,
+        traced: loop && miles > 0, unsavedVia: loop,
         // The held stops, in order, where the truck sat: what a via row's
         // Save button saves.
         via: (chain.via || []).slice(),
@@ -922,6 +1113,11 @@ function geoDeriveDay(input) {
       // Nothing after it to corroborate with either: an unconfirmed last
       // reading does not get to end a day that may still be running.
       if (!next) continue;
+      // Rule 15: a fix drifting outside is the weakest possible evidence that
+      // somebody left, and while the OS's own closed crossing still covers
+      // this instant for this very fence, it is not evidence at all. Jack's
+      // 4:01pm is exactly that shape.
+      if (_gdSameFence(inside(later[i].ts), arrived.fence)) continue;
       left = true; break;
     }
     if (left) {
@@ -954,18 +1150,37 @@ function geoDeriveDay(input) {
   // Rule 13: a visit the day cannot vouch for is a question, not a row.
   const asked = _gdHeldVisits(ended, inp, dayStart);
   // Rule 15: and the drives between them, using rule 13's own answer.
-  const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart);
+  const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart, fences, opts);
+  // Rule 17: the workday window, computed ONCE from the two signals the owner
+  // named. Rules 15 and 16 both read it rather than each guessing again.
+  const win = _gdDayWindow(askedLegs, asked, inp, opts, dayEnd, fences);
+  // Everything between the bookends counts: a drive rule 15 could not vouch
+  // for on its own is work if the workday was open around it.
+  const winLegs = win
+    ? askedLegs.map(l => (l && l.held === true && _gdInWindow(win, l))
+        ? Object.assign({}, l, { held: false, inWindow: true }) : l)
+    : askedLegs;
+  // Rule 16: a day that never reached business at all writes no drives. A
+  // house loop (rule 7) survives only inside the window.
+  const laddered = _gdEmptyDayLegs(winLegs, asked, inp, open,
+    journeys.some(j => j && j.open), win, fences, opts.radiusFt);
+  // Rule 20: the commute is marked, not deleted. The leg is a real drive and
+  // the map, the route and every structural rule above still need it; what it
+  // must never do is bill. geoDeriveRows writes no mileage row and no drive
+  // time row for it, which is where "no hours, no miles" actually lives.
+  const realLegs = laddered.map(l => (l && _gdIsCommuteLeg(l, fences, opts.radiusFt))
+    ? Object.assign({}, l, { commute: true }) : l);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
   // (owner 2026-09-06). It still reports where he is; it now also says whether
   // that is work, and the rail can stop calling it time.
-  if (open) open.counts = _gdOpenCounts(open, asked);
+  if (open) open.counts = _gdOpenCounts(open, asked, win, nowMs);
 
   return {
     day: inp.day || '',
     dwells: asked.filter(d => d.minutes >= 1),
-    legs: askedLegs,
+    legs: realLegs,
     open,
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
@@ -1267,9 +1482,28 @@ function _gdIsHouse(fence, fences, radiusFt) {
 // address is not time until the day lands in real work. Same test the writer
 // uses, read off the dwells that survived it, so the rail and the row can
 // never disagree.
-function _gdOpenCounts(open, dwells) {
+// ── AND THE DAY HAS TO BE ABLE TO END (owner 2026-09-12) ──────────────────
+// "How does a day with automatic drives end? Right now they can't and my own
+// account is proof." It could not, and this is where.
+//
+// An open dwell has no departure yet, so it runs to this moment by
+// definition. At his own house, on any day that reached real work, the test
+// below said it counted, and it went on saying so all evening and all night,
+// because nothing about a man sitting in his kitchen ever changes. The
+// screens drew "On site now" against it until he drove somewhere.
+//
+// Rule 17 already worked out when the workday closed (the last real work plus
+// the wrap, or the last clock-out) and nobody asked it. Now it does: past
+// that, at your own address, you are home. Drive out again and a new journey
+// re-opens the window, so this can never strand a day that was not over.
+//
+// Deliberately measured against NOW and not against the arrival: getting home
+// at 17:39 does not end a workday that runs to 18:09, and the half-hourly
+// re-derive is what flips it once it does.
+function _gdOpenCounts(open, dwells, win, nowMs) {
   if (!open) return false;
   if (!open.atHome) return true;
+  if (win && Number(nowMs) > Number(win.close)) return false;
   return (dwells || []).some(d => d && !_gdIsBaseKind(d.kind) && d.kind !== 'office');
 }
 function _gdHouseOffTheClock(dwells) {
@@ -1408,18 +1642,90 @@ function _gdPath(fixes, a, b, maxAccM, endpoints, max, maxMph) {
 // fires on the odd-hours visits, which are the family ones. What it still
 // cannot know, and no competitor can either: a genuinely personal weekday
 // afternoon at a client with nothing scheduled counts.
-function _gdHeldVisits(dwells, inp, dayStart) {
-  const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
-    .map(c => c && { a: Number(c.start), b: Number(c.end) })
-    .filter(c => c && c.a > 0 && c.b > c.a);
-  const wh = inp.workHours || {};
+// ── RULE 19: THE DAY LEARNS WHEN THIS PERSON USUALLY WORKS ────────────────
+// Owner 2026-09-15: "Jack's day is 8 am to 5 pm really but sometimes gets off
+// before that, we know his clock in and clock out behavior so how do we run
+// this ladder off the times we know he usually works? This could be global."
+//
+// The company's Settings hours are one number for everybody, and they exist to
+// cover the forgetful contractor for free (rule 13). They cannot tell a crew
+// member who starts at 7:45 from an owner who invoices at 10pm, and the
+// question this now has to answer is exactly that: was this drive part of THIS
+// person's working day.
+//
+// His own clock punches answer it, and far more sharply than a setting could.
+// Jack's seven clocked days, Central: in at 7:42, 7:44, 7:44, 7:45, 7:54,
+// 7:55, 7:58, and out between 15:00 and 19:30. A sixteen-minute band on the
+// in. The 5:29am gym run is more than two hours before the earliest he has
+// ever started; that is not a close call, it is a different part of the day.
+//
+// THE EDGES ARE THE EXTREMES, PADDED, NOT THE MEDIAN, and the asymmetry is
+// deliberate: missing a real job costs the owner money, while letting one gym
+// trip through costs a greyed row he can dismiss. So the window is as wide as
+// the person has ever been, plus an hour each way, minus the single most
+// extreme sample on each side so one 4am start cannot poison it forever.
+//
+// ONLY CLOCKS ON OR BEFORE THE DAY BEING DERIVED. A day's rows must not change
+// because of a punch from three weeks later; re-deriving September 1st next
+// month has to reach the same answer it reached then.
+//
+// UNDER FIVE CLOCKED DAYS THERE IS NO PATTERN, only a couple of points, so the
+// company setting stands. A new hire is covered from day one, just loosely.
+//
+// input.clockHistory is [{day, inMin, outMin}], minutes after that day's local
+// midnight, resolved by the caller: it already owns the Central day maths and
+// this file must not grow a second copy of it (a DST day is 23 or 25 hours and
+// a modulo would be wrong twice a year).
+const GEO_LEARNED_MIN_DAYS = 5;
+const GEO_LEARNED_PAD_MS = 3600000;
+function _gdLearnedHours(inp) {
+  const day = String((inp && inp.day) || '');
+  const rows = (Array.isArray(inp && inp.clockHistory) ? inp.clockHistory : [])
+    .filter(r => r && typeof r.inMin === 'number' && typeof r.outMin === 'number'
+      && r.outMin > r.inMin && String(r.day || '') && String(r.day) <= day);
+  if (rows.length < GEO_LEARNED_MIN_DAYS) return null;
+  const ins = rows.map(r => r.inMin).sort((a, b) => a - b);
+  const outs = rows.map(r => r.outMin).sort((a, b) => a - b);
+  // Drop the one outlier at each end. With exactly the minimum that still
+  // leaves three days either side of the edge being chosen.
+  const a = ins[1], b = outs[outs.length - 2];
+  if (!(a >= 0 && b > a)) return null;
+  return { a: a * 60000 - GEO_LEARNED_PAD_MS, b: b * 60000 + GEO_LEARNED_PAD_MS };
+}
+// The working day, as one answer: its bounds in ms after local midnight, and
+// whether this is a working day at all. One definition, because rule 13 asks
+// it about visits and rule 16 asks it about drives, and they cannot disagree.
+function _gdDayShape(inp) {
+  const wh = (inp && inp.workHours) || {};
   const hm = v => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '')); return m ? (Number(m[1]) * 60 + Number(m[2])) * 60000 : NaN; };
   let whA = hm(wh.start), whB = hm(wh.end);
   if (!Number.isFinite(whA)) whA = 6 * 3600000;
   if (!Number.isFinite(whB)) whB = 20 * 3600000;
+  // Rule 19: what this person actually does REPLACES what the company wrote
+  // down, because it is measured rather than guessed and it is already padded
+  // by an hour each way with its outliers trimmed off. The setting is the
+  // fallback for anybody too new to have a pattern, not a floor under one.
+  //
+  // Replacing can make the window narrower than the company's, and that is the
+  // point: Jack has never once started before 7:42, so the company's 6am tells
+  // us nothing about his morning. What keeps that safe is where this window is
+  // USED. A drive between two saved fences counts at any hour, and so does one
+  // a clock covers; the window only ever arbitrates a drive that can vouch for
+  // neither, which is the ambiguous loop through somewhere nobody saved. The
+  // worst it can do is drop one of those, and the whole reason it exists is
+  // that one of those is a gym run.
+  const learned = _gdLearnedHours(inp);
+  if (learned) { whA = learned.a; whB = learned.b; }
   const days = Array.isArray(wh.days) ? wh.days.map(Number) : [1, 2, 3, 4, 5, 6];
-  const dow = new Date(String(inp.day || '') + 'T12:00:00Z').getUTCDay();
-  const workDay = Number.isFinite(dow) && days.indexOf(dow) >= 0;
+  const dow = new Date(String((inp && inp.day) || '') + 'T12:00:00Z').getUTCDay();
+  return { whA, whB, learned: !!learned, workDay: Number.isFinite(dow) && days.indexOf(dow) >= 0 };
+}
+
+function _gdHeldVisits(dwells, inp, dayStart) {
+  const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
+    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .filter(c => c && c.a > 0 && c.b > c.a);
+  const { whA, whB, workDay } = _gdDayShape(inp);
   const overlaps = (d, a, b) => Math.min(d.endTs, b) - Math.max(d.startTs, a) >= 60000;
   return (dwells || []).map(d => {
     if (!d || d.kind !== 'client' || !d.fence || d.fence.scheduled === true) return d;
@@ -1445,10 +1751,286 @@ function _gdHeldVisits(dwells, inp, dayStart) {
     // answer to give, not this function's to assume, and a held visit already
     // counts toward nothing and asks on the card. Dropping it silently would
     // lose the one case he DOES bill for at that address.
-    if (d.fence.personal === true) return Object.assign({}, d, { held: true });
+    //
+    // ── THE THIRD WITNESS: OPEN ON THE BOOKS (owner 2026-09-12) ──────────
+    // "flag the question if it's work or personal if there's no active job
+    // or proposal that's open on the books."
+    //
+    // The calendar witness above is DATE-BOUND: `scheduled` means a job whose
+    // dates cover this very day. That is too narrow for the way the work
+    // actually arrives. A live job at a family member's address is business
+    // whether or not today is one of its scheduled days, and a proposal still
+    // sitting out there unanswered is a reason to be at the address at all:
+    // walking the job, measuring, chasing the signature.
+    //
+    // So the fence carries `onBooks` (js/geo-track.js _geoDeriveFences and
+    // geo_fences_for, the one pair that has to agree): a job not canceled,
+    // complete or done, or a bid still open (Pending, sent, opportunity, or
+    // won and not yet closed out). A DRAFT never counts: nothing has been put
+    // in front of the client, so it is not evidence of anything.
+    //
+    // It vouches for the visit exactly the way the calendar does, and it
+    // vouches ONLY for a family contact's benefit here; an ordinary client
+    // never needed it, because the working-day window already covered them.
+    if (d.fence.personal === true && d.fence.onBooks !== true) return Object.assign({}, d, { held: true });
     if (workDay && whB > whA && overlaps(d, dayStart + whA, dayStart + whB)) return d;
     return Object.assign({}, d, { held: true });
   });
+}
+
+// ── Rule 17: THE WORKDAY WINDOW (owner 2026-09-12) ────────────────────────
+// "We got a business fence to business fence to start the work timer, and or
+// we got a manual clock in and clock out, and everything in between those
+// times." And, on the drive that happens before the clock: "some days Jack
+// went straight from home to a job site, but he had a manual clock in in the
+// middle of the day."
+//
+// Rules 7, 11, 15 and 16 each made their OWN guess about whether the day
+// counted, from different evidence, at different points in the pipeline. That
+// is why a real trip could vanish while a gym run wrote mileage: nothing in
+// the file knew, as one fact, whether the workday was open. This is that fact.
+//
+// OPENS at the EARLIER of the two signals, which is the whole point of his
+// second sentence. Measured on the crew member's own week: he clocks in when
+// he ARRIVES, not when he leaves. 31 August he pulled out at 7:09 and clocked
+// in at 7:55, a 46-minute drive to the yard that a clock-anchored window would
+// have thrown away, and 1 and 9 September are the same by 19 minutes. The
+// mirror case is 8 September: clocked in at 7:58, first drive not until 13:28,
+// a morning at the shop with no drive in it that only the clock can open.
+// Either signal can be first. Whichever is, opens the day.
+//
+// CLOSES at the LATER of the last clock-out or the last business arrival plus
+// the shop wrap (rule 11's number, owner 2026-08-24, already chosen for the
+// phone that sits at the yard all evening). So an evening gym run after a real
+// workday falls OUTSIDE the window and is still not work, which is the case
+// that stops "the day was open" from meaning "everything today was work."
+//
+// WHAT COUNTS AS THE FENCE SIGNAL is rule 15's answer, not a new one: a leg
+// that reaches a business end (a job, the yard, a supply house, or a client
+// the day can stand behind). NOT "business fence to BUSINESS fence" in the
+// literal sense, which was checked against both real accounts and is wrong:
+// only 3 of the crew member's 7 work days pass it, because the other four run
+// house -> yard -> house and his house is one end. 12 September is the proof,
+// 13.9 miles out to the yard and back with no clock, which both-ends deletes.
+// One business end plus the clock classifies all 24 days across both accounts
+// correctly, and kills exactly the four nobody worked.
+//
+// A HOUSE LOOP CAN NEVER OPEN THE WINDOW. It touches no business fence by
+// definition, so rule 7 can mark one and let this judge it without the two
+// ever depending on each other.
+//
+// NOT the same thing as _gdWorkWindow above, which is rule 10's narrower
+// question (first drive to last real work) and exists only to decide when the
+// house may be Office. That one is left exactly as it is: widening it would
+// move Office rows on days nobody asked about.
+function _gdDayWindow(legs, dwells, inp, opts, dayEnd, fences) {
+  let open = Infinity, close = -Infinity;
+  (Array.isArray(inp.clocks) ? inp.clocks : []).forEach((c) => {
+    const a = Number(c && c.start), b = Number(c && c.end);
+    if (a > 0 && b > a) { if (a < open) open = a; if (b > close) close = b; }
+  });
+  const wrap = Number(opts && opts.wrapMin) >= 0
+    ? Number(opts.wrapMin) : GEO_DERIVE_DEFAULTS.wrapMin;
+  // ── THE WRAP IS FOR UNLOADING, SO IT ONLY EXISTS WHERE YOU UNLOAD ──────
+  // Rule 11's wrapMin is the half hour after the last job for putting the
+  // truck away at a real yard. It was added to the end of EVERY leg and
+  // every dwell, which includes arriving at your own driveway, and on the
+  // owner's account that is the same coordinate as the yard: his shop fence
+  // sits 20 ft from his home office. So every time he got home the workday
+  // stretched another thirty minutes past the moment he stopped working, and
+  // the evening that followed landed inside it (his 10 and 11 September).
+  //
+  // Same call the vouches ladder already makes one rule up (a shop that is
+  // your house is your house), applied to the one place that never got the
+  // memo. Nothing changes for a yard a mile and a half from the house, which
+  // is the crew member's, and it keeps its wrap exactly as before.
+  const wrapFor = (fence) => (_gdIsHouse(fence, fences, opts && opts.radiusFt) ? 0 : wrap * 60000);
+  (legs || []).forEach((l) => {
+    // Rule 15 has already said which legs reach business; a held one has not.
+    if (!l || l.held === true || l.houseLoop === true) return;
+    if (Number(l.startTs) > 0 && l.startTs < open) open = l.startTs;
+    const end = Number(l.endTs) + wrapFor(l.to);
+    if (end > close) close = end;
+  });
+  (dwells || []).forEach((d) => {
+    if (!d || _gdIsBaseKind(d.kind) || d.kind === 'office' || d.held === true) return;
+    if (Number(d.startTs) > 0 && d.startTs < open) open = d.startTs;
+    const end = Number(d.endTs) + wrapFor(d.fence);
+    if (end > close) close = end;
+  });
+  if (!isFinite(open) || !(close > open)) return null;
+  return { open, close: Math.min(close, Number(dayEnd) || close) };
+}
+// ── INSIDE THE WINDOW MEANS INSIDE IT, NOT TOUCHING IT ────────────────────
+// This used to pass on one minute of OVERLAP, and the comment claimed that
+// was "no part-credit" when it was nothing but part-credit: his 11 September
+// evening loop ran 17:45 to 20:58 against a window that closed at 18:09, and
+// came in whole on 24 minutes of contact. A three-hour trip does not join the
+// workday because its first six minutes did.
+//
+// Containment, both ends. A leg that starts before the day opened or ends
+// after it closed is not in the day, and the two signals that OPEN a window
+// (a clock, a leg that reached business) are contained in it by construction,
+// so nothing that genuinely belongs to the day is excluded by tightening this.
+function _gdInWindow(win, r) {
+  if (!win || !r) return false;
+  const a = Number(r.startTs), b = Number(r.endTs);
+  if (!(a > 0 && b >= a)) return false;
+  return a >= win.open && b <= win.close;
+}
+
+// ── Rule 16: a day that never reached business writes no drives ───────────
+// Owner 2026-09-12, on a crew member's unclocked days: "he should only have
+// drives and mileage on the days there was a clock in ... Jack doesn't have
+// two back to back fences going all the way back to the shop on those days he
+// doesn't have a clock does he?"
+//
+// He does not, and that is the rule. Checked against every day the crew member
+// has on record: all six of his clocked days open with a leg from his house to
+// the yard or to a real customer, and not one of the four unclocked days
+// touches a business address anywhere. Two of them are the same gym run a week
+// apart, out at 5:25 and home by 6:21, both ends unsaved.
+//
+// So this is rule 11's test, finally applied to the legs. Rule 11 already
+// throws away a day's base dwells when nothing in it landed in real work
+// ("Jack's do: home, the gym, home"). It never did the same for the drives,
+// and that asymmetry is why the gym ran up mileage rows on a day the time log
+// correctly showed as empty.
+//
+// ── THE LADDER, AS THE OWNER STATED IT (2026-09-15) ───────────────────────
+// "In order to start the day, we need back to back fence stops aligned with
+// core motion or a manual clock in to happen." Then, having spotted the hole
+// in his own rule: "What if the first stop of the day isn't a saved address
+// nor is the clock in button hit, then we have missing rows."
+//
+// He is right, and the hole is not fixable by looking harder at the tape: a
+// gym run and a first job at an address nobody saved are THE SAME DATA. Leave
+// the house, stop somewhere unsaved, come home. No rule reading only the
+// breadcrumbs can separate them, so any rule that kills one kills the other.
+//
+// What separates them is WHEN. So the day-start question is answered by the
+// witness ladder rule 13 already uses for visits, applied to drives, with rule
+// 19's learned hours in place of the company setting:
+//
+//   1. the drive vouches for itself: two different saved fences, off the tape
+//   2. a manual clock covers it
+//   3. it sits wholly inside this person's working day (rule 19)
+//   4. none of those: it is not written
+//
+// Rungs 1 and 2 are his rule, unchanged and unconditional on the hour. Rung 3
+// is the answer to his catch-22: a 9am run to a customer nobody has saved is
+// written, greyed, earning nothing, with the Save button on it, so the row is
+// there to be named and nothing goes missing. Rung 4 is the gym, out at 5:29
+// and home by 6:27, two hours before Jack has ever clocked in.
+//
+// WHOLLY inside, not touching: his gym run ends at 6:27 and would overlap a
+// 6am company window by 27 minutes. Same rule _gdInWindow already states for
+// the workday ("inside the window means inside it, not touching it").
+//
+// A leg that is NOT held reached business on its own and is rung 1 by
+// definition, so it never has to ask the hour.
+// ── RULE 20: THE COMMUTE IS NOT WORK, AND IT IS NOT MILEAGE ───────────────
+// Owner 2026-09-15: "He doesn't get paid for his drive to his dads shop or
+// when he goes home, his time runs on arrival to the shop and or clock in time
+// and out time, we dont want to show his mileage to his dads or from home."
+//
+// This is the IRS commuting rule and that is why it is global rather than one
+// man's exception: travel between your home and your regular place of work is
+// never claimable, and everything from arrival onward is. Jack happening not
+// to own the shop he reports to is incidental; an employee of any contractor
+// on this app has the same two drives every day.
+//
+// THE SHOP IS THE REGULAR PLACE, and no box has to be ticked to say so (owner
+// 2026-09-15: "globally the process will be employees drive to the shop don't
+// get logged, but anything from the shop out to the next job does. The trigger
+// would be shop to address and/or clock in"). The account already says where
+// the shop is, so the rule needs no setup and is right on day one for every
+// account: the checkbox is the EXCEPTION, for a second yard somebody reports
+// to that is not the registered shop.
+//
+// A leg with a HOUSE at one end and that place at the other, in either
+// direction, is the commute: no time row, no mileage row, nothing on the rail.
+// Arrival is where the day starts, which is what the owner asked for, and the
+// dwell at the shop is untouched because being there IS the work.
+//
+// A HOME OFFICE DOES NOT EXEMPT IT, and that is deliberate rather than an
+// oversight. The tax code would let a genuine principal-place-of-business home
+// office claim that first drive; the owner's rule is that the day runs from
+// arrival at the shop or the clock, whichever comes first, and his own house
+// is a home_office place. Naming it here so the next reader knows the narrower
+// reading was chosen, not missed.
+//
+// EVERY OTHER LEG OUT OF THAT PLACE IS WORK, unchanged. Shop to a customer,
+// shop to a supply house, customer back to the shop: all still claimed. Only
+// the two ends of the commute itself are refused, which is exactly the line
+// the deduction draws.
+//
+// It is dropped BEFORE the ladder rather than inside it, and unconditionally:
+// a commute covered by a manual clock is still a commute. The clock says he
+// was working, not that the drive was billable, and rule 16's rungs are about
+// whether a drive can be PLACED, which this one can, precisely.
+// ONE BUILDING ANSWERS TO SEVERAL FENCES, and this rule cannot be the third
+// thing to forget it. His yard is registered twice on his own account: the
+// built-in Settings shop and the td_places row migrated from it, same
+// coordinate, same rank, so which one a leg's end carries is decided by
+// nothing better than list order. Ticking the box on one of them has to work.
+//
+// Same shape _gdShopIsHome already uses for the other duplicate-registration
+// question ("is there a home office standing at this shop"), so there is one
+// idiom for "what else is at this spot" rather than two.
+// The shop, or anywhere the box was ticked. A house that happens to be a shop
+// is not caught here: _gdIsCommuteLeg refuses a leg whose ends are both the
+// house, which is the owner's own account (his shop fence sits on his desk).
+function _gdReportsKind(f) {
+  return !!f && (f.commute === true || String(f.kind) === 'shop');
+}
+function _gdReportsHere(fence, fences, radiusFt) {
+  if (!fence || fence.lat == null || fence.lng == null) return false;
+  if (_gdReportsKind(fence)) return true;
+  const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  return (fences || []).some(f => _gdReportsKind(f) && f.lat != null && f.lng != null &&
+    _gdMiles(fence, f) * 5280 <= r);
+}
+function _gdIsCommuteLeg(l, fences, radiusFt) {
+  if (!l || !l.from || !l.to) return false;
+  // A CHAIN IS NOT A COMMUTE, however it ends. A leg that stopped anywhere on
+  // the way is the shop, four customers and then the house (his 1 September),
+  // and refusing the whole chain because its last end is home would delete the
+  // four customer stops and the five drives inside it. The commute is the
+  // drive with nothing in it: door to door, no stops.
+  if (Array.isArray(l.drives) && l.drives.length > 1) return false;
+  const a = l.from, b = l.to;
+  if (a.unsaved === true || b.unsaved === true) return false;
+  const house = (e) => _gdIsHouse(e, fences, radiusFt);
+  const reports = (e) => _gdReportsHere(e, fences, radiusFt);
+  // A place that is BOTH the house and the place you report to is one place,
+  // and the drive between a spot and itself is not a commute, it is nothing.
+  if (house(a) && house(b)) return false;
+  return (house(a) && reports(b)) || (reports(a) && house(b));
+}
+
+function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win, fences, radiusFt) {
+  const list = (legs || []);
+  if (!list.length) return list;
+  const { whA, whB, workDay } = _gdDayShape(inp);
+  const ds = Number(inp && inp.dayStart);
+  const clocks = (Array.isArray(inp && inp.clocks) ? inp.clocks : [])
+    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .filter(c => c && c.a > 0 && c.b > c.a);
+  const covered = (l) => clocks.some(c => Math.min(l.endTs, c.b) - Math.max(l.startTs, c.a) >= 60000);
+  const inHours = (l) => workDay && ds > 0 &&
+    Number(l.startTs) >= ds + whA && Number(l.endTs) <= ds + whB;
+  // IT ASKS BEFORE IT DELETES, kept from the rule this replaces and named by
+  // the owner himself: "except for Laurie which we now tag as family and flag
+  // the question if it's work or personal." A day holding a NAMED held visit
+  // still has something to ask about, and the drives either side of it are
+  // part of the question, so they stay and rule 15's amber row asks. The gym
+  // has no fence and nobody to name; there is no question to put to anybody,
+  // which is exactly why this does not save it.
+  const named = (d) => !!(d && d.fence && (d.fence.name || d.fence.clientId != null || d.fence.jobId != null));
+  const asking = (dwells || []).some(d => d && d.held === true && named(d) &&
+    !_gdIsBaseKind(d.kind) && d.kind !== 'office');
+  return list.filter(l => !!l && (l.held !== true || covered(l) || inHours(l) || asking));
 }
 
 // ── Rule 15: a drive the day cannot vouch for is a question too ───────────
@@ -1478,7 +2060,7 @@ function _gdHeldVisits(dwells, inp, dayStart) {
 // story, and stays out of every money total until somebody answers. Losing
 // the drive would break the log; claiming it would put a number on a tax
 // return that nothing on the phone can stand behind.
-function _gdHeldLegs(legs, dwells, inp, dayStart) {
+function _gdHeldLegs(legs, dwells, inp, dayStart, fences, opts) {
   const heldClients = new Set();
   (dwells || []).forEach(d => {
     if (d && d.held && d.fence && d.fence.clientId != null) heldClients.add(String(d.fence.clientId));
@@ -1489,18 +2071,82 @@ function _gdHeldLegs(legs, dwells, inp, dayStart) {
   const vouches = (e) => {
     if (!e || e.unsaved === true) return false;
     if (e.jobId != null) return true;
-    if (e.kind === 'shop' || e.kind === 'supply') return true;
+    if (e.kind === 'supply') return true;
+    // ── A SHOP THAT IS YOUR HOUSE IS YOUR HOUSE (owner 2026-09-12) ───────
+    // "How does a day with automatic drives end? Right now they can't and my
+    // own account is proof."
+    //
+    // It couldn't, and this line is why. His shop fence sits 20 ft from his
+    // home office, well inside the 600 ft radius, and the shop OUTRANKS the
+    // home office, so every time he pulled into his own driveway the deriver
+    // recorded an arrival at a business address. Rule 17 closes the workday at
+    // the last business arrival plus the wrap, so coming home pushed the end
+    // of the day out by another half hour, every time, forever. His 11
+    // September: last real work at John Doe ended 17:23, and the evening that
+    // followed sat inside the workday as 2h43m of on-site time.
+    //
+    // _gdShopIsHome has known the difference since 2026-09-04. Rule 7 asks it
+    // before calling a round trip a round trip, rule 11 asks it before calling
+    // a day a shift, and the live card asks it before drawing anything at all.
+    // This was the one place that took `kind` at face value.
+    if (e.kind === 'shop') return !_gdShopIsHome(e, fences, (opts && opts.radiusFt));
     // A client end is only as good as rule 13's answer about that visit. A
-    // contact marked family never vouches: the whole point of the mark is
-    // that being at that address is not evidence of work (rule 13).
-    if (e.clientId != null) return e.personal !== true && !heldClients.has(String(e.clientId));
+    // contact marked family does not vouch on its own: the whole point of the
+    // mark is that being at that address is not evidence of work (rule 13).
+    // It gets rule 13's own reprieve and no other: an open job or proposal on
+    // the books is a reason to be there, so the drives come with it.
+    if (e.clientId != null) {
+      return (e.personal !== true || e.onBooks === true) && !heldClients.has(String(e.clientId));
+    }
     return false;
   };
   return (legs || []).map(l => {
     if (!l || l.held) return l;
-    if (vouches(l.from) || vouches(l.to)) return l;
-    if (clocks.some(c => Math.min(l.endTs, c.b) - Math.max(l.startTs, c.a) >= 60000)) return l;
-    return Object.assign({}, l, { held: true });
+    // ── RULE 18: A LOOP'S TWO ENDS ARE ONE END, COUNTED TWICE ────────────
+    // Owner 2026-09-13, on his 11 September: "tradedesk shop to shop can't
+    // display that way so that's wrong, would have to be tradedesk shop to
+    // unsaved address then unsaved address to tradedesk shop."
+    //
+    // He is describing the loophole in the founding rule. Section 17 opens
+    // with "both ends saved or no leg," and a round trip does not violate
+    // that, it SATISFIES it: rule 7 collapses the loop into one leg whose
+    // from and to are the same saved fence, and the only place he actually
+    // went is buried inside as a collapsed stop that nothing ever examines.
+    // One business address at the kerb vouches for a trip that never reached
+    // a business address at all, because the OR below reads the same fence
+    // twice and finds it good both times.
+    //
+    // So a loop is held unless a clock covers it. Not a fourth rule stacked
+    // on rules 7, 14 and 17: it is the founding rule asking the question it
+    // meant to ask, which is where the trip WENT, not what it left from.
+    // `unsavedVia` is already set at the point the round trip is built (rule
+    // 7 and its house-loop twin) and means exactly this: the far end was
+    // never saved.
+    //
+    // THIS UNDER-COUNTS ON PURPOSE, and the owner chose it with the trade
+    // named (2026-09-13: "I don't want to ask, I want this to be fully
+    // automatic when addresses are put in"). A first run to a supply house
+    // nobody has saved comes back held rather than claimed. Held is not
+    // deleted: the row stays on the log and on the map earning nothing, and
+    // saving the address re-derives the day into two real legs. Clients are
+    // always entered before anybody drives to them, so a customer is never
+    // at risk; a parts store you have never saved is, and it shows up greyed
+    // rather than silently.
+    //
+    // `business` is stamped on EVERY leg either way, held or not, because two
+    // different questions were reading one flag. Rule 16 asks "did anything
+    // today reach a business address", and it used to answer that by looking
+    // for a leg rule 15 left alone, which was the same thing right up until
+    // rule 18 started holding legs that DID touch one. Without this a day
+    // whose only trip is yard -> somewhere unsaved -> yard is thrown away
+    // whole rather than held, which is the opposite of what holding means.
+    const business = vouches(l.from) || vouches(l.to);
+    const loop = l.unsavedVia === true;
+    if (!loop && business) return l.business === business ? l : Object.assign({}, l, { business });
+    if (clocks.some(c => Math.min(l.endTs, c.b) - Math.max(l.startTs, c.a) >= 60000)) {
+      return Object.assign({}, l, { business });
+    }
+    return Object.assign({}, l, { held: true, business });
   });
 }
 
@@ -1529,7 +2175,44 @@ function _gdDwell(fence, startTs, endTs, journeyId, open) {
 //   job / client / place  -> job_time_entries (source geofence | client | place)
 //   leg                   -> job_time_entries source 'drive' + td_mileage (gps)
 //
-// client_key carries the journey id, so a rebuild upserts onto its own rows.
+// ── A ROW IS KEYED BY ITS JOURNEY, NEVER BY THE STRUCTURE AROUND IT ───────
+// Owner 2026-09-14: "a row's identity should not depend on a guess the app
+// can change its mind about."
+//
+// Every automatic row names ONE journey, and a journey id is minted from the
+// CoreMotion flip (who and when, _gdJourneys). That is a fact off the tape,
+// not a reading of it, so the same flip mints the same id forever:
+//
+//   drive segment   the journey that STARTED it            'j-<uid>-<n>'
+//   stop / dwell    the journey that ENDED there         'd-j-<uid>-<n>'
+//   office          the fence and the window it carved   'o-<place>-<n>'
+//   mileage leg     the chain's first journey (one row per leg, rule 6)
+//
+// WHY THIS, AND NOT THE OLD ':N' / ':sN'. Both of those indexed a row by the
+// deriver's own inference: which chain a drive fell into, and how many stops
+// it had decided were in front of it. Both are revisable, and both revised.
+// Jack's 14 September, from the rows themselves:
+//
+//   14:42 derive   j-987ebc83-mu1925w4:0    drive 12:59:23 -> 13:14:01
+//                  j-987ebc83-mu1925w4:s0   stop  13:14:01 -> 14:22:44
+//                  j-987ebc83-mu1925w4:1    drive 14:22:44 -> 14:42:25
+//   16:16 derive   j-987ebc83-mu1925w4      drive 12:59:23 -> 13:24:58
+//                  d-j-987ebc83-mu1925w4    visit 13:24:58 -> 14:22:44
+//                  j-987ebc83-mu1c1crh      drive 14:22:44 -> 14:42:25
+//
+// Three rows re-keyed for three drives nothing was wrong about. The ':1' and
+// the 'mu1c1crh' rows are the SAME drive, minuted the same, named the same,
+// under two keys; the sweep retired one and the day was right by luck. When
+// the sweep cannot reach one (a `fixed_at` stamp, a derive with no tape) the
+// old key survives as a GHOST, and his 13:14 stop sat on top of both the
+// drive and the visit for the rest of the day.
+//
+// Under this rule both derives key that drive 'j-987ebc83-mu1925w4' and that
+// stop 'd-j-987ebc83-mu1925w4', so the second derive UPDATES the first's
+// rows. The stop and the visit are the same key on purpose: they are the
+// same arrival, and the only difference between them is whether the place
+// was saved yet. Saving the address is what turns one into the other, and it
+// must not turn one row into two.
 /**
  * geoSpanClaim(span, ctx) -> { claim, why }
  *
@@ -1643,6 +2326,12 @@ function geoDeriveRows(result, ids) {
     // company's mileage log.
     const lClaim = geoSpanClaim(l, claimCtx);
     if (!lClaim.claim) { held.push({ kind: 'leg', id: l.id, startTs: l.startTs, endTs: l.endTs }); continue; }
+    // RULE 20: THE COMMUTE BILLS NOTHING. Marked upstream, refused here, once,
+    // for both outputs: no mileage row and no drive time row. It is the same
+    // line the IRS deduction draws, and doing it here rather than by deleting
+    // the leg keeps the drive on the record and re-derivable the day the flag
+    // changes.
+    if (l.commute === true) continue;
     // ONE ROW PER DRIVE, NOT ONE PER CHAIN (owner 2026-09-04: "right, in
     // between it logs the time as a unsaved job site").
     //
@@ -1666,7 +2355,15 @@ function geoDeriveRows(result, ids) {
     // here, this app was built to survive a IRS audit"). Time and mileage stop
     // being the same row, which is the whole change.
     const segsRaw = (Array.isArray(l.drives) && l.drives.length) ? l.drives
-      : [[l.startTs, l.endTs, (l.minutes || 0) * 60000]];
+      : [[l.startTs, l.endTs, (l.minutes || 0) * 60000, l.id, l.id]];
+    // A segment entry is [startTs, endTs, autoMs, startJourney, endJourney].
+    // The drive is keyed by the flip that began it and the stop after it by
+    // the flip that ended it, which is the same id the dwell would carry if
+    // that place were saved (see the identity rule at the top of this
+    // section). A single-segment leg's drive key is the leg id, exactly as
+    // it has always been, because the chain's first journey IS that segment.
+    const segKey = sg => String((sg && sg[3]) || l.id);
+    const stopKey = sg => 'd-' + String((sg && sg[4]) || l.id);
     // A MINUTE IS NOT A DRIVE EITHER. The same floor that refuses to write a
     // one-minute stop refuses to write a one-minute drive BETWEEN two stops:
     // his 2 September, 8:17 to 8:18am, with the phone at one coordinate from
@@ -1679,6 +2376,51 @@ function geoDeriveRows(result, ids) {
     // says he left the shop or reached it, and dropping one loses the trip.
     const segs = segsRaw.filter((sg, i) => i === 0 || i === segsRaw.length - 1 ||
       (Number(sg[1]) - Number(sg[0])) >= GEO_DERIVE_DEFAULTS.minLegMs);
+    // ── THE TIME ROWS GET THE GATE THE MILEAGE ROWS ALREADY HAD ───────────
+    // Owner 2026-09-13, on 193 minutes of his evening sitting in his hours
+    // while the 11.7 miles under it stayed out of his deduction.
+    //
+    // Every gate built into this file protected MILEAGE. Rule 14 marks a
+    // traced leg `addressUnknown` so no total claims it, rule 15 holds a leg
+    // the day cannot vouch for, and rule 7 refuses a loop its miles outright.
+    // None of that reached the time rows, which are pushed below with a flat
+    // `source: 'drive'` and counted by every reader. Two outputs, one set of
+    // gates, and time had none of them.
+    //
+    // One suffix carries it, because one predicate already owns what a source
+    // MEANS (js/geo-track.js): `-held` is the family the reader keeps out of
+    // every total, and 'client-held' has been in it since rule 13. A drive is
+    // still a drive and reads as Drive time on the rail; it simply earns
+    // nothing. Shown, never claimed, which is the same answer rule 14 gives
+    // on the mileage side, in the same words.
+    const hs = l.held === true ? '-held' : '';
+    // ── EACH SEGMENT NAMES ITS OWN ENDS (owner report 2026-09-14) ─────────
+    // Jack's Sunday read "JS Solutions shop to Bill Lorson" at 9:55 and then
+    // again at 10:39, for the two halves of one journey that split at a stop
+    // nobody saved. Neither row was that drive. The first ran shop to the
+    // stop, the second stop to Bill Lorson, and the half-hour between them
+    // was already sitting on the rail as its own Unsaved address row saying
+    // so. The same trip, claimed three times, twice under the wrong ends.
+    //
+    // Nothing in this file was wrong about the DRIVE: `dest_place` above is
+    // already per segment, null for one that ends at a stop. The labels came
+    // from the mileage row, which is deliberately ONE row for the whole
+    // collapsed leg (rule 6, the direct route through a personal stop), so
+    // its from_name and to_name are the JOURNEY's ends and describe no
+    // segment but a single-segment leg's. The reader had nothing else to
+    // read, so it read the wrong thing.
+    //
+    // So the deriver says it, once, here: the ordered ends of every segment,
+    // on the leg the reader already has in hand. An interior end is '' and
+    // means exactly what the stop row between the two drives means, that
+    // nobody saved it. The MILES are untouched: still one collapsed leg at
+    // the direct route between the two saved fences, which is rule 6 and is
+    // correct. Only the time rows stop borrowing labels that were never
+    // theirs.
+    const segEnds = segs.map((sg, i) => ({
+      from: i === 0 ? (l.from.name || '') : '',
+      to: i === segs.length - 1 ? (l.to.name || '') : '',
+    }));
     segs.forEach((sg, i) => {
       const a = Number(sg[0]), b = Number(sg[1]);
       if (!(a > 0 && b > a)) return;
@@ -1690,7 +2432,30 @@ function geoDeriveRows(result, ids) {
         // eventually ended up would be the inference this rule exists to
         // avoid.
         dest_place: (i === segs.length - 1) ? (l.to.name || null) : null,
-        client_key: segs.length > 1 ? (l.id + ':' + i) : l.id, source: 'drive' });
+        // ── AND THE ROW NAMES WHERE IT STARTED (owner 2026-09-15) ────────
+        // "The way it's titled is wrong, we should have fixed the title a
+        // long time ago rather than last night."
+        //
+        // He is right, and the reason it took so long is the shape, not the
+        // day it was noticed. A drive row has always carried only where it
+        // ENDED, so a rail that wanted to say "shop to Bill Lorson" had to go
+        // find the mileage leg, work out which segment this was, and read the
+        // other end off THAT. Two tables to title one row. Everything that
+        // followed came out of the join: the leg's from_name is the whole
+        // journey's, so a split drive borrowed ends that were never its own
+        // (fixed 2026-09-14 with segEnds, which is still a join); a day
+        // derived before segEnds existed has nothing to read, so every one of
+        // Jack's 14 September drives fell back to naming only its
+        // destination, which is the report that prompted this; and a screen
+        // holding time rows without mileage rows could never title them at
+        // all.
+        //
+        // A row that describes a drive knows both of its ends. It says both.
+        // Same rule as dest_place directly above, mirrored: only the FIRST
+        // segment actually left the origin, and the ones after it start at a
+        // stop nobody saved, which the row between them already says.
+        origin_place: (i === 0) ? (l.from.name || null) : null,
+        client_key: segKey(sg), source: 'drive' + hs });
     });
     // EVERY STOP IS A ROW (owner 2026-09-04): "we should be logging every flip
     // to onsite unsaved address and every drive with times in between."
@@ -1725,7 +2490,7 @@ function geoDeriveRows(result, ids) {
       time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
         arrived_at: iso(a), departed_at: iso(b),
         minutes: Math.round((b - a) / 60000),
-        dest_place: null, client_key: l.id + ':s' + i, source: 'unsaved' });
+        dest_place: null, client_key: stopKey(segs[i]), source: 'unsaved' + hs });
     }
     // A round trip writes time but never mileage (rule 7 as amended): both of
     // its endpoints are the same fence, and the place between them was never
@@ -1737,7 +2502,18 @@ function geoDeriveRows(result, ids) {
       id: l.id, legKey: l.id, gps: true, date: result.day,
       from: l.from.addr || l.from.name || '', from_name: l.from.name || '',
       to: l.to.addr || l.to.name || '', to_name: l.to.name || '',
-    }, l.traced ? {
+    }, segs.length > 1 ? {
+      // The ends of each drive segment, in order (see segEnds above). Only
+      // on a leg that actually split: a single-segment leg's ends ARE
+      // from_name and to_name, and the rail already reads those.
+      segEnds,
+      // WHICH ROW IS WHICH SEGMENT. The rail row for a segment carries that
+      // segment's own journey id, which no longer says the leg's id out
+      // loud, so the leg says the segments' ids instead: same order as
+      // segEnds, and how a drive row finds the trip it belongs to
+      // (_mileLegSeg, js/mileage.js). One list, read by both screens.
+      segKeys: segs.map(segKey),
+    } : {}, l.traced ? {
       // THE ROW IS SHOWN, THE MILES ARE NOT CLAIMED (owner 2026-09-08: "only
       // things with addresses saved should update any totals"). Every total
       // in the app goes through addressedTrips (js/mileage.js), which drops
@@ -1755,7 +2531,11 @@ function geoDeriveRows(result, ids) {
       // on the Time Log rail, and the Save button there needs somewhere to
       // send the lead form. The rail's row is keyed ':sN' against this same
       // leg (see the stop rows above), so N indexes straight into this.
-      viaStops: l.via.map(v => ({ lat: v.lat, lng: v.lng, at: iso(v.ts) })),
+      // `key` is the stop row's own client_key on the Time Log rail, so the
+      // Save button matches on it instead of counting positions: a leg drops
+      // an interior segment too short to be a drive, and a count would then
+      // name the wrong stop.
+      viaStops: l.via.map(v => ({ lat: v.lat, lng: v.lng, at: iso(v.ts), key: v.key || '' })),
     }, l.unsavedVia ? {
       // The MILEAGE row's own Save button and the stamp beside its "Unsaved
       // address": a round trip's two ends are the same fence, so the stop is

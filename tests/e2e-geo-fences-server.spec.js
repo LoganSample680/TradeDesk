@@ -43,12 +43,19 @@ test.describe('geo fences: the browser half of the equivalence', () => {
         // list cannot follow geoDeriveDay to the server: it reads these.
         Object.assign(S, c.settings);
         places.length = 0; c.places.forEach(x => places.push(x));
+        bids.length = 0; (c.bids || []).forEach(x => bids.push(x));
         clients.length = 0; c.clients.forEach(x => clients.push(x));
         jobs.length = 0; c.jobs.forEach(x => jobs.push(x));
         return _geoDeriveFences(c.day).map((f) => ({
           id: f.id, kind: f.kind, name: f.name, lat: f.lat, lng: f.lng,
           scheduled: f.scheduled === undefined ? null : !!f.scheduled,
           personal: f.personal === undefined ? null : !!f.personal,
+          on_books: f.onBooks === undefined ? null : !!f.onBooks,
+          // Rule 20. Both halves answer the same yes/no, so both are read as a
+          // plain boolean: the browser leaves it undefined where it is not set
+          // and the SQL writes false, and neither difference means anything to
+          // _gdReportsHere, which asks `=== true`.
+          commute: f.commute === true,
         }));
       } finally { if (savedGeo) localStorage.setItem('zp3_nearby_geo', savedGeo); }
     }, CASE);
@@ -96,6 +103,18 @@ test.describe('geo fences: the browser half of the equivalence', () => {
     expect(got.filter(f => f.kind !== 'client').every(f => f.personal === null)).toBe(true);
   });
 
+  // ── RULE 20: THE COMMUTE (owner 2026-09-15) ──────────────────────────
+  // "He doesn't get paid for his drive to his dads shop or when he goes home."
+  // p4 is an ordinary place in every way except the box being ticked, so a
+  // half that drops the flag fails on that one row and nothing else. The whole
+  // rule hangs off it: without the flag the leg is billable work again.
+  test('rule 20: a place marked "I report here" carries the flag, and nobody else does', async () => {
+    const got = await build();
+    expect(got.find(f => f.id === 'place-p4').commute, 'the yard he reports to').toBe(true);
+    expect(got.filter(f => f.id !== 'place-p4').every(f => f.commute === false),
+      'every other fence, of every kind').toBe(true);
+  });
+
   test('a canceled, a done and an ended job are not fences; a live one is', async () => {
     const got = await build();
     expect(got.filter(f => f.kind === 'job').map(f => f.id)).toEqual(['job-9001']);
@@ -112,6 +131,23 @@ test.describe('geo fences: the browser half of the equivalence', () => {
     const sql = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'ci', 'geo-fences-equivalence.sql'), 'utf8');
     expect(sql, 'the CI check names the fixture it loads').toContain('geo-fences-case.json');
     expect(sql, 'and calls the function under test').toContain('geo_fences_for');
+  });
+
+  // ── Rule 13's third witness (owner 2026-09-12) ────────────────────────
+  // "flag the question if it's work or personal if there's no active job or
+  // proposal that's open on the books." c6 and c7 are the same family contact
+  // in every respect but this, so a half that drops on_books fails on one row.
+  test('rule 13: an open proposal puts a family contact back on the books', async () => {
+    const got = await build();
+    expect(got.find(f => f.id === 'client-c7').on_books, 'a Pending bid is open').toBe(true);
+    expect(got.find(f => f.id === 'client-c6').on_books, 'a Draft and a Closed Lost are not open').toBe(false);
+    // The whole reason this witness is separate from `scheduled`: c2's job
+    // 9002 is still 'upcoming' but dated Aug 20, so the calendar says no and
+    // the books say yes. A live job is business on a day it is not booked for.
+    expect(got.find(f => f.id === 'client-c2').scheduled, 'nothing on the calendar that day').toBe(false);
+    expect(got.find(f => f.id === 'client-c2').on_books, 'but the job is still open').toBe(true);
+    // Only a client can be on the books, same as `personal`.
+    expect(got.filter(f => f.kind !== 'client').every(f => f.on_books === null)).toBe(true);
   });
 
   test('no console errors', async () => { assertNoErrors(page, 'geo fences'); });

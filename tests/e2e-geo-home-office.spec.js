@@ -649,14 +649,205 @@ test.describe('Home office: presence is not work', () => {
       expect(out.v).toBe(0);
     });
 
-    test('the tape upload runs once per session, not once per settle', async () => {
+    test('the BOOT tape upload runs once per session, not once per settle', async () => {
       const out = await page.evaluate(async () => {
         window._geoTapeSyncRan = false;
-        const a = await _geoTapeSync();
-        const b = await _geoTapeSync();     // second call must short-circuit
+        const a = await _geoTapeSync('boot');
+        const b = await _geoTapeSync('boot');   // second call must short-circuit
         return { a, b };
       });
       expect(out.b).toBe(0);
+    });
+
+    // ── FIVE HOURS LATE, AND NOTHING WAS BROKEN (owner 2026-09-14) ─────────
+    // "I want this to run to the exact second, no issues."
+    //
+    // Every flip the plugin pushed on his 13 September landed in the same
+    // second. What it did not push waited for _geoTapeSync, and that ran once
+    // per PAGE LOAD, so it waited for him to open the app: the 13:10 flip
+    // landed at 18:13 and the 19:01 one at 20:01, with eight push-pings going
+    // past in between carrying none of it.
+    //
+    // The ping sweeps now. These tests are about the thing that made it
+    // possible: this function can be asked to run again.
+    test.describe('the tape rides the 30-minute ping', () => {
+      // TIMESTAMPS ARE BUILT IN THE PAGE, not out here. The page's clock is
+      // pinned (CLAUDE.md 5.2.2) and the runner's is not, so a `ts` computed
+      // on this side lands in the page's future and _geoMotionTape's own
+      // upper bound drops it. Same trap that section documents for
+      // assertions; it applies to fixtures too.
+      const rig = (offsets) => page.evaluate(async (offs) => {
+        const T = Date.now();
+        const tr = offs.map(o => ({ ts: T - o.ago, kind: o.kind }));
+        const savedPlugin = window._geoTdPlugin, savedFetch = window.fetch;
+        const savedKey = localStorage.getItem('zp3_geo_flush_key');
+        const savedLog = localStorage.getItem('zp3_geo_applog');
+        const savedHw = localStorage.getItem('zp3_geo_tape_hw');
+        window._geoTdPlugin = () => ({ motionSince: async (o) => ({
+          available: true,
+          // Honour the floor, the way the real plugin does: that is what
+          // makes the high-water mark mean anything.
+          transitions: tr.filter(t => t.ts >= ((o && o.sinceMs) || 0)) }) });
+        localStorage.setItem('zp3_geo_flush_key', 'test-key');
+        localStorage.removeItem('zp3_geo_applog');
+        localStorage.removeItem('zp3_geo_tape_hw');
+        const posts = [];
+        window.fetch = async (_u, o) => { posts.push(JSON.parse(o.body)); return { ok: true }; };
+        try {
+          // A boot already happened this session, which is the state a phone
+          // is actually in when a ping arrives.
+          window._geoTapeSyncRan = true;
+          window._geoTapePingBusy = false;
+          const first = await _geoTapeSync('ping');
+          const hwAfterFirst = Number(localStorage.getItem('zp3_geo_tape_hw')) || 0;
+          const second = await _geoTapeSync('ping');
+          return { first, second, hwAfterFirst, want: tr.map(t => t.ts),
+                   sent: [].concat.apply([], posts.map(p => p.events)).map(e => e.ts) };
+        } finally {
+          window._geoTdPlugin = savedPlugin; window.fetch = savedFetch;
+          if (savedKey) localStorage.setItem('zp3_geo_flush_key', savedKey); else localStorage.removeItem('zp3_geo_flush_key');
+          if (savedLog) localStorage.setItem('zp3_geo_applog', savedLog); else localStorage.removeItem('zp3_geo_applog');
+          if (savedHw) localStorage.setItem('zp3_geo_tape_hw', savedHw); else localStorage.removeItem('zp3_geo_tape_hw');
+        }
+      }, offsets);
+
+      const TWO = [{ ago: 300000, kind: 'automotive' }, { ago: 120000, kind: 'onFoot' }];
+
+      test('a ping sends the flips a boot-only sweep would have sat on', async () => {
+        const r = await rig(TWO);
+        // The boot latch is set, exactly as it is on a real phone hours in,
+        // and the ping still runs. That is the whole fix.
+        expect(r.first, 'the ping is not blocked by the boot latch').toBe(2);
+        expect(r.sent).toEqual(r.want);
+      });
+
+      test('the next ping carries only what is new, not the same flips again', async () => {
+        const r = await rig(TWO);
+        // Nothing new happened between the two, so the second sweep is empty.
+        // Without the high-water mark it would re-send both, every half hour,
+        // forever.
+        expect(r.second).toBe(0);
+        expect(r.hwAfterFirst).toBe(r.want[r.want.length - 1]);
+      });
+
+      // ── AND EVERY OTHER WAKE SWEEPS TOO (owner 2026-09-14) ─────────────
+      // The phone was awake within 0 to 3 minutes of nearly every late drive
+      // flip and left it behind, because only region crossings recover
+      // history natively. Where the webview is alive on that wake, this is
+      // what closes it without a build.
+      test.describe('any wake sweeps, throttled', () => {
+        const drive = (types) => page.evaluate(async (ts2) => {
+          const calls = [];
+          const real = window._geoTapeSync;
+          window._geoTapeSync = (why) => { calls.push(why); return Promise.resolve(0); };
+          window._geoTapeWakeAt = 0;
+          for (const t of ts2) { try { await _geoTdEvent({ type: t, ts: Date.now() }, false); } catch (e) {} }
+          window._geoTapeSync = real;
+          return calls;
+        }, types);
+
+        test('a location wake sweeps, which is the one that was dropping flips', async () => {
+          // A `fix` is the significant-change wake. Natively it recovers
+          // nothing, which is the whole bug.
+          expect(await drive(['fix'])).toEqual(['ping']);
+        });
+
+        test('a visit wake sweeps too', async () => {
+          expect(await drive(['visit'])).toEqual(['ping']);
+        });
+
+        test('an event that proves nothing about being awake does not', async () => {
+          // A motion flip is the thing being recovered, not a wake, and a
+          // heartbeat returns before any of this. Sweeping on them would be
+          // a query per flip for no new information.
+          expect(await drive(['motion'])).toEqual([]);
+          expect(await drive(['heartbeat'])).toEqual([]);
+        });
+
+        test('a drive does not sweep on every fix: sixty seconds between', async () => {
+          // Fixes arrive every few seconds with the radio up. Without the
+          // throttle this is a plugin query and a POST per fix.
+          expect(await drive(['fix', 'fix', 'fix', 'visit', 'fix'])).toEqual(['ping']);
+        });
+
+        test('a replay is history, not a wake', async () => {
+          const calls = await page.evaluate(async () => {
+            const out = [];
+            const real = window._geoTapeSync;
+            window._geoTapeSync = (why) => { out.push(why); return Promise.resolve(0); };
+            window._geoTapeWakeAt = 0;
+            try { await _geoTdEvent({ type: 'fix', ts: Date.now() }, true); } catch (e) {}
+            window._geoTapeSync = real;
+            return out;
+          });
+          expect(calls).toEqual([]);
+        });
+
+        test('a sweep that throws never reaches the event handler', async () => {
+          // This runs first in _geoTdEvent. A throw here would take every
+          // fence decision on the wake down with it.
+          const ok = await page.evaluate(async () => {
+            const real = window._geoTapeSync;
+            window._geoTapeSync = () => { throw new Error('boom'); };
+            window._geoTapeWakeAt = 0;
+            let threw = false;
+            try { await _geoTdEvent({ type: 'fix', ts: Date.now() }, false); } catch (e) { threw = true; }
+            window._geoTapeSync = real;
+            return !threw;
+          });
+          expect(ok).toBe(true);
+        });
+      });
+
+      test('two pings at once do not both upload', async () => {
+        const out = await page.evaluate(async () => {
+          window._geoTapePingBusy = true;    // one already in flight
+          try { return await _geoTapeSync('ping'); }
+          finally { window._geoTapePingBusy = false; }
+        });
+        expect(out).toBe(0);
+      });
+
+      test('the busy latch is released even when the sweep fails', async () => {
+        // A stuck latch would silently end live tracking for the session,
+        // which is worse than the lag this whole change is about.
+        const out = await page.evaluate(async () => {
+          const savedPlugin = window._geoTdPlugin;
+          window._geoTdPlugin = () => { throw new Error('plugin exploded'); };
+          window._geoTapePingBusy = false;
+          let threw = null;
+          try { await _geoTapeSync('ping'); } catch (e) { threw = String(e); }
+          window._geoTdPlugin = savedPlugin;
+          const busy = !!window._geoTapePingBusy;
+          window._geoTapePingBusy = false;
+          return { threw, busy };
+        });
+        expect(out.threw, 'never throws out of a wake handler').toBeNull();
+        expect(out.busy, 'and never leaves itself locked').toBe(false);
+      });
+
+      test('a refused chunk does not move the mark, so the next ping retries it', async () => {
+        const out = await page.evaluate(async () => {
+          const t = Date.now();
+          const savedPlugin = window._geoTdPlugin, savedFetch = window.fetch;
+          const savedKey = localStorage.getItem('zp3_geo_flush_key');
+          const savedHw = localStorage.getItem('zp3_geo_tape_hw');
+          window._geoTdPlugin = () => ({ motionSince: async () => ({
+            available: true, transitions: [{ ts: t - 60000, kind: 'automotive' }] }) });
+          localStorage.setItem('zp3_geo_flush_key', 'test-key');
+          localStorage.removeItem('zp3_geo_tape_hw');
+          window.fetch = async () => ({ ok: false });
+          window._geoTapePingBusy = false;
+          const sent = await _geoTapeSync('ping');
+          const hw = localStorage.getItem('zp3_geo_tape_hw');
+          window._geoTdPlugin = savedPlugin; window.fetch = savedFetch;
+          if (savedKey) localStorage.setItem('zp3_geo_flush_key', savedKey); else localStorage.removeItem('zp3_geo_flush_key');
+          if (savedHw) localStorage.setItem('zp3_geo_tape_hw', savedHw); else localStorage.removeItem('zp3_geo_tape_hw');
+          return { sent, hw };
+        });
+        expect(out.sent).toBe(0);
+        expect(out.hw, 'the mark only moves for a chunk the server took').toBeNull();
+      });
     });
 
     // ── The newest hundred used to be thrown away, every time ──────────────

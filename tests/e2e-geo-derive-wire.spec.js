@@ -37,7 +37,25 @@ const centralParts = (ms) => {
 const centralOff = (ms) => centralParts(ms) - ms;
 const centralDayKey = (ms) => new Date(centralParts(ms)).toISOString().slice(0, 10);
 const centralMidnight = (key) => { const u = Date.parse(key + 'T00:00:00Z'); return u - centralOff(u - centralOff(u)); };
-const DAY = centralDayKey(Date.now() - 2 * 86400000);
+// ── A SUNDAY IS NOT A WORKING DAY, AND THIS SPEC IS ABOUT WORK (2026-09-15) ─
+// This was `Date.now() - 2 days`, full stop, and it went red the morning that
+// landed on a Sunday: the default working week is Monday to Saturday, so a day
+// outside it holds the visit and the queue carried 'client-held' where the
+// assertion says 'client'. Nothing was wrong with the deriver or the test, the
+// CALENDAR decided the result, which is the class CLAUDE.md 5.2.2 exists to
+// stop (the clock pin fixes the hour and deliberately never moves the date).
+//
+// The day still has to be relative: the tape window is seven days and a fixed
+// date would age out of it. So it steps back past any non-working day instead,
+// which says out loud what the fixture always assumed.
+const WORK_DAYS = [1, 2, 3, 4, 5, 6];            // the deriver's own default
+const centralDow = (ms) => new Date(new Intl.DateTimeFormat('en-CA', { timeZone: CENTRAL,
+  year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms)) + 'T12:00:00Z').getUTCDay();
+const workingDayBefore = (ms) => {
+  for (let i = 0; i < 8; i++, ms -= 86400000) if (WORK_DAYS.includes(centralDow(ms))) return ms;
+  return ms;
+};
+const DAY = centralDayKey(workingDayBefore(Date.now() - 2 * 86400000));
 const DAY_START = centralMidnight(DAY);
 const DAY_END = centralMidnight(centralDayKey(DAY_START + 36 * 3600000));
 const PREV_DAY = centralDayKey(DAY_START - 12 * 3600000);
@@ -275,6 +293,63 @@ test.describe('geo-derive wiring', () => {
       });
       expect(r.hasFix).toBe(true);
       expect(r.motionLogged).toBe(false);
+    });
+  });
+
+  // ── The region log (rule 15) ──────────────────────────────────────────────
+  test.describe('the region log (rule 15)', () => {
+    test('a crossing lands in it from the router, and its POSITION never becomes a fix', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_reglog'); localStorage.removeItem('zp3_geo_fixlog');
+        const t0 = Date.now() - 5000;
+        await _geoTdEvent({ type: 'regionEnter', ts: t0, regionId: 'place-9', lat: 39.02, lng: -95.68, acc: 5 }, false).catch(() => {});
+        await _geoTdEvent({ type: 'regionExit', ts: t0 + 60000, regionId: 'place-9', lat: 39.02, lng: -95.68, acc: 5 }, false).catch(() => {});
+        return { reg: _geoRegLogRead().map(e => [e.id, e.enter]),
+                 fix: _geoFixLogRead().some(f => f.lat === 39.02 && f.lng === -95.68) };
+      });
+      expect(r.reg).toEqual([['place-9', true], ['place-9', false]]);
+      expect(r.fix, 'a crossing is not a fix').toBe(false);
+    });
+
+    test('the same crossing twice in a second is one crossing; junk is nothing', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_reglog');
+        const t0 = Date.now() - 5000;
+        _geoRegLogPush(t0, 'place-9', true);
+        _geoRegLogPush(t0 + 1, 'place-9', true);        // the live row and its replay
+        _geoRegLogPush(t0 + 2000, 'place-9', true);     // two seconds on: a real re-entry
+        _geoRegLogPush(t0 + 3000, 'place-9', false);
+        _geoRegLogPush('junk', 'place-9', true); _geoRegLogPush(t0 + 4000, '', true);
+        _geoRegLogPush(t0 + 5000, null, false);
+        return _geoRegLogRead().map(e => [e.ts - t0, e.id, e.enter]);
+      });
+      expect(r).toEqual([[0, 'place-9', true], [2000, 'place-9', true], [3000, 'place-9', false]]);
+    });
+
+    test('seeding from the server dedupes on the crossing, not the instant', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_reglog');
+        const t0 = Date.now() - 5000;
+        _geoRegLogPush(t0, 'place-9', true);
+        _geoRegLogSeed([{ ts: t0, id: 'place-9', enter: true },      // already have it
+                        { ts: t0, id: 'client-4', enter: true },     // same instant, other fence
+                        { ts: t0, id: 'place-9', enter: false },     // same instant, other edge
+                        null, { ts: 'x', id: 'place-9', enter: true }, { ts: t0 + 9, id: '', enter: true }]);
+        _geoRegLogSeed(null); _geoRegLogSeed([]);
+        return _geoRegLogRead().map(e => [e.id, e.enter]);
+      });
+      expect(r).toEqual([['place-9', true], ['client-4', true], ['place-9', false]]);
+    });
+
+    test('it ages out on the same eight days as the fix log', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_reglog');
+        const now = Date.now();
+        _geoRegLogPush(now - 9 * 86400000, 'place-old', true);
+        _geoRegLogPush(now - 1000, 'place-9', true);
+        return _geoRegLogRead().map(e => e.id);
+      });
+      expect(r).toEqual(['place-9']);
     });
   });
 
@@ -1311,9 +1386,17 @@ test.describe('geo-derive wiring', () => {
       // same kind of thing as 'fix', a live getCurrentPosition read taken at
       // the moment of the tap, which is exactly the test this filter applies.
       // A fence row, a motion row and a push-ping still never qualify.
+      //
+      // AMENDED 2026-09-15 (rule 15): a SECOND `in` rides along now, asking
+      // geo_events for the fence crossings. It is not a fix source and must
+      // never become one, which is what this pins: the trace fetch still asks
+      // for the three fresh types and nothing else, and the crossing fetch
+      // asks only for the two region types.
       const ins = r.calls.filter(c => c[0] === 'in');
       expect(ins.length).toBeGreaterThan(0);
-      ins.forEach(c => expect(c).toEqual(['in', 'type', ['fix', 'clock-in', 'clock-out']]));
+      const shapes = [...new Set(ins.map(c => JSON.stringify(c[2])))].sort();
+      expect(shapes).toEqual([JSON.stringify(['fix', 'clock-in', 'clock-out']),
+                              JSON.stringify(['regionEnter', 'regionExit'])].sort());
       expect(r.sorted).toBe(true);
       expect(r.last.acc).toBe(7);
     });
@@ -1517,7 +1600,17 @@ test.describe('geo-derive wiring', () => {
       expect(osrm[0].u).toContain('/driving/-95.7462,39.0132;-95.7401,39.01245;-95.72357,39.02946;-95.7112,39.0308?');
       expect(osrm[1].u).toContain('/driving/-95.7462,39.0132;-95.7112,39.0308?');
       expect(r.legs).toEqual([[39.0132, 39.01245], [39.01245, 39.02946], [39.02946, 39.0308]]);
-      expect(r.c).toEqual({ miles: 1.9, mins: 6 });
+      // AMENDED 2026-09-13 (10.4). _routeDistance used to return the distance
+      // and the time and throw MapKit's geometry away, and this asserted that
+      // exact pair. The route map now needs the line as well, to draw a
+      // force-close hole as the road instead of a straight edge through town,
+      // so a third field rides along. The two numbers are unchanged.
+      expect(r.c.miles).toBe(1.9);
+      expect(r.c.mins).toBe(6);
+      // This stub's routes carry no polyline, which is the shape a future
+      // MapKit rename would also produce: an empty line, never a throw inside
+      // a directions callback.
+      expect(r.c.path).toEqual([]);
     });
 
     test('the legs paint the moment the day is derived; the road miles are a second paint', async () => {

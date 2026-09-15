@@ -1,0 +1,70 @@
+name: UAT guard
+
+# ── uat is never allowed to lose work (owner 2026-09-14) ────────────────────
+#
+# The pre-push hook (scripts/uat-guard.sh, installed by scripts/install-hooks.sh)
+# is the first line of defence, but a fresh clone has no hooks, and a cloud
+# session almost always IS a fresh clone. So the same containment check runs
+# here too, where nobody can skip it.
+#
+# The check: whatever uat pointed at BEFORE this push must be an ancestor of
+# what it points at now. A merge-based roll satisfies that by construction.
+# A `checkout -B uat <branch>` + force-push does not, and that is exactly the
+# move that silently deletes another session's work.
+#
+# This runs after the push has landed, so it cannot block the damage. It makes
+# the damage impossible to miss, and it names the commits to put back.
+
+on:
+  push:
+    branches: [uat]
+
+permissions:
+  contents: read
+
+jobs:
+  contains-previous-uat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: uat must still contain everything uat already had
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # All-zeroes = the branch was just created. Nothing existed to lose.
+          case "$BEFORE" in *[!0]*) : ;; *) echo "uat created. Nothing to check."; exit 0 ;; esac
+          if [ "$BEFORE" = "$AFTER" ]; then echo "No move."; exit 0; fi
+
+          # Ask GitHub, not git: after a force-push the old commit is dangling
+          # and cannot be fetched into a clone, but the compare API still sees it.
+          #   ahead / identical -> the new uat contains the old one. Safe.
+          #   behind / diverged -> commits were dropped. Refuse.
+          status=$(gh api "repos/$REPO/compare/$BEFORE...$AFTER" --jq '.status' 2>/dev/null || echo 'unknown')
+
+          if [ "$status" = "ahead" ] || [ "$status" = "identical" ]; then
+            echo "uat still contains its previous tip ($BEFORE). Safe roll."
+            exit 0
+          fi
+
+          if [ "$status" = "unknown" ]; then
+            echo "::warning::Could not compare $BEFORE...$AFTER. Verify the roll by hand."
+            exit 0
+          fi
+
+          echo "::error::This push to uat DROPPED work. Previous uat ($BEFORE) is not contained in $AFTER (compare status: $status)."
+          echo ""
+          echo "Commits that were on uat and are now gone:"
+          gh api "repos/$REPO/compare/$AFTER...$BEFORE" \
+            --jq '.commits[] | "  " + .sha[0:7] + " " + (.commit.message | split("\n")[0])' || true
+          echo ""
+          echo "Another session almost certainly put those there."
+          echo "Put them back by MERGING, which cannot lose them:"
+          echo "    bash scripts/uat-roll.sh <your-branch>"
+          echo "  or:"
+          echo "    git fetch origin && git checkout -B uat <the-dropped-sha>"
+          echo "    git merge <your-branch> && git push origin uat --force-with-lease"
+          exit 1

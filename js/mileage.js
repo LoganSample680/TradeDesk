@@ -1557,6 +1557,61 @@ function _poiPlaceKind(category){
 // via: optional waypoints ({lat,lng}) the route must pass through, in order.
 // The deriver hands it the breadcrumbs of a thin trace so the router
 // measures the road the truck took, not the fastest one it would suggest.
+// ── THE LINE, NOT JUST THE NUMBER (owner 2026-09-13) ───────────────────────
+// MapKit hands back a full route and this file used to keep the distance and
+// throw the geometry away. Where the phone was force-closed there is a hole in
+// the breadcrumbs, and the map drew one straight line across it: the mileage
+// was already routed and correct (_geoTraceComplete sends a gapped trace to
+// the router), but the picture said the truck drove through the middle of
+// town. This reads the road back out so the hole can be drawn as the road.
+//
+// Defensive about shape on purpose. MapKit JS has moved the geometry around
+// between versions and index.html pins "5.x.x", so a build that renames this
+// must degrade to no line rather than throw inside a directions callback.
+function _routePolyline(route){
+  try{
+    const pl=route&&route.polyline;
+    const raw=(pl&&(pl.points||pl.coordinates))||route&&route.path||null;
+    if(!Array.isArray(raw))return [];
+    const out=[];
+    for(const c of raw){
+      if(!c)continue;
+      const la=Number(c.latitude!=null?c.latitude:(Array.isArray(c)?c[0]:NaN));
+      const ln=Number(c.longitude!=null?c.longitude:(Array.isArray(c)?c[1]:NaN));
+      if(isFinite(la)&&isFinite(ln))out.push([la,ln]);
+    }
+    return out;
+  }catch(_e){return [];}
+}
+
+// A HOLE WORTH DRAWING. Not every skipped breadcrumb is a gap: the receiver
+// duty-cycles, a tunnel eats a minute, and drawing a dashed guess over those
+// would call ordinary GPS an outage. A force-close is minutes AND miles, so
+// both have to be true before the router is asked.
+const _MILE_GAP_MS=90*1000;
+const _MILE_GAP_FT=1320;        // a quarter mile
+function _mileGaps(r){
+  const out=[];
+  try{
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2||typeof _geoDistFt!=='function')return out;
+    for(let i=1;i<p.length;i++){
+      const a=p[i-1],b=p[i];
+      if(!Array.isArray(a)||!Array.isArray(b))continue;
+      const alat=+a[0],alon=+a[1],blat=+b[0],blon=+b[1];
+      if(!isFinite(alat)||!isFinite(alon)||!isFinite(blat)||!isFinite(blon))continue;
+      // The third slot is the fix's ms. A path written without it cannot be
+      // judged on time, so distance alone decides.
+      const at=Number(a[2]),bt=Number(b[2]);
+      const dt=(isFinite(at)&&isFinite(bt)&&bt>at)?(bt-at):0;
+      const ft=_geoDistFt({lat:alat,lng:alon},{lat:blat,lng:blon});
+      const timeOk=dt?dt>=_MILE_GAP_MS:true;
+      if(timeOk&&ft>=_MILE_GAP_FT)out.push({i,from:{lat:alat,lng:alon},to:{lat:blat,lng:blon},ft,ms:dt});
+    }
+  }catch(_e){}
+  return out;
+}
+
 async function _routeDistance(fromCoords,toCoords,via){
   const stops=[fromCoords].concat(Array.isArray(via)?via.filter(v=>v&&isFinite(v.lat)&&isFinite(v.lng)):[],[toCoords]);
   // MapKit Directions, primary. MapKit JS routes one origin to one
@@ -1573,12 +1628,17 @@ async function _routeDistance(fromCoords,toCoords,via){
         },(err,data)=>{
           if(err||!data?.routes?.[0]){reject(new Error('mapkit'));return;}
           const r=data.routes[0];
-          resolve({m:Number(r.distance)||0,s:Number(r.expectedTravelTime)||0});
+          resolve({m:Number(r.distance)||0,s:Number(r.expectedTravelTime)||0,path:_routePolyline(r)});
         });
       });
       const parts=await Promise.all(stops.slice(1).map((b,i)=>seg(stops[i],b)));
       const m=parts.reduce((t,p)=>t+p.m,0),s=parts.reduce((t,p)=>t+p.s,0);
-      return {miles:Math.round(m/1609.344*10)/10,mins:Math.round(s/60)};
+      // The drawn line, concatenated across waypoints in the same order the
+      // distance was summed. Callers that only want a number ignore it; the
+      // route map uses it to draw the stretch the phone never watched.
+      const path=[];
+      parts.forEach(pt=>{ if(Array.isArray(pt.path)) pt.path.forEach(c=>path.push(c)); });
+      return {miles:Math.round(m/1609.344*10)/10,mins:Math.round(s/60),path};
     }catch(e){}
   }
   // Fallback: Valhalla + OSRM in parallel
@@ -2997,18 +3057,157 @@ function openMileageRoute(id){
         gps+'Logged '+_mi+' mi</div>')+
     _trNote+
     _csNote+
+    // Filled in only if a routed stretch actually gets drawn. It lives in the
+    // modal rather than in the map's own hint because the fallback plot writes
+    // its own hint line and would drop it, and this sentence is the difference
+    // between a picture and a claim on a tax record.
+    '<div id="_mil-route-fillnote"></div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
+  const _kit=(typeof tdAppleHardware==='function')?tdAppleHardware():false;
+  const _st=tdMapState();
+  const _draw=(paths)=>{
+    try{
+      tdMapRender(Object.assign({
+        body:document.getElementById('_mil-route-body'),
+        pts,
+        style:{start:{c:'#0E6B39',label:'Start',glyph:'A'},end:{c:'#dc2626',label:'End',glyph:'B'}},
+        st:_st,hostId:'_mil-route-canvas',height:300,
+        allowKit:_kit,
+      }, paths?{paths}:{path:r.path}));
+    }catch(_e){}
+  };
+  // Paint what was actually watched FIRST, every time. The routed fill is a
+  // network round trip and the map must never wait on one to appear (8.3: a
+  // waiting surface gets content now and repaints once, never a delay).
+  _draw(null);
+  // ── THE HOLE, DRAWN AS THE ROAD (owner 2026-09-13) ──────────────────────
+  // "If app is force closed, should the route call MapKit and route out what
+  // the most direct way would be and that's our mileage route on the map? I
+  // think so."
+  //
+  // The MILEAGE already works that way: a gapped trace fails
+  // _geoTraceComplete, so the router's distance wins and the row is stamped
+  // derived-routed. Only the LINE was still lying, drawing one straight edge
+  // across a stretch the truck spent on real roads.
+  //
+  // Fetched when the map opens rather than stored on the row (owner's call):
+  // nothing new is written and nothing new syncs, and a drive row stays the
+  // size it is. The cost is that it needs a connection to draw, which is why
+  // the observed trace is already on screen before this runs and a failure
+  // here simply leaves it as it was.
+  _mileRouteFill(r).then(paths=>{
+    // The overlay is only worth a repaint if something came back, and only if
+    // this map is still the one on screen.
+    if(!paths||!paths.length)return;
+    // Still the map on screen? The OVERLAY is the test, not the canvas: the
+    // fallback plot (every non-Apple device, and CI) never creates an element
+    // with the host id, so keying on that skipped the repaint everywhere the
+    // tiles are not licensed. Caught in the step 0.5 screenshot.
+    if(!document.getElementById('_mil-route-ov'))return;
+    _draw(paths);
+    const note=document.getElementById('_mil-route-fillnote');
+    if(note)note.innerHTML='<div style="display:flex;align-items:center;gap:7px;font-size:11px;'+
+      'color:var(--text3);line-height:1.5;margin-bottom:12px">'+
+      '<span style="flex:0 0 22px;height:0;border-top:3px dashed '+_MILE_FILL_COLOR+';border-radius:2px"></span>'+
+      '<span>Dashed is routed, not recorded. The app was closed here, so the phone logged no position and this is the road between the two points it did see.</span></div>';
+  }).catch(()=>{});
+}
+
+// ── THE DASHED STRETCH HAS MILES ON IT (owner 2026-09-14) ──────────────────
+//
+// "the routed version with dashes traced the right roads but only logged a
+// fraction of the trace, seems were missing the dashed line to run its
+// mileage route through mapkits."
+//
+// He was right and it was one discarded value. This asked the router for
+// every hole in the trace, kept the ROAD it came back with, drew it dashed,
+// and threw the DISTANCE away. So the picture knew the truck had driven a
+// real road across the hole and the number still counted the straight line
+// over it. His 14 September: four fixes for a six-minute drive, a map drawn
+// on the right streets, and 2.4 miles logged for a 3.4 mile trip.
+//
+// ONE function answers both now, so the line and the number can never
+// disagree about the same drive (7.3):
+//   • every edge the phone actually WATCHED keeps its real breadcrumb length,
+//     because that is evidence and no router improves on it
+//   • every hole is billed at the road the router found, which is the same
+//     road already being drawn dashed
+//   • a hole the router cannot answer keeps its straight edge, exactly as
+//     before, so a dead network can never shrink a trip
+//
+// The fallback routers matter here more than anywhere else in the app.
+// MapKit returns a line AND a distance; Valhalla and OSRM are asked with
+// overview=false and return a distance only. So off Apple hardware the
+// dashed line cannot be drawn and THE MILES STILL COME BACK. Fixing the
+// number is not gated on being able to draw it.
+const _MILE_TRACE_COLOR='#2D5DA8';
+const _MILE_FILL_COLOR='#B45309';
+async function _mileGapFill(r){
+  const out={miles:0,watched:0,fills:[],asked:0,filled:0,gaps:0};
   try{
-    tdMapRender({
-      body:document.getElementById('_mil-route-body'),
-      pts,
-      path:r.path,
-      style:{start:{c:'#0E6B39',label:'Start',glyph:'A'},end:{c:'#dc2626',label:'End',glyph:'B'}},
-      st:tdMapState(),hostId:'_mil-route-canvas',height:300,
-      allowKit:(typeof tdAppleHardware==='function')?tdAppleHardware():false,
-    });
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2||typeof _geoDistFt!=='function')return out;
+    const gaps=(typeof _mileGaps==='function')?_mileGaps(r):[];
+    out.gaps=gaps.length;
+    const holes=new Set(gaps.map(g=>g.i));
+    // The watched edges, at their real length. A gap edge is skipped here and
+    // priced below, so nothing is ever counted twice.
+    let ft=0;
+    for(let i=1;i<p.length;i++){
+      if(holes.has(i))continue;
+      const a=p[i-1],b=p[i];
+      if(!Array.isArray(a)||!Array.isArray(b))continue;
+      const alat=+a[0],alon=+a[1],blat=+b[0],blon=+b[1];
+      if(!isFinite(alat)||!isFinite(alon)||!isFinite(blat)||!isFinite(blon))continue;
+      ft+=_geoDistFt({lat:alat,lng:alon},{lat:blat,lng:blon});
+    }
+    out.watched=ft/5280;
+    out.miles=out.watched;
+    if(typeof _routeDistance!=='function'){out.miles=Math.round(out.miles*10)/10;return out;}
+    for(const g of gaps){
+      out.asked++;
+      const got=await Promise.race([
+        _routeDistance(g.from,g.to,[]),
+        new Promise(res=>setTimeout(()=>res(null),(typeof _GEO_ROUTE_TIMEOUT_MS!=='undefined'&&_GEO_ROUTE_TIMEOUT_MS)||8000))
+      ]).catch(()=>null);
+      const mi=(got&&Number(got.miles)>0)?Number(got.miles):0;
+      const line=(got&&Array.isArray(got.path)&&got.path.length>=2)?got.path:null;
+      if(mi>0){out.miles+=mi;out.filled++;}
+      else out.miles+=(Number(g.ft)||0)/5280;
+      if(line)out.fills.push({i:g.i,path:line});
+    }
+    out.miles=Math.round(out.miles*10)/10;
   }catch(_e){}
+  return out;
+}
+// Solid for what the phone watched, dashed for what the router filled in.
+// Returns null when there is nothing to fill or nothing came back, and the
+// caller then leaves the plain trace alone.
+async function _mileRouteFill(r){
+  try{
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2)return null;
+    const got=await _mileGapFill(r);
+    const fills=got.fills;
+    if(!fills.length)return null;
+    // The observed trace, cut at every gap that was filled, so a dashed road
+    // never runs underneath a solid line claiming the same stretch.
+    const cut=new Set(fills.map(f=>f.i));
+    const out=[];
+    let run=[p[0]];
+    for(let i=1;i<p.length;i++){
+      if(cut.has(i)){
+        if(run.length>=2)out.push({path:run,color:_MILE_TRACE_COLOR,width:4});
+        run=[p[i]];
+        continue;
+      }
+      run.push(p[i]);
+    }
+    if(run.length>=2)out.push({path:run,color:_MILE_TRACE_COLOR,width:4});
+    fills.forEach(f=>out.push({path:f.path,color:_MILE_FILL_COLOR,width:4,opacity:.9,dash:[7,6]}));
+    return out;
+  }catch(_e){return null;}
 }
 // ── ONE TRIP NUMBER, TWO SCREENS (owner 2026-09-08) ─────────────────────────
 // "list trip numbers on timesheet and on mileage log." The day's trips in
@@ -3027,9 +3226,33 @@ function _mileTripNumbers(dayKey,rows){
 }
 function _mileTripNumberForLeg(dayKey,clientKey){
   if(!clientKey)return null;
-  const key=String(clientKey).replace(/:\d+$/,'');
   const nos=_mileTripNumbers(dayKey);
-  return nos['leg:'+key]||null;
+  const ls=_mileLegSeg(clientKey,dayKey);
+  if(ls)return nos['leg:'+String(ls.leg.legKey!=null?ls.leg.legKey:ls.leg.id)]||null;
+  return nos['leg:'+String(clientKey).replace(/:\d+$/,'')]||null;
+}
+// ── WHICH LEG A DRIVE ROW BELONGS TO, AND WHICH SEGMENT OF IT ──────────────
+// One place knows how a time row's key relates to a mileage leg, because two
+// screens ask (the rail's title and its trip number, js/timelog.js; the trip
+// number above). The deriver keys a drive row by the journey that started it
+// (js/geo-derive.js, the identity rule), which for a leg that never split IS
+// the leg's own key and for one that did is listed on the leg as segKeys.
+//
+// The ':N' arm is not a second answer, it is the same answer for a day nobody
+// can re-derive: the tape is seven days long, so a row written under the old
+// shape keeps it forever and still has to draw.
+function _mileLegSeg(clientKey,dayKey){
+  const key=String(clientKey||'');
+  if(!key||typeof mileage==='undefined'||!Array.isArray(mileage))return null;
+  const on=x=>x&&(!dayKey||x.date===dayKey);
+  let leg=mileage.find(x=>on(x)&&Array.isArray(x.segKeys)&&x.segKeys.indexOf(key)>=0);
+  if(leg)return {leg,ix:leg.segKeys.indexOf(key),split:true};
+  leg=mileage.find(x=>on(x)&&String(x.legKey!=null?x.legKey:x.id)===key);
+  if(leg)return {leg,ix:0,split:false};
+  const m=/^(.*):(\d+)$/.exec(key);
+  if(!m)return null;
+  leg=mileage.find(x=>on(x)&&String(x.legKey!=null?x.legKey:x.id)===m[1]);
+  return leg?{leg,ix:Number(m[2]),split:true}:null;
 }
 // ── SAVE THIS ADDRESS → the new-lead form (owner 2026-09-08) ─────────────────
 // "save this address should popup the enter lead." Not a bare address field:
@@ -3082,25 +3305,39 @@ async function _mileSaveAddress(id,which){
 // fact the mileage log shows as "Unsaved address", so it gets the same
 // button, and neither screen owns the behaviour.
 //
-// A rail stop carries its leg id with ':sN' on it (js/geo-derive.js writes
-// both), which names the trip it belongs to AND which of that trip's stops
-// this is, so the coordinate comes straight off the leg's viaStops. No new
-// lookup, no second source of truth: the leg the mileage log is already
-// drawing is the leg this reads.
+// A rail stop is an ARRIVAL, so it carries the id of the drive that ended
+// there (js/geo-derive.js, the identity rule) and the leg lists the same key
+// beside the coordinate on viaStops. Matching on the key rather than counting
+// positions is the point: a leg drops an interior segment too short to be a
+// drive, and the count would then open the lead form at the wrong stop.
+// No new lookup, no second source of truth: the leg the mileage log is
+// already drawing is the leg this reads.
 async function _mileSaveStopAddress(clientKey,day){
-  const m=/^(.*):s(\d+)$/.exec(String(clientKey||''));
-  if(!m)return false;
-  const legKey=m[1],ix=Number(m[2]);
-  const r=(typeof mileage!=='undefined'?mileage:[]).find(x=>x&&String(x.legKey||x.id)===legKey&&(!day||x.date===day));
-  if(!r)return false;
-  // viaStops is the answer; viaCoord is the same stop on an older row
-  // written before the array existed, so a day nobody has re-derived yet
-  // still answers its first stop instead of doing nothing.
-  const c=(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null;
+  const key=String(clientKey||'');
+  if(!key)return false;
+  const list=(typeof mileage!=='undefined'?mileage:[]);
+  const on=x=>x&&(!day||x.date===day);
+  let r=list.find(x=>on(x)&&Array.isArray(x.viaStops)&&x.viaStops.some(v=>v&&v.key===key));
+  let c=null,ix=0;
+  if(r){ix=r.viaStops.findIndex(v=>v&&v.key===key);c=r.viaStops[ix];}
+  else{
+    // A day too old to re-derive keeps the old ':sN' shape forever, and its
+    // viaStops carry no key. Position is all there is, so position it is.
+    const m=/^(.*):s(\d+)$/.exec(key);
+    if(!m)return false;
+    ix=Number(m[2]);
+    r=list.find(x=>on(x)&&String(x.legKey||x.id)===m[1]);
+    if(!r)return false;
+    // viaCoord is the same stop on an older row written before the array
+    // existed, so a day nobody has re-derived yet still answers its first
+    // stop instead of doing nothing.
+    c=(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null;
+  }
   if(!c)return false;
   // WHICH stop, not just which leg: the fallback below names one rail row and
-  // a leg can carry several.
-  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to',stop:ix});
+  // a leg can carry several. The row's own key rides along so naming it never
+  // has to rebuild one.
+  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to',stopKey:key});
 }
 // Called by saveClient once the new client's address has been geocoded (so
 // the fence exists). Re-derives the traced day; the real leg lands under the
@@ -3173,20 +3410,35 @@ async function _mileNameUnsaved(p,client){
   try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
   return true;
 }
-// The Time Log rail's own row for that same stop. The deriver writes it with
-// no name on purpose (an unsaved stop is never given one) and keeps it out of
-// every total; naming it is the same answer `geo_answer_visit` records for a
-// held visit, so it lands in the same shape: the client's name, source
-// 'client', and the fixed_at stamp that makes it a person's answer.
+// The Time Log rail's own row for that same stop, on a day nothing can
+// rebuild. The deriver writes the row with no name on purpose (an unsaved
+// stop is never given one) and keeps it out of every total; once the address
+// is a client, a day with tape left re-derives and the deriver names it
+// itself, under the same key, because the stop and the visit are the same
+// arrival. This is for the day past the tape's seven, where that will never
+// happen: it writes the name onto the row that is already there.
+//
+// NO fixed_at, and that is the whole point (owner 2026-09-14: "saving an
+// address is creating a CLIENT, not hand-correcting a row"). The stamp used
+// to be how this work survived a rebuild, and it is what made Jack's 13:14
+// stop permanent: the sweep skips a stamped row, so when the deriver settled
+// on 13:24:58 and wrote the arrival under its own key, the 13:14 guess could
+// not be retired and sat on top of both the drive and the visit. The key is
+// the protection now. A stamp here would also freeze the row's TIMES, since
+// geo_replace_day reads a fixed row's own span back over the derive, so the
+// one thing a rebuild is for could never reach it.
 async function _mileNameStopRow(p,client){
-  if(p.stop==null||!window._supa||!window._supaUser)return false;
+  // The rail row's own key, exactly as it was read off the row. Rebuilding it
+  // from a leg id and a position is how a key shape gets a second author.
+  const key=p&&p.stopKey?String(p.stopKey):'';
+  if(!key||!window._supa||!window._supaUser)return false;
   const nm=String(client.name||client.addr||'').trim();
   if(!nm)return false;
   try{
     const{error}=await _supa.from('job_time_entries')
-      .update({dest_place:nm,source:'client',fixed_at:new Date().toISOString()})
+      .update({dest_place:nm,source:'client'})
       .eq('employee_user_id',_supaUser.id)
-      .eq('client_key',String(p.legKey)+':s'+p.stop);
+      .eq('client_key',key);
     if(error)return false;
   }catch(_e){return false;}
   try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}

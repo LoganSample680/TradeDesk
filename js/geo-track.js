@@ -913,7 +913,9 @@ function _geoDistFt(a,b){return _haversineMiles(a,b)*5280;} // a,b = {lat,lng}
 
 // Who owns the time rows this device writes. For an employee it's their
 // contractor; for the owner working a job themselves, it's their own account.
-function _geoCid(){ return _isEmployee ? _contractorUserId : (_supaUser && _supaUser.id); }
+// Same question, same answer: _effectiveUid decides whose account this is,
+// including the ops support view (js/data.js).
+function _geoCid(){ return _effectiveUid(); }
 
 // ── Jobs this device should fence against today + their coordinates ─────────────
 // Employees: only the jobs dispatched to them. Owner: any of today's active jobs,
@@ -2085,6 +2087,19 @@ function _geoIsDriveSource(s){return /^drive/.test(String(s||''));}
 // Time outside every fence that is not driving: lunch, an errand, waiting on a
 // gate. Neither job labor nor drive time, and never silently folded into either.
 function _geoIsOffJobSource(s){return String(s||'')==='stop';}
+// ── SHOWN, NEVER CLAIMED ──────────────────────────────────────────────────
+// A `-held` suffix means the deriver wrote this row but nothing in the day
+// vouched for it (js/geo-derive.js rules 13, 15 and 18): a visit at a family
+// address, a drive out to somewhere nobody saved, the stop at the far end of
+// it. The row exists so the log has no hole in it and so the map can draw
+// where the truck went; it earns no minutes anywhere.
+//
+// A SUFFIX, so it composes with the prefix families rather than replacing
+// them. 'drive-held' is still a drive to _geoIsDriveSource and still reads
+// "Drive time" on the rail, which is what it was; it is simply not paid.
+// 'client-held' has been in this family since rule 13 shipped and now has a
+// name for what it is instead of one string every reader had to memorise.
+function _geoIsHeldSource(s){return /-held$/.test(String(s||''));}
 // A stop that spans Central midnight is an END-OF-DAY PARK (truck home for
 // the night), never an unpaid leg of a workday, and writing it is exactly
 // what let single days total more than 24 hours (owner rule 2026-08-24: "it's
@@ -4710,7 +4725,13 @@ function _geoEnterParkMode(spot){
   // Only duty-cycle a watcher that is actually running, and only when we know
   // where we are parked: a fence, or (owner report 2026-08-09, arrow still on
   // after 4 minutes parked outside every fence) the anonymous STOP anchor.
-  if(_geoNativeWatcherId==null&&!_geoNativeStarting){_geoParkNote('park-skip','no watcher');return;}
+  if(_geoNativeWatcherId==null&&!_geoNativeStarting){
+    // Nothing in memory is not the same as nothing running: this is precisely
+    // the state a reload leaves behind, and the persisted list is what knows.
+    const orphans=_geoDropWatchers('park-skip orphan');
+    if(orphans)_geoParkNote('park-drop',orphans+' orphaned');
+    _geoParkNote('park-skip','no watcher');return;
+  }
   const _at=spot||_geoLastFenceLoc;
   if(!_at){_geoParkNote('park-skip','no park spot');return;}
   // LAST CHANCE BEFORE THE GPS GOES DARK. Parking cuts the fix stream, and
@@ -4768,14 +4789,12 @@ function _geoEnterParkMode(spot){
       // holds the low-power session and fires the tick. ttl self-stops a
       // heartbeat nobody turned off (phone left at the shop over a weekend).
       _geoHeartbeatSync(_at);
-      if(_geoNativeWatcherId!=null){
-        const BG=_geoNativePlugin();
-        try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
-        _geoForgetWatcher(_geoNativeWatcherId);
-        _geoNativeWatcherId=null;
-        if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
-        _geoRadioNote('js-watcher',false,_armReason);
-      }
+      // EVERY watcher, not the one this JS happens to remember. Park is the
+      // moment the precise receiver must go dark, and the id in memory is the
+      // least durable record we have of it (owner 2026-09-15, arrow lit from
+      // 06:45 to gone-6pm: the ledger's js-watcher session opened at 06:45:42
+      // and never closed, and the night before ran 676 minutes the same way).
+      _geoDropWatchers(_armReason);
     },(err)=>{
       // A failed attempt must never die silently (it did, and the arrow sat
       // there all evening): journal the reason and retry on the countdown.
@@ -5256,8 +5275,49 @@ function _geoDiagPanel(){
 // of ONE physical exit/arrival, seconds apart, mint two different legKeys.
 // Always honoring ev.ts removes the second clock entirely: live and replay
 // can now only ever agree.
+// ── EVERY WAKE CARRIES THE TAPE, NOT JUST THE PING (owner 2026-09-14) ──────
+// "I want it live, it should be live by the second."
+//
+// Measured across four days: the phone was awake within 0 to 3 minutes of
+// nearly every late drive flip, sent a location, and left the flip behind.
+// His 13 September 10:30 automotive flip had a wake 0 minutes later and did
+// not upload for 137 minutes; 10:38 had one at +2 minutes and took 130.
+//
+// The reason is native: TdGeoPlugin calls backfillMotionHistory() from
+// didEnterRegion and didExitRegion and nowhere else, so a significant-change
+// wake recovers nothing. That is fixed properly in the plugin, which costs a
+// build. This is the half that costs nothing: when one of those wakes reaches
+// the web layer at all, sweep from here.
+//
+// It is a BEST EFFORT and not the real fix, deliberately. On a wake where iOS
+// never resumes the webview this code does not run, which is exactly the case
+// the native change exists for. Where the webview IS alive it turns a 30
+// minute wait into a one second one, and it ships tonight instead of after a
+// build.
+//
+// THROTTLED, because fixes arrive every few seconds during a drive and each
+// sweep is a plugin query plus a POST. Sixty seconds is far below the gap it
+// is closing and far above the rate a drive produces.
+// On window, like the two latches this feature already keeps there
+// (_geoTapeSyncRan, _geoTapePingBusy), so the throttle is inspectable on a
+// real handset and resettable by a test. A module-level `let` is invisible to
+// both, and a test that cannot reset it silently measures the previous test.
+const _GEO_TAPE_WAKE_MS=60000;
+function _geoTapeWakeSweep(type){
+  if(!/^(fix|visit|regionEnter|regionExit)$/.test(String(type||'')))return;
+  const now=Date.now();
+  if(now-(Number(window._geoTapeWakeAt)||0)<_GEO_TAPE_WAKE_MS)return;
+  window._geoTapeWakeAt=now;
+  try{
+    if(typeof _geoTapeSync==='function')Promise.resolve(_geoTapeSync('ping')).catch(()=>{});
+  }catch(_e){}
+}
 async function _geoTdEvent(ev,replay){
   if(!ev||typeof ev!=='object')return;
+  // Before anything else decides what this event MEANS: it proves the app is
+  // awake, and that is all the sweep needs. A replay is history being re-read
+  // and never evidence of a live wake.
+  if(!replay)_geoTapeWakeSweep(ev.type);
   // The shadow engine (js/geo-shadow.js) sees the SAME raw event, so any
   // difference in what the two engines conclude is genuinely the engine and
   // not the sensor. It can only ever write to its own local journal.
@@ -5300,6 +5360,21 @@ async function _geoTdEvent(ev,replay){
   }
   if(ev.type==='sampling'){
     if(ev.mode!=='drive'&&_geoDriveWinAt){_geoDriveWinAt=0;_geoDriveWinWhy='';_geoDriveWinAskedAt=0;}
+    // AND THE PLUGIN CAN OPEN ONE NOW, TOO (owner 2026-09-14). It arms the
+    // dense window itself on an automotive flip, because a backgrounded
+    // WebView on iOS is a SUSPENDED one and JS was not there to ask. If JS
+    // kept believing nothing was open, nothing on this side would ever close
+    // it: the 30-minute confirmer and every park path key off _geoDriveWinAt,
+    // so the window would run all the way to the plugin's safety cap even
+    // though the truck parked ten minutes in. A live row is adopted here; a
+    // relaunch that missed the row entirely is caught by samplingState() in
+    // _geoTdInit. A REPLAY is history and must never re-open anything.
+    if(!replay&&ev.mode==='drive'&&!_geoDriveWinAt){
+      _geoDriveWinAt=Number(ev.ts)||Date.now();
+      _geoDriveWinWhy='native';
+      _geoDriveWinAskedAt=_geoDriveWinAt;
+      _geoParkNote('drive-window-adopt','native flip');
+    }
     if(!replay)_geoParkNote('sampling',String(ev.mode||'')+(ev.reason?' ('+ev.reason+')':''));
     return;
   }
@@ -5318,6 +5393,26 @@ async function _geoTdEvent(ev,replay){
     // odometer, because a push-ping's fix is whatever cached position
     // CLLocationManager happened to be holding.
     if(!replay&&ev.type==='push-ping'){const _v=_geoDriveConfirm(ev);if(_v)_geoParkNote('drive-confirm',_v);}
+    // ── AND THE TAPE RIDES IT TOO (owner 2026-09-14) ──────────────────────
+    // "I want this to run to the exact second, no issues."
+    //
+    // The plugin pushes a flip live when something wakes it, and those land
+    // sub-second. What it does not push waits for _geoTapeSync, which ran
+    // once per page load, so it waited for somebody to OPEN THE APP. On his
+    // 13 September that was five hours for the 13:10 flip and an hour for the
+    // 19:01 one, with eight of these pings going past in between.
+    //
+    // This wake is already up, already doing a version check and a location
+    // confirm, so it carries the tape as well rather than growing a timer of
+    // its own (7.3). Bounded to what is new since the last sweep landed, so
+    // it is a handful of flips, not a week.
+    //
+    // Not awaited: the ping's own work must not wait on an upload, and a
+    // failure here is already a no-op that the next ping or the next boot
+    // picks up.
+    if(!replay&&ev.type==='push-ping'&&typeof _geoTapeSync==='function'){
+      try{Promise.resolve(_geoTapeSync('ping')).catch(()=>{});}catch(_e){}
+    }
     // THE UPDATE RIDES THE WAKE (owner 2026-08-28). Until now new web code
     // reached a phone only when somebody opened the app: the version check
     // fires on foreground resume (js/cloud.js _checkVersionOnResume), so a
@@ -5577,6 +5672,10 @@ async function _geoTdEvent(ev,replay){
   // A fence crossing is the moment the day changed; the day is re-derived
   // on it, same as on a foot flip and a ping (owner 2026-09-02: the 12:04
   // exit left the Doe row open until something else happened to run it).
+  // Rule 15: the crossing itself, kept. Its POSITION is deliberately not kept
+  // (a region row carries the plugin's last-known fix, the very thing rule 15
+  // exists to stop trusting); only the fence id and which edge it was.
+  if(ev.type==='regionExit'||ev.type==='regionEnter')_geoRegLogPush(Number(ev.ts)||Date.now(),ev.regionId,ev.type==='regionEnter');
   if(!replay&&(ev.type==='regionExit'||ev.type==='regionEnter')&&_geoEvFresh(ev))_geoDeriveLiveSoon(ev.type);
   // The phone just started moving after being still (iOS 17 wake stream,
   // live only: a replayed one describes a drive that already happened). The
@@ -5751,6 +5850,30 @@ function _geoTdInit(){
   // Anything that fired while the WebView was asleep or the app was dead
   // (region monitoring relaunches a killed app) replays oldest-first, awaited
   // one at a time so the fence machine sees them in order.
+  // ── A WINDOW THIS SIDE DID NOT OPEN (owner 2026-09-14) ───────────────────
+  // The plugin arms the drive window on its own now, so JS can boot, or come
+  // back from a WebView reload, into a radio that is already up. Without this
+  // it would believe nothing was open and never close it, because every close
+  // path (park, the 30-minute confirmer, the leg) keys off _geoDriveWinAt.
+  //
+  // samplingState() was built for exactly this question and already answers
+  // it in one call (7.3): no new state, no second source of truth. Anchored
+  // at the window's REAL start, from the cap it was given and what is left of
+  // it, so the cap and the re-assert throttle both measure from when the
+  // radio actually came up rather than from this boot.
+  try{
+    if(typeof Td.samplingState==='function'){
+      Promise.resolve(Td.samplingState()).then(st=>{
+        if(!st||st.mode!=='drive'||_geoDriveWinAt)return;
+        const cap=Number(st.maxMs)||_GEO_DRIVE_WIN_CAP_MS;
+        const left=Math.max(0,Math.min(cap,Number(st.remainingMs)||0));
+        _geoDriveWinAt=Date.now()-(cap-left);
+        _geoDriveWinWhy='native';
+        _geoDriveWinAskedAt=_geoDriveWinAt;
+        _geoParkNote('drive-window-adopt','native, '+Math.round(left/60000)+'m left');
+      },()=>{});
+    }
+  }catch(_e){}
   try{
     if(typeof Td.drainBuffer==='function'){
       Promise.resolve(Td.drainBuffer()).then(r=>{
@@ -5783,6 +5906,29 @@ function _geoForgetWatcher(id){
     localStorage.setItem('td_geo_watcher_ids',JSON.stringify(ids));
   }catch(_e){}
 }
+// THE RELEASE, and there is exactly one of it (owner 2026-09-15: "why does my
+// Dynamic Island show the blue arrow all day"). It did, for 368 minutes and
+// counting, because the precise watcher was only ever released through the id
+// held in JS memory, and memory is the first thing a WebView reload throws
+// away. The persisted list already existed for the sweep; this makes it the
+// thing every release reads, so an id JS has forgotten is still an id we can
+// turn off. Returns how many were actually dropped.
+function _geoDropWatchers(reason){
+  const BG=_geoNativePlugin();
+  let ids=[];
+  try{ids=JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[];}catch(_e){}
+  if(!Array.isArray(ids))ids=[];
+  if(_geoNativeWatcherId!=null&&ids.indexOf(_geoNativeWatcherId)<0)ids.push(_geoNativeWatcherId);
+  ids.forEach((id)=>{try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id});}catch(_e){}});
+  try{localStorage.setItem('td_geo_watcher_ids','[]');}catch(_e){}
+  const had=ids.length>0;
+  _geoNativeWatcherId=null;
+  if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
+  // The ledger row is what the radio DID, so it is written only when there was
+  // something to turn off. An OFF with no ON would be a lie on it.
+  if(had)_geoRadioNote('js-watcher',false,reason);
+  return ids.length;
+}
 function _geoStaleWatcherSweep(BG){
   let ids=[];
   try{ids=JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[];}catch(_e){}
@@ -5805,6 +5951,12 @@ function startGeoTracking(){
   // relaunch, a reload behind the lock screen) stays parked on the fences.
   if(_geoParkModeOn){
     if(_geoAppOnScreen()){_geoExitParkMode();return;}
+    // A reload while parked lands here with empty memory. Anything the old
+    // JS left running is in the list, and nothing else will ever come back
+    // for it: startGeoTracking's sweep is the only other reader and this is
+    // the branch that never reaches it.
+    const orphans=_geoDropWatchers('reload while parked');
+    if(orphans)_geoParkNote('start-drop',orphans+' orphaned');
     _geoParkNote('start-skip','parked, app hidden');
     return;
   }
@@ -5845,6 +5997,11 @@ function startGeoTracking(){
       })).then(id=>{
         _geoNativeStarting=false;_geoNativeWatcherId=id||null;
         _geoRememberWatcher(_geoNativeWatcherId);
+        // addWatcher is async and a park can land while it is in flight: the
+        // park's own release runs before this id exists, so it releases
+        // nothing and the receiver comes up INTO a parked app and stays up.
+        // Whoever arrives second does the work.
+        if(_geoParkModeOn){_geoDropWatchers('park: started while parked');return;}
         // The live engine owns the radio from here; the clock that measures
         // its cost starts with it (js/geo-shadow.js).
         if(typeof _shadowLiveGpsStart==='function')_shadowLiveGpsStart();
@@ -5899,14 +6056,7 @@ function stopGeoTracking(){
   _geoDriveWindowClose('tracking-off');
   _geoTapePollStop();
   {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll({reason:'tracking off'});}catch(_e){}}
-  if(_geoNativeWatcherId!=null){
-    const BG=_geoNativePlugin();
-    try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
-    _geoForgetWatcher(_geoNativeWatcherId);
-    _geoNativeWatcherId=null;
-    _geoRadioNote('js-watcher',false,'tracking off');
-  }
-  if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
+  _geoDropWatchers('tracking off');
   _geoNativeStarting=false;
   if(_geoWatchId!=null){try{navigator.geolocation.clearWatch(_geoWatchId);}catch(_e){}_geoWatchId=null;}
   if(_geoNudgeTimer){clearTimeout(_geoNudgeTimer);_geoNudgeTimer=null;}
@@ -6196,17 +6346,68 @@ const _GEO_STOP_REPAIR_FLAG='td_geo_stop_repair_v1';
 // So: chunk it, and send every chunk.
 const _GEO_TAPE_CHUNK=400;    // ingest-geo's own per-POST cap, matched exactly
 const _GEO_TAPE_MAX=2000;     // what one boot may lift, so a settle stays a settle
-async function _geoTapeSync(){
+// ── AND IT RUNS ON THE PING NOW, NOT ONLY AT BOOT (owner 2026-09-14) ────────
+// "I want this to run to the exact second, no issues."
+//
+// It nearly does, and the half that did not was this function's latch.
+//
+// Measured on his own Saturday: every flip the native plugin pushed at a wake
+// reached the server IN THE SAME SECOND. 10:30:19, 10:45:33, 12:12:12,
+// 12:20:14, 12:43:54, 12:55:43, all sub-second, and fixes, visits and fence
+// crossings run about a second too. The live path was never the problem.
+//
+// But this is the ONLY producer of a `motion` row, it was called from exactly
+// one place (js/cloud.js, at boot), and it latched on window._geoTapeSyncRan,
+// so it ran once per PAGE LOAD. Any flip the plugin did not push live then sat
+// on the handset until somebody opened the app. Same day: flips at 13:10 and
+// 13:33 did not land until 18:13, five hours later, and 19:01 to 19:04 not
+// until 20:01. Both arrival times are app opens. Eight push-pings went by in
+// between (14:38, 15:00, 15:34, 16:00, 16:30, 17:07, 17:35, 18:02) and carried
+// none of it, because nothing on that path had a way to.
+//
+// The ping already wakes the app every half hour and already does work while
+// it is up. So the sweep rides it (7.3: no second timer), and the only new
+// thing is that this function can be asked to run again.
+//
+// BOUNDED, because the boot sweep and the ping sweep are different jobs. Boot
+// lifts a week so a phone that has been shut off catches up. A ping only has
+// to carry what has happened since the last time anything went up, which on a
+// working day is a handful of flips, so it reads from the high-water mark and
+// caps small. A phone that has been quiet for hours still only sends the flips
+// that actually occurred.
+const _GEO_TAPE_PING_MAX=200; // one ping's worth; the boot sweep owns the rest
+const _GEO_TAPE_MARK='zp3_geo_tape_hw';
+function _geoTapeHighWater(){
+  try{const v=Number(localStorage.getItem(_GEO_TAPE_MARK));return v>0?v:0;}catch(_e){return 0;}
+}
+function _geoTapeSetHighWater(ts){
+  try{if(Number(ts)>_geoTapeHighWater())localStorage.setItem(_GEO_TAPE_MARK,String(Math.round(ts)));}catch(_e){}
+}
+// `why` is 'boot' (the once-per-load week sweep) or 'ping' (the light one).
+async function _geoTapeSync(why){
   try{
-    if(window._geoTapeSyncRan)return 0;
-    window._geoTapeSyncRan=true;
+    const ping=String(why||'')==='ping';
+    if(ping){
+      // Not the boot latch: two pings must not overlap, but a ping must be
+      // able to run again in half an hour, which is the entire point.
+      if(window._geoTapePingBusy)return 0;
+      window._geoTapePingBusy=true;
+    }else{
+      if(window._geoTapeSyncRan)return 0;
+      window._geoTapeSyncRan=true;
+    }
+    try{
     if(!_supa||!_supaUser||typeof _SUPA_DIRECT_URL==='undefined')return 0;
     const devId=(typeof _initDeviceId==='function')?_initDeviceId():null;
     let key=null;try{key=localStorage.getItem('zp3_geo_flush_key');}catch(_e){}
     // No key means the plugin's flush was never configured on this device, so
     // there is nothing to authenticate with. A browser lands here too.
     if(!devId||!key)return 0;
-    const since=Date.now()-7*86400000;
+    // A ping carries only what is new; a boot carries the week.
+    const hw0=ping?_geoTapeHighWater():0;
+    const since=ping
+      ? Math.max(hw0+1,Date.now()-7*86400000)
+      : Date.now()-7*86400000;
     const tape=await _geoMotionTape(since,Date.now());
     const batch=[];
     (Array.isArray(tape)?tape:[]).forEach(t=>{
@@ -6227,10 +6428,20 @@ async function _geoTapeSync(){
     });
     if(!batch.length)return 0;
     batch.sort((a,b)=>a.ts-b.ts);
+    // THE MARK IS ENFORCED HERE, not left to the plugin's floor.
+    // _geoMotionTape asks motionSince for `sinceMs - 120000`, deliberately, so
+    // a flip on the boundary is never missed. That back-off also hands back
+    // the last flip already sent, so a ping every half hour would re-upload it
+    // forever: harmless on the server, which dedups, and a lie in the logs
+    // about how much is still pending. Caught by 'the next ping carries only
+    // what is new'.
+    const fresh=hw0?batch.filter(e=>e.ts>hw0):batch;
+    if(!fresh.length)return 0;
     // If a week is bigger than one boot may carry, carry the NEWEST of it.
     // That is the half this whole rewrite exists to stop losing, and an older
     // flip that misses this boot is picked up by the next one.
-    const send=batch.length>_GEO_TAPE_MAX?batch.slice(batch.length-_GEO_TAPE_MAX):batch;
+    const cap=ping?_GEO_TAPE_PING_MAX:_GEO_TAPE_MAX;
+    const send=fresh.length>cap?fresh.slice(fresh.length-cap):fresh;
     let sent=0;
     for(let i=0;i<send.length;i+=_GEO_TAPE_CHUNK){
       const part=send.slice(i,i+_GEO_TAPE_CHUNK);
@@ -6243,10 +6454,16 @@ async function _geoTapeSync(){
       // and every chunk that already landed is a free no-op on the way past.
       if(!(r&&r.ok))break;
       sent+=part.length;
+      // MOVED ONLY BY A CHUNK THE SERVER ACCEPTED. A refused chunk ends the
+      // run (above) and the mark stays where it was, so the next sweep starts
+      // from the last thing that actually landed rather than from what was
+      // merely attempted.
+      _geoTapeSetHighWater(part[part.length-1].ts);
     }
-    _geoParkNote('tape-sync',sent+'/'+send.length+(send.length<batch.length?' (of '+batch.length+')':''));
+    _geoParkNote('tape-sync',(ping?'ping ':'')+sent+'/'+send.length+(send.length<fresh.length?' (of '+fresh.length+')':''));
     return sent;
-  }catch(_e){return 0;}
+    }finally{ if(ping) window._geoTapePingBusy=false; }
+  }catch(_e){try{if(String(why||'')==='ping')window._geoTapePingBusy=false;}catch(_e2){}return 0;}
 }
 // ── THE PLUGIN HAS BEEN COUNTING ALL ALONG, AND NOBODY EVER LOOKED ──────────
 //
@@ -6951,6 +7168,11 @@ const _GEO_FIXLOG_KEEP_MS=8*86400000;
 const _GEO_DERIVE_DAYS=7;
 
 const _GEO_APPLOG_KEY='zp3_geo_applog';
+// Rule 15 (js/geo-derive.js): the OS's own fence crossings, kept exactly the
+// way the lifecycle edges are. Its own log rather than two more kinds in the
+// app log, because rule 10 reads that one for app-open minutes and a fence
+// crossing is not the app being open.
+const _GEO_REGLOG_KEY='zp3_geo_reglog';
 // Fewer local fixes than this inside a day means the log does not know the
 // day: a real drive alone is a hundred.
 const _GEO_FIXLOG_THIN=20;
@@ -6995,6 +7217,38 @@ function _geoAppLogPush(ts,kind){
     localStorage.setItem(_GEO_APPLOG_KEY,JSON.stringify(out));
   }catch(_e){}
 }
+function _geoRegLogSeed(list){
+  try{
+    if(!Array.isArray(list)||!list.length)return;
+    const a=_geoRegLogRead();const have=new Set(a.map(e=>e.ts+'|'+e.id+'|'+(e.enter?1:0)));
+    list.forEach(e=>{
+      const k=e&&(e.ts+'|'+e.id+'|'+(e.enter?1:0));
+      if(e&&typeof e.ts==='number'&&e.id&&!have.has(k)){a.push({ts:e.ts,id:String(e.id),enter:!!e.enter});have.add(k);}
+    });
+    a.sort((x,y)=>x.ts-y.ts);
+    _geoRegLogWrite(a,Date.now());
+  }catch(_e){}
+}
+function _geoRegLogRead(){try{const a=JSON.parse(localStorage.getItem(_GEO_REGLOG_KEY)||'[]');return Array.isArray(a)?a:[];}catch(_e){return [];}}
+function _geoRegLogPush(ts,id,enter){
+  try{
+    const t=Number(ts),k=String(id||'');
+    if(!(t>0)||!k)return;
+    const a=_geoRegLogRead();
+    // The same crossing can reach this twice (a live event and its replay, a
+    // plugin retry): same fence, same edge, same second is one crossing.
+    const last=a[a.length-1];
+    if(last&&last.id===k&&!!last.enter===!!enter&&t-last.ts<1000)return;
+    a.push({ts:t,id:k,enter:!!enter});
+    _geoRegLogWrite(a,t);
+  }catch(_e){}
+}
+function _geoRegLogWrite(a,nowMs){
+  const cut=nowMs-_GEO_FIXLOG_KEEP_MS;
+  let out=a.filter(e=>e&&e.ts>=cut);
+  if(out.length>2000)out=out.slice(out.length-2000);
+  localStorage.setItem(_GEO_REGLOG_KEY,JSON.stringify(out));
+}
 function _geoFixLogRead(){try{const a=JSON.parse(localStorage.getItem(_GEO_FIXLOG_KEY)||'[]');return Array.isArray(a)?a:[];}catch(_e){return [];}}
 function _geoFixLogPush(ts,lat,lng,acc){
   try{
@@ -7034,15 +7288,33 @@ function _geoDayBounds(dayKey){
 
 // The saved locations, as the deriver wants them. Same sources as the park
 // regions (shop, places, clients, that day's jobs) so the fence the phone
+// ── WHAT "OPEN ON THE BOOKS" MEANS (owner 2026-09-12, rule 13's third witness)
+// Two vocabularies, named once, because geo_fences_for has to say the SAME
+// thing in SQL and tests/fixtures/geo-fences-case.json is what stops the two
+// drifting apart. Counted from the live data, every status either table
+// actually holds.
+//
+// A job is open while it is still work to be done. 'complete' and 'done' are
+// both in use and both mean finished; 'canceled' never happened.
+const _GEO_OPEN_JOB={upcoming:1,active:1,'in progress':1,scheduled:1};
+// A bid is open while the client still owes an answer, or owes the work. A
+// Draft has never been put in front of them, so it is evidence of nothing,
+// and Closed Lost / Abandoned are answered.
+const _GEO_OPEN_BID={Pending:1,sent:1,Sent:1,opportunity:1,Won:1,'Closed Won':1};
+
 // armed and the fence the deriver resolves are the same set.
 function _geoDeriveFences(dayKey){
   const out=[];
   try{
     if(typeof S!=='undefined'&&S&&S.officeLat!=null&&S.officeLon!=null)
+      // The built-in Settings shop carries no rule-20 flag of its own. It is
+      // lifted into a real place by _migrateShopToPlaces (js/places.js), which
+      // is where the box is ticked, and _gdReportsHere reads any fence at that
+      // spot as the same building.
       out.push({id:'shop',kind:'shop',name:(S.bname?S.bname+' shop':'Shop'),lat:Number(S.officeLat),lng:Number(S.officeLon),addr:S.baddr||''});
     (typeof places!=='undefined'&&Array.isArray(places)?places:[]).forEach(pl=>{
       if(!pl||pl.lat==null||pl.lon==null)return;
-      out.push({id:'place-'+pl.id,kind:String(pl.kind||'other'),name:pl.name||'',lat:Number(pl.lat),lng:Number(pl.lon),addr:pl.addr||'',placeId:pl.id,radiusFt:pl.fenceFt||undefined});
+      out.push({id:'place-'+pl.id,kind:String(pl.kind||'other'),name:pl.name||'',lat:Number(pl.lat),lng:Number(pl.lon),addr:pl.addr||'',placeId:pl.id,radiusFt:pl.fenceFt||undefined,commute:pl.commute===true||undefined});
     });
     const cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
     // A client fence says whether the calendar vouches for it that day
@@ -7062,10 +7334,23 @@ function _geoDeriveFences(dayKey){
       if(!(hit&&hit.addr===c.addr&&hit.lat!=null))return;
       const scheduled=jl.some(j=>j&&j.status!=='canceled'&&String(j.client_id)===String(c.id)&&
         ((typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true));
+      // OPEN ON THE BOOKS (owner 2026-09-12): rule 13's third witness, and the
+      // ONE thing that lets a contact marked family count as work again.
+      // Deliberately NOT date-bound the way `scheduled` is: a live job is
+      // business whether or not today is one of its days, and a proposal still
+      // sitting out there unanswered is itself the reason to be at the address
+      // (walking it, measuring, chasing the signature).
+      // A Draft never counts: nothing has been put in front of the client yet,
+      // so it is evidence of nothing. Neither does a job already finished or a
+      // bid already lost.
+      const onBooks=jl.some(j=>j&&String(j.client_id)===String(c.id)&&
+          _GEO_OPEN_JOB[String(j.status||'')]===1)||
+        (typeof bids!=='undefined'&&Array.isArray(bids)?bids:[]).some(b=>b&&
+          String(b.client_id)===String(c.id)&&_GEO_OPEN_BID[String(b.status||'')]===1);
       // Marked family or personal on the contact itself (owner 2026-09-12):
       // rule 13 then holds the visit unless the calendar or a running clock
       // vouches for it, instead of letting the working-day window do so.
-      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal});
+      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks});
     });
     (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
       if(!j||j.status==='canceled')return;
@@ -7088,6 +7373,39 @@ function _geoDeriveClocks(dayStart,dayEnd){
     const mine=e=>{const u=e.logged_by_uid;return u?String(u)===me:(typeof _isEmployee==='undefined'||!_isEmployee);};
     return timeEntries.filter(e=>e&&!e.open&&e.start_time&&e.end_time&&mine(e)).map(e=>({start:Date.parse(e.start_time),end:Date.parse(e.end_time)}))
       .filter(c=>c.start>0&&c.end>c.start&&c.end>dayStart&&c.start<dayEnd);
+  }catch(_e){return [];}
+}
+// Rule 19: this person's own punches, as minutes after their own local
+// midnight, so the deriver can learn when they actually work rather than
+// reading one company-wide setting for everybody (owner 2026-09-15: "we know
+// his clock in and clock out behavior so how do we run this ladder off the
+// times we know he usually works").
+//
+// The business timezone, not the device's: a crew member who drives across a
+// zone line still works his employer's day. Same Intl shape _bizDateStr uses,
+// because a DST day is 23 or 25 hours and a modulo against the clock would be
+// wrong twice a year.
+function _geoClockHistory(){
+  try{
+    if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries)||!_supaUser)return [];
+    const me=String(_supaUser.id);
+    const mine=e=>{const u=e.logged_by_uid;return u?String(u)===me:(typeof _isEmployee==='undefined'||!_isEmployee);};
+    const tz=(typeof S!=='undefined'&&S&&S.bizTz)||'America/Chicago';
+    const fmt=new Intl.DateTimeFormat('en-CA',{timeZone:tz,hour12:false,
+      year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const at=ms=>{
+      const p=fmt.formatToParts(new Date(ms)),g=t=>p.find(x=>x.type===t).value;
+      return {day:g('year')+'-'+g('month')+'-'+g('day'),min:(Number(g('hour'))%24)*60+Number(g('minute'))};
+    };
+    return timeEntries.filter(e=>e&&!e.open&&e.start_time&&e.end_time&&mine(e)).map(e=>{
+      const s=Date.parse(e.start_time),x=Date.parse(e.end_time);
+      if(!(s>0&&x>s))return null;
+      const a=at(s),b=at(x);
+      // A clock that ran past midnight ends "before" it began in minutes of
+      // day. Its OUT says nothing about when this person's day closes, so it
+      // is pushed to the end of its own day and only the IN is learned from.
+      return {day:a.day,inMin:a.min,outMin:b.min>a.min?b.min:24*60};
+    }).filter(Boolean);
   }catch(_e){return [];}
 }
 // Working hours, per company (Settings > Business). Defaults 6am to 8pm,
@@ -7297,11 +7615,17 @@ async function _geoPageAll(build){
 async function _geoDeriveServerFixes(fromMs,toMs){
   const out=[];
   out.appEvents=[];
+  out.regions=[];
   try{
     if(!_supa||!_supaUser)return out;
     const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
     const ap=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type').eq('employee_user_id',me).like('type','app-%').gte('ts',a).lt('ts',b));
     ap.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.appEvents.push({ts:t,kind:String(e.type).slice(4)});});
+    // Rule 15's evidence. A crossing the phone saw while this install was not
+    // the one holding the tape is still a crossing, so it is fetched on the
+    // same trip as the lifecycle edges and folded into the same local log.
+    const rg=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type,region_id').eq('employee_user_id',me).in('type',['regionEnter','regionExit']).gte('ts',a).lt('ts',b).not('region_id','is',null));
+    rg.forEach(e=>{const t=Date.parse(e.ts);if(t>0&&e.region_id)out.regions.push({ts:t,id:String(e.region_id),enter:e.type==='regionEnter'});});
     // Only rows whose position is FRESH. A fence or motion row carries the
     // last-known position, which after a wake can be a mile stale, and one
     // of those in the trace read a 3-mile drive as 6.1 (owner 2026-09-02).
@@ -7384,6 +7708,10 @@ function _geoTraceComplete(m){
   }catch(_e){return false;}
 }
 let _GEO_ROUTE_TIMEOUT_MS=8000;
+// One request per hole, so a leg the phone barely watched cannot turn a boot
+// rebuild into a hundred round trips. Past this the endpoint route below is
+// the cheaper answer and still better than a straight line.
+const _GEO_GAPFILL_MAX=6;
 const _GEO_ROUTE_CACHE_KEY='zp3_geo_routes';
 const _GEO_ROUTE_CACHE_MAX=400;
 function _geoRouteKey(a,b,via){const r=v=>Math.round(Number(v)*1e4)/1e4;return r(a.lat)+','+r(a.lng)+'>'+(Array.isArray(via)&&via.length?via.map(v=>r(v.lat)+','+r(v.lng)).join('>')+'>':'')+r(b.lat)+','+r(b.lng);}
@@ -7511,8 +7839,7 @@ async function _geoDeriveRouteMiles(rows){
         routed=(r&&Number(r.miles)>0)?Math.round(Number(r.miles)*10)/10:0;
         if(routed>0){cache[k]=routed;fresh[k]=routed;dirty=true;}
       }
-      if(!(routed>0))continue;
-      m.routeMiles=routed;
+      if(routed>0)m.routeMiles=routed;
       // A trace that runs fence to fence with a breadcrumb every few seconds
       // IS the drive (owner 2026-09-02: his 3.0 against the router's 3.9).
       // The router only outranks a thin one, or one that starts down the
@@ -7523,9 +7850,69 @@ async function _geoDeriveRouteMiles(rows){
       // actually driven through the detour. When the trace spans fence to
       // fence, the driven path caps the router (owner 2026-09-02: 3.9 from
       // the router for a leg the truck drove in 3.3 with the stop in it).
-      const via=(Number(m.collapsedStops)>0&&_geoTraceSpans(m)&&typeof _milePathMiles==='function')?_milePathMiles(m):0;
-      const direct=(via>0&&routed>via)?Math.round(via*10)/10:routed;
-      if(direct>(Number(m.miles)||0)){m.miles=direct;m.calc_method=direct===routed?'derived-routed':'derived-via';}
+      let best=0,how='';
+      if(routed>0){
+        const via=(Number(m.collapsedStops)>0&&_geoTraceSpans(m)&&typeof _milePathMiles==='function')?_milePathMiles(m):0;
+        const direct=(via>0&&routed>via)?Math.round(via*10)/10:routed;
+        best=direct;how=direct===routed?'derived-routed':'derived-via';
+      }
+      // ── THE HOLES ARE PRICED AT THE ROAD, NOT THE STRAIGHT LINE ────────
+      // Owner 2026-09-14: "the routed version with dashes traced the right
+      // roads but only logged a fraction of the trace."
+      //
+      // The map already asked the router for every hole in the trace and drew
+      // the answer dashed. It just never counted it. Same question, same
+      // function now (_mileGapFill, js/mileage.js), so the picture and the
+      // number are the same arithmetic and cannot disagree.
+      //
+      // LAST, and only when it is BIGGER, which is deliberate. My first cut
+      // ran this before the endpoint route and returned on it, and four
+      // deriver-wire tests went red in the same minute: every leg that used to
+      // read derived-routed came back derived-gapfill with no routeMiles on
+      // it. Those tests are not in the way, they are the rules. A dense trace
+      // still wins (rule above), a leg collapsed through a personal stop is
+      // still billed at the DIRECT route (rule 6) and is skipped here for
+      // exactly that reason, and the endpoint route still stands where it
+      // already stood. This only closes the case the owner reported: a drive
+      // whose holes were being counted as the straight line across them.
+      //
+      // Bounded because each hole is one request and a boot rebuild does a
+      // week of them; rule 14 already kept unsaved-end rows out of this loop.
+      //
+      // AND ONLY WHERE THE LEG ROUTE COULD NOT BE HAD. Scoped down after two
+      // deriver-wire tests stayed red on REQUEST COUNT, not on a wrong number:
+      // they assert one router call per distinct pair of ends, and a boot
+      // rebuild of a week pays for every call, so that assertion is a cost
+      // rule and not an incidental expectation. Holes are one request each.
+      // The owner's 14 September drive is the case this exists for and it is
+      // exactly this case: the endpoint router returned NOTHING, so the row
+      // kept the straight line at 2.4 for a 3.4 mile trip. Where the leg
+      // route does answer, it already answers, steered through the very
+      // breadcrumbs gap-filling would have used (_geoRouteVia).
+      if(best>0)                       { /* the leg route answered; it stands */ }
+      else if(Number(m.collapsedStops)>0){ /* rule 6: the direct route, never the driven one */ }
+      else if(typeof _mileGapFill==='function'){
+        try{
+          // GAP-FILL ONLY EARNS ITS NAME WHEN THERE IS EVIDENCE TO KEEP.
+          // Its whole claim over the endpoint route is that it preserves the
+          // stretches the phone watched. A trace that is ALL hole (two fixes,
+          // one edge, nothing observed in between) has nothing to preserve, so
+          // it is not a better answer, it is the same answer at N times the
+          // cost. The deriver-wire tests assert one router call per leg and
+          // they are right to: a boot rebuild of a week pays for every one.
+          const edges=(Array.isArray(m.path)?m.path.length:1)-1;
+          const holes=(typeof _mileGaps==='function')?_mileGaps(m).length:0;
+          const watchedEdges=edges-holes;
+          if(holes>0&&holes<=_GEO_GAPFILL_MAX&&watchedEdges>0){
+            const gf=await _mileGapFill(m);
+            if(gf&&gf.filled>0&&Number(gf.miles)>best){
+              best=Number(gf.miles);how='derived-gapfill';
+              m.gapMiles=best;m.watchedMiles=Math.round(gf.watched*10)/10;
+            }
+          }
+        }catch(_e){}
+      }
+      if(best>(Number(m.miles)||0)){m.miles=best;m.calc_method=how;}
     }catch(_e){}
   }
   if(dirty){
@@ -7586,16 +7973,18 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
         server=await _geoDeriveServerFixes(b.start-2*3600000,b.end);
         _geoFixLogSeed(server);
         _geoAppLogSeed(server.appEvents);
+        _geoRegLogSeed(server.regions);
       }
     }
     const fixes=_geoFixLogRead().concat(server||[]);
     const appEvents=_geoAppLogRead().concat((server&&Array.isArray(server.appEvents))?server.appEvents:[]);
+    const regions=_geoRegLogRead().concat((server&&Array.isArray(server.regions))?server.regions:[]);
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
-      tape,fixes,appEvents,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
+      tape,fixes,appEvents,regions,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.
-      clocks:_geoDeriveClocks(b.start,b.end),workHours:_geoWorkHours(),
+      clocks:_geoDeriveClocks(b.start,b.end),clockHistory:_geoClockHistory(),workHours:_geoWorkHours(),
     });
     // MISSING EVIDENCE IS NOT AN EMPTY DAY (owner 2026-09-02, 22:33: "my
     // mileage gone for today when I should have four trips"). The tape had

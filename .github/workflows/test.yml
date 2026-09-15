@@ -65,13 +65,51 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -v ON_ERROR_STOP=1 -f scripts/ci/supabase-bootstrap.sql
 
+      # ── TWO FILES, ONE VERSION (2026-09-13) ─────────────────────────────
+      # Supabase keys supabase_migrations.schema_migrations on the VERSION
+      # NUMBER, not the filename, so two files sharing a prefix is a unique
+      # violation the moment the second one is pushed: "duplicate key value
+      # violates unique constraint schema_migrations_pkey". Git cannot see it,
+      # because both files are new and neither conflicts; it only shows up when
+      # a deploy dies.
+      #
+      # It happened twice in one night on this repo, both times because two
+      # branches picked the next free number independently and only collided
+      # once they met (20261005, then 20261006). This is the cheapest possible
+      # check and it runs before anything is applied.
+      - name: One file per migration version
+        run: |
+          dupes=$(ls supabase/migrations/*.sql | xargs -n1 basename | sed 's/_.*//' | sort | uniq -d)
+          if [ -n "$dupes" ]; then
+            echo "::error::Two migrations share a version number. Supabase keys on the number, not the name, so the second to deploy fails with a unique violation. Rename one."
+            for v in $dupes; do ls supabase/migrations/${v}_*.sql; done
+            exit 1
+          fi
+          echo "✅ Every migration version is unique"
+
+      # ON_ERROR_STOP IS THE WHOLE POINT (2026-09-15). Without it psql prints
+      # ERROR and exits 0, so this step passed on a migration that could not be
+      # applied at all: 20261017 widened geo_fences_for's returns-table without
+      # dropping it first, Postgres refused (42P13, a returns-table column is an
+      # OUT parameter), and the only thing that noticed was the Supabase preview
+      # check after the push. The step claimed "All migrations applied cleanly"
+      # about a database that had none of it.
+      #
+      # pg_cron and pg_net cannot be installed on a bare runner, and that
+      # migration's body is already guarded on the extension existing, so it is
+      # a no-op here either way. It is named explicitly rather than tolerated by
+      # a blanket rule, so a NEW file can never quietly join it.
       - name: Run all migrations against local Postgres
         env:
           PGPASSWORD: testpass
         run: |
           for f in $(ls supabase/migrations/*.sql | sort); do
+            if [ "$(basename "$f")" = "20260901_geo_ping_pg_cron.sql" ]; then
+              echo "⏭ skipping $f (needs pg_cron/pg_net, unavailable on the runner)"
+              continue
+            fi
             echo "▶ applying $f"
-            psql -h localhost -U testuser -d testdb -f "$f" || exit 1
+            psql -h localhost -U testuser -d testdb -v ON_ERROR_STOP=1 -f "$f" || exit 1
           done
           echo "✅ All migrations applied cleanly"
 
@@ -106,6 +144,15 @@ jobs:
       # thing standing between "one set of rules" and two.
       - name: The server's deriver is the phone's deriver
         run: node scripts/gen-shared-deriver.mjs --check
+
+      # ── THE SERVER WRAPPER, ACTUALLY RUN (2026-09-15) ──────────────────────
+      # supabase/functions/_shared/derive-day.mjs is the only piece of the geo
+      # path that no other check executes: not a browser file, so no shard
+      # loads it; not SQL, so the lint above never sees it. It shipped calling
+      # a function that did not exist and the first thing to find out was a
+      # person clicking Rebuild in the ops portal. This runs it.
+      - name: The server deriver runs
+        run: node scripts/ci/derive-day-smoke.mjs
 
       # The one figure the server can never work out as well as the phone: road
       # miles need a router, and routing is device-only. It rewrote a real
