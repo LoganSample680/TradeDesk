@@ -1797,17 +1797,43 @@ function _gdInWindow(win, r) {
 //     rule 11 was already designed around
 //   - a named visit still holding an open question (rule 13)
 function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win) {
-  // Mid-drive, or standing at a work fence right now: the day is not over and
-  // nothing about it can be called empty yet.
-  if (driving) return legs;
-  if (open && !_gdIsBaseKind(open.kind) && open.kind !== 'office') return legs;
   const list = legs || [];
   if (!list.length) return list;
   // RULE 7's HOUSE LOOP, judged here now rather than at build time. Out of the
   // house and back with nothing saved between is the gym run, unless the
   // workday was open around it, which is the only evidence that says otherwise
   // (owner 2026-09-12). Dropped first so it can never hold a dead day open.
+  //
+  // ── AND DROPPED WHETHER OR NOT HE IS DRIVING RIGHT NOW (owner 2026-09-15) ─
+  // "Why today we got drive time to the gym showing again for Jack. Remember
+  // the rule? Need at least one true fence to fence and or a manual clock in
+  // to start the timesheet and mileage. What happened to that server side?"
+  //
+  // Nothing happened to it. It was being SKIPPED, and this is the line that
+  // skipped it. Both early returns below used to sit above this filter and
+  // hand back `legs` untouched, so while any journey was open the whole of
+  // rule 16 was off, house loop and all.
+  //
+  // His 15 September, from the tape: the gym run closed at 06:27, CoreMotion
+  // flipped automotive at 06:22:32 and never flipped back, and the 06:30
+  // push-ping derived on the server at 06:42 with that journey still open. One
+  // bail, and the gym went to the rail as three held rows. Then it stayed
+  // there, because the server may add and never retire: a mid-drive derive can
+  // write a row that no later derive on the server can ever take back.
+  //
+  // The bails are still right about what they are for. "The day is not over"
+  // is an answer about the DAY, and the two tests below it ask whether the day
+  // as a whole ever reached work, which an open drive genuinely can still
+  // change. It is not an answer about a loop that already closed: that leg's
+  // two ends are the house, its middle was never saved, and no journey
+  // starting later can make either of those untrue. A real job at an unsaved
+  // address is not lost by this, it is deferred: the window opens when the day
+  // reaches work, and the next derive writes the loop back under the same key.
   const kept = list.filter(l => !(l && l.houseLoop === true && !_gdInWindow(win, l)));
+  // Mid-drive, or standing at a work fence right now: the day is not over and
+  // nothing about it can be called empty yet.
+  if (driving) return kept;
+  if (open && !_gdIsBaseKind(open.kind) && open.kind !== 'office') return kept;
   if (!kept.length) return kept;
   // A leg that reached business. One is enough for the day.
   //

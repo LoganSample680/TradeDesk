@@ -416,6 +416,75 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.miles).toBe(0);
     });
 
+    // ── AND IT STAYS NOTHING WHILE HE IS STILL DRIVING (owner 2026-09-15) ──
+    // "Why today we got drive time to the gym showing again for Jack. Remember
+    // the rule? Need at least one true fence to fence and or a manual clock in
+    // to start the timesheet and mileage. What happened to that server side?"
+    //
+    // Nothing happened to it: rule 16 was being SKIPPED. Its first line bailed
+    // out whenever any journey was open, on the reasoning that a day still in
+    // progress cannot be called empty, and that bail sat ABOVE the house-loop
+    // filter and took it with it.
+    //
+    // His real 15 September: the gym run closed at 06:27, CoreMotion flipped
+    // automotive at 06:22:32 and never flipped back, and the 06:30 push-ping
+    // derived on the server at 06:42 with that journey still open. The gym went
+    // to the rail as three held rows and stayed there, because a server derive
+    // may add and never retire.
+    //
+    // A journey that starts later cannot make a loop that already closed into
+    // work: both its ends are the house and its middle was never saved.
+    const openTail = (over) => {
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const GYM = { lat: 39.0501, lng: -95.7301 };
+      return gym(Object.assign({
+        // Same run, and then the phone flips automotive and never flips back.
+        tape: [mo(t(5, 20), 'still'), mo(t(5, 25), 'automotive'), mo(t(5, 33), 'onFoot'),
+          mo(t(6, 21), 'automotive')],
+        // His shape exactly: leaves from the house, so the loop's origin IS the
+        // house and the loop closes on the arrival back inside the fence, while
+        // the tape's last flip is still hanging.
+        fixes: [fix(t(5, 24), { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(5, 33) + 5000, GYM), fix(t(6, 10), GYM),
+          fix(t(6, 26), { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(6, 40), { lat: HOME.lat, lng: HOME.lng })],
+        nowMs: t(6, 42),
+      }, over || {}));
+    };
+
+    test('still driving at derive time does not let the gym run through', async () => {
+      const r = await out(openTail());
+      expect(r.legs, 'an open journey says nothing about a loop that already closed').toBe(0);
+      expect(r.miles).toBe(0);
+      expect(r.time, 'and no drive or stop rows either').toBe(0);
+    });
+
+    test('a clock still claims it, driving or not', async () => {
+      // The bail was never what made a clocked day count, and it still is not.
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const r = await out(openTail({ clocks: [{ start: ds + 5 * 3600000, end: ds + 7 * 3600000 }] }));
+      expect(r.legs).toBeGreaterThan(0);
+    });
+
+    test('a day that DID reach business is untouched by the bail either way', async () => {
+      // The other half of the rule: the house-loop filter drops loops, never
+      // legs that got somewhere. Mid-drive must not start deleting real work.
+      const ds = Date.parse('2026-09-10T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      const r = await out(gym({
+        fences: [HOME, SHOP2],
+        tape: [mo(t(5, 20), 'still'), mo(t(5, 25), 'automotive'), mo(t(5, 33), 'onFoot'),
+          mo(t(6, 21), 'automotive'), mo(t(6, 29), 'onFoot'), mo(t(7, 30), 'automotive')],
+        fixes: [fix(t(5, 22), { lat: 39.0210, lng: -95.7500 }),
+          fix(t(5, 33) + 5000, { lat: 39.0501, lng: -95.7301 }), fix(t(6, 10), { lat: 39.0501, lng: -95.7301 }),
+          fix(t(6, 29) + 5000, { lat: HOME.lat, lng: HOME.lng }),
+          fix(t(7, 30) + 5000, { lat: SHOP2.lat, lng: SHOP2.lng }), fix(t(8, 0), { lat: SHOP2.lat, lng: SHOP2.lng })],
+        nowMs: t(8, 30),
+      }));
+      expect(r.legs, 'the run to the yard survives').toBeGreaterThan(0);
+    });
+
     test('the same day with a clock is claimed in full', async () => {
       const ds = Date.parse('2026-09-10T05:00:00Z');
       const r = await out(gym({ clocks: [{ start: ds + 5 * 3600000, end: ds + 7 * 3600000 }] }));
