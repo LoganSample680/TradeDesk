@@ -87,8 +87,12 @@ const SUMMARY = { days: 30, people: 3, accounts: 2, active_days: 40, days_clocke
 // The page builds its client the moment the vendor script defines window.supabase.
 // Intercepting that assignment is the only seam that exists before boot runs, and
 // it keeps the stub inside this spec instead of in shared helpers (§10.3).
-function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BRIEF, live = LIVE } = {}) {
-  return page.addInitScript(({ roster, summary, by, brief, live }) => {
+function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BRIEF, live = LIVE, invoke = null } = {}) {
+  return page.addInitScript(({ roster, summary, by, brief, live, invoke }) => {
+    // Every functions.invoke the page makes, recorded, so a test can assert
+    // WHAT it asked for as well as what it did with the answer. The reply is
+    // whatever `invoke` names for that function, defaulting to a plain success.
+    window.__invoked = [];
     let held;
     Object.defineProperty(window, 'supabase', {
       configurable: true,
@@ -106,12 +110,22 @@ function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BR
               if (fn === 'ops_live_status') return Promise.resolve({ data: live, error: null });
               return realRpc(fn, args);
             };
+            c.functions = {
+              invoke: (fn, opts) => {
+                window.__invoked.push({ fn, body: (opts || {}).body || null });
+                // Read at CALL time, not at setup time, so a test can change
+                // the answer between clicks without rebooting the page.
+                const r = (window.__invokeReply && window.__invokeReply[fn]) || (invoke && invoke[fn]);
+                if (r && r.throw) return Promise.reject(new Error(r.throw));
+                return Promise.resolve(r || { data: { ok: true, days: [{ day: '2026-09-14', wrote: true, time: 9, shop: 3, miles: 5, sweep: true }] }, error: null });
+              }
+            };
             return c;
           }
         };
       }
     });
-  }, { roster, summary, by, brief, live });
+  }, { roster, summary, by, brief, live, invoke });
 }
 
 test.describe('Ops portal: the support view, embedded', () => {
@@ -315,6 +329,85 @@ test.describe('Ops portal: the support view, embedded', () => {
       await page.locator('#view-exit').click();
       await page.locator('#biz-back').click();
       await page.locator('#trade-back').click();
+    });
+
+    // ── Rebuild a day (owner 2026-09-15) ──────────────────────────────────
+    // The server derives on every flush, but only for the days the incoming
+    // events are stamped with, so a day that is already wrong is never handed
+    // back to it. This is the door: run the deriver again for one person, one
+    // day, from here, instead of waiting on that person to open the app.
+    test.describe('rebuilding a day', () => {
+      test.beforeEach(async () => {
+        await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        await page.evaluate(() => { window.__invoked = []; window.__invokeReply = null; });
+      });
+      test.afterEach(async () => {
+        await page.locator('#biz-back').click();
+        await page.locator('#trade-back').click();
+      });
+
+      test('it rebuilds the person the chips have selected, on the day you picked', async () => {
+        await page.locator('#biz-chips .chip', { hasText: 'Jack' }).click();
+        await page.locator('#rb-day').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Rebuilt');
+        const calls = await page.evaluate(() => window.__invoked);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].fn).toBe('rebuild-day');
+        // The person from the chips, the business from the page, the day from
+        // the field. Nothing here invents an id.
+        expect(calls[0].body).toEqual({
+          contractor_user_id: 'biz-a', employee_user_id: 'u-jack', day: '2026-09-14',
+        });
+      });
+
+      test('the day defaults to the business day, not this browser\'s', async () => {
+        const want = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago',
+          year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        await expect(page.locator('#rb-day')).toHaveValue(want);
+      });
+
+      test('a rebuild that could not sweep says so instead of claiming it cleaned up', async () => {
+        // The difference is the whole reason for pressing it, so it cannot be
+        // reported as the same thing.
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day':
+          { data: { ok: true, days: [{ day: '2026-09-14', wrote: true, time: 9, shop: 3, miles: 5, sweep: false }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Nothing retired');
+      });
+
+      test('no day picked is a message, not a call', async () => {
+        await page.locator('#rb-day').fill('');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Pick a day');
+        expect(await page.evaluate(() => window.__invoked)).toHaveLength(0);
+      });
+
+      test('a refusal from the function is shown, never swallowed as success', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day':
+          { data: { ok: false, error: 'not an ops admin' }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('not an ops admin');
+        await expect(page.locator('#rb-out')).not.toContainText('Rebuilt');
+      });
+
+      test('a day the deriver refused to write is reported with its reason', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day':
+          { data: { ok: true, days: [{ day: '2026-09-14', wrote: false, reason: 'no evidence' }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('no evidence');
+      });
+
+      test('the control does not bleed off a phone', async () => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const w = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+        expect(w[0]).toBeLessThanOrEqual(w[1] + 1);
+        await page.setViewportSize({ width: 1280, height: 800 });
+      });
     });
 
     test('a crew chip opens the app as the crew member, not the owner', async () => {

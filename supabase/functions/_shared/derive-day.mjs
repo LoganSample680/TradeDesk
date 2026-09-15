@@ -155,7 +155,13 @@ async function routeRows(rows, route) {
   return asked;
 }
 
-export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), route = null) {
+export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), route = null, opts = null) {
+  // `opts.sweep` is the ONE door through which a server derive may retire a
+  // row, and it is only ever opened by a person asking for this day to be
+  // rebuilt (rebuild-day/index.ts). See the p_sweep note at the top of this
+  // file for why the ingest path may never do it, and the guard further down
+  // for what has to be true even here.
+  const wantSweep = !!(opts && opts.sweep);
   const b = centralDayBounds(day);
   if (!b) return { day, wrote: false, reason: "bad day" };
   const fromIso = new Date(b.start - TWO_HOURS).toISOString();
@@ -270,6 +276,36 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     tape, fixes, appEvents, regions, fences, nowMs, clocks, workHours,
   });
 
+  // ── WHEN A REBUILD MAY RETIRE A ROW (owner 2026-09-15) ──────────────────
+  // "I want Jack to wake up to a clean record of today."
+  //
+  // The standing rule is that the SERVER may add and never retire, because
+  // what it sees is whatever has been flushed, and a stretch nobody uploaded
+  // yet looks exactly like a stretch that did not happen. That is right for
+  // ingest and it stays right: the ingest path passes no opts and sweeps
+  // nothing.
+  //
+  // A rebuild is a different act. Somebody looked at a day, decided it was
+  // wrong, and asked for it to be done again; the rows that need removing are
+  // there BECAUSE an earlier derive changed its mind, and only a sweep
+  // removes them. So the rule is not relaxed, it is given the same test the
+  // phone applies before it sweeps (tapeCovers, js/geo-track.js): absence of
+  // evidence is evidence of absence only where there is evidence.
+  //
+  // Ownership needs no test here and needs one on the phone: CoreMotion
+  // history belongs to the device, so a shift change mid-day mixes two
+  // people's tapes into one log. These rows carry employee_user_id from the
+  // sender, so the tape read here is already one person's.
+  //
+  // A sweep against an empty derive would be a delete-everything with extra
+  // steps. The two guards below already refuse to write at all in that case,
+  // which is what stops it.
+  //
+  // tapeCovers is the one computed above for the no-evidence guard, which asks
+  // the same question for the same reason and must not be asked twice in two
+  // ways.
+  const sweep = wantSweep && tapeCovers;
+
   // MISSING EVIDENCE IS NOT AN EMPTY DAY, the second half of it: drives that
   // are plainly on the tape and resolve to nowhere at all mean the fixes have
   // not arrived, not that the truck teleported. Same guard the phone makes.
@@ -292,7 +328,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     p_day_start: new Date(b.start).toISOString(),
     p_day_end: new Date(b.end).toISOString(),
     p_time: rows.job_time_entries, p_shop: rows.shop_time_entries, p_miles: rows.td_mileage,
-    p_sweep: false,
+    p_sweep: sweep,
   });
   if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message };
 
@@ -301,5 +337,8 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     dwells: res.dwells.length, legs: res.legs.length,
     time: rows.job_time_entries.length, shop: rows.shop_time_entries.length,
     miles: rows.td_mileage.length, held: rows.held.length, routed,
+    // What this call was allowed to do, so a rebuild that could not sweep
+    // says so instead of looking like one that did.
+    sweep, sweepAsked: wantSweep, tapeCovers,
   };
 }

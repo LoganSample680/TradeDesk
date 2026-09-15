@@ -121,6 +121,11 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .open-app{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:13px 14px;margin:14px 0 2px}
 .btn-open{background:var(--accent);border:0;color:var(--on-accent);border-radius:9px;padding:11px 17px;font-size:14px;font-weight:800;cursor:pointer;flex-shrink:0}
 .btn-open:hover{filter:brightness(1.08)}
+/* The rebuild row sits under the open-app card and reads as its footnote:
+   same gutter, quieter chrome, wraps to its own line on a phone. */
+.rebuild{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 14px 0;min-width:0}
+.rebuild input[type=date]{background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;min-width:0}
+.rebuild .muted{flex:1 1 100%;font-size:12px;min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
 .chip{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
 .chip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
@@ -290,6 +295,20 @@ form.signin input{background:var(--field);border:1px solid var(--line2);color:va
       <div class="open-app">
         <button class="btn-open" id="biz-open">Open their app &rsaquo;</button>
         <div class="chips" id="biz-chips"></div>
+      </div>
+
+      <!-- REBUILD A DAY (owner 2026-09-15) ────────────────────────────────
+           The deriver runs on the server on every flush, but only for the
+           days the incoming events are stamped with, so a day that is already
+           wrong is never handed back to it: no new event will ever carry
+           yesterday's date. That left "fix a crew member's day" waiting on
+           "that crew member opens the app". This is the door. It runs the
+           same deriver over the same evidence for the person selected above,
+           and it is the only server path allowed to retire a stale row. -->
+      <div class="rebuild">
+        <input type="date" id="rb-day" aria-label="Day to rebuild">
+        <button class="btn" id="rb-go">Rebuild this day</button>
+        <span class="muted" id="rb-out"></span>
       </div>
 
       <!-- Every metric section, drawn from what ops_metric_defs names. Adding a
@@ -601,6 +620,14 @@ function show(id){
 function openBiz(b){
   OPEN=b;
   WHO=null;                          // a new business picks its own owner again
+  // Today, in the BUSINESS's day, not this browser's: the deriver works in
+  // Central and an ops screen open in another zone would otherwise offer to
+  // rebuild the wrong date for most of the evening.
+  try{
+    $('rb-day').value=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',
+      year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  }catch(_e){}
+  $('rb-out').textContent='';
   show('lvl-biz');
   renderBiz(b);
 }
@@ -680,6 +707,43 @@ $('biz-open').addEventListener('click',()=>{
   if(!OPEN)return;
   const p=OPEN.people.find(x=>x.person_user_id===WHO)||OPEN.people[0];
   if(p)openView(p);
+});
+
+/* ── Rebuild a day ────────────────────────────────────────────────────────── */
+// This page is SELECT-only against the database and stays that way: the write
+// happens inside the rebuild-day edge function, behind the same is_ops_admin()
+// gate this whole page is behind, checked there against the caller's own token.
+// Nothing here can write a row, and nothing here decides what the rows are.
+// It runs the deriver for the person selected in the chips above, so which
+// person it rebuilds is whichever one you were already looking at.
+function rbSay(t,bad){ const el=$('rb-out'); el.textContent=t||''; el.style.color=bad?'var(--bad,#e5534b)':''; }
+
+$('rb-go').addEventListener('click',async()=>{
+  if(!OPEN)return rbSay('Open a business first',true);
+  const p=OPEN.people.find(x=>x.person_user_id===WHO)||OPEN.people[0];
+  if(!p)return rbSay('Pick a person first',true);
+  const day=$('rb-day').value;
+  if(!day)return rbSay('Pick a day first',true);
+  const btn=$('rb-go'); btn.disabled=true;
+  rbSay('Rebuilding '+day+' for '+(p.person_name||p.person_email||'them')+'…');
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session)return rbSay('Signed out. Reload and sign in again.',true);
+    const {data,error}=await sb.functions.invoke('rebuild-day',{body:{
+      contractor_user_id:OPEN.id, employee_user_id:p.person_user_id, day,
+    }});
+    if(error)return rbSay(error.message||'That call failed',true);
+    if(!data||data.ok!==true)return rbSay((data&&data.error)||'That call failed',true);
+    const d=(data.days||[])[0]||{};
+    if(!d.wrote)return rbSay('Nothing written: '+(d.reason||'no reason given'),true);
+    // A rebuild that could not sweep is not the same as one that did, and the
+    // difference is the whole point of pressing this: say which happened.
+    rbSay(d.sweep
+      ? ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. Stale rows retired.')
+      : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+
+         'Nothing retired: no motion tape covers that day on the server, so it cannot tell a row that should go from one nobody uploaded.'));
+  }catch(e){ rbSay(String((e&&e.message)||e),true); }
+  finally{ btn.disabled=false; }
 });
 
 /* ── Is their app open right now ───────────────────────────────────────────── */
