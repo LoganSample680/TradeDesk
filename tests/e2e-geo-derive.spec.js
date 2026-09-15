@@ -30,6 +30,24 @@ const HD    = { id: 'place-1787001824911022', kind: 'supply', name: 'The Home De
 const JOB   = { id: 'job-1788294875837048', kind: 'job', name: 'John Doe', jobId: 1788294875837048, lat: 39.0123292, lng: -95.7464936 };
 const FENCES = [SHOP, SHOP2, HOME, DOE, HD];
 const GAS = { lat: 39.0210, lng: -95.7300 };   // not saved anywhere
+// His seven real clocked days, in minutes after Central midnight.
+const JACK_CLOCKS = [
+  { day: '2026-08-31', inMin: 7 * 60 + 55, outMin: 15 * 60 + 45 },
+  { day: '2026-09-01', inMin: 7 * 60 + 42, outMin: 15 * 60 + 0 },
+  { day: '2026-09-02', inMin: 7 * 60 + 44, outMin: 19 * 60 + 30 },
+  { day: '2026-09-03', inMin: 7 * 60 + 45, outMin: 16 * 60 + 45 },
+  { day: '2026-09-08', inMin: 7 * 60 + 58, outMin: 17 * 60 + 16 },
+  { day: '2026-09-09', inMin: 7 * 60 + 54, outMin: 16 * 60 + 1 },
+  { day: '2026-09-04', inMin: 7 * 60 + 44, outMin: 16 * 60 + 13 },
+];
+// The same pattern, dated to the seven days before a fixture's own day. Rule
+// 19 only reads clocks on or before the day it is deriving (a day's rows must
+// not change because of a punch from three weeks later), so a fixture set in
+// early September cannot learn from his real late-September week.
+const clocksBefore = (day) => JACK_CLOCKS.map((c, n) => Object.assign({}, c, {
+  day: new Date(Date.parse(day + 'T12:00:00Z') - (n + 1) * 86400000).toISOString().slice(0, 10),
+}));
+
 
 const fix = (ts, at, acc) => ({ ts, lat: at.lat, lng: at.lng, acc: acc == null ? 8 : acc });
 const mo = (ts, kind, id) => (id ? { ts, kind, id } : { ts, kind });
@@ -396,6 +414,13 @@ test.describe('geo-derive: the day deriver', () => {
       const GYM = { lat: 39.0501, lng: -95.7301 };   // nobody ever saved it
       return Object.assign({
         day: '2026-09-10', dayStart: ds, dayEnd: ds + 86400000, personId: 'p',
+        // Rule 19: his own clock history, and these are his real punches.
+        // Seven clocked days, in between 7:42 and 7:58 Central, out between
+        // 15:00 and 19:30. Trimmed and padded that is 6:44am to 6:16pm, so the
+        // gym run at 5:25 is outside the day this person has ever worked.
+        // Without it the company's 6am stands and the 6:21 drive home reads as
+        // inside the working day, which is the whole reason rule 19 exists.
+        clockHistory: JACK_CLOCKS,
         tape: [mo(t(5, 20), 'still'), mo(t(5, 25), 'automotive'), mo(t(5, 33), 'onFoot'),
           mo(t(6, 21), 'automotive'), mo(t(6, 29), 'onFoot'), mo(t(6, 35), 'still')],
         fixes: [fix(t(5, 22), { lat: 39.0210, lng: -95.7500 }),
@@ -472,14 +497,18 @@ test.describe('geo-derive: the day deriver', () => {
       // legs that got somewhere. Mid-drive must not start deleting real work.
       const ds = Date.parse('2026-09-10T05:00:00Z');
       const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      // HD, not SHOP2: this file's shop sits four metres from the home office,
+      // so "home to the yard" there is one spot read twice and rule 7 writes
+      // nothing at all. A supply house is a second fence.
       const r = await out(gym({
-        fences: [HOME, SHOP2],
+        fences: [HOME, HD],
         tape: [mo(t(5, 20), 'still'), mo(t(5, 25), 'automotive'), mo(t(5, 33), 'onFoot'),
-          mo(t(6, 21), 'automotive'), mo(t(6, 29), 'onFoot'), mo(t(7, 30), 'automotive')],
+          mo(t(6, 21), 'automotive'), mo(t(6, 29), 'onFoot'),
+          mo(t(7, 30), 'automotive'), mo(t(8, 0), 'onFoot')],
         fixes: [fix(t(5, 22), { lat: 39.0210, lng: -95.7500 }),
           fix(t(5, 33) + 5000, { lat: 39.0501, lng: -95.7301 }), fix(t(6, 10), { lat: 39.0501, lng: -95.7301 }),
           fix(t(6, 29) + 5000, { lat: HOME.lat, lng: HOME.lng }),
-          fix(t(7, 30) + 5000, { lat: SHOP2.lat, lng: SHOP2.lng }), fix(t(8, 0), { lat: SHOP2.lat, lng: SHOP2.lng })],
+          fix(t(7, 30) + 5000, { lat: HD.lat, lng: HD.lng }), fix(t(8, 0), { lat: HD.lat, lng: HD.lng })],
         nowMs: t(8, 30),
       }));
       expect(r.legs, 'the run to the yard survives').toBeGreaterThan(0);
@@ -742,11 +771,26 @@ test.describe('geo-derive: the day deriver', () => {
         fix(T(20, 0), GAS), fix(T(20, 48, 5), GAS), fix(T(20, 58, 5), YF), fix(T(21, 30), YF)];
       const { legs, rows } = await rowsOf(base({ tape, fixes, fences: [YARD, DOE], nowMs: T(23, 0) }));
       const evening = legs.filter(l => Number(l.startTs) >= T(17, 40));
-      expect(evening.length, 'held is not deleted: it is still on the log').toBe(1);
-      expect(evening[0].held).toBe(true);
-      // The day's two real drives are plain; nothing from the evening is.
+      // AMENDED 2026-09-15 (rule 19). This used to assert the evening loop
+      // stayed on the log as a held row, on the principle that held must never
+      // mean deleted. That principle held while the question was "did the day
+      // reach business", which this day plainly did.
+      //
+      // The question is now "was this inside the working day", and this trip
+      // ran 17:45 to 20:58, past the eight o'clock close. The owner asked for
+      // exactly that: "fence to fence starts the day and or manual clock in is
+      // hit", and for anything that can claim neither, the hours decide. A
+      // three-hour evening round trip out of the yard to a gas station is the
+      // same shape as the gym run and gets the same answer.
+      //
+      // Held still does not mean deleted for anything INSIDE the day: a loop
+      // at noon is written greyed and asks to be named, which is what stops an
+      // unsaved first job going missing.
+      expect(evening.length, 'outside the working day, and nothing vouches for it').toBe(0);
+      // The day's two real drives are plain, and the evening left nothing.
       expect(rows.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
-      expect(rows.job_time_entries.filter(t => /-held$/.test(t.source)).length).toBe(3);
+      // Three held rows (out, the stop, back) used to ride along with it.
+      expect(rows.job_time_entries.filter(t => /-held$/.test(t.source)).length).toBe(0);
     });
   });
 
@@ -1142,23 +1186,36 @@ test.describe('geo-derive: the day deriver', () => {
         const f = [fix(T(9, 0, 5), spot(A)), fix(T(9, 20, 5), GAS), fix(T(11, 0, 5), GAS), fix(T(11, 10, 5), spot(A))];
         const r = await run(page, base({ tape: t, fixes: f, fences: [A] }));
         // Amended 2026-09-04: this used to expect no leg at all. The two
-        // drives are real for every fence kind EXCEPT his own house, where
-        // there is nothing to say the trip was work; the mileage never is.
+        // drives are real for every fence kind; the mileage never is.
         const house = from === 'home_office';
-        // Rule 14 (2026-09-08): the round trip carries its traced miles now,
-        // flagged so no total reads them; the leg shape is otherwise the same.
+        // AMENDED 2026-09-15 (10.4) for rule 19. The house used to be the one
+        // kind that wrote NOTHING here, because a loop out of your own front
+        // door with nothing saved between is the gym run and the day had
+        // reached no business to say otherwise.
+        //
+        // The owner retired that test by naming its hole: "what if the first
+        // stop of the day isn't a saved address nor is the clock in button
+        // hit, then we have missing rows." A gym trip and a first job at an
+        // address nobody saved ARE the same data, so the only thing that can
+        // separate them is when they happened. This one runs 9:00 to 11:10 on
+        // a working day, so it is written, greyed, earning nothing, with the
+        // Save button on it, and the person says which it was. The gym at 5:25
+        // is still dropped, by the hours rather than by the day's verdict.
+        //
+        // A house loop is `houseLoop`, never `roundTrip`: rule 7 refuses to
+        // call a trip out of your own door a round trip, and that is unchanged.
         expect(r.legs.map(l => [l.from.kind, l.to.kind, !!l.roundTrip, !!l.traced, l.miles > 0]))
-          .toEqual(house ? [] : [[from, from, true, true, true]]);
+          .toEqual([[from, from, !house, true, true]]);
         const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
         // AMENDED 2026-09-13 (10.4) for rule 18: both drives are still
         // written for every fence kind, and every one of them is now HELD.
         // A loop has one real destination, it was never saved, and the fence
         // at the kerb cannot vouch for it by being read twice.
         const drv = rows.job_time_entries.filter(t2 => /^drive/.test(t2.source));
-        expect(drv.length).toBe(house ? 0 : 2);
+        expect(drv.length).toBe(2);
         expect(drv.every(d => d.source === 'drive-held')).toBe(true);
-        // One traced, unclaimed row (rule 14); none at all from the house.
-        expect(rows.td_mileage.map(m => [!!m.addressUnknown, !!m.unsavedVia])).toEqual(house ? [] : [[true, true]]);
+        // One traced, unclaimed row (rule 14), from every kind now.
+        expect(rows.td_mileage.map(m => [!!m.addressUnknown, !!m.unsavedVia])).toEqual([[true, true]]);
       });
     }
   });
@@ -1182,6 +1239,102 @@ test.describe('geo-derive: the day deriver', () => {
   // reverted the same evening. Both of the things that broke it are cases
   // here: one building answering to three region ids, and an enter with no
   // exit. Those are his real ids and his real timestamps.
+  // ── RULE 19: the day learns when this person usually works ───────────────
+  //
+  // Owner 2026-09-15: "Jack's day is 8 am to 5 pm really but sometimes gets off
+  // before that, we know his clock in and clock out behavior so how do we run
+  // this ladder off the times we know he usually works? This could be global."
+  //
+  // The company setting is one number for everybody. His own punches are the
+  // person. These are the real ones, at the top of this file.
+  test.describe('rule 19: the learned working day', () => {
+    const shape = (over) => page.evaluate((i) => {
+      const r = _gdDayShape(i);
+      return { a: r.whA / 60000, b: r.whB / 60000, learned: r.learned, workDay: r.workDay };
+    }, Object.assign({ day: DAY, workHours: null }, over || {}));
+
+    test('his seven days give 6:44am to 6:16pm, trimmed and padded', async () => {
+      const r = await shape({ clockHistory: clocksBefore(DAY) });
+      expect(r.learned).toBe(true);
+      // ins 7:42..7:58, trimmed to 7:44, less an hour. outs 15:00..19:30,
+      // trimmed to 17:16, plus an hour. Wide on purpose: missing a real job
+      // costs money, letting a gym trip through costs a greyed row.
+      expect([r.a, r.b]).toEqual([6 * 60 + 44, 18 * 60 + 16]);
+    });
+
+    test('under five clocked days there is no pattern, so the company stands', async () => {
+      const four = clocksBefore(DAY).slice(0, 4);
+      const r = await shape({ clockHistory: four });
+      expect(r.learned).toBe(false);
+      expect([r.a, r.b]).toEqual([6 * 60, 20 * 60]);
+    });
+
+    test('it replaces the company setting rather than widening it', async () => {
+      // Narrower is the point: he has never started before 7:42, so the
+      // company's 6am says nothing about his morning. Safe because the window
+      // only ever arbitrates a drive that can vouch for neither a second fence
+      // nor a clock.
+      const r = await shape({ clockHistory: clocksBefore(DAY), workHours: { start: '05:00', end: '23:00' } });
+      expect([r.a, r.b]).toEqual([6 * 60 + 44, 18 * 60 + 16]);
+    });
+
+    test('a punch from after the day being derived is not evidence about it', async () => {
+      // A day's rows must not change because of a clock three weeks later.
+      const future = JACK_CLOCKS.map((c, n) => Object.assign({}, c, {
+        day: new Date(Date.parse(DAY + 'T12:00:00Z') + (n + 1) * 86400000).toISOString().slice(0, 10),
+      }));
+      const r = await shape({ clockHistory: future });
+      expect(r.learned).toBe(false);
+    });
+
+    test('one wild punch cannot poison the window', async () => {
+      const wild = clocksBefore(DAY).concat([
+        { day: '2026-01-01', inMin: 3 * 60, outMin: 23 * 60 + 30 },
+      ]);
+      const r = await shape({ clockHistory: wild });
+      // The 3am start is the single most extreme sample and is trimmed off;
+      // 7:42 becomes the new extreme, so the edge moves by two minutes.
+      expect(r.a).toBe(6 * 60 + 42);
+    });
+
+    test('junk history is no history', async () => {
+      const junk = [null, {}, { day: '2026-09-01' },
+        { day: '2026-09-01', inMin: 500, outMin: 400 }, { inMin: 1, outMin: 2 }];
+      for (const h of [null, 'nope', [], junk]) {
+        const r = await shape({ clockHistory: h });
+        expect(r.learned).toBe(false);
+        expect([r.a, r.b]).toEqual([6 * 60, 20 * 60]);
+      }
+    });
+
+    test('the learned window decides a loop the ladder cannot otherwise place', async () => {
+      // 6:30 to 7:45 out of his own door, nothing saved between, no clock.
+      // Inside the company's 6am day and outside his own, and his own wins.
+      const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+      const GYM = { lat: JHOME.lat + 0.03, lng: JHOME.lng };
+      const tape = [mo(T(6, 0), 'onFoot'), mo(T(6, 30), 'driving'), mo(T(6, 45), 'onFoot'),
+        mo(T(7, 30), 'driving'), mo(T(7, 45), 'onFoot')];
+      const fixes = [fix(T(6, 30, 5), JHOME), fix(T(6, 45, 5), GYM), fix(T(7, 0), GYM),
+        fix(T(7, 30, 5), GYM), fix(T(7, 45, 5), JHOME), fix(T(9, 0), JHOME)];
+      const day = (over) => base(Object.assign({ tape, fixes, fences: [JHOME], nowMs: T(10, 0) }, over));
+      // Without his history the company's 6am keeps it, greyed, asking.
+      const bare = await run(page, day({}));
+      expect(bare.legs.map(l => l.held === true)).toEqual([true]);
+      // With it, the day he actually works starts at 6:44 and this is before.
+      const learned = await run(page, day({ clockHistory: clocksBefore(DAY) }));
+      expect(learned.legs).toEqual([]);
+    });
+
+    test('a clock over it still claims it, and so does a second fence', async () => {
+      // Rungs 1 and 2 never ask the hour. A 5am run between two saved places
+      // is work, and so is anything a person clocked for.
+      const tape = [mo(T(4, 30), 'onFoot'), mo(T(5, 0), 'driving'), mo(T(5, 20), 'onFoot')];
+      const fixes = [fix(T(5, 0, 5), SHOP), fix(T(5, 20, 5), DOE), fix(T(6, 0), DOE)];
+      const r = await run(page, base({ tape, fixes, clockHistory: clocksBefore(DAY), nowMs: T(9, 0) }));
+      expect(r.legs.map(l => [l.from.name, l.to.name])).toEqual([['TradeDesk shop', 'John Doe']]);
+    });
+  });
+
   test.describe('rule 15: a closed fence crossing beats a cached fix', () => {
     const reg = (ts, id, enter) => ({ ts, id, enter });
     // His yard, registered three ways at one coordinate: the settings shop,
@@ -1758,12 +1911,18 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.legs.map(l => [l.from.name, l.to.name, hm(l.endTs)])).toEqual([['TradeDesk shop', 'John Doe', '14:20'], ['John Doe', 'TradeDesk shop', '17:10']]);
       expect(r.dwells.map(d => [d.name, hm(d.startTs), hm(d.endTs)])).toEqual([['John Doe', '14:20', '17:00']]);
       // But a fix from after the NEXT drive began is not this arrival: the
-      // 9:20 stop stays unknown, so shop -> unknown -> shop is a round trip.
-      // This fixture's SHOP sits 30 ft from HOME, so it is his house, and a
-      // round trip out of the house writes nothing at all (rule 7 as amended
-      // 2026-09-04 is scoped away from the house).
+      // 9:20 stop stays unknown, so shop -> unknown -> shop is a loop out of
+      // the house (this fixture's SHOP sits 30 ft from HOME).
+      //
+      // AMENDED 2026-09-15 for rule 19: that loop used to write nothing,
+      // because the day had reached no business. It runs 9:00 to 12:10 on a
+      // working day now, which is indistinguishable from a first job at an
+      // address nobody saved, so it is written, held, and asks. The arrival
+      // this test is actually about is unchanged: the 9:20 stop is still
+      // unknown, which is why the leg is a loop at all.
       const r2 = await run(page, base({ tape, fixes: [fix(T(9, 0, 5), SHOP), fix(T(12, 0, 5), DOE), fix(T(12, 10, 5), SHOP), fix(T(12, 30), SHOP)] }));
-      expect(r2.legs).toEqual([]);
+      expect(r2.legs.map(l => [l.from.name, l.to.name, !!l.houseLoop, l.held === true]))
+        .toEqual([['TradeDesk shop', 'TradeDesk shop', true, true]]);
       expect(r2.dwells).toEqual([]);
     });
   });
@@ -1936,10 +2095,15 @@ test.describe('geo-derive: the day deriver', () => {
                     mo(T(7, 30), 'driving'), mo(T(7, 45), 'onFoot')];
       const fixes = [fix(T(6, 0), JFIX), fix(T(6, 30, 5), JFIX), fix(T(6, 45, 5), GYM),
                      fix(T(7, 0), GYM), fix(T(7, 30, 5), GYM), fix(T(7, 45, 5), JFIX), fix(T(9, 0), JFIX)];
-      const r = await run(page, base({ tape, fixes, fences: [JHOME], nowMs: T(10, 0) }));
-      // The gym is not saved, and a round trip out of the HOUSE and back is
-      // not work (rule 7 as amended 2026-09-04 is scoped away from the house
-      // for exactly this day).
+      const r = await run(page, base({ tape, fixes, fences: [JHOME], nowMs: T(10, 0),
+        // AMENDED 2026-09-15 for rule 19. This is his gym run, an hour later
+        // than the real one, and it used to be dropped because the day reached
+        // no business. The owner retired that test ("what if the first stop of
+        // the day isn't a saved address nor is the clock in button hit, then we
+        // have missing rows"), so what drops it now is WHEN: 6:30 to 7:45 is
+        // before the earliest he has ever clocked in. His own punches say so,
+        // and they are the same seven days at the top of this file.
+        clockHistory: clocksBefore(DAY) }));
       expect(r.legs).toEqual([]);
       expect(r.dwells.filter(d => d.kind === 'home_office')).toEqual([]);
     });

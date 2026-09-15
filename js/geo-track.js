@@ -7340,6 +7340,39 @@ function _geoDeriveClocks(dayStart,dayEnd){
       .filter(c=>c.start>0&&c.end>c.start&&c.end>dayStart&&c.start<dayEnd);
   }catch(_e){return [];}
 }
+// Rule 19: this person's own punches, as minutes after their own local
+// midnight, so the deriver can learn when they actually work rather than
+// reading one company-wide setting for everybody (owner 2026-09-15: "we know
+// his clock in and clock out behavior so how do we run this ladder off the
+// times we know he usually works").
+//
+// The business timezone, not the device's: a crew member who drives across a
+// zone line still works his employer's day. Same Intl shape _bizDateStr uses,
+// because a DST day is 23 or 25 hours and a modulo against the clock would be
+// wrong twice a year.
+function _geoClockHistory(){
+  try{
+    if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries)||!_supaUser)return [];
+    const me=String(_supaUser.id);
+    const mine=e=>{const u=e.logged_by_uid;return u?String(u)===me:(typeof _isEmployee==='undefined'||!_isEmployee);};
+    const tz=(typeof S!=='undefined'&&S&&S.bizTz)||'America/Chicago';
+    const fmt=new Intl.DateTimeFormat('en-CA',{timeZone:tz,hour12:false,
+      year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const at=ms=>{
+      const p=fmt.formatToParts(new Date(ms)),g=t=>p.find(x=>x.type===t).value;
+      return {day:g('year')+'-'+g('month')+'-'+g('day'),min:(Number(g('hour'))%24)*60+Number(g('minute'))};
+    };
+    return timeEntries.filter(e=>e&&!e.open&&e.start_time&&e.end_time&&mine(e)).map(e=>{
+      const s=Date.parse(e.start_time),x=Date.parse(e.end_time);
+      if(!(s>0&&x>s))return null;
+      const a=at(s),b=at(x);
+      // A clock that ran past midnight ends "before" it began in minutes of
+      // day. Its OUT says nothing about when this person's day closes, so it
+      // is pushed to the end of its own day and only the IN is learned from.
+      return {day:a.day,inMin:a.min,outMin:b.min>a.min?b.min:24*60};
+    }).filter(Boolean);
+  }catch(_e){return [];}
+}
 // Working hours, per company (Settings > Business). Defaults 6am to 8pm,
 // Monday to Saturday: the window that covers the forgetful contractor for
 // free, so rule 13 only ever asks about the odd-hours visits.
@@ -7916,7 +7949,7 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       tape,fixes,appEvents,regions,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.
-      clocks:_geoDeriveClocks(b.start,b.end),workHours:_geoWorkHours(),
+      clocks:_geoDeriveClocks(b.start,b.end),clockHistory:_geoClockHistory(),workHours:_geoWorkHours(),
     });
     // MISSING EVIDENCE IS NOT AN EMPTY DAY (owner 2026-09-02, 22:33: "my
     // mileage gone for today when I should have four trips"). The tape had
