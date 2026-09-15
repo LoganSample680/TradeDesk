@@ -87,13 +87,29 @@ jobs:
           fi
           echo "✅ Every migration version is unique"
 
+      # ON_ERROR_STOP IS THE WHOLE POINT (2026-09-15). Without it psql prints
+      # ERROR and exits 0, so this step passed on a migration that could not be
+      # applied at all: 20261017 widened geo_fences_for's returns-table without
+      # dropping it first, Postgres refused (42P13, a returns-table column is an
+      # OUT parameter), and the only thing that noticed was the Supabase preview
+      # check after the push. The step claimed "All migrations applied cleanly"
+      # about a database that had none of it.
+      #
+      # pg_cron and pg_net cannot be installed on a bare runner, and that
+      # migration's body is already guarded on the extension existing, so it is
+      # a no-op here either way. It is named explicitly rather than tolerated by
+      # a blanket rule, so a NEW file can never quietly join it.
       - name: Run all migrations against local Postgres
         env:
           PGPASSWORD: testpass
         run: |
           for f in $(ls supabase/migrations/*.sql | sort); do
+            if [ "$(basename "$f")" = "20260901_geo_ping_pg_cron.sql" ]; then
+              echo "⏭ skipping $f (needs pg_cron/pg_net, unavailable on the runner)"
+              continue
+            fi
             echo "▶ applying $f"
-            psql -h localhost -U testuser -d testdb -f "$f" || exit 1
+            psql -h localhost -U testuser -d testdb -v ON_ERROR_STOP=1 -f "$f" || exit 1
           done
           echo "✅ All migrations applied cleanly"
 

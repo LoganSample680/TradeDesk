@@ -18,7 +18,12 @@
 -- Absent everywhere it has not been set, which reads as false and leaves every
 -- existing account deriving exactly as it does now. Everything else in this
 -- function is 20261006 verbatim; a returns-table cannot be widened in place,
--- so the whole body comes along.
+-- so the whole body comes along, and the old one has to be dropped first:
+-- a RETURNS TABLE column is an OUT parameter, and Postgres refuses to change
+-- a function's row type in place (42P13). 20261003 and 20261006 both did the
+-- same thing for the same reason.
+
+drop function if exists geo_fences_for(uuid, date);
 
 create or replace function geo_fences_for(p_contractor uuid, p_day date)
 returns table (
