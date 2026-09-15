@@ -711,7 +711,7 @@ function geoDeriveDay(input) {
               miles: Math.round(miles * 10) / 10, milesFrom: p > 0 ? 'path' : 'straight',
               collapsed: false, stops: 0, roundTrip: false,
               traced: true, unsavedFrom: true, unsavedTo: !toFence,
-              drives: [[j.startTs, j.endTs, autoMs]],
+              drives: [[j.startTs, j.endTs, autoMs, j.id, j.id]],
               path: _gdPath(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax, opts.maxMph),
             });
           }
@@ -753,10 +753,11 @@ function geoDeriveDay(input) {
       chain.autoMs += j.endTs - prevSeg[1];
       prevSeg[1] = j.endTs;
       prevSeg[2] = prevSeg[1] - prevSeg[0];
+      prevSeg[4] = j.id;
       if (chain.stops > 0) { chain.stops -= 1; if (chain.via) chain.via.pop(); }
     } else {
       chain.autoMs += autoMs;
-      chain.drives.push([j.startTs, j.endTs, autoMs]);
+      chain.drives.push([j.startTs, j.endTs, autoMs, j.id, j.id]);
     }
 
     if (!toFence) {
@@ -775,7 +776,7 @@ function geoDeriveDay(input) {
       // the position the whole dwell agrees on, and it is what the Save button
       // writes into a new client record.
       const stopFix = _gdStopFix(fixes, j.endTs, nextStart, opts.maxFixAccM, endFix);
-      if (stopFix) (chain.via = chain.via || []).push({ lat: Number(stopFix.lat), lng: Number(stopFix.lng), ts: j.endTs });
+      if (stopFix) (chain.via = chain.via || []).push({ lat: Number(stopFix.lat), lng: Number(stopFix.lng), ts: j.endTs, key: 'd-' + j.id });
       continue;
     }
 
@@ -1880,7 +1881,44 @@ function _gdDwell(fence, startTs, endTs, journeyId, open) {
 //   job / client / place  -> job_time_entries (source geofence | client | place)
 //   leg                   -> job_time_entries source 'drive' + td_mileage (gps)
 //
-// client_key carries the journey id, so a rebuild upserts onto its own rows.
+// ── A ROW IS KEYED BY ITS JOURNEY, NEVER BY THE STRUCTURE AROUND IT ───────
+// Owner 2026-09-14: "a row's identity should not depend on a guess the app
+// can change its mind about."
+//
+// Every automatic row names ONE journey, and a journey id is minted from the
+// CoreMotion flip (who and when, _gdJourneys). That is a fact off the tape,
+// not a reading of it, so the same flip mints the same id forever:
+//
+//   drive segment   the journey that STARTED it            'j-<uid>-<n>'
+//   stop / dwell    the journey that ENDED there         'd-j-<uid>-<n>'
+//   office          the fence and the window it carved   'o-<place>-<n>'
+//   mileage leg     the chain's first journey (one row per leg, rule 6)
+//
+// WHY THIS, AND NOT THE OLD ':N' / ':sN'. Both of those indexed a row by the
+// deriver's own inference: which chain a drive fell into, and how many stops
+// it had decided were in front of it. Both are revisable, and both revised.
+// Jack's 14 September, from the rows themselves:
+//
+//   14:42 derive   j-987ebc83-mu1925w4:0    drive 12:59:23 -> 13:14:01
+//                  j-987ebc83-mu1925w4:s0   stop  13:14:01 -> 14:22:44
+//                  j-987ebc83-mu1925w4:1    drive 14:22:44 -> 14:42:25
+//   16:16 derive   j-987ebc83-mu1925w4      drive 12:59:23 -> 13:24:58
+//                  d-j-987ebc83-mu1925w4    visit 13:24:58 -> 14:22:44
+//                  j-987ebc83-mu1c1crh      drive 14:22:44 -> 14:42:25
+//
+// Three rows re-keyed for three drives nothing was wrong about. The ':1' and
+// the 'mu1c1crh' rows are the SAME drive, minuted the same, named the same,
+// under two keys; the sweep retired one and the day was right by luck. When
+// the sweep cannot reach one (a `fixed_at` stamp, a derive with no tape) the
+// old key survives as a GHOST, and his 13:14 stop sat on top of both the
+// drive and the visit for the rest of the day.
+//
+// Under this rule both derives key that drive 'j-987ebc83-mu1925w4' and that
+// stop 'd-j-987ebc83-mu1925w4', so the second derive UPDATES the first's
+// rows. The stop and the visit are the same key on purpose: they are the
+// same arrival, and the only difference between them is whether the place
+// was saved yet. Saving the address is what turns one into the other, and it
+// must not turn one row into two.
 /**
  * geoSpanClaim(span, ctx) -> { claim, why }
  *
@@ -2017,7 +2055,15 @@ function geoDeriveRows(result, ids) {
     // here, this app was built to survive a IRS audit"). Time and mileage stop
     // being the same row, which is the whole change.
     const segsRaw = (Array.isArray(l.drives) && l.drives.length) ? l.drives
-      : [[l.startTs, l.endTs, (l.minutes || 0) * 60000]];
+      : [[l.startTs, l.endTs, (l.minutes || 0) * 60000, l.id, l.id]];
+    // A segment entry is [startTs, endTs, autoMs, startJourney, endJourney].
+    // The drive is keyed by the flip that began it and the stop after it by
+    // the flip that ended it, which is the same id the dwell would carry if
+    // that place were saved (see the identity rule at the top of this
+    // section). A single-segment leg's drive key is the leg id, exactly as
+    // it has always been, because the chain's first journey IS that segment.
+    const segKey = sg => String((sg && sg[3]) || l.id);
+    const stopKey = sg => 'd-' + String((sg && sg[4]) || l.id);
     // A MINUTE IS NOT A DRIVE EITHER. The same floor that refuses to write a
     // one-minute stop refuses to write a one-minute drive BETWEEN two stops:
     // his 2 September, 8:17 to 8:18am, with the phone at one coordinate from
@@ -2086,7 +2132,7 @@ function geoDeriveRows(result, ids) {
         // eventually ended up would be the inference this rule exists to
         // avoid.
         dest_place: (i === segs.length - 1) ? (l.to.name || null) : null,
-        client_key: segs.length > 1 ? (l.id + ':' + i) : l.id, source: 'drive' + hs });
+        client_key: segKey(sg), source: 'drive' + hs });
     });
     // EVERY STOP IS A ROW (owner 2026-09-04): "we should be logging every flip
     // to onsite unsaved address and every drive with times in between."
@@ -2121,7 +2167,7 @@ function geoDeriveRows(result, ids) {
       time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
         arrived_at: iso(a), departed_at: iso(b),
         minutes: Math.round((b - a) / 60000),
-        dest_place: null, client_key: l.id + ':s' + i, source: 'unsaved' + hs });
+        dest_place: null, client_key: stopKey(segs[i]), source: 'unsaved' + hs });
     }
     // A round trip writes time but never mileage (rule 7 as amended): both of
     // its endpoints are the same fence, and the place between them was never
@@ -2136,9 +2182,14 @@ function geoDeriveRows(result, ids) {
     }, segs.length > 1 ? {
       // The ends of each drive segment, in order (see segEnds above). Only
       // on a leg that actually split: a single-segment leg's ends ARE
-      // from_name and to_name, and the rail already reads those. N indexes
-      // the same way the ':N' drive rows and ':sN' stop rows do.
+      // from_name and to_name, and the rail already reads those.
       segEnds,
+      // WHICH ROW IS WHICH SEGMENT. The rail row for a segment carries that
+      // segment's own journey id, which no longer says the leg's id out
+      // loud, so the leg says the segments' ids instead: same order as
+      // segEnds, and how a drive row finds the trip it belongs to
+      // (_mileLegSeg, js/mileage.js). One list, read by both screens.
+      segKeys: segs.map(segKey),
     } : {}, l.traced ? {
       // THE ROW IS SHOWN, THE MILES ARE NOT CLAIMED (owner 2026-09-08: "only
       // things with addresses saved should update any totals"). Every total
@@ -2157,7 +2208,11 @@ function geoDeriveRows(result, ids) {
       // on the Time Log rail, and the Save button there needs somewhere to
       // send the lead form. The rail's row is keyed ':sN' against this same
       // leg (see the stop rows above), so N indexes straight into this.
-      viaStops: l.via.map(v => ({ lat: v.lat, lng: v.lng, at: iso(v.ts) })),
+      // `key` is the stop row's own client_key on the Time Log rail, so the
+      // Save button matches on it instead of counting positions: a leg drops
+      // an interior segment too short to be a drive, and a count would then
+      // name the wrong stop.
+      viaStops: l.via.map(v => ({ lat: v.lat, lng: v.lng, at: iso(v.ts), key: v.key || '' })),
     }, l.unsavedVia ? {
       // The MILEAGE row's own Save button and the stamp beside its "Unsaved
       // address": a round trip's two ends are the same fence, so the stop is

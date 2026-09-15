@@ -2276,11 +2276,21 @@ test.describe('geo-derive: the day deriver', () => {
       // The journey's own ends are unchanged, and so are the miles: this adds
       // a fact, it does not move one.
       expect([leg.from_name, leg.to_name]).toEqual(['1200 SW Oakley Ave', '7402 SW 22nd Ct']);
-      // N indexes the same way the ':N' drive rows do, which is what lets the
-      // rail read them without guessing.
+      // OLD: the drive rows were keyed '<legKey>:N' and the rail indexed
+      // segEnds by that N. It was right about the ORDER and wrong about the
+      // identity: N counts the segments the deriver currently believes are in
+      // front of this one, and that belief is revisable (owner 2026-09-14).
+      // NEW: each row carries the id of the journey that started it, and the
+      // leg lists those ids in the same order as segEnds, so the rail still
+      // reads the pair without guessing and the row keeps its name when the
+      // deriver changes its mind about the shape around it.
       const drives = rows.job_time_entries.filter(t => t.source === 'drive')
         .sort((a, b) => Date.parse(a.arrived_at) - Date.parse(b.arrived_at));
-      expect(drives.map(d => d.client_key)).toEqual([0, 1, 2, 3, 4].map(i => leg.legKey + ':' + i));
+      expect(leg.segKeys).toEqual(drives.map(d => d.client_key));
+      expect(leg.segKeys).toHaveLength(leg.segEnds.length);
+      // The first segment IS the leg's own journey; the rest are their own.
+      expect(drives[0].client_key).toBe(leg.legKey);
+      expect(new Set(leg.segKeys).size, 'five journeys, five keys').toBe(5);
       // Only the end that IS the destination carries its name, exactly as
       // dest_place already does on the rows themselves.
       expect(drives.map(d => d.dest_place)).toEqual(
@@ -2299,10 +2309,107 @@ test.describe('geo-derive: the day deriver', () => {
       }, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
       expect(rows.td_mileage).toHaveLength(1);
       expect(rows.td_mileage[0].segEnds).toBeUndefined();
+      expect(rows.td_mileage[0].segKeys).toBeUndefined();
       const drives = rows.job_time_entries.filter(x => x.source === 'drive');
       expect(drives).toHaveLength(1);
-      // No ':N' on a single-segment leg, so nothing to index.
+      // Nothing to index, and the one segment's journey IS the leg's.
       expect(drives[0].client_key).toBe(rows.td_mileage[0].legKey);
+    });
+
+    // ── A ROW'S IDENTITY IS ITS JOURNEY, NOT THE SHAPE AROUND IT ─────────
+    // Owner 2026-09-14, after Jack's 13:14 stop sat on top of both the drive
+    // and the visit for a whole day: "a row's identity should not depend on a
+    // guess the app can change its mind about."
+    //
+    // The guess is the STRUCTURE: whether the deriver thinks this journey is
+    // one of a chain (it wrote '<chain>:N' and '<chain>:sN') or standing on
+    // its own (it wrote '<journey>' and 'd-<journey>'). More fixes arrive, it
+    // revises, and the same physical drive lands under a second key while the
+    // first is left behind. These three tests are that claim, from the same
+    // day in three shapes.
+    test('the same drive keeps its key whether or not the deriver split the journey', async () => {
+      // One tape, two readings. First with the far end saved, so the trip
+      // resolves as one plain leg; then with it unsaved, so the deriver
+      // chains on through a stop and the trip becomes segment 0 of a chain.
+      const t = [mo(T(11, 0), 'onFoot'),
+        mo(T(12, 4), 'automotive'), mo(T(12, 15), 'onFoot'),
+        mo(T(13, 4), 'automotive'), mo(T(13, 40), 'onFoot')];
+      const f = [fix(T(12, 4, 5), { lat: DS.lat, lng: DS.lng }), fix(T(12, 15, 5), C1), fix(T(12, 40), C1),
+        fix(T(13, 4, 5), C1), fix(T(13, 40, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 30), { lat: JH.lat, lng: JH.lng })];
+      const run = async (fences) => page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+        return JSON.parse(JSON.stringify(rows.job_time_entries
+          .map(x => ({ k: x.client_key, s: x.source, a: x.arrived_at.slice(11, 16) }))
+          .sort((a, b) => a.a.localeCompare(b.a))));
+      }, base({ tape: t, fixes: f, fences, nowMs: T(18, 0) }));
+      // C1 saved as a client: two separate legs, the first ending at a fence.
+      const BILL = { id: 'client-1', kind: 'client', name: 'Bill Lorson', clientId: 1, lat: C1.lat, lng: C1.lng };
+      const saved = await run(F.concat([BILL]));
+      // C1 not saved: one chain with a held stop in the middle of it.
+      const unsaved = await run(F);
+      const first = x => x.find(y => y.a === '17:04');
+      expect(first(saved).k, 'the 12:04 drive names its own journey either way')
+        .toBe(first(unsaved).k);
+      // And the standing at C1 is the same arrival under either reading: a
+      // visit when the place is saved, a stop when it is not, one key.
+      const at1215 = x => x.find(y => y.a === '17:15');
+      expect(at1215(saved).k).toBe(at1215(unsaved).k);
+      expect([at1215(saved).s, at1215(unsaved).s]).toEqual(['client', 'unsaved']);
+      expect(at1215(saved).k, 'the arrival is keyed by the drive that ended there')
+        .toBe('d-' + first(saved).k);
+      // And the drive AWAY from that stop, which under the old shape went
+      // from '<chain>:1' to its own bare id the moment the address was
+      // saved, is one row that never moved.
+      const second = x => x.find(y => y.a === '18:04');
+      expect(second(saved).k).toBe(second(unsaved).k);
+      expect(new Set([first(saved).k, second(saved).k, at1215(saved).k]).size).toBe(3);
+    });
+
+    test('a stop and the visit it becomes are the same row, so saving the address never leaves a ghost', async () => {
+      // Jack's 14 September, in miniature. The deriver first reads the stop
+      // as unsaved; the address is saved, which makes it a fence; the next
+      // derive resolves the same arrival to a client. The two writes have to
+      // land on ONE row, or the first is a ghost the sweep cannot reach once
+      // anything stamps it.
+      const t = [mo(T(11, 0), 'onFoot'),
+        mo(T(12, 4), 'automotive'), mo(T(12, 15), 'onFoot'),
+        mo(T(13, 4), 'automotive'), mo(T(13, 40), 'onFoot')];
+      const f = [fix(T(12, 4, 5), { lat: DS.lat, lng: DS.lng }), fix(T(12, 15, 5), C1), fix(T(12, 40), C1),
+        fix(T(13, 4, 5), C1), fix(T(13, 40, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 30), { lat: JH.lat, lng: JH.lng })];
+      const run = async (fences) => page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+        const stop = rows.job_time_entries.find(x => x.source === 'unsaved' || x.source === 'client');
+        const leg = rows.td_mileage.find(m => Array.isArray(m.viaStops) && m.viaStops.length);
+        return JSON.parse(JSON.stringify({ key: stop ? stop.client_key : null,
+          src: stop ? stop.source : null, via: leg ? leg.viaStops : null }));
+      }, base({ tape: t, fixes: f, fences, nowMs: T(18, 0) }));
+      const BILL = { id: 'client-1', kind: 'client', name: 'Bill Lorson', clientId: 1, lat: C1.lat, lng: C1.lng };
+      const before = await run(F);
+      const after = await run(F.concat([BILL]));
+      expect(before.src).toBe('unsaved');
+      expect(after.src).toBe('client');
+      expect(after.key, 'one arrival, one row, before and after the address was saved')
+        .toBe(before.key);
+      // And the Save button on the rail finds that stop by its own key rather
+      // than by counting positions (_mileSaveStopAddress, js/mileage.js).
+      expect(before.via.map(v => v.key)).toEqual([before.key]);
+    });
+
+    test('every automatic key names a journey, and no two rows share one', async () => {
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape, fixes, fences: F, nowMs: T(18, 0) }));
+      const keys = rows.job_time_entries.map(x => x.client_key)
+        .concat(rows.shop_time_entries.map(x => x.client_key));
+      // A drive is 'j-...', an arrival is 'd-j-...', an office window 'o-...'.
+      // Nothing carries a position any more.
+      expect(keys.every(k => /^(d-)?j-|^o-/.test(k)), keys.join(',')).toBe(true);
+      expect(keys.some(k => /:s?\d+$/.test(k)), 'no row is keyed by its place in a list').toBe(false);
+      expect(new Set(keys).size, 'or geo_replace_day would upsert them over each other')
+        .toBe(keys.length);
     });
 
     // ── A stop must be still ────────────────────────────────────────────

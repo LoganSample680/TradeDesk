@@ -377,6 +377,73 @@ test.describe('traced trips', () => {
         }
       });
 
+      // ── THE KEY, NOT THE POSITION (owner 2026-09-14) ──────────────────
+      // A stop row is now keyed by the drive that ended there, because that
+      // is a fact off the tape and its position in a list is not: a leg drops
+      // an interior segment too short to be a drive, and every stop after it
+      // shifts. The leg says which stop is which by naming the key beside
+      // the coordinate (viaStops[].key, js/geo-derive.js).
+      test.describe('a stop keyed by its own drive', () => {
+        const seedKeyed = () => page.evaluate(() => {
+          mileage.push({ id: 'j-a', legKey: 'j-a', gps: true, date: todayKey(),
+            from_name: 'Shop', to_name: 'John Doe', miles: 8.1, mins: 40,
+            startedIso: '2026-09-09T13:00:00.000Z', endedIso: '2026-09-09T13:40:00.000Z',
+            segKeys: ['j-a', 'j-b', 'j-c'],
+            segEnds: [{ from: 'Shop', to: '' }, { from: '', to: '' }, { from: '', to: 'John Doe' }],
+            viaStops: [{ lat: 39.06146, lng: -95.69681, at: '2026-09-09T13:10:00.000Z', key: 'd-j-a' },
+                       { lat: 39.07, lng: -95.68, at: '2026-09-09T13:25:00.000Z', key: 'd-j-b' }] });
+        });
+
+        test('the rail row finds its own stop wherever it sits in the list', async () => {
+          await seed(); await seedKeyed();
+          expect((await save('d-j-b')).pending).toEqual(expect.objectContaining(
+            { legKey: 'j-a', which: 'to', lat: 39.07, lng: -95.68, stopKey: 'd-j-b' }));
+          expect((await save('d-j-a')).pending).toEqual(expect.objectContaining(
+            { lat: 39.06146, lng: -95.69681, stopKey: 'd-j-a' }));
+        });
+
+        test('a key no leg claims answers nothing, and never the wrong stop', async () => {
+          await seed(); await seedKeyed();
+          for (const key of ['d-j-z', 'j-a', 'd-', '']) {
+            expect((await save(key)).ok, String(key)).toBe(false);
+          }
+        });
+
+        test('_mileLegSeg: a drive row names its leg and which segment it is', async () => {
+          await seed(); await seedKeyed();
+          const r = await page.evaluate(() => {
+            const one = k => { const x = _mileLegSeg(k, todayKey()); return x ? [x.leg.id, x.ix, x.split] : null; };
+            return { mid: one('j-b'), last: one('j-c'), first: one('j-a'), none: one('j-zz'), junk: one('') };
+          });
+          // The first segment's key IS the leg's, and it still says split, so
+          // the rail reads segEnds[0] rather than the journey's two ends.
+          expect(r.first).toEqual(['j-a', 0, true]);
+          expect(r.mid).toEqual(['j-a', 1, true]);
+          expect(r.last).toEqual(['j-a', 2, true]);
+          expect([r.none, r.junk]).toEqual([null, null]);
+        });
+
+        test('_mileLegSeg: a leg that never split, and a day too old to re-derive', async () => {
+          await seed();
+          await page.evaluate(() => {
+            mileage.push({ id: 'j-plain', legKey: 'j-plain', gps: true, date: todayKey(),
+              from_name: 'Shop', to_name: 'John Doe', miles: 4, startedIso: '2026-09-09T15:00:00.000Z' });
+            // Written under the old shape and past the seven days of tape, so
+            // nothing will ever re-key it. It still has to draw.
+            mileage.push({ id: 'j-old2', legKey: 'j-old2', gps: true, date: todayKey(),
+              from_name: 'Shop', to_name: 'John Doe', miles: 6, startedIso: '2026-09-09T16:00:00.000Z',
+              segEnds: [{ from: 'Shop', to: '' }, { from: '', to: 'John Doe' }] });
+          });
+          const r = await page.evaluate(() => {
+            const one = k => { const x = _mileLegSeg(k, todayKey()); return x ? [x.leg.id, x.ix, x.split] : null; };
+            return { plain: one('j-plain'), legacy: one('j-old2:1'), legacy0: one('j-old2:0') };
+          });
+          expect(r.plain, 'one segment, so no index and no split').toEqual(['j-plain', 0, false]);
+          expect(r.legacy).toEqual(['j-old2', 1, true]);
+          expect(r.legacy0).toEqual(['j-old2', 0, true]);
+        });
+      });
+
       test('both doors end in the same place: one pending target, one form', async () => {
         await seed(); await seedVia();
         const r = await page.evaluate(async () => {
@@ -395,14 +462,17 @@ test.describe('traced trips', () => {
           return out;
         });
         // OLD: the two doors handed over identical targets. NEW (2026-09-10):
-        // the rail door adds `stop`, because a rail row IS one stop of a leg
+        // the rail door adds the stop, because a rail row IS one stop of a leg
         // and the too-old-to-rebuild path has to name that row and no other.
+        // It carries the row's own KEY rather than its position (2026-09-14):
+        // a position is a count of the segments in front of it, which is the
+        // deriver's own inference and moves when it revises one.
         // Everything else the two doors carry still has to match exactly, or
         // they have stopped being one behaviour.
-        const shared = k => Object.keys(k).filter(x => x !== 'stop').sort();
+        const shared = k => Object.keys(k).filter(x => x !== 'stopKey').sort();
         expect(shared(r.viaMileage)).toEqual(shared(r.viaRail));
-        expect(r.viaMileage.stop, 'the mileage log names an END, so it names no stop').toBe(undefined);
-        expect(r.viaRail.stop, 'the rail names the stop that was pressed').toBe(0);
+        expect(r.viaMileage.stopKey, 'the mileage log names an END, so it names no stop').toBe(undefined);
+        expect(r.viaRail.stopKey, 'the rail names the row that was pressed').toBe('j-chain:s0');
         expect([r.formA, r.formB], 'the same lead form opens either way').toEqual([true, true]);
       });
     });
@@ -601,7 +671,7 @@ test.describe('traced trips', () => {
             addressUnknown: true, unsavedVia: true, viaCoord: { lat: 39.02, lng: -95.72 },
             viaStops: [{ lat: 39.02, lng: -95.72, at: '2026-09-08T19:00:00.000Z' }],
             startedIso: '2026-09-08T18:40:00.000Z', endedIso: '2026-09-08T19:20:00.000Z' });
-          _mileAddressPending = { legKey: 'j-loop', day: d, which: 'to', lat: 39.02, lng: -95.72, stop: 0 };
+          _mileAddressPending = { legKey: 'j-loop', day: d, which: 'to', lat: 39.02, lng: -95.72, stopKey: 'j-loop:s0' };
           await _mileAddressSaved({ id: 11, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
           const row = mileage.find(m => m.id === 'j-loop');
           return { from: row.from, to: row.to, via: row.via_addr, viaName: row.via_name,
@@ -626,19 +696,29 @@ test.describe('traced trips', () => {
             f.then = (res) => { sent.push({ table: f._t, update: f._u, where: f._w }); return res({ error: null }); };
             return f; } }) };
           window._supaUser = { id: 'emp-1' };
-          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7, stop: 2 };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7, stopKey: 'j-traced:s2' };
           await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
           return sent;
         }, day);
         expect(r.length, 'one write, to the time row').toBe(1);
         expect(r[0].table).toBe('job_time_entries');
-        expect(r[0].where.client_key, 'stop 2 of that leg, not the leg and not stop 0')
+        expect(r[0].where.client_key, 'the row that was pressed, written back under its own key')
           .toBe('j-traced:s2');
         expect(r[0].where.employee_user_id).toBe('emp-1');
         expect(r[0].update.dest_place, 'the client\'s name, the way a resolved dwell carries it')
           .toBe('Ace Hardware');
         expect(r[0].update.source, 'answered as work, so it leaves the unpaid bucket').toBe('client');
-        expect(typeof r[0].update.fixed_at, 'and stamped as a person\'s answer').toBe('string');
+        // OLD, and it was right at the time: the stamp was the only thing that
+        // kept this name through the next rebuild, because a rebuild re-keyed
+        // the row and the sweep would otherwise have retired it.
+        // NEW (owner 2026-09-14): the key is stable, so the row this names is
+        // the row the deriver rewrites. A stamp would now do real harm, twice
+        // over: geo_replace_day reads a stamped row's own span back over the
+        // derive, freezing the guessed times forever, and the sweep cannot
+        // retire a stamped row that DOES go stale. Saving an address creates a
+        // client; it does not correct a row, and fixed_at means a person
+        // corrected this row.
+        expect(r[0].update.fixed_at, 'not a hand correction, so not stamped as one').toBe(undefined);
       });
 
       test('no stop was pressed, so no time row is touched', async () => {

@@ -5163,6 +5163,33 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(first).not.toContain('→');
       expect(first).toContain('Destination not saved');
     });
+
+    // ── AND THE SEGMENT IS NAMED BY ITS OWN JOURNEY (owner 2026-09-14) ────
+    // ':0' and ':1' counted the segments in front of this one, which is the
+    // deriver's own reading of the day and moves when it revises one. Each
+    // drive row carries the id of the journey that started it now, and the
+    // leg lists them in segEnds order as segKeys. The rail reads the pair
+    // through _mileLegSeg (js/mileage.js), so both screens agree by
+    // construction rather than by both remembering the same trick.
+    const KEYED = Object.assign({}, LEG, { segKeys: ['j-mu1d7p2e', 'j-mu1ffssg'] });
+
+    test('each half reads its own ends when the rows are keyed by journey', async () => {
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e' }), [KEYED]);
+      const second = await render(DRIVE({ clientKey: 'j-mu1ffssg', clientName: 'Bill Lorson',
+        destUnsaved: false, rawId: 'srv-2' }), [KEYED]);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+      expect(second).toContain('Unsaved address → Bill Lorson');
+      // The first segment's key IS the leg's key, and it must still read as a
+      // SEGMENT: this is the row that would otherwise borrow the journey's
+      // two ends and claim the whole trip.
+      expect(first).not.toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('a drive belonging to no leg on the day says only what it knows', async () => {
+      const orphan = await render(DRIVE({ clientKey: 'j-nothing' }), [KEYED]);
+      expect(orphan).not.toContain('→');
+      expect(orphan).toContain('Destination not saved');
+    });
   });
 
   test.describe('a held drive is still a drive, and still earns nothing', () => {
