@@ -257,7 +257,14 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   // Central maths lives here rather than there on purpose: a DST day is 23 or
   // 25 hours long and a modulo against the clock would be wrong twice a year.
   const clockHistory = [];
-  const minOfDay = (ms) => Math.round(((centralParts(ms) % 86400_000) + 86400_000) % 86400_000 / 60000);
+  // centralOffset shifts an instant to its Central wall clock, so the
+  // remainder against a day IS the minutes since local midnight. This line
+  // called a `centralParts` that never existed in this module and threw a
+  // ReferenceError on every server derive (owner 2026-09-15, from the ops
+  // rebuilder). Nothing here executes in a browser, so no offline shard could
+  // have caught it; scripts/ci/derive-day-smoke.mjs now runs it for real.
+  const centralMs = (ms) => ms + centralOffset(ms);
+  const minOfDay = (ms) => Math.round(((centralMs(ms) % 86400_000) + 86400_000) % 86400_000 / 60000);
   for (const r of (Array.isArray(clockRes?.data) ? clockRes.data : [])) {
     const d = r?.data || {};
     if (d.open || !d.start_time || !d.end_time) continue;

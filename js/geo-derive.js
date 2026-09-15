@@ -236,7 +236,25 @@ function geoFenceAt(pt, fences, radiusFt) {
 // Overlapping spans rank the way geoFenceAt ranks overlapping circles, so one
 // precedence governs the file; on a tie the span that STARTED later wins,
 // because entering B while still inside A is standing in B.
-function _gdRegionSpans(regions, fences, radiusFt) {
+// ── RULE 21: THE CROSSING KNOWS WHEN HE ARRIVED (owner 2026-09-15) ────────
+// "I shouldn't be babysitting his day and telling you what happened."
+//
+// His 15 September: the phone crossed his mother's fence at 07:59:25 and
+// CoreMotion did not drop out of automotive until 08:30:53, thirty-one minutes
+// later, because the app was terminated at 08:01 and nothing sampled a fix in
+// between. A journey ends on that flip, so a five-minute drive was written as
+// thirty-six and her house did not start until 08:30. Every minute of it was
+// on the wrong row.
+//
+// The OS was watching the fence the whole time and said so. When a CLOSED
+// crossing pair opens inside a journey and is still open when the tape finally
+// flips, he was already there: the journey ends at the crossing. It is the
+// same evidence rule 15 already trusts for WHERE, used for WHEN, and it is
+// only ever allowed to make a drive SHORTER, never to invent one.
+//
+// A drive that passes THROUGH a fence is untouched, because its crossing
+// closes before the journey does.
+function _gdRegionSpanList(regions, fences, radiusFt) {
   const byId = new Map();
   (Array.isArray(fences) ? fences : []).forEach(f => { if (f && f.id != null) byId.set(String(f.id), f); });
   const rows = (Array.isArray(regions) ? regions : [])
@@ -255,6 +273,10 @@ function _gdRegionSpans(regions, fences, radiusFt) {
     if (f && r.ts > from) spans.push({ from, to: r.ts, f });
   }
   // Whatever is left in `open` never closed, and is dropped. See 2 above.
+  return spans;
+}
+function _gdRegionSpans(regions, fences, radiusFt) {
+  const spans = _gdRegionSpanList(regions, fences, radiusFt);
   if (!spans.length) return () => null;
   return (ts) => {
     if (typeof ts !== 'number') return null;
@@ -267,6 +289,23 @@ function _gdRegionSpans(regions, fences, radiusFt) {
     }
     return best;
   };
+}
+
+// Rule 21, applied to the journey list before anything reads it, so the leg
+// and the dwell after it move together: one boundary, not two.
+function _gdArrivalTrim(journeys, spans) {
+  if (!Array.isArray(journeys) || !Array.isArray(spans) || !spans.length) return journeys;
+  return journeys.map((j) => {
+    if (!j || typeof j.endTs !== 'number' || typeof j.startTs !== 'number') return j;
+    let arrival = null;
+    for (const s of spans) {
+      // Entered after this drive began, before the tape said it ended, and
+      // still inside at that moment: he was parked in there the whole time.
+      if (!(s.from > j.startTs && s.from < j.endTs && s.to >= j.endTs)) continue;
+      if (arrival == null || s.from < arrival) arrival = s.from;
+    }
+    return arrival == null ? j : Object.assign({}, j, { endTs: arrival });
+  });
 }
 
 function _gdSameFence(a, b) {
@@ -668,14 +707,18 @@ function geoDeriveDay(input) {
   if (!(dayStart > 0 && dayEnd > dayStart)) return empty;
   const directMiles = typeof inp.directMiles === 'function' ? inp.directMiles : null;
 
-  const journeys = _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes);
+  // Rule 15 and rule 21 read the same crossings: one says which fence an
+  // instant belongs to, the other says when a drive into it actually ended.
+  const regionSpans = _gdRegionSpanList(inp.regions, fences, opts.radiusFt);
+  const journeys = _gdArrivalTrim(
+    _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes), regionSpans);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;
   // Rule 15 (above): where a CLOSED crossing pair covers the instant, the
   // boundary the OS watched beats the position this app happened to sample.
   // Where none does, nothing changes: fenceAt IS fenceOf.
-  const inside = _gdRegionSpans(inp.regions, fences, opts.radiusFt);
+  const inside = _gdRegionSpans(inp.regions, fences, opts.radiusFt);   // same crossings, read for WHERE
   const fenceAt = (fix, ts) => inside(ts) || fenceOf(fix);
   // The chain: the first saved origin and the automotive minutes since it.
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
