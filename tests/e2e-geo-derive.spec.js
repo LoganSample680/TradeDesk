@@ -1249,6 +1249,92 @@ test.describe('geo-derive: the day deriver', () => {
   // The IRS commuting rule, which is why it is global: home to your regular
   // workplace is never claimable, everything from arrival onward is. Him not
   // owning the yard he reports to is incidental.
+  // ── RULE 21: THE CROSSING KNOWS WHEN HE ARRIVED ─────────────────────────
+  //
+  // Owner 2026-09-15: "I shouldn't be babysitting his day and telling you what
+  // happened." He had to read Life360 to find out that his crew member reached
+  // his mother's at 7:55 while the app said 8:30.
+  //
+  // His real 15 September, timestamp for timestamp off his own phone:
+  //
+  //   07:54:54  automotive          he pulls out of his drive
+  //   07:55:50  regionExit home
+  //   07:59:25  regionEnter Laurie  he is THERE
+  //   08:01:39  app terminated      and nothing samples a fix for 14 minutes
+  //   08:30:53  walking             CoreMotion finally lets go of automotive
+  //   09:08:40  regionExit Laurie
+  //
+  // A journey ends on the flip, so the drive was written 07:54 to 08:30 and
+  // her house did not start until 08:30. Thirty-one minutes on the wrong row,
+  // with the OS holding the answer the whole time.
+  test.describe('rule 21: the arrival is the crossing, not the flip', () => {
+    const JH = { id: 'p-jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const MOM = { id: 'client-mom', kind: 'client', name: 'Laurie Schonfeldt', clientId: 7, lat: 39.0104968, lng: -95.7790924 };
+    const F21 = [JH, MOM];
+    // Only two fixes all morning, which is the point: the app died at 08:01.
+    const fixes21 = [fix(T(7, 54, 54), JH), fix(T(9, 7, 18), MOM)];
+    const tape21 = [mo(T(7, 54, 38), 'still'), mo(T(7, 54, 54), 'automotive'),
+      mo(T(8, 30, 53), 'walking'), mo(T(9, 7, 18), 'automotive'), mo(T(9, 16, 29), 'onFoot')];
+    const regions21 = [
+      { ts: T(7, 55, 50), id: 'p-jh', enter: false },
+      { ts: T(7, 59, 25), id: 'client-mom', enter: true },
+      { ts: T(9, 8, 40), id: 'client-mom', enter: false },
+    ];
+    const run21 = (over) => run(page, base(Object.assign({
+      tape: tape21, fixes: fixes21, fences: F21, regions: regions21, nowMs: T(14, 0),
+    }, over)));
+
+    test('his morning: the drive ends at 07:59, where he actually pulled up', async () => {
+      const r = await run21();
+      const leg = r.legs[0];
+      expect(hm(leg.startTs)).toBe(hm(T(7, 54, 54)));
+      expect(hm(leg.endTs), 'the crossing, not the 08:30 flip').toBe(hm(T(7, 59, 25)));
+    });
+
+    test('and the time it took off the drive lands on the stop, not nowhere', async () => {
+      const r = await run21();
+      const at = r.dwells.find(d => d.name === 'Laurie Schonfeldt');
+      expect(at, 'he was at his mother\'s').toBeTruthy();
+      expect(hm(at.startTs), 'from the moment he arrived').toBe(hm(T(7, 59, 25)));
+    });
+
+    test('a drive that only passes THROUGH a fence is untouched', async () => {
+      // Same morning, except he drives past her house rather than stopping:
+      // the crossing closes before the tape does, so there is nothing to trim.
+      const r = await run21({ regions: [
+        { ts: T(7, 55, 50), id: 'p-jh', enter: false },
+        { ts: T(7, 59, 25), id: 'client-mom', enter: true },
+        { ts: T(8, 0, 10), id: 'client-mom', enter: false },
+      ] });
+      expect(hm(r.legs[0].endTs), 'the flip still ends it').toBe(hm(T(8, 30, 53)));
+    });
+
+    test('it can only ever make a drive shorter, never longer or backwards', async () => {
+      // A crossing that CLOSED before the drive began cannot be its arrival.
+      // (An open-at-the-time one would mean he never left, which rule 7 reads
+      // as a round trip, not as a drive with a bad end.)
+      const r = await run21({ regions: [
+        { ts: T(6, 0, 0), id: 'client-mom', enter: true },
+        { ts: T(6, 30, 0), id: 'client-mom', enter: false },
+      ] });
+      expect(hm(r.legs[0].endTs)).toBe(hm(T(8, 30, 53)));
+      expect(r.legs[0].endTs).toBeGreaterThan(r.legs[0].startTs);
+    });
+
+    test('no crossings at all is exactly the old behaviour', async () => {
+      const r = await run21({ regions: [] });
+      expect(hm(r.legs[0].endTs)).toBe(hm(T(8, 30, 53)));
+    });
+
+    test('junk crossings change nothing', async () => {
+      for (const junk of [null, undefined, [], [null], [{ ts: 'x', id: 'client-mom', enter: true }],
+                          [{ ts: T(7, 59), id: 'nobody', enter: true }, { ts: T(9, 8), id: 'nobody', enter: false }]]) {
+        const r = await run21({ regions: junk });
+        expect(hm(r.legs[0].endTs), String(junk && junk.length)).toBe(hm(T(8, 30, 53)));
+      }
+    });
+  });
+
   test.describe('rule 20: the commute', () => {
     const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
     // No flag on it. The shop IS the place you report to (owner 2026-09-15:
@@ -1495,8 +1581,12 @@ test.describe('geo-derive: the day deriver', () => {
 
     test("his 4:01pm: the crossing names the stop four cached fixes put 1,279 ft away", async () => {
       const r = await run(page, day({ regions: [reg(T(15, 58), YARD2.id, true), reg(T(16, 36), YARD2.id, false)] }));
+      // AMENDED 2026-09-15 for rule 21. The dwell used to start at 16:01, the
+      // tape's flip out of automotive. The crossing fired at 15:58 and is the
+      // moment he actually pulled in, so the drive ends there and the stop
+      // starts there. Three minutes, on the right row now.
       expect(r.dwells.map(d => [d.kind, d.name, hm(d.startTs), hm(d.endTs)]))
-        .toEqual([['shop', 'JS Solutions shop', hm(T(16, 1)), hm(T(16, 35))]]);
+        .toEqual([['shop', 'JS Solutions shop', hm(T(15, 58)), hm(T(16, 35))]]);
     });
 
     test('without the crossing it is the bug he reported: nothing names the stop', async () => {
@@ -1528,8 +1618,9 @@ test.describe('geo-derive: the day deriver', () => {
       // Nor does it reach forward past a later, real pair for the same place.
       const both = await run(page, day({ regions: [reg(T(7, 43), YARD.id, true),
         reg(T(15, 58), YARD2.id, true), reg(T(16, 36), YARD2.id, false)] }));
+      // Rule 21 again: the real pair's ENTER is the arrival (see above).
       expect(both.dwells.map(d => [hm(d.startTs), hm(d.endTs)]))
-        .toEqual([[hm(T(16, 1)), hm(T(16, 35))]]);
+        .toEqual([[hm(T(15, 58)), hm(T(16, 35))]]);
     });
 
     test('an exit with no enter is nothing either', async () => {
