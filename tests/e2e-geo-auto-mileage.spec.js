@@ -2967,7 +2967,7 @@ test.describe('Automatic mileage from drive legs', () => {
           window.__realOnScreen = _geoAppOnScreen; _geoAppOnScreen = () => false;   // phone in the pocket
           await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 } });
           await new Promise(r2 => setTimeout(r2, 10));
-          return { parkedCalls: parked.length, parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id, watcher: _geoNativeWatcherId };
+          return { parkedCalls: parked.length, parkOn: _geoParkModeOn, removedIds: removed.map(o => o && o.id), watcher: _geoNativeWatcherId };
         } finally {
           if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
           window.Capacitor = realCap; _supaUser = realUser;
@@ -2980,7 +2980,11 @@ test.describe('Automatic mileage from drive legs', () => {
       }, { shop: SHOP });
       expect(r.parkedCalls, 'the over-threshold ping parks on the spot').toBe(1);
       expect(r.parkOn).toBe(true);
-      expect(r.removedId).toBe('w-1');
+      // Every known id, not only the one this JS remembers (2026-09-15). The
+      // remembered id used to be the whole release, so an id lost to a reload
+      // ran the receiver all day; park now reads the persisted list too, which
+      // is why this asserts membership rather than the first one off the rank.
+      expect(r.removedIds).toContain('w-1');
       expect(r.watcher).toBe(null);
     });
 
@@ -3269,7 +3273,7 @@ test.describe('Automatic mileage from drive legs', () => {
           return {
             parkedCalls: parked.length,
             region: parked[0] && parked[0].regions && parked[0].regions[0],
-            parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id,
+            parkOn: _geoParkModeOn, removedIds: removed.map(o => o && o.id),
           };
         } finally {
           if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
@@ -3283,7 +3287,11 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.parkedCalls, 'the over-dwell stop parks on the spot').toBe(1);
       expect(r.region && r.region.lat).toBeCloseTo(ROAD.lat, 4);
       expect(r.parkOn).toBe(true);
-      expect(r.removedId).toBe('w-1');
+      // Every known id, not only the one this JS remembers (2026-09-15). The
+      // remembered id used to be the whole release, so an id lost to a reload
+      // ran the receiver all day; park now reads the persisted list too, which
+      // is why this asserts membership rather than the first one off the rank.
+      expect(r.removedIds).toContain('w-1');
     });
 
     // Owner report (2026-08-09, third sighting): "I walk everywhere with my
@@ -3338,7 +3346,7 @@ test.describe('Automatic mileage from drive legs', () => {
           return {
             parkedCalls: parked.length,
             region: parked[0] && parked[0].regions && parked[0].regions[0],
-            parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id,
+            parkOn: _geoParkModeOn, removedIds: removed.map(o => o && o.id),
           };
         } finally {
           if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
@@ -3354,7 +3362,11 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.region && r.region.lat, 'parked where they are strolling').toBeCloseTo(ROAD.lat, 2);
       expect(r.region.radius, 'a foot park gets the wider region so a stroll stays inside it').toBeGreaterThanOrEqual(250);
       expect(r.parkOn).toBe(true);
-      expect(r.removedId).toBe('w-1');
+      // Every known id, not only the one this JS remembers (2026-09-15). The
+      // remembered id used to be the whole release, so an id lost to a reload
+      // ran the receiver all day; park now reads the persisted list too, which
+      // is why this asserts membership rather than the first one off the rank.
+      expect(r.removedIds).toContain('w-1');
     });
 
     test('driving speed holds the park off and kills the countdown', async () => {
@@ -3451,6 +3463,127 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.liveId).toBe('w-new');
       expect(r.removedLive, 'stop removes the live watcher too').toBe(true);
       expect(r.storeAfterStop, 'nothing persisted once tracking stops').toEqual([]);
+    });
+
+    // ── THE ARROW THAT STAYED ON ALL DAY (owner 2026-09-15) ──────────────
+    // "Why does my Dynamic Island show the blue arrow all day today." The
+    // radio ledger agreed: js-watcher opened at 06:45:42 at best accuracy and
+    // was still open six hours later, and the night before ran 676 minutes the
+    // same way. The release only ever removed the id held in JS memory, and a
+    // WebView reload throws that away while the watcher itself lives natively.
+    // Three doors, all of them now the same door.
+    test('park releases a watcher this JS has forgotten, because the list remembers it', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realOnScreen = _geoAppOnScreen;
+        const removed = [], parked = [];
+        try {
+          _geoAppOnScreen = () => false;   // in the pocket: park for real, not deferred
+          localStorage.setItem('td_geo_watcher_ids', JSON.stringify(['ghost-1']));
+          _geoNativeWatcherId = null; _geoNativeStarting = true;   // in flight, or reloaded
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          _geoLastFenceLoc = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              removeWatcher: (o) => { removed.push(o.id); return Promise.resolve(); },
+            } : n === 'TdGeo' ? {
+              startParked: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              startEvents: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              stopAll: () => Promise.resolve(),
+            } : null,
+          };
+          _geoEnterParkMode({ lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' });
+          await new Promise(r2 => setTimeout(r2, 30));
+          return { removed, parkedCalls: parked.length,
+                   store: JSON.parse(localStorage.getItem('td_geo_watcher_ids') || '[]') };
+        } finally {
+          _geoAppOnScreen = realOnScreen;
+          window.Capacitor = realCap;
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoLastFenceLoc = null;
+        }
+      }, { shop: SHOP });
+      expect(r.parkedCalls, 'the park itself still arms').toBe(1);
+      expect(r.removed, 'the forgotten watcher is killed anyway').toContain('ghost-1');
+      expect(r.store, 'and nothing is left persisted to leak into tomorrow').toEqual([]);
+    });
+
+    // The same hole from the other side: a start that resolves AFTER the park
+    // brings the receiver up into a parked app, where nothing was ever going
+    // to come back for it. Whoever arrives second releases it.
+    test('a watcher that lands after the park is dropped on arrival', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const removed = [];
+        let resolveAdd;
+        try {
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              addWatcher: () => new Promise((res) => { resolveAdd = res; }),
+              removeWatcher: (o) => { removed.push(o.id); return Promise.resolve(); },
+            } : n === 'TdGeo' ? { addListener: () => {}, stopAll: () => Promise.resolve(),
+                                  drainBuffer: () => Promise.resolve({ fixes: [] }) } : null,
+          };
+          startGeoTracking();
+          await new Promise(r2 => setTimeout(r2, 10));
+          _geoParkModeOn = true;              // the park happened while it was in flight
+          resolveAdd('w-late');
+          await new Promise(r2 => setTimeout(r2, 30));
+          return { removed, live: _geoNativeWatcherId,
+                   store: JSON.parse(localStorage.getItem('td_geo_watcher_ids') || '[]') };
+        } finally {
+          window.Capacitor = realCap;
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+        }
+      });
+      expect(r.removed, 'it never gets to run into a parked app').toContain('w-late');
+      expect(r.live).toBe(null);
+      expect(r.store).toEqual([]);
+    });
+
+    // And the third: a reload that lands parked with the screen off never
+    // reaches startGeoTracking's sweep, which is the only other reader.
+    test('a reload while parked and hidden sweeps what the old JS left running', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor, realOnScreen = _geoAppOnScreen;
+        const removed = [];
+        try {
+          localStorage.setItem('td_geo_watcher_ids', JSON.stringify(['ghost-a', 'ghost-b']));
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = true; window._geoTdBound = true;
+          _geoAppOnScreen = () => false;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              addWatcher: () => Promise.resolve('never'),
+              removeWatcher: (o) => { removed.push(o.id); return Promise.resolve(); },
+            } : n === 'TdGeo' ? { addListener: () => {}, stopAll: () => Promise.resolve(),
+                                  drainBuffer: () => Promise.resolve({ fixes: [] }) } : null,
+          };
+          startGeoTracking();
+          await new Promise(r2 => setTimeout(r2, 20));
+          return { removed, stillParked: _geoParkModeOn, live: _geoNativeWatcherId,
+                   store: JSON.parse(localStorage.getItem('td_geo_watcher_ids') || '[]') };
+        } finally {
+          _geoAppOnScreen = realOnScreen;
+          window.Capacitor = realCap;
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+        }
+      });
+      expect(r.removed.sort(), 'both orphans die').toEqual(['ghost-a', 'ghost-b']);
+      expect(r.stillParked, 'and it stays parked: no watcher is started here').toBe(true);
+      expect(r.live).toBe(null);
+      expect(r.store).toEqual([]);
     });
 
     test('in a plain browser park mode does not exist', async () => {

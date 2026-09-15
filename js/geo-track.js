@@ -4725,7 +4725,13 @@ function _geoEnterParkMode(spot){
   // Only duty-cycle a watcher that is actually running, and only when we know
   // where we are parked: a fence, or (owner report 2026-08-09, arrow still on
   // after 4 minutes parked outside every fence) the anonymous STOP anchor.
-  if(_geoNativeWatcherId==null&&!_geoNativeStarting){_geoParkNote('park-skip','no watcher');return;}
+  if(_geoNativeWatcherId==null&&!_geoNativeStarting){
+    // Nothing in memory is not the same as nothing running: this is precisely
+    // the state a reload leaves behind, and the persisted list is what knows.
+    const orphans=_geoDropWatchers('park-skip orphan');
+    if(orphans)_geoParkNote('park-drop',orphans+' orphaned');
+    _geoParkNote('park-skip','no watcher');return;
+  }
   const _at=spot||_geoLastFenceLoc;
   if(!_at){_geoParkNote('park-skip','no park spot');return;}
   // LAST CHANCE BEFORE THE GPS GOES DARK. Parking cuts the fix stream, and
@@ -4783,14 +4789,12 @@ function _geoEnterParkMode(spot){
       // holds the low-power session and fires the tick. ttl self-stops a
       // heartbeat nobody turned off (phone left at the shop over a weekend).
       _geoHeartbeatSync(_at);
-      if(_geoNativeWatcherId!=null){
-        const BG=_geoNativePlugin();
-        try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
-        _geoForgetWatcher(_geoNativeWatcherId);
-        _geoNativeWatcherId=null;
-        if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
-        _geoRadioNote('js-watcher',false,_armReason);
-      }
+      // EVERY watcher, not the one this JS happens to remember. Park is the
+      // moment the precise receiver must go dark, and the id in memory is the
+      // least durable record we have of it (owner 2026-09-15, arrow lit from
+      // 06:45 to gone-6pm: the ledger's js-watcher session opened at 06:45:42
+      // and never closed, and the night before ran 676 minutes the same way).
+      _geoDropWatchers(_armReason);
     },(err)=>{
       // A failed attempt must never die silently (it did, and the arrow sat
       // there all evening): journal the reason and retry on the countdown.
@@ -5902,6 +5906,29 @@ function _geoForgetWatcher(id){
     localStorage.setItem('td_geo_watcher_ids',JSON.stringify(ids));
   }catch(_e){}
 }
+// THE RELEASE, and there is exactly one of it (owner 2026-09-15: "why does my
+// Dynamic Island show the blue arrow all day"). It did, for 368 minutes and
+// counting, because the precise watcher was only ever released through the id
+// held in JS memory, and memory is the first thing a WebView reload throws
+// away. The persisted list already existed for the sweep; this makes it the
+// thing every release reads, so an id JS has forgotten is still an id we can
+// turn off. Returns how many were actually dropped.
+function _geoDropWatchers(reason){
+  const BG=_geoNativePlugin();
+  let ids=[];
+  try{ids=JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[];}catch(_e){}
+  if(!Array.isArray(ids))ids=[];
+  if(_geoNativeWatcherId!=null&&ids.indexOf(_geoNativeWatcherId)<0)ids.push(_geoNativeWatcherId);
+  ids.forEach((id)=>{try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id});}catch(_e){}});
+  try{localStorage.setItem('td_geo_watcher_ids','[]');}catch(_e){}
+  const had=ids.length>0;
+  _geoNativeWatcherId=null;
+  if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
+  // The ledger row is what the radio DID, so it is written only when there was
+  // something to turn off. An OFF with no ON would be a lie on it.
+  if(had)_geoRadioNote('js-watcher',false,reason);
+  return ids.length;
+}
 function _geoStaleWatcherSweep(BG){
   let ids=[];
   try{ids=JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[];}catch(_e){}
@@ -5924,6 +5951,12 @@ function startGeoTracking(){
   // relaunch, a reload behind the lock screen) stays parked on the fences.
   if(_geoParkModeOn){
     if(_geoAppOnScreen()){_geoExitParkMode();return;}
+    // A reload while parked lands here with empty memory. Anything the old
+    // JS left running is in the list, and nothing else will ever come back
+    // for it: startGeoTracking's sweep is the only other reader and this is
+    // the branch that never reaches it.
+    const orphans=_geoDropWatchers('reload while parked');
+    if(orphans)_geoParkNote('start-drop',orphans+' orphaned');
     _geoParkNote('start-skip','parked, app hidden');
     return;
   }
@@ -5964,6 +5997,11 @@ function startGeoTracking(){
       })).then(id=>{
         _geoNativeStarting=false;_geoNativeWatcherId=id||null;
         _geoRememberWatcher(_geoNativeWatcherId);
+        // addWatcher is async and a park can land while it is in flight: the
+        // park's own release runs before this id exists, so it releases
+        // nothing and the receiver comes up INTO a parked app and stays up.
+        // Whoever arrives second does the work.
+        if(_geoParkModeOn){_geoDropWatchers('park: started while parked');return;}
         // The live engine owns the radio from here; the clock that measures
         // its cost starts with it (js/geo-shadow.js).
         if(typeof _shadowLiveGpsStart==='function')_shadowLiveGpsStart();
@@ -6018,14 +6056,7 @@ function stopGeoTracking(){
   _geoDriveWindowClose('tracking-off');
   _geoTapePollStop();
   {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll({reason:'tracking off'});}catch(_e){}}
-  if(_geoNativeWatcherId!=null){
-    const BG=_geoNativePlugin();
-    try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
-    _geoForgetWatcher(_geoNativeWatcherId);
-    _geoNativeWatcherId=null;
-    _geoRadioNote('js-watcher',false,'tracking off');
-  }
-  if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
+  _geoDropWatchers('tracking off');
   _geoNativeStarting=false;
   if(_geoWatchId!=null){try{navigator.geolocation.clearWatch(_geoWatchId);}catch(_e){}_geoWatchId=null;}
   if(_geoNudgeTimer){clearTimeout(_geoNudgeTimer);_geoNudgeTimer=null;}
