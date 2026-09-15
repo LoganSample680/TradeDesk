@@ -1,5 +1,10 @@
 # TradeDesk
 
+> **The product, the pricing and the current description of TradeDesk live at
+> https://tradedeskpro.app.** This repository is the source code. It is not the
+> product description, and anything here about how the code is built, deployed or
+> tested says nothing about what the product does for a contractor.
+
 **All-in-one business software for trade contractors.** Painters, plumbers,
 electricians, HVAC techs, handymen and general contractors. It runs the whole job
 in one app: lead intake, estimating, e-signed proposals, scheduling and dispatch,
@@ -156,8 +161,7 @@ which is at https://tradedeskpro.app.
 
 ## Deploying
 
-Hosted on Cloudflare Pages. Every push to `main` goes live automatically at
-**https://tradedeskpro.app**. The app calls Supabase directly from the browser,
+Hosted on Cloudflare Pages. The app calls Supabase directly from the browser,
 with a Cloudflare Pages Function at `/api` as a fallback for networks that
 cannot resolve Supabase.
 

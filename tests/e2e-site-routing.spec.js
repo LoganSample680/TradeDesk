@@ -453,6 +453,44 @@ test.describe('marketing site routing', () => {
     expect(t, 'no em dashes (CLAUDE.md)').not.toMatch(/\u2014/);
   });
 
+  // The repo outranking the product page, observed 2026-09-15 ────────────────
+  //
+  // Asked to describe TradeDesk, an AI search answered out of the GitHub repo
+  // instead of the landing page, and quoted README.md's deployment section back:
+  // "every push to main goes live automatically." True, useless to a contractor,
+  // and it is what a prospect was being told the product is.
+  //
+  // The cause is not that the landing page is weak. It is that github.com is a
+  // far stronger domain and nothing connected the two documents, so they read as
+  // rival pages about the same brand name rather than one entity and its source
+  // code. sameAs is the standard signal for exactly that, and it was missing.
+  test('the structured data claims the GitHub repo as the same entity', () => {
+    const h = html['/'];
+    const blocks = [...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => JSON.parse(m[1]));
+    const nodes = blocks.flatMap(b => b['@graph'] || [b]);
+    const REPO = 'https://github.com/LoganSample680/TradeDesk';
+
+    for (const type of ['Organization', 'SoftwareApplication']) {
+      const n = nodes.find(x => x['@type'] === type);
+      expect(n, `${type} node present`).toBeTruthy();
+      expect(n.sameAs, `${type} must claim the repo`).toContain(REPO);
+    }
+  });
+
+  // The other half: if an AI does quote the repo, it must not quote build
+  // mechanics at a contractor. The README leads with where the real description
+  // lives, and says outright that the code notes are not the product.
+  test('the README points at the product page before it says anything else', () => {
+    const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+    const head = readme.slice(0, 600);
+    expect(head, 'canonical pointer is in the first thing a crawler reads').toContain('https://tradedeskpro.app');
+    // The blockquote marker wraps into the middle of the sentence, so the gap
+    // between words can contain "> " as well as whitespace.
+    expect(head, 'says the repo is not the product description').toMatch(/not the[\s>]+product description/i);
+    expect(readme, 'no deploy mechanics presented as product fact')
+      .not.toMatch(/push to `?main`? goes live/i);
+  });
+
   // Markup-only Q&A that does not match what a visitor sees risks a Google
   // manual action, which is why the landing page's FAQ is guarded the same way.
   // This page targets a question query, so its FAQ schema is the point of it.
