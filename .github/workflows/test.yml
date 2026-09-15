@@ -145,6 +145,15 @@ jobs:
       - name: The server's deriver is the phone's deriver
         run: node scripts/gen-shared-deriver.mjs --check
 
+      # ── THE SERVER WRAPPER, ACTUALLY RUN (2026-09-15) ──────────────────────
+      # supabase/functions/_shared/derive-day.mjs is the only piece of the geo
+      # path that no other check executes: not a browser file, so no shard
+      # loads it; not SQL, so the lint above never sees it. It shipped calling
+      # a function that did not exist and the first thing to find out was a
+      # person clicking Rebuild in the ops portal. This runs it.
+      - name: The server deriver runs
+        run: node scripts/ci/derive-day-smoke.mjs
+
       # The one figure the server can never work out as well as the phone: road
       # miles need a router, and routing is device-only. It rewrote a real
       # 3.1-mile leg to 2.9 within an hour of going live. 20261002 draws the
