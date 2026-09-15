@@ -3109,7 +3109,7 @@ async function _fetchCrewLabor(sinceISO){
     // id: the Time Log's Edit button needs to address the actual row to
     // correct a wrong GPS clock-out (owner rule 2026-08-24). Additive, every
     // other _fetchCrewLabor consumer ignores fields it doesn't use.
-    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
+    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     const{data:te}=await q;
     out.entries=te||[];

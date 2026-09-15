@@ -1100,6 +1100,101 @@ test.describe('geo-derive: the day deriver', () => {
   // 343 ft out at a foreground wake closed a visit that was still running,
   // and a closed visit means `open` is null, so nothing was ever published
   // to the on-site card or the Live Activity.
+  // ── RULE 15: the OS's own fence crossings (owner 2026-09-15) ──────────────
+  //
+  // "Fix stale cache it should correct." His 14 September, Jack, 4:01pm: the
+  // app was suspended from 4:01 to 4:36, so every fix in the dwell is ONE
+  // cached coordinate restated verbatim, 1,279 ft from his own shop against a
+  // 300 ft fence, while the shop's regionEnter had fired at 15:58 and its exit
+  // came at 16:36. 34 minutes at his own yard derived as an unsaved address.
+  //
+  // A crossing is watched in the kernel, on the boundary, whether or not the
+  // app has runtime. It cannot go stale and there is nothing to outvote, so it
+  // beats the fix. These are the whole rule.
+  test.describe('rule 15: a fence crossing beats a cached fix', () => {
+    const reg = (ts, f, enter) => ({ ts, id: f.id, enter });
+
+    test("Jack's 4:01pm: the shop names the stop the fixes put 1,279 ft away", async () => {
+      // One drive in, one drive out, and in between one coordinate restated
+      // four times, far enough out that no fence contains it.
+      const OFF = { lat: SHOP.lat - 0.0035, lng: SHOP.lng };   // ~1,275 ft south
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(15, 43), 'driving'), mo(T(16, 1), 'onFoot'),
+                    mo(T(16, 35), 'driving'), mo(T(16, 53), 'onFoot')];
+      const fixes = [fix(T(15, 43), DOE), fix(T(15, 59), SHOP),
+                     fix(T(16, 11), OFF), fix(T(16, 14), OFF), fix(T(16, 30), OFF), fix(T(16, 36), OFF),
+                     fix(T(16, 53), DOE)];
+      const regions = [reg(T(15, 58), SHOP, true), reg(T(16, 36), SHOP, false)];
+      const withReg = await run(page, base({ tape, fixes, regions, fences: [SHOP, DOE], nowMs: T(17, 30) }));
+      const shop = withReg.dwells.filter(d => d.kind === 'shop');
+      expect(shop.map(d => [hm(d.startTs), hm(d.endTs)])).toEqual([[hm(T(16, 1)), hm(T(16, 35))]]);
+      // And without the crossings it is exactly the bug he reported: nothing
+      // names that stop, so the day carries no shop dwell at all.
+      const noReg = await run(page, base({ tape, fixes, fences: [SHOP, DOE], nowMs: T(17, 30) }));
+      expect(noReg.dwells.filter(d => d.kind === 'shop')).toEqual([]);
+    });
+
+    test('a closed crossing does not reach past its own exit', async () => {
+      const OFF = { lat: SHOP.lat - 0.0035, lng: SHOP.lng };
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(15, 43), 'driving'), mo(T(16, 1), 'onFoot'),
+                    mo(T(16, 35), 'driving'), mo(T(16, 53), 'onFoot')];
+      const fixes = [fix(T(15, 43), DOE), fix(T(16, 11), OFF), fix(T(16, 30), OFF), fix(T(16, 53), OFF)];
+      // The exit lands BEFORE the stop this time, so nothing is inside it.
+      const regions = [reg(T(15, 40), SHOP, true), reg(T(15, 42), SHOP, false)];
+      const r = await run(page, base({ tape, fixes, regions, fences: [SHOP, DOE], nowMs: T(17, 30) }));
+      expect(r.dwells.filter(d => d.kind === 'shop')).toEqual([]);
+    });
+
+    test('an enter with no exit yet runs to now, and no further', async () => {
+      const OFF = { lat: SHOP.lat - 0.0035, lng: SHOP.lng };
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(15, 43), 'driving'), mo(T(16, 1), 'onFoot')];
+      const fixes = [fix(T(15, 43), DOE), fix(T(16, 11), OFF), fix(T(16, 30), OFF)];
+      const regions = [reg(T(15, 58), SHOP, true)];
+      const r = await run(page, base({ tape, fixes, regions, fences: [SHOP, DOE], nowMs: T(17, 0) }));
+      expect(r.open && r.open.kind).toBe('shop');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(16, 1)));
+    });
+
+    test('a crossing for a fence the account no longer has is not evidence', async () => {
+      const OFF = { lat: SHOP.lat - 0.0035, lng: SHOP.lng };
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(15, 43), 'driving'), mo(T(16, 1), 'onFoot'),
+                    mo(T(16, 35), 'driving'), mo(T(16, 53), 'onFoot')];
+      const fixes = [fix(T(15, 43), DOE), fix(T(16, 11), OFF), fix(T(16, 30), OFF), fix(T(16, 53), DOE)];
+      const regions = [{ ts: T(15, 58), id: 'place-deleted-last-week', enter: true },
+                       { ts: T(16, 36), id: 'place-deleted-last-week', enter: false }];
+      const r = await run(page, base({ tape, fixes, regions, fences: [SHOP, DOE], nowMs: T(17, 30) }));
+      expect(r.dwells.filter(d => d.kind === 'shop')).toEqual([]);
+    });
+
+    // Two crossings can be open at once (a job inside a client's fence, a shop
+    // inside a home office). They rank the way geoFenceAt already ranks two
+    // overlapping circles, job over shop over client, so one precedence
+    // governs the file and a crossing cannot reorder what a fix would say.
+    test('overlapping crossings rank the way overlapping fences do', async () => {
+      const OFF = { lat: SHOP.lat - 0.0035, lng: SHOP.lng };
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(15, 43), 'driving'), mo(T(16, 1), 'onFoot'),
+                    mo(T(16, 35), 'driving'), mo(T(16, 53), 'onFoot')];
+      const fixes = [fix(T(15, 43), HD), fix(T(16, 11), OFF), fix(T(16, 30), OFF), fix(T(16, 53), HD)];
+      const regions = [reg(T(15, 58), DOE, true), reg(T(15, 59), JOB, true),
+                       reg(T(16, 36), JOB, false), reg(T(16, 37), DOE, false)];
+      const r = await run(page, base({ tape, fixes, regions, fences: [JOB, DOE, HD], nowMs: T(17, 30) }));
+      expect(r.dwells.map(d => [d.kind, d.name])).toEqual([['job', 'John Doe']]);
+    });
+
+    test('junk crossings change nothing and never throw', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
+      const fixes = [fix(T(8, 0, 5), SHOP), fix(T(8, 20, 5), DOE), fix(T(10, 0), DOE)];
+      const clean = await run(page, base({ tape, fixes, fences: [SHOP, DOE] }));
+      for (const regions of [null, 'nope', [null, {}, { ts: 'x', id: SHOP.id, enter: true },
+                             { ts: T(9, 0), id: null, enter: true },
+                             // an exit with no enter, and an enter that never closes before its own start
+                             { ts: T(9, 0), id: SHOP.id, enter: false }]]) {
+        const r = await run(page, base({ tape, fixes, regions, fences: [SHOP, DOE] }));
+        expect(r.dwells).toEqual(clean.dwells);
+        expect(r.legs).toEqual(clean.legs);
+      }
+    });
+  });
+
   test.describe('one fix outside a fence is not leaving', () => {
     // The one that cost the owner his whole day, 2026-09-03. A UAT roll
     // reloaded the app at 14:19, the radio spun up, and CoreMotion called it
@@ -2295,6 +2390,32 @@ test.describe('geo-derive: the day deriver', () => {
       // dest_place already does on the rows themselves.
       expect(drives.map(d => d.dest_place)).toEqual(
         leg.segEnds.map(e => e.to || null));
+      // ── AND THE ROW NAMES ITS OWN ORIGIN (owner 2026-09-15) ───────────
+      // "The way it's titled is wrong, we should have fixed the title a long
+      // time ago rather than last night." segEnds still exists for the days
+      // already written under it, but a drive row no longer has to be joined
+      // to a mileage leg to be titled: it carries both of its own ends.
+      expect(drives.map(d => d.origin_place)).toEqual(
+        leg.segEnds.map(e => e.from || null));
+      // Which on a split leg means exactly one row knows where the journey
+      // started and exactly one knows where it finished; the rest run between
+      // stops nobody saved, and the stop rows between them already say so.
+      expect(drives.filter(d => d.origin_place).length).toBe(1);
+      expect(drives.filter(d => d.dest_place).length).toBe(1);
+    });
+
+    test('an unsplit drive row carries both of its ends, so nothing has to be joined to title it', async () => {
+      const t = [mo(T(11, 0), 'onFoot'), mo(T(12, 4), 'automotive'), mo(T(12, 40), 'onFoot')];
+      const f = [fix(T(12, 4, 5), { lat: DS.lat, lng: DS.lng }),
+        fix(T(12, 40, 5), { lat: JH.lat, lng: JH.lng }), fix(T(13, 30), { lat: JH.lat, lng: JH.lng })];
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+      const drives = rows.job_time_entries.filter(x => x.source === 'drive');
+      expect(drives).toHaveLength(1);
+      expect([drives[0].origin_place, drives[0].dest_place])
+        .toEqual([rows.td_mileage[0].from_name, rows.td_mileage[0].to_name]);
     });
 
     // An unsplit leg has one segment, and its ends ARE from_name and to_name.

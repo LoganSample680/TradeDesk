@@ -757,6 +757,12 @@ async function _timeLogRows(sinceISO){
       // corrected in place (owner rule 2026-08-24). rawSource is the raw
       // column, unlike `detail` which is the friendly label.
       rawId:e.id!=null?e.id:null,rawSource:e.source||'',
+      // BOTH ENDS, OFF THE ROW ITSELF (owner 2026-09-15). The title used to be
+      // assembled by joining to the mileage leg and counting segments; the
+      // deriver writes both ends onto the drive row now (js/geo-derive.js), so
+      // the rail reads one row to title one row. Null on a row written before
+      // the column existed, which is what the leg fallback below is for.
+      originPlace:e.origin_place||'',destPlace:e.dest_place||'',
       // A RAW FACT, NOT THE LABEL. The clock-out cutoff asks "was he heading
       // home" and used to answer it by looking at clientName, which was empty
       // on a drive nobody could name. Naming that drive "Destination not
@@ -1556,7 +1562,29 @@ function _tlRailRow(r){
     // '' from the deriver means nobody saved that end, which is the same word
     // the stop row sitting between two segments already shows.
     const _arrow=(a,b)=>(a||'—')+' → '+(b||'—');
-    const ttl=_segE?_arrow(_segE.from||'Unsaved address',_segE.to||'Unsaved address')
+    // ── THE ROW TITLES ITSELF (owner 2026-09-15) ──────────────────────────
+    // "The way it's titled is wrong, we should have fixed the title a long
+    // time ago rather than last night."
+    //
+    // Every arm below this one is a JOIN: find the mileage leg, work out which
+    // segment this row is, read the ends off that. Every way this title has
+    // ever been wrong came out of the join. A collapsed leg's from_name is the
+    // whole journey's, so a split drive wore ends that were never its own; a
+    // day derived before segEnds existed has nothing to read, which is why all
+    // of Jack's 14 September drives showed only a destination; and a screen
+    // with the time rows but not the mileage rows could not title them at all.
+    //
+    // The deriver writes both ends onto the drive row now (js/geo-derive.js,
+    // origin_place beside dest_place), so one row titles one row. An end the
+    // deriver left null on a drive is a stop nobody saved, exactly as the stop
+    // row between two segments already says.
+    const _ends=isDrive&&(r.originPlace||r.destPlace)
+      ?_arrow(r.originPlace||'Unsaved address',r.destPlace||'Unsaved address'):'';
+    // Below here is history: rows written before origin_place existed, on days
+    // past the tape's seven that nothing will ever re-derive. They keep the
+    // join, and they are the only reason it is still here.
+    const ttl=_ends?_ends
+             :_segE?_arrow(_segE.from||'Unsaved address',_segE.to||'Unsaved address')
              // A leg the deriver did NOT split: its two ends are the row's two
              // ends, which is what this always was.
              :(leg&&_ls&&!_ls.split)?_arrow(leg.from_name,leg.to_name||r.clientName)
