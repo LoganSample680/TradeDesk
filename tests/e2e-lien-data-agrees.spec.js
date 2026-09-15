@@ -142,15 +142,11 @@ test.describe('the lien datasets agree with each other', () => {
 
   const REPUBLISHER = /findlaw|lawserver|law\.resource\.org|justia|nolo|avvo/i;
 
-  // Vermont is the one exception, and it is named here rather than filtered out
-  // quietly, the same way TX is named at the top of this file.
-  // legislature.vermont.gov answered 503 to roughly forty attempts across two
-  // hours, on the section page, the chapter page and the site root, while other
-  // vermont.gov hosts served fine in the same second. That is their outage, not
-  // our egress. The entry has to SAY it is unverified, which is the part that
-  // actually protects a contractor, and this exception comes out the day the
-  // site is readable again.
-  const UNREACHABLE_SOURCE = ['VT'];
+  // No exceptions any more. Vermont was the last one: its site answered nothing
+  // but errors for hours, then came back, and the statute confirmed the numbers
+  // we already had. The list stays here because the next outage will need it,
+  // and an exception belongs in the open where it can be seen and removed.
+  const UNREACHABLE_SOURCE = [];
 
   test('no state is sourced from a commercial republisher', () => {
     const bad = Object.entries(LIEN_LAW)
