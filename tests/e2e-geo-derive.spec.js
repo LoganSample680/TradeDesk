@@ -1100,6 +1100,109 @@ test.describe('geo-derive: the day deriver', () => {
   // 343 ft out at a foreground wake closed a visit that was still running,
   // and a closed visit means `open` is null, so nothing was ever published
   // to the on-site card or the Live Activity.
+  // ── RULE 15: a closed fence crossing beats a cached fix ───────────────────
+  //
+  // Owner 2026-09-15: "I just want the stale cache fixed from his phone to
+  // close out the day right." Jack's 14 September, 4:01pm to 4:36pm reads as
+  // an unsaved address. He was at his own yard. The app was suspended for the
+  // whole stretch, so the only fixes in the dwell are ONE cached coordinate
+  // restated verbatim, 1,279 ft out against a 300 ft fence, while the yard's
+  // regionEnter stood from 15:58 and its exit came at 16:36.
+  //
+  // This block is also the guard on the FIRST attempt, which shipped and was
+  // reverted the same evening. Both of the things that broke it are cases
+  // here: one building answering to three region ids, and an enter with no
+  // exit. Those are his real ids and his real timestamps.
+  test.describe('rule 15: a closed fence crossing beats a cached fix', () => {
+    const reg = (ts, id, enter) => ({ ts, id, enter });
+    // His yard, registered three ways at one coordinate: the settings shop,
+    // a td_places row, and a third id with a colon where the others have a
+    // hyphen. Only the first is what geoFenceAt would name the place.
+    const YARD = { id: 'shop', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106 };
+    const YARD2 = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const OFF = { lat: YARD.lat - 0.0035, lng: YARD.lng };   // the cache, ~1,275 ft south
+    const F = [YARD, YARD2, DOE];
+    // Out to the client, back to the yard at 16:01, away again at 16:35.
+    const tape = [mo(T(7, 0), 'onFoot'), mo(T(15, 43), 'driving'), mo(T(16, 1), 'onFoot'),
+                  mo(T(16, 35), 'driving'), mo(T(16, 53), 'onFoot')];
+    const fixes = [fix(T(15, 43), DOE), fix(T(16, 11), OFF), fix(T(16, 14), OFF),
+                   fix(T(16, 30), OFF), fix(T(16, 36), OFF), fix(T(16, 53), DOE)];
+    const day = (over) => base(Object.assign({ tape, fixes, fences: F, nowMs: T(17, 30) }, over));
+
+    test("his 4:01pm: the crossing names the stop four cached fixes put 1,279 ft away", async () => {
+      const r = await run(page, day({ regions: [reg(T(15, 58), YARD2.id, true), reg(T(16, 36), YARD2.id, false)] }));
+      expect(r.dwells.map(d => [d.kind, d.name, hm(d.startTs), hm(d.endTs)]))
+        .toEqual([['shop', 'JS Solutions shop', hm(T(16, 1)), hm(T(16, 35))]]);
+    });
+
+    test('without the crossing it is the bug he reported: nothing names the stop', async () => {
+      const r = await run(page, day({}));
+      expect(r.dwells.filter(d => d.kind === 'shop')).toEqual([]);
+    });
+
+    // REGRESSION, first attempt. The crossing fired on the td_places id, so
+    // keying the NAME off that id renamed every drive of his day onto "1200 SW
+    // Oakley Ave". The id says WHERE; geoFenceAt says WHICH.
+    test('one building, three region ids, one answer', async () => {
+      for (const id of [YARD.id, YARD2.id]) {
+        const r = await run(page, day({ regions: [reg(T(15, 58), id, true), reg(T(16, 36), id, false)] }));
+        expect(r.dwells.map(d => d.name), 'whichever id fired, the place is named the same')
+          .toEqual(['JS Solutions shop']);
+      }
+      // And the third id is not a fence at all, so it is not evidence.
+      const junk = await run(page, day({ regions: [reg(T(15, 58), 'place:1788216906515011', true),
+                                                   reg(T(16, 36), 'place:1788216906515011', false)] }));
+      expect(junk.dwells.filter(d => d.kind === 'shop')).toEqual([]);
+    });
+
+    // REGRESSION, first attempt. 'shop' entered at 07:43 and never exited; an
+    // open span run to now swallowed the day and put his 10:10 stop, three
+    // miles east, at the yard.
+    test('an enter with no exit is not a span, and cannot swallow the day', async () => {
+      const r = await run(page, day({ regions: [reg(T(7, 43), YARD.id, true)] }));
+      expect(r.dwells.filter(d => d.kind === 'shop')).toEqual([]);
+      // Nor does it reach forward past a later, real pair for the same place.
+      const both = await run(page, day({ regions: [reg(T(7, 43), YARD.id, true),
+        reg(T(15, 58), YARD2.id, true), reg(T(16, 36), YARD2.id, false)] }));
+      expect(both.dwells.map(d => [hm(d.startTs), hm(d.endTs)]))
+        .toEqual([[hm(T(16, 1)), hm(T(16, 35))]]);
+    });
+
+    test('an exit with no enter is nothing either', async () => {
+      const r = await run(page, day({ regions: [reg(T(16, 36), YARD2.id, false)] }));
+      expect(r.dwells.filter(d => d.kind === 'shop')).toEqual([]);
+    });
+
+    test('a closed span does not reach past its own ends', async () => {
+      const r = await run(page, day({ regions: [reg(T(11, 0), YARD2.id, true), reg(T(11, 30), YARD2.id, false)] }));
+      expect(r.dwells.filter(d => d.kind === 'shop')).toEqual([]);
+    });
+
+    // Two crossings can be open at once (a job inside a client's fence, a shop
+    // inside a home office). They rank the way geoFenceAt already ranks two
+    // overlapping circles, so one precedence governs the file.
+    test('overlapping spans rank the way overlapping fences do', async () => {
+      const r = await run(page, base({ tape, fences: [JOB, DOE, HD],
+        fixes: [fix(T(15, 43), HD), fix(T(16, 11), OFF), fix(T(16, 30), OFF), fix(T(16, 53), HD)],
+        regions: [reg(T(15, 58), DOE.id, true), reg(T(15, 59), JOB.id, true),
+                  reg(T(16, 36), JOB.id, false), reg(T(16, 37), DOE.id, false)],
+        nowMs: T(17, 30) }));
+      expect(r.dwells.map(d => [d.kind, d.name])).toEqual([['job', 'John Doe']]);
+    });
+
+    test('junk crossings change nothing and never throw', async () => {
+      const clean = await run(page, day({}));
+      for (const regions of [null, 'nope', [], [null, {}, { ts: 'x', id: YARD.id, enter: true },
+                             { ts: T(16, 10), id: null, enter: true },
+                             { ts: T(16, 10), id: 'place-deleted-last-week', enter: true },
+                             { ts: T(16, 20), id: 'place-deleted-last-week', enter: false }]]) {
+        const r = await run(page, day({ regions }));
+        expect(r.dwells).toEqual(clean.dwells);
+        expect(r.legs).toEqual(clean.legs);
+      }
+    });
+  });
+
   test.describe('one fix outside a fence is not leaving', () => {
     // The one that cost the owner his whole day, 2026-09-03. A UAT roll
     // reloaded the app at 14:19, the radio spun up, and CoreMotion called it

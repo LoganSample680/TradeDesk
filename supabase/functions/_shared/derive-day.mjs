@@ -166,7 +166,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   // this day's arrival, and the flip that opened it is on the other side.
   const [evRows, pingRows, fenceRes, clockRes, cfgRes] = await Promise.all([
     pageAll((f, t) => svc.from("geo_events")
-      .select("ts,type,kind,lat,lon")
+      .select("ts,type,kind,lat,lon,region_id")
       .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
       .order("ts", { ascending: true }).range(f, t)),
     pageAll((f, t) => svc.from("location_pings")
@@ -181,10 +181,18 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   const tape = [];
   const fixes = [];
   const appEvents = [];
+  // Rule 15: the OS's own fence crossings. Deliberately NOT a fix source (a
+  // region row carries the plugin's last-known position, the very thing rule
+  // 15 exists to stop trusting); only the edge and the region id are read,
+  // and those are exact.
+  const regions = [];
   for (const e of evRows) {
     const ts = Date.parse(e.ts);
     if (!(ts > 0)) continue;
     if (e.type === "motion" && e.kind) tape.push({ ts, kind: String(e.kind) });
+    else if (e.type === "regionEnter" || e.type === "regionExit") {
+      if (e.region_id) regions.push({ ts, id: String(e.region_id), enter: e.type === "regionEnter" });
+    }
     else if (String(e.type).startsWith("app-")) appEvents.push({ ts, kind: String(e.type).slice(4) });
     if (FRESH_FIX_TYPES.includes(e.type) && e.lat != null && e.lon != null) {
       fixes.push({ ts, lat: Number(e.lat), lng: Number(e.lon), acc: null });
@@ -199,6 +207,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   fixes.sort((a, b2) => a.ts - b2.ts);
   tape.sort((a, b2) => a.ts - b2.ts);
   appEvents.sort((a, b2) => a.ts - b2.ts);
+  regions.sort((a, b2) => a.ts - b2.ts);
 
   // NOTHING TO GO ON IS NOT AN EMPTY DAY. The phone refuses to derive a day
   // its tape does not cover (js/geo-track.js), and the server has strictly
@@ -258,7 +267,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
 
   const res = geoDeriveDay({
     day, dayStart: b.start, dayEnd: b.end, personId: uid,
-    tape, fixes, appEvents, fences, nowMs, clocks, workHours,
+    tape, fixes, appEvents, regions, fences, nowMs, clocks, workHours,
   });
 
   // MISSING EVIDENCE IS NOT AN EMPTY DAY, the second half of it: drives that

@@ -5668,6 +5668,10 @@ async function _geoTdEvent(ev,replay){
   // A fence crossing is the moment the day changed; the day is re-derived
   // on it, same as on a foot flip and a ping (owner 2026-09-02: the 12:04
   // exit left the Doe row open until something else happened to run it).
+  // Rule 15: the crossing itself, kept. Its POSITION is deliberately not kept
+  // (a region row carries the plugin's last-known fix, the very thing rule 15
+  // exists to stop trusting); only the fence id and which edge it was.
+  if(ev.type==='regionExit'||ev.type==='regionEnter')_geoRegLogPush(Number(ev.ts)||Date.now(),ev.regionId,ev.type==='regionEnter');
   if(!replay&&(ev.type==='regionExit'||ev.type==='regionEnter')&&_geoEvFresh(ev))_geoDeriveLiveSoon(ev.type);
   // The phone just started moving after being still (iOS 17 wake stream,
   // live only: a replayed one describes a drive that already happened). The
@@ -7133,6 +7137,11 @@ const _GEO_FIXLOG_KEEP_MS=8*86400000;
 const _GEO_DERIVE_DAYS=7;
 
 const _GEO_APPLOG_KEY='zp3_geo_applog';
+// Rule 15 (js/geo-derive.js): the OS's own fence crossings, kept exactly the
+// way the lifecycle edges are. Its own log rather than two more kinds in the
+// app log, because rule 10 reads that one for app-open minutes and a fence
+// crossing is not the app being open.
+const _GEO_REGLOG_KEY='zp3_geo_reglog';
 // Fewer local fixes than this inside a day means the log does not know the
 // day: a real drive alone is a hundred.
 const _GEO_FIXLOG_THIN=20;
@@ -7176,6 +7185,38 @@ function _geoAppLogPush(ts,kind){
     if(out.length>2000)out=out.slice(out.length-2000);
     localStorage.setItem(_GEO_APPLOG_KEY,JSON.stringify(out));
   }catch(_e){}
+}
+function _geoRegLogSeed(list){
+  try{
+    if(!Array.isArray(list)||!list.length)return;
+    const a=_geoRegLogRead();const have=new Set(a.map(e=>e.ts+'|'+e.id+'|'+(e.enter?1:0)));
+    list.forEach(e=>{
+      const k=e&&(e.ts+'|'+e.id+'|'+(e.enter?1:0));
+      if(e&&typeof e.ts==='number'&&e.id&&!have.has(k)){a.push({ts:e.ts,id:String(e.id),enter:!!e.enter});have.add(k);}
+    });
+    a.sort((x,y)=>x.ts-y.ts);
+    _geoRegLogWrite(a,Date.now());
+  }catch(_e){}
+}
+function _geoRegLogRead(){try{const a=JSON.parse(localStorage.getItem(_GEO_REGLOG_KEY)||'[]');return Array.isArray(a)?a:[];}catch(_e){return [];}}
+function _geoRegLogPush(ts,id,enter){
+  try{
+    const t=Number(ts),k=String(id||'');
+    if(!(t>0)||!k)return;
+    const a=_geoRegLogRead();
+    // The same crossing can reach this twice (a live event and its replay, a
+    // plugin retry): same fence, same edge, same second is one crossing.
+    const last=a[a.length-1];
+    if(last&&last.id===k&&!!last.enter===!!enter&&t-last.ts<1000)return;
+    a.push({ts:t,id:k,enter:!!enter});
+    _geoRegLogWrite(a,t);
+  }catch(_e){}
+}
+function _geoRegLogWrite(a,nowMs){
+  const cut=nowMs-_GEO_FIXLOG_KEEP_MS;
+  let out=a.filter(e=>e&&e.ts>=cut);
+  if(out.length>2000)out=out.slice(out.length-2000);
+  localStorage.setItem(_GEO_REGLOG_KEY,JSON.stringify(out));
 }
 function _geoFixLogRead(){try{const a=JSON.parse(localStorage.getItem(_GEO_FIXLOG_KEY)||'[]');return Array.isArray(a)?a:[];}catch(_e){return [];}}
 function _geoFixLogPush(ts,lat,lng,acc){
@@ -7506,11 +7547,17 @@ async function _geoPageAll(build){
 async function _geoDeriveServerFixes(fromMs,toMs){
   const out=[];
   out.appEvents=[];
+  out.regions=[];
   try{
     if(!_supa||!_supaUser)return out;
     const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
     const ap=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type').eq('employee_user_id',me).like('type','app-%').gte('ts',a).lt('ts',b));
     ap.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.appEvents.push({ts:t,kind:String(e.type).slice(4)});});
+    // Rule 15's evidence. A crossing the phone saw while this install was not
+    // the one holding the tape is still a crossing, so it is fetched on the
+    // same trip as the lifecycle edges and folded into the same local log.
+    const rg=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type,region_id').eq('employee_user_id',me).in('type',['regionEnter','regionExit']).gte('ts',a).lt('ts',b).not('region_id','is',null));
+    rg.forEach(e=>{const t=Date.parse(e.ts);if(t>0&&e.region_id)out.regions.push({ts:t,id:String(e.region_id),enter:e.type==='regionEnter'});});
     // Only rows whose position is FRESH. A fence or motion row carries the
     // last-known position, which after a wake can be a mile stale, and one
     // of those in the trace read a 3-mile drive as 6.1 (owner 2026-09-02).
@@ -7858,13 +7905,15 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
         server=await _geoDeriveServerFixes(b.start-2*3600000,b.end);
         _geoFixLogSeed(server);
         _geoAppLogSeed(server.appEvents);
+        _geoRegLogSeed(server.regions);
       }
     }
     const fixes=_geoFixLogRead().concat(server||[]);
     const appEvents=_geoAppLogRead().concat((server&&Array.isArray(server.appEvents))?server.appEvents:[]);
+    const regions=_geoRegLogRead().concat((server&&Array.isArray(server.regions))?server.regions:[]);
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
-      tape,fixes,appEvents,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
+      tape,fixes,appEvents,regions,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.
       clocks:_geoDeriveClocks(b.start,b.end),workHours:_geoWorkHours(),

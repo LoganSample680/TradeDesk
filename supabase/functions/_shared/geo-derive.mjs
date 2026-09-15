@@ -202,6 +202,79 @@ function geoFenceAt(pt, fences, radiusFt) {
   return best;
 }
 
+// ── RULE 15: A CLOSED FENCE CROSSING SAYS WHERE THE PHONE WAS ─────────────
+// Owner 2026-09-15: "I just want the stale cache fixed from his phone to
+// close out the day right."
+//
+// A fix SAMPLES a position; region monitoring watches the BOUNDARY, in the
+// kernel, and fires on the edge whether or not this app has runtime. That is
+// the one observer a suspended phone cannot degrade, and it is what answers
+// Jack's 4:01pm: the app was suspended from 4:01 to 4:36, so the only four
+// fixes in the dwell are one cached coordinate restated verbatim 1,279 ft
+// from his own yard, while the yard's crossing pair sat right across it.
+//
+// This is the SECOND attempt. The first shipped and was reverted the same
+// evening because it got two things wrong, and both are fixed here by
+// construction rather than by conditions bolted on:
+//
+// 1. IT NAMED THE FENCE FROM THE CROSSING'S ID, and one building answers to
+//    several. Jack's yard fired all three of these on one morning:
+//      07:43:00  regionEnter  place-1788216906515011
+//      07:43:00  regionEnter  shop
+//      07:43:14  regionEnter  place:1788216906515011
+//    The settings shop, a td_places row at the identical coordinate, and a
+//    third id with a colon where the others have a hyphen. Keying on the id
+//    renamed every drive of his day off "JS Solutions shop" onto "1200 SW
+//    Oakley Ave". So the id is used ONLY to find where the crossing happened;
+//    the fence is then named by geoFenceAt at that position, exactly as a fix
+//    would be. Three ids for one place give one answer, and the file keeps
+//    one definition of which circle wins.
+//
+// 2. IT TRUSTED AN ENTER WITH NO EXIT, and ran it to now. Jack's 'shop'
+//    crossing entered at 07:43 and never exited, so that span swallowed the
+//    whole day and put his 10:10 stop, three miles east, at the yard. An
+//    unpaired enter is not a span: the app may have been dead when the exit
+//    fired, the fence may have been unregistered mid-day, the id may be one
+//    of the duplicates above. Only a CLOSED pair is evidence, which on his
+//    real day leaves exactly the three that are true (07:43-07:59,
+//    09:37-09:56, 15:58-16:36) and drops exactly the two that are not.
+//
+// Overlapping spans rank the way geoFenceAt ranks overlapping circles, so one
+// precedence governs the file; on a tie the span that STARTED later wins,
+// because entering B while still inside A is standing in B.
+function _gdRegionSpans(regions, fences, radiusFt) {
+  const byId = new Map();
+  (Array.isArray(fences) ? fences : []).forEach(f => { if (f && f.id != null) byId.set(String(f.id), f); });
+  const rows = (Array.isArray(regions) ? regions : [])
+    .filter(r => r && typeof r.ts === 'number' && r.id != null && byId.has(String(r.id)))
+    .sort((a, b) => a.ts - b.ts);
+  const open = new Map(), spans = [];
+  for (const r of rows) {
+    const id = String(r.id);
+    if (r.enter) { if (!open.has(id)) open.set(id, r.ts); continue; }
+    const from = open.get(id);
+    if (from == null) continue;
+    open.delete(id);
+    const at = byId.get(id);
+    // The crossing says WHERE, geoFenceAt says WHICH. See 1 above.
+    const f = geoFenceAt(at, fences, radiusFt);
+    if (f && r.ts > from) spans.push({ from, to: r.ts, f });
+  }
+  // Whatever is left in `open` never closed, and is dropped. See 2 above.
+  if (!spans.length) return () => null;
+  return (ts) => {
+    if (typeof ts !== 'number') return null;
+    let best = null, bestRank = Infinity, bestFrom = -Infinity;
+    for (const s of spans) {
+      if (ts < s.from || ts > s.to) continue;
+      const rank = GEO_FENCE_RANK[String(s.f.kind || 'other')];
+      const rk = rank == null ? GEO_FENCE_RANK.other : rank;
+      if (rk < bestRank || (rk === bestRank && s.from > bestFrom)) { best = s.f; bestRank = rk; bestFrom = s.from; }
+    }
+    return best;
+  };
+}
+
 function _gdSameFence(a, b) {
   if (!a || !b) return false;
   return String(a.id) === String(b.id);
@@ -585,6 +658,7 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
  * input.nowMs     for the open tail; defaults to Date.now()
  * input.directMiles(a,b) optional sync resolver for a collapsed leg; default
  *                 straight line, and the leg says which it got.
+ * input.regions   [{ts, id, enter}] the OS's own fence crossings, for rule 15
  * input.appEvents [{ts, kind}] app-active | app-background | app-terminate |
  *                 app-relaunch (the plugin's own lifecycle events), for rule 10
  * input.opts      overrides for GEO_DERIVE_DEFAULTS
@@ -604,6 +678,11 @@ function geoDeriveDay(input) {
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;
+  // Rule 15 (above): where a CLOSED crossing pair covers the instant, the
+  // boundary the OS watched beats the position this app happened to sample.
+  // Where none does, nothing changes: fenceAt IS fenceOf.
+  const inside = _gdRegionSpans(inp.regions, fences, opts.radiusFt);
+  const fenceAt = (fix, ts) => inside(ts) || fenceOf(fix);
   // The chain: the first saved origin and the automotive minutes since it.
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
   let arrived = null;        // {fence, ts, journeyId}: an open dwell awaiting its departure
@@ -618,7 +697,7 @@ function geoDeriveDay(input) {
     const parkedFix = _gdParkedFixBefore(fixes, j.startTs, prevEnd, opts.parkedFixMaxMs, opts.maxFixAccM);
     const nearFix = at(j.startTs);
     const startFix = (parkedFix && fenceOf(parkedFix)) ? parkedFix : (nearFix || parkedFix);
-    const depFence = fenceOf(startFix);
+    const depFence = fenceAt(startFix, j.startTs);
     // The departure ping labels the dwell that just ended. If it is missing,
     // the arrival that opened the dwell still knows where it was.
     const fromFence = depFence || (arrived && arrived.fence) || null;
@@ -696,7 +775,7 @@ function geoDeriveDay(input) {
     // is its mirror. `at()` stays as the fallback for a journey with nothing
     // after it at all.
     const endFix = _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM, j.startTs) || at(j.endTs);
-    const toFence = fenceOf(endFix);
+    const toFence = fenceAt(endFix, j.endTs);
     const autoMs = j.endTs - j.startTs;
 
     if (!chain) {
@@ -997,6 +1076,11 @@ function geoDeriveDay(input) {
       // Nothing after it to corroborate with either: an unconfirmed last
       // reading does not get to end a day that may still be running.
       if (!next) continue;
+      // Rule 15: a fix drifting outside is the weakest possible evidence that
+      // somebody left, and while the OS's own closed crossing still covers
+      // this instant for this very fence, it is not evidence at all. Jack's
+      // 4:01pm is exactly that shape.
+      if (_gdSameFence(inside(later[i].ts), arrived.fence)) continue;
       left = true; break;
     }
     if (left) {
