@@ -2856,6 +2856,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // scope, is unchanged; only the precondition is now stated rather
         // than inherited.
         setTimeLogScope('me');
+        // And the DRILL level, for exactly the same reason, one level deeper
+        // (CI shard 6 again, 2026-09-15: meShare read false because the page
+        // was sitting on a day, where there is no month chart to carry a Send).
+        // _tlDrill is module state too, this test mutates it itself further
+        // down, and whether a preceding test in the same worker left it on
+        // 'month' depends on how the shard happened to split. The rule under
+        // test, Share follows scope, has nothing to do with the drill level, so
+        // the level is stated rather than inherited.
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null, uid: null };
         await renderTimeLog();
         // The page-level Share button is gone (2026-08-30); what follows scope
         // now is the CHART, and its Send rides on it. Read that instead.
