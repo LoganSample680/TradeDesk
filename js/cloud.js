@@ -63,11 +63,34 @@ async function _fetchStripeConnectStatus(){
     const session=await _supa.auth.getSession();
     const token=session?.data?.session?.access_token;
     if(!token)return null;
+    // ── ASK ABOUT THE ACCOUNT ON SCREEN, NOT THE ONE HOLDING THE TOKEN ─────
+    // (owner 2026-09-16: "why is his account saying stripe is connected in
+    // integrations though?"). Jack has no Stripe account and never has. The
+    // target used to be gated on _isEmployee, which meant "my rows live on
+    // another account" until the 2026-09-13 split made it the ROLE only. The
+    // support view then named another account through _effectiveUid with
+    // _isEmployee false, so this went out empty, the Edge Function answered
+    // about the SIGNED-IN user, and the viewer's own Stripe was cached under
+    // the viewed account's key and drawn on their Integrations screen. One
+    // owner's payment account shown as another's is the worst shape that bug
+    // could take.
+    //
+    // The uid decides now, not the role. The function verifies the team link
+    // server-side and 403s when there is none, which is the right answer for
+    // a support view: it cannot see another owner's Stripe, so it says so.
     const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-status',{
       method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify(_isEmployee&&_statusUid!==_supaUser.id?{target:_statusUid}:{})
+      body:JSON.stringify(_statusUid&&_statusUid!==_supaUser.id?{target:_statusUid}:{})
     });
     const data=await res.json();
+    // A REFUSAL IS NOT A STATUS. An error body has no `connected` key, so
+    // caching it would park a shape every reader tests with `?.charges_enabled`
+    // for an hour, and a later legitimate read would never happen. Answer
+    // "not connected" for this render and leave the cache empty.
+    if(!res.ok||!data||data.error){
+      _stripeConnectStatus={connected:false,reason:'unavailable'};
+      return _stripeConnectStatus;
+    }
     _stripeConnectStatus=data;
     try{localStorage.setItem(_cacheKey,JSON.stringify({ts:Date.now(),data}));}catch(e){}
     return data;
