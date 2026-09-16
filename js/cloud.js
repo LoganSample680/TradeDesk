@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.16.26.14';
+const APP_VERSION='09.16.26.15';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -6726,6 +6726,27 @@ function _offlinePendingBlob(){
     _dataOwner:(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
     clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
 }
+// The same blob, but never LOSING what is already pending. Used only while a
+// cloud load is in flight, when memory is the server's copy plus whatever the
+// person has done since, and the rows the load has not drained back yet exist
+// nowhere else. Current memory wins for an id both hold; a pending row memory
+// no longer has is carried across untouched.
+function _offlinePendingBlobMerged(){
+  try{
+    const prev=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
+    if(!prev)return _offlinePendingBlob();
+    const now=JSON.parse(_offlinePendingBlob());
+    for(const{t}of _TD_TABLES){
+      const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+      const cur=Array.isArray(now[key])?now[key]:[];
+      const old=Array.isArray(prev[key])?prev[key]:[];
+      if(!old.length)continue;
+      const have=new Set(cur.map(r=>String(r&&r.id)));
+      now[key]=cur.concat(old.filter(r=>r&&!have.has(String(r.id))));
+    }
+    return JSON.stringify(now);
+  }catch(_e){return _offlinePendingBlob();}
+}
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
 function _readOwnedOfflinePending(){
@@ -6762,21 +6783,28 @@ function supaSaveDebounced(){
   // before visibilitychange or the async catch block can run, but a synchronous
   // localStorage write completes atomically and survives any force-quit.
   // Cleared by supaSaveToCloud() on a successful push. Drain deduplicates on reload.
-  // ── NEVER WHILE A LOAD IS IN FLIGHT (owner 2026-09-16, Jack's missing 9am
+  // ── A LOAD MAY NOT EMPTY THE NET (owner 2026-09-16, Jack's missing 9am
   // clock-in) ────────────────────────────────────────────────────────────
   // This blob is a SNAPSHOT OF MEMORY, not a queue of unsynced rows, and that
   // is the whole hazard. A cloud load replaces every array with the server's
   // copy and only drains the blob back in at the very END of the load. Any
   // save that fires inside that window (applySettings alone reaches saveAll)
-  // rewrites the blob from arrays that no longer hold the unsynced row, and
-  // the only record of it is gone before the drain ever looks.
+  // rewrote the blob from arrays that no longer held the unsynced row, and the
+  // only record of it was gone before the drain ever looked.
   //
-  // Jack's morning is that shape: a punch that had not reached the server,
-  // a resume, and a day that came back saying he was never clocked in. The
-  // blob is the force-quit safety net; a net that can be emptied by the thing
-  // it is meant to survive is not one.
-  if((_supaCloudLoaded||_mergeOnSignIn)&&!_loadInProgress){
-    try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
+  // Jack's morning is that shape: a punch that had not reached the server, a
+  // resume, and a day that came back saying he was never clocked in. The blob
+  // is the force-quit safety net; a net the load can empty is not one.
+  //
+  // SKIPPING THE WRITE IS THE WRONG FIX, and CI caught it: a row CREATED
+  // during a load (a save is a save, the person is still using the app) would
+  // then never be snapshotted at all, which loses the new row instead of the
+  // old one. Both have to hold, so during a load the blob is MERGED rather
+  // than replaced: current memory wins per id, and anything pending that
+  // memory no longer holds rides along untouched.
+  if(_supaCloudLoaded||_mergeOnSignIn){
+    try{localStorage.setItem('zp3_offline_pending',
+      _loadInProgress?_offlinePendingBlobMerged():_offlinePendingBlob());}catch(_e){}
   }
   // The fired save MUST be tracked in _pendingSavePromise (via _flushSaveNow), a bare
   // supaSaveToCloud() here is invisible to the silent-load guard in supaLoadFromCloud,
