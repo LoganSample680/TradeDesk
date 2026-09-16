@@ -2213,6 +2213,32 @@ function _gdCommuteMark(legs, fences, radiusFt, crew, clockSpans) {
   //
   // Crew stays in as the other half: a crew member whose employer registered
   // no shop at all still commutes to the first job of the day.
+  //
+  // ── AND HOME BEING THE BASE OUTRANKS BOTH (owner 2026-09-16, third round)
+  // "Rebuilt, still missing a shit load of miles."
+  //
+  // It was the crew flag every time. Three fixes in one day moved that
+  // question to three different places a support view could still answer
+  // wrongly: _isEmployee, a cached copy of it, then the uids on the write.
+  // Every one is session state, and a wrong answer on the OWNER'S OWN account
+  // silently retires his first drive out and his last drive home. His 15
+  // September replays to four legs with the flag off and to exactly the two
+  // that were left in the table with it on, every single round.
+  //
+  // So the flag stops being able to reach him at all. If this account reports
+  // to a base that IS the person's house, there is no commute to find: home is
+  // the place of business, and the drive out of the door is the first business
+  // mile of the day. That is the tax rule, it is a fact about the FENCES, and
+  // nothing on a screen can poison it. His shop fence sits four metres from
+  // his desk, so this is his case exactly.
+  //
+  // It cannot reach Jack: his 7402 SW 22nd Ct is a home_office, which is not a
+  // place anybody reports to, and his dad's yard is eight miles away. Nor a
+  // crew member with no base registered, whose commute still comes from the
+  // flag below.
+  const homeBase = (fences || []).some(f => f && f.lat != null && f.lng != null &&
+    _gdReportsHere(f, fences, radiusFt) && _gdIsHouse(f, fences, radiusFt));
+  if (homeBase) return legs;
   const awayBase = (fences || []).some(f => f && f.lat != null && f.lng != null &&
     _gdReportsHere(f, fences, radiusFt) && !_gdIsHouse(f, fences, radiusFt));
   if (!crew && !awayBase) return legs;
