@@ -2716,12 +2716,115 @@ function _gdReseatDwells(dwells, fixes, fences, opts) {
     const spot = _gdSpotOf(fixes, d.startTs, d.endTs, opts.maxFixAccM);
     if (!spot) return d;
     const f = geoFenceAt(spot, fences, opts.radiusFt);
-    if (f && _gdSameFence(f, d.fence)) return d;
+    // The spot rides along even when nothing moves, because rule 23 needs it:
+    // the visits that teach a pin where it is are overwhelmingly the ones that
+    // resolved correctly, and those used to return `d` untouched with the
+    // middle of the stop thrown away.
+    if (f && _gdSameFence(f, d.fence)) return Object.assign({}, d, { spot });
     if (f) return Object.assign({}, d, { fence: f, kind: String(f.kind || 'other'),
       name: f.name || '', reseated: true, spot });
     // Nowhere saved. Keep the fence for the rules, take the NAME off the row.
     return Object.assign({}, d, { farFromFence: true, spot });
   });
+}
+
+// ── RULE 23: A SAVED ADDRESS LEARNS WHERE IT ACTUALLY IS ──────────────────
+// Owner 2026-09-16, after measuring his own account: "are we designing the
+// learning pin on where the truck gets parked or where the most clusters sit
+// while actively working on the house?"
+//
+// Neither, and that is the point. The pin is aimed at the MEASUREMENT. The
+// matcher compares a stop's settled cluster against the fence, so the learned
+// point has to live in the same space as that cluster or the offset comes
+// straight back, smaller and harder to see. It is the same median rule 22
+// already computes, remembered instead of thrown away.
+//
+// The numbers this is built on, from his own twenty visits to one client over
+// three weeks, in feet from the saved pin: 59, 62, 62, 63, 64, 65, 67, 69, 69,
+// 69, 74, 75, 77, 78, 79, 80, 80, 81, 84, 87. Mean 72, every visit inside 15
+// ft of it. So there are two errors and only one of them is a problem: a
+// SYSTEMATIC 72 ft, which is the gap between where the geocoder dropped the
+// pin and where the truck actually sits, and a RANDOM 14 ft, which is the real
+// precision. Learning the first away leaves the second, and 14 ft against a
+// 60 ft lot is what separates two neighbours.
+//
+// THE GEOCODED ADDRESS IS NEVER TOUCHED. It is what the invoice says and what
+// navigation routes to. The anchor is a second field, used only to decide
+// which saved address a stop belongs to.
+//
+// Four guards, each against a specific way this could poison itself:
+//  - ONE NAME IN RANGE. A stop whose cluster sits inside two fences teaches
+//    neither. That is exactly the neighbour case, and it is the one that would
+//    drag a pin onto the house next door and then keep confirming itself.
+//  - IT MUST BE THE FENCE THE ROW SAYS. A re-seated or held stop teaches
+//    nothing; only a visit that resolved cleanly on its own.
+//  - LONG ENOUGH TO HAVE A MIDDLE. Ten minutes, on top of rule 22's three
+//    fixes. A drive-by does not get a vote.
+//  - NEVER FAR FROM THE PIN. A sighting past maxDriftFt is not a correction,
+//    it is a different place, and averaging it in is how a pin walks away.
+// And then the anchor itself needs THREE sightings agreeing within 40 ft. One
+// visit never moves a pin, and the median of the agreeing ones is what lands,
+// so a stray that clears every guard above still cannot shift it.
+const GEO_ANCHOR = Object.freeze({
+  minVisits: 3,        // one visit never moves a pin
+  agreeFt: 40,         // his observed random error is 14 ft; this is generous
+  keep: 10,            // sightings remembered per address
+  minMs: 10 * 60000,   // a stop too short to have a cluster teaches nothing
+  maxDriftFt: 150,     // past this it is a different place, not a correction
+});
+
+// Every fence containing this point, not just the winner. geoFenceAt answers
+// "which one", this answers "how many", which is the ambiguity test.
+function _gdFencesAt(pt, fences, radiusFt) {
+  const out = [];
+  if (!pt || pt.lat == null || pt.lng == null) return out;
+  const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  for (const f of (fences || [])) {
+    if (!f || f.lat == null || f.lng == null) continue;
+    if (_gdMiles(pt, f) * 5280 <= _gdFenceLimitFt(f, r)) out.push(f);
+  }
+  return out;
+}
+
+// The dwells on this day that are allowed to teach their fence where it is.
+function geoAnchorSightings(dwells, fences, opts) {
+  const o = opts || {};
+  const r = Number(o.radiusFt) > 0 ? Number(o.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const minMs = Number(o.anchorMinMs) > 0 ? Number(o.anchorMinMs) : GEO_ANCHOR.minMs;
+  const maxFt = Number(o.anchorMaxDriftFt) > 0 ? Number(o.anchorMaxDriftFt) : GEO_ANCHOR.maxDriftFt;
+  const out = [];
+  for (const d of (dwells || [])) {
+    if (!d || d.open || !d.fence || !d.spot) continue;
+    if (d.held || d.farFromFence || d.reseated || d.dismissed) continue;
+    if (!(Number(d.endTs) - Number(d.startTs) >= minMs)) continue;
+    const here = _gdFencesAt(d.spot, fences, r);
+    if (here.length !== 1) continue;
+    if (!_gdSameFence(here[0], d.fence)) continue;
+    if (_gdMiles(d.spot, d.fence) * 5280 > maxFt) continue;
+    out.push({ id: String(d.fence.id), lat: d.spot.lat, lng: d.spot.lng,
+      ts: Number(d.startTs), n: Number(d.spot.n) || 0 });
+  }
+  return out;
+}
+
+// The anchor a list of sightings supports, or null while it is still learning.
+function geoAnchorOf(seen, opts) {
+  const o = opts || {};
+  const min = Number(o.anchorMinVisits) > 0 ? Number(o.anchorMinVisits) : GEO_ANCHOR.minVisits;
+  const agree = Number(o.anchorAgreeFt) > 0 ? Number(o.anchorAgreeFt) : GEO_ANCHOR.agreeFt;
+  const list = (seen || []).filter(s => s && s.lat != null && s.lng != null &&
+    isFinite(Number(s.lat)) && isFinite(Number(s.lng)));
+  if (list.length < min) return null;
+  const med = (nums) => {
+    const v = nums.slice().sort((x, y) => x - y), m = v.length >> 1;
+    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+  };
+  const pt = { lat: med(list.map(s => Number(s.lat))), lng: med(list.map(s => Number(s.lng))) };
+  const near = list.filter(s => _gdMiles({ lat: Number(s.lat), lng: Number(s.lng) }, pt) * 5280 <= agree);
+  if (near.length < min) return null;
+  // Re-median on the agreeing ones only, so an outlier that survived the
+  // filters above still contributes nothing to where the pin lands.
+  return { lat: med(near.map(s => Number(s.lat))), lng: med(near.map(s => Number(s.lng))), n: near.length };
 }
 
 function geoDeriveRows(result, ids) {

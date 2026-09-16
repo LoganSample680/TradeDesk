@@ -1686,19 +1686,43 @@ function _tlRailRow(r){
     // row between two segments already says.
     const _ends=isDrive&&(r.originPlace||r.destPlace)
       ?_arrow(r.originPlace||'Unsaved address',r.destPlace||'Unsaved address'):'';
+    // ── ONE END KNOWN IS NOT THE ROW TITLING ITSELF (owner 2026-09-16) ────
+    // "On jacks 09/08 rows he has unsaved address to Tagen Lindstram when it
+    // should say JS Solutions shop to Tagen Lindstram."
+    //
+    // It should, and the name was never missing: the mileage leg for that
+    // drive says "JS Solutions shop → Tagen Lindstram" and always did. The
+    // row's origin_place is null only because the day was derived on 14
+    // September and origin_place landed on the 15th. The comment below has
+    // said since that day that such rows keep the join; this claimed them
+    // before the join could run, because it fired on EITHER end. So the one
+    // field the deriver had not written yet erased the one the log already
+    // had, and it hit every drive row derived before origin_place existed.
+    //
+    // A row titles itself when it knows BOTH ends. Knowing one is a question
+    // for the join, and _ends waits at the bottom of the chain to answer it
+    // if the join cannot: that is the only way "Unsaved address" stays the
+    // word for an end that genuinely is unsaved, rather than for an end
+    // nobody asked about.
+    const _both=!!(isDrive&&r.originPlace&&r.destPlace);
     // Below here is history: rows written before origin_place existed, on days
     // past the tape's seven that nothing will ever re-derive. They keep the
     // join, and they are the only reason it is still here.
-    const ttl=_ends?_ends
+    const ttl=_both?_ends
              :_segE?_arrow(_segE.from||'Unsaved address',_segE.to||'Unsaved address')
              // A leg the deriver did NOT split: its two ends are the row's two
-             // ends, which is what this always was.
-             :(leg&&_ls&&!_ls.split)?_arrow(leg.from_name,leg.to_name||r.clientName)
+             // ends, which is what this always was. Only when it actually
+             // HOLDS an origin: a leg out of an unsaved address has an empty
+             // from_name, and an em dash there is worse than the words.
+             :(leg&&_ls&&!_ls.split&&leg.from_name)?_arrow(leg.from_name,leg.to_name||r.clientName)
              // A segment written before segEnds existed. The leg's ends are
              // the journey's, not this row's, so the row says what it knows
              // about itself instead of borrowing them. The next derive of that
              // day rewrites the leg and the arrow comes back.
-             :_fallTtl;
+             // And last, the one end the row DOES know, with "Unsaved address"
+             // for the other: the join had nothing to add, so the end really
+             // is one nobody saved.
+             :(_ends||_fallTtl);
     // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
     // put tradedesk shop under the sub title that already says it ... can
     // just do the start and end time under there").

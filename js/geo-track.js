@@ -7314,7 +7314,11 @@ function _geoDeriveFences(dayKey){
       out.push({id:'shop',kind:'shop',name:(S.bname?S.bname+' shop':'Shop'),lat:Number(S.officeLat),lng:Number(S.officeLon),addr:S.baddr||''});
     (typeof places!=='undefined'&&Array.isArray(places)?places:[]).forEach(pl=>{
       if(!pl||pl.lat==null||pl.lon==null)return;
-      out.push({id:'place-'+pl.id,kind:String(pl.kind||'other'),name:pl.name||'',lat:Number(pl.lat),lng:Number(pl.lon),addr:pl.addr||'',placeId:pl.id,radiusFt:pl.fenceFt||undefined,commute:pl.commute===true||undefined});
+      // RULE 23: stand the fence where the visits say the place is, not where
+      // the geocoder guessed. pl.lat/pl.lon are untouched and still what the
+      // map and the address field show (js/geo-anchor.js).
+      const a=(typeof _geoAnchorPoint==='function')?_geoAnchorPoint(pl):null;
+      out.push({id:'place-'+pl.id,kind:String(pl.kind||'other'),name:pl.name||'',lat:a?a.lat:Number(pl.lat),lng:a?a.lng:Number(pl.lon),addr:pl.addr||'',placeId:pl.id,radiusFt:pl.fenceFt||undefined,commute:pl.commute===true||undefined,anchored:a?true:undefined});
     });
     const cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
     // A client fence says whether the calendar vouches for it that day
@@ -7350,7 +7354,11 @@ function _geoDeriveFences(dayKey){
       // Marked family or personal on the contact itself (owner 2026-09-12):
       // rule 13 then holds the visit unless the calendar or a running clock
       // vouches for it, instead of letting the working-day window do so.
-      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks});
+      // RULE 23 (js/geo-anchor.js): the learned anchor stands in for the
+      // geocoded coordinate, and only for matching. c.lat/c.lon and c.addr are
+      // untouched, so the invoice, the map and navigation are unaffected.
+      const anc=(typeof _geoAnchorPoint==='function')?_geoAnchorPoint(c):null;
+      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:anc?anc.lat:Number(hit.lat),lng:anc?anc.lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks,anchored:anc?true:undefined});
     });
     (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
       if(!j||j.status==='canceled')return;
@@ -8077,6 +8085,7 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     const fixes=_geoFixLogRead().concat(server||[]);
     const appEvents=_geoAppLogRead().concat((server&&Array.isArray(server.appEvents))?server.appEvents:[]);
     const regions=_geoRegLogRead().concat((server&&Array.isArray(server.regions))?server.regions:[]);
+    const _fences=_geoDeriveFences(dayKey);
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
       // Rule 20 is crew-only (owner 2026-09-16: "for a business owner it
@@ -8084,7 +8093,7 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       //
       // The two ids this write is about, nothing else (_geoCrewWrite above).
       crew:_geoCrewWrite(),
-      tape,fixes,appEvents,regions,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
+      tape,fixes,appEvents,regions,fences:_fences,nowMs:Date.now(),
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.
       clocks:_geoDeriveClocks(b.start,b.end),clockHistory:_geoClockHistory(),workHours:_geoWorkHours(),
@@ -8158,6 +8167,11 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // crossed midnight can be closed at yesterday's arrival home.
     try{if(typeof _dayEndNoteDay==='function'&&_dayEndNoteDay(dayKey,res)&&typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
     _geoOpenDwellPublish(dayKey,res);
+    // RULE 23: the day's clean visits tell their addresses where they are
+    // (js/geo-anchor.js). After the rows are written, never before: learning
+    // is a side effect of a derive that already happened, and it must never
+    // be able to change what that derive produced.
+    try{if(typeof geoAnchorRecord==='function')geoAnchorRecord(res,_fences,{});}catch(_e){}
     try{_geoParkNote('derived',dayKey+' '+res.dwells.length+'d/'+res.legs.length+'l'+(res.pending?' pending':'')+(res.open?' open':''));}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
     return res;
