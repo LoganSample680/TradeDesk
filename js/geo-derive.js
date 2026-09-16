@@ -291,20 +291,99 @@ function _gdRegionSpans(regions, fences, radiusFt) {
   };
 }
 
+// ── THE ARRIVAL THAT ENDS THE DAY (owner 2026-09-16) ─────────────────────
+// "Why am I as Logan Sample missing my last drive for the day still."
+//
+// Because the whole write was being thrown away, and had been all evening:
+//
+//   error_log  01:13:01Z, app 09.15.26.17
+//   "geo derive refused: geo_replace_day: 1 overlapping pair(s) in the
+//    derived set"
+//
+// geo_replace_day refuses a SET with any overlap in it and discards all of
+// it, which is right (17: one writer, one transaction, no half-written day).
+// The overlap was his last drive against the dwell it arrived at:
+//
+//   drive   17:41:19 - 17:54:39      the tape stayed automotive
+//   office  17:50:14 - 17:53:29      the crossing said he was home
+//
+// The crossing at 17:50:14 is exactly what rule 21 exists to read, and rule
+// 21 never saw it, because _gdRegionSpanList drops an enter that never
+// exited and he never left again: it was the last arrival of the day. So the
+// one crossing that most needs to end a drive is precisely the one shape the
+// span list throws away.
+//
+// The reason it throws it away is sound and is NOT weakened here: an unpaired
+// enter cannot be a SPAN, because a span says WHERE somebody was for its
+// whole length, and Jack's 07:43 'shop' enter never exited and swallowed his
+// entire day. That stays exactly as it was.
+//
+// But rule 21 does not want a span. It wants an INSTANT: the moment the
+// kernel saw the boundary crossed inward, which it reports on the edge
+// whether or not this app has runtime, and which is the same whether an exit
+// ever follows. So the instant is admitted on its own, with one condition
+// that a span could never give: A FIX AFTER IT, STILL INSIDE THE FENCE. That
+// is what separates arriving from driving past with a lost exit, and it is
+// the same "proven by fixes inside the fence" standard rule 10 already uses.
+//
+// Rule 21 can still only ever make a drive SHORTER, never invent one.
+function _gdOpenArrivals(regions, fences, radiusFt, fixes) {
+  const byId = new Map();
+  (Array.isArray(fences) ? fences : []).forEach(f => { if (f && f.id != null) byId.set(String(f.id), f); });
+  const rows = (Array.isArray(regions) ? regions : [])
+    .filter(r => r && typeof r.ts === 'number' && r.id != null && byId.has(String(r.id)))
+    .sort((a, b) => a.ts - b.ts);
+  // Last enter wins for an id, and any exit clears it: what is left is an
+  // arrival nobody ever left.
+  const open = new Map();
+  for (const r of rows) {
+    const id = String(r.id);
+    if (r.enter) { if (!open.has(id)) open.set(id, r.ts); continue; }
+    open.delete(id);
+  }
+  const out = [];
+  for (const [id, ts] of open) {
+    // The crossing says WHERE, geoFenceAt says WHICH: same as the span list,
+    // so one building answering to three ids still gives one answer.
+    const f = geoFenceAt(byId.get(id), fences, radiusFt);
+    if (!f) continue;
+    // HE WAS STILL THERE AFTERWARDS, and a fix has to say so. Without this a
+    // lost exit on a fence he merely drove past would end the drive at the
+    // roadside.
+    const proven = (Array.isArray(fixes) ? fixes : []).some(fx => fx && fx.ts > ts &&
+      fx.lat != null && fx.lng != null && _gdSameFence(geoFenceAt(fx, fences, radiusFt), f));
+    if (proven) out.push({ from: ts, to: Infinity, f, unpaired: true });
+  }
+  return out;
+}
+
 // Rule 21, applied to the journey list before anything reads it, so the leg
 // and the dwell after it move together: one boundary, not two.
 function _gdArrivalTrim(journeys, spans) {
   if (!Array.isArray(journeys) || !Array.isArray(spans) || !spans.length) return journeys;
   return journeys.map((j) => {
     if (!j || typeof j.endTs !== 'number' || typeof j.startTs !== 'number') return j;
-    let arrival = null;
+    let arrival = null, fence = null;
     for (const s of spans) {
       // Entered after this drive began, before the tape said it ended, and
       // still inside at that moment: he was parked in there the whole time.
       if (!(s.from > j.startTs && s.from < j.endTs && s.to >= j.endTs)) continue;
-      if (arrival == null || s.from < arrival) arrival = s.from;
+      if (arrival == null || s.from < arrival) { arrival = s.from; fence = s.f; }
     }
-    return arrival == null ? j : Object.assign({}, j, { endTs: arrival });
+    // ── AND THE CROSSING NAMES THE PLACE, NOT JUST THE MOMENT ────────────
+    // The OS region is WIDER than the app's own fence circle, so the instant
+    // the boundary fires he is not yet "inside" by this file's radius: on his
+    // 15 September the crossing fired 0.4 miles out, and trimming the drive
+    // there left the arrival to be named by a fix still on the road. The leg
+    // came back "Destination not saved" and the dwell never opened at all,
+    // which is a different wrong answer from the one this rule fixed.
+    //
+    // It is the same evidence either way. Rule 15 already trusts the crossing
+    // for WHERE and rule 21 trusts it for WHEN; asking the fixes to re-answer
+    // WHERE at a moment the crossing itself chose is asking the weaker witness
+    // a question the stronger one already answered.
+    return arrival == null ? j
+      : Object.assign({}, j, { endTs: arrival }, fence ? { endFence: fence } : {});
   });
 }
 
@@ -714,8 +793,12 @@ function geoDeriveDay(input) {
   // Rule 15 and rule 21 read the same crossings: one says which fence an
   // instant belongs to, the other says when a drive into it actually ended.
   const regionSpans = _gdRegionSpanList(inp.regions, fences, opts.radiusFt);
+  // Rule 21 reads the closed pairs AND the unpaired arrivals; rule 15 reads
+  // only the closed pairs, which is the distinction _gdOpenArrivals exists to
+  // draw. Never the other way round.
   const journeys = _gdArrivalTrim(
-    _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes), regionSpans);
+    _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
+    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes)));
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;
@@ -816,7 +899,9 @@ function geoDeriveDay(input) {
     // is its mirror. `at()` stays as the fallback for a journey with nothing
     // after it at all.
     const endFix = _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM, j.startTs) || at(j.endTs);
-    const toFence = fenceAt(endFix, j.endTs);
+    // Rule 21's arrival, when it trimmed this journey: the crossing named the
+    // place and this file does not second-guess it (see _gdArrivalTrim).
+    const toFence = j.endFence || fenceAt(endFix, j.endTs);
     const autoMs = j.endTs - j.startTs;
 
     if (!chain) {

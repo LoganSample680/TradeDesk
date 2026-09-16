@@ -1333,6 +1333,94 @@ test.describe('geo-derive: the day deriver', () => {
         expect(hm(r.legs[0].endTs), String(junk && junk.length)).toBe(hm(T(8, 30, 53)));
       }
     });
+
+    // ── THE ARRIVAL THAT ENDS THE DAY (owner 2026-09-16) ─────────────────
+    // "Why am I as Logan Sample missing my last drive for the day still."
+    //
+    // His whole day was being thrown away, every derive, all evening:
+    //
+    //   error_log 01:13:01Z, app 09.15.26.17
+    //   "geo derive refused: geo_replace_day: 1 overlapping pair(s)"
+    //
+    // He drove home from John Doe at 17:41:19. The crossing into his own
+    // place fired at 17:50:14 and the tape did not leave automotive until
+    // 17:54:39, so the drive ran nine minutes past the dwell the same
+    // crossing opened, the two rows overlapped, and geo_replace_day threw out
+    // the ENTIRE day rather than write a contradiction. Rule 21 is exactly
+    // the rule for that crossing, and it never saw it: the enter had no exit,
+    // because he was home and never left again, and an unpaired enter was
+    // dropped before rule 21 ran.
+    //
+    // Two things have to hold, and the second is what the first fix got
+    // wrong on its own: the day must WRITE (no overlapping pair anywhere in
+    // the set), and the drive must still know where it ended.
+    test('an arrival with no exit still ends the drive, and still names the place', async () => {
+      const HOME = { id: 'p-home', kind: 'shop', name: 'TradeDesk shop', lat: 39.0307066, lng: -95.7112082 };
+      const CLI = { id: 'client-jd', kind: 'client', name: 'John Doe', clientId: 9, lat: 39.0123292, lng: -95.7464936 };
+      // The crossing fires at the OS region boundary, which is WIDER than this
+      // file's own circle: a third of a mile short of the shop, still on the
+      // road. That is why the arrival cannot be re-resolved from the fixes.
+      const GATE = { lat: 39.0295618, lng: -95.7135011 };
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+        const all = rows.job_time_entries.map(t => [Date.parse(t.arrived_at), Date.parse(t.departed_at)])
+          .concat(rows.shop_time_entries.map(t => [Date.parse(t.arrived_at), Date.parse(t.departed_at)]));
+        // The exact test geo_replace_day applies before it writes anything.
+        let overlaps = 0;
+        for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+          if (Math.min(all[i][1], all[j][1]) > Math.max(all[i][0], all[j][0])) overlaps++;
+        }
+        const last = res.legs[res.legs.length - 1];
+        return JSON.parse(JSON.stringify({
+          overlaps, endTs: last && last.endTs,
+          to: last && last.to && last.to.name, unsavedTo: !!(last && last.unsavedTo),
+        }));
+      }, base({
+        fences: [HOME, CLI],
+        tape: [mo(T(13, 26, 48), 'onFoot'), mo(T(17, 41, 19), 'automotive'), mo(T(17, 54, 39), 'cycling')],
+        fixes: [fix(T(13, 26, 48), CLI), fix(T(15, 0), CLI), fix(T(17, 41, 19), CLI),
+          fix(T(17, 50, 14), GATE), fix(T(17, 50, 20), GATE), fix(T(17, 52, 0), HOME),
+          fix(T(17, 54, 39), HOME), fix(T(18, 30), HOME)],
+        regions: [
+          { ts: T(17, 41, 25), id: 'client-jd', enter: false },
+          // Entered and never left: he was home for the night.
+          { ts: T(17, 50, 14), id: 'p-home', enter: true },
+        ],
+        nowMs: T(20, 0), crew: false,
+      }));
+      expect(r.overlaps, 'geo_replace_day refuses the whole day over one of these').toBe(0);
+      expect(hm(r.endTs), 'the crossing ends it, not the 17:54 flip').toBe(hm(T(17, 50, 14)));
+      expect(r.to, 'and the crossing names where he arrived').toBe('TradeDesk shop');
+      expect(r.unsavedTo, 'the boundary fix being short of the circle is not "nowhere"').toBe(false);
+    });
+
+    // The reason an unpaired enter was dropped in the first place, which this
+    // does NOT undo: Jack's 'shop' entered at 07:43 and never exited, and as a
+    // SPAN it swallowed his whole day and put a stop three miles east at the
+    // yard. An instant is not a span. Rule 15 still sees only closed pairs.
+    test('but an unpaired enter is still never a span for where he was', async () => {
+      const YARD = { id: 'yard', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106 };
+      const FAR = { id: 'client-far', kind: 'client', name: 'Bill Lorson', clientId: 3, lat: 39.10721, lng: -95.6650246 };
+      const r = await run(page, base({
+        fences: [JH, YARD, FAR],
+        tape: [mo(T(7, 43), 'onFoot'), mo(T(10, 0), 'automotive'), mo(T(10, 20), 'onFoot'),
+          mo(T(15, 0), 'automotive'), mo(T(15, 20), 'onFoot')],
+        fixes: [fix(T(7, 43), YARD), fix(T(9, 0), YARD), fix(T(10, 0), YARD),
+          fix(T(10, 20), FAR), fix(T(12, 0), FAR), fix(T(15, 0), FAR),
+          fix(T(15, 20), YARD), fix(T(17, 0), YARD)],
+        // Entered the yard at 07:43 and the exit was never recorded.
+        regions: [{ ts: T(7, 43), id: 'yard', enter: true }],
+        nowMs: T(20, 0), crew: true,
+      }));
+      const far = r.dwells.find(d => d.name === 'Bill Lorson');
+      expect(far, 'the midday stop is at the customer, not swallowed by the yard').toBeTruthy();
+      expect(hm(far.startTs)).toBe(hm(T(10, 20)));
+      // And the 10:00 drive out is NOT trimmed back to the 07:43 crossing:
+      // that crossing is before it, which rule 21 already refuses.
+      const out = r.legs.find(l => l.to && l.to.name === 'Bill Lorson');
+      expect(hm(out.endTs)).toBe(hm(T(10, 20)));
+    });
   });
 
   test.describe('rule 20: the commute', () => {
