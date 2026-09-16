@@ -101,7 +101,7 @@ test.describe('manual clock over a derived day', () => {
     expect(clock.blended).toBe(564);
     // The 36 minutes nothing itemised are now a Job site rather than sitting
     // unnamed on the clock (2026-09-04). Same minutes, named row.
-    expect(clock.min + r.filter(x => x.raw === 'site').reduce((n, x) => n + x.min, 0)).toBe(36);
+    expect(clock.min + r.filter(x => x.raw === 'clock-span').reduce((n, x) => n + x.min, 0)).toBe(36);
     // And the day totals the clock, not the clock plus the fences.
     const total = r.reduce((s, x) => s + (x.unpaid ? 0 : x.min), 0);
     expect(total).toBe(600);
@@ -120,13 +120,17 @@ test.describe('manual clock over a derived day', () => {
     // fence is the 121 that remain. This is the exact case the owner named on
     // 2026-09-04, so those 121 minutes now say what they are instead of
     // reading as anonymous Manual time.
-    const site = r.find(x => x.raw === 'site');
+    const site = r.find(x => x.raw === 'clock-span');
     expect(site, 'the untracked client in the middle').toBeTruthy();
     expect(site.min).toBe(121);
-    expect(site.kind).toBe('site');
-    // Renamed 2026-09-04: "rather than unsaved job site do we say Unsaved
-    // Address." Half of these are a supply house or a gate.
-    expect(site.name).toBe('Unsaved address');
+    // AMENDED 2026-09-16 (10.4). It was kind 'site' named "Unsaved address".
+    // It is Manual time now and carries no name, because this row has never
+    // known an address: all it knows is that the clock was running and nothing
+    // tracked the stretch. Owner 2026-09-16, reading Jack's rail, took the
+    // shop at 1:27 followed by "Unsaved address" at 1:57 for a lost drive. He
+    // had not moved. Not one total changes; only the claim does.
+    expect(site.kind).toBe('off');
+    expect(site.name).toBe('');
     expect(clock.min).toBe(0);
     // The drive before the clock is its own paid row, untouched by the blend.
     const drive = r.find(x => x.raw === 'drive');
@@ -143,7 +147,7 @@ test.describe('manual clock over a derived day', () => {
     const clock = r.find(x => x.src === 'manual');
     expect(clock.blended).toBe(60);
     // The two hours of clock the fence did not reach are a Job site now.
-    expect(clock.min + r.filter(x => x.raw === 'site').reduce((n, x) => n + x.min, 0)).toBe(120);
+    expect(clock.min + r.filter(x => x.raw === 'clock-span').reduce((n, x) => n + x.min, 0)).toBe(120);
     const total = r.reduce((s, x) => s + x.min, 0);
     expect(total).toBe(120 + 120);
   });
@@ -160,7 +164,7 @@ test.describe('manual clock over a derived day', () => {
     // fence in its middle, so each leaves a free hour either side of it. The
     // point of this test is that neither clock reaches into the other, and
     // that is what the split proves.
-    const sites = r.filter(x => x.raw === 'site');
+    const sites = r.filter(x => x.raw === 'clock-span');
     expect(sites.map(x => [x.t, x.min])).toEqual([
       ['12:00-13:00', 60], ['14:00-15:00', 60],
       ['18:00-19:00', 60], ['20:00-21:00', 60],
@@ -357,7 +361,7 @@ test.describe('manual clock over a derived day', () => {
           uids: Array.from(new Set(rows.map(x => String(x.personUid || '')))).sort(),
           blended: clock ? clock.blendedMin || 0 : -1,
           clockMin: clock ? clock.minutes : -1,
-          site: rows.filter(x => x.rawSource === 'site').reduce((n, x) => n + x.minutes, 0),
+          site: rows.filter(x => x.rawSource === 'clock-span').reduce((n, x) => n + x.minutes, 0),
           paid: rows.reduce((n, x) => n + (x.unpaid ? 0 : x.minutes), 0),
         };
       } finally {

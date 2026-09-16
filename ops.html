@@ -314,9 +314,18 @@ form.signin input{background:var(--field);border:1px solid var(--line2);color:va
            "that crew member opens the app". This is the door. It runs the
            same deriver over the same evidence for the person selected above,
            and it is the only server path allowed to retire a stale row. -->
+      <!-- A RANGE, BECAUSE A WRONG DAY IS RARELY ALONE (owner 2026-09-16).
+           Every one of a crew member's 24 days changed under the deriver's
+           current rules, and rebuilding them one date-picker click at a time
+           is the kind of chore nobody finishes. The edge function has always
+           taken a `days` array, up to ten in a call; this is the second date
+           box that finally uses it. Leave the second box empty and it rebuilds
+           the one day, exactly as before. -->
       <div class="rebuild">
         <input type="date" id="rb-day" aria-label="Day to rebuild">
-        <button class="btn" id="rb-go">Rebuild this day</button>
+        <span class="muted">to</span>
+        <input type="date" id="rb-day2" aria-label="Last day to rebuild (optional)">
+        <button class="btn" id="rb-go">Rebuild</button>
         <span class="muted" id="rb-out"></span>
       </div>
 
@@ -730,7 +739,10 @@ $('biz-open').addEventListener('click',()=>{
 // Nothing here can write a row, and nothing here decides what the rows are.
 // It runs the deriver for the person selected in the chips above, so which
 // person it rebuilds is whichever one you were already looking at.
-function rbSay(t,bad){ const el=$('rb-out'); el.textContent=t||''; el.style.color=bad?'var(--bad,#e5534b)':''; }
+function rbSay(t,bad){ const el=$('rb-out'); el.textContent=t||'';
+  // A range answers with one line per day, so the status has to keep them.
+  el.style.whiteSpace='pre-line';
+  el.style.color=bad?'var(--bad,#e5534b)':''; }
 
 $('rb-go').addEventListener('click',async()=>{
   if(!OPEN)return rbSay('Open a business first',true);
@@ -738,24 +750,45 @@ $('rb-go').addEventListener('click',async()=>{
   if(!p)return rbSay('Pick a person first',true);
   const day=$('rb-day').value;
   if(!day)return rbSay('Pick a day first',true);
+  // The range, inclusive, capped at what the function accepts in one call.
+  // An empty or earlier second box means "just the one day", so the old
+  // single-day behaviour is what you get by not touching it.
+  const day2=$('rb-day2').value;
+  const days=[];
+  for(let t=Date.parse(day+'T12:00:00Z'), end=Date.parse((day2&&day2>=day?day2:day)+'T12:00:00Z');
+      t<=end; t+=86400000){ days.push(new Date(t).toISOString().slice(0,10)); }
+  if(days.length>10)return rbSay('Ten days at a time. That range is '+days.length+'.',true);
   const btn=$('rb-go'); btn.disabled=true;
-  rbSay('Rebuilding '+day+' for '+(p.person_name||p.person_email||'them')+'…');
+  const who=p.person_name||p.person_email||'them';
+  rbSay('Rebuilding '+(days.length>1?days.length+' days':day)+' for '+who+'…');
   try{
     const {data:{session}}=await sb.auth.getSession();
     if(!session)return rbSay('Signed out. Reload and sign in again.',true);
     const {data,error}=await sb.functions.invoke('rebuild-day',{body:{
-      contractor_user_id:OPEN.id, employee_user_id:p.person_user_id, day,
+      contractor_user_id:OPEN.id, employee_user_id:p.person_user_id, days,
     }});
     if(error)return rbSay(error.message||'That call failed',true);
     if(!data||data.ok!==true)return rbSay((data&&data.error)||'That call failed',true);
-    const d=(data.days||[])[0]||{};
-    if(!d.wrote)return rbSay('Nothing written: '+(d.reason||'no reason given'),true);
-    // A rebuild that could not sweep is not the same as one that did, and the
-    // difference is the whole point of pressing this: say which happened.
-    rbSay(d.sweep
-      ? ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. Stale rows retired.')
-      : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+
-         'Nothing retired: no motion tape covers that day on the server, so it cannot tell a row that should go from one nobody uploaded.'));
+    const got=data.days||[];
+    // ONE LINE PER DAY WHEN THERE ARE SEVERAL. A range that half worked and
+    // half did not is the case worth reading, and a single summary number
+    // would hide exactly the days somebody needs to look at.
+    if(got.length===1){
+      const d=got[0]||{};
+      if(!d.wrote)return rbSay('Nothing written: '+(d.reason||'no reason given'),true);
+      // A rebuild that could not sweep is not the same as one that did, and the
+      // difference is the whole point of pressing this: say which happened.
+      return rbSay(d.sweep
+        ? ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. Stale rows retired.')
+        : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+
+           'Nothing retired: no motion tape covers that day on the server, so it cannot tell a row that should go from one nobody uploaded.'));
+    }
+    const wrote=got.filter(d=>d&&d.wrote);
+    const skipped=got.filter(d=>d&&!d.wrote);
+    rbSay(wrote.map(d=>d.day+': '+d.time+' time, '+d.shop+' shop, '+d.miles+' mileage'+
+        (d.sweep?'':' (nothing retired)')).join('\n')+
+      (skipped.length?('\n'+skipped.map(d=>d.day+': nothing written, '+(d.reason||'no reason given')).join('\n')):''),
+      wrote.length===0);
   }catch(e){ rbSay(String((e&&e.message)||e),true); }
   finally{ btn.disabled=false; }
 });

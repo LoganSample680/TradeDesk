@@ -347,6 +347,9 @@ test.describe('Ops portal: the support view, embedded', () => {
         await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
         await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
         await page.evaluate(() => { window.__invoked = []; window.__invokeReply = null; });
+        // The second date box persists across tests in this one page, and a
+        // stale value there would quietly turn a single-day test into a range.
+        await page.locator('#rb-day2').fill('');
       });
       test.afterEach(async () => {
         await page.locator('#biz-back').click();
@@ -363,9 +366,62 @@ test.describe('Ops portal: the support view, embedded', () => {
         expect(calls[0].fn).toBe('rebuild-day');
         // The person from the chips, the business from the page, the day from
         // the field. Nothing here invents an id.
+        //
+        // AMENDED 2026-09-16: it sends `days`, an array, because the second
+        // date box can make it a range. One day is an array of one, and the
+        // edge function has always taken this shape.
         expect(calls[0].body).toEqual({
-          contractor_user_id: 'biz-a', employee_user_id: 'u-jack', day: '2026-09-14',
+          contractor_user_id: 'biz-a', employee_user_id: 'u-jack', days: ['2026-09-14'],
         });
+      });
+
+      // ── A RANGE, BECAUSE A WRONG DAY IS RARELY ALONE (owner 2026-09-16) ──
+      // Every one of a crew member's 24 days changed under the deriver's
+      // current rules. Rebuilding those one date-picker click at a time is a
+      // chore nobody finishes, and the edge function has always accepted up to
+      // ten days in a call. The second box is what finally uses it.
+      test('a second date makes it a range, inclusive of both ends', async () => {
+        await page.locator('#biz-chips .chip', { hasText: 'Jack' }).click();
+        await page.locator('#rb-day').fill('2026-09-12');
+        await page.locator('#rb-day2').fill('2026-09-15');
+        await page.locator('#rb-go').click();
+        const calls = await page.evaluate(() => window.__invoked);
+        expect(calls[0].body.days).toEqual(['2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15']);
+      });
+
+      test('an empty or earlier second date is still just the one day', async () => {
+        for (const second of ['', '2026-09-01']) {
+          await page.evaluate(() => { window.__invoked = []; });
+          await page.locator('#rb-day').fill('2026-09-14');
+          await page.locator('#rb-day2').fill(second);
+          await page.locator('#rb-go').click();
+          const calls = await page.evaluate(() => window.__invoked);
+          expect(calls[0].body.days, String(second)).toEqual(['2026-09-14']);
+        }
+      });
+
+      // The function refuses more than ten, so the page says so before it
+      // spends a call finding out.
+      test('more than ten days is a message, not a call', async () => {
+        await page.locator('#rb-day').fill('2026-09-01');
+        await page.locator('#rb-day2').fill('2026-09-15');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Ten days at a time');
+        expect(await page.evaluate(() => window.__invoked)).toHaveLength(0);
+      });
+
+      // A range that half worked is the case worth reading, so every day gets
+      // its own line rather than one summary number that hides the bad ones.
+      test('a range reports every day, the written and the skipped', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true, days: [
+          { day: '2026-09-13', wrote: true, time: 4, shop: 1, miles: 2, sweep: true },
+          { day: '2026-09-14', wrote: false, reason: 'no tape for that day' },
+        ] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-13');
+        await page.locator('#rb-day2').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('2026-09-13: 4 time, 1 shop, 2 mileage');
+        await expect(page.locator('#rb-out')).toContainText('2026-09-14: nothing written, no tape for that day');
       });
 
       test('the day defaults to the business day, not this browser\'s', async () => {

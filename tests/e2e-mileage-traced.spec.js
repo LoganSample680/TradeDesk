@@ -259,14 +259,27 @@ test.describe('traced trips', () => {
   });
 
   test.describe('save this address', () => {
-    test('opens the new-lead form on the traced coordinates, address prefilled from the reverse geocode', async () => {
+    // ── IT ASKS WHAT THE ADDRESS IS FIRST (owner 2026-09-16) ────────────
+    // "He clicked save address for a plumbing place and it dropped it as a
+    //  lead, go look at neenans co, that's supposed to be a supply house not
+    //  a lead."
+    //
+    // Save used to go straight here for every address on the log, so a stop at
+    // a plumbing supply counter became a sales lead, and then got enriched off
+    // Zillow as a single family home. The kind is not cosmetic: a supply run is
+    // held for its receipt and a client visit is not. So it asks, and this test
+    // now answers "A customer" before asserting everything it always did.
+    test('asks what the address is, and a customer opens the new-lead form prefilled', async () => {
       await seed();
       const r = await page.evaluate(async () => {
         const keep = window._nominatimReverse;
         window._nominatimReverse = async (lat, lng) => (lat === 39.035 && lng === -95.7 ? '2100 SW Gage Blvd, Topeka, KS 66604' : null);
         try {
           const ok = await _mileSaveAddress('j-traced', 'to');
+          const asked = !!document.getElementById('_mile-kind-ov');
+          await _mileSaveKind('client');
           return {
+            asked, gone: !document.getElementById('_mile-kind-ov'),
             ok,
             title: document.getElementById('cf-title') && document.getElementById('cf-title').textContent,
             street: document.getElementById('cf-street').value, city: document.getElementById('cf-city').value,
@@ -277,6 +290,8 @@ test.describe('traced trips', () => {
         } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
       });
       expect(r.ok).toBe(true);
+      expect(r.asked, 'it asks before it assumes').toBe(true);
+      expect(r.gone, 'and gets out of the way once answered').toBe(true);
       expect(r.title).toBe('New lead');
       expect([r.street, r.city, r.state, r.zip]).toEqual(['2100 SW Gage Blvd', 'Topeka', 'KS', '66604']);
       expect(r.name, 'the name is his to give').toBe('');
@@ -302,6 +317,7 @@ test.describe('traced trips', () => {
         window._nominatimReverse = async () => null;
         try {
           const ok = await _mileSaveAddress('j-via', 'to');
+          await _mileSaveKind('client');
           return { ok, pending: _mileAddressPending, stamp: row.includes(clk('2026-09-09T19:05:42.000Z')) };
         } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
       });
@@ -309,6 +325,195 @@ test.describe('traced trips', () => {
       expect(r.pending).toEqual(expect.objectContaining({ legKey: 'j-via', which: 'to', lat: 39.06146, lng: -95.69681 }));
       // And the stamp beside "Unsaved address" is when he was AT the stop.
       expect(r.stamp).toBe(true);
+    });
+
+    // ── AND THE OTHER ARM: NEENANS CO (owner 2026-09-16) ────────────────
+    // The one that did not exist. A supply house is not a customer, and the
+    // place form is the app's own form for it: it already takes a coordinate
+    // and already refuses to save without a real type. No new form, no second
+    // copy of the flow (7.3). The re-derive fires from either arm, or the trip
+    // that prompted the save would still read "Unsaved address" afterwards.
+    test('a supply house opens the PLACE form, not a lead, on the same coordinate', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        try {
+          // cf-title is static markup, so its presence proves nothing. Blank it
+          // first: openNewClient is what writes 'New lead' into it, so the
+          // text is the only honest tell that the lead form ran.
+          document.getElementById('cf-title').textContent = '';
+          await _mileSaveAddress('j-traced', 'to');
+          await _mileSaveKind('place');
+          const pm = document.getElementById('place-modal');
+          return {
+            place: !!pm, lead: document.getElementById('cf-title').textContent === 'New lead',
+            pending: _mileAddressPending,
+            // Every kind the place form offers, so a supply house is reachable.
+            kinds: pm ? [...pm.querySelectorAll('#place-kind option')].map(o => o.value).filter(Boolean) : [],
+          };
+        } finally {
+          document.getElementById('place-modal')?.remove();
+          if (typeof closeClientForm === 'function') closeClientForm();
+        }
+      });
+      expect(r.place, 'the place form, on the traced coordinate').toBe(true);
+      expect(r.lead, 'and no lead form anywhere').toBe(false);
+      expect(r.kinds, 'supply house among them').toContain('supply');
+      expect(r.pending, 'and the same day is still queued to re-derive')
+        .toEqual(expect.objectContaining({ legKey: 'j-traced', lat: 39.035, lng: -95.7 }));
+    });
+
+    // ── AND IT KNOWS WHAT IS STANDING THERE (owner 2026-09-16) ──────────
+    // "For save address I guess we need to make it smart enough to know and
+    //  ask is this a Supply House or a Lead/Client."
+    //
+    // Apple names the business on a commercial pin and _reverseGeocode was
+    // throwing that name away before anyone saw it. Neenans Co is the real
+    // case: a plumbing supply counter at 3210 S Kansas Ave that the app turned
+    // into a sales lead and then enriched off Zillow as a single family home.
+    test('a supply house names itself and leads with Supply house', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        // Bare assignment, not window.: _mapkitReady is a script-scope `let`
+        // and window._mapkitReady = true sets a different variable (the same
+        // note withMapKit carries below).
+        const keepMk = _mapkitReady, keepG = window.mapkit;
+        _mapkitReady = true;
+        window.mapkit = {
+          Coordinate: function (a, b) { this.latitude = a; this.longitude = b; },
+          Geocoder: function () {
+            this.reverseLookup = (c, cb) => cb(null, { results: [{
+              name: 'Neenans Co', fullThoroughfare: '3210 S Kansas Ave',
+              locality: 'Topeka', administrativeAreaCode: 'KS', postCode: '66611' }] });
+          },
+        };
+        try {
+          await _mileSaveAddress('j-traced', 'to');
+          // The lookup fills the prompt in after it paints, so wait for it.
+          for (let i = 0; i < 40 && !/Neenans/.test(document.getElementById('_mile-kind-ov')?.textContent || ''); i++) {
+            await new Promise(r => setTimeout(r, 25));
+          }
+          const ov = document.getElementById('_mile-kind-ov');
+          const btns = [...ov.querySelectorAll('button')].map(b => ({ t: b.textContent, p: b.className.includes('btn-p') }));
+          return { text: ov.textContent, btns, guess: _mileAddressPending.found };
+        } finally { _mapkitReady = keepMk; window.mapkit = keepG;
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.text, 'it says what is there instead of a raw coordinate').toContain('Neenans Co');
+      // AND IT DOES NOT PRETEND TO KNOW. "Neenans Co" is the case that started
+      // this and the name says nothing: no keyword in it suggests plumbing
+      // supply. A confident wrong answer here is the exact failure the prompt
+      // exists to stop, so a named business the list cannot place is shown by
+      // name with both answers offered evenly. Knowing it is Neenans Co rather
+      // than 39.0106, -95.6811 is most of the value on its own.
+      expect(r.guess.guess, 'named, but not placed').toBe('');
+      // AND NO STATE EVER FILLS ONE (owner 2026-09-16: "it leads click customer
+      // heavy, want them to look at it twice to ensure it's right"). A filled
+      // primary is the app telling you where to tap, and the app's guess is the
+      // thing that was wrong here. The guess orders them and says itself in
+      // words; both look identical so he has to read them.
+      expect(r.btns.filter(b => b.p), 'neither side is pre-picked').toHaveLength(0);
+      expect(r.btns.map(b => b.t)).toEqual(expect.arrayContaining(['Supply house', 'Lead or client']));
+      expect(r.text).toContain('The map found that name but not what it is');
+    });
+
+    // Even the confident case leads without leaning: first in the list, same
+    // weight as the other, and the guess stated in words above them.
+    test('a confident guess still fills no button, it only orders them', async () => {
+      const r = await page.evaluate(async () => {
+        // Restored in the finally: _mileWhatIsHere is a top-level function, so
+        // assigning to window really does replace it, and leaving it replaced
+        // silently fed this fixture to the next test in the file.
+        const keep = window._mileWhatIsHere;
+        try {
+          window._mileWhatIsHere = async () => ({ parts: {}, name: 'Ferguson Plumbing Supply',
+            guess: 'supply', supply: true });
+          await _mileSaveAddress('j-traced', 'to');
+          for (let i = 0; i < 40 && !_mileAddressPending.found; i++) await new Promise(r => setTimeout(r, 25));
+          const ov = document.getElementById('_mile-kind-ov');
+          return { btns: [...ov.querySelectorAll('button')].map(b => ({ t: b.textContent, p: b.className.includes('btn-p') })),
+                   text: ov.textContent };
+        } finally { window._mileWhatIsHere = keep; document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.btns[0].t, 'the likely one is simply first').toBe('Supply house');
+      expect(r.btns.filter(b => b.p), 'and nothing is weighted').toHaveLength(0);
+      expect(r.text, 'the guess is words, not a heavy button')
+        .toContain('reads like a supply house');
+      expect(r.text).toContain('Check it before you pick');
+    });
+
+    test('a name that says what it is is read as a supply house', async () => {
+      const r = await page.evaluate(() => [
+        _mileGuessKind('Ferguson Plumbing Supply'), _mileGuessKind('Westlake Ace Hardware'),
+        _mileGuessKind('Capital City Lumber'), _mileGuessKind('Neenans Co'),
+        _mileGuessKind(''), _mileGuessKind('Bill Lorson'),
+      ]);
+      expect(r).toEqual(['supply', 'supply', 'supply', '', 'client', '']);
+    });
+
+    test('a house leads with Lead or client, which is the old behaviour', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        // Bare assignment, not window.: _mapkitReady is a script-scope `let`
+        // and window._mapkitReady = true sets a different variable (the same
+        // note withMapKit carries below).
+        const keepMk = _mapkitReady, keepG = window.mapkit;
+        _mapkitReady = true;
+        window.mapkit = {
+          Coordinate: function (a, b) { this.latitude = a; this.longitude = b; },
+          Geocoder: function () {
+            this.reverseLookup = (c, cb) => cb(null, { results: [{
+              fullThoroughfare: '1530 SW Arvonia Pl', locality: 'Topeka',
+              administrativeAreaCode: 'KS', postCode: '66604' }] });
+          },
+        };
+        window._geocodeAddress = async () => [];
+        try {
+          await _mileSaveAddress('j-traced', 'to');
+          for (let i = 0; i < 40 && !_mileAddressPending.found; i++) await new Promise(r => setTimeout(r, 25));
+          const ov = document.getElementById('_mile-kind-ov');
+          return { first: ov.querySelector('button').textContent, supply: _mileAddressPending.found.supply };
+        } finally { _mapkitReady = keepMk; window.mapkit = keepG;
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.supply, 'a street address with no business on it').toBe(false);
+      expect(r.first).toBe('Lead or client');
+    });
+
+    // The guess only ORDERS the buttons. Picking the other one is one tap and
+    // decides it, which is the whole reason this asks rather than assuming.
+    test('Supply house opens the place form already set to supply', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        try {
+          document.getElementById('cf-title').textContent = '';
+          await _mileSaveAddress('j-traced', 'to');
+          _mileAddressPending.found = { name: 'Neenans Co', supply: true, parts: {} };
+          await _mileSaveKind('supply');
+          return {
+            kind: document.getElementById('place-kind').value,
+            name: document.getElementById('place-name') ? document.getElementById('place-name').value : null,
+            lead: document.getElementById('cf-title').textContent === 'New lead',
+          };
+        } finally { document.getElementById('place-modal')?.remove();
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.kind, 'his answer, not a default').toBe('supply');
+      expect(r.lead, 'and no lead anywhere near it').toBe(false);
+    });
+
+    // Somewhere else still opens on the placeholder, because nobody picked a
+    // type there. That is the 2026-08-31 rule and it is unchanged.
+    test('Somewhere else still opens with no type pre-picked', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        try {
+          await _mileSaveAddress('j-traced', 'to');
+          await _mileSaveKind('place');
+          return document.getElementById('place-kind').value;
+        } finally { document.getElementById('place-modal')?.remove();
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r).toBe('');
     });
 
     // ── The Time Log's button comes through the same door (owner 2026-09-09:
@@ -500,8 +705,14 @@ test.describe('traced trips', () => {
       test('Apple gives the pieces already separated, and nothing else is asked', async () => {
         const r = await withMapKit({ fullThoroughfare: '1530 SW Arvonia Pl', locality: 'Topeka',
                                      administrativeAreaCode: 'KS', postCode: '66604' });
+        // AMENDED 2026-09-16: `name` rides along now. Apple names the business
+        // standing on a commercial pin and this function was discarding it,
+        // which is the one fact that tells a supply counter from a house
+        // (owner: "make it smart enough to know and ask is this a Supply House
+        // or a Lead/Client"). A residential pin like this one has no name, and
+        // an empty string is the honest answer for it.
         expect(r.parts).toEqual({ street: '1530 SW Arvonia Pl', city: 'Topeka', state: 'KS', zip: '66604',
-                                  addr: '1530 SW Arvonia Pl, Topeka, KS 66604' });
+                                  addr: '1530 SW Arvonia Pl, Topeka, KS 66604', name: '' });
         expect(r.nomCalled, 'no second lookup once Apple answered').toBe(false);
       });
 
@@ -544,6 +755,7 @@ test.describe('traced trips', () => {
           window._nominatimReverse = async () => '1530 Southwest Arvonia Place, Topeka, Kansas, 66604';
           try {
             await _mileSaveAddress('j-traced', 'to');
+            await _mileSaveKind('client');   // the chooser, answered (2026-09-16)
             return ['cf-street', 'cf-city', 'cf-state', 'cf-zip'].map(id => document.getElementById(id).value);
           } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
         });
@@ -558,6 +770,7 @@ test.describe('traced trips', () => {
         window._nominatimReverse = async () => null;
         try {
           const ok = await _mileSaveAddress('j-traced', 'to');
+          await _mileSaveKind('client');
           return { ok, street: document.getElementById('cf-street').value, day: _mileAddressPending && _mileAddressPending.day };
         } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
       });

@@ -203,6 +203,13 @@ function savePlace(pl){
   // this pin becomes this place, which is the whole payoff of promoting a
   // repeat-stop suggestion. Idempotent, only anonymous endpoints move.
   if(typeof _placeRetroNameTrips==='function')_placeRetroNameTrips(existing||pl);
+  // AND THE DAY IT WAS SAVED FROM RE-DERIVES, exactly as the client arm does
+  // (clients.js, saveClient). Without this, answering "a supply house" on the
+  // Save-this-address chooser named the place and left the trip that prompted
+  // it still reading "Unsaved address": the same trip, the same fix, two
+  // different outcomes depending on which button he pressed (owner 2026-09-16,
+  // on Neenans Co). No-ops when nothing is pending.
+  try{if(typeof _mileAddressSaved==='function')_mileAddressSaved(existing||pl);}catch(_e){}
   return existing||pl;
 }
 function deletePlace(id){
@@ -1016,7 +1023,7 @@ function _placeKindChanged(kind){
 }
 // Add / edit. lat+lon are passed when promoting a suggestion, since that stop
 // already has coordinates and asking for an address would be absurd.
-function openPlaceModal(id,lat,lon){
+function openPlaceModal(id,lat,lon,kind){
   const pl=id?(places||[]).find(p=>String(p.id)===String(id)):null;
   const _lat=pl?pl.lat:lat,_lon=pl?pl.lon:lon;
   document.getElementById('place-modal')?.remove();
@@ -1031,7 +1038,11 @@ function openPlaceModal(id,lat,lon){
   // It opens on a greyed placeholder instead, and Save refuses until a real
   // type is chosen (_savePlaceFromModal). An EDIT still opens on the saved
   // kind, the placeholder is only ever the state of a place with no type yet.
-  const _plKind=(pl&&PLACE_KINDS[pl.kind])?pl.kind:'';
+  // `kind` is an ANSWER, never a default. The 2026-08-31 rule below is about
+  // opening ON a type nobody picked; a caller that passes one here has just
+  // been told (the Save-this-address chooser, mileage.js). Every other caller
+  // passes nothing and opens on the placeholder exactly as before.
+  const _plKind=(pl&&PLACE_KINDS[pl.kind])?pl.kind:(PLACE_KINDS[kind]?kind:'');
   const kindOpts='<option value="" disabled'+(_plKind?'':' selected')+'>Choose a type</option>'+
     Object.keys(PLACE_KINDS).map(k=>
       '<option value="'+k+'"'+(_plKind===k?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');

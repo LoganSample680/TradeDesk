@@ -1333,6 +1333,94 @@ test.describe('geo-derive: the day deriver', () => {
         expect(hm(r.legs[0].endTs), String(junk && junk.length)).toBe(hm(T(8, 30, 53)));
       }
     });
+
+    // ── THE ARRIVAL THAT ENDS THE DAY (owner 2026-09-16) ─────────────────
+    // "Why am I as Logan Sample missing my last drive for the day still."
+    //
+    // His whole day was being thrown away, every derive, all evening:
+    //
+    //   error_log 01:13:01Z, app 09.15.26.17
+    //   "geo derive refused: geo_replace_day: 1 overlapping pair(s)"
+    //
+    // He drove home from John Doe at 17:41:19. The crossing into his own
+    // place fired at 17:50:14 and the tape did not leave automotive until
+    // 17:54:39, so the drive ran nine minutes past the dwell the same
+    // crossing opened, the two rows overlapped, and geo_replace_day threw out
+    // the ENTIRE day rather than write a contradiction. Rule 21 is exactly
+    // the rule for that crossing, and it never saw it: the enter had no exit,
+    // because he was home and never left again, and an unpaired enter was
+    // dropped before rule 21 ran.
+    //
+    // Two things have to hold, and the second is what the first fix got
+    // wrong on its own: the day must WRITE (no overlapping pair anywhere in
+    // the set), and the drive must still know where it ended.
+    test('an arrival with no exit still ends the drive, and still names the place', async () => {
+      const HOME = { id: 'p-home', kind: 'shop', name: 'TradeDesk shop', lat: 39.0307066, lng: -95.7112082 };
+      const CLI = { id: 'client-jd', kind: 'client', name: 'John Doe', clientId: 9, lat: 39.0123292, lng: -95.7464936 };
+      // The crossing fires at the OS region boundary, which is WIDER than this
+      // file's own circle: a third of a mile short of the shop, still on the
+      // road. That is why the arrival cannot be re-resolved from the fixes.
+      const GATE = { lat: 39.0295618, lng: -95.7135011 };
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+        const all = rows.job_time_entries.map(t => [Date.parse(t.arrived_at), Date.parse(t.departed_at)])
+          .concat(rows.shop_time_entries.map(t => [Date.parse(t.arrived_at), Date.parse(t.departed_at)]));
+        // The exact test geo_replace_day applies before it writes anything.
+        let overlaps = 0;
+        for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+          if (Math.min(all[i][1], all[j][1]) > Math.max(all[i][0], all[j][0])) overlaps++;
+        }
+        const last = res.legs[res.legs.length - 1];
+        return JSON.parse(JSON.stringify({
+          overlaps, endTs: last && last.endTs,
+          to: last && last.to && last.to.name, unsavedTo: !!(last && last.unsavedTo),
+        }));
+      }, base({
+        fences: [HOME, CLI],
+        tape: [mo(T(13, 26, 48), 'onFoot'), mo(T(17, 41, 19), 'automotive'), mo(T(17, 54, 39), 'cycling')],
+        fixes: [fix(T(13, 26, 48), CLI), fix(T(15, 0), CLI), fix(T(17, 41, 19), CLI),
+          fix(T(17, 50, 14), GATE), fix(T(17, 50, 20), GATE), fix(T(17, 52, 0), HOME),
+          fix(T(17, 54, 39), HOME), fix(T(18, 30), HOME)],
+        regions: [
+          { ts: T(17, 41, 25), id: 'client-jd', enter: false },
+          // Entered and never left: he was home for the night.
+          { ts: T(17, 50, 14), id: 'p-home', enter: true },
+        ],
+        nowMs: T(20, 0), crew: false,
+      }));
+      expect(r.overlaps, 'geo_replace_day refuses the whole day over one of these').toBe(0);
+      expect(hm(r.endTs), 'the crossing ends it, not the 17:54 flip').toBe(hm(T(17, 50, 14)));
+      expect(r.to, 'and the crossing names where he arrived').toBe('TradeDesk shop');
+      expect(r.unsavedTo, 'the boundary fix being short of the circle is not "nowhere"').toBe(false);
+    });
+
+    // The reason an unpaired enter was dropped in the first place, which this
+    // does NOT undo: Jack's 'shop' entered at 07:43 and never exited, and as a
+    // SPAN it swallowed his whole day and put a stop three miles east at the
+    // yard. An instant is not a span. Rule 15 still sees only closed pairs.
+    test('but an unpaired enter is still never a span for where he was', async () => {
+      const YARD = { id: 'yard', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106 };
+      const FAR = { id: 'client-far', kind: 'client', name: 'Bill Lorson', clientId: 3, lat: 39.10721, lng: -95.6650246 };
+      const r = await run(page, base({
+        fences: [JH, YARD, FAR],
+        tape: [mo(T(7, 43), 'onFoot'), mo(T(10, 0), 'automotive'), mo(T(10, 20), 'onFoot'),
+          mo(T(15, 0), 'automotive'), mo(T(15, 20), 'onFoot')],
+        fixes: [fix(T(7, 43), YARD), fix(T(9, 0), YARD), fix(T(10, 0), YARD),
+          fix(T(10, 20), FAR), fix(T(12, 0), FAR), fix(T(15, 0), FAR),
+          fix(T(15, 20), YARD), fix(T(17, 0), YARD)],
+        // Entered the yard at 07:43 and the exit was never recorded.
+        regions: [{ ts: T(7, 43), id: 'yard', enter: true }],
+        nowMs: T(20, 0), crew: true,
+      }));
+      const far = r.dwells.find(d => d.name === 'Bill Lorson');
+      expect(far, 'the midday stop is at the customer, not swallowed by the yard').toBeTruthy();
+      expect(hm(far.startTs)).toBe(hm(T(10, 20)));
+      // And the 10:00 drive out is NOT trimmed back to the 07:43 crossing:
+      // that crossing is before it, which rule 21 already refuses.
+      const out = r.legs.find(l => l.to && l.to.name === 'Bill Lorson');
+      expect(hm(out.endTs)).toBe(hm(T(10, 20)));
+    });
   });
 
   test.describe('rule 20: the commute', () => {
@@ -1472,19 +1560,60 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.drives).toBe(2);
     });
 
-    test('a clock over the commute does not make it billable', async () => {
-      // The clock says he was working, not that the drive was claimable. Rule
-      // 16's rungs are about whether a drive can be PLACED; this one can be,
-      // precisely, which is why it is refused before the ladder runs.
+    // ── REVERSED 2026-09-16 (10.4), BY THE OWNER, IN HIS OWN WORDS ───────
+    // It used to read "a clock over the commute does not make it billable",
+    // on the reasoning that the clock said he was working, not that the drive
+    // was claimable. That was my reading, not his, and he overruled it:
+    //
+    //   "everything between a manual clock in for Jack shows drive to address,
+    //    onsite time then drive to next address onsite time, drive to shop,
+    //    shop time, drive from shop to address, onsite time then clock out."
+    //
+    // THE CLOCK IS THE BRACKET AND IT OUTRANKS THIS RULE. The commute rule
+    // exists to answer a question the evidence leaves open. A punch closes it:
+    // the person is telling you, at the time and in their own words, that this
+    // stretch is work. Jack punches in at his own house at 07:54 and pulls out
+    // of the driveway at 07:54:54, and on his real Monday rule 20 was cutting
+    // two drives out of the middle of an eight-hour shift.
+    //
+    // Outside a clock nothing changes, which is the test below this one and is
+    // what still keeps his 5am gym trip out of the day.
+    test('a clock over the commute claims it: the punch outranks the rule', async () => {
       const r = await page.evaluate((inp) => {
         const res = geoDeriveDay(inp);
         const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
         return { miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
+                 commutes: res.legs.filter(l => l && l.commute === true).length,
                  drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length };
       }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0), crew: true,
         clocks: [{ start: T(7, 0), end: T(18, 0) }] }));
-      expect(r.miles).toEqual([['JS Solutions shop', 'Bill Lorson'], ['Bill Lorson', 'JS Solutions shop']]);
+      expect(r.commutes, 'nothing inside a punch is a commute').toBe(0);
+      expect(r.drives, 'all four, the drive in and the drive home included').toBe(4);
+      expect(r.miles).toEqual([
+        ['7402 SW 22nd Ct', 'JS Solutions shop'], ['JS Solutions shop', 'Bill Lorson'],
+        ['Bill Lorson', 'JS Solutions shop'], ['JS Solutions shop', '7402 SW 22nd Ct'],
+      ]);
+    });
+
+    // And the same day with no punch on it is the rule again, unchanged. This
+    // is the pair that matters: the clock is the only thing that moved.
+    test('and the same day with no clock is two commutes, exactly as before', async () => {
+      const r = await run20([JHOME, YARD, CUST]);
+      expect(r.commutes).toBe(2);
       expect(r.drives).toBe(2);
+    });
+
+    // A punch that only abuts the drive does not claim it: one minute of real
+    // overlap, the same threshold rules 13 and 16 already use.
+    test('a clock that starts after the drive ended claims nothing', async () => {
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        return res.legs.filter(l => l && l.commute === true).length;
+      }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0), crew: true,
+        // He punches in at the yard, after the drive in, and out before he
+        // leaves for home. Both commutes are outside it and both still go.
+        clocks: [{ start: T(8, 0), end: T(16, 0) }] }));
+      expect(r).toBe(2);
     });
 
     test('a place that is both the house and the yard has no commute to hide', async () => {
@@ -1537,26 +1666,73 @@ test.describe('geo-derive: the day deriver', () => {
     // house") that gave the right answer on the owner's own account only
     // because his shop fence sits four metres from his desk; an owner whose
     // yard is across town would have had his drive in refused.
-    test('the same day derived for the business owner bills every drive', async () => {
+    // AMENDED 2026-09-16, same day, after the crew-only gate broke the one
+    // person it was written for. Its first draft modelled "the owner" as
+    // Jack's own fences with the crew hat switched off, which is not the
+    // owner's shape at all: it is a man with a yard eight miles from his
+    // house, and that man has a commute whoever owns the account.
+    //
+    // IT IS THE BASE, NOT THE HAT. The owner's shop fence sits four metres
+    // from his home office, so home IS his place of business and every drive
+    // out of the door is work, which is his sentence "for a business owner it
+    // does" and is the line the tax code draws in the same place.
+    test('the owner, whose shop is his house, bills every drive out of his door', async () => {
+      const HOMESHOP = { id: 'shop', kind: 'shop', name: 'TradeDesk shop',
+        lat: JHOME.lat, lng: JHOME.lng };
       const asOwner = await page.evaluate((inp) => {
         const r = geoDeriveDay(inp);
         const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'c' });
         return JSON.parse(JSON.stringify({
           commutes: r.legs.filter(l => l && l.commute === true).length,
           drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
+        }));
+      }, base({
+        fences: [JHOME, HOMESHOP, CUST], nowMs: T(20, 0), crew: false,
+        tape: [mo(T(7, 0), 'onFoot'), mo(T(7, 59), 'automotive'), mo(T(8, 24), 'onFoot'),
+          mo(T(15, 43), 'automotive'), mo(T(16, 3), 'onFoot')],
+        fixes: [fix(T(7, 30), JHOME), fix(T(7, 59, 5), JHOME), fix(T(8, 24, 5), CUST),
+          fix(T(12, 0), CUST), fix(T(15, 43, 5), CUST), fix(T(16, 3, 5), JHOME),
+          fix(T(18, 0), JHOME)],
+      }));
+      expect(asOwner.commutes, 'nothing is a commute when the house IS the base').toBe(0);
+      expect(asOwner.drives, 'out of his own driveway and back, both work').toBe(2);
+    });
+
+    // ── AND JACK IS NOT CREW IN THE DATA (owner 2026-09-16) ───────────────
+    // This is the case the crew-only gate got wrong, found on his live rows.
+    // Jack's job_time_entries carry contractor_user_id === employee_user_id,
+    // there is no team_members row for him anywhere, and his login owns its
+    // own account with ownerName "Jack Schonfeldt". So `crew` is FALSE for
+    // him, his commutes billed, and that is the exact opposite of what the
+    // owner asked for twice.
+    //
+    // His base is still eight miles from his house, and that is the fact that
+    // decides it. No link, no hat, no setting.
+    test('a one-man account whose base is not his house still has a commute', async () => {
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const rows = geoDeriveRows(res, { contractorId: 'x', employeeId: 'x' });
+        return JSON.parse(JSON.stringify({
+          commutes: res.legs.filter(l => l && l.commute === true).length,
+          drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
           miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
         }));
       }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0), crew: false }));
-      expect(asOwner.commutes, 'nothing is a commute when the house is the business').toBe(0);
-      expect(asOwner.drives, 'all four, including the one out of his own driveway').toBe(4);
-      expect(asOwner.miles).toEqual([
-        ['7402 SW 22nd Ct', 'JS Solutions shop'], ['JS Solutions shop', 'Bill Lorson'],
-        ['Bill Lorson', 'JS Solutions shop'], ['JS Solutions shop', '7402 SW 22nd Ct'],
-      ]);
-      // And the same evidence for Jack is the answer he actually gave.
+      expect(r.commutes, 'the drive in and the drive home, with nobody linked as crew').toBe(2);
+      expect(r.drives).toBe(2);
+      expect(r.miles, 'the yard out to the customer and back, and nothing else')
+        .toEqual([['JS Solutions shop', 'Bill Lorson'], ['Bill Lorson', 'JS Solutions shop']]);
+      // And the crew hat reaches the same answer, so nothing turns on it.
       const asCrew = await run20([JHOME, YARD, CUST]);
       expect(asCrew.commutes).toBe(2);
       expect(asCrew.drives).toBe(2);
+    });
+
+    // The other half stays in: a crew member whose employer registered no shop
+    // at all has no away-base to find, and still commutes to the first job.
+    test('and crew with no base registered anywhere still commutes', async () => {
+      const r = await run20([JHOME, CUST]);
+      expect(r.commutes, 'first drive out, last drive home').toBe(2);
     });
 
     // ── A COMMUTE HAS NOTHING IN IT (owner 2026-09-16) ────────────────────
@@ -1603,6 +1779,96 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.drives, 'out in the morning and back at night, both his employer\'s').toBe(2);
       expect(r.stopMins, 'the whole day at that address, on the timesheet').toEqual([395]);
       expect(r.nameable, 'and the Save this address button has a coordinate to open on').toBe(true);
+    });
+
+    // ── THE WRAP IS FOR A DAY THAT ENDED (owner 2026-09-16) ──────────────
+    // "From JS Solutions shop to the unsaved address at 157 pm for Jack we're
+    // missing a fucking drive dude."
+    //
+    // No drive was missing: his phone never moved. The tape reads still,
+    // onFoot, still from 13:51 to 15:21 without touching automotive once, and
+    // the fixes sit 11 to 20 feet from the yard until one cached coordinate
+    // 1,161 ft out repeats verbatim at 14:06, 14:38, 15:00 and 15:25. He left
+    // at 15:22:07 and the fence agreed, exiting at 15:25:40.
+    //
+    // What was missing is 1h25m of YARD time. The 30-minute unload wrap fired
+    // in the MIDDLE of his working day, because "the last real work" is
+    // computed from dwells and his 3:38pm stop was at an address nobody saved,
+    // which is not a dwell. So a day still in progress looked like a day that
+    // had ended at 1:22, and the hole it left is what the rail then dressed up
+    // as an address he had supposedly driven to.
+    //
+    // He left again, and that is the whole test.
+    test('a yard he drove out of keeps every minute, wrap or no wrap', async () => {
+      const STOP = { lat: 39.0421, lng: -95.7511 };   // no fence near it
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const shop = res.dwells.filter(d => d.kind === 'shop');
+        return JSON.parse(JSON.stringify({
+          shop: shop.map(d => [d.startTs, d.endTs]),
+          work: res.dwells.filter(d => d.kind === 'client').length,
+          // The hole is the thing: a rail with one cannot help but imply a
+          // trip nobody took.
+          holes: (() => {
+            const all = res.dwells.map(d => [d.startTs, d.endTs])
+              .concat(res.legs.map(l => [l.startTs, l.endTs])).sort((a, b) => a[0] - b[0]);
+            let n = 0, mark = all.length ? all[0][1] : 0;
+            for (const [a, b] of all.slice(1)) { if (a - mark >= 5 * 60000) n++; mark = Math.max(mark, b); }
+            return n;
+          })(),
+        }));
+      }, base({
+        fences: [JHOME, YARD, CUST],
+        // Customer all morning, the yard from 13:27, out to an unsaved address
+        // at 15:22, home at 16:21. The yard stretch is nearly two hours and the
+        // last dwell-shaped work of the day ended when he left the customer.
+        tape: [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 16), 'onFoot'),
+          mo(T(13, 22), 'automotive'), mo(T(13, 27), 'onFoot'),
+          mo(T(15, 22), 'automotive'), mo(T(15, 38), 'onFoot'),
+          mo(T(16, 21), 'automotive'), mo(T(16, 35), 'onFoot')],
+        fixes: [fix(T(8, 30), YARD), fix(T(9, 0), YARD),
+          fix(T(9, 16), CUST), fix(T(11, 0), CUST), fix(T(13, 22), CUST),
+          fix(T(13, 27), YARD), fix(T(14, 0), YARD), fix(T(15, 0), YARD), fix(T(15, 22), YARD),
+          fix(T(15, 38), STOP), fix(T(16, 0), STOP), fix(T(16, 21), STOP),
+          fix(T(16, 35), JHOME), fix(T(18, 0), JHOME)],
+        nowMs: T(20, 0), crew: true,
+      }));
+      expect(r.work, 'the customer visit is a real dwell: without one the wrap '
+        + 'branch is never reached and this test passes for the wrong reason').toBe(1);
+      expect(r.shop.length, 'one yard stretch, not a clipped stub').toBe(1);
+      expect(Math.round((r.shop[0][1] - r.shop[0][0]) / 60000),
+        'every minute from arriving to driving away, not 30').toBe(115);
+      expect(r.holes, 'and no hole for the rail to dress up as somewhere he drove to').toBe(0);
+    });
+
+    // The contrast, and the reason "he left again" is not the test on its own.
+    // The drive HOME is also leaving. Change nothing about the day above
+    // except that he goes straight home from the yard instead of stopping on
+    // the way, and the wrap must fire exactly as it always has: that is the
+    // 19h38m case (a phone sitting at the yard until 11:48pm) this rule was
+    // written for, and it is untouched.
+    test('but driving straight home from the yard is the day ending, and still caps', async () => {
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify({
+          shop: res.dwells.filter(d => d.kind === 'shop').map(d => Math.round((d.endTs - d.startTs) / 60000)),
+          work: res.dwells.filter(d => d.kind === 'client').length,
+        }));
+      }, base({
+        fences: [JHOME, YARD, CUST],
+        // Same morning, same yard arrival at 13:27, same departure at 15:22.
+        // The only difference is the far end: his driveway, one hop, no stop.
+        tape: [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 16), 'onFoot'),
+          mo(T(13, 22), 'automotive'), mo(T(13, 27), 'onFoot'),
+          mo(T(15, 22), 'automotive'), mo(T(15, 40), 'onFoot')],
+        fixes: [fix(T(8, 30), YARD), fix(T(9, 0), YARD),
+          fix(T(9, 16), CUST), fix(T(11, 0), CUST), fix(T(13, 22), CUST),
+          fix(T(13, 27), YARD), fix(T(14, 0), YARD), fix(T(15, 0), YARD), fix(T(15, 22), YARD),
+          fix(T(15, 40), JHOME), fix(T(18, 0), JHOME)],
+        nowMs: T(20, 0), crew: true,
+      }));
+      expect(r.work, 'same day, same customer visit, so the same branch runs').toBe(1);
+      expect(r.shop, 'the unload window, not the whole afternoon').toEqual([30]);
     });
 
     // The other half of the same rule, and the reason it is worded as "nothing

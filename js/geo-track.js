@@ -7371,7 +7371,27 @@ function _geoDeriveClocks(dayStart,dayEnd){
     if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries)||!_supaUser)return [];
     const me=String(_supaUser.id);
     const mine=e=>{const u=e.logged_by_uid;return u?String(u)===me:(typeof _isEmployee==='undefined'||!_isEmployee);};
-    return timeEntries.filter(e=>e&&!e.open&&e.start_time&&e.end_time&&mine(e)).map(e=>({start:Date.parse(e.start_time),end:Date.parse(e.end_time)}))
+    // ── A CLOCK THAT IS STILL RUNNING IS THE STRONGEST EVIDENCE THERE IS ──
+    // Owner 2026-09-16: "Why did Jack mark Laurie Schonfeldt as personal?
+    // While on a clock in?"
+    //
+    // Because the app asked him, and by its own rule it never should have.
+    // Rule 13 rung 2 is "a manual clock is running over it": his ran 07:54 to
+    // 16:39 and the visit was 08:30 to 09:07, inside it. But this line took
+    // only CLOSED clocks, and the visit was derived at 09:08 that morning
+    // while he was still punched in. So there was no clock to see, the visit
+    // was held, the card asked, he answered Personal at 13:34, and fixed_at
+    // pinned that answer forever. The clock did not close until 16:39, hours
+    // after the only question anybody was ever going to be asked.
+    //
+    // A person who is clocked in RIGHT NOW is saying, at the time, that this
+    // is work. Throwing that away and keeping only yesterday's punches was
+    // backwards. An open clock runs to now, bounded by the day the caller
+    // asked for, so it can never reach past the day it belongs to.
+    const nowMs=Date.now();
+    return timeEntries.filter(e=>e&&e.start_time&&(e.end_time||e.open)&&mine(e))
+      .map(e=>({start:Date.parse(e.start_time),
+                end:e.end_time?Date.parse(e.end_time):Math.min(nowMs,dayEnd)}))
       .filter(c=>c.start>0&&c.end>c.start&&c.end>dayStart&&c.start<dayEnd);
   }catch(_e){return [];}
 }

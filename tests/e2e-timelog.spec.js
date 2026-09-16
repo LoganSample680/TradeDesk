@@ -4257,10 +4257,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
         A('place', [8, 0], [9, 0], 60),
         A('place', [12, 0], [13, 0], 60),
       ], CLOCK([8, 0], [13, 0], 300));
-      const site = r.rows.find(x => x.raw === 'site');
+      const site = r.rows.find(x => x.raw === 'clock-span');
       expect(site, 'the three hours between the two visits').toBeTruthy();
       expect(site.m).toBe(180);
-      expect(site.detail).toBe('Address not saved');
+      // AMENDED 2026-09-16 (10.4): "Address not saved" asserted an address.
+      // This row has none and never had one. Paid exactly as before.
+      expect(site.detail).toBe('Clocked in, nothing tracked');
       expect(site.unpaid).toBe(false);
     });
 
@@ -4272,7 +4274,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const r = await rowsFor(rows, CLOCK([8, 0], [13, 0], 300));
       expect(r.paid, 'exactly the clock, before and after').toBe(300);
       const clock = r.rows.find(x => x.src === 'manual');
-      const site = r.rows.find(x => x.raw === 'site');
+      const site = r.rows.find(x => x.raw === 'clock-span');
       expect(clock.m + site.m + 120, 'the clock gave up what the site took').toBe(300);
     });
 
@@ -4287,7 +4289,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         CLOCKR(1, [8, 0], [9, 0], 60),
         CLOCKR(2, [12, 0], [13, 0], 60),
       ], DR);
-      expect(r.rows.some(x => x.raw === 'site'), 'lunch is a clock out, not a guess').toBe(false);
+      expect(r.rows.some(x => x.raw === 'clock-span'), 'lunch is a clock out, not a guess').toBe(false);
       expect(r.rows.some(x => x.raw === 'unaccounted')).toBe(true);
     });
 
@@ -4297,7 +4299,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         AR('place', [8, 0], [9, 0], 60),
         AR('place', [12, 0], [13, 0], 60),
       ], [], DR);
-      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.some(x => x.raw === 'clock-span')).toBe(false);
       expect(r.rows.find(x => x.raw === 'unaccounted').unpaid).toBe(true);
     });
 
@@ -4307,7 +4309,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // the inference this app must not make.
     test('a clock with nothing tracked under it at all is left alone', async () => {
       const r = await rowsFor([], CLOCK([8, 0], [16, 0], 480));
-      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.some(x => x.raw === 'clock-span')).toBe(false);
       expect(r.rows.find(x => x.src === 'manual').m).toBe(480);
       expect(r.paid).toBe(480);
     });
@@ -4318,7 +4320,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         A('place', [8, 0], [9, 0], 60),
         A('place', [9, 2], [10, 0], 58),
       ], CLOCK([8, 0], [10, 0], 120));
-      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.some(x => x.raw === 'clock-span')).toBe(false);
     });
 
     // NOTHING IS INFERRED ABOUT WHERE (owner: "un saved mileage legs no they
@@ -4331,7 +4333,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
         try {
           const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
-          const site = day.find(r => r.rawSource === 'site');
+          const site = day.find(r => r.rawSource === 'clock-span');
           return { addr: site.addr, key: site.clientKey, name: site.clientName,
                    mileage: (typeof mileage !== 'undefined' && Array.isArray(mileage))
                      ? mileage.filter(m => m && m.date === '2026-09-01').length : 0,
@@ -4340,20 +4342,19 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }, [[A('place', [8, 0], [9, 0], 60), A('place', [12, 0], [13, 0], 60)], CLOCK([8, 0], [13, 0], 300)]);
       expect(out.addr).toBe('');
       expect(out.key).toBe(null);
-      // ADDRESS, not job site (owner 2026-09-04: "rather than unsaved job site
-      // do we say Unsaved Address"). Half of these are a supply house or a
-      // gate, and calling every one of them a job site asserts a reason
-      // nobody supplied.
-      expect(out.name).toBe('Unsaved address');
+      // AMENDED 2026-09-16 (10.4), and the test's own title is now literally
+      // true. It used to check that the row said "Unsaved address", which
+      // claims no address and an address in the same breath. On Jack's real
+      // rail that read as a lost drive: the shop at 1:27, then an address at
+      // 1:57, with nothing in between. He had not moved. The row says what it
+      // knows, which is that the clock was running and nothing tracked this.
+      expect(out.name).toBe('');
       expect(out.mileage, 'naming time never writes a mileage leg').toBe(0);
-      // The tag carries the whole statement and the row prints no title of its
-      // own rather than repeating it.
-      expect(out.html).toContain('Unsaved address');
-      // It must never read as the geofenced kind, which is what an audit turns
-      // on. The two real 'place' rows in this fixture DO say "On site", so the
-      // check is that the unsaved row itself does not: its own block carries
-      // that tag and the address disclaimer, never the saved-client one.
-      const i = out.html.indexOf('Unsaved address');
+      expect(out.html).toContain('Manual time');
+      // And it must never claim the two things an audit turns on: the
+      // geofenced kind, or an address.
+      expect(out.html).not.toContain('Unsaved address');
+      const i = out.html.indexOf('Manual time');
       expect(out.html.slice(i, i + 300)).not.toContain('On site');
     });
 
@@ -4672,7 +4673,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // it used to sit on the clock row as 556 anonymous minutes, and is now
       // handed to a named job-site row (owner's rule, above). The number that
       // must not move is the day's total, and it does not.
-      expect(man.m + (r.rows.find(x => x.raw === 'site') || { m: 0 }).m).toBe(556);
+      expect(man.m + (r.rows.find(x => x.raw === 'clock-span') || { m: 0 }).m).toBe(556);
       expect(r.paid, 'the clock, plus the 18 minutes that ran before it').toBe(576);
     });
 
@@ -4692,7 +4693,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // anonymously are now named as job-site stretches around the lunch. The
       // lunch itself is STILL not deducted, which is what this test guards,
       // and the day still totals what it did.
-      const sites = r.rows.filter(x => x.raw === 'site').reduce((n, x) => n + x.m, 0);
+      const sites = r.rows.filter(x => x.raw === 'clock-span').reduce((n, x) => n + x.m, 0);
       expect(man.m + sites).toBe(480);
       expect(r.rows.some(x => x.raw === 'stop' && x.m === 30),
         'the lunch is still its own row, undeducted').toBe(true);
