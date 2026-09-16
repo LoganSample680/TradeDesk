@@ -362,6 +362,131 @@ test.describe('traced trips', () => {
         .toEqual(expect.objectContaining({ legKey: 'j-traced', lat: 39.035, lng: -95.7 }));
     });
 
+    // ── AND IT KNOWS WHAT IS STANDING THERE (owner 2026-09-16) ──────────
+    // "For save address I guess we need to make it smart enough to know and
+    //  ask is this a Supply House or a Lead/Client."
+    //
+    // Apple names the business on a commercial pin and _reverseGeocode was
+    // throwing that name away before anyone saw it. Neenans Co is the real
+    // case: a plumbing supply counter at 3210 S Kansas Ave that the app turned
+    // into a sales lead and then enriched off Zillow as a single family home.
+    test('a supply house names itself and leads with Supply house', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        // Bare assignment, not window.: _mapkitReady is a script-scope `let`
+        // and window._mapkitReady = true sets a different variable (the same
+        // note withMapKit carries below).
+        const keepMk = _mapkitReady, keepG = window.mapkit;
+        _mapkitReady = true;
+        window.mapkit = {
+          Coordinate: function (a, b) { this.latitude = a; this.longitude = b; },
+          Geocoder: function () {
+            this.reverseLookup = (c, cb) => cb(null, { results: [{
+              name: 'Neenans Co', fullThoroughfare: '3210 S Kansas Ave',
+              locality: 'Topeka', administrativeAreaCode: 'KS', postCode: '66611' }] });
+          },
+        };
+        try {
+          await _mileSaveAddress('j-traced', 'to');
+          // The lookup fills the prompt in after it paints, so wait for it.
+          for (let i = 0; i < 40 && !/Neenans/.test(document.getElementById('_mile-kind-ov')?.textContent || ''); i++) {
+            await new Promise(r => setTimeout(r, 25));
+          }
+          const ov = document.getElementById('_mile-kind-ov');
+          const btns = [...ov.querySelectorAll('button')].map(b => ({ t: b.textContent, p: b.className.includes('btn-p') }));
+          return { text: ov.textContent, btns, guess: _mileAddressPending.found };
+        } finally { _mapkitReady = keepMk; window.mapkit = keepG;
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.text, 'it says what is there instead of a raw coordinate').toContain('Neenans Co');
+      // AND IT DOES NOT PRETEND TO KNOW. "Neenans Co" is the case that started
+      // this and the name says nothing: no keyword in it suggests plumbing
+      // supply. A confident wrong answer here is the exact failure the prompt
+      // exists to stop, so a named business the list cannot place is shown by
+      // name with both answers offered evenly. Knowing it is Neenans Co rather
+      // than 39.0106, -95.6811 is most of the value on its own.
+      expect(r.guess.guess, 'named, but not placed').toBe('');
+      expect(r.btns.filter(b => b.p), 'neither side is pre-picked').toHaveLength(0);
+      expect(r.btns.map(b => b.t)).toEqual(expect.arrayContaining(['Supply house', 'Lead or client']));
+      expect(r.text).toContain('The map found that name but not what it is');
+    });
+
+    // A name the list CAN place leads with Supply house, filled.
+    test('a name that says what it is leads with Supply house', async () => {
+      const r = await page.evaluate(() => [
+        _mileGuessKind('Ferguson Plumbing Supply'), _mileGuessKind('Westlake Ace Hardware'),
+        _mileGuessKind('Capital City Lumber'), _mileGuessKind('Neenans Co'),
+        _mileGuessKind(''), _mileGuessKind('Bill Lorson'),
+      ]);
+      expect(r).toEqual(['supply', 'supply', 'supply', '', 'client', '']);
+    });
+
+    test('a house leads with Lead or client, which is the old behaviour', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        // Bare assignment, not window.: _mapkitReady is a script-scope `let`
+        // and window._mapkitReady = true sets a different variable (the same
+        // note withMapKit carries below).
+        const keepMk = _mapkitReady, keepG = window.mapkit;
+        _mapkitReady = true;
+        window.mapkit = {
+          Coordinate: function (a, b) { this.latitude = a; this.longitude = b; },
+          Geocoder: function () {
+            this.reverseLookup = (c, cb) => cb(null, { results: [{
+              fullThoroughfare: '1530 SW Arvonia Pl', locality: 'Topeka',
+              administrativeAreaCode: 'KS', postCode: '66604' }] });
+          },
+        };
+        window._geocodeAddress = async () => [];
+        try {
+          await _mileSaveAddress('j-traced', 'to');
+          for (let i = 0; i < 40 && !_mileAddressPending.found; i++) await new Promise(r => setTimeout(r, 25));
+          const ov = document.getElementById('_mile-kind-ov');
+          return { first: ov.querySelector('button').textContent, supply: _mileAddressPending.found.supply };
+        } finally { _mapkitReady = keepMk; window.mapkit = keepG;
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.supply, 'a street address with no business on it').toBe(false);
+      expect(r.first).toBe('Lead or client');
+    });
+
+    // The guess only ORDERS the buttons. Picking the other one is one tap and
+    // decides it, which is the whole reason this asks rather than assuming.
+    test('Supply house opens the place form already set to supply', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        try {
+          document.getElementById('cf-title').textContent = '';
+          await _mileSaveAddress('j-traced', 'to');
+          _mileAddressPending.found = { name: 'Neenans Co', supply: true, parts: {} };
+          await _mileSaveKind('supply');
+          return {
+            kind: document.getElementById('place-kind').value,
+            name: document.getElementById('place-name') ? document.getElementById('place-name').value : null,
+            lead: document.getElementById('cf-title').textContent === 'New lead',
+          };
+        } finally { document.getElementById('place-modal')?.remove();
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.kind, 'his answer, not a default').toBe('supply');
+      expect(r.lead, 'and no lead anywhere near it').toBe(false);
+    });
+
+    // Somewhere else still opens on the placeholder, because nobody picked a
+    // type there. That is the 2026-08-31 rule and it is unchanged.
+    test('Somewhere else still opens with no type pre-picked', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        try {
+          await _mileSaveAddress('j-traced', 'to');
+          await _mileSaveKind('place');
+          return document.getElementById('place-kind').value;
+        } finally { document.getElementById('place-modal')?.remove();
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r).toBe('');
+    });
+
     // ── The Time Log's button comes through the same door (owner 2026-09-09:
     // "wire the functions together with a split in between them ... one
     // update carries it to both locations") ────────────────────────────────
@@ -551,8 +676,14 @@ test.describe('traced trips', () => {
       test('Apple gives the pieces already separated, and nothing else is asked', async () => {
         const r = await withMapKit({ fullThoroughfare: '1530 SW Arvonia Pl', locality: 'Topeka',
                                      administrativeAreaCode: 'KS', postCode: '66604' });
+        // AMENDED 2026-09-16: `name` rides along now. Apple names the business
+        // standing on a commercial pin and this function was discarding it,
+        // which is the one fact that tells a supply counter from a house
+        // (owner: "make it smart enough to know and ask is this a Supply House
+        // or a Lead/Client"). A residential pin like this one has no name, and
+        // an empty string is the honest answer for it.
         expect(r.parts).toEqual({ street: '1530 SW Arvonia Pl', city: 'Topeka', state: 'KS', zip: '66604',
-                                  addr: '1530 SW Arvonia Pl, Topeka, KS 66604' });
+                                  addr: '1530 SW Arvonia Pl, Topeka, KS 66604', name: '' });
         expect(r.nomCalled, 'no second lookup once Apple answered').toBe(false);
       });
 

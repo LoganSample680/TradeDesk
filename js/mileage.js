@@ -2222,8 +2222,14 @@ async function _reverseGeocode(lat,lon){
         });
       });
       if(p){
+        // THE NAME WAS ALWAYS IN THE ANSWER AND WAS BEING THROWN AWAY. Apple's
+        // reverse lookup names the business standing on a commercial pin, and
+        // that is the single fact that tells a supply counter apart from a
+        // customer's house. Additive: every existing caller reads street/city/
+        // state/zip/addr and is untouched.
         const out={street:p.fullThoroughfare||[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' ')||'',
-          city:p.locality||'',state:p.administrativeAreaCode||'',zip:p.postCode||''};
+          city:p.locality||'',state:p.administrativeAreaCode||'',zip:p.postCode||'',
+          name:(p.name&&p.name!==p.fullThoroughfare)?String(p.name):''};
         if(out.street||out.city)return Object.assign(out,{addr:join(out)});
         // A pin in the middle of a field has no street to give. Apple's own
         // one-line answer still beats nothing, and the parser reads it.
@@ -3273,6 +3279,64 @@ let _mileAddressPending=null;
 // Save button and the Time Log rail's both do nothing but RESOLVE A
 // COORDINATE and call this, so the flow can only ever change in both places
 // at once.
+// ── WHAT IS STANDING AT THIS PIN (owner 2026-09-16) ─────────────────────────
+// "For save address I guess we need to make it smart enough to know and ask is
+//  this a Supply House or a Lead/Client."
+//
+// Asking blind was better than assuming, but it still made him read a raw
+// coordinate and decide. Apple already knows: its reverse lookup names the
+// business on a commercial pin, and _reverseGeocode was discarding that name
+// before anyone saw it. Where the reverse lookup comes back with a bare
+// street address, the forward search gets a second go at the same spot,
+// because a search for "3210 S Kansas Ave, Topeka" returns Neenans Co and a
+// reverse lookup of a parking-lot coordinate sometimes does not.
+//
+// The keyword list is a SUGGESTION and is worded as one on screen. It orders
+// the two buttons and pre-picks nothing that cannot be changed in one tap,
+// which is the whole reason this asks at all instead of guessing (openPlaceModal
+// carries the same lesson in its own words: a wrong kind decides how that
+// stop's trips deduct).
+const _MILE_SUPPLY_WORDS=['supply','supplies','plumbing','electric','hardware','lumber',
+  'building','depot','menards','lowes','ace ','ferguson','winsupply','winnelson','grainger',
+  'sherwin','paint','wholesale','distribut','rental','hvac','pipe','steel','concrete',
+  'ready mix','fastenal','johnstone','reece','hajoca','sonepar','rexel','graybar','tractor',
+  'auto parts','napa','warehouse','lighting','flooring','roofing','mill','yard'];
+// THREE ANSWERS, NOT TWO, AND THE THIRD ONE IS "I DO NOT KNOW".
+//
+// The keyword list reads a name like "Ferguson Plumbing Supply" and is right.
+// It reads "Neenans Co", the actual case that started this, and is wrong: that
+// is a plumbing supply counter and the name says nothing at all. Forcing a
+// side there would put a confident wrong answer in front of him, which is the
+// failure this whole prompt exists to stop.
+//
+// So a name that matches leads with Supply house, a pin with no business on it
+// at all leads with Lead or client (a street address with nothing standing on
+// it is a house), and a named business the list cannot place is shown BY NAME
+// with both answers offered evenly. Knowing it is "Neenans Co" rather than
+// 39.0106, -95.6811 is most of the value even when the kind is still his call.
+function _mileGuessKind(name){
+  const n=String(name||'').trim();
+  if(!n)return 'client';
+  const l=' '+n.toLowerCase()+' ';
+  return _MILE_SUPPLY_WORDS.some(w=>l.indexOf(w)>=0)?'supply':'';
+}
+async function _mileWhatIsHere(lat,lng){
+  let parts={street:'',city:'',state:'',zip:'',addr:'',name:''};
+  try{parts=await _reverseGeocode(lat,lng)||parts;}catch(_e){}
+  let name=String(parts.name||'');
+  if(!name&&parts.street){
+    // Second chance at the same spot, biased to it, and only a hit that is
+    // actually AT the pin counts: a search can drift to a similarly named
+    // street across town.
+    try{
+      const hits=await _geocodeAddress([parts.street,parts.city,parts.state].filter(Boolean).join(', '),5,lat,lng);
+      const near=(hits||[]).find(h=>h&&h.name&&Math.abs(h.lat-lat)<0.0025&&Math.abs(h.lon-lng)<0.0032);
+      if(near)name=String(near.name);
+    }catch(_e){}
+  }
+  const guess=_mileGuessKind(name);
+  return {parts,name,guess,supply:guess==='supply'};
+}
 // ── NOT EVERY ADDRESS IS A CUSTOMER (owner 2026-09-16) ──────────────────────
 // "The code to save a address steered Jack wrong, he clicked save address for a
 //  plumbing place and it dropped it as a lead, go look at neenans co, that's
@@ -3299,17 +3363,39 @@ function _mileSaveAskKind(la,ln){
   const ov=document.createElement('div');
   ov.className='zmodal-overlay';ov.id='_mile-kind-ov';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
-    '<div style="font-size:17px;font-weight:800;margin-bottom:8px">What is this address?</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:20px">'+
-      'A customer becomes a client you can quote and invoice. Anywhere else becomes a place, '+
-      'so the app knows a supply run from a job.</div>'+
-    '<div style="display:flex;flex-direction:column;gap:10px">'+
-    '<button class="btn btn-p" onclick="_mileSaveKind(\'client\')">A customer</button>'+
-    '<button class="btn" onclick="_mileSaveKind(\'place\')">A supply house, shop or other place</button>'+
-    '<button class="btn" onclick="document.getElementById(\'_mile-kind-ov\')?.remove()">Cancel</button>'+
-    '</div></div>';
+  const paint=(found)=>{
+    const nm=found&&found.name?found.name:'';
+    const sub=nm?escHtml(nm):(found&&found.parts&&found.parts.addr?escHtml(found.parts.addr):'Looking up this address…');
+    // The likely answer leads and is the filled button; the other is one tap
+    // away and nothing is decided by the guess alone.
+    const g=found?found.guess:'';
+    const supply='<button class="btn'+(g==='supply'?' btn-p':'')+'" '+
+      'onclick="_mileSaveKind(\'supply\')">Supply house</button>';
+    const client='<button class="btn'+(g==='client'?' btn-p':'')+'" '+
+      'onclick="_mileSaveKind(\'client\')">Lead or client</button>';
+    ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
+      '<div style="font-size:17px;font-weight:800;margin-bottom:4px">What is this address?</div>'+
+      '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px">'+sub+'</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:18px">'+
+        (nm&&g?'That is our guess from the map. Change it if it is wrong.'
+         :nm?'The map found that name but not what it is. Which one?'
+           :'A supply house is a place, so its trips wait for a receipt. A client is somebody you quote and invoice.')+
+      '</div>'+
+      '<div style="display:flex;flex-direction:column;gap:10px">'+
+      (g==='supply'?supply+client:client+supply)+
+      '<button class="btn" onclick="_mileSaveKind(\'place\')">Somewhere else (shop, office, other)</button>'+
+      '<button class="btn" onclick="document.getElementById(\'_mile-kind-ov\')?.remove()">Cancel</button>'+
+      '</div></div>';
+  };
+  paint(null);
   document.body.appendChild(ov);
+  // Painted first, filled in when the lookup lands, so a slow or offline
+  // geocoder costs nothing: the buttons are live from the moment it opens.
+  _mileWhatIsHere(la,ln).then(found=>{
+    if(!document.getElementById('_mile-kind-ov'))return;
+    _mileAddressPending=Object.assign({},_mileAddressPending||{},{found});
+    paint(found);
+  }).catch(()=>{});
 }
 // The two arms. _mileAddressPending is already set before the chooser opens, so
 // whichever he picks, the save re-derives the same day (_mileAddressSaved).
@@ -3317,22 +3403,38 @@ async function _mileSaveKind(kind){
   document.getElementById('_mile-kind-ov')?.remove();
   const p=_mileAddressPending;
   if(!p)return false;
-  if(kind==='place'){
+  const found=p.found||null;
+  if(kind==='place'||kind==='supply'){
     // No goPg: the place form is a modal that opens over whatever page you are
     // on, which is exactly how the dashboard and the Places list already call
     // it. Navigating first was my addition and there is no 'pg-places' to
     // navigate to; assertNoErrors caught it on the first run (7.3, again).
-    if(typeof openPlaceModal==='function')openPlaceModal(null,p.lat,p.lng);
+    //
+    // 'supply' pre-picks the type and 'place' deliberately does not. That is
+    // not a contradiction of the 2026-08-31 rule ("dont want to pre fill
+    // things in"): the rule is against a DEFAULT nobody chose, and the whole
+    // point of this prompt is that he chose. Somewhere else leaves the picker
+    // empty exactly as before.
+    if(typeof openPlaceModal==='function')openPlaceModal(null,p.lat,p.lng,kind==='supply'?'supply':'');
+    // The name the map gave us, so he confirms instead of typing.
+    if(found&&found.name){
+      const n=document.getElementById('place-name');
+      if(n&&!n.value)n.value=found.name;
+    }
     return true;
   }
   // Apple Maps hands back the four fields already separated (_reverseGeocode,
   // above), which is what this form has four boxes for.
-  let parts={street:'',city:'',state:'',zip:''};
-  try{parts=await _reverseGeocode(p.lat,p.lng)||parts;}catch(_e){}
+  let parts=(found&&found.parts)||{street:'',city:'',state:'',zip:''};
+  if(!parts.street){try{parts=await _reverseGeocode(p.lat,p.lng)||parts;}catch(_e){}}
   try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
   if(typeof openNewClient==='function')openNewClient();
   const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};
   set('cf-street',parts.street);set('cf-city',parts.city);set('cf-state',parts.state);set('cf-zip',parts.zip);
+  // A business name from the map is a better starting point than a blank box,
+  // and the owner's "the name is his to give" still holds: it is a prefilled
+  // field he can clear, not a decision.
+  if(found&&found.name)set('cf-name',found.name);
   try{if(typeof _updateAddrComputed==='function')_updateAddrComputed();}catch(_e){}
   return true;
 }

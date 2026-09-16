@@ -1023,7 +1023,7 @@ function _placeKindChanged(kind){
 }
 // Add / edit. lat+lon are passed when promoting a suggestion, since that stop
 // already has coordinates and asking for an address would be absurd.
-function openPlaceModal(id,lat,lon){
+function openPlaceModal(id,lat,lon,kind){
   const pl=id?(places||[]).find(p=>String(p.id)===String(id)):null;
   const _lat=pl?pl.lat:lat,_lon=pl?pl.lon:lon;
   document.getElementById('place-modal')?.remove();
@@ -1038,7 +1038,11 @@ function openPlaceModal(id,lat,lon){
   // It opens on a greyed placeholder instead, and Save refuses until a real
   // type is chosen (_savePlaceFromModal). An EDIT still opens on the saved
   // kind, the placeholder is only ever the state of a place with no type yet.
-  const _plKind=(pl&&PLACE_KINDS[pl.kind])?pl.kind:'';
+  // `kind` is an ANSWER, never a default. The 2026-08-31 rule below is about
+  // opening ON a type nobody picked; a caller that passes one here has just
+  // been told (the Save-this-address chooser, mileage.js). Every other caller
+  // passes nothing and opens on the placeholder exactly as before.
+  const _plKind=(pl&&PLACE_KINDS[pl.kind])?pl.kind:(PLACE_KINDS[kind]?kind:'');
   const kindOpts='<option value="" disabled'+(_plKind?'':' selected')+'>Choose a type</option>'+
     Object.keys(PLACE_KINDS).map(k=>
       '<option value="'+k+'"'+(_plKind===k?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');
