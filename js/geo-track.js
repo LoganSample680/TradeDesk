@@ -7981,6 +7981,11 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     const regions=_geoRegLogRead().concat((server&&Array.isArray(server.regions))?server.regions:[]);
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
+      // Rule 20 is crew-only (owner 2026-09-16: "for a business owner it
+      // does, but for Jack it doesn't"). _isEmployee is this session's own
+      // answer to that; the uid comparison is the same fact from the other
+      // direction and covers a boot where the flag has not landed yet.
+      crew:!!_isEmployee||String(_geoCid())!==String(_supaUser.id),
       tape,fixes,appEvents,regions,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.

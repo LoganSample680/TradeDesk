@@ -1355,6 +1355,10 @@ test.describe('geo-derive: the day deriver', () => {
       fix(T(7, 59, 5), YARD), fix(T(8, 24, 5), CUST), fix(T(12, 0), CUST),
       fix(T(15, 43, 5), CUST), fix(T(16, 3, 5), YARD), fix(T(16, 20), YARD),
       fix(T(16, 35, 5), YARD), fix(T(16, 53, 5), JHOME), fix(T(18, 0), JHOME)];
+    // crew: true on every fixture in this block. Rule 20 is crew-only (owner
+    // 2026-09-16), and every day in here is Jack's, who is crew on his dad's
+    // account. The owner's own side of that answer is its own test at the
+    // bottom of the block.
     const run20 = (fences) => page.evaluate((inp) => {
       const r = geoDeriveDay(inp);
       const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
@@ -1369,7 +1373,7 @@ test.describe('geo-derive: the day deriver', () => {
         miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
         drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
       }));
-    }, base({ tape, fixes, fences, nowMs: T(20, 0) }));
+    }, base({ tape, fixes, fences, nowMs: T(20, 0), crew: true }));
 
     test('his day: the two commutes bill nothing, the work drives do', async () => {
       const r = await run20([JHOME, YARD, CUST]);
@@ -1398,14 +1402,58 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.commutes).toBe(2);
     });
 
-    test('a yard that is not the shop needs the box, and then it counts', async () => {
+    // AMENDED 2026-09-16 (10.4). It used to read "a yard that is not the shop
+    // needs the box, and then it counts", and expected four drives without the
+    // box: back when the rule was anchored on the base, an unrecognised place
+    // at the far end meant no commute at all. The rule is now crew and the
+    // DAY's shape (owner 2026-09-16), so for Jack the first hop out and the
+    // last hop home are his own whatever stands at the other end, box or no
+    // box. The box has not stopped mattering, it has stopped mattering HERE:
+    // its own job is the midday drive, which is the test directly below.
+    test('for crew the first and last hop go with or without the box', async () => {
       const off = await run20([JHOME, OTHER, CUST]);
-      expect(off.drives, 'an unmarked "other" place is an ordinary stop').toBe(4);
-      expect(off.commutes).toBe(0);
+      expect(off.commutes, 'his morning and his evening, unmarked place or not').toBe(2);
+      expect(off.drives).toBe(2);
       const on = await run20([JHOME, Object.assign({}, OTHER, { commute: true }), CUST]);
       expect(on.miles).toEqual([['Second yard', 'Bill Lorson'], ['Bill Lorson', 'Second yard']]);
       expect(on.drives).toBe(2);
       expect(on.commutes).toBe(2);
+    });
+
+    // ── AND WHAT THE BOX IS ACTUALLY FOR ──────────────────────────────────
+    // "I report here. The drive between home and here is a commute: no hours,
+    // no miles." (js/places.js, the place form.) The day-shape rule above
+    // covers the first hop out and the last hop home on its own, so the only
+    // drive left for the box to speak about is a MIDDAY one: home to the
+    // second yard and back in the middle of the day, which is the same two
+    // ends every day and is a commute at any hour.
+    test('the box still answers for a midday drive between home and the base', async () => {
+      const day = {
+        tape: [mo(T(6, 30), 'onFoot'), mo(T(7, 0), 'automotive'), mo(T(7, 30), 'onFoot'),
+          mo(T(11, 0), 'automotive'), mo(T(11, 30), 'onFoot'),
+          mo(T(12, 0), 'automotive'), mo(T(12, 20), 'onFoot'),
+          mo(T(13, 0), 'automotive'), mo(T(13, 20), 'onFoot'),
+          mo(T(17, 0), 'automotive'), mo(T(17, 30), 'onFoot')],
+        fixes: [fix(T(7, 0, 5), JHOME), fix(T(7, 30, 5), CUST), fix(T(10, 0), CUST),
+          fix(T(11, 0, 5), CUST), fix(T(11, 30, 5), JHOME), fix(T(11, 50), JHOME),
+          fix(T(12, 0, 5), JHOME), fix(T(12, 20, 5), OTHER), fix(T(12, 50), OTHER),
+          fix(T(13, 0, 5), OTHER), fix(T(13, 20, 5), CUST), fix(T(16, 0), CUST),
+          fix(T(17, 0, 5), CUST), fix(T(17, 30, 5), JHOME), fix(T(19, 0), JHOME)],
+      };
+      const run = (place) => page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(r.legs.map(l => [
+          (l.from && l.from.name) || '?', (l.to && l.to.name) || '?', !!l.commute])));
+      }, base(Object.assign({}, day, { fences: [JHOME, place, CUST], nowMs: T(20, 0), crew: true })));
+      const midday = (legs) => legs.find(l => l[0] === '7402 SW 22nd Ct' && l[1] === 'Second yard');
+      const off = await run(OTHER);
+      expect(midday(off), 'the drive happened either way').toBeTruthy();
+      expect(midday(off)[2], 'an unmarked place: an ordinary midday trip out').toBe(false);
+      const on = await run(Object.assign({}, OTHER, { commute: true }));
+      expect(midday(on)[2], 'ticked "I report here": a commute at any hour').toBe(true);
+      // And it never reaches past its own two ends: the drive OUT to the
+      // customer from that yard is work, whatever the box says.
+      expect(on.find(l => l[0] === 'Second yard' && l[1] === 'Bill Lorson')[2]).toBe(false);
     });
 
     // ONE BUILDING, SEVERAL FENCES. His yard is registered twice on his own
@@ -1433,7 +1481,7 @@ test.describe('geo-derive: the day deriver', () => {
         const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
         return { miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
                  drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length };
-      }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0),
+      }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0), crew: true,
         clocks: [{ start: T(7, 0), end: T(18, 0) }] }));
       expect(r.miles).toEqual([['JS Solutions shop', 'Bill Lorson'], ['Bill Lorson', 'JS Solutions shop']]);
       expect(r.drives).toBe(2);
@@ -1449,21 +1497,66 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.legs.map(l => l[1])).toContain('Bill Lorson');
     });
 
-    test('junk on the flag changes nothing', async () => {
+    // AMENDED 2026-09-16 (10.4) along with the test above, for the same
+    // reason: junk on the flag no longer changes the DAY's shape, because the
+    // day's shape never asked about the flag. What must still hold is that
+    // junk is not a yes: it cannot earn the midday exception, and it cannot
+    // turn the work drives in the middle of the day into commutes.
+    test('junk on the flag is still not a yes', async () => {
       for (const v of [undefined, null, false, 0, 'true', 1]) {
         const r = await run20([JHOME, Object.assign({}, OTHER, { commute: v }), CUST]);
-        // Only a real boolean true is the flag; anything else is an ordinary
-        // place and the day is four drives.
-        expect(r.drives, String(v)).toBe(4);
+        expect(r.commutes, String(v)).toBe(2);
+        expect(r.drives, String(v)).toBe(2);
       }
+      // A real boolean true is the flag, and on this day it changes nothing
+      // either, because the two hops it would speak for are already his.
+      const yes = await run20([JHOME, Object.assign({}, OTHER, { commute: true }), CUST]);
+      expect(yes.commutes).toBe(2);
     });
 
     // The shop is a KIND, not a name or a guess: a junk kind is not a shop.
+    // Same amendment, same reason. The day is Jack's either way, so his first
+    // and last hop go either way; what a junk kind must never do is make the
+    // yard read as a base and start swallowing the work in between.
     test('only a real shop kind anchors it', async () => {
       for (const k of ['Shop', 'SHOP', 'shoppe', '', null, undefined]) {
         const r = await run20([JHOME, Object.assign({}, YARD, { kind: k }), CUST]);
-        expect(r.drives, String(k)).toBe(4);
+        expect(r.commutes, String(k)).toBe(2);
+        expect(r.drives, String(k)).toBe(2);
       }
+    });
+
+    // ── THE OWNER'S SIDE OF THE ANSWER (owner 2026-09-16) ─────────────────
+    // Asked straight out whether a drive from the house to a customer job
+    // should bill: "for a business owner it does, but for Jack it doesn't."
+    //
+    // So the same evidence, the same fences, the same day, derived for the
+    // person who OWNS the business, bills every drive. This is not a setting
+    // and it is not geography: it is who the day belongs to. The old gate
+    // asked a geographic question ("has this account a base away from the
+    // house") that gave the right answer on the owner's own account only
+    // because his shop fence sits four metres from his desk; an owner whose
+    // yard is across town would have had his drive in refused.
+    test('the same day derived for the business owner bills every drive', async () => {
+      const asOwner = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'c' });
+        return JSON.parse(JSON.stringify({
+          commutes: r.legs.filter(l => l && l.commute === true).length,
+          drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
+          miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
+        }));
+      }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0), crew: false }));
+      expect(asOwner.commutes, 'nothing is a commute when the house is the business').toBe(0);
+      expect(asOwner.drives, 'all four, including the one out of his own driveway').toBe(4);
+      expect(asOwner.miles).toEqual([
+        ['7402 SW 22nd Ct', 'JS Solutions shop'], ['JS Solutions shop', 'Bill Lorson'],
+        ['Bill Lorson', 'JS Solutions shop'], ['JS Solutions shop', '7402 SW 22nd Ct'],
+      ]);
+      // And the same evidence for Jack is the answer he actually gave.
+      const asCrew = await run20([JHOME, YARD, CUST]);
+      expect(asCrew.commutes).toBe(2);
+      expect(asCrew.drives).toBe(2);
     });
 
     // ── A COMMUTE HAS NOTHING IN IT (owner 2026-09-16) ────────────────────
@@ -1503,7 +1596,7 @@ test.describe('geo-derive: the day deriver', () => {
           mo(T(15, 0), 'automotive'), mo(T(15, 25), 'onFoot')],
         fixes: [fix(T(8, 0), JHOME), fix(T(8, 25), JOB), fix(T(11, 0), JOB),
           fix(T(15, 0), JOB), fix(T(15, 25), JHOME), fix(T(18, 0), JHOME)],
-        fences: [JHOME, YARD], nowMs: T(20, 0),
+        fences: [JHOME, YARD], nowMs: T(20, 0), crew: true,
         clocks: [{ start: T(8, 0), end: T(15, 25) }],
       }));
       expect(r.commutes, 'a trip with work in the middle is not a commute').toBe(0);
@@ -1563,7 +1656,7 @@ test.describe('geo-derive: the day deriver', () => {
           fix(T(16, 3, 5), YARD), fix(T(16, 20), YARD), fix(T(16, 35, 5), YARD),
           fix(T(16, 50, 5), STOP), fix(T(17, 10), STOP), fix(T(17, 30, 5), STOP),
           fix(T(17, 50, 5), JHOME), fix(T(19, 0), JHOME)],
-        fences: [JHOME, YARD, CUST], nowMs: T(21, 0),
+        fences: [JHOME, YARD, CUST], nowMs: T(21, 0), crew: true,
       }));
       expect(r.commutes, 'the chain home is marked').toBe(1);
       expect(r.stops, 'and the 40 minutes at that address is still on the timesheet').toBe(1);
@@ -2736,7 +2829,7 @@ test.describe('geo-derive: the day deriver', () => {
       const rows = await page.evaluate((inp) => {
         const r = geoDeriveDay(inp);
         return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
-      }, base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0) }));
+      }, base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0), crew: true }));
       const time = rows.job_time_entries;
       // AMENDED 2026-09-15 (§10.4). This used to expect the two drives as rows
       // and to check that they named the house as a destination. Both of them
@@ -2749,7 +2842,7 @@ test.describe('geo-derive: the day deriver', () => {
       expect(rows.shop_time_entries.length).toBe(1);
       // The legs are still derived; they simply do not bill.
       const legs = await page.evaluate((inp) => geoDeriveDay(inp).legs.map(l => !!l.commute),
-        base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0) }));
+        base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0), crew: true }));
       expect(legs).toEqual([true, true]);
     });
   });

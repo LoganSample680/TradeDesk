@@ -694,6 +694,10 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
  * input.day      'YYYY-MM-DD' (the Central day to derive)
  * input.dayStart / input.dayEnd  ms bounds of that day (caller owns the zone)
  * input.personId  employee uid (stamped into ids)
+ * input.crew     true when this person is CREW on somebody else's account,
+ *                false/absent for the business owner deriving their own day.
+ *                Rule 20 is the only thing that reads it, and it is the whole
+ *                of that rule's gate (owner 2026-09-16).
  * input.nowMs     for the open tail; defaults to Date.now()
  * input.directMiles(a,b) optional sync resolver for a collapsed leg; default
  *                 straight line, and the leg says which it got.
@@ -1174,7 +1178,7 @@ function geoDeriveDay(input) {
   // the map, the route and every structural rule above still need it; what it
   // must never do is bill. geoDeriveRows writes no mileage row and no drive
   // time row for it, which is where "no hours, no miles" actually lives.
-  const realLegs = _gdCommuteMark(laddered, fences, opts.radiusFt);
+  const realLegs = _gdCommuteMark(laddered, fences, opts.radiusFt, inp.crew === true);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -2019,27 +2023,28 @@ function _gdReportsHere(fence, fences, radiusFt) {
 // an unsaved address for 43 minutes, then his driveway: one leg, two hops. The
 // old rule exempted the whole thing to protect the stop in the middle; this
 // refuses the final hop and leaves the stop exactly where it is.
-function _gdCommuteMark(legs, fences, radiusFt) {
+function _gdCommuteMark(legs, fences, radiusFt, crew) {
+  // ── AND ONLY FOR CREW ─────────────────────────────────────────────────
+  // Owner 2026-09-16, asked straight out whether a drive from the house to a
+  // customer job should bill: "for a business owner it does, but for Jack it
+  // doesn't."
+  //
+  // That is the whole gate, and it is the line the tax code draws in the same
+  // place. An owner with a home office has their principal place of business
+  // at home, so every drive out of the door is already work. An employee
+  // getting themselves to the first job of the day is commuting, whoever owns
+  // the address at the far end.
+  //
+  // It replaces a geographic proxy ("does this account have a base away from
+  // the house"), which happened to give the right answer on the owner's own
+  // account, where his shop fence sits four metres from his desk, and the
+  // WRONG one for any owner whose yard is across town: their drive in would
+  // have been refused. Crew is the actual question, so crew is what is asked.
+  if (!crew) return legs;
   const list = Array.isArray(legs) ? legs.filter(Boolean) : [];
   if (!list.length) return legs;
   const house = (e) => !!e && e.unsaved !== true && _gdIsHouse(e, fences, radiusFt);
   const reports = (e) => !!e && e.unsaved !== true && _gdReportsHere(e, fences, radiusFt);
-  // ── AND ONLY WHEN HE HAS SOMEWHERE ELSE TO REPORT TO ──────────────────
-  // A commute needs two places: the house you sleep in and the base you work
-  // out of. Jack has both, his own address and his dad's yard eight miles
-  // away, which is why his first and last hop are his own time.
-  //
-  // The owner has ONE: his shop fence sits four metres from his home office.
-  // For him the house IS the base, every drive out of it is the start of work
-  // (the home-office exception the tax code draws in exactly the same place),
-  // and this rule must not touch a single one of them. Same for any sole
-  // trader running out of a garage.
-  //
-  // Derived, never configured: if the account holds a shop or a ticked
-  // "I report here" that is NOT at the house, there is a commute to have.
-  const awayBase = (fences || []).some(f => f && f.lat != null && f.lng != null &&
-    _gdReportsHere(f, fences, radiusFt) && !_gdIsHouse(f, fences, radiusFt));
-  if (!awayBase) return legs;
   const order = list.slice().sort((a, b) => a.startTs - b.startTs);
   const mark = new Map();     // leg -> {first:bool, last:bool}
   const put = (l, k) => { const m = mark.get(l) || {}; m[k] = true; mark.set(l, m); };
