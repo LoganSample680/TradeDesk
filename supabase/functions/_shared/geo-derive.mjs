@@ -2585,9 +2585,18 @@ function geoDeriveRows(result, ids) {
       // 'client-held' is rule 13's question. The reader keeps it out of every
       // total and the dashboard asks; geo_replace_day carries the answer
       // (source, under fixed_at) across every rebuild after that.
+      // A SUPPLY HOUSE IS NOT A JOB SITE (owner 2026-09-16, on the new Save
+      // address chooser: "mark the timesheet as Supply House rather than
+      // onsite"). It used to fall through to the bare 'place', which the
+      // reader has no arm for, so a stop at Ferguson read "On site" on the
+      // rail and counted as job-site labour on the split bar. The mileage side
+      // already knew: a leg ending at a supply fence is a Supply run with a
+      // receipt pending. Same fact, said on both screens.
       source: d.kind === 'office' ? 'place-office'
         : d.held ? 'client-held'
-        : (f.jobId != null ? 'geofence' : (f.clientId != null ? 'client' : 'place')),
+        : (f.jobId != null ? 'geofence'
+          : (f.clientId != null ? 'client'
+            : (d.kind === 'supply' ? 'place-supply' : 'place'))),
     }));
   }
   for (const l of (result && result.legs) || []) {

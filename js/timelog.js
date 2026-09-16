@@ -1473,6 +1473,10 @@ function _tlRailKind(r){
   if(r.source==='unaccounted')return 'gap';
   if(r.source==='shop')return 'shop';
   if(r.rawSource==='place-load')return 'load';
+  // Ferguson is not a job site (owner 2026-09-16). Before the Save-address
+  // chooser there was no way to say a stop was a supply house, so there was
+  // nothing to draw; now that he can say it, the rail says it back.
+  if(r.rawSource==='place-supply')return 'supply';
   if(r.rawSource==='place-office')return 'office';
   if(r.rawSource==='place-home')return 'home';
   // The blend's own row: the clock was running and nothing tracked it. Grey
@@ -1511,6 +1515,10 @@ const _TL_RAIL_META={
   drive: {c:'#9F5B00',           icon:'🚗', word:'Drive time'},
   shop:  {c:'#0E6B6B',           icon:'🔧', word:'Shop time'},
   load:  {c:'#6D28D9',           icon:'📦', word:'Loading time'},
+  // Its own colour, not the grey bucket: picking up material IS work, it is
+  // just not labour at a customer's address, which is the distinction the
+  // split bar exists to draw.
+  supply:{c:'#15803D',           icon:'🛒', word:'Supply house'},
   office:{c:'#0E6B6B',           icon:'📋', word:'Office'},
   // A stretch at somebody's own address. It reads as its own thing rather
   // than as 'On site', which is what a house was drawn as when a home_office
@@ -1988,7 +1996,7 @@ async function _tlRowMenuDo(what,a,b){
 function _tlBucketFold(rows){
   const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object');
   const agg=_tlEmpWeekAgg(list,'day');
-  const e={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,loadMin:0,ot:false};
+  const e={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,loadMin:0,supplyMin:0,ot:false};
   Object.keys(agg).forEach(u=>{const a=agg[u];
     e.min+=a.min||0;if(a.weekOT)e.ot=true;
     _TL_BUCKETS.forEach(b=>{e[b.k]+=a[b.k]||0;});});
@@ -3184,7 +3192,7 @@ function _tlEmpWeekAgg(rows,cid){
   rows.forEach(r=>{
     if(r.unpaid)return;
     const uid=r.personUid||cid;
-    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,loadMin:0,weekOT:false,name:r.personName});
+    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,loadMin:0,supplyMin:0,weekOT:false,name:r.personName});
     e.min+=r.minutes||0;
     if(r.weekOT)e.weekOT=true;
     // Shop/yard dwell is its own bucket (owner request 2026-08-24): it is paid
@@ -3216,6 +3224,7 @@ function _tlEmpWeekAgg(rows,cid){
     // still, not a second one computed inside the rail: the card and the rail
     // must never be able to disagree about what a minute was.
     else if(_src==='place-load')e.loadMin+=r.minutes||0;
+    else if(_src==='place-supply')e.supplyMin+=r.minutes||0;
     else if(typeof _geoIsPlaceSource==='function'&&_geoIsPlaceSource(_src))e.placeMin+=r.minutes||0;
     else e.onsiteMin+=r.minutes||0;
     if(!e.name&&r.personName)e.name=r.personName;
@@ -3374,6 +3383,9 @@ const _TL_BUCKETS=[
   {k:'shopMin',   label:'Shop',         c:'var(--c-teal,#0E6B6B)'},
   {k:'driveMin',  label:'Driving',      c:'#9F5B00'},
   {k:'loadMin',   label:'Loading',      c:'#6D28D9'},
+  // Carved out of grey for the same reason Loading was (owner 2026-08-30,
+  // again 2026-09-16): a named thing belongs on the legend under its name.
+  {k:'supplyMin', label:'Supply',       c:'#15803D'},
   // Grey is what the clock covered and no fence explained (owner 2026-09-01:
   // "grey time should say Manual Time rather than supply/other"). It was named
   // for the supply-house visits it used to hold; on a real day it is mostly
