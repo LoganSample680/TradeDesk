@@ -2311,6 +2311,80 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.open && r.open.kind).toBe('client');
       expect(hm(r.open.sinceTs)).toBe(hm(T(8, 20)));
     });
+
+    // ── The approach is not a departure (owner 2026-09-16) ────────────────
+    //
+    // "my onsite banner at john doe didnt grab my arrival time and
+    // incremement the time up nor do I see my log beginning at john doe
+    // starting at 143 pm like I used to", and in the same breath "why im
+    // missing my shop time". One cause, both holes.
+    //
+    // iOS fires a region crossing at the FULL region radius, so his 13:43:37
+    // enter was stamped 785 ft from the pin. The dwell test measures against
+    // the kind-scaled span instead (a client is 0.4 of the account radius,
+    // 240 ft), so the last ten fixes of the drive up the street were all
+    // "outside", the first two corroborated each other, and the visit closed
+    // at its own arrival instant with no length. `open` went null, and with
+    // no open work dwell rule 11 read the day as having ended at the morning
+    // visit and dropped the 12:59 to 13:36 shop dwell as after-hours.
+    //
+    // These are his real coordinates off geo_events, distances from the pin
+    // in the comments.
+    const APPROACH = [
+      [T(13, 43, 40), 39.012751, -95.743859],   // 761 ft
+      [T(13, 43, 46), 39.012467, -95.743866],   // 745 ft
+      [T(13, 43, 50), 39.012525, -95.744252],   // 638 ft
+      [T(13, 43, 58), 39.012942, -95.744908],   // 501 ft
+      [T(13, 44, 14), 39.013409, -95.746213],   // 401 ft
+      [T(13, 44, 27), 39.013139, -95.746320],   // 299 ft, still outside the 240 ft span
+    ].map(([ts, lat, lng]) => ({ ts, lat, lng, acc: 8 }));
+    const PARKED = [
+      { ts: T(13, 47, 7), lat: 39.012871, lng: -95.746368, acc: 8 },   // 200 ft: reached
+      { ts: T(13, 48, 6), lat: 39.012567, lng: -95.746604, acc: 8 },   // 92 ft
+      { ts: T(14, 2, 5), lat: 39.012329, lng: -95.746317, acc: 8 },    // 50 ft
+      { ts: T(14, 33, 6), lat: 39.012224, lng: -95.746278, acc: 8 },   // 72 ft
+    ];
+    // Morning at the client, back to the yard at 12:59, out again at 13:36.
+    const afternoon = (over) => base(Object.assign({
+      tape: [mo(T(7, 45), 'driving'), mo(T(7, 55), 'onFoot'),
+             mo(T(12, 45), 'driving'), mo(T(12, 59), 'onFoot'),
+             mo(T(13, 36), 'driving'), mo(T(13, 47), 'onFoot')],
+      fixes: [fix(T(7, 45, 5), SHOP), fix(T(7, 55, 5), DOE), fix(T(10, 0), DOE), fix(T(12, 45, 5), DOE),
+              fix(T(12, 59, 5), SHOP), fix(T(13, 10), SHOP), fix(T(13, 36, 5), SHOP)]
+        .concat(APPROACH, PARKED),
+      regions: [{ ts: T(13, 43, 37), id: DOE.id, enter: true }],
+      fences: [SHOP, HOME, DOE], nowMs: T(14, 56),
+    }, over));
+
+    test('the drive up the street is not a departure: the visit opens at the crossing', async () => {
+      const r = await run(page, afternoon());
+      expect(r.openWhy).toBe('');
+      expect(r.open && r.open.name).toBe('John Doe');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(13, 43)));
+      // And no zero-length visit was invented at the arrival instant.
+      expect(r.dwells.filter(d => d.kind === 'client' && d.startTs >= T(13, 0))).toEqual([]);
+    });
+
+    test('and the yard between the two runs keeps its minutes', async () => {
+      const r = await run(page, afternoon());
+      expect(r.dwells.filter(d => d.kind === 'shop').map(d => [hm(d.startTs), hm(d.endTs)]))
+        .toEqual([[hm(T(12, 59)), hm(T(13, 36))]]);
+    });
+
+    test('driving PAST the fence still writes nothing: no fix ever lands inside', async () => {
+      // Same crossing, same approach, and then he carries on out of town.
+      const AWAY = { lat: DOE.lat + 0.02, lng: DOE.lng };
+      const r = await run(page, afternoon({
+        tape: [mo(T(7, 45), 'driving'), mo(T(7, 55), 'onFoot'),
+               mo(T(12, 45), 'driving'), mo(T(12, 59), 'onFoot'),
+               mo(T(13, 36), 'driving')],
+        fixes: [fix(T(7, 45, 5), SHOP), fix(T(7, 55, 5), DOE), fix(T(10, 0), DOE), fix(T(12, 45, 5), DOE),
+                fix(T(12, 59, 5), SHOP), fix(T(13, 36, 5), SHOP)]
+          .concat(APPROACH, [fix(T(13, 50), AWAY), fix(T(13, 55), AWAY)]),
+      }));
+      expect(r.open).toBeNull();
+      expect(r.dwells.filter(d => d.kind === 'client' && d.startTs >= T(13, 0))).toEqual([]);
+    });
   });
 
   // ── Rule 10: paperwork at the home office ───────────────────────────────

@@ -1228,7 +1228,29 @@ function geoDeriveDay(input) {
       if (prev && prev.lat === f.lat && prev.lng === f.lng && f.ts - prev.ts <= sameMs) { later[later.length - 1] = f; continue; }
       later.push(f);
     }
-    for (let i = 0; i < later.length; i++) {
+    // ── YOU CANNOT LEAVE A PLACE YOU HAVE NOT REACHED YET ────────────────
+    // Owner 2026-09-16: "my onsite banner at john doe didnt grab my arrival
+    // time and incremement the time up nor do I see my log beginning at john
+    // doe starting at 143 pm like I used to."
+    //
+    // A fenced arrival is stamped at the OS region crossing, and iOS fires
+    // that at the FULL region radius: his 13:43:37 enter sits 785 ft from the
+    // pin. inFence measures against the kind-scaled span instead (a client is
+    // 0.4 of the account radius, 240 ft), so the last ten fixes of the drive
+    // up the street, 761, 745, 638, 586, 501, 456, 431, 430, 401 and 299 ft,
+    // are every one of them "outside". The first two corroborated each other,
+    // the visit closed at its own arrival instant with no length, and because
+    // a closed visit means `open` is null, rule 11 then read the day as
+    // having ended at 12:45 and dropped his 12:59 to 13:36 shop dwell as
+    // after-hours. One missed arrival, two holes, on the same afternoon.
+    //
+    // So the departure scan starts at the first fix that is genuinely inside.
+    // Everything before it is the approach, and an approach is not a
+    // departure. If NO fix is ever inside, he drove past without arriving:
+    // that is the old behaviour and is kept exactly as it was, the scan runs
+    // from the top and closes the visit at its own instant, writing nothing.
+    const reached = later.findIndex(inFence);
+    for (let i = reached > 0 ? reached : 0; i < later.length; i++) {
       if (inFence(later[i])) { end = later[i].ts; continue; }
       // Outside. Confirmed only if the NEXT fix is also outside; a single
       // outlier between two inside fixes is noise and is skipped.
