@@ -7621,21 +7621,39 @@ async function _geoDeriveTape(sinceMs){
 const _GEO_FRESH_FIX_TYPES=['fix','clock-in','clock-out'];
 const _GEO_FETCH_PAGE=1000;
 const _GEO_FETCH_PAGES=40;
+// ── A SHORT ANSWER AND A COMPLETE ONE ARE NOT THE SAME THING ──────────────
+// Owner 2026-09-16: "I'm missing so many fucking drives now everywhere."
+//
+// Eleven time rows, ten mileage rows and a shop row were retired off his last
+// week at 06:45 that morning by the boot rebuild, with no error anywhere. The
+// path is this function: it stops on an error (`data` null) and it stops at
+// the page cap, and in BOTH cases it returns what it happens to have as though
+// that were the whole set. The caller then derives a day from a partial copy
+// of the evidence and SWEEPS, so every row the missing pages would have
+// produced is read as a row that should no longer exist.
+//
+// `out.complete` is the difference. It costs nothing to carry and it is the
+// one fact the sweep needs: this is everything, or this is some of it.
 async function _geoPageAll(build){
   const out=[];
+  out.complete=false;
   for(let i=0;i<_GEO_FETCH_PAGES;i++){
     const r=await build().order('ts',{ascending:true}).range(i*_GEO_FETCH_PAGE,(i+1)*_GEO_FETCH_PAGE-1);
     const data=r&&Array.isArray(r.data)?r.data:null;
-    if(!data)break;
+    if(!data)return out;                       // an error: what we have, and say so
     out.push.apply(out,data);
-    if(data.length<_GEO_FETCH_PAGE)break;
+    if(data.length<_GEO_FETCH_PAGE){out.complete=true;return out;}
   }
-  return out;
+  return out;                                  // hit the page cap: there is more
 }
 async function _geoDeriveServerFixes(fromMs,toMs){
   const out=[];
   out.appEvents=[];
   out.regions=[];
+  // Every one of the four fetches below has to have come back whole before a
+  // day derived from this is allowed to retire anything (see _geoPageAll).
+  // Starts false: a throw, or no session at all, leaves it false.
+  out.complete=false;
   try{
     if(!_supa||!_supaUser)return out;
     const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
@@ -7653,6 +7671,7 @@ async function _geoDeriveServerFixes(fromMs,toMs){
     ev.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});});
     const pg=await _geoPageAll(()=>_supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b));
     pg.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:e.accuracy!=null?Number(e.accuracy):null});});
+    out.complete=!!(ap.complete&&rg.complete&&ev.complete&&pg.complete);
   }catch(_e){}
   return out;
 }
@@ -7983,6 +8002,10 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       (serverFixes&&Array.isArray(serverFixes.appEvents)&&serverFixes.appEvents.some(e=>e.ts>=b.start&&e.ts<b.end));
     if(!tapeCovers&&!appCovers)return null;
     let server=Array.isArray(serverFixes)?serverFixes:null;
+    // Did the evidence this derive is about to run on come back WHOLE? Only a
+    // complete fetch may retire a row (see _geoPageAll). A derive that never
+    // needed the server is judged on its own local log, exactly as before.
+    let fetched=false;
     if(!server){
       // Live derive with a thin local log for this day (a fresh build, a
       // reinstall, a day the app was dead for): the server has what other
@@ -7990,6 +8013,7 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       // does not have to ask.
       const localToday=_geoFixLogRead().filter(f=>f.ts>=b.start&&f.ts<b.end).length;
       if(localToday<_GEO_FIXLOG_THIN){
+        fetched=true;
         server=await _geoDeriveServerFixes(b.start-2*3600000,b.end);
         _geoFixLogSeed(server);
         _geoAppLogSeed(server.appEvents);
@@ -8055,11 +8079,25 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // Tomorrow's rebuild, with the claim covering the whole of today, sweeps
     // it properly.
     const tapeOwned=_geoTapeSince()<=b.start-2*3600000;
+    // ── AND THE EVIDENCE HAS TO BE WHOLE BEFORE ANYTHING IS RETIRED ───────
+    // Owner 2026-09-16: "I'm missing so many fucking drives now everywhere."
+    // Twenty-two rows off his last week, retired at 06:45 by the boot rebuild,
+    // no error anywhere. The fetch behind it stops silently on an error and at
+    // a page cap and hands back a partial set as though it were the whole one;
+    // the day then derives from part of the evidence and sweeps against all of
+    // it, so every row the missing pages would have produced reads as a row
+    // that should no longer exist.
+    //
+    // This is the same rule the server path has always had, said the other way
+    // round: absence of evidence is evidence of absence only where there IS
+    // evidence. A partial fetch still WRITES what it found, it just may not
+    // retire what it did not.
+    const whole=!(serverFixes||fetched)||!!(server&&server.complete);
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
       p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
       p_time:rows.job_time_entries,p_shop:rows.shop_time_entries,p_miles:rows.td_mileage,
-      p_sweep:!!(tapeCovers&&tapeOwned),
+      p_sweep:!!(tapeCovers&&tapeOwned&&whole),
     });
     _geoDeriveApplyMileage(dayKey,rows.td_mileage);
     // Every derived day tells js/day-end.js where it ended, so a clock that

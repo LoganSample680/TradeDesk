@@ -1288,6 +1288,75 @@ test.describe('geo-derive wiring', () => {
       expect(r.miles, 'the in-memory legs are not touched either').toEqual(['leg-live']);
     });
 
+    // ── A PARTIAL FETCH MAY WRITE, BUT IT MAY NOT RETIRE (owner 2026-09-16) ──
+    // "I'm missing so many fucking drives now everywhere."
+    //
+    // Twenty-two rows off his last week, retired at 06:45 by the boot rebuild,
+    // with no error anywhere: eleven time rows, ten mileage rows and a shop
+    // row across four days. _geoPageAll stops silently on an error and at its
+    // page cap and hands the caller what it happens to have, as though that
+    // were the whole set. The day then derives from PART of the evidence and
+    // sweeps against ALL of it, so every row the missing pages would have
+    // produced reads as a row that should no longer exist.
+    //
+    // It is the same rule the server path has always had, said the other way
+    // round: absence of evidence is evidence of absence only where there IS
+    // evidence.
+    test('a server fetch that came back short writes, but never sweeps', async () => {
+      await seed();
+      const r = await page.evaluate(async ([DAY, SHOP, DOE, T]) => {
+        localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
+        const real = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        // Enough to resolve the day, and explicitly NOT complete: this is what
+        // an errored page or the page cap hands back.
+        window._geoDeriveServerFixes = async () => {
+          const o = [{ ts: T[0], lat: SHOP.lat, lng: SHOP.lng, acc: null },
+                     { ts: T[1], lat: DOE.lat, lng: DOE.lng, acc: 5 },
+                     { ts: T[2], lat: DOE.lat, lng: DOE.lng, acc: 5 },
+                     { ts: T[3], lat: SHOP.lat, lng: SHOP.lng, acc: 5 },
+                     { ts: T[4], lat: SHOP.lat, lng: SHOP.lng, acc: 5 }];
+          o.appEvents = []; o.regions = []; o.complete = false; return o;
+        };
+        try {
+          localStorage.setItem('zp3_geo_queue', '[]');
+          await _geoDeriveDayNow(DAY, null);
+          const short = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0];
+          // The same fetch, whole this time, is allowed to sweep.
+          const prev = window._geoDeriveServerFixes;
+          window._geoDeriveServerFixes = async (...a) => { const o = await prev(...a); o.complete = true; return o; };
+          localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
+          localStorage.setItem('zp3_geo_queue', '[]');
+          await _geoDeriveDayNow(DAY, null);
+          const whole = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0];
+          return { shortSweep: short && short.args.p_sweep, shortRows: short && short.args.p_time.length,
+                   wholeSweep: whole && whole.args.p_sweep };
+        } finally { window._geoDeriveServerFixes = real; }
+      }, [DAY, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)]]);
+      expect(r.shortSweep, 'a short fetch retires nothing').toBe(false);
+      expect(r.shortRows, 'but it still writes what it did find').toBeGreaterThan(0);
+      expect(r.wholeSweep, 'and a complete one sweeps exactly as before').toBe(true);
+    });
+
+    // The pager is where `complete` comes from, and it has to be honest about
+    // both ways it can stop early: an error, and running out of pages.
+    test('the pager says whether it got everything', async () => {
+      const r = await page.evaluate(async () => {
+        const page1 = (n) => ({ data: Array.from({ length: n }, (_, i) => ({ ts: new Date(i).toISOString() })) });
+        const mk = (reply) => { let i = -1; return () => ({ order: () => ({ range: async () => { i++; return reply(i); } }) }); };
+        const short = await _geoPageAll(mk(() => page1(3)));            // one part page: done
+        const err = await _geoPageAll(mk((i) => i === 0 ? page1(1000) : ({ error: { message: 'boom' } })));
+        const capped = await _geoPageAll(mk(() => page1(1000)));        // never a short page
+        return { short: short.complete, shortN: short.length,
+                 err: err.complete, errN: err.length,
+                 capped: capped.complete };
+      });
+      expect(r.short, 'a page shorter than the limit is the end of the data').toBe(true);
+      expect(r.shortN).toBe(3);
+      expect(r.err, 'an error mid-way is not the end of the data').toBe(false);
+      expect(r.errN, 'and what it already had is still handed back').toBe(1000);
+      expect(r.capped, 'running out of pages means there is more').toBe(false);
+    });
+
     test('a thin local log asks the server once and keeps what it got', async () => {
       await seed();
       const r = await page.evaluate(async ([DAY, SHOP, DOE, T]) => {
