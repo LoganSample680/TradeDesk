@@ -2068,6 +2068,24 @@ function _gdCommuteMark(legs, fences, radiusFt) {
       put(l, 'first'); put(l, 'last');
     }
   }
+  // ── A COMMUTE HAS NOTHING IN IT ───────────────────────────────────────
+  // If the SAME leg is both the day's first drive out of the house and its
+  // last drive back to it, then the whole day is one journey: house, one or
+  // more addresses nobody saved, house. Every hop of it would be refused, and
+  // that is wrong twice over. It is wrong in principle, because a stop in the
+  // middle is exactly what makes a trip not a commute (the same reading v2
+  // had, kept here and only here); and it was wrong in fact, because the leg
+  // then carried no mileage row, the rail's Save button resolves a stop's
+  // coordinate off that row, and six and a half hours at an address he could
+  // no longer name was the result (owner 2026-09-16: "no unsaved addresses
+  // with no option to fill?").
+  //
+  // Single-hop legs are untouched: house straight to the yard and back is two
+  // separate legs, each with nothing in it, and both are still commutes.
+  for (const l of order) {
+    const m = mark.get(l);
+    if (m && m.first && m.last && Array.isArray(l.drives) && l.drives.length > 1) mark.delete(l);
+  }
   if (!mark.size) return legs;
   return list.map((l) => {
     const m = mark.get(l);
@@ -2412,9 +2430,26 @@ function geoDeriveRows(result, ids) {
     // already refuses as a mileage endpoint.
     const commuteSegs = (l.commute === true)
       ? (Array.isArray(l.commuteSegs) ? l.commuteSegs : [0]) : [];
-    const allCommute = l.commute === true &&
-      commuteSegs.length >= (Array.isArray(l.drives) && l.drives.length ? l.drives.length : 1);
-    if (allCommute) continue;
+    const nDrives = (Array.isArray(l.drives) && l.drives.length) ? l.drives.length : 1;
+    const allCommute = l.commute === true && commuteSegs.length >= nDrives;
+    // ── A LEG IS ONLY EVER DROPPED WHOLE WHEN IT IS ONE DOOR-TO-DOOR HOP ──
+    // Owner 2026-09-16, asking the only question that matters before a roll:
+    // "no unsaved addresses with no option to fill?"
+    //
+    // There was one, and it was the worst shape this rule can take. A day
+    // that goes house, an address nobody saved, house is ONE leg with TWO
+    // hops, and both of them qualify: the first drive out of his house and
+    // the last drive back to it. commuteSegs covered every hop, the leg was
+    // dropped here, and six and a half hours of work at that address went
+    // with it. No stop row, no Save this address button, nothing to fill in,
+    // and a manual clock running over the whole thing did not save it.
+    //
+    // That is v1's mistake wearing a different hat, and the answer is the
+    // same one: RULE 20 REFUSES A HOP, NEVER THE STOP BESIDE IT. A multi-hop
+    // leg always has an interior stop, so it always falls through to the stop
+    // rows below. Only the mileage row and the drive rows are refused, and
+    // the mileage gate moved down beside the row it governs.
+    if (allCommute && nDrives <= 1) continue;
     // ONE ROW PER DRIVE, NOT ONE PER CHAIN (owner 2026-09-04: "right, in
     // between it logs the time as a unsaved job site").
     //
@@ -2592,6 +2627,11 @@ function geoDeriveRows(result, ids) {
     // Rule 14: a traced round trip is a row (shown, never claimed); a plain
     // same-fence loop is still nothing.
     if (l.roundTrip && !l.traced) continue;
+    // Rule 20, the mileage half. Every hop of this leg is his own time, so
+    // there are no business miles on it to write. The stop rows above already
+    // landed, which is the whole reason this gate is here and not up with the
+    // drive rows.
+    if (allCommute) continue;
     // Rule 20 and the mileage row, which is ONE row for the whole leg at the
     // direct route between its two saved ends. A door-to-door commute never
     // reaches here (allCommute above dropped it). A CHAIN that merely ends at

@@ -1465,6 +1465,63 @@ test.describe('geo-derive: the day deriver', () => {
         expect(r.drives, String(k)).toBe(4);
       }
     });
+
+    // ── A COMMUTE HAS NOTHING IN IT (owner 2026-09-16) ────────────────────
+    // He asked the only question worth asking before a roll: "no unsaved
+    // addresses with no option to fill?" There was one, and this is it.
+    //
+    // A day that goes house, an address nobody saved, house is ONE leg with
+    // TWO hops, and both qualified: the first drive out of the house and the
+    // last drive back to it. Every hop refused meant the whole leg was
+    // dropped, and six and a half hours of work at that address went with it:
+    // no stop row, no coordinate, no Save this address button, and a manual
+    // clock running over the lot of it did not save any of it.
+    //
+    // Two things have to hold forever, so this asserts both: the work is on
+    // the timesheet, and the stop can still be NAMED, which means the mileage
+    // row's viaStops still carries the coordinate under the stop row's own
+    // client_key. That second half is the one that was silently broken: the
+    // rail's Save button (_mileSaveStopAddress, js/mileage.js) resolves a stop
+    // through that array and nowhere else, so a leg with no mileage row is a
+    // button that does nothing.
+    test('house, an address nobody saved, house: the day is work, not two commutes', async () => {
+      const JOB = { lat: 39.0721, lng: -95.7010 };   // no fence anywhere near it
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+        const stops = rows.job_time_entries.filter(t => /^unsaved/.test(t.source));
+        return JSON.parse(JSON.stringify({
+          commutes: res.legs.filter(l => l && l.commute === true).length,
+          drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
+          stopMins: stops.map(t => Number(t.minutes)),
+          // Can he name it? Exactly what the Save button asks.
+          nameable: stops.every(t => rows.td_mileage.some(m => Array.isArray(m.viaStops) &&
+            m.viaStops.some(v => v && v.key === t.client_key && v.lat != null && v.lng != null))),
+        }));
+      }, base({
+        tape: [mo(T(7, 55), 'onFoot'), mo(T(8, 0), 'automotive'), mo(T(8, 25), 'onFoot'),
+          mo(T(15, 0), 'automotive'), mo(T(15, 25), 'onFoot')],
+        fixes: [fix(T(8, 0), JHOME), fix(T(8, 25), JOB), fix(T(11, 0), JOB),
+          fix(T(15, 0), JOB), fix(T(15, 25), JHOME), fix(T(18, 0), JHOME)],
+        fences: [JHOME, YARD], nowMs: T(20, 0),
+        clocks: [{ start: T(8, 0), end: T(15, 25) }],
+      }));
+      expect(r.commutes, 'a trip with work in the middle is not a commute').toBe(0);
+      expect(r.drives, 'out in the morning and back at night, both his employer\'s').toBe(2);
+      expect(r.stopMins, 'the whole day at that address, on the timesheet').toEqual([395]);
+      expect(r.nameable, 'and the Save this address button has a coordinate to open on').toBe(true);
+    });
+
+    // The other half of the same rule, and the reason it is worded as "nothing
+    // in it" rather than "not the same leg": house straight to the yard and
+    // back at night are two SEPARATE legs with nothing inside either one, and
+    // both are still refused. Covered above by his real day; asserted here
+    // against the shape that nearly took it out.
+    test('but an empty drive out and an empty drive home are still commutes', async () => {
+      const r = await run20([JHOME, YARD, CUST]);
+      expect(r.commutes).toBe(2);
+      expect(r.drives).toBe(2);
+    });
   });
 
   // ── RULE 19: the day learns when this person usually works ───────────────
