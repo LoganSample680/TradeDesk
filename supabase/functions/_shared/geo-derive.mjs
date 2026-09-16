@@ -1265,8 +1265,11 @@ function geoDeriveDay(input) {
     }
   }
 
+  // Rule 22: the stop sits where the phone SAT (see _gdReseatDwells), before
+  // any rule below reads which fence it is at.
+  const seated = _gdReseatDwells(dwells, fixes, fences, opts);
   // Rule 10: paperwork at the home office.
-  const carved = _gdOffice(dwells, open, journeys, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
+  const carved = _gdOffice(seated, open, journeys, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
   // Rule 12: the house is never on the clock.
   const housed = _gdHouseOffTheClock(carved);
   // Rule 11: the day ends with the last real work.
@@ -2613,6 +2616,73 @@ function geoSpanClaim(span, ctx) {
   return { claim: true, why: clocked ? 'clock' : 'fence' };
 }
 
+// ── RULE 22: THE STOP SITS WHERE THE PHONE SAT, NOT WHERE ONE PING FELL ───
+// Owner 2026-09-16: "Jack reported an issue where it tagged the house a few
+// houses down they were previously at. How can we align the address better so
+// the gps pings we get can center itself on a more probable address?"
+//
+// His 15 September, every fix inside that stop, in feet from Laurie
+// Schonfeldt's saved pin:
+//
+//   07:59:25  748     still rolling
+//   07:59:28  657
+//   07:59:32  595
+//   07:59:40  483
+//   07:59:46  387
+//   08:00:01  297     parked
+//   08:01:09  296
+//   08:01:34  295
+//   08:15:36  295
+//   08:15:38  300
+//   09:04:28  250
+//
+// He parked and sat there for an hour, and the parked fixes agree with each
+// other to within FIVE FEET. That is not noise. It is a different house, about
+// 295 feet up the street, and the old 600 ft circle made her the only name in
+// range, so she won.
+//
+// A dwell has dozens of fixes and the arrival fence was picked from exactly
+// one of them: the one nearest the moment the tape flipped, which is the wake
+// where iOS is most likely to hand back a cached position. The median of the
+// whole stop is the better witness and costs nothing, and being a median it
+// ignores the rolling-in fixes rather than being dragged by them.
+//
+// Two outcomes, and the second is the one that matters. A median landing on a
+// DIFFERENT fence re-seats the stop there. A median landing on NO fence does
+// not rename the dwell (rules 12, 13 and 20 all read d.fence and must keep a
+// real one), it marks it, and geoDeriveRows writes the row as an unsaved stop:
+// "Unsaved address" with the Save button, instead of the neighbour's name. A
+// blank he can fill beats a wrong name he has to catch.
+const _GD_RESEAT_MIN_FIXES = 3;
+function _gdSpotOf(fixes, a, b, maxAccM) {
+  const inside = [];
+  for (const f of (fixes || [])) {
+    if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') continue;
+    if (f.acc != null && Number(f.acc) > maxAccM) continue;
+    if (f.ts < a || f.ts > b) continue;
+    inside.push(f);
+  }
+  if (inside.length < _GD_RESEAT_MIN_FIXES) return null;
+  const med = (nums) => {
+    const v = nums.slice().sort((x, y) => x - y), m = v.length >> 1;
+    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+  };
+  return { lat: med(inside.map(f => f.lat)), lng: med(inside.map(f => f.lng)), n: inside.length };
+}
+function _gdReseatDwells(dwells, fixes, fences, opts) {
+  return (dwells || []).map((d) => {
+    if (!d || d.open || !d.fence) return d;
+    const spot = _gdSpotOf(fixes, d.startTs, d.endTs, opts.maxFixAccM);
+    if (!spot) return d;
+    const f = geoFenceAt(spot, fences, opts.radiusFt);
+    if (f && _gdSameFence(f, d.fence)) return d;
+    if (f) return Object.assign({}, d, { fence: f, kind: String(f.kind || 'other'),
+      name: f.name || '', reseated: true, spot });
+    // Nowhere saved. Keep the fence for the rules, take the NAME off the row.
+    return Object.assign({}, d, { farFromFence: true, spot });
+  });
+}
+
 function geoDeriveRows(result, ids) {
   const cid = ids && ids.contractorId, uid = ids && ids.employeeId;
   const iso = ms => new Date(ms).toISOString();
@@ -2630,8 +2700,8 @@ function geoDeriveRows(result, ids) {
     if (d.kind === 'shop') { shop.push(base); continue; }
     const f = d.fence || {};
     time.push(Object.assign(base, {
-      job_id: f.jobId != null ? String(f.jobId) : null,
-      dest_place: f.jobId != null ? null : (d.name || null),
+      job_id: d.farFromFence ? null : (f.jobId != null ? String(f.jobId) : null),
+      dest_place: d.farFromFence ? null : (f.jobId != null ? null : (d.name || null)),
       // No 'place-home' arm: rule 12 means a home_office dwell never reaches
       // here at all, so a branch for it would be a branch that cannot run.
       // js/timelog.js still READS 'place-home' on purpose, for the rows that
@@ -2647,7 +2717,10 @@ function geoDeriveRows(result, ids) {
       // rail and counted as job-site labour on the split bar. The mileage side
       // already knew: a leg ending at a supply fence is a Supply run with a
       // receipt pending. Same fact, said on both screens.
-      source: d.kind === 'office' ? 'place-office'
+      // Rule 22: the median of this stop's own fixes landed on no fence at
+      // all, so the row does not borrow the name the arrival fix guessed.
+      source: d.farFromFence ? 'unsaved'
+        : d.kind === 'office' ? 'place-office'
         : d.held ? 'client-held'
         : (f.jobId != null ? 'geofence'
           : (f.clientId != null ? 'client'

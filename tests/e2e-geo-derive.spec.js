@@ -4300,6 +4300,78 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 22: THE STOP SITS WHERE THE PHONE SAT ────────────────────────────
+  // Owner 2026-09-16: "I want to see all the addresses they have and all the
+  // pings at the address to determine if it was the right address." We did.
+  // Jack's 15 September, every fix inside that stop, in feet from Laurie
+  // Schonfeldt's saved pin: 748, 657, 595, 483, 387 rolling in, then 297, 296,
+  // 295, 295, 300, 250 parked for an hour. The parked fixes agree with each
+  // other to within five feet. It is a different house about 295 ft up the
+  // street, and the old 600 ft circle made her the only name in range.
+  test.describe('rule 22: a stop is named from the middle of itself', () => {
+    const PIN = { lat: 39.0104968, lng: -95.7790924 };          // Laurie's saved pin
+    const PARKED = { lat: 39.011155, lng: -95.779699 };          // where he actually sat
+    const LAURIE = { id: 'client-l', kind: 'client', name: 'Laurie Schonfeldt', clientId: 7,
+      lat: PIN.lat, lng: PIN.lng };
+    // His real day: out of the house, park up the street, sit there, drive on.
+    const day = (parkAt) => {
+      const HOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+      return base({
+        fences: [HOME, LAURIE],
+        tape: [mo(T(7, 50), 'onFoot'), mo(T(7, 54), 'automotive'), mo(T(8, 0), 'onFoot'),
+          mo(T(9, 8), 'automotive'), mo(T(9, 20), 'onFoot')],
+        fixes: [
+          fix(T(7, 53), HOME),
+          // THE ARRIVAL FIX LANDS ON HER PIN, which is the whole trap. It sits
+          // on the tape flip, so it is the one the arrival lookup picks, and it
+          // is inside her circle even at the narrowed radius. Nothing but the
+          // median of the stop can catch this one.
+          fix(T(8, 0, 0), { lat: PIN.lat + 0.0002, lng: PIN.lng }),   // ~73 ft
+          // Then the truck's real fixes, five feet apart, for an hour.
+          fix(T(8, 2), parkAt), fix(T(8, 5), parkAt), fix(T(8, 15), parkAt), fix(T(9, 4), parkAt),
+          fix(T(9, 20, 5), HOME), fix(T(10, 0), HOME),
+        ],
+        // A clock over the stop, so rule 13 vouches for the day and the dwell
+        // is a real row rather than a held question. What is under test here
+        // is WHICH ADDRESS it is, not whether it counts.
+        clocks: [{ start: T(7, 50), end: T(9, 30) }],
+        nowMs: T(12, 0),
+      });
+    };
+    const stop = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'c' });
+      const d = r.dwells.find(x => x.startTs > 0 && x.kind !== 'home_office' && x.kind !== 'office');
+      const row = rows.job_time_entries.find(t => !/^drive/.test(t.source) && t.source !== 'place-office');
+      return JSON.parse(JSON.stringify({ name: d && d.name, far: !!(d && d.farFromFence),
+        source: row && row.source, dest: row && row.dest_place }));
+    }, inp);
+
+    test('the arrival ping says her house, the hour parked says otherwise', async () => {
+      const r = await stop(day(PARKED));
+      expect(r.far, 'the median of the stop is on no fence at all').toBe(true);
+      expect(r.source, 'so the row is an unsaved stop with a Save button').toBe('unsaved');
+      expect(r.dest, 'and it does not borrow the neighbour\'s name').toBe(null);
+    });
+
+    test('parked in her driveway: still her house, nothing changes', async () => {
+      const r = await stop(day({ lat: PIN.lat + 0.00008, lng: PIN.lng }));   // ~29 ft
+      expect(r.far).toBe(false);
+      expect(r.source).toBe('client');
+      expect(r.dest).toBe('Laurie Schonfeldt');
+    });
+
+    // The median is what makes this safe: the rolling-in fixes are 748 and 483
+    // feet out and must not drag the answer, and a stop with almost no fixes
+    // must not be re-seated on one of them.
+    test('too few fixes to have a middle: the arrival fence stands', async () => {
+      const thin = day(PARKED);
+      thin.fixes = thin.fixes.filter(f => f.ts < T(8, 1) || f.ts > T(9, 5));
+      const r = await stop(thin);
+      expect(r.far, 'two fixes is not a middle, so nothing is re-seated').toBe(false);
+    });
+  });
+
   test('no console errors across the deriver', async () => {
     assertNoErrors(page, 'geo-derive');
   });
