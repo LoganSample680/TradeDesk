@@ -113,6 +113,70 @@ test.describe('Receipt-gated supply runs', () => {
       expect(out.heldGone, 'and the card has nothing left to ask').toBe(true);
     });
 
+    // ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-16) ─────────────────
+    // "Personal should remove the mileage and the timesheet will then have a
+    // personal hole and exclude itself from time."
+    //
+    // It only ever reached the mileage row. Jack's Neenans run came off his
+    // deductible miles and left forty-four minutes of drive and dwell on his
+    // timesheet as paid work, so the app told him two different stories about
+    // one trip. geo_answer_supply_run is the door for the time half, keyed by
+    // the run because that is what the card is about: a day and a store.
+    test('Personal also takes the hours off, through the one door that owns them', async () => {
+      const key = await seedHeld();
+      const out = await page.evaluate((k) => {
+        const calls = [];
+        const orig = window._supa;
+        window._supa = Object.assign({}, orig || {}, {
+          rpc: (fn, args) => { calls.push([fn, args]); return Promise.resolve({ data: null, error: null }); },
+        });
+        try { resolveSupplyRun(k, 'personal'); return { calls }; }
+        finally { window._supa = orig; }
+      }, key);
+      expect(out.calls).toEqual([['geo_answer_supply_run', { p_key: key, p_mode: 'personal' }]]);
+    });
+
+    // ── AND THE WAY BACK FROM A MIS-TAP (owner 2026-09-16) ─────────────────
+    // "For Jack he meant to hit no receipt." He has done it twice, and until
+    // today no control anywhere could undo it: the card is gone once answered
+    // and the mileage row only reported what had happened to it.
+    //
+    // Back to where "no receipt" would have left it, not back to HELD. He has
+    // answered the receipt question; asking it again is the app refusing to
+    // believe him.
+    test('It was work: a mis-tapped Personal goes back to no-receipt business, hours and all', async () => {
+      const key = await seedHeld();
+      const out = await page.evaluate((k) => {
+        const calls = [];
+        const orig = window._supa;
+        window._supa = Object.assign({}, orig || {}, {
+          rpc: (fn, args) => { calls.push([fn, args]); return Promise.resolve({ data: null, error: null }); },
+        });
+        try {
+          resolveSupplyRun(k, 'personal');
+          const n = resolveSupplyRun(k, 'unpersonal');
+          const rows = mileage.filter(m => m.supplyRunKey === k);
+          return { n, calls,
+            cleared: rows.every(m => !m.personal && m.noReceipt === true && !m.pendingReceipt),
+            backOnBooks: deductibleTrips(mileage).length === rows.length,
+            notReasked: pendingSupplyRuns().length === 0 };
+        } finally { window._supa = orig; }
+      }, key);
+      expect(out.n).toBe(2);
+      expect(out.cleared, 'personal off, no receipt on, not held again').toBe(true);
+      expect(out.backOnBooks, 'and the miles are deductible again').toBe(true);
+      expect(out.notReasked, 'the receipt question is not re-opened').toBe(true);
+      expect(out.calls[1]).toEqual(['geo_answer_supply_run', { p_key: key, p_mode: 'working' }]);
+    });
+
+    // NOT DOM-TESTED, and said out loud rather than quietly skipped: the
+    // mileage list does not draw in the offline harness (renderAllMileage
+    // writes into a container the test DOM never builds), so the chip's markup
+    // has no honest assertion here. What it calls IS tested, directly, by the
+    // two tests above. If the list ever becomes renderable offline, assert
+    // 'Personal · off the books' and 'It was work' on the row and delete this
+    // note.
+
     test('an answered run stays answered when the deriver writes the same leg again', async () => {
       // The carry-across in js/geo-track.js: whatever the person answered
       // rides onto the re-derived leg, and the fresh hold is dropped.

@@ -1183,6 +1183,69 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     expect(r.clearedAfter).toBe(true);
   });
 
+  // ── THE SAFETY NET CANNOT BE EMPTIED BY THE THING IT SURVIVES ────────────
+  // Owner 2026-09-16, on Jack: "he said he clocked in at 9am this morning and
+  // just clocked out, but I don't see his clock in time or his banner."
+  //
+  // zp3_offline_pending is a SNAPSHOT OF MEMORY, written synchronously so a
+  // force-quit inside the debounce window still keeps the row. A cloud load
+  // replaces every array with the server's copy and only drains the blob back
+  // at the very END of the load. Any save that fires inside that window
+  // (applySettings alone reaches saveAll) used to rewrite the blob from arrays
+  // that no longer held the unsynced row, so the only record of it was gone
+  // before the drain ever looked. A punch that never reached the server came
+  // back as a day with no clock on it.
+  test('a save during a cloud load never overwrites the pending blob', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { user: window._supaUser, loaded: _supaCloudLoaded, load: _loadInProgress,
+                      entries: timeEntries.slice(), pend: localStorage.getItem('zp3_offline_pending') };
+      try {
+        window._supaUser = window._supaUser || { id: 'pending-guard-u' };
+        _supaCloudLoaded = true; _loadInProgress = false;
+        // A punch lands and is snapshotted, exactly as clockIn leaves it.
+        timeEntries = saved.entries.concat([{ id: 'punch-1', date: '2026-09-16',
+          start_time: '2026-09-16T13:53:30.000Z', end_time: null, minutes: null, open: true }]);
+        supaSaveDebounced();
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        const inBlob = (localStorage.getItem('zp3_offline_pending') || '').indexOf('punch-1') >= 0;
+        // Now a load starts: memory is replaced with the server's copy, which
+        // has never seen the punch, and something saves mid-load.
+        _loadInProgress = true;
+        timeEntries = saved.entries.slice();
+        supaSaveDebounced();
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        const stillInBlob = (localStorage.getItem('zp3_offline_pending') || '').indexOf('punch-1') >= 0;
+        return { inBlob, stillInBlob };
+      } finally {
+        window._supaUser = saved.user; _supaCloudLoaded = saved.loaded; _loadInProgress = saved.load;
+        timeEntries = saved.entries;
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        if (saved.pend == null) localStorage.removeItem('zp3_offline_pending');
+        else localStorage.setItem('zp3_offline_pending', saved.pend);
+      }
+    });
+    expect(r.inBlob, 'the punch is snapshotted the moment it happens').toBe(true);
+    expect(r.stillInBlob, 'and a mid-load save cannot erase it').toBe(true);
+  });
+
+  // The other half: a punch does not sit in the debounce while the phone goes
+  // back in the pocket. Jack's app had eleven seconds of foreground that
+  // morning and one second on the next wake; a timer suspended with the app
+  // never fires.
+  test('a clock punch asks for the push immediately, it does not wait out the debounce', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { flush: window._flushSaveNow, timer: window._activeTimer };
+      let flushes = 0;
+      try {
+        window._flushSaveNow = async () => { flushes++; };
+        _tlFlushClockPunch();
+        return { flushes, exists: typeof _tlFlushClockPunch === 'function' };
+      } finally { window._flushSaveNow = saved.flush; window._activeTimer = saved.timer; }
+    });
+    expect(r.exists).toBe(true);
+    expect(r.flushes, 'one push, asked for now').toBe(1);
+  });
+
   // ── Wedge guard: a slow/hung save must NOT starve the reconcile backstop ──────
   // Live failure (A→B delete): B's silent reload awaited B's own in-flight save
   // UNBOUNDED while holding _loadInProgress, so every heartbeat tick skipped and B

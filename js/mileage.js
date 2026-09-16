@@ -1197,15 +1197,59 @@ function _supplyRunSettleByKeys(keys){
   });
   return n;
 }
-// The three doors. 'personal' deletes the held rows outright. 'noreceipt'
-// commits as business carrying a noReceipt flag (the disclaimer was shown
-// before calling this). 'receipt' commits and links the expense that
-// proved it.
+// ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-16) ───────────────────
+// "Personal should remove the mileage and the timesheet will then have a
+// personal hole and exclude itself from time."
+//
+// Personal only ever reached the MILEAGE row. Jack's Neenans run came off his
+// deductible miles and left forty-four minutes of drive and dwell sitting on
+// his timesheet as paid work, so the app told him two different stories about
+// one trip. geo_answer_supply_run (20261020) is the door for the time half,
+// and it is the same shape as every other answer: source 'dismissed' plus
+// answered_at, which the reader draws as a grey Personal row in no total.
+//
+// The "hole" he described is a ROW that says what it is, not a blank. A blank
+// is what _tlBlendManual fills back in with paid time under a running clock,
+// which is the exact bug his 15 September had.
+//
+// Fire and forget, after the local mark: the mileage half is already true on
+// this device and must not wait on the network to show it, and a failed call
+// leaves the time rows saying what the deriver said, which is the safe way to
+// be wrong.
+function _supplyRunAnswerTime(key,mode){
+  try{
+    if(!key||!window._supa||typeof opsReadOnly==='function'&&opsReadOnly())return;
+    Promise.resolve(_supa.rpc('geo_answer_supply_run',{p_key:String(key),p_mode:mode}))
+      .then(()=>{try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}})
+      .catch(()=>{});
+  }catch(_e){}
+}
+// The doors. 'personal' takes the run off BOTH books. 'noreceipt' commits as
+// business carrying a noReceipt flag (the disclaimer was shown before calling
+// this). 'receipt' commits and links the expense that proved it. 'unpersonal'
+// is the way back from a mis-tap, which is the whole reason it exists: Jack
+// meant no receipt and hit Personal, and until today there was no control
+// anywhere that could undo it (owner 2026-09-16: "he made a human mistake").
 function resolveSupplyRun(key,mode,expenseId){
   if(mode==='personal'){
     const n=_supplyRunSettleByKeys(new Set([key]));
     if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}typeof renderDash==='function'&&renderDash();}
+    _supplyRunAnswerTime(key,'personal');
     return n;
+  }
+  if(mode==='unpersonal'){
+    // Back to exactly where a "no receipt" answer would have left it: on the
+    // books, no receipt attached, hours restored. Not back to HELD: he has
+    // answered the receipt question, and asking it again is the app refusing
+    // to believe him.
+    let u=0;
+    (mileage||[]).forEach(m=>{
+      if(!m||m.supplyRunKey!==key||!m.personal)return;
+      delete m.personal;m.noReceipt=true;u++;
+    });
+    if(u){saveAll();typeof renderDash==='function'&&renderDash();try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}}
+    _supplyRunAnswerTime(key,'working');
+    return u;
   }
   let n=0;
   (mileage||[]).forEach(m=>{
@@ -2827,7 +2871,12 @@ function _milRenderTripList(shown,yr){
       const stateBadge=r.addressUnknown?'<div style="font-size:10px;font-weight:800;color:#B45309">Not on the books · no address</div>'
         :(r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
         :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'
-        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>'
+        :(r.personal?('<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>'+
+            // THE WAY BACK, ON THE ROW (owner 2026-09-16). Jack meant no
+            // receipt and hit Personal, twice, and no control anywhere could
+            // undo it: the card is gone once answered and the row only said
+            // what had happened to it. A mis-tap should cost ten seconds.
+            (r.supplyRunKey?'<button type="button" class="tl-rail-chip" style="margin-top:4px" onclick="event.stopPropagation();resolveSupplyRun(\''+escHtml(String(r.supplyRunKey))+'\',\'unpersonal\')">It was work</button>':''))
         :(r.pendingPurpose?'<div style="font-size:10px;font-weight:700;color:var(--amber)">Work or personal? · not counted yet</div>':''))));
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
