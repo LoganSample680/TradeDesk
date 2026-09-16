@@ -843,42 +843,23 @@ function deleteTimeEntry(entryId){
   saveAll();
   typeof renderTimeLog==='function'&&renderTimeLog();
 }
-function _openEditTimeEntry(entryId){
-  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
-  if(e.open)return; // still running, clock out first, then edit
-  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
-  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
-  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  const toLocalInput=iso=>{try{const d=new Date(iso);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);}catch(_e){return'';}};
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Edit time entry</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(e.logged_by_name||'')+'</div>'+
-    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Start</label>'+
-      '<input type="datetime-local" id="tle-start" value="'+toLocalInput(e.start_time)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">End</label>'+
-      '<input type="datetime-local" id="tle-end" value="'+toLocalInput(e.end_time)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div id="tle-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
-      '<button onclick="_saveEditedTimeEntry('+entryId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
-    '</div>'+
-    // Owner 2026-08-31: "add a delete button to the edit button on manual
-    // clock out things". deleteTimeEntry() has existed since the 2026-07-11
-    // bulletproof work but the only way to reach it was a long-press
-    // (js/cloud.js _lpStart), which nobody discovers. Editing an entry is
-    // exactly where somebody realises it should not exist at all.
-    //
-    // On its OWN row, below the pair, with a rule above it. Never a third
-    // column beside Save: the two are one thumb-width apart on a phone and
-    // one of them destroys a payroll record. Ghost styling for the same
-    // reason, so the green Save stays the only thing that reads as the
-    // primary action on this screen (15.1).
-    '<div style="border-top:1px solid var(--border2);margin-top:14px;padding-top:12px">'+
-      '<button onclick="_deleteTimeEntryFromModal('+entryId+')" style="width:100%;padding:11px;border-radius:var(--r);border:1px solid var(--c-red-edge,#E3B7B7);background:transparent;color:#A32D2D;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">'+svgIcon('🗑',{size:14})+' Delete this entry</button>'+
-    '</div>';
-  overlay.appendChild(box);document.body.appendChild(overlay);
-  overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
-}
+// _openEditTimeEntry was DELETED here (7: deleted, never hidden), and so was
+// _saveEditedTimeEntry below. Both are now _tlEditEntry('manual', id) and
+// _tlSaveEntry('manual', id) in js/timelog.js, which is the SAME function a
+// tracked row goes through (owner 2026-09-14: "can we combine the three dots
+// and the edit in one function").
+//
+// The two used to be separate because a manual clock lives in this file's
+// timeEntries array and a tracked row lives in job_time_entries on the server.
+// That is still true, and it turned out to be the only true part: it is two
+// lines inside one function now, and everything else the copies each carried
+// (the dialog, the words, the validation, the clock) was duplicated rather
+// than different. They had drifted three ways, the worst of which was that
+// this one read and wrote in the DEVICE's timezone while the other used
+// business time, so editing a clock from out of state moved it.
+//
+// _deleteTimeEntryFromModal stays here: it is manual-only by design and it
+// belongs beside deleteTimeEntry, which does the work.
 // Delete from inside the edit modal. Confirms first, through the app's own
 // zConfirm rather than a hand-rolled sheet (7.3), and names the entry being
 // destroyed: "delete this entry" with nothing after it is how somebody deletes
@@ -902,33 +883,6 @@ function _deleteTimeEntryFromModal(entryId){
     if(typeof showToast==='function')showToast('Entry deleted','🗑');
   },{title:'Delete time entry',yes:'Delete',danger:true});
 }
-function _saveEditedTimeEntry(entryId){
-  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
-  const startEl=document.getElementById('tle-start'),endEl=document.getElementById('tle-end');
-  const start=startEl?new Date(startEl.value):null,end=endEl?new Date(endEl.value):null;
-  const errEl=document.getElementById('tle-err');
-  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start){
-    if(errEl){errEl.textContent='End must be after start.';errEl.style.display='block';}
-    return;
-  }
-  const minutes=Math.max(1,Math.round((end.getTime()-start.getTime())/60000));
-  // A single clock session can't legitimately run longer than a day, beyond
-  // that is almost certainly a fat-fingered date, not a real shift. Caught
-  // here so an edit can never silently produce an "impossible" day total.
-  if(minutes>1440){
-    if(errEl){errEl.textContent='That\'s over 24 hours for one entry, check the dates.';errEl.style.display='block';}
-    return;
-  }
-  e.start_time=start.toISOString();e.end_time=end.toISOString();
-  e.minutes=minutes;
-  e.date=dateKey(start);
-  const{loggedByUid,loggedByName}=_tlLoggedByInfo();
-  e.edited_by_uid=loggedByUid;e.edited_by_name=loggedByName;e.edited_at=new Date().toISOString();
-  saveAll();
-  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
-  typeof renderTimeLog==='function'&&renderTimeLog();
-}
-
 // "0:07", "12:34", "3h 04:09". One formatter, because the running clock is now
 // painted in two places at once: the app-wide clock banner and the Time Log's
 // "Currently clocked in" card (js/timelog.js _tlTickOpenElapsed). Two hand-rolled

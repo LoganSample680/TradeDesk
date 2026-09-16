@@ -17,3 +17,22 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
   if not exists (select 1 from pg_roles where rolname='service_role')  then create role service_role; end if;
 end $$;
+
+-- The rest of the surface, added 2026-09-15 because the apply loop below used
+-- to swallow errors and these were the failures it was swallowing. Storage and
+-- the realtime publication exist on every real Supabase project and on no bare
+-- Postgres, so without them a third of the migrations died on the runner and
+-- nobody could tell that apart from a migration that is actually broken.
+create schema if not exists storage;
+create table if not exists storage.buckets(
+  id text primary key, name text, public boolean default false,
+  created_at timestamptz default now());
+create table if not exists storage.objects(
+  id uuid primary key default extensions.gen_random_uuid(),
+  bucket_id text, name text, owner uuid, metadata jsonb,
+  created_at timestamptz default now());
+alter table storage.objects enable row level security;
+do $$ begin
+  if not exists (select 1 from pg_publication where pubname='supabase_realtime')
+    then create publication supabase_realtime; end if;
+end $$;

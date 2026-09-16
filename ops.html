@@ -2,7 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- THE SAME VIEWPORT THE APP USES, and it is not a style choice (owner
+     2026-09-14, with a screenshot: "the portal view is fucking zoomed in
+     massively and not scaled to mobile").
+     Nothing was broken in the layout. The two-up tile grid in his screenshot is
+     intact and every gap and corner radius is magnified by the same factor, so
+     the page had not reflowed, it had ZOOMED, and it was scrolled right, which
+     is why the left edge of every row was cut off. A double-tap on a tile does
+     that, and nothing here ever put it back.
+     index.html, client.html, sign.html, intake.html and contract-sign.html all
+     carry maximum-scale + user-scalable=no. This page was the one app-facing
+     screen that did not, so it was the one screen that could zoom (7.3: match
+     the existing pattern, do not invent a second one). -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <title>TradeDesk Ops</title>
 <link rel="icon" href="favicon.ico">
@@ -63,10 +75,17 @@
   }
 }
 *{box-sizing:border-box}
+/* The other half of the same fix. Safari honours user-scalable=no in a
+   home-screen app, which is how the owner opens this, but touch-action is what
+   kills the double-tap that zoomed it in the first place, and
+   -webkit-text-size-adjust stops iOS inflating the type on rotate. Straight off
+   index.html, same values, for the same reason. overflow-x guarantees the page
+   can never be dragged sideways even if something one day overflows. */
+html{-webkit-text-size-adjust:100%;touch-action:pan-y}
 /* .rows and .tiles set display, which beats the browser's own [hidden] rule, so
    a hidden section stayed on screen. Everything here hides when told to. */
 [hidden]{display:none!important}
-body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;overflow-x:hidden;touch-action:pan-y;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1180px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(60px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 /* viewport-fit=cover plus a translucent status bar means the page draws
    behind the notch: every screen here reserves the inset itself, or the
@@ -102,6 +121,11 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .open-app{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:13px 14px;margin:14px 0 2px}
 .btn-open{background:var(--accent);border:0;color:var(--on-accent);border-radius:9px;padding:11px 17px;font-size:14px;font-weight:800;cursor:pointer;flex-shrink:0}
 .btn-open:hover{filter:brightness(1.08)}
+/* The rebuild row sits under the open-app card and reads as its footnote:
+   same gutter, quieter chrome, wraps to its own line on a phone. */
+.rebuild{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 14px 0;min-width:0}
+.rebuild input[type=date]{background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;min-width:0}
+.rebuild .muted{flex:1 1 100%;font-size:12px;min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
 .chip{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
 .chip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
@@ -122,6 +146,15 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .dot-background{background:var(--live-bg);box-shadow:0 0 0 3px var(--bg-ring)}
 .dot-closed{background:var(--live-off);box-shadow:0 0 0 3px var(--off-ring)}
 .dot-unknown{background:var(--line2)}
+/* STILL ASKING, and it must not look like an answer (owner 2026-09-15: "it
+   takes forever to show a state and defaults to black"). A dot that has not
+   been told anything yet breathes; one that has been told "nothing is
+   reporting" sits still in the same grey. Same colour on purpose: this is not
+   a fifth state, it is the absence of one, and inventing a colour for it would
+   put a light on the page that no rule in app_presence can produce. */
+.dot-loading{background:var(--line2);animation:dot-wait 1.1s ease-in-out infinite}
+@keyframes dot-wait{0%,100%{opacity:.28}50%{opacity:.85}}
+@media (prefers-reduced-motion:reduce){.dot-loading{animation:none;opacity:.55}}
 .chip .dot{margin-right:6px;vertical-align:1px}
 /* The selected chip is the accent colour, and a red dot on orange is nearly
    invisible. A ring in the chip's own background separates the two. */
@@ -273,6 +306,29 @@ form.signin input{background:var(--field);border:1px solid var(--line2);color:va
         <div class="chips" id="biz-chips"></div>
       </div>
 
+      <!-- REBUILD A DAY (owner 2026-09-15) ────────────────────────────────
+           The deriver runs on the server on every flush, but only for the
+           days the incoming events are stamped with, so a day that is already
+           wrong is never handed back to it: no new event will ever carry
+           yesterday's date. That left "fix a crew member's day" waiting on
+           "that crew member opens the app". This is the door. It runs the
+           same deriver over the same evidence for the person selected above,
+           and it is the only server path allowed to retire a stale row. -->
+      <!-- A RANGE, BECAUSE A WRONG DAY IS RARELY ALONE (owner 2026-09-16).
+           Every one of a crew member's 24 days changed under the deriver's
+           current rules, and rebuilding them one date-picker click at a time
+           is the kind of chore nobody finishes. The edge function has always
+           taken a `days` array, up to ten in a call; this is the second date
+           box that finally uses it. Leave the second box empty and it rebuilds
+           the one day, exactly as before. -->
+      <div class="rebuild">
+        <input type="date" id="rb-day" aria-label="Day to rebuild">
+        <span class="muted">to</span>
+        <input type="date" id="rb-day2" aria-label="Last day to rebuild (optional)">
+        <button class="btn" id="rb-go">Rebuild</button>
+        <span class="muted" id="rb-out"></span>
+      </div>
+
       <!-- Every metric section, drawn from what ops_metric_defs names. Adding a
            metric is a row in that function, not an edit here. -->
       <div id="biz-sections"></div>
@@ -368,6 +424,9 @@ async function load(){
   build();
   renderTrades();
   refreshStats();
+  // Alongside the stats, not behind them: the lights are the thing that used to
+  // arrive last and they are the first thing looked at.
+  loadLive();
 }
 
 // Businesses from the people roster, then trades from the businesses. The trade
@@ -424,9 +483,9 @@ async function renderTiles(){
     tile(r.accounts,'Businesses'),
     tile(r.active_days,'Days the app was opened'),
     tile(r.days_clocked,'Days clocked'),
-    tile(r.avg_day_min!=null?Math.round(r.avg_day_min/60*10)/10+'h':'—','Average day'),
+    tile(dur(r.avg_day_min),'Average day'),
     tile(r.total_miles,'Miles'),
-    tile(r.avg_visit_min!=null?Math.round(r.avg_visit_min)+'m':'—','Average visit'),
+    tile(dur(r.avg_visit_min),'Average visit'),
     tile(r.unnamed_legs,'Unnamed drives')
   ].join('');
 }
@@ -582,6 +641,14 @@ function show(id){
 function openBiz(b){
   OPEN=b;
   WHO=null;                          // a new business picks its own owner again
+  // Today, in the BUSINESS's day, not this browser's: the deriver works in
+  // Central and an ops screen open in another zone would otherwise offer to
+  // rebuild the wrong date for most of the evening.
+  try{
+    $('rb-day').value=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',
+      year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  }catch(_e){}
+  $('rb-out').textContent='';
   show('lvl-biz');
   renderBiz(b);
 }
@@ -592,16 +659,30 @@ $('biz-back').addEventListener('click',()=>{
   show(TRADE?'lvl-trade':'lvl-all');
 });
 
-// A duration reads as a person would say it. 240 minutes is four hours, not 240.
+// A duration reads as a person would say it, and it reads the SAME here as it
+// does in the app. _fmtMin (js/jobs.js) is the shape every screen already uses:
+// minutes on their own up to an hour, then hours and minutes. Copied rather
+// than imported because this page loads none of the app's bundles, and matching
+// the existing shape exactly is the point (CLAUDE.md 7.3).
+//
+// Owner 2026-09-14: "average visit time is in minutes and can say something
+// like 269 minutes, I want it broken to minutes then hours and minutes if it
+// goes over 60." 269 now reads 4h 29m.
+//
+// Every duration on this page goes through here. There is no second opinion
+// about what a minute count looks like.
 function dur(m){
   if(m==null||m==='')return '—';
-  const n=Number(m);
+  const n=Math.round(Number(m));
   if(!isFinite(n))return '—';
-  if(n<1)return 'under a minute';
-  if(n<90)return Math.round(n)+' min';
-  const h=n/60;
-  if(h<48)return (Math.round(h*10)/10)+' hours';
-  return (Math.round(h/24*10)/10)+' days';
+  if(n<1)return '0m';
+  // Past two days, hours stop meaning anything: a proposal that sat for 4320
+  // minutes is three days, not 72h. This tier predates the owner's rule and
+  // his rule was about a VISIT, so it is kept rather than flattened.
+  if(n>=48*60)return (Math.round(n/1440*10)/10)+' days';
+  const h=Math.floor(n/60),rem=n%60;
+  if(!h)return rem+'m';
+  return rem?h+'h '+rem+'m':h+'h';
 }
 const pct=v=>v==null?'—':num(v)+'%';
 const usd=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
@@ -634,7 +715,9 @@ function renderBiz(b){
   </button>`).join('');
 
   loadBrief(b);
-  loadLive(b);
+  // No live call here: the lights are already in hand from boot, and the tick
+  // keeps them fresh. Opening a business is a repaint.
+  paintLive();
 }
 
 $('biz-chips').addEventListener('click',e=>{
@@ -649,6 +732,67 @@ $('biz-open').addEventListener('click',()=>{
   if(p)openView(p);
 });
 
+/* ── Rebuild a day ────────────────────────────────────────────────────────── */
+// This page is SELECT-only against the database and stays that way: the write
+// happens inside the rebuild-day edge function, behind the same is_ops_admin()
+// gate this whole page is behind, checked there against the caller's own token.
+// Nothing here can write a row, and nothing here decides what the rows are.
+// It runs the deriver for the person selected in the chips above, so which
+// person it rebuilds is whichever one you were already looking at.
+function rbSay(t,bad){ const el=$('rb-out'); el.textContent=t||'';
+  // A range answers with one line per day, so the status has to keep them.
+  el.style.whiteSpace='pre-line';
+  el.style.color=bad?'var(--bad,#e5534b)':''; }
+
+$('rb-go').addEventListener('click',async()=>{
+  if(!OPEN)return rbSay('Open a business first',true);
+  const p=OPEN.people.find(x=>x.person_user_id===WHO)||OPEN.people[0];
+  if(!p)return rbSay('Pick a person first',true);
+  const day=$('rb-day').value;
+  if(!day)return rbSay('Pick a day first',true);
+  // The range, inclusive, capped at what the function accepts in one call.
+  // An empty or earlier second box means "just the one day", so the old
+  // single-day behaviour is what you get by not touching it.
+  const day2=$('rb-day2').value;
+  const days=[];
+  for(let t=Date.parse(day+'T12:00:00Z'), end=Date.parse((day2&&day2>=day?day2:day)+'T12:00:00Z');
+      t<=end; t+=86400000){ days.push(new Date(t).toISOString().slice(0,10)); }
+  if(days.length>10)return rbSay('Ten days at a time. That range is '+days.length+'.',true);
+  const btn=$('rb-go'); btn.disabled=true;
+  const who=p.person_name||p.person_email||'them';
+  rbSay('Rebuilding '+(days.length>1?days.length+' days':day)+' for '+who+'…');
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session)return rbSay('Signed out. Reload and sign in again.',true);
+    const {data,error}=await sb.functions.invoke('rebuild-day',{body:{
+      contractor_user_id:OPEN.id, employee_user_id:p.person_user_id, days,
+    }});
+    if(error)return rbSay(error.message||'That call failed',true);
+    if(!data||data.ok!==true)return rbSay((data&&data.error)||'That call failed',true);
+    const got=data.days||[];
+    // ONE LINE PER DAY WHEN THERE ARE SEVERAL. A range that half worked and
+    // half did not is the case worth reading, and a single summary number
+    // would hide exactly the days somebody needs to look at.
+    if(got.length===1){
+      const d=got[0]||{};
+      if(!d.wrote)return rbSay('Nothing written: '+(d.reason||'no reason given'),true);
+      // A rebuild that could not sweep is not the same as one that did, and the
+      // difference is the whole point of pressing this: say which happened.
+      return rbSay(d.sweep
+        ? ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. Stale rows retired.')
+        : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+
+           'Nothing retired: no motion tape covers that day on the server, so it cannot tell a row that should go from one nobody uploaded.'));
+    }
+    const wrote=got.filter(d=>d&&d.wrote);
+    const skipped=got.filter(d=>d&&!d.wrote);
+    rbSay(wrote.map(d=>d.day+': '+d.time+' time, '+d.shop+' shop, '+d.miles+' mileage'+
+        (d.sweep?'':' (nothing retired)')).join('\n')+
+      (skipped.length?('\n'+skipped.map(d=>d.day+': nothing written, '+(d.reason||'no reason given')).join('\n')):''),
+      wrote.length===0);
+  }catch(e){ rbSay(String((e&&e.message)||e),true); }
+  finally{ btn.disabled=false; }
+});
+
 /* ── Is their app open right now ───────────────────────────────────────────── */
 // Four lights, and the rule behind them lives in ops_live_status, not here, so
 // a person reading this page and an agent asked the same question cannot
@@ -658,8 +802,20 @@ $('biz-open').addEventListener('click',()=>{
 // says how long it has been quiet: the light is a reading, the time is why.
 let LIVE=new Map();                  // person_user_id -> row from ops_live_status
 let LIVE_TIMER=null;
+// Has an answer ever come back? Owner 2026-09-15: "it takes forever to show a
+// state and defaults to black." Half of that was the query (fixed in
+// 20261016_app_presence_one_watermark.sql, ten and a half seconds down to a
+// quarter) and half was this: "we have not asked yet" and "the phone reports
+// nothing" wore the same dead grey dot, so a page that was working looked like
+// a person who was unreachable. They are different answers and they look
+// different now.
+let LIVE_LOADED=false;
 
-const liveState=uid=>(LIVE.get(uid)||{}).state||'unknown';
+const liveState=uid=>{
+  const r=LIVE.get(uid);
+  if(r&&r.state)return r.state;
+  return LIVE_LOADED?'unknown':'loading';
+};
 
 // A day and a clock time, never a bare "3h ago". Owner 2026-09-13: on a
 // backgrounded phone he wants to know when they last had it open, and on a
@@ -675,7 +831,10 @@ const agoMin=q=>q==null?'':(q<1?'just now':q<60?q+'m':q<1440?(Math.round(q/60*10
 
 function liveLabel(uid){
   const r=LIVE.get(uid);
-  if(!r)return '';
+  // Before the first answer, say which of the two silences this is. An empty
+  // label next to a grey dot reads as "nothing reporting" and used to be the
+  // first thing on screen for as long as the query took.
+  if(!r)return LIVE_LOADED?'':'Checking…';
   // These times are the PHONE's own events (TdGeoPlugin records app-active,
   // app-background and app-terminate), so they are reported without hedging.
   const opened=stamp(r.last_open), bg=stamp(r.last_bg);
@@ -700,11 +859,18 @@ function liveLabel(uid){
 // The full sentence app_presence wrote, on hover, for the states that have one.
 const liveTitle=uid=>(LIVE.get(uid)||{}).detail||'';
 
-async function loadLive(b){
-  const {data,error}=await sb.rpc('ops_live_status',{p_target:b.id});
-  if(!OPEN||OPEN.id!==b.id)return;
-  if(error||!Array.isArray(data))return;   // a light that cannot load stays grey
+// EVERY light, in one call, not one call per business. app_presence() computes
+// presence for every person however it is asked, so narrowing it to one account
+// saved nothing and cost a round trip each time a business was opened. Asking
+// once at load and again on the tick means opening a business is a repaint.
+async function loadLive(){
+  const {data,error}=await sb.rpc('ops_live_status');
+  // A light that cannot load keeps whatever it last knew. Not marking it loaded
+  // is the point: a failed first call leaves the dots reading "still asking"
+  // rather than asserting that nobody is reporting.
+  if(error||!Array.isArray(data))return;
   LIVE=new Map(data.map(r=>[r.person_user_id,r]));
+  LIVE_LOADED=true;
   paintLive();
 }
 
@@ -726,8 +892,8 @@ function paintLive(){
 function liveTick(){
   if(LIVE_TIMER)clearInterval(LIVE_TIMER);
   LIVE_TIMER=setInterval(()=>{
-    if(document.hidden||!OPEN||$('lvl-biz').hidden)return;
-    loadLive(OPEN);
+    if(document.hidden)return;
+    loadLive();
   },30000);
 }
 liveTick();
@@ -743,12 +909,28 @@ async function loadBrief(b){
   const {from,to}=rangeIso();
   const key=b.id+'|'+DAYS;
   const seen=BRIEF_CACHE.get(key);
-  if(seen){ BRIEF=seen; paintBrief(seen); return; }
-  $('biz-sections').innerHTML='<div class="tiles">'+'<div class="skel"></div>'.repeat(8)+'</div>';
-  $('biz-timing').innerHTML='<div class="skel"></div>';
+  // SHOW WHAT WE HAVE, THEN GO AND CHECK (owner 2026-09-15: "why does jacks
+  // view in ops portal say its on 09.14.26.19 but ops portal says 09.14.26.11
+  // with last seen yesterday when he clocked in this morning").
+  //
+  // Both numbers were right about their own source and one of them was old.
+  // The live view reads the app, which had updated; this brief came out of a
+  // cache that was FINAL, so a portal tab open since yesterday answered with
+  // yesterday's brief forever and no amount of clicking around refreshed it.
+  // His 8:01am session was in the database the whole time.
+  //
+  // Instant on re-entry is worth keeping, so the cached copy still paints
+  // first; it is simply no longer the last word. A failed refresh leaves what
+  // was on screen rather than replacing a real answer with an error.
+  if(seen){ BRIEF=seen; paintBrief(seen); }
+  else{
+    $('biz-sections').innerHTML='<div class="tiles">'+'<div class="skel"></div>'.repeat(8)+'</div>';
+    $('biz-timing').innerHTML='<div class="skel"></div>';
+  }
   const {data,error}=await sb.rpc('ops_account_brief',{p_target:b.id,p_from:from,p_to:to});
   if(!OPEN||OPEN.id!==b.id)return;   // they moved on while it was in flight
   if(error||!data){
+    if(seen)return;                  // keep the answer already on screen
     BRIEF=null;
     $('biz-sections').innerHTML='<div class="tiles">'+tile('—','Could not load')+'</div>';
     $('biz-timing').innerHTML='<div class="muted">'+esc(error?error.message:'No answer')+'</div>';
@@ -766,8 +948,8 @@ const FMT = {
   num:  v => num(v),
   pct:  v => v==null?null:num(v)+'%',
   usd:  v => v==null?null:'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}),
-  hours:v => v==null?null:(Math.round(Number(v)/60*10)/10)+'h',
-  mins: v => v==null?null:Math.round(Number(v))+'m',
+  hours:v => v==null?null:dur(v),
+  mins: v => v==null?null:dur(v),
   text: v => v==null||v===''?null:String(v),
   ago:  v => v==null?null:relDay(String(v).slice(0,10)).replace(/^(last )?active /,''),
 };

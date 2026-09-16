@@ -72,19 +72,30 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       await new Promise(r => setTimeout(r, 60));
       return window.__td.calls.map(c => ({ name: c.name, a: c.args }));
     });
-    expect(r.length).toBe(1);
-    expect(r[0].name).toBe('start');
-    expect(r[0].a.channel).toBe('clock');
-    expect(r[0].a.kind).toBe('CLOCKED IN');
-    expect(r[0].a.title).toBe('FBC');
-    expect(r[0].a.detail).toBe('Interior');
+    // AMENDED 2026-09-12 (10.4). This used to assert exactly one call and read
+    // it at index 0. That was right while the clock-in only took an on-site
+    // card down if THIS launch had put one up, which is precisely the bug: a
+    // card outlives the app and _liveLast does not, so the old guard left a
+    // stale card running after every relaunch. The clock-in now ends the
+    // on-site channel unconditionally (once per launch, a no-op when nothing
+    // is live), so exactly one start is still the claim, and this now says so
+    // directly instead of by counting.
+    const starts = r.filter(c => c.name === 'start');
+    expect(starts.length).toBe(1);
+    const a = starts[0].a;
+    expect(a.channel).toBe('clock');
+    expect(a.kind).toBe('CLOCKED IN');
+    expect(a.title).toBe('FBC');
+    expect(a.detail).toBe('Interior');
     // The clock must be rendered on-device from a start time, never pushed.
-    expect(r[0].a.timer).toBe(true);
-    expect(r[0].a.startedAt).toBe(1755000000);
+    expect(a.timer).toBe(true);
+    expect(a.startedAt).toBe(1755000000);
     // Two-clock card (owner feedback 2026-08-19): site arrival and step start
     // are the same instant for a fresh job, so both clocks match here.
-    expect(r[0].a.dualTimer).toBe(true);
-    expect(r[0].a.siteStartedAt).toBe(1755000000);
+    expect(a.dualTimer).toBe(true);
+    expect(a.siteStartedAt).toBe(1755000000);
+    // Nothing else was started; the island carries one card.
+    expect(r.filter(c => c.name === 'start' && c.a.channel !== 'clock').length).toBe(0);
   });
 
   // ── Lock-screen "Next"/"Clock out" button payload (owner 2026-08-19) ──────
@@ -105,7 +116,12 @@ test.describe('Live Activities: what reaches the lock screen', () => {
         window.__td.calls.length = 0;
         _liveActClockIn({ jobId: 5, jobName: 'X', clientName: 'Y', scopeLabel: '', startTime: Date.now() });
         await new Promise(res => setTimeout(res, 60));
-        return window.__td.calls[0].args;
+        // The CLOCK-CHANNEL call, not whatever landed first. A clock-in also
+        // ends the on-site channel once per launch (js/live-activity.js), and
+        // it is a start or an update depending on whether a clock card is
+        // already up, which is a function of test order and not of this
+        // payload. The channel is the thing this test actually means.
+        return (window.__td.calls.find(c => c.args && c.args.channel === 'clock') || {}).args;
       });
       expect(r.jobId).toBe('5');
       expect(typeof r.contractorUserId).toBe('string');
@@ -133,7 +149,12 @@ test.describe('Live Activities: what reaches the lock screen', () => {
         // Clocked into the FIRST of three scopes: Next should point at the second.
         _liveActClockIn({ jobId: 88801, jobName: 'Live push fixture job', clientName: 'Live push fixture job', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() });
         await new Promise(res => setTimeout(res, 60));
-        return window.__td.calls[0].args;
+        // The CLOCK-CHANNEL call, not whatever landed first. A clock-in also
+        // ends the on-site channel once per launch (js/live-activity.js), and
+        // it is a start or an update depending on whether a clock card is
+        // already up, which is a function of test order and not of this
+        // payload. The channel is the thing this test actually means.
+        return (window.__td.calls.find(c => c.args && c.args.channel === 'clock') || {}).args;
       });
       expect(r.currentScopeId).toBe('sand');
       expect(r.nextScopeId).toBe('prime');
@@ -155,7 +176,12 @@ test.describe('Live Activities: what reaches the lock screen', () => {
         window.__td.calls.length = 0;
         _liveActClockIn({ jobId: 88801, jobName: 'Live push fixture job', clientName: 'Live push fixture job', scopeId: 'prime', scopeLabel: 'Primer coat', startTime: Date.now() });
         await new Promise(res => setTimeout(res, 60));
-        return window.__td.calls[0].args;
+        // The CLOCK-CHANNEL call, not whatever landed first. A clock-in also
+        // ends the on-site channel once per launch (js/live-activity.js), and
+        // it is a start or an update depending on whether a clock card is
+        // already up, which is a function of test order and not of this
+        // payload. The channel is the thing this test actually means.
+        return (window.__td.calls.find(c => c.args && c.args.channel === 'clock') || {}).args;
       });
       expect(r.isLastScope).toBe(true);
       expect(r.nextScopeId).toBe('');
@@ -223,6 +249,101 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.toasts).toEqual([]);
+  });
+
+  // ── FORTY TOASTS AT THE WHEEL (owner 2026-09-13) ───────────────────────
+  //
+  // A crew member drove twenty-five minutes with Live Activities switched off
+  // for TradeDesk and got roughly forty toasts reading "Live Activity:
+  // disabled in Settings", one per drive ping, plus forty rows of telemetry.
+  //
+  // The cause is right and must stay: _liveActReady caches only a YES, because
+  // the switch lives in Settings and a person can flip it back at any moment,
+  // so the app has to keep asking. What was wrong was answering out loud every
+  // time it asked.
+  //
+  // The toast is gone rather than throttled, because it was the wrong surface:
+  // it is fixed in Settings, it appeared while he was driving, and it was gone
+  // before he could have acted on it. The dashboard setup checklist asks now
+  // (js/dashboard.js, the 'liveact' item, tested in e2e-geo-permission).
+  //
+  // ITS OWN PAGE. "Once" is remembered in a module-level object for the life
+  // of the page, which is the entire point of it, so a test asserting a count
+  // of one cannot share a page with anything else that might already have
+  // spent it. One context, one boot, a memo nobody has touched.
+  test.describe('the phone that cannot draw a card says so once', () => {
+    let page;
+    test.beforeAll(async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+      page = await ctx.newPage();
+      await mockAllExternal(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(page);
+    });
+    test.afterAll(async () => { await page.context().close(); });
+
+    test('a phone with the switch off is told once, not once per ping', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const toasts = [];
+        const realToast = window._toast;
+        const reports = [];
+        const realReport = window._liveActReport;
+        window._toast = (m) => { toasts.push(String(m)); };
+        window._liveActReport = (kind, why) => { reports.push(kind + '|' + why); };
+        // supported, but the person switched it off: the exact shape his phone
+        // reported ('drive:disabled'), and the only case worth saying anything
+        // about at all.
+        window.Capacitor = { isNativePlatform: () => true, Plugins: {},
+          registerPlugin: () => ({ isSupported: () => Promise.resolve({ supported: true, enabled: false }) }) };
+        try {
+          const keep = window._liveSupported; window._liveSupported = undefined;
+          // Fifty pings, which is two drives' worth.
+          for (let i = 0; i < 50; i++) await _liveActSet('drive', { kind: 'DRIVING', title: 'On the road' });
+          window._liveSupported = keep;
+          return { toasts, reports };
+        } finally { window.Capacitor = realCap; window._toast = realToast; window._liveActReport = realReport; }
+      });
+      // Not one toast, at any count. This is the whole fix.
+      expect(r.toasts).toEqual([]);
+      // And the telemetry says it once, so it stays a signal rather than a log
+      // of how long somebody drove.
+      expect(r.reports).toEqual(['notready|drive:disabled']);
+    });
+
+    test('a different channel is its own answer, and a different reason is too', async () => {
+      // Once per channel per reason, not once per app. The drive card being off
+      // and the clock card being off are two facts, and an old iPhone that
+      // cannot do this at all is a third.
+      //
+      // NOTE WHAT IS MISSING from the expectation below, because it is the
+      // point rather than an oversight: 'drive:disabled' does not appear. The
+      // test above already spent it on this page, and the memo lives as long
+      // as the page does. Fifty pings in one test and four calls in the next
+      // still produce one line about the drive card being off, which is
+      // exactly the promise.
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const realReport = window._liveActReport;
+        const reports = [];
+        window._liveActReport = (kind, why) => { reports.push(why); };
+        let answer = { supported: true, enabled: false };
+        window.Capacitor = { isNativePlatform: () => true, Plugins: {},
+          registerPlugin: () => ({ isSupported: () => Promise.resolve(answer) }) };
+        try {
+          const keep = window._liveSupported; window._liveSupported = undefined;
+          await _liveActSet('drive', { kind: 'DRIVING', title: 'a' });
+          await _liveActSet('drive', { kind: 'DRIVING', title: 'b' });
+          await _liveActSet('clock', { kind: 'CLOCKED', title: 'c' });
+          answer = { supported: false, enabled: false };
+          await _liveActSet('drive', { kind: 'DRIVING', title: 'd' });
+          window._liveSupported = keep;
+          return reports;
+        } finally { window.Capacitor = realCap; window._liveActReport = realReport; }
+      });
+      expect(r).toEqual(['clock:disabled', 'drive:unsupported']);
+    });
+
   });
 
   // ── THE SAME CLIENT TWICE IN A DAY ─────────────────────────────────────
@@ -329,6 +450,72 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r.ended).toBe(1);            // and it took the old one down
     expect(r.startsAfter).toBe(1);      // nothing started in its place
     expect(r.startsFinal).toBe(1);      // still nothing, however often we ask
+  });
+
+  // ── THE CARD THAT OUTLIVED THE APP (owner 2026-09-12) ──────────────────
+  // "Why is my gps Dynamic Island still running?" His drive card went up at
+  // 15:29 on the 11th and was still there the next day.
+  //
+  // An ActivityKit card survives a force-quit, a relaunch and the version
+  // watchdog's reload. The map the app used to decide whether to end one does
+  // not. So every "there should be no card" path read an empty map, concluded
+  // it had never started anything, and left the island lit.
+  //
+  // A RELAUNCH IS SIMULATED HONESTLY HERE: the module's memory is cleared
+  // without touching the plugin, which is exactly what a new process looks
+  // like from ActivityKit's side, a live card and an app with no memory of it.
+  test('a relaunch ends the card the app can no longer see', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const atDoe = { id: 'd-doe', name: 'John Doe', kind: 'client',
+        sinceTs: Date.now() - 45 * 60000, atHome: false, fence: {} };
+      _liveActOnSite(atDoe); await new Promise(r => setTimeout(r, 60));
+      const up = window.__td.calls.filter(c => c.name === 'start').length;
+
+      // The app dies and comes back. The card does not.
+      Object.keys(_liveLast).forEach(k => delete _liveLast[k]);
+      Object.keys(_liveEnded).forEach(k => delete _liveEnded[k]);
+      window.__td.calls.length = 0;
+
+      // He is home now, so the first publish after the relaunch must take it
+      // down even though this launch never put anything up.
+      _liveActOnSite({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
+        sinceTs: Date.now() - 5 * 60000, atHome: true, fence: {} });
+      await new Promise(r => setTimeout(r, 60));
+      const ended = window.__td.calls.filter(c => c.name === 'end').length;
+
+      // And it costs exactly one call, not one per publish: the next four
+      // change nothing.
+      for (let i = 0; i < 4; i++) {
+        _liveActOnSite({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
+          sinceTs: Date.now() - 5 * 60000, atHome: true, fence: {} });
+        await new Promise(r => setTimeout(r, 20));
+      }
+      return { up, ended, total: window.__td.calls.filter(c => c.name === 'end').length };
+    });
+    expect(r.up).toBe(1);
+    expect(r.ended, 'the stale card is ended after a relaunch').toBe(1);
+    expect(r.total, 'and only once, however often the dwell republishes').toBe(1);
+  });
+
+  test('the drive card too: not driving after a relaunch takes the blue arrow down', async () => {
+    // The exact channel his island was stuck on.
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const keep = window._geoDriving, keepW = window._geoDriveWindowOn;
+      window._geoDriving = () => false; window._geoDriveWindowOn = () => false;
+      try {
+        Object.keys(_liveLast).forEach(k => delete _liveLast[k]);
+        Object.keys(_liveEnded).forEach(k => delete _liveEnded[k]);
+        window.__td.calls.length = 0;
+        _liveActDrive(); await new Promise(r => setTimeout(r, 60));
+        const first = window.__td.calls.filter(c => c.name === 'end').length;
+        _liveActDrive(); _liveActDrive(); await new Promise(r => setTimeout(r, 60));
+        return { first, total: window.__td.calls.filter(c => c.name === 'end').length };
+      } finally { window._geoDriving = keep; window._geoDriveWindowOn = keepW; }
+    });
+    expect(r.first).toBe(1);
+    expect(r.total).toBe(1);
   });
 
   // The one that actually explains the whole day (owner 2026-09-03, confirmed

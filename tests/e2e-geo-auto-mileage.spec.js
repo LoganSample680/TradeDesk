@@ -2967,7 +2967,7 @@ test.describe('Automatic mileage from drive legs', () => {
           window.__realOnScreen = _geoAppOnScreen; _geoAppOnScreen = () => false;   // phone in the pocket
           await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 } });
           await new Promise(r2 => setTimeout(r2, 10));
-          return { parkedCalls: parked.length, parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id, watcher: _geoNativeWatcherId };
+          return { parkedCalls: parked.length, parkOn: _geoParkModeOn, removedIds: removed.map(o => o && o.id), watcher: _geoNativeWatcherId };
         } finally {
           if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
           window.Capacitor = realCap; _supaUser = realUser;
@@ -2980,7 +2980,11 @@ test.describe('Automatic mileage from drive legs', () => {
       }, { shop: SHOP });
       expect(r.parkedCalls, 'the over-threshold ping parks on the spot').toBe(1);
       expect(r.parkOn).toBe(true);
-      expect(r.removedId).toBe('w-1');
+      // Every known id, not only the one this JS remembers (2026-09-15). The
+      // remembered id used to be the whole release, so an id lost to a reload
+      // ran the receiver all day; park now reads the persisted list too, which
+      // is why this asserts membership rather than the first one off the rank.
+      expect(r.removedIds).toContain('w-1');
       expect(r.watcher).toBe(null);
     });
 
@@ -3269,7 +3273,7 @@ test.describe('Automatic mileage from drive legs', () => {
           return {
             parkedCalls: parked.length,
             region: parked[0] && parked[0].regions && parked[0].regions[0],
-            parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id,
+            parkOn: _geoParkModeOn, removedIds: removed.map(o => o && o.id),
           };
         } finally {
           if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
@@ -3283,7 +3287,11 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.parkedCalls, 'the over-dwell stop parks on the spot').toBe(1);
       expect(r.region && r.region.lat).toBeCloseTo(ROAD.lat, 4);
       expect(r.parkOn).toBe(true);
-      expect(r.removedId).toBe('w-1');
+      // Every known id, not only the one this JS remembers (2026-09-15). The
+      // remembered id used to be the whole release, so an id lost to a reload
+      // ran the receiver all day; park now reads the persisted list too, which
+      // is why this asserts membership rather than the first one off the rank.
+      expect(r.removedIds).toContain('w-1');
     });
 
     // Owner report (2026-08-09, third sighting): "I walk everywhere with my
@@ -3338,7 +3346,7 @@ test.describe('Automatic mileage from drive legs', () => {
           return {
             parkedCalls: parked.length,
             region: parked[0] && parked[0].regions && parked[0].regions[0],
-            parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id,
+            parkOn: _geoParkModeOn, removedIds: removed.map(o => o && o.id),
           };
         } finally {
           if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
@@ -3354,7 +3362,11 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.region && r.region.lat, 'parked where they are strolling').toBeCloseTo(ROAD.lat, 2);
       expect(r.region.radius, 'a foot park gets the wider region so a stroll stays inside it').toBeGreaterThanOrEqual(250);
       expect(r.parkOn).toBe(true);
-      expect(r.removedId).toBe('w-1');
+      // Every known id, not only the one this JS remembers (2026-09-15). The
+      // remembered id used to be the whole release, so an id lost to a reload
+      // ran the receiver all day; park now reads the persisted list too, which
+      // is why this asserts membership rather than the first one off the rank.
+      expect(r.removedIds).toContain('w-1');
     });
 
     test('driving speed holds the park off and kills the countdown', async () => {
@@ -3451,6 +3463,127 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.liveId).toBe('w-new');
       expect(r.removedLive, 'stop removes the live watcher too').toBe(true);
       expect(r.storeAfterStop, 'nothing persisted once tracking stops').toEqual([]);
+    });
+
+    // ── THE ARROW THAT STAYED ON ALL DAY (owner 2026-09-15) ──────────────
+    // "Why does my Dynamic Island show the blue arrow all day today." The
+    // radio ledger agreed: js-watcher opened at 06:45:42 at best accuracy and
+    // was still open six hours later, and the night before ran 676 minutes the
+    // same way. The release only ever removed the id held in JS memory, and a
+    // WebView reload throws that away while the watcher itself lives natively.
+    // Three doors, all of them now the same door.
+    test('park releases a watcher this JS has forgotten, because the list remembers it', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realOnScreen = _geoAppOnScreen;
+        const removed = [], parked = [];
+        try {
+          _geoAppOnScreen = () => false;   // in the pocket: park for real, not deferred
+          localStorage.setItem('td_geo_watcher_ids', JSON.stringify(['ghost-1']));
+          _geoNativeWatcherId = null; _geoNativeStarting = true;   // in flight, or reloaded
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          _geoLastFenceLoc = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              removeWatcher: (o) => { removed.push(o.id); return Promise.resolve(); },
+            } : n === 'TdGeo' ? {
+              startParked: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              startEvents: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              stopAll: () => Promise.resolve(),
+            } : null,
+          };
+          _geoEnterParkMode({ lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' });
+          await new Promise(r2 => setTimeout(r2, 30));
+          return { removed, parkedCalls: parked.length,
+                   store: JSON.parse(localStorage.getItem('td_geo_watcher_ids') || '[]') };
+        } finally {
+          _geoAppOnScreen = realOnScreen;
+          window.Capacitor = realCap;
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoLastFenceLoc = null;
+        }
+      }, { shop: SHOP });
+      expect(r.parkedCalls, 'the park itself still arms').toBe(1);
+      expect(r.removed, 'the forgotten watcher is killed anyway').toContain('ghost-1');
+      expect(r.store, 'and nothing is left persisted to leak into tomorrow').toEqual([]);
+    });
+
+    // The same hole from the other side: a start that resolves AFTER the park
+    // brings the receiver up into a parked app, where nothing was ever going
+    // to come back for it. Whoever arrives second releases it.
+    test('a watcher that lands after the park is dropped on arrival', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const removed = [];
+        let resolveAdd;
+        try {
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              addWatcher: () => new Promise((res) => { resolveAdd = res; }),
+              removeWatcher: (o) => { removed.push(o.id); return Promise.resolve(); },
+            } : n === 'TdGeo' ? { addListener: () => {}, stopAll: () => Promise.resolve(),
+                                  drainBuffer: () => Promise.resolve({ fixes: [] }) } : null,
+          };
+          startGeoTracking();
+          await new Promise(r2 => setTimeout(r2, 10));
+          _geoParkModeOn = true;              // the park happened while it was in flight
+          resolveAdd('w-late');
+          await new Promise(r2 => setTimeout(r2, 30));
+          return { removed, live: _geoNativeWatcherId,
+                   store: JSON.parse(localStorage.getItem('td_geo_watcher_ids') || '[]') };
+        } finally {
+          window.Capacitor = realCap;
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+        }
+      });
+      expect(r.removed, 'it never gets to run into a parked app').toContain('w-late');
+      expect(r.live).toBe(null);
+      expect(r.store).toEqual([]);
+    });
+
+    // And the third: a reload that lands parked with the screen off never
+    // reaches startGeoTracking's sweep, which is the only other reader.
+    test('a reload while parked and hidden sweeps what the old JS left running', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor, realOnScreen = _geoAppOnScreen;
+        const removed = [];
+        try {
+          localStorage.setItem('td_geo_watcher_ids', JSON.stringify(['ghost-a', 'ghost-b']));
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = true; window._geoTdBound = true;
+          _geoAppOnScreen = () => false;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              addWatcher: () => Promise.resolve('never'),
+              removeWatcher: (o) => { removed.push(o.id); return Promise.resolve(); },
+            } : n === 'TdGeo' ? { addListener: () => {}, stopAll: () => Promise.resolve(),
+                                  drainBuffer: () => Promise.resolve({ fixes: [] }) } : null,
+          };
+          startGeoTracking();
+          await new Promise(r2 => setTimeout(r2, 20));
+          return { removed, stillParked: _geoParkModeOn, live: _geoNativeWatcherId,
+                   store: JSON.parse(localStorage.getItem('td_geo_watcher_ids') || '[]') };
+        } finally {
+          _geoAppOnScreen = realOnScreen;
+          window.Capacitor = realCap;
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+        }
+      });
+      expect(r.removed.sort(), 'both orphans die').toEqual(['ghost-a', 'ghost-b']);
+      expect(r.stillParked, 'and it stays parked: no watcher is started here').toBe(true);
+      expect(r.live).toBe(null);
+      expect(r.store).toEqual([]);
     });
 
     test('in a plain browser park mode does not exist', async () => {
@@ -4745,6 +4878,175 @@ test.describe('A settled stop never strands the leg origin', () => {
     expect(r).toEqual([false, false, false, false]);
   });
 
+
+  // ── THE DASHED STRETCH HAS MILES ON IT (owner 2026-09-14) ─────────────────
+  //
+  // "the routed version with dashes traced the right roads but only logged a
+  // fraction of the trace, seems were missing the dashed line to run its
+  // mileage route through mapkits."
+  //
+  // His 14 September drive: four GPS fixes for six minutes of driving, a map
+  // drawn on exactly the right streets, and 2.4 miles logged for a 3.4 mile
+  // trip. _mileRouteFill had asked the router for the hole, kept the road and
+  // thrown the distance away.
+  test.describe('a hole in the trace is priced at the road, not the straight line', () => {
+    // One fixture, four points. Two short hops the phone genuinely watched and
+    // one hole wide enough and long enough to be a real gap between them.
+    const FIX = () => {
+      const t0 = 1789000000000;
+      return {
+        id: 'gapfix', date: '2026-09-14', gps: true,
+        path: [
+          [39.0000, -95.7000, t0],
+          [39.0010, -95.7000, t0 + 10000],     // ~365ft, 10s: watched
+          [39.0200, -95.7000, t0 + 200000],    // ~6900ft, 190s: THE HOLE
+          [39.0210, -95.7000, t0 + 210000],    // ~365ft, 10s: watched
+        ],
+      };
+    };
+
+    test('the hole is one gap, and the short hops either side are not', async () => {
+      const r = await page.evaluate((m) => {
+        const g = _mileGaps(m);
+        return { n: g.length, at: g.map(x => x.i) };
+      }, FIX());
+      expect(r.n).toBe(1);
+      expect(r.at).toEqual([2]);
+    });
+
+    test('the road across the hole is what gets counted, and the watched hops keep their own length', async () => {
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => ({ miles: 2.0, mins: 4, path: [[39.00, -95.70], [39.02, -95.70]] });
+        try {
+          const straight = _milePathMiles(m);
+          const gf = await _mileGapFill(m);
+          return { straight, miles: gf.miles, watched: gf.watched, asked: gf.asked, filled: gf.filled, fills: gf.fills.length };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.asked).toBe(1);
+      expect(r.filled).toBe(1);
+      // The watched hops are two short edges, nowhere near the hole's width.
+      expect(r.watched).toBeLessThan(0.2);
+      // watched + the routed road, NOT watched + the straight line over it.
+      expect(r.miles).toBeCloseTo(Math.round((r.watched + 2.0) * 10) / 10, 5);
+      // And it beats what the straight line would have said, which is the bug.
+      expect(r.miles).toBeGreaterThan(r.straight);
+      expect(r.fills).toBe(1);
+    });
+
+    test('a router that answers with no line still fixes the number', async () => {
+      // Valhalla and OSRM are asked with overview=false: distance, no geometry.
+      // Off Apple hardware that is the only answer there is, and the miles
+      // must not be gated on being able to draw them.
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => ({ miles: 2.0, mins: 4 });
+        try {
+          const gf = await _mileGapFill(m);
+          return { miles: gf.miles, filled: gf.filled, fills: gf.fills.length, straight: _milePathMiles(m) };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.filled).toBe(1);
+      expect(r.fills).toBe(0);                    // nothing to draw
+      expect(r.miles).toBeGreaterThan(r.straight); // still counted
+    });
+
+    test('a router that cannot answer keeps the straight edge, so a dead network never shrinks a trip', async () => {
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => { throw new Error('offline'); };
+        try {
+          const gf = await _mileGapFill(m);
+          return { miles: gf.miles, filled: gf.filled, straight: Math.round(_milePathMiles(m) * 10) / 10 };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.filled).toBe(0);
+      expect(r.miles).toBe(r.straight);
+    });
+
+    test('a shorter road than the straight line is still the road', async () => {
+      // A straight line between two fixes can be LONGER than the drive when the
+      // trace is so thin the two points sit either side of a bend. The router
+      // is still the better answer; the rule is not "always bigger".
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => ({ miles: 0.4, mins: 1 });
+        try {
+          const gf = await _mileGapFill(m);
+          return { miles: gf.miles, watched: gf.watched };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.miles).toBeCloseTo(Math.round((r.watched + 0.4) * 10) / 10, 5);
+    });
+
+    test('a trace with no holes never asks the router and keeps every watched foot', async () => {
+      const r = await page.evaluate(async () => {
+        const t0 = 1789000000000;
+        const m = { id: 'nogap', path: [
+          [39.0000, -95.7000, t0],
+          [39.0010, -95.7000, t0 + 10000],
+          [39.0020, -95.7000, t0 + 20000],
+        ] };
+        const orig = window._routeDistance;
+        let asked = 0;
+        window._routeDistance = async () => { asked++; return { miles: 99, mins: 1 }; };
+        try {
+          const gf = await _mileGapFill(m);
+          return { asked, calls: asked, miles: gf.miles, straight: Math.round(_milePathMiles(m) * 10) / 10 };
+        } finally { window._routeDistance = orig; }
+      });
+      expect(r.calls).toBe(0);
+      expect(r.miles).toBe(r.straight);
+    });
+
+    test('the hole is never counted twice', async () => {
+      // The straight edge across the hole is skipped in the watched pass and
+      // priced once below it. Watched plus the hole's own straight length must
+      // come back to the plain path total.
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => null;     // no answer: straight edge kept
+        try {
+          const gf = await _mileGapFill(m);
+          return { miles: gf.miles, straight: Math.round(_milePathMiles(m) * 10) / 10 };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.miles).toBe(r.straight);
+    });
+
+    test('null, junk and a one-point path do not throw', async () => {
+      const r = await page.evaluate(async () => {
+        const out = [];
+        for (const m of [null, undefined, {}, { path: null }, { path: [] }, { path: [[1, 2, 3]] },
+                         { path: 'nope' }, { path: [['a', 'b'], ['c', 'd']] }]) {
+          try { const g = await _mileGapFill(m); out.push(g.miles); } catch (e) { out.push('THREW:' + e.message); }
+        }
+        return out;
+      });
+      expect(r.every(x => x === 0)).toBe(true);
+    });
+
+    test('the map and the number are the same arithmetic', async () => {
+      // _mileRouteFill draws it, _mileGapFill counts it, and after 2026-09-14
+      // there is one function under both: the line can never claim a road the
+      // mileage did not count.
+      const r = await page.evaluate(async (m) => {
+        const orig = window._routeDistance;
+        window._routeDistance = async () => ({ miles: 2.0, mins: 4, path: [[39.00, -95.70], [39.02, -95.70]] });
+        try {
+          const gf = await _mileGapFill(m);
+          const segs = await _mileRouteFill(m);
+          const dashed = (segs || []).filter(s => s.dash);
+          return { filled: gf.filled, dashed: dashed.length, solid: (segs || []).filter(s => !s.dash).length };
+        } finally { window._routeDistance = orig; }
+      }, FIX());
+      expect(r.dashed).toBe(r.filled);
+      // The observed trace is cut at the hole, so two solid runs either side.
+      expect(r.solid).toBe(2);
+    });
+  });
+
   assertNoErrors(() => page);
 });
 
@@ -5144,6 +5446,147 @@ test.describe('a recorded path outranks a routed guess', () => {
     }
     return pts;
   };
+
+  // ── THE HOLE A FORCE-CLOSE LEAVES (owner 2026-09-13) ────────────────────
+  // "If app is force closed, should the route call MapKit and route out what
+  // the most direct way would be and that's our mileage route on the map? I
+  // think so."
+  //
+  // The mileage already routes a gapped leg (_geoTraceComplete sends it to the
+  // router). The LINE did not: it drew one straight edge across the hole, which
+  // on his own drives runs through the middle of town. _mileGaps is what finds
+  // a hole worth drawing as a road, and its whole job is telling a force-close
+  // apart from ordinary GPS breathing.
+  test('_mileGaps: minutes AND miles, never one or the other', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const A = [39.0257, -95.7939], B = [39.0457, -95.7151];   // ~4.5 mi apart
+      const near = [39.0258, -95.7940];                          // ~40 ft
+      const t = (m) => 1757700000000 + m * 60000;
+      return {
+        // Four and a half miles with six minutes between the fixes: a hole.
+        hole: _mileGaps({ path: [[A[0], A[1], t(0)], [B[0], B[1], t(6)]] }).length,
+        // The same distance covered in 30 seconds is not a hole, it is a
+        // motorway, and the breadcrumbs either side are real.
+        fast: _mileGaps({ path: [[A[0], A[1], t(0)], [B[0], B[1], t(0.5)]] }).length,
+        // Ten minutes parked 40 feet from where you were is not a hole either.
+        parked: _mileGaps({ path: [[A[0], A[1], t(0)], [near[0], near[1], t(10)]] }).length,
+        // A path with no timestamps can only be judged on distance, and that
+        // is the right fallback: an old row still draws its gap.
+        noStamp: _mileGaps({ path: [[A[0], A[1]], [B[0], B[1]]] }).length,
+        // Two holes in one leg are two fills, and the index says where.
+        two: _mileGaps({ path: [[A[0], A[1], t(0)], [B[0], B[1], t(6)],
+                                [A[0], A[1], t(14)]] }).map(g => g.i),
+        none: _mileGaps({ path: [[A[0], A[1], t(0)], [near[0], near[1], t(1)]] }).length,
+        // Nothing here may throw: this runs inside a map open.
+        nul: _mileGaps(null).length,
+        empty: _mileGaps({}).length,
+        one: _mileGaps({ path: [[A[0], A[1], t(0)]] }).length,
+        junk: _mileGaps({ path: [['x', 'y', 1], [B[0], B[1], t(9)]] }).length,
+        notArray: _mileGaps({ path: 'nope' }).length,
+      };
+    });
+    expect(r.hole).toBe(1);
+    expect(r.fast).toBe(0);
+    expect(r.parked).toBe(0);
+    expect(r.noStamp).toBe(1);
+    expect(r.two).toEqual([1, 2]);
+    expect(r.none).toBe(0);
+    expect(r.nul).toBe(0);
+    expect(r.empty).toBe(0);
+    expect(r.one).toBe(0);
+    expect(r.junk).toBe(0);
+    expect(r.notArray).toBe(0);
+  });
+
+  test('_mileRouteFill asks for nothing when there is no hole, and survives a router that never answers', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const A = [39.0257, -95.7939], B = [39.0457, -95.7151];
+      const t = (m) => 1757700000000 + m * 60000;
+      const tight = { path: [[A[0], A[1], t(0)], [39.0258, -95.7940, t(1)]] };
+      const gapped = { path: [[A[0], A[1], t(0)], [B[0], B[1], t(6)]] };
+      const keep = window._routeDistance, keepT = window._GEO_ROUTE_TIMEOUT_MS;
+      try {
+        // No hole: the router is never called at all.
+        let asked = 0;
+        window._routeDistance = () => { asked++; return Promise.resolve({ miles: 4.5, path: [] }); };
+        const noHole = await _mileRouteFill(tight);
+        const askedForTight = asked;
+        // A hole, but the router comes back with no road: the observed trace
+        // is still the honest picture, so nothing is drawn over it.
+        window._routeDistance = () => Promise.resolve({ miles: 4.5, path: [] });
+        const noRoad = await _mileRouteFill(gapped);
+        // A hole and a router that throws.
+        window._routeDistance = () => Promise.reject(new Error('offline'));
+        const threw = await _mileRouteFill(gapped);
+        // A hole and a router that never answers: the race times out.
+        window._GEO_ROUTE_TIMEOUT_MS = 50;
+        window._routeDistance = () => new Promise(() => {});
+        const hung = await _mileRouteFill(gapped);
+        return { noHole, askedForTight, noRoad, threw, hung };
+      } finally { window._routeDistance = keep; window._GEO_ROUTE_TIMEOUT_MS = keepT; }
+    });
+    expect(r.noHole).toBe(null);
+    expect(r.askedForTight).toBe(0);
+    expect(r.noRoad).toBe(null);
+    expect(r.threw).toBe(null);
+    expect(r.hung).toBe(null);
+  });
+
+  test('_mileRouteFill cuts the observed trace at the hole and dashes only the fill', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const t = (m) => 1757700000000 + m * 60000;
+      // Two watched stretches with a four-mile hole between them.
+      const path = [
+        [39.0257, -95.7939, t(0)], [39.0260, -95.7930, t(1)],
+        [39.0457, -95.7151, t(8)], [39.0460, -95.7140, t(9)],
+      ];
+      const keep = window._routeDistance;
+      window._routeDistance = () => Promise.resolve({
+        miles: 4.6, path: [[39.0260, -95.7930], [39.0350, -95.7500], [39.0457, -95.7151]],
+      });
+      try { return await _mileRouteFill({ path }); }
+      finally { window._routeDistance = keep; }
+    });
+    expect(Array.isArray(r)).toBe(true);
+    const solid = r.filter(s => !s.dash);
+    const dashed = r.filter(s => Array.isArray(s.dash) && s.dash.length);
+    // The watched trace is cut in two, so no solid line crosses the hole.
+    expect(solid.length).toBe(2);
+    expect(solid.every(s => s.path.length === 2)).toBe(true);
+    // And exactly one dashed road fills it.
+    expect(dashed.length).toBe(1);
+    expect(dashed[0].path.length).toBe(3);
+    // Different colours, because "watched" and "guessed" must not read alike.
+    expect(dashed[0].color).not.toBe(solid[0].color);
+  });
+
+  test('the dashed style reaches the drawn line, tiles or no tiles', async ({ page }) => {
+    // The fallback plot is what renders in CI (no MapKit on an unauthorized
+    // origin), and it is also what every Android and Windows user sees, so the
+    // dash has to survive that path too, not just Apple's.
+    const html = await page.evaluate(() => {
+      const host = document.createElement('div');
+      host.id = '_dash-probe-body';
+      document.body.appendChild(host);
+      try {
+        tdMapRender({
+          body: host, hostId: '_dash-probe', height: 120, allowKit: false,
+          st: tdMapState(),
+          pts: [{ lat: 39.0257, lon: -95.7939, type: 'start', label: 'A' },
+                { lat: 39.0457, lon: -95.7151, type: 'end', label: 'B' }],
+          style: { start: { c: '#0E6B39', glyph: 'A' }, end: { c: '#dc2626', glyph: 'B' } },
+          paths: [
+            { path: [[39.0257, -95.7939], [39.0260, -95.7930]], color: '#2D5DA8', width: 4 },
+            { path: [[39.0260, -95.7930], [39.0457, -95.7151]], color: '#B45309', width: 4, dash: [7, 6] },
+          ],
+        });
+        return host.innerHTML;
+      } finally { host.remove(); }
+    });
+    expect(html).toContain('stroke-dasharray="7 6"');
+    // Exactly one of the two is dashed: the watched stretch stays solid.
+    expect((html.match(/stroke-dasharray/g) || []).length).toBe(1);
+  });
 
   test('_milePathMiles measures the line that was actually driven', async ({ page }) => {
     const r = await page.evaluate((path) => ({

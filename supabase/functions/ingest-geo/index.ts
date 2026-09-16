@@ -35,6 +35,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Plain ESM, not .ts, so Deno and the Node test harness load the exact same
 // file: tests/e2e-geo-derive-server.spec.js drives this module directly.
 import { daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
+import { makeRoute } from "../_shared/route-cache.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -550,9 +551,14 @@ Deno.serve(async (req) => {
     // that throws is reported rather than failing the flush: the events are
     // already stored, the next trigger derives again, and the phone's own
     // rebuild is still behind all of it.
+    // One road, one lookup. The resolver and its cache key live in
+    // ../_shared/route-cache.ts because rebuild-day needs the identical thing,
+    // and two copies of a key is two places for it to drift from the phone's.
+    const route = makeRoute(svc, cid);
+
     const derivedDays = [];
     for (const day of daysToDerive(evs, Date.now())) {
-      try { derivedDays.push(await deriveDayServer(svc, cid, uid, day)); }
+      try { derivedDays.push(await deriveDayServer(svc, cid, uid, day, Date.now(), route)); }
       catch (e) { derivedDays.push({ day, wrote: false, reason: String((e as Error)?.message || e) }); }
     }
     derived = derivedDays.filter((d) => d.wrote).length;

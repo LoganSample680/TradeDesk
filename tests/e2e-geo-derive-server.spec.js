@@ -149,6 +149,58 @@ test.describe('the deriver on the server', () => {
     expect(rpc.find((c) => c.name === 'geo_replace_day').args.p_sweep).toBe(false);
   });
 
+  // ── The one door that may retire a row (owner 2026-09-15) ────────────────
+  // "I want Jack to wake up to a clean record of today." A rebuild is somebody
+  // looking at a day, deciding it is wrong and asking for it again; the rows
+  // that need removing are there BECAUSE an earlier derive changed its mind,
+  // and only a sweep removes them. The rule above is not relaxed, it is given
+  // the same test the phone applies: absence of evidence is evidence of
+  // absence only where there is evidence.
+  test.describe('a rebuild may sweep, and only on evidence', () => {
+    test('asking for it, with a tape covering the day, sweeps', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      expect(rpc.find((c) => c.name === 'geo_replace_day').args.p_sweep).toBe(true);
+      expect([r.sweep, r.sweepAsked, r.tapeCovers]).toEqual([true, true, true]);
+    });
+
+    test('not asking for it is the ingest path, unchanged', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      for (const opts of [undefined, null, {}, { sweep: false }, { sweep: 0 }]) {
+        const rpc = [];
+        await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, opts);
+        expect(rpc.find((c) => c.name === 'geo_replace_day').args.p_sweep).toBe(false);
+      }
+    });
+
+    test('no motion tape covering the day: it writes, and retires nothing', async () => {
+      // The rows are still worth adding; what the server cannot do on this
+      // evidence is say what did NOT happen. Reported rather than silent, so a
+      // rebuild that could not clean up does not look like one that did.
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const noTape = { ...TABLES, geo_events: TABLES.geo_events.filter((e) => e.type !== 'motion') };
+      const r = await deriveDayServer(fakeSvc(noTape, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      if (write) expect(write.args.p_sweep).toBe(false);
+      expect(r.tapeCovers === true).toBe(false);
+      expect(r.sweep === true).toBe(false);
+    });
+
+    test('a day that writes nothing never reaches the writer at all', async () => {
+      // Which is what stops a sweep from running against an empty derive: the
+      // two guards above the write already refuse, so there is no call to make
+      // a delete-everything out of.
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const bare = { geo_events: [], location_pings: [], td_time_entries: [], zj_data: [], __fences: FENCES };
+      const r = await deriveDayServer(fakeSvc(bare, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      expect(r.wrote).toBe(false);
+      expect(rpc.find((c) => c.name === 'geo_replace_day')).toBeUndefined();
+    });
+  });
+
   test('a day nobody has uploaded is not an empty day', async () => {
     const { deriveDayServer } = await import(SHARED);
     const rpc = [];

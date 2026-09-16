@@ -63,11 +63,34 @@ async function _fetchStripeConnectStatus(){
     const session=await _supa.auth.getSession();
     const token=session?.data?.session?.access_token;
     if(!token)return null;
+    // ── ASK ABOUT THE ACCOUNT ON SCREEN, NOT THE ONE HOLDING THE TOKEN ─────
+    // (owner 2026-09-16: "why is his account saying stripe is connected in
+    // integrations though?"). Jack has no Stripe account and never has. The
+    // target used to be gated on _isEmployee, which meant "my rows live on
+    // another account" until the 2026-09-13 split made it the ROLE only. The
+    // support view then named another account through _effectiveUid with
+    // _isEmployee false, so this went out empty, the Edge Function answered
+    // about the SIGNED-IN user, and the viewer's own Stripe was cached under
+    // the viewed account's key and drawn on their Integrations screen. One
+    // owner's payment account shown as another's is the worst shape that bug
+    // could take.
+    //
+    // The uid decides now, not the role. The function verifies the team link
+    // server-side and 403s when there is none, which is the right answer for
+    // a support view: it cannot see another owner's Stripe, so it says so.
     const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-status',{
       method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify(_isEmployee&&_statusUid!==_supaUser.id?{target:_statusUid}:{})
+      body:JSON.stringify(_statusUid&&_statusUid!==_supaUser.id?{target:_statusUid}:{})
     });
     const data=await res.json();
+    // A REFUSAL IS NOT A STATUS. An error body has no `connected` key, so
+    // caching it would park a shape every reader tests with `?.charges_enabled`
+    // for an hour, and a later legitimate read would never happen. Answer
+    // "not connected" for this render and leave the cache empty.
+    if(!res.ok||!data||data.error){
+      _stripeConnectStatus={connected:false,reason:'unavailable'};
+      return _stripeConnectStatus;
+    }
     _stripeConnectStatus=data;
     try{localStorage.setItem(_cacheKey,JSON.stringify({ts:Date.now(),data}));}catch(e){}
     return data;
@@ -686,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.12.26.25';
+const APP_VERSION='09.16.26.10';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1297,7 +1320,7 @@ let _opSyncRunning=false;
 async function _opSyncOps(){
   if(!window._opLogShadow||!_supa||!_supaUser||_opSyncRunning)return;
   if(_devSupportMode)return;
-  const _opUid=_isEmployee?_contractorUserId:_supaUser.id;
+  const _opUid=_effectiveUid();
   if(!_opUid)return;
   _opSyncRunning=true;
   try{
@@ -1640,15 +1663,15 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
   function _lpStart(e){
     const row=e.target.closest('[data-lp-id]');
     if(!row)return;
-    // Every other [data-lp-id] row is a DEV-ONLY hard-purge gesture, inert for
-    // real users. Time Log rows are the one exception, the gesture there
-    // calls deleteTimeEntry(), a real soft-delete that already re-checks
-    // ownership/permission itself (js/jobs.js) and is only rendered onto rows
-    // _tlCanEdit() already approved (js/timelog.js _tlRailRow), so it's safe to
-    // let regular contractors/employees use it, not just dev mode.
+    // DEV-ONLY, all of it, again (owner 2026-09-13). Time Log rows used to be
+    // the one exception here, because the hold was the only way to delete a
+    // time entry. It is not any more: every row carries a three-dot menu
+    // (js/timelog.js _tlRowMenu), which is discoverable, reachable by
+    // VoiceOver, and works on the derived rows this gesture never touched.
+    // Two doors to one action is how they drift apart, so this one is closed
+    // (7: deleted, not hidden).
     const devOk=typeof _canDelete==='function'&&_canDelete();
-    const timelogOk=row.dataset.lpType==='timelog';
-    if(!devOk&&!timelogOk)return;
+    if(!devOk)return;
     if(e.target.closest('button,select,input,a,label'))return;
     clearTimeout(_lpTimer);_lpFired=false;
     const t=e.touches?e.touches[0]:e;
@@ -1693,10 +1716,6 @@ function _showLpDeletePopup(row){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _lpDoDelete(id,type){
-  // timelog is the one non-dev-gated type (see _lpStart), deleteTimeEntry()
-  // is a real soft-delete that re-checks ownership/permission itself, unlike
-  // every other branch below which is a dev-only hard purge.
-  if(type==='timelog'){if(typeof deleteTimeEntry==='function')deleteTimeEntry(parseInt(id,10));return;}
   if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY (defense in depth)
   const nid=parseInt(id,10);
   // DEV HARD DELETE (owner directive): the long-press purges the ACTUAL row(s) via
@@ -7153,9 +7172,7 @@ async function supaSaveToCloud(){
     else localStorage.removeItem('zp3_rcpt_imgs');
   }catch(_e){}
 
-  const uid=_devSupportMode
-    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-    :(_isEmployee?_contractorUserId:_supaUser.id);
+  const uid=_effectiveUid();
 
   try{
     const ts=new Date().toISOString();
@@ -8187,9 +8204,7 @@ async function supaLoadFromCloud({silent=false}={}){
   // ReferenceError and the load-failure cache fallback silently painted NOTHING
   // for every signed-in user (caught by the dual-hat regression test's warn
   // trace: "Cache load failed: uid is not defined").
-  const uid=_devSupportMode
-    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-    :(_isEmployee?_contractorUserId:_supaUser.id);
+  const uid=_effectiveUid();
   try{
     // ── CURSOR READ-FIRST, the other half of the read-skew fix ──
     // The save writes tables FIRST, cursor LAST ("cursor moved ⇒ all data committed").
@@ -8532,7 +8547,7 @@ async function supaLoadFromCloud({silent=false}={}){
     // onFoot/still/driving the coprocessor holds stops being handset-only, and
     // then any home-office visit that closed before the load-out rule existed
     // and both no-op without a tape, same as the mileage sweep above.
-    try{if(typeof _geoTapeSync==='function')_geoTapeSync();}catch(_e){}
+    try{if(typeof _geoTapeSync==='function')_geoTapeSync('boot');}catch(_e){}
     // And the plugin's own wake counters, once per session, as analytics rows.
     // flushSent / flushOk / flushFail is the difference between "the upload
     // failed" and "the upload was never sent", which is the one thing the raw
@@ -8849,7 +8864,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(!_supaUser||_loadInProgress||_reconcileTimer)return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
         try{
-          const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
+          const _puid=_effectiveUid();
           if(_isEmployee&&!_devSupportMode){
             // Crew can't SELECT zj_data, the cursor RPC is their heartbeat probe.
             const{data:_ec}=await _supa.rpc('get_account_cursor',{target:_puid});
@@ -9171,9 +9186,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // into B's arrays even in that race. The expected owner is B's uid (contractor's uid for
   // an employee, the dev-support target while in support mode).
   if(fromRealtime){
-    const _curOwner=_devSupportMode
-      ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId)
-      :(_isEmployee?_contractorUserId:(_supaUser&&_supaUser.id));
+    const _curOwner=_effectiveUid();
     const _recOwner=(payload.new&&payload.new.user_id)||(payload.old&&payload.old.user_id);
     // Drop ONLY when BOTH owners are known and differ (a genuine foreign-account row).
     // Never drop on a transient-null _curOwner: on an offline worker's reconnect _supaUser

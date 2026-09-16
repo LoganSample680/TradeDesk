@@ -37,7 +37,25 @@ const centralParts = (ms) => {
 const centralOff = (ms) => centralParts(ms) - ms;
 const centralDayKey = (ms) => new Date(centralParts(ms)).toISOString().slice(0, 10);
 const centralMidnight = (key) => { const u = Date.parse(key + 'T00:00:00Z'); return u - centralOff(u - centralOff(u)); };
-const DAY = centralDayKey(Date.now() - 2 * 86400000);
+// ── A SUNDAY IS NOT A WORKING DAY, AND THIS SPEC IS ABOUT WORK (2026-09-15) ─
+// This was `Date.now() - 2 days`, full stop, and it went red the morning that
+// landed on a Sunday: the default working week is Monday to Saturday, so a day
+// outside it holds the visit and the queue carried 'client-held' where the
+// assertion says 'client'. Nothing was wrong with the deriver or the test, the
+// CALENDAR decided the result, which is the class CLAUDE.md 5.2.2 exists to
+// stop (the clock pin fixes the hour and deliberately never moves the date).
+//
+// The day still has to be relative: the tape window is seven days and a fixed
+// date would age out of it. So it steps back past any non-working day instead,
+// which says out loud what the fixture always assumed.
+const WORK_DAYS = [1, 2, 3, 4, 5, 6];            // the deriver's own default
+const centralDow = (ms) => new Date(new Intl.DateTimeFormat('en-CA', { timeZone: CENTRAL,
+  year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms)) + 'T12:00:00Z').getUTCDay();
+const workingDayBefore = (ms) => {
+  for (let i = 0; i < 8; i++, ms -= 86400000) if (WORK_DAYS.includes(centralDow(ms))) return ms;
+  return ms;
+};
+const DAY = centralDayKey(workingDayBefore(Date.now() - 2 * 86400000));
 const DAY_START = centralMidnight(DAY);
 const DAY_END = centralMidnight(centralDayKey(DAY_START + 36 * 3600000));
 const PREV_DAY = centralDayKey(DAY_START - 12 * 3600000);
@@ -275,6 +293,63 @@ test.describe('geo-derive wiring', () => {
       });
       expect(r.hasFix).toBe(true);
       expect(r.motionLogged).toBe(false);
+    });
+  });
+
+  // ── The region log (rule 15) ──────────────────────────────────────────────
+  test.describe('the region log (rule 15)', () => {
+    test('a crossing lands in it from the router, and its POSITION never becomes a fix', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_reglog'); localStorage.removeItem('zp3_geo_fixlog');
+        const t0 = Date.now() - 5000;
+        await _geoTdEvent({ type: 'regionEnter', ts: t0, regionId: 'place-9', lat: 39.02, lng: -95.68, acc: 5 }, false).catch(() => {});
+        await _geoTdEvent({ type: 'regionExit', ts: t0 + 60000, regionId: 'place-9', lat: 39.02, lng: -95.68, acc: 5 }, false).catch(() => {});
+        return { reg: _geoRegLogRead().map(e => [e.id, e.enter]),
+                 fix: _geoFixLogRead().some(f => f.lat === 39.02 && f.lng === -95.68) };
+      });
+      expect(r.reg).toEqual([['place-9', true], ['place-9', false]]);
+      expect(r.fix, 'a crossing is not a fix').toBe(false);
+    });
+
+    test('the same crossing twice in a second is one crossing; junk is nothing', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_reglog');
+        const t0 = Date.now() - 5000;
+        _geoRegLogPush(t0, 'place-9', true);
+        _geoRegLogPush(t0 + 1, 'place-9', true);        // the live row and its replay
+        _geoRegLogPush(t0 + 2000, 'place-9', true);     // two seconds on: a real re-entry
+        _geoRegLogPush(t0 + 3000, 'place-9', false);
+        _geoRegLogPush('junk', 'place-9', true); _geoRegLogPush(t0 + 4000, '', true);
+        _geoRegLogPush(t0 + 5000, null, false);
+        return _geoRegLogRead().map(e => [e.ts - t0, e.id, e.enter]);
+      });
+      expect(r).toEqual([[0, 'place-9', true], [2000, 'place-9', true], [3000, 'place-9', false]]);
+    });
+
+    test('seeding from the server dedupes on the crossing, not the instant', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_reglog');
+        const t0 = Date.now() - 5000;
+        _geoRegLogPush(t0, 'place-9', true);
+        _geoRegLogSeed([{ ts: t0, id: 'place-9', enter: true },      // already have it
+                        { ts: t0, id: 'client-4', enter: true },     // same instant, other fence
+                        { ts: t0, id: 'place-9', enter: false },     // same instant, other edge
+                        null, { ts: 'x', id: 'place-9', enter: true }, { ts: t0 + 9, id: '', enter: true }]);
+        _geoRegLogSeed(null); _geoRegLogSeed([]);
+        return _geoRegLogRead().map(e => [e.id, e.enter]);
+      });
+      expect(r).toEqual([['place-9', true], ['client-4', true], ['place-9', false]]);
+    });
+
+    test('it ages out on the same eight days as the fix log', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_reglog');
+        const now = Date.now();
+        _geoRegLogPush(now - 9 * 86400000, 'place-old', true);
+        _geoRegLogPush(now - 1000, 'place-9', true);
+        return _geoRegLogRead().map(e => e.id);
+      });
+      expect(r).toEqual(['place-9']);
     });
   });
 
@@ -531,7 +606,44 @@ test.describe('geo-derive wiring', () => {
       expect(r).toBe(0);
     });
 
-    test('the clocks are this person\'s own, closed, and touching the day', async () => {
+    // ── A RUNNING CLOCK IS EVIDENCE TOO (owner 2026-09-16) ───────────────
+    // "Why did Jack mark Laurie Schonfeldt as personal? While on a clock in?"
+    //
+    // Because this function only took CLOSED clocks, and the visit was derived
+    // at 09:08 that morning while he was still punched in. Rule 13 rung 2 is
+    // "a manual clock is running over it"; his ran 07:54 to 16:39 and the
+    // visit sat inside it. With nothing to see, the visit was held, the card
+    // asked, he answered Personal at 13:34, and fixed_at pinned that answer
+    // forever. His clock did not close until 16:39, hours after the only
+    // question anybody was ever going to be asked.
+    test('a clock that is still running counts, bounded by now and by the day', async () => {
+      const r = await page.evaluate(() => {
+        const savedTE = window.timeEntries, savedU = window._supaUser, savedE = window._isEmployee;
+        try {
+          window._supaUser = { id: 'me' }; window._isEmployee = false;
+          const ds = Date.parse('2026-09-01T05:00:00Z');
+          window.timeEntries = [
+            { id: 1, start_time: new Date(Date.now() - 3600000).toISOString(),
+              end_time: null, open: true, logged_by_uid: null },
+          ];
+          // Today's window, so the open clock is inside it.
+          const today = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z') - 5 * 3600000;
+          const live = _geoDeriveClocks(today, today + 86400000);
+          // And it can never reach past the day it belongs to: asked about a
+          // day in the past, an open clock that started today is not in it.
+          const past = _geoDeriveClocks(ds, ds + 86400000).length;
+          return { n: live.length, mins: live[0] ? Math.round((live[0].end - live[0].start) / 60000) : 0, past };
+        } finally { window.timeEntries = savedTE; window._supaUser = savedU; window._isEmployee = savedE; }
+      });
+      expect(r.n, 'the clock he is punched into right now').toBe(1);
+      expect(r.mins, 'from when he punched in, up to now').toBe(60);
+      expect(r.past, 'and never bleeding into another day').toBe(0);
+    });
+
+    // AMENDED 2026-09-16: the title said "closed" and the fixture asserted an
+    // open clock was dropped. That is the defect above, not the rule. What
+    // this still proves, and what has not changed, is WHOSE clock it is.
+    test('the clocks are this person\'s own, and touching the day', async () => {
       const r = await page.evaluate(() => {
         const savedTE = window.timeEntries, savedU = window._supaUser, savedE = window._isEmployee;
         try {
@@ -540,7 +652,6 @@ test.describe('geo-derive wiring', () => {
             { id: 1, start_time: '2026-09-01T13:00:00Z', end_time: '2026-09-01T17:00:00Z', logged_by_uid: null },   // the owner's
             { id: 2, start_time: '2026-09-01T13:00:00Z', end_time: '2026-09-01T17:00:00Z', logged_by_uid: 'crew' },  // somebody else's
             { id: 3, start_time: '2026-08-20T13:00:00Z', end_time: '2026-08-20T17:00:00Z', logged_by_uid: null },   // another day
-            { id: 4, start_time: '2026-09-01T18:00:00Z', end_time: null, open: true, logged_by_uid: null },          // still running
             null, { id: 5 },
           ];
           const ds = Date.parse('2026-09-01T05:00:00Z');
@@ -1008,6 +1119,113 @@ test.describe('geo-derive wiring', () => {
       expect(it.args.p_miles[0].legKey).toBe(it.args.p_time[1].client_key);
     });
 
+    // ── THE PHONE HAS TO SAY WHOSE DAY THIS IS (owner 2026-09-16) ────────
+    // "For a business owner it does, but for Jack it doesn't." Rule 20 turns
+    // entirely on that one bit now, so the bit has to arrive. A derive that
+    // silently sent `undefined` would bill every crew commute in the company
+    // and nothing on screen would say why.
+    //
+    // AMENDED THE SAME DAY, after "why am I still missing mileage legs from
+    // yesterday and today on my side." This used to read the bit off the
+    // session two ways, _isEmployee and the uid comparison, and BOTH of them
+    // are things the support view writes: js/ops-view.js sets _isEmployee from
+    // the role of the person being VIEWED, and _geoCid is _effectiveUid, which
+    // names the viewed account. Opening Jack therefore made Logan crew on his
+    // own tape, and the next rebuild swept his first drive out and his last
+    // drive home away as commutes. Replayed against his real 15 September:
+    // crew false gives all four legs, crew true gives exactly the two middle
+    // ones, which is exactly what the table held.
+    //
+    // So the bit is read off the ACCOUNT now (zp3_acct_<uid>.isEmployee, which
+    // only loadAccountData writes, keyed by the signed-in uid), and a session
+    // pointed at somebody else does not derive at all.
+    test('the crew bit is the two ids this write is about, not a flag on screen', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        const seen = [];
+        const real = window.geoDeriveDay;
+        window.geoDeriveDay = (inp) => { seen.push(inp.crew); return real(inp); };
+        const cid = window._geoCid();
+        const key = 'zp3_acct_' + _supaUser.id;
+        const keep = localStorage.getItem(key);
+        try {
+          // The owner on his own account.
+          window._isEmployee = false;
+          await _geoDeriveDayNow(DAY, null);
+          // A support view flipped the session flag and left it flipped. The
+          // write still lands on his own account, so he is still the owner.
+          window._isEmployee = true;
+          await _geoDeriveDayNow(DAY, null);
+          // And a poisoned account cache cannot reach it either: the second
+          // fix read this bit from there, and a cache is one more thing that
+          // can hold a wrong answer.
+          localStorage.setItem(key, JSON.stringify({ isEmployee: true }));
+          await _geoDeriveDayNow(DAY, null);
+        } finally {
+          window.geoDeriveDay = real; window._isEmployee = false;
+          window._geoCid = () => cid;
+          if (keep == null) localStorage.removeItem(key); else localStorage.setItem(key, keep);
+        }
+        return seen;
+      }, DAY);
+      expect(r, 'his own account is never crew, whatever the session thinks').toEqual([false, false, false]);
+    });
+
+    // Genuinely crew: the day is written to somebody else's books, which is
+    // the same test the server makes (derive-day.mjs) and cannot disagree with
+    // the row it is describing.
+    test('a day written to another account IS crew', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        const seen = [];
+        const real = window.geoDeriveDay;
+        window.geoDeriveDay = (inp) => { seen.push(inp.crew); return real(inp); };
+        const cid = window._geoCid();
+        const keepOps = window._opsView;
+        try {
+          // Crew: the rows land on the employer's account. Not a support view,
+          // so the door above lets it through.
+          window._opsView = null;
+          window._geoCid = () => 'my-employers-account';
+          await _geoDeriveDayNow(DAY, null);
+        } finally {
+          window.geoDeriveDay = real; window._geoCid = () => cid; window._opsView = keepOps;
+        }
+        return seen;
+      }, DAY);
+      expect(r).toEqual([true]);
+    });
+
+    // ── AND IT DOES NOT DERIVE AT ALL WHILE POINTED SOMEWHERE ELSE ───────
+    // The support view is read only on screen and was not read only here. Its
+    // three layers all miss this path: the client seal replaces insert, update
+    // and delete, and geo_replace_day is a security-definer RPC that is none
+    // of those, with a guard that passes because the signed-in user really is
+    // the employee whose day it is.
+    test('a session pointed at another account derives nothing', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        let calls = 0;
+        const real = window.geoDeriveDay;
+        window.geoDeriveDay = (inp) => { calls++; return real(inp); };
+        const cid = window._geoCid();
+        const keepOps = window._opsView;
+        try {
+          const out = [];
+          window._opsView = { target: 'somebody-elses-account' };
+          out.push(await _geoDeriveDayNow(DAY, null));
+          window._opsArming = true; window._opsView = null;
+          out.push(await _geoDeriveDayNow(DAY, null));
+          window._opsArming = false;
+          return { out, calls };
+        } finally {
+          window.geoDeriveDay = real; window._geoCid = () => cid; window._opsView = keepOps;
+        }
+      }, DAY);
+      expect(r.out, 'both refused').toEqual([null, null]);
+      expect(r.calls, 'the deriver was never even called').toBe(0);
+    });
+
     // Owner 2026-09-04, walking it through: "I sign out and sign in on jacks
     // phone, we both have different core motions, what happens." The claim
     // starts at the swap. The morning's rows came from the other phone and are
@@ -1140,6 +1358,75 @@ test.describe('geo-derive wiring', () => {
       expect(r.q, 'nothing is sent to geo_replace_day').toBe(0);
       expect(r.notes).toEqual([DAY + ': 2 drives on the tape, none resolved']);
       expect(r.miles, 'the in-memory legs are not touched either').toEqual(['leg-live']);
+    });
+
+    // ── A PARTIAL FETCH MAY WRITE, BUT IT MAY NOT RETIRE (owner 2026-09-16) ──
+    // "I'm missing so many fucking drives now everywhere."
+    //
+    // Twenty-two rows off his last week, retired at 06:45 by the boot rebuild,
+    // with no error anywhere: eleven time rows, ten mileage rows and a shop
+    // row across four days. _geoPageAll stops silently on an error and at its
+    // page cap and hands the caller what it happens to have, as though that
+    // were the whole set. The day then derives from PART of the evidence and
+    // sweeps against ALL of it, so every row the missing pages would have
+    // produced reads as a row that should no longer exist.
+    //
+    // It is the same rule the server path has always had, said the other way
+    // round: absence of evidence is evidence of absence only where there IS
+    // evidence.
+    test('a server fetch that came back short writes, but never sweeps', async () => {
+      await seed();
+      const r = await page.evaluate(async ([DAY, SHOP, DOE, T]) => {
+        localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
+        const real = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        // Enough to resolve the day, and explicitly NOT complete: this is what
+        // an errored page or the page cap hands back.
+        window._geoDeriveServerFixes = async () => {
+          const o = [{ ts: T[0], lat: SHOP.lat, lng: SHOP.lng, acc: null },
+                     { ts: T[1], lat: DOE.lat, lng: DOE.lng, acc: 5 },
+                     { ts: T[2], lat: DOE.lat, lng: DOE.lng, acc: 5 },
+                     { ts: T[3], lat: SHOP.lat, lng: SHOP.lng, acc: 5 },
+                     { ts: T[4], lat: SHOP.lat, lng: SHOP.lng, acc: 5 }];
+          o.appEvents = []; o.regions = []; o.complete = false; return o;
+        };
+        try {
+          localStorage.setItem('zp3_geo_queue', '[]');
+          await _geoDeriveDayNow(DAY, null);
+          const short = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0];
+          // The same fetch, whole this time, is allowed to sweep.
+          const prev = window._geoDeriveServerFixes;
+          window._geoDeriveServerFixes = async (...a) => { const o = await prev(...a); o.complete = true; return o; };
+          localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
+          localStorage.setItem('zp3_geo_queue', '[]');
+          await _geoDeriveDayNow(DAY, null);
+          const whole = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0];
+          return { shortSweep: short && short.args.p_sweep, shortRows: short && short.args.p_time.length,
+                   wholeSweep: whole && whole.args.p_sweep };
+        } finally { window._geoDeriveServerFixes = real; }
+      }, [DAY, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)]]);
+      expect(r.shortSweep, 'a short fetch retires nothing').toBe(false);
+      expect(r.shortRows, 'but it still writes what it did find').toBeGreaterThan(0);
+      expect(r.wholeSweep, 'and a complete one sweeps exactly as before').toBe(true);
+    });
+
+    // The pager is where `complete` comes from, and it has to be honest about
+    // both ways it can stop early: an error, and running out of pages.
+    test('the pager says whether it got everything', async () => {
+      const r = await page.evaluate(async () => {
+        const page1 = (n) => ({ data: Array.from({ length: n }, (_, i) => ({ ts: new Date(i).toISOString() })) });
+        const mk = (reply) => { let i = -1; return () => ({ order: () => ({ range: async () => { i++; return reply(i); } }) }); };
+        const short = await _geoPageAll(mk(() => page1(3)));            // one part page: done
+        const err = await _geoPageAll(mk((i) => i === 0 ? page1(1000) : ({ error: { message: 'boom' } })));
+        const capped = await _geoPageAll(mk(() => page1(1000)));        // never a short page
+        return { short: short.complete, shortN: short.length,
+                 err: err.complete, errN: err.length,
+                 capped: capped.complete };
+      });
+      expect(r.short, 'a page shorter than the limit is the end of the data').toBe(true);
+      expect(r.shortN).toBe(3);
+      expect(r.err, 'an error mid-way is not the end of the data').toBe(false);
+      expect(r.errN, 'and what it already had is still handed back').toBe(1000);
+      expect(r.capped, 'running out of pages means there is more').toBe(false);
     });
 
     test('a thin local log asks the server once and keeps what it got', async () => {
@@ -1311,9 +1598,17 @@ test.describe('geo-derive wiring', () => {
       // same kind of thing as 'fix', a live getCurrentPosition read taken at
       // the moment of the tap, which is exactly the test this filter applies.
       // A fence row, a motion row and a push-ping still never qualify.
+      //
+      // AMENDED 2026-09-15 (rule 15): a SECOND `in` rides along now, asking
+      // geo_events for the fence crossings. It is not a fix source and must
+      // never become one, which is what this pins: the trace fetch still asks
+      // for the three fresh types and nothing else, and the crossing fetch
+      // asks only for the two region types.
       const ins = r.calls.filter(c => c[0] === 'in');
       expect(ins.length).toBeGreaterThan(0);
-      ins.forEach(c => expect(c).toEqual(['in', 'type', ['fix', 'clock-in', 'clock-out']]));
+      const shapes = [...new Set(ins.map(c => JSON.stringify(c[2])))].sort();
+      expect(shapes).toEqual([JSON.stringify(['fix', 'clock-in', 'clock-out']),
+                              JSON.stringify(['regionEnter', 'regionExit'])].sort());
       expect(r.sorted).toBe(true);
       expect(r.last.acc).toBe(7);
     });
@@ -1517,7 +1812,17 @@ test.describe('geo-derive wiring', () => {
       expect(osrm[0].u).toContain('/driving/-95.7462,39.0132;-95.7401,39.01245;-95.72357,39.02946;-95.7112,39.0308?');
       expect(osrm[1].u).toContain('/driving/-95.7462,39.0132;-95.7112,39.0308?');
       expect(r.legs).toEqual([[39.0132, 39.01245], [39.01245, 39.02946], [39.02946, 39.0308]]);
-      expect(r.c).toEqual({ miles: 1.9, mins: 6 });
+      // AMENDED 2026-09-13 (10.4). _routeDistance used to return the distance
+      // and the time and throw MapKit's geometry away, and this asserted that
+      // exact pair. The route map now needs the line as well, to draw a
+      // force-close hole as the road instead of a straight edge through town,
+      // so a third field rides along. The two numbers are unchanged.
+      expect(r.c.miles).toBe(1.9);
+      expect(r.c.mins).toBe(6);
+      // This stub's routes carry no polyline, which is the shape a future
+      // MapKit rename would also produce: an empty line, never a throw inside
+      // a directions callback.
+      expect(r.c.path).toEqual([]);
     });
 
     test('the legs paint the moment the day is derived; the road miles are a second paint', async () => {
