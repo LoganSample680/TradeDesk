@@ -3273,19 +3273,74 @@ let _mileAddressPending=null;
 // Save button and the Time Log rail's both do nothing but RESOLVE A
 // COORDINATE and call this, so the flow can only ever change in both places
 // at once.
-async function _mileSaveAddressAt(lat,lng,pend){
-  const la=Number(lat),ln=Number(lng);
-  if(!isFinite(la)||!isFinite(ln))return false;
-  _mileAddressPending=Object.assign({which:'to'},pend||{},{lat:la,lng:ln});
+// ── NOT EVERY ADDRESS IS A CUSTOMER (owner 2026-09-16) ──────────────────────
+// "The code to save a address steered Jack wrong, he clicked save address for a
+//  plumbing place and it dropped it as a lead, go look at neenans co, that's
+//  supposed to be a supply house not a lead."
+//
+// It did, and it had no other option: this went straight to the new-lead form
+// for every address on the log. Half of these were never customers. Jack tapped
+// Save on a stop at Neenans Co, a plumbing supply counter, and the app made him
+// a sales lead out of it, then enriched him off Zillow as a single family home.
+//
+// A wrong kind is not cosmetic here, which openPlaceModal already says in its
+// own words: it decides how that stop's trips deduct and which bucket the
+// mileage report puts them in. A supply run is held for its receipt; a client
+// visit is not. Guessing "client" for everything got that wrong every time
+// somebody stopped at a counter.
+//
+// So it ASKS, once, in two taps instead of one, and then hands off to the form
+// that already exists for whichever he picked. Nothing here is a new form: the
+// client arm is the same openNewClient it always was, and the place arm is
+// openPlaceModal, the app's own place form, which already takes a coordinate
+// and already refuses to save without a real type (7.3).
+function _mileSaveAskKind(la,ln){
+  document.getElementById('_mile-kind-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';ov.id='_mile-kind-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:8px">What is this address?</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:20px">'+
+      'A customer becomes a client you can quote and invoice. Anywhere else becomes a place, '+
+      'so the app knows a supply run from a job.</div>'+
+    '<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<button class="btn btn-p" onclick="_mileSaveKind(\'client\')">A customer</button>'+
+    '<button class="btn" onclick="_mileSaveKind(\'place\')">A supply house, shop or other place</button>'+
+    '<button class="btn" onclick="document.getElementById(\'_mile-kind-ov\')?.remove()">Cancel</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+// The two arms. _mileAddressPending is already set before the chooser opens, so
+// whichever he picks, the save re-derives the same day (_mileAddressSaved).
+async function _mileSaveKind(kind){
+  document.getElementById('_mile-kind-ov')?.remove();
+  const p=_mileAddressPending;
+  if(!p)return false;
+  if(kind==='place'){
+    // No goPg: the place form is a modal that opens over whatever page you are
+    // on, which is exactly how the dashboard and the Places list already call
+    // it. Navigating first was my addition and there is no 'pg-places' to
+    // navigate to; assertNoErrors caught it on the first run (7.3, again).
+    if(typeof openPlaceModal==='function')openPlaceModal(null,p.lat,p.lng);
+    return true;
+  }
   // Apple Maps hands back the four fields already separated (_reverseGeocode,
   // above), which is what this form has four boxes for.
   let parts={street:'',city:'',state:'',zip:''};
-  try{parts=await _reverseGeocode(la,ln)||parts;}catch(_e){}
+  try{parts=await _reverseGeocode(p.lat,p.lng)||parts;}catch(_e){}
   try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
   if(typeof openNewClient==='function')openNewClient();
   const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};
   set('cf-street',parts.street);set('cf-city',parts.city);set('cf-state',parts.state);set('cf-zip',parts.zip);
   try{if(typeof _updateAddrComputed==='function')_updateAddrComputed();}catch(_e){}
+  return true;
+}
+async function _mileSaveAddressAt(lat,lng,pend){
+  const la=Number(lat),ln=Number(lng);
+  if(!isFinite(la)||!isFinite(ln))return false;
+  _mileAddressPending=Object.assign({which:'to'},pend||{},{lat:la,lng:ln});
+  _mileSaveAskKind(la,ln);
   return true;
 }
 // Door one: an end of a row in the mileage log.
@@ -3342,6 +3397,8 @@ async function _mileSaveStopAddress(clientKey,day){
 // Called by saveClient once the new client's address has been geocoded (so
 // the fence exists). Re-derives the traced day; the real leg lands under the
 // same journey id and the traced row is replaced by geo_replace_day.
+// Called by BOTH arms of the chooser: saveClient hands a client, savePlace
+// hands a place. All this needs from either is an address, so it takes either.
 async function _mileAddressSaved(client){
   const p=_mileAddressPending;
   if(!p||!client||!client.addr)return false;

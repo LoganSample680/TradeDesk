@@ -259,14 +259,27 @@ test.describe('traced trips', () => {
   });
 
   test.describe('save this address', () => {
-    test('opens the new-lead form on the traced coordinates, address prefilled from the reverse geocode', async () => {
+    // ── IT ASKS WHAT THE ADDRESS IS FIRST (owner 2026-09-16) ────────────
+    // "He clicked save address for a plumbing place and it dropped it as a
+    //  lead, go look at neenans co, that's supposed to be a supply house not
+    //  a lead."
+    //
+    // Save used to go straight here for every address on the log, so a stop at
+    // a plumbing supply counter became a sales lead, and then got enriched off
+    // Zillow as a single family home. The kind is not cosmetic: a supply run is
+    // held for its receipt and a client visit is not. So it asks, and this test
+    // now answers "A customer" before asserting everything it always did.
+    test('asks what the address is, and a customer opens the new-lead form prefilled', async () => {
       await seed();
       const r = await page.evaluate(async () => {
         const keep = window._nominatimReverse;
         window._nominatimReverse = async (lat, lng) => (lat === 39.035 && lng === -95.7 ? '2100 SW Gage Blvd, Topeka, KS 66604' : null);
         try {
           const ok = await _mileSaveAddress('j-traced', 'to');
+          const asked = !!document.getElementById('_mile-kind-ov');
+          await _mileSaveKind('client');
           return {
+            asked, gone: !document.getElementById('_mile-kind-ov'),
             ok,
             title: document.getElementById('cf-title') && document.getElementById('cf-title').textContent,
             street: document.getElementById('cf-street').value, city: document.getElementById('cf-city').value,
@@ -277,6 +290,8 @@ test.describe('traced trips', () => {
         } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
       });
       expect(r.ok).toBe(true);
+      expect(r.asked, 'it asks before it assumes').toBe(true);
+      expect(r.gone, 'and gets out of the way once answered').toBe(true);
       expect(r.title).toBe('New lead');
       expect([r.street, r.city, r.state, r.zip]).toEqual(['2100 SW Gage Blvd', 'Topeka', 'KS', '66604']);
       expect(r.name, 'the name is his to give').toBe('');
@@ -302,6 +317,7 @@ test.describe('traced trips', () => {
         window._nominatimReverse = async () => null;
         try {
           const ok = await _mileSaveAddress('j-via', 'to');
+          await _mileSaveKind('client');
           return { ok, pending: _mileAddressPending, stamp: row.includes(clk('2026-09-09T19:05:42.000Z')) };
         } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
       });
@@ -309,6 +325,41 @@ test.describe('traced trips', () => {
       expect(r.pending).toEqual(expect.objectContaining({ legKey: 'j-via', which: 'to', lat: 39.06146, lng: -95.69681 }));
       // And the stamp beside "Unsaved address" is when he was AT the stop.
       expect(r.stamp).toBe(true);
+    });
+
+    // ── AND THE OTHER ARM: NEENANS CO (owner 2026-09-16) ────────────────
+    // The one that did not exist. A supply house is not a customer, and the
+    // place form is the app's own form for it: it already takes a coordinate
+    // and already refuses to save without a real type. No new form, no second
+    // copy of the flow (7.3). The re-derive fires from either arm, or the trip
+    // that prompted the save would still read "Unsaved address" afterwards.
+    test('a supply house opens the PLACE form, not a lead, on the same coordinate', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        try {
+          // cf-title is static markup, so its presence proves nothing. Blank it
+          // first: openNewClient is what writes 'New lead' into it, so the
+          // text is the only honest tell that the lead form ran.
+          document.getElementById('cf-title').textContent = '';
+          await _mileSaveAddress('j-traced', 'to');
+          await _mileSaveKind('place');
+          const pm = document.getElementById('place-modal');
+          return {
+            place: !!pm, lead: document.getElementById('cf-title').textContent === 'New lead',
+            pending: _mileAddressPending,
+            // Every kind the place form offers, so a supply house is reachable.
+            kinds: pm ? [...pm.querySelectorAll('#place-kind option')].map(o => o.value).filter(Boolean) : [],
+          };
+        } finally {
+          document.getElementById('place-modal')?.remove();
+          if (typeof closeClientForm === 'function') closeClientForm();
+        }
+      });
+      expect(r.place, 'the place form, on the traced coordinate').toBe(true);
+      expect(r.lead, 'and no lead form anywhere').toBe(false);
+      expect(r.kinds, 'supply house among them').toContain('supply');
+      expect(r.pending, 'and the same day is still queued to re-derive')
+        .toEqual(expect.objectContaining({ legKey: 'j-traced', lat: 39.035, lng: -95.7 }));
     });
 
     // ── The Time Log's button comes through the same door (owner 2026-09-09:
@@ -544,6 +595,7 @@ test.describe('traced trips', () => {
           window._nominatimReverse = async () => '1530 Southwest Arvonia Place, Topeka, Kansas, 66604';
           try {
             await _mileSaveAddress('j-traced', 'to');
+            await _mileSaveKind('client');   // the chooser, answered (2026-09-16)
             return ['cf-street', 'cf-city', 'cf-state', 'cf-zip'].map(id => document.getElementById(id).value);
           } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
         });
@@ -558,6 +610,7 @@ test.describe('traced trips', () => {
         window._nominatimReverse = async () => null;
         try {
           const ok = await _mileSaveAddress('j-traced', 'to');
+          await _mileSaveKind('client');
           return { ok, street: document.getElementById('cf-street').value, day: _mileAddressPending && _mileAddressPending.day };
         } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
       });

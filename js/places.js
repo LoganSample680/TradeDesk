@@ -203,6 +203,13 @@ function savePlace(pl){
   // this pin becomes this place, which is the whole payoff of promoting a
   // repeat-stop suggestion. Idempotent, only anonymous endpoints move.
   if(typeof _placeRetroNameTrips==='function')_placeRetroNameTrips(existing||pl);
+  // AND THE DAY IT WAS SAVED FROM RE-DERIVES, exactly as the client arm does
+  // (clients.js, saveClient). Without this, answering "a supply house" on the
+  // Save-this-address chooser named the place and left the trip that prompted
+  // it still reading "Unsaved address": the same trip, the same fix, two
+  // different outcomes depending on which button he pressed (owner 2026-09-16,
+  // on Neenans Co). No-ops when nothing is pending.
+  try{if(typeof _mileAddressSaved==='function')_mileAddressSaved(existing||pl);}catch(_e){}
   return existing||pl;
 }
 function deletePlace(id){
