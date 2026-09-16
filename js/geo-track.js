@@ -8010,31 +8010,36 @@ async function _geoDeriveSyncMileage(dayKey){
 // has no business writing this phone's day under rules it read off that screen,
 // and there is nothing to lose by waiting: exiting the view is a hard reload,
 // and the boot rebuild runs again on the way back in.
-// AND THE FLAG SURVIVES THE VIEW. Closing the door above is not enough on its
-// own: the dev-support exit restores arrays and re-renders rather than
-// reloading, so _isEmployee can still be sitting true on his own account after
-// he leaves, and the next derive is crew again with nothing on screen to say
-// so. The honest answer for the SIGNED-IN user is already persisted, keyed by
-// his uid, by the four places in loadAccountData that decide it
-// (zp3_acct_<uid>.isEmployee, js/cloud.js). A support view never writes it.
-function _geoOwnIsCrew(){
-  try{
-    if(!_supaUser)return false;
-    const a=JSON.parse(localStorage.getItem('zp3_acct_'+_supaUser.id)||'null');
-    if(a&&typeof a.isEmployee==='boolean')return a.isEmployee;
-  }catch(_e){}
-  // No cache yet (a first sign-in mid-session): the live flag is all there is,
-  // and at that moment no support view has had a chance to touch it.
-  return !!(typeof _isEmployee!=='undefined'&&_isEmployee);
-}
 function _geoViewingSomebodyElse(){
   try{
     if(typeof opsReadOnly==='function'&&opsReadOnly())return true;
     if(typeof _devSupportMode!=='undefined'&&_devSupportMode)return true;
-    if(_supaUser&&typeof _geoCid==='function'&&_geoCid()&&String(_geoCid())!==String(_supaUser.id)
-       &&!(typeof _isEmployee!=='undefined'&&_isEmployee))return true;
   }catch(_e){}
   return false;
+}
+// ── CREW IS A FACT ABOUT THE ROW, NOT A FLAG ON THE SCREEN (owner 2026-09-16)
+// "I did just that and it deleted more mileage and didn't restore."
+//
+// It did, and the first fix was still wrong, in the same way twice. Rule 20's
+// gate was _isEmployee, so the support view poisoned it; the fix read the bit
+// off zp3_acct_<uid> instead, which is a CACHE, and anything that can write a
+// cache under his uid poisons that too. Both are answers to "what does this
+// session think it is", and that question has a wrong answer available.
+//
+// This is the only definition with no wrong answer available, and the server
+// has been using it all along (crew: String(uid) !== String(cid),
+// supabase/functions/_shared/derive-day.mjs): the two ids this very write is
+// about. p_employee is whose tape this is, p_contractor is whose books it
+// lands in. Different means crew, by construction, and it cannot disagree with
+// the row it is describing. Nothing on screen is consulted, and a derive is
+// refused outright while a support view is open (above), so the pair is the
+// phone's own person and the phone's own account or there is no write at all.
+function _geoCrewWrite(){
+  try{
+    if(!_supaUser)return false;
+    const cid=(typeof _geoCid==='function')?_geoCid():null;
+    return !!cid&&String(cid)!==String(_supaUser.id);
+  }catch(_e){return false;}
 }
 async function _geoDeriveDayNow(dayKey,serverFixes){
   try{
@@ -8077,14 +8082,8 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       // Rule 20 is crew-only (owner 2026-09-16: "for a business owner it
       // does, but for Jack it doesn't").
       //
-      // READ OFF THE ACCOUNT, NOT OFF THE SCREEN (owner 2026-09-16, same day,
-      // his missing legs). This used to be `_isEmployee || _geoCid() !== uid`,
-      // and both halves are things a support view sets: ops-view.js writes
-      // _isEmployee from the role of the person being VIEWED, and _geoCid is
-      // _effectiveUid, which names the viewed account. Deriving his own tape
-      // while either was pointed at Jack made him crew on his own books and
-      // swept his first and last drive of the day away as commutes.
-      crew:_geoOwnIsCrew(),
+      // The two ids this write is about, nothing else (_geoCrewWrite above).
+      crew:_geoCrewWrite(),
       tape,fixes,appEvents,regions,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.

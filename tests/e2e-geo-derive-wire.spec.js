@@ -1139,7 +1139,7 @@ test.describe('geo-derive wiring', () => {
     // So the bit is read off the ACCOUNT now (zp3_acct_<uid>.isEmployee, which
     // only loadAccountData writes, keyed by the signed-in uid), and a session
     // pointed at somebody else does not derive at all.
-    test('the crew bit comes from the account, not from whatever is on screen', async () => {
+    test('the crew bit is the two ids this write is about, not a flag on screen', async () => {
       await seed();
       const r = await page.evaluate(async (DAY) => {
         const seen = [];
@@ -1148,16 +1148,18 @@ test.describe('geo-derive wiring', () => {
         const cid = window._geoCid();
         const key = 'zp3_acct_' + _supaUser.id;
         const keep = localStorage.getItem(key);
-        const acct = (v) => localStorage.setItem(key, JSON.stringify({ isEmployee: v }));
         try {
           // The owner on his own account.
-          acct(false); window._isEmployee = false;
+          window._isEmployee = false;
           await _geoDeriveDayNow(DAY, null);
-          // A support view has flipped the session flag. He is still the owner.
+          // A support view flipped the session flag and left it flipped. The
+          // write still lands on his own account, so he is still the owner.
           window._isEmployee = true;
           await _geoDeriveDayNow(DAY, null);
-          // Genuinely crew: the account says so.
-          acct(true); window._isEmployee = true;
+          // And a poisoned account cache cannot reach it either: the second
+          // fix read this bit from there, and a cache is one more thing that
+          // can hold a wrong answer.
+          localStorage.setItem(key, JSON.stringify({ isEmployee: true }));
           await _geoDeriveDayNow(DAY, null);
         } finally {
           window.geoDeriveDay = real; window._isEmployee = false;
@@ -1166,7 +1168,32 @@ test.describe('geo-derive wiring', () => {
         }
         return seen;
       }, DAY);
-      expect(r, 'owner false, owner-under-a-support-view false, real crew true').toEqual([false, false, true]);
+      expect(r, 'his own account is never crew, whatever the session thinks').toEqual([false, false, false]);
+    });
+
+    // Genuinely crew: the day is written to somebody else's books, which is
+    // the same test the server makes (derive-day.mjs) and cannot disagree with
+    // the row it is describing.
+    test('a day written to another account IS crew', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        const seen = [];
+        const real = window.geoDeriveDay;
+        window.geoDeriveDay = (inp) => { seen.push(inp.crew); return real(inp); };
+        const cid = window._geoCid();
+        const keepOps = window._opsView;
+        try {
+          // Crew: the rows land on the employer's account. Not a support view,
+          // so the door above lets it through.
+          window._opsView = null;
+          window._geoCid = () => 'my-employers-account';
+          await _geoDeriveDayNow(DAY, null);
+        } finally {
+          window.geoDeriveDay = real; window._geoCid = () => cid; window._opsView = keepOps;
+        }
+        return seen;
+      }, DAY);
+      expect(r).toEqual([true]);
     });
 
     // ── AND IT DOES NOT DERIVE AT ALL WHILE POINTED SOMEWHERE ELSE ───────
@@ -1185,11 +1212,11 @@ test.describe('geo-derive wiring', () => {
         const keepOps = window._opsView;
         try {
           const out = [];
-          window._geoCid = () => 'somebody-elses-account';
-          out.push(await _geoDeriveDayNow(DAY, null));
-          window._geoCid = () => cid;
           window._opsView = { target: 'somebody-elses-account' };
           out.push(await _geoDeriveDayNow(DAY, null));
+          window._opsArming = true; window._opsView = null;
+          out.push(await _geoDeriveDayNow(DAY, null));
+          window._opsArming = false;
           return { out, calls };
         } finally {
           window.geoDeriveDay = real; window._geoCid = () => cid; window._opsView = keepOps;
