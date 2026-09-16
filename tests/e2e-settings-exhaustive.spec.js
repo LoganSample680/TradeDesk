@@ -715,6 +715,58 @@ test.describe('settings.js: exhaustive coverage', () => {
       expect(r).toContain('Connected');
     });
 
+    // ── WHOSE STRIPE IS THIS? (owner 2026-09-16) ───────────────────────────
+    // "Why is his account saying stripe is connected in integrations though?"
+    // It was not his. The status request used to carry the account it was
+    // asking about only when _isEmployee was true, and since the 2026-09-13
+    // split _effectiveUid can name another account with _isEmployee false (the
+    // support view). The request went out empty, the Edge Function answered
+    // about the signed-in user, and the viewer's own Stripe was cached under
+    // the viewed account's key and drawn as theirs.
+    const probeStatus = (viewedUid, res) => page.evaluate(async ([viewedUid, res]) => {
+      const keep = { eff: window._effectiveUid, user: window._supaUser, fetch: window.fetch,
+                     supa: window._supa, emp: window._isEmployee, en: window.supaEnabled };
+      let sentBody = null;
+      try {
+        window.supaEnabled = () => true;
+        window._supaUser = { id: 'viewer-uid' };
+        window._isEmployee = false;                       // the support view is not crew
+        window._effectiveUid = () => viewedUid;
+        window._supa = { auth: { getSession: async () => ({ data: { session: { access_token: 't' } } }) } };
+        window.fetch = async (url, opt) => { sentBody = JSON.parse(opt.body); return {
+          ok: res.ok, json: async () => res.body }; };
+        try { localStorage.removeItem('td_stripe_status_' + viewedUid); } catch (e) {}
+        const out = await _fetchStripeConnectStatus();
+        let cached = null;
+        try { cached = localStorage.getItem('td_stripe_status_' + viewedUid); } catch (e) {}
+        return { sentBody, out, cached };
+      } finally {
+        window._effectiveUid = keep.eff; window._supaUser = keep.user; window.fetch = keep.fetch;
+        window._supa = keep.supa; window._isEmployee = keep.emp; window.supaEnabled = keep.en;
+        try { localStorage.removeItem('td_stripe_status_' + viewedUid); } catch (e) {}
+      }
+    }, [viewedUid, res]);
+
+    test('the status request names the account on screen, not the one holding the token', async () => {
+      const r = await probeStatus('viewed-uid', { ok: true, body: { connected: false, reason: 'no_stripe_account' } });
+      expect(r.sentBody).toEqual({ target: 'viewed-uid' });
+      expect(r.out).toEqual({ connected: false, reason: 'no_stripe_account' });
+    });
+
+    test('a refusal is not a status: not connected, and nothing cached', async () => {
+      const r = await probeStatus('viewed-uid', { ok: false, body: { error: 'Forbidden' } });
+      // Never the viewer's own account, and never parked in the cache for an
+      // hour in a shape every reader tests with `?.charges_enabled`.
+      expect(r.out).toEqual({ connected: false, reason: 'unavailable' });
+      expect(r.cached).toBe(null);
+    });
+
+    test('signed in as yourself still asks about yourself, with no target', async () => {
+      const r = await probeStatus('viewer-uid', { ok: true, body: { connected: true, charges_enabled: true } });
+      expect(r.sentBody).toEqual({});
+      expect(r.out.charges_enabled).toBe(true);
+    });
+
     test('missing integrations-list DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('integrations-list');
