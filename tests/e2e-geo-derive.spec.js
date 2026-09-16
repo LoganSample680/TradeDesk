@@ -1560,19 +1560,60 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.drives).toBe(2);
     });
 
-    test('a clock over the commute does not make it billable', async () => {
-      // The clock says he was working, not that the drive was claimable. Rule
-      // 16's rungs are about whether a drive can be PLACED; this one can be,
-      // precisely, which is why it is refused before the ladder runs.
+    // ── REVERSED 2026-09-16 (10.4), BY THE OWNER, IN HIS OWN WORDS ───────
+    // It used to read "a clock over the commute does not make it billable",
+    // on the reasoning that the clock said he was working, not that the drive
+    // was claimable. That was my reading, not his, and he overruled it:
+    //
+    //   "everything between a manual clock in for Jack shows drive to address,
+    //    onsite time then drive to next address onsite time, drive to shop,
+    //    shop time, drive from shop to address, onsite time then clock out."
+    //
+    // THE CLOCK IS THE BRACKET AND IT OUTRANKS THIS RULE. The commute rule
+    // exists to answer a question the evidence leaves open. A punch closes it:
+    // the person is telling you, at the time and in their own words, that this
+    // stretch is work. Jack punches in at his own house at 07:54 and pulls out
+    // of the driveway at 07:54:54, and on his real Monday rule 20 was cutting
+    // two drives out of the middle of an eight-hour shift.
+    //
+    // Outside a clock nothing changes, which is the test below this one and is
+    // what still keeps his 5am gym trip out of the day.
+    test('a clock over the commute claims it: the punch outranks the rule', async () => {
       const r = await page.evaluate((inp) => {
         const res = geoDeriveDay(inp);
         const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
         return { miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
+                 commutes: res.legs.filter(l => l && l.commute === true).length,
                  drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length };
       }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0), crew: true,
         clocks: [{ start: T(7, 0), end: T(18, 0) }] }));
-      expect(r.miles).toEqual([['JS Solutions shop', 'Bill Lorson'], ['Bill Lorson', 'JS Solutions shop']]);
+      expect(r.commutes, 'nothing inside a punch is a commute').toBe(0);
+      expect(r.drives, 'all four, the drive in and the drive home included').toBe(4);
+      expect(r.miles).toEqual([
+        ['7402 SW 22nd Ct', 'JS Solutions shop'], ['JS Solutions shop', 'Bill Lorson'],
+        ['Bill Lorson', 'JS Solutions shop'], ['JS Solutions shop', '7402 SW 22nd Ct'],
+      ]);
+    });
+
+    // And the same day with no punch on it is the rule again, unchanged. This
+    // is the pair that matters: the clock is the only thing that moved.
+    test('and the same day with no clock is two commutes, exactly as before', async () => {
+      const r = await run20([JHOME, YARD, CUST]);
+      expect(r.commutes).toBe(2);
       expect(r.drives).toBe(2);
+    });
+
+    // A punch that only abuts the drive does not claim it: one minute of real
+    // overlap, the same threshold rules 13 and 16 already use.
+    test('a clock that starts after the drive ended claims nothing', async () => {
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        return res.legs.filter(l => l && l.commute === true).length;
+      }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0), crew: true,
+        // He punches in at the yard, after the drive in, and out before he
+        // leaves for home. Both commutes are outside it and both still go.
+        clocks: [{ start: T(8, 0), end: T(16, 0) }] }));
+      expect(r).toBe(2);
     });
 
     test('a place that is both the house and the yard has no commute to hide', async () => {

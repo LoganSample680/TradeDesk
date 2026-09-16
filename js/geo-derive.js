@@ -1235,7 +1235,8 @@ function geoDeriveDay(input) {
   // Rule 12: the house is never on the clock.
   const housed = _gdHouseOffTheClock(carved);
   // Rule 11: the day ends with the last real work.
-  const ended = _gdEndOfDay(housed, fences, opts, open, journeys.some(j => j && j.open), legs);
+  const ended = _gdEndOfDay(housed, fences, opts, open, journeys.some(j => j && j.open), legs,
+    _gdClockSpans(inp));
   // Rule 13: a visit the day cannot vouch for is a question, not a row.
   const asked = _gdHeldVisits(ended, inp, dayStart);
   // Rule 15: and the drives between them, using rule 13's own answer.
@@ -1257,7 +1258,8 @@ function geoDeriveDay(input) {
   // the map, the route and every structural rule above still need it; what it
   // must never do is bill. geoDeriveRows writes no mileage row and no drive
   // time row for it, which is where "no hours, no miles" actually lives.
-  const realLegs = _gdCommuteMark(laddered, fences, opts.radiusFt, inp.crew === true);
+  const realLegs = _gdCommuteMark(laddered, fences, opts.radiusFt, inp.crew === true,
+    _gdClockSpans(inp));
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -1608,7 +1610,7 @@ function _gdHouseOffTheClock(dwells) {
 // time. The evening rule still holds: once the drive has ended, at home or
 // at a stop that never resolves, the base dwell after the last work is not
 // a row.
-function _gdEndOfDay(dwells, fences, opts, open, driving, legs) {
+function _gdEndOfDay(dwells, fences, opts, open, driving, legs, clockSpans) {
   const work = dwells.filter(d => !_gdIsBaseKind(d.kind) && d.kind !== 'office');
   // A day with no work anywhere in it. "A yard-only day is a shift" is right
   // for a YARD and wrong for a house, and the difference had never been drawn
@@ -1648,6 +1650,11 @@ function _gdEndOfDay(dwells, fences, opts, open, driving, legs) {
   const out = [];
   for (const d of dwells) {
     if (!_gdIsBaseKind(d.kind)) { out.push(d); continue; }
+    // THE CLOCK OUTRANKS THIS RULE TOO. The wrap is for a phone left at the
+    // yard after hours, and nobody is clocked in after hours. Jack's 13:27 to
+    // 15:22 at the yard sat inside an eight-hour punch and was still cut to 30
+    // minutes, which is the hole the rail then dressed up as an address.
+    if (_gdUnderClock(clockSpans, d.startTs, d.endTs)) { out.push(d); continue; }
     // Rule 14, second half: A HOME SHOP IS A BOOKEND, NEVER THE DAY. On a day
     // that did land in real work, the house earns the truck-loading window on
     // either side of it and nothing else. It used to keep every minute that
@@ -1845,6 +1852,31 @@ function _gdDayShape(inp) {
   return { whA, whB, learned: !!learned, workDay: Number.isFinite(dow) && days.indexOf(dow) >= 0 };
 }
 
+// ── THE CLOCK IS THE BRACKET (owner 2026-09-16) ──────────────────────────
+// "Everything between a manual clock in for Jack shows drive to address,
+//  onsite time then drive to next address onsite time, drive to shop, shop
+//  time, drive from shop to address, onsite time then clock out."
+//
+// He has said this, in one form or another, since the first week. It is one
+// rule and it outranks every rule in this file that can take something OFF a
+// day: the commute (20), the unload wrap (14), and the held visit (13). Those
+// exist to answer a question the evidence leaves open. A manual clock closes
+// it. A person who punched in is telling you, at the time and in their own
+// words, that this stretch is work, and no amount of geometry gets to argue.
+//
+// So: inside a clock nothing is refused and nothing is a question. Outside a
+// clock every rule below still decides, exactly as it did, which is what keeps
+// the 5am gym trip and the evening at the yard out of the day.
+function _gdClockSpans(inp) {
+  return (Array.isArray(inp && inp.clocks) ? inp.clocks : [])
+    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .filter(c => c && c.a > 0 && c.b > c.a);
+}
+// A minute of real overlap, the same threshold rules 13 and 16 already use, so
+// a clock that merely abuts a row does not claim it.
+function _gdUnderClock(spans, a, b) {
+  return (spans || []).some(c => Math.min(b, c.b) - Math.max(a, c.a) >= 60000);
+}
 function _gdHeldVisits(dwells, inp, dayStart) {
   const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
     .map(c => c && { a: Number(c.start), b: Number(c.end) })
@@ -2138,7 +2170,7 @@ function _gdReportsHere(fence, fences, radiusFt) {
 // an unsaved address for 43 minutes, then his driveway: one leg, two hops. The
 // old rule exempted the whole thing to protect the stop in the middle; this
 // refuses the final hop and leaves the stop exactly where it is.
-function _gdCommuteMark(legs, fences, radiusFt, crew) {
+function _gdCommuteMark(legs, fences, radiusFt, crew, clockSpans) {
   // ── AND ONLY FOR CREW ─────────────────────────────────────────────────
   // Owner 2026-09-16, asked straight out whether a drive from the house to a
   // customer job should bill: "for a business owner it does, but for Jack it
@@ -2157,6 +2189,10 @@ function _gdCommuteMark(legs, fences, radiusFt, crew) {
   // have been refused. Crew is the actual question, so crew is what is asked.
   const list = Array.isArray(legs) ? legs.filter(Boolean) : [];
   if (!list.length) return legs;
+  // THE CLOCK OUTRANKS THIS RULE. Jack punches in at his own house at 07:54
+  // and pulls out of the driveway at 07:54:54; that drive is inside his shift
+  // because he said so. The commute rule is for the drive nobody claimed.
+  const clocked = (l) => !!l && _gdUnderClock(clockSpans, l.startTs, l.endTs);
   const house = (e) => !!e && e.unsaved !== true && _gdIsHouse(e, fences, radiusFt);
   const reports = (e) => !!e && e.unsaved !== true && _gdReportsHere(e, fences, radiusFt);
   // ── OR A BASE THAT IS NOT HIS HOUSE, WHICH IS THE OTHER HALF ──────────
@@ -2180,7 +2216,8 @@ function _gdCommuteMark(legs, fences, radiusFt, crew) {
   const awayBase = (fences || []).some(f => f && f.lat != null && f.lng != null &&
     _gdReportsHere(f, fences, radiusFt) && !_gdIsHouse(f, fences, radiusFt));
   if (!crew && !awayBase) return legs;
-  const order = list.slice().sort((a, b) => a.startTs - b.startTs);
+  const order = list.slice().sort((a, b) => a.startTs - b.startTs).filter(l => !clocked(l));
+  if (!order.length) return legs;
   const mark = new Map();     // leg -> {first:bool, last:bool}
   const put = (l, k) => { const m = mark.get(l) || {}; m[k] = true; mark.set(l, m); };
   // The first hop of the day that LEAVES the house.
