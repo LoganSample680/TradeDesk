@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.16.26.10';
+const APP_VERSION='09.16.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -6762,7 +6762,20 @@ function supaSaveDebounced(){
   // before visibilitychange or the async catch block can run, but a synchronous
   // localStorage write completes atomically and survives any force-quit.
   // Cleared by supaSaveToCloud() on a successful push. Drain deduplicates on reload.
-  if(_supaCloudLoaded||_mergeOnSignIn){
+  // ── NEVER WHILE A LOAD IS IN FLIGHT (owner 2026-09-16, Jack's missing 9am
+  // clock-in) ────────────────────────────────────────────────────────────
+  // This blob is a SNAPSHOT OF MEMORY, not a queue of unsynced rows, and that
+  // is the whole hazard. A cloud load replaces every array with the server's
+  // copy and only drains the blob back in at the very END of the load. Any
+  // save that fires inside that window (applySettings alone reaches saveAll)
+  // rewrites the blob from arrays that no longer hold the unsynced row, and
+  // the only record of it is gone before the drain ever looks.
+  //
+  // Jack's morning is that shape: a punch that had not reached the server,
+  // a resume, and a day that came back saying he was never clocked in. The
+  // blob is the force-quit safety net; a net that can be emptied by the thing
+  // it is meant to survive is not one.
+  if((_supaCloudLoaded||_mergeOnSignIn)&&!_loadInProgress){
     try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
   }
   // The fired save MUST be tracked in _pendingSavePromise (via _flushSaveNow), a bare
