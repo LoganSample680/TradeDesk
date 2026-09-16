@@ -184,6 +184,38 @@ test.describe('geo-derive: the day deriver', () => {
     expect(legs[1].supplyRunKey).toBeUndefined();
   });
 
+  // ── AND THE DWELL SAYS SO TOO (owner 2026-09-16) ────────────────────────
+  // "Mark the timesheet as Supply House rather than onsite." The mileage side
+  // has known a supply run since 2026-09-05; the time side wrote a bare
+  // 'place', which the rail has no arm for, so standing at Home Depot read
+  // "On site" and counted as job-site labour on the split bar. Same fact,
+  // said on both screens now.
+  test('a dwell at a supply place is a supply house, by name, not a job site', async () => {
+    const t = [mo(T(7, 50), 'automotive'), mo(T(8, 5), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 20), 'onFoot')];
+    const f = [fix(T(7, 49), { lat: SHOP.lat, lng: SHOP.lng }),
+      fix(T(8, 5, 5), { lat: HD.lat, lng: HD.lng }), fix(T(8, 30), { lat: HD.lat, lng: HD.lng }),
+      fix(T(9, 20, 5), { lat: DOE.lat, lng: DOE.lng }), fix(T(10, 0), { lat: DOE.lat, lng: DOE.lng })];
+    const r = await page.evaluate((inp) => {
+      const rows = geoDeriveRows(geoDeriveDay(inp), { contractorId: 'c', employeeId: 'e' });
+      const hd = rows.job_time_entries.find(x => x.dest_place === 'The Home Depot' && x.source !== 'drive');
+      return { source: hd && hd.source, name: hd && hd.dest_place,
+        kind: hd && _tlRailKind({ source: 'auto', rawSource: hd.source }),
+        // The split bar must move it out of on-site labour as well as the rail.
+        agg: _tlEmpWeekAgg([{ personUid: 'e', source: 'auto', rawSource: hd.source, minutes: 55 }], 'c').e,
+        rail: _tlDayRailHtml([{ id: 'x', source: 'auto', rawSource: hd.source, minutes: 55, date: '2026-09-01',
+          clientName: hd.dest_place, startTime: hd.arrived_at, endTime: hd.departed_at }]) };
+    }, base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+    expect(r.source).toBe('place-supply');
+    expect(r.name).toBe('The Home Depot');
+    expect(r.kind).toBe('supply');
+    expect(r.agg.supplyMin).toBe(55);
+    expect(r.agg.onsiteMin).toBe(0);
+    expect(r.agg.placeMin).toBe(0);
+    // The word rides with the colour, so the rail never leans on green alone.
+    expect(r.rail).toContain('Supply house');
+    expect(r.rail).toContain('The Home Depot');
+  });
+
   // ── Rule 13: a client visit the day cannot vouch for is a question ────
   // Owner 2026-09-04: "He does work for me at my address. He does work for
   // his mom and her address ... we wouldn't want time log showing her
