@@ -7988,9 +7988,58 @@ async function _geoDeriveSyncMileage(dayKey){
 
 // One day, end to end. Returns the deriver's result, or null when there was
 // nothing to derive from.
+// ── THE SUPPORT VIEW IS READ ONLY, AND THE DERIVER IS NOT (owner 2026-09-16)
+// "Why am I still missing mileage legs from yesterday and today on my side."
+//
+// Because he had Jack open in the support view. js/ops-view.js sets the GLOBAL
+// _isEmployee from the role of the person being VIEWED, and this function three
+// lines down reads that same global to decide whether rule 20 (the commute)
+// applies, while deriving the PHONE OWNER'S own day off his own tape. So the
+// moment he opened somebody who is not an owner, he became crew for his own
+// tracking, and the next rebuild marked his first drive out and his last drive
+// home as a commute and swept both legs away. Replayed against his real
+// evidence: crew false gives all four of his 15 September legs, crew true gives
+// exactly the two middle ones, which is exactly what is in the table.
+//
+// The view's three read-only layers all miss this. The client seal replaces
+// insert, update and delete; geo_replace_day is a security-definer RPC and is
+// none of those, and its own guard passes because the signed-in user IS the
+// employee whose day this is.
+//
+// So the deriver stops at the door. A screen pointed at somebody else's account
+// has no business writing this phone's day under rules it read off that screen,
+// and there is nothing to lose by waiting: exiting the view is a hard reload,
+// and the boot rebuild runs again on the way back in.
+// AND THE FLAG SURVIVES THE VIEW. Closing the door above is not enough on its
+// own: the dev-support exit restores arrays and re-renders rather than
+// reloading, so _isEmployee can still be sitting true on his own account after
+// he leaves, and the next derive is crew again with nothing on screen to say
+// so. The honest answer for the SIGNED-IN user is already persisted, keyed by
+// his uid, by the four places in loadAccountData that decide it
+// (zp3_acct_<uid>.isEmployee, js/cloud.js). A support view never writes it.
+function _geoOwnIsCrew(){
+  try{
+    if(!_supaUser)return false;
+    const a=JSON.parse(localStorage.getItem('zp3_acct_'+_supaUser.id)||'null');
+    if(a&&typeof a.isEmployee==='boolean')return a.isEmployee;
+  }catch(_e){}
+  // No cache yet (a first sign-in mid-session): the live flag is all there is,
+  // and at that moment no support view has had a chance to touch it.
+  return !!(typeof _isEmployee!=='undefined'&&_isEmployee);
+}
+function _geoViewingSomebodyElse(){
+  try{
+    if(typeof opsReadOnly==='function'&&opsReadOnly())return true;
+    if(typeof _devSupportMode!=='undefined'&&_devSupportMode)return true;
+    if(_supaUser&&typeof _geoCid==='function'&&_geoCid()&&String(_geoCid())!==String(_supaUser.id)
+       &&!(typeof _isEmployee!=='undefined'&&_isEmployee))return true;
+  }catch(_e){}
+  return false;
+}
 async function _geoDeriveDayNow(dayKey,serverFixes){
   try{
     if(typeof geoDeriveDay!=='function'||!_supaUser)return null;
+    if(_geoViewingSomebodyElse())return null;
     const b=_geoDayBounds(dayKey);
     if(!b)return null;
     const tape=await _geoDeriveTape(b.start-2*3600000);
@@ -8026,10 +8075,16 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
       // Rule 20 is crew-only (owner 2026-09-16: "for a business owner it
-      // does, but for Jack it doesn't"). _isEmployee is this session's own
-      // answer to that; the uid comparison is the same fact from the other
-      // direction and covers a boot where the flag has not landed yet.
-      crew:!!_isEmployee||String(_geoCid())!==String(_supaUser.id),
+      // does, but for Jack it doesn't").
+      //
+      // READ OFF THE ACCOUNT, NOT OFF THE SCREEN (owner 2026-09-16, same day,
+      // his missing legs). This used to be `_isEmployee || _geoCid() !== uid`,
+      // and both halves are things a support view sets: ops-view.js writes
+      // _isEmployee from the role of the person being VIEWED, and _geoCid is
+      // _effectiveUid, which names the viewed account. Deriving his own tape
+      // while either was pointed at Jack made him crew on his own books and
+      // swept his first and last drive of the day away as commutes.
+      crew:_geoOwnIsCrew(),
       tape,fixes,appEvents,regions,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.

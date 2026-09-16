@@ -1121,37 +1121,82 @@ test.describe('geo-derive wiring', () => {
 
     // ── THE PHONE HAS TO SAY WHOSE DAY THIS IS (owner 2026-09-16) ────────
     // "For a business owner it does, but for Jack it doesn't." Rule 20 turns
-    // entirely on that one bit now, so the bit has to arrive. It is read off
-    // the session two ways, deliberately: _isEmployee is the session's own
-    // answer, and the uid comparison is the same fact from the other side,
-    // which covers a boot where the flag has not landed yet. A derive that
+    // entirely on that one bit now, so the bit has to arrive. A derive that
     // silently sent `undefined` would bill every crew commute in the company
     // and nothing on screen would say why.
-    test('the derive tells the deriver whether this session is crew', async () => {
+    //
+    // AMENDED THE SAME DAY, after "why am I still missing mileage legs from
+    // yesterday and today on my side." This used to read the bit off the
+    // session two ways, _isEmployee and the uid comparison, and BOTH of them
+    // are things the support view writes: js/ops-view.js sets _isEmployee from
+    // the role of the person being VIEWED, and _geoCid is _effectiveUid, which
+    // names the viewed account. Opening Jack therefore made Logan crew on his
+    // own tape, and the next rebuild swept his first drive out and his last
+    // drive home away as commutes. Replayed against his real 15 September:
+    // crew false gives all four legs, crew true gives exactly the two middle
+    // ones, which is exactly what the table held.
+    //
+    // So the bit is read off the ACCOUNT now (zp3_acct_<uid>.isEmployee, which
+    // only loadAccountData writes, keyed by the signed-in uid), and a session
+    // pointed at somebody else does not derive at all.
+    test('the crew bit comes from the account, not from whatever is on screen', async () => {
       await seed();
       const r = await page.evaluate(async (DAY) => {
         const seen = [];
         const real = window.geoDeriveDay;
         window.geoDeriveDay = (inp) => { seen.push(inp.crew); return real(inp); };
         const cid = window._geoCid();
+        const key = 'zp3_acct_' + _supaUser.id;
+        const keep = localStorage.getItem(key);
+        const acct = (v) => localStorage.setItem(key, JSON.stringify({ isEmployee: v }));
         try {
           // The owner on his own account.
-          window._isEmployee = false;
+          acct(false); window._isEmployee = false;
           await _geoDeriveDayNow(DAY, null);
-          // Crew, by the session flag.
+          // A support view has flipped the session flag. He is still the owner.
           window._isEmployee = true;
           await _geoDeriveDayNow(DAY, null);
-          // Crew, by the uids alone, with the flag not yet landed.
-          window._isEmployee = false;
-          window._geoCid = () => 'somebody-elses-account';
+          // Genuinely crew: the account says so.
+          acct(true); window._isEmployee = true;
           await _geoDeriveDayNow(DAY, null);
         } finally {
           window.geoDeriveDay = real; window._isEmployee = false;
           window._geoCid = () => cid;
+          if (keep == null) localStorage.removeItem(key); else localStorage.setItem(key, keep);
         }
         return seen;
       }, DAY);
-      expect(r, 'owner false, crew true, crew-by-uid true').toEqual([false, true, true]);
+      expect(r, 'owner false, owner-under-a-support-view false, real crew true').toEqual([false, false, true]);
+    });
+
+    // ── AND IT DOES NOT DERIVE AT ALL WHILE POINTED SOMEWHERE ELSE ───────
+    // The support view is read only on screen and was not read only here. Its
+    // three layers all miss this path: the client seal replaces insert, update
+    // and delete, and geo_replace_day is a security-definer RPC that is none
+    // of those, with a guard that passes because the signed-in user really is
+    // the employee whose day it is.
+    test('a session pointed at another account derives nothing', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        let calls = 0;
+        const real = window.geoDeriveDay;
+        window.geoDeriveDay = (inp) => { calls++; return real(inp); };
+        const cid = window._geoCid();
+        const keepOps = window._opsView;
+        try {
+          const out = [];
+          window._geoCid = () => 'somebody-elses-account';
+          out.push(await _geoDeriveDayNow(DAY, null));
+          window._geoCid = () => cid;
+          window._opsView = { target: 'somebody-elses-account' };
+          out.push(await _geoDeriveDayNow(DAY, null));
+          return { out, calls };
+        } finally {
+          window.geoDeriveDay = real; window._geoCid = () => cid; window._opsView = keepOps;
+        }
+      }, DAY);
+      expect(r.out, 'both refused').toEqual([null, null]);
+      expect(r.calls, 'the deriver was never even called').toBe(0);
     });
 
     // Owner 2026-09-04, walking it through: "I sign out and sign in on jacks
