@@ -493,6 +493,38 @@ function _gdStopFix(fixes, fromTs, toTs, maxAccM, fallback) {
   groups.forEach((g) => {
     if (!best || g.n > best.n || (g.n === best.n && g.last.ts > best.last.ts)) best = g;
   });
+  // ── NOTHING REPEATED, SO ASK THE CLUSTER (owner 2026-09-16) ─────────────
+  // "Then when you save it calls and says alright app, what was the tightest
+  // cluster on gps pings and what address does this belong to."
+  //
+  // That is what this was reaching for and only half doing. The grouping above
+  // counts EXACT repeats, which is the right test when iOS restates one cached
+  // coordinate verbatim, and it was written against a real incident where it
+  // did. But a truck parked with a live radio produces readings that agree
+  // within five feet and repeat none of them: every group is n=1, and the
+  // winner is then just the LAST fix of the dwell, which is the one taken as
+  // he rolled back out. Jack's 15 September stop is exactly that shape: 297,
+  // 296, 295, 295, 300, then 250.
+  //
+  // So when nothing repeats, take the fix nearest the MEDIAN of the stop,
+  // which is rule 22's own answer to the same question one field over
+  // (_gdSpotOf). Same posture, same function, one meaning of "where the truck
+  // sat". A repeat still beats it, because a coordinate the phone stated
+  // twice is evidence the median is not.
+  if (best && best.n === 1) {
+    const spot = _gdSpotOf(fixes, fromTs, toTs, maxAccM);
+    if (spot) {
+      let near = null, nearFt = Infinity;
+      (fixes || []).forEach((f) => {
+        if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') return;
+        if (f.acc != null && Number(f.acc) > maxAccM) return;
+        if (f.ts < fromTs || f.ts > toTs) return;
+        const ft = _gdMiles(f, spot) * 5280;
+        if (ft < nearFt) { near = f; nearFt = ft; }
+      });
+      if (near) return near;
+    }
+  }
   return best ? best.last : fallback;
 }
 

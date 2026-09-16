@@ -4231,6 +4231,36 @@ test.describe('geo-derive: the day deriver', () => {
       });
       expect(ok).toBe(true);
     });
+
+    // ── NOTHING REPEATS: THE MIDDLE, NOT THE LAST ONE (owner 2026-09-16) ──
+    // "What was the tightest cluster on gps pings and what address does this
+    // belong to." A parked truck with a live radio repeats no coordinate at
+    // all, so every group is n=1 and the old rule handed back the last fix of
+    // the dwell: the one taken rolling back out. Jack's real 15 September
+    // stop, in feet from Laurie's pin, is exactly that: 297, 296, 295, 295,
+    // 300, then 250.
+    test('a parked truck that repeats nothing resolves to the middle of itself', async () => {
+      // Five readings tightly grouped, then one straggler as he pulls away.
+      const got = await pick([f(1000, 39.01115, -95.77970), f(2000, 39.01116, -95.77971),
+        f(3000, 39.01114, -95.77969), f(4000, 39.01117, -95.77970), f(5000, 39.01115, -95.77972),
+        f(6000, 39.01160, -95.77930)], 0, 9999);
+      expect(got, 'the straggler is the newest and would have won on recency alone')
+        .not.toEqual([39.01160, -95.77930]);
+      expect(Math.abs(got[0] - 39.011155) < 0.00005, 'and it lands in the middle of the five').toBe(true);
+    });
+
+    test('a coordinate the phone stated twice still beats the median', async () => {
+      // Two identical readings on one side, three scattered ones on the other.
+      // The repeat is evidence the median is not, so the repeat wins.
+      const got = await pick([f(1000, 39.05, -95.75), f(2000, 39.05, -95.75),
+        f(3000, 39.09, -95.71), f(4000, 39.091, -95.711), f(5000, 39.092, -95.712)], 0, 9999);
+      expect(got).toEqual([39.05, -95.75]);
+    });
+
+    test('too few fixes to have a middle: the last one still answers', async () => {
+      const got = await pick([f(1000, 39.05, -95.75), f(2000, 39.06, -95.76)], 0, 9999);
+      expect(got, 'two readings is not a cluster').toEqual([39.06, -95.76]);
+    });
   });
 
   test.describe('rule 14: traced legs', () => {
