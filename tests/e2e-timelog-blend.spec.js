@@ -309,7 +309,7 @@ test.describe('manual clock over a derived day', () => {
         const byId = id => rows.find(x => x.rawId === id);
         return { held: byId('h1') && { unpaid: byId('h1').unpaid, detail: byId('h1').detail, kind: _tlRailKind(byId('h1')) },
                  dis: byId('d1') && { unpaid: byId('d1').unpaid, dismissed: !!byId('d1').dismissed },
-                 drawn: _tlDayRailHtml(rows.filter(x => x.date === '2026-08-23')).indexOf('Personal (not counted)') >= 0,
+                 rail: _tlDayRailHtml(rows.filter(x => x.date === '2026-08-23')),
                  paid: _tlPaidMin(rows) };
       } finally { window._fetchCrewLabor = saved; }
     });
@@ -321,8 +321,13 @@ test.describe('manual clock over a derived day', () => {
     expect(r.held).toEqual({ unpaid: true, detail: 'Not counted until you answer', kind: 'held' });
     // It is there, so the blend can never mistake it for an empty stretch.
     expect(r.dis).toEqual({ unpaid: true, dismissed: true });
-    // And the rail never draws it, which is what "gone" always meant here.
-    expect(r.drawn).toBe(false);
+    // AMENDED AGAIN 2026-09-16, same day, second half of the same report:
+    // "he didn't mean to hit personal." It used to be drawn nowhere, and that
+    // is what made a one-tap answer permanent: no row, no control on it, no
+    // way back. It draws now, grey, in no total, carrying the one chip that
+    // undoes the tap. "Not counted" is still asserted above; "invisible" was
+    // never the requirement, it was the bug.
+    expect(r.rail).toContain('data-kind="personal"');
     expect(r.paid).toBe(120);
   });
 
@@ -348,6 +353,27 @@ test.describe('manual clock over a derived day', () => {
     // The stop itself is present, unpaid, and carries the dismissed flag.
     const p = rows.find(r => r.t === span);
     expect(p && { min: p.min, unpaid: p.unpaid, name: p.name }).toEqual({ min: 68, unpaid: true, name: 'Laurie Schonfeldt' });
+  });
+
+  // The undo itself. It is the only way back from a one-tap answer, and it
+  // goes through the SAME door the Home card's answers do (_visitHoldAnswer,
+  // 'working'), so one definition of what an answer means serves both (7.3).
+  test('an answered-Personal row of your own offers It was work', async () => {
+    const r = await page.evaluate(() => {
+      const mine = { id: 'x', rawId: 'row-uuid', source: 'auto', rawSource: 'dismissed', dismissed: true,
+        unpaid: true, minutes: 68, date: '2026-09-01', personUid: _supaUser.id, clientName: 'Laurie Schonfeldt',
+        detail: 'Personal (not counted)', startTime: '2026-09-01T13:00:00.000Z', endTime: '2026-09-01T14:08:00.000Z' };
+      const theirs = Object.assign({}, mine, { id: 'y', rawId: 'row-2', personUid: 'someone-else' });
+      return { mine: _tlDayRailHtml([mine]), theirs: _tlDayRailHtml([theirs]) };
+    });
+    expect(r.mine).toContain('It was work');
+    expect(r.mine).toContain("_visitHoldAnswer('row-uuid','working')");
+    // Never on somebody else's row: answering for another person is not a
+    // thing a shared timesheet gets to do, the same gate the Working/Personal
+    // chips already carry.
+    expect(r.theirs).not.toContain('It was work');
+    // And it is still in no total either way.
+    expect(r.mine).toContain('data-kind="personal"');
   });
 
   // ── THE VIEWER IS NOT THE PERSON (owner report 2026-09-14) ──────────────
