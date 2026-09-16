@@ -2311,6 +2311,83 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.open && r.open.kind).toBe('client');
       expect(hm(r.open.sinceTs)).toBe(hm(T(8, 20)));
     });
+
+    // ── The approach is not a departure (owner 2026-09-16) ────────────────
+    //
+    // "my onsite banner at john doe didnt grab my arrival time and
+    // incremement the time up nor do I see my log beginning at john doe
+    // starting at 143 pm like I used to", and in the same breath "why im
+    // missing my shop time". One cause, both holes.
+    //
+    // iOS fires a region crossing at the FULL region radius, so his 13:43:37
+    // enter was stamped 785 ft from the pin. The dwell test measures against
+    // the kind-scaled span instead (a client is 0.4 of the account radius,
+    // 240 ft), so the last ten fixes of the drive up the street were all
+    // "outside", the first two corroborated each other, and the visit closed
+    // at its own arrival instant with no length. `open` went null, and with
+    // no open work dwell rule 11 read the day as having ended at the morning
+    // visit and dropped the 12:59 to 13:36 shop dwell as after-hours.
+    //
+    // These are his real coordinates off geo_events, distances from the pin
+    // in the comments.
+    const APPROACH = [
+      [T(13, 43, 40), 39.012751, -95.743859],   // 761 ft
+      [T(13, 43, 46), 39.012467, -95.743866],   // 745 ft
+      [T(13, 43, 50), 39.012525, -95.744252],   // 638 ft
+      [T(13, 43, 58), 39.012942, -95.744908],   // 501 ft
+      [T(13, 44, 14), 39.013409, -95.746213],   // 401 ft
+      [T(13, 44, 27), 39.013139, -95.746320],   // 299 ft, still outside the 240 ft span
+    ].map(([ts, lat, lng]) => ({ ts, lat, lng, acc: 8 }));
+    const PARKED = [
+      { ts: T(13, 47, 7), lat: 39.012871, lng: -95.746368, acc: 8 },   // 200 ft: reached
+      { ts: T(13, 48, 6), lat: 39.012567, lng: -95.746604, acc: 8 },   // 92 ft
+      { ts: T(14, 2, 5), lat: 39.012329, lng: -95.746317, acc: 8 },    // 50 ft
+      { ts: T(14, 33, 6), lat: 39.012224, lng: -95.746278, acc: 8 },   // 72 ft
+    ];
+    // Morning at the client, back to the yard at 12:59, out again at 13:36.
+    const afternoon = (over) => base(Object.assign({
+      tape: [mo(T(7, 45), 'driving'), mo(T(7, 55), 'onFoot'),
+             mo(T(12, 45), 'driving'), mo(T(12, 59), 'onFoot'),
+             mo(T(13, 36), 'driving'), mo(T(13, 47), 'onFoot')],
+      fixes: [fix(T(7, 45, 5), SHOP), fix(T(7, 55, 5), DOE), fix(T(10, 0), DOE), fix(T(12, 45, 5), DOE),
+              fix(T(12, 59, 5), SHOP), fix(T(13, 10), SHOP), fix(T(13, 36, 5), SHOP)]
+        .concat(APPROACH, PARKED),
+      regions: [{ ts: T(13, 43, 37), id: DOE.id, enter: true }],
+      fences: [SHOP, HOME, DOE], nowMs: T(14, 56),
+    }, over));
+
+    test('the drive up the street is not a departure: the visit opens at the crossing', async () => {
+      const r = await run(page, afternoon());
+      expect(r.openWhy).toBe('');
+      expect(r.open && r.open.name).toBe('John Doe');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(13, 43)));
+      // And no zero-length visit was invented at the arrival instant.
+      expect(r.dwells.filter(d => d.kind === 'client' && d.startTs >= T(13, 0))).toEqual([]);
+    });
+
+    test('and the yard between the two runs keeps its minutes', async () => {
+      const r = await run(page, afternoon());
+      expect(r.dwells.filter(d => d.kind === 'shop').map(d => [hm(d.startTs), hm(d.endTs)]))
+        .toEqual([[hm(T(12, 59)), hm(T(13, 36))]]);
+    });
+
+    test('driving PAST the fence still writes nothing: no fix ever lands inside', async () => {
+      // Same crossing, same approach, and then he carries on out of town.
+      const AWAY = { lat: DOE.lat + 0.02, lng: DOE.lng };
+      const r = await run(page, afternoon({
+        tape: [mo(T(7, 45), 'driving'), mo(T(7, 55), 'onFoot'),
+               mo(T(12, 45), 'driving'), mo(T(12, 59), 'onFoot'),
+               mo(T(13, 36), 'driving')],
+        // Only the part of the approach that never comes inside the 600 ft
+        // fence: he crossed the region boundary (which iOS stamps wider than
+        // the fence) and carried straight on out of town.
+        fixes: [fix(T(7, 45, 5), SHOP), fix(T(7, 55, 5), DOE), fix(T(10, 0), DOE), fix(T(12, 45, 5), DOE),
+                fix(T(12, 59, 5), SHOP), fix(T(13, 36, 5), SHOP)]
+          .concat(APPROACH.slice(0, 2), [fix(T(13, 50), AWAY), fix(T(13, 55), AWAY)]),
+      }));
+      expect(r.open).toBeNull();
+      expect(r.dwells.filter(d => d.kind === 'client' && d.startTs >= T(13, 0))).toEqual([]);
+    });
   });
 
   // ── Rule 10: paperwork at the home office ───────────────────────────────
@@ -4154,6 +4231,36 @@ test.describe('geo-derive: the day deriver', () => {
       });
       expect(ok).toBe(true);
     });
+
+    // ── NOTHING REPEATS: THE MIDDLE, NOT THE LAST ONE (owner 2026-09-16) ──
+    // "What was the tightest cluster on gps pings and what address does this
+    // belong to." A parked truck with a live radio repeats no coordinate at
+    // all, so every group is n=1 and the old rule handed back the last fix of
+    // the dwell: the one taken rolling back out. Jack's real 15 September
+    // stop, in feet from Laurie's pin, is exactly that: 297, 296, 295, 295,
+    // 300, then 250.
+    test('a parked truck that repeats nothing resolves to the middle of itself', async () => {
+      // Five readings tightly grouped, then one straggler as he pulls away.
+      const got = await pick([f(1000, 39.01115, -95.77970), f(2000, 39.01116, -95.77971),
+        f(3000, 39.01114, -95.77969), f(4000, 39.01117, -95.77970), f(5000, 39.01115, -95.77972),
+        f(6000, 39.01160, -95.77930)], 0, 9999);
+      expect(got, 'the straggler is the newest and would have won on recency alone')
+        .not.toEqual([39.01160, -95.77930]);
+      expect(Math.abs(got[0] - 39.011155) < 0.00005, 'and it lands in the middle of the five').toBe(true);
+    });
+
+    test('a coordinate the phone stated twice still beats the median', async () => {
+      // Two identical readings on one side, three scattered ones on the other.
+      // The repeat is evidence the median is not, so the repeat wins.
+      const got = await pick([f(1000, 39.05, -95.75), f(2000, 39.05, -95.75),
+        f(3000, 39.09, -95.71), f(4000, 39.091, -95.711), f(5000, 39.092, -95.712)], 0, 9999);
+      expect(got).toEqual([39.05, -95.75]);
+    });
+
+    test('too few fixes to have a middle: the last one still answers', async () => {
+      const got = await pick([f(1000, 39.05, -95.75), f(2000, 39.06, -95.76)], 0, 9999);
+      expect(got, 'two readings is not a cluster').toEqual([39.06, -95.76]);
+    });
   });
 
   test.describe('rule 14: traced legs', () => {
@@ -4248,54 +4355,61 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
-  // ── A HOUSE IS NOT A YARD (owner 2026-09-16) ──────────────────────────────
-  // "Jack reported an issue where it tagged the house a few houses down they
-  // were previously at." One radius served every kind, and at 600 ft that is a
-  // circle twelve hundred feet across: about ten houses each way on a
-  // fifty-foot lot. With no fence on the house he was actually at, a customer
-  // he visited last month was the only name in range and won.
-  test.describe('fence span by kind: a customer down the street stops swallowing the block', () => {
-    // 0.001 degrees of latitude is ~364 ft, so this is a neighbour about four
-    // houses away, well inside the old 600 ft circle and outside the new one.
+  // ── ONE RADIUS, EVERY KIND (owner 2026-09-16) ─────────────────────────────
+  // This block used to assert the opposite: a client and a home office were
+  // scaled to 0.4 of the account radius so a customer down the street could
+  // not claim the stop. The owner reverted it in his own words: "go switch the
+  // fence back to 600 feet, the problem was never the fence being 600 feet, it
+  // was the fact that we only grabbed the address for Jack on one iOS ping
+  // rather than the address and cordinates on the cluster."
+  //
+  // He is right, and rule 22 below is the proof: the stop is named from the
+  // median of the fixes taken while he sat there. A single arrival ping can
+  // land next door at any radius, so narrowing the circle only hid a deriver
+  // reading the wrong point, and it cost real reach on every legitimate stop.
+  test.describe('fence span: one circle for every kind', () => {
+    // 0.001 degrees of latitude is ~364 ft: a neighbour about four houses
+    // away, inside the 600 ft circle for every kind of fence there is.
     const HERE = { lat: 39.0257251, lng: -95.7939329 };
-    const NEIGHBOUR = (kind) => ({ id: 'n', kind, name: 'Bill Lorson', clientId: 9,
+    const NEAR = (kind) => ({ id: 'n', kind, name: 'Bill Lorson', clientId: 9,
       lat: HERE.lat + 0.001, lng: HERE.lng });
     const at = (fences) => page.evaluate((f) => {
       const g = geoFenceAt({ lat: 39.0257251, lng: -95.7939329 }, f, 600);
       return g ? g.name : null;
     }, fences);
 
-    test('a client four houses down no longer claims the stop', async () => {
-      expect(await at([NEIGHBOUR('client')])).toBe(null);
+    test('every kind reaches the same 600 ft, none of them scaled down', async () => {
+      for (const kind of ['client', 'home_office', 'job', 'shop', 'supply', 'business_meeting', 'other']) {
+        expect(await at([NEAR(kind)]), kind).toBe('Bill Lorson');
+      }
     });
 
-    test('and neither does their house', async () => {
-      expect(await at([NEIGHBOUR('home_office')])).toBe(null);
+    test('and the kind-scaling table itself is gone, not just unused', async () => {
+      const gone = await page.evaluate(() => typeof GEO_FENCE_SPAN === 'undefined');
+      expect(gone, 'a narrowed circle must not be able to come back by accident').toBe(true);
     });
 
-    test('a yard keeps its full circle: a lot with a gate needs it', async () => {
-      expect(await at([NEIGHBOUR('shop')])).toBe('Bill Lorson');
-      expect(await at([NEIGHBOUR('supply')])).toBe('Bill Lorson');
-    });
-
-    test('a client right where he parked still wins, which is the whole point', async () => {
-      const close = Object.assign({}, NEIGHBOUR('client'), { lat: HERE.lat + 0.0002 });  // ~73 ft
-      expect(await at([close])).toBe('Bill Lorson');
+    test('past the radius is still out, whatever the kind', async () => {
+      const far = Object.assign({}, NEAR('client'), { lat: HERE.lat + 0.002 });   // ~728 ft
+      expect(await at([far])).toBe(null);
+      expect(await at([Object.assign({}, far, { kind: 'shop' })])).toBe(null);
     });
 
     test('a radius somebody typed on the place still wins outright', async () => {
-      const wide = Object.assign({}, NEIGHBOUR('client'), { radiusFt: 900 });
-      expect(await at([wide]), 'a number a person set about a specific place').toBe('Bill Lorson');
+      const far = Object.assign({}, NEAR('client'), { lat: HERE.lat + 0.002, radiusFt: 900 });
+      expect(await at([far]), 'a number a person set about a specific place').toBe('Bill Lorson');
+      const tight = Object.assign({}, NEAR('client'), { radiusFt: 100 });
+      expect(await at([tight]), 'and it narrows as readily as it widens').toBe(null);
     });
 
-    test('the span scales with the account setting, it does not override it', async () => {
+    test('the account setting is the radius, for every kind', async () => {
       const r = await page.evaluate(() => {
         const n = { id: 'n', kind: 'client', name: 'Bill Lorson', clientId: 9,
-          lat: 39.0257251 + 0.001, lng: -95.7939329 };
+          lat: 39.0257251 + 0.002, lng: -95.7939329 };   // ~728 ft
         const pt = { lat: 39.0257251, lng: -95.7939329 };
         return { tight: !!geoFenceAt(pt, [n], 600), wide: !!geoFenceAt(pt, [n], 1500) };
       });
-      expect(r.tight, 'at the 600 ft default a client four houses down is out').toBe(false);
+      expect(r.tight, '728 ft is outside the 600 ft default').toBe(false);
       expect(r.wide, 'an account on rural roads that raised the radius keeps the reach').toBe(true);
     });
   });
@@ -4347,11 +4461,94 @@ test.describe('geo-derive: the day deriver', () => {
         source: row && row.source, dest: row && row.dest_place }));
     }, inp);
 
-    test('the arrival ping says her house, the hour parked says otherwise', async () => {
+    // ── WHAT THE 600 FT REVERT COSTS, STATED OUT LOUD ────────────────────
+    // This test used to assert `far: true` for Jack's real 295 ft park: it
+    // passed only because a client fence was briefly narrowed to 240 ft. The
+    // owner reverted that (2026-09-16, "switch the fence back to 600 feet"),
+    // and at 600 ft a house four lots up IS inside Laurie's circle, so the
+    // cluster re-seats onto her and the row says her name. That is the
+    // deliberate trade: reach everywhere else, at the price of two houses on
+    // one street being one address until somebody saves the second one.
+    //
+    // Rule 22 is not weakened by it, and the two tests under this one are the
+    // proof: it still moves a stop onto whichever fence the cluster is really
+    // in, and still refuses to name one at all when the cluster is on no
+    // fence. What it cannot do is separate two houses closer together than
+    // the radius, and no re-seating rule can.
+    test('at 600 ft the house up the street is inside her circle, and says so', async () => {
       const r = await stop(day(PARKED));
+      expect(r.far, '295 ft is well inside a 600 ft fence').toBe(false);
+      expect(r.source).toBe('client');
+      expect(r.dest, 'save the real address and the next stop there names itself').toBe('Laurie Schonfeldt');
+    });
+
+    test('a cluster on no fence at all is still an unsaved stop, not a borrowed name', async () => {
+      const FAR = { lat: PIN.lat + 0.002, lng: PIN.lng };    // ~728 ft, outside 600
+      const r = await stop(day(FAR));
       expect(r.far, 'the median of the stop is on no fence at all').toBe(true);
       expect(r.source, 'so the row is an unsaved stop with a Save button').toBe('unsaved');
       expect(r.dest, 'and it does not borrow the neighbour\'s name').toBe(null);
+    });
+
+    test('a cluster inside a DIFFERENT fence takes that fence, not the arrival ping\'s', async () => {
+      const inp = day(PARKED);
+      // The house he was actually at, now saved. The arrival ping still lands
+      // on Laurie's pin; the hour parked is 30 ft from this one.
+      inp.fences = inp.fences.concat([{ id: 'client-n', kind: 'client', name: 'Tagen Lindstrom',
+        clientId: 8, lat: PARKED.lat, lng: PARKED.lng }]);
+      const r = await stop(inp);
+      expect(r.far).toBe(false);
+      expect(r.dest, 'the stop sits where the phone sat').toBe('Tagen Lindstrom');
+    });
+
+    // ── 6712 AND 6713, BOTH SAVED (owner 2026-09-16) ─────────────────────
+    // "Save the address and it pulls the cluster GPS fixes... 6712 SW
+    // Finsbury and 6713 SW Finsbury, if they are each in the database, will
+    // log the right client correct?"
+    //
+    // Correct, and this is the case that proves it, because it is the hardest
+    // one: two houses across the street from each other, closer together than
+    // the GPS noise on any single ping, with the arrival ping landing on the
+    // WRONG one. Both are clients, so they tie on kind rank and the tie falls
+    // to distance from the median of the hour parked.
+    const ODD  = { lat: PIN.lat, lng: PIN.lng };                   // 6712, Laurie
+    const EVEN = { lat: PIN.lat + 0.0002, lng: PIN.lng };          // 6713, ~73 ft across the street
+    const pair = (parkAt) => {
+      const inp = day(parkAt);
+      inp.fences = inp.fences.concat([{ id: 'client-6713', kind: 'client',
+        name: 'Ray Finsbury', clientId: 8, lat: EVEN.lat, lng: EVEN.lng }]);
+      // The arrival ping deliberately lands on the OTHER house from the one
+      // he parks at, which is the exact shape of Jack's mis-tag.
+      inp.fixes = inp.fixes.map(f => (f.ts === T(8, 0, 0)
+        ? Object.assign({}, f, { lat: (parkAt === ODD ? EVEN : ODD).lat, lng: PIN.lng })
+        : f));
+      return inp;
+    };
+
+    test('parked at 6712 with the arrival ping on 6713: it logs 6712', async () => {
+      const r = await stop(pair(ODD));
+      expect(r.dest).toBe('Laurie Schonfeldt');
+    });
+
+    test('parked at 6713 with the arrival ping on 6712: it logs 6713', async () => {
+      const r = await stop(pair(EVEN));
+      expect(r.dest).toBe('Ray Finsbury');
+    });
+
+    // The one caveat, stated as a test so nobody has to remember it: rank
+    // beats distance ACROSS kinds. A job saved at the neighbour's outranks a
+    // client (job 0, client 3) and takes the stop even parked in the client's
+    // driveway. Two fences of the SAME kind are always decided by distance,
+    // which is the case the owner asked about.
+    test('a job at the neighbour outranks a client he is parked at', async () => {
+      const inp = day(ODD);
+      inp.fences = inp.fences.concat([{ id: 'job-6713', kind: 'job', name: 'Ray Finsbury reroof',
+        jobId: 6713, lat: EVEN.lat, lng: EVEN.lng }]);
+      const r = await stop(inp);
+      // A job dwell is named by the job and carries job_id rather than a
+      // client's dest_place, so the fence name is what says who took it.
+      expect(r.name, 'kind rank wins across kinds: this is the known trade').toBe('Ray Finsbury reroof');
+      expect(r.source).toBe('geofence');
     });
 
     test('parked in her driveway: still her house, nothing changes', async () => {

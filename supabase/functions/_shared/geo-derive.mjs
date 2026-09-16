@@ -161,33 +161,26 @@ const GEO_FENCE_RANK = Object.freeze({
   job: 0, shop: 1, home_office: 2, client: 3, supply: 4, business_meeting: 4, other: 5,
 });
 
-// ── A HOUSE IS NOT A YARD, SO IT DOES NOT GET A YARD'S CIRCLE ─────────────
-// Owner 2026-09-16: "Jack reported an issue where it tagged the house a few
-// houses down they were previously at."
+// ── ONE RADIUS, EVERY KIND (owner 2026-09-16) ────────────────────────────
+// "Go switch the fence back to 600 feet. The problem was never the fence
+// being 600 feet, it was the fact that we only grabbed the address for Jack
+// on one iOS ping rather than the address and coordinates on the cluster."
 //
-// One radius served every kind, and at the 600 ft default that is a circle
-// twelve hundred feet across. On a street of fifty-foot lots that is about ten
-// houses each way, so a customer he visited last month sits in the same circle
-// as the driveway he is actually parked in, and with no fence at all on the
-// house he is at, the neighbour is the only name in range and wins.
+// This briefly shrank a client and a home office to 0.4 of the account
+// radius, to stop a customer down the street claiming the stop. That was
+// treating the symptom. The stop was named from ONE arrival ping, taken
+// while the truck was still rolling in, and a single ping can land next
+// door however wide the circle is. Rule 22 (_gdReseatDwells) is the real
+// answer: the stop is named from the median of every fix taken while he
+// sat there, which is the cluster and not a ping.
 //
-// Six hundred feet was never chosen for houses. It was chosen for a yard: a
-// lot with a gate, a gravel apron and a shop at the back, where the truck can
-// legitimately be five hundred feet from the pin. A residential address is the
-// opposite shape and needs a circle that fits the lot.
-//
-// A MULTIPLIER, not a fixed number, so an account that raised geoFenceRadius
-// for its own rural roads keeps the proportion rather than having this quietly
-// override the setting. A fence carrying its own radiusFt still wins outright:
+// So the circle is the account's radius again, for every kind, and a
+// narrowed radius never gets to hide the fact that the deriver is reading
+// the wrong point. A fence carrying its own radiusFt still wins outright:
 // that is a number a person typed about a specific place.
-const GEO_FENCE_SPAN = Object.freeze({
-  job: 0.67, shop: 1, home_office: 0.4, client: 0.4, supply: 1, business_meeting: 0.4, other: 1,
-});
 function _gdFenceLimitFt(f, radiusFt) {
   if (f && Number(f.radiusFt) > 0) return Number(f.radiusFt);
-  const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
-  const m = GEO_FENCE_SPAN[String((f && f.kind) || 'other')];
-  return r * (m == null ? 1 : m);
+  return Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
 }
 
 function _gdKind(k) {
@@ -506,6 +499,38 @@ function _gdStopFix(fixes, fromTs, toTs, maxAccM, fallback) {
   groups.forEach((g) => {
     if (!best || g.n > best.n || (g.n === best.n && g.last.ts > best.last.ts)) best = g;
   });
+  // ── NOTHING REPEATED, SO ASK THE CLUSTER (owner 2026-09-16) ─────────────
+  // "Then when you save it calls and says alright app, what was the tightest
+  // cluster on gps pings and what address does this belong to."
+  //
+  // That is what this was reaching for and only half doing. The grouping above
+  // counts EXACT repeats, which is the right test when iOS restates one cached
+  // coordinate verbatim, and it was written against a real incident where it
+  // did. But a truck parked with a live radio produces readings that agree
+  // within five feet and repeat none of them: every group is n=1, and the
+  // winner is then just the LAST fix of the dwell, which is the one taken as
+  // he rolled back out. Jack's 15 September stop is exactly that shape: 297,
+  // 296, 295, 295, 300, then 250.
+  //
+  // So when nothing repeats, take the fix nearest the MEDIAN of the stop,
+  // which is rule 22's own answer to the same question one field over
+  // (_gdSpotOf). Same posture, same function, one meaning of "where the truck
+  // sat". A repeat still beats it, because a coordinate the phone stated
+  // twice is evidence the median is not.
+  if (best && best.n === 1) {
+    const spot = _gdSpotOf(fixes, fromTs, toTs, maxAccM);
+    if (spot) {
+      let near = null, nearFt = Infinity;
+      (fixes || []).forEach((f) => {
+        if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') return;
+        if (f.acc != null && Number(f.acc) > maxAccM) return;
+        if (f.ts < fromTs || f.ts > toTs) return;
+        const ft = _gdMiles(f, spot) * 5280;
+        if (ft < nearFt) { near = f; nearFt = ft; }
+      });
+      if (near) return near;
+    }
+  }
   return best ? best.last : fallback;
 }
 
@@ -1228,7 +1253,29 @@ function geoDeriveDay(input) {
       if (prev && prev.lat === f.lat && prev.lng === f.lng && f.ts - prev.ts <= sameMs) { later[later.length - 1] = f; continue; }
       later.push(f);
     }
-    for (let i = 0; i < later.length; i++) {
+    // ── YOU CANNOT LEAVE A PLACE YOU HAVE NOT REACHED YET ────────────────
+    // Owner 2026-09-16: "my onsite banner at john doe didnt grab my arrival
+    // time and incremement the time up nor do I see my log beginning at john
+    // doe starting at 143 pm like I used to."
+    //
+    // A fenced arrival is stamped at the OS region crossing, and iOS fires
+    // that at the FULL region radius: his 13:43:37 enter sits 785 ft from the
+    // pin. inFence measures against the kind-scaled span instead (a client is
+    // 0.4 of the account radius, 240 ft), so the last ten fixes of the drive
+    // up the street, 761, 745, 638, 586, 501, 456, 431, 430, 401 and 299 ft,
+    // are every one of them "outside". The first two corroborated each other,
+    // the visit closed at its own arrival instant with no length, and because
+    // a closed visit means `open` is null, rule 11 then read the day as
+    // having ended at 12:45 and dropped his 12:59 to 13:36 shop dwell as
+    // after-hours. One missed arrival, two holes, on the same afternoon.
+    //
+    // So the departure scan starts at the first fix that is genuinely inside.
+    // Everything before it is the approach, and an approach is not a
+    // departure. If NO fix is ever inside, he drove past without arriving:
+    // that is the old behaviour and is kept exactly as it was, the scan runs
+    // from the top and closes the visit at its own instant, writing nothing.
+    const reached = later.findIndex(inFence);
+    for (let i = reached > 0 ? reached : 0; i < later.length; i++) {
       if (inFence(later[i])) { end = later[i].ts; continue; }
       // Outside. Confirmed only if the NEXT fix is also outside; a single
       // outlier between two inside fixes is noise and is skipped.
