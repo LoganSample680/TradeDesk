@@ -2634,10 +2634,74 @@ function geoDeriveRows(result, ids) {
     // overstates it by that hop; dropping it would delete every business mile
     // he drove that afternoon. The row stays, and splitting mileage by hop is
     // the next change, not this one.
+    // ── RULE 20 AND A CHAIN THAT ONLY PARTLY BILLS (owner 2026-09-16) ────
+    // Run against his real Monday, the rule refused the last hop into his
+    // driveway and then billed 4.4 miles to it anyway. One mileage row covers
+    // the whole leg at the DIRECT route between its two SAVED ends, and his
+    // house is one of those ends, so the row named his own driveway as a
+    // business destination and charged the commute to the company.
+    //
+    // What he actually drove for work is the yard out to an address nobody
+    // saved, and rule 14 already says what that is: a TRACED row. Breadcrumb
+    // miles over the part that bills, shown on the log, claimed by nobody,
+    // with a Save button that turns it into a real leg the moment he names
+    // the stop. So this invents no third shape; it routes the case into the
+    // one that already exists.
+    const billSegs = segsRaw.filter(sg => !isCommuteSeg(sg));
+    const partCommute = commuteSegs.length > 0 && billSegs.length > 0 &&
+      billSegs.length < segsRaw.length;
+    let cut = null;
+    if (partCommute) {
+      const a = Math.min.apply(null, billSegs.map(sg => Number(sg[0])));
+      const b = Math.max.apply(null, billSegs.map(sg => Number(sg[1])));
+      // WHICH END WENT. The refused hop is the first out of the house, the
+      // last back into it, or both; whichever it was, that end of this row is
+      // no longer a place he drove to on business.
+      const lostFirst = isCommuteSeg(segsRaw[0]);
+      const lostLast = isCommuteSeg(segsRaw[segsRaw.length - 1]);
+      const via = Array.isArray(l.via) ? l.via : [];
+      const stop = lostLast ? via[via.length - 1] : (lostFirst ? via[0] : null);
+      // The breadcrumbs inside that window, summed. l.path is already cleaned
+      // and thinned by _gdPath, so this is the same number a traced round trip
+      // carries and needs no access to the raw fixes geoDeriveRows never has.
+      //
+      // THE STOP CLOSES THE LINE. A drive segment ends at the tape's flip to
+      // onFoot and the fix that proves where he landed arrives SECONDS after
+      // it, so a window that only trusts its own bounds can hold one point
+      // and measure nothing. On a dense day that never shows; on a sparse one
+      // the row silently vanished. The stop is where the billable part of
+      // this leg actually ended, so it is the last point, always.
+      const pts = (Array.isArray(l.path) ? l.path : [])
+        .filter(pt => pt && pt[2] >= a && pt[2] <= b)
+        .map(pt => ({ lat: pt[0], lng: pt[1] }));
+      if (stop && stop.lat != null && stop.lng != null) {
+        if (lostLast) pts.push({ lat: stop.lat, lng: stop.lng });
+        else pts.unshift({ lat: stop.lat, lng: stop.lng });
+      }
+      let m = 0;
+      for (let k = 1; k < pts.length; k++) m += _gdMiles(pts[k - 1], pts[k]);
+      // And if even that leaves nothing to measure, the straight line between
+      // the end he kept and the stop, which is the same last resort every
+      // other miles branch in this file falls back to.
+      if (!(m > 0) && stop) m = _gdMiles(lostLast ? l.from : l.to, stop);
+      cut = {
+        miles: Math.round(m * 10) / 10, milesFrom: m > 0 ? 'path' : 'none',
+        startTs: a, endTs: b, lostFirst, lostLast,
+        // The stop that is now this row's open end, and the coordinate its
+        // Save button opens the lead form on.
+        stop,
+      };
+      // Nothing traceable left once the commute is taken out: there is no
+      // honest number to show, so there is no row. The stop rows above
+      // already landed and still carry the time.
+      if (!(cut.miles > 0)) continue;
+    }
     miles.push(Object.assign({
       id: l.id, legKey: l.id, gps: true, date: result.day,
-      from: l.from.addr || l.from.name || '', from_name: l.from.name || '',
-      to: l.to.addr || l.to.name || '', to_name: l.to.name || '',
+      from: (cut && cut.lostFirst) ? '' : (l.from.addr || l.from.name || ''),
+      from_name: (cut && cut.lostFirst) ? '' : (l.from.name || ''),
+      to: (cut && cut.lostLast) ? '' : (l.to.addr || l.to.name || ''),
+      to_name: (cut && cut.lostLast) ? '' : (l.to.name || ''),
     }, segs.length > 1 ? {
       // The ends of each drive segment, in order (see segEnds above). Only
       // on a leg that actually split: a single-segment leg's ends ARE
@@ -2721,6 +2785,32 @@ function geoDeriveRows(result, ids) {
       // Named as what it is, so the log and the map can say "traced" rather
       // than pretending a breadcrumb sum is a routed distance.
       calc_method: 'derived-traced', gpsMiles: l.miles,
+    } : {}, cut ? {
+      // ── AND THE ROW AS IT ACTUALLY IS, ONCE THE COMMUTE IS TAKEN OUT ────
+      // Last, so it overrides every field above that was computed from the
+      // whole leg. It is the rule-14 shape exactly: breadcrumb miles over the
+      // part that bills, named traced, address unknown at the end that went,
+      // and out of every money total (pendingPurpose) until he saves the
+      // stop. Saving it re-derives the day and the real leg lands under this
+      // same id, which is what makes this recoverable rather than a write-off.
+      miles: cut.miles, gpsMiles: cut.miles, calc_method: 'derived-traced',
+      traced: true, addressUnknown: true,
+      unsavedFrom: !!cut.lostFirst, unsavedTo: !!cut.lostLast, unsavedVia: false,
+      startedIso: iso(cut.startTs), endedIso: iso(cut.endTs),
+      loggedAt: iso(cut.startTs), created_at: iso(cut.startTs),
+      mins: Math.max(1, Math.round((cut.endTs - cut.startTs) / 60000)),
+      path: (Array.isArray(l.path) ? l.path : []).filter(pt => pt && pt[2] >= cut.startTs && pt[2] <= cut.endTs),
+      // The open end is the STOP, not the house he was refused for driving
+      // to, so the Save button opens the lead form where he actually stood.
+      // toCoord and fromCoord are what _mileSaveAddress reads.
+      toCoord: (cut.lostLast && cut.stop) ? { lat: cut.stop.lat, lng: cut.stop.lng } : { lat: l.to.lat, lng: l.to.lng },
+      fromCoord: (cut.lostFirst && cut.stop) ? { lat: cut.stop.lat, lng: cut.stop.lng } : { lat: l.from.lat, lng: l.from.lng },
+      // Nothing at the open end to resolve a purpose or a client against.
+      pendingPurpose: true, purpose: '',
+      _to: cut.lostLast ? { kind: '', clientId: null, jobId: null, placeId: null }
+        : { kind: l.to.kind, clientId: l.to.clientId, jobId: l.to.jobId, placeId: l.to.placeId },
+      client_id: cut.lostLast ? null : (l.to.clientId != null ? l.to.clientId : null),
+      client_name: cut.lostLast ? '' : (l.to.clientId != null ? (l.to.name || '') : ''),
     } : {}));
   }
   // `held` is the spans this account declined, so the caller can say so

@@ -1522,6 +1522,59 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.commutes).toBe(2);
       expect(r.drives).toBe(2);
     });
+
+    // ── AND THE MILES GO WITH THE HOP (owner 2026-09-16) ──────────────────
+    // Found by running the rule against his real Monday rather than a
+    // fixture. It refused the last hop into his driveway and then billed 4.4
+    // miles to it anyway: one mileage row covers the whole leg at the DIRECT
+    // route between its two SAVED ends, his house is one of those ends, so
+    // the row named his own driveway as a business destination and charged
+    // the commute to the company.
+    //
+    // His yard out to an address nobody saved is what he actually drove for
+    // work, and rule 14 already says what that is: a traced row, breadcrumb
+    // miles, shown on the log and claimed by nobody until he names the stop.
+    test('a chain that ends at his driveway does not bill the miles home', async () => {
+      const STOP = { lat: 39.0421, lng: -95.7511 };   // no fence within a mile
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+        return JSON.parse(JSON.stringify({
+          commutes: res.legs.filter(l => l && l.commute === true).length,
+          rows: rows.td_mileage.map(m => ({
+            to: m.to_name, miles: m.miles, traced: !!m.traced,
+            held: !!m.pendingPurpose, unsavedTo: !!m.unsavedTo,
+            // The Save button's target: where he actually stood, never the
+            // house he was refused for driving to.
+            toLat: m.toCoord && Math.round(m.toCoord.lat * 1e4) / 1e4,
+          })),
+          stops: rows.job_time_entries.filter(t => /^unsaved/.test(t.source)).length,
+        }));
+      }, base({
+        // Yard at 07:48, out to the customer, back to the yard, then the
+        // chain home: yard, 40 minutes at STOP, driveway.
+        tape: [mo(T(7, 0), 'onFoot'), mo(T(7, 48), 'onFoot'),
+          mo(T(7, 59), 'automotive'), mo(T(8, 24), 'onFoot'),
+          mo(T(15, 43), 'automotive'), mo(T(16, 3), 'onFoot'),
+          mo(T(16, 35), 'automotive'), mo(T(16, 50), 'onFoot'),
+          mo(T(17, 30), 'automotive'), mo(T(17, 50), 'onFoot')],
+        fixes: [fix(T(7, 48, 5), YARD), fix(T(7, 59, 5), YARD),
+          fix(T(8, 24, 5), CUST), fix(T(12, 0), CUST), fix(T(15, 43, 5), CUST),
+          fix(T(16, 3, 5), YARD), fix(T(16, 20), YARD), fix(T(16, 35, 5), YARD),
+          fix(T(16, 50, 5), STOP), fix(T(17, 10), STOP), fix(T(17, 30, 5), STOP),
+          fix(T(17, 50, 5), JHOME), fix(T(19, 0), JHOME)],
+        fences: [JHOME, YARD, CUST], nowMs: T(21, 0),
+      }));
+      expect(r.commutes, 'the chain home is marked').toBe(1);
+      expect(r.stops, 'and the 40 minutes at that address is still on the timesheet').toBe(1);
+      const home = r.rows.find(m => m.unsavedTo);
+      expect(home, 'the chain home writes a row, it is not deleted').toBeTruthy();
+      expect(home.to, 'it does not name his driveway as a destination').toBe('');
+      expect(home.traced && home.held, 'shown on the log, in no money total').toBe(true);
+      expect(home.toLat, 'and Save opens where he actually stood').toBe(39.0421);
+      expect(r.rows.some(m => m.to === '7402 SW 22nd Ct'),
+        'no row bills miles to his house').toBe(false);
+    });
   });
 
   // ── RULE 19: the day learns when this person usually works ───────────────
