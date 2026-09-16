@@ -1215,7 +1215,16 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
         supaSaveDebounced();
         if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
         const stillInBlob = (localStorage.getItem('zp3_offline_pending') || '').indexOf('punch-1') >= 0;
-        return { inBlob, stillInBlob };
+        // And the other half, which CI caught when the first fix simply
+        // skipped the write: a row CREATED during the load is still the
+        // person using the app, and must be snapshotted like any other.
+        timeEntries = saved.entries.concat([{ id: 'punch-2', date: '2026-09-16',
+          start_time: '2026-09-16T14:10:00.000Z', end_time: null, minutes: null, open: true }]);
+        supaSaveDebounced();
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        const blob = localStorage.getItem('zp3_offline_pending') || '';
+        return { inBlob, stillInBlob, newRow: blob.indexOf('punch-2') >= 0,
+          oldStillThere: blob.indexOf('punch-1') >= 0 };
       } finally {
         window._supaUser = saved.user; _supaCloudLoaded = saved.loaded; _loadInProgress = saved.load;
         timeEntries = saved.entries;
@@ -1226,6 +1235,8 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     });
     expect(r.inBlob, 'the punch is snapshotted the moment it happens').toBe(true);
     expect(r.stillInBlob, 'and a mid-load save cannot erase it').toBe(true);
+    expect(r.newRow, 'a row created DURING the load is still snapshotted').toBe(true);
+    expect(r.oldStillThere, 'without dropping the one the load has not drained yet').toBe(true);
   });
 
   // The other half: a punch does not sit in the debounce while the phone goes
