@@ -688,6 +688,10 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
  * input.day      'YYYY-MM-DD' (the Central day to derive)
  * input.dayStart / input.dayEnd  ms bounds of that day (caller owns the zone)
  * input.personId  employee uid (stamped into ids)
+ * input.crew     true when this person is CREW on somebody else's account,
+ *                false/absent for the business owner deriving their own day.
+ *                Rule 20 is the only thing that reads it, and it is the whole
+ *                of that rule's gate (owner 2026-09-16).
  * input.nowMs     for the open tail; defaults to Date.now()
  * input.directMiles(a,b) optional sync resolver for a collapsed leg; default
  *                 straight line, and the leg says which it got.
@@ -1168,8 +1172,7 @@ function geoDeriveDay(input) {
   // the map, the route and every structural rule above still need it; what it
   // must never do is bill. geoDeriveRows writes no mileage row and no drive
   // time row for it, which is where "no hours, no miles" actually lives.
-  const realLegs = laddered.map(l => (l && _gdIsCommuteLeg(l, fences, opts.radiusFt))
-    ? Object.assign({}, l, { commute: true }) : l);
+  const realLegs = _gdCommuteMark(laddered, fences, opts.radiusFt, inp.crew === true);
   // WOULD THIS BILL IF IT CLOSED NOW? The open dwell is published straight to
   // the screens (_geoOpenDwellPublish) and skips every rule above on the way,
   // so a man standing in his own kitchen read as time on the clock at the shop
@@ -1979,7 +1982,7 @@ function _gdInWindow(win, r) {
 // question ("is there a home office standing at this shop"), so there is one
 // idiom for "what else is at this spot" rather than two.
 // The shop, or anywhere the box was ticked. A house that happens to be a shop
-// is not caught here: _gdIsCommuteLeg refuses a leg whose ends are both the
+// is not caught here: _gdCommuteMark refuses a leg whose ends are both the
 // house, which is the owner's own account (his shop fence sits on his desk).
 function _gdReportsKind(f) {
   return !!f && (f.commute === true || String(f.kind) === 'shop');
@@ -1991,22 +1994,109 @@ function _gdReportsHere(fence, fences, radiusFt) {
   return (fences || []).some(f => _gdReportsKind(f) && f.lat != null && f.lng != null &&
     _gdMiles(fence, f) * 5280 <= r);
 }
-function _gdIsCommuteLeg(l, fences, radiusFt) {
-  if (!l || !l.from || !l.to) return false;
-  // A CHAIN IS NOT A COMMUTE, however it ends. A leg that stopped anywhere on
-  // the way is the shop, four customers and then the house (his 1 September),
-  // and refusing the whole chain because its last end is home would delete the
-  // four customer stops and the five drives inside it. The commute is the
-  // drive with nothing in it: door to door, no stops.
-  if (Array.isArray(l.drives) && l.drives.length > 1) return false;
-  const a = l.from, b = l.to;
-  if (a.unsaved === true || b.unsaved === true) return false;
-  const house = (e) => _gdIsHouse(e, fences, radiusFt);
-  const reports = (e) => _gdReportsHere(e, fences, radiusFt);
-  // A place that is BOTH the house and the place you report to is one place,
-  // and the drive between a spot and itself is not a commute, it is nothing.
-  if (house(a) && house(b)) return false;
-  return (house(a) && reports(b)) || (reports(a) && house(b));
+// RULE 20, THIRD SHAPE (owner 2026-09-15). The first two anchored on the SHOP
+// and both were wrong about his real days:
+//
+//   v1/v2  "house to the place you report to"   His first drive that morning
+//          went to his MOTHER'S, not the yard, so it billed. And the drive
+//          home billed too, because he stopped at one address on the way and
+//          a chain was exempt.
+//
+// His rule, in his words, was never about the shop: "his time runs on arrival
+// and out at clock out." So the anchor is the HOUSE and the DAY:
+//
+//   THE FIRST DRIVE OUT OF HIS HOUSE AND THE LAST DRIVE BACK TO IT ARE HIS
+//   OWN, whatever sits at the other end.
+//
+// That is the IRS commuting line too (first trip out, last trip home), it
+// kills the drive to his mother's without a word about family, and it cannot
+// eat a customer stop, because only the FIRST and LAST hop of the day are ever
+// refused and everything between them is untouched.
+//
+// It marks SEGMENTS, not whole legs. The 15 September drive home was the yard,
+// an unsaved address for 43 minutes, then his driveway: one leg, two hops. The
+// old rule exempted the whole thing to protect the stop in the middle; this
+// refuses the final hop and leaves the stop exactly where it is.
+function _gdCommuteMark(legs, fences, radiusFt, crew) {
+  // ── AND ONLY FOR CREW ─────────────────────────────────────────────────
+  // Owner 2026-09-16, asked straight out whether a drive from the house to a
+  // customer job should bill: "for a business owner it does, but for Jack it
+  // doesn't."
+  //
+  // That is the whole gate, and it is the line the tax code draws in the same
+  // place. An owner with a home office has their principal place of business
+  // at home, so every drive out of the door is already work. An employee
+  // getting themselves to the first job of the day is commuting, whoever owns
+  // the address at the far end.
+  //
+  // It replaces a geographic proxy ("does this account have a base away from
+  // the house"), which happened to give the right answer on the owner's own
+  // account, where his shop fence sits four metres from his desk, and the
+  // WRONG one for any owner whose yard is across town: their drive in would
+  // have been refused. Crew is the actual question, so crew is what is asked.
+  if (!crew) return legs;
+  const list = Array.isArray(legs) ? legs.filter(Boolean) : [];
+  if (!list.length) return legs;
+  const house = (e) => !!e && e.unsaved !== true && _gdIsHouse(e, fences, radiusFt);
+  const reports = (e) => !!e && e.unsaved !== true && _gdReportsHere(e, fences, radiusFt);
+  const order = list.slice().sort((a, b) => a.startTs - b.startTs);
+  const mark = new Map();     // leg -> {first:bool, last:bool}
+  const put = (l, k) => { const m = mark.get(l) || {}; m[k] = true; mark.set(l, m); };
+  // The first hop of the day that LEAVES the house.
+  for (const l of order) {
+    if (!house(l.from)) continue;
+    // A house loop is rule 7's round trip, not a commute.
+    if (house(l.to) && (!Array.isArray(l.drives) || l.drives.length <= 1)) break;
+    put(l, 'first'); break;
+  }
+  // The last hop of the day that ARRIVES at the house.
+  for (let i = order.length - 1; i >= 0; i--) {
+    const l = order[i];
+    if (!house(l.to)) continue;
+    if (house(l.from) && (!Array.isArray(l.drives) || l.drives.length <= 1)) break;
+    put(l, 'last'); break;
+  }
+  // And the standing exception that has nothing to do with the day's shape: a
+  // place somebody ticked "I report here", or the shop itself. A drive between
+  // that and the house is a commute at any hour, because it is the same two
+  // ends every day (a second yard, a supply house he starts at).
+  for (const l of order) {
+    if (Array.isArray(l.drives) && l.drives.length > 1) continue;
+    if (house(l.from) && house(l.to)) continue;
+    if ((house(l.from) && reports(l.to)) || (reports(l.from) && house(l.to))) {
+      put(l, 'first'); put(l, 'last');
+    }
+  }
+  // ── A COMMUTE HAS NOTHING IN IT ───────────────────────────────────────
+  // If the SAME leg is both the day's first drive out of the house and its
+  // last drive back to it, then the whole day is one journey: house, one or
+  // more addresses nobody saved, house. Every hop of it would be refused, and
+  // that is wrong twice over. It is wrong in principle, because a stop in the
+  // middle is exactly what makes a trip not a commute (the same reading v2
+  // had, kept here and only here); and it was wrong in fact, because the leg
+  // then carried no mileage row, the rail's Save button resolves a stop's
+  // coordinate off that row, and six and a half hours at an address he could
+  // no longer name was the result (owner 2026-09-16: "no unsaved addresses
+  // with no option to fill?").
+  //
+  // Single-hop legs are untouched: house straight to the yard and back is two
+  // separate legs, each with nothing in it, and both are still commutes.
+  for (const l of order) {
+    const m = mark.get(l);
+    if (m && m.first && m.last && Array.isArray(l.drives) && l.drives.length > 1) mark.delete(l);
+  }
+  if (!mark.size) return legs;
+  return list.map((l) => {
+    const m = mark.get(l);
+    if (!m) return l;
+    const n = Array.isArray(l.drives) ? l.drives.length : 1;
+    // Which hops of this leg are refused: the opening one, the closing one, or
+    // (a door-to-door drive) the only one there is.
+    const segs = [];
+    if (m.first) segs.push(0);
+    if (m.last) segs.push(n - 1);
+    return Object.assign({}, l, { commute: true, commuteSegs: segs });
+  });
 }
 
 function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win, fences, radiusFt) {
@@ -2326,12 +2416,39 @@ function geoDeriveRows(result, ids) {
     // company's mileage log.
     const lClaim = geoSpanClaim(l, claimCtx);
     if (!lClaim.claim) { held.push({ kind: 'leg', id: l.id, startTs: l.startTs, endTs: l.endTs }); continue; }
-    // RULE 20: THE COMMUTE BILLS NOTHING. Marked upstream, refused here, once,
-    // for both outputs: no mileage row and no drive time row. It is the same
-    // line the IRS deduction draws, and doing it here rather than by deleting
-    // the leg keeps the drive on the record and re-derivable the day the flag
-    // changes.
-    if (l.commute === true) continue;
+    // RULE 20: THE COMMUTE BILLS NOTHING, hop by hop. `commuteSegs` names which
+    // driving segments of this leg are his own time: the first out of his house
+    // in the morning, the last back to it at night. A leg whose every hop is
+    // refused writes nothing at all; one that carries a customer stop in the
+    // middle keeps the stop and loses only the hop into his driveway.
+    //
+    // THE MILEAGE GOES WITH IT. One mileage row covers the whole leg, at the
+    // direct route between its two SAVED ends, and the house is one of those
+    // ends whenever a hop is refused. There is no honest fraction of it to
+    // keep: what remains ends at an address nobody saved, which rule 14
+    // already refuses as a mileage endpoint.
+    const commuteSegs = (l.commute === true)
+      ? (Array.isArray(l.commuteSegs) ? l.commuteSegs : [0]) : [];
+    const nDrives = (Array.isArray(l.drives) && l.drives.length) ? l.drives.length : 1;
+    const allCommute = l.commute === true && commuteSegs.length >= nDrives;
+    // ── A LEG IS ONLY EVER DROPPED WHOLE WHEN IT IS ONE DOOR-TO-DOOR HOP ──
+    // Owner 2026-09-16, asking the only question that matters before a roll:
+    // "no unsaved addresses with no option to fill?"
+    //
+    // There was one, and it was the worst shape this rule can take. A day
+    // that goes house, an address nobody saved, house is ONE leg with TWO
+    // hops, and both of them qualify: the first drive out of his house and
+    // the last drive back to it. commuteSegs covered every hop, the leg was
+    // dropped here, and six and a half hours of work at that address went
+    // with it. No stop row, no Save this address button, nothing to fill in,
+    // and a manual clock running over the whole thing did not save it.
+    //
+    // That is v1's mistake wearing a different hat, and the answer is the
+    // same one: RULE 20 REFUSES A HOP, NEVER THE STOP BESIDE IT. A multi-hop
+    // leg always has an interior stop, so it always falls through to the stop
+    // rows below. Only the mileage row and the drive rows are refused, and
+    // the mileage gate moved down beside the row it governs.
+    if (allCommute && nDrives <= 1) continue;
     // ONE ROW PER DRIVE, NOT ONE PER CHAIN (owner 2026-09-04: "right, in
     // between it logs the time as a unsaved job site").
     //
@@ -2376,6 +2493,16 @@ function geoDeriveRows(result, ids) {
     // says he left the shop or reached it, and dropping one loses the trip.
     const segs = segsRaw.filter((sg, i) => i === 0 || i === segsRaw.length - 1 ||
       (Number(sg[1]) - Number(sg[0])) >= GEO_DERIVE_DEFAULTS.minLegMs);
+    // Rule 20 refuses a HOP, never the stop beside it. The refusal is applied
+    // to the drive rows below and to the mileage, and deliberately NOT to
+    // `segs`, because the gap between two segments is what writes the unsaved
+    // stop: dropping the hop home out of this list would take the 43 minutes
+    // he spent at that address with it.
+    const isCommuteSeg = (sg) => {
+      if (!commuteSegs.length) return false;
+      const i = segsRaw.indexOf(sg);
+      return i >= 0 && commuteSegs.indexOf(i) >= 0;
+    };
     // ── THE TIME ROWS GET THE GATE THE MILEAGE ROWS ALREADY HAD ───────────
     // Owner 2026-09-13, on 193 minutes of his evening sitting in his hours
     // while the 11.7 miles under it stayed out of his deduction.
@@ -2424,6 +2551,7 @@ function geoDeriveRows(result, ids) {
     segs.forEach((sg, i) => {
       const a = Number(sg[0]), b = Number(sg[1]);
       if (!(a > 0 && b > a)) return;
+      if (isCommuteSeg(sg)) return;   // rule 20: his own time, not a drive row
       time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
         arrived_at: iso(a), departed_at: iso(b),
         minutes: Math.max(1, Math.round(Number(sg[2] || (b - a)) / 60000)),
@@ -2498,10 +2626,87 @@ function geoDeriveRows(result, ids) {
     // Rule 14: a traced round trip is a row (shown, never claimed); a plain
     // same-fence loop is still nothing.
     if (l.roundTrip && !l.traced) continue;
+    // Rule 20, the mileage half. Every hop of this leg is his own time, so
+    // there are no business miles on it to write. The stop rows above already
+    // landed, which is the whole reason this gate is here and not up with the
+    // drive rows.
+    if (allCommute) continue;
+    // Rule 20 and the mileage row, which is ONE row for the whole leg at the
+    // direct route between its two saved ends. A door-to-door commute never
+    // reaches here (allCommute above dropped it). A CHAIN that merely ends at
+    // his driveway does, and its miles are the day's real work with the last
+    // hop riding along: shop, four customers, then home. Keeping the row
+    // overstates it by that hop; dropping it would delete every business mile
+    // he drove that afternoon. The row stays, and splitting mileage by hop is
+    // the next change, not this one.
+    // ── RULE 20 AND A CHAIN THAT ONLY PARTLY BILLS (owner 2026-09-16) ────
+    // Run against his real Monday, the rule refused the last hop into his
+    // driveway and then billed 4.4 miles to it anyway. One mileage row covers
+    // the whole leg at the DIRECT route between its two SAVED ends, and his
+    // house is one of those ends, so the row named his own driveway as a
+    // business destination and charged the commute to the company.
+    //
+    // What he actually drove for work is the yard out to an address nobody
+    // saved, and rule 14 already says what that is: a TRACED row. Breadcrumb
+    // miles over the part that bills, shown on the log, claimed by nobody,
+    // with a Save button that turns it into a real leg the moment he names
+    // the stop. So this invents no third shape; it routes the case into the
+    // one that already exists.
+    const billSegs = segsRaw.filter(sg => !isCommuteSeg(sg));
+    const partCommute = commuteSegs.length > 0 && billSegs.length > 0 &&
+      billSegs.length < segsRaw.length;
+    let cut = null;
+    if (partCommute) {
+      const a = Math.min.apply(null, billSegs.map(sg => Number(sg[0])));
+      const b = Math.max.apply(null, billSegs.map(sg => Number(sg[1])));
+      // WHICH END WENT. The refused hop is the first out of the house, the
+      // last back into it, or both; whichever it was, that end of this row is
+      // no longer a place he drove to on business.
+      const lostFirst = isCommuteSeg(segsRaw[0]);
+      const lostLast = isCommuteSeg(segsRaw[segsRaw.length - 1]);
+      const via = Array.isArray(l.via) ? l.via : [];
+      const stop = lostLast ? via[via.length - 1] : (lostFirst ? via[0] : null);
+      // The breadcrumbs inside that window, summed. l.path is already cleaned
+      // and thinned by _gdPath, so this is the same number a traced round trip
+      // carries and needs no access to the raw fixes geoDeriveRows never has.
+      //
+      // THE STOP CLOSES THE LINE. A drive segment ends at the tape's flip to
+      // onFoot and the fix that proves where he landed arrives SECONDS after
+      // it, so a window that only trusts its own bounds can hold one point
+      // and measure nothing. On a dense day that never shows; on a sparse one
+      // the row silently vanished. The stop is where the billable part of
+      // this leg actually ended, so it is the last point, always.
+      const pts = (Array.isArray(l.path) ? l.path : [])
+        .filter(pt => pt && pt[2] >= a && pt[2] <= b)
+        .map(pt => ({ lat: pt[0], lng: pt[1] }));
+      if (stop && stop.lat != null && stop.lng != null) {
+        if (lostLast) pts.push({ lat: stop.lat, lng: stop.lng });
+        else pts.unshift({ lat: stop.lat, lng: stop.lng });
+      }
+      let m = 0;
+      for (let k = 1; k < pts.length; k++) m += _gdMiles(pts[k - 1], pts[k]);
+      // And if even that leaves nothing to measure, the straight line between
+      // the end he kept and the stop, which is the same last resort every
+      // other miles branch in this file falls back to.
+      if (!(m > 0) && stop) m = _gdMiles(lostLast ? l.from : l.to, stop);
+      cut = {
+        miles: Math.round(m * 10) / 10, milesFrom: m > 0 ? 'path' : 'none',
+        startTs: a, endTs: b, lostFirst, lostLast,
+        // The stop that is now this row's open end, and the coordinate its
+        // Save button opens the lead form on.
+        stop,
+      };
+      // Nothing traceable left once the commute is taken out: there is no
+      // honest number to show, so there is no row. The stop rows above
+      // already landed and still carry the time.
+      if (!(cut.miles > 0)) continue;
+    }
     miles.push(Object.assign({
       id: l.id, legKey: l.id, gps: true, date: result.day,
-      from: l.from.addr || l.from.name || '', from_name: l.from.name || '',
-      to: l.to.addr || l.to.name || '', to_name: l.to.name || '',
+      from: (cut && cut.lostFirst) ? '' : (l.from.addr || l.from.name || ''),
+      from_name: (cut && cut.lostFirst) ? '' : (l.from.name || ''),
+      to: (cut && cut.lostLast) ? '' : (l.to.addr || l.to.name || ''),
+      to_name: (cut && cut.lostLast) ? '' : (l.to.name || ''),
     }, segs.length > 1 ? {
       // The ends of each drive segment, in order (see segEnds above). Only
       // on a leg that actually split: a single-segment leg's ends ARE
@@ -2585,6 +2790,32 @@ function geoDeriveRows(result, ids) {
       // Named as what it is, so the log and the map can say "traced" rather
       // than pretending a breadcrumb sum is a routed distance.
       calc_method: 'derived-traced', gpsMiles: l.miles,
+    } : {}, cut ? {
+      // ── AND THE ROW AS IT ACTUALLY IS, ONCE THE COMMUTE IS TAKEN OUT ────
+      // Last, so it overrides every field above that was computed from the
+      // whole leg. It is the rule-14 shape exactly: breadcrumb miles over the
+      // part that bills, named traced, address unknown at the end that went,
+      // and out of every money total (pendingPurpose) until he saves the
+      // stop. Saving it re-derives the day and the real leg lands under this
+      // same id, which is what makes this recoverable rather than a write-off.
+      miles: cut.miles, gpsMiles: cut.miles, calc_method: 'derived-traced',
+      traced: true, addressUnknown: true,
+      unsavedFrom: !!cut.lostFirst, unsavedTo: !!cut.lostLast, unsavedVia: false,
+      startedIso: iso(cut.startTs), endedIso: iso(cut.endTs),
+      loggedAt: iso(cut.startTs), created_at: iso(cut.startTs),
+      mins: Math.max(1, Math.round((cut.endTs - cut.startTs) / 60000)),
+      path: (Array.isArray(l.path) ? l.path : []).filter(pt => pt && pt[2] >= cut.startTs && pt[2] <= cut.endTs),
+      // The open end is the STOP, not the house he was refused for driving
+      // to, so the Save button opens the lead form where he actually stood.
+      // toCoord and fromCoord are what _mileSaveAddress reads.
+      toCoord: (cut.lostLast && cut.stop) ? { lat: cut.stop.lat, lng: cut.stop.lng } : { lat: l.to.lat, lng: l.to.lng },
+      fromCoord: (cut.lostFirst && cut.stop) ? { lat: cut.stop.lat, lng: cut.stop.lng } : { lat: l.from.lat, lng: l.from.lng },
+      // Nothing at the open end to resolve a purpose or a client against.
+      pendingPurpose: true, purpose: '',
+      _to: cut.lostLast ? { kind: '', clientId: null, jobId: null, placeId: null }
+        : { kind: l.to.kind, clientId: l.to.clientId, jobId: l.to.jobId, placeId: l.to.placeId },
+      client_id: cut.lostLast ? null : (l.to.clientId != null ? l.to.clientId : null),
+      client_name: cut.lostLast ? '' : (l.to.clientId != null ? (l.to.name || '') : ''),
     } : {}));
   }
   // `held` is the spans this account declined, so the caller can say so

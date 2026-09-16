@@ -1083,6 +1083,41 @@ test.describe('geo-derive wiring', () => {
       expect(it.args.p_miles[0].legKey).toBe(it.args.p_time[1].client_key);
     });
 
+    // ── THE PHONE HAS TO SAY WHOSE DAY THIS IS (owner 2026-09-16) ────────
+    // "For a business owner it does, but for Jack it doesn't." Rule 20 turns
+    // entirely on that one bit now, so the bit has to arrive. It is read off
+    // the session two ways, deliberately: _isEmployee is the session's own
+    // answer, and the uid comparison is the same fact from the other side,
+    // which covers a boot where the flag has not landed yet. A derive that
+    // silently sent `undefined` would bill every crew commute in the company
+    // and nothing on screen would say why.
+    test('the derive tells the deriver whether this session is crew', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        const seen = [];
+        const real = window.geoDeriveDay;
+        window.geoDeriveDay = (inp) => { seen.push(inp.crew); return real(inp); };
+        const cid = window._geoCid();
+        try {
+          // The owner on his own account.
+          window._isEmployee = false;
+          await _geoDeriveDayNow(DAY, null);
+          // Crew, by the session flag.
+          window._isEmployee = true;
+          await _geoDeriveDayNow(DAY, null);
+          // Crew, by the uids alone, with the flag not yet landed.
+          window._isEmployee = false;
+          window._geoCid = () => 'somebody-elses-account';
+          await _geoDeriveDayNow(DAY, null);
+        } finally {
+          window.geoDeriveDay = real; window._isEmployee = false;
+          window._geoCid = () => cid;
+        }
+        return seen;
+      }, DAY);
+      expect(r, 'owner false, crew true, crew-by-uid true').toEqual([false, true, true]);
+    });
+
     // Owner 2026-09-04, walking it through: "I sign out and sign in on jacks
     // phone, we both have different core motions, what happens." The claim
     // starts at the swap. The morning's rows came from the other phone and are

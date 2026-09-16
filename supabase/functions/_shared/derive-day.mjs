@@ -295,6 +295,11 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
 
   const res = geoDeriveDay({
     day, dayStart: b.start, dayEnd: b.end, personId: uid,
+    // Rule 20 is crew-only (owner 2026-09-16: "for a business owner it does,
+    // but for Jack it doesn't"). On this side the question is already
+    // answered by the two ids the caller passed: the contractor deriving
+    // their own day has uid === cid, anybody else is crew on their account.
+    crew: String(uid) !== String(cid),
     tape, fixes, appEvents, regions, fences, nowMs, clocks, clockHistory, workHours,
   });
 

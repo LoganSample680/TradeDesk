@@ -226,16 +226,47 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.allSameLength).toBe(true);
     });
 
-    test('still-open (currently clocked in) entries are excluded, they belong in the banner, not the history', async () => {
+    // AMENDED 2026-09-15. This used to assert that a running clock is EXCLUDED
+    // from the rows. Owner, looking at a crew member's timesheet on the day he
+    // clocked in at 07:54: "I'm looking at Jack's timesheet and not seeing the
+    // 7:54 am clock in anymore." It had never been there, and _tlRailClocks
+    // says in its own comment that an entry still running "stays an ordinary
+    // row", so this file disagreed with itself and the deleting half won.
+    test('a running clock is a live row on the rail, with no end and no minutes', async () => {
       const r = await page.evaluate(async () => {
-        timeEntries.push({ id: 8990099, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        const st = new Date(Date.now() - 45 * 60000).toISOString();
+        timeEntries.push({ id: 8990099, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: st, end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
         try {
           const rows = await _timeLogRows(null);
-          return { ok: true, found: rows.some(x => x.rawId === 8990099) };
+          const row = rows.find(x => x.rawId === 8990099);
+          return { ok: true, found: !!row, live: row && row.live, end: row && row.endTime,
+                   mins: row && row.minutes, start: row && row.startTime, src: row && row.source };
         } finally { timeEntries = timeEntries.filter(e => e.id !== 8990099); }
       });
       expect(r.ok).toBe(true);
-      expect(r.found).toBe(false);
+      expect(r.found, 'the clock he punched is on his day').toBe(true);
+      expect(r.live, 'drawn as running, not as a finished shift').toBe(true);
+      expect(r.end, 'no closing cap, because he has not clocked out').toBe(null);
+      expect(r.mins, 'and no minutes, so no total can claim it yet').toBe(0);
+      expect(r.src).toBe('manual');
+    });
+
+    test('a running clock brackets nothing: the blend leaves every other row alone', async () => {
+      // _tlRailClocks is right that a half-open bracket is worse than none.
+      // The live row must therefore never join the clock set, or the rail
+      // would draw a CLOCKED OUT cap at a time nobody clocked out.
+      const r = await page.evaluate(async () => {
+        const st = new Date(Date.now() - 45 * 60000).toISOString();
+        timeEntries.push({ id: 8990098, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: st, end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        try {
+          const rows = await _timeLogRows(null);
+          const blended = _tlBlendManual(rows.slice());
+          const row = blended.find(x => x.rawId === 8990098);
+          return { still: !!row, mins: row && row.minutes };
+        } finally { timeEntries = timeEntries.filter(e => e.id !== 8990098); }
+      });
+      expect(r.still, 'it survives the blend').toBe(true);
+      expect(r.mins, 'and still claims nothing').toBe(0);
     });
 
     test('manual entries carry startTime/endTime through for the Clock In / Clock Out columns', async () => {
@@ -3246,6 +3277,49 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.spines, 'a missing segment is a visible break in the line').toBe(4);
       expect(r.nodes).toBe(4);
       expect(r.railVars).toBe(true);
+    });
+
+    // ── A RUNNING CLOCK OPENS THE DAY (owner 2026-09-15) ────────────────
+    // "Clock in and clock out has always rendered." It has, for a clock with
+    // both ends. A live one has to read the same way at the top of the rail,
+    // and must never draw a clock-out nobody punched.
+    test('a running clock draws CLOCKED IN and no closing cap', async () => {
+      const r = await page.evaluate(() => {
+        const iso = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+        const day = (typeof _bizDateStr === 'function') ? _bizDateStr(new Date()) : new Date().toISOString().slice(0, 10);
+        const live = { id: 'mlive', rawId: 77001, source: 'manual', date: day, minutes: 0, live: true,
+          personName: 'Jack', personUid: null, clientName: 'General time', addr: '', jobName: '',
+          detail: 'Clocked in, still running', startTime: iso(7, 54), endTime: null };
+        const d = document.createElement('div');
+        d.innerHTML = _tlDayRailHtml([live]);
+        // data-kind, not the words: the rail prints "Clocked in" and the CSS
+        // uppercases it, so a text match would be asserting a stylesheet.
+        return { ins: d.querySelectorAll('li[data-kind="clock-in"]').length,
+                 outs: d.querySelectorAll('li[data-kind="clock-out"]').length,
+                 // Compared against the app's own formatter, never a literal:
+                 // mockAllExternal pins the page clock by an OFFSET (§5.2.2),
+                 // so a hardcoded "7:54" is asserting the pin, not the rail.
+                 hasTime: d.textContent.indexOf(_tlFmtTime(live.startTime)) >= 0 };
+      });
+      expect(r.ins, 'the punch he made').toBe(1);
+      expect(r.outs, 'and not one he did not').toBe(0);
+      expect(r.hasTime).toBe(true);
+    });
+
+    test('a closed clock still draws both caps, exactly as it always has', async () => {
+      const r = await page.evaluate(() => {
+        const iso = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+        const day = (typeof _bizDateStr === 'function') ? _bizDateStr(new Date()) : new Date().toISOString().slice(0, 10);
+        const done = { id: 'mdone', rawId: 77002, source: 'manual', date: day, minutes: 30,
+          personName: 'Jack', personUid: null, clientName: 'General time', addr: '', jobName: '',
+          startTime: iso(6, 10), endTime: iso(6, 40) };
+        const d = document.createElement('div');
+        d.innerHTML = _tlDayRailHtml([done]);
+        return { ins: d.querySelectorAll('li[data-kind="clock-in"]').length,
+                 outs: d.querySelectorAll('li[data-kind="clock-out"]').length };
+      });
+      expect(r.ins).toBe(1);
+      expect(r.outs).toBe(1);
     });
 
     // WCAG 1.4.1: colour is never the only carrier.
