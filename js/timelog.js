@@ -1479,6 +1479,14 @@ function _tlRailKind(r){
   // Manual time, never 'Unsaved address', because this row has no address and
   // never had one (see _tlBlendManual).
   if(r.rawSource==='clock-span')return 'off';
+  // ── A MIS-TAP HAS TO BE REACHABLE (owner 2026-09-16: "he didn't mean to hit
+  // personal") ─────────────────────────────────────────────────────────────
+  // An answered-Personal visit was drawn nowhere, which made the answer
+  // permanent: the row is not on the rail, so there is no control on it, so
+  // there is no way back. geo_answer_visit has taken 'working' since the day
+  // it was written; nothing could call it. The row draws now, grey, in no
+  // total, with the one chip that undoes the tap.
+  if(r.rawSource==='dismissed')return 'personal';
   if(r.rawSource==='site'||/^unsaved/.test(String(r.rawSource||'')))return 'site';
   // RULE 13'S QUESTION IS NOT MANUAL TIME (owner 2026-09-10, on his Sunday
   // rail: a 14-minute visit to a client he had just saved came back reading
@@ -1510,6 +1518,9 @@ const _TL_RAIL_META={
   // like the other buckets that are not asserted work: being home is not a
   // claim about the day, it is just where the phone was.
   home:  {c:'var(--text3)',      icon:'🏠', word:'Home'},
+  // Answered Personal. Grey and in no total, like every other bucket that is
+  // not asserted work, and it says the word so the row is its own receipt.
+  personal:{c:'var(--text3)',    icon:'⛔', word:'Personal'},
   // NOT 'Break', and not a knife and fork (owner 2026-09-01, on his afternoon:
   // "that was a untracked address that should have shown grey as manual time").
   // An anonymous stop between fences is time the app cannot place. Calling it a
@@ -1740,6 +1751,13 @@ function _tlRailRow(r){
         '<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+a+'\',\'personal\')">Personal</button>'+
         '</div>';
     }
+    // The other direction of the same door (7.3): one handler, one meaning of
+    // an answer, in both places it can be given.
+    if(kind==='personal'&&r.rawId!=null&&_tlRowIsMine(r)){
+      body+='<div class="tl-rail-chips">'+
+        '<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+
+        escHtml(String(r.rawId))+'\',\'working\')">It was work</button></div>';
+    }
     if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)){
       body+='<div class="tl-rail-chips">'+
         '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
@@ -1759,7 +1777,10 @@ function _tlRailRow(r){
   const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+(_tripNo?('Trip '+_tripNo+' · '):'')+escHtml(m.word)+
     // A held visit carries no "unpaid": it is not counted YET, and the row
     // says so in words and offers the two answers underneath.
-    (r.unpaid&&!isGap&&kind!=='held'&&!r.clockPaid?' · unpaid':'')+'</span>';
+    // Nor does an answered-Personal row: "Personal" already says it is not
+    // counted, and "Personal · unpaid" reads as a second, harsher verdict on
+    // a stop the person has simply taken off the day.
+    (r.unpaid&&!isGap&&kind!=='held'&&kind!=='personal'&&!r.clockPaid?' · unpaid':'')+'</span>';
   // EDIT USED TO LIVE HERE. It does not any more: it is the first action in
   // the row menu, for both kinds of row (7, deleted rather than hidden).
   //
@@ -1882,8 +1903,15 @@ function _tlRowMenu(btn){
       // The raw source rides along as the second argument: it is what tells
       // the dispatcher which of the two tables this row lives in, and the
       // button is the only thing that knows.
-      acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
-        'Keeps it off your hours and your miles. Just this one, not the place.',true);
+      if(raw==='dismissed'){
+        // The undo, in the menu as well as on the chip, because this is where
+        // a person goes when a row looks wrong.
+        acts+=act('_tlRowMenuDo(\'iswork\',\''+escHtml(String(id))+'\')','It was work',
+          'Puts this stop back on your hours and your miles.');
+      }else{
+        acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
+          'Keeps it off your hours and your miles. Just this one, not the place.',true);
+      }
       if(/^unsaved/.test(raw)&&d.rowKey){
         acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
           'Save this address','Then it names itself here and everywhere after');
@@ -1942,6 +1970,9 @@ async function _tlRowMenuDo(what,a,b){
       // The SAME door the held-visit chips use, so one definition of what an
       // answer means still serves both (7.3).
       if(typeof _visitHoldAnswer==='function'){await _visitHoldAnswer(String(a),'personal');return;}
+    }
+    if(what==='iswork'){
+      if(typeof _visitHoldAnswer==='function'){await _visitHoldAnswer(String(a),'working');return;}
     }
   }catch(_e){}
 }
@@ -2059,7 +2090,13 @@ function _tlDayRailHtml(rows){
   // A withdrawn hole is not a row and not a clock: Personal took the time off
   // the day, so the day does not draw it (owner 2026-09-05). It is still in
   // the rows the gap filler saw, which is why the question does not come back.
-  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object'&&!r.dismissed)
+  // A withdrawn HOLE is still not drawn: that is a manual entry the person
+  // wrote to say "this stretch was mine", and drawing it back was the thing
+  // the owner rejected on 2026-09-05. An answered VISIT is different and the
+  // difference is that it can be wrong: a tap on the Home card is one tap, and
+  // until 2026-09-16 there was no way back from it. It draws.
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object'
+      &&(!r.dismissed||r.rawSource==='dismissed'))
     .sort((a,b)=>String(a.startTime||'').localeCompare(String(b.startTime||'')));
   if(!list.length)return '';
   // Only a clock with both ends can bracket anything. An entry still running,
