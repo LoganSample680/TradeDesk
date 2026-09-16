@@ -161,33 +161,26 @@ const GEO_FENCE_RANK = Object.freeze({
   job: 0, shop: 1, home_office: 2, client: 3, supply: 4, business_meeting: 4, other: 5,
 });
 
-// ── A HOUSE IS NOT A YARD, SO IT DOES NOT GET A YARD'S CIRCLE ─────────────
-// Owner 2026-09-16: "Jack reported an issue where it tagged the house a few
-// houses down they were previously at."
+// ── ONE RADIUS, EVERY KIND (owner 2026-09-16) ────────────────────────────
+// "Go switch the fence back to 600 feet. The problem was never the fence
+// being 600 feet, it was the fact that we only grabbed the address for Jack
+// on one iOS ping rather than the address and coordinates on the cluster."
 //
-// One radius served every kind, and at the 600 ft default that is a circle
-// twelve hundred feet across. On a street of fifty-foot lots that is about ten
-// houses each way, so a customer he visited last month sits in the same circle
-// as the driveway he is actually parked in, and with no fence at all on the
-// house he is at, the neighbour is the only name in range and wins.
+// This briefly shrank a client and a home office to 0.4 of the account
+// radius, to stop a customer down the street claiming the stop. That was
+// treating the symptom. The stop was named from ONE arrival ping, taken
+// while the truck was still rolling in, and a single ping can land next
+// door however wide the circle is. Rule 22 (_gdReseatDwells) is the real
+// answer: the stop is named from the median of every fix taken while he
+// sat there, which is the cluster and not a ping.
 //
-// Six hundred feet was never chosen for houses. It was chosen for a yard: a
-// lot with a gate, a gravel apron and a shop at the back, where the truck can
-// legitimately be five hundred feet from the pin. A residential address is the
-// opposite shape and needs a circle that fits the lot.
-//
-// A MULTIPLIER, not a fixed number, so an account that raised geoFenceRadius
-// for its own rural roads keeps the proportion rather than having this quietly
-// override the setting. A fence carrying its own radiusFt still wins outright:
+// So the circle is the account's radius again, for every kind, and a
+// narrowed radius never gets to hide the fact that the deriver is reading
+// the wrong point. A fence carrying its own radiusFt still wins outright:
 // that is a number a person typed about a specific place.
-const GEO_FENCE_SPAN = Object.freeze({
-  job: 0.67, shop: 1, home_office: 0.4, client: 0.4, supply: 1, business_meeting: 0.4, other: 1,
-});
 function _gdFenceLimitFt(f, radiusFt) {
   if (f && Number(f.radiusFt) > 0) return Number(f.radiusFt);
-  const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
-  const m = GEO_FENCE_SPAN[String((f && f.kind) || 'other')];
-  return r * (m == null ? 1 : m);
+  return Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
 }
 
 function _gdKind(k) {
