@@ -536,7 +536,8 @@ test.describe('Wake region set for the dead app', () => {
     let reloads = 0, fetches = 0;
     try {
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => o.hidden });
-      window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: o.serverVersion }) }; };
+      window.fetch = async (u) => { if (String(u).indexOf('version.json') >= 0) fetches++;
+        return { ok: true, json: async () => ({ version: o.serverVersion }) }; };
       window._autoSaveAndReload = async () => { reloads++; };
       _geoBgUpdAt = 0;
       await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
@@ -550,6 +551,16 @@ test.describe('Wake region set for the dead app', () => {
     }
   }, opts);
 
+  // ── COUNT THE PROBE, NOT EVERY FETCH ON THE PAGE (2026-09-16) ────────────
+  // These three stubs replaced window.fetch wholesale and counted every call,
+  // and the thing under test is the VERSION PROBE ('version.json'). A push-ping
+  // also kicks the day deriver (_geoDeriveLiveSoon at the push-ping arm), and
+  // that fetches the server's fixes when this page's local fix log happens to
+  // be thin. Whether it is thin depends on what ran before in the same worker,
+  // so the count read 1 or 2 depending on shard composition: it failed on
+  // WebKit shard 3 the day two tests were added to an unrelated spec. The
+  // assertion was measuring the wrong thing, which is the "scan written too
+  // broadly" class in CLAUDE.md 5.2.1. The probe is still counted exactly.
   test('a backgrounded phone on an old version reloads on the push wake', async () => {
     const r = await bgUpd({ hidden: true, serverVersion: '99.99.99.9' });
     expect(r.fetches, 'the wake must check the live version').toBe(1);
@@ -576,7 +587,8 @@ test.describe('Wake region set for the dead app', () => {
       try {
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
         const cur = APP_VERSION;
-        window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: cur }) }; };
+        window.fetch = async (u) => { if (String(u).indexOf('version.json') >= 0) fetches++;
+          return { ok: true, json: async () => ({ version: cur }) }; };
         window._autoSaveAndReload = async () => {};
         _geoBgUpdAt = 0;
         for (let i = 0; i < 5; i++) await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
@@ -596,7 +608,8 @@ test.describe('Wake region set for the dead app', () => {
       let fetches = 0;
       try {
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-        window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: '99.99.99.9' }) }; };
+        window.fetch = async (u) => { if (String(u).indexOf('version.json') >= 0) fetches++;
+          return { ok: true, json: async () => ({ version: '99.99.99.9' }) }; };
         _geoBgUpdAt = 0;
         await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 }, true);
         await new Promise(r => setTimeout(r, 60));

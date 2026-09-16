@@ -1479,7 +1479,7 @@ test.describe('geo-derive: the day deriver', () => {
     // 2026-09-16), and every day in here is Jack's, who is crew on his dad's
     // account. The owner's own side of that answer is its own test at the
     // bottom of the block.
-    const run20 = (fences) => page.evaluate((inp) => {
+    const run20 = (fences, over) => page.evaluate((inp) => {
       const r = geoDeriveDay(inp);
       const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
       return JSON.parse(JSON.stringify({
@@ -1493,7 +1493,7 @@ test.describe('geo-derive: the day deriver', () => {
         miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
         drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
       }));
-    }, base({ tape, fixes, fences, nowMs: T(20, 0), crew: true }));
+    }, base(Object.assign({ tape, fixes, fences, nowMs: T(20, 0), crew: true }, over || {})));
 
     test('his day: the two commutes bill nothing, the work drives do', async () => {
       const r = await run20([JHOME, YARD, CUST]);
@@ -1765,6 +1765,35 @@ test.describe('geo-derive: the day deriver', () => {
     test('and crew with no base registered anywhere still commutes', async () => {
       const r = await run20([JHOME, CUST]);
       expect(r.commutes, 'first drive out, last drive home').toBe(2);
+    });
+
+    // ── AND THE FLAG CANNOT REACH A MAN WHOSE BASE IS HIS HOUSE ───────────
+    // Owner 2026-09-16, third round: "rebuilt, still missing a shit load of
+    // miles." It was the crew flag every time, chased through three different
+    // places a support view could answer wrongly, and each wrong answer
+    // retired his first drive out and his last drive home off his own books.
+    //
+    // Home being the base now outranks the flag entirely, because it is a fact
+    // about the FENCES and nothing on a screen can poison it. His shop sits
+    // four metres from his desk: home is the place of business, so the drive
+    // out of the door is the first business mile of the day.
+    test('home as the base beats the crew flag, in both directions', async () => {
+      const HOMESHOP = { id: 'shop', kind: 'shop', name: 'TradeDesk shop',
+        lat: JHOME.lat, lng: JHOME.lng };
+      const on = await run20([JHOME, HOMESHOP, CUST], { crew: true });
+      const off = await run20([JHOME, HOMESHOP, CUST], { crew: false });
+      expect(on.commutes, 'the flag cannot make his own driveway a commute').toBe(0);
+      expect(off.commutes).toBe(0);
+      expect(on.drives).toBe(off.drives);
+      expect(on.miles).toEqual(off.miles);
+    });
+
+    // And it cannot reach Jack, which is the whole point of keeping it narrow:
+    // his house is a home_office, which is not a place anybody reports to, and
+    // the yard he does report to is eight miles away.
+    test('a base away from the house is untouched by it', async () => {
+      const r = await run20([JHOME, YARD, CUST], { crew: false });
+      expect(r.commutes, 'the drive in and the drive home, flag or no flag').toBe(2);
     });
 
     // ── A COMMUTE HAS NOTHING IN IT (owner 2026-09-16) ────────────────────
