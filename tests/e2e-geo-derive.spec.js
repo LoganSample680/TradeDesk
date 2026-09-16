@@ -4471,6 +4471,56 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dest, 'the stop sits where the phone sat').toBe('Tagen Lindstrom');
     });
 
+    // ── 6712 AND 6713, BOTH SAVED (owner 2026-09-16) ─────────────────────
+    // "Save the address and it pulls the cluster GPS fixes... 6712 SW
+    // Finsbury and 6713 SW Finsbury, if they are each in the database, will
+    // log the right client correct?"
+    //
+    // Correct, and this is the case that proves it, because it is the hardest
+    // one: two houses across the street from each other, closer together than
+    // the GPS noise on any single ping, with the arrival ping landing on the
+    // WRONG one. Both are clients, so they tie on kind rank and the tie falls
+    // to distance from the median of the hour parked.
+    const ODD  = { lat: PIN.lat, lng: PIN.lng };                   // 6712, Laurie
+    const EVEN = { lat: PIN.lat + 0.0002, lng: PIN.lng };          // 6713, ~73 ft across the street
+    const pair = (parkAt) => {
+      const inp = day(parkAt);
+      inp.fences = inp.fences.concat([{ id: 'client-6713', kind: 'client',
+        name: 'Ray Finsbury', clientId: 8, lat: EVEN.lat, lng: EVEN.lng }]);
+      // The arrival ping deliberately lands on the OTHER house from the one
+      // he parks at, which is the exact shape of Jack's mis-tag.
+      inp.fixes = inp.fixes.map(f => (f.ts === T(8, 0, 0)
+        ? Object.assign({}, f, { lat: (parkAt === ODD ? EVEN : ODD).lat, lng: PIN.lng })
+        : f));
+      return inp;
+    };
+
+    test('parked at 6712 with the arrival ping on 6713: it logs 6712', async () => {
+      const r = await stop(pair(ODD));
+      expect(r.dest).toBe('Laurie Schonfeldt');
+    });
+
+    test('parked at 6713 with the arrival ping on 6712: it logs 6713', async () => {
+      const r = await stop(pair(EVEN));
+      expect(r.dest).toBe('Ray Finsbury');
+    });
+
+    // The one caveat, stated as a test so nobody has to remember it: rank
+    // beats distance ACROSS kinds. A job saved at the neighbour's outranks a
+    // client (job 0, client 3) and takes the stop even parked in the client's
+    // driveway. Two fences of the SAME kind are always decided by distance,
+    // which is the case the owner asked about.
+    test('a job at the neighbour outranks a client he is parked at', async () => {
+      const inp = day(ODD);
+      inp.fences = inp.fences.concat([{ id: 'job-6713', kind: 'job', name: 'Ray Finsbury reroof',
+        jobId: 6713, lat: EVEN.lat, lng: EVEN.lng }]);
+      const r = await stop(inp);
+      // A job dwell is named by the job and carries job_id rather than a
+      // client's dest_place, so the fence name is what says who took it.
+      expect(r.name, 'kind rank wins across kinds: this is the known trade').toBe('Ray Finsbury reroof');
+      expect(r.source).toBe('geofence');
+    });
+
     test('parked in her driveway: still her house, nothing changes', async () => {
       const r = await stop(day({ lat: PIN.lat + 0.00008, lng: PIN.lng }));   // ~29 ft
       expect(r.far).toBe(false);
