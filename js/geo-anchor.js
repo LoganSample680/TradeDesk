@@ -73,11 +73,19 @@ function _geoAnchorMayWrite() {
 // visit would be counted as ten agreeing visits and satisfy minVisits on its
 // own, which is precisely the "one visit never moves a pin" guard being
 // defeated by the machinery rather than by evidence.
+//
+// The key is the BUSINESS day, the same one the deriver keys its rows on, and
+// never a UTC one: an evening stop in Central is tomorrow in UTC, so a UTC key
+// would file two evening visits under two different days and let one visit
+// count twice. tests/e2e-utils-exhaustive.spec.js bans the UTC idiom in app
+// source outright, and it caught this on the first push.
 function _geoAnchorDayKey(ts) {
+  const ms = Number(ts) || Date.now();
   try {
-    if (typeof _geoDayKeyOf === 'function') return _geoDayKeyOf(ts, (typeof _geoBizTz === 'function') ? _geoBizTz() : null);
+    if (typeof _geoDayKeyOf === 'function') return _geoDayKeyOf(ms, (typeof _geoBizTz === 'function') ? _geoBizTz() : null);
   } catch (_e) { }
-  return new Date(Number(ts) || Date.now()).toISOString().slice(0, 10);
+  try { if (typeof dateKey === 'function') return dateKey(new Date(ms)); } catch (_e) { }
+  return '';
 }
 
 // Fold this day's clean sightings into the records they belong to. Returns the
@@ -97,6 +105,9 @@ function geoAnchorRecord(res, fences, opts) {
       const rec = _geoAnchorRecFor(s.id);
       if (!rec) continue;
       const day = _geoAnchorDayKey(s.ts);
+      // No day key, no sighting. An empty key would file every visit under one
+      // name and turn the once-per-day guard into the opposite of itself.
+      if (!day) continue;
       const list = Array.isArray(rec.anchorSeen) ? rec.anchorSeen.slice() : [];
       const at = list.findIndex(x => x && x.d === day);
       const row = { d: day, lat: s.lat, lng: s.lng, n: s.n };
