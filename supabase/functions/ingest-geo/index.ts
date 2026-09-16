@@ -34,7 +34,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Plain ESM, not .ts, so Deno and the Node test harness load the exact same
 // file: tests/e2e-geo-derive-server.spec.js drives this module directly.
-import { daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
+import { centralDayKey, daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
+import { liveCardFor } from "../_shared/live-card.mjs";
+import { pushLiveCard } from "../_shared/live-push.ts";
 import { makeRoute } from "../_shared/route-cache.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -567,6 +569,35 @@ Deno.serve(async (req) => {
         console.error("derive-day", { uid, day: d.day, reason: d.reason });
       }
     }
+
+    // ── AND THE LOCK SCREEN LEARNS, WITH THE APP ON ANY SCREEN AT ALL ─────
+    // Owner 2026-09-16: "live activities, if I'm in the ops portal it doesn't
+    // update live when I go to drive, how can we make live activities
+    // bulletproof?"
+    //
+    // The card used to move only when the phone's own derive ran, and a derive
+    // is refused while a support view is open (js/geo-track.js), so the ops
+    // portal froze it. This derive just ran on the server and already knows
+    // the answer, so it says so. Same fact, same rule (live-card.mjs), no
+    // dependence on which screen anybody is looking at, or on the app being
+    // open at all.
+    //
+    // TODAY ONLY, and only when the derive actually reached a verdict. A day
+    // that returned before deriving carries no `open` key, and that is "we do
+    // not know", which must never be read as "no card": ending a live card
+    // because a backfill of last Tuesday told us nothing would be worse than
+    // the bug this fixes.
+    try {
+      const today = centralDayKey(Date.now());
+      const d = derivedDays.find((x) => x.day === today && "open" in x);
+      if (d) {
+        const card = liveCardFor(d.open, {});
+        const note = await pushLiveCard(svc, uid, card);
+        if (note !== "unchanged" && note !== "no live card" && note !== "nothing to end") {
+          console.log("[live-push]", { uid, day: today, event: card.event, note });
+        }
+      }
+    } catch (e) { console.error("[live-push] " + String(e).slice(0, 200)); }
 
     // Fleet & Team liveness for free: the newest fix stamps the device row.
     const newest = [...evs].reverse().find((e) => e.lat != null);

@@ -347,14 +347,29 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   // MISSING EVIDENCE IS NOT AN EMPTY DAY, the second half of it: drives that
   // are plainly on the tape and resolve to nowhere at all mean the fixes have
   // not arrived, not that the truck teleported. Same guard the phone makes.
+  // ── THE OPEN DWELL RIDES OUT OF HERE (owner 2026-09-16) ────────────────
+  // "Live activities, if I'm in the ops portal it doesn't update live when I
+  // go to drive." The lock screen is drawn from this one fact, and until now
+  // only the phone ever saw it, so the card could only move while the app was
+  // on a screen that was allowed to derive. It is returned on EVERY path
+  // below, including the ones that write nothing: "nothing to add" is exactly
+  // the shape of a man who has been standing at John Doe's for four hours,
+  // and it is still the truth the card needs.
+  const openCard = res.open
+    ? { name: String(res.open.name || ""), kind: String(res.open.kind || ""),
+        sinceTs: Number(res.open.sinceTs) || 0, atHome: !!res.open.atHome,
+        counts: res.open.counts !== false,
+        fence: res.open.fence ? { addr: String(res.open.fence.addr || "") } : null }
+    : null;
+
   const resolvedAny = !!(res.legs.length || res.dwells.length || res.pending || res.open);
-  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved" };
+  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard };
 
   const rows = geoDeriveRows(res, { contractorId: cid, employeeId: uid, shared: false, clocks });
   const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length;
   // Nothing to add, and this call may never retire: a write would be a no-op
   // with a round trip attached.
-  if (nothing) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length };
+  if (nothing) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard };
 
   // Before the write, not after: geo_replace_day is the only writer and a
   // second pass to correct a number it just stored would be the reconciler
@@ -368,10 +383,10 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     p_time: rows.job_time_entries, p_shop: rows.shop_time_entries, p_miles: rows.td_mileage,
     p_sweep: sweep,
   });
-  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message };
+  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard };
 
   return {
-    day, wrote: true,
+    day, wrote: true, open: openCard,
     dwells: res.dwells.length, legs: res.legs.length,
     time: rows.job_time_entries.length, shop: rows.shop_time_entries.length,
     miles: rows.td_mileage.length, held: rows.held.length, routed,
