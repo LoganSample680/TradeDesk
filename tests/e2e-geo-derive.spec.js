@@ -4248,6 +4248,58 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── A HOUSE IS NOT A YARD (owner 2026-09-16) ──────────────────────────────
+  // "Jack reported an issue where it tagged the house a few houses down they
+  // were previously at." One radius served every kind, and at 600 ft that is a
+  // circle twelve hundred feet across: about ten houses each way on a
+  // fifty-foot lot. With no fence on the house he was actually at, a customer
+  // he visited last month was the only name in range and won.
+  test.describe('fence span by kind: a customer down the street stops swallowing the block', () => {
+    // 0.001 degrees of latitude is ~364 ft, so this is a neighbour about four
+    // houses away, well inside the old 600 ft circle and outside the new one.
+    const HERE = { lat: 39.0257251, lng: -95.7939329 };
+    const NEIGHBOUR = (kind) => ({ id: 'n', kind, name: 'Bill Lorson', clientId: 9,
+      lat: HERE.lat + 0.001, lng: HERE.lng });
+    const at = (fences) => page.evaluate((f) => {
+      const g = geoFenceAt({ lat: 39.0257251, lng: -95.7939329 }, f, 600);
+      return g ? g.name : null;
+    }, fences);
+
+    test('a client four houses down no longer claims the stop', async () => {
+      expect(await at([NEIGHBOUR('client')])).toBe(null);
+    });
+
+    test('and neither does their house', async () => {
+      expect(await at([NEIGHBOUR('home_office')])).toBe(null);
+    });
+
+    test('a yard keeps its full circle: a lot with a gate needs it', async () => {
+      expect(await at([NEIGHBOUR('shop')])).toBe('Bill Lorson');
+      expect(await at([NEIGHBOUR('supply')])).toBe('Bill Lorson');
+    });
+
+    test('a client right where he parked still wins, which is the whole point', async () => {
+      const close = Object.assign({}, NEIGHBOUR('client'), { lat: HERE.lat + 0.0002 });  // ~73 ft
+      expect(await at([close])).toBe('Bill Lorson');
+    });
+
+    test('a radius somebody typed on the place still wins outright', async () => {
+      const wide = Object.assign({}, NEIGHBOUR('client'), { radiusFt: 900 });
+      expect(await at([wide]), 'a number a person set about a specific place').toBe('Bill Lorson');
+    });
+
+    test('the span scales with the account setting, it does not override it', async () => {
+      const r = await page.evaluate(() => {
+        const n = { id: 'n', kind: 'client', name: 'Bill Lorson', clientId: 9,
+          lat: 39.0257251 + 0.001, lng: -95.7939329 };
+        const pt = { lat: 39.0257251, lng: -95.7939329 };
+        return { tight: !!geoFenceAt(pt, [n], 600), wide: !!geoFenceAt(pt, [n], 1500) };
+      });
+      expect(r.tight, 'at the 600 ft default a client four houses down is out').toBe(false);
+      expect(r.wide, 'an account on rural roads that raised the radius keeps the reach').toBe(true);
+    });
+  });
+
   test('no console errors across the deriver', async () => {
     assertNoErrors(page, 'geo-derive');
   });
