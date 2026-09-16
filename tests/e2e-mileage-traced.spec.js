@@ -406,13 +406,42 @@ test.describe('traced trips', () => {
       // name with both answers offered evenly. Knowing it is Neenans Co rather
       // than 39.0106, -95.6811 is most of the value on its own.
       expect(r.guess.guess, 'named, but not placed').toBe('');
+      // AND NO STATE EVER FILLS ONE (owner 2026-09-16: "it leads click customer
+      // heavy, want them to look at it twice to ensure it's right"). A filled
+      // primary is the app telling you where to tap, and the app's guess is the
+      // thing that was wrong here. The guess orders them and says itself in
+      // words; both look identical so he has to read them.
       expect(r.btns.filter(b => b.p), 'neither side is pre-picked').toHaveLength(0);
       expect(r.btns.map(b => b.t)).toEqual(expect.arrayContaining(['Supply house', 'Lead or client']));
       expect(r.text).toContain('The map found that name but not what it is');
     });
 
-    // A name the list CAN place leads with Supply house, filled.
-    test('a name that says what it is leads with Supply house', async () => {
+    // Even the confident case leads without leaning: first in the list, same
+    // weight as the other, and the guess stated in words above them.
+    test('a confident guess still fills no button, it only orders them', async () => {
+      const r = await page.evaluate(async () => {
+        // Restored in the finally: _mileWhatIsHere is a top-level function, so
+        // assigning to window really does replace it, and leaving it replaced
+        // silently fed this fixture to the next test in the file.
+        const keep = window._mileWhatIsHere;
+        try {
+          window._mileWhatIsHere = async () => ({ parts: {}, name: 'Ferguson Plumbing Supply',
+            guess: 'supply', supply: true });
+          await _mileSaveAddress('j-traced', 'to');
+          for (let i = 0; i < 40 && !_mileAddressPending.found; i++) await new Promise(r => setTimeout(r, 25));
+          const ov = document.getElementById('_mile-kind-ov');
+          return { btns: [...ov.querySelectorAll('button')].map(b => ({ t: b.textContent, p: b.className.includes('btn-p') })),
+                   text: ov.textContent };
+        } finally { window._mileWhatIsHere = keep; document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.btns[0].t, 'the likely one is simply first').toBe('Supply house');
+      expect(r.btns.filter(b => b.p), 'and nothing is weighted').toHaveLength(0);
+      expect(r.text, 'the guess is words, not a heavy button')
+        .toContain('reads like a supply house');
+      expect(r.text).toContain('Check it before you pick');
+    });
+
+    test('a name that says what it is is read as a supply house', async () => {
       const r = await page.evaluate(() => [
         _mileGuessKind('Ferguson Plumbing Supply'), _mileGuessKind('Westlake Ace Hardware'),
         _mileGuessKind('Capital City Lumber'), _mileGuessKind('Neenans Co'),

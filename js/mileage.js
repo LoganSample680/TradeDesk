@@ -3369,15 +3369,25 @@ function _mileSaveAskKind(la,ln){
     // The likely answer leads and is the filled button; the other is one tap
     // away and nothing is decided by the guess alone.
     const g=found?found.guess:'';
-    const supply='<button class="btn'+(g==='supply'?' btn-p':'')+'" '+
-      'onclick="_mileSaveKind(\'supply\')">Supply house</button>';
-    const client='<button class="btn'+(g==='client'?' btn-p':'')+'" '+
-      'onclick="_mileSaveKind(\'client\')">Lead or client</button>';
+    // ── NEITHER ANSWER IS EVER THE HEAVY BUTTON (owner 2026-09-16) ──────
+    // "One problem with screenshot it leads click customer heavy, want them to
+    //  look at it twice to ensure it's right."
+    //
+    // He is right and it undoes the point of asking. A filled primary button is
+    // the app telling you where to tap, and this prompt exists precisely
+    // because the app's guess is the thing that was wrong: it made Neenans Co,
+    // a plumbing supply counter, into a sales lead. A crew member in a hurry
+    // taps the dark one and we are back to guessing, with his fingerprint on
+    // it. So the guess ORDERS the two and says itself in words, and both look
+    // identical, which is what makes him read them.
+    const supply='<button class="btn" onclick="_mileSaveKind(\'supply\')">Supply house</button>';
+    const client='<button class="btn" onclick="_mileSaveKind(\'client\')">Lead or client</button>';
     ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
       '<div style="font-size:17px;font-weight:800;margin-bottom:4px">What is this address?</div>'+
       '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px">'+sub+'</div>'+
       '<div style="font-size:12px;color:var(--text3);margin-bottom:18px">'+
-        (nm&&g?'That is our guess from the map. Change it if it is wrong.'
+        (nm&&g==='supply'?'That reads like a supply house to us. Check it before you pick.'
+         :g==='client'?'No business at this pin, so it looks like a customer. Check it before you pick.'
          :nm?'The map found that name but not what it is. Which one?'
            :'A supply house is a place, so its trips wait for a receipt. A client is somebody you quote and invoice.')+
       '</div>'+
