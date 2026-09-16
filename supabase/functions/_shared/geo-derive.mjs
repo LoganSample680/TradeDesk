@@ -1683,6 +1683,42 @@ function _gdEndOfDay(dwells, fences, opts, open, driving, legs) {
       continue;
     }
     if (d.startTs < lastWorkEnd) { out.push(d); continue; }
+    // ── THE WRAP IS FOR A DAY THAT ENDED, NOT A YARD HE DROVE OUT OF ─────
+    // Owner 2026-09-16: "From JS Solutions shop to the unsaved address at 157
+    // pm for Jack we're missing a fucking drive dude."
+    //
+    // No drive is missing. His phone never moved: the tape reads still, onFoot,
+    // still from 13:51 to 15:21 without touching automotive once, and the fixes
+    // sit 11 to 20 feet from the yard until 14:06, when one cached coordinate
+    // 1,161 ft out repeats verbatim at 14:06, 14:38, 15:00 and 15:25. He left
+    // at 15:22:07, and the fence agreed: the exit fired at 15:25:40.
+    //
+    // What is missing is 1h25m of YARD time, and this branch took it. The wrap
+    // was written for a phone that sits at the yard after hours (one session
+    // ran to 11:48pm and would have added 19h38m to a week), so it allows 30
+    // minutes to unload and drops the rest. It fired here because "the last
+    // real work" is computed from DWELLS, and his 3:38pm stop was at an
+    // address nobody saved, which is not a dwell. So a day that was still
+    // going looked, to this rule, like a day that had ended at 1:22.
+    //
+    // HE LEFT AGAIN AND THE DAY CARRIED ON, AND THAT IS THE WHOLE TEST.
+    //
+    // "Left again" on its own is too loose, because the drive HOME is also
+    // leaving: a yard dwell that ends with him going home is precisely the
+    // 19h38m case this rule was written for, and that one must still be
+    // capped. What separates Jack's afternoon from it is where the next leg
+    // went. He drove out of the yard to an address nobody saved and spent 43
+    // minutes there; the day was not over, it was still going.
+    //
+    // So: a leg after this dwell that ends anywhere but a house, or a CHAIN
+    // (more than one hop, which by definition has a stop inside it). Straight
+    // home, one hop, is the day ending and keeps the unload window.
+    const houseEnd = (l) => !!(l && l.to && l.to.unsaved !== true &&
+      _gdIsHouse(l.to, fences, opts.radiusFt));
+    const wentOnWorking = (legs || []).some(l => l && typeof l.startTs === 'number' &&
+      l.startTs >= d.endTs - 60000 &&
+      (!houseEnd(l) || (Array.isArray(l.drives) && l.drives.length > 1)));
+    if (wentOnWorking) { out.push(d); continue; }
     // After the last real work. A real shop gets the wrap-up allowance.
     if (d.kind === 'shop') {
       const row = trim(d, d.startTs, Math.min(d.endTs, d.startTs + wrapMs));

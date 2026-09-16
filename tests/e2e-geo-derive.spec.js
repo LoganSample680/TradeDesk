@@ -1693,6 +1693,96 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.nameable, 'and the Save this address button has a coordinate to open on').toBe(true);
     });
 
+    // ── THE WRAP IS FOR A DAY THAT ENDED (owner 2026-09-16) ──────────────
+    // "From JS Solutions shop to the unsaved address at 157 pm for Jack we're
+    // missing a fucking drive dude."
+    //
+    // No drive was missing: his phone never moved. The tape reads still,
+    // onFoot, still from 13:51 to 15:21 without touching automotive once, and
+    // the fixes sit 11 to 20 feet from the yard until one cached coordinate
+    // 1,161 ft out repeats verbatim at 14:06, 14:38, 15:00 and 15:25. He left
+    // at 15:22:07 and the fence agreed, exiting at 15:25:40.
+    //
+    // What was missing is 1h25m of YARD time. The 30-minute unload wrap fired
+    // in the MIDDLE of his working day, because "the last real work" is
+    // computed from dwells and his 3:38pm stop was at an address nobody saved,
+    // which is not a dwell. So a day still in progress looked like a day that
+    // had ended at 1:22, and the hole it left is what the rail then dressed up
+    // as an address he had supposedly driven to.
+    //
+    // He left again, and that is the whole test.
+    test('a yard he drove out of keeps every minute, wrap or no wrap', async () => {
+      const STOP = { lat: 39.0421, lng: -95.7511 };   // no fence near it
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const shop = res.dwells.filter(d => d.kind === 'shop');
+        return JSON.parse(JSON.stringify({
+          shop: shop.map(d => [d.startTs, d.endTs]),
+          work: res.dwells.filter(d => d.kind === 'client').length,
+          // The hole is the thing: a rail with one cannot help but imply a
+          // trip nobody took.
+          holes: (() => {
+            const all = res.dwells.map(d => [d.startTs, d.endTs])
+              .concat(res.legs.map(l => [l.startTs, l.endTs])).sort((a, b) => a[0] - b[0]);
+            let n = 0, mark = all.length ? all[0][1] : 0;
+            for (const [a, b] of all.slice(1)) { if (a - mark >= 5 * 60000) n++; mark = Math.max(mark, b); }
+            return n;
+          })(),
+        }));
+      }, base({
+        fences: [JHOME, YARD, CUST],
+        // Customer all morning, the yard from 13:27, out to an unsaved address
+        // at 15:22, home at 16:21. The yard stretch is nearly two hours and the
+        // last dwell-shaped work of the day ended when he left the customer.
+        tape: [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 16), 'onFoot'),
+          mo(T(13, 22), 'automotive'), mo(T(13, 27), 'onFoot'),
+          mo(T(15, 22), 'automotive'), mo(T(15, 38), 'onFoot'),
+          mo(T(16, 21), 'automotive'), mo(T(16, 35), 'onFoot')],
+        fixes: [fix(T(8, 30), YARD), fix(T(9, 0), YARD),
+          fix(T(9, 16), CUST), fix(T(11, 0), CUST), fix(T(13, 22), CUST),
+          fix(T(13, 27), YARD), fix(T(14, 0), YARD), fix(T(15, 0), YARD), fix(T(15, 22), YARD),
+          fix(T(15, 38), STOP), fix(T(16, 0), STOP), fix(T(16, 21), STOP),
+          fix(T(16, 35), JHOME), fix(T(18, 0), JHOME)],
+        nowMs: T(20, 0), crew: true,
+      }));
+      expect(r.work, 'the customer visit is a real dwell: without one the wrap '
+        + 'branch is never reached and this test passes for the wrong reason').toBe(1);
+      expect(r.shop.length, 'one yard stretch, not a clipped stub').toBe(1);
+      expect(Math.round((r.shop[0][1] - r.shop[0][0]) / 60000),
+        'every minute from arriving to driving away, not 30').toBe(115);
+      expect(r.holes, 'and no hole for the rail to dress up as somewhere he drove to').toBe(0);
+    });
+
+    // The contrast, and the reason "he left again" is not the test on its own.
+    // The drive HOME is also leaving. Change nothing about the day above
+    // except that he goes straight home from the yard instead of stopping on
+    // the way, and the wrap must fire exactly as it always has: that is the
+    // 19h38m case (a phone sitting at the yard until 11:48pm) this rule was
+    // written for, and it is untouched.
+    test('but driving straight home from the yard is the day ending, and still caps', async () => {
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify({
+          shop: res.dwells.filter(d => d.kind === 'shop').map(d => Math.round((d.endTs - d.startTs) / 60000)),
+          work: res.dwells.filter(d => d.kind === 'client').length,
+        }));
+      }, base({
+        fences: [JHOME, YARD, CUST],
+        // Same morning, same yard arrival at 13:27, same departure at 15:22.
+        // The only difference is the far end: his driveway, one hop, no stop.
+        tape: [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 16), 'onFoot'),
+          mo(T(13, 22), 'automotive'), mo(T(13, 27), 'onFoot'),
+          mo(T(15, 22), 'automotive'), mo(T(15, 40), 'onFoot')],
+        fixes: [fix(T(8, 30), YARD), fix(T(9, 0), YARD),
+          fix(T(9, 16), CUST), fix(T(11, 0), CUST), fix(T(13, 22), CUST),
+          fix(T(13, 27), YARD), fix(T(14, 0), YARD), fix(T(15, 0), YARD), fix(T(15, 22), YARD),
+          fix(T(15, 40), JHOME), fix(T(18, 0), JHOME)],
+        nowMs: T(20, 0), crew: true,
+      }));
+      expect(r.work, 'same day, same customer visit, so the same branch runs').toBe(1);
+      expect(r.shop, 'the unload window, not the whole afternoon').toEqual([30]);
+    });
+
     // The other half of the same rule, and the reason it is worded as "nothing
     // in it" rather than "not the same leg": house straight to the yard and
     // back at night are two SEPARATE legs with nothing inside either one, and

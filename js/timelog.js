@@ -564,12 +564,35 @@ function _tlBlendManual(rows){
         const mins=Math.round((b-a)/60000);
         if(mins<_TL_SITE_MIN_MIN||handed+mins>m.r.minutes)return;
         handed+=mins;
+        // ── IT IS NOT AN ADDRESS. NOTHING HERE KNOWS AN ADDRESS ───────────
+        // Owner 2026-09-16, reading Jack's rail: "from JS Solutions shop to
+        // the unsaved address at 157 pm we're missing a fucking drive."
+        //
+        // No drive was missing. He never moved. This row said he was at an
+        // address, so the rail showed him at the shop and then at an address
+        // with nothing in between, and the only way to read that is a lost
+        // drive. Two of these sat on his day: 1:57 to 3:22, when he was
+        // standing at the yard, and 7:59 to 9:07, which is his mother's and
+        // which he had already answered PERSONAL. That one is the worse half:
+        // the dismissed row is dropped before the blend runs (_timeLogRows,
+        // 'dismissed'), so the blend found 68 empty minutes and billed them
+        // back as paid time under an address that does not exist.
+        //
+        // All this code actually knows is that the clock was running and no
+        // tracked row explains the stretch. That is Manual time, which is the
+        // bucket the owner himself named for exactly this on 2026-09-01: "that
+        // was a untracked address that should have shown grey as manual time."
+        // 'Unsaved address' stays what it always meant: a stop the DERIVER
+        // placed, with a coordinate under it and a Save button that works.
+        //
+        // The accounting is untouched. The row is still paid and still carries
+        // the minutes the clock handed over, so _tlPaidMin comes out identical.
         rows.push({
-          id:'site'+k+'_'+a,rawId:null,source:'site',rawSource:'site',
+          id:'site'+k+'_'+a,rawId:null,source:'site',rawSource:'clock-span',
           date:m.r.date,minutes:mins,
           personName:m.r.personName,personUid:m.r.personUid||null,
-          clientName:'Unsaved address',addr:'',jobName:'',clientKey:null,
-          unpaid:false,detail:'Address not saved',
+          clientName:'',addr:'',jobName:'',clientKey:null,
+          unpaid:false,detail:'Clocked in, nothing tracked',
           startTime:new Date(a).toISOString(),endTime:new Date(b).toISOString()
         });
       });
@@ -1422,6 +1445,10 @@ function _tlRailKind(r){
   if(r.rawSource==='place-load')return 'load';
   if(r.rawSource==='place-office')return 'office';
   if(r.rawSource==='place-home')return 'home';
+  // The blend's own row: the clock was running and nothing tracked it. Grey
+  // Manual time, never 'Unsaved address', because this row has no address and
+  // never had one (see _tlBlendManual).
+  if(r.rawSource==='clock-span')return 'off';
   if(r.rawSource==='site'||/^unsaved/.test(String(r.rawSource||'')))return 'site';
   // RULE 13'S QUESTION IS NOT MANUAL TIME (owner 2026-09-10, on his Sunday
   // rail: a 14-minute visit to a client he had just saved came back reading
