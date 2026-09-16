@@ -283,8 +283,20 @@ test.describe('manual clock over a derived day', () => {
   });
 
   // Rule 13 on the rail: a held visit is a question in no total; a dismissed
-  // one is not a row at all.
-  test('a held visit is unpaid and says so; a dismissed one is gone', async () => {
+  // one is a row nothing draws.
+  //
+  // AMENDED 2026-09-16. This used to assert the dismissed visit produced no
+  // row at all, and that was correct for what it could see: the rail does not
+  // draw it and no total counts it. It was wrong about the mechanism, and the
+  // mechanism is what broke Jack's day. A row that is absent from `rows` is a
+  // hole, and under a manual clock _tlBlendManual fills holes with paid time,
+  // so his answered-Personal stop at Laurie Schonfeldt came back as 68 paid
+  // minutes of "manual time". The row now EXISTS and carries `dismissed`,
+  // which is the same shape a personal gap answer has always had
+  // (_tlIsPersonalGap): every span-aware pass sees the stretch covered, and
+  // _tlDayRailHtml is the only thing that drops it. Unpaid and undrawn are
+  // still asserted below, so nothing this test was protecting has moved.
+  test('a held visit is unpaid and says so; a dismissed one is covered but never drawn', async () => {
     const r = await page.evaluate(async () => {
       const saved = window._fetchCrewLabor;
       try {
@@ -296,7 +308,9 @@ test.describe('manual clock over a derived day', () => {
         const rows = await _timeLogRows(null);
         const byId = id => rows.find(x => x.rawId === id);
         return { held: byId('h1') && { unpaid: byId('h1').unpaid, detail: byId('h1').detail, kind: _tlRailKind(byId('h1')) },
-                 dismissed: !!byId('d1'), paid: _tlPaidMin(rows) };
+                 dis: byId('d1') && { unpaid: byId('d1').unpaid, dismissed: !!byId('d1').dismissed },
+                 drawn: _tlDayRailHtml(rows.filter(x => x.date === '2026-08-23')).indexOf('Personal (not counted)') >= 0,
+                 paid: _tlPaidMin(rows) };
       } finally { window._fetchCrewLabor = saved; }
     });
     // unpaid stays: a held visit is still in no total, which is the whole
@@ -305,8 +319,35 @@ test.describe('manual clock over a derived day', () => {
     // which is not manual and is not a verdict, and it used to send him to the
     // Home screen for the answer that now sits on the row.
     expect(r.held).toEqual({ unpaid: true, detail: 'Not counted until you answer', kind: 'held' });
-    expect(r.dismissed).toBe(false);
+    // It is there, so the blend can never mistake it for an empty stretch.
+    expect(r.dis).toEqual({ unpaid: true, dismissed: true });
+    // And the rail never draws it, which is what "gone" always meant here.
+    expect(r.drawn).toBe(false);
     expect(r.paid).toBe(120);
+  });
+
+  // ── HIS ANSWER SURVIVES HIS OWN CLOCK (owner 2026-09-16) ─────────────────
+  //
+  // "Also why is Laurie Schonfeldt sitting as manual time?" Jack answered that
+  // stop Personal at 1:34pm. His clock ran anyway, so the reader dropped the
+  // row, found 68 minutes of clock that nothing explained, and billed them
+  // back as a paid untracked row. The answer took the stop off the rail and
+  // left the pay on the day. This is the permanent guard: a dismissed stretch
+  // under a clock is COVERED, so no filler row is ever written over it.
+  test('a stop answered Personal is not re-billed by the clock that brackets it', async () => {
+    const entries = [
+      row('p1', 'dismissed', T(7, 59), T(9, 7), { dest_place: 'Laurie Schonfeldt' }),
+      row('l1', 'drive', T(9, 7), T(9, 30), { dest_place: 'John Doe' }),
+      row('c1', 'client', T(9, 30), T(16, 0), { dest_place: 'John Doe' }),
+    ];
+    const rows = await render(entries, [], [[T(7, 54), T(16, 39)]]);
+    const hm = t => t.slice(11, 16);
+    const span = hm(T(7, 59)) + '-' + hm(T(9, 7));
+    // Nothing invented over the personal stretch.
+    expect(rows.filter(r => r.raw === 'clock-span' && r.t.slice(0, 5) < hm(T(9, 7)) && r.t.slice(6) > hm(T(7, 59)))).toEqual([]);
+    // The stop itself is present, unpaid, and carries the dismissed flag.
+    const p = rows.find(r => r.t === span);
+    expect(p && { min: p.min, unpaid: p.unpaid, name: p.name }).toEqual({ min: 68, unpaid: true, name: 'Laurie Schonfeldt' });
   });
 
   // ── THE VIEWER IS NOT THE PERSON (owner report 2026-09-14) ──────────────

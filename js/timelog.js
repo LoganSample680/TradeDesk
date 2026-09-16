@@ -755,9 +755,39 @@ async function _timeLogRows(sinceISO){
   });
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
-    // Rule 13, answered "Personal": the visit never happened as far as the
-    // log is concerned. Not hidden by CSS, not counted, not drawn.
-    if(String(e.source||'')==='dismissed')return;
+    // ── RULE 13, ANSWERED "PERSONAL" (owner 2026-09-16) ──────────────────
+    // "Why is Laurie Schonfeldt sitting as manual time?" Because this line
+    // used to `return`, and dropping the row out of `rows` is not the same as
+    // taking the time off the day. Jack answered that stop Personal at 1:34pm;
+    // his clock ran 7:54am to 4:39pm either way, so _tlBlendManual then found
+    // 68 minutes of clock nothing explained and billed them straight back as
+    // paid time under a stop that no longer existed. His own answer, undone on
+    // screen, one function later.
+    //
+    // The file already solved this for a personal GAP answer and the fix is to
+    // use it rather than invent a second one (§7.3): the row stays in `rows`
+    // carrying `dismissed`, so every span-aware pass sees the stretch covered,
+    // and _tlDayRailHtml is the ONLY thing that drops it. Not drawn, not
+    // counted (unpaid), and never asked about again.
+    //
+    // The clock keeps its own minutes. Personal says the STOP was not work; it
+    // is not a deduction from the hours he punched, and a manual personal gap
+    // (_tlIsPersonalGap) has never docked a clock either.
+    if(String(e.source||'')==='dismissed'){
+      const _da=Date.parse(e.arrived_at||''),_dd=Date.parse(e.departed_at||'');
+      if(!(_da>0&&_dd>_da))return;              // no span to cover, nothing to do
+      rows.push({
+        id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
+        source:'auto',date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(_da)):e.arrived_at.slice(0,10),
+        minutes:Number(e.minutes)>0?Math.round(Number(e.minutes)):Math.round((_dd-_da)/60000),
+        personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
+        clientName:e.dest_place||'',addr:'',jobName:'',clientKey:e.client_key||null,
+        unpaid:true,dismissed:true,detail:'Personal (not counted)',
+        startTime:e.arrived_at,endTime:e.departed_at,
+        rawId:e.id!=null?e.id:null,rawSource:'dismissed'
+      });
+      return;
+    }
     // Off-job stops (lunch, an errand) still get a row (owner request
     // 2026-08-23: "needs logged as lunches or unaccounted for time", the day
     // should read complete, not like a chunk is silently missing), but the
