@@ -606,7 +606,44 @@ test.describe('geo-derive wiring', () => {
       expect(r).toBe(0);
     });
 
-    test('the clocks are this person\'s own, closed, and touching the day', async () => {
+    // ── A RUNNING CLOCK IS EVIDENCE TOO (owner 2026-09-16) ───────────────
+    // "Why did Jack mark Laurie Schonfeldt as personal? While on a clock in?"
+    //
+    // Because this function only took CLOSED clocks, and the visit was derived
+    // at 09:08 that morning while he was still punched in. Rule 13 rung 2 is
+    // "a manual clock is running over it"; his ran 07:54 to 16:39 and the
+    // visit sat inside it. With nothing to see, the visit was held, the card
+    // asked, he answered Personal at 13:34, and fixed_at pinned that answer
+    // forever. His clock did not close until 16:39, hours after the only
+    // question anybody was ever going to be asked.
+    test('a clock that is still running counts, bounded by now and by the day', async () => {
+      const r = await page.evaluate(() => {
+        const savedTE = window.timeEntries, savedU = window._supaUser, savedE = window._isEmployee;
+        try {
+          window._supaUser = { id: 'me' }; window._isEmployee = false;
+          const ds = Date.parse('2026-09-01T05:00:00Z');
+          window.timeEntries = [
+            { id: 1, start_time: new Date(Date.now() - 3600000).toISOString(),
+              end_time: null, open: true, logged_by_uid: null },
+          ];
+          // Today's window, so the open clock is inside it.
+          const today = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z') - 5 * 3600000;
+          const live = _geoDeriveClocks(today, today + 86400000);
+          // And it can never reach past the day it belongs to: asked about a
+          // day in the past, an open clock that started today is not in it.
+          const past = _geoDeriveClocks(ds, ds + 86400000).length;
+          return { n: live.length, mins: live[0] ? Math.round((live[0].end - live[0].start) / 60000) : 0, past };
+        } finally { window.timeEntries = savedTE; window._supaUser = savedU; window._isEmployee = savedE; }
+      });
+      expect(r.n, 'the clock he is punched into right now').toBe(1);
+      expect(r.mins, 'from when he punched in, up to now').toBe(60);
+      expect(r.past, 'and never bleeding into another day').toBe(0);
+    });
+
+    // AMENDED 2026-09-16: the title said "closed" and the fixture asserted an
+    // open clock was dropped. That is the defect above, not the rule. What
+    // this still proves, and what has not changed, is WHOSE clock it is.
+    test('the clocks are this person\'s own, and touching the day', async () => {
       const r = await page.evaluate(() => {
         const savedTE = window.timeEntries, savedU = window._supaUser, savedE = window._isEmployee;
         try {
@@ -615,7 +652,6 @@ test.describe('geo-derive wiring', () => {
             { id: 1, start_time: '2026-09-01T13:00:00Z', end_time: '2026-09-01T17:00:00Z', logged_by_uid: null },   // the owner's
             { id: 2, start_time: '2026-09-01T13:00:00Z', end_time: '2026-09-01T17:00:00Z', logged_by_uid: 'crew' },  // somebody else's
             { id: 3, start_time: '2026-08-20T13:00:00Z', end_time: '2026-08-20T17:00:00Z', logged_by_uid: null },   // another day
-            { id: 4, start_time: '2026-09-01T18:00:00Z', end_time: null, open: true, logged_by_uid: null },          // still running
             null, { id: 5 },
           ];
           const ds = Date.parse('2026-09-01T05:00:00Z');

@@ -267,12 +267,23 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   const minOfDay = (ms) => Math.round(((centralMs(ms) % 86400_000) + 86400_000) % 86400_000 / 60000);
   for (const r of (Array.isArray(clockRes?.data) ? clockRes.data : [])) {
     const d = r?.data || {};
-    if (d.open || !d.start_time || !d.end_time) continue;
+    // An OPEN clock counts, bounded by now and by the day (owner 2026-09-16:
+    // "why did Jack mark Laurie Schonfeldt as personal? while on a clock in?"
+    // Because a mid-day derive saw no clock at all: it took closed ones only,
+    // and his was still running). Same change as _geoDeriveClocks, so the two
+    // halves of the one deriver cannot disagree about what a clock is.
+    if (!d.start_time) continue;
+    if (!d.end_time && !d.open) continue;
     const owner = d.logged_by_uid ? String(d.logged_by_uid) === uid : uid === cid;
     if (!owner) continue;
-    const s = Date.parse(d.start_time), e = Date.parse(d.end_time);
+    const s = Date.parse(d.start_time);
+    const e = d.end_time ? Date.parse(d.end_time) : Math.min(nowMs, b.end);
     if (!(s > 0 && e > s)) continue;
     if (e > b.start && s < b.end) clocks.push({ start: s, end: e });
+    // Rule 19 learns from FINISHED days only: an open clock has no out time to
+    // learn from, and guessing one from `now` would teach the window whatever
+    // time of day the derive happened to run.
+    if (!d.end_time) continue;
     const inMin = minOfDay(s), outMin = minOfDay(e);
     // A clock that ran past midnight ends "before" it began in minutes-of-day.
     // Its OUT time says nothing about when this person's day closes, so only

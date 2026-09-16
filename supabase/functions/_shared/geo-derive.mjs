@@ -2161,11 +2161,31 @@ function _gdCommuteMark(legs, fences, radiusFt, crew) {
   // account, where his shop fence sits four metres from his desk, and the
   // WRONG one for any owner whose yard is across town: their drive in would
   // have been refused. Crew is the actual question, so crew is what is asked.
-  if (!crew) return legs;
   const list = Array.isArray(legs) ? legs.filter(Boolean) : [];
   if (!list.length) return legs;
   const house = (e) => !!e && e.unsaved !== true && _gdIsHouse(e, fences, radiusFt);
   const reports = (e) => !!e && e.unsaved !== true && _gdReportsHere(e, fences, radiusFt);
+  // ── OR A BASE THAT IS NOT HIS HOUSE, WHICH IS THE OTHER HALF ──────────
+  // Owner 2026-09-16: "for a business owner it does, but for Jack it doesn't."
+  // Gating on the crew hat alone was the wrong reading of that and it broke
+  // the very person it was written for. In the DATA Jack is not crew: his
+  // rows carry contractor_user_id === employee_user_id, he has no
+  // team_members row anywhere, and his login owns its own account. So `crew`
+  // is false for him and his commutes billed, which is the exact opposite of
+  // what the owner asked for, twice.
+  //
+  // Both of his sentences are true at once under one test, and it is the
+  // question the tax code actually asks: IS HOME THE BASE? The owner's shop
+  // fence sits four metres from his desk, so home IS his place of business
+  // and every drive out of the door is work. Jack's base is his dad's yard
+  // eight miles away, so his first drive out and his last drive back are his
+  // own, whether or not anybody ever links him as crew.
+  //
+  // Crew stays in as the other half: a crew member whose employer registered
+  // no shop at all still commutes to the first job of the day.
+  const awayBase = (fences || []).some(f => f && f.lat != null && f.lng != null &&
+    _gdReportsHere(f, fences, radiusFt) && !_gdIsHouse(f, fences, radiusFt));
+  if (!crew && !awayBase) return legs;
   const order = list.slice().sort((a, b) => a.startTs - b.startTs);
   const mark = new Map();     // leg -> {first:bool, last:bool}
   const put = (l, k) => { const m = mark.get(l) || {}; m[k] = true; mark.set(l, m); };

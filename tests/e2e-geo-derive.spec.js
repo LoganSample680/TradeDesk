@@ -1625,26 +1625,73 @@ test.describe('geo-derive: the day deriver', () => {
     // house") that gave the right answer on the owner's own account only
     // because his shop fence sits four metres from his desk; an owner whose
     // yard is across town would have had his drive in refused.
-    test('the same day derived for the business owner bills every drive', async () => {
+    // AMENDED 2026-09-16, same day, after the crew-only gate broke the one
+    // person it was written for. Its first draft modelled "the owner" as
+    // Jack's own fences with the crew hat switched off, which is not the
+    // owner's shape at all: it is a man with a yard eight miles from his
+    // house, and that man has a commute whoever owns the account.
+    //
+    // IT IS THE BASE, NOT THE HAT. The owner's shop fence sits four metres
+    // from his home office, so home IS his place of business and every drive
+    // out of the door is work, which is his sentence "for a business owner it
+    // does" and is the line the tax code draws in the same place.
+    test('the owner, whose shop is his house, bills every drive out of his door', async () => {
+      const HOMESHOP = { id: 'shop', kind: 'shop', name: 'TradeDesk shop',
+        lat: JHOME.lat, lng: JHOME.lng };
       const asOwner = await page.evaluate((inp) => {
         const r = geoDeriveDay(inp);
         const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'c' });
         return JSON.parse(JSON.stringify({
           commutes: r.legs.filter(l => l && l.commute === true).length,
           drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
+        }));
+      }, base({
+        fences: [JHOME, HOMESHOP, CUST], nowMs: T(20, 0), crew: false,
+        tape: [mo(T(7, 0), 'onFoot'), mo(T(7, 59), 'automotive'), mo(T(8, 24), 'onFoot'),
+          mo(T(15, 43), 'automotive'), mo(T(16, 3), 'onFoot')],
+        fixes: [fix(T(7, 30), JHOME), fix(T(7, 59, 5), JHOME), fix(T(8, 24, 5), CUST),
+          fix(T(12, 0), CUST), fix(T(15, 43, 5), CUST), fix(T(16, 3, 5), JHOME),
+          fix(T(18, 0), JHOME)],
+      }));
+      expect(asOwner.commutes, 'nothing is a commute when the house IS the base').toBe(0);
+      expect(asOwner.drives, 'out of his own driveway and back, both work').toBe(2);
+    });
+
+    // ── AND JACK IS NOT CREW IN THE DATA (owner 2026-09-16) ───────────────
+    // This is the case the crew-only gate got wrong, found on his live rows.
+    // Jack's job_time_entries carry contractor_user_id === employee_user_id,
+    // there is no team_members row for him anywhere, and his login owns its
+    // own account with ownerName "Jack Schonfeldt". So `crew` is FALSE for
+    // him, his commutes billed, and that is the exact opposite of what the
+    // owner asked for twice.
+    //
+    // His base is still eight miles from his house, and that is the fact that
+    // decides it. No link, no hat, no setting.
+    test('a one-man account whose base is not his house still has a commute', async () => {
+      const r = await page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const rows = geoDeriveRows(res, { contractorId: 'x', employeeId: 'x' });
+        return JSON.parse(JSON.stringify({
+          commutes: res.legs.filter(l => l && l.commute === true).length,
+          drives: rows.job_time_entries.filter(t => /^drive/.test(t.source)).length,
           miles: rows.td_mileage.map(m => [m.from_name, m.to_name]),
         }));
       }, base({ tape, fixes, fences: [JHOME, YARD, CUST], nowMs: T(20, 0), crew: false }));
-      expect(asOwner.commutes, 'nothing is a commute when the house is the business').toBe(0);
-      expect(asOwner.drives, 'all four, including the one out of his own driveway').toBe(4);
-      expect(asOwner.miles).toEqual([
-        ['7402 SW 22nd Ct', 'JS Solutions shop'], ['JS Solutions shop', 'Bill Lorson'],
-        ['Bill Lorson', 'JS Solutions shop'], ['JS Solutions shop', '7402 SW 22nd Ct'],
-      ]);
-      // And the same evidence for Jack is the answer he actually gave.
+      expect(r.commutes, 'the drive in and the drive home, with nobody linked as crew').toBe(2);
+      expect(r.drives).toBe(2);
+      expect(r.miles, 'the yard out to the customer and back, and nothing else')
+        .toEqual([['JS Solutions shop', 'Bill Lorson'], ['Bill Lorson', 'JS Solutions shop']]);
+      // And the crew hat reaches the same answer, so nothing turns on it.
       const asCrew = await run20([JHOME, YARD, CUST]);
       expect(asCrew.commutes).toBe(2);
       expect(asCrew.drives).toBe(2);
+    });
+
+    // The other half stays in: a crew member whose employer registered no shop
+    // at all has no away-base to find, and still commutes to the first job.
+    test('and crew with no base registered anywhere still commutes', async () => {
+      const r = await run20([JHOME, CUST]);
+      expect(r.commutes, 'first drive out, last drive home').toBe(2);
     });
 
     // ── A COMMUTE HAS NOTHING IN IT (owner 2026-09-16) ────────────────────
