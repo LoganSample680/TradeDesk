@@ -188,6 +188,24 @@ const STATE_DEPOSIT_CAP={
   WY:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
 };
 
+// THE CAP WHEN THERE IS NO CONTRACT PRICE (T&M rate sheet, _tmRateOnly).
+//
+// _maxDeposit ends in Math.min(max, amt), which is right: a deposit can never
+// exceed what the job costs. On a rate sheet the job has no stated cost, so
+// that clamp is against 0 and it wipes out a mobilization deposit the
+// contractor deliberately asked for.
+//
+// A percentage arm genuinely cannot be evaluated without a contract price, so
+// it does not apply. A FLAT arm still does, and that is the legally meaningful
+// half here (California's cap, for one, is $1,000 or 10% whichever is less: the
+// $1,000 stands on its own). Infinity means no dollar ceiling in this state.
+function _maxDepositNoTotal(state){
+  const cap=STATE_DEPOSIT_CAP[state?String(state).toUpperCase():''];
+  if(!cap||cap.rule==='none')return Infinity;
+  if(cap.rule==='pct')return Infinity;          // nothing to take a percent of
+  return (cap.flat!=null)?cap.flat:Infinity;    // 'flat' and the flat half of 'lesser'
+}
+
 // Returns the maximum legal deposit dollar amount for a state + contract amount.
 // 'lesser' → min(flat, pct%·amount); 'pct' → pct%·amount; 'flat' → flat;
 // 'none'/unknown → the full contract amount (no statutory cap).

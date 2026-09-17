@@ -2176,7 +2176,23 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
         <!-- Rates & crew -->
         <div class="card">
-          <div class="td-h3" style="margin-bottom:10px">Rates &amp; crew</div>
+          <div class="row-bw" style="margin-bottom:10px">
+            <div class="td-h3">Rates &amp; crew</div>
+          </div>
+          <!-- THE RATE SHEET SWITCH. On a real time-and-materials job there is no
+               total, that is the whole point of the contract, and forcing a day
+               count so the app can print an "ESTIMATED TOTAL" is asking a man to
+               invent a number he will then be held to. On: he signs the rate, and
+               the NTE cap below is the only ceiling the client ever sees. -->
+          <div class="sf-row" style="padding-left:0;padding-right:0;border:0;margin-bottom:12px">
+            <div class="sf-body" style="gap:0"><span style="font-size:15px;font-weight:700;color:var(--text)">Rate sheet</span>
+              <span style="font-size:11px;color:var(--text-3);font-weight:500" id="tm-rateonly-sub">Client signs your rate, no total on the proposal</span>
+            </div>
+            <label class="sf-switch">
+              <input type="checkbox" id="tm-i-rateonly" onchange="_tmSetRateOnly(this.checked)">
+              <span class="sf-track"></span><span class="sf-knob"></span>
+            </label>
+          </div>
           <div class="fg fg2">
             <div class="f">
               <label>Hourly rate · $/hr</label>
@@ -2190,23 +2206,23 @@ body.dark .cal-cell.other{background:var(--cream)}
                 <button onclick="_tmCrewStep(1)" type="button" style="width:42px;border:none;border-left:1px solid var(--border2);background:var(--blue);cursor:pointer;font-size:22px;color:#fff;font-family:inherit;flex-shrink:0;display:flex;align-items:center;justify-content:center">+</button>
               </div>
             </div>
-            <div class="f">
+            <div class="f" id="tm-days-f">
               <label>Estimated days</label>
               <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
+          <div id="tm-stat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
             <div class="stat-tile">
               <div class="stat-l">Day rate</div>
               <div class="stat-v" id="tm-stat-day">$0</div>
               <div class="stat-s" id="tm-stat-day-s">enter rate &amp; crew</div>
             </div>
-            <div class="stat-tile">
+            <div class="stat-tile" id="tm-stat-labor-tile">
               <div class="stat-l">Est. labor total</div>
               <div class="stat-v" id="tm-stat-labor">$0</div>
               <div class="stat-s" id="tm-stat-labor-s">-</div>
             </div>
-            <div class="stat-tile">
+            <div class="stat-tile" id="tm-stat-days-tile">
               <div class="stat-l">Total hours</div>
               <div class="stat-v" id="tm-stat-days">0</div>
               <div class="stat-s">at 8hr days</div>
@@ -2217,7 +2233,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <!-- Material categories -->
         <div class="card">
           <div class="row-bw" style="margin-bottom:12px">
-            <div class="td-h3">Material categories</div>
+            <div class="td-h3" id="tm-mat-head">Material categories</div>
             <button class="btn btn-sm" onclick="_tmAddMatCat()">+ Add category</button>
           </div>
           <div class="tm-mat-list" id="tm-mat-list"></div>
@@ -2232,7 +2248,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
         <!-- NTE cap -->
         <div class="card">
-          <div class="td-h3" style="margin-bottom:10px">Not-to-exceed cap (optional)</div>
+          <div class="td-h3" id="tm-nte-head" style="margin-bottom:10px">Not-to-exceed cap (optional)</div>
           <div class="fg fg2">
             <div class="f">
               <label>Cap amount</label>
@@ -2253,12 +2269,26 @@ body.dark .cal-cell.other{background:var(--cream)}
       <!-- Summary rail -->
       <div class="summary-rail">
         <div class="summary-card">
-          <div class="td-micro" style="margin-bottom:8px">Estimated total</div>
-          <div class="td-display summary-total" id="tm-rail-total">$0</div>
-          <div class="summary-meta">±15% normal for T&amp;M</div>
-          <div class="summary-divider"></div>
-          <div class="summary-row"><span>Labor</span><span id="tm-rail-labor">$0</span></div>
-          <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
+          <!-- ONE OF THESE TWO HEADS THE RAIL, never both: the estimated total a
+               fixed-ish T&M job carries, or the rate the client is actually
+               signing when there is no total (_tmSetRateOnly). -->
+          <div id="tm-rail-total-wrap">
+            <div class="td-micro" style="margin-bottom:8px">Estimated total</div>
+            <div class="td-display summary-total" id="tm-rail-total">$0</div>
+            <div class="summary-meta">±15% normal for T&amp;M</div>
+            <div class="summary-divider"></div>
+            <div class="summary-row"><span>Labor</span><span id="tm-rail-labor">$0</span></div>
+            <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
+          </div>
+          <div id="tm-rail-rate-wrap" style="display:none">
+            <div class="td-micro" style="margin-bottom:8px">Your rate</div>
+            <div class="td-display summary-total" id="tm-rail-rate">$0<span style="font-size:18px;font-weight:700">/hr</span></div>
+            <div class="summary-meta" id="tm-rail-rate-sub">per worker</div>
+            <div class="summary-divider"></div>
+            <div class="summary-row"><span>Crew on site</span><span id="tm-rail-rate-crew">1</span></div>
+            <div class="summary-row"><span>Day rate</span><span id="tm-rail-rate-day">$0</span></div>
+            <div class="summary-row"><span>Materials</span><span id="tm-rail-rate-mat">at cost</span></div>
+          </div>
           <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
           <!-- Crew labor cost, only rendered when the contractor has employees -->
@@ -2266,6 +2296,16 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div id="tm-gauge-wrap"></div>
           <div class="summary-divider"></div>
           <div id="tm-deposit-wrap"></div>
+          <!-- A PERCENT OF NOTHING IS NOTHING. With no estimated total there is
+               nothing to take 25% of, so a rate sheet asks for its mobilization
+               money as a flat figure he names. Blank means none. -->
+          <div id="tm-deposit-flat-wrap" style="display:none">
+            <div class="summary-row" style="align-items:center">
+              <span style="font-size:14px;font-weight:600">Mobilization deposit</span>
+              <div class="input-prefix" style="width:118px"><span>$</span><input type="text" inputmode="decimal" id="tm-i-dep-flat" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
+            </div>
+            <div class="summary-row" style="color:var(--text-3)"><span>Balance</span><span>billed as you go</span></div>
+          </div>
           <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">

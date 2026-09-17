@@ -4145,9 +4145,17 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r).toEqual([]);      // was "Materials required"
     });
 
+    // Amended 2026-09-17 for the rate sheet (_tmRateOnly). Rate and hours used
+    // to be ONE gate titled "Time & labor required", which was correct while
+    // both were mandatory on every T&M bid. They are now two gates, because a
+    // rate sheet has a rate and deliberately no day count: rate first (it is
+    // the bid either way), days second and only when a total is being printed.
+    // This fixture supplies neither, so the rate gate is the one that fires.
+    // The thing being asserted, that a T&M job with no numbers cannot be sent,
+    // is unchanged. The days half is covered in e2e-tm-rate-sheet.spec.js.
     test('a time and materials job with no rate or hours is still refused, because that IS the bid', async () => {
       const r = await page.evaluate(() => {
-        _geiIsTM = true; _geiIsFreeForm = false;
+        _geiIsTM = true; _geiIsFreeForm = false; _tmRateOnly = false;
         _geiScopeNoScope = true; _geiScopeChips = [];
         _tmRatePerMan = 0; _tmEstHours = 0; _geiLines = [];
         window.__blocked = [];
@@ -4155,7 +4163,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         sendGenericProposal();
         return window.__blocked;
       });
-      expect(r).toEqual(['Time & labor required']);
+      expect(r).toEqual(['Rate required']);
     });
   });
 

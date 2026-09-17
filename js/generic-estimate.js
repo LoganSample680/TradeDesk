@@ -341,6 +341,28 @@ Object.defineProperty(window,'_tmRatePerMan',{get:()=>_tmRatePerMan,set:v=>{_tmR
 Object.defineProperty(window,'_tmEstHours',{get:()=>_tmEstHours,set:v=>{_tmEstHours=v;},configurable:true});
 Object.defineProperty(window,'_tmBillingCycle',{get:()=>_tmBillingCycle,set:v=>{_tmBillingCycle=v;},configurable:true});
 let _tmCapAction='Stop & get re-approval';
+// ── THE RATE SHEET (owner 2026-09-17) ──────────────────────────────────────
+//
+// "time and materials, need a fast fucking way to get through a bid and not
+// show price if we don't want to."
+//
+// Those are one thing, not two. A time-and-materials contract prices the RATE,
+// not the job: that is the entire reason a man writes one instead of a fixed
+// bid. The builder here did the opposite. It multiplied rate x crew x days into
+// an ESTIMATED TOTAL, printed that on the proposal in the biggest type on the
+// page, and REFUSED THE SEND BUTTON until an estimated-days number existed
+// (sendGenericProposal, "Enter your hourly rate and estimated days"). So a
+// service call he cannot honestly put a day count on could not be sent at all,
+// and the way through was to invent a number the client would then hold him to.
+//
+// Rate sheet on: the client signs the rate, the crew size, the billing cadence
+// and, if he sets one, the NTE cap. No total anywhere, because there isn't one.
+// Days, material categories and the deposit all become optional, which is why
+// the same switch is also the fast path: rate prefills from Settings, crew
+// defaults to 1, cadence defaults to weekly, so the bid is a scope chip and
+// Send.
+let _tmRateOnly=false;
+Object.defineProperty(window,'_tmRateOnly',{get:()=>_tmRateOnly,set:v=>{_tmRateOnly=!!v;},configurable:true});
 let _geiIsFreeForm=false;
 Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
@@ -632,6 +654,10 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
+  // What he corrects, the app keeps (_geiRememberDeposit's rule). A man who
+  // works time-and-materials works it every day; asking him to flip the same
+  // switch on every bid is the friction the switch exists to remove.
+  _tmRateOnly=!!(S&&S.tmRateOnly);
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -680,6 +706,10 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||_facts.laborRate;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
+        // The BID's own answer wins over the account default: a rate sheet he
+        // saved stays a rate sheet, and a totalled T&M he saved before he ever
+        // turned the default on does not silently lose its total on resume.
+        if(b.tmRateOnly!==undefined)_tmRateOnly=!!b.tmRateOnly;
       }
       else if(b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       // Deposit % is restored in _tmShowPage/_byoShowPage instead, the field
@@ -734,7 +764,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       // isTM precedence, legacy dual-flag rows (see _byoAutosave note) must
       // resume as T&M, never as an empty BYO.
-      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       if(Array.isArray(_b.exclusions))_geiExclusions=[..._b.exclusions];
@@ -1335,6 +1365,11 @@ function _tmShowPage(){
   if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
+  // A rate sheet's deposit is a flat figure, not a percent of a total it does
+  // not have. Restored before _tmApplyRateOnly so the row is populated the
+  // instant it is shown.
+  if(_tmRateOnly&&b&&Number(b.tmDepositAmt)>0)setV('tm-i-dep-flat',b.tmDepositAmt);
+  _tmApplyRateOnly();
   // Restore who's on the job, drives the true-cost gauge via the shared crew picker.
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _injectRrpItems();
@@ -2000,6 +2035,14 @@ function _byoAutosave(){
   if(_geiIsTM){
     b.isTM=true;
     b.isFreeForm=false;
+    b.tmRateOnly=!!_tmRateOnly;
+    if(_tmRateOnly){
+      // Same reason as saveGenericEstimate: the flat figure is the deposit, and
+      // the percent the shared block just wrote off a phantom total is wrong.
+      b.tmDepositPct=0;
+      b.tmDepositAmt=Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0);
+      b.deposit=b.tmDepositAmt;
+    }
     b.tmCrewCount=_tmCrewCount;
     b.tmRatePerMan=_tmRatePerMan;
     b.tmEstHours=_tmEstHours;
@@ -3373,8 +3416,17 @@ function _tmInputChange(){
   if(crewDisp)_tmCrewCount=parseInt(crewDisp.textContent)||_tmCrewCount||1;
   // The field is "Estimated days", _tmEstHours (shared with save/resume/the legacy
   // wizard) stays a real hour count internally, just derived from days×8 now.
+  //
+  // A RATE SHEET HAS NO HOURS, and hiding the field is not the same as zeroing
+  // it. Type 3 days, then turn the switch on: the input keeps its 3, so the
+  // labor line stayed in _geiLines and the client's document read "Labor: 2
+  // workers @ $95/hr x24" under a header promising no total. That is exactly
+  // the day count the rate sheet exists not to state. The INPUT keeps its value
+  // (turning the switch back off must not lose what he typed), it just does not
+  // reach _tmEstHours, and labor falling to 0 splices the line straight out
+  // below.
   const daysInput=_moneyVal('tm-i-days');
-  _tmEstHours=daysInput*8;
+  _tmEstHours=_tmRateOnly?0:daysInput*8;
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   // Upsert labor line in _geiLines (same shape the rest of the app expects)
   const idx=_geiLines.findIndex(l=>l._tmLabor);
@@ -3397,11 +3449,23 @@ function _tmInputChange(){
   setT('tm-rail-total','$'+total.toLocaleString());
   setT('tm-rail-labor','$'+labor.toLocaleString());
   setT('tm-rail-mat','$'+matRaw.toLocaleString());
+  // The rate head, which is what a rate sheet's rail says instead of a total.
+  setT('tm-rail-rate','$'+_tmRatePerMan.toLocaleString());
+  const _rateEl=document.getElementById('tm-rail-rate');
+  if(_rateEl)_rateEl.innerHTML='$'+_tmRatePerMan.toLocaleString()+'<span style="font-size:18px;font-weight:700">/hr</span>';
+  setT('tm-rail-rate-sub',_tmCrewCount>1?'per worker, '+_tmCrewCount+' on site':'per worker');
+  setT('tm-rail-rate-crew',String(_tmCrewCount));
+  setT('tm-rail-rate-day','$'+dayRate.toLocaleString());
+  setT('tm-rail-rate-mat',matRaw>0?'$'+matRaw.toLocaleString()+' est.':'at cost');
   const _tmDeposit=Math.round(total*_geiDepositPct())/100;
   setT('tm-rail-balance','$'+(total-_tmDeposit).toLocaleString());
   let nte=_moneyVal('tm-i-nte');
   const nteInp=document.getElementById('tm-i-nte');
-  if(nteInp&&nte>0&&nte<total){
+  // A cap under the estimated total is a contradiction, but only where there IS
+  // an estimated total. On a rate sheet the cap is the ceiling he has chosen to
+  // give, and flagging it red against a number the client never sees would be
+  // the app arguing with him about arithmetic it is not doing.
+  if(nteInp&&!_tmRateOnly&&nte>0&&nte<total){
     nteInp.style.borderColor='var(--red)';
     nteInp.title='NTE cap cannot be less than the estimated total ($'+total.toLocaleString()+')';
   } else if(nteInp){nteInp.style.borderColor='';nteInp.title='';}
@@ -3525,6 +3589,46 @@ function _tmDelMatCat(idx){
   if(!confirm('Remove "'+(l.desc||'this category')+'"?'))return;
   _geiLines.splice(idx,1);
   _tmRenderMatList();_tmInputChange();
+}
+// ── THE RATE SHEET SWITCH ───────────────────────────────────────────────────
+// Flipping it is a decision about what the CLIENT reads, so it is remembered on
+// the account the moment he makes it, the same way his deposit percent is.
+function _tmSetRateOnly(on){
+  _tmRateOnly=!!on;
+  if(typeof S!=='undefined'&&!!S.tmRateOnly!==_tmRateOnly){
+    S.tmRateOnly=_tmRateOnly;
+    if(typeof _settingsChanged==='function')_settingsChanged();
+  }
+  _tmApplyRateOnly();
+  _tmInputChange();
+}
+// Everything the switch shows and hides, in one place, so the page shows the
+// same way on a flip as it does on a resume. Called by _tmShowPage too.
+function _tmApplyRateOnly(){
+  const on=!!_tmRateOnly;
+  const show=(id,vis)=>{const e=document.getElementById(id);if(e)e.style.display=vis?'':'none';};
+  const sw=document.getElementById('tm-i-rateonly');
+  if(sw)sw.checked=on;
+  // Days drives nothing a rate sheet prints, and it is the field that blocks
+  // Send. Hidden rather than disabled so the page does not read as broken.
+  show('tm-days-f',!on);
+  show('tm-stat-labor-tile',!on);
+  show('tm-stat-days-tile',!on);
+  show('tm-rail-total-wrap',!on);
+  show('tm-rail-rate-wrap',on);
+  show('tm-deposit-wrap',!on);
+  show('tm-deposit-flat-wrap',on);
+  const grid=document.getElementById('tm-stat-grid');
+  if(grid)grid.style.gridTemplateColumns=on?'1fr':'repeat(3,1fr)';
+  const sub=document.getElementById('tm-rateonly-sub');
+  if(sub)sub.textContent=on?'No total on the proposal, the client signs your rate'
+                           :'Client signs your rate, no total on the proposal';
+  // The cap stops being a sanity check on an estimate and becomes the only
+  // ceiling the client is given, so it says so.
+  const nteH=document.getElementById('tm-nte-head');
+  if(nteH)nteH.textContent=on?'Not-to-exceed cap (the only number they see)':'Not-to-exceed cap (optional)';
+  const matH=document.getElementById('tm-mat-head');
+  if(matH)matH.textContent=on?'Material categories (optional)':'Material categories';
 }
 function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();_byoAutosave();}
 function _tmSyncCadence(){
@@ -4637,14 +4741,20 @@ function saveGenericEstimate(draft){
   const _tmNteFromNew=parseFloat(v('tm-i-nte'))||0;
   const _tmNteOnEl=document.getElementById('tm-nte-on');
   const _tmNteOnChecked=_tmNteOnEl?(_tmNteOnEl.checked||false):false;
+  // A rate sheet's deposit is the flat figure he typed. The percent is forced
+  // to 0 rather than left at his standard, because 25% of a total that does not
+  // exist is exactly the bug that puts $0 on the proposal and a live percent in
+  // the record for the invoice to find later.
+  const _tmFlatDep=(_geiIsTM&&_tmRateOnly)?Math.round(_moneyVal('tm-i-dep-flat')):0;
   const _tmFields=_geiIsTM?{
     isTM:true,
+    tmRateOnly:!!_tmRateOnly,
     tmReason:v('tm-reason'),tmReasonNote:v('tm-reason-note'),
     tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
     tmBillingCycle:_tmBillingCycle||'weekly',
     tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
-    tmDepositPct:_geiDepositPct(),
-    tmDepositAmt:Math.round(total*_geiDepositPct()/100),
+    tmDepositPct:_tmRateOnly?0:_geiDepositPct(),
+    tmDepositAmt:_tmRateOnly?_tmFlatDep:Math.round(total*_geiDepositPct()/100),
     tmNteEnabled:(_tmNteFromNew>0)||_tmNteOnChecked,
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
@@ -4654,7 +4764,13 @@ function saveGenericEstimate(draft){
   if(typeof _maxDeposit==='function'){
     const _depAddrM=(v('gei-addr')||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
     const _depState=(_depAddrM?_depAddrM[1]:null)||(typeof S!=='undefined'&&S.state)||'KS';
-    const _depMax=_maxDeposit(_depState,total);
+    // A rate sheet's contract price is 0 by design, and _maxDeposit ends in
+    // Math.min(cap, amount), so running it here would clamp every mobilization
+    // deposit to nothing. _maxDepositNoTotal applies the arm that can still be
+    // evaluated without a price (the flat dollar ceiling) and nothing else.
+    const _depMax=(_geiIsTM&&_tmRateOnly&&typeof _maxDepositNoTotal==='function')
+      ?_maxDepositNoTotal(_depState)
+      :_maxDeposit(_depState,total);
     if(_deposit>_depMax+0.005){
       _deposit=Math.round(_depMax*100)/100;
       if(_geiIsTM)_tmFields.tmDepositAmt=_deposit;
@@ -4766,10 +4882,26 @@ function _geiBuildTermsHtml(){
   // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
   // shape: preserved verbatim by the renderer below.
   const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
+  // The cadence the contractor actually picked. This used to be a two-way
+  // ternary against 'weekly', so the two cadences the rail has always offered
+  // BESIDES weekly, milestone and completion, both told the client "Bi-weekly
+  // invoices" in the binding terms. One list, four answers, and the same list
+  // is what the rate-sheet footer prints so the document and the terms cannot
+  // say different things.
+  const _tmBillTerm={
+    weekly:'Weekly invoices',biweekly:'Invoices every two weeks',
+    milestone:'Invoices at each agreed milestone',completion:'One invoice on completion',
+  }[_tmBillingCycle||'weekly']||'Weekly invoices';
+  // ON A RATE SHEET THE RATE IS THE CONTRACT. There is no total to point at, so
+  // the number Buyer is agreeing to has to be stated in the terms themselves
+  // and not left living only in the document body.
+  const _tmRateClause=_tmRateOnly?[['Rate',
+    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate. Materials are billed at actual cost. No total contract price is stated or implied${_tmNteCap?`, other than the not-to-exceed amount above`:''}.`]]:[];
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
+    ..._tmRateClause,
     ['Cancellation &amp; Deposits',_cancelClause],
-    ['Billing',`${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.`],
+    ['Billing',`${_tmBillTerm} with time sheets and material receipts attached.`],
   ]:[
     ['Cancellation &amp; Deposits',_cancelClause],
   ];
@@ -4814,7 +4946,12 @@ async function sendGenericProposal(previewOnly,opts){
       // The rate and the hours ARE the bid on a time and materials job, so
       // those stay. A service call with no parts is an ordinary T&M job and is
       // no longer refused for having no materials.
-      if(!_tmRatePerMan||!_tmEstHours){zAlert('Enter your hourly rate and estimated days in the Rates & crew section.',{title:'Time & labor required'});return;}
+      // A RATE SHEET NEEDS A RATE. That is the whole list. Demanding an
+      // estimated-days figure here is what forced a man to invent a number he
+      // would then be held to on every service call he could not honestly put
+      // a day count on (see the _tmRateOnly header).
+      if(!_tmRatePerMan){zAlert('Enter your hourly rate in the Rates & crew section.',{title:'Rate required'});return;}
+      if(!_tmRateOnly&&!_tmEstHours){zAlert('Enter your estimated days, or turn on Rate sheet to send this without a total.',{title:'Estimated days required'});return;}
     }else if(_geiIsFreeForm){
       const _byoOn=_byoItems.filter(it=>it.on);
       if(!_byoOn.length){zAlert('Add at least one line before you send this.',{title:'Nothing to send yet'});return;}
@@ -4900,6 +5037,26 @@ async function sendGenericProposal(previewOnly,opts){
   // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
   const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
+  // ── THE RATE SHEET FOOTER ────────────────────────────────────────────────
+  // What sits where the ESTIMATED TOTAL would be when there is no total. The
+  // rate is the headline number because the rate is what he is being hired at,
+  // and it is the ONLY dollar figure here unless he deliberately gave the
+  // client a ceiling (NTE) or asked for money up front (mobilization). The
+  // material categories above already print without prices (_mkLineRow's T&M
+  // path is colspan=2, no amount column), so "no price on the proposal" holds
+  // for the whole document, not just this block.
+  const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+  const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
+  const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed by milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
+  const _rsFlatDep=Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0);
+  const _rateFooterRows=
+    `<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">HOURLY RATE<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">per worker, billed for time on the job</div></td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_rsMoney(_tmRatePerMan)}<span style="font-size:13px;font-weight:700">/hr</span></td></tr>`+
+    _rsRow('Crew on site',`${_tmCrewCount} worker${_tmCrewCount>1?'s':''}`,'#f8fafc','#334155')+
+    _rsRow('Day rate, full 8-hour day',_rsMoney(_tmCrewCount*_tmRatePerMan*8),'#fff','#334155')+
+    _rsRow('Materials','Billed at actual cost','#f8fafc','#334155')+
+    _rsRow('Billing',_rsCadence,'#fff','#334155')+
+    (_tmNteCap>0?_rsRow(`Not to exceed, without your written approval`,_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
+    (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
   // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own
   // Preview overlay below. No longer embedded in the proposal document body.
@@ -5122,7 +5279,9 @@ async function sendGenericProposal(previewOnly,opts){
   // TOTAL is the one number a client should remember, sized and weighted like a
   // deliberate focal point (matches the confident-number treatment sign.html's own
   // amount display uses), not just another table row.
-  const _totalFooterRows=`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
+  const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
+    ?_rateFooterRows
+    :`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
@@ -5156,7 +5315,9 @@ async function sendGenericProposal(previewOnly,opts){
   })():'';
   const _lineItemsSection=_geiIsFreeForm
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
-    :`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
+    // A "Description" header over an empty tbody is a heading for nothing, and a
+    // rate sheet with no material categories is exactly that case.
+    :`<table style="width:100%;border-collapse:collapse;font-size:12px">${lineRows?`<thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead>`:''}<tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
   const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
@@ -5177,7 +5338,18 @@ async function sendGenericProposal(previewOnly,opts){
     contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     clientId:_geiClientId||null,
     proposalHtml,termsHtml:_fullTermsHtml,clientAddr:v('gei-addr'),
-    amount:total,deposit:_tmDepAmt,
+    // A RATE SHEET HAS NO CONTRACT TOTAL, and writing one anyway is the lie the
+    // whole feature exists to stop. amount stays 0 and sign.html reads
+    // rateOnly to show the rate where it would have shown a total; the only
+    // money at signing is the mobilization deposit, which is a flat figure, not
+    // a percent of the zero above.
+    amount:(_geiIsTM&&_tmRateOnly)?0:total,
+    deposit:(_geiIsTM&&_tmRateOnly)?_rsFlatDep:_tmDepAmt,
+    rateOnly:!!(_geiIsTM&&_tmRateOnly),
+    hourlyRate:_geiIsTM?_tmRatePerMan:0,
+    crewCount:_geiIsTM?_tmCrewCount:0,
+    nteCap:_geiIsTM?_tmNteCap:0,
+    billingCycle:_geiIsTM?(_tmBillingCycle||'weekly'):'',
     createdAt:new Date().toISOString(),status:'pending',
     // The price-hold date travels WITH the proposal, so the portal stops
     // recomputing its own +30 from createdAt and an extended price actually

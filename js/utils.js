@@ -41,6 +41,26 @@ const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(
 // Comma+cents string for programmatically pre-filling a money input (no $ sign,
 // the field's own label/prefix already shows that).
 const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+// WHAT A BID ROW SAYS WHERE A PRICE WOULD GO.
+//
+// A time-and-materials RATE SHEET (b.tmRateOnly, js/generic-estimate.js) has no
+// contract total by design, so b.amount is 0 and every list that printed
+// fmt(b.amount) printed "$0" next to a real signed agreement. It says the rate
+// instead, which is the number that bid actually carries. One helper because
+// three lists show the same row (the client hub, the dashboard money feed, and
+// the dashboard bid list) and they must never disagree about what a bid is
+// worth.
+function bidAmountLabel(b,fmtFn){
+  const f=fmtFn||(typeof fmt==='function'?fmt:(n=>'$'+(Number(n)||0).toLocaleString('en-US')));
+  if(!b)return f(0);
+  if(b.isTM&&b.tmRateOnly){
+    const r=Number(b.tmRatePerMan)||0;
+    const cap=Number(b.tmNteCap)||0;
+    return r>0?(f(r)+'/hr'+(cap>0?' · NTE '+f(cap):'')):(cap>0?'NTE '+f(cap):'T&M rate');
+  }
+  if(b.isTM&&b.tmNteCap)return 'Est. '+f(b.amount)+' / NTE '+f(b.tmNteCap);
+  return f(b.amount);
+}
 // THE RATE FOR A GIVEN YEAR, not "the rate".
 //
 // This used to be S.irsRate||.725: one stored number with no year attached, so
