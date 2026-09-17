@@ -5008,8 +5008,19 @@ function _geiBuildTermsHtml(){
   // there), but the terms, because the rate IS the consideration. A labor
   // charge nobody signed for is a labor charge that gets argued about, and he
   // has to be able to point at a number the customer agreed to.
-  const _tmRateClause=_tmRateOnly?[['Rate',
-    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate. Materials are billed at actual cost. No total contract price is stated or implied${_tmNteCap?`, other than the not-to-exceed amount above`:''}.`]]:[];
+  // EVERY T&M WITH A RATE CARRIES IT, not just the ones with no estimate.
+  //
+  // This used to fire only when _tmRateOnly, so a T&M proposal that also showed
+  // an estimated total went out with no agreed hourly rate anywhere in it. Two
+  // things make that wrong, and the first is statutory: Pennsylvania's Home
+  // Improvement Consumer Protection Act defines a time-and-materials contract
+  // as payment "based on the actual cost of labor at a specified hourly rate",
+  // so the rate is a REQUIRED TERM there, estimate or no estimate. The second
+  // is what the trade says happens without it: the contractors who got burned
+  // on T&M were not burned by showing a rate, they were burned by never fixing
+  // one in writing and then arguing about it afterwards.
+  const _tmRateClause=(_geiIsTM&&Number(_tmRatePerMan)>0)?[['Rate',
+    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate. Materials are billed at actual cost.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
     ..._tmRateClause,

@@ -284,7 +284,35 @@ test.describe('T&M rate sheet: no total, no day count', () => {
     });
     expect(r.on).toContain('$95 per hour');
     expect(r.on).toContain('No total contract price is stated or implied');
+    // A T&M that DOES carry an estimate still names the rate, it just does not
+    // claim there is no total. Pennsylvania's HICPA defines a T&M contract as
+    // payment "based on the actual cost of labor at a specified hourly rate",
+    // so the rate is a required term whether or not an estimate is shown.
+    expect(r.off).toContain('$95 per hour');
+    expect(r.off).toContain('not a fixed price');
     expect(r.off).not.toContain('No total contract price is stated or implied');
+  });
+
+  test('a T&M proposal with no rate entered has no rate clause to state', async () => {
+    const r = await page.evaluate(() => {
+      const prev = { tm: _geiIsTM, rate: _tmRatePerMan };
+      _geiIsTM = true; _tmRatePerMan = 0;
+      const h = _geiBuildTermsHtml();
+      _geiIsTM = prev.tm; _tmRatePerMan = prev.rate;
+      return h;
+    });
+    expect(r).not.toContain('per hour, per worker');
+  });
+
+  test('a fixed-price proposal never gets a rate clause', async () => {
+    const r = await page.evaluate(() => {
+      const prev = { tm: _geiIsTM, rate: _tmRatePerMan };
+      _geiIsTM = false; _tmRatePerMan = 95;
+      const h = _geiBuildTermsHtml();
+      _geiIsTM = prev.tm; _tmRatePerMan = prev.rate;
+      return h;
+    });
+    expect(r).not.toContain('per hour, per worker');
   });
 
   test('every billing cadence says what it means, not "Bi-weekly" for all three', async () => {
