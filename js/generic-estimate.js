@@ -5004,6 +5004,10 @@ function _geiBuildTermsHtml(){
   // ON A RATE SHEET THE RATE IS THE CONTRACT. There is no total to point at, so
   // the number Buyer is agreeing to has to be stated in the terms themselves
   // and not left living only in the document body.
+  // THE ONE PLACE THE RATE STAYS. Not the document body (the rate never appears
+  // there), but the terms, because the rate IS the consideration. A labor
+  // charge nobody signed for is a labor charge that gets argued about, and he
+  // has to be able to point at a number the customer agreed to.
   const _tmRateClause=_tmRateOnly?[['Rate',
     `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate. Materials are billed at actual cost. No total contract price is stated or implied${_tmNteCap?`, other than the not-to-exceed amount above`:''}.`]]:[];
   const _modeTerms=_geiIsTM?[
@@ -5146,25 +5150,31 @@ async function sendGenericProposal(previewOnly,opts){
   // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
   const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
-  // ── THE RATE SHEET FOOTER ────────────────────────────────────────────────
-  // What sits where the ESTIMATED TOTAL would be when there is no total. The
-  // rate is the headline number because the rate is what he is being hired at,
-  // and it is the ONLY dollar figure here unless he deliberately gave the
-  // client a ceiling (NTE) or asked for money up front (mobilization). The
-  // material categories above already print without prices (_mkLineRow's T&M
-  // path is colspan=2, no amount column), so "no price on the proposal" holds
-  // for the whole document, not just this block.
+  // ── THE TIME AND MATERIALS FOOTER ────────────────────────────────────────
+  //
+  // Owner 2026-09-17: "if you place a materials section on a invoice or on a
+  // agreement or even the hourly rate you'll get push back ... hourly rate
+  // never gets exposed to the proposal itself." And on why the first version of
+  // this builder was wrong: "we did it wrong, used it to give a price."
+  //
+  // That is the correction. The rate IS collected, and it is what lets the app
+  // total the job off the clock instead of making him do the arithmetic at the
+  // end of the week. It is a BACKEND number. The client signs a scope, the
+  // billing terms, and any ceiling he chose to give them.
+  //
+  // So the only dollar figures that can reach this document are ones he
+  // deliberately handed the customer: a not-to-exceed cap and a mobilization
+  // deposit. Set neither and it carries no money at all, which is the point.
+  // Crew size and a day rate are both routes back to the rate, so neither
+  // ships either.
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
-  const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed by milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
+  const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
   const _rsFlatDep=Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0);
   const _rateFooterRows=
-    `<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">HOURLY RATE<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">per worker, billed for time on the job</div></td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_rsMoney(_tmRatePerMan)}<span style="font-size:13px;font-weight:700">/hr</span></td></tr>`+
-    _rsRow('Crew on site',`${_tmCrewCount} worker${_tmCrewCount>1?'s':''}`,'#f8fafc','#334155')+
-    _rsRow('Day rate, full 8-hour day',_rsMoney(_tmCrewCount*_tmRatePerMan*8),'#fff','#334155')+
-    _rsRow('Materials','Billed at actual cost','#f8fafc','#334155')+
-    _rsRow('Billing',_rsCadence,'#fff','#334155')+
-    (_tmNteCap>0?_rsRow(`Not to exceed, without your written approval`,_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
+    `<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
+    _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
+    (_tmNteCap>0?_rsRow('Not to exceed, without your written approval',_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
     (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
   // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own

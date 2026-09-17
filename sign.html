@@ -873,7 +873,11 @@ async function init(){
     // place that would print that 0 prints the hourly rate instead. The one
     // number the client can owe today is the mobilization deposit.
     const _rateOnly=!!_prop.rateOnly;
-    const _rateTxt=_rateOnly?(fmt(_prop.hourlyRate||0)+'/hr'):'';
+    // THE RATE IS NOT SHOWN HERE EITHER. This page IS the document the customer
+    // reads, so "the hourly rate never gets exposed to the proposal" covers it.
+    // What heads the bar instead is the ceiling he chose to give them, or the
+    // words when he gave none.
+    const _rateTxt=_rateOnly?((Number(_prop.nteCap)||0)>0?fmt(_prop.nteCap):'Time & materials'):'';
     const _cadTxt={weekly:'weekly',biweekly:'every two weeks',milestone:'by milestone',completion:'on completion'}[_prop.billingCycle||'weekly']||'weekly';
     // Sticky bar total
     const stickyTotal=document.getElementById('sticky-total');
@@ -916,7 +920,7 @@ async function init(){
       ?((_prop.deposit||0)>0?'Deposit to start: '+fmt(_prop.deposit):'Nothing due today')
       :'Deposit to start: '+fmt(_prop.deposit);
     document.getElementById('amt-bal').textContent=_rateOnly
-      ?((_prop.nteCap||0)>0?'Billed '+_cadTxt+' for time and materials, not to exceed '+fmt(_prop.nteCap):'Billed '+_cadTxt+' for time and materials')
+      ?((_prop.nteCap||0)>0?'Billed '+_cadTxt+' for the time and materials used, not to exceed '+fmt(_prop.nteCap):'Billed '+_cadTxt+' for the time and materials used')
       :'Balance on completion: '+fmt(_prop.amount-_prop.deposit);
     const _days=_prop.estDays;
     document.getElementById('sum-rows').innerHTML=

@@ -344,12 +344,16 @@ test.describe('T&M rate sheet: no total, no day count', () => {
     return html;
   }, opts);
 
-  test('the rate sheet proposal says HOURLY RATE, never ESTIMATED TOTAL', async () => {
+  test('the T&M proposal never shows the rate, and never shows a total', async () => {
+    // Owner 2026-09-17: "hourly rate never gets exposed to the proposal itself."
+    // The rate is collected so the app can total the job off the clock. It is a
+    // backend number and this asserts it stays one.
     const html = await buildProposal({ rateOnly: true, bidId: 66601, rate: 95, crew: 2, dep: 0, nte: 0 });
-    expect(html).toContain('HOURLY RATE');
-    // The /hr sits in its own span so it can be sized down beside the number.
-    expect(html).toMatch(/\$95<span[^>]*>\/hr<\/span>/);
+    expect(html).toContain('TIME &amp; MATERIALS');
+    expect(html).not.toContain('HOURLY RATE');
     expect(html).not.toContain('ESTIMATED TOTAL');
+    expect(html).not.toContain('/hr');
+    expect(html).not.toContain('95');
     expect(html).not.toContain('Mobilization Deposit');
   });
 
@@ -359,12 +363,13 @@ test.describe('T&M rate sheet: no total, no day count', () => {
     expect(html).not.toContain('HOURLY RATE');
   });
 
-  test('a rate sheet prints the crew, the day rate and the cadence', async () => {
+  test('a T&M proposal prints the billing cadence and nothing about the crew', async () => {
     const html = await buildProposal({ rateOnly: true, bidId: 66601, rate: 95, crew: 3, cycle: 'milestone' });
-    expect(html).toContain('3 workers');
-    expect(html).toContain('$2,280');           // 3 x 95 x 8
-    expect(html).toContain('Billed by milestone');
-    expect(html).toContain('Billed at actual cost');
+    expect(html).toContain('Billed at each agreed milestone');
+    // Crew size and day rate are both routes back to the rate. Neither ships.
+    expect(html).not.toContain('3 workers');
+    expect(html).not.toContain('$2,280');
+    expect(html).not.toContain('Day rate');
   });
 
   test('NO dollar figure reaches the client except the ones he chose to give', async () => {
@@ -375,15 +380,19 @@ test.describe('T&M rate sheet: no total, no day count', () => {
     });
     expect(html).toContain('Copper and fittings');
     const money = [...html.matchAll(/\$[\d,]+(?:\.\d\d)?/g)].map(m => m[0]);
-    const allowed = new Set(['$95', '$1,520', '$3,000', '$500']);  // rate, day rate, NTE, deposit
+    // ONLY the two he deliberately handed the customer: the ceiling and the
+    // deposit. No rate, no day rate, no material costs, no total.
+    const allowed = new Set(['$3,000', '$500']);
     const strays = money.filter(m => !allowed.has(m));
     expect(strays).toEqual([]);
   });
 
-  test('no NTE and no deposit means the rate and the day rate are the only numbers', async () => {
+  test('no cap and no deposit means the document carries no money at all', async () => {
+    // This is the Kansas case in one assertion: a scope, the billing terms, and
+    // a signature. Not one dollar figure anywhere on it.
     const html = await buildProposal({ rateOnly: true, bidId: 66601, rate: 95, crew: 1, nte: 0, dep: 0 });
     const money = [...html.matchAll(/\$[\d,]+(?:\.\d\d)?/g)].map(m => m[0]);
-    expect([...new Set(money)].sort()).toEqual(['$760', '$95']);
+    expect(money).toEqual([]);
   });
 
   test('dropping Estimate strips the labor line and its hour count', async () => {
@@ -517,9 +526,11 @@ test.describe('sign.html: a rate sheet shows a rate, never $0', () => {
       dep: (document.getElementById('amt-dep') || {}).textContent || '',
       bal: (document.getElementById('amt-bal') || {}).textContent || '',
     }));
-    expect(r.sticky).toContain('/hr');
-    expect(r.sticky).toContain('95');
-    expect(r.total).toContain('/hr');
+    // The rate is a backend number. With a cap set, the cap heads the bar.
+    expect(r.sticky).not.toContain('/hr');
+    expect(r.sticky).not.toContain('95');
+    expect(r.sticky).toContain('3,000');
+    expect(r.total).toContain('3,000');
     expect(r.dep).toContain('500');
     expect(r.bal).toContain('weekly');
     expect(r.bal).toContain('3,000');          // the ceiling he chose to give
@@ -582,6 +593,17 @@ test.describe('sign.html: a rate sheet with no deposit asks for nothing today', 
     expect(r.later).toBe(true);            // never a dead end
     expect(r.label).toBe('Nothing is due today');
     expect(r.badge).toBe('Due today');
+  });
+
+  test('with no cap either, the bar says what it is instead of a number', async () => {
+    const r = await page.evaluate(() => ({
+      sticky: (document.getElementById('sticky-total') || {}).textContent || '',
+      bal: (document.getElementById('amt-bal') || {}).textContent || '',
+    }));
+    expect(r.sticky).toBe('Time & materials');
+    expect(r.sticky).not.toContain('$');
+    expect(r.bal).toContain('time and materials used');
+    expect(r.bal).not.toContain('$');
   });
 
   test('the sticky line explains the billing instead of a deposit', async () => {
