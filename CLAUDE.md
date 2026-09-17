@@ -1915,3 +1915,75 @@ supposed to be. That design is gone. The rule now:
   to `tests/e2e-geo-derive.spec.js`, and the boot rebuild repairs history.
   `tests/e2e-geo-derive-gone.spec.js` fails CI if any of the deleted names
   come back.
+
+---
+
+## 18. Metrics Are Data: One Definition, Many Mouths (owner rule 2026-09-17)
+
+`ops_account_brief` shipped with its metrics written out twice, once in the SQL
+that computed them and once in the page that labelled and formatted them, so
+adding "how many change orders" meant editing both, in agreement, forever.
+`ops_metric_defs()` ended that: every metric is named ONCE with its section,
+label and format (`int`, `pct`, `usd`, `num`, `hours`, `mins`, `text`, `date`,
+`ago`). It is already granted to `authenticated`, not gated on ops admin.
+
+That registry now has two readers, the ops portal and Tim, and this section
+exists so it keeps having exactly one author.
+
+- **Never hardcode a metric key, label or format in JS.** Not in
+  `js/ops-view.js`, not in `js/tim.js`, not in a new file. Read
+  `ops_metric_defs()`, cache it, and format off the `fmt` column. The moment a
+  reader hardcodes "close rate is a percent," the registry stops being the
+  definition and it is two places again.
+- **Adding a metric is a value in the brief plus a row in the registry.** Never
+  a page change. If a change to a metric requires touching a rendering file,
+  the change is wrong.
+- **A new RPC Tim should answer from gets its registry row in the SAME
+  commit**, exactly like tests ship with features (§5.1). An RPC with no row is
+  a number nobody can name.
+
+### 18.1 One query, two gates, two mouths
+
+The per-contractor ops RPCs (`funnel_by_contractor`, `money_by_contractor`,
+`ops_by_contractor`, `usage_by_contractor`, `control_usage_by_contractor`)
+already compute per-business exactly what a contractor wants to know about
+themselves. They are reused by SCOPE, never by duplication.
+
+- **Scope with one helper, never a copied predicate.** `ops_scope_uid()`
+  returns null for an ops admin and `auth.uid()` for everybody else; each
+  function carries the same single predicate. These are `security definer`, so
+  that predicate is the only thing between one contractor and the whole
+  platform's revenue. A `tim_*` sibling that re-implements the aggregation is
+  banned (§7.3): two copies of a funnel drift, and then the number Tim says out
+  loud disagrees with the number the ops portal shows.
+- **Account scope is not permission scope.** Landing on your own row says
+  nothing about whether this PERSON may see it. Money answers still pass
+  through `crew_perm` / `has_team_perm`. Two gates, different jobs, both
+  required.
+- **Three layers, and the top two never import each other.** The scoped RPCs,
+  then one thin numbers module that returns plain values and no markup, then
+  the mouths: `js/ops-view.js` draws tables for one person on a desktop,
+  `js/tim.js` says a sentence on a phone. Merging the mouths into one file
+  ships cross-account rendering code to every contractor's device and makes an
+  ops tweak able to break Tim.
+
+### 18.2 Tim is an interface, not an intelligence (owner rule 2026-09-17)
+
+`js/tim.js` resolves a sentence against things the app already holds: a screen
+in its own nav table, a year in the books, a customer in the customer list, a
+service in the price book, a metric in the registry above. String matching, so
+it runs with no signal, costs nothing per command, and nothing said to Tim
+leaves the phone. That last part is a promise made to a real customer, not a
+preference.
+
+- **Tim owns no trade knowledge and must not grow any.** What a repipe drags in
+  with it belongs in the price book, written once at setup and priced by the
+  contractor, never guessed at 7am. Same argument as `js/estimate-speak.js`.
+- **Every sentence Tim could not place gets logged.** That miss list is the
+  vocabulary roadmap, written by real contractors instead of guessed. It is how
+  he gets smarter without a model.
+- **Tim asks who is on the job before he asks anything about money**, so a rate
+  is a consequence of the crew rather than a field. Cost per person
+  (`pay_type` / `pay_rate` on `team_members`) is already per-person and already
+  gated behind `_canViewComp()`. The BILL rate per person is a separate number
+  from what you pay them and the two must never be conflated.
