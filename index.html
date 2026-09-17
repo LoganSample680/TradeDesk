@@ -2174,24 +2174,24 @@ body.dark .cal-cell.other{background:var(--cream)}
         <!-- Scope of work chips -->
         <div id="tm-sitenote-wrap"></div>
         <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
+
+        <!-- ── WHAT THIS PROPOSAL CARRIES ────────────────────────────────────
+             Owner 2026-09-17: "just get the scope signed, no deposit no payment
+             upfront if they want it to work that way ... but those should only
+             be required in the states that require it."
+
+             So the page is the scope and Send. Everything else is a layer he
+             adds, and a state adds for him only where the law says it must.
+             Measured before this change: 2,509px tall on a phone, 35 live
+             controls, and the biggest block on it (612px, a quarter of the
+             page) was the optional exclusions list while scope of work, the
+             only part that is ever required, got 149px. -->
+        <div id="tm-add-row" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+
         <!-- Rates & crew -->
-        <div class="card">
+        <div class="card" id="tm-blk-rate" style="display:none">
           <div class="row-bw" style="margin-bottom:10px">
             <div class="td-h3">Rates &amp; crew</div>
-          </div>
-          <!-- THE RATE SHEET SWITCH. On a real time-and-materials job there is no
-               total, that is the whole point of the contract, and forcing a day
-               count so the app can print an "ESTIMATED TOTAL" is asking a man to
-               invent a number he will then be held to. On: he signs the rate, and
-               the NTE cap below is the only ceiling the client ever sees. -->
-          <div class="sf-row" style="padding-left:0;padding-right:0;border:0;margin-bottom:12px">
-            <div class="sf-body" style="gap:0"><span style="font-size:15px;font-weight:700;color:var(--text)">Rate sheet</span>
-              <span style="font-size:11px;color:var(--text-3);font-weight:500" id="tm-rateonly-sub">Client signs your rate, no total on the proposal</span>
-            </div>
-            <label class="sf-switch">
-              <input type="checkbox" id="tm-i-rateonly" onchange="_tmSetRateOnly(this.checked)">
-              <span class="sf-track"></span><span class="sf-knob"></span>
-            </label>
           </div>
           <div class="fg fg2">
             <div class="f">
@@ -2231,7 +2231,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
 
         <!-- Material categories -->
-        <div class="card">
+        <div class="card" id="tm-blk-mat" style="display:none">
           <div class="row-bw" style="margin-bottom:12px">
             <div class="td-h3" id="tm-mat-head">Material categories</div>
             <button class="btn btn-sm" onclick="_tmAddMatCat()">+ Add category</button>
@@ -2244,10 +2244,10 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
 
         <!-- Same rule as BYO: exclusions come after the work. -->
-        <div id="tm-excl-wrap"></div>
+        <div id="tm-blk-excl" style="display:none"><div id="tm-excl-wrap"></div></div>
 
         <!-- NTE cap -->
-        <div class="card">
+        <div class="card" id="tm-blk-nte" style="display:none">
           <div class="td-h3" id="tm-nte-head" style="margin-bottom:10px">Not-to-exceed cap (optional)</div>
           <div class="fg fg2">
             <div class="f">
@@ -2269,9 +2269,14 @@ body.dark .cal-cell.other{background:var(--cream)}
       <!-- Summary rail -->
       <div class="summary-rail">
         <div class="summary-card">
+          <!-- THE RAIL CARRIES ONLY WHAT HE ADDED. With no layers on, a T&M
+               proposal is a scope and a signature, so the rail is the Send
+               button and nothing else. Every money block below is shown by
+               _tmApplyLayers. -->
+          <div id="tm-rail-money" style="display:none">
           <!-- ONE OF THESE TWO HEADS THE RAIL, never both: the estimated total a
-               fixed-ish T&M job carries, or the rate the client is actually
-               signing when there is no total (_tmSetRateOnly). -->
+               job with a day count carries, or the rate he is being hired at
+               when there is no total. -->
           <div id="tm-rail-total-wrap">
             <div class="td-micro" style="margin-bottom:8px">Estimated total</div>
             <div class="td-display summary-total" id="tm-rail-total">$0</div>
@@ -2307,12 +2312,13 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div class="summary-row" style="color:var(--text-3)"><span>Balance</span><span>billed as you go</span></div>
           </div>
           <div class="summary-divider"></div>
-          <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <div class="td-micro" style="margin-bottom:6px" id="tm-cad-head">Billing cadence</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap" id="tm-cad-row">
             <span class="chip chip-int" id="tm-cad-weekly" onclick="_tmCadence('weekly')">Weekly</span>
             <span class="chip chip-int" id="tm-cad-milestone" onclick="_tmCadence('milestone')">By milestone</span>
             <span class="chip chip-int" id="tm-cad-completion" onclick="_tmCadence('completion')">On completion</span>
           </div>
+          </div><!-- /tm-rail-money -->
           <div id="tm-actions-wrap"></div>
         </div>
       </div>

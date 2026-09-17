@@ -654,10 +654,11 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
-  // What he corrects, the app keeps (_geiRememberDeposit's rule). A man who
-  // works time-and-materials works it every day; asking him to flip the same
-  // switch on every bid is the friction the switch exists to remove.
-  _tmRateOnly=!!(S&&S.tmRateOnly);
+  // A NEW T&M PROPOSAL STARTS AT NOTHING. Scope and Send, and whatever the job
+  // address's own statute forces on (_tmApplyLayers adds those). His last
+  // proposal's shape is not carried over: the fast path is the empty one, and
+  // a man who wants a rate on every job is one tap from it.
+  _tmLayers=new Set();_tmRateOnly=false;
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -1366,10 +1367,15 @@ function _tmShowPage(){
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
   // A rate sheet's deposit is a flat figure, not a percent of a total it does
-  // not have. Restored before _tmApplyRateOnly so the row is populated the
+  // not have. Restored before _tmApplyLayers so the row is populated the
   // instant it is shown.
-  if(_tmRateOnly&&b&&Number(b.tmDepositAmt)>0)setV('tm-i-dep-flat',b.tmDepositAmt);
-  _tmApplyRateOnly();
+  if(b&&Number(b.tmDepositAmt)>0)setV('tm-i-dep-flat',b.tmDepositAmt);
+  // THE BID'S OWN LAYERS WIN. A proposal he built as scope-only stays
+  // scope-only on resume; one with a rate and a cap comes back with both. A bid
+  // written before layers existed is read from what it actually carries, so
+  // nothing saved earlier opens looking empty.
+  _tmLayers = new Set(Array.isArray(b&&b.tmLayers) ? b.tmLayers : _tmLayersFrom(b));
+  _tmApplyLayers();
   // Restore who's on the job, drives the true-cost gauge via the shared crew picker.
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _injectRrpItems();
@@ -2036,6 +2042,7 @@ function _byoAutosave(){
     b.isTM=true;
     b.isFreeForm=false;
     b.tmRateOnly=!!_tmRateOnly;
+    b.tmLayers=[..._tmLayers];
     if(_tmRateOnly){
       // Same reason as saveGenericEstimate: the flat figure is the deposit, and
       // the percent the shared block just wrote off a phantom total is wrong.
@@ -3590,45 +3597,146 @@ function _tmDelMatCat(idx){
   _geiLines.splice(idx,1);
   _tmRenderMatList();_tmInputChange();
 }
-// ── THE RATE SHEET SWITCH ───────────────────────────────────────────────────
-// Flipping it is a decision about what the CLIENT reads, so it is remembered on
-// the account the moment he makes it, the same way his deposit percent is.
-function _tmSetRateOnly(on){
-  _tmRateOnly=!!on;
-  if(typeof S!=='undefined'&&!!S.tmRateOnly!==_tmRateOnly){
-    S.tmRateOnly=_tmRateOnly;
-    if(typeof _settingsChanged==='function')_settingsChanged();
-  }
-  _tmApplyRateOnly();
-  _tmInputChange();
+// ── THE LAYERS ──────────────────────────────────────────────────────────────
+//
+// Owner 2026-09-17: "I want this to be so fucking fast but have the ability to
+// show a estimate price or don't show financials at all in the states that
+// would allow it like Kansas, just get the scope signed ... but those should
+// only be required in the states that require it."
+//
+// So the page is the scope and Send. Everything with a number on it is a LAYER
+// he taps to add. Measured on the old page before this: 2,509px tall on a
+// phone and 35 live controls, with 612px of it (a quarter of the page) given to
+// the optional exclusions list while scope of work, the only part ever
+// required, got 149px.
+//
+// The rate sheet switch this replaces is gone rather than hidden (§7). It was
+// two concepts for one idea: a T&M proposal with no day count IS a rate sheet,
+// so "rate only" is simply the Rate layer without the Estimate layer, and
+// _tmRateOnly is derived from that below instead of being its own toggle.
+const TM_LAYERS = [
+  {k:'rate', label:'Rate',         blk:'tm-blk-rate'},
+  {k:'est',  label:'Estimate',     needs:'rate'},   // the day count, inside the rate block
+  {k:'mat',  label:'Materials',    blk:'tm-blk-mat'},
+  {k:'dep',  label:'Deposit'},                       // rail only
+  {k:'cap',  label:'Not to exceed', blk:'tm-blk-nte'},
+  {k:'excl', label:'Exclusions',   blk:'tm-blk-excl'},
+];
+let _tmLayers=new Set();
+Object.defineProperty(window,'_tmLayers',{get:()=>_tmLayers,set:v=>{_tmLayers=(v instanceof Set)?v:new Set(v||[]);},configurable:true});
+
+// THE STATE DECIDES WHAT HE CANNOT REMOVE, and only where a statute says so.
+// Read off the JOB address, not his own: he may work across a line.
+function _tmStateRule(){
+  const addr=(typeof _geiSiteAddr==='function')?_geiSiteAddr():'';
+  const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null)
+    ||(typeof S!=='undefined'&&S.state)||'';
+  const r=(typeof statePriceRule==='function')?statePriceRule(st):{rule:'none'};
+  return Object.assign({state:st},r);
 }
-// Everything the switch shows and hides, in one place, so the page shows the
-// same way on a flip as it does on a resume. Called by _tmShowPage too.
-function _tmApplyRateOnly(){
-  const on=!!_tmRateOnly;
-  const show=(id,vis)=>{const e=document.getElementById(id);if(e)e.style.display=vis?'':'none';};
-  const sw=document.getElementById('tm-i-rateonly');
-  if(sw)sw.checked=on;
-  // Days drives nothing a rate sheet prints, and it is the field that blocks
-  // Send. Hidden rather than disabled so the page does not read as broken.
-  show('tm-days-f',!on);
-  show('tm-stat-labor-tile',!on);
-  show('tm-stat-days-tile',!on);
-  show('tm-rail-total-wrap',!on);
-  show('tm-rail-rate-wrap',on);
-  show('tm-deposit-wrap',!on);
-  show('tm-deposit-flat-wrap',on);
+// A layer a statute put there cannot be tapped off.
+function _tmLockedLayers(){
+  const r=_tmStateRule();
+  return r.rule==='cap'?new Set(['rate','cap']):new Set();
+}
+function _tmAddLayer(k){
+  if(!TM_LAYERS.some(l=>l.k===k))return;
+  const l=TM_LAYERS.find(x=>x.k===k);
+  if(l.needs)_tmLayers.add(l.needs);
+  _tmLayers.add(k);
+  _tmApplyLayers();_tmInputChange();
+}
+function _tmDropLayer(k){
+  if(_tmLockedLayers().has(k))return;
+  _tmLayers.delete(k);
+  // Nothing may depend on a layer that is gone.
+  TM_LAYERS.forEach(l=>{if(l.needs===k)_tmLayers.delete(l.k);});
+  _tmApplyLayers();_tmInputChange();
+}
+function _tmToggleLayer(k){_tmLayers.has(k)?_tmDropLayer(k):_tmAddLayer(k);}
+
+// Everything the layers show, hide and say, in one place, so a flip and a
+// resume paint the same page.
+function _tmApplyLayers(){
+  const rule=_tmStateRule();
+  const locked=_tmLockedLayers();
+  locked.forEach(k=>_tmLayers.add(k));
+  // RATE ONLY IS NOT A SETTING ANY MORE, it is the shape of the proposal: a
+  // rate with no day count behind it has no total to print.
+  _tmRateOnly=_tmLayers.has('rate')&&!_tmLayers.has('est');
+  const show=(id,on)=>{const e=document.getElementById(id);if(e)e.style.display=on?'':'none';};
+  TM_LAYERS.forEach(l=>{if(l.blk)show(l.blk,_tmLayers.has(l.k));});
+  // The day count and the two tiles that exist only to total it.
+  show('tm-days-f',_tmLayers.has('est'));
+  show('tm-stat-labor-tile',_tmLayers.has('est'));
+  show('tm-stat-days-tile',_tmLayers.has('est'));
   const grid=document.getElementById('tm-stat-grid');
-  if(grid)grid.style.gridTemplateColumns=on?'1fr':'repeat(3,1fr)';
-  const sub=document.getElementById('tm-rateonly-sub');
-  if(sub)sub.textContent=on?'No total on the proposal, the client signs your rate'
-                           :'Client signs your rate, no total on the proposal';
-  // The cap stops being a sanity check on an estimate and becomes the only
-  // ceiling the client is given, so it says so.
+  if(grid)grid.style.gridTemplateColumns=_tmLayers.has('est')?'repeat(3,1fr)':'1fr';
+  // The rail carries only what he added.
+  const anyMoney=['rate','est','mat','dep','cap'].some(k=>_tmLayers.has(k));
+  show('tm-rail-money',anyMoney);
+  show('tm-rail-total-wrap',_tmLayers.has('est'));
+  show('tm-rail-rate-wrap',_tmRateOnly);
+  show('tm-deposit-wrap',_tmLayers.has('dep')&&_tmLayers.has('est'));
+  show('tm-deposit-flat-wrap',_tmLayers.has('dep')&&!_tmLayers.has('est'));
+  show('tm-cad-head',_tmLayers.has('rate'));
+  show('tm-cad-row',_tmLayers.has('rate'));
   const nteH=document.getElementById('tm-nte-head');
-  if(nteH)nteH.textContent=on?'Not-to-exceed cap (the only number they see)':'Not-to-exceed cap (optional)';
+  if(nteH)nteH.textContent=locked.has('cap')
+    ?'Guaranteed maximum price'
+    :(_tmRateOnly?'Not-to-exceed cap (the only number they see)':'Not-to-exceed cap (optional)');
   const matH=document.getElementById('tm-mat-head');
-  if(matH)matH.textContent=on?'Material categories (optional)':'Material categories';
+  if(matH)matH.textContent='Material categories';
+  _tmRenderAddRow(rule,locked);
+}
+
+// The row of chips. An added layer reads as added and can be tapped back off,
+// unless a statute put it there, in which case it says which one.
+function _tmRenderAddRow(rule,locked){
+  const row=document.getElementById('tm-add-row');
+  if(!row)return;
+  rule=rule||_tmStateRule();locked=locked||_tmLockedLayers();
+  const chips=TM_LAYERS.map(l=>{
+    const on=_tmLayers.has(l.k),lock=locked.has(l.k);
+    const bg=lock?'var(--amber-lt,#FEF3C7)':on?'var(--ink)':'var(--bg2)';
+    const fg=lock?'#92400E':on?'var(--text-cream,#fff)':'var(--text2)';
+    const bd=lock?'1.5px solid #D97706':on?'1.5px solid var(--ink)':'1.5px solid var(--border2)';
+    const mark=lock?'🔒':on?'✓':'＋';
+    return '<button type="button" onclick="_tmToggleLayer(\''+l.k+'\')"'+
+      (lock?' title="'+escHtml(rule.note||'')+'"':'')+
+      ' style="padding:8px 13px;border-radius:var(--r-pill,999px);border:'+bd+';background:'+bg+';color:'+fg+
+      ';font-size:13px;font-weight:700;cursor:'+(lock?'default':'pointer')+';font-family:inherit">'+
+      mark+' '+escHtml(l.label)+'</button>';
+  }).join('');
+  // A state that will not take a T&M contract at all has to say so where he is
+  // about to write one, not at the send button after he has done the work.
+  const blocked=rule.rule==='block'
+    ?'<div class="tip" style="width:100%;margin-top:4px;background:#FEE8E8;border-color:#E5B5B5">'+
+      '<span data-ico="⚠️" data-ico-size="18"></span><div><b>'+escHtml(rule.state)+
+      ' does not allow a time and materials home improvement contract.</b> '+escHtml(rule.note)+
+      ' Use a fixed-price proposal for this address.</div></div>'
+    :'';
+  const forced=rule.rule==='cap'
+    ?'<div style="width:100%;font-size:11px;color:var(--text3);margin-top:2px">'+
+      escHtml(rule.state)+' requires a total, so the cap is part of this one. '+escHtml(rule.statute)+'</div>'
+    :rule.rule==='warn'
+    ?'<div style="width:100%;font-size:11px;color:#92400E;margin-top:2px">'+escHtml(rule.note)+'</div>'
+    :'';
+  row.innerHTML=chips+forced+blocked;
+}
+// WHAT A BID SAVED BEFORE LAYERS ACTUALLY CARRIES. Read from its own values,
+// never guessed: a resumed proposal must come back showing exactly the blocks
+// it has something in.
+function _tmLayersFrom(b){
+  const out=[];
+  if(!b)return out;
+  if(Number(b.tmRatePerMan)>0)out.push('rate');
+  if(Number(b.tmEstHours)>0){out.push('rate');out.push('est');}
+  if((b.geiLines||[]).some(l=>l&&!l._tmLabor))out.push('mat');
+  if(Number(b.tmDepositAmt)>0||Number(b.deposit)>0)out.push('dep');
+  if(Number(b.tmNteCap)>0)out.push('cap');
+  if((b.exclusions||[]).length)out.push('excl');
+  return [...new Set(out)];
 }
 function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();_byoAutosave();}
 function _tmSyncCadence(){
@@ -4749,6 +4857,7 @@ function saveGenericEstimate(draft){
   const _tmFields=_geiIsTM?{
     isTM:true,
     tmRateOnly:!!_tmRateOnly,
+    tmLayers:[..._tmLayers],
     tmReason:v('tm-reason'),tmReasonNote:v('tm-reason-note'),
     tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
     tmBillingCycle:_tmBillingCycle||'weekly',
