@@ -2932,15 +2932,32 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       // Deposit amount/percentage is NOT its own clause, it's already shown
       // as its own line in the proposal's deposit/balance summary, so restating
       // it in Terms & Conditions would be redundant (owner directive 2026-07-13).
-      expect(tm.clauses.length).toBe(12);
+      // Amended 2026-09-17: T&M gained a Rate clause and went 12 -> 13.
+      //
+      // It used to appear only on a rate-only proposal, so a T&M carrying an
+      // estimated total went out with no agreed hourly rate anywhere in it.
+      // Pennsylvania's HICPA defines a time-and-materials contract as payment
+      // "based on the actual cost of labor at a specified hourly rate", which
+      // makes the rate a required term there regardless of whether an estimate
+      // is shown, and the trade's own accounts of T&M disputes all turn on a
+      // rate that was never fixed in writing. It fires for every T&M with a
+      // rate now. This fixture has one, so it is here.
+      //
+      // The numbering assertions below are the load-bearing half of this test
+      // and they still hold: numbers are generated from array order, so
+      // inserting a clause renumbers everything after it rather than leaving a
+      // gap. sign.html's legacy patcher keys on clause shapes in proposalHtml,
+      // which has not embedded terms since 2026-07-13, so the shift is safe.
+      expect(tm.clauses.length).toBe(13);
       expect(byo.clauses.length).toBe(10);
       tm.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
       byo.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
 
       // Mode-specific heads (sign.html's legacy patcher depends on these shapes).
       expect(tm.clauses[0].title).toBe('Contract type');
-      expect(tm.clauses[1].title).toBe('Cancellation &amp; Deposits');
-      expect(tm.clauses[2].title).toBe('Billing');
+      expect(tm.clauses[1].title).toBe('Rate');
+      expect(tm.clauses[2].title).toBe('Cancellation &amp; Deposits');
+      expect(tm.clauses[3].title).toBe('Billing');
       expect(byo.clauses[0].title).toBe('Cancellation &amp; Deposits');
 
       // Shared tail: same titles in the same order in both modes...
