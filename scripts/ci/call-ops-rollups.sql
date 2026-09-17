@@ -16,7 +16,7 @@ begin
        and (p.proname like 'ops\_%' or p.proname like 'funnel\_%'
             or p.proname like 'usage\_%' or p.proname like 'control\_usage%'
             or p.proname like 'money\_%' or p.proname = 'signing_funnel'
-            or p.proname like 'app\_%')
+            or p.proname like 'app\_%' or p.proname like 'accuracy\_%')
      order by p.proname
   loop
     begin
@@ -39,11 +39,11 @@ begin
   end if;
   -- A guard that cannot fail is not a guard. Discovery is a query, and a query
   -- that matches nothing would let this step pass while proving nothing at all,
-  -- which is the exact shape of the bug it exists to catch. 14 is the count on
-  -- the day this was written, so a rollup deleted without updating this is a
+  -- which is the exact shape of the bug it exists to catch. 15 is the count as
+  -- of accuracy_by_contractor (20261023), so a rollup deleted without updating this is a
   -- deliberate edit rather than a silent loss of coverage.
-  if found < 14 then
-    raise exception 'only % ops rollup(s) were found and called, expected at least 14. Either migrations did not apply or the discovery query stopped matching.', found;
+  if found < 15 then
+    raise exception 'only % ops rollup(s) were found and called, expected at least 15. Either migrations did not apply or the discovery query stopped matching.', found;
   end if;
   raise notice 'called % ops rollups, all returned', found;
 end $$;
