@@ -5470,10 +5470,15 @@ function _renderIndModal(){
     '</div>'+
     '<div style="padding:14px 16px 0">'+
 
-    // ── AI Scope Helper ──
+    // ── Scope helper ──
+    // The label never says AI (owner 2026-09-17: "remove any reference to AI
+    // for anything here"). What the contractor is told is what it does for him,
+    // describe the site and get the equipment list, not what is running behind
+    // it. The privacy policy is where the processing is disclosed, and it stays
+    // there.
     '<div style="margin-bottom:14px;padding:12px;background:linear-gradient(135deg,#fffbeb,#fff7ed);border-radius:var(--r);border:1.5px solid #fed7aa">'+
       '<div style="font-size:11px;font-weight:800;color:#c2410c;margin-bottom:8px;display:flex;align-items:center;gap:6px">'+
-        '<span>'+svgIcon('✨',{size:12,color:'#c2410c'})+'</span> AI Scope Helper'+
+        '<span>'+svgIcon('📋',{size:12,color:'#c2410c'})+'</span> Scope helper'+
         '<span style="font-size:10px;font-weight:500;color:#9a3412;margin-left:4px">- describe what you see, we\'ll suggest the equipment</span>'+
       '</div>'+
       '<textarea id="ind-desc-inp" rows="2" placeholder="e.g. Two small drum dryers, a baghouse, and the control house, heavy rust on dryers, last painted 5+ years ago" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid #fed7aa;border-radius:var(--r);background:#fff;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:8px"></textarea>'+
