@@ -3683,8 +3683,8 @@ function _tmApplyLayers(){
   show('tm-cad-row',_tmLayers.has('rate'));
   const nteH=document.getElementById('tm-nte-head');
   if(nteH)nteH.textContent=locked.has('cap')
-    ?'Guaranteed maximum price'
-    :(_tmRateOnly?'Not-to-exceed cap (the only number they see)':'Not-to-exceed cap (optional)');
+    ?'Guaranteed maximum price'   // the statutes' phrase, where a statute forces it
+    :(_tmRateOnly?'The most it can cost them (the only number they see)':'The most it can cost them (optional)');
   const matH=document.getElementById('tm-mat-head');
   if(matH)matH.textContent='Material categories';
   _tmRenderAddRow(rule,locked);
@@ -5185,7 +5185,11 @@ async function sendGenericProposal(previewOnly,opts){
   const _rateFooterRows=
     `<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
     _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
-    (_tmNteCap>0?_rsRow('Not to exceed, without your written approval',_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
+    // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
+    // Across the customer-side research the question they actually ask is
+    // "what's the most this could be?", so that is what the line says. The
+    // phrase the statutes use lives in the terms, where it has to.
+    (_tmNteCap>0?_rsRow('The most this can cost you, unless you approve more in writing',_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
     (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
   // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own

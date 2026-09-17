@@ -920,7 +920,7 @@ async function init(){
       ?((_prop.deposit||0)>0?'Deposit to start: '+fmt(_prop.deposit):'Nothing due today')
       :'Deposit to start: '+fmt(_prop.deposit);
     document.getElementById('amt-bal').textContent=_rateOnly
-      ?((_prop.nteCap||0)>0?'Billed '+_cadTxt+' for the time and materials used, not to exceed '+fmt(_prop.nteCap):'Billed '+_cadTxt+' for the time and materials used')
+      ?((_prop.nteCap||0)>0?'Billed '+_cadTxt+' for the time and materials used. The most it can cost you is '+fmt(_prop.nteCap):'Billed '+_cadTxt+' for the time and materials used')
       :'Balance on completion: '+fmt(_prop.amount-_prop.deposit);
     const _days=_prop.estDays;
     document.getElementById('sum-rows').innerHTML=
@@ -1338,7 +1338,7 @@ function _renderRateSheetPayTiles(){
   const amtEl=document.getElementById('pay-tile-dep-amt');
   if(amtEl){amtEl.textContent=fmt(dep);amtEl.style.color='var(--denim)';}
   const note=document.getElementById('pay-tile-dep-note');
-  if(note)note.textContent='Time and materials billed '+cad+((Number(_prop?.nteCap)||0)>0?', not to exceed '+fmt(_prop.nteCap):'');
+  if(note)note.textContent='Time and materials billed '+cad+((Number(_prop?.nteCap)||0)>0?'. The most it can cost you is '+fmt(_prop.nteCap):'');
   const sel=td?td.querySelector('.sig-pay-opt-sel'):null;
   if(sel){sel.innerHTML=svgIcon('✓',{size:14})+' Selected';sel.style.color='var(--denim)';}
   const lbl=document.querySelector('.sig-pay-opts-label');

@@ -562,6 +562,10 @@ test.describe('sign.html: a rate sheet shows a rate, never $0', () => {
     expect(r.dep).toContain('500');
     expect(r.bal).toContain('weekly');
     expect(r.bal).toContain('3,000');          // the ceiling he chose to give
+    // Their words. Homeowners ask "what's the most this could be?", they never
+    // say "not to exceed", so neither does anything they read.
+    expect(r.bal).toContain('The most it can cost you');
+    expect(r.bal).not.toContain('not to exceed');
     expect(r.bal).not.toContain('Balance on completion');
   });
 
@@ -786,5 +790,65 @@ test.describe('the state decides what cannot be removed', () => {
         return !(v === Infinity || v > 0);
       }));
     expect(r).toEqual([]);
+  });
+});
+
+
+// ── THE CAP SPEAKS THE CUSTOMER'S LANGUAGE ───────────────────────────────────
+// Across the customer-side research the phrase "not to exceed" appears almost
+// entirely in contractor and legal writing. What homeowners actually ask is
+// "what's the most this could be?". The trade phrase stays in the terms, where
+// a statute expects it, and nowhere a customer reads casually.
+
+test.describe('the cap is worded the way a customer asks for it', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the document says the most it can cost, not the trade phrase', async () => {
+    const html = await page.evaluate(() => {
+      const prev = { tm: _geiIsTM, rate: _tmRatePerMan, id: _geiEditBidId, layers: [..._tmLayers] };
+      _geiIsTM = true; _tmRatePerMan = 95;
+      _tmLayers = new Set(['rate', 'cap']);
+      const nte = document.getElementById('tm-i-nte'), legacy = document.getElementById('tm-nte-cap');
+      const pn = nte.value, pl = legacy ? legacy.value : '';
+      nte.value = '3,000'; if (legacy) legacy.value = '3000';
+      _tmApplyLayers();
+      let h = '';
+      try { h = sendGenericProposal(true, { silent: true }); } catch (e) { h = 'THREW:' + e.message; }
+      nte.value = pn; if (legacy) legacy.value = pl;
+      _geiIsTM = prev.tm; _tmRatePerMan = prev.rate; _geiEditBidId = prev.id;
+      _tmLayers = new Set(prev.layers); _tmApplyLayers();
+      return h;
+    });
+    expect(html).toContain('The most this can cost you');
+    expect(html).not.toContain('Not to exceed');
+  });
+
+  test('the builder heading says it too', async () => {
+    const t = await page.evaluate(() =>
+      (document.getElementById('tm-nte-head') || {}).textContent || '');
+    expect(t.toLowerCase()).toContain('most it can cost');
+  });
+
+  test('the trade phrase survives in the terms, where a statute expects it', async () => {
+    const h = await page.evaluate(() => {
+      const prev = { tm: _geiIsTM, rate: _tmRatePerMan };
+      _geiIsTM = true; _tmRatePerMan = 95;
+      const legacy = document.getElementById('tm-nte-cap');
+      const pl = legacy ? legacy.value : '';
+      if (legacy) legacy.value = '3000';
+      const out = _geiBuildTermsHtml();
+      if (legacy) legacy.value = pl;
+      _geiIsTM = prev.tm; _tmRatePerMan = prev.rate;
+      return out;
+    });
+    expect(h).toContain('not to exceed');
   });
 });
