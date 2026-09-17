@@ -601,6 +601,19 @@ test.describe('sign.html: an ordinary proposal is unchanged', () => {
     expect(r.chip.toLowerCase()).toContain('price is held');
   });
 
+  // THE ONE THIS SPEC MISSED. Adding the rate-sheet branch to the sticky
+  // deposit line stranded the ordinary branch's style.display='block' inside
+  // the new else, so a normal proposal wrote the text and left the element
+  // hidden. Everything this describe already asserted still passed, because
+  // none of it looked at whether the line was VISIBLE. CI shard 6 found it.
+  test('the sticky deposit line is actually visible, not just filled in', async () => {
+    const line = page.locator('#sticky-deposit-line');
+    await expect(line).toBeVisible();
+    const t = await line.textContent();
+    expect(t).toContain('2,500');
+    expect(t).toContain('locks in your spot');
+  });
+
   test('no console errors on an ordinary proposal', async () => {
     assertNoErrors(page, 'sign.html totalled proposal');
   });

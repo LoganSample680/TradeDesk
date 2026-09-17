@@ -885,9 +885,12 @@ async function init(){
     const _sdl=document.getElementById('sticky-deposit-line');
     if(_sdl&&(_prop.deposit||0)>0){
       _sdl.innerHTML='<strong style="color:var(--ink)">'+fmt(_prop.deposit)+' today</strong> locks in your spot on the schedule';
-    }else if(_sdl&&_rateOnly){
-      _sdl.innerHTML='<strong style="color:var(--ink)">Nothing due today.</strong> You are billed '+_cadTxt+' for the time and materials actually used.';
       _sdl.style.display='block';
+    }else if(_sdl&&_rateOnly){
+      // A rate sheet with no mobilization deposit still has something to say
+      // here, and it is the thing that makes signing feel safe: nothing leaves
+      // their pocket today.
+      _sdl.innerHTML='<strong style="color:var(--ink)">Nothing due today.</strong> You are billed '+_cadTxt+' for the time and materials actually used.';
       _sdl.style.display='block';
     }
     // Price-held-until chip, surfaces the REAL 30-day validity window the
