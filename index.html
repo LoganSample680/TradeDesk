@@ -4275,6 +4275,9 @@ body.dark .cal-cell.other{background:var(--cream)}
 <!-- ── More popup (tap-to-open, no swipe needed) ── -->
 <div id="mtb-more-popup" onclick="closeMobileMore()">
   <div id="mtb-more-menu" onclick="event.stopPropagation()">
+    <button class="mmi" id="mmi-tim" onclick="closeMobileMore();openTim()">
+      <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 015.4-5.4z"/><path d="M14.7 6.3L18 3l3 3-3.3 3.3"/></svg>Tim
+    </button>
     <button class="mmi" id="mmi-proposals" onclick="mobileNavTo('pg-proposals')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Proposals
     </button>
@@ -4370,6 +4373,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/handoff.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/estimate-speak.js"></script>
+<script src="js/tim.js"></script>
 <script src="js/equipment.js"></script>
 <script src="js/share-inbox.js"></script>
 <script src="js/bg-upload.js"></script>
