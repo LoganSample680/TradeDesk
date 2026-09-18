@@ -183,8 +183,13 @@ test.describe('Receipt-gated supply runs', () => {
       const out = await page.evaluate(() => {
         mileage.length = 0;
         const day = todayKey(), key = day + '|Home Depot';
+        // ONE instant, computed once. This used to call new Date() inside
+        // leg(), so the rebuild's leg claimed a different departure from the
+        // one that was answered, which is now (2026-09-18) exactly how the
+        // app tells two trips apart.
+        const started = new Date().toISOString();
         const leg = (extra) => Object.assign({ id: 'j-x-1', legKey: 'j-x-1', gps: true, date: day, miles: 4,
-          pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', startedIso: new Date().toISOString() }, extra || {});
+          pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', startedIso: started }, extra || {});
         const results = {};
         for (const [name, answer] of [['personal', 'personal'], ['noreceipt', 'noreceipt'], ['receipt', 'receipt']]) {
           mileage.length = 0;
@@ -204,6 +209,63 @@ test.describe('Receipt-gated supply runs', () => {
       expect(out.noreceipt).toEqual({ held: false, personal: false, noReceipt: true, exp: undefined });
       expect(out.receipt).toEqual({ held: false, personal: false, noReceipt: false, exp: 777001 });
       expect(out.unanswered).toEqual({ held: true, n: 1 });
+    });
+
+    // ── AN ANSWER BELONGS TO A TRIP, NOT TO AN ID (owner 2026-09-18) ──────
+    // "Ain't no fucking way Jack answered personal to the timesheet rows why
+    // the fuck did things at 8 am go to personal" He had not. His
+    // j-987ebc83-mu6ym0i3 began the day as a seven-minute drive to an unsaved
+    // job site and ended it as a 0.9-mile round trip that had absorbed three
+    // journeys, because the id is minted from the motion flip and the journey
+    // around that flip is re-derived on every rebuild. The answer given to the
+    // first trip became true of the second.
+    test('an answer does not follow the id onto a different trip', async () => {
+      const out = await page.evaluate(() => {
+        const day = todayKey(), key = day + '|Home Depot';
+        const started = '2026-09-18T12:53:31.275Z';
+        const leg = (extra) => Object.assign({ id: 'j-x-2', legKey: 'j-x-2', gps: true, date: day,
+          miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run',
+          to_name: 'Home Depot', collapsedStops: 0, startedIso: started }, extra || {});
+        const after = (extra) => {
+          mileage.length = 0;
+          _geoDeriveApplyMileage(day, [leg()]);
+          resolveSupplyRun(key, 'personal');
+          _geoDeriveApplyMileage(day, [leg(extra)]);      // the rebuild, reshaped
+          const m = mileage.find(x => x.id === 'j-x-2');
+          return { personal: !!m.personal, miles: m.miles, to: m.to_name };
+        };
+        return {
+          same:      after({}),
+          collapsed: after({ collapsedStops: 3, to_name: 'JS Solutions shop', miles: 0.9 }),
+          elsewhere: after({ to_name: 'Neenans Co' }),
+          farther:   after({ miles: 12 }),
+          later:     after({ startedIso: '2026-09-18T17:45:13.000Z' }),
+          nudged:    after({ miles: 4.3 }),
+        };
+      });
+      expect(out.same.personal, 'the same trip keeps its answer').toBe(true);
+      expect(out.collapsed.personal, 'his 8am leg: it absorbed three stops and became a round trip').toBe(false);
+      expect(out.elsewhere.personal, 'a different destination is a different trip').toBe(false);
+      expect(out.farther.personal, 'four miles became twelve').toBe(false);
+      expect(out.later.personal, 'a different departure is a different journey').toBe(false);
+      expect(out.nudged.personal, 'a router re-measuring the same trip is still that trip').toBe(true);
+    });
+
+    test('the identity fields still ride across a reshaped leg', async () => {
+      const out = await page.evaluate(() => {
+        const day = todayKey();
+        mileage.length = 0;
+        const base = { id: 'j-x-3', legKey: 'j-x-3', gps: true, date: day, miles: 4,
+          to_name: 'Home Depot', collapsedStops: 0, startedIso: '2026-09-18T12:53:31.275Z' };
+        _geoDeriveApplyMileage(day, [Object.assign({}, base)]);
+        const m0 = mileage.find(x => x.id === 'j-x-3');
+        m0.vehicle = '2013 Ford F150'; m0.vehicleId = 7; m0.notes = 'gate code 4412';
+        _geoDeriveApplyMileage(day, [Object.assign({}, base, { to_name: 'Somewhere else', miles: 19 })]);
+        const m = mileage.find(x => x.id === 'j-x-3');
+        return { vehicle: m.vehicle, vehicleId: m.vehicleId, notes: m.notes };
+      });
+      expect(out, 'a truck and a note are about the leg however it is shaped')
+        .toEqual({ vehicle: '2013 Ford F150', vehicleId: 7, notes: 'gate code 4412' });
     });
 
     test('No receipt: commits as business carrying the noReceipt flag', async () => {

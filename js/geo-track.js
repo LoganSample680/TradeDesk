@@ -7895,6 +7895,40 @@ function _geoDeriveApplyMileage(dayKey,derived){
   // rebuild. Any answer present means the hold is dropped.
   const keep=['vehicle','vehicleId','purpose','notes','receiptId','deductible','noReceipt','receiptExpenseId','personal'];
   const answered=r=>!!(r&&(r.noReceipt||r.receiptExpenseId!=null||r.personal));
+  // ── AN ANSWER BELONGS TO A TRIP, NOT TO AN ID (owner 2026-09-18) ────────
+  //
+  // "Ain't no fucking way Jack answered personal to the timesheet rows why the
+  // fuck did things at 8 am go to personal" He did not, and this is how it
+  // happened anyway.
+  //
+  // These flags ride across a re-derive keyed on the leg id, and a leg id is
+  // NOT a stable name for a trip. It is minted from the CoreMotion flip that
+  // opened the journey, and the journey around that flip is re-derived every
+  // time the day is rebuilt: it collapses, absorbs stops, changes destination.
+  // His j-987ebc83-mu6ym0i3 began 18 September as a seven-minute drive from
+  // the shop to an unsaved job site and ended it as a 0.9-mile round trip that
+  // had swallowed three journeys (collapsedStops 3, three segKeys). Whatever
+  // was answered about the first one silently became true of the second, and
+  // the row gave itself away: purpose "Business" sitting beside personal true,
+  // with no supplyRunKey the Personal door could ever have matched.
+  //
+  // So the identity fields ride across as before (a vehicle and a note are
+  // about the leg however it is shaped), and the three ANSWERS ride only while
+  // the trip is still recognisably the same one: same departure instant, same
+  // destination, same collapse, and the distance within a quarter. Anything
+  // else is a different trip and deserves the question again rather than an
+  // answer nobody gave about it.
+  const ANSWERS=['personal','noReceipt','receiptExpenseId','deductible'];
+  const _num=v=>{const n=Number(v);return isFinite(n)?n:null;};
+  const sameTrip=(a,b)=>{
+    if(!a||!b)return false;
+    if(String(a.startedIso||'')!==String(b.startedIso||''))return false;
+    if(String(a.to_name||a.to||'')!==String(b.to_name||b.to||''))return false;
+    if((_num(a.collapsedStops)||0)!==(_num(b.collapsedStops)||0))return false;
+    const am=_num(a.miles),bm=_num(b.miles);
+    if(am==null||bm==null)return am===bm;
+    return Math.abs(am-bm)<=Math.max(0.2,Math.max(am,bm)*0.25);
+  };
   const byId={};
   mileage.forEach(m=>{if(m&&m.id!=null)byId[String(m.id)]=m;});
   // A ROW WITH NO ID IS NOT A ROW. Every real caller hands this the deriver's
@@ -7912,10 +7946,23 @@ function _geoDeriveApplyMileage(dayKey,derived){
   src.forEach(m=>{
     const old=byId[String(m.id)];
     const row=Object.assign({},m);
-    if(old)keep.forEach(k=>{if(old[k]!=null&&old[k]!=='')row[k]=old[k];});
+    const carry=old?sameTrip(old,m):false;
+    if(old)keep.forEach(k=>{
+      if(old[k]==null||old[k]==='')return;
+      if(!carry&&ANSWERS.indexOf(k)>=0)return;   // a changed trip is a new question
+      row[k]=old[k];
+    });
     if(answered(row))delete row.pendingReceipt;
     const at=mileage.findIndex(x=>x&&String(x.id)===String(m.id));
-    if(at>=0)mileage[at]=Object.assign(mileage[at],row);else mileage.push(row);
+    if(at>=0){
+      // The merge below keeps whatever the stored row already had, so simply
+      // declining to COPY an answer is not the same as dropping it: the old
+      // flag would survive on the target untouched. A trip that is no longer
+      // the trip that was answered has its answers removed, which puts the
+      // question back where the person can see it.
+      if(!carry)ANSWERS.forEach(k=>{delete mileage[at][k];});
+      mileage[at]=Object.assign(mileage[at],row);
+    }else mileage.push(row);
   });
   return _geoMileageFingerprint(dayKey)!==_before;
 }
