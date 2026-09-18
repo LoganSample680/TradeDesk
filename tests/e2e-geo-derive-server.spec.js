@@ -34,15 +34,38 @@ const CLIENT = { lat: 39.0123292, lon: -95.7464936 };
 // A plain day: sat at the shop, drove to a client, worked, drove back.
 const DEPART = at(7, 48), ARRIVE = at(7, 58), LEAVE = at(12, 27), HOME = at(12, 38);
 
+// Jittered for the same reason `sit` is, and here the duplication was exact in
+// a second way: the drive out and the drive back interpolate the same two
+// points over the same 30 steps, so step i of one is byte-equal to step 29-i of
+// the other. Nobody retraces a road to the centimetre.
+// Keyed on the reading's own instant, so two readings taken at different times
+// are never byte-equal however close together they sit, and the fixture cannot
+// accidentally collide two points the way an index-keyed version did at the
+// seam between a drive's last step and the dwell it opens.
+const jitter = (v, ts, k) => v + (((Math.round(ts / 1000) * (k === 'lat' ? 2654435761 : 40503)) % 977) - 488) * 1e-9;
 const line = (a, b, t1, t2, n) => Array.from({ length: n }, (_, i) => ({
   ts: Math.round(t1 + (t2 - t1) * i / (n - 1)),
   type: 'fix',
-  lat: a.lat + (b.lat - a.lat) * i / (n - 1),
-  lon: a.lon + (b.lon - a.lon) * i / (n - 1),
+  lat: jitter(a.lat + (b.lat - a.lat) * i / (n - 1), t1 + (t2 - t1) * i / (n - 1), 'lat'),
+  lon: jitter(a.lon + (b.lon - a.lon) * i / (n - 1), t1 + (t2 - t1) * i / (n - 1), 'lon'),
   kind: null,
 }));
+// A PARKED PHONE JITTERS, and the fixture has to as well (2026-09-18). This
+// used to emit `lat: p.lat` unchanged, so the six morning readings at the shop
+// and the eight afternoon ones after he drove back were byte-equal: the same
+// double, to all seventeen digits, hours and a round trip apart. No GPS does
+// that. Two readings of a phone sitting perfectly still still differ in the low
+// bits, which is the entire premise the replay guard rests on, and a fixture
+// that says otherwise is asserting something false about the world. It went
+// unnoticed while the guard only looked back two hours; a day-wide window made
+// the afternoon at the shop look like the morning's reading played again.
+//
+// Deterministic, and about a centimetre: far below any fence, far above the
+// float equality the guard tests.
 const sit = (p, t1, t2, n) => Array.from({ length: n }, (_, i) => ({
-  ts: Math.round(t1 + (t2 - t1) * i / (n - 1)), type: 'fix', lat: p.lat, lon: p.lon, kind: null,
+  ts: Math.round(t1 + (t2 - t1) * i / (n - 1)), type: 'fix',
+  lat: jitter(p.lat, t1 + (t2 - t1) * i / (n - 1), 'lat'),
+  lon: jitter(p.lon, t1 + (t2 - t1) * i / (n - 1), 'lon'), kind: null,
 }));
 
 const EVENTS = [
@@ -50,11 +73,11 @@ const EVENTS = [
   { ts: DEPART, type: 'motion', kind: 'automotive', lat: null, lon: null },
   ...line(SHOP, CLIENT, DEPART, ARRIVE, 30),
   { ts: ARRIVE, type: 'motion', kind: 'walking', lat: null, lon: null },
-  ...sit(CLIENT, ARRIVE, LEAVE, 40),
+  ...sit(CLIENT, ARRIVE + 1000, LEAVE, 40),
   { ts: LEAVE, type: 'motion', kind: 'automotive', lat: null, lon: null },
   ...line(CLIENT, SHOP, LEAVE, HOME, 30),
   { ts: HOME, type: 'motion', kind: 'still', lat: null, lon: null },
-  ...sit(SHOP, HOME, at(14, 0), 8),
+  ...sit(SHOP, HOME + 1000, at(14, 0), 8),
 ].sort((a, b) => a.ts - b.ts).map((e) => ({ ...e, ts: iso(e.ts) }));
 
 const FENCES = [
@@ -393,13 +416,21 @@ test.describe('the server drops a replayed cached fix', () => {
     for (const h of [8, 9, 10, 11, 12]) { rows.push(F(h, 4, SHOP_CACHED)); rows.push(F(h, 30, LOT)); }
     const r = await run(rows);
     expect(r.fixesSeen).toBe(12);
-    // FOUR, not five, and the one that gets through is the window working
-    // rather than failing. 8:04 and 9:04 are inside two hours of the real
-    // 7:39 reading and are dropped; by 10:04 that reading has aged out, so
-    // that replay is kept and becomes the new anchor, which then catches
-    // 11:04 and 12:04. A cached value that survives two hours of being the
-    // only thing said about a place has earned the benefit of the doubt.
-    expect(r.fixesDropped).toBe(4);
+    // AMENDED 2026-09-18, and the old number is why. This asserted FOUR, on
+    // the reasoning that "a cached value that survives two hours of being the
+    // only thing said about a place has earned the benefit of the doubt": 8:04
+    // and 9:04 fell inside two hours of the real 7:39 reading and were
+    // dropped, 10:04 had aged out of the window and was kept, and that kept
+    // copy became the new anchor for 11:04 and 12:04.
+    //
+    // Jack's day proved the benefit of the doubt unearned. His phone re-sent
+    // the 07:39 shop fix on the 30-minute push cycle at 10:00, 10:31, 11:03,
+    // 11:33, 12:00, 12:22 and 12:29, and the gaps between the copies the scan
+    // could still see were wider than two hours, so copy after copy read as
+    // new and 08:00 to 13:12 put him back at a shop he left at 07:53. Waiting
+    // does not make a cached coordinate fresh. Five arrivals after he left,
+    // five drops.
+    expect(r.fixesDropped).toBe(5);
   });
 
   test('a phone that never moved keeps every reading: that is not a replay', async () => {
@@ -417,9 +448,37 @@ test.describe('the server drops a replayed cached fix', () => {
     expect(r.fixesDropped).toBe(0);
   });
 
-  test('past the two-hour window it is allowed through again', async () => {
+  // AMENDED 2026-09-18 with the test above. This was 'past the two-hour window
+  // it is allowed through again' and asserted 0 drops for a copy three hours
+  // later. The window is the day now, so three hours later on the same day is
+  // still the same cache talking.
+  test('later the same day is still the same cache: it stays out', async () => {
     const r = await run([F(6, 0, SHOP_CACHED), F(6, 5, LOT), F(9, 0, SHOP_CACHED)]);
-    expect(r.fixesDropped).toBe(0);
+    expect(r.fixesDropped).toBe(1);
+  });
+
+  // Jack's actual afternoon, which is the case the two-hour window let through.
+  // Nothing real is said about where he is between 09:03 and 12:36; the only
+  // thing arriving is the 07:39 shop coordinate on the push cycle. Every one of
+  // those has to go, or the day plants him at the shop for three and a half
+  // hours he spent in a car park.
+  test("the 30-minute push cycle re-sending one coordinate is dropped every time", async () => {
+    const rows = [F(7, 39, SHOP_CACHED), F(7, 58, LOT), F(9, 3, LOT)];
+    for (const [h, m] of [[10, 0], [10, 31], [11, 3], [11, 33], [12, 0], [12, 22], [12, 29]]) {
+      rows.push(F(h, m, SHOP_CACHED));
+    }
+    const r = await run(rows);
+    expect(r.fixesDropped, 'all seven, not just the first two').toBe(7);
+  });
+
+  // The boundary the day-wide window must not cross.
+  test('the same coordinate on the next day is a new fix, not a replay', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const rows = [F(7, 39, SHOP_CACHED), F(7, 58, LOT),
+      { ts: iso(at(23, 30) + 3 * 3600_000), type: 'fix', kind: null, ...SHOP_CACHED }];
+    const r = await deriveDayServer(fakeSvc(jackish(rows), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.fixesDropped, 'yesterday cannot silence today').toBe(0);
   });
 
   test('a clean day reports the count and drops nothing', async () => {

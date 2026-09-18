@@ -106,18 +106,35 @@ const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out"];
 // over and those repeats are real evidence, both of coverage and of not having
 // left. So the rule is only a coordinate that comes back AFTER the phone has
 // been seen somewhere else. Standing still and saying so twice is honest.
-const REPLAY_MS = 2 * 3600_000;
-const REPLAY_SCAN = 400;
+//
+// THE WINDOW IS THE DAY, not two hours. Two hours was the first cut and it is
+// what let Jack's day go wrong a second time. His first replay burst spanned 47
+// minutes, which two hours covers comfortably. The rest of the day was not a
+// burst: the 07:39 shop fix came back on the 30-minute push cycle at 10:00,
+// 10:31, 11:03, 11:33, 12:00, 12:22 and 12:29, each one more than two hours
+// after the last copy the scan could still see, so each one read as new and
+// 08:00 to 13:12 put him back at a shop he had left at 07:53.
+//
+// A cached coordinate does not go stale by waiting. Going quiet for three hours
+// is what a cache does while the phone sleeps. The day is the honest boundary:
+// it is the unit the deriver works in, and yesterday's cache describes nothing
+// this day needs.
+//
+// Scanning the kept list is still enough. The guard drops a coordinate only
+// when that coordinate is already in the list, so the FIRST appearance of one
+// is never the one dropped, and the first appearance is all the scan has to
+// find.
+const REPLAY_SCAN = 2000;
 function dropReplayedFixes(sorted) {
   const kept = [];
   for (const f of sorted) {
     const last = kept[kept.length - 1];
     if (last && (last.lat !== f.lat || last.lng !== f.lng)) {
-      const cut = f.ts - REPLAY_MS;
+      const day = centralDayKey(f.ts);
       let replay = false;
       for (let i = kept.length - 1, seen = 0; i >= 0 && seen < REPLAY_SCAN; i--, seen++) {
         const k = kept[i];
-        if (!(k.ts >= cut)) break;
+        if (centralDayKey(k.ts) !== day) break;
         if (k.lat === f.lat && k.lng === f.lng) { replay = true; break; }
       }
       if (replay) continue;

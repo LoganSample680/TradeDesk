@@ -1087,11 +1087,21 @@ test.describe('geo-derive wiring', () => {
       localStorage.removeItem('zp3_geo_tape_log');
       window._geoDrainQueue = () => {};   // hold the queue so it can be inspected
       window._routeDistance = async () => ({ miles: 0, mins: 0 });   // no router unless a test brings one
-      _geoFixLogPush(T[0], SHOP.lat, SHOP.lng, 5);
-      _geoFixLogPush(T[1], DOE.lat, DOE.lng, 5);
-      _geoFixLogPush(T[2], DOE.lat, DOE.lng, 5);
-      _geoFixLogPush(T[3], SHOP.lat, SHOP.lng, 5);
-      _geoFixLogPush(T[4], SHOP.lat, SHOP.lng, 5);
+      // Jittered by the reading's own instant (2026-09-18). These used to push
+      // SHOP.lat byte-for-byte at 07:52, 12:31 and 13:00, with a morning at
+      // John Doe's in between: the same double, to all seventeen digits, five
+      // hours and a round trip apart. No GPS does that, and the replay guard
+      // reads exact float equality as "this is one cached CLLocation sent
+      // twice" precisely because two real readings never are. The fixture was
+      // asserting something false about the world; it only went unnoticed while
+      // the guard looked back two hours.
+      const jit = (v, ts, k) => v + (((Math.round(ts / 1000) * (k === 'lat' ? 2654435761 : 40503)) % 977) - 488) * 1e-9;
+      const push = (ts, p) => _geoFixLogPush(ts, jit(p.lat, ts, 'lat'), jit(p.lng, ts, 'lng'), 5);
+      push(T[0], SHOP);
+      push(T[1], DOE);
+      push(T[2], DOE);
+      push(T[3], SHOP);
+      push(T[4], SHOP);
     }, [tape, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)], DAY_START - 30 * 86400000]);
 
     test('one queue item per day, carrying the whole day for geo_replace_day', async () => {
@@ -3185,7 +3195,12 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     localStorage.removeItem('zp3_geo_queue');
     window._geoDrainQueue = () => {};
     window._routeDistance = async () => ({ miles: 0, mins: 0 });
-    F.forEach(f => _geoFixLogPush(f[0], f[1], f[2], 5));
+    // Jittered by the reading's own instant, for the reason spelled out in the
+    // 'deriving a day' seeder above: a real phone never reports one place with
+    // byte-equal floats hours apart, and the replay guard reads that equality
+    // as a cached CLLocation sent twice.
+    const jit = (v, ts, k) => v + (((Math.round(ts / 1000) * (k === 'lat' ? 2654435761 : 40503)) % 977) - 488) * 1e-9;
+    F.forEach(f => _geoFixLogPush(f[0], jit(f[1], f[0], 'lat'), jit(f[2], f[0], 'lng'), 5));
     const res = await _geoDeriveDayNow(DAY, null);
     const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
     return { pending: !!(res && res.pending),
@@ -3324,13 +3339,45 @@ test.describe('a cached fix re-sent is not a new fix', () => {
     expect(log[2][1]).toBe(39.045656251);
   });
 
-  test('past the replay window it is allowed through again', async () => {
+  // AMENDED 2026-09-18. This was 'past the replay window it is allowed through
+  // again' and expected all three entries: the window was two hours, so a copy
+  // two and a half hours later counted as a fresh reading. Jack's day showed
+  // that is exactly backwards. His phone re-sent the 07:39 shop fix on the
+  // 30-minute push cycle at 10:00, 10:31, 11:03, 11:33, 12:00, 12:22 and
+  // 12:29; each copy was more than two hours past the last one still visible
+  // to the scan, so each was taken as new and the day planted him back at the
+  // shop from 08:00 to 13:12. A cached coordinate does not become true by
+  // waiting. The window is the business day now.
+  test('later the same day it is still the same cache', async () => {
     const log = await run([
       [T(6, 0, 0), ...SHOP_CACHED],
       [T(6, 5, 0), ...LOT],
-      [T(8, 30, 0), ...SHOP_CACHED],   // two and a half hours later, out of the window
+      [T(8, 30, 0), ...SHOP_CACHED],   // two and a half hours later, same day, same cache
     ]);
+    expect(log.length).toBe(2);
+    expect(log[log.length - 1], 'the last thing known is still the car park').toEqual([T(6, 5, 0), ...LOT]);
+  });
+
+  // The case the two-hour window let straight through, at his real cadence.
+  test("the 30-minute push cycle re-sending one coordinate never gets back in", async () => {
+    const pushes = [[T(7, 39, 7), ...SHOP_CACHED], [T(7, 58, 19), ...LOT], [T(9, 3, 50), ...LOT]];
+    for (const [h, m] of [[10, 0], [10, 31], [11, 3], [11, 33], [12, 0], [12, 22], [12, 29]]) {
+      pushes.push([T(h, m), ...SHOP_CACHED]);
+    }
+    const log = await run(pushes);
+    expect(log.filter(f => f[1] === SHOP_CACHED[0]).length, 'once, at 07:39, when it was true').toBe(1);
     expect(log.length).toBe(3);
+  });
+
+  // The boundary the day-wide window must not cross: a new day starts clean,
+  // or a coordinate you really do visit two mornings running is lost.
+  test('the same coordinate tomorrow is a new fix, not a replay', async () => {
+    const log = await run([
+      [T(7, 39, 7), ...SHOP_CACHED],
+      [T(7, 58, 19), ...LOT],
+      [T(31, 0, 0), ...SHOP_CACHED],   // 07:00 the next morning
+    ]);
+    expect(log.length, 'yesterday cannot silence today').toBe(3);
   });
 
   test('the very same fix twice in a row is still one entry', async () => {

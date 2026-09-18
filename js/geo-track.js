@@ -7202,11 +7202,27 @@ const _GEO_DERIVER_WRITES=true;
 const _GEO_FIXLOG_KEY='zp3_geo_fixlog';
 const _GEO_FIXLOG_MAX=6000;
 // How far back a re-sent cached fix is still recognisable as the same fix, and
-// how many entries that scan may read. Jack's replay spanned 47 minutes
-// (07:39:07 to 08:26:45), so an hour would have been a near miss; two gives it
-// room without ever reaching yesterday. See the note in _geoFixLogPush.
-const _GEO_FIX_REPLAY_MS=2*60*60*1000;
-const _GEO_FIX_REPLAY_SCAN=400;
+// how many entries that scan may read.
+//
+// THE WINDOW IS THE BUSINESS DAY, and it started out as two hours, which was
+// wrong in the one way that mattered. Jack's first replay burst spanned 47
+// minutes, so two hours looked generous. The rest of his day was not a burst:
+// the same 07:39 shop fix came back on the 30-minute push cycle at 10:00,
+// 10:31, 11:03, 11:33, 12:00, 12:22 and 12:29. Each of those is more than two
+// hours after the previous one the scan could still see, so each one read as
+// brand new, and 08:00 to 13:12 planted him back at the shop he had left.
+//
+// A cached coordinate does not expire. Going quiet for three hours is what a
+// cache DOES when the phone is asleep; it is not evidence that the next copy
+// is fresh. The honest boundary is the day, because that is the unit the
+// deriver works in and the point where the phone's cache is no longer
+// describing anything the day cares about.
+//
+// The scan only ever needs to find the FIRST time a coordinate appeared, and
+// that one is always kept: the guard drops a coordinate only when it is
+// already in the log, so the original is never the one dropped. Scanning the
+// kept log is therefore enough, as long as it reaches the start of the day.
+const _GEO_FIX_REPLAY_SCAN=2000;
 const _GEO_FIXLOG_KEEP_MS=8*86400000;
 const _GEO_DERIVE_DAYS=7;
 
@@ -7336,15 +7352,17 @@ function _geoFixLogPush(ts,lat,lng,acc){
     // Even a parked phone's consecutive fixes differ in the low bits; fourteen
     // matching decimals is one CLLocation object handed out twice.
     //
-    // Bounded scan, because the log holds a week: back over the replay window
-    // and no further, and never more than a few hundred entries.
+    // Bounded scan, because the log holds a week: back to the start of this
+    // business day and no further, and never more than _GEO_FIX_REPLAY_SCAN
+    // entries. The window used to be two hours and that is exactly how the
+    // cache got back in; see the constant.
     const last=a[a.length-1];
     if(last&&(last.lat!==la||last.lng!==ln)){
-      const cut2=t-_GEO_FIX_REPLAY_MS;
+      const day2=_bizDateStr(new Date(t));
       for(let i=a.length-1,seen=0;i>=0&&seen<_GEO_FIX_REPLAY_SCAN;i--,seen++){
         const f=a[i];
         if(!f)continue;
-        if(!(f.ts>=cut2))break;                     // out of the window, and the log is in order
+        if(_bizDateStr(new Date(f.ts))!==day2)break; // yesterday, and the log is in order
         if(f.lat===la&&f.lng===ln)return;           // seen here before, and we have moved since
       }
     }
