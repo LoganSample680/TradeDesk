@@ -125,16 +125,32 @@ const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out"];
 // is never the one dropped, and the first appearance is all the scan has to
 // find.
 const REPLAY_SCAN = 2000;
+// THE DAY IS COMPARED AS A NUMBER, not as a key, and that is not a style
+// choice. The first cut of this called centralDayKey(k.ts) inside the inner
+// scan. centralDayKey builds a fresh Intl.DateTimeFormat and runs
+// formatToParts on every call, which is among the most expensive things in the
+// language, and the scan runs once per kept fix per fix. Jack's day holds about
+// 630, so a rebuild asked for something near 400,000 Intl constructions and the
+// edge function ran out of wall clock: "edge function returned a non-2xx status
+// code", on the first rebuild after it shipped.
+//
+// `sorted` is ascending, so the day only ever moves forward. One pair of bounds
+// per distinct day, cached, and the scan stays arithmetic.
 function dropReplayedFixes(sorted) {
   const kept = [];
+  let lo = Infinity, hi = -Infinity;
   for (const f of sorted) {
+    if (!(f.ts >= lo && f.ts < hi)) {
+      const b = centralDayBounds(centralDayKey(f.ts));
+      lo = b ? b.start : -Infinity;
+      hi = b ? b.end : Infinity;
+    }
     const last = kept[kept.length - 1];
     if (last && (last.lat !== f.lat || last.lng !== f.lng)) {
-      const day = centralDayKey(f.ts);
       let replay = false;
       for (let i = kept.length - 1, seen = 0; i >= 0 && seen < REPLAY_SCAN; i--, seen++) {
         const k = kept[i];
-        if (centralDayKey(k.ts) !== day) break;
+        if (!(k.ts >= lo)) break;               // yesterday, and the list is in order
         if (k.lat === f.lat && k.lng === f.lng) { replay = true; break; }
       }
       if (replay) continue;

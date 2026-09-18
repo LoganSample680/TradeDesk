@@ -481,6 +481,25 @@ test.describe('the server drops a replayed cached fix', () => {
     expect(r.fixesDropped, 'yesterday cannot silence today').toBe(0);
   });
 
+  // The other half of the wire spec's cost guard, on the side that actually
+  // fell over: this scan runs once per kept fix per fix, so formatting a day
+  // key inside it turned Jack's 630-fix rebuild into ~400,000 Intl
+  // constructions and the edge function timed out.
+  test('the scan does not format a date per entry', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rows = Array.from({ length: 600 }, (_, i) => ({
+      ts: iso(at(7, 0) + i * 30000), type: 'fix', kind: null,
+      lat: 39.04 + i * 1e-5, lon: -95.71 - i * 1e-5,
+    }));
+    const Real = Intl.DateTimeFormat;
+    let made = 0;
+    Intl.DateTimeFormat = function (...a) { made++; return new Real(...a); };
+    Intl.DateTimeFormat.supportedLocalesOf = Real.supportedLocalesOf;
+    try { await deriveDayServer(fakeSvc(jackish(rows), []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true }); }
+    finally { Intl.DateTimeFormat = Real; }
+    expect(made, 'bounds once per day, not once per entry').toBeLessThan(2000);
+  });
+
   test('a clean day reports the count and drops nothing', async () => {
     const { deriveDayServer } = await import(SHARED);
     const r = await deriveDayServer(fakeSvc(TABLES, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });

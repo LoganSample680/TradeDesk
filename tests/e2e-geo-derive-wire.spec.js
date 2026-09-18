@@ -3380,6 +3380,36 @@ test.describe('a cached fix re-sent is not a new fix', () => {
     expect(log.length, 'yesterday cannot silence today').toBe(3);
   });
 
+  // THE SCAN HAS TO STAY CHEAP, and this test exists because it did not.
+  // The day-wide window was first written comparing formatted day KEYS inside
+  // the scan, which means one Intl.DateTimeFormat per entry examined. On the
+  // server that is once per kept fix per fix, and Jack's day holds about 630,
+  // so his rebuild asked for something near 400,000 of them and the edge
+  // function ran out of wall clock: "edge function returned a non-2xx status
+  // code". Counting constructions rather than timing anything, so this is
+  // deterministic and can never be a flake.
+  test('a full day of fixes does not format a date per entry', async () => {
+    const r = await page.evaluate(([T0]) => {
+      localStorage.removeItem('zp3_geo_fixlog');
+      const Real = Intl.DateTimeFormat;
+      let made = 0;
+      Intl.DateTimeFormat = function (...a) { made++; return new Real(...a); };
+      Intl.DateTimeFormat.supportedLocalesOf = Real.supportedLocalesOf;
+      try {
+        // 700 readings, a realistic day, each a genuinely new position so every
+        // one is kept and the scan has the longest possible list to walk.
+        for (let i = 0; i < 700; i++) {
+          _geoFixLogPush(T0 + i * 60000, 39.04 + i * 1e-5, -95.71 - i * 1e-5, 10);
+        }
+      } finally { Intl.DateTimeFormat = Real; }
+      return { made, kept: _geoFixLogRead().length };
+    }, [Date.parse('2026-09-18T12:00:00Z')]);
+    expect(r.kept, 'every one is a new place, so every one is kept').toBe(700);
+    // Bounds are computed once per day and cached, so this is a couple of
+    // walks, not seven hundred. The number that broke production was ~245,000.
+    expect(r.made, 'a handful, not one per entry').toBeLessThan(2000);
+  });
+
   test('the very same fix twice in a row is still one entry', async () => {
     const log = await run([[T(7, 39, 7), ...SHOP_CACHED], [T(7, 39, 7), ...SHOP_CACHED]]);
     expect(log.length).toBe(1);

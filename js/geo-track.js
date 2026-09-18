@@ -7223,6 +7223,16 @@ const _GEO_FIXLOG_MAX=6000;
 // already in the log, so the original is never the one dropped. Scanning the
 // kept log is therefore enough, as long as it reaches the start of the day.
 const _GEO_FIX_REPLAY_SCAN=2000;
+// The start of the business day holding `ms`, cached, because the replay scan
+// needs it on every push and computing it walks Intl in 15-minute steps.
+let _geoFixDayLoV=Infinity,_geoFixDayHiV=-Infinity;
+function _geoFixDayLo(ms){
+  if(ms>=_geoFixDayLoV&&ms<_geoFixDayHiV)return _geoFixDayLoV;
+  const b=_geoDayBounds(_geoDayKeyOf(ms,_geoBizTz()));
+  _geoFixDayLoV=b?b.start:-Infinity;
+  _geoFixDayHiV=b?b.end:Infinity;
+  return _geoFixDayLoV;
+}
 const _GEO_FIXLOG_KEEP_MS=8*86400000;
 const _GEO_DERIVE_DAYS=7;
 
@@ -7358,11 +7368,16 @@ function _geoFixLogPush(ts,lat,lng,acc){
     // cache got back in; see the constant.
     const last=a[a.length-1];
     if(last&&(last.lat!==la||last.lng!==ln)){
-      const day2=_bizDateStr(new Date(t));
+      // The day is a NUMBER here, not a key. Formatting a date per scanned
+      // entry means an Intl.DateTimeFormat per entry, which is one of the most
+      // expensive calls in the language; the server's copy of this guard was
+      // written that way for an hour and a rebuild timed out on it. One pair of
+      // bounds per day, cached across pushes, and the scan stays arithmetic.
+      const lo=_geoFixDayLo(t);
       for(let i=a.length-1,seen=0;i>=0&&seen<_GEO_FIX_REPLAY_SCAN;i--,seen++){
         const f=a[i];
         if(!f)continue;
-        if(_bizDateStr(new Date(f.ts))!==day2)break; // yesterday, and the log is in order
+        if(!(f.ts>=lo))break;                       // yesterday, and the log is in order
         if(f.lat===la&&f.lng===ln)return;           // seen here before, and we have moved since
       }
     }
