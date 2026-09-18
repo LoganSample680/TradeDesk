@@ -3415,7 +3415,7 @@ function geoDeriveRows(result, ids) {
       // a destination the deriver could not name, which is precisely the
       // drive it has no standing to label.
       pendingPurpose: true, purpose: '',
-    } : {}, l.to.kind === 'supply' ? {
+    } : {}, (l.to.kind === 'supply' && !l.collapsed) ? {
       // THE RECEIPT IS THE PROOF, NOT THE DESTINATION (owner design
       // 2026-08-17, and owner 2026-09-05: "the receipt thing didn't stay
       // alive from my Home Depot run"). A leg that ends at a supply place is
@@ -3424,6 +3424,28 @@ function geoDeriveRows(result, ids) {
       // rewrite (2959bb3) deleted the engine and nothing set it again, so his
       // 28 August Home Depot leg landed as a plain Supply run and the card
       // never showed. The key is what the card groups visits by.
+      //
+      // AND ONLY WHEN THE LEG IS THE TRIP TO THE STORE (owner 2026-09-18:
+      // "So why did the jobs in the morning go personal?"). A COLLAPSED leg is
+      // a chain: it absorbs every unsaved stop until it reaches a saved
+      // destination and is keyed by the FIRST journey's id. On Jack's 18
+      // September his midday drives were not resolving, so the chain that
+      // opened at 07:53 ran all the way to the first saved place it could
+      // find, which was Neenans at 13:30. One leg, ending at a supply house,
+      // carrying four hours of unrelated work inside it.
+      //
+      // The card then honestly said "Neenans Co", he tapped Personal, and
+      // both books took the whole chain: the mileage row is the chain's miles,
+      // and the two time rows the answer dismisses are the chain's own, which
+      // are the 07:53 drive and the 08:00 stop. His morning went off the books
+      // for a receipt question about an afternoon errand.
+      //
+      // There is no honest answer to offer here. The app cannot say which part
+      // of a chain was the supply run, so it must not offer a button that
+      // takes all of it off. A chain's receipt question returns the day it
+      // stops being a chain, which is what the deriver is for: once the
+      // midday drives resolve, the run to the store is its own leg and asks
+      // for its own receipt.
       pendingReceipt: true, supplyRunKey: String(result.day || '') + '|' + (l.to.name || 'Store'),
     } : {}, l.traced ? {
       // Named as what it is, so the log and the map can say "traced" rather

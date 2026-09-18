@@ -5046,6 +5046,68 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── A CHAIN IS NOT A TRIP TO THE STORE (owner 2026-09-18) ───────────────
+  // "So why did the jobs in the morning go personal?" Because the leg that
+  // asked the receipt question was a chain: it opened at 07:53 and, with his
+  // midday drives not resolving, ran to the first saved place it could find,
+  // Neenans at 13:30. The card honestly said Neenans Co; Personal then took the
+  // chain's miles and dismissed the chain's own two rows, which were the 07:53
+  // drive and the 08:00 stop. Four hours of work off the books for a receipt
+  // question about an afternoon errand.
+  test.describe('a collapsed chain never asks for a receipt', () => {
+    const YARD = { id: 'p-shop', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106 };
+    const STORE = { id: 'p-supply', kind: 'supply', name: 'Neenans Co', placeId: 9,
+      lat: 39.0106029, lng: -95.6811282 };
+    const LOT = { lat: 39.0444552, lng: -95.7129016 };   // unsaved, 768 ft off the yard
+    const F = [YARD, STORE];
+    const rows = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      return geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })
+        .td_mileage.map(m => ({ id: m.id, to: m.to_name || m.to, collapsed: m.collapsedStops || 0,
+          held: !!m.pendingReceipt, key: m.supplyRunKey || null }));
+    }, inp);
+
+    // Yard, an unsaved stop, then on to the store: one chain, keyed by the
+    // FIRST journey, ending at a supply house.
+    const chained = base({
+      fences: F,
+      tape: [mo(T(7, 30), 'onFoot'), mo(T(7, 53), 'automotive'), mo(T(8, 0), 'onFoot'),
+             mo(T(12, 23), 'automotive'), mo(T(13, 30), 'onFoot')],
+      fixes: [fix(T(7, 40), YARD), fix(T(7, 50), YARD),
+              fix(T(8, 5), LOT), fix(T(9, 0), LOT), fix(T(11, 0), LOT), fix(T(12, 20), LOT),
+              fix(T(13, 35), STORE), fix(T(13, 50), STORE), fix(T(14, 5), STORE)],
+      nowMs: T(16, 0),
+    });
+    // The same run standing on its own: yard straight to the store.
+    const direct = base({
+      fences: F,
+      tape: [mo(T(12, 0), 'onFoot'), mo(T(12, 23), 'automotive'), mo(T(13, 30), 'onFoot')],
+      fixes: [fix(T(12, 10), YARD), fix(T(12, 20), YARD),
+              fix(T(13, 35), STORE), fix(T(13, 50), STORE), fix(T(14, 5), STORE)],
+      nowMs: T(16, 0),
+    });
+
+    test('the chain that swallowed the morning asks nothing', async () => {
+      const r = await rows(chained);
+      const held = r.filter(m => m.held);
+      expect(held.length, 'no receipt card, because there is no honest answer').toBe(0);
+      expect(r.some(m => m.collapsed > 0), 'and it really is a chain').toBe(true);
+    });
+
+    test('a real run to the store still asks', async () => {
+      const r = await rows(direct);
+      const held = r.filter(m => m.held);
+      expect(held.length, 'this one IS the trip to the store').toBe(1);
+      expect(held[0].collapsed).toBe(0);
+      expect(held[0].key).toContain('Neenans Co');
+    });
+
+    test('no chain carries a supply key for an answer to land on', async () => {
+      const r = await rows(chained);
+      expect(r.every(m => m.key === null), 'nothing for the card to group, so nothing to answer').toBe(true);
+    });
+  });
+
   test('no console errors across the deriver', async () => {
     assertNoErrors(page, 'geo-derive');
   });
