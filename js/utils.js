@@ -163,7 +163,17 @@ function zConfirm(msg, onYes, opts={}){
   const yesLabel=opts.yes||'Yes';
   const noLabel=opts.no||'Cancel';
   const danger=opts.danger!==false;
+  // ── THE SAFE ANSWER UNDER THE THUMB (owner 2026-09-18) ──────────────────
+  // "No keep it should be on the right not left". Opt-in, not a new default:
+  // ~57 sites build a .zmodal and every other one of them keeps the order it
+  // has always had (§15.2, no drastic visual change without a yes). It is for
+  // the dialogs where the wrong tap costs something real, and the one that
+  // asked for it is the supply run's Personal door, where a mis-tap deletes a
+  // man's hours.
+  const safeRight=opts.safeRight===true;
   const onNo=opts.onNo||null; // optional callback when user taps No/Cancel
+  const _zNo=()=>'<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px">'+noLabel+'</button>';
+  const _zYes=()=>'<button id="zmodal-yes" class="btn" style="font-size:14px;padding:10px 16px;background:'+(danger?'#A32D2D':'var(--blue)')+';color:#fff;border-color:'+(danger?'#A32D2D':'var(--blue)')+'">'+yesLabel+'</button>';
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   overlay.innerHTML=
@@ -171,8 +181,8 @@ function zConfirm(msg, onYes, opts={}){
       '<div class="zmodal-title">'+title+'</div>'+
       '<div class="zmodal-msg">'+msg+'</div>'+
       '<div class="zmodal-btns">'+
-        '<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px">'+noLabel+'</button>'+
-        '<button id="zmodal-yes" class="btn" style="font-size:14px;padding:10px 16px;background:'+(danger?'#A32D2D':'var(--blue)')+';color:#fff;border-color:'+(danger?'#A32D2D':'var(--blue)')+'">'+yesLabel+'</button>'+
+        (safeRight?_zYes():_zNo())+
+        (safeRight?_zNo():_zYes())+
       '</div>'+
     '</div>';
   document.body.appendChild(overlay);

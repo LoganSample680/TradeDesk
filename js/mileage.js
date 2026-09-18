@@ -1321,7 +1321,8 @@ function _supplyRunPersonal(k){
            'You do not get paid for that time, and nothing will ever prompt you to put it back.<br><br>'+
            'Was this trip for work? Then hit <b>No, keep it</b> and answer <b>No receipt</b> instead.',
     ()=>{resolveSupplyRun(key,'personal');if(typeof showToast==='function')showToast('Off the books, and off your hours','🚗');},
-    {title:'Read this before you tap',yes:'Delete it, it was personal',no:'No, keep it',danger:true});
+    {title:'Read this before you tap',yes:'Delete it, it was personal',no:'No, keep it',
+     danger:true,safeRight:true});
 }
 function _supplyRunNoReceipt(k){
   // Owner copy (2026-08-17): one plain line, not a tax lecture. No longer the
