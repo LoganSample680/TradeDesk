@@ -36,6 +36,15 @@
 -- stretch still being driven, and belongs to whoever can see the end of it.
 -- ════════════════════════════════════════════════════════════════════════
 
+-- A NEW TRAILING PARAMETER IS AN OVERLOAD, NOT A REPLACEMENT. `create or
+-- replace` matches on the argument list, so adding p_sweep_until left the old
+-- nine-argument function in place beside the new ten-argument one, and every
+-- existing nine-argument call became ambiguous: "function geo_replace_day(...)
+-- is not unique" (CI migration lint, caught this on the first push). The old
+-- signature has to go explicitly, and its grants go with it, so they are
+-- re-issued below against the new one.
+drop function if exists geo_replace_day(uuid, uuid, text, timestamptz, timestamptz, jsonb, jsonb, jsonb, boolean);
+
 create or replace function geo_replace_day(
   p_contractor uuid,
   p_employee   uuid,
@@ -400,5 +409,5 @@ begin
     'retired', jsonb_build_object('time', n_del_t, 'shop', n_del_s, 'miles', n_del_m));
 end $$;
 
-revoke all on function geo_replace_day(uuid, uuid, text, timestamptz, timestamptz, jsonb, jsonb, jsonb, boolean) from anon;
-grant execute on function geo_replace_day(uuid, uuid, text, timestamptz, timestamptz, jsonb, jsonb, jsonb, boolean) to authenticated, service_role;
+revoke all on function geo_replace_day(uuid, uuid, text, timestamptz, timestamptz, jsonb, jsonb, jsonb, boolean, timestamptz) from anon;
+grant execute on function geo_replace_day(uuid, uuid, text, timestamptz, timestamptz, jsonb, jsonb, jsonb, boolean, timestamptz) to authenticated, service_role;
