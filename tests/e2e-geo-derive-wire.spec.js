@@ -3144,3 +3144,88 @@ test.describe('the mileage paint is gated on an actual change', () => {
 
   test('no console errors', async () => { await assertNoErrors(page); });
 });
+
+// ── NO ANSWER, NO SWEEP (owner 2026-09-18, on Jack's morning) ──────────────
+// "in the past this would then say we had a drive from the js solutions shop
+// to a unsaved address then show current dwell at unsaved address... why didnt
+// this happen."
+//
+// It did happen. Rule 14 wrote the traced leg at 08:11:03: shop to an unsaved
+// end, breadcrumb miles, off every total, carrying the Save this address path.
+// Then he moved the truck at 08:27:07 and the derive that ran at 08:34:49,
+// eight seconds after the tape flipped back to still, found the chain's last
+// journey still OPEN. Rule 14 is right to withhold the leg while the truck is
+// moving. The bug was that the withheld set still went to geo_replace_day with
+// the sweep ON, so the RPC retired the good row and its drive. An hour of his
+// morning became nothing.
+//
+// Withholding a row must never mean deleting it.
+test.describe('a derive that is still mid-drive retires nothing', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Same fixture as 'deriving a day' above, with the tape handed in so a test
+  // can choose whether the last journey ever closes.
+  const derive = (tape) => page.evaluate(async ([tape, SHOP, DOE, F, OWNED_SINCE, DAY]) => {
+    S.bizTz = 'America/Chicago';
+    S.officeLat = SHOP.lat; S.officeLon = SHOP.lng; S.bname = 'JS Solutions';
+    window.places = []; window.mileage = [];
+    window.clients = [{ id: 1788214075432, name: 'John Doe', addr: '2950 SW McClure Rd' }];
+    localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 1788214075432: { addr: '2950 SW McClure Rd', lat: DOE.lat, lon: DOE.lng } }));
+    window._geoDeriveTape = async () => tape;
+    localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: OWNED_SINCE }));
+    localStorage.removeItem('zp3_geo_tape_log');
+    localStorage.removeItem('zp3_geo_queue');
+    window._geoDrainQueue = () => {};
+    window._routeDistance = async () => ({ miles: 0, mins: 0 });
+    F.forEach(f => _geoFixLogPush(f[0], f[1], f[2], 5));
+    const res = await _geoDeriveDayNow(DAY, null);
+    const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
+    return { pending: !!(res && res.pending), legs: res ? res.legs.length : -1,
+      queued: q.length, sweep: q[0] && q[0].args.p_sweep,
+      rows: q[0] ? q[0].args.p_time.length : -1 };
+  }, [tape, SHOP, DOE,
+      [[T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
+       [T(12, 21) + 5000, DOE.lat, DOE.lng], [T(12, 31) + 5000, SHOP.lat, SHOP.lng],
+       [T(13, 0), SHOP.lat, SHOP.lng]],
+      DAY_START - 30 * 86400000, DAY]);
+
+  const CLOSED = [
+    { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
+    { ts: T(12, 21), kind: 'driving' }, { ts: T(12, 31), kind: 'onFoot' },
+  ];
+  // Jack's shape: the last flip is into the truck and nothing closes it.
+  const STILL_DRIVING = [
+    { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
+    { ts: T(12, 21), kind: 'driving' },
+  ];
+
+  test('the control: a day whose drives all closed sweeps as it always did', async () => {
+    const r = await derive(CLOSED);
+    expect(r.pending).toBe(false);
+    expect(r.sweep).toBe(true);
+  });
+
+  test('a day still mid-drive is written, and sweeps nothing', async () => {
+    const r = await derive(STILL_DRIVING);
+    expect(r.pending, 'the chain has not come to rest').toBe(true);
+    expect(r.queued, 'it still writes: withholding is not skipping').toBe(1);
+    expect(r.sweep, 'THE bug: this was true, and it retired the traced leg Jack could have named').toBe(false);
+  });
+
+  test('and once the truck parks, the same day sweeps again', async () => {
+    const still = await derive(STILL_DRIVING);
+    expect(still.sweep).toBe(false);
+    const parked = await derive(CLOSED);
+    expect(parked.sweep, 'the next derive resolves it and cleans up properly').toBe(true);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});
