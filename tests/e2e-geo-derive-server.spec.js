@@ -392,6 +392,68 @@ test.describe('an un-swept rebuild reports WHICH guard stopped it', () => {
 // Jack's real numbers: one fix taken at 07:39:07 while he stood in the shop
 // arrived FIFTEEN times out of thirty-seven, the last at 12:42, hours after he
 // had parked 767 ft away, identical to fourteen decimal places every time.
+// ── A MEMBERSHIP GOES STALE; A PARKED PHONE DOES NOT (owner 2026-09-18) ────
+//
+// Jack's 18 September. iOS reported him entering the shop region at 07:35:15
+// and leaving it at 13:21:57, and it was entitled to: he parked 768 ft away,
+// outside the deriver's 600 ft circle and well inside whatever radius the OS
+// was watching. Rule 15 lets a CLOSED crossing pair beat the fix, so for five
+// and a half hours every dwell was named "shop" while his own phone reported,
+// every thirty minutes, a position 726 to 899 ft away that never moved.
+//
+// Rule 15 is still right about its own case: the OS boundary is wider, so at
+// the instant of a crossing the fix is still out on the road and must not name
+// the arrival (his 15 September, where it fired 0.4 miles out). The difference
+// is not distance, it is whether the phone SETTLED. Mid-drive the fixes are
+// strung along a road; parked, they sit on top of each other for hours.
+//
+// Driven on the full-day fixture above, because that one derives a real day:
+// out to a client, a long stay, and back.
+test.describe('a stale region membership loses to a parked phone', () => {
+  // The crossing pair the phone never closed on time: it claims he was inside
+  // the shop region for the whole of the day, including the hours the fixes
+  // put him at John Doe's.
+  const pinned = (rows) => ({ ...TABLES, geo_events: TABLES.geo_events.concat(rows) });
+  const PAIR = [
+    { ts: iso(at(7, 30)), type: 'regionEnter', kind: null, lat: null, lon: null, region_id: 'shop' },
+    { ts: iso(at(13, 0)), type: 'regionExit', kind: null, lat: null, lon: null, region_id: 'shop' },
+  ];
+
+  test('the control: the day without the crossing pair', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const w = rpc.find((c) => c.name === 'geo_replace_day');
+    expect(w.args.p_time.find((t) => t.source === 'client'), 'he visits John Doe').toBeTruthy();
+  });
+
+  test('the four hours at the client stay at the client', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    await deriveDayServer(fakeSvc(pinned(PAIR), rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const w = rpc.find((c) => c.name === 'geo_replace_day');
+    expect(w, 'the day still writes').toBeTruthy();
+    const visit = w.args.p_time.find((t) => t.source === 'client');
+    expect(visit, 'a crossing the phone forgot to close does not move him to the shop').toBeTruthy();
+    expect(Number(visit.minutes), 'and it is the whole stay, not a sliver').toBeGreaterThan(120);
+  });
+
+  test('the shop rows are still the shop: the membership keeps its job', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    await deriveDayServer(fakeSvc(pinned(PAIR), rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const w = rpc.find((c) => c.name === 'geo_replace_day');
+    expect((w.args.p_shop || []).length, 'the morning and evening at the yard survive').toBeGreaterThan(0);
+  });
+
+  test('both drives survive: a pinned membership does not eat the legs', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(pinned(PAIR), rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.legs, 'out and back, exactly as without the pair').toBe(2);
+  });
+});
+
 test.describe('the server drops a replayed cached fix', () => {
   const SHOP_CACHED = { lat: 39.04565625037153, lon: -95.71510278822348 };
   const LOT = { lat: 39.04445524882554, lon: -95.7129015768892 };

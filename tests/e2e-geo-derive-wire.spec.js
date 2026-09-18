@@ -1586,7 +1586,7 @@ test.describe('geo-derive wiring', () => {
         const origSupa = window._supa;
         const calls = [];
         const rowsFor = (table, sel) => {
-          if (table === 'geo_events' && sel === 'ts,lat,lon') return Array.from({ length: 1300 }, (_, i) => ({ ts: new Date(Date.parse('2026-09-01T17:20:00Z') + i * 1000).toISOString(), lat: 39 + i * 1e-5, lon: -95 }));
+          if (table === 'geo_events' && sel === 'ts,lat,lon,type,detail') return Array.from({ length: 1300 }, (_, i) => ({ ts: new Date(Date.parse('2026-09-01T17:20:00Z') + i * 1000).toISOString(), lat: 39 + i * 1e-5, lon: -95 }));
           if (table === 'geo_events') return [{ ts: '2026-09-01T18:00:00.000Z', type: 'app-active' }];
           return [{ ts: '2026-09-01T17:25:00.000Z', lat: 39.5, lon: -95.5, accuracy: 7 }];
         };
@@ -1606,7 +1606,7 @@ test.describe('geo-derive wiring', () => {
       });
       expect(r.n).toBe(1301);
       expect(r.app).toEqual([{ ts: Date.parse('2026-09-01T18:00:00Z'), kind: 'active' }]);
-      expect(r.calls.filter(c => c[1] === 'ts,lat,lon').map(c => [c[2], c[3]])).toEqual([[0, 999], [1000, 1999]]);
+      expect(r.calls.filter(c => c[1] === 'ts,lat,lon,type,detail').map(c => [c[2], c[3]])).toEqual([[0, 999], [1000, 1999]]);
       expect(r.calls.filter(c => c[0] === 'location_pings')).toHaveLength(1);
       // Only rows whose position is fresh feed the trace: never a fence or
       // motion row's stale last-known, and since 2026-09-03 never a push-ping
@@ -1627,7 +1627,12 @@ test.describe('geo-derive wiring', () => {
       const ins = r.calls.filter(c => c[0] === 'in');
       expect(ins.length).toBeGreaterThan(0);
       const shapes = [...new Set(ins.map(c => JSON.stringify(c[2])))].sort();
-      expect(shapes).toEqual([JSON.stringify(['fix', 'clock-in', 'clock-out']),
+      // AMENDED 2026-09-18 with the trusted-type list itself: the position
+      // query now asks for visits and push-pings too (_GEO_FIX_QUERY_TYPES),
+      // and drops a ping whose stored age says it is stale once the rows are
+      // back. A type either is or is not worth asking the database for;
+      // whether a given ROW of it is usable is a separate question.
+      expect(shapes).toEqual([JSON.stringify(['fix', 'clock-in', 'clock-out', 'visit', 'push-ping']),
                               JSON.stringify(['regionEnter', 'regionExit'])].sort());
       expect(r.sorted).toBe(true);
       expect(r.last.acc).toBe(7);
@@ -1884,9 +1889,38 @@ test.describe('geo-derive wiring', () => {
           return _geoFixLogRead().filter(f => f.ts >= ts).map(f => f.ts - ts).sort((a, b) => a - b);
         } finally { window._geoDeriveLiveSoon = keepLive; window._geoBgUpdateCheck = keepUpd; }
       });
-      // Fence, motion and visit rows carry a stale last-known position; a
-      // heartbeat's is the 3 km keepalive fix. Only a real fix and a ping.
-      expect(r).toEqual([5, 6]);
+      // AMENDED 2026-09-18. This read "Fence, motion and visit rows carry a
+      // stale last-known position; a heartbeat's is the 3 km keepalive fix.
+      // Only a real fix and a ping." and expected [5, 6], which quietly
+      // contradicted itself: index 4 is the visit and 6 is the push-ping, so
+      // the comment excluded the visit and the assertion took the ping. The
+      // list it was describing had neither.
+      //
+      // Both belong now, for reasons that are not the same reason. A VISIT is
+      // not a last-known position at all: CLVisit is iOS reporting a place a
+      // person stopped, with its own arrival and departure timestamps, and
+      // excluding it threw away the best evidence in the system. A PUSH-PING
+      // is a cache, but since 2026-09-09 silentPush measures its true age
+      // against the CLLocation's own timestamp and marks anything over five
+      // minutes with staleMs, so an unmarked one (as here) is verified fresh.
+      // Fence, motion and heartbeat rows are unchanged and still excluded.
+      expect(r).toEqual([4, 5, 6]);
+    });
+
+    test('a push-ping that says it is stale stays out of the fix log', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_fixlog');
+        const ts = Date.now() - 60000;
+        const keepLive = window._geoDeriveLiveSoon, keepUpd = window._geoBgUpdateCheck;
+        window._geoDeriveLiveSoon = () => {}; window._geoBgUpdateCheck = () => {};
+        try {
+          // Same instant, same coordinates, one marked stale by the plugin.
+          await _geoTdEvent({ type: 'push-ping', ts: ts + 1, lat: 39.01, lng: -95.69, acc: 5 }, false);
+          await _geoTdEvent({ type: 'push-ping', ts: ts + 2, lat: 39.02, lng: -95.69, acc: 5, staleMs: 4 * 3600000 }, false);
+          return _geoFixLogRead().filter(f => f.ts >= ts).map(f => f.ts - ts);
+        } finally { window._geoDeriveLiveSoon = keepLive; window._geoBgUpdateCheck = keepUpd; }
+      });
+      expect(r, 'the fresh one lands, the four-hour-old one does not').toEqual([1]);
     });
 
     test('today\'s open dwell is published for the screens, and only today\'s', async () => {

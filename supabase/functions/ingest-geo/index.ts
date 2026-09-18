@@ -195,7 +195,25 @@ Deno.serve(async (req) => {
           ? String(e.session || "").slice(0, 60)
           : String(e.regionId || "").slice(0, 60),
         arrivalTs: typeof e.arrivalTs === "number" ? Math.round(e.arrivalTs) : null,
-        detail: e.type === "radio" ? radioDetail(e) : null,
+        // A PUSH-PING'S AGE IS THE ONLY THING THAT MAKES IT READABLE, and this
+        // line threw it away (owner 2026-09-18, on Jack's day). silentPush
+        // (TdGeoPlugin.swift) measures the cached location against the
+        // CLLocation's OWN timestamp and puts staleMs on the row when it is
+        // over five minutes old, plus blind when it had to buy a burst. Both
+        // died here: every type but radio got a null detail, so 1,060
+        // push-pings over ten days reached the server with no age at all and
+        // the deriver had no way to tell a five-second position from a
+        // five-hour one. It refused all of them, which is why a parked day
+        // has no positions in it even though the phone reported one every
+        // thirty minutes.
+        detail: e.type === "radio"
+          ? radioDetail(e)
+          : (e.type === "push-ping" && (typeof e.staleMs === "number" || e.blind === true)
+            ? {
+              ...(typeof e.staleMs === "number" ? { staleMs: Math.round(e.staleMs) } : {}),
+              ...(e.blind === true ? { blind: true } : {}),
+            }
+            : null),
         // What the coprocessor actually said: onFoot / still / driving. The
         // native plugin has always sent it and this function has always
         // dropped it, so the server could see that a transition happened and

@@ -5466,7 +5466,12 @@ async function _geoTdEvent(ev,replay){
     // And the day is re-derived on the same push, so an open dwell that a
     // fix has since left gets closed without waiting for a flip.
     if(!replay&&ev.type==='push-ping'){
-      if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
+      // ...and only when the ping's own age says it is worth having. This line
+      // took EVERY ping, stale or not, which is the hole the 2026-09-03 note
+      // above was trying to close by excluding push-ping from the deriver's
+      // types: the local log had it all along. _geoFreshFixEv is the one rule
+      // now, so the log and the deriver cannot disagree about a row.
+      if(typeof ev.lat==='number'&&typeof ev.lng==='number'&&_geoFreshFixEv(ev))_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
       // NOW, not in four seconds. This arrives on a background wake with a few
       // seconds of runtime; see the note on _geoDeriveLiveSoon. A ping every
       // thirty minutes is not a burst and has nothing to coalesce with.
@@ -5703,7 +5708,7 @@ async function _geoTdEvent(ev,replay){
   // Only a FRESH position goes in the fix log. A fence or motion row carries
   // the plugin's last-known location, which after a wake can be a mile and
   // a minute stale, and one of those in a trace read 3 miles as 6.1.
-  if(_GEO_FRESH_FIX_TYPES.indexOf(String(ev.type||''))>=0)_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
+  if(_geoFreshFixEv(ev))_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
   // ── THE VISIT REPORT ALREADY KNOWS WHEN THEY GOT THERE ───────────────────
   // Owner report 2026-08-25, with two weeks of his own journal behind it: a
   // stop the app has a FENCE for is stamped within a minute, because crossing
@@ -7751,7 +7756,38 @@ async function _geoDeriveTape(sinceMs){
 // getCurrentPosition read taken at that instant, never a last-known position
 // replayed from a wake (owner 2026-09-04). They are also the only position
 // evidence at all on a day whose owner has saved no fences.
-const _GEO_FRESH_FIX_TYPES=['fix','clock-in','clock-out'];
+// AMENDED 2026-09-18, on Jack's day. Everything above this line was true on
+// 3 September and stopped being true on the 9th, when silentPush started
+// measuring the cache against the CLLocation's OWN timestamp and marking
+// anything over five minutes with staleMs (and buying a four-second burst to
+// replace it). The exclusion outlived its reason and quietly became the thing
+// standing between the deriver and the only honest positions on a parked day.
+//
+// What it cost, on his 18 September: a correct position arrived every thirty
+// minutes all morning on push-ping and visit rows, and every one was thrown
+// away. What was kept instead was the `fix` stream, which is the one that
+// lies, because event() stamps ts with Date() and drops the location's own
+// timestamp, so a buffered old reading arrives looking current. At 12:22:46
+// both landed in the same instant: the push-ping at his actual job site, the
+// `fix` 724 ft away at a shop he had left at 07:53.
+//
+//   visit      ALWAYS. CLVisit is not a cache; it is iOS reporting a place a
+//              person stopped, with its own arrival and departure times.
+//   push-ping  unless it SAYS it is stale. Unmarked means natively verified
+//              under five minutes, which is more than a `fix` ever claims.
+//   wake-drop  still no: mgr().location with no age measured at all.
+const _GEO_FRESH_FIX_TYPES=['fix','clock-in','clock-out','visit'];
+// The conditional half. Kept separate from the list above because the list is
+// also what the server-side read filters on, and a type either is or is not
+// worth asking the database for; whether a given ROW of it is usable is this.
+function _geoFreshFixEv(ev){
+  if(!ev)return false;
+  const t=String(ev.type||'');
+  if(_GEO_FRESH_FIX_TYPES.indexOf(t)>=0)return true;
+  if(t!=='push-ping')return false;
+  return !(Number(ev.staleMs)>0);
+}
+const _GEO_FIX_QUERY_TYPES=_GEO_FRESH_FIX_TYPES.concat(['push-ping']);
 const _GEO_FETCH_PAGE=1000;
 const _GEO_FETCH_PAGES=40;
 // ── A SHORT ANSWER AND A COMPLETE ONE ARE NOT THE SAME THING ──────────────
@@ -7800,8 +7836,16 @@ async function _geoDeriveServerFixes(fromMs,toMs){
     // Only rows whose position is FRESH. A fence or motion row carries the
     // last-known position, which after a wake can be a mile stale, and one
     // of those in the trace read a 3-mile drive as 6.1 (owner 2026-09-02).
-    const ev=await _geoPageAll(()=>_supa.from('geo_events').select('ts,lat,lon').eq('employee_user_id',me).in('type',_GEO_FRESH_FIX_TYPES).gte('ts',a).lt('ts',b).not('lat','is',null));
-    ev.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});});
+    const ev=await _geoPageAll(()=>_supa.from('geo_events').select('ts,lat,lon,type,detail').eq('employee_user_id',me).in('type',_GEO_FIX_QUERY_TYPES).gte('ts',a).lt('ts',b).not('lat','is',null));
+    // The query asks for push-pings too; this is where a stale one is dropped.
+    // Same rule as _geoFreshFixEv, reading the age off the stored row rather
+    // than off the live event (ingest-geo keeps it in `detail` since
+    // 2026-09-18; a row older than that carries none and reads as fresh).
+    ev.forEach(e=>{
+      const t=Date.parse(e.ts);if(!(t>0))return;
+      if(String(e.type)==='push-ping'&&Number(e.detail&&e.detail.staleMs)>0)return;
+      out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});
+    });
     const pg=await _geoPageAll(()=>_supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b));
     pg.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:e.accuracy!=null?Number(e.accuracy):null});});
     out.complete=!!(ap.complete&&rg.complete&&ev.complete&&pg.complete);

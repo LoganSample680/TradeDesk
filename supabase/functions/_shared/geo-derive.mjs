@@ -385,6 +385,42 @@ function _gdOpenArrivals(regions, fences, radiusFt, fixes) {
   return out;
 }
 
+// A PARKED PHONE OUTVOTES A STALE MEMBERSHIP (owner 2026-09-18, on Jack).
+//
+// Rule 15 lets a closed OS crossing pair beat the fix, because the OS boundary
+// is WIDER than this file's circle: the instant a crossing fires, the phone is
+// still out on the road, and naming the arrival from that fix gets it wrong
+// (his 15 September, the crossing fired 0.4 miles out). That is true at the
+// EDGES of a membership and false in the middle of one.
+//
+// Jack's 18 September is the middle. iOS said he was inside the shop region
+// from 07:35:15 to 13:21:57, which it was entitled to say: he parked 768 ft
+// away, outside this file's 600 ft circle and well inside whatever radius the
+// OS was watching. So for five and a half hours the membership named every
+// dwell "shop" while his own phone reported, every thirty minutes, a position
+// 726 to 899 ft away that never moved.
+//
+// The difference between the two cases is not the distance, it is whether the
+// phone SETTLED there. Mid-drive the fixes around that instant are strung out
+// along a road; parked, they sit on top of each other for a long time. So the
+// membership keeps its authority except where the fixes prove a stay somewhere
+// else: three or more readings, spanning at least ten minutes, all within one
+// fence radius of this one and none of them back inside the region.
+function _gdSettledAway(fixes, fix, reg, fences, radiusFt) {
+  if (!fix || !reg || fix.lat == null || fix.lng == null) return false;
+  if (_gdSameFence(geoFenceAt(fix, fences, radiusFt), reg)) return false;
+  let n = 0, lo = fix.ts, hi = fix.ts;
+  for (const f of (Array.isArray(fixes) ? fixes : [])) {
+    if (!f || f.lat == null || f.lng == null) continue;
+    if (_gdMiles(f, fix) * 5280 > radiusFt) continue;
+    if (_gdSameFence(geoFenceAt(f, fences, radiusFt), reg)) return false;
+    n++;
+    if (f.ts < lo) lo = f.ts;
+    if (f.ts > hi) hi = f.ts;
+  }
+  return n >= 3 && (hi - lo) >= 10 * 60000;
+}
+
 // Rule 21, applied to the journey list before anything reads it, so the leg
 // and the dwell after it move together: one boundary, not two.
 function _gdArrivalTrim(journeys, spans) {
@@ -866,7 +902,17 @@ function geoDeriveDay(input) {
   // boundary the OS watched beats the position this app happened to sample.
   // Where none does, nothing changes: fenceAt IS fenceOf.
   const inside = _gdRegionSpans(inp.regions, fences, opts.radiusFt);   // same crossings, read for WHERE
-  const fenceAt = (fix, ts) => inside(ts) || fenceOf(fix);
+  // ... except where the phone settled somewhere else entirely, which is a
+  // membership gone stale rather than a boundary freshly crossed. See
+  // _gdSettledAway: the OS region is wider than this circle, so a crossing
+  // outranks one roadside sample and must not outrank five hours of parked
+  // ones.
+  const fenceAt = (fix, ts) => {
+    const reg = inside(ts);
+    if (!reg) return fenceOf(fix);
+    if (_gdSettledAway(fixes, fix, reg, fences, opts.radiusFt)) return fenceOf(fix);
+    return reg;
+  };
   // The chain: the first saved origin and the automotive minutes since it.
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
   let arrived = null;        // {fence, ts, journeyId}: an open dwell awaiting its departure

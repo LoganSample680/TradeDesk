@@ -82,7 +82,50 @@ export function daysToDerive(evs, nowMs) {
 // (_GEO_FRESH_FIX_TYPES, js/geo-track.js). A motion or fence row carries the
 // LAST KNOWN position, which after a wake can be a mile stale, and one of those
 // in the trace once read a 3-mile drive as 6.1.
-const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out"];
+// AMENDED 2026-09-18, on Jack's day, and the reason the old list was right in
+// September and wrong now is worth keeping.
+//
+// It held "fix", "clock-in", "clock-out" because on 2026-09-03 a push-ping
+// carried the plugin's cached location with no age on it, and one sitting 343
+// ft from where the owner stood produced phantom fence crossings and a refused
+// write. True then. Since 2026-09-09 silentPush measures that cache against the
+// CLLocation's OWN timestamp and says so, and a cache older than five minutes
+// buys a four-second burst to replace itself. The exclusion outlived its reason.
+//
+// What it cost, measured on Jack's 18 September: his phone reported a correct
+// position every thirty minutes all morning, on push-ping and visit rows, and
+// the deriver discarded every one. What it kept instead was the `fix` stream,
+// which is the one that lies: TdGeoPlugin's event() stamps ts with Date() and
+// drops the location's own timestamp, so a buffered old reading arrives looking
+// current. At 12:22:46 both rows landed in the same instant, the push-ping at
+// his actual job site and the `fix` 724 ft away at a shop he had left at 07:53.
+// We trusted the wrong one by rule.
+//
+//   visit      ALWAYS. This is not a cache at all: CLVisit is iOS's own report
+//              of a place a person stopped, with its own arrival and departure
+//              timestamps. It is the best position evidence in the system and
+//              it was never being read.
+//   push-ping  UNLESS it says it is stale. An unmarked one is natively
+//              verified under five minutes old, which is better than a `fix`
+//              can claim, because a `fix` carries no age whatsoever.
+//   wake-drop  STILL NO. It takes mgr().location with no age measured at all
+//              (wakeDrop, TdGeoPlugin.swift). Same defect as `fix` and without
+//              the replay guard's protection, so it stays out.
+//
+// The legacy caveat, stated rather than hidden: staleMs was dropped at ingest
+// until this same commit, so rows written before it carry no age and are read
+// as fresh. The blind burst means a stale cache is followed by a real fix
+// seconds later anyway, and the replay guard strips exact repeats, so the worst
+// case is one soft point beside a good one rather than a day at the wrong
+// address.
+const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out", "visit"];
+function freshFix(e) {
+  if (FRESH_FIX_TYPES.includes(e.type)) return true;
+  if (e.type !== "push-ping") return false;
+  const d = e.detail;
+  const stale = d && typeof d === "object" ? Number(d.staleMs) : NaN;
+  return !(stale > 0);
+}
 
 // ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ──────
 // The twin of the guard in _geoFixLogPush (js/geo-track.js), and it has to
@@ -262,7 +305,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   // this day's arrival, and the flip that opened it is on the other side.
   const [evRows, pingRows, fenceRes, clockRes, cfgRes] = await Promise.all([
     pageAll((f, t) => svc.from("geo_events")
-      .select("ts,type,kind,lat,lon,region_id")
+      .select("ts,type,kind,lat,lon,region_id,detail")
       .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
       .order("ts", { ascending: true }).range(f, t)),
     pageAll((f, t) => svc.from("location_pings")
@@ -290,7 +333,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
       if (e.region_id) regions.push({ ts, id: String(e.region_id), enter: e.type === "regionEnter" });
     }
     else if (String(e.type).startsWith("app-")) appEvents.push({ ts, kind: String(e.type).slice(4) });
-    if (FRESH_FIX_TYPES.includes(e.type) && e.lat != null && e.lon != null) {
+    if (freshFix(e) && e.lat != null && e.lon != null) {
       fixes.push({ ts, lat: Number(e.lat), lng: Number(e.lon), acc: null });
     }
   }
