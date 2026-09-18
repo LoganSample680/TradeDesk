@@ -3217,7 +3217,7 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
 
   // Same fixture as 'deriving a day' above, with the tape handed in so a test
   // can choose whether the last journey ever closes.
-  const derive = (tape) => page.evaluate(async ([tape, SHOP, DOE, F, OWNED_SINCE, DAY]) => {
+  const derive = (tape, fixesOver) => page.evaluate(async ([tape, SHOP, DOE, F, OWNED_SINCE, DAY]) => {
     S.bizTz = 'America/Chicago';
     S.officeLat = SHOP.lat; S.officeLon = SHOP.lng; S.bname = 'JS Solutions';
     window.places = []; window.mileage = [];
@@ -3227,6 +3227,12 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: OWNED_SINCE }));
     localStorage.removeItem('zp3_geo_tape_log');
     localStorage.removeItem('zp3_geo_queue');
+    // AND THE FIX LOG, which this helper never cleared. Every test in the
+    // block seeded on top of the last one's readings; it went unnoticed only
+    // because they all seeded the identical five. The moment one test brought
+    // its own fixture (a moving truck, 2026-09-18) the leftovers from it
+    // decided the next test's day.
+    localStorage.removeItem('zp3_geo_fixlog');
     window._geoDrainQueue = () => {};
     window._routeDistance = async () => ({ miles: 0, mins: 0 });
     // Jittered by the reading's own instant, for the reason spelled out in the
@@ -3244,6 +3250,7 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
       sweepUntil: (q[0] && q[0].args.p_sweep_until) ? Date.parse(q[0].args.p_sweep_until) : null,
       rows: q[0] ? q[0].args.p_time.length : -1 };
   }, [tape, SHOP, DOE,
+      fixesOver ||
       [[T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
        [T(12, 21) + 5000, DOE.lat, DOE.lng], [T(12, 31) + 5000, SHOP.lat, SHOP.lng],
        [T(13, 0), SHOP.lat, SHOP.lng]],
@@ -3254,9 +3261,32 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     { ts: T(12, 21), kind: 'driving' }, { ts: T(12, 31), kind: 'onFoot' },
   ];
   // Jack's shape: the last flip is into the truck and nothing closes it.
+  //
+  // AMENDED 2026-09-18. The tape alone is no longer enough to make a day
+  // "mid-drive": since a missing flip stopped being read as evidence of a
+  // departure, a journey the tape never closed still ends where the FIXES say
+  // the truck parked. The shared fixture's trailing readings sit at the shop
+  // from 12:31, so with this tape the day now resolves, which is correct and
+  // is the whole point of that change (his afternoon of the 18th was being
+  // thrown away by the old reading).
+  //
+  // A genuinely unresolved day therefore has to be genuinely unresolved: the
+  // truck is still moving when the readings run out. That is what MOVING_FIXES
+  // is for, and it is what these sweep tests actually mean to describe.
   const STILL_DRIVING = [
     { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
     { ts: T(12, 21), kind: 'driving' },
+  ];
+  // The same day, except the last stretch is a phone in a moving truck rather
+  // than a phone sitting at the shop: no still run, so nothing can close the
+  // journey and the chain stays open.
+  const MOVING_FIXES = [
+    [T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
+    [T(12, 21) + 5000, DOE.lat, DOE.lng],
+    [T(12, 25), DOE.lat + 0.02, DOE.lng + 0.02],
+    [T(12, 31), DOE.lat + 0.05, DOE.lng + 0.05],
+    [T(12, 40), DOE.lat + 0.09, DOE.lng + 0.09],
+    [T(12, 50), DOE.lat + 0.14, DOE.lng + 0.14],
   ];
 
   test('the control: a day whose drives all closed sweeps as it always did', async () => {
@@ -3270,7 +3300,7 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     // two tables, because a dwell that changes kind moves table. The sweep
     // retires anything in the day not in the new key set, so it catches that
     // on its own the moment it is allowed to run at all.
-    const r = await derive(STILL_DRIVING);
+    const r = await derive(STILL_DRIVING, MOVING_FIXES);
     expect(r.sweep).toBe(true);
     expect(r.sweepUntil, 'the 08:00 dwell is before the line, so it is swept').toBeGreaterThan(T(8, 30));
   });
@@ -3285,7 +3315,7 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
   // arent merged together" (owner, on Jack's rebuilt day). The sweep is on
   // again, bounded instead, and the boundary is where the day stops being known.
   test('a day still mid-drive sweeps what it can describe, and stops there', async () => {
-    const r = await derive(STILL_DRIVING);
+    const r = await derive(STILL_DRIVING, MOVING_FIXES);
     expect(r.pending, 'the chain has not come to rest').toBe(true);
     expect(r.queued).toBe(1);
     expect(r.sweep, 'the settled morning is still swept').toBe(true);

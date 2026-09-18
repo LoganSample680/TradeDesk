@@ -781,7 +781,27 @@ function _gdParkedResume(cut, fixes, tape, opts, endTs) {
   for (const x of (tape || [])) { if (x.ts > cut[1] && x.k !== 'still') { flip = x.ts; break; } }
   const back = Math.min(moved, flip);
   // Nothing said it moved before this journey ended: it never drove again.
-  if (!isFinite(back) || back <= cut[0]) return (endTs != null) ? null : cut[1];
+  //
+  // AND THAT IS JUST AS TRUE OF A JOURNEY THE TAPE NEVER CLOSED (owner
+  // 2026-09-18: "why didn't the rebuilder ride the entire day?"). This used to
+  // return cut[1] for an OPEN journey, so the caller resumed the drive at the
+  // last fix of the park and left it open. Nothing had said the truck moved;
+  // the departure was invented because the tape had not yet said the journey
+  // ended.
+  //
+  // What that cost Jack on the 18th: his last real flip was automotive at
+  // 13:45:13, leaving Neenans. The fixes put him at one address from 14:05:19
+  // and never more than 40 ft from it for the next two and three quarter
+  // hours. No flip ever arrived to close the journey, so a phantom open drive
+  // was minted at 16:49:28, the last fix of the day. An open journey suppresses
+  // the open-dwell fallback (rule 5), so the whole afternoon, a drive and a
+  // two-hour stop that the data states plainly, simply was not there. His day
+  // ended at 1:45pm on screen while he was still working.
+  //
+  // A missing flip is not evidence of a departure. Both cases return null now:
+  // the journey ends where the fixes say it parked, and the dwell after it is
+  // the rest of the day.
+  if (!isFinite(back) || back <= cut[0]) return null;
   if (endTs != null && back >= endTs) return null;
   return Math.max(back, cut[1]);
 }
@@ -869,6 +889,54 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
  *                 app-relaunch (the plugin's own lifecycle events), for rule 10
  * input.opts      overrides for GEO_DERIVE_DEFAULTS
  */
+// A SHUFFLE IN THE LOT IS NOT A JOURNEY (owner 2026-09-18: "why does Neenans
+// have two rows?").
+//
+// His 18 September at Neenans Co: CoreMotion flipped automotive at 13:41:01,
+// still at 13:41:29, cycling at 13:42:48, automotive again at 13:45:13. He
+// moved the truck across the lot. That 1m47s flip is a journey to this file, so
+// it cut one ten-minute stop into 13:30-13:41 and 13:42-13:45, two rows for one
+// visit.
+//
+// minLegMs already knows this shape: 2 minutes, "a journey shorter than this is
+// a walk across a fence line". But it was only ever consulted when deciding
+// whether to write a MILEAGE row, so rule 7 correctly refused the mileage and
+// the journey went on splitting the dwell anyway. A drive that never left the
+// fence it started in did not happen, and it should not exist at all.
+//
+// Deliberately narrow, because a short drive between two real places must
+// survive: the journey has to be under minLegMs, the fixes bracketing it have
+// to name the SAME fence, and nothing inside it may sit outside that fence. A
+// journey with no fix to vouch for it is left alone.
+function _gdShuffleDrop(journeys, fixes, fences, opts) {
+  if (!Array.isArray(journeys) || !journeys.length) return journeys;
+  const fx = (Array.isArray(fixes) ? fixes : [])
+    .filter(f => f && typeof f.ts === 'number' && f.lat != null && f.lng != null)
+    .sort((a, b) => a.ts - b.ts);
+  if (!fx.length) return journeys;
+  const at = (ts, before) => {
+    let best = null;
+    for (const f of fx) {
+      if (before ? f.ts > ts : f.ts < ts) continue;
+      if (!best || (before ? f.ts > best.ts : f.ts < best.ts)) best = f;
+    }
+    return best;
+  };
+  return journeys.filter((j) => {
+    if (!j || j.open || typeof j.startTs !== 'number' || typeof j.endTs !== 'number') return true;
+    if (j.endTs - j.startTs >= opts.minLegMs) return true;
+    const a = at(j.startTs, true), b = at(j.endTs, false);
+    if (!a || !b) return true;                       // nothing vouches either way
+    const fa = geoFenceAt(a, fences, opts.radiusFt);
+    if (!fa || !_gdSameFence(fa, geoFenceAt(b, fences, opts.radiusFt))) return true;
+    for (const f of fx) {
+      if (f.ts <= j.startTs || f.ts >= j.endTs) continue;
+      if (!_gdSameFence(geoFenceAt(f, fences, opts.radiusFt), fa)) return true;
+    }
+    return false;                                    // it never left: not a journey
+  });
+}
+
 function geoDeriveDay(input) {
   const inp = input || {};
   const opts = Object.assign({}, GEO_DERIVE_DEFAULTS, inp.opts || {});
@@ -886,9 +954,10 @@ function geoDeriveDay(input) {
   // Rule 21 reads the closed pairs AND the unpaired arrivals; rule 15 reads
   // only the closed pairs, which is the distinction _gdOpenArrivals exists to
   // draw. Never the other way round.
-  const journeys = _gdArrivalTrim(
+  const journeys = _gdShuffleDrop(_gdArrivalTrim(
     _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
-    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes)));
+    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes))),
+    fixes, fences, opts);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;

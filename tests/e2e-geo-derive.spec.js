@@ -4798,10 +4798,38 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.open.kind).toBe('client');
     });
 
+    // AMENDED 2026-09-18, and the old fixture is the reason. It dropped the
+    // closing flip from the tape and kept the fixes, which put the phone at one
+    // spot from 07:58 to 09:30, and then asserted r.open was null on the
+    // grounds that an unclosed journey means "still driving". Ninety-two
+    // minutes of stationary readings at a single address is not driving. It is
+    // Jack's afternoon of 18 September exactly: his last flip was automotive at
+    // 13:45:13 leaving Neenans, the tape said nothing more, and his fixes sat
+    // within 40 ft of one address for two and three quarter hours while the
+    // screens showed his day ending at 1:45pm.
+    //
+    // A missing flip is not evidence of a departure. So the fixture now says
+    // what the test's name promises: the phone is actually MOVING, and then
+    // nothing can be claimed about where he is standing.
     test('still driving is not standing somewhere', async () => {
-      const inp = morning({ tape: [mo(T(7, 36), 'onFoot'), mo(T(7, 53, 31), 'automotive')] });
+      const rolling = [];
+      for (let i = 0; i < 10; i++) {
+        rolling.push(fix(T(7, 56) + i * 4 * 60000, { lat: SITE.lat + i * 0.01, lng: SITE.lng - i * 0.01 }));
+      }
+      const inp = morning({
+        tape: [mo(T(7, 36), 'onFoot'), mo(T(7, 53, 31), 'automotive')],
+        fixes: [fix(T(7, 40), JSHOP), fix(T(7, 48), JSHOP)].concat(rolling),
+      });
       const r = await derive(inp);
       expect(r.open).toBeNull();
+    });
+
+    // The other half of the same rule, which is the case that was wrong.
+    test('parked for ninety minutes is standing somewhere, flip or no flip', async () => {
+      const inp = morning({ tape: [mo(T(7, 36), 'onFoot'), mo(T(7, 53, 31), 'automotive')] });
+      const r = await derive(inp);
+      expect(r.open, 'the tape never closed it; the fixes did').not.toBeNull();
+      expect(r.open.unsaved).toBe(true);
     });
 
     test('no fixes at all never throws', async () => {
@@ -4954,6 +4982,67 @@ test.describe('geo-derive: the day deriver', () => {
       thin.fixes = thin.fixes.filter(f => f.ts < T(8, 1) || f.ts > T(9, 5));
       const r = await stop(thin);
       expect(r.far, 'two fixes is not a middle, so nothing is re-seated').toBe(false);
+    });
+  });
+
+  // ── A SHUFFLE IN THE LOT IS NOT A JOURNEY (owner 2026-09-18) ────────────
+  // "why does Neenans have two rows?" Because CoreMotion flipped automotive at
+  // 13:41:01, still at 13:41:29, cycling at 13:42:48 and automotive again at
+  // 13:45:13: he moved the truck across the supply house lot, and that 1m47s
+  // flip was a journey, so it cut one fifteen-minute visit into 13:30-13:41 and
+  // 13:42-13:45.
+  test.describe('a shuffle inside a fence is not a journey', () => {
+    const YARD = { id: 'p-supply', kind: 'supply', name: 'Neenans Co', placeId: 7,
+      lat: 39.0106029, lng: -95.6811282 };
+    const HOMEB = { id: 'p-home', kind: 'home_office', name: 'Home', lat: 39.0257251, lng: -95.7939329 };
+    const day = (over) => base(Object.assign({
+      fences: [HOMEB, YARD],
+      tape: [mo(T(7, 0), 'onFoot'), mo(T(7, 30), 'automotive'), mo(T(8, 0), 'onFoot'),
+             // The shuffle: out and back inside the yard, under two minutes.
+             mo(T(8, 20), 'automotive'), mo(T(8, 21, 47), 'onFoot'),
+             mo(T(9, 0), 'automotive'), mo(T(9, 30), 'onFoot')],
+      fixes: [
+        fix(T(7, 5), HOMEB), fix(T(7, 25), HOMEB),
+        fix(T(8, 2), YARD), fix(T(8, 10), YARD), fix(T(8, 19), YARD),
+        fix(T(8, 21), YARD), fix(T(8, 22), YARD), fix(T(8, 40), YARD), fix(T(8, 58), YARD),
+        fix(T(9, 35), HOMEB), fix(T(9, 50), HOMEB),
+      ],
+      nowMs: T(12, 0),
+    }, over));
+
+    test('one visit to the yard, not two', async () => {
+      const r = await run(page, day());
+      const yard = r.dwells.filter(d => d && d.fence && d.fence.kind === 'supply');
+      expect(yard.length, 'the truck moving in the lot does not end the visit').toBe(1);
+      expect(yard[0].minutes, 'and it is the whole stay').toBeGreaterThan(50);
+    });
+
+    test('the real drives on either side survive', async () => {
+      const r = await run(page, day());
+      expect(r.legs.length, 'out and back, and nothing in between').toBe(2);
+    });
+
+    // The guards, stated as the inverse of the test above rather than by
+    // counting legs: the absorption is what must be conditional.
+    test('a hop that genuinely leaves the fence still splits the visit', async () => {
+      const r = await run(page, day({
+        fixes: [
+          fix(T(7, 5), HOMEB), fix(T(7, 25), HOMEB),
+          fix(T(8, 2), YARD), fix(T(8, 10), YARD), fix(T(8, 19), YARD),
+          // Mid-shuffle he is a mile away: this one really went somewhere.
+          fix(T(8, 20, 30), { lat: YARD.lat + 0.02, lng: YARD.lng + 0.02 }),
+          fix(T(8, 22), YARD), fix(T(8, 40), YARD), fix(T(8, 58), YARD),
+          fix(T(9, 35), HOMEB), fix(T(9, 50), HOMEB),
+        ],
+      }));
+      const yard = r.dwells.filter(d => d && d.fence && d.fence.kind === 'supply');
+      expect(yard.length, 'it left the fence, so it is a journey and the visit splits').toBe(2);
+    });
+
+    test('no fixes around it: nothing vouches either way, so it stands', async () => {
+      const r = await run(page, day({ fixes: [fix(T(7, 5), HOMEB), fix(T(9, 50), HOMEB)] }));
+      const yard = r.dwells.filter(d => d && d.fence && d.fence.kind === 'supply');
+      expect(yard.length, 'no fix names the ends, so the journey is left alone').toBe(0);
     });
   });
 

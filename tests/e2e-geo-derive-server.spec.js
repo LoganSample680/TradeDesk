@@ -218,10 +218,8 @@ test.describe('the deriver on the server', () => {
     test('a day still mid-drive sweeps what it can describe, and stops there', async () => {
       const { deriveDayServer } = await import(SHARED);
       // Jack's shape: the last flip is into the truck and nothing closes it.
-      const stillDriving = { ...TABLES, geo_events: TABLES.geo_events
-        .filter((e) => !(e.type === 'motion' && e.kind === 'still')) };
       const rpc = [];
-      const r = await deriveDayServer(fakeSvc(stillDriving, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const r = await deriveDayServer(fakeSvc(stillDrivingTables(), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
       const write = rpc.find((c) => c.name === 'geo_replace_day');
       expect(write, 'it still writes: withholding is not skipping').toBeTruthy();
       expect(write.args.p_sweep, 'the settled part of the day is swept').toBe(true);
@@ -343,15 +341,29 @@ test.describe('the deriver on the server', () => {
 // no-answer guard added a second, and the owner was told the server had no
 // motion tape for Jack's day when it had plenty: the day was simply still
 // mid-drive. The flags have to say which.
+// STILL DRIVING MEANS THE TRUCK IS STILL MOVING (2026-09-18, second pass).
+// Dropping the `still` flips used to be enough to leave a day mid-drive, because
+// a journey the tape never closed stayed open by default. It does not any more:
+// a missing flip stopped being read as evidence of a departure, so the journey
+// ends where the FIXES say the truck parked, and this fixture's trailing
+// readings sit at the yard from 12:38. That change is the point (Jack's whole
+// afternoon was being discarded by the old reading), so a genuinely unresolved
+// day now has to be genuinely unresolved: no still flips AND no settled
+// readings at the end, which is a phone in a moving truck when the day runs out.
+const stillDrivingTables = () => {
+  const cut = at(12, 38);
+  return { ...TABLES, geo_events: TABLES.geo_events
+    .filter((e) => !(e.type === 'motion' && e.kind === 'still'))
+    .filter((e) => !(e.type === 'fix' && Date.parse(e.ts) >= cut)) };
+};
+
 test.describe('an un-swept rebuild reports WHICH guard stopped it', () => {
   // AMENDED the same day it was written: pending no longer STOPS the sweep, it
   // BOUNDS it. So it is not a reason nothing was retired any more; it is a note
   // about where the retiring stopped.
   test('mid-drive: pending true, tape present, and the sweep is bounded not blocked', async () => {
     const { deriveDayServer } = await import(SHARED);
-    const stillDriving = { ...TABLES, geo_events: TABLES.geo_events
-      .filter((e) => !(e.type === 'motion' && e.kind === 'still')) };
-    const r = await deriveDayServer(fakeSvc(stillDriving, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    const r = await deriveDayServer(fakeSvc(stillDrivingTables(), []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
     expect(r.pending).toBe(true);
     expect(r.tapeCovers, 'the tape is there: blaming it would be the wrong answer').toBe(true);
     expect(r.sweep).toBe(true);
