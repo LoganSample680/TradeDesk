@@ -5827,7 +5827,15 @@ async function _geoBgUpdateCheck(){
     if(Date.now()-_geoBgUpdAt<60000)return;
     _geoBgUpdAt=Date.now();
     if(typeof APP_VERSION==='undefined'||!APP_VERSION)return;
-    const r=await fetch('version.json?_='+Date.now(),{cache:'no-store'});
+    // `bg=1` names the asker. FOUR paths in this app fetch version.json (two
+    // connectivity probes and the foreground poller in cloud.js, and this
+    // one), and until now nothing downstream could tell them apart: not a
+    // server log, and not a test. e2e-geo-wake-regions counted every URL
+    // containing the filename, so a cloud.js poll landing inside its 60ms
+    // window read as a second wake probe and failed the shard on WebKit.
+    // Marking the request is how "the wake probed once" becomes a thing that
+    // can actually be observed rather than inferred.
+    const r=await fetch('version.json?bg=1&_='+Date.now(),{cache:'no-store'});
     if(!r.ok)return;
     const d=await r.json();
     if(!d||!d.version||d.version===APP_VERSION)return;
