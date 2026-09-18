@@ -1545,6 +1545,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // crossing does not. The deadline itself is what gets asserted: waiting on
     // a real 20-second timer would put a 20-second floor under the suite.
     func scheduleFlushForTest(type: String) { scheduleFlush(for: type) }
+    func isUrgentFlushTypeForTest(_ t: String) -> Bool { isUrgentFlushType(t) }
     var flushDeadlineForTest: Date? { flushDeadline }
     var flushPendingForTest: Bool { flushPending }
     func driveFlushDelaySecForTest() -> Double { driveFlushDelaySec() }
@@ -2146,6 +2147,28 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             return
         }
         if UIApplication.shared.applicationState != .active { flushUrgently(); return }
+        // ── A FLIP IS NEVER DEBOUNCED (owner 2026-09-18) ────────────────────
+        // "If I arrive at John Doe and go from automotive to on foot, I want
+        // it to flush right away."
+        //
+        // Backgrounded, that already happened: the line above sends every wake
+        // straight out. FOREGROUND it did not, and foreground is where the
+        // damage is, because the next thing a person does after a flip is put
+        // the phone in their pocket. His 11 September: the app was active from
+        // 19:06, the automotive flip landed at 20:48:43 and armed a 1.5 second
+        // timer, the app backgrounded at 20:49:41, and the flip did not reach
+        // the server until 02:43. The dwell it closed could not be written for
+        // five hours and fifty-five minutes, because a dwell needs both ends.
+        //
+        // Same lesson as the clock punch (PR #84): a timer suspended with the
+        // app never fires, and every other event can afford the debounce
+        // because the person is still looking at the screen. A flip is the one
+        // they walk away from, and it is the event the whole engine turns on.
+        //
+        // The debounce keeps doing its job for the thing it was built for: a
+        // fix every two seconds through a drive, which must not become a POST
+        // every two seconds.
+        if isUrgentFlushType(type) { flushUrgently(); return }
         let delay = flushDelaySec(for: type)
         let due = Date().addingTimeInterval(delay)
         // An already-pending flush that lands at or before this one covers it.
@@ -2169,6 +2192,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // and any event at all outside a drive, keeps the interval it always had.
     // Split out of scheduleFlush so the decision can be asserted without a
     // simulator's app state or a real timer in the way.
+    // The one event that outranks the debounce. Deliberately narrow: widening
+    // this turns a drive, which samples a fix every couple of seconds, into a
+    // POST every couple of seconds.
+    private func isUrgentFlushType(_ t: String) -> Bool { t == "motion" }
+
     private func flushDelaySec(for type: String) -> Double {
         guard type == "fix", driveSamplingOn() else { return TdGeoPlugin.flushDebounceMs / 1000 }
         return driveFlushDelaySec()

@@ -3522,3 +3522,62 @@ extension TdGeoPluginTests {
             "a day would wait more than a ping cycle to be declared covered")
     }
 }
+
+// ── A FLIP IS NEVER DEBOUNCED (owner 2026-09-18) ────────────────────────────
+//
+// "If I arrive at John Doe and go from automotive to on foot, I want it to
+// flush right away. If I go from on foot to drive, I want it to flush right
+// away. This doesn't seem hard."
+//
+// It is not hard, and backgrounded it already worked. Foreground it did not,
+// and foreground is where the damage is: the next thing a person does after a
+// flip is put the phone away, and a timer suspended with the app never fires.
+// His 11 September is the receipt. App active from 19:06, automotive flip at
+// 20:48:43 arming a 1.5 second timer, app backgrounded at 20:49:41, flip on
+// the server at 02:43. The 163 minute dwell it closed could not be written
+// that night, because a dwell needs both of its ends.
+extension TdGeoPluginTests {
+
+    func testAMotionFlipIsUrgentAndAFixIsNot() {
+        // The contract in one assertion. A flip goes out now; a fix keeps the
+        // debounce it was built for, because a drive samples one every couple
+        // of seconds and each one must not become its own POST.
+        XCTAssertTrue(plugin.isUrgentFlushTypeForTest("motion"),
+            "a motion flip must never wait on a timer")
+        XCTAssertFalse(plugin.isUrgentFlushTypeForTest("fix"),
+            "a fix must keep the debounce, or a drive is a POST every two seconds")
+    }
+
+    func testEveryOtherEventKeepsTheDebounce() {
+        // Deliberately narrow. Widening this to every type would turn a drive
+        // into a flush storm, which is the failure the debounce exists for.
+        for t in ["fix", "radio", "heartbeat", "push-ping", "visit", "sampling", ""] {
+            XCTAssertFalse(plugin.isUrgentFlushTypeForTest(t),
+                "\(t) became urgent, which the debounce exists to prevent")
+        }
+    }
+
+    func testFlipUrgencyDoesNotDependOnAppState() {
+        // The whole point: the old rule was "urgent only when not active", and
+        // the flip that cost five hours happened while the app WAS active.
+        // This must be a property of the event, not of what the screen is
+        // doing at the moment it arrives.
+        XCTAssertTrue(plugin.isUrgentFlushTypeForTest("motion"),
+            "flip urgency must not be conditional on the app being backgrounded")
+    }
+
+    func testSchedulingAFlipNeverThrowsOffTheMainThread() {
+        // §3.3 input classes: record() is called from CoreLocation and
+        // CoreMotion callbacks that are not guaranteed to be on the main
+        // thread, and UIApplication is main-thread only. A flip now takes a
+        // path that reads application state, so it has to bounce like the rest.
+        let done = expectation(description: "off-thread flip scheduling returned")
+        DispatchQueue.global().async {
+            self.plugin.scheduleFlushForTest(type: "motion")
+            self.plugin.scheduleFlushForTest(type: "fix")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+        XCTAssertTrue(true, "scheduling a flip from a background queue did not crash")
+    }
+}
