@@ -4724,6 +4724,92 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 5 AMENDED: A PLACE NOBODY SAVED IS STILL A PLACE ───────────────
+  // Owner 2026-09-18, on Jack: "he's like 700 feet away from the shop at a on
+  // site address 2 and a half blocks from his dads shop", and then the design
+  // he had asked for once already: "consolidate pings off cordinates and
+  // compare the two, different cordinates between core motion flips means were
+  // at a new address, but I guess that didnt carry over."
+  //
+  // Half of it had. Rule 22 names a stop from the median of its own fixes, but
+  // it can only reseat a stop that EXISTS, and rule 5 wrote nothing for a
+  // journey ending somewhere unsaved. His real morning, to the coordinate.
+  test.describe('rule 5 amended: an unsaved arrival is still somewhere', () => {
+    const JSHOP = { id: 'p-shop', kind: 'shop', name: 'JS Solutions shop',
+      lat: 39.0456577, lng: -95.7151106 };                       // 1200 SW Oakley
+    const SITE = { lat: 39.0444476, lng: -95.7128917 };          // 767 ft away, nobody saved it
+    const morning = (over) => base(Object.assign({
+      fences: [JSHOP],
+      tape: [mo(T(7, 36), 'onFoot'), mo(T(7, 53, 31), 'automotive'), mo(T(8, 0, 36), 'onFoot')],
+      fixes: [
+        fix(T(7, 40), JSHOP), fix(T(7, 48), JSHOP),
+        fix(T(7, 58, 19), SITE), fix(T(8, 4), SITE), fix(T(8, 11), SITE),
+        fix(T(8, 34), SITE), fix(T(8, 56), SITE), fix(T(9, 30), SITE),
+      ],
+      clocks: [{ start: T(7, 36), end: T(12, 0) }],
+      nowMs: T(10, 0),
+    }, over));
+    const derive = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      return { open: r.open ? { kind: r.open.kind, unsaved: !!r.open.unsaved, since: r.open.sinceTs,
+        lat: r.open.fence && r.open.fence.lat, lng: r.open.fence && r.open.fence.lng } : null,
+        why: r.openWhy };
+    }, inp);
+
+    test('he is somewhere, and it is the job site, not the shop', async () => {
+      const r = await derive(morning({}));
+      expect(r.open, 'THE bug: this was null and the screens showed the shop').not.toBeNull();
+      expect(r.open.unsaved).toBe(true);
+      expect(r.open.kind).toBe('unsaved');
+      expect(r.why).toBe('');
+    });
+
+    test('it is seated on the cluster, not on one arrival ping', async () => {
+      // The arrival ping lands back at the shop, exactly the shape of the
+      // cached fix that started all this. The hour of real fixes must win.
+      const inp = morning({});
+      inp.fixes = inp.fixes.map(f => (f.ts === T(7, 58, 19)
+        ? Object.assign({}, f, { lat: JSHOP.lat, lng: JSHOP.lng }) : f));
+      const r = await derive(inp);
+      expect(r.open).not.toBeNull();
+      expect(Math.abs(r.open.lat - SITE.lat), 'within a few feet of the site').toBeLessThan(0.0005);
+      expect(Math.abs(r.open.lng - SITE.lng)).toBeLessThan(0.0005);
+    });
+
+    test('it opens when he got there, not when the report landed', async () => {
+      const r = await derive(morning({}));
+      expect(r.open.since).toBe(T(8, 0, 36));
+    });
+
+    // The guard: one ping is not a cluster, and the old answer stands.
+    test('too few fixes to agree with each other: nobody is placed', async () => {
+      const inp = morning({});
+      inp.fixes = inp.fixes.filter(f => f.ts <= T(7, 58, 19));
+      const r = await derive(inp);
+      expect(r.open).toBeNull();
+    });
+
+    test('a saved arrival is untouched: it still takes the fence', async () => {
+      const inp = morning({});
+      inp.fences = inp.fences.concat([{ id: 'client-j', kind: 'client', name: 'Job Site',
+        clientId: 9, lat: SITE.lat, lng: SITE.lng }]);
+      const r = await derive(inp);
+      expect(r.open.unsaved).toBeFalsy();
+      expect(r.open.kind).toBe('client');
+    });
+
+    test('still driving is not standing somewhere', async () => {
+      const inp = morning({ tape: [mo(T(7, 36), 'onFoot'), mo(T(7, 53, 31), 'automotive')] });
+      const r = await derive(inp);
+      expect(r.open).toBeNull();
+    });
+
+    test('no fixes at all never throws', async () => {
+      const r = await derive(morning({ fixes: [] }));
+      expect(r.open).toBeNull();
+    });
+  });
+
   test.describe('rule 22: a stop is named from the middle of itself', () => {
     const PIN = { lat: 39.0104968, lng: -95.7790924 };          // Laurie's saved pin
     const PARKED = { lat: 39.011155, lng: -95.779699 };          // where he actually sat
