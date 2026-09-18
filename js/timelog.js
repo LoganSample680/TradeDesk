@@ -608,7 +608,19 @@ function _tlBlendManual(rows){
   });
   return rows;
 }
-async function _timeLogRows(sinceISO){
+// ── THE CREW HALF IS THE ONLY SLOW PART ───────────────────────────────────
+// Everything this function builds comes out of memory except one call:
+// _fetchCrewLabor, which is three Supabase queries (js/finance.js) and has no
+// cache of its own. So a tap that changes only LOCAL rows, answering a gap,
+// pays a network round trip before a single pixel moves (owner 2026-09-18:
+// "clicking the button makes the day rail laggy").
+//
+// _tlRowsCache above cannot help there: it holds the ASSEMBLED rows, so
+// painting from it would redraw the day without the row the tap just added.
+// This caches the crew PAYLOAD instead, one layer down, so the local half can
+// be rebuilt fresh around it with nothing awaited on the network.
+let _tlCrewCache=null;
+async function _timeLogRows(sinceISO,opts){
   const rows=[];
   timeEntries.forEach(e=>{
     // ── A RUNNING CLOCK IS STILL THE DAY (owner 2026-09-15) ───────────────
@@ -677,7 +689,16 @@ async function _timeLogRows(sinceISO){
       startTime:e.start_time||null,endTime:e.end_time||null
     });
   });
-  const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
+  // crewCached: paint now off the last payload, and the caller revalidates
+  // straight after. Only ever honoured when a payload was fetched for the
+  // SAME window, since sinceISO decides what is in it.
+  const _cc=!!(opts&&opts.crewCached&&_tlCrewCache&&_tlCrewCache.since===(sinceISO||null));
+  let crew;
+  if(_cc)crew=_tlCrewCache.payload;
+  else{
+    crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
+    _tlCrewCache={since:sinceISO||null,payload:crew};
+  }
   // WHERE I AM RIGHT NOW (owner 2026-09-02: "continue to update the time
   // log day rail in real time"). The deriver never writes an open dwell (no
   // departure yet), so the rail draws it from the live report, running to
@@ -1310,7 +1331,9 @@ async function _tlSaveEntry(kind,id){
     }
     if(typeof saveAll==='function')saveAll();
     document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
-    if(typeof renderTimeLog==='function')renderTimeLog();
+    // crewCached: the change is a local row, so the rail must be on screen in
+    // this same task, not after three Supabase queries (owner 2026-09-18).
+    if(typeof renderTimeLog==='function')renderTimeLog({crewCached:true});
     return;
   }
   if(!window._supa||!window._supaUser)return _tlEditErr('Not connected.');
@@ -1430,7 +1453,9 @@ function _tlAddUnaccounted(startIso,endIso,kind){
     if(typeof supaSaveToCloud==='function')supaSaveToCloud();
     if(typeof showToast==='function')showToast(k==='personal'?'Taken off the day':
       ('Changed to '+(k==='break'?('break, '+(unpaid?'unpaid':'paid')):'work time')),k==='personal'?'🏠':'⏱');
-    if(typeof renderTimeLog==='function')renderTimeLog();
+    // crewCached: the change is a local row, so the rail must be on screen in
+    // this same task, not after three Supabase queries (owner 2026-09-18).
+    if(typeof renderTimeLog==='function')renderTimeLog({crewCached:true});
     return;
   }
   timeEntries.push({
@@ -1458,7 +1483,7 @@ function _tlAddUnaccounted(startIso,endIso,kind){
        (k==='break'?('break, '+(unpaid?'unpaid':'paid')):'work time')),k==='personal'?'🏠':'⏱');
   // The gap row is derived, so it simply stops existing on the next build:
   // the span is now covered by a real row and no hole remains to report.
-  if(typeof renderTimeLog==='function')renderTimeLog();
+  if(typeof renderTimeLog==='function')renderTimeLog({crewCached:true});
 }
 // ── The day rail (owner-approved design 2026-08-29) ────────────────────────
 // "I like the day rail but what would a compliant day rail look like for ADA
@@ -3667,9 +3692,14 @@ async function renderTimeLog(opts){
   // down to el.innerHTML runs in the same task as the click and the new day
   // is on screen on the very next frame instead of two seconds later.
   const _cached=!!(opts&&opts.cached&&_tlRowsCache);
+  // crewCached: the rows genuinely changed (a gap was answered), so the
+  // assembled cache above is no use, but the change is entirely LOCAL. Rebuild
+  // the rows around the crew payload already in hand, which awaits nothing on
+  // the network, and revalidate after the paint exactly as a drill tap does.
+  const _crewCached=!_cached&&!!(opts&&opts.crewCached&&_tlCrewCache);
   if(_cached)allRows=_tlRowsCache;
   else{
-    try{allRows=await _timeLogRows(null);}
+    try{allRows=await _timeLogRows(null,{crewCached:_crewCached});}
     catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
     _tlRowsCache=allRows;_tlRowsAt=Date.now();
   }
@@ -3691,7 +3721,11 @@ async function renderTimeLog(opts){
   // The Time Log never writes (owner 2026-09-02). It used to run a repair
   // pass on every open; now it only checks that what it painted is what the
   // server holds.
-  if(_cached){try{_tlRevalidateRows(allRows,_gen);}catch(_e){}}
+  // force on the crew-cached path: the throttle exists to stop a held drill
+  // arrow firing three queries per tap, and this is one deliberate write, not
+  // a burst. Skipping it here would leave the crew half however stale the last
+  // fetch left it, with no second chance for half a minute.
+  if(_cached||_crewCached){try{_tlRevalidateRows(allRows,_gen,_crewCached);}catch(_e){}}
   // Set as soon as the rows are in hand, not at the end: the render has
   // several early returns after this point and every one of them is still a
   // completed first load as far as the placeholder is concerned.

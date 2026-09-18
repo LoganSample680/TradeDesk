@@ -7721,8 +7721,14 @@ function _geoEnqueueRpc(dayKey,args){
 // server against, so the derived legs have to be in it or the next save
 // would retire them (CLAUDE.md 9.8). Hand-typed trips are untouched; what a
 // person set on a GPS leg (vehicle, purpose, notes) rides across by id.
+// Returns true only when the in-memory list actually came out different, so a
+// caller can skip a repaint that would redraw the same numbers (owner
+// 2026-09-18: "I should never see them update"). A derive is a pure function
+// of the tape, so re-deriving an unchanged day is the NORMAL case and it must
+// cost the screen nothing.
 function _geoDeriveApplyMileage(dayKey,derived){
-  if(typeof mileage==='undefined'||!Array.isArray(mileage))return;
+  if(typeof mileage==='undefined'||!Array.isArray(mileage))return false;
+  const _before=_geoMileageFingerprint(dayKey);
   // The three receipt answers ride across too (owner 2026-09-05): a held
   // supply run that was answered must not come back held on the next
   // rebuild. Any answer present means the hold is dropped.
@@ -7730,12 +7736,19 @@ function _geoDeriveApplyMileage(dayKey,derived){
   const answered=r=>!!(r&&(r.noReceipt||r.receiptExpenseId!=null||r.personal));
   const byId={};
   mileage.forEach(m=>{if(m&&m.id!=null)byId[String(m.id)]=m;});
-  const ids=new Set((derived||[]).map(m=>String(m.id)));
+  // A ROW WITH NO ID IS NOT A ROW. Every real caller hands this the deriver's
+  // own output, so the shape was only ever assumed; a null in the list threw
+  // on String(m.id) and took the whole apply with it, and the sweep two lines
+  // down would then have retired the day it was meant to be writing. Nothing
+  // in the app does that today, and that is exactly why it would surface as a
+  // missing day rather than an error (CLAUDE.md 11.1).
+  const src=Array.isArray(derived)?derived.filter(m=>m&&typeof m==='object'&&m.id!=null):[];
+  const ids=new Set(src.map(m=>String(m.id)));
   for(let i=mileage.length-1;i>=0;i--){
     const m=mileage[i];
     if(m&&m.gps===true&&m.date===dayKey&&!ids.has(String(m.id)))mileage.splice(i,1);
   }
-  (derived||[]).forEach(m=>{
+  src.forEach(m=>{
     const old=byId[String(m.id)];
     const row=Object.assign({},m);
     if(old)keep.forEach(k=>{if(old[k]!=null&&old[k]!=='')row[k]=old[k];});
@@ -7743,6 +7756,20 @@ function _geoDeriveApplyMileage(dayKey,derived){
     const at=mileage.findIndex(x=>x&&String(x.id)===String(m.id));
     if(at>=0)mileage[at]=Object.assign(mileage[at],row);else mileage.push(row);
   });
+  return _geoMileageFingerprint(dayKey)!==_before;
+}
+// Everything a mileage row puts ON SCREEN for one day, in a stable order.
+// Deliberately not the whole row: a re-derive rewrites internals (the path,
+// the route key, the collapsed-stop count) that no pixel depends on, and
+// including them would call every rebuild a change and defeat the point.
+function _geoMileageFingerprint(dayKey){
+  try{
+    if(typeof mileage==='undefined'||!Array.isArray(mileage))return '';
+    return mileage.filter(m=>m&&m.date===dayKey).map(m=>[
+      m.id,m.miles,m.from,m.to,m.startedIso,m.endedIso,m.mins,
+      m.vehicle,m.purpose,m.client_id,m.calc_method,m.pendingReceipt?1:0,m.personal?1:0,
+    ].join('')).sort().join('');
+  }catch(_e){return String(Math.random());}   // unknown: treat as changed
 }
 
 // ── Road miles for a derived leg ──────────────────────────────────────────
@@ -8010,8 +8037,12 @@ async function _geoDeriveSyncMileage(dayKey){
     const{data,error}=await _supa.from('td_mileage').select('id,data').eq('user_id',_supaUser.id).is('deleted_at',null).eq('data->>date',dayKey);
     if(error||!Array.isArray(data))return 0;
     const live=data.map(r=>r&&r.data).filter(r=>r&&r.gps===true&&r.id!=null&&r.date===dayKey);
-    _geoDeriveApplyMileage(dayKey,live);
-    try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
+    // Only when the table disagreed with the screen. The usual case is that
+    // this reads back exactly what the derive just wrote, and repainting the
+    // same numbers is the flicker the owner reported on 2026-09-18.
+    if(_geoDeriveApplyMileage(dayKey,live)){
+      try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
+    }
     return live.length;
   }catch(_e){return 0;}
 }
@@ -8142,11 +8173,21 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     if(rows.held&&rows.held.length){
       try{_geoParkNote('derive-held',dayKey+': '+rows.held.length+' span(s) this account cannot identify either end of, left to whoever can');}catch(_e){}
     }
-    // The legs show the moment the day is derived (owner 2026-09-02: "the
-    // drives themselves weren't instant"); the road miles are a lookup that
-    // can take seconds per new pair, so they land as a second paint.
-    _geoDeriveApplyMileage(dayKey,rows.td_mileage);
-    try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
+    // ── ONE PAINT, AND IT IS THE FINAL NUMBER (owner 2026-09-18) ──────────
+    // "mileage on books still re renders numbers live." It did, by design,
+    // and the design was wrong. This used to apply the legs and paint them
+    // immediately, with the road-mile lookup landing seconds later as a
+    // SECOND paint: 2.7 on screen, then 3.2 once the router answered. On a
+    // boot rebuild that is two days in a row, seven on a version change, so
+    // a contractor who opened Books in the first ten seconds watched the
+    // totals move under him.
+    //
+    // The rows still land in memory here, so nothing is lost and no other
+    // screen waits; only the REPAINT moves, down past the router to the
+    // apply below, where the miles are the ones that stay. Offline is
+    // covered by the same move: the apply runs whether or not the write
+    // reaches the server, so the paint does too.
+    const _milesMoved=_geoDeriveApplyMileage(dayKey,rows.td_mileage);
     await _geoDeriveRouteMiles(rows.td_mileage);
     // NO TAPE, NO SWEEP (owner 2026-09-04: "cant risk data going away ever").
     // A derive without the phone's own motion history for this day (a
@@ -8184,7 +8225,16 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       p_time:_geoWithOpen(rows,'job_time_entries'),p_shop:_geoWithOpen(rows,'shop_time_entries'),p_miles:rows.td_mileage,
       p_sweep:!!(tapeCovers&&tapeOwned&&whole),
     });
-    _geoDeriveApplyMileage(dayKey,rows.td_mileage);
+    // The only mileage paint this derive makes, the numbers in it are road
+    // miles rather than trace miles (see the note above the router call), and
+    // it happens at all only if the day actually came out different.
+    // Either half counts: the first apply is where a NEW leg appears, the
+    // second is where the router corrects one that was already there. OR, not
+    // the second alone, or a day whose legs landed before the router said
+    // nothing new would never reach the screen at all.
+    if(_geoDeriveApplyMileage(dayKey,rows.td_mileage)||_milesMoved){
+      try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
+    }
     // Every derived day tells js/day-end.js where it ended, so a clock that
     // crossed midnight can be closed at yesterday's arrival home.
     try{if(typeof _dayEndNoteDay==='function'&&_dayEndNoteDay(dayKey,res)&&typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}

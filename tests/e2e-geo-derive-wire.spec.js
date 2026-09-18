@@ -3021,3 +3021,126 @@ test.describe('_geoWithOpen: the open dwell reaches the writer', () => {
     expect(r).toEqual([0, 0, 0, 0, 0]);
   });
 });
+
+// ── ONE PAINT, AND ONLY WHEN SOMETHING MOVED (owner 2026-09-18) ────────────
+// "mileage on books still re renders numbers live." Two causes, both here:
+// the derive used to paint the legs with TRACE miles and paint them again
+// seconds later once the router answered with ROAD miles (2.7 then 3.2), and
+// the read-back after geo_replace_day painted a third time with numbers
+// identical to the second. A derive is pure, so re-deriving an unchanged day
+// is the normal case and it must cost the screen nothing.
+test.describe('the mileage paint is gated on an actual change', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const K = '2026-09-14';
+  const leg = (over) => Object.assign({
+    id: 'g1', gps: true, date: K, miles: 2.7, from: 'Shop', to: 'John Doe',
+    startedIso: K + 'T13:00:00.000Z', endedIso: K + 'T13:12:00.000Z', mins: 12,
+    calc_method: 'trace', path: [[1, 2], [3, 4]],
+  }, over || {});
+
+  // Seed the array, apply once to settle it, then apply again and report only
+  // the SECOND answer. The first apply is always a change (the row is new);
+  // what this spec is about is the second one.
+  const reapply = (first, second) => page.evaluate(([a, b]) => {
+    mileage.length = 0;
+    _geoDeriveApplyMileage('2026-09-14', a);
+    return { second: _geoDeriveApplyMileage('2026-09-14', b), rows: JSON.parse(JSON.stringify(mileage)) };
+  }, [first, second]);
+
+  test('the same day derived twice paints nothing the second time', async () => {
+    const r = await reapply([leg()], [leg()]);
+    expect(r.second).toBe(false);
+    expect(r.rows.length).toBe(1);
+  });
+
+  test('the router correcting the miles IS a change: this is the 2.7 to 3.2 repaint', async () => {
+    const r = await reapply([leg()], [leg({ miles: 3.2 })]);
+    expect(r.second).toBe(true);
+    expect(r.rows[0].miles).toBe(3.2);
+  });
+
+  test('a new leg is a change', async () => {
+    const r = await reapply([leg()], [leg(), leg({ id: 'g2', from: 'John Doe', to: 'Shop' })]);
+    expect(r.second).toBe(true);
+    expect(r.rows.length).toBe(2);
+  });
+
+  test('a retired leg is a change', async () => {
+    const r = await reapply([leg(), leg({ id: 'g2' })], [leg()]);
+    expect(r.second).toBe(true);
+    expect(r.rows.length).toBe(1);
+  });
+
+  test('an end getting its NAME is a change, because that is what the row reads', async () => {
+    const r = await reapply([leg({ to: '' })], [leg({ to: 'John Doe' })]);
+    expect(r.second).toBe(true);
+  });
+
+  test('the clock moving is a change', async () => {
+    const r = await reapply([leg()], [leg({ startedIso: K + 'T12:55:00.000Z', mins: 17 })]);
+    expect(r.second).toBe(true);
+  });
+
+  // The point of a fingerprint rather than a deep compare: a rebuild rewrites
+  // internals every single time, and counting those would call every rebuild a
+  // change and gate nothing at all.
+  test('a rewritten trace with the same miles is NOT a change: no pixel reads the path', async () => {
+    const r = await reapply([leg()], [leg({ path: [[1, 2], [1.5, 3], [3, 4]], collapsedStops: 1 })]);
+    expect(r.second).toBe(false);
+  });
+
+  test('another day changing does not make this one repaint', async () => {
+    const r = await page.evaluate(() => {
+      mileage.length = 0;
+      _geoDeriveApplyMileage('2026-09-14', [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }]);
+      mileage.push({ id: 'x9', gps: true, date: '2026-09-13', miles: 40 });
+      return _geoDeriveApplyMileage('2026-09-14', [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }]);
+    });
+    expect(r).toBe(false);
+  });
+
+  test('a hand-set vehicle rides across and is not, by itself, a change', async () => {
+    const r = await page.evaluate(() => {
+      mileage.length = 0;
+      _geoDeriveApplyMileage('2026-09-14', [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }]);
+      mileage[0].vehicle = 'Truck';
+      return { moved: _geoDeriveApplyMileage('2026-09-14', [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }]), veh: mileage[0].vehicle };
+    });
+    expect(r.moved).toBe(false);
+    expect(r.veh).toBe('Truck');
+  });
+
+  test('nothing, garbage and an empty set never throw', async () => {
+    const r = await page.evaluate(() => {
+      const out = [];
+      for (const bad of [null, undefined, [], [null], 'nope', [{}]]) {
+        try { out.push(typeof _geoDeriveApplyMileage('2026-09-14', bad)); } catch (e) { out.push('THREW'); }
+      }
+      return out;
+    });
+    expect(r).toEqual(['boolean', 'boolean', 'boolean', 'boolean', 'boolean', 'boolean']);
+  });
+
+  test('called ten times in a row, only the first can be a change', async () => {
+    const r = await page.evaluate(() => {
+      mileage.length = 0;
+      const rows = [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }];
+      const out = [];
+      for (let i = 0; i < 10; i++) out.push(_geoDeriveApplyMileage('2026-09-14', rows));
+      return out;
+    });
+    expect(r[0]).toBe(true);
+    expect(r.slice(1).some(Boolean)).toBe(false);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});
