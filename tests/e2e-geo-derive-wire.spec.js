@@ -1087,11 +1087,21 @@ test.describe('geo-derive wiring', () => {
       localStorage.removeItem('zp3_geo_tape_log');
       window._geoDrainQueue = () => {};   // hold the queue so it can be inspected
       window._routeDistance = async () => ({ miles: 0, mins: 0 });   // no router unless a test brings one
-      _geoFixLogPush(T[0], SHOP.lat, SHOP.lng, 5);
-      _geoFixLogPush(T[1], DOE.lat, DOE.lng, 5);
-      _geoFixLogPush(T[2], DOE.lat, DOE.lng, 5);
-      _geoFixLogPush(T[3], SHOP.lat, SHOP.lng, 5);
-      _geoFixLogPush(T[4], SHOP.lat, SHOP.lng, 5);
+      // Jittered by the reading's own instant (2026-09-18). These used to push
+      // SHOP.lat byte-for-byte at 07:52, 12:31 and 13:00, with a morning at
+      // John Doe's in between: the same double, to all seventeen digits, five
+      // hours and a round trip apart. No GPS does that, and the replay guard
+      // reads exact float equality as "this is one cached CLLocation sent
+      // twice" precisely because two real readings never are. The fixture was
+      // asserting something false about the world; it only went unnoticed while
+      // the guard looked back two hours.
+      const jit = (v, ts, k) => v + (((Math.round(ts / 1000) * (k === 'lat' ? 2654435761 : 40503)) % 977) - 488) * 1e-9;
+      const push = (ts, p) => _geoFixLogPush(ts, jit(p.lat, ts, 'lat'), jit(p.lng, ts, 'lng'), 5);
+      push(T[0], SHOP);
+      push(T[1], DOE);
+      push(T[2], DOE);
+      push(T[3], SHOP);
+      push(T[4], SHOP);
     }, [tape, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)], DAY_START - 30 * 86400000]);
 
     test('one queue item per day, carrying the whole day for geo_replace_day', async () => {
@@ -1576,7 +1586,7 @@ test.describe('geo-derive wiring', () => {
         const origSupa = window._supa;
         const calls = [];
         const rowsFor = (table, sel) => {
-          if (table === 'geo_events' && sel === 'ts,lat,lon') return Array.from({ length: 1300 }, (_, i) => ({ ts: new Date(Date.parse('2026-09-01T17:20:00Z') + i * 1000).toISOString(), lat: 39 + i * 1e-5, lon: -95 }));
+          if (table === 'geo_events' && sel === 'ts,lat,lon,type,detail') return Array.from({ length: 1300 }, (_, i) => ({ ts: new Date(Date.parse('2026-09-01T17:20:00Z') + i * 1000).toISOString(), lat: 39 + i * 1e-5, lon: -95 }));
           if (table === 'geo_events') return [{ ts: '2026-09-01T18:00:00.000Z', type: 'app-active' }];
           return [{ ts: '2026-09-01T17:25:00.000Z', lat: 39.5, lon: -95.5, accuracy: 7 }];
         };
@@ -1596,7 +1606,7 @@ test.describe('geo-derive wiring', () => {
       });
       expect(r.n).toBe(1301);
       expect(r.app).toEqual([{ ts: Date.parse('2026-09-01T18:00:00Z'), kind: 'active' }]);
-      expect(r.calls.filter(c => c[1] === 'ts,lat,lon').map(c => [c[2], c[3]])).toEqual([[0, 999], [1000, 1999]]);
+      expect(r.calls.filter(c => c[1] === 'ts,lat,lon,type,detail').map(c => [c[2], c[3]])).toEqual([[0, 999], [1000, 1999]]);
       expect(r.calls.filter(c => c[0] === 'location_pings')).toHaveLength(1);
       // Only rows whose position is fresh feed the trace: never a fence or
       // motion row's stale last-known, and since 2026-09-03 never a push-ping
@@ -1617,7 +1627,12 @@ test.describe('geo-derive wiring', () => {
       const ins = r.calls.filter(c => c[0] === 'in');
       expect(ins.length).toBeGreaterThan(0);
       const shapes = [...new Set(ins.map(c => JSON.stringify(c[2])))].sort();
-      expect(shapes).toEqual([JSON.stringify(['fix', 'clock-in', 'clock-out']),
+      // AMENDED 2026-09-18 with the trusted-type list itself: the position
+      // query now asks for visits and push-pings too (_GEO_FIX_QUERY_TYPES),
+      // and drops a ping whose stored age says it is stale once the rows are
+      // back. A type either is or is not worth asking the database for;
+      // whether a given ROW of it is usable is a separate question.
+      expect(shapes).toEqual([JSON.stringify(['fix', 'clock-in', 'clock-out', 'visit', 'push-ping']),
                               JSON.stringify(['regionEnter', 'regionExit'])].sort());
       expect(r.sorted).toBe(true);
       expect(r.last.acc).toBe(7);
@@ -1874,9 +1889,38 @@ test.describe('geo-derive wiring', () => {
           return _geoFixLogRead().filter(f => f.ts >= ts).map(f => f.ts - ts).sort((a, b) => a - b);
         } finally { window._geoDeriveLiveSoon = keepLive; window._geoBgUpdateCheck = keepUpd; }
       });
-      // Fence, motion and visit rows carry a stale last-known position; a
-      // heartbeat's is the 3 km keepalive fix. Only a real fix and a ping.
-      expect(r).toEqual([5, 6]);
+      // AMENDED 2026-09-18. This read "Fence, motion and visit rows carry a
+      // stale last-known position; a heartbeat's is the 3 km keepalive fix.
+      // Only a real fix and a ping." and expected [5, 6], which quietly
+      // contradicted itself: index 4 is the visit and 6 is the push-ping, so
+      // the comment excluded the visit and the assertion took the ping. The
+      // list it was describing had neither.
+      //
+      // Both belong now, for reasons that are not the same reason. A VISIT is
+      // not a last-known position at all: CLVisit is iOS reporting a place a
+      // person stopped, with its own arrival and departure timestamps, and
+      // excluding it threw away the best evidence in the system. A PUSH-PING
+      // is a cache, but since 2026-09-09 silentPush measures its true age
+      // against the CLLocation's own timestamp and marks anything over five
+      // minutes with staleMs, so an unmarked one (as here) is verified fresh.
+      // Fence, motion and heartbeat rows are unchanged and still excluded.
+      expect(r).toEqual([4, 5, 6]);
+    });
+
+    test('a push-ping that says it is stale stays out of the fix log', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_fixlog');
+        const ts = Date.now() - 60000;
+        const keepLive = window._geoDeriveLiveSoon, keepUpd = window._geoBgUpdateCheck;
+        window._geoDeriveLiveSoon = () => {}; window._geoBgUpdateCheck = () => {};
+        try {
+          // Same instant, same coordinates, one marked stale by the plugin.
+          await _geoTdEvent({ type: 'push-ping', ts: ts + 1, lat: 39.01, lng: -95.69, acc: 5 }, false);
+          await _geoTdEvent({ type: 'push-ping', ts: ts + 2, lat: 39.02, lng: -95.69, acc: 5, staleMs: 4 * 3600000 }, false);
+          return _geoFixLogRead().filter(f => f.ts >= ts).map(f => f.ts - ts);
+        } finally { window._geoDeriveLiveSoon = keepLive; window._geoBgUpdateCheck = keepUpd; }
+      });
+      expect(r, 'the fresh one lands, the four-hour-old one does not').toEqual([1]);
     });
 
     test('today\'s open dwell is published for the screens, and only today\'s', async () => {
@@ -3173,7 +3217,7 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
 
   // Same fixture as 'deriving a day' above, with the tape handed in so a test
   // can choose whether the last journey ever closes.
-  const derive = (tape) => page.evaluate(async ([tape, SHOP, DOE, F, OWNED_SINCE, DAY]) => {
+  const derive = (tape, fixesOver) => page.evaluate(async ([tape, SHOP, DOE, F, OWNED_SINCE, DAY]) => {
     S.bizTz = 'America/Chicago';
     S.officeLat = SHOP.lat; S.officeLon = SHOP.lng; S.bname = 'JS Solutions';
     window.places = []; window.mileage = [];
@@ -3183,15 +3227,30 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: OWNED_SINCE }));
     localStorage.removeItem('zp3_geo_tape_log');
     localStorage.removeItem('zp3_geo_queue');
+    // AND THE FIX LOG, which this helper never cleared. Every test in the
+    // block seeded on top of the last one's readings; it went unnoticed only
+    // because they all seeded the identical five. The moment one test brought
+    // its own fixture (a moving truck, 2026-09-18) the leftovers from it
+    // decided the next test's day.
+    localStorage.removeItem('zp3_geo_fixlog');
     window._geoDrainQueue = () => {};
     window._routeDistance = async () => ({ miles: 0, mins: 0 });
-    F.forEach(f => _geoFixLogPush(f[0], f[1], f[2], 5));
+    // Jittered by the reading's own instant, for the reason spelled out in the
+    // 'deriving a day' seeder above: a real phone never reports one place with
+    // byte-equal floats hours apart, and the replay guard reads that equality
+    // as a cached CLLocation sent twice.
+    const jit = (v, ts, k) => v + (((Math.round(ts / 1000) * (k === 'lat' ? 2654435761 : 40503)) % 977) - 488) * 1e-9;
+    F.forEach(f => _geoFixLogPush(f[0], jit(f[1], f[0], 'lat'), jit(f[2], f[0], 'lng'), 5));
     const res = await _geoDeriveDayNow(DAY, null);
     const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
-    return { pending: !!(res && res.pending), legs: res ? res.legs.length : -1,
+    return { pending: !!(res && res.pending),
+      pendingStart: (res && res.pending && Number(res.pending.startTs)) || null,
+      legs: res ? res.legs.length : -1,
       queued: q.length, sweep: q[0] && q[0].args.p_sweep,
+      sweepUntil: (q[0] && q[0].args.p_sweep_until) ? Date.parse(q[0].args.p_sweep_until) : null,
       rows: q[0] ? q[0].args.p_time.length : -1 };
   }, [tape, SHOP, DOE,
+      fixesOver ||
       [[T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
        [T(12, 21) + 5000, DOE.lat, DOE.lng], [T(12, 31) + 5000, SHOP.lat, SHOP.lng],
        [T(13, 0), SHOP.lat, SHOP.lng]],
@@ -3202,9 +3261,32 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     { ts: T(12, 21), kind: 'driving' }, { ts: T(12, 31), kind: 'onFoot' },
   ];
   // Jack's shape: the last flip is into the truck and nothing closes it.
+  //
+  // AMENDED 2026-09-18. The tape alone is no longer enough to make a day
+  // "mid-drive": since a missing flip stopped being read as evidence of a
+  // departure, a journey the tape never closed still ends where the FIXES say
+  // the truck parked. The shared fixture's trailing readings sit at the shop
+  // from 12:31, so with this tape the day now resolves, which is correct and
+  // is the whole point of that change (his afternoon of the 18th was being
+  // thrown away by the old reading).
+  //
+  // A genuinely unresolved day therefore has to be genuinely unresolved: the
+  // truck is still moving when the readings run out. That is what MOVING_FIXES
+  // is for, and it is what these sweep tests actually mean to describe.
   const STILL_DRIVING = [
     { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
     { ts: T(12, 21), kind: 'driving' },
+  ];
+  // The same day, except the last stretch is a phone in a moving truck rather
+  // than a phone sitting at the shop: no still run, so nothing can close the
+  // journey and the chain stays open.
+  const MOVING_FIXES = [
+    [T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
+    [T(12, 21) + 5000, DOE.lat, DOE.lng],
+    [T(12, 25), DOE.lat + 0.02, DOE.lng + 0.02],
+    [T(12, 31), DOE.lat + 0.05, DOE.lng + 0.05],
+    [T(12, 40), DOE.lat + 0.09, DOE.lng + 0.09],
+    [T(12, 50), DOE.lat + 0.14, DOE.lng + 0.14],
   ];
 
   test('the control: a day whose drives all closed sweeps as it always did', async () => {
@@ -3213,18 +3295,40 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     expect(r.sweep).toBe(true);
   });
 
-  test('a day still mid-drive is written, and sweeps nothing', async () => {
-    const r = await derive(STILL_DRIVING);
-    expect(r.pending, 'the chain has not come to rest').toBe(true);
-    expect(r.queued, 'it still writes: withholding is not skipping').toBe(1);
-    expect(r.sweep, 'THE bug: this was true, and it retired the traced leg Jack could have named').toBe(false);
+  test("Jack's shape: the stale morning row is inside the boundary, so it goes", async () => {
+    // His 08:00 dwell stood twice, once as shop and once as unsaved, same key,
+    // two tables, because a dwell that changes kind moves table. The sweep
+    // retires anything in the day not in the new key set, so it catches that
+    // on its own the moment it is allowed to run at all.
+    const r = await derive(STILL_DRIVING, MOVING_FIXES);
+    expect(r.sweep).toBe(true);
+    expect(r.sweepUntil, 'the 08:00 dwell is before the line, so it is swept').toBeGreaterThan(T(8, 30));
   });
 
-  test('and once the truck parks, the same day sweeps again', async () => {
-    const still = await derive(STILL_DRIVING);
-    expect(still.sweep).toBe(false);
-    const parked = await derive(CLOSED);
-    expect(parked.sweep, 'the next derive resolves it and cleans up properly').toBe(true);
+  // AMENDED 2026-09-18, hours after it was written, and the old assertion is
+  // quoted so the change is legible: it read
+  //   expect(r.sweep, 'THE bug: this was true...').toBe(false);
+  //
+  // Turning the sweep off for the whole day was too blunt. One unresolved chain
+  // at the END of a day left every stale row from every earlier derive standing,
+  // and each rebuild stacked more beside them: "its all duplicative and things
+  // arent merged together" (owner, on Jack's rebuilt day). The sweep is on
+  // again, bounded instead, and the boundary is where the day stops being known.
+  test('a day still mid-drive sweeps what it can describe, and stops there', async () => {
+    const r = await derive(STILL_DRIVING, MOVING_FIXES);
+    expect(r.pending, 'the chain has not come to rest').toBe(true);
+    expect(r.queued).toBe(1);
+    expect(r.sweep, 'the settled morning is still swept').toBe(true);
+    // The boundary IS the deriver's own idea of where the unresolved chain
+    // began: this spec tests the wiring, and the deriver owns that instant.
+    expect(r.sweepUntil).toBe(r.pendingStart);
+    expect(r.sweepUntil, 'and the settled morning is safely inside it').toBeGreaterThan(T(8, 30));
+  });
+
+  test('a settled day sweeps the whole of itself, with no boundary at all', async () => {
+    const r = await derive(CLOSED);
+    expect(r.sweep).toBe(true);
+    expect(r.sweepUntil, 'null means the whole day').toBeNull();
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
@@ -3299,13 +3403,75 @@ test.describe('a cached fix re-sent is not a new fix', () => {
     expect(log[2][1]).toBe(39.045656251);
   });
 
-  test('past the replay window it is allowed through again', async () => {
+  // AMENDED 2026-09-18. This was 'past the replay window it is allowed through
+  // again' and expected all three entries: the window was two hours, so a copy
+  // two and a half hours later counted as a fresh reading. Jack's day showed
+  // that is exactly backwards. His phone re-sent the 07:39 shop fix on the
+  // 30-minute push cycle at 10:00, 10:31, 11:03, 11:33, 12:00, 12:22 and
+  // 12:29; each copy was more than two hours past the last one still visible
+  // to the scan, so each was taken as new and the day planted him back at the
+  // shop from 08:00 to 13:12. A cached coordinate does not become true by
+  // waiting. The window is the business day now.
+  test('later the same day it is still the same cache', async () => {
     const log = await run([
       [T(6, 0, 0), ...SHOP_CACHED],
       [T(6, 5, 0), ...LOT],
-      [T(8, 30, 0), ...SHOP_CACHED],   // two and a half hours later, out of the window
+      [T(8, 30, 0), ...SHOP_CACHED],   // two and a half hours later, same day, same cache
     ]);
+    expect(log.length).toBe(2);
+    expect(log[log.length - 1], 'the last thing known is still the car park').toEqual([T(6, 5, 0), ...LOT]);
+  });
+
+  // The case the two-hour window let straight through, at his real cadence.
+  test("the 30-minute push cycle re-sending one coordinate never gets back in", async () => {
+    const pushes = [[T(7, 39, 7), ...SHOP_CACHED], [T(7, 58, 19), ...LOT], [T(9, 3, 50), ...LOT]];
+    for (const [h, m] of [[10, 0], [10, 31], [11, 3], [11, 33], [12, 0], [12, 22], [12, 29]]) {
+      pushes.push([T(h, m), ...SHOP_CACHED]);
+    }
+    const log = await run(pushes);
+    expect(log.filter(f => f[1] === SHOP_CACHED[0]).length, 'once, at 07:39, when it was true').toBe(1);
     expect(log.length).toBe(3);
+  });
+
+  // The boundary the day-wide window must not cross: a new day starts clean,
+  // or a coordinate you really do visit two mornings running is lost.
+  test('the same coordinate tomorrow is a new fix, not a replay', async () => {
+    const log = await run([
+      [T(7, 39, 7), ...SHOP_CACHED],
+      [T(7, 58, 19), ...LOT],
+      [T(31, 0, 0), ...SHOP_CACHED],   // 07:00 the next morning
+    ]);
+    expect(log.length, 'yesterday cannot silence today').toBe(3);
+  });
+
+  // THE SCAN HAS TO STAY CHEAP, and this test exists because it did not.
+  // The day-wide window was first written comparing formatted day KEYS inside
+  // the scan, which means one Intl.DateTimeFormat per entry examined. On the
+  // server that is once per kept fix per fix, and Jack's day holds about 630,
+  // so his rebuild asked for something near 400,000 of them and the edge
+  // function ran out of wall clock: "edge function returned a non-2xx status
+  // code". Counting constructions rather than timing anything, so this is
+  // deterministic and can never be a flake.
+  test('a full day of fixes does not format a date per entry', async () => {
+    const r = await page.evaluate(([T0]) => {
+      localStorage.removeItem('zp3_geo_fixlog');
+      const Real = Intl.DateTimeFormat;
+      let made = 0;
+      Intl.DateTimeFormat = function (...a) { made++; return new Real(...a); };
+      Intl.DateTimeFormat.supportedLocalesOf = Real.supportedLocalesOf;
+      try {
+        // 700 readings, a realistic day, each a genuinely new position so every
+        // one is kept and the scan has the longest possible list to walk.
+        for (let i = 0; i < 700; i++) {
+          _geoFixLogPush(T0 + i * 60000, 39.04 + i * 1e-5, -95.71 - i * 1e-5, 10);
+        }
+      } finally { Intl.DateTimeFormat = Real; }
+      return { made, kept: _geoFixLogRead().length };
+    }, [Date.parse('2026-09-18T12:00:00Z')]);
+    expect(r.kept, 'every one is a new place, so every one is kept').toBe(700);
+    // Bounds are computed once per day and cached, so this is a couple of
+    // walks, not seven hundred. The number that broke production was ~245,000.
+    expect(r.made, 'a handful, not one per entry').toBeLessThan(2000);
   });
 
   test('the very same fix twice in a row is still one entry', async () => {

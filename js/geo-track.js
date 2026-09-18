@@ -5466,7 +5466,12 @@ async function _geoTdEvent(ev,replay){
     // And the day is re-derived on the same push, so an open dwell that a
     // fix has since left gets closed without waiting for a flip.
     if(!replay&&ev.type==='push-ping'){
-      if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
+      // ...and only when the ping's own age says it is worth having. This line
+      // took EVERY ping, stale or not, which is the hole the 2026-09-03 note
+      // above was trying to close by excluding push-ping from the deriver's
+      // types: the local log had it all along. _geoFreshFixEv is the one rule
+      // now, so the log and the deriver cannot disagree about a row.
+      if(typeof ev.lat==='number'&&typeof ev.lng==='number'&&_geoFreshFixEv(ev))_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
       // NOW, not in four seconds. This arrives on a background wake with a few
       // seconds of runtime; see the note on _geoDeriveLiveSoon. A ping every
       // thirty minutes is not a burst and has nothing to coalesce with.
@@ -5703,7 +5708,7 @@ async function _geoTdEvent(ev,replay){
   // Only a FRESH position goes in the fix log. A fence or motion row carries
   // the plugin's last-known location, which after a wake can be a mile and
   // a minute stale, and one of those in a trace read 3 miles as 6.1.
-  if(_GEO_FRESH_FIX_TYPES.indexOf(String(ev.type||''))>=0)_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
+  if(_geoFreshFixEv(ev))_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
   // ── THE VISIT REPORT ALREADY KNOWS WHEN THEY GOT THERE ───────────────────
   // Owner report 2026-08-25, with two weeks of his own journal behind it: a
   // stop the app has a FENCE for is stamped within a minute, because crossing
@@ -7202,11 +7207,37 @@ const _GEO_DERIVER_WRITES=true;
 const _GEO_FIXLOG_KEY='zp3_geo_fixlog';
 const _GEO_FIXLOG_MAX=6000;
 // How far back a re-sent cached fix is still recognisable as the same fix, and
-// how many entries that scan may read. Jack's replay spanned 47 minutes
-// (07:39:07 to 08:26:45), so an hour would have been a near miss; two gives it
-// room without ever reaching yesterday. See the note in _geoFixLogPush.
-const _GEO_FIX_REPLAY_MS=2*60*60*1000;
-const _GEO_FIX_REPLAY_SCAN=400;
+// how many entries that scan may read.
+//
+// THE WINDOW IS THE BUSINESS DAY, and it started out as two hours, which was
+// wrong in the one way that mattered. Jack's first replay burst spanned 47
+// minutes, so two hours looked generous. The rest of his day was not a burst:
+// the same 07:39 shop fix came back on the 30-minute push cycle at 10:00,
+// 10:31, 11:03, 11:33, 12:00, 12:22 and 12:29. Each of those is more than two
+// hours after the previous one the scan could still see, so each one read as
+// brand new, and 08:00 to 13:12 planted him back at the shop he had left.
+//
+// A cached coordinate does not expire. Going quiet for three hours is what a
+// cache DOES when the phone is asleep; it is not evidence that the next copy
+// is fresh. The honest boundary is the day, because that is the unit the
+// deriver works in and the point where the phone's cache is no longer
+// describing anything the day cares about.
+//
+// The scan only ever needs to find the FIRST time a coordinate appeared, and
+// that one is always kept: the guard drops a coordinate only when it is
+// already in the log, so the original is never the one dropped. Scanning the
+// kept log is therefore enough, as long as it reaches the start of the day.
+const _GEO_FIX_REPLAY_SCAN=2000;
+// The start of the business day holding `ms`, cached, because the replay scan
+// needs it on every push and computing it walks Intl in 15-minute steps.
+let _geoFixDayLoV=Infinity,_geoFixDayHiV=-Infinity;
+function _geoFixDayLo(ms){
+  if(ms>=_geoFixDayLoV&&ms<_geoFixDayHiV)return _geoFixDayLoV;
+  const b=_geoDayBounds(_geoDayKeyOf(ms,_geoBizTz()));
+  _geoFixDayLoV=b?b.start:-Infinity;
+  _geoFixDayHiV=b?b.end:Infinity;
+  return _geoFixDayLoV;
+}
 const _GEO_FIXLOG_KEEP_MS=8*86400000;
 const _GEO_DERIVE_DAYS=7;
 
@@ -7336,15 +7367,22 @@ function _geoFixLogPush(ts,lat,lng,acc){
     // Even a parked phone's consecutive fixes differ in the low bits; fourteen
     // matching decimals is one CLLocation object handed out twice.
     //
-    // Bounded scan, because the log holds a week: back over the replay window
-    // and no further, and never more than a few hundred entries.
+    // Bounded scan, because the log holds a week: back to the start of this
+    // business day and no further, and never more than _GEO_FIX_REPLAY_SCAN
+    // entries. The window used to be two hours and that is exactly how the
+    // cache got back in; see the constant.
     const last=a[a.length-1];
     if(last&&(last.lat!==la||last.lng!==ln)){
-      const cut2=t-_GEO_FIX_REPLAY_MS;
+      // The day is a NUMBER here, not a key. Formatting a date per scanned
+      // entry means an Intl.DateTimeFormat per entry, which is one of the most
+      // expensive calls in the language; the server's copy of this guard was
+      // written that way for an hour and a rebuild timed out on it. One pair of
+      // bounds per day, cached across pushes, and the scan stays arithmetic.
+      const lo=_geoFixDayLo(t);
       for(let i=a.length-1,seen=0;i>=0&&seen<_GEO_FIX_REPLAY_SCAN;i--,seen++){
         const f=a[i];
         if(!f)continue;
-        if(!(f.ts>=cut2))break;                     // out of the window, and the log is in order
+        if(!(f.ts>=lo))break;                       // yesterday, and the log is in order
         if(f.lat===la&&f.lng===ln)return;           // seen here before, and we have moved since
       }
     }
@@ -7718,7 +7756,38 @@ async function _geoDeriveTape(sinceMs){
 // getCurrentPosition read taken at that instant, never a last-known position
 // replayed from a wake (owner 2026-09-04). They are also the only position
 // evidence at all on a day whose owner has saved no fences.
-const _GEO_FRESH_FIX_TYPES=['fix','clock-in','clock-out'];
+// AMENDED 2026-09-18, on Jack's day. Everything above this line was true on
+// 3 September and stopped being true on the 9th, when silentPush started
+// measuring the cache against the CLLocation's OWN timestamp and marking
+// anything over five minutes with staleMs (and buying a four-second burst to
+// replace it). The exclusion outlived its reason and quietly became the thing
+// standing between the deriver and the only honest positions on a parked day.
+//
+// What it cost, on his 18 September: a correct position arrived every thirty
+// minutes all morning on push-ping and visit rows, and every one was thrown
+// away. What was kept instead was the `fix` stream, which is the one that
+// lies, because event() stamps ts with Date() and drops the location's own
+// timestamp, so a buffered old reading arrives looking current. At 12:22:46
+// both landed in the same instant: the push-ping at his actual job site, the
+// `fix` 724 ft away at a shop he had left at 07:53.
+//
+//   visit      ALWAYS. CLVisit is not a cache; it is iOS reporting a place a
+//              person stopped, with its own arrival and departure times.
+//   push-ping  unless it SAYS it is stale. Unmarked means natively verified
+//              under five minutes, which is more than a `fix` ever claims.
+//   wake-drop  still no: mgr().location with no age measured at all.
+const _GEO_FRESH_FIX_TYPES=['fix','clock-in','clock-out','visit'];
+// The conditional half. Kept separate from the list above because the list is
+// also what the server-side read filters on, and a type either is or is not
+// worth asking the database for; whether a given ROW of it is usable is this.
+function _geoFreshFixEv(ev){
+  if(!ev)return false;
+  const t=String(ev.type||'');
+  if(_GEO_FRESH_FIX_TYPES.indexOf(t)>=0)return true;
+  if(t!=='push-ping')return false;
+  return !(Number(ev.staleMs)>0);
+}
+const _GEO_FIX_QUERY_TYPES=_GEO_FRESH_FIX_TYPES.concat(['push-ping']);
 const _GEO_FETCH_PAGE=1000;
 const _GEO_FETCH_PAGES=40;
 // ── A SHORT ANSWER AND A COMPLETE ONE ARE NOT THE SAME THING ──────────────
@@ -7767,8 +7836,16 @@ async function _geoDeriveServerFixes(fromMs,toMs){
     // Only rows whose position is FRESH. A fence or motion row carries the
     // last-known position, which after a wake can be a mile stale, and one
     // of those in the trace read a 3-mile drive as 6.1 (owner 2026-09-02).
-    const ev=await _geoPageAll(()=>_supa.from('geo_events').select('ts,lat,lon').eq('employee_user_id',me).in('type',_GEO_FRESH_FIX_TYPES).gte('ts',a).lt('ts',b).not('lat','is',null));
-    ev.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});});
+    const ev=await _geoPageAll(()=>_supa.from('geo_events').select('ts,lat,lon,type,detail').eq('employee_user_id',me).in('type',_GEO_FIX_QUERY_TYPES).gte('ts',a).lt('ts',b).not('lat','is',null));
+    // The query asks for push-pings too; this is where a stale one is dropped.
+    // Same rule as _geoFreshFixEv, reading the age off the stored row rather
+    // than off the live event (ingest-geo keeps it in `detail` since
+    // 2026-09-18; a row older than that carries none and reads as fresh).
+    ev.forEach(e=>{
+      const t=Date.parse(e.ts);if(!(t>0))return;
+      if(String(e.type)==='push-ping'&&Number(e.detail&&e.detail.staleMs)>0)return;
+      out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});
+    });
     const pg=await _geoPageAll(()=>_supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b));
     pg.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:e.accuracy!=null?Number(e.accuracy):null});});
     out.complete=!!(ap.complete&&rg.complete&&ev.complete&&pg.complete);
@@ -7818,6 +7895,40 @@ function _geoDeriveApplyMileage(dayKey,derived){
   // rebuild. Any answer present means the hold is dropped.
   const keep=['vehicle','vehicleId','purpose','notes','receiptId','deductible','noReceipt','receiptExpenseId','personal'];
   const answered=r=>!!(r&&(r.noReceipt||r.receiptExpenseId!=null||r.personal));
+  // ── AN ANSWER BELONGS TO A TRIP, NOT TO AN ID (owner 2026-09-18) ────────
+  //
+  // "Ain't no fucking way Jack answered personal to the timesheet rows why the
+  // fuck did things at 8 am go to personal" He did not, and this is how it
+  // happened anyway.
+  //
+  // These flags ride across a re-derive keyed on the leg id, and a leg id is
+  // NOT a stable name for a trip. It is minted from the CoreMotion flip that
+  // opened the journey, and the journey around that flip is re-derived every
+  // time the day is rebuilt: it collapses, absorbs stops, changes destination.
+  // His j-987ebc83-mu6ym0i3 began 18 September as a seven-minute drive from
+  // the shop to an unsaved job site and ended it as a 0.9-mile round trip that
+  // had swallowed three journeys (collapsedStops 3, three segKeys). Whatever
+  // was answered about the first one silently became true of the second, and
+  // the row gave itself away: purpose "Business" sitting beside personal true,
+  // with no supplyRunKey the Personal door could ever have matched.
+  //
+  // So the identity fields ride across as before (a vehicle and a note are
+  // about the leg however it is shaped), and the three ANSWERS ride only while
+  // the trip is still recognisably the same one: same departure instant, same
+  // destination, same collapse, and the distance within a quarter. Anything
+  // else is a different trip and deserves the question again rather than an
+  // answer nobody gave about it.
+  const ANSWERS=['personal','noReceipt','receiptExpenseId','deductible'];
+  const _num=v=>{const n=Number(v);return isFinite(n)?n:null;};
+  const sameTrip=(a,b)=>{
+    if(!a||!b)return false;
+    if(String(a.startedIso||'')!==String(b.startedIso||''))return false;
+    if(String(a.to_name||a.to||'')!==String(b.to_name||b.to||''))return false;
+    if((_num(a.collapsedStops)||0)!==(_num(b.collapsedStops)||0))return false;
+    const am=_num(a.miles),bm=_num(b.miles);
+    if(am==null||bm==null)return am===bm;
+    return Math.abs(am-bm)<=Math.max(0.2,Math.max(am,bm)*0.25);
+  };
   const byId={};
   mileage.forEach(m=>{if(m&&m.id!=null)byId[String(m.id)]=m;});
   // A ROW WITH NO ID IS NOT A ROW. Every real caller hands this the deriver's
@@ -7835,10 +7946,23 @@ function _geoDeriveApplyMileage(dayKey,derived){
   src.forEach(m=>{
     const old=byId[String(m.id)];
     const row=Object.assign({},m);
-    if(old)keep.forEach(k=>{if(old[k]!=null&&old[k]!=='')row[k]=old[k];});
+    const carry=old?sameTrip(old,m):false;
+    if(old)keep.forEach(k=>{
+      if(old[k]==null||old[k]==='')return;
+      if(!carry&&ANSWERS.indexOf(k)>=0)return;   // a changed trip is a new question
+      row[k]=old[k];
+    });
     if(answered(row))delete row.pendingReceipt;
     const at=mileage.findIndex(x=>x&&String(x.id)===String(m.id));
-    if(at>=0)mileage[at]=Object.assign(mileage[at],row);else mileage.push(row);
+    if(at>=0){
+      // The merge below keeps whatever the stored row already had, so simply
+      // declining to COPY an answer is not the same as dropping it: the old
+      // flag would survive on the target untouched. A trip that is no longer
+      // the trip that was answered has its answers removed, which puts the
+      // question back where the person can see it.
+      if(!carry)ANSWERS.forEach(k=>{delete mileage[at][k];});
+      mileage[at]=Object.assign(mileage[at],row);
+    }else mileage.push(row);
   });
   return _geoMileageFingerprint(dayKey)!==_before;
 }
@@ -8303,38 +8427,32 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // evidence. A partial fetch still WRITES what it found, it just may not
     // retire what it did not.
     const whole=!(serverFixes||fetched)||!!(server&&server.complete);
-    // ── AND A DERIVE THAT IS STILL MID-DRIVE RETIRES NOTHING ──────────────
-    // Owner 2026-09-18, on Jack: "in the past this would then say we had a
-    // drive from the js solutions shop to a unsaved address then show current
-    // dwell at unsaved address... why didnt this happen."
+    // ── AND A DERIVE RETIRES ONLY WHAT IT HAS AN ANSWER FOR ───────────────
+    // Owner 2026-09-18, on Jack: "rebuilt his day... its all duplicative and
+    // things arent merged together."
     //
-    // It did happen. At 08:11:03 the rule-14 traced leg was written exactly as
-    // he describes: shop to an unsaved end, breadcrumb miles, off every total,
-    // with the Save this address path on it. Then he moved the truck at
-    // 08:27:07, and the derive that ran at 08:34:49, eight seconds after the
-    // tape flipped back to still, found the chain's last journey still OPEN.
+    // That was this guard, one revision ago. It started as `&& !res.pending`,
+    // because rule 14 withholds a traced leg while the chain is still moving
+    // and the withheld set was going to a SWEEPING write, which retired the
+    // good row it had just declined to re-send. Withholding a row must never
+    // mean deleting it, and that much was right.
     //
-    // Rule 14 is right to withhold the leg there: you cannot say where the
-    // truck came to rest while it is still moving, so the chain stays pending
-    // and geoDeriveDay reports it as `pending` rather than guessing. The bug is
-    // what happened next. A pending chain still produced a row SET, that set no
-    // longer contained the traced leg, and it went to geo_replace_day with the
-    // sweep on, so the RPC did what it was asked and retired a good row plus
-    // its drive. Jack's morning went from a drive he could name to an hour of
-    // nothing.
+    // The blast radius was wrong. ONE unresolved chain at the end of a day
+    // turned the sweep off for the WHOLE day, so every stale row from every
+    // earlier derive survived and every rebuild stacked more beside them. His
+    // 08:00 dwell stood twice, once as shop and once as unsaved, same key, two
+    // tables, because a dwell that changes kind moves table and the sweep that
+    // would have caught it never ran.
     //
-    // Third member of the family the two guards above belong to, and the same
-    // sentence each time: no evidence, no sweep; partial evidence, no sweep;
-    // NO ANSWER, NO SWEEP. Withholding a row must never mean deleting it
-    // (CLAUDE.md 17: unresolved writes nothing, which is not the same as
-    // unresolved erases something). The next derive, once the truck is parked,
-    // resolves the chain and sweeps properly.
-    const settled=!res.pending;
+    // Same rule, with a boundary: retire what this derive can describe, leave
+    // the stretch still being driven to whoever can see the end of it.
+    const sweepUntil = (res.pending && Number(res.pending.startTs) > 0)
+      ? new Date(Number(res.pending.startTs)).toISOString() : null;
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
       p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
       p_time:_geoWithOpen(rows,'job_time_entries'),p_shop:_geoWithOpen(rows,'shop_time_entries'),p_miles:rows.td_mileage,
-      p_sweep:!!(tapeCovers&&tapeOwned&&whole&&settled),
+      p_sweep:!!(tapeCovers&&tapeOwned&&whole),p_sweep_until:sweepUntil,
     });
     // The only mileage paint this derive makes, the numbers in it are road
     // miles rather than trace miles (see the note above the router call), and

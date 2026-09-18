@@ -440,6 +440,63 @@ test.describe('Ops portal: the support view, embedded', () => {
         await expect(page.locator('#rb-out')).toContainText('Nothing retired');
       });
 
+      // ── THE REBUILD WAKES THE PHONE FIRST (owner 2026-09-18) ──────────
+      // "so how can my rebuild button fire the core motion tape and pull it
+      // in, I thought it did that?" It did not. CoreMotion cannot deliver a
+      // flip to a suspended process, so the flips sit on the phone until
+      // something gives it runtime: Jack had 18 uploaded by lunchtime against
+      // 127 on a full Wednesday, and re-deriving a tenth of a day just
+      // reproduced the wrong answer. rebuild-day sends the same silent push
+      // the cron sends, to that one person, and waits for the flush.
+      //
+      // Whether it worked has to be VISIBLE. A rebuild that could not wake the
+      // phone used only what was already uploaded, and silence would look
+      // exactly like success.
+      test('a woken phone is said out loud, so the rebuild can be trusted', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true, nudged: 1, nudgeNote: '',
+          days: [{ day: '2026-09-18', wrote: true, time: 6, shop: 2, miles: 3, sweep: true }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-18');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Woke his phone first');
+        await expect(page.locator('#rb-out')).toContainText('Stale rows retired');
+      });
+
+      test('a phone that could not be woken is a warning, never silence', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true, nudged: 0,
+          nudgeNote: 'no device registered',
+          days: [{ day: '2026-09-18', wrote: true, time: 6, shop: 2, miles: 3, sweep: true }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-18');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Could NOT wake his phone');
+        await expect(page.locator('#rb-out')).toContainText('no device registered');
+        await expect(page.locator('#rb-out'), 'and it says what to do about it')
+          .toContainText('have him open it and press this again');
+      });
+
+      // Rebuilding last month wakes nobody: the backfill reads forward from a
+      // mark and has nothing older to give. Saying "could not wake" there would
+      // be noise about a thing that was never attempted.
+      test('an old day says nothing about the phone at all', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true, nudged: 0,
+          nudgeNote: 'not today',
+          days: [{ day: '2026-08-14', wrote: true, time: 6, shop: 2, miles: 3, sweep: true }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-08-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Rebuilt');
+        await expect(page.locator('#rb-out')).not.toContainText('wake his phone');
+      });
+
+      // An older function that does not report the field at all must not draw
+      // a scary line: deploy order is not a fact about Jack's phone.
+      test('a response with no nudge field says nothing about it', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true,
+          days: [{ day: '2026-09-18', wrote: true, time: 6, shop: 2, miles: 3, sweep: true }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-18');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Rebuilt');
+        await expect(page.locator('#rb-out')).not.toContainText('wake his phone');
+      });
+
       test('no day picked is a message, not a call', async () => {
         await page.locator('#rb-day').fill('');
         await page.locator('#rb-go').click();

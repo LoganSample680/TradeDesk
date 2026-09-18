@@ -379,6 +379,42 @@ function _gdOpenArrivals(regions, fences, radiusFt, fixes) {
   return out;
 }
 
+// A PARKED PHONE OUTVOTES A STALE MEMBERSHIP (owner 2026-09-18, on Jack).
+//
+// Rule 15 lets a closed OS crossing pair beat the fix, because the OS boundary
+// is WIDER than this file's circle: the instant a crossing fires, the phone is
+// still out on the road, and naming the arrival from that fix gets it wrong
+// (his 15 September, the crossing fired 0.4 miles out). That is true at the
+// EDGES of a membership and false in the middle of one.
+//
+// Jack's 18 September is the middle. iOS said he was inside the shop region
+// from 07:35:15 to 13:21:57, which it was entitled to say: he parked 768 ft
+// away, outside this file's 600 ft circle and well inside whatever radius the
+// OS was watching. So for five and a half hours the membership named every
+// dwell "shop" while his own phone reported, every thirty minutes, a position
+// 726 to 899 ft away that never moved.
+//
+// The difference between the two cases is not the distance, it is whether the
+// phone SETTLED there. Mid-drive the fixes around that instant are strung out
+// along a road; parked, they sit on top of each other for a long time. So the
+// membership keeps its authority except where the fixes prove a stay somewhere
+// else: three or more readings, spanning at least ten minutes, all within one
+// fence radius of this one and none of them back inside the region.
+function _gdSettledAway(fixes, fix, reg, fences, radiusFt) {
+  if (!fix || !reg || fix.lat == null || fix.lng == null) return false;
+  if (_gdSameFence(geoFenceAt(fix, fences, radiusFt), reg)) return false;
+  let n = 0, lo = fix.ts, hi = fix.ts;
+  for (const f of (Array.isArray(fixes) ? fixes : [])) {
+    if (!f || f.lat == null || f.lng == null) continue;
+    if (_gdMiles(f, fix) * 5280 > radiusFt) continue;
+    if (_gdSameFence(geoFenceAt(f, fences, radiusFt), reg)) return false;
+    n++;
+    if (f.ts < lo) lo = f.ts;
+    if (f.ts > hi) hi = f.ts;
+  }
+  return n >= 3 && (hi - lo) >= 10 * 60000;
+}
+
 // Rule 21, applied to the journey list before anything reads it, so the leg
 // and the dwell after it move together: one boundary, not two.
 function _gdArrivalTrim(journeys, spans) {
@@ -745,7 +781,27 @@ function _gdParkedResume(cut, fixes, tape, opts, endTs) {
   for (const x of (tape || [])) { if (x.ts > cut[1] && x.k !== 'still') { flip = x.ts; break; } }
   const back = Math.min(moved, flip);
   // Nothing said it moved before this journey ended: it never drove again.
-  if (!isFinite(back) || back <= cut[0]) return (endTs != null) ? null : cut[1];
+  //
+  // AND THAT IS JUST AS TRUE OF A JOURNEY THE TAPE NEVER CLOSED (owner
+  // 2026-09-18: "why didn't the rebuilder ride the entire day?"). This used to
+  // return cut[1] for an OPEN journey, so the caller resumed the drive at the
+  // last fix of the park and left it open. Nothing had said the truck moved;
+  // the departure was invented because the tape had not yet said the journey
+  // ended.
+  //
+  // What that cost Jack on the 18th: his last real flip was automotive at
+  // 13:45:13, leaving Neenans. The fixes put him at one address from 14:05:19
+  // and never more than 40 ft from it for the next two and three quarter
+  // hours. No flip ever arrived to close the journey, so a phantom open drive
+  // was minted at 16:49:28, the last fix of the day. An open journey suppresses
+  // the open-dwell fallback (rule 5), so the whole afternoon, a drive and a
+  // two-hour stop that the data states plainly, simply was not there. His day
+  // ended at 1:45pm on screen while he was still working.
+  //
+  // A missing flip is not evidence of a departure. Both cases return null now:
+  // the journey ends where the fixes say it parked, and the dwell after it is
+  // the rest of the day.
+  if (!isFinite(back) || back <= cut[0]) return null;
   if (endTs != null && back >= endTs) return null;
   return Math.max(back, cut[1]);
 }
@@ -833,6 +889,54 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
  *                 app-relaunch (the plugin's own lifecycle events), for rule 10
  * input.opts      overrides for GEO_DERIVE_DEFAULTS
  */
+// A SHUFFLE IN THE LOT IS NOT A JOURNEY (owner 2026-09-18: "why does Neenans
+// have two rows?").
+//
+// His 18 September at Neenans Co: CoreMotion flipped automotive at 13:41:01,
+// still at 13:41:29, cycling at 13:42:48, automotive again at 13:45:13. He
+// moved the truck across the lot. That 1m47s flip is a journey to this file, so
+// it cut one ten-minute stop into 13:30-13:41 and 13:42-13:45, two rows for one
+// visit.
+//
+// minLegMs already knows this shape: 2 minutes, "a journey shorter than this is
+// a walk across a fence line". But it was only ever consulted when deciding
+// whether to write a MILEAGE row, so rule 7 correctly refused the mileage and
+// the journey went on splitting the dwell anyway. A drive that never left the
+// fence it started in did not happen, and it should not exist at all.
+//
+// Deliberately narrow, because a short drive between two real places must
+// survive: the journey has to be under minLegMs, the fixes bracketing it have
+// to name the SAME fence, and nothing inside it may sit outside that fence. A
+// journey with no fix to vouch for it is left alone.
+function _gdShuffleDrop(journeys, fixes, fences, opts) {
+  if (!Array.isArray(journeys) || !journeys.length) return journeys;
+  const fx = (Array.isArray(fixes) ? fixes : [])
+    .filter(f => f && typeof f.ts === 'number' && f.lat != null && f.lng != null)
+    .sort((a, b) => a.ts - b.ts);
+  if (!fx.length) return journeys;
+  const at = (ts, before) => {
+    let best = null;
+    for (const f of fx) {
+      if (before ? f.ts > ts : f.ts < ts) continue;
+      if (!best || (before ? f.ts > best.ts : f.ts < best.ts)) best = f;
+    }
+    return best;
+  };
+  return journeys.filter((j) => {
+    if (!j || j.open || typeof j.startTs !== 'number' || typeof j.endTs !== 'number') return true;
+    if (j.endTs - j.startTs >= opts.minLegMs) return true;
+    const a = at(j.startTs, true), b = at(j.endTs, false);
+    if (!a || !b) return true;                       // nothing vouches either way
+    const fa = geoFenceAt(a, fences, opts.radiusFt);
+    if (!fa || !_gdSameFence(fa, geoFenceAt(b, fences, opts.radiusFt))) return true;
+    for (const f of fx) {
+      if (f.ts <= j.startTs || f.ts >= j.endTs) continue;
+      if (!_gdSameFence(geoFenceAt(f, fences, opts.radiusFt), fa)) return true;
+    }
+    return false;                                    // it never left: not a journey
+  });
+}
+
 function geoDeriveDay(input) {
   const inp = input || {};
   const opts = Object.assign({}, GEO_DERIVE_DEFAULTS, inp.opts || {});
@@ -850,9 +954,10 @@ function geoDeriveDay(input) {
   // Rule 21 reads the closed pairs AND the unpaired arrivals; rule 15 reads
   // only the closed pairs, which is the distinction _gdOpenArrivals exists to
   // draw. Never the other way round.
-  const journeys = _gdArrivalTrim(
+  const journeys = _gdShuffleDrop(_gdArrivalTrim(
     _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
-    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes)));
+    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes))),
+    fixes, fences, opts);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;
@@ -860,7 +965,17 @@ function geoDeriveDay(input) {
   // boundary the OS watched beats the position this app happened to sample.
   // Where none does, nothing changes: fenceAt IS fenceOf.
   const inside = _gdRegionSpans(inp.regions, fences, opts.radiusFt);   // same crossings, read for WHERE
-  const fenceAt = (fix, ts) => inside(ts) || fenceOf(fix);
+  // ... except where the phone settled somewhere else entirely, which is a
+  // membership gone stale rather than a boundary freshly crossed. See
+  // _gdSettledAway: the OS region is wider than this circle, so a crossing
+  // outranks one roadside sample and must not outrank five hours of parked
+  // ones.
+  const fenceAt = (fix, ts) => {
+    const reg = inside(ts);
+    if (!reg) return fenceOf(fix);
+    if (_gdSettledAway(fixes, fix, reg, fences, opts.radiusFt)) return fenceOf(fix);
+    return reg;
+  };
   // The chain: the first saved origin and the automotive minutes since it.
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
   let arrived = null;        // {fence, ts, journeyId}: an open dwell awaiting its departure
@@ -3294,7 +3409,7 @@ function geoDeriveRows(result, ids) {
       // a destination the deriver could not name, which is precisely the
       // drive it has no standing to label.
       pendingPurpose: true, purpose: '',
-    } : {}, l.to.kind === 'supply' ? {
+    } : {}, (l.to.kind === 'supply' && !l.collapsed) ? {
       // THE RECEIPT IS THE PROOF, NOT THE DESTINATION (owner design
       // 2026-08-17, and owner 2026-09-05: "the receipt thing didn't stay
       // alive from my Home Depot run"). A leg that ends at a supply place is
@@ -3303,6 +3418,28 @@ function geoDeriveRows(result, ids) {
       // rewrite (2959bb3) deleted the engine and nothing set it again, so his
       // 28 August Home Depot leg landed as a plain Supply run and the card
       // never showed. The key is what the card groups visits by.
+      //
+      // AND ONLY WHEN THE LEG IS THE TRIP TO THE STORE (owner 2026-09-18:
+      // "So why did the jobs in the morning go personal?"). A COLLAPSED leg is
+      // a chain: it absorbs every unsaved stop until it reaches a saved
+      // destination and is keyed by the FIRST journey's id. On Jack's 18
+      // September his midday drives were not resolving, so the chain that
+      // opened at 07:53 ran all the way to the first saved place it could
+      // find, which was Neenans at 13:30. One leg, ending at a supply house,
+      // carrying four hours of unrelated work inside it.
+      //
+      // The card then honestly said "Neenans Co", he tapped Personal, and
+      // both books took the whole chain: the mileage row is the chain's miles,
+      // and the two time rows the answer dismisses are the chain's own, which
+      // are the 07:53 drive and the 08:00 stop. His morning went off the books
+      // for a receipt question about an afternoon errand.
+      //
+      // There is no honest answer to offer here. The app cannot say which part
+      // of a chain was the supply run, so it must not offer a button that
+      // takes all of it off. A chain's receipt question returns the day it
+      // stops being a chain, which is what the deriver is for: once the
+      // midday drives resolve, the run to the store is its own leg and asks
+      // for its own receipt.
       pendingReceipt: true, supplyRunKey: String(result.day || '') + '|' + (l.to.name || 'Store'),
     } : {}, l.traced ? {
       // Named as what it is, so the log and the map can say "traced" rather

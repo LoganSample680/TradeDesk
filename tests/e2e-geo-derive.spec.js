@@ -4798,10 +4798,38 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.open.kind).toBe('client');
     });
 
+    // AMENDED 2026-09-18, and the old fixture is the reason. It dropped the
+    // closing flip from the tape and kept the fixes, which put the phone at one
+    // spot from 07:58 to 09:30, and then asserted r.open was null on the
+    // grounds that an unclosed journey means "still driving". Ninety-two
+    // minutes of stationary readings at a single address is not driving. It is
+    // Jack's afternoon of 18 September exactly: his last flip was automotive at
+    // 13:45:13 leaving Neenans, the tape said nothing more, and his fixes sat
+    // within 40 ft of one address for two and three quarter hours while the
+    // screens showed his day ending at 1:45pm.
+    //
+    // A missing flip is not evidence of a departure. So the fixture now says
+    // what the test's name promises: the phone is actually MOVING, and then
+    // nothing can be claimed about where he is standing.
     test('still driving is not standing somewhere', async () => {
-      const inp = morning({ tape: [mo(T(7, 36), 'onFoot'), mo(T(7, 53, 31), 'automotive')] });
+      const rolling = [];
+      for (let i = 0; i < 10; i++) {
+        rolling.push(fix(T(7, 56) + i * 4 * 60000, { lat: SITE.lat + i * 0.01, lng: SITE.lng - i * 0.01 }));
+      }
+      const inp = morning({
+        tape: [mo(T(7, 36), 'onFoot'), mo(T(7, 53, 31), 'automotive')],
+        fixes: [fix(T(7, 40), JSHOP), fix(T(7, 48), JSHOP)].concat(rolling),
+      });
       const r = await derive(inp);
       expect(r.open).toBeNull();
+    });
+
+    // The other half of the same rule, which is the case that was wrong.
+    test('parked for ninety minutes is standing somewhere, flip or no flip', async () => {
+      const inp = morning({ tape: [mo(T(7, 36), 'onFoot'), mo(T(7, 53, 31), 'automotive')] });
+      const r = await derive(inp);
+      expect(r.open, 'the tape never closed it; the fixes did').not.toBeNull();
+      expect(r.open.unsaved).toBe(true);
     });
 
     test('no fixes at all never throws', async () => {
@@ -4954,6 +4982,129 @@ test.describe('geo-derive: the day deriver', () => {
       thin.fixes = thin.fixes.filter(f => f.ts < T(8, 1) || f.ts > T(9, 5));
       const r = await stop(thin);
       expect(r.far, 'two fixes is not a middle, so nothing is re-seated').toBe(false);
+    });
+  });
+
+  // ── A SHUFFLE IN THE LOT IS NOT A JOURNEY (owner 2026-09-18) ────────────
+  // "why does Neenans have two rows?" Because CoreMotion flipped automotive at
+  // 13:41:01, still at 13:41:29, cycling at 13:42:48 and automotive again at
+  // 13:45:13: he moved the truck across the supply house lot, and that 1m47s
+  // flip was a journey, so it cut one fifteen-minute visit into 13:30-13:41 and
+  // 13:42-13:45.
+  test.describe('a shuffle inside a fence is not a journey', () => {
+    const YARD = { id: 'p-supply', kind: 'supply', name: 'Neenans Co', placeId: 7,
+      lat: 39.0106029, lng: -95.6811282 };
+    const HOMEB = { id: 'p-home', kind: 'home_office', name: 'Home', lat: 39.0257251, lng: -95.7939329 };
+    const day = (over) => base(Object.assign({
+      fences: [HOMEB, YARD],
+      tape: [mo(T(7, 0), 'onFoot'), mo(T(7, 30), 'automotive'), mo(T(8, 0), 'onFoot'),
+             // The shuffle: out and back inside the yard, under two minutes.
+             mo(T(8, 20), 'automotive'), mo(T(8, 21, 47), 'onFoot'),
+             mo(T(9, 0), 'automotive'), mo(T(9, 30), 'onFoot')],
+      fixes: [
+        fix(T(7, 5), HOMEB), fix(T(7, 25), HOMEB),
+        fix(T(8, 2), YARD), fix(T(8, 10), YARD), fix(T(8, 19), YARD),
+        fix(T(8, 21), YARD), fix(T(8, 22), YARD), fix(T(8, 40), YARD), fix(T(8, 58), YARD),
+        fix(T(9, 35), HOMEB), fix(T(9, 50), HOMEB),
+      ],
+      nowMs: T(12, 0),
+    }, over));
+
+    test('one visit to the yard, not two', async () => {
+      const r = await run(page, day());
+      const yard = r.dwells.filter(d => d && d.fence && d.fence.kind === 'supply');
+      expect(yard.length, 'the truck moving in the lot does not end the visit').toBe(1);
+      expect(yard[0].minutes, 'and it is the whole stay').toBeGreaterThan(50);
+    });
+
+    test('the real drives on either side survive', async () => {
+      const r = await run(page, day());
+      expect(r.legs.length, 'out and back, and nothing in between').toBe(2);
+    });
+
+    // The guards, stated as the inverse of the test above rather than by
+    // counting legs: the absorption is what must be conditional.
+    test('a hop that genuinely leaves the fence still splits the visit', async () => {
+      const r = await run(page, day({
+        fixes: [
+          fix(T(7, 5), HOMEB), fix(T(7, 25), HOMEB),
+          fix(T(8, 2), YARD), fix(T(8, 10), YARD), fix(T(8, 19), YARD),
+          // Mid-shuffle he is a mile away: this one really went somewhere.
+          fix(T(8, 20, 30), { lat: YARD.lat + 0.02, lng: YARD.lng + 0.02 }),
+          fix(T(8, 22), YARD), fix(T(8, 40), YARD), fix(T(8, 58), YARD),
+          fix(T(9, 35), HOMEB), fix(T(9, 50), HOMEB),
+        ],
+      }));
+      const yard = r.dwells.filter(d => d && d.fence && d.fence.kind === 'supply');
+      expect(yard.length, 'it left the fence, so it is a journey and the visit splits').toBe(2);
+    });
+
+    test('no fixes around it: nothing vouches either way, so it stands', async () => {
+      const r = await run(page, day({ fixes: [fix(T(7, 5), HOMEB), fix(T(9, 50), HOMEB)] }));
+      const yard = r.dwells.filter(d => d && d.fence && d.fence.kind === 'supply');
+      expect(yard.length, 'no fix names the ends, so the journey is left alone').toBe(0);
+    });
+  });
+
+  // ── A CHAIN IS NOT A TRIP TO THE STORE (owner 2026-09-18) ───────────────
+  // "So why did the jobs in the morning go personal?" Because the leg that
+  // asked the receipt question was a chain: it opened at 07:53 and, with his
+  // midday drives not resolving, ran to the first saved place it could find,
+  // Neenans at 13:30. The card honestly said Neenans Co; Personal then took the
+  // chain's miles and dismissed the chain's own two rows, which were the 07:53
+  // drive and the 08:00 stop. Four hours of work off the books for a receipt
+  // question about an afternoon errand.
+  test.describe('a collapsed chain never asks for a receipt', () => {
+    const YARD = { id: 'p-shop', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106 };
+    const STORE = { id: 'p-supply', kind: 'supply', name: 'Neenans Co', placeId: 9,
+      lat: 39.0106029, lng: -95.6811282 };
+    const LOT = { lat: 39.0444552, lng: -95.7129016 };   // unsaved, 768 ft off the yard
+    const F = [YARD, STORE];
+    const rows = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      return geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })
+        .td_mileage.map(m => ({ id: m.id, to: m.to_name || m.to, collapsed: m.collapsedStops || 0,
+          held: !!m.pendingReceipt, key: m.supplyRunKey || null }));
+    }, inp);
+
+    // Yard, an unsaved stop, then on to the store: one chain, keyed by the
+    // FIRST journey, ending at a supply house.
+    const chained = base({
+      fences: F,
+      tape: [mo(T(7, 30), 'onFoot'), mo(T(7, 53), 'automotive'), mo(T(8, 0), 'onFoot'),
+             mo(T(12, 23), 'automotive'), mo(T(13, 30), 'onFoot')],
+      fixes: [fix(T(7, 40), YARD), fix(T(7, 50), YARD),
+              fix(T(8, 5), LOT), fix(T(9, 0), LOT), fix(T(11, 0), LOT), fix(T(12, 20), LOT),
+              fix(T(13, 35), STORE), fix(T(13, 50), STORE), fix(T(14, 5), STORE)],
+      nowMs: T(16, 0),
+    });
+    // The same run standing on its own: yard straight to the store.
+    const direct = base({
+      fences: F,
+      tape: [mo(T(12, 0), 'onFoot'), mo(T(12, 23), 'automotive'), mo(T(13, 30), 'onFoot')],
+      fixes: [fix(T(12, 10), YARD), fix(T(12, 20), YARD),
+              fix(T(13, 35), STORE), fix(T(13, 50), STORE), fix(T(14, 5), STORE)],
+      nowMs: T(16, 0),
+    });
+
+    test('the chain that swallowed the morning asks nothing', async () => {
+      const r = await rows(chained);
+      const held = r.filter(m => m.held);
+      expect(held.length, 'no receipt card, because there is no honest answer').toBe(0);
+      expect(r.some(m => m.collapsed > 0), 'and it really is a chain').toBe(true);
+    });
+
+    test('a real run to the store still asks', async () => {
+      const r = await rows(direct);
+      const held = r.filter(m => m.held);
+      expect(held.length, 'this one IS the trip to the store').toBe(1);
+      expect(held[0].collapsed).toBe(0);
+      expect(held[0].key).toContain('Neenans Co');
+    });
+
+    test('no chain carries a supply key for an answer to land on', async () => {
+      const r = await rows(chained);
+      expect(r.every(m => m.key === null), 'nothing for the card to group, so nothing to answer').toBe(true);
     });
   });
 

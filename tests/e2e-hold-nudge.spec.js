@@ -344,6 +344,58 @@ test.describe('Needs an answer: the nudge', () => {
       expect(r.fetchSrc).toContain('client_key');
     });
 
+    // ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-18) ──────────────
+    // "how do we have personal rows and neenans going to a fucking onsite
+    // versus supply house..?" His Neenans run was marked Personal on the
+    // supply-receipt door at 16:54, and the rows answered Working at 17:01.
+    // The two doors never spoke, so the trip finished the day personal in
+    // mileage and paid work on the timesheet: one trip, two stories.
+    test('answering a row Working takes the mileage leg off personal', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast, ml: window.mileage };
+        window._supa = { rpc: async () => ({ error: null }) }; window._supaUser = { id: 'me' }; window.showToast = () => {};
+        window.mileage = [
+          { id: 'j-neenans', gps: true, date: '2026-09-18', miles: 4.5, personal: true },
+          { id: 'j-other', gps: true, date: '2026-09-18', miles: 9, personal: true },
+        ];
+        try {
+          _visitHoldCache = { at: Date.now(), rows: [{ id: 'v9', arrived_at: '2026-09-18T18:30:37Z',
+            minutes: 15, dest_place: 'Neenans Co', job_id: null, client_key: 'd-j-neenans' }], uid: 'me' };
+          await _visitHoldAnswer('v9', 'working');
+          return mileage.map(m => [m.id, !!m.personal, !!m.noReceipt]);
+        } finally { window._supa = saved.supa; window._supaUser = saved.user;
+          window.showToast = saved.toast; window.mileage = saved.ml;
+          _visitHoldCache = { at: 0, rows: [], uid: null }; }
+      });
+      expect(r[0], 'the answered trip: personal off, receipt question still answered')
+        .toEqual(['j-neenans', false, true]);
+      expect(r[1], 'and nothing else is touched').toEqual(['j-other', true, false]);
+    });
+
+    test('answering Personal leaves the mileage exactly as it was', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast, ml: window.mileage };
+        window._supa = { rpc: async () => ({ error: null }) }; window._supaUser = { id: 'me' }; window.showToast = () => {};
+        window.mileage = [{ id: 'j-neenans', gps: true, date: '2026-09-18', miles: 4.5, personal: true }];
+        try {
+          _visitHoldCache = { at: Date.now(), rows: [{ id: 'v9', arrived_at: '2026-09-18T18:30:37Z',
+            minutes: 15, dest_place: 'Neenans Co', job_id: null, client_key: 'd-j-neenans' }], uid: 'me' };
+          await _visitHoldAnswer('v9', 'personal');
+          return mileage.map(m => [m.id, !!m.personal]);
+        } finally { window._supa = saved.supa; window._supaUser = saved.user;
+          window.showToast = saved.toast; window.mileage = saved.ml;
+          _visitHoldCache = { at: 0, rows: [], uid: null }; }
+      });
+      expect(r[0]).toEqual(['j-neenans', true]);
+    });
+
+    test('the leg key is found from the drive row too, not just the dwell', async () => {
+      const r = await page.evaluate(() =>
+        [_visitAnswerUnpersonal(null), _visitAnswerUnpersonal(''), _visitAnswerUnpersonal('d-'),
+         _visitAnswerUnpersonal('j-nothing-here')]);
+      expect(r, 'junk and misses cost nothing and never throw').toEqual([0, 0, 0, 0]);
+    });
+
     test('the 7-day sweep answers too', async () => {
       await page.evaluate(() => {
         const old = dateKey(new Date(Date.now() - 9 * 86400000));

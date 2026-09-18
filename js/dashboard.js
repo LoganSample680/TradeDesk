@@ -444,6 +444,27 @@ function _paintDashVisitHold(el,rows){
         '</div>').join('');
   _dashHoldSync();
 }
+// The mileage half of the answer above. A time row's client_key is the leg's
+// id ('j-...') or that leg's dwell ('d-j-...'), so one strip of the 'd-' finds
+// the leg either way. Nothing is invented here: it only ever takes a personal
+// flag OFF, and only for the leg the answered row belongs to.
+function _visitAnswerUnpersonal(key){
+  try{
+    const leg=String(key||'').replace(/^d-/,'');
+    if(!leg||!Array.isArray(window.mileage))return 0;
+    let n=0;
+    mileage.forEach(m=>{
+      if(!m||!m.personal)return;
+      if(String(m.id)!==leg&&String(m.supplyRunKey||'')!==leg)return;
+      delete m.personal;m.noReceipt=true;n++;
+    });
+    if(n){
+      if(typeof saveAll==='function')saveAll();
+      try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}
+    }
+    return n;
+  }catch(_e){return 0;}
+}
 async function _visitHoldAnswer(id,mode){
   const m=(mode==='working')?'working':'personal';
   const row=(_visitHoldCache.rows||[]).find(r=>r&&String(r.id)===String(id))||null;
@@ -454,6 +475,22 @@ async function _visitHoldAnswer(id,mode){
   try{
     if(window._supa){const{error}=await _supa.rpc('geo_answer_visit',{p_id:String(id),p_mode:m});
       if(error)throw error;}
+    // ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-18) ───────────────
+    // "how do we have personal rows and neenans going to a fucking onsite"
+    //
+    // The mileage half of a trip has its own door (resolveSupplyRun, and its
+    // 'unpersonal' way back), and this one never spoke to it. So his Neenans
+    // run ended the day marked personal in mileage and, after he answered the
+    // rows Working, paid work on the timesheet: one trip, two stories, which
+    // is the exact thing the 2026-09-16 note says was fixed for the other
+    // door and was only ever fixed in that direction.
+    //
+    // Answering a row Working clears the matching leg's personal flag, the
+    // same way resolveSupplyRun('unpersonal') does, and leaves noReceipt set
+    // because he has still answered the receipt question. Local and immediate:
+    // the row is already gone off the card, and the mileage must not disagree
+    // with it for as long as a round trip to the server.
+    if(m==='working'&&row&&row.client_key)_visitAnswerUnpersonal(String(row.client_key));
     if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🏠');
     try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered(row&&row.client_key);}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
