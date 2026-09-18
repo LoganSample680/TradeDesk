@@ -83,6 +83,49 @@ export function daysToDerive(evs, nowMs) {
 // LAST KNOWN position, which after a wake can be a mile stale, and one of those
 // in the trace once read a 3-mile drive as 6.1.
 const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out"];
+
+// ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ──────
+// The twin of the guard in _geoFixLogPush (js/geo-track.js), and it has to
+// exist on BOTH sides: that one protects the phone's own log, this one is what
+// the ops portal's Rebuild button derives from, and the rebuild is exactly the
+// moment somebody has decided a day is wrong and wants it done again.
+//
+// Jack's 18 September: one fix taken at 07:39:07 while he stood in the shop,
+//
+//     39.04565625037153, -95.71510278822348
+//
+// arrived FIFTEEN times out of his thirty-seven, the last at 12:42, hours after
+// he had parked 767 ft away. Identical to fourteen decimal places every time,
+// which two real fixes never are: even a parked phone's consecutive readings
+// differ in the low bits. It is one CLLocation handed out again on every wake,
+// and TdGeoPlugin's event() stamps ts with Date() and drops the location's own
+// timestamp, so nothing downstream can see its age.
+//
+// Narrow on purpose, and the phone's version learned this the hard way from two
+// tests: a phone parked somewhere all morning reports the same place over and
+// over and those repeats are real evidence, both of coverage and of not having
+// left. So the rule is only a coordinate that comes back AFTER the phone has
+// been seen somewhere else. Standing still and saying so twice is honest.
+const REPLAY_MS = 2 * 3600_000;
+const REPLAY_SCAN = 400;
+function dropReplayedFixes(sorted) {
+  const kept = [];
+  for (const f of sorted) {
+    const last = kept[kept.length - 1];
+    if (last && (last.lat !== f.lat || last.lng !== f.lng)) {
+      const cut = f.ts - REPLAY_MS;
+      let replay = false;
+      for (let i = kept.length - 1, seen = 0; i >= 0 && seen < REPLAY_SCAN; i--, seen++) {
+        const k = kept[i];
+        if (!(k.ts >= cut)) break;
+        if (k.lat === f.lat && k.lng === f.lng) { replay = true; break; }
+      }
+      if (replay) continue;
+    }
+    kept.push(f);
+  }
+  return kept;
+}
 const PAGE = 1000, MAX_PAGES = 12;
 
 async function pageAll(build) {
@@ -225,6 +268,12 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     }
   }
   fixes.sort((a, b2) => a.ts - b2.ts);
+  // After the sort, because a replay is only recognisable in time order.
+  const fixesSeen = fixes.length;
+  const liveFixes = dropReplayedFixes(fixes);
+  const fixesDropped = fixesSeen - liveFixes.length;
+  fixes.length = 0;
+  for (const f of liveFixes) fixes.push(f);
   tape.sort((a, b2) => a.ts - b2.ts);
   appEvents.sort((a, b2) => a.ts - b2.ts);
   regions.sort((a, b2) => a.ts - b2.ts);
@@ -395,13 +444,13 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     : null;
 
   const resolvedAny = !!(res.legs.length || res.dwells.length || res.pending || res.open);
-  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard };
+  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard, fixesSeen, fixesDropped };
 
   const rows = geoDeriveRows(res, { contractorId: cid, employeeId: uid, shared: false, clocks });
   const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length;
   // Nothing to add, and this call may never retire: a write would be a no-op
   // with a round trip attached.
-  if (nothing) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard };
+  if (nothing) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard, fixesSeen, fixesDropped };
 
   // Before the write, not after: geo_replace_day is the only writer and a
   // second pass to correct a number it just stored would be the reconciler
@@ -415,7 +464,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     p_time: withOpen(rows, "job_time_entries"), p_shop: withOpen(rows, "shop_time_entries"), p_miles: rows.td_mileage,
     p_sweep: sweep,
   });
-  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard };
+  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard, fixesSeen, fixesDropped };
 
   return {
     day, wrote: true, open: openCard,
@@ -430,5 +479,9 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // no-answer guard above there are two, and the owner was handed the wrong
     // one on Jack's morning (2026-09-18).
     sweep, sweepAsked: wantSweep, tapeCovers, pending: !!res.pending,
+    // How much of the evidence was one CLLocation pretending to be many. Worth
+    // saying: on Jack's day it was 15 of 37, and a rebuild that silently ate
+    // them is how the wrong answer kept being confirmed.
+    fixesSeen, fixesDropped,
   };
 }

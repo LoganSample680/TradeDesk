@@ -335,3 +335,74 @@ test.describe('an un-swept rebuild reports WHICH guard stopped it', () => {
     expect(r.sweep).toBe(true);
   });
 });
+
+
+// ── A CACHED FIX RE-SENT IS NOT A NEW FIX, SERVER SIDE (owner 2026-09-18) ───
+// The twin of the guard in _geoFixLogPush, and it has to exist on both sides:
+// that one protects the phone's own log, this is what the ops portal's Rebuild
+// button derives from, and a rebuild is exactly when somebody has decided a day
+// is wrong and wants it done again.
+//
+// Jack's real numbers: one fix taken at 07:39:07 while he stood in the shop
+// arrived FIFTEEN times out of thirty-seven, the last at 12:42, hours after he
+// had parked 767 ft away, identical to fourteen decimal places every time.
+test.describe('the server drops a replayed cached fix', () => {
+  const SHOP_CACHED = { lat: 39.04565625037153, lon: -95.71510278822348 };
+  const LOT = { lat: 39.04445524882554, lon: -95.7129015768892 };
+
+  // His shape: real fixes at the shop, he drives off, and the cached shop
+  // coordinate keeps arriving all morning while he sits in a car park.
+  const jackish = (rows) => ({ ...TABLES, location_pings: [],
+    geo_events: TABLES.geo_events.filter((e) => e.type !== 'fix').concat(rows) });
+  const fixAt = (h, m, at) => ({ ts: iso(at(h, m)), type: 'fix', kind: null,
+    lat: at === null ? null : undefined, lon: undefined });
+
+  const run = async (fixRows) => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(jackish(fixRows), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    return r;
+  };
+  const F = (h, m, p) => ({ ts: iso(at(h, m)), type: 'fix', kind: null, lat: p.lat, lon: p.lon });
+
+  test('fifteen arrivals of one coordinate count once', async () => {
+    const rows = [F(7, 39, SHOP_CACHED), F(7, 58, LOT)];
+    for (const h of [8, 9, 10, 11, 12]) { rows.push(F(h, 4, SHOP_CACHED)); rows.push(F(h, 30, LOT)); }
+    const r = await run(rows);
+    expect(r.fixesSeen).toBe(12);
+    // FOUR, not five, and the one that gets through is the window working
+    // rather than failing. 8:04 and 9:04 are inside two hours of the real
+    // 7:39 reading and are dropped; by 10:04 that reading has aged out, so
+    // that replay is kept and becomes the new anchor, which then catches
+    // 11:04 and 12:04. A cached value that survives two hours of being the
+    // only thing said about a place has earned the benefit of the doubt.
+    expect(r.fixesDropped).toBe(4);
+  });
+
+  test('a phone that never moved keeps every reading: that is not a replay', async () => {
+    const rows = [];
+    for (let i = 0; i < 12; i++) rows.push(F(8 + Math.floor(i / 2), (i % 2) * 30, SHOP_CACHED));
+    const r = await run(rows);
+    expect(r.fixesDropped, 'standing still and saying so twelve times is honest').toBe(0);
+  });
+
+  test('a genuinely different reading at the same place is kept', async () => {
+    const r = await run([
+      F(7, 39, SHOP_CACHED), F(7, 58, LOT),
+      F(9, 30, { lat: 39.045656251, lon: -95.715102789 }),   // really back, really measured
+    ]);
+    expect(r.fixesDropped).toBe(0);
+  });
+
+  test('past the two-hour window it is allowed through again', async () => {
+    const r = await run([F(6, 0, SHOP_CACHED), F(6, 5, LOT), F(9, 0, SHOP_CACHED)]);
+    expect(r.fixesDropped).toBe(0);
+  });
+
+  test('a clean day reports the count and drops nothing', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const r = await deriveDayServer(fakeSvc(TABLES, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.fixesDropped).toBe(0);
+    expect(r.fixesSeen).toBeGreaterThan(0);
+  });
+});
