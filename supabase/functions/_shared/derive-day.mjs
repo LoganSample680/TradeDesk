@@ -356,7 +356,25 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   // tapeCovers is the one computed above for the no-evidence guard, which asks
   // the same question for the same reason and must not be asked twice in two
   // ways.
-  const sweep = wantSweep && tapeCovers;
+  // ── AND NO ANSWER, NO SWEEP (owner 2026-09-18, on Jack) ──────────────────
+  // The phone's twin of this line grew the same third term on the same day,
+  // and the two must not drift. Jack's morning: rule 14 wrote a traced leg
+  // from the shop to an unsaved end at 08:11:03, exactly the row that carries
+  // the Save this address path. He moved the truck at 08:27:07, and the derive
+  // eight seconds after the tape flipped back to still found the chain's last
+  // journey still OPEN. Rule 14 correctly withheld the leg, the withheld set
+  // went to geo_replace_day with the sweep on, and the RPC retired the good row
+  // and its drive. An hour of his morning became nothing.
+  //
+  // It matters MORE here than on the phone: this is the rebuild path, a person
+  // pressed a button, and wantSweep defaults to true. Pressing Rebuild on a day
+  // somebody is still driving would repeat the deletion on demand.
+  //
+  // Withholding a row must never mean deleting it (CLAUDE.md 17: unresolved
+  // writes nothing, which is not the same as unresolved erases something). The
+  // rebuild still WRITES what it resolved; it just retires nothing until the
+  // day has an answer. Press it again once they park.
+  const sweep = wantSweep && tapeCovers && !res.pending;
 
   // MISSING EVIDENCE IS NOT AN EMPTY DAY, the second half of it: drives that
   // are plainly on the tape and resolve to nowhere at all mean the fixes have
