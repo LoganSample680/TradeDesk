@@ -4422,6 +4422,115 @@ test.describe('geo-derive: the day deriver', () => {
   // 295, 295, 300, 250 parked for an hour. The parked fixes agree with each
   // other to within five feet. It is a different house about 295 ft up the
   // street, and the old 600 ft circle made her the only name in range.
+  // ── THE ARRIVAL IS A FACT THE MOMENT IT HAPPENS (owner 2026-09-18) ──────
+  //
+  // "I just want all the mileage and time sheets to show in real time server
+  // side, arrivals on site, current time on site and when you drive and leave."
+  //
+  // A dwell used to become a row only once it had both ends, so a man four
+  // hours into a job had no row and the timesheet ran one event behind the
+  // truck. geoDeriveRows now also returns the OPEN dwell, with the two fields
+  // it genuinely does not have left null.
+  test.describe('the open dwell is a row shape, not a thing thrown away', () => {
+    // On site since 08:20, nowhere near leaving. The day is clocked so rule 13
+    // vouches for the visit and the test is about the open row, not about held.
+    const ONSITE = {
+      tape: [mo(T(8, 0), 'automotive'), mo(T(8, 20), 'onFoot')],
+      fixes: [fix(T(7, 59), { lat: SHOP.lat, lng: SHOP.lng }),
+        fix(T(8, 20, 5), { lat: DOE.lat, lng: DOE.lng }),
+        fix(T(9, 30), { lat: DOE.lat, lng: DOE.lng }),
+        fix(T(10, 30), { lat: DOE.lat, lng: DOE.lng })],
+      clocks: [{ start: T(7, 0), end: T(17, 0) }],
+    };
+    const rowsAt = (nowMs) => page.evaluate((inp) => {
+      const r = geoDeriveDay(inp);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e', clocks: inp.clocks });
+      return JSON.parse(JSON.stringify({
+        open: rows.open, closed: rows.job_time_entries.filter(x => x.source !== 'drive'),
+        counts: r.open ? r.open.counts : null,
+      }));
+    }, base(Object.assign({}, ONSITE, { nowMs })));
+
+    test('four hours into a job there is a row, and it says when he arrived', async () => {
+      const r = await rowsAt(T(12, 30));
+      expect(r.open.length).toBe(1);
+      expect(r.open[0].arrived_at).toBe(new Date(T(8, 20)).toISOString());
+      expect(r.open[0]._table).toBe('job_time_entries');
+      expect(r.open[0].source).toBe('open');
+    });
+
+    test('the two fields it does not have are null, never zero and never a guess', async () => {
+      // A zero would read as "he was here and it was worth nothing", and a
+      // minutes-to-now would be the reader inventing an end, which CLAUDE.md
+      // 17 bans outright.
+      const r = await rowsAt(T(12, 30));
+      expect(r.open[0].departed_at).toBeNull();
+      expect(r.open[0].minutes).toBeNull();
+    });
+
+    test('it carries the same key the closed row will carry, so closing replaces it', async () => {
+      // The whole reason this is safe: the id is minted from the CoreMotion
+      // flip, so the open row and the row it becomes are the same row.
+      const openKey = (await rowsAt(T(12, 30))).open[0].client_key;
+      const closed = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e', clocks: inp.clocks });
+        return JSON.parse(JSON.stringify(rows.job_time_entries.filter(x => x.source !== 'drive')));
+      }, base(Object.assign({}, ONSITE, {
+        tape: ONSITE.tape.concat([mo(T(12, 40), 'automotive')]),
+        fixes: ONSITE.fixes.concat([fix(T(12, 50), { lat: SHOP.lat, lng: SHOP.lng })]),
+        nowMs: T(14, 0),
+      })));
+      const same = closed.find(c => c.client_key === openKey);
+      expect(same, 'the closed row must carry the open row key').toBeTruthy();
+      expect(same.departed_at).toBeTruthy();
+      expect(Number(same.minutes)).toBeGreaterThan(0);
+    });
+
+    test('once it closes there is no open row left behind', async () => {
+      const r = await page.evaluate((inp) => {
+        const rows = geoDeriveRows(geoDeriveDay(inp), { contractorId: 'c', employeeId: 'e', clocks: inp.clocks });
+        return JSON.parse(JSON.stringify(rows.open));
+      }, base(Object.assign({}, ONSITE, {
+        tape: ONSITE.tape.concat([mo(T(12, 40), 'automotive')]),
+        fixes: ONSITE.fixes.concat([fix(T(12, 50), { lat: SHOP.lat, lng: SHOP.lng })]),
+        nowMs: T(14, 0),
+      })));
+      // Standing at the shop is itself an open dwell, so the assertion is that
+      // no row still points at John Doe, not that the array is empty.
+      expect(r.filter(x => x.dest_place === 'John Doe').length).toBe(0);
+    });
+
+    test('a kitchen is on the map and not on the clock', async () => {
+      // _gdOpenCounts already answers "would this bill if it closed now", and
+      // this reuses that judgement rather than making a second one. His own
+      // house: present, reported, and no row.
+      const r = await page.evaluate((inp) => {
+        const d = geoDeriveDay(inp);
+        const rows = geoDeriveRows(d, { contractorId: 'c', employeeId: 'e' });
+        return JSON.parse(JSON.stringify({ open: rows.open, there: !!d.open, counts: d.open ? d.open.counts : null }));
+      }, base({
+        tape: [mo(T(18, 0), 'automotive'), mo(T(18, 20), 'onFoot')],
+        fixes: [fix(T(17, 59), { lat: DOE.lat, lng: DOE.lng }),
+          fix(T(18, 20, 5), { lat: HOME.lat, lng: HOME.lng }),
+          fix(T(19, 30), { lat: HOME.lat, lng: HOME.lng })],
+        nowMs: T(20, 0),
+      }));
+      expect(r.open.length, 'a man in his own kitchen must not get a time row').toBe(0);
+    });
+
+    test('nothing is returned for a day with nobody anywhere, and no caller breaks', async () => {
+      const r = await page.evaluate(() => {
+        const rows = geoDeriveRows({ dwells: [], legs: [], open: null }, { contractorId: 'c', employeeId: 'e' });
+        const bare = geoDeriveRows({}, { contractorId: 'c', employeeId: 'e' });
+        const nully = geoDeriveRows(null, { contractorId: 'c', employeeId: 'e' });
+        return { a: rows.open.length, b: bare.open.length, c: nully.open.length,
+          stillHas: Array.isArray(rows.job_time_entries) && Array.isArray(rows.td_mileage) };
+      });
+      expect(r).toEqual({ a: 0, b: 0, c: 0, stillHas: true });
+    });
+  });
+
   // ── THE SAME DAY, TOLD IN INSTALMENTS (owner 2026-09-18) ────────────────
   //
   // "I want to know that we won't eat rows or miss mileage or miss how

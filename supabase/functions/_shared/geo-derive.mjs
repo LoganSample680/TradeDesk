@@ -3292,7 +3292,51 @@ function geoDeriveRows(result, ids) {
   // `held` is the spans this account declined, so the caller can say so
   // rather than the day quietly coming up short. Never written anywhere: the
   // whole point is that this account has no standing to write them.
-  return { job_time_entries: time, shop_time_entries: shop, td_mileage: miles, held };
+  // ── THE ARRIVAL IS A FACT THE MOMENT IT HAPPENS (owner 2026-09-18) ────────
+  // "I just want all the mileage and time sheets to show in real time server
+  // side, arrivals on site, current time on site and when you drive and leave."
+  //
+  // Until now a dwell became a row only once it had BOTH ends, so a man four
+  // hours into a job had no row at all and the timesheet ran permanently one
+  // event behind the truck. That was never a rule about what is true, only
+  // about what got stored: the deriver has always known who is on site and
+  // since when (`result.open`), and has always thrown it away at this line.
+  //
+  // So the open dwell gets a row shaped exactly like the closed one, with the
+  // two fields it genuinely does not have left NULL. A reader shows it as
+  // running rather than as a number, which is the same call the yard row takes
+  // (CLAUDE.md 18.2, and the owner's "show it, marked not final").
+  //
+  // It is returned SEPARATELY rather than pushed into job_time_entries, and
+  // that is deliberate: geo_replace_day's overlap invariant builds a tstzrange
+  // per row, and an unbounded upper bound overlaps everything after it. The
+  // writer has to opt in knowingly. Until it does, this array is the shape
+  // waiting for it and changes nothing for any existing caller.
+  //
+  // `counts` is the deriver's own answer to "would this bill if it closed
+  // now" (_gdOpenCounts). A man standing in his own kitchen is on the map and
+  // is not on the clock, and this reuses that judgement rather than making a
+  // second one.
+  const open = [];
+  const _o = result && result.open;
+  if (_o && _o.counts !== false && Number(_o.startTs || _o.sinceTs) > 0) {
+    const _of = _o.fence || {};
+    const _oid = _o.id || (_o.journeyId != null ? 'd-' + String(_o.journeyId) : null);
+    if (_oid) {
+      const _orow = { contractor_user_id: cid, employee_user_id: uid,
+        arrived_at: iso(Number(_o.startTs || _o.sinceTs)),
+        departed_at: null, minutes: null, client_key: String(_oid) };
+      if (String(_o.kind) === 'shop') open.push(Object.assign(_orow, { _table: 'shop_time_entries' }));
+      else open.push(Object.assign(_orow, {
+        _table: 'job_time_entries',
+        job_id: _of.jobId != null ? String(_of.jobId) : null,
+        dest_place: _of.jobId != null ? null : (_o.name || null),
+        source: 'open',
+      }));
+    }
+  }
+
+  return { job_time_entries: time, shop_time_entries: shop, td_mileage: miles, held, open };
 }
 
 export { geoDeriveDay, geoDeriveRows, geoFenceAt, geoSpanClaim };
