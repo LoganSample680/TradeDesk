@@ -3229,3 +3229,107 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
 
   test('no console errors', async () => { await assertNoErrors(page); });
 });
+
+// ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ──────
+// He left the shop at 07:53:31 and parked 767 ft away, and all morning the day
+// kept planting him back at the shop. One fix, taken at 07:39:07 while he was
+// genuinely standing there, was uploaded NINE times, the last at 08:26:45,
+// each with a fresh ts and identical to fourteen decimal places. That is the
+// plugin's cached CLLocation going out again on every wake: TdGeoPlugin's
+// event() stamps ts with Date() and drops the CLLocation's own timestamp, and
+// fixAgeMs rides only on motion rows, so a `fix` carries no age at all. `fix`
+// is the one type _GEO_FRESH_FIX_TYPES trusts as a current position.
+test.describe('a cached fix re-sent is not a new fix', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // His real numbers, to the decimal place they actually arrived with.
+  const SHOP_CACHED = [39.04565625037153, -95.71510278822348];
+  const SHOP_REAL = [39.04573522081296, -95.71489730040652];
+  const LOT = [39.04445524882554, -95.7129015768892];
+
+  const run = (pushes) => page.evaluate((list) => {
+    localStorage.removeItem('zp3_geo_fixlog');
+    list.forEach(([ts, lat, lng]) => _geoFixLogPush(ts, lat, lng, 10));
+    return _geoFixLogRead().map(f => [f.ts, f.lat, f.lng]);
+  }, pushes);
+
+  const T = (h, m, s) => Date.parse('2026-09-18T05:00:00Z') + ((h * 60 + m) * 60 + (s || 0)) * 1000;
+
+  test("Jack's morning: the shop fix is recorded once, at the time it was true", async () => {
+    const log = await run([
+      [T(7, 39, 7), ...SHOP_CACHED],     // real, he is standing in the shop
+      [T(7, 48, 22), ...SHOP_REAL],      // real, still there, a different fix
+      [T(7, 58, 19), ...LOT],            // real, he has parked 767 ft away
+      [T(7, 58, 19), ...SHOP_CACHED],    // the replay
+      [T(8, 4, 55), ...SHOP_CACHED],     // and again
+      [T(8, 11, 1), ...SHOP_CACHED],     // and again
+      [T(8, 26, 45), ...SHOP_CACHED],    // and again, 47 minutes after it was true
+    ]);
+    expect(log.filter(f => f[1] === SHOP_CACHED[0]).length, 'once, not five times').toBe(1);
+    expect(log[0][0]).toBe(T(7, 39, 7));
+    expect(log[log.length - 1], 'the last thing known is the car park').toEqual([T(7, 58, 19), ...LOT]);
+  });
+
+  // The qualifier that makes this safe, and the one two existing tests caught
+  // the first cut on: standing still and saying so repeatedly is honest.
+  test('a parked phone repeating itself keeps every report: that is coverage', async () => {
+    const pushes = [];
+    for (let i = 0; i < 30; i++) pushes.push([T(9, 0) + i * 60000, ...SHOP_CACHED]);
+    const log = await run(pushes);
+    expect(log.length).toBe(30);
+  });
+
+  test('going away and genuinely coming back still records the return', async () => {
+    // A real fix back at the shop is a NEW fix, so it differs in the low bits
+    // and is nothing like the cached one.
+    const log = await run([
+      [T(7, 39, 7), ...SHOP_CACHED],
+      [T(7, 58, 19), ...LOT],
+      [T(9, 30, 0), 39.045656251, -95.715102789],   // really back, really measured
+    ]);
+    expect(log.length).toBe(3);
+    expect(log[2][1]).toBe(39.045656251);
+  });
+
+  test('past the replay window it is allowed through again', async () => {
+    const log = await run([
+      [T(6, 0, 0), ...SHOP_CACHED],
+      [T(6, 5, 0), ...LOT],
+      [T(8, 30, 0), ...SHOP_CACHED],   // two and a half hours later, out of the window
+    ]);
+    expect(log.length).toBe(3);
+  });
+
+  test('the very same fix twice in a row is still one entry', async () => {
+    const log = await run([[T(7, 39, 7), ...SHOP_CACHED], [T(7, 39, 7), ...SHOP_CACHED]]);
+    expect(log.length).toBe(1);
+  });
+
+  test('an empty log takes the first fix whatever it is', async () => {
+    const log = await run([[T(7, 39, 7), ...SHOP_CACHED]]);
+    expect(log).toEqual([[T(7, 39, 7), ...SHOP_CACHED]]);
+  });
+
+  test('junk never throws and never lands', async () => {
+    const r = await page.evaluate(() => {
+      localStorage.removeItem('zp3_geo_fixlog');
+      const out = [];
+      for (const bad of [[0, 1, 2], [NaN, 1, 2], [1e12, NaN, 2], [1e12, 1, NaN], [null, null, null]]) {
+        try { _geoFixLogPush(bad[0], bad[1], bad[2], 5); out.push('ok'); } catch (e) { out.push('THREW'); }
+      }
+      return { out, len: _geoFixLogRead().length };
+    });
+    expect(r.out.every(x => x === 'ok')).toBe(true);
+    expect(r.len).toBe(0);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});

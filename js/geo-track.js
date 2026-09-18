@@ -7201,6 +7201,12 @@ try{
 const _GEO_DERIVER_WRITES=true;
 const _GEO_FIXLOG_KEY='zp3_geo_fixlog';
 const _GEO_FIXLOG_MAX=6000;
+// How far back a re-sent cached fix is still recognisable as the same fix, and
+// how many entries that scan may read. Jack's replay spanned 47 minutes
+// (07:39:07 to 08:26:45), so an hour would have been a near miss; two gives it
+// room without ever reaching yesterday. See the note in _geoFixLogPush.
+const _GEO_FIX_REPLAY_MS=2*60*60*1000;
+const _GEO_FIX_REPLAY_SCAN=400;
 const _GEO_FIXLOG_KEEP_MS=8*86400000;
 const _GEO_DERIVE_DAYS=7;
 
@@ -7292,7 +7298,56 @@ function _geoFixLogPush(ts,lat,lng,acc){
     const t=Number(ts),la=Number(lat),ln=Number(lng);
     if(!(t>0)||!isFinite(la)||!isFinite(ln))return;
     const a=_geoFixLogRead();
+    // ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ───
+    // He left the shop at 07:53 and parked 767 ft away. All morning the day
+    // kept planting him back at the shop, and this is why: ONE fix, taken at
+    // 07:39:07 while he was genuinely standing there,
+    //
+    //     39.04565625037153, -95.71510278822348
+    //
+    // was uploaded NINE times, the last at 08:26:45, each with a fresh ts.
+    // Identical to fourteen decimal places every time, which no real GPS fix
+    // ever is: two separate fixes of a parked phone still differ in the low
+    // bits. It is the plugin's cached CLLocation going out again on each wake.
+    //
+    // Nothing downstream could tell. TdGeoPlugin's event() stamps ts with
+    // Date() and drops the CLLocation's own timestamp, and fixAgeMs is only
+    // attached to motion rows, so a `fix` carries no age at all. Meanwhile
+    // `fix` is the one type _GEO_FRESH_FIX_TYPES trusts as a current position,
+    // precisely because it is supposed to be the fresh one. The engine already
+    // distrusts stale coordinates on motion, regionEnter and regionExit; it had
+    // no reason to think a fix could be stale.
+    //
+    // ONLY WHEN THE TRUCK HAS MOVED ON, and that qualifier is load-bearing.
+    // The first cut of this dropped every exact-duplicate coordinate, and two
+    // tests said no: a phone parked somewhere all morning reports the same
+    // place over and over, and those repeats ARE evidence. They are how the
+    // log covers a day (a covered day never asks the server) and how a
+    // departure gets corroborated. Dropping them shrank real coverage.
+    //
+    // The defect is narrower than "a repeated coordinate". It is a coordinate
+    // that comes back AFTER the phone has been seen somewhere else. Standing
+    // still and saying so twice is honest; saying you are at the shop when the
+    // last thing observed was a car park 767 ft away is the cached value
+    // talking. So: only when the most recent known position is a different
+    // place, and this one has been recorded before, is this a replay.
+    //
+    // Two real fixes are never byte-equal, so exact float equality is the test.
+    // Even a parked phone's consecutive fixes differ in the low bits; fourteen
+    // matching decimals is one CLLocation object handed out twice.
+    //
+    // Bounded scan, because the log holds a week: back over the replay window
+    // and no further, and never more than a few hundred entries.
     const last=a[a.length-1];
+    if(last&&(last.lat!==la||last.lng!==ln)){
+      const cut2=t-_GEO_FIX_REPLAY_MS;
+      for(let i=a.length-1,seen=0;i>=0&&seen<_GEO_FIX_REPLAY_SCAN;i--,seen++){
+        const f=a[i];
+        if(!f)continue;
+        if(!(f.ts>=cut2))break;                     // out of the window, and the log is in order
+        if(f.lat===la&&f.lng===ln)return;           // seen here before, and we have moved since
+      }
+    }
     if(last&&last.ts===t&&last.lat===la&&last.lng===ln)return;   // the same fix twice
     a.push({ts:t,lat:la,lng:ln,acc:acc!=null&&isFinite(Number(acc))?Math.round(Number(acc)):null});
     const cut=t-_GEO_FIXLOG_KEEP_MS;

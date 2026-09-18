@@ -739,6 +739,23 @@ $('biz-open').addEventListener('click',()=>{
 // Nothing here can write a row, and nothing here decides what the rows are.
 // It runs the deriver for the person selected in the chips above, so which
 // person it rebuilds is whichever one you were already looking at.
+// WHICH GUARD STOPPED IT, not whichever one was written here first.
+// Until 2026-09-18 there was only ever one reason a rebuild could not retire
+// anything, so this page stated it as a fact. Then the no-answer guard landed
+// (deriveDayServer: a day whose last drive has not closed writes what it
+// resolved and retires nothing), and the page carried on blaming the motion
+// tape. The owner pressed Rebuild on Jack mid-drive and was told the server had
+// no tape for the day, which was not true and sent him looking in the wrong
+// place. The function reports both flags now; this reads them.
+function rbWhyNoSweep(d,brief){
+  if(d&&d.pending) return brief
+    ? 'that day is still mid-drive'
+    : 'Nothing retired: that day is still mid-drive, so nothing can say yet where the truck came to rest. Press it again once they park.';
+  if(d&&d.tapeCovers===false) return brief
+    ? 'no motion tape on the server for that day'
+    : 'Nothing retired: no motion tape covers that day on the server, so it cannot tell a row that should go from one nobody uploaded.';
+  return brief ? 'the sweep was not allowed' : 'Nothing retired: the sweep was not allowed for this day.';
+}
 function rbSay(t,bad){ const el=$('rb-out'); el.textContent=t||'';
   // A range answers with one line per day, so the status has to keep them.
   el.style.whiteSpace='pre-line';
@@ -780,13 +797,12 @@ $('rb-go').addEventListener('click',async()=>{
       // difference is the whole point of pressing this: say which happened.
       return rbSay(d.sweep
         ? ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. Stale rows retired.')
-        : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+
-           'Nothing retired: no motion tape covers that day on the server, so it cannot tell a row that should go from one nobody uploaded.'));
+        : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+rbWhyNoSweep(d)));
     }
     const wrote=got.filter(d=>d&&d.wrote);
     const skipped=got.filter(d=>d&&!d.wrote);
     rbSay(wrote.map(d=>d.day+': '+d.time+' time, '+d.shop+' shop, '+d.miles+' mileage'+
-        (d.sweep?'':' (nothing retired)')).join('\n')+
+        (d.sweep?'':' (nothing retired: '+rbWhyNoSweep(d,true)+')')).join('\n')+
       (skipped.length?('\n'+skipped.map(d=>d.day+': nothing written, '+(d.reason||'no reason given')).join('\n')):''),
       wrote.length===0);
   }catch(e){ rbSay(String((e&&e.message)||e),true); }

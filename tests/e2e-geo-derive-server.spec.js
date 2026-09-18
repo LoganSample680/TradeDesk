@@ -295,3 +295,43 @@ test.describe('the deriver on the server', () => {
     expect(centralDayKey(centralDayBounds(DAY).end - 1)).toBe(DAY);
   });
 });
+
+// The ops portal explains an un-swept rebuild, and until 2026-09-18 there was
+// only one reason it could happen, so the page stated it as a fact. The
+// no-answer guard added a second, and the owner was told the server had no
+// motion tape for Jack's day when it had plenty: the day was simply still
+// mid-drive. The flags have to say which.
+test.describe('an un-swept rebuild reports WHICH guard stopped it', () => {
+  test('mid-drive: pending true, tape present', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const stillDriving = { ...TABLES, geo_events: TABLES.geo_events
+      .filter((e) => !(e.type === 'motion' && e.kind === 'still')) };
+    const r = await deriveDayServer(fakeSvc(stillDriving, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.pending).toBe(true);
+    expect(r.tapeCovers, 'the tape is there: blaming it would be the wrong answer').toBe(true);
+    expect(r.sweep).toBe(false);
+  });
+
+  // Strip the tape entirely and it never reaches a write at all: the
+  // no-evidence guard turns it round first, with a reason and no flags. The
+  // portal prints that reason through its own "Nothing written" branch, so
+  // rbWhyNoSweep is never asked about this case.
+  test('no tape at all: turned round before the write, with a reason', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const noTape = { ...TABLES, geo_events: TABLES.geo_events.filter((e) => e.type !== 'motion') };
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(noTape, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.wrote).toBe(false);
+    expect(typeof r.reason).toBe('string');
+    expect(r.sweep === true).toBe(false);
+    expect(r.pending === true, 'and it must not be blamed on a drive either').toBe(false);
+  });
+
+  test('a clean day reports neither', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const r = await deriveDayServer(fakeSvc(TABLES, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.pending).toBe(false);
+    expect(r.tapeCovers).toBe(true);
+    expect(r.sweep).toBe(true);
+  });
+});

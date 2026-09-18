@@ -424,6 +424,11 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     miles: rows.td_mileage.length, held: rows.held.length, routed,
     // What this call was allowed to do, so a rebuild that could not sweep
     // says so instead of looking like one that did.
-    sweep, sweepAsked: wantSweep, tapeCovers,
+    // pending rides out so the caller can say WHICH guard stopped the sweep.
+    // The ops portal explained every un-swept rebuild as "no motion tape covers
+    // that day", which was the only reason there had ever been; since the
+    // no-answer guard above there are two, and the owner was handed the wrong
+    // one on Jack's morning (2026-09-18).
+    sweep, sweepAsked: wantSweep, tapeCovers, pending: !!res.pending,
   };
 }
