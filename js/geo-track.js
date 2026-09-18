@@ -5725,10 +5725,39 @@ async function _geoTdEvent(ev,replay){
   // Rewinding __tdTs instead would drag every drive clock, park timer and
   // fence stamp backwards with it for one ping, which is a far bigger blast
   // radius for no extra accuracy.
+  // ── A VISIT THAT REPORTS A DEPARTURE PLACES NOBODY (owner 2026-09-18) ────
+  // Jack's morning. He left the shop at 07:53:31 and parked 700 ft away at an
+  // address nobody has saved. At 07:58:19 iOS delivered a CLVisit carrying the
+  // SHOP's coordinates and NO arrival date: that is iOS closing out the stay he
+  // had just ended, not announcing a new one. This engine read the coordinates
+  // as where he was, and opened a shop dwell at 07:58:19, five minutes after he
+  // drove away and overlapping the drive that ran to 08:00:36. The real report
+  // landed at 08:11:01 and said, in its own arrival date, 07:54:01 at the
+  // unsaved spot: thirteen minutes too late, the day was already wrong.
+  //
+  // The rule now: a visit is a PLACEMENT only when it carries an arrival date
+  // this engine can stand behind (the same test the backdate below applies).
+  // Without one, or with a departure date, the report describes a place being
+  // LEFT. It is still a wake, it still counts for the radio log, and it still
+  // says the phone is alive: it just never says where the truck is now.
+  //
+  // Deliberately NOT a fix-log entry either: _GEO_FRESH_FIX_TYPES already
+  // excludes 'visit', so nothing here changes the trace. The only thing that
+  // changes is that these coordinates stop reaching the fence machine.
+  const _vTs=(typeof ev.ts==='number'?ev.ts:Date.now());
+  const _vArr=Number(ev.arrivalTs);
+  const _vUsable=isFinite(_vArr)&&_vArr>0&&_vArr<_vTs&&(_vTs-_vArr)<=_GEO_VISIT_BACKDATE_MAX_MS&&
+    _bizDateStr(new Date(_vArr))===_bizDateStr(new Date(_vTs));
+  if(ev.type==='visit'&&!_vUsable){
+    try{_geoParkNote('visit-departure',(isFinite(_vArr)&&_vArr>0)
+      ?('arrival '+Math.round((_vTs-_vArr)/60000)+'m old, not a placement')
+      :'no arrival date, not a placement');}catch(_e){}
+    return;
+  }
   let _backdated=null;
   if(ev.type==='visit'&&!_geoParkBackdate){
     const a=Number(ev.arrivalTs);
-    const nowMs=(typeof ev.ts==='number'?ev.ts:Date.now());
+    const nowMs=_vTs;
     // Never invent time, and never re-open a visit that is already history:
     // it must be in the PAST, inside the delivery-lag window this exists to
     // close, and on the same Central day (the reconciler's own honesty rule,
