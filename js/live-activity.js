@@ -117,7 +117,23 @@ const _liveWant={};
 // must end the crew phone's CLOCKED IN card, or the lock screen keeps telling
 // them they are on the meter. The drive card stays phone-driven, nothing
 // server-side knows more about a drive than the phone in the truck does.
-const _LIVE_PUSH_CHANNELS={clock:true};
+// ── WHICH CARDS THE SERVER MAY DRIVE ────────────────────────────────────────
+// A card started with push:true gets its own APNs token from ActivityKit,
+// which this file stores server-side (_liveActSaveToken); the server then
+// changes or ends it with the app closed, or on a screen that is not allowed
+// to derive.
+//
+// 'onsite' joined 'clock' on 2026-09-16, and the owner's report is why: "live
+// activities, if I'm in the ops portal it doesn't update live when I go to
+// drive." The on-site card is published at the end of a derive and a derive is
+// refused while a support view is open, so it froze. With a token, the
+// server's own derive keeps it honest (supabase/functions/_shared/live-card.mjs)
+// whatever screen anybody is on.
+//
+// 'drive' is deliberately NOT here. Its value is the running mileage tally,
+// which lives on the phone and nowhere else, so a server push could only ever
+// tell it something it already knows better.
+const _LIVE_PUSH_CHANNELS={clock:true,onsite:true};
 
 // Report a Live Activity outcome to telemetry (analytics_events via
 // ingest-telemetry). console.warn is NOT captured by js/observability.js, only

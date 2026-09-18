@@ -606,6 +606,11 @@ function _scanFtIn(m){
 // td_scans rides the sync fabric like every other account record (§7.3): one
 // _TD_TABLES entry in cloud.js, saveAll persists, sweep/cache/reset for free.
 function getScans(){return (typeof scans!=='undefined'&&scans)||[];}
+// Set while a photo-upload pass is running, so the saveScan that pass performs
+// at the end cannot start another one. Declared above its use rather than
+// below: a `let` read before its declaration executes is a ReferenceError, not
+// an undefined.
+let _scanSavingPhotos=0;
 function saveScan(sc){
   if(!sc)return null;
   if(!sc.id)sc.id=(typeof _newId==='function'?_newId():String(Date.now()));
@@ -615,6 +620,16 @@ function saveScan(sc){
   // The hub snapshot carries this client's scans (locked or unlocked), so any
   // scan change refreshes it; the content hash inside upload dedupes no-ops.
   if(sc.clientId&&typeof _uploadClientHub==='function'){try{_uploadClientHub(sc.clientId).catch(()=>{});}catch(_e){}}
+  // The photos go up too (owner 2026-09-16). Fire and forget: a scan must save
+  // at the speed of a local write whatever the network is doing, and
+  // scanPhotosToHub is idempotent, so the next save retries whatever failed.
+  //
+  // Guarded on _scanSavingPhotos because scanPhotosToHub calls saveScan again
+  // once it has uploaded anything, and without this that second save would
+  // start a third upload pass, and so on.
+  if(sc.clientId&&!_scanSavingPhotos&&typeof scanPhotosToHub==='function'){
+    try{Promise.resolve(scanPhotosToHub(sc.id)).catch(()=>{});}catch(_e){}
+  }
   return sc;
 }
 function deleteScan(id){
@@ -1827,12 +1842,150 @@ function _scanDollhouseSvg(sc){
 // ── Photo walkthrough ────────────────────────────────────────────────────────
 // Photos are device-local files (the client deliverable excludes them by
 // design); the shell serves them through Capacitor's file bridge.
+// ── A ROOM SCAN'S PHOTOS BELONG IN THE CLIENT HUB (owner 2026-09-16) ────────
+//
+// "Scanner photos use receipts but a scanned room could dump it to the photos
+// section in the client hub."
+//
+// Right on both counts. The receipts bucket is private with signed URLs
+// because a receipt is a financial document; a room photo is something the
+// customer is meant to see, and that is the `gallery` bucket the client hub
+// already uses. This does what the before/after card does (js/jobs.js,
+// _shareBeforeAfter): upload to `gallery`, compress, upload a thumb, push a
+// td_photos row, refresh the hub. Same bucket, same helpers, same row shape.
+//
+// WHY THIS IS A CHANGE OF MIND AND NOT A BUG FIX. saveScanResult says it in
+// so many words: "Photos stay device-local paths in v1 (the client deliverable
+// excludes them by design)." That was a real decision. What it did not
+// anticipate is that the path stored is a SANDBOX path:
+//   /var/mobile/Containers/Data/Application/<UUID>/Documents/td_walk_*.jpg
+// and iOS reassigns that <UUID> on every reinstall. So the frames were not
+// merely private to the phone, they were one reinstall from gone, and a second
+// device showed "Re-walk the photos · 60 frames" over 60 broken images. The
+// upload fixes the durability whatever anybody decides about the deliverable.
+
+// Every 4th frame of the walk, capped, because 60 full-size JPEGs per room is
+// four photos of the same corner. The shutter photos a person deliberately
+// took are never thinned.
+const _SCAN_WALK_EVERY=4, _SCAN_WALK_MAX=12;
+
+// The bytes behind a device-local scan path. convertFileSrc is the same
+// converter the viewer already uses, so a path this file can draw is a path it
+// can upload; no native change and no iOS build.
+async function _scanBlobAt(path){
+  try{
+    if(!path)return null;
+    const cap=window.Capacitor;
+    const url=(cap&&typeof cap.convertFileSrc==='function')?cap.convertFileSrc(path):path;
+    const r=await fetch(url);
+    if(!r||!r.ok)return null;
+    const b=await r.blob();
+    return (b&&b.size)?b:null;
+  }catch(_e){return null;}
+}
+
+// One frame: upload, remember the url ON THE FRAME, and add it to the hub.
+//
+// The url is written back onto the scan's own photos[]/walk[] entry as well as
+// into td_photos, and that is deliberate rather than duplication: they answer
+// two different questions. The frame's url is what the RE-WALK viewer falls
+// back to when the local file is gone (the reinstall case); the td_photos row
+// is what the client hub GALLERY lists. One object in storage, two readers.
+async function _scanUploadFrame(sc,fr,kind,idx){
+  try{
+    if(!fr||fr.url)return 'done';                 // already up, idempotent
+    if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supaUser==='undefined'||!_supaUser)return 'offline';
+    const raw=await _scanBlobAt(fr.path);
+    if(!raw)return 'missing';                     // the sandbox path is already dead
+    const cp=(typeof _compressPhoto==='function')?await _compressPhoto(raw,{maxEdge:1600}):null;
+    const body=cp?cp.blob:raw;
+    const path=_supaUser.id+'/'+(sc.clientId||'unfiled')+'/scan-'+sc.id+'-'+kind+'-'+idx+'.jpg';
+    const{error}=await _supa.storage.from('gallery')
+      .upload(path,body,{contentType:'image/jpeg',upsert:true,cacheControl:_PHOTO_CACHE});
+    if(error)return 'failed';
+    const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+    const url=(urlData&&urlData.publicUrl)||'';
+    if(!url)return 'failed';
+    const{thumbUrl,thumbPath}=(typeof _uploadPhotoThumb==='function')
+      ? await _uploadPhotoThumb(cp?cp.thumb:null,path) : {thumbUrl:'',thumbPath:''};
+    fr.url=url; fr.storagePath=path;
+    // The gallery row. scanId/scanKind/scanIdx ride along so a future screen
+    // can group a scan's photos without parsing the storage path.
+    const c=(typeof clients!=='undefined'&&Array.isArray(clients))
+      ? clients.find(x=>String(x.id)===String(sc.clientId)) : null;
+    const room=(kind==='shutter'&&sc.rooms&&sc.rooms[fr.room|0]&&sc.rooms[fr.room|0].label)||'';
+    if(typeof photos!=='undefined'&&Array.isArray(photos)){
+      photos.push({id:Date.now()+Math.random(),url,storagePath:path,thumbUrl,thumbPath,
+        type:'scan',caption:(room||sc.name||'Room scan').slice(0,60),
+        client_id:sc.clientId||'',client_name:c?c.name:'',
+        scanId:String(sc.id),scanKind:kind,scanIdx:idx,
+        uploadedAt:new Date().toISOString()});
+    }
+    return 'uploaded';
+  }catch(_e){return 'failed';}
+}
+
+// Put a scan's photos in the hub. Safe to call twice: a frame that already
+// carries a url is skipped, so a re-run only picks up what failed last time.
+async function scanPhotosToHub(scanId){
+  const out={uploaded:0,skipped:0,missing:0,failed:0};
+  // THE GUARD BELONGS TO THE PASS, NOT TO ITS CALLER. This ends by calling
+  // saveScan so the urls it just wrote are persisted, and saveScan starts a
+  // pass, so holding the flag in saveScan alone left a direct call to this
+  // function re-entering itself through its own save. Held here, every door
+  // into a pass is covered by the same flag.
+  if(_scanSavingPhotos)return out;
+  _scanSavingPhotos=1;
+  try{
+    const sc=getScans().find(x=>String(x.id)===String(scanId));
+    if(!sc)return out;
+    const jobs=[];
+    (sc.photos||[]).forEach((p,i)=>jobs.push([p,'shutter',i]));
+    const walk=(sc.walk||[]);
+    // Thin to every Nth, then cap, so a long walk cannot flood the gallery.
+    const every=Math.max(_SCAN_WALK_EVERY,Math.ceil(walk.length/_SCAN_WALK_MAX)||1);
+    walk.forEach((k,i)=>{if(i%every===0)jobs.push([k,'walk',i]);});
+    for(const [fr,kind,i] of jobs){
+      const r=await _scanUploadFrame(sc,fr,kind,i);
+      if(r==='uploaded')out.uploaded++;
+      else if(r==='done')out.skipped++;
+      else if(r==='missing')out.missing++;
+      else if(r==='failed')out.failed++;
+    }
+    if(out.uploaded){
+      // saveScan already refreshes the client hub snapshot.
+      saveScan(sc);
+    }
+  }catch(_e){}
+  finally{_scanSavingPhotos=0;}
+  return out;
+}
+
 function _scanPhotoSrc(p){
   try{
     const cap=window.Capacitor;
-    if(cap&&typeof cap.convertFileSrc==='function')return cap.convertFileSrc(p.path);
+    // THE LOCAL FILE FIRST. Reading off the disk is instant and costs no
+    // egress, and on the phone that took the scan it is normally there.
+    if(cap&&typeof cap.convertFileSrc==='function'&&p&&p.path)return cap.convertFileSrc(p.path);
   }catch(_e){}
-  return p.path;
+  if(p&&p.url)return p.url;
+  return (p&&p.path)||'';
+}
+// ── AND THE NET UNDERNEATH IT ──────────────────────────────────────────────
+// Preferring the local file is only safe if something catches it when the file
+// is not there, and convertFileSrc cannot tell: it happily returns a URL for a
+// path that died with the last reinstall, and the <img> just renders blank.
+// So the element carries the fallback itself. One swap, then onerror is
+// cleared, so a url that is also broken fails once rather than looping.
+//
+// It works in the other direction too: on a device that never had the file,
+// convertFileSrc returns something unreachable and this swaps to the upload,
+// which is the whole point of uploading them.
+function _scanImgAttrs(p){
+  const q=v=>String(v||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const src=_scanPhotoSrc(p);
+  const url=(p&&p.url)||'';
+  return 'src="'+q(src)+'"'+((url&&url!==src)?(' onerror="this.onerror=null;this.src=&#39;'+q(url)+'&#39;"'):'');
 }
 function _scanOpenPhoto(id,idx){
   const sc=getScans().find(x=>String(x.id)===String(id));
@@ -1843,7 +1996,7 @@ function _scanOpenPhoto(id,idx){
   const ov=document.createElement('div');ov.id='_scan-photo-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
   ov.innerHTML=
-    '<img src="'+_scanPhotoSrc(sc.photos[i]).replace(/"/g,'&quot;')+'" style="max-width:94vw;max-height:74vh;border-radius:10px;object-fit:contain" alt="Scan photo '+(i+1)+'">'+
+    '<img '+_scanImgAttrs(sc.photos[i])+' style="max-width:94vw;max-height:74vh;border-radius:10px;object-fit:contain" alt="Scan photo '+(i+1)+'">'+
     '<div style="display:flex;align-items:center;gap:18px">'+
       '<button onclick="_scanOpenPhoto(\''+id+'\','+(i-1)+')" style="border:none;background:rgba(255,255,255,.16);color:#fff;font-size:20px;width:44px;height:44px;border-radius:22px;cursor:pointer">‹</button>'+
       '<div style="color:#fff;font-size:13px;font-weight:700">'+(i+1)+' of '+n+'</div>'+
@@ -1901,7 +2054,7 @@ function _scanOpenWalk(id,idx,mark){
     :'';
   ov.innerHTML=
     '<div style="position:relative;max-width:94vw;max-height:74vh">'+
-      '<img src="'+_scanPhotoSrc(k).replace(/"/g,'&quot;')+'" style="max-width:94vw;max-height:74vh;border-radius:10px;object-fit:contain;display:block" alt="Walkthrough photo '+(i+1)+'">'+
+      '<img '+_scanImgAttrs(k)+' style="max-width:94vw;max-height:74vh;border-radius:10px;object-fit:contain;display:block" alt="Walkthrough photo '+(i+1)+'">'+
       markHtml+
     '</div>'+
     '<div style="display:flex;align-items:center;gap:18px">'+

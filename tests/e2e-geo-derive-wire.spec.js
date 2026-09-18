@@ -1114,7 +1114,17 @@ test.describe('geo-derive wiring', () => {
       expect(it.args.p_day_end).toBe(new Date(DAY_END).toISOString());
       expect(it.args.p_time.map(x => x.source)).toEqual(['client', 'drive', 'drive']);
       expect(it.args.p_time[0].dest_place).toBe('John Doe');
-      expect(it.args.p_shop).toEqual([]);
+      // ── AMENDED 2026-09-18, and the old assertion was right at the time ──
+      // It read toEqual([]) because an open dwell was never written: a row
+      // needed both of its ends, so this day, which leaves him standing at the
+      // shop, produced no shop row at all. That is exactly the behaviour the
+      // owner asked to end ("arrivals on site, current time on site"), so the
+      // open dwell is a row now, with departed_at and minutes null until he
+      // drives away. One row, unclosed, is the new correct answer here.
+      expect(it.args.p_shop).toHaveLength(1);
+      expect(it.args.p_shop[0].departed_at, 'the open row has no end yet').toBeNull();
+      expect(it.args.p_shop[0].minutes, 'and no minutes, rather than a zero or a guess').toBeNull();
+      expect(it.args.p_shop[0].client_key).toMatch(/^d-j-/);
       expect(it.args.p_miles).toHaveLength(2);
       expect(it.args.p_miles[0].legKey).toBe(it.args.p_time[1].client_key);
     });
@@ -2940,5 +2950,74 @@ test.describe('geo-derive wiring', () => {
 
   test('no console errors across the wiring', async () => {
     assertNoErrors(page, 'geo-derive wiring');
+  });
+});
+
+
+// ── THE OPEN ROW RIDES OUT WITH THE REST (owner 2026-09-18) ────────────────
+//
+// geoDeriveRows returns the open dwell in its own array so a writer has to opt
+// in knowingly. Both writers do it through one helper, and this pins that the
+// phone's copy behaves: a drifted pair here means the phone and the server
+// send different rows for the same day, which is the one thing the shared
+// deriver exists to prevent.
+test.describe('_geoWithOpen: the open dwell reaches the writer', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const call = (rows, tbl) => page.evaluate(([r, t]) => JSON.parse(JSON.stringify(_geoWithOpen(r, t))), [rows, tbl]);
+
+  test('an open row is appended to its own table and nowhere else', async () => {
+    const rows = {
+      job_time_entries: [{ client_key: 'a', minutes: 5 }],
+      shop_time_entries: [{ client_key: 's', minutes: 9 }],
+      open: [{ client_key: 'o', minutes: null, departed_at: null, _table: 'job_time_entries' }],
+    };
+    const t = await call(rows, 'job_time_entries');
+    const s = await call(rows, 'shop_time_entries');
+    expect(t.map(r => r.client_key)).toEqual(['a', 'o']);
+    expect(s.map(r => r.client_key)).toEqual(['s']);
+  });
+
+  test('_table is stripped, because the RPC takes two arrays and not a tagged one', async () => {
+    const t = await call({ job_time_entries: [], open: [{ client_key: 'o', _table: 'job_time_entries' }] }, 'job_time_entries');
+    expect(t.length).toBe(1);
+    expect('_table' in t[0]).toBe(false);
+    expect(t[0].client_key).toBe('o');
+  });
+
+  test('the null departure survives the trip: that IS the open row', async () => {
+    const t = await call({ job_time_entries: [], open: [{ client_key: 'o', departed_at: null, minutes: null, _table: 'job_time_entries' }] }, 'job_time_entries');
+    expect(t[0].departed_at).toBeNull();
+    expect(t[0].minutes).toBeNull();
+  });
+
+  test('no open dwell means the array the caller already had, untouched', async () => {
+    const base = [{ client_key: 'a' }];
+    const t = await call({ job_time_entries: base, open: [] }, 'job_time_entries');
+    expect(t).toEqual(base);
+  });
+
+  test('a shop open row goes to the shop array', async () => {
+    const s = await call({ shop_time_entries: [{ client_key: 's' }], open: [{ client_key: 'o', _table: 'shop_time_entries' }] }, 'shop_time_entries');
+    expect(s.map(r => r.client_key)).toEqual(['s', 'o']);
+  });
+
+  test('nothing, garbage and a missing array are all an empty list, never a throw', async () => {
+    const r = await page.evaluate(() => {
+      const out = [];
+      for (const bad of [null, undefined, {}, { open: null }, { job_time_entries: 'nope', open: 'nope' }]) {
+        try { out.push(_geoWithOpen(bad, 'job_time_entries').length); } catch (e) { out.push('THREW'); }
+      }
+      return out;
+    });
+    expect(r).toEqual([0, 0, 0, 0, 0]);
   });
 });

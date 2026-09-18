@@ -527,3 +527,68 @@ test.describe('manual clock over a derived day', () => {
 
   test('no console errors', async () => { assertNoErrors(page, 'blend'); });
 });
+
+
+// ── ONE DWELL, ONE ROW (owner 2026-09-18) ─────────────────────────────────
+//
+// A dwell with no departure yet is stored now, so the ops portal and Crew Cost
+// can see who is on site without this phone being open. This screen already
+// had the same fact and a better version of it: the live row built from
+// window._geoOpenDwell, which ticks and says "On site now". Letting the stored
+// row through as well would draw the same dwell twice, once live and once as a
+// dead 0m row, and a NaN duration if anything tried to measure it.
+test.describe('the stored open row never doubles the live one', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => {};
+      window._supaUser = window._supaUser || { id: 'owner-open', email: 'o@t.com' };
+      S.bizTz = 'America/Chicago'; S.bname = 'JS Solutions';
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const draw = (entries, shop) => page.evaluate(async ([entries, shop, DAY]) => {
+    const me = _supaUser.id;
+    const keepF = window._fetchCrewLabor, keepT = timeEntries.slice(), keepO = window._geoOpenDwell;
+    window._geoOpenDwell = null;              // the live row is its own test
+    window.timeEntries = [];
+    window._fetchCrewLabor = async () => ({ name: { [me]: 'Me' },
+      entries: entries.map(e => ({ ...e, employee_user_id: me, contractor_user_id: me })),
+      shopEntries: shop.map(e => ({ ...e, employee_user_id: me, contractor_user_id: me })) });
+    try {
+      const rows = (await _timeLogRows(null)).filter(r => r.date === DAY);
+      const total = rows.reduce((s, x) => s + (Number(x.minutes) || 0), 0);
+      return { n: rows.length, keys: rows.map(r => r.clientKey), total, finite: Number.isFinite(total) };
+    } finally { window._fetchCrewLabor = keepF; window.timeEntries = keepT; window._geoOpenDwell = keepO; }
+  }, [entries, shop, DAY]);
+
+  test('a job row with no departure draws nothing, so the dwell is not doubled', async () => {
+    const r = await draw([
+      row('l1', 'drive', T(8, 0), T(8, 20), { dest_place: 'John Doe' }),
+      { id: 'o1', source: 'open', job_id: null, client_key: 'd-o1', dest_place: 'John Doe',
+        arrived_at: T(8, 20), departed_at: null, minutes: null },
+    ], []);
+    expect(r.n, 'only the closed row is drawn').toBe(1);
+    expect(r.keys).toEqual(['d-l1']);
+  });
+
+  test('a shop row with no departure is skipped too', async () => {
+    const r = await draw([], [{ id: 'o2', client_key: 'd-o2', arrived_at: T(9, 0), departed_at: null, minutes: null }]);
+    expect(r.n).toBe(0);
+  });
+
+  test('a null departure never becomes NaN minutes', async () => {
+    // Worse than a missing row: nobody can tell what a NaN was supposed to be.
+    const r = await draw([{ id: 'o3', source: 'open', job_id: null, client_key: 'd-o3',
+      dest_place: null, arrived_at: T(10, 0), departed_at: null, minutes: null }], []);
+    expect(r.finite).toBe(true);
+    expect(r.total).toBe(0);
+    expect(r.n).toBe(0);
+  });
+});

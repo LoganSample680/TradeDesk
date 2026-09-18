@@ -5325,6 +5325,51 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toContain('Destination not saved');
     });
 
+    // ── JACK'S 8 SEPTEMBER (owner 2026-09-16) ────────────────────────────
+    // "On jacks 09/08 rows he has unsaved address to Tagen Lindstram when it
+    // should say JS Solutions shop to Tagen Lindstram, then at 453 it should
+    // say Tagen Linstram to JS Soltuions shop."
+    //
+    // Both names were in the database the whole time. That day was derived on
+    // 14 September and origin_place landed on the 15th, so the rows carry a
+    // dest_place and a null origin_place while the mileage legs say
+    // "JS Solutions shop → Tagen Lindstram" and the reverse. The self-titling
+    // arm fired on EITHER end, claimed the row, and printed "Unsaved address"
+    // for the field that simply had not been written yet, shutting out the
+    // join that held the answer. It hit every drive row derived before 15
+    // September, and those days are past the tape so nothing re-derives them.
+    const S8 = { legKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+      from_name: 'JS Solutions shop', to_name: 'Tagen Lindstram' };
+    const S8BACK = { legKey: 'j-987ebc83-mtt7ijni', date: '2026-09-08',
+      from_name: 'Tagen Lindstram', to_name: 'JS Solutions shop' };
+
+    test('a row from before origin_place existed reads its origin off the leg', async () => {
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        clientName: 'Tagen Lindstram', destUnsaved: false,
+        originPlace: '', destPlace: 'Tagen Lindstram' }), [S8]);
+      expect(out).toContain('JS Solutions shop → Tagen Lindstram');
+      expect(out, 'the origin was never missing, only unasked for').not.toContain('Unsaved address');
+    });
+
+    test('and the 4:53 leg home reads the other way round', async () => {
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt7ijni', date: '2026-09-08',
+        rawId: 'srv-9', clientName: 'JS Solutions shop', destUnsaved: false,
+        originPlace: '', destPlace: 'JS Solutions shop' }), [S8BACK]);
+      expect(out).toContain('Tagen Lindstram → JS Solutions shop');
+      expect(out).not.toContain('Unsaved address');
+    });
+
+    test('but an origin that genuinely is unsaved still says so', async () => {
+      // Same shape, and this time the leg agrees the origin was nobody's
+      // address. The words must survive: a dash is worse than the truth.
+      const bare = { legKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        from_name: '', to_name: 'Tagen Lindstram' };
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        clientName: 'Tagen Lindstram', destUnsaved: false,
+        originPlace: '', destPlace: 'Tagen Lindstram' }), [bare]);
+      expect(out).toContain('Unsaved address → Tagen Lindstram');
+    });
+
     test('only a DRIVE row is titled this way', async () => {
       // A visit carries dest_place too. It is one place, not two, and titling
       // it with an arrow would invent a journey.
