@@ -755,6 +755,24 @@ async function _timeLogRows(sinceISO){
   });
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
+    // ── THE OPEN ROW IS STORED FOR EVERYONE ELSE, NOT FOR THIS SCREEN ──────
+    // (owner 2026-09-18)
+    //
+    // A dwell with no departure yet is a row now (js/geo-derive.js,
+    // geo_replace_day 20261024), so the ops portal, Crew Cost and anything
+    // else querying the database can see who is on site WITHOUT this phone
+    // being open. That was the whole point of storing it.
+    //
+    // This screen already had the same fact and a better version of it: the
+    // live row a few dozen lines up, built from window._geoOpenDwell, which
+    // ticks, says "On site now", and knows from the deriver whether it would
+    // bill (od.counts). Letting the stored row through as well would draw the
+    // SAME dwell twice, once live and once as a dead 0m row, which is the
+    // double-count this rule exists to prevent.
+    //
+    // The shop loop above has always skipped a null departure for its own
+    // reasons; this says it out loud for the job side.
+    if(!e.departed_at)return;
     // ── RULE 13, ANSWERED "PERSONAL" (owner 2026-09-16) ──────────────────
     // "Why is Laurie Schonfeldt sitting as manual time?" Because this line
     // used to `return`, and dropping the row out of `rows` is not the same as
