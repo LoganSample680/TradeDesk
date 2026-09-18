@@ -1317,11 +1317,11 @@ function _supplyRunPersonal(k){
   if(c.miles>0)bits.push(c.miles+' mi');
   if(c.mins>0)bits.push(typeof _fmtMin==='function'?_fmtMin(c.mins):(c.mins+'m'));
   const what=bits.length?bits.join(' and '):'the miles and the time';
-  zConfirm('<b>'+what+'</b> comes off your timesheet AND off your mileage. '+
-           'You will be unpaid for that stretch of the day.<br><br>'+
-           'Only say yes if the trip was not work. You can put it back later from the row.',
+  zConfirm('<b>'+what+'</b> gets DELETED from your timesheet and from your mileage.<br><br>'+
+           'You do not get paid for that time, and nothing will ever prompt you to put it back.<br><br>'+
+           'Was this trip for work? Then hit <b>No, keep it</b> and answer <b>No receipt</b> instead.',
     ()=>{resolveSupplyRun(key,'personal');if(typeof showToast==='function')showToast('Off the books, and off your hours','🚗');},
-    {title:'Take this off the books?',yes:'Yes, it was personal',no:'No, keep it',danger:true});
+    {title:'Read this before you tap',yes:'Delete it, it was personal',no:'No, keep it',danger:true});
 }
 function _supplyRunNoReceipt(k){
   // Owner copy (2026-08-17): one plain line, not a tax lecture. No longer the

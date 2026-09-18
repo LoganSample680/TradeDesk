@@ -295,13 +295,14 @@ test.describe('Receipt-gated supply runs', () => {
         };
       });
       expect(r.asked, 'one tap must no longer be enough').toBe(true);
-      expect(r.title).toBe('Take this off the books?');
+      expect(r.title).toBe('Read this before you tap');
       expect(r.msg, 'the real numbers, not a category').toContain('4.5 mi');
       expect(r.msg).toContain('26m');
       expect(r.msg, 'both books, said plainly').toContain('timesheet');
       expect(r.msg).toContain('mileage');
-      expect(r.msg, 'unpaid is the word that matters').toContain('unpaid');
-      expect(r.yes).toBe('Yes, it was personal');
+      expect(r.msg, 'paid is the word that matters').toContain('do not get paid');
+      expect(r.msg, 'and it points at the answer he probably wants').toContain('No receipt');
+      expect(r.yes).toBe('Delete it, it was personal');
       expect(r.no).toBe('No, keep it');
       expect(r.red, 'the destructive button is the red one').toBe(true);
       expect(r.personalYet, 'asking is not doing').toBe(false);
@@ -323,7 +324,12 @@ test.describe('Receipt-gated supply runs', () => {
         resolveSupplyRun('k2', 'unpersonal');
         return { msg, after, back: !!mileage[0].personal, noReceipt: !!mileage[0].noReceipt };
       });
-      expect(r.msg, 'it says you can put it back').toContain('put it back');
+      // The copy does NOT promise an undo any more (owner wanted it to feel
+      // final), and it does not deny one either: it says nothing will PROMPT
+      // you, which is true. The undo still exists and still works, which is
+      // what the rest of this test proves.
+      expect(r.msg).toContain('nothing will ever prompt you');
+      expect(r.msg, 'and it never claims the undo is impossible').not.toContain('no way');
       expect(r.after, 'saying yes does take it off').toBe(true);
       expect(r.back, 'and the way back really works').toBe(false);
       expect(r.noReceipt, 'landing where a no-receipt answer would have').toBe(true);
