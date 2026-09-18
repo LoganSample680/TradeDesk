@@ -155,6 +155,20 @@ async function routeRows(rows, route) {
   return asked;
 }
 
+// ── THE OPEN ROW RIDES OUT WITH THE REST (owner 2026-09-18) ────────────────
+// geoDeriveRows returns the open dwell in its own array so a writer has to opt
+// in knowingly: its range is unbounded and geo_replace_day had to learn that
+// shape first (20261024). The same helper exists on the phone
+// (_geoWithOpen, js/geo-track.js) and does the same thing, so the two writers
+// cannot drift on which rows they send. `_table` is the deriver saying which
+// table the row belongs to, and is stripped because the RPC takes two arrays.
+function withOpen(rows, tbl) {
+  const base = Array.isArray(rows?.[tbl]) ? rows[tbl] : [];
+  const open = Array.isArray(rows?.open) ? rows.open.filter((r) => r && r._table === tbl) : [];
+  if (!open.length) return base;
+  return base.concat(open.map((r) => { const o = { ...r }; delete o._table; return o; }));
+}
+
 export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), route = null, opts = null) {
   // `opts.sweep` is the ONE door through which a server derive may retire a
   // row, and it is only ever opened by a person asking for this day to be
@@ -380,7 +394,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     p_contractor: cid, p_employee: uid, p_day: day,
     p_day_start: new Date(b.start).toISOString(),
     p_day_end: new Date(b.end).toISOString(),
-    p_time: rows.job_time_entries, p_shop: rows.shop_time_entries, p_miles: rows.td_mileage,
+    p_time: withOpen(rows, "job_time_entries"), p_shop: withOpen(rows, "shop_time_entries"), p_miles: rows.td_mileage,
     p_sweep: sweep,
   });
   if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard };

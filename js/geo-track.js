@@ -7692,6 +7692,20 @@ async function _geoDeriveServerFixes(fromMs,toMs){
   return out;
 }
 
+// ── THE OPEN ROW RIDES OUT WITH THE REST (owner 2026-09-18) ────────────────
+// geoDeriveRows returns the open dwell in its own array, so a writer has to
+// opt in knowingly: its range is unbounded and geo_replace_day had to learn
+// that shape first (20261024). Both writers opt in now, through this one
+// helper, so the phone and the server cannot drift on which rows they send.
+// `_table` is the deriver saying which table it belongs to and is stripped
+// here, because the RPC takes two arrays and not a tagged one.
+function _geoWithOpen(rows,tbl){
+  const base=(rows&&Array.isArray(rows[tbl]))?rows[tbl]:[];
+  const open=(rows&&Array.isArray(rows.open))?rows.open.filter(r=>r&&r._table===tbl):[];
+  if(!open.length)return base;
+  return base.concat(open.map(r=>{const o=Object.assign({},r);delete o._table;return o;}));
+}
+
 function _geoEnqueueRpc(dayKey,args){
   if(typeof opsReadOnly==='function'&&opsReadOnly())return;
   try{
@@ -8167,7 +8181,7 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
       p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
-      p_time:rows.job_time_entries,p_shop:rows.shop_time_entries,p_miles:rows.td_mileage,
+      p_time:_geoWithOpen(rows,'job_time_entries'),p_shop:_geoWithOpen(rows,'shop_time_entries'),p_miles:rows.td_mileage,
       p_sweep:!!(tapeCovers&&tapeOwned&&whole),
     });
     _geoDeriveApplyMileage(dayKey,rows.td_mileage);
