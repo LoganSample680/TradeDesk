@@ -747,6 +747,18 @@ $('biz-open').addEventListener('click',()=>{
 // tape. The owner pressed Rebuild on Jack mid-drive and was told the server had
 // no tape for the day, which was not true and sent him looking in the wrong
 // place. The function reports both flags now; this reads them.
+// WAS THE PHONE ASKED, AND DID IT ANSWER (owner 2026-09-18: "so how can my
+// rebuild button fire the core motion tape and pull it in, I thought it did
+// that?"). It does now, and the answer has to be visible: a rebuild that could
+// not wake the phone derived from whatever was already uploaded, which on a
+// bad day is a tenth of the tape. Silence here would look exactly like success.
+function rbNudgeLine(d){
+  if(!d||typeof d.nudged!=='number')return '';
+  if(d.nudged>0)return 'Woke his phone first, so the tape it had is in this.';
+  if(d.nudgeNote==='not today')return '';
+  return 'Could NOT wake his phone'+(d.nudgeNote?' ('+d.nudgeNote+')':'')+
+    ', so this used only what was already uploaded. A force-quit app takes no silent push: have him open it and press this again.';
+}
 function rbWhyNoSweep(d,brief){
   if(d&&d.pending) return brief
     ? 'that day is still mid-drive'
@@ -777,7 +789,8 @@ $('rb-go').addEventListener('click',async()=>{
   if(days.length>10)return rbSay('Ten days at a time. That range is '+days.length+'.',true);
   const btn=$('rb-go'); btn.disabled=true;
   const who=p.person_name||p.person_email||'them';
-  rbSay('Rebuilding '+(days.length>1?days.length+' days':day)+' for '+who+'…');
+  rbSay('Waking his phone for the motion tape, then rebuilding '+
+    (days.length>1?days.length+' days':day)+' for '+who+'… (up to ~15s)');
   try{
     const {data:{session}}=await sb.auth.getSession();
     if(!session)return rbSay('Signed out. Reload and sign in again.',true);
@@ -795,15 +808,18 @@ $('rb-go').addEventListener('click',async()=>{
       if(!d.wrote)return rbSay('Nothing written: '+(d.reason||'no reason given'),true);
       // A rebuild that could not sweep is not the same as one that did, and the
       // difference is the whole point of pressing this: say which happened.
-      return rbSay(d.sweep
+      const _n=rbNudgeLine(data);
+      return rbSay((d.sweep
         ? ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. Stale rows retired.')
-        : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+rbWhyNoSweep(d)));
+        : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+rbWhyNoSweep(d)))
+        +(_n?'\n'+_n:''));
     }
     const wrote=got.filter(d=>d&&d.wrote);
     const skipped=got.filter(d=>d&&!d.wrote);
     rbSay(wrote.map(d=>d.day+': '+d.time+' time, '+d.shop+' shop, '+d.miles+' mileage'+
         (d.sweep?'':' (nothing retired: '+rbWhyNoSweep(d,true)+')')).join('\n')+
-      (skipped.length?('\n'+skipped.map(d=>d.day+': nothing written, '+(d.reason||'no reason given')).join('\n')):''),
+      (skipped.length?('\n'+skipped.map(d=>d.day+': nothing written, '+(d.reason||'no reason given')).join('\n')):'')+
+      (rbNudgeLine(data)?('\n'+rbNudgeLine(data)):''),
       wrote.length===0);
   }catch(e){ rbSay(String((e&&e.message)||e),true); }
   finally{ btn.disabled=false; }
