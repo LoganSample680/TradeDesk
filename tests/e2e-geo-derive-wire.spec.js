@@ -3021,3 +3021,315 @@ test.describe('_geoWithOpen: the open dwell reaches the writer', () => {
     expect(r).toEqual([0, 0, 0, 0, 0]);
   });
 });
+
+// ── ONE PAINT, AND ONLY WHEN SOMETHING MOVED (owner 2026-09-18) ────────────
+// "mileage on books still re renders numbers live." Two causes, both here:
+// the derive used to paint the legs with TRACE miles and paint them again
+// seconds later once the router answered with ROAD miles (2.7 then 3.2), and
+// the read-back after geo_replace_day painted a third time with numbers
+// identical to the second. A derive is pure, so re-deriving an unchanged day
+// is the normal case and it must cost the screen nothing.
+test.describe('the mileage paint is gated on an actual change', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const K = '2026-09-14';
+  const leg = (over) => Object.assign({
+    id: 'g1', gps: true, date: K, miles: 2.7, from: 'Shop', to: 'John Doe',
+    startedIso: K + 'T13:00:00.000Z', endedIso: K + 'T13:12:00.000Z', mins: 12,
+    calc_method: 'trace', path: [[1, 2], [3, 4]],
+  }, over || {});
+
+  // Seed the array, apply once to settle it, then apply again and report only
+  // the SECOND answer. The first apply is always a change (the row is new);
+  // what this spec is about is the second one.
+  const reapply = (first, second) => page.evaluate(([a, b]) => {
+    mileage.length = 0;
+    _geoDeriveApplyMileage('2026-09-14', a);
+    return { second: _geoDeriveApplyMileage('2026-09-14', b), rows: JSON.parse(JSON.stringify(mileage)) };
+  }, [first, second]);
+
+  test('the same day derived twice paints nothing the second time', async () => {
+    const r = await reapply([leg()], [leg()]);
+    expect(r.second).toBe(false);
+    expect(r.rows.length).toBe(1);
+  });
+
+  test('the router correcting the miles IS a change: this is the 2.7 to 3.2 repaint', async () => {
+    const r = await reapply([leg()], [leg({ miles: 3.2 })]);
+    expect(r.second).toBe(true);
+    expect(r.rows[0].miles).toBe(3.2);
+  });
+
+  test('a new leg is a change', async () => {
+    const r = await reapply([leg()], [leg(), leg({ id: 'g2', from: 'John Doe', to: 'Shop' })]);
+    expect(r.second).toBe(true);
+    expect(r.rows.length).toBe(2);
+  });
+
+  test('a retired leg is a change', async () => {
+    const r = await reapply([leg(), leg({ id: 'g2' })], [leg()]);
+    expect(r.second).toBe(true);
+    expect(r.rows.length).toBe(1);
+  });
+
+  test('an end getting its NAME is a change, because that is what the row reads', async () => {
+    const r = await reapply([leg({ to: '' })], [leg({ to: 'John Doe' })]);
+    expect(r.second).toBe(true);
+  });
+
+  test('the clock moving is a change', async () => {
+    const r = await reapply([leg()], [leg({ startedIso: K + 'T12:55:00.000Z', mins: 17 })]);
+    expect(r.second).toBe(true);
+  });
+
+  // The point of a fingerprint rather than a deep compare: a rebuild rewrites
+  // internals every single time, and counting those would call every rebuild a
+  // change and gate nothing at all.
+  test('a rewritten trace with the same miles is NOT a change: no pixel reads the path', async () => {
+    const r = await reapply([leg()], [leg({ path: [[1, 2], [1.5, 3], [3, 4]], collapsedStops: 1 })]);
+    expect(r.second).toBe(false);
+  });
+
+  test('another day changing does not make this one repaint', async () => {
+    const r = await page.evaluate(() => {
+      mileage.length = 0;
+      _geoDeriveApplyMileage('2026-09-14', [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }]);
+      mileage.push({ id: 'x9', gps: true, date: '2026-09-13', miles: 40 });
+      return _geoDeriveApplyMileage('2026-09-14', [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }]);
+    });
+    expect(r).toBe(false);
+  });
+
+  test('a hand-set vehicle rides across and is not, by itself, a change', async () => {
+    const r = await page.evaluate(() => {
+      mileage.length = 0;
+      _geoDeriveApplyMileage('2026-09-14', [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }]);
+      mileage[0].vehicle = 'Truck';
+      return { moved: _geoDeriveApplyMileage('2026-09-14', [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }]), veh: mileage[0].vehicle };
+    });
+    expect(r.moved).toBe(false);
+    expect(r.veh).toBe('Truck');
+  });
+
+  test('nothing, garbage and an empty set never throw', async () => {
+    const r = await page.evaluate(() => {
+      const out = [];
+      for (const bad of [null, undefined, [], [null], 'nope', [{}]]) {
+        try { out.push(typeof _geoDeriveApplyMileage('2026-09-14', bad)); } catch (e) { out.push('THREW'); }
+      }
+      return out;
+    });
+    expect(r).toEqual(['boolean', 'boolean', 'boolean', 'boolean', 'boolean', 'boolean']);
+  });
+
+  test('called ten times in a row, only the first can be a change', async () => {
+    const r = await page.evaluate(() => {
+      mileage.length = 0;
+      const rows = [{ id: 'g1', gps: true, date: '2026-09-14', miles: 2.7 }];
+      const out = [];
+      for (let i = 0; i < 10; i++) out.push(_geoDeriveApplyMileage('2026-09-14', rows));
+      return out;
+    });
+    expect(r[0]).toBe(true);
+    expect(r.slice(1).some(Boolean)).toBe(false);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});
+
+// ── NO ANSWER, NO SWEEP (owner 2026-09-18, on Jack's morning) ──────────────
+// "in the past this would then say we had a drive from the js solutions shop
+// to a unsaved address then show current dwell at unsaved address... why didnt
+// this happen."
+//
+// It did happen. Rule 14 wrote the traced leg at 08:11:03: shop to an unsaved
+// end, breadcrumb miles, off every total, carrying the Save this address path.
+// Then he moved the truck at 08:27:07 and the derive that ran at 08:34:49,
+// eight seconds after the tape flipped back to still, found the chain's last
+// journey still OPEN. Rule 14 is right to withhold the leg while the truck is
+// moving. The bug was that the withheld set still went to geo_replace_day with
+// the sweep ON, so the RPC retired the good row and its drive. An hour of his
+// morning became nothing.
+//
+// Withholding a row must never mean deleting it.
+test.describe('a derive that is still mid-drive retires nothing', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Same fixture as 'deriving a day' above, with the tape handed in so a test
+  // can choose whether the last journey ever closes.
+  const derive = (tape) => page.evaluate(async ([tape, SHOP, DOE, F, OWNED_SINCE, DAY]) => {
+    S.bizTz = 'America/Chicago';
+    S.officeLat = SHOP.lat; S.officeLon = SHOP.lng; S.bname = 'JS Solutions';
+    window.places = []; window.mileage = [];
+    window.clients = [{ id: 1788214075432, name: 'John Doe', addr: '2950 SW McClure Rd' }];
+    localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 1788214075432: { addr: '2950 SW McClure Rd', lat: DOE.lat, lon: DOE.lng } }));
+    window._geoDeriveTape = async () => tape;
+    localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: OWNED_SINCE }));
+    localStorage.removeItem('zp3_geo_tape_log');
+    localStorage.removeItem('zp3_geo_queue');
+    window._geoDrainQueue = () => {};
+    window._routeDistance = async () => ({ miles: 0, mins: 0 });
+    F.forEach(f => _geoFixLogPush(f[0], f[1], f[2], 5));
+    const res = await _geoDeriveDayNow(DAY, null);
+    const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
+    return { pending: !!(res && res.pending), legs: res ? res.legs.length : -1,
+      queued: q.length, sweep: q[0] && q[0].args.p_sweep,
+      rows: q[0] ? q[0].args.p_time.length : -1 };
+  }, [tape, SHOP, DOE,
+      [[T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
+       [T(12, 21) + 5000, DOE.lat, DOE.lng], [T(12, 31) + 5000, SHOP.lat, SHOP.lng],
+       [T(13, 0), SHOP.lat, SHOP.lng]],
+      DAY_START - 30 * 86400000, DAY]);
+
+  const CLOSED = [
+    { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
+    { ts: T(12, 21), kind: 'driving' }, { ts: T(12, 31), kind: 'onFoot' },
+  ];
+  // Jack's shape: the last flip is into the truck and nothing closes it.
+  const STILL_DRIVING = [
+    { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
+    { ts: T(12, 21), kind: 'driving' },
+  ];
+
+  test('the control: a day whose drives all closed sweeps as it always did', async () => {
+    const r = await derive(CLOSED);
+    expect(r.pending).toBe(false);
+    expect(r.sweep).toBe(true);
+  });
+
+  test('a day still mid-drive is written, and sweeps nothing', async () => {
+    const r = await derive(STILL_DRIVING);
+    expect(r.pending, 'the chain has not come to rest').toBe(true);
+    expect(r.queued, 'it still writes: withholding is not skipping').toBe(1);
+    expect(r.sweep, 'THE bug: this was true, and it retired the traced leg Jack could have named').toBe(false);
+  });
+
+  test('and once the truck parks, the same day sweeps again', async () => {
+    const still = await derive(STILL_DRIVING);
+    expect(still.sweep).toBe(false);
+    const parked = await derive(CLOSED);
+    expect(parked.sweep, 'the next derive resolves it and cleans up properly').toBe(true);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});
+
+// ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ──────
+// He left the shop at 07:53:31 and parked 767 ft away, and all morning the day
+// kept planting him back at the shop. One fix, taken at 07:39:07 while he was
+// genuinely standing there, was uploaded NINE times, the last at 08:26:45,
+// each with a fresh ts and identical to fourteen decimal places. That is the
+// plugin's cached CLLocation going out again on every wake: TdGeoPlugin's
+// event() stamps ts with Date() and drops the CLLocation's own timestamp, and
+// fixAgeMs rides only on motion rows, so a `fix` carries no age at all. `fix`
+// is the one type _GEO_FRESH_FIX_TYPES trusts as a current position.
+test.describe('a cached fix re-sent is not a new fix', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // His real numbers, to the decimal place they actually arrived with.
+  const SHOP_CACHED = [39.04565625037153, -95.71510278822348];
+  const SHOP_REAL = [39.04573522081296, -95.71489730040652];
+  const LOT = [39.04445524882554, -95.7129015768892];
+
+  const run = (pushes) => page.evaluate((list) => {
+    localStorage.removeItem('zp3_geo_fixlog');
+    list.forEach(([ts, lat, lng]) => _geoFixLogPush(ts, lat, lng, 10));
+    return _geoFixLogRead().map(f => [f.ts, f.lat, f.lng]);
+  }, pushes);
+
+  const T = (h, m, s) => Date.parse('2026-09-18T05:00:00Z') + ((h * 60 + m) * 60 + (s || 0)) * 1000;
+
+  test("Jack's morning: the shop fix is recorded once, at the time it was true", async () => {
+    const log = await run([
+      [T(7, 39, 7), ...SHOP_CACHED],     // real, he is standing in the shop
+      [T(7, 48, 22), ...SHOP_REAL],      // real, still there, a different fix
+      [T(7, 58, 19), ...LOT],            // real, he has parked 767 ft away
+      [T(7, 58, 19), ...SHOP_CACHED],    // the replay
+      [T(8, 4, 55), ...SHOP_CACHED],     // and again
+      [T(8, 11, 1), ...SHOP_CACHED],     // and again
+      [T(8, 26, 45), ...SHOP_CACHED],    // and again, 47 minutes after it was true
+    ]);
+    expect(log.filter(f => f[1] === SHOP_CACHED[0]).length, 'once, not five times').toBe(1);
+    expect(log[0][0]).toBe(T(7, 39, 7));
+    expect(log[log.length - 1], 'the last thing known is the car park').toEqual([T(7, 58, 19), ...LOT]);
+  });
+
+  // The qualifier that makes this safe, and the one two existing tests caught
+  // the first cut on: standing still and saying so repeatedly is honest.
+  test('a parked phone repeating itself keeps every report: that is coverage', async () => {
+    const pushes = [];
+    for (let i = 0; i < 30; i++) pushes.push([T(9, 0) + i * 60000, ...SHOP_CACHED]);
+    const log = await run(pushes);
+    expect(log.length).toBe(30);
+  });
+
+  test('going away and genuinely coming back still records the return', async () => {
+    // A real fix back at the shop is a NEW fix, so it differs in the low bits
+    // and is nothing like the cached one.
+    const log = await run([
+      [T(7, 39, 7), ...SHOP_CACHED],
+      [T(7, 58, 19), ...LOT],
+      [T(9, 30, 0), 39.045656251, -95.715102789],   // really back, really measured
+    ]);
+    expect(log.length).toBe(3);
+    expect(log[2][1]).toBe(39.045656251);
+  });
+
+  test('past the replay window it is allowed through again', async () => {
+    const log = await run([
+      [T(6, 0, 0), ...SHOP_CACHED],
+      [T(6, 5, 0), ...LOT],
+      [T(8, 30, 0), ...SHOP_CACHED],   // two and a half hours later, out of the window
+    ]);
+    expect(log.length).toBe(3);
+  });
+
+  test('the very same fix twice in a row is still one entry', async () => {
+    const log = await run([[T(7, 39, 7), ...SHOP_CACHED], [T(7, 39, 7), ...SHOP_CACHED]]);
+    expect(log.length).toBe(1);
+  });
+
+  test('an empty log takes the first fix whatever it is', async () => {
+    const log = await run([[T(7, 39, 7), ...SHOP_CACHED]]);
+    expect(log).toEqual([[T(7, 39, 7), ...SHOP_CACHED]]);
+  });
+
+  test('junk never throws and never lands', async () => {
+    const r = await page.evaluate(() => {
+      localStorage.removeItem('zp3_geo_fixlog');
+      const out = [];
+      for (const bad of [[0, 1, 2], [NaN, 1, 2], [1e12, NaN, 2], [1e12, 1, NaN], [null, null, null]]) {
+        try { _geoFixLogPush(bad[0], bad[1], bad[2], 5); out.push('ok'); } catch (e) { out.push('THREW'); }
+      }
+      return { out, len: _geoFixLogRead().length };
+    });
+    expect(r.out.every(x => x === 'ok')).toBe(true);
+    expect(r.len).toBe(0);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});

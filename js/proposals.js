@@ -414,7 +414,24 @@ async function _uploadClientHub(clientId){
     // writes per load). A content hash gates it: only changed hubs upload, no data
     // loss, since any real change (incl. the daily finance-charge tick) hashes
     // differently and uploads.
-    const _hash=_hubHash(_json);
+    //
+    // ── THE HASH IS OF THE CONTENT, NOT OF THE MOMENT (owner 2026-09-18) ────
+    // generatedAt is a fresh timestamp on every call, so hashing the whole JSON
+    // meant the hash could never once match the stored one and the gate above
+    // could never once fire. Every tokened client re-uploaded its hub and
+    // re-stamped its client row on EVERY boot: one lead of the owner's carried
+    // 50 of those stamps in five days, all of them a different value, with no
+    // human edit to the record in between. It also kept that row permanently
+    // "changed" for the delta save, which is how a row nobody had touched was
+    // being rewritten ten times a day.
+    //
+    // The owner's rule: a hub re-uploads when something was sent, signed or
+    // paid, an action was taken on the hub, or the contractor sent something
+    // new. Every one of those changes the bids, payments, jobs or photos in the
+    // snapshot below, so the content hash IS that rule, once the clock is out
+    // of it. The stamp still ships inside the uploaded file; it just no longer
+    // gets a vote on whether there is anything to upload.
+    const _hash=_hubHash(JSON.stringify(snapshot,(k,v)=>k==='generatedAt'?undefined:v));
     if(c.clientHubKey&&c.clientHubHash===_hash)return;
     const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
     const{error}=await _supa.storage.from('proposals').upload(key,_json,{contentType:'application/json',upsert:true,cacheControl:'0'});

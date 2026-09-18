@@ -2317,3 +2317,136 @@ test.describe('100-writer op channel + rebase', () => {
     });
   });
 });
+
+// ── A DELETE THAT SAVES ITSELF (owner 2026-09-18) ──────────────────────────
+// "I deleted Blake sample like 4 times over the last week and she keeps coming
+// back." Her row never carried a deleted_at at all: the delete had not failed,
+// it had never been sent.
+//
+// deleteClient and delMileage end their _userDelete callback with
+// _flushSaveNow(), and supaSaveToCloud runs synchronously from there into the
+// sweep. _userDelete records what was deleted by diffing AFTER the callback
+// returns, so the save read an empty delete list, took its no-op fast path, and
+// that path advanced _lastKnownIds past the id. The intent then landed on
+// bookkeeping that no longer had anywhere to apply it, so no later save could
+// sweep it either. Permanent, silent, and identical on every retry.
+test.describe('a delete records its intent before any save can read it', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Run a delete shaped exactly like deleteClient's: mutate, then flush from
+  // inside the callback. Report what the flush SAW when it ran.
+  const run = (opts) => page.evaluate((o) => {
+    const id = String(o.id);
+    clients.push({ id: o.id, name: 'Resurrect Me' });
+    _locallyDeletedIds.td_clients.delete(id);
+    (_lastKnownIds.td_clients || (_lastKnownIds.td_clients = new Set())).add(id);
+    // Stand in for the real save. The only thing under test is WHEN it runs
+    // relative to the diff, so it records the two facts the sweep depends on.
+    const keep = window.supaSaveToCloud;
+    const seen = [];
+    window.supaSaveToCloud = async () => {
+      seen.push({
+        intentRecorded: _locallyDeletedIds.td_clients.has(id),
+        stillKnown: !!(_lastKnownIds.td_clients && _lastKnownIds.td_clients.has(id)),
+        goneFromArray: !clients.some(c => String(c.id) === id),
+      });
+    };
+    try {
+      _userDelete(() => {
+        clients = clients.filter(c => String(c.id) !== id);
+        if (o.throws) throw new Error('mid-delete');
+        if (o.flush) _flushSaveNow();
+      });
+    } catch (e) { /* the throwing case */ }
+    return { seen, intentRecorded: _locallyDeletedIds.td_clients.has(id), keptGate: _userDeleteDepth };
+  }, opts).finally(() => page.evaluate(() => { try { delete window.supaSaveToCloud; } catch (_e) {} }));
+
+  test('the save fires exactly once, and by then the delete is written down', async () => {
+    const r = await run({ id: 991001, flush: true });
+    expect(r.seen.length).toBe(1);
+    expect(r.seen[0].intentRecorded).toBe(true);   // THE bug: this was false
+    expect(r.seen[0].goneFromArray).toBe(true);
+  });
+
+  test('and the id is still in _lastKnownIds when it runs, so the sweep can see it leave', async () => {
+    const r = await run({ id: 991002, flush: true });
+    expect(r.seen[0].stillKnown).toBe(true);
+  });
+
+  test('a delete that flushes nothing still records the intent', async () => {
+    const r = await run({ id: 991003, flush: false });
+    expect(r.seen.length).toBe(0);
+    expect(r.intentRecorded).toBe(true);
+  });
+
+  test('two flushes inside one delete collapse to one save', async () => {
+    const r = await page.evaluate(() => {
+      const id = '991004';
+      clients.push({ id: 991004, name: 'Twice' });
+      _locallyDeletedIds.td_clients.delete(id);
+      const keep = window.supaSaveToCloud;
+      let n = 0;
+      window.supaSaveToCloud = async () => { n++; };
+      try {
+        _userDelete(() => { clients = clients.filter(c => String(c.id) !== id); _flushSaveNow(); _flushSaveNow(); });
+      } finally { window.supaSaveToCloud = keep; }
+      return { n, intent: _locallyDeletedIds.td_clients.has(id) };
+    });
+    expect(r.n).toBe(1);
+    expect(r.intent).toBe(true);
+  });
+
+  // The gate is a counter, not a flag, and it is released in a finally. Both
+  // matter: a delete that throws halfway must still record what it got through,
+  // and must never leave every later save shut out of the cloud.
+  test('a delete that throws still records, and never leaves the gate closed', async () => {
+    const r = await run({ id: 991005, throws: true });
+    expect(r.intentRecorded).toBe(true);
+    expect(r.keptGate).toBe(0);
+  });
+
+  test('a nested delete does not release the gate early', async () => {
+    const r = await page.evaluate(() => {
+      const a = '991006', b = '991007';
+      clients.push({ id: 991006, name: 'Outer' }, { id: 991007, name: 'Inner' });
+      _locallyDeletedIds.td_clients.delete(a); _locallyDeletedIds.td_clients.delete(b);
+      const keep = window.supaSaveToCloud;
+      const seen = [];
+      window.supaSaveToCloud = async () => {
+        seen.push({ a: _locallyDeletedIds.td_clients.has(a), b: _locallyDeletedIds.td_clients.has(b) });
+      };
+      try {
+        _userDelete(() => {
+          clients = clients.filter(c => String(c.id) !== a);
+          _userDelete(() => { clients = clients.filter(c => String(c.id) !== b); _flushSaveNow(); });
+        });
+      } finally { window.supaSaveToCloud = keep; }
+      return { seen, depth: _userDeleteDepth };
+    });
+    // One save, after BOTH deletes are written down. The inner one must not
+    // release it while the outer is still mutating.
+    expect(r.seen.length).toBe(1);
+    expect(r.seen[0]).toEqual({ a: true, b: true });
+    expect(r.depth).toBe(0);
+  });
+
+  test('an ordinary flush outside a delete is untouched', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = window.supaSaveToCloud;
+      let n = 0;
+      window.supaSaveToCloud = async () => { n++; };
+      try { _flushSaveNow(); return n; } finally { window.supaSaveToCloud = keep; }
+    });
+    expect(r).toBe(1);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});

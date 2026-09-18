@@ -174,6 +174,39 @@ test.describe('the deriver on the server', () => {
       }
     });
 
+    // ── NO ANSWER, NO SWEEP (owner 2026-09-18, on Jack) ───────────────────
+    // His morning: rule 14 wrote a traced leg from the shop to an unsaved end
+    // at 08:11:03, the row that carries the Save this address path. He moved
+    // the truck at 08:27:07, and the derive eight seconds after the tape
+    // flipped back to still found the chain's last journey still OPEN. Rule 14
+    // correctly withheld the leg, the withheld set went to geo_replace_day with
+    // the sweep on, and the RPC retired the good row and its drive.
+    //
+    // It matters more on THIS path than on the phone: a person pressed the
+    // button and the rebuild asks to sweep by default, so pressing Rebuild on
+    // a day somebody is still driving would repeat the deletion on demand.
+    test('a day still mid-drive is written, and retires nothing', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      // Jack's shape: the last flip is into the truck and nothing closes it.
+      const stillDriving = { ...TABLES, geo_events: TABLES.geo_events
+        .filter((e) => !(e.type === 'motion' && e.kind === 'still')) };
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(stillDriving, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(write, 'it still writes: withholding is not skipping').toBeTruthy();
+      expect(write.args.p_sweep, 'THE bug: this was true, and it retired a good row').toBe(false);
+      expect(r.sweepAsked, 'the ask is still reported honestly').toBe(true);
+      expect(r.tapeCovers).toBe(true);
+    });
+
+    test('the same day, once it parks, sweeps again', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      expect(rpc.find((c) => c.name === 'geo_replace_day').args.p_sweep).toBe(true);
+      expect(r.sweep).toBe(true);
+    });
+
     test('no motion tape covering the day: it writes, and retires nothing', async () => {
       // The rows are still worth adding; what the server cannot do on this
       // evidence is say what did NOT happen. Reported rather than silent, so a
@@ -260,5 +293,45 @@ test.describe('the deriver on the server', () => {
     expect((dst.end - dst.start) / 3600000, 'the 25-hour day').toBe(25);
     expect(centralDayKey(centralDayBounds(DAY).start)).toBe(DAY);
     expect(centralDayKey(centralDayBounds(DAY).end - 1)).toBe(DAY);
+  });
+});
+
+// The ops portal explains an un-swept rebuild, and until 2026-09-18 there was
+// only one reason it could happen, so the page stated it as a fact. The
+// no-answer guard added a second, and the owner was told the server had no
+// motion tape for Jack's day when it had plenty: the day was simply still
+// mid-drive. The flags have to say which.
+test.describe('an un-swept rebuild reports WHICH guard stopped it', () => {
+  test('mid-drive: pending true, tape present', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const stillDriving = { ...TABLES, geo_events: TABLES.geo_events
+      .filter((e) => !(e.type === 'motion' && e.kind === 'still')) };
+    const r = await deriveDayServer(fakeSvc(stillDriving, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.pending).toBe(true);
+    expect(r.tapeCovers, 'the tape is there: blaming it would be the wrong answer').toBe(true);
+    expect(r.sweep).toBe(false);
+  });
+
+  // Strip the tape entirely and it never reaches a write at all: the
+  // no-evidence guard turns it round first, with a reason and no flags. The
+  // portal prints that reason through its own "Nothing written" branch, so
+  // rbWhyNoSweep is never asked about this case.
+  test('no tape at all: turned round before the write, with a reason', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const noTape = { ...TABLES, geo_events: TABLES.geo_events.filter((e) => e.type !== 'motion') };
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(noTape, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.wrote).toBe(false);
+    expect(typeof r.reason).toBe('string');
+    expect(r.sweep === true).toBe(false);
+    expect(r.pending === true, 'and it must not be blamed on a drive either').toBe(false);
+  });
+
+  test('a clean day reports neither', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const r = await deriveDayServer(fakeSvc(TABLES, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.pending).toBe(false);
+    expect(r.tapeCovers).toBe(true);
+    expect(r.sweep).toBe(true);
   });
 });

@@ -1305,6 +1305,59 @@ function geoDeriveDay(input) {
                 _gdShopIsHome(arrived.fence, fences, opts.radiusFt) };
     }
   }
+  // ── RULE 5, AMENDED: A PLACE NOBODY SAVED IS STILL A PLACE ──────────────
+  // Owner 2026-09-18, on Jack: "he's like 700 feet away from the shop at a on
+  // site address 2 and a half blocks from his dads shop", and then the design
+  // he had already asked for once: "consolidate pings off cordinates and
+  // compare the two, different cordinates between core motion flips means were
+  // at a new address, but I guess that didnt carry over."
+  //
+  // Half of it had carried over. Rule 22 (_gdReseatDwells) names a stop from
+  // the median of every fix taken while he sat there, in his own words, rather
+  // than from one arrival ping. But rule 22 can only reseat a stop that EXISTS,
+  // and rule 5 says a journey ending somewhere unsaved writes nothing, so no
+  // stop was ever created for it to work on. The clustering rule was sitting
+  // behind a gate that never opened.
+  //
+  // His morning: shop 07:35 to 07:53, then 767 ft to a job site nobody has
+  // saved, where he has been ever since. The engine asked "which saved fence
+  // contains this fix", got nothing, and stopped asking. It never asked the
+  // question he is asking: is this even the same place I was before.
+  //
+  // So an arrival with no fence now opens a dwell too, seated on the CLUSTER
+  // (the same _gdSpotOf median rule 22 uses), named as exactly what it is.
+  // Scope, deliberately narrow, because this is the live report only:
+  //   * It is an OPEN dwell, so it reaches the screens and the ops portal as
+  //     the open row (no departure, no minutes) and claims nothing: an open
+  //     row has no minutes to claim. What the DRIVE here was worth is rule
+  //     14's decision and still is. Nothing about totals moves.
+  //   * It stays open until a journey actually leaves. A flip that ends where
+  //     it started never closes it, which is the other half of Jack's
+  //     morning: a false automotive flip at 08:27 that travelled 120 ft
+  //     inside a 220 ft parked cluster ended a stop he is still sitting in.
+  //   * It needs a real cluster, not one ping. Without _GD_RESEAT_MIN_FIXES
+  //     fixes to agree with each other there is nothing to be confident about
+  //     and the old answer (nobody on site) stands.
+  //   * unsaved:true rides on it so the screens know to offer Save this
+  //     address rather than draw a name they do not have. Saving it makes a
+  //     fence, and the next derive of the day finds it at both ends.
+  // Read off the JOURNEY, not off `arrived`: on this path `arrived` was never
+  // set at all (openWhy said 'no-arrival'), because the only place it is
+  // assigned for a closing journey is behind `if (toFence)`. That is rule 5
+  // itself, in one line: no fence, no arrival, nothing to stand on.
+  else if (!open && journeys.length && !journeys.some(j => j && j.open)) {
+    const lastJ = journeys[journeys.length - 1];
+    const t0 = Number(lastJ && lastJ.endTs);
+    const spot = t0 > 0 ? _gdSpotOf(fixes, t0, dayEnd, opts.maxFixAccM) : null;
+    // Nowhere saved is the whole condition. A cluster that IS inside a fence
+    // belongs to the branch above, and rule 22 has already had its say there.
+    if (spot && !geoFenceAt(spot, fences, opts.radiusFt)) {
+      open = { id: 'd-' + lastJ.id, fence: _gdUnsavedEnd(spot), kind: 'unsaved',
+        name: '', sinceTs: t0, journeyId: String(lastJ.id),
+        unsaved: true, spot, atHome: false };
+      openWhy = '';
+    }
+  }
 
   // Rule 22: the stop sits where the phone SAT (see _gdReseatDwells), before
   // any rule below reads which fence it is at.
