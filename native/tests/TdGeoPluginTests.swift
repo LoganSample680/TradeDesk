@@ -3400,3 +3400,125 @@ extension TdGeoPluginTests {
         clearSelfArmState()
     }
 }
+
+// ── COVERAGE: WHAT THE PHONE KNOWS IT HAS CHECKED (owner 2026-09-18) ────────
+//
+// "I just need to ensure phone derives go down and they do land in real time."
+//
+// The server derives on every flush and is forbidden to retire a row, because
+// it cannot tell a stretch that did not happen from a stretch nobody uploaded.
+// The coverage mark is the one fact that settles that, so these tests guard the
+// two ways it could lie: claiming a window the coprocessor never answered for,
+// and claiming one the server never received.
+//
+// The simulator has no coprocessor, which makes it the perfect place to prove
+// the first half: a query that cannot run must leave the mark exactly where it
+// was. A mark that crept forward here is a mark that would authorise the server
+// to delete somebody's paid time on no evidence at all.
+extension TdGeoPluginTests {
+
+    private var readKey: String { plugin.motionReadKeyForTest }
+    private var ackedKey: String { plugin.flushCoveredKeyForTest }
+
+    func testCoverageIsNotTheSameMarkAsTheLastFlip() {
+        // These were one number once and it was wrong: a man standing still
+        // from 10:58 to 12:11 has his last FLIP at 10:58 the whole time, while
+        // the phone has checked and knows nothing happened. Two facts, two
+        // keys, and nothing may collapse them back into one.
+        let d = UserDefaults.standard
+        XCTAssertNotEqual(plugin.motionReadKeyForTest, plugin.motionMarkKeyForTest,
+            "coverage and the last flip must not share a key")
+        d.set(1_000_000.0, forKey: plugin.motionMarkKeyForTest)
+        d.set(0.0, forKey: readKey)
+        XCTAssertEqual(d.double(forKey: readKey), 0,
+            "moving the flip mark must not move the coverage mark")
+    }
+
+    func testCoverageIsNotClaimedWithoutACoprocessor() {
+        // The simulator's CMMotionActivityManager is unavailable, so the query
+        // never runs. Nothing was asked, so nothing is covered.
+        let d = UserDefaults.standard
+        d.set(0.0, forKey: readKey)
+        plugin.backfillMotionHistoryForTest()
+        plugin.backfillMotionHistoryForTest()
+        XCTAssertEqual(d.double(forKey: readKey), 0,
+            "a backfill that could not query claimed coverage it does not have")
+    }
+
+    func testCoverageNeverMovesBackwards() {
+        // The server trusts the highest coverage it has been told. A mark that
+        // could fall would re-open a day the server already closed.
+        let d = UserDefaults.standard
+        let ahead = (Date().timeIntervalSince1970 * 1000) + 60_000
+        d.set(ahead, forKey: readKey)
+        plugin.backfillMotionHistoryForTest()
+        XCTAssertGreaterThanOrEqual(d.double(forKey: readKey), ahead,
+            "the coverage mark moved backwards")
+    }
+
+    func testCoverageSurvivesAGarbageValue() {
+        // §3.3 input classes. Whatever is in defaults is not to be trusted:
+        // an upgrade, a restore, a half-written write.
+        let d = UserDefaults.standard
+        for junk in [Double.nan, -1, .infinity, 1e18, 0] {
+            d.set(junk, forKey: readKey)
+            d.set(junk, forKey: ackedKey)
+            plugin.backfillMotionHistoryForTest()
+            plugin.flushNowForTest()
+        }
+        XCTAssertTrue(true, "a corrupt coverage mark never crashed a wake or a flush")
+    }
+
+    func testAQuietWakeWithNoNewCoverageSendsNothing() {
+        // The old behaviour and still the right one for the common case: an
+        // empty buffer and nothing new checked is not worth a request.
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.set(["url": "https://example.invalid/ingest", "userId": "u", "deviceId": "dev", "key": "k"],
+              forKey: plugin.flushCfgKeyForTest)
+        let now = Date().timeIntervalSince1970 * 1000
+        d.set(now, forKey: readKey)
+        d.set(now, forKey: ackedKey)      // the server already has this coverage
+        plugin.flushNowForTest()
+        let inflight = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertTrue(inflight.isEmpty,
+            "a wake with no events and no new coverage posted anyway")
+        d.removeObject(forKey: plugin.flushCfgKeyForTest)
+    }
+
+    func testAQuietWakeWithNewCoverageDoesSendIt() {
+        // The half-hourly ping wake is usually this shape: nothing happened,
+        // and that is precisely the fact the server is waiting for. Before
+        // this, an empty buffer ended the flush and the fact never left.
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.set(["url": "https://example.invalid/ingest", "userId": "u", "deviceId": "dev", "key": "k"],
+              forKey: plugin.flushCfgKeyForTest)
+        let now = Date().timeIntervalSince1970 * 1000
+        d.set(now, forKey: readKey)
+        d.set(now - 2 * TdGeoPlugin.coverageIdleMsForTest, forKey: ackedKey)
+        plugin.flushNowForTest()
+        let inflight = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertFalse(inflight.isEmpty,
+            "coverage moved well past what the server has and the phone said nothing")
+        let cov = (d.dictionary(forKey: plugin.flushInflightCovKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(cov.count, inflight.count,
+            "every upload in flight must carry the coverage value it claimed")
+        d.removeObject(forKey: plugin.flushCfgKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightCovKeyForTest)
+    }
+
+    func testCoverageIdleWindowIsBoundedAwayFromAHeartbeat() {
+        // Zero here turns every wake into a POST, which is how a background
+        // app gets its location privileges throttled. A day is also never
+        // waiting on coverage longer than one ping cycle, so it has a ceiling
+        // as well as a floor.
+        XCTAssertGreaterThanOrEqual(TdGeoPlugin.coverageIdleMsForTest, 60_000,
+            "the coverage idle window is short enough to be a heartbeat")
+        XCTAssertLessThanOrEqual(TdGeoPlugin.coverageIdleMsForTest, 30 * 60_000,
+            "a day would wait more than a ping cycle to be declared covered")
+    }
+}

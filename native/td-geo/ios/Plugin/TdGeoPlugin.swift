@@ -83,6 +83,29 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // history has been read off the coprocessor, and a wake must never re-emit
     // transitions it already pulled.
     private let motionMarkKey = "td_geo_motion_hist_ts"
+    // ── COVERAGE, WHICH IS NOT THE SAME AS THE LAST THING THAT HAPPENED ────
+    // motionMarkKey is the newest FLIP pulled off the coprocessor. It is the
+    // wrong number to prove coverage with: a man standing still from 10:58 to
+    // 12:11 has his mark stuck at 10:58 the whole time, even though the phone
+    // asked at noon and was told nothing happened.
+    //
+    // This is the instant the query was asked THROUGH. "I put the question to
+    // the coprocessor about everything up to here, and this was all of it."
+    // That, and only that, lets the server treat an empty stretch as evidence
+    // of absence rather than evidence missing, which is the one thing standing
+    // between it and closing a day out without waking the phone.
+    //
+    // Advanced ONLY on a query that came back without an error, and only from
+    // backfillMotionHistory, whose events go straight into the native flush
+    // lane. motionSince() is not allowed to advance it: that one hands its
+    // events to JS, and JS may never post them, so claiming coverage there
+    // would promise the server data nobody sent.
+    private let motionReadKey = "td_geo_motion_read_ts"
+    // The coverage value the server has actually ACKED. Advanced on 2xx beside
+    // the event watermark, for the same reason: an upload that never landed
+    // proves nothing.
+    private let flushCoveredKey = "td_geo_flush_covered_ts"
+    private let flushInflightCovKey = "td_geo_flush_inflight_cov"
     // taskIdentifier -> the batch's max ts, persisted so a delegate callback
     // arriving after a relaunch can still advance the watermark.
     private let flushInflightKey = "td_geo_flush_inflight"
@@ -1506,6 +1529,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // point; TdNativeTests is a DEBUG-configuration target (§3.3).
     func backfillMotionHistoryForTest() { backfillMotionHistory() }
     var motionMarkKeyForTest: String { motionMarkKey }
+    var motionReadKeyForTest: String { motionReadKey }
+    var flushCoveredKeyForTest: String { flushCoveredKey }
+    var flushInflightCovKeyForTest: String { flushInflightCovKey }
+    static var coverageIdleMsForTest: Double { coverageIdleMs }
     static var backfillFreshMsForTest: Double { backfillFreshMs }
     // The urgent lane, reachable without backgrounding a simulator. What the
     // tests can assert is that it survives being called from any queue, with
@@ -2298,7 +2325,20 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let mark = d.double(forKey: flushMarkKey)
         let buf = (d.array(forKey: bufferKey) as? [[String: Any]]) ?? []
         let fresh = buf.filter { (num($0["ts"]) ?? 0) > mark }
-        if fresh.isEmpty { return }
+        // ── A QUIET WAKE STILL HAS SOMETHING TO SAY ────────────────────────
+        // An empty buffer used to end the flush here, which is right for
+        // events and wrong for coverage: "nothing happened since you last
+        // heard from me, and I have checked" is exactly the fact the server
+        // needs to close a day out, and it was the one fact that never left
+        // the phone. The half-hourly ping wake is usually this shape.
+        //
+        // Rate-limited so it cannot become a heartbeat: coverage has to have
+        // moved a real interval past what the server already acked, so a burst
+        // of wakes in one minute sends one POST, not six.
+        let covered = d.double(forKey: motionReadKey)
+        let coveredAcked = d.double(forKey: flushCoveredKey)
+        let coverageWorthSending = covered > coveredAcked + TdGeoPlugin.coverageIdleMs
+        if fresh.isEmpty && !coverageWorthSending { return }
         let batch = Array(fresh.prefix(400))
         let maxTs = batch.compactMap { num($0["ts"]) }.max() ?? mark
         // One upload per batch. Timers frozen through a suspension all fire
@@ -2307,9 +2347,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // already on its way is identified by its newest event.
         let inflightNow = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
         if inflightNow.values.contains(maxTs) { return }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "user_id": userId, "device_id": deviceId, "key": key, "events": batch
         ]
+        // Omitted rather than sent as zero when this phone has never completed
+        // a history read: the server must be able to tell "no coverage claimed"
+        // from "covered through the epoch".
+        if covered > 0 { payload["covered_through"] = covered }
         guard JSONSerialization.isValidJSONObject(payload),
               let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
         var req = URLRequest(url: target)
@@ -2336,6 +2380,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         var inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
         inflight[inflightKey(session, task)] = maxTs
         d.set(inflight, forKey: flushInflightKey)
+        // Coverage rides in its own map keyed the same way, so the 2xx handler
+        // advances exactly the value THIS upload carried rather than whatever
+        // the phone has read by the time the reply lands.
+        var inflightCov = (d.dictionary(forKey: flushInflightCovKey) as? [String: Double]) ?? [:]
+        inflightCov[inflightKey(session, task)] = covered
+        d.set(inflightCov, forKey: flushInflightCovKey)
         task.resume()
         countWake("flushSent")
         countWake(live ? "flushLive" : "flushDeferred")
@@ -2352,6 +2402,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // Never returning it is what iOS punishes by throttling the session: the
     // owner's raw event upload went silent mid-drive twice today and only
     // came back on a relaunch.
+    // Five minutes: long enough that a wake storm posts once, short enough
+    // that a day is never waiting on coverage for more than one ping cycle.
+    private static let coverageIdleMs: Double = 5 * 60_000
+
     public static var backgroundFlushCompletion: (() -> Void)?
 
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
@@ -2369,13 +2423,21 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // an upgrade must still be able to retire its own last batch.
         let tid = inflightKey(session, task)
         let bare = String(task.taskIdentifier)
+        var inflightCov = (d.dictionary(forKey: flushInflightCovKey) as? [String: Double]) ?? [:]
+        let sentCov = inflightCov[tid] ?? inflightCov[bare] ?? 0
         guard let maxTs = inflight[tid] ?? inflight[bare] else { return }
         inflight.removeValue(forKey: tid)
         inflight.removeValue(forKey: bare)
         d.set(inflight, forKey: flushInflightKey)
+        inflightCov.removeValue(forKey: tid)
+        inflightCov.removeValue(forKey: bare)
+        d.set(inflightCov, forKey: flushInflightCovKey)
         let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
         if error == nil && status >= 200 && status < 300 {
             if maxTs > d.double(forKey: flushMarkKey) { d.set(maxTs, forKey: flushMarkKey) }
+            // Same contract as the event watermark: the server has it, so the
+            // phone may stop re-claiming it.
+            if sentCov > d.double(forKey: flushCoveredKey) { d.set(sentCov, forKey: flushCoveredKey) }
             countWake("flushOk")
             flushRetryStep = 0
             flushRetryGen += 1          // cancel a retry armed by an earlier failure
@@ -2415,9 +2477,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let floorMs = nowMs - 7 * 24 * 3600 * 1000
         let mark = max(d.double(forKey: motionMarkKey), floorMs)
         let from = Date(timeIntervalSince1970: mark / 1000)
-        guard from < Date() else { return }
+        // Captured ONCE and used for both the query bound and the coverage
+        // mark, so the mark can never claim a millisecond the question did not
+        // actually cover.
+        let readThrough = Date()
+        guard from < readThrough else { return }
         let wakeLoc = mgr().location
-        motionMgr.queryActivityStarting(from: from, to: Date(), to: .main) { [weak self] acts, _ in
+        motionMgr.queryActivityStarting(from: from, to: readThrough, to: .main) { [weak self] acts, err in
             guard let self = self else { return }
             var last = ""
             var newest = mark
@@ -2449,6 +2515,15 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 self.record(ev)
             }
             if newest > mark { d.set(newest, forKey: self.motionMarkKey) }
+            // A failed query answered nothing, so it covered nothing. Leaving
+            // the mark where it was costs one repeated read on the next wake;
+            // moving it would tell the server a stretch was checked when the
+            // coprocessor never replied.
+            guard err == nil else { return }
+            let readMs = readThrough.timeIntervalSince1970 * 1000
+            if readMs > d.double(forKey: self.motionReadKey) {
+                d.set(readMs, forKey: self.motionReadKey)
+            }
         }
     }
 
