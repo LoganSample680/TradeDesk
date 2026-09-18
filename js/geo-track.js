@@ -8303,38 +8303,32 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // evidence. A partial fetch still WRITES what it found, it just may not
     // retire what it did not.
     const whole=!(serverFixes||fetched)||!!(server&&server.complete);
-    // ── AND A DERIVE THAT IS STILL MID-DRIVE RETIRES NOTHING ──────────────
-    // Owner 2026-09-18, on Jack: "in the past this would then say we had a
-    // drive from the js solutions shop to a unsaved address then show current
-    // dwell at unsaved address... why didnt this happen."
+    // ── AND A DERIVE RETIRES ONLY WHAT IT HAS AN ANSWER FOR ───────────────
+    // Owner 2026-09-18, on Jack: "rebuilt his day... its all duplicative and
+    // things arent merged together."
     //
-    // It did happen. At 08:11:03 the rule-14 traced leg was written exactly as
-    // he describes: shop to an unsaved end, breadcrumb miles, off every total,
-    // with the Save this address path on it. Then he moved the truck at
-    // 08:27:07, and the derive that ran at 08:34:49, eight seconds after the
-    // tape flipped back to still, found the chain's last journey still OPEN.
+    // That was this guard, one revision ago. It started as `&& !res.pending`,
+    // because rule 14 withholds a traced leg while the chain is still moving
+    // and the withheld set was going to a SWEEPING write, which retired the
+    // good row it had just declined to re-send. Withholding a row must never
+    // mean deleting it, and that much was right.
     //
-    // Rule 14 is right to withhold the leg there: you cannot say where the
-    // truck came to rest while it is still moving, so the chain stays pending
-    // and geoDeriveDay reports it as `pending` rather than guessing. The bug is
-    // what happened next. A pending chain still produced a row SET, that set no
-    // longer contained the traced leg, and it went to geo_replace_day with the
-    // sweep on, so the RPC did what it was asked and retired a good row plus
-    // its drive. Jack's morning went from a drive he could name to an hour of
-    // nothing.
+    // The blast radius was wrong. ONE unresolved chain at the end of a day
+    // turned the sweep off for the WHOLE day, so every stale row from every
+    // earlier derive survived and every rebuild stacked more beside them. His
+    // 08:00 dwell stood twice, once as shop and once as unsaved, same key, two
+    // tables, because a dwell that changes kind moves table and the sweep that
+    // would have caught it never ran.
     //
-    // Third member of the family the two guards above belong to, and the same
-    // sentence each time: no evidence, no sweep; partial evidence, no sweep;
-    // NO ANSWER, NO SWEEP. Withholding a row must never mean deleting it
-    // (CLAUDE.md 17: unresolved writes nothing, which is not the same as
-    // unresolved erases something). The next derive, once the truck is parked,
-    // resolves the chain and sweeps properly.
-    const settled=!res.pending;
+    // Same rule, with a boundary: retire what this derive can describe, leave
+    // the stretch still being driven to whoever can see the end of it.
+    const sweepUntil = (res.pending && Number(res.pending.startTs) > 0)
+      ? new Date(Number(res.pending.startTs)).toISOString() : null;
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
       p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
       p_time:_geoWithOpen(rows,'job_time_entries'),p_shop:_geoWithOpen(rows,'shop_time_entries'),p_miles:rows.td_mileage,
-      p_sweep:!!(tapeCovers&&tapeOwned&&whole&&settled),
+      p_sweep:!!(tapeCovers&&tapeOwned&&whole),p_sweep_until:sweepUntil,
     });
     // The only mileage paint this derive makes, the numbers in it are road
     // miles rather than trace miles (see the note above the router call), and

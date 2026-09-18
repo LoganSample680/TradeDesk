@@ -185,7 +185,14 @@ test.describe('the deriver on the server', () => {
     // It matters more on THIS path than on the phone: a person pressed the
     // button and the rebuild asks to sweep by default, so pressing Rebuild on
     // a day somebody is still driving would repeat the deletion on demand.
-    test('a day still mid-drive is written, and retires nothing', async () => {
+    // AMENDED 2026-09-18, hours after it was written. It asserted
+    //   expect(write.args.p_sweep).toBe(false);
+    // and turning the sweep off for the whole day proved far too blunt: one
+    // unresolved chain at the END left every stale row from every earlier
+    // derive standing, and on THIS path a person is pressing a button, so each
+    // press stacked more beside them. That is what the owner was looking at
+    // when he said a rebuilt day was "all duplicative". Bounded now instead.
+    test('a day still mid-drive sweeps what it can describe, and stops there', async () => {
       const { deriveDayServer } = await import(SHARED);
       // Jack's shape: the last flip is into the truck and nothing closes it.
       const stillDriving = { ...TABLES, geo_events: TABLES.geo_events
@@ -194,16 +201,28 @@ test.describe('the deriver on the server', () => {
       const r = await deriveDayServer(fakeSvc(stillDriving, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
       const write = rpc.find((c) => c.name === 'geo_replace_day');
       expect(write, 'it still writes: withholding is not skipping').toBeTruthy();
-      expect(write.args.p_sweep, 'THE bug: this was true, and it retired a good row').toBe(false);
-      expect(r.sweepAsked, 'the ask is still reported honestly').toBe(true);
+      expect(write.args.p_sweep, 'the settled part of the day is swept').toBe(true);
+      expect(write.args.p_sweep_until, 'and it stops where the day stops being known').toBeTruthy();
+      expect(r.sweepAsked).toBe(true);
       expect(r.tapeCovers).toBe(true);
     });
 
-    test('the same day, once it parks, sweeps again', async () => {
+    test('a settled day has no boundary at all: the whole day is known', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(write.args.p_sweep).toBe(true);
+      expect(write.args.p_sweep_until, 'null means sweep all of it').toBeNull();
+    });
+
+    test('the same day, once it parks, sweeps with no boundary', async () => {
       const { deriveDayServer } = await import(SHARED);
       const rpc = [];
       const r = await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
-      expect(rpc.find((c) => c.name === 'geo_replace_day').args.p_sweep).toBe(true);
+      const w = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(w.args.p_sweep).toBe(true);
+      expect(w.args.p_sweep_until).toBeNull();
       expect(r.sweep).toBe(true);
     });
 
@@ -302,14 +321,18 @@ test.describe('the deriver on the server', () => {
 // motion tape for Jack's day when it had plenty: the day was simply still
 // mid-drive. The flags have to say which.
 test.describe('an un-swept rebuild reports WHICH guard stopped it', () => {
-  test('mid-drive: pending true, tape present', async () => {
+  // AMENDED the same day it was written: pending no longer STOPS the sweep, it
+  // BOUNDS it. So it is not a reason nothing was retired any more; it is a note
+  // about where the retiring stopped.
+  test('mid-drive: pending true, tape present, and the sweep is bounded not blocked', async () => {
     const { deriveDayServer } = await import(SHARED);
     const stillDriving = { ...TABLES, geo_events: TABLES.geo_events
       .filter((e) => !(e.type === 'motion' && e.kind === 'still')) };
     const r = await deriveDayServer(fakeSvc(stillDriving, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
     expect(r.pending).toBe(true);
     expect(r.tapeCovers, 'the tape is there: blaming it would be the wrong answer').toBe(true);
-    expect(r.sweep).toBe(false);
+    expect(r.sweep).toBe(true);
+    expect(r.sweepUntil).toBeTruthy();
   });
 
   // Strip the tape entirely and it never reaches a write at all: the

@@ -405,25 +405,23 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   // tapeCovers is the one computed above for the no-evidence guard, which asks
   // the same question for the same reason and must not be asked twice in two
   // ways.
-  // ── AND NO ANSWER, NO SWEEP (owner 2026-09-18, on Jack) ──────────────────
-  // The phone's twin of this line grew the same third term on the same day,
-  // and the two must not drift. Jack's morning: rule 14 wrote a traced leg
-  // from the shop to an unsaved end at 08:11:03, exactly the row that carries
-  // the Save this address path. He moved the truck at 08:27:07, and the derive
-  // eight seconds after the tape flipped back to still found the chain's last
-  // journey still OPEN. Rule 14 correctly withheld the leg, the withheld set
-  // went to geo_replace_day with the sweep on, and the RPC retired the good row
-  // and its drive. An hour of his morning became nothing.
+  // ── AND IT RETIRES ONLY WHAT IT HAS AN ANSWER FOR ────────────────────────
+  // The phone's twin of this grew and then shrank on the same day, and the two
+  // must not drift. It started as `&& !res.pending`: a chain still mid-drive
+  // withholds its traced leg (rule 14) and the withheld set was going to a
+  // SWEEPING write, which retired the good row it had just declined to re-send.
   //
-  // It matters MORE here than on the phone: this is the rebuild path, a person
-  // pressed a button, and wantSweep defaults to true. Pressing Rebuild on a day
-  // somebody is still driving would repeat the deletion on demand.
+  // The blast radius was wrong. One unresolved chain at the end of a day turned
+  // the sweep off for the WHOLE day, and on this path that is worse than on the
+  // phone, because a person pressed a button: Jack's rebuild added rows beside
+  // every stale one instead of replacing them, which is exactly what the owner
+  // was looking at when he said "its all duplicative".
   //
-  // Withholding a row must never mean deleting it (CLAUDE.md 17: unresolved
-  // writes nothing, which is not the same as unresolved erases something). The
-  // rebuild still WRITES what it resolved; it just retires nothing until the
-  // day has an answer. Press it again once they park.
-  const sweep = wantSweep && tapeCovers && !res.pending;
+  // Same rule, with a boundary. p_sweep_until is the instant past which this
+  // derive has no answer; before it, a sweep is as safe as it ever was.
+  const sweep = wantSweep && tapeCovers;
+  const sweepUntil = (res.pending && Number(res.pending.startTs) > 0)
+    ? new Date(Number(res.pending.startTs)).toISOString() : null;
 
   // MISSING EVIDENCE IS NOT AN EMPTY DAY, the second half of it: drives that
   // are plainly on the tape and resolve to nowhere at all mean the fixes have
@@ -462,7 +460,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     p_day_start: new Date(b.start).toISOString(),
     p_day_end: new Date(b.end).toISOString(),
     p_time: withOpen(rows, "job_time_entries"), p_shop: withOpen(rows, "shop_time_entries"), p_miles: rows.td_mileage,
-    p_sweep: sweep,
+    p_sweep: sweep, p_sweep_until: sweepUntil,
   });
   if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard, fixesSeen, fixesDropped };
 
@@ -478,7 +476,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // that day", which was the only reason there had ever been; since the
     // no-answer guard above there are two, and the owner was handed the wrong
     // one on Jack's morning (2026-09-18).
-    sweep, sweepAsked: wantSweep, tapeCovers, pending: !!res.pending,
+    sweep, sweepAsked: wantSweep, tapeCovers, pending: !!res.pending, sweepUntil,
     // How much of the evidence was one CLLocation pretending to be many. Worth
     // saying: on Jack's day it was 15 of 37, and a rebuild that silently ate
     // them is how the wrong answer kept being confirmed.

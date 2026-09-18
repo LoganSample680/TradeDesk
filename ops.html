@@ -759,10 +759,22 @@ function rbNudgeLine(d){
   return 'Could NOT wake his phone'+(d.nudgeNote?' ('+d.nudgeNote+')':'')+
     ', so this used only what was already uploaded. A force-quit app takes no silent push: have him open it and press this again.';
 }
+// AMENDED 2026-09-18, the same day the pending branch was added. Being
+// mid-drive no longer STOPS the sweep, it BOUNDS it (p_sweep_until): the
+// settled part of the day is retired properly and the stretch still being
+// driven is left alone. Blocking the whole day left every stale row standing
+// and every rebuild stacked more beside them, which is what the owner was
+// looking at when he called a rebuilt day "all duplicative". So pending is no
+// longer a reason nothing was retired; it is a note about where it stopped.
+function rbBoundaryLine(d){
+  if(!d||!d.sweepUntil)return '';
+  try{
+    const t=new Date(d.sweepUntil).toLocaleTimeString('en-US',
+      {hour:'numeric',minute:'2-digit',timeZone:'America/Chicago'});
+    return 'Stale rows retired up to '+t+'. After that he was still driving, so that stretch was left alone. Press it again once he parks.';
+  }catch(_e){return '';}
+}
 function rbWhyNoSweep(d,brief){
-  if(d&&d.pending) return brief
-    ? 'that day is still mid-drive'
-    : 'Nothing retired: that day is still mid-drive, so nothing can say yet where the truck came to rest. Press it again once they park.';
   if(d&&d.tapeCovers===false) return brief
     ? 'no motion tape on the server for that day'
     : 'Nothing retired: no motion tape covers that day on the server, so it cannot tell a row that should go from one nobody uploaded.';
@@ -809,8 +821,9 @@ $('rb-go').addEventListener('click',async()=>{
       // A rebuild that could not sweep is not the same as one that did, and the
       // difference is the whole point of pressing this: say which happened.
       const _n=rbNudgeLine(data);
+      const _b=rbBoundaryLine(d);
       return rbSay((d.sweep
-        ? ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. Stale rows retired.')
+        ? ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+(_b||'Stale rows retired.'))
         : ('Rebuilt: '+d.time+' time rows, '+d.shop+' shop, '+d.miles+' mileage. '+rbWhyNoSweep(d)))
         +(_n?'\n'+_n:''));
     }

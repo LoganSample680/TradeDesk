@@ -3188,8 +3188,11 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     F.forEach(f => _geoFixLogPush(f[0], f[1], f[2], 5));
     const res = await _geoDeriveDayNow(DAY, null);
     const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
-    return { pending: !!(res && res.pending), legs: res ? res.legs.length : -1,
+    return { pending: !!(res && res.pending),
+      pendingStart: (res && res.pending && Number(res.pending.startTs)) || null,
+      legs: res ? res.legs.length : -1,
       queued: q.length, sweep: q[0] && q[0].args.p_sweep,
+      sweepUntil: (q[0] && q[0].args.p_sweep_until) ? Date.parse(q[0].args.p_sweep_until) : null,
       rows: q[0] ? q[0].args.p_time.length : -1 };
   }, [tape, SHOP, DOE,
       [[T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
@@ -3213,18 +3216,40 @@ test.describe('a derive that is still mid-drive retires nothing', () => {
     expect(r.sweep).toBe(true);
   });
 
-  test('a day still mid-drive is written, and sweeps nothing', async () => {
+  test("Jack's shape: the stale morning row is inside the boundary, so it goes", async () => {
+    // His 08:00 dwell stood twice, once as shop and once as unsaved, same key,
+    // two tables, because a dwell that changes kind moves table. The sweep
+    // retires anything in the day not in the new key set, so it catches that
+    // on its own the moment it is allowed to run at all.
     const r = await derive(STILL_DRIVING);
-    expect(r.pending, 'the chain has not come to rest').toBe(true);
-    expect(r.queued, 'it still writes: withholding is not skipping').toBe(1);
-    expect(r.sweep, 'THE bug: this was true, and it retired the traced leg Jack could have named').toBe(false);
+    expect(r.sweep).toBe(true);
+    expect(r.sweepUntil, 'the 08:00 dwell is before the line, so it is swept').toBeGreaterThan(T(8, 30));
   });
 
-  test('and once the truck parks, the same day sweeps again', async () => {
-    const still = await derive(STILL_DRIVING);
-    expect(still.sweep).toBe(false);
-    const parked = await derive(CLOSED);
-    expect(parked.sweep, 'the next derive resolves it and cleans up properly').toBe(true);
+  // AMENDED 2026-09-18, hours after it was written, and the old assertion is
+  // quoted so the change is legible: it read
+  //   expect(r.sweep, 'THE bug: this was true...').toBe(false);
+  //
+  // Turning the sweep off for the whole day was too blunt. One unresolved chain
+  // at the END of a day left every stale row from every earlier derive standing,
+  // and each rebuild stacked more beside them: "its all duplicative and things
+  // arent merged together" (owner, on Jack's rebuilt day). The sweep is on
+  // again, bounded instead, and the boundary is where the day stops being known.
+  test('a day still mid-drive sweeps what it can describe, and stops there', async () => {
+    const r = await derive(STILL_DRIVING);
+    expect(r.pending, 'the chain has not come to rest').toBe(true);
+    expect(r.queued).toBe(1);
+    expect(r.sweep, 'the settled morning is still swept').toBe(true);
+    // The boundary IS the deriver's own idea of where the unresolved chain
+    // began: this spec tests the wiring, and the deriver owns that instant.
+    expect(r.sweepUntil).toBe(r.pendingStart);
+    expect(r.sweepUntil, 'and the settled morning is safely inside it').toBeGreaterThan(T(8, 30));
+  });
+
+  test('a settled day sweeps the whole of itself, with no boundary at all', async () => {
+    const r = await derive(CLOSED);
+    expect(r.sweep).toBe(true);
+    expect(r.sweepUntil, 'null means the whole day').toBeNull();
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
