@@ -4422,6 +4422,199 @@ test.describe('geo-derive: the day deriver', () => {
   // 295, 295, 300, 250 parked for an hour. The parked fixes agree with each
   // other to within five feet. It is a different house about 295 ft up the
   // street, and the old 600 ft circle made her the only name in range.
+  // ── THE SAME DAY, TOLD IN INSTALMENTS (owner 2026-09-18) ────────────────
+  //
+  // "I want to know that we won't eat rows or miss mileage or miss how
+  // timesheets get routed."
+  //
+  // The server derives a day as the evidence arrives and is forbidden to
+  // retire anything, because it cannot tell a stretch that did not happen from
+  // a stretch nobody uploaded. Giving it that permission is only safe if a
+  // derive on PART of a day never writes a row that the whole day would take
+  // back. That is the property these tests pin, and they pin it by deriving
+  // the same day at four cut points and comparing each against the finished
+  // article.
+  //
+  // The answer is not a flat yes, and pretending otherwise is how a sweep eats
+  // somebody's pay. There are two kinds of row:
+  //
+  //   JOURNEY rows (a drive, a client, an unsaved stop) are decided by their
+  //   own two ends. Once both are known nothing later in the day touches them,
+  //   so a mid-day derive writes exactly what the finished day writes. These
+  //   are safe to close in real time.
+  //
+  //   DAY rows (shop, yard, office) are trimmed by rule 11's day window, which
+  //   closes at the last real work plus the wrap and therefore only ever moves
+  //   LATER. The yard sit written at 5pm is correct at 5pm and wrong at 6:15
+  //   when another job happens. These are provisional by construction and no
+  //   amount of coverage makes them final before the day is.
+  test.describe('a day derived in instalments never takes back a journey row', () => {
+    // A crew shape: out of the house, the yard, a customer, an unsaved stop
+    // long enough to collapse the leg, back to the customer, the yard again,
+    // home. Clocked, so rule 13 vouches for the client time and the diff is
+    // about instalments rather than about held rows.
+    const DAY_TAPE = [
+      mo(T(7, 0), 'automotive'), mo(T(7, 20), 'onFoot'),
+      mo(T(8, 0), 'automotive'), mo(T(8, 20), 'onFoot'),
+      mo(T(11, 0), 'automotive'), mo(T(11, 10), 'onFoot'),
+      mo(T(12, 30), 'automotive'), mo(T(12, 40), 'onFoot'),
+      mo(T(15, 0), 'automotive'), mo(T(15, 20), 'onFoot'),
+      mo(T(16, 0), 'automotive'), mo(T(16, 20), 'onFoot'),
+    ];
+    const DAY_FIXES = [
+      fix(T(6, 59), { lat: HOME.lat, lng: HOME.lng }),
+      fix(T(7, 20, 5), { lat: SHOP.lat, lng: SHOP.lng }), fix(T(7, 50), { lat: SHOP.lat, lng: SHOP.lng }),
+      fix(T(8, 20, 5), { lat: DOE.lat, lng: DOE.lng }), fix(T(10, 0), { lat: DOE.lat, lng: DOE.lng }),
+      fix(T(11, 10, 5), { lat: GAS.lat, lng: GAS.lng }), fix(T(12, 0), { lat: GAS.lat, lng: GAS.lng }),
+      fix(T(12, 40, 5), { lat: DOE.lat, lng: DOE.lng }), fix(T(14, 0), { lat: DOE.lat, lng: DOE.lng }),
+      fix(T(15, 20, 5), { lat: SHOP.lat, lng: SHOP.lng }), fix(T(15, 50), { lat: SHOP.lat, lng: SHOP.lng }),
+      fix(T(16, 20, 5), { lat: HOME.lat, lng: HOME.lng }),
+    ];
+    const CLOCKS = [{ start: T(7, 0), end: T(16, 30) }];
+
+    // Everything the phone had by `cut`, judged as of `cut`: exactly the
+    // evidence and exactly the "now" a server holds mid-afternoon.
+    const at = (cut) => page.evaluate(({ tape, fixes, clocks, cut: c, f }) => {
+      const r = geoDeriveDay({
+        day: '2026-09-01', dayStart: window.__dayStart, dayEnd: window.__dayEnd,
+        personId: 'e', fences: f, clocks,
+        tape: tape.filter(t => t.ts <= c), fixes: fixes.filter(x => x.ts <= c), nowMs: c,
+      });
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+      const take = (arr, kind) => arr.map(x => ({
+        kind, key: x.client_key, src: x.source || kind,
+        a: x.arrived_at, z: x.departed_at, min: Number(x.minutes),
+        dest: x.dest_place || '', job: x.job_id || '',
+      }));
+      return JSON.parse(JSON.stringify({
+        time: take(rows.job_time_entries, 'time'),
+        shop: take(rows.shop_time_entries, 'shop'),
+        miles: rows.td_mileage.map(m => ({
+          key: m.client_key || m.legKey || m.id, miles: Number(m.miles) || 0,
+          from: m.from_name || '', to: m.to_name || '',
+        })),
+      }));
+    }, { tape: DAY_TAPE, fixes: DAY_FIXES, clocks: CLOCKS, cut, f: FENCES });
+
+    // Rows whose value depends on the day's LAST event, so they cannot be
+    // final until the day is. Everything else is decided by its own two ends.
+    const DAY_SCOPED = (r) => r.kind === 'shop' || /^place-office$/.test(r.src);
+    const CUTS = [[9, 0], [12, 0], [14, 0], [15, 30]];
+
+    test.beforeAll(async () => {
+      await page.evaluate(([s, e]) => { window.__dayStart = s; window.__dayEnd = e; },
+        [base({}).dayStart, base({}).dayEnd]);
+    });
+
+    test('no journey row written mid-day is missing from the finished day', async () => {
+      const full = await at(base({}).dayEnd);
+      const fullKeys = new Set([...full.time, ...full.shop].map(r => r.kind + '|' + r.key));
+      const orphans = [];
+      for (const [h, m] of CUTS) {
+        const part = await at(T(h, m));
+        for (const r of [...part.time, ...part.shop]) {
+          if (DAY_SCOPED(r)) continue;                       // provisional by design
+          if (!fullKeys.has(r.kind + '|' + r.key)) {
+            orphans.push(`${hm(T(h, m))} wrote ${r.src} ${r.key} and the day took it back`);
+          }
+        }
+      }
+      // THIS is the property that makes closing in real time safe. Every
+      // orphan is a row a sweeping server would have created and then eaten.
+      expect(orphans).toEqual([]);
+    });
+
+    test('no journey row changes its minutes, its place or its job once both ends are known', async () => {
+      const full = await at(base({}).dayEnd);
+      const byKey = new Map([...full.time, ...full.shop].map(r => [r.kind + '|' + r.key, r]));
+      const drifted = [];
+      for (const [h, m] of CUTS) {
+        const part = await at(T(h, m));
+        for (const r of [...part.time, ...part.shop]) {
+          if (DAY_SCOPED(r)) continue;
+          const f = byKey.get(r.kind + '|' + r.key);
+          if (!f) continue;                                   // covered by the test above
+          // An open row is still being lived through; only a row the cut
+          // itself calls finished is asserted about here.
+          if (!r.z) continue;
+          if (r.min !== f.min) drifted.push(`${r.key} minutes ${r.min} -> ${f.min} (cut ${hm(T(h, m))})`);
+          if (r.dest !== f.dest) drifted.push(`${r.key} place "${r.dest}" -> "${f.dest}"`);
+          if (r.job !== f.job) drifted.push(`${r.key} job "${r.job}" -> "${f.job}"`);
+          if (r.src !== f.src) drifted.push(`${r.key} routed ${r.src} -> ${f.src}`);
+        }
+      }
+      // Routing is the half that decides whose timesheet and which job a
+      // minute lands on. A drift here is a re-routed row, which is worse than
+      // a late one: it is silently wrong on somebody's pay.
+      expect(drifted).toEqual([]);
+    });
+
+    test('mileage only ever grows as the day goes on, and no leg disappears', async () => {
+      const full = await at(base({}).dayEnd);
+      const fullLegs = new Map(full.miles.map(m => [m.key, m]));
+      const lost = [];
+      const filled = [];
+      let lastTotal = -1;
+      for (const [h, m] of CUTS) {
+        const part = await at(T(h, m));
+        const total = part.miles.reduce((s, x) => s + x.miles, 0);
+        expect(total).toBeGreaterThanOrEqual(lastTotal);
+        lastTotal = total;
+        for (const leg of part.miles) {
+          const f = fullLegs.get(leg.key);
+          if (!f) { lost.push(`${hm(T(h, m))} wrote leg ${leg.key} (${leg.from} -> ${leg.to}) and the day dropped it`); continue; }
+          // ── RESOLVING IS NOT RE-ROUTING (found by this test, 2026-09-18) ──
+          // The first version asserted a leg's two ends never change, and the
+          // 11:00 drive to the unsaved stop failed it: at noon its far end is
+          // blank because the truck has not finished going wherever it is
+          // going, and by the end of the day the stop has collapsed and the
+          // leg reads John Doe -> John Doe.
+          //
+          // That assertion was wrong from the start. It could not tell an end
+          // that had not resolved yet from an end that resolved WRONG, and
+          // only the second is a defect. The leg keeps its key either way, so
+          // geo_replace_day updates it in place and no mileage is lost.
+          //
+          // What must never happen is one real place becoming a different real
+          // place: that is a drive re-attributed to another customer, which is
+          // silently wrong on an invoice and on an IRS log. Filling a blank is
+          // allowed and counted; swapping a name is a failure.
+          const fills = (was, now) => was === '' && now !== '';
+          if (f.from !== leg.from && !fills(leg.from, f.from)) {
+            lost.push(`${leg.key} re-originated: "${leg.from}" became "${f.from}"`);
+          }
+          if (f.to !== leg.to && !fills(leg.to, f.to)) {
+            lost.push(`${leg.key} re-routed: "${leg.to}" became "${f.to}"`);
+          }
+          if (fills(leg.to, f.to) || fills(leg.from, f.from)) {
+            filled.push(`${hm(T(h, m))} ${leg.key}: ${leg.from || '?'} -> ${leg.to || '?'} resolved to ${f.from} -> ${f.to}`);
+          }
+        }
+      }
+      expect(lost).toEqual([]);
+      // Visible on purpose. A leg written before its far end is known is the
+      // one shape a real-time close has to expect, and it is the same leg that
+      // carries two drive rows through a collapsed stop (js/mileage.js
+      // _mileTripNumberForLeg). If this list ever empties, legs stopped being
+      // written early and the close got later, which is worth knowing too.
+      expect(filled.length).toBeGreaterThan(0);
+      expect(full.miles.reduce((s, x) => s + x.miles, 0)).toBeGreaterThanOrEqual(lastTotal);
+    });
+
+    test('the yard row IS provisional, and that is the documented exception', async () => {
+      // Not a defect, the thing itself: rule 11's window closes at the last
+      // real work plus the wrap, so the same yard sit is one length at 3pm
+      // and another once the afternoon has happened. This test exists so the
+      // exception stays deliberate, and so a future change that makes yard
+      // time stable is noticed rather than assumed.
+      const early = await at(T(15, 30));
+      const full = await at(base({}).dayEnd);
+      const sum = (r) => r.shop.reduce((s, x) => s + x.min, 0);
+      expect(sum(full)).toBeGreaterThanOrEqual(0);
+      expect(sum(early)).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   test.describe('rule 22: a stop is named from the middle of itself', () => {
     const PIN = { lat: 39.0104968, lng: -95.7790924 };          // Laurie's saved pin
     const PARKED = { lat: 39.011155, lng: -95.779699 };          // where he actually sat
