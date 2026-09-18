@@ -268,6 +268,108 @@ test.describe('Receipt-gated supply runs', () => {
         .toEqual({ vehicle: '2013 Ford F150', vehicleId: 7, notes: 'gate code 4412' });
     });
 
+    // ── THE FEAR BELONGS ON THE DESTRUCTIVE DOOR (owner 2026-09-18) ───────
+    // "I think personal needs to be the most scary looking thing"
+    // It was the other way round, and the control log shows the cost: at
+    // 16:54:45 Jack tapped _supplyRunNoReceipt, then a dialog button, then
+    // _supplyRunPersonal. No receipt is the harmless answer and carried the
+    // only warning; Personal took the miles AND the hours in one tap with no
+    // confirm at all.
+    test('Personal asks first, in red, and names what it costs', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-p1', supplyRunKey: 'k1', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunPersonal(encodeURIComponent('k1'));
+        const o = document.querySelector('.zmodal-overlay');
+        const yes = o && o.querySelector('#zmodal-yes');
+        return {
+          asked: !!o,
+          title: o && o.querySelector('.zmodal-title').textContent,
+          msg: o && o.querySelector('.zmodal-msg').textContent,
+          yes: yes && yes.textContent,
+          no: o && o.querySelector('.zmodal-cancel').textContent,
+          red: yes && /a32d2d/i.test(yes.getAttribute('style') || ''),
+          // Nothing may happen until he answers.
+          personalYet: !!mileage[0].personal,
+        };
+      });
+      expect(r.asked, 'one tap must no longer be enough').toBe(true);
+      expect(r.title).toBe('Take this off the books?');
+      expect(r.msg, 'the real numbers, not a category').toContain('4.5 mi');
+      expect(r.msg).toContain('26m');
+      expect(r.msg, 'both books, said plainly').toContain('timesheet');
+      expect(r.msg).toContain('mileage');
+      expect(r.msg, 'unpaid is the word that matters').toContain('unpaid');
+      expect(r.yes).toBe('Yes, it was personal');
+      expect(r.no).toBe('No, keep it');
+      expect(r.red, 'the destructive button is the red one').toBe(true);
+      expect(r.personalYet, 'asking is not doing').toBe(false);
+    });
+
+    // The half the owner's draft got wrong, and it matters more than the fear:
+    // 'unpersonal' exists (built 2026-09-16 on his own instruction after this
+    // same mis-tap), so a warning that says otherwise would be a lie, and a lie
+    // here teaches people to hide mistakes rather than undo them.
+    test('the warning promises an undo, and the undo is real', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-p2', supplyRunKey: 'k2', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunPersonal(encodeURIComponent('k2'));
+        const msg = document.querySelector('.zmodal-msg').textContent;
+        document.querySelector('#zmodal-yes').click();
+        const after = !!mileage[0].personal;
+        resolveSupplyRun('k2', 'unpersonal');
+        return { msg, after, back: !!mileage[0].personal, noReceipt: !!mileage[0].noReceipt };
+      });
+      expect(r.msg, 'it says you can put it back').toContain('put it back');
+      expect(r.after, 'saying yes does take it off').toBe(true);
+      expect(r.back, 'and the way back really works').toBe(false);
+      expect(r.noReceipt, 'landing where a no-receipt answer would have').toBe(true);
+    });
+
+    test('No, keep it changes nothing at all', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-p3', supplyRunKey: 'k3', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunPersonal(encodeURIComponent('k3'));
+        document.querySelector('.zmodal-cancel').click();
+        return { personal: !!mileage[0].personal, held: !!mileage[0].pendingReceipt,
+          gone: !document.querySelector('.zmodal-overlay') };
+      });
+      expect(r).toEqual({ personal: false, held: true, gone: true });
+    });
+
+    test('No receipt is no longer dressed as the dangerous one', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-p4', supplyRunKey: 'k4', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunNoReceipt(encodeURIComponent('k4'));
+        const yes = document.querySelector('#zmodal-yes');
+        const msg = document.querySelector('.zmodal-msg').textContent;
+        document.querySelector('.zmodal-cancel').click();
+        return { red: /a32d2d/i.test(yes.getAttribute('style') || ''), msg };
+      });
+      expect(r.red, 'the ordinary business answer is not the red button').toBe(false);
+      expect(r.msg, 'but the tax note stays, because it is true').toContain('IRS');
+    });
+
+    // §11.1: a run with nothing to read still asks, and says something true.
+    test('a run with no numbers still asks, in plain words', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [];
+        _supplyRunPersonal(encodeURIComponent('k-missing'));
+        const msg = document.querySelector('.zmodal-msg').textContent;
+        document.querySelector('.zmodal-cancel').click();
+        return msg;
+      });
+      expect(r).toContain('the miles and the time');
+    });
+
     test('No receipt: commits as business carrying the noReceipt flag', async () => {
       const key = await seedHeld();
       const out = await page.evaluate((k) => {

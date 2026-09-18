@@ -1277,15 +1277,59 @@ function _supplyRunSweep(){
   if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}}
   return n;
 }
+// What this run costs him if he says personal, read off the legs themselves so
+// the warning names real numbers instead of a category.
+function _supplyRunCost(key){
+  let mi=0,mins=0,n=0;
+  (mileage||[]).forEach(m=>{
+    if(!m||String(m.supplyRunKey||'')!==String(key))return;
+    n++;
+    const a=Number(m.miles);if(isFinite(a))mi+=a;
+    const b=Number(m.mins);if(isFinite(b))mins+=b;
+  });
+  return {legs:n,miles:Math.round(mi*10)/10,mins:Math.round(mins)};
+}
+// ── THE FEAR BELONGS ON THE DESTRUCTIVE DOOR (owner 2026-09-18) ────────────
+//
+// "I think personal needs to be the most scary looking thing"
+//
+// It was the other way round, and the control log shows what that cost. At
+// 16:54:45 Jack tapped _supplyRunNoReceipt, then a dialog button, then
+// _supplyRunPersonal. No receipt is the harmless answer and it was the only
+// one carrying a warning ("The IRS may disallow..."), while Personal, which
+// takes the miles AND the hours off the books in one tap, had no confirm at
+// all. He hit the scary one, backed out, and took the door that looked safe.
+//
+// So the confirm moves to Personal and says what it actually does, with this
+// run's own numbers in it. No receipt keeps its tax note, because that note is
+// true, but it is no longer the red button: it is the ordinary business answer.
+//
+// AND THE LAST LINE IS HONEST. The owner's draft ended "taking this off
+// personal will not allow you to add back later". It does: resolveSupplyRun's
+// 'unpersonal' door exists for exactly this mis-tap and was built on his own
+// instruction (2026-09-16, "he made a human mistake"). A threat the app does
+// not honour teaches people to hide mistakes instead of undoing them, so the
+// warning is heavy about the consequence and straight about the way back.
 function _supplyRunPersonal(k){
-  resolveSupplyRun(decodeURIComponent(k),'personal');
-  if(typeof showToast==='function')showToast('Cleared, kept off the books','🚗');
+  const key=decodeURIComponent(k);
+  const c=_supplyRunCost(key);
+  const bits=[];
+  if(c.miles>0)bits.push(c.miles+' mi');
+  if(c.mins>0)bits.push(typeof _fmtMin==='function'?_fmtMin(c.mins):(c.mins+'m'));
+  const what=bits.length?bits.join(' and '):'the miles and the time';
+  zConfirm('<b>'+what+'</b> comes off your timesheet AND off your mileage. '+
+           'You will be unpaid for that stretch of the day.<br><br>'+
+           'Only say yes if the trip was not work. You can put it back later from the row.',
+    ()=>{resolveSupplyRun(key,'personal');if(typeof showToast==='function')showToast('Off the books, and off your hours','🚗');},
+    {title:'Take this off the books?',yes:'Yes, it was personal',no:'No, keep it',danger:true});
 }
 function _supplyRunNoReceipt(k){
-  // Owner copy (2026-08-17): one plain line, not a tax lecture.
+  // Owner copy (2026-08-17): one plain line, not a tax lecture. No longer the
+  // red button (2026-09-18): this is the ordinary answer, and dressing it as
+  // the dangerous one is what pushed him onto Personal.
   zConfirm('Save this run as business without a receipt?\n\nThe IRS may disallow the mileage and the expense if no receipt is provided.',
     ()=>{resolveSupplyRun(decodeURIComponent(k),'noreceipt');if(typeof showToast==='function')showToast('Logged as business, no receipt on file','⚠️');},
-    {title:'No receipt',yes:'Save as business'});
+    {title:'No receipt',yes:'Save as business',danger:false});
 }
 // Scan door: the existing quick-expense modal (it carries the receipt
 // scanner). The run key rides INSIDE the modal as a hidden field, never a
