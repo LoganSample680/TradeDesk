@@ -24,6 +24,32 @@ var clients=[],bids=[],jobs=[],mileage=[],timeEntries=[];
 var _supaUser=null,_contractorUserId=null,_isEmployee=false,_employeeRecord=null;
 var _tsp={token:'',data:null,jobs:{},name:'',busy:false};
 
+// ── THE LINK BELONGS TO THE FIRST DEVICE THAT OPENS IT ───────────────────
+// Owner 2026-09-19: "the link that is shared I need some security on it, only
+// the person who receives it can open it, if it's resent again that person
+// can't see it." He picked trust-on-first-use by number out of three shapes.
+//
+// The server does the deciding (timesheet_claim, 20261027). This side's only
+// job is to say WHICH device is asking, and to say it the same way every
+// time, including after the phone is closed and the link reopened a week
+// later from the same thread. localStorage, same key the app itself uses
+// (_initDeviceId, js/cloud.js), so a boss who also runs TradeDesk on this
+// phone is one device here and not two.
+//
+// No storage at all (a locked-down browser, private mode) is not an error:
+// the page sends nothing, and the server serves it only while the sheet is
+// still unclaimed. That degrades to exactly the old behaviour for the one
+// person it can affect, rather than locking out a boss over a browser
+// setting.
+function _tspDeviceId(){
+  try{
+    let id=localStorage.getItem('zp3_device_id');
+    if(!id){id='dev_'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+            localStorage.setItem('zp3_device_id',id);}
+    return id;
+  }catch(_e){return '';}
+}
+
 // Belt and braces only: _tlReadOnly() above is the guard that matters.
 function _canViewComp(){return false;}
 function bizTz(){return S.bizTz;}
@@ -200,7 +226,7 @@ async function _tspDecide(decision){
   _tsp.busy=true;
   document.querySelectorAll('#tsp-foot button').forEach(b=>{b.disabled=true;});
   try{
-    const{data,error}=await sb.rpc('timesheet_decide',{p_token:_tsp.token,p_decision:decision,p_note:note,p_name:null});
+    const{data,error}=await sb.rpc('timesheet_decide',{p_token:_tsp.token,p_decision:decision,p_note:note,p_name:null,p_device:_tspDeviceId()});
     if(error)throw error;
     Object.assign(_tsp.data,data||{},{status:(data&&data.status)||(decision==='approve'?'approved':'rejected')});
     if(decision==='reject'&&!_tsp.data.reject_note)_tsp.data.reject_note=note;
@@ -234,10 +260,15 @@ async function _tspBoot(){
   if(!sb)return _tspState('Could not load','Check your connection and try again.');
   let data=null;
   try{
-    const r=await sb.rpc('timesheet_public',{p_token:token});
+    const r=await sb.rpc('timesheet_public',{p_token:token,p_device:_tspDeviceId()});
     if(r&&r.error)throw r.error;
     data=r&&r.data;
   }catch(_e){return _tspState('Could not load','Check your connection and try again.');}
+  // A refusal is an ANSWER, not a failure, and it gets its own words. "Could
+  // not load" is what a bad signal says, and it would send somebody off
+  // checking their bars over a link that is working exactly as intended.
+  if(data&&data.refused)return _tspState('This link is already open somewhere else',
+    'A timesheet link works on the first phone or computer that opens it. Ask for it to be sent again and this one will work.');
   if(!data||!data.week_start)return _tspState('This timesheet is not here','The link may be old or mistyped.');
   _tsp.data=data;
   _tsp.name=String(data.person_name||'Crew');

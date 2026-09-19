@@ -27,9 +27,16 @@ const DATA = {
 
 async function openPage(page, data, opts) {
   await mockAllExternal(page);
-  await page.addInitScript(({ data, decideFail }) => {
+  await page.addInitScript(({ data, decideFail, noStorage }) => {
     window.__tsp = { data, calls: [], decideFail };
-  }, { data, decideFail: !!(opts && opts.decideFail) });
+    // A browser that refuses storage (private mode, a locked-down profile).
+    // Installed HERE rather than in the test body because _tspDeviceId runs
+    // at boot, which is long before a test gets a look in (10.5).
+    if (noStorage) {
+      const bang = () => { throw new Error('storage is off'); };
+      try { Object.defineProperty(window, 'localStorage', { get: bang, configurable: true }); } catch (_e) {}
+    }
+  }, { data, decideFail: !!(opts && opts.decideFail), noStorage: !!(opts && opts.noStorage) });
   // Registered AFTER mockAllExternal so it wins: the SDK becomes a shim whose
   // rpc answers from window.__tsp.
   await page.route('**/supabase-js@2*', (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: `
@@ -64,7 +71,11 @@ test.describe('The public timesheet page', () => {
     expect(r.range).toBe('Aug 23 to 29');
     expect(r.chip).toMatch(/^Submitted Sep 5,/);
     expect(r.title).toContain('Jack Sample');
-    expect(r.rpc).toEqual(['timesheet_public', { p_token: 'tok_abc_1234567890' }]);
+    // p_device joined it 2026-09-19: the link binds to the first device that
+    // opens it, and this side's whole job is naming which device is asking.
+    expect(r.rpc[0]).toBe('timesheet_public');
+    expect(r.rpc[1].p_token).toBe('tok_abc_1234567890');
+    expect(r.rpc[1].p_device).toMatch(/^dev_/);
   });
 
   test('the same week bars the app draws: seven columns, hours on the worked days, a chevron to open them, no Send button, no arrows out of the week', async ({ page }) => {
@@ -297,6 +308,74 @@ test.describe('The public timesheet page', () => {
     expect(r.junk).toEqual([false, false, false]);
     // Navigation only: nothing on the shared page calls a writer.
     r.handlers.forEach((h) => expect(h, h).toMatch(/^_tlDrill(To|Up|Step)\(/));
+  });
+
+  // ── The link belongs to the first device that opens it ─────────────────
+  //
+  // Owner 2026-09-19: "the link that is shared I need some security on it,
+  // only the person who receives it can open it, if it's resent again that
+  // person can't see it." He picked trust-on-first-use out of three shapes.
+  //
+  // The DECIDING is the server's (timesheet_claim, migration 20261027, proven
+  // in SQL). What is proven here is the only part this file owns: that the
+  // page names its device, names the SAME one every time, names it on the
+  // approve too, and has something true to say when the answer is no.
+  test.describe('one device per link', () => {
+    test('every call says which device is asking, and it is one device', async ({ page }) => {
+      await openPage(page, DATA);
+      await page.evaluate(() => _tspDecide('approve'));
+      const r = await page.evaluate(() => ({
+        calls: window.__tsp.calls.map(c => [c[0], c[1].p_device]),
+        stored: localStorage.getItem('zp3_device_id'),
+      }));
+      expect(r.calls.length).toBe(2);
+      expect(r.calls[0][0]).toBe('timesheet_public');
+      expect(r.calls[1][0]).toBe('timesheet_decide');
+      // Approving is the part that costs money, so it carries the claim too.
+      expect(r.calls[1][1], 'the approve names the device as well').toBe(r.calls[0][1]);
+      expect(r.calls[0][1]).toBe(r.stored);
+    });
+
+    // The same key js/cloud.js writes (_initDeviceId), on purpose: a boss who
+    // also runs TradeDesk on this phone must be ONE device here, not two.
+    test('the same phone comes back as the same device, not a new one', async ({ page }) => {
+      await openPage(page, DATA);
+      const first = await page.evaluate(() => window.__tsp.calls[0][1].p_device);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => window.__tsp && window.__tsp.calls.length > 0);
+      const second = await page.evaluate(() => window.__tsp.calls[0][1].p_device);
+      expect(second).toBe(first);
+    });
+
+    test('refused: the page says what happened and shows nothing of the week', async ({ page }) => {
+      await openPage(page, { refused: 'bound' });
+      const r = await page.evaluate(() => ({
+        title: document.querySelector('.tsp-state-t').textContent.trim(),
+        msg: document.querySelector('.tsp-state-m').textContent.trim(),
+        pageHidden: document.getElementById('tsp-page').hidden,
+        body: (document.getElementById('tsp-body') || {}).innerHTML || '',
+      }));
+      expect(r.title).toMatch(/already open somewhere else/i);
+      // Not "could not load": that is what a bad signal says, and it would
+      // send somebody checking their bars over a link working as intended.
+      expect(r.title).not.toMatch(/could not load/i);
+      expect(r.msg, 'and what to do about it').toMatch(/sent again/i);
+      expect(r.pageHidden, 'no hours leak past the refusal').toBe(true);
+      expect(r.body).not.toContain('tl-wbar');
+    });
+
+    // Private mode, a locked-down profile. The page sends no device, the
+    // server serves it only while the sheet is unclaimed, and nobody is
+    // locked out of their own timesheet over a browser setting.
+    test('a browser with no storage still opens the link', async ({ page }) => {
+      await openPage(page, DATA, { noStorage: true });
+      const r = await page.evaluate(() => ({
+        device: window.__tsp.calls[0][1].p_device,
+        shown: !document.getElementById('tsp-page').hidden,
+      }));
+      expect(r.device).toBe('');
+      expect(r.shown).toBe(true);
+    });
   });
 
   test('layout (§15.3): no bleed, no overlapping controls at 320px and 390px', async ({ page }) => {
