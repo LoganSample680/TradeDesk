@@ -2086,7 +2086,32 @@ function _geoCloseShopEntry(arrivedAt,departedIso){
 function _geoIsDriveSource(s){return /^drive/.test(String(s||''));}
 // Time outside every fence that is not driving: lunch, an errand, waiting on a
 // gate. Neither job labor nor drive time, and never silently folded into either.
-function _geoIsOffJobSource(s){return String(s||'')==='stop';}
+// ── OFFICE TIME IS NEVER RUNNING TIME (owner rule 2026-09-19) ────────────
+// "Office time should never add itself to a table as running time, right now
+// it does ... important to leave it but need to mark it as unpaid since
+// office time goes a part of the bill."
+//
+// Section 9.11 has said half of this since 2026-08-30 ("home office time only
+// counts when the app is open") and the deriver already enforces that half:
+// rule 10 writes an Office row only for app-open minutes inside a home fence,
+// and only OUTSIDE the working day. What nothing said was what the row is
+// worth once written, so it fell through to paid and added itself to the
+// day, the week and the overtime like a job site.
+//
+// It is overhead, not payroll: it belongs on the bill and in the record, and
+// not in the hours anybody is paid for. Said HERE rather than in a reader
+// because this one predicate is what every total already asks (the Time Log's
+// paid minutes and OT, Crew Cost's labour bucket), so one answer moves all of
+// them at once and cannot drift between screens.
+//
+// Nothing is deleted and nothing is rebuilt: the row keeps its place on the
+// rail, greyed, and because this is a question about the SOURCE it re-grades
+// every row already written, on every account, the moment this ships.
+//
+// 'place-home' rides along: the deriver stopped writing it (rule 12) but the
+// rows it wrote are still there and js/timelog.js still reads them on purpose.
+const _GEO_OFFICE_SOURCES={'place-office':1,'place-home':1};
+function _geoIsOffJobSource(s){const k=String(s||'');return k==='stop'||_GEO_OFFICE_SOURCES[k]===1;}
 // ── SHOWN, NEVER CLAIMED ──────────────────────────────────────────────────
 // A `-held` suffix means the deriver wrote this row but nothing in the day
 // vouched for it (js/geo-derive.js rules 13, 15 and 18): a visit at a family
@@ -7249,6 +7274,10 @@ function _geoFixDayLo(ms){
   return _geoFixDayLoV;
 }
 const _GEO_FIXLOG_KEEP_MS=8*86400000;
+// How far back the CoreMotion tape is worth asking about: iOS keeps roughly a
+// week of it. This is the TAPE window and nothing else. It used to double as
+// the boot rebuild's reach, which is why it is named the way it is; see
+// _geoDeriveRebuildDays, where that second job was taken away from it.
 const _GEO_DERIVE_DAYS=7;
 
 const _GEO_APPLOG_KEY='zp3_geo_applog';
@@ -7997,16 +8026,12 @@ function _geoWithOpen(rows,tbl){
   return base.concat(open.map(r=>{const o=Object.assign({},r);delete o._table;return o;}));
 }
 
-function _geoEnqueueRpc(dayKey,args){
-  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
-  try{
-    const key='rpc:'+dayKey;
-    const q=_geoQueueRead().filter(x=>!(x&&x.row&&x.row.client_key===key));
-    q.push({rpc:'geo_replace_day',args,row:{client_key:key}});
-    _geoQueueWrite(q);
-  }catch(_e){}
-  _geoDrainQueue();
-}
+// _geoEnqueueRpc was DELETED 2026-09-19 (§7: deleted, never hidden). It was
+// the only way a phone could put a derived day on file, and a week of
+// measurement said it had never once contributed a row the server could not
+// derive from the same evidence. The drain still understands an `rpc` item,
+// deliberately: a queue written by an older build must still be able to empty
+// itself after an update.
 
 // The in-memory mileage array is what the settings-blob sweep compares the
 // server against, so the derived legs have to be in it or the next save
@@ -8538,63 +8563,34 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // reaches the server, so the paint does too.
     const _milesMoved=_geoDeriveApplyMileage(dayKey,rows.td_mileage);
     await _geoDeriveRouteMiles(rows.td_mileage);
-    // NO TAPE, NO SWEEP (owner 2026-09-04: "cant risk data going away ever").
-    // A derive without the phone's own motion history for this day (a
-    // laptop, a new phone, a shared iPad before this person's claim) may
-    // still ADD what it can prove from the app log, a Sunday of invoicing at
-    // the home office, but it may never retire a row it cannot see the
-    // evidence for. geo_replace_day skips its sweeps when p_sweep is false.
+    // ── THE PHONE NO LONGER WRITES ROWS (owner 2026-09-19) ───────────────
+    // "Turn off the portion of the phone that can write then, we got our
+    // answer."
     //
-    // AND ONLY WHEN THIS PHONE OWNED THE WHOLE DAY. Owner 2026-09-04, walking
-    // it through: "I sign out and sign in on jacks phone, we both have
-    // different core motions, what happens." The claim starts at the swap, so
-    // the tape says nothing about the morning; the morning's rows came from
-    // the other phone, they are not in this derive's set, and a sweep would
-    // have retired them. A partial day may add and refresh, never retire.
-    // Tomorrow's rebuild, with the claim covering the whole of today, sweeps
-    // it properly.
-    const tapeOwned=_geoTapeSince()<=b.start-2*3600000;
-    // ── AND THE EVIDENCE HAS TO BE WHOLE BEFORE ANYTHING IS RETIRED ───────
-    // Owner 2026-09-16: "I'm missing so many fucking drives now everywhere."
-    // Twenty-two rows off his last week, retired at 06:45 by the boot rebuild,
-    // no error anywhere. The fetch behind it stops silently on an error and at
-    // a page cap and hands back a partial set as though it were the whole one;
-    // the day then derives from part of the evidence and sweeps against all of
-    // it, so every row the missing pages would have produced reads as a row
-    // that should no longer exist.
+    // The answer, measured over a week on both live accounts:
+    //   - rows the phone wrote whose evidence the server does not have: 0 of 142.
+    //     It never knew anything the server could not derive for itself.
+    //   - overlapping automatic rows on file: 7 pairs, 70 minutes. geo_replace_day
+    //     REFUSES a set containing an overlap, so the server cannot make one
+    //     alone; every pair is two writers disagreeing about the same minutes,
+    //     and over half of it landed on Jack's 18 September.
+    //   - that day derived properly: the server produces 10 rows, all correct,
+    //     against about 20 on file. Rows the phone added that were right: none.
     //
-    // This is the same rule the server path has always had, said the other way
-    // round: absence of evidence is evidence of absence only where there IS
-    // evidence. A partial fetch still WRITES what it found, it just may not
-    // retire what it did not.
-    const whole=!(serverFixes||fetched)||!!(server&&server.complete);
-    // ── AND A DERIVE RETIRES ONLY WHAT IT HAS AN ANSWER FOR ───────────────
-    // Owner 2026-09-18, on Jack: "rebuilt his day... its all duplicative and
-    // things arent merged together."
+    // ingest-geo already runs deriveDayServer on every batch that lands, from
+    // the uploaded record, with byte-for-byte the same code (gen-shared-deriver,
+    // and CI fails if they drift). One deriver, one writer, one place it runs.
     //
-    // That was this guard, one revision ago. It started as `&& !res.pending`,
-    // because rule 14 withholds a traced leg while the chain is still moving
-    // and the withheld set was going to a SWEEPING write, which retired the
-    // good row it had just declined to re-send. Withholding a row must never
-    // mean deleting it, and that much was right.
+    // The derive above still RUNS and everything below still reads it: the open
+    // dwell for the on-site card, day-end's note, the mileage paint. What it no
+    // longer does is put its answer on file where it can argue with the server's.
     //
-    // The blast radius was wrong. ONE unresolved chain at the end of a day
-    // turned the sweep off for the WHOLE day, so every stale row from every
-    // earlier derive survived and every rebuild stacked more beside them. His
-    // 08:00 dwell stood twice, once as shop and once as unsaved, same key, two
-    // tables, because a dwell that changes kind moves table and the sweep that
-    // would have caught it never ran.
-    //
-    // Same rule, with a boundary: retire what this derive can describe, leave
-    // the stretch still being driven to whoever can see the end of it.
-    const sweepUntil = (res.pending && Number(res.pending.startTs) > 0)
-      ? new Date(Number(res.pending.startTs)).toISOString() : null;
-    _geoEnqueueRpc(dayKey,{
-      p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
-      p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
-      p_time:_geoWithOpen(rows,'job_time_entries'),p_shop:_geoWithOpen(rows,'shop_time_entries'),p_miles:rows.td_mileage,
-      p_sweep:!!(tapeCovers&&tapeOwned&&whole),p_sweep_until:sweepUntil,
-    });
+    // THE SWEEP GUARDS WENT WITH IT. tapeOwned ("no tape, no sweep", owner
+    // 2026-09-04: "cant risk data going away ever"), `whole` (a partial fetch
+    // may add and never retire, owner 2026-09-16) and sweepUntil (retire only
+    // what this derive can describe) all bounded what THIS PHONE could retire.
+    // It retires nothing now. The same three questions are asked on the server,
+    // where the write is, and derive-day.mjs carries that reasoning in full.
     // The only mileage paint this derive makes, the numbers in it are road
     // miles rather than trace miles (see the note above the router call), and
     // it happens at all only if the day actually came out different.
@@ -8616,6 +8612,10 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     try{if(typeof geoAnchorRecord==='function')geoAnchorRecord(res,_fences,{});}catch(_e){}
     try{_geoParkNote('derived',dayKey+' '+res.dwells.length+'d/'+res.legs.length+'l'+(res.pending?' pending':'')+(res.open?' open':''));}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+    // The rows this derive produced. They used to leave here inside a queue
+    // item and the only way to see what the deriver made was to read the
+    // queue; nothing sends them now, and they are still the honest output.
+    res.rows=rows;
     return res;
   }catch(_e){return null;}
 }
@@ -8682,12 +8682,33 @@ function _geoDeriveVerSeenKey(){
   const uid=(_supaUser&&_supaUser.id)||'anon';
   return _GEO_DERIVE_VER_KEY+'_'+uid;
 }
+// ── AND A FINISHED DAY IS NOT REBUILT BY A PHONE (owner 2026-09-19) ──────
+// "I want something clean that actually works and won't overwrite, Jack is
+// pissed about the constant updating he can see."
+//
+// This used to reach back the FULL WEEK once per app version, on the
+// reasoning below: the rules only change with the version, so a version
+// change is the one moment an old day could legitimately come out different.
+// That reasoning was sound and the cost of it was invisible until tonight,
+// when five UAT rolls in an evening meant five whole-week rebuilds on his
+// phone, each one re-deriving Friday from this phone's own fix log and
+// writing the result over the day the server had just got right.
+//
+// The premise is also no longer true. The server derives with the same code
+// (scripts/gen-shared-deriver.mjs keeps them byte for byte, and CI fails if
+// they drift) and it re-derives on every batch that lands, so a rule change
+// reaches old days through ingest without this phone doing anything. What
+// the wider window added was not correctness, it was a second opinion, and a
+// second opinion is the whole bug: same function, two descriptions of one
+// day, and the phone's description is the one with iOS's replayed cached
+// coordinates still in it.
+//
+// So the phone derives the days that are still collecting evidence, today
+// and yesterday, and nothing else. Anything older belongs to the server, or
+// to somebody deliberately pressing Rebuild. Nothing is discarded and no
+// evidence is thrown away: the rows already written simply stop moving.
 function _geoDeriveRebuildDays(){
-  try{
-    const seen=localStorage.getItem(_geoDeriveVerSeenKey())||'';
-    const ver=_geoDeriveAppVer();
-    return (ver&&seen===ver)?_GEO_DERIVE_DAYS_LIVE:_GEO_DERIVE_DAYS;
-  }catch(_e){return _GEO_DERIVE_DAYS_LIVE;}
+  return _GEO_DERIVE_DAYS_LIVE;
 }
 // One rebuild at a time. _geoDeriveRebuiltAt is stamped when a rebuild
 // FINISHES, so a stale check arriving while one is still running (an
