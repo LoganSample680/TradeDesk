@@ -3557,6 +3557,124 @@ async function _mileSaveKind(kind){
   // above), which is what this form has four boxes for.
   let parts=(found&&found.parts)||{street:'',city:'',state:'',zip:''};
   if(!parts.street){try{parts=await _reverseGeocode(p.lat,p.lng)||parts;}catch(_e){}}
+  // ── SOMEBODY HE ALREADY HAS, OR SOMEBODY NEW (owner 2026-09-19) ────────
+  // "add in a option for a picker on time sheet save address where we can
+  // pick a client or add new."
+  //
+  // This arm went straight to a NEW customer, which is right the first time
+  // somebody is quoted and wrong every time after. A second visit to a
+  // customer already on the books, a landlord's second rental, a job site
+  // for a builder he works for every week: all of them made a duplicate
+  // record, and the fence landed on the duplicate rather than on the person
+  // whose jobs and proposals rule 13 reads.
+  //
+  // So the pin asks WHOSE it is first. Picking somebody files the pin as a
+  // property on that record (_mileFileAddressOn), which is the same property
+  // card the client detail page draws, and the day re-derives against it.
+  // Add new is the old path, unchanged, one tap away.
+  _mileSaveAskWho(parts);
+  return true;
+}
+// Free of a geocode, deliberately: the pin IS the coordinate, so filing it on
+// a customer needs no round trip and works with no signal. The address string
+// is what the reverse lookup already gave the chooser.
+function _mileAddrLine(parts){
+  const p=parts||{};
+  return [p.street,p.city,[p.state,p.zip].filter(Boolean).join(' ')].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
+}
+function _mileSaveAskWho(parts){
+  document.getElementById('_mile-who-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';ov.id='_mile-who-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const line=_mileAddrLine(parts);
+  _mileAddressPending=Object.assign({},_mileAddressPending||{},{parts,addrLine:line});
+  ov.innerHTML='<div class="zmodal" style="max-width:380px">'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Whose address is this?</div>'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">'+escHtml(line||'This stop')+'</div>'+
+    '<input id="_mile-who-q" type="text" inputmode="search" placeholder="Search your customers" '+
+      'oninput="_mileWhoRender()" style="width:100%;box-sizing:border-box;padding:10px;border-radius:var(--r);'+
+      'border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;font-size:14px;margin-bottom:10px">'+
+    '<div id="_mile-who-hits" style="max-height:44vh;overflow:auto;-webkit-overflow-scrolling:touch"></div>'+
+    '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">'+
+    '<button class="btn" onclick="_mileWhoNew()">Add a new customer</button>'+
+    '<button class="btn" onclick="document.getElementById(\'_mile-who-ov\')?.remove()">Cancel</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  _mileWhoRender();
+  setTimeout(()=>{try{document.getElementById('_mile-who-q')?.focus();}catch(_e){}},60);
+}
+// The same predicate the new-client gate uses, so "who do I have" means one
+// thing in this app (§7.3). The subtitle says how many properties they already
+// have, because that is the number this is about to add to.
+function _mileWhoRender(){
+  const box=document.getElementById('_mile-who-hits');
+  if(!box)return;
+  const q=(document.getElementById('_mile-who-q')?.value||'');
+  const hits=(typeof _newcGateMatches==='function')?_newcGateMatches(q):[];
+  if(!hits.length){
+    box.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 2px">'+
+      (q.trim()?'Nobody by that name yet.':'No customers yet.')+'</div>';
+    return;
+  }
+  box.innerHTML=hits.map(c=>{
+    const props=(typeof _newcGateProps==='function')?_newcGateProps(c):[];
+    const sub=props.length?(props.length+' propert'+(props.length===1?'y':'ies')):'No address yet';
+    return '<button onclick="_mileWhoPick('+JSON.stringify(String(c.id))+')" '+
+      'style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r);'+
+      'border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">'+
+      '<span style="flex:1;min-width:0">'+
+        '<span style="display:block;font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name||'Customer')+'</span>'+
+        '<span style="display:block;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</span>'+
+      '</span></button>';
+  }).join('');
+}
+function _mileWhoNew(){
+  document.getElementById('_mile-who-ov')?.remove();
+  _mileOpenNewClientForm();
+}
+// Files the pin on a customer already on the books. The FIRST address a
+// customer has is their primary, because a record with no address and one
+// property card would read as a customer he never gave an address to;
+// everything after is a property card beside it, exactly as the client detail
+// page adds one (saveAddClientAddress, js/clients.js).
+async function _mileWhoPick(id){
+  document.getElementById('_mile-who-ov')?.remove();
+  const p=_mileAddressPending;
+  // By STRING, deliberately: the id arrives out of an onclick attribute, and
+  // getClientById compares with === against a numeric record id, so the
+  // obvious call silently finds nobody and the pin goes nowhere. Every other
+  // picker in this app emits the id unquoted and relies on it being a number;
+  // this one does not have to care what it is.
+  const c=(typeof clients!=='undefined'&&Array.isArray(clients))
+    ?clients.find(x=>x&&String(x.id)===String(id)):null;
+  if(!p||!c)return false;
+  const addr=p.addrLine||_mileAddrLine(p.parts);
+  if(!addr)return false;
+  const found=p.found||null;
+  if(!c.addr){
+    c.addr=addr;c.lat=p.lat;c.lon=p.lng;c.geoAddr=addr;
+  }else{
+    if(!Array.isArray(c.extraAddresses))c.extraAddresses=[];
+    // Already filed, by an earlier tap or an earlier day: keep one card.
+    const had=c.extraAddresses.find(a=>a&&a.addr===addr)||(c.addr===addr?{}:null);
+    if(!had)c.extraAddresses.push({label:(found&&found.name)||'Additional property',
+      addr,lat:p.lat,lon:p.lng,geoAddr:addr});
+    else if(had.addr&&had.lat==null){had.lat=p.lat;had.lon=p.lng;had.geoAddr=addr;}
+  }
+  try{if(typeof saveAll==='function')saveAll();}catch(_e){}
+  // The address just FILED, not the record's primary. On a day too old to
+  // re-derive, _mileNameUnsaved writes client.addr onto the row, and for a
+  // landlord's second rental the primary is the wrong house. Same function,
+  // same one path, handed the property this pin actually is.
+  await _mileAddressSaved({name:c.name,addr,clientId:c.id});
+  return true;
+}
+function _mileOpenNewClientForm(){
+  const p=_mileAddressPending;
+  if(!p)return false;
+  const parts=p.parts||{street:'',city:'',state:'',zip:''};
+  const found=p.found||null;
   try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
   if(typeof openNewClient==='function')openNewClient();
   const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};

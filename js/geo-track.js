@@ -7466,7 +7466,10 @@ function _geoDeriveFences(dayKey){
     // active on dayKey. Same _jobActiveOn the job fences below use.
     const jl=(typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]);
     (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).forEach(c=>{
-      if(!c||!c.addr)return;
+      // A customer with no primary address can still have a property, which is
+      // exactly what a job site saved off the Time Log looks like before
+      // anybody fills the rest of the record in.
+      if(!c)return;
       // THE RECORD FIRST, the device cache second (owner 2026-09-11). The
       // cache is per-device, so a phone that has never geocoded this client
       // used to have no fence for them at all, and neither did anything off
@@ -7475,7 +7478,6 @@ function _geoDeriveFences(dayKey){
       const hit=(c.lat!=null&&c.lon!=null&&c.geoAddr===c.addr)
         ? {lat:Number(c.lat),lon:Number(c.lon),addr:c.addr}
         : cache[c.id];
-      if(!(hit&&hit.addr===c.addr&&hit.lat!=null))return;
       const scheduled=jl.some(j=>j&&j.status!=='canceled'&&String(j.client_id)===String(c.id)&&
         ((typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true));
       // OPEN ON THE BOOKS (owner 2026-09-12): rule 13's third witness, and the
@@ -7498,7 +7500,40 @@ function _geoDeriveFences(dayKey){
       // geocoded coordinate, and only for matching. c.lat/c.lon and c.addr are
       // untouched, so the invoice, the map and navigation are unaffected.
       const anc=(typeof _geoAnchorPoint==='function')?_geoAnchorPoint(c):null;
-      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:anc?anc.lat:Number(hit.lat),lng:anc?anc.lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks,anchored:anc?true:undefined});
+      if(c.addr&&hit&&hit.addr===c.addr&&hit.lat!=null){
+        out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:anc?anc.lat:Number(hit.lat),lng:anc?anc.lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks,anchored:anc?true:undefined});
+      }
+      // ── AND EVERY OTHER PROPERTY HE HAS (owner 2026-09-19) ─────────────
+      // "in lead client record if I add it it needs to carry over to mileage
+      // and time sheet to."
+      //
+      // It could not. A customer's SECOND address has been a real part of the
+      // record for a long time (extraAddresses, the property cards on the
+      // client detail page, and the picker every estimate opens through), and
+      // this loop read c.addr and nothing else. A landlord with four rentals
+      // had one fence, so three of his four job sites derived as "unsaved
+      // address" forever, however carefully he had typed them in.
+      //
+      // Same client, so the same answers: rule 13's witnesses are about the
+      // PERSON (is anything of theirs on the books, are they marked family),
+      // not about which of their houses this is, and they are computed once
+      // above and shared. What differs is the coordinate.
+      //
+      // Its own id so the deriver can tell two of his properties apart, and
+      // c.id still on clientId so every rule that asks "whose is this" gets
+      // the same answer it always did. The label is the name, because that is
+      // what he typed to tell them apart, and "Primary" is not a place.
+      (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach((a,i)=>{
+        if(!a||!a.addr)return;
+        // The same two-copy rule the primary has, and the same guard: a
+        // property carries the address its coordinates were derived from, so
+        // editing the address retires the fence until it is geocoded again.
+        if(!(a.lat!=null&&a.lon!=null&&a.geoAddr===a.addr))return;
+        out.push({id:'client-'+c.id+'-p'+i,kind:'client',
+          name:(c.name||'Client')+(a.label?' ('+a.label+')':''),
+          lat:Number(a.lat),lng:Number(a.lon),addr:a.addr,clientId:c.id,
+          scheduled,personal:!!c.personal,onBooks});
+      });
     });
     (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
       if(!j||j.status==='canceled')return;

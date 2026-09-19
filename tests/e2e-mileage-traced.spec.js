@@ -303,8 +303,17 @@ test.describe('traced trips', () => {
           const ok = await _mileSaveAddress('j-traced', 'to');
           const asked = !!document.getElementById('_mile-kind-ov');
           await _mileSaveKind('client');
+          // AMENDED 2026-09-19 (10.4). 'client' used to open the new-lead form
+          // directly and this test asserted that. It now asks WHOSE address
+          // this is first (owner: "add in a option for a picker on time sheet
+          // save address where we can pick a client or add new"), because a
+          // second visit to somebody already on the books was making a
+          // duplicate record every time. Add a new customer is one tap in that
+          // picker and lands on exactly the form this test has always checked.
+          const askedWho = !!document.getElementById('_mile-who-ov');
+          _mileWhoNew();
           return {
-            asked, gone: !document.getElementById('_mile-kind-ov'),
+            asked, askedWho, gone: !document.getElementById('_mile-kind-ov'),
             ok,
             title: document.getElementById('cf-title') && document.getElementById('cf-title').textContent,
             street: document.getElementById('cf-street').value, city: document.getElementById('cf-city').value,
@@ -316,6 +325,7 @@ test.describe('traced trips', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.asked, 'it asks before it assumes').toBe(true);
+      expect(r.askedWho, 'and it asks whose it is before it makes a new one').toBe(true);
       expect(r.gone, 'and gets out of the way once answered').toBe(true);
       expect(r.title).toBe('New lead');
       expect([r.street, r.city, r.state, r.zip]).toEqual(['2100 SW Gage Blvd', 'Topeka', 'KS', '66604']);
@@ -781,6 +791,7 @@ test.describe('traced trips', () => {
           try {
             await _mileSaveAddress('j-traced', 'to');
             await _mileSaveKind('client');   // the chooser, answered (2026-09-16)
+            _mileWhoNew();                   // and the who picker (2026-09-19)
             return ['cf-street', 'cf-city', 'cf-state', 'cf-zip'].map(id => document.getElementById(id).value);
           } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
         });
@@ -796,6 +807,7 @@ test.describe('traced trips', () => {
         try {
           const ok = await _mileSaveAddress('j-traced', 'to');
           await _mileSaveKind('client');
+          _mileWhoNew();
           return { ok, street: document.getElementById('cf-street').value, day: _mileAddressPending && _mileAddressPending.day };
         } finally { window._nominatimReverse = keep; closeClientForm && closeClientForm(); }
       });
@@ -1079,6 +1091,140 @@ test.describe('traced trips', () => {
         mileage.push({ id: 'm2', date: yr + '-09-08', from_name: '', to_name: '', miles: 99, purpose: 'Business', addressUnknown: true, unsavedTo: true });
       });
       expect(withTraced).toBe(withOut);
+    });
+  });
+
+  // ── WHOSE ADDRESS IS THIS (owner 2026-09-19) ───────────────────────────
+  // "add in a option for a picker on time sheet save address where we can pick
+  // a client or add new, this feeds address to property card on lead client
+  // record."
+  //
+  // Saving a stop always made a NEW customer, which is right the first time
+  // somebody is quoted and wrong every time after: a second visit, a
+  // landlord's second rental, a builder's next job site. Each one made a
+  // duplicate record, and the fence landed on the duplicate instead of on the
+  // person whose jobs and proposals rule 13 actually reads.
+  test.describe('the who picker', () => {
+    // The real path, because _mileAddressPending is module-scoped and a test
+    // that sets window._mileAddressPending is poking a different variable
+    // (found the hard way, 2026-09-19). Save the address, answer the kind
+    // chooser, and the who picker is what opens.
+    const arm = (o) => page.evaluate(async (o) => {
+      window.clients = o.clients; window.jobs = []; window.bids = [];
+      window._nominatimReverse = async () => '4310 SW Twilight Dr, Topeka, KS 66610';
+      window._mileWhatIsHere = async () => (o.found || null);
+      await _mileSaveAddressAt(39.0444, -95.7129, { day: '2026-09-18', legKey: 'j-p', which: 'to' });
+      await new Promise(r => setTimeout(r, 40));   // the kind chooser's own lookup
+      await _mileSaveKind('client');
+      return !!document.getElementById('_mile-who-ov');
+    }, o);
+    const shot = () => page.evaluate(() => {
+      const c = (window.clients || [])[0] || {};
+      return { addr: c.addr || '', lat: c.lat, lon: c.lon, geoAddr: c.geoAddr || '',
+        extras: (c.extraAddresses || []).map(a => [a.label, a.addr, a.lat, a.lon, a.geoAddr]) };
+    });
+    const ADDR = '4310 SW Twilight Dr, Topeka, KS 66610';
+
+    test('it lists the customers he already has, with how many properties each', async () => {
+      const open = await arm({ clients: [
+        { id: 701, name: 'Neenan Builders', addr: '1 First St', extraAddresses: [{ label: 'Lot 2', addr: '2 Second St' }] },
+        { id: 702, name: 'Jane Doe', addr: '' },
+      ] });
+      expect(open).toBe(true);
+      const r = await page.evaluate(() => ({
+        hits: document.getElementById('_mile-who-hits').textContent,
+        all: document.getElementById('_mile-who-ov').textContent,
+      }));
+      expect(r.hits).toContain('Neenan Builders');
+      expect(r.hits).toContain('2 properties');
+      expect(r.hits).toContain('No address yet');
+      // The pin he is filing says what it is, above the list.
+      expect(r.all).toContain(ADDR);
+      expect(r.all, 'and the other door is right there').toContain('Add a new customer');
+    });
+
+    test('a customer with no address yet gets this one as their primary', async () => {
+      await arm({ clients: [{ id: 702, name: 'Jane Doe', addr: '' }] });
+      await page.evaluate(() => _mileWhoPick('702'));
+      const r = await shot();
+      expect([r.addr, r.geoAddr]).toEqual([ADDR, ADDR]);
+      expect([r.lat, r.lon], 'the pin IS the coordinate, so no geocode is needed').toEqual([39.0444, -95.7129]);
+      expect(r.extras, 'a record with one address has a primary, not a property card').toEqual([]);
+    });
+
+    test('a customer who already has one gets a property card beside it', async () => {
+      await arm({ clients: [{ id: 701, name: 'Neenan Builders', addr: '1 First St', lat: 39.01, lon: -95.70, geoAddr: '1 First St' }],
+        found: { name: 'Lot 14', parts: { street: '4310 SW Twilight Dr', city: 'Topeka', state: 'KS', zip: '66610' } } });
+      await page.evaluate(() => _mileWhoPick('701'));
+      const r = await shot();
+      expect(r.addr, 'his primary is not touched').toBe('1 First St');
+      // The map's name is the label, because that is the only thing anybody
+      // has said about which property this is.
+      expect(r.extras).toEqual([['Lot 14', ADDR, 39.0444, -95.7129, ADDR]]);
+    });
+
+    test('with no name from the map the card still says what it is', async () => {
+      await arm({ clients: [{ id: 701, name: 'Neenan Builders', addr: '1 First St' }] });
+      await page.evaluate(() => _mileWhoPick('701'));
+      const r = await shot();
+      expect(r.extras.map(a => a[0])).toEqual(['Additional property']);
+    });
+
+    test('filing the same pin twice is one property card, not two', async () => {
+      await arm({ clients: [{ id: 701, name: 'Neenan Builders', addr: '1 First St' }] });
+      await page.evaluate(() => _mileWhoPick('701'));
+      const kept = await page.evaluate(() => window.clients);
+      await arm({ clients: kept });
+      await page.evaluate(() => _mileWhoPick('701'));
+      const r = await shot();
+      expect(r.extras.length).toBe(1);
+    });
+
+    test('the property it files is a fence the same moment, which is the whole point', async () => {
+      await arm({ clients: [{ id: 701, name: 'Neenan Builders', addr: '1 First St', lat: 39.01, lon: -95.70, geoAddr: '1 First St' }] });
+      await page.evaluate(() => _mileWhoPick('701'));
+      const r = await page.evaluate(() => _geoDeriveFences('2026-09-18')
+        .filter(f => f.kind === 'client').map(f => [f.id, f.addr, f.lat, f.lng]));
+      expect(r).toEqual([
+        ['client-701', '1 First St', 39.01, -95.70],
+        ['client-701-p0', ADDR, 39.0444, -95.7129],
+      ]);
+    });
+
+    test('a pin already filed is spent: the second tap writes nothing', async () => {
+      await arm({ clients: [{ id: 701, name: 'Neenan Builders', addr: '1 First St' }] });
+      const r = await page.evaluate(async () => {
+        const a = await _mileWhoPick('701');
+        const b = await _mileWhoPick('701');
+        return { a, b, extras: window.clients[0].extraAddresses.length };
+      });
+      expect([r.a, r.b]).toEqual([true, false]);
+      expect(r.extras).toBe(1);
+    });
+
+    test('a customer who is not there files nothing and never throws', async () => {
+      await arm({ clients: [{ id: 701, name: 'Neenan Builders', addr: '1 First St' }] });
+      const r = await page.evaluate(async () => {
+        const out = [await _mileWhoPick('nope'), await _mileWhoPick(null), await _mileWhoPick(undefined)];
+        return { out, extras: (window.clients[0].extraAddresses || []).length };
+      });
+      expect(r.out).toEqual([false, false, false]);
+      expect(r.extras).toBe(0);
+    });
+
+    test('an address the reverse lookup could not name files nothing', async () => {
+      const r = await page.evaluate(async () => {
+        window.clients = [{ id: 701, name: 'Neenan Builders', addr: '1 First St' }];
+        window._nominatimReverse = async () => null;
+        window._mileWhatIsHere = async () => null;
+        await _mileSaveAddressAt(39.04, -95.71, { day: '2026-09-18', legKey: 'j-p', which: 'to' });
+        await new Promise(r2 => setTimeout(r2, 40));
+        await _mileSaveKind('client');
+        const ok = await _mileWhoPick('701');
+        return { ok, extras: (window.clients[0].extraAddresses || []).length };
+      });
+      expect(r.ok, 'nothing to file, so nothing is filed').toBe(false);
+      expect(r.extras).toBe(0);
     });
   });
 
