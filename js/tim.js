@@ -111,6 +111,42 @@ function timWantsBuild(text){
       || /\b(t and m|time and materials|estimate|proposal|bid|quote)\b/.test(t);
 }
 
+// ── Which of the three doors ────────────────────────────────────────────────
+//
+// The app already has one router for this, `_pickEstStyle` in js/clients.js,
+// and these are its three ids. Tim's only job is turning what a contractor
+// says into one of them, the same way timWhere turns a sentence into a screen.
+//
+// Longest phrase wins, so "build your own" is not eaten by "build", and
+// "true bid" is not eaten by "bid", which on its own means a proposal in
+// general and should pick nothing at all.
+const TIM_STYLES=[
+  {id:'tm',      name:'Time and materials', say:['t and m','t m','tm','time and materials','time and material','hourly','by the hour','cost plus']},
+  {id:'truebid', name:'TrueBid',            say:['true bid','truebid','true scan','truescan','true measure','truemeasure','scan','scan it','measure it','trace it','lidar','from above']},
+  {id:'freeform',name:'Build your own',     say:['build your own','byo','b y o','line item','line items','itemize','itemise','a la carte','by the line','flat price','fixed price','lump sum']},
+];
+function timStyle(text){
+  const t=_timNorm(text);
+  if(t.trim()==='')return null;
+  let best=null,bestLen=0;
+  TIM_STYLES.forEach(s=>{
+    s.say.forEach(phrase=>{
+      if(t.indexOf(' '+phrase+' ')<0)return;
+      if(phrase.length>bestLen){bestLen=phrase.length;best=s;}
+    });
+  });
+  return best?{id:best.id,name:best.name}:null;
+}
+
+// Is that a no? The answer to "anything the crew should know" is very often
+// nothing, and a man who says "nope" must not have the word "nope" saved as
+// the gate code for his customer's house.
+function timIsNothing(text){
+  const t=_timNorm(text);
+  if(t.trim()==='')return true;
+  return /^ (no|nope|nah|none|nothing|negative|all good|its fine|it s fine|clear|nothing special|not really|no notes|skip|n a) $/.test(t);
+}
+
 // The whole sentence, resolved. Pure: hand it the lists, get back a plan.
 // Order matters. Building beats looking, because a contractor who says
 // "estimate" while describing work wants the builder, not the list of ones he
@@ -332,6 +368,18 @@ function _timClose(){
   if(!ov)return;
   _timTalkStop(true);
   ov.remove();
+  // Backing out abandons whatever was in flight. A half-answered "build a T&M
+  // for Dana" that survives the sheet closing would open Dana's builder on some
+  // later, unrelated tap, and a site note he never finished saying would ride
+  // along with it.
+  //
+  // `_timBuild` still being set is exactly what "in flight" means: _timBuildGo
+  // clears it before it closes the sheet, so a finished flow keeps the answer
+  // it is on its way to deliver and only an abandoned one throws it away.
+  // Stepping from the door to the question goes through _timSheet rather than
+  // here, so the flow itself never passes through this.
+  if(_timBuild){_timBuild=null;_timPendingSiteNote='';}
+  _timJob=null;
 }
 
 function _timSheet(id,inner){
@@ -386,7 +434,10 @@ function _timAskHtml(){
       '</button>'
     : '';
   return '<div style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
-    '<input id="_tim-say" type="text" autocomplete="off" placeholder="Tell Tim what changed" '+
+    '<input id="_tim-say" type="text" autocomplete="off" placeholder="'+
+      (document.getElementById('pg-est-generic')?.classList.contains('active')
+        ? 'Tell Tim what changed'
+        : 'Build a T and M for Dana')+'" '+
       'style="flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 13px;border:0;border-radius:var(--r-md);background:var(--bg2);box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text)">'+
     mic+
   '</div>'+
@@ -425,6 +476,166 @@ function openTim(){
   _timPreview();
   // No autofocus. A keyboard covering the page he came here to look at is the
   // opposite of the point, and the mic is the way in on a job site anyway.
+}
+
+// ── Starting a proposal through Tim ──────────────────────────────────────────
+//
+// Owner 2026-09-19: "you click into him and say you want to build a T&M or a
+// true bid scan or a BYO then he asks is there any site notes like a dog,
+// parking restrictions, etc? Answer then go."
+//
+// Two steps and no more. He says which door and who it is for; Tim asks the one
+// question that is always worth asking and is never asked at the right moment;
+// then the builder opens with the answer already saved.
+//
+// Why THAT question and no other: the site note is the only thing on the
+// estimate that is worth capturing while he is still standing on the driveway
+// looking at the dog. Everything else on the page he can do sitting down. The
+// old field asked for it in a textarea on a page he opens to write scope, which
+// is the wrong moment, and so it was almost always empty.
+//
+// The routing is `_pickEstStyle` in js/clients.js, untouched. Tim sets the same
+// state the picker sets and calls the same function, so a door opened through
+// him and a door opened by tapping a card are the same door (7.3).
+let _timBuild=null;   // {style, client} while the two steps are in flight
+
+function _timStartBuild(styleId,client){
+  const s=TIM_STYLES.find(x=>x.id===styleId);
+  if(!s||!client)return false;
+  _timBuild={style:s,client};
+  _timAskSiteNote();
+  return true;
+}
+
+// Step two. One question, and it is different depending on whether he has been
+// to this property before, because asking a man for a gate code he gave you in
+// May is how an assistant teaches somebody to ignore it.
+function _timAskSiteNote(){
+  const b=_timBuild;
+  if(!b)return;
+  const addr=(b.client&&b.client.addr)||'';
+  const addrShort=addr.split(',')[0].trim();
+  const known=(typeof getSiteNote==='function')?String(getSiteNote(b.client,addr)||'').trim():'';
+  const who=(b.client.name||'this job');
+
+  const head=_timHeadHtml(b.style.name+' for '+who);
+
+  const body=known
+    // He has been here before. Show what he said last time and let him confirm
+    // it in one tap, which is the whole job most of the time.
+    ? '<div style="padding:15px 16px 0">'+
+        '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px">Anything changed at '+
+          escHtml(addrShort||'this property')+'?</div>'+
+        '<div style="font-size:13px;line-height:1.55;color:var(--text2);padding:11px 13px;border-radius:var(--r-md);background:var(--bg2);box-shadow:0 0 0 1px var(--border)">'+
+          escHtml(known)+'</div>'+
+        '<div style="font-size:11.5px;color:var(--text-3);margin-top:7px">What you told me last time you were there.</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:9px;padding:13px 16px 0">'+
+        '<button type="button" onclick="_timBuildGo()" style="flex:1;height:48px;border:0;border-radius:var(--r-md);background:var(--blue);color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">Still right, start</button>'+
+        '<button type="button" onclick="_timEditSiteNote()" style="height:48px;padding:0 16px;border:0;border-radius:var(--r-md);background:var(--bg);box-shadow:0 0 0 1px var(--border2);color:var(--text2);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">Change it</button>'+
+      '</div>'
+    // First time here. Ask plainly, in the words a foreman would use, and name
+    // the three things it is nearly always about.
+    : '<div style="padding:15px 16px 0">'+
+        '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:5px">Anything the crew should know before they get there?</div>'+
+        '<div style="font-size:12.5px;line-height:1.55;color:var(--text-3)">A dog, where to park, a gate code, a lock box. Crew only, it never goes on the proposal.</div>'+
+      '</div>'+
+      _timNoteFieldHtml('')+
+      '<div style="display:flex;gap:9px;padding:13px 16px 0">'+
+        '<button type="button" onclick="_timSaveSiteNoteAndGo()" style="flex:1;height:48px;border:0;border-radius:var(--r-md);background:var(--blue);color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">Save it and start</button>'+
+        '<button type="button" onclick="_timBuildGo()" style="height:48px;padding:0 16px;border:0;border-radius:var(--r-md);background:var(--bg);box-shadow:0 0 0 1px var(--border2);color:var(--text2);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">Nothing</button>'+
+      '</div>';
+
+  _timSheet('_tim-sheet',head+body);
+  if(!known)setTimeout(()=>document.getElementById('_tim-note')?.focus(),80);
+}
+
+// The field, with the same on-device mic every note in this app uses. A gate
+// code said out loud on a driveway is the exact case it exists for.
+function _timNoteFieldHtml(val){
+  const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
+    ? '<button type="button" onclick="_timTalkToggle(\'_tim-note\')" aria-label="Say it instead" '+
+      'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-md);background:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">'+
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
+        '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
+        '<path d="M12 19v3"></path><path d="M8 22h8"></path></svg>'+
+      '</button>'
+    : '';
+  return '<div style="display:flex;align-items:flex-start;gap:10px;padding:13px 16px 0">'+
+    '<textarea id="_tim-note" rows="2" placeholder="Dog in the back, park on the street, code 4417" '+
+      'style="flex:1;min-width:0;box-sizing:border-box;padding:11px 13px;border:0;border-radius:var(--r-md);'+
+      'background:var(--bg2);box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;'+
+      'color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val||'')+'</textarea>'+
+    mic+
+  '</div>';
+}
+function _timEditSiteNote(){
+  const b=_timBuild;
+  if(!b)return;
+  const known=(typeof getSiteNote==='function')?String(getSiteNote(b.client,b.client.addr)||''):'';
+  _timSheet('_tim-sheet',_timHeadHtml(b.style.name+' for '+(b.client.name||'this job'))+
+    '<div style="padding:15px 16px 0">'+
+      '<div style="font-size:14px;font-weight:700;color:var(--text)">What should the crew know?</div>'+
+    '</div>'+
+    _timNoteFieldHtml(known)+
+    '<div style="display:flex;gap:9px;padding:13px 16px 0">'+
+      '<button type="button" onclick="_timSaveSiteNoteAndGo()" style="flex:1;height:48px;border:0;border-radius:var(--r-md);background:var(--blue);color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">Save it and start</button>'+
+    '</div>');
+  setTimeout(()=>document.getElementById('_tim-note')?.focus(),80);
+}
+
+function _timSaveSiteNoteAndGo(){
+  const el=document.getElementById('_tim-note');
+  const said=el?String(el.value||'').trim():'';
+  // "Nope" is an answer to the question, not a gate code. Saving it would put
+  // the word nope on a customer's house forever.
+  if(said&&!timIsNothing(said))_timPendingSiteNote=said;
+  _timBuildGo();
+}
+
+// WHICH PROPERTY the note belongs to is not known yet. A client can own five
+// houses and the builder is the thing that asks which one this job is at, so
+// the answer is held here and written the moment the estimate page knows its
+// address (js/generic-estimate.js, _geiShowSharedChrome). Writing it to the
+// primary address now would put the gate code for house four on house one.
+let _timPendingSiteNote='';
+function timTakePendingSiteNote(){
+  const v=_timPendingSiteNote;
+  _timPendingSiteNote='';
+  return v;
+}
+
+function _timBuildGo(){
+  const b=_timBuild;
+  _timBuild=null;
+  _timClose();
+  if(!b)return;
+  // The app's own router, with the state it expects. One door, one code path.
+  if(typeof _stylePickState!=='undefined')_stylePickState={c:b.client,overrideAddr:null};
+  if(typeof _pickEstStyle==='function')_pickEstStyle(b.style.id);
+  timDockRefresh();
+}
+
+// He said "start something for Dana" and never said which kind. Three rows, the
+// same three the picker card shows, because at that point naming them is faster
+// than making him say it again.
+function _timAskStyle(client){
+  const rows=TIM_STYLES.map(s=>{
+    const sub=s.id==='tm'?'Bill the hours as they happen'
+      :s.id==='truebid'?'Measure it, then price what you measured'
+      :'One line per service, at your prices';
+    return '<button type="button" onclick="_timStartBuild('+escHtml(JSON.stringify(s.id))+',_timPickFor)" '+
+      'style="display:flex;align-items:center;gap:11px;width:100%;padding:14px 16px;border:0;border-top:1px solid var(--border);background:none;cursor:pointer;font-family:inherit;text-align:left">'+
+      '<span style="flex:1;min-width:0">'+
+        '<span style="display:block;font-size:14.5px;font-weight:600;color:var(--text)">'+escHtml(s.name)+'</span>'+
+        '<span style="display:block;font-size:11.5px;color:var(--text-3);margin-top:2px">'+sub+'</span>'+
+      '</span>'+
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--border2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m9 18 6-6-6-6"></path></svg>'+
+    '</button>';
+  }).join('');
+  window._timPickFor=client;
+  _timSheet('_tim-sheet',_timHeadHtml('For '+(client.name||'this job'))+
+    '<div style="padding:15px 16px 4px;font-size:14px;font-weight:700;color:var(--text)">How are you billing it?</div>'+rows);
 }
 
 // ── What he presses ──────────────────────────────────────────────────────────
@@ -562,10 +773,19 @@ function _timTalkPanel(){
   '</div>';
 }
 
-function _timTalkToggle(){_timTalking?_timTalkStop():_timTalkBegin();}
+// WHICH FIELD the words land in. The sheet has two: the command line on the
+// findings panel, and the site-note field when Tim is starting a proposal. Same
+// mic, same waveform, same promise, different destination, so the id comes in
+// rather than being assumed.
+let _timTalkTarget='_tim-say';
+function _timTalkToggle(target){
+  if(_timTalking){_timTalkStop();return;}
+  _timTalkTarget=target||'_tim-say';
+  _timTalkBegin();
+}
 
 function _timTalkBegin(){
-  const el=document.getElementById('_tim-say');
+  const el=document.getElementById(_timTalkTarget);
   if(!el)return;
   _timTalking=true;_timHeard='';_timTalkStart=Date.now();
   const sheet=document.getElementById('_tim-sheet');
@@ -595,9 +815,13 @@ function _timTalkStop(silent){
   document.getElementById('_tim-listen')?.remove();
   const finish=(text)=>{
     const said=String(text||_timHeard||'').trim();
-    const el=document.getElementById('_tim-say');
+    const el=document.getElementById(_timTalkTarget);
     if(el&&said)el.value=said;
     if(silent||!said)return;
+    // Dictating a site note fills the field and stops. It is an answer to a
+    // question Tim asked, not a new instruction, so reading it back as a job
+    // would throw away the question he is halfway through answering.
+    if(_timTalkTarget!=='_tim-say')return;
     _timShowRead(said);
   };
   if(typeof _voiceStop==='function')Promise.resolve(_voiceStop()).then(finish).catch(()=>finish(''));
@@ -820,6 +1044,24 @@ function _timGo(){
   const el=document.getElementById('_tim-say');
   const said=el?el.value:'';
   if(!String(said||'').trim())return {text:'',kind:'none'};
+
+  // ── "Build me a T and M for Dana" ─────────────────────────────────────────
+  // A door and a customer is a proposal, and it outranks everything else,
+  // including the estimate page he may already be standing on: a man who says
+  // "build me a TrueBid for the Kellermans" while looking at Dana's T&M means
+  // a new one, not a note on this one.
+  const style=timStyle(said);
+  const who=(typeof spkClient==='function')?spkClient(said,(typeof clients!=='undefined'?clients:[])):null;
+  if(style&&who&&timWantsBuild(said)){
+    _timStartBuild(style.id,who);
+    return {text:said,kind:'build',style:style.id,clientId:who.id};
+  }
+  // A customer and a clear intent to build, but he never said which kind.
+  if(who&&timWantsBuild(said)&&!style&&!/\b(hours?|hrs)\b/i.test(said)){
+    _timAskStyle(who);
+    return {text:said,kind:'build',style:null,clientId:who.id};
+  }
+
   // On an estimate he is describing work, not asking for a screen, so the read
   // back comes first and the navigator is the fallback.
   const onEstimate=!!document.getElementById('pg-est-generic')?.classList.contains('active');

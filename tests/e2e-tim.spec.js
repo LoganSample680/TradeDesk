@@ -587,6 +587,216 @@ test.describe('tim', () => {
     });
   });
 
+  // ── Starting a proposal through Tim ───────────────────────────────────────
+  //
+  // Owner 2026-09-19: "you click into him and say you want to build a T&M or a
+  // true bid scan or a BYO then he asks is there any site notes like a dog,
+  // parking restrictions, etc? Answer then go."
+  //
+  // Two steps, and the second one is the point. The site note is the only thing
+  // on an estimate worth capturing while he is still on the driveway looking at
+  // the dog, and the old textarea asked for it on a page he opens to write
+  // scope, which is why it was almost always empty.
+  test.describe('say the door, answer one question, go', () => {
+    const CLIENT = { id: 87701, name: 'Dana Whitfield', addr: '1200 Elm St, Wichita KS 67203' };
+
+    test.beforeEach(async () => {
+      await page.evaluate(c => {
+        clients.length = 0; clients.push(JSON.parse(JSON.stringify(c)));
+        document.getElementById('_tim-ov')?.remove();
+        document.getElementById('_style-pick-ov')?.remove();
+        window.__picked = null;
+        window._pickEstStyle = (style) => { window.__picked = { style, c: _stylePickState && _stylePickState.c }; };
+      }, CLIENT);
+      await page.evaluate(() => goPg('pg-dash'));
+    });
+
+    // ── Which door he asked for ─────────────────────────────────────────────
+    test('each of the three is recognised, in the words he says them', async () => {
+      const r = await page.evaluate(() => [
+        'build me a t and m for dana', 'time and materials for dana', 'bill it hourly',
+        'true bid for dana', 'lets scan it', 'truebid', 'trace it from above',
+        'build your own for dana', 'byo', 'line items', 'flat price',
+      ].map(t => (timStyle(t) || {}).id));
+      expect(r).toEqual([
+        'tm', 'tm', 'tm',
+        'truebid', 'truebid', 'truebid', 'truebid',
+        'freeform', 'freeform', 'freeform', 'freeform',
+      ]);
+    });
+
+    // "Build your own" must not be eaten by "build", and "true bid" must not be
+    // eaten by "bid", which on its own means a proposal in general.
+    test('a longer phrase wins, and a bare "bid" picks nothing', async () => {
+      const r = await page.evaluate(() => [
+        (timStyle('build your own') || {}).id,
+        timStyle('send that bid'),
+        timStyle('what a morning'),
+        timStyle(''), timStyle(null),
+      ]);
+      expect(r).toEqual(['freeform', null, null, null, null]);
+    });
+
+    // ── The one question ────────────────────────────────────────────────────
+    test('a door plus a customer asks about the site, it does not just open', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        const el = document.getElementById('_tim-say');
+        el.value = 'build me a t and m for dana';
+        _timGo();
+        const sheet = document.getElementById('_tim-sheet');
+        return { text: sheet ? sheet.textContent : '', opened: !!window.__picked, field: !!document.getElementById('_tim-note') };
+      });
+      expect(r.text).toContain('Anything the crew should know before they get there?');
+      expect(r.text).toContain('A dog, where to park, a gate code, a lock box');
+      expect(r.text).toContain('Time and materials for Dana Whitfield');
+      expect(r.field).toBe(true);
+      // Nothing has opened yet. The question comes first, which is the whole ask.
+      expect(r.opened).toBe(false);
+    });
+
+    test('the answer is saved and the right door opens, through the app own router', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        const el = document.getElementById('_tim-say');
+        el.value = 'true bid for dana';
+        _timGo();
+        document.getElementById('_tim-note').value = 'Dog in the back, park on the street, code 4417';
+        _timSaveSiteNoteAndGo();
+        return { picked: window.__picked, held: timTakePendingSiteNote(), closed: !document.getElementById('_tim-ov') };
+      });
+      expect(r.picked.style).toBe('truebid');
+      expect(r.picked.c.name).toBe('Dana Whitfield');
+      expect(r.held).toBe('Dog in the back, park on the street, code 4417');
+      expect(r.closed).toBe(true);
+    });
+
+    // "Nope" is an answer to the question, not a gate code. Saving it would put
+    // the word nope on a customer house forever.
+    test('a no is a no, not a note', async () => {
+      const r = await page.evaluate(() => {
+        const said = ['no', 'nope', 'nah', 'nothing', 'none', 'not really', 'all good', ''];
+        const asNothing = said.map(t => timIsNothing(t));
+        openTim();
+        document.getElementById('_tim-say').value = 'build your own for dana';
+        _timGo();
+        document.getElementById('_tim-note').value = 'nope';
+        _timSaveSiteNoteAndGo();
+        return { asNothing, held: timTakePendingSiteNote(), picked: window.__picked.style };
+      });
+      expect(r.asNothing).toEqual([true, true, true, true, true, true, true, true]);
+      expect(r.held).toBe('');
+      expect(r.picked).toBe('freeform');   // still goes, it just saves nothing
+    });
+
+    test('"Nothing" skips straight through', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        document.getElementById('_tim-say').value = 'build me a t and m for dana';
+        _timGo();
+        _timBuildGo();
+        return { picked: window.__picked.style, held: timTakePendingSiteNote() };
+      });
+      expect(r).toEqual({ picked: 'tm', held: '' });
+    });
+
+    // Asking a man for a gate code he gave you in May is how an assistant
+    // teaches somebody to ignore it.
+    test('a property he has been to shows what he said last time, to confirm in one tap', async () => {
+      const r = await page.evaluate(() => {
+        setSiteNote(clients[0], clients[0].addr, 'Lockbox 5590 on the front porch');
+        openTim();
+        document.getElementById('_tim-say').value = 'build me a t and m for dana';
+        _timGo();
+        const sheet = document.getElementById('_tim-sheet');
+        return { text: sheet.textContent, asksBlank: !!document.getElementById('_tim-note') };
+      });
+      expect(r.text).toContain('Anything changed at 1200 Elm St?');
+      expect(r.text).toContain('Lockbox 5590 on the front porch');
+      expect(r.text).toContain('Still right, start');
+      expect(r.asksBlank).toBe(false);
+    });
+
+    // ── Which property ──────────────────────────────────────────────────────
+    //
+    // A client can own five houses and the BUILDER is what decides which one
+    // this job is at. Writing the note when he answers would put the gate code
+    // for house four on house one, so the answer is held until the page knows.
+    test('the note is held until the estimate page knows its address', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        document.getElementById('_tim-say').value = 'build me a t and m for dana';
+        _timGo();
+        document.getElementById('_tim-note').value = 'Side gate, beware of dog';
+        _timSaveSiteNoteAndGo();
+        // Not written to the client yet: nothing knows the address.
+        const beforeOpen = getSiteNote(clients[0], clients[0].addr);
+        // Now the builder opens and the address is real.
+        _geiClientId = clients[0].id; _geiIsTM = true; _geiIsFreeForm = false;
+        openTMEstimate(clients[0]);
+        _tmShowPage();
+        return { beforeOpen, afterOpen: getSiteNote(clients[0], clients[0].addr) };
+      });
+      expect(r.beforeOpen).toBe('');
+      expect(r.afterOpen).toBe('Side gate, beware of dog');
+    });
+
+    // ── He never said which kind ────────────────────────────────────────────
+    test('a customer with no door named gets the three doors, not a guess', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        document.getElementById('_tim-say').value = 'start something for dana';
+        _timGo();
+        const sheet = document.getElementById('_tim-sheet');
+        return { text: sheet.textContent, opened: !!window.__picked };
+      });
+      expect(r.text).toContain('How are you billing it?');
+      expect(r.text).toContain('Time and materials');
+      expect(r.text).toContain('TrueBid');
+      expect(r.text).toContain('Build your own');
+      expect(r.opened).toBe(false);
+    });
+
+    test('a door with nobody to build it for is not a build', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-dash');
+        openTim();
+        document.getElementById('_tim-say').value = 'time and materials';
+        const p = _timGo();
+        return { kind: p.kind, opened: !!window.__picked };
+      });
+      expect(r.kind).not.toBe('build');
+      expect(r.opened).toBe(false);
+    });
+
+    // A sentence that describes the WORK is the existing estimate-speak path
+    // and must not be hijacked into the two-step flow.
+    test('a sentence with hours in it still goes to the estimate parser', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        document.getElementById('_tim-say').value = 'build a t and m for dana, eight hours';
+        const p = _timGo();
+        return { kind: p.kind, style: p.style };
+      });
+      // Still a build, and still T&M: the hours ride along into the builder.
+      expect(r.kind).toBe('build');
+      expect(r.style).toBe('tm');
+    });
+
+    test('the flow survives being cancelled halfway', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        document.getElementById('_tim-say').value = 'build me a t and m for dana';
+        _timGo();
+        _timClose();
+        let threw = false;
+        try { _timSaveSiteNoteAndGo(); _timBuildGo(); } catch (e) { threw = true; }
+        return { threw, opened: !!window.__picked };
+      });
+      expect(r).toEqual({ threw: false, opened: false });
+    });
+  });
+
   test('no console errors, tim.js', async () => {
     assertNoErrors(page, 'tim.js');
   });

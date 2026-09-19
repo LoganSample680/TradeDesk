@@ -119,6 +119,36 @@ test.describe('tim screenshots', () => {
     await page.waitForTimeout(300);
     await page.screenshot({ path: OUT + '/app-4d-readback-lower.png' });
 
+    // Starting a proposal through Tim: say the door, answer one question, go.
+    await page.evaluate(() => {
+      document.getElementById('_tim-ov')?.remove();
+      goPg('pg-dash');
+      openTim();
+      document.getElementById('_tim-say').value = 'build me a t and m for dana';
+      _timGo();
+    });
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: OUT + '/app-build-ask.png' });
+    // The second time at the same property, he confirms rather than retypes.
+    await page.evaluate(() => {
+      setSiteNote(clients[0], clients[0].addr, 'Code 4417 on the side gate. Dog is friendly but barks.');
+      document.getElementById('_tim-ov')?.remove();
+      openTim();
+      document.getElementById('_tim-say').value = 'true bid for dana';
+      _timGo();
+    });
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: OUT + '/app-build-known.png' });
+    // No door named: the three, in his words.
+    await page.evaluate(() => {
+      document.getElementById('_tim-ov')?.remove();
+      openTim();
+      document.getElementById('_tim-say').value = 'start something for dana';
+      _timGo();
+    });
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: OUT + '/app-build-doors.png' });
+
     // 8b: the book read out of proposals already sent.
     await page.evaluate(() => {
       document.getElementById('_tim-ov')?.remove();

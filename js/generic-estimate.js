@@ -1410,6 +1410,14 @@ function _geiShowSharedChrome(prefix){
   _geiRenderActionButtons(prefix,m.actionOpts);
   _geiRenderDepositField(prefix,m.depositOninput);
   _geiApplyDepositDefault(prefix);
+  // THE ANSWER TIM TOOK ON THE DRIVEWAY, written now that the page knows which
+  // property this job is at. Held rather than saved earlier because a client can
+  // own five houses and this is the screen that decides which one (js/tim.js,
+  // timTakePendingSiteNote).
+  if(typeof timTakePendingSiteNote==='function'){
+    const pending=timTakePendingSiteNote();
+    if(pending&&typeof _geiSiteNoteInput==='function')_geiSiteNoteInput(pending);
+  }
   _geiSiteNoteOpen=false;   // a new estimate opens shut, whatever the last one was left on
   _geiRenderSiteNoteField(prefix);
   _geiRenderExclusions(prefix);
