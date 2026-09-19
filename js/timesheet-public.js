@@ -24,37 +24,43 @@ var clients=[],bids=[],jobs=[],mileage=[],timeEntries=[];
 var _supaUser=null,_contractorUserId=null,_isEmployee=false,_employeeRecord=null;
 var _tsp={token:'',data:null,jobs:{},name:'',busy:false};
 
+// ── THE LINK BELONGS TO THE FIRST DEVICE THAT OPENS IT ───────────────────
+// Owner 2026-09-19: "the link that is shared I need some security on it, only
+// the person who receives it can open it, if it's resent again that person
+// can't see it." He picked trust-on-first-use by number out of three shapes.
+//
+// The server does the deciding (timesheet_claim, 20261027). This side's only
+// job is to say WHICH device is asking, and to say it the same way every
+// time, including after the phone is closed and the link reopened a week
+// later from the same thread. localStorage, same key the app itself uses
+// (_initDeviceId, js/cloud.js), so a boss who also runs TradeDesk on this
+// phone is one device here and not two.
+//
+// No storage at all (a locked-down browser, private mode) is not an error:
+// the page sends nothing, and the server serves it only while the sheet is
+// still unclaimed. That degrades to exactly the old behaviour for the one
+// person it can affect, rather than locking out a boss over a browser
+// setting.
+function _tspDeviceId(){
+  try{
+    let id=localStorage.getItem('zp3_device_id');
+    if(!id){id='dev_'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+            localStorage.setItem('zp3_device_id',id);}
+    return id;
+  }catch(_e){return '';}
+}
+
 // Belt and braces only: _tlReadOnly() above is the guard that matters.
 function _canViewComp(){return false;}
 function bizTz(){return S.bizTz;}
 function _bizTzName(){return S.bizTz;}
 function _geoBizTz(){return S.bizTz;}
-// ── OFFICE TIME IS NEVER RUNNING TIME (owner rule 2026-09-19) ────────────
-// "Office time should never add itself to a table as running time, right now
-// it does ... important to leave it but need to mark it as unpaid since
-// office time goes a part of the bill."
-//
-// Section 9.11 has said half of this since 2026-08-30 ("home office time only
-// counts when the app is open") and the deriver already enforces that half:
-// rule 10 writes an Office row only for app-open minutes inside a home fence,
-// and only OUTSIDE the working day. What nothing said was what the row is
-// worth once written, so it fell through to paid and added itself to the
-// day, the week and the overtime like a job site.
-//
-// It is overhead, not payroll: it belongs on the bill and in the record, and
-// not in the hours anybody is paid for. Said HERE rather than in a reader
-// because this one predicate is what every total already asks (the Time Log's
-// paid minutes and OT, Crew Cost's labour bucket), so one answer moves all of
-// them at once and cannot drift between screens.
-//
-// Nothing is deleted and nothing is rebuilt: the row keeps its place on the
-// rail, greyed, and because this is a question about the SOURCE it re-grades
-// every row already written, on every account, the moment this ships.
-//
-// 'place-home' rides along: the deriver stopped writing it (rule 12) but the
-// rows it wrote are still there and js/timelog.js still reads them on purpose.
-const _GEO_OFFICE_SOURCES={'place-office':1,'place-home':1};
-function _geoIsOffJobSource(s){const k=String(s||'');return k==='stop'||_GEO_OFFICE_SOURCES[k]===1;}
+// THE FOUR SOURCE PREDICATES ARE NOT COPIED HERE ANY MORE. This file used to
+// carry its own _geoIsOffJobSource and none of the other three, which is
+// exactly how a hand copy fails: the one that was copied stayed right and the
+// three that were not silently answered false, so every drive on a shared
+// timesheet was drawn as time on site. js/geo-sources.js is loaded by
+// timesheet.html ahead of js/timelog.js and owns all four (7.3).
 function _geoShopAddr(){return '';}
 function getOwnerName(){return _tsp.name||'';}
 function getClientById(){return null;}
@@ -83,11 +89,26 @@ function _tlJobClientInfo(jobId){
 }
 // _timeLogRows (js/timelog.js) asks this for the derived rows. The answer is
 // the RPC's, and every row is this one person's.
+// ── ONE PERSON, SO THE PAGE SAYS SO ──────────────────────────────────────
+// A sheet is one person's week by definition, and the RPC never returns
+// employee_user_id: there is nobody else on the page to tell them apart from.
+// js/timelog.js does not know that. Its shop loop drops any row without an
+// employee, so every minute of shop time vanished from a shared timesheet: a
+// week with 13h 30m on it drew 12h 50m and nothing said where the other 40
+// went. Found 2026-09-19 against real rows; it never showed in a test because
+// the spec's fixture invented the field the server does not send.
+//
+// Stamped here rather than added to the RPC: the id is a uuid nobody outside
+// the account has any business holding, and the page has exactly one person
+// to point at. It is an internal key on this page and never drawn.
+const _TSP_UID='sheet-person';
 function _fetchCrewLabor(){
   const d=_tsp.data||{};
-  const name={};
-  (d.time||[]).concat(d.shop||[]).forEach(e=>{if(e&&e.employee_user_id)name[e.employee_user_id]=_tsp.name||'Crew';});
-  return Promise.resolve({name,entries:d.time||[],shopEntries:d.shop||[]});
+  const stamp=e=>Object.assign({},e,{employee_user_id:e.employee_user_id||_TSP_UID});
+  return Promise.resolve({
+    name:{[_TSP_UID]:_tsp.name||'Crew'},
+    entries:(d.time||[]).filter(e=>e&&typeof e==='object').map(stamp),
+    shopEntries:(d.shop||[]).filter(e=>e&&typeof e==='object').map(stamp)});
 }
 
 // ── Supabase, as anon, same constants sign.html uses ────────────────────────
@@ -200,7 +221,7 @@ async function _tspDecide(decision){
   _tsp.busy=true;
   document.querySelectorAll('#tsp-foot button').forEach(b=>{b.disabled=true;});
   try{
-    const{data,error}=await sb.rpc('timesheet_decide',{p_token:_tsp.token,p_decision:decision,p_note:note,p_name:null});
+    const{data,error}=await sb.rpc('timesheet_decide',{p_token:_tsp.token,p_decision:decision,p_note:note,p_name:null,p_device:_tspDeviceId()});
     if(error)throw error;
     Object.assign(_tsp.data,data||{},{status:(data&&data.status)||(decision==='approve'?'approved':'rejected')});
     if(decision==='reject'&&!_tsp.data.reject_note)_tsp.data.reject_note=note;
@@ -234,10 +255,15 @@ async function _tspBoot(){
   if(!sb)return _tspState('Could not load','Check your connection and try again.');
   let data=null;
   try{
-    const r=await sb.rpc('timesheet_public',{p_token:token});
+    const r=await sb.rpc('timesheet_public',{p_token:token,p_device:_tspDeviceId()});
     if(r&&r.error)throw r.error;
     data=r&&r.data;
   }catch(_e){return _tspState('Could not load','Check your connection and try again.');}
+  // A refusal is an ANSWER, not a failure, and it gets its own words. "Could
+  // not load" is what a bad signal says, and it would send somebody off
+  // checking their bars over a link that is working exactly as intended.
+  if(data&&data.refused)return _tspState('This link is already open somewhere else',
+    'A timesheet link works on the first phone or computer that opens it. Ask for it to be sent again and this one will work.');
   if(!data||!data.week_start)return _tspState('This timesheet is not here','The link may be old or mistyped.');
   _tsp.data=data;
   _tsp.name=String(data.person_name||'Crew');

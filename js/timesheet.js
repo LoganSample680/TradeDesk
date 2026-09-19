@@ -222,6 +222,16 @@ async function _tsSubmit(wk){
   const text=_tlWeekShareText(rows,wk)+'\n\n'+
     (Number(row.version)>1?'Corrected timesheet. ':'')+
     'Submitted by '+name+', '+_tsWhen(row.submitted_at)+'\n\n'+
+    // ONE LINE, BECAUSE THE RULE IS INVISIBLE OTHERWISE (owner 2026-09-19).
+    // The link binds to the first device that opens it, so a boss who
+    // forwards it to his bookkeeper hands over a link that then refuses HIM.
+    // The refusal page explains itself, but by then somebody is already
+    // confused, and a sentence up here costs nothing.
+    //
+    // ABOVE the call to action, never below it: the link stays the last thing
+    // in the message so a phone makes the whole tail tappable, which is what
+    // the 2026-09-05 shape was for and is not being undone here.
+    'This link opens on one phone only, the first one to tap it.\n\n'+
     'Tap to review and approve:\n'+_tsLink(row.token);
   try{if(typeof pwaShare==='function')await pwaShare({title:'Timesheet',text});}catch(_e){}
   try{if(typeof renderTimeLog==='function'&&document.getElementById('pg-timelog')?.classList.contains('active'))renderTimeLog({cached:true});}catch(_e){}

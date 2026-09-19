@@ -3082,6 +3082,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
       setTimeLogYear(2026);
       _tlDrill = { level: 'month', mo: '2026-08', wk: null, day: null };
       await renderTimeLog();
+      if (lv === 'week') {
+        _tlDrill = { level: 'week', mo: '2026-08', wk: '2026-08-16', day: null };
+        await renderTimeLog();
+      }
       if (lv === 'day') {
         // _tlDrillTo fires renderTimeLog() without awaiting it (the same
         // fire-and-forget convention setTimeLogYear uses), so reading straight
@@ -3201,6 +3205,39 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('a single day still shows the shared split bar, same as Team does', async () => {
       const me = await body('me', 'day');
       expect(me, 'Me used to render nothing at all on a day').toContain('tl-split-bar');
+    });
+
+    // ── The week answers "where did it go" too (owner 2026-09-19) ──────────
+    //
+    // Asked of the shared timesheet link, which opens on the WEEK: "does it
+    // include the breakdown of where time went? I'm talking the totals." It
+    // did not. The week printed a total and seven bars, and a client had to
+    // tap into a single day to learn that four of the hours were driving.
+    test('the week names its buckets, not just its total', async () => {
+      const wk = await body('me', 'week');
+      expect(wk, 'the week is the level the shared link opens on').toContain('tl-split-bar');
+      expect(wk, 'and it says which bucket each slice is').toContain('tl-rail-legend');
+      expect(wk, 'above the per-day bars, which stay').toContain('tl-wbar');
+      expect(wk.indexOf('tl-split-bar'), 'breakdown first, then the days')
+        .toBeLessThan(wk.indexOf('tl-wbar'));
+    });
+
+    // The whole point of putting it on the week is that it folds the WEEK. A
+    // bar that only ever showed the selected day's buckets would be the day
+    // view wearing the week's label.
+    test('and folds the whole week, not one day of it', async () => {
+      const r = await page.evaluate((rows) => {
+        const week = rows.slice();
+        const day = rows.filter(x => x.date === '2026-08-20');
+        const names = h => _TL_BUCKETS.map(b => b.label)
+          .filter(l => String(h).includes('>' + l + ' <b>'));
+        return { week: names(_tlRailHeadHtml(week, '', true)),
+                 day: names(_tlRailHeadHtml(day, '', true)) };
+      }, ROWS);
+      expect(r.day, 'Thursday is shop time and nothing else').toEqual(['Shop']);
+      expect(r.week.length, 'the week spent its hours on more than one thing')
+        .toBeGreaterThan(r.day.length);
+      expect(r.week).toEqual(expect.arrayContaining(['Shop', 'Driving']));
     });
   });
 

@@ -1854,14 +1854,18 @@ function _tlRailRow(r){
   // THE SAME TRIP NUMBER THE MILEAGE LOG SHOWS (owner 2026-09-08): one
   // definition, _mileTripNumbers, keyed by the leg id the drive row carries.
   let _tripNo=null;
-  // "Trip 1" three times over told him nothing (owner 2026-09-18). A chain's
-  // segments all belong to one trip and the label now says which drive of it
-  // this is; a trip with a single drive is unchanged.
+  // ── AND IT IS JUST THE TRIP NUMBER AGAIN (owner 2026-09-19) ────────────
+  // "Still have the 1 of 3 2 of 3 thing carrying over which I don't want."
+  //
+  // The suffix was added on 2026-09-18 to explain "Trip 1" appearing three
+  // times over, and he said at the time it was the wrong fix: they were three
+  // separate drives, not one trip in three parts. He was right. The chain was
+  // collapsing three real drives into one leg, that is fixed in the deriver
+  // (a work-length stop closes the chain), and each drive now carries its own
+  // trip number. With the cause gone the label has nothing left to explain
+  // and says the number, as it did before.
   try{
-    if(kind==='drive'&&typeof _mileTripLegForLeg==='function'){
-      const _tl=_mileTripLegForLeg(r.date,r.clientKey);
-      _tripNo=_tl?(_tl.of>1?(_tl.no+' · drive '+_tl.ix+' of '+_tl.of):String(_tl.no)):null;
-    }else if(kind==='drive'&&typeof _mileTripNumberForLeg==='function'){
+    if(kind==='drive'&&typeof _mileTripNumberForLeg==='function'){
       _tripNo=_mileTripNumberForLeg(r.date,r.clientKey);
     }
   }catch(_e){_tripNo=null;}
@@ -2501,7 +2505,11 @@ function _tlBarsHtml(groups,opts){
     '<i style="bottom:25%"></i><i style="bottom:50%"></i><i style="bottom:75%"></i><b></b></div>';
   // The key, only for the buckets actually on screen. Read from _TL_BUCKETS,
   // never retyped, so a renamed bucket renames here too.
-  const present=_TL_BUCKETS.filter(b=>folds.some(f=>(f[b.k]||0)>0));
+  // key:false when something ABOVE the chart already names the buckets. The
+  // week grew a split bar with hours on it (owner 2026-09-19), and a colour-
+  // only key repeating those same names four inches lower is the duplicate
+  // 15.1 bans. The month has no such header, so it keeps its key.
+  const present=o.key===false?[]:_TL_BUCKETS.filter(b=>folds.some(f=>(f[b.k]||0)>0));
   const key=present.length?'<div class="tl-wbar-key">'+present.map(b=>
     '<span><i style="background:'+b.c+'"></i>'+escHtml(b.label)+'</span>').join('')+'</div>':'';
   return '<div class="tl-wbar-wrap'+(o.level?' tl-wbar-'+String(o.level):'')+'">'+
@@ -2568,7 +2576,7 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
     aria:(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d),
     rows:byDay[d]||[],
     onclick:'_tlDrillTo(\'day\',\''+String(d)+'\')'
-  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week'});
+  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week',key:false});
 }
 // A MONTH: one bar per week, guided at 40 hours.
 //
@@ -2960,10 +2968,17 @@ function _tlLevelsHtml(moRows,selMo,opts){
   const wkRows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===_tlDrill.wk&&
     (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
   const days=_tlWeekDayDates(_tlDrill.wk);
+  // The week carries the same split bar the day does (owner 2026-09-19, of the
+  // shared timesheet link: "does it include the breakdown of where time went?
+  // I'm talking the totals"). The link opens on the week, so the level a
+  // client actually lands on was the one level with no answer to "where did
+  // the hours go": a total and seven bars, and the breakdown only after a tap
+  // into a day. Same component as the day (7.3), folded over the week's rows.
   if(_tlDrill.level==='week')
     return {head:_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
               _tlDrill.wk,o.backLabel||_bkMonthLabel(selMo),o.eyebrow),
-            body:_tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
+            body:_tlRailHeadHtml(wkRows,'',true)+
+                 _tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
   const dayKeys=days.filter(d=>wkRows.some(r=>r.date===d));
   if(dayKeys.indexOf(_tlDrill.day)<0)_tlDrill.day=dayKeys[dayKeys.length-1]||null;
   const dayRows=wkRows.filter(r=>r.date===_tlDrill.day);

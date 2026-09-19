@@ -3335,28 +3335,14 @@ function _mileTripNumberForLeg(dayKey,clientKey){
 //
 // "the drive numbers on time sheet are off trip 1 is repeated 3 times"
 //
-// His 18 September showed three plainly different drives, 7:53 shop to a job
-// site, 12:23 between two unsaved stops, 13:03 back to the shop, and every one
-// of them said TRIP 1. The number was not wrong: all three are segments of one
-// collapsed leg (a chain keyed by the first journey, its segKeys naming the
-// three), so all three genuinely belong to trip 1. It was useless, which on a
-// timesheet is the same thing as wrong: nothing on screen said why a number
-// meant to tell drives apart was not telling them apart.
-//
-// _mileLegSeg has always known the segment index; the trip-number helper threw
-// it away. So the label keeps the trip and adds the leg when, and only when,
-// there is more than one: "Trip 1", or "Trip 1 · drive 2 of 3".
-function _mileTripLegForLeg(dayKey,clientKey){
-  if(!clientKey)return null;
-  const nos=_mileTripNumbers(dayKey);
-  const ls=_mileLegSeg(clientKey,dayKey);
-  const key=ls?String(ls.leg.legKey!=null?ls.leg.legKey:ls.leg.id)
-              :String(clientKey).replace(/:\d+$/,'');
-  const no=nos['leg:'+key]||null;
-  if(!no)return null;
-  const of=(ls&&ls.split&&ls.leg&&Array.isArray(ls.leg.segKeys))?ls.leg.segKeys.length:1;
-  return {no,ix:(ls&&ls.ix>=0?ls.ix:0)+1,of:of>1?of:1};
-}
+// _mileTripLegForLeg was DELETED 2026-09-19 (§7). It added "· drive 2 of 3"
+// to a trip number, written on 2026-09-18 to explain why three plainly
+// different drives all read TRIP 1. The owner said at the time that was the
+// wrong fix, and he was right: they were three separate drives, and the chain
+// was wrongly collapsing them into one leg. That is fixed in the deriver (a
+// work-length stop closes the chain), so each drive carries its own trip
+// number and there is nothing left to explain. _mileTripNumberForLeg, below,
+// is what the rail asks again.
 // ── WHICH LEG A DRIVE ROW BELONGS TO, AND WHICH SEGMENT OF IT ──────────────
 // One place knows how a time row's key relates to a mileage leg, because two
 // screens ask (the rail's title and its trip number, js/timelog.js; the trip

@@ -2078,53 +2078,13 @@ function _geoCloseShopEntry(arrivedAt,departedIso){
 // known place is a real deductible trip that used to vanish: shop -> supply ->
 // shop wrote nothing at all, because a drive entry was only ever written on
 // arriving at a JOB.
-// ONE place decides what a job_time_entries row means. Three call sites in
-// finance.js tested `source==='drive'` exactly, so a personal-vehicle leg
-// ('drive-personal') fell through their else branch and was counted as ON-SITE
-// job labor: it inflated Job Profit's labor cost and the crew report's job-site
-// hours with time the person spent behind the wheel.
-function _geoIsDriveSource(s){return /^drive/.test(String(s||''));}
+// _geoIsDriveSource, _geoIsPlaceSource, _geoIsHeldSource and
+// _geoIsOffJobSource all live in js/geo-sources.js now, loaded ahead of this
+// file. They moved because timesheet.html needs them and cannot load this
+// one: see that file's header for what the shared timesheet was drawing
+// without them. Nothing about what any of them MEANS changed.
 // Time outside every fence that is not driving: lunch, an errand, waiting on a
 // gate. Neither job labor nor drive time, and never silently folded into either.
-// ── OFFICE TIME IS NEVER RUNNING TIME (owner rule 2026-09-19) ────────────
-// "Office time should never add itself to a table as running time, right now
-// it does ... important to leave it but need to mark it as unpaid since
-// office time goes a part of the bill."
-//
-// Section 9.11 has said half of this since 2026-08-30 ("home office time only
-// counts when the app is open") and the deriver already enforces that half:
-// rule 10 writes an Office row only for app-open minutes inside a home fence,
-// and only OUTSIDE the working day. What nothing said was what the row is
-// worth once written, so it fell through to paid and added itself to the
-// day, the week and the overtime like a job site.
-//
-// It is overhead, not payroll: it belongs on the bill and in the record, and
-// not in the hours anybody is paid for. Said HERE rather than in a reader
-// because this one predicate is what every total already asks (the Time Log's
-// paid minutes and OT, Crew Cost's labour bucket), so one answer moves all of
-// them at once and cannot drift between screens.
-//
-// Nothing is deleted and nothing is rebuilt: the row keeps its place on the
-// rail, greyed, and because this is a question about the SOURCE it re-grades
-// every row already written, on every account, the moment this ships.
-//
-// 'place-home' rides along: the deriver stopped writing it (rule 12) but the
-// rows it wrote are still there and js/timelog.js still reads them on purpose.
-const _GEO_OFFICE_SOURCES={'place-office':1,'place-home':1};
-function _geoIsOffJobSource(s){const k=String(s||'');return k==='stop'||_GEO_OFFICE_SOURCES[k]===1;}
-// ── SHOWN, NEVER CLAIMED ──────────────────────────────────────────────────
-// A `-held` suffix means the deriver wrote this row but nothing in the day
-// vouched for it (js/geo-derive.js rules 13, 15 and 18): a visit at a family
-// address, a drive out to somewhere nobody saved, the stop at the far end of
-// it. The row exists so the log has no hole in it and so the map can draw
-// where the truck went; it earns no minutes anywhere.
-//
-// A SUFFIX, so it composes with the prefix families rather than replacing
-// them. 'drive-held' is still a drive to _geoIsDriveSource and still reads
-// "Drive time" on the rail, which is what it was; it is simply not paid.
-// 'client-held' has been in this family since rule 13 shipped and now has a
-// name for what it is instead of one string every reader had to memorise.
-function _geoIsHeldSource(s){return /-held$/.test(String(s||''));}
 // A stop that spans Central midnight is an END-OF-DAY PARK (truck home for
 // the night), never an unpaid leg of a workday, and writing it is exactly
 // what let single days total more than 24 hours (owner rule 2026-08-24: "it's
@@ -2240,7 +2200,7 @@ function _geoBindInteract(){
 // _geoIsDriveSource is /^drive/ and this is now /^place/: one predicate owns
 // what a source MEANS, and a new variant joins the family by being named into
 // it rather than by every caller learning a new string.
-function _geoIsPlaceSource(s){return /^place/.test(String(s||''));}
+// (in js/geo-sources.js)
 // A drive leg is not, by itself, evidence of a workday. The owner's rule names
 // job sites and supply runs, so those visits are the anchors and a drive
 // counts only when it is CHAINED to one: it pulls out as a visit ends (the
