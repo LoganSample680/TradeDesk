@@ -7837,6 +7837,77 @@ async function _geoPageAll(build){
   }
   return out;                                  // hit the page cap: there is more
 }
+// ── ONE DERIVER IS NOT ENOUGH IF IT READS TWO DIFFERENT TAPES ────────────
+// Owner 2026-09-19, on Jack's 18 September: "why does his phone keep deriving
+// over the correct server row."
+//
+// It was not deriving OVER anything. It was adding, and it added because the
+// two derives could not tell they were describing the same drive.
+//
+// The phone built its tape from a LIVE CoreMotion query (_geoDeriveTape ->
+// Td.motionSince) and the server builds its from the motion rows that were
+// UPLOADED during the day (derive-day.mjs). Those are two records of one day
+// and they disagree, because the uploaded record accumulates every flip every
+// wake ever reported while a fresh query returns CoreMotion's current
+// segmentation of the same minutes. His shop -> Neenans run is in geo_events
+// twice, 13:19:59 and 13:20:18; the phone's query returned only the second.
+//
+// The journey id is the flip's instant in base 36 (_gdJourneyId,
+// js/geo-derive.js) and geo_replace_day matches a row by that key, so
+// nineteen seconds of disagreement is not a corrected row, it is a brand new
+// one beside the old. Four drives, eight rows.
+//
+// So the phone reads the same rows the server does and folds them in. It is
+// a union rather than a replacement because the phone must still see the flip
+// that happened ninety seconds ago and has not flushed yet, which is the
+// whole point of a live derive; _gdJourneys collapses consecutive same-kind
+// flips, so once both records hold a flip the EARLIEST instant wins on both
+// sides and the two derives mint the same id by construction.
+//
+// Deliberately its own fetch and not folded into _geoDeriveServerFixes: that
+// one is gated on a thin local fix log (see _geoDeriveDayNow) and so runs
+// almost never on a healthy phone, which is exactly the phone this went wrong
+// on. The tape is small, a few dozen rows a day.
+async function _geoDeriveServerTape(fromMs,toMs){
+  const out=[];
+  out.complete=false;
+  try{
+    if(!_supa||!_supaUser)return out;
+    const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
+    const rows=await _geoPageAll(()=>_supa.from('geo_events').select('ts,kind').eq('employee_user_id',me).eq('type','motion').gte('ts',a).lt('ts',b));
+    rows.forEach(e=>{const t=Date.parse(e.ts);if(t>0&&e.kind)out.push({ts:t,kind:String(e.kind)});});
+    out.complete=!!rows.complete;
+  }catch(_e){}
+  return out;
+}
+
+// The union of the two records of one day, oldest first. An exact repeat (the
+// same instant saying the same thing, which is what the phone's own flip looks
+// like once it has been uploaded and read back) is one fact and is kept once;
+// everything else rides, and the deriver decides what it means. Never throws:
+// a derive with half a tape beats a derive with none.
+function _geoTapeMerge(a,b){
+  const all=(Array.isArray(a)?a:[]).concat(Array.isArray(b)?b:[]);
+  const seen=Object.create(null),out=[];
+  for(const x of all){
+    if(!x||typeof x.ts!=='number'||!isFinite(x.ts)||!x.kind)continue;
+    const k=Math.round(x.ts)+'|'+_geoTapeKindKey(x.kind);
+    if(seen[k])continue;
+    seen[k]=1;
+    out.push(x);
+  }
+  return out.sort((x,y)=>x.ts-y.ts);
+}
+// The deriver's own normalisation (_gdKind), reachable here so the two
+// spellings of one fact ('driving' from the history query, 'automotive' from
+// the live stream) dedupe against each other rather than both surviving.
+function _geoTapeKindKey(k){
+  const s=String(k||'');
+  if(s==='driving'||s==='automotive')return 'auto';
+  if(s==='onFoot'||s==='walking'||s==='running'||s==='cycling')return 'foot';
+  if(s==='still'||s==='stationary')return 'still';
+  return s;
+}
 async function _geoDeriveServerFixes(fromMs,toMs){
   const out=[];
   out.appEvents=[];
@@ -8340,11 +8411,18 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     if(_geoViewingSomebodyElse())return null;
     const b=_geoDayBounds(dayKey);
     if(!b)return null;
-    const tape=await _geoDeriveTape(b.start-2*3600000);
+    const localTape=await _geoDeriveTape(b.start-2*3600000);
     // Nothing positively covering this day: leave its rows alone. A day the
     // tape does not cover can still be a Sunday of invoicing at the home
     // office (rule 10), which the app log covers instead.
-    const tapeCovers=tape.some(t=>t.ts>=b.start-2*3600000&&t.ts<b.end);
+    //
+    // THIS PHONE'S OWN TAPE, deliberately, and not the merged one below. The
+    // sweep gate downstream reads this, and "NO TAPE, NO SWEEP" means no tape
+    // OF MINE: rows another device uploaded are evidence enough to derive
+    // from and never evidence that this phone watched the day and can say
+    // what is no longer true. Merging here would have quietly handed the
+    // sweep to a phone that was in a drawer.
+    const tapeCovers=localTape.some(t=>t.ts>=b.start-2*3600000&&t.ts<b.end);
     const appCovers=_geoAppLogRead().some(e=>e.ts>=b.start&&e.ts<b.end)||
       (serverFixes&&Array.isArray(serverFixes.appEvents)&&serverFixes.appEvents.some(e=>e.ts>=b.start&&e.ts<b.end));
     if(!tapeCovers&&!appCovers)return null;
@@ -8367,6 +8445,10 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
         _geoRegLogSeed(server.regions);
       }
     }
+    // One tape, both derives (see _geoDeriveServerTape). Fetched every time,
+    // not only when the fix log is thin: a phone with a healthy local log is
+    // exactly the phone that never asked and so never agreed.
+    const tape=_geoTapeMerge(localTape,await _geoDeriveServerTape(b.start-2*3600000,b.end));
     const fixes=_geoFixLogRead().concat(server||[]);
     const appEvents=_geoAppLogRead().concat((server&&Array.isArray(server.appEvents))?server.appEvents:[]);
     const regions=_geoRegLogRead().concat((server&&Array.isArray(server.regions))?server.regions:[]);
