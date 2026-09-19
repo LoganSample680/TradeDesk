@@ -2686,7 +2686,14 @@ function _renderLaborPicker(type){
   if(!_estCrew.length){
     body='<span style="color:var(--text3)">Tap a name to add who\'s on this job, their pay + benefits become a job cost.</span>';
   }else if(cost<=0){
-    body='<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
+    // TWO NUMBERS, AND THIS LINE IS ONLY ABOUT ONE OF THEM. With per-person
+    // bill rates on screen above it, the old wording ("set pay rates") read as
+    // "your rates did not take" on a table that visibly had rates in it. What
+    // is missing is what they COST, which is a different number in a different
+    // place, and the sentence now says which.
+    body=_crewHourlyBill()>0
+      ? '<span style="color:var(--c-amber)">What they bill is set. What they cost you is not, so there is no profit figure on this job yet. Add their pay on the Team page.</span>'
+      : '<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
   }else{
     const ppl=_estCrew.length;
     const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">'+svgIcon('⚠',{size:10})+' '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
@@ -3780,7 +3787,11 @@ function _tmRenderMoneyRows(n){
   const keep=bill-cost;
   const share=Math.round((keep/bill)*100);
   const cents=Math.max(0,Math.min(100,share));
-  const money=v=>(typeof fmt==='function')?fmt(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
+  // Whole dollars, the same rule Tim's panels use. `fmt` always prints cents,
+  // which belong on the proposal and the tax documents where precision is a
+  // legal matter. This rail is neither, and ".00" three times is just noise on
+  // three figures he is glancing at.
+  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
   const target=_MARGIN_BANDS.target;
   const colour=share>=_MARGIN_BANDS.target?'var(--c-green)':share>=_MARGIN_BANDS.low?'var(--c-amber)':'var(--c-red)';
 
