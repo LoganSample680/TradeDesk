@@ -194,8 +194,9 @@ function timLeaveDrift(d){
 // ── The sheet ────────────────────────────────────────────────────────────────
 function openTimBook(){
   const read=timBookNew();
-  const money=v=>(typeof fmt==='function')?fmt(v):('$'+v);
-  const price=v=>Math.abs(v)<10?('$'+(Math.round(v*100)/100).toFixed(2)):money(Math.round(v));
+  // One formatter, shared with the read-back panel: cents only where the rate
+  // itself is cents, whole dollars everywhere else.
+  const price=v=>(typeof timPrice==='function')?timPrice(v):('$'+Math.round(v));
 
   let html='<div style="display:flex;align-items:flex-start;gap:11px;padding:0 16px 14px;border-bottom:1px solid var(--border)">'+
     (typeof timMark==='function'?timMark(28):'')+

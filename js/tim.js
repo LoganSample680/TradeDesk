@@ -625,7 +625,7 @@ function _timShowRead(said){
   if(!job){_timGo();return;}
   _timJob=job;
 
-  const money=n=>(typeof fmt==='function')?fmt(Math.round(n||0)):('$'+Math.round(n||0));
+  const money=n=>(typeof timPrice==='function')?timPrice(n):('$'+Math.round(n||0));
   const micro=t=>'<div style="padding:13px 16px 9px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+t+'</div>';
 
   const who=(job.client&&job.client.name)||'This job';
@@ -661,6 +661,7 @@ function _timShowRead(said){
   }
 
   if(job.materials.length){
+    const anyPriced=job.suppliesPriced>0;
     const secs=[];
     (typeof TIM_SUPPLY_SECTIONS!=='undefined'?TIM_SUPPLY_SECTIONS:[]).forEach(sec=>{
       const rows=job.materials.filter(m=>m.section===sec.id);
@@ -675,6 +676,14 @@ function _timShowRead(said){
             '<span style="font-size:12px;color:var(--text3);font-variant-numeric:tabular-nums;flex-shrink:0;text-align:right">'+escHtml(f.qtyLabel)+
               (f.packNote?'<span style="display:block;font-size:10px">'+escHtml(f.packNote)+'</span>':'')+
             '</span>'+
+            // A blank here is the honest answer for something he has never
+            // bought, counted under the total rather than guessed at. The whole
+            // column goes when nothing on the list is priced, because five
+            // blanks in a row is worse at saying "your book is thin" than one
+            // sentence underneath is.
+            (anyPriced?('<span style="width:62px;flex-shrink:0;text-align:right;font-size:12.5px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums">'+
+              (Number(m.rate)>0?money(m.rate):'<span style="color:var(--text3);font-weight:400">-</span>')+
+            '</span>'):'')+
           '</div>';
         }).join(''));
     });
@@ -694,10 +703,27 @@ function _timShowRead(said){
     '</div>';
   });
 
+  if(job.suppliesPriced>0){
+    html+='<div style="display:flex;align-items:baseline;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border)">'+
+      '<span style="font-size:13px;font-weight:600;color:var(--text)">Supplies at cost</span>'+
+      '<span style="font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">'+money(job.suppliesCost)+'</span>'+
+    '</div>';
+    if(job.suppliesUnpriced>0){
+      html+='<div style="padding:0 16px 10px;font-size:11.5px;line-height:1.5;color:var(--text3)">'+
+        job.suppliesUnpriced+' of these '+(job.suppliesUnpriced===1?'has':'have')+
+        ' no price in your book yet, so '+(job.suppliesUnpriced===1?'it is':'they are')+' not in that figure.</div>';
+    }
+  }else if(job.materials.length){
+    // Nothing on the list is in his book. Said once, plainly, instead of a
+    // column of dashes and a total of zero.
+    html+='<div style="padding:12px 16px;border-top:1px solid var(--border);font-size:12px;line-height:1.5;color:var(--text3)">'+
+      'None of these are in your price book yet, so there is no cost on them. Buy them once and the next list carries what you paid.</div>';
+  }
+
   if(job.addedHours>0){
     html+='<div style="display:flex;align-items:baseline;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border)">'+
       '<span style="font-size:13px;font-weight:600;color:var(--text)">Time on the contract</span>'+
-      '<span style="font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums">'+job.saidHours+' hrs, plus '+job.addedHours+' for the access</span>'+
+      '<span style="font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums">'+job.saidHours+' hrs, plus '+job.addedHours+' for the '+_timHoursFor(job)+'</span>'+
     '</div>';
   }
 
@@ -714,6 +740,15 @@ function _timShowRead(said){
   }
 
   _timSheet('_tim-sheet',_timHeadHtml('What I made of it')+html);
+}
+
+// What the extra hours are for, named. "Plus 6 for the scaffold" is a thing he
+// can picture; "plus 6 for the access" is a category.
+function _timHoursFor(job){
+  const r=(job.implied||[]).filter(x=>Number(x.hours)>0);
+  if(!r.length)return 'access';
+  const word=String(r[0].step||r[0].say||'').toLowerCase().replace(/^set\s+/,'').split(',')[0].trim();
+  return word||'access';
 }
 
 // The only function here that changes the proposal.

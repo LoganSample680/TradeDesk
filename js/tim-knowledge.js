@@ -619,6 +619,21 @@ function timLineFigures(item){
 const _TIMK_WORDS=['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'];
 function _timWordish(n){return (n>=0&&n<=12&&n===Math.floor(n))?(_TIMK_WORDS[n].charAt(0).toUpperCase()+_TIMK_WORDS[n].slice(1)):String(n);}
 
+// Money the way this app's own design system says to write it: whole dollars,
+// because cents on a figure he is glancing at are two characters of noise. The
+// exception is a rate that IS cents, like $0.78 a square foot, where dropping
+// them would print $1 and be wrong rather than merely untidy.
+//
+// Deliberately not `fmt`, which always prints cents. Full dollars and cents
+// belong on the proposal and the tax documents, where precision is a legal
+// matter, and nothing Tim renders is either of those.
+function timPrice(n){
+  const v=Number(n)||0;
+  return (v!==0&&Math.abs(v)<10)
+    ? ('$'+(Math.round(v*100)/100).toFixed(2))
+    : ('$'+Math.round(v).toLocaleString('en-US'));
+}
+
 // ── Where his own numbers disagree ───────────────────────────────────────────
 //
 // Rule 2 of the header, made concrete. Six rolls of synthetic covers 60 squares
@@ -760,7 +775,21 @@ function timReadJob(said,opts){
 
   // THE SCOPE COMES OFF HIS BOOK FIRST. Those are his words and his prices, and
   // a line matched against them reads like something he wrote, because he did.
-  const fromBook=timBookLines(said,o.book,o.catalog).map(s=>({
+  // The supply list is worked out FIRST, because it decides what the book lines
+  // are allowed to be. `_pbLearn` fills one book from both services and
+  // material categories, so "Scaffold" and "Duration exterior, Iron Ore" sit in
+  // it next to "Strip and repaint". Without this, a sentence mentioning paint
+  // puts a tin of paint in the scope of work as something the crew DOES, and
+  // worse, a book line called Scaffold makes Tim think the job already has
+  // scaffold on it and swallow the correction that is the whole point.
+  //
+  // The same words cannot be both a thing he is buying and a thing he is doing,
+  // and the materials parser is the more specific signal, so it wins.
+  const matsFirst=timMaterials(said,{trade:o.trade});
+  const matKeys=new Set(matsFirst.map(m=>(typeof _pbKey==='function')?_pbKey(m.label):String(m.label).toLowerCase()));
+  const fromBook=timBookLines(said,o.book,o.catalog)
+    .filter(s=>!matKeys.has((typeof _pbKey==='function')?_pbKey(s.desc):String(s.desc).toLowerCase()))
+    .map(s=>({
     text:s.desc,rate:s.rate,unit:s.unit,from:s.from,
     // What the screen prints under the line, in his words, never a score.
     why:s.from==='book'
@@ -812,7 +841,7 @@ function timReadJob(said,opts){
     if(r.pairs&&r.pairs.step)withImplied.push({text:r.pairs.step,stage:r.pairs.stage,last:!!r.pairs.last,_tim:r.id});
   });
 
-  const materials=timMaterials(said,{trade:o.trade});
+  const materials=matsFirst;
   // A rental is priced in days, and the days are the job's, not a guess. Three
   // days of work is three days of scaffold on the yard ticket.
   const jobDays=Math.max(1,Math.ceil((Number(plan.hours)||0)/8));
@@ -823,6 +852,21 @@ function timReadJob(said,opts){
     if(have){if(have.unit==='d'&&!have.counted)have.qty=qty;have.detail=have.detail||r.because;have._tim=r.id;return;}
     materials.push(Object.assign({per:1,rate:0,counted:false,detail:r.because,_tim:r.id},r.supply,{qty}));
   });
+
+  // WHAT THE SUPPLIES COST, FROM HIS BOOK, OR NOTHING AT ALL.
+  //
+  // A supply line he has bought before is already in the price book at what he
+  // paid, and reading it back is free. A line he has never bought gets no
+  // figure: the screen shows a blank and the total says how many are missing,
+  // because a made up materials price is the one number on this panel he has no
+  // way to check.
+  materials.forEach(m=>{
+    if(Number(m.rate)>0)return;
+    const hit=(typeof _pbFind==='function')?_pbFind(m.label,o.trade):null;
+    const unit=Number(hit&&hit.rate)||0;
+    if(unit>0)m.rate=Math.round(unit*(Number(m.qty)||1));
+  });
+  const priced=materials.filter(m=>Number(m.rate)>0);
 
   const hours=(Number(plan.hours)||0)+implied.reduce((s,r)=>s+(Number(r.hours)||0),0);
 
@@ -836,6 +880,11 @@ function timReadJob(said,opts){
     implied,
     materials,
     coverage:timCoverage(materials),
+    // What the supplies come to, and how many of them he has no price for yet.
+    // Both, always, so a total is never read as covering the whole list.
+    suppliesCost:priced.reduce((s,m)=>s+Number(m.rate),0),
+    suppliesPriced:priced.length,
+    suppliesUnpriced:materials.length-priced.length,
     hours,
     saidHours:Number(plan.hours)||0,
     addedHours:hours-(Number(plan.hours)||0),
