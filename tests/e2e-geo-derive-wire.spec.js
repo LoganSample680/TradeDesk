@@ -3557,3 +3557,128 @@ test.describe('a cached fix re-sent is not a new fix', () => {
 
   test('no console errors', async () => { await assertNoErrors(page); });
 });
+
+// ── ONE DERIVER IS NOT ENOUGH IF IT READS TWO DIFFERENT TAPES ─────────────
+// Owner 2026-09-19, on Jack's 18 September: "why does his phone keep deriving
+// over the correct server row."
+//
+// It never overwrote one. The phone derived from a live CoreMotion query and
+// the server from the motion rows uploaded during the day, and those two
+// records of one day disagree by seconds. His shop -> Neenans run sits in
+// geo_events twice, 13:19:59 and 13:20:18, and the phone's query returned only
+// the second; the journey id is the flip's instant, so that was a new row
+// beside the right one rather than a correction of it. Four drives, eight rows.
+test.describe('the phone and the server derive from one tape', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the union keeps every flip once, oldest first', async () => {
+    const r = await page.evaluate(() => _geoTapeMerge(
+      [{ ts: 300, kind: 'onFoot' }, { ts: 100, kind: 'driving' }],
+      [{ ts: 200, kind: 'still' }],
+    ).map(x => [x.ts, x.kind]));
+    expect(r).toEqual([[100, 'driving'], [200, 'still'], [300, 'onFoot']]);
+  });
+
+  test('two spellings of one fact at one instant are one fact', async () => {
+    // 'driving' comes off the history query and 'automotive' off the live
+    // stream. Both survive in geo_events; both must not survive into a tape.
+    const r = await page.evaluate(() => _geoTapeMerge(
+      [{ ts: 100, kind: 'driving' }],
+      [{ ts: 100, kind: 'automotive' }, { ts: 100, kind: 'still' }],
+    ).map(x => x.kind));
+    expect(r).toEqual(['driving', 'still']);
+  });
+
+  test('his real pair survives as two, because seconds apart is not one instant', async () => {
+    // The deriver collapses consecutive same-kind flips and keeps the FIRST,
+    // which is what makes the two ids agree. The merge must not pre-empt that
+    // judgement by throwing one away.
+    const r = await page.evaluate(() => _geoTapeMerge(
+      [{ ts: 1789755618100, kind: 'driving' }],
+      [{ ts: 1789755599617, kind: 'driving' }],
+    ).map(x => x.ts));
+    expect(r).toEqual([1789755599617, 1789755618100]);
+  });
+
+  test('the journey then mints the SAME id from either side', async () => {
+    // The whole point, asserted end to end against his real instants: the
+    // phone-only tape names the drive 18.5 seconds late and gets a different
+    // key; the merged tape names it exactly as the server does.
+    const r = await page.evaluate(() => {
+      const day = '2026-09-18';
+      const ds = Date.parse('2026-09-18T05:00:00.000Z');
+      const mk = (tape) => geoDeriveDay({
+        day, dayStart: ds, dayEnd: ds + 86400000, personId: '987ebc83-1567-49e1-9dd3-b89b0cf9121b',
+        tape, fixes: [], appEvents: [], regions: [], fences: [], nowMs: ds + 86400000,
+      }).journeys.map(j => j.id);
+      const SERVER = [{ ts: 1789755599617, kind: 'driving' }, { ts: 1789755618100, kind: 'driving' },
+        { ts: 1789756237000, kind: 'onFoot' }];
+      const PHONE = [{ ts: 1789755618100, kind: 'driving' }, { ts: 1789756237000, kind: 'onFoot' }];
+      return { phoneOnly: mk(PHONE), merged: mk(_geoTapeMerge(PHONE, SERVER)), server: mk(SERVER) };
+    });
+    expect(r.merged).toEqual(r.server);
+    expect(r.server).toEqual(['j-987ebc83-mu7a9uyp']);
+    expect(r.phoneOnly, 'the bug, pinned: a different key for the same drive').toEqual(['j-987ebc83-mu7aa984']);
+  });
+
+  test('junk in is a tape out, never a throw', async () => {
+    const r = await page.evaluate(() => [
+      _geoTapeMerge(null, undefined).length,
+      _geoTapeMerge([null, { ts: 'x', kind: 'driving' }, { ts: 1, kind: '' }, { ts: NaN, kind: 'still' }], []).length,
+      _geoTapeMerge([{ ts: 5, kind: 'still' }], 'nope').length,
+    ]);
+    expect(r).toEqual([0, 0, 1]);
+  });
+
+  test('the server tape is read for this person, as motion rows, and never throws', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window._supa, savedU = window._supaUser;
+      const asked = {};
+      try {
+        window._supaUser = { id: 'uid-1' };
+        const chain = () => {
+          const q = {
+            select: (c) => { asked.cols = c; return q; },
+            eq: (k, v) => { asked[k] = v; return q; },
+            gte: () => q, lt: () => q, order: () => q,
+            range: async () => ({ data: [{ ts: '2026-09-18T18:19:59.617Z', kind: 'driving' }] }),
+          };
+          return q;
+        };
+        window._supa = { from: (t) => { asked.table = t; return chain(); } };
+        const out = await _geoDeriveServerTape(Date.parse('2026-09-18T05:00:00Z'), Date.parse('2026-09-19T05:00:00Z'));
+        return { asked, rows: out.map(x => [x.ts, x.kind]), complete: out.complete };
+      } finally { window._supa = saved; window._supaUser = savedU; }
+    });
+    expect(r.asked.table).toBe('geo_events');
+    expect(r.asked.type).toBe('motion');
+    expect(r.asked.employee_user_id).toBe('uid-1');
+    expect(r.rows).toEqual([[Date.parse('2026-09-18T18:19:59.617Z'), 'driving']]);
+    expect(r.complete).toBe(true);
+  });
+
+  test('no session, or a throwing client, returns an empty tape rather than failing the derive', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window._supa, savedU = window._supaUser;
+      try {
+        window._supaUser = null;
+        const a = await _geoDeriveServerTape(1, 2);
+        window._supaUser = { id: 'uid-1' };
+        window._supa = { from: () => { throw new Error('offline'); } };
+        const b = await _geoDeriveServerTape(1, 2);
+        return [a.length, a.complete, b.length, b.complete];
+      } finally { window._supa = saved; window._supaUser = savedU; }
+    });
+    expect(r).toEqual([0, false, 0, false]);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});
