@@ -333,6 +333,23 @@ Object.defineProperty(window,'_geiScopeNoScope',{get:()=>_geiScopeNoScope,set:v=
 // Crew assigned to this bid (employee emails). Each adds their loaded payroll cost as a
 // real expense; more people on the job → bigger cost. Hours come automatically from scope.
 let _estCrew=[];
+// WHAT EACH PERSON BILLS AT, WHICH IS NOT WHAT EACH PERSON COSTS.
+//
+// Owner 2026-09-19: "could this give me the ability to do two different rates on
+// time and materials for the people I add?" A lead and an apprentice do not
+// bill the same, so the rate belongs to the WORKER and the job shows the total
+// per hour that comes out of it.
+//
+// Two numbers per person and they must never be conflated (rule 18.2):
+//   pay_rate  on team_members   what they cost you, already per person, already
+//                               gated behind _canViewComp()
+//   billRate  on the employee   what the client is charged for their hour
+//
+// This map is the override for THIS job only. Empty means the person bills at
+// their own default, and no default means the job's flat rate, which is how
+// every bid written before today still prices.
+let _estCrewRates={};
+Object.defineProperty(window,'_estCrewRates',{get:()=>_estCrewRates,set:v=>{_estCrewRates=(v&&typeof v==='object')?v:{};},configurable:true});
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
 Object.defineProperty(window,'_geiIsTM',{get:()=>_geiIsTM,set:v=>{_geiIsTM=v;},configurable:true});
@@ -596,7 +613,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
@@ -1013,7 +1030,8 @@ function _geiRenderScopeCard(prefix){
   wrap.style.display='';
   wrap.innerHTML=
     '<div class="card-hd">'+
-      '<div class="card-hd-title">Scope of work</div>'+
+      // "in order" is a promise the list now keeps, so the heading says it.
+      '<div class="card-hd-title">Scope of work, in order</div>'+
       (mode==='full'?'<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>':'')+
     '</div>'+
     (mode==='legacy'?'<div style="padding:11px 16px 2px;font-size:11.5px;color:var(--text-3);line-height:1.5">Your line items and their descriptions are the scope on this proposal now. These older entries still print, remove any you do not want.</div>':'')+
@@ -1378,6 +1396,7 @@ function _tmShowPage(){
   _tmApplyLayers();
   // Restore who's on the job, drives the true-cost gauge via the shared crew picker.
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
+  _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
   _tmRenderMatList();
   _tmInputChange();
@@ -1435,6 +1454,7 @@ function _byoShowPage(){
   _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
   _byoCustomTerms=b?.byoCustomTerms||'';
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
+  _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
   _byoRenderSections();
   _byoUpdateRail(); // also renders the auto crew-labor cost line
@@ -1489,19 +1509,62 @@ function _renderScopeChips(containerId){
     }
     return;
   }
-  // Render selected scope as clean line items (not pills), one per row with a divider.
+  // SCOPE IS A NUMBERED LIST, IN THE ORDER THE WORK HAPPENS.
+  //
+  // It used to be an icon per row, which said what KIND of work each line was
+  // and nothing about when it happens. The owner's note: "Scope of work I love
+  // how it puts it all in order from start." So the icon gives up its place to
+  // the step number, because the number is the information: a crew reading line
+  // 1 is reading the first thing they do, and a homeowner reading it can follow
+  // the week.
+  //
+  // The array's own order IS the work order. js/tim-knowledge.js `timOrderScope`
+  // is what puts it in that order, and this only draws it.
   let html='<div style="padding:4px 0">';
   _geiScopeChips.forEach((l,i)=>{
     const c=allItems.find(x=>x.label===l)||{icon:'✓',label:l};
     const border=i<_geiScopeChips.length-1?'border-bottom:1px solid var(--border)':'';
-    html+='<div style="display:flex;align-items:center;gap:11px;padding:11px 16px;'+border+'">'+
-      '<span style="font-size:17px;line-height:1;flex-shrink:0">'+svgIcon(c.icon||'✓',{size:17})+'</span>'+
-      '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(c.label)+'</span>'+
+    html+='<div style="display:flex;align-items:baseline;gap:11px;padding:12px 16px;'+border+'">'+
+      '<span style="font-size:11.5px;font-weight:600;color:var(--text3);font-variant-numeric:tabular-nums;flex-shrink:0;min-width:10px">'+(i+1)+'</span>'+
+      '<span style="flex:1;min-width:0;font-size:14px;font-weight:500;color:var(--text);line-height:1.4">'+escHtml(c.label)+'</span>'+
       '<button type="button" onclick="_toggleScopeChip('+escHtml(JSON.stringify(l))+')" aria-label="Remove '+escHtml(c.label)+'" style="flex-shrink:0;border:none;background:none;color:var(--text3);font-size:18px;font-weight:700;cursor:pointer;padding:2px 6px;line-height:1;font-family:inherit">×</button>'+
     '</div>';
   });
   html+='</div>';
+  // The offer to sort it, and only when sorting it would actually change
+  // something. A list already in work order does not get a button telling him
+  // it might not be.
+  if(_geiScopeChips.length>1&&typeof _geiScopeOutOfOrder==='function'&&_geiScopeOutOfOrder()){
+    html+='<button type="button" onclick="_geiPutScopeInOrder()" style="width:100%;display:flex;align-items:center;gap:8px;padding:12px 16px;border:0;border-top:1px solid var(--border);background:none;cursor:pointer;font-family:inherit;text-align:left">'+
+      (typeof timMark==='function'?timMark(16):'')+
+      '<span style="font-size:13.5px;font-weight:600;color:var(--blue)">Put these in work order</span>'+
+    '</button>';
+  }
   wrap.innerHTML=html;
+}
+
+// Would sorting this change anything? `timOrderScope` is stable, so a list
+// already in order comes back identical and this is false.
+function _geiScopeOutOfOrder(){
+  if(typeof timOrderScope!=='function')return false;
+  try{
+    const now=(_geiScopeChips||[]).slice();
+    const sorted=timOrderScope(now).map(s=>s.text);
+    return sorted.some((t,i)=>t!==now[i]);
+  }catch(_e){return false;}
+}
+// Tim's one job on this card. Nothing is added or removed, the same lines come
+// back in the order the work happens, and he can undo it by dragging or by
+// removing and re-adding like any other day.
+function _geiPutScopeInOrder(){
+  if(typeof timOrderScope!=='function')return;
+  const sorted=timOrderScope((_geiScopeChips||[]).slice()).map(s=>s.text);
+  if(!sorted.length)return;
+  _geiScopeChips.length=0;
+  sorted.forEach(t=>_geiScopeChips.push(t));
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+  if(typeof _byoAutosave==='function')_byoAutosave();
+  if(typeof showToast==='function')showToast('Scope is in work order','🔧',2200);
 }
 function _openScopeSheet(containerId){
   document.getElementById('_scope-sheet-ov')?.remove();
@@ -2020,6 +2083,7 @@ function _byoAutosave(){
   // Build Your Own with empty items (the "my work disappeared" bug).
   b.isFreeForm=_geiIsFreeForm&&!_geiIsTM;
   b.estCrew=[..._estCrew];
+  b.estCrewRates=Object.assign({},_estCrewRates);
   b.exclusions=[..._geiExclusions];
   // THE PROMISE, frozen. _estLaborHours() is derived live from the price book
   // and his scope history, so it MOVES as the book learns. Stamping it here is
@@ -2070,6 +2134,11 @@ function _byoAutosave(){
   if(_wasEmpty&&!_geiDraftIsEmpty(b)){
     try{if(typeof lcProposalSaved==='function')lcProposalSaved(b.id,b.client_id);}catch(_e){}
   }
+  // Every field on this page feeds something Tim reads: the address is the
+  // state, the lines are the price check, the scope is whether the work reaches
+  // past a ladder. One coalesced repaint per frame, so a burst of keystrokes is
+  // still one pass over the book.
+  if(typeof timDockRefresh==='function')timDockRefresh();
 }
 function _injectRrpItems(){
   const _rrpC=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
@@ -2419,6 +2488,168 @@ function _toggleCrewMember(email){
   if(typeof _byoUpdateRail==='function')_byoUpdateRail();
   if(typeof _byoAutosave==='function')_byoAutosave();
 }
+// ── The rate on the worker ───────────────────────────────────────────────────
+//
+// What this person's hour is sold for. Three places it can come from, nearest
+// first: what he typed on THIS job, what he set as their default, and failing
+// both, nothing, which leaves the job's one flat rate in charge exactly as it
+// was before per-person rates existed.
+//
+// Two numbers per person and they must never be conflated (rule 18.2):
+//   pay_rate  on team_members   what they cost you, gated behind _canViewComp()
+//   billRate  on the employee   what the client is charged for their hour
+function _billRateFor(email){
+  const k=String(email||'').toLowerCase();
+  if(!k)return 0;
+  const own=Number(_estCrewRates&&_estCrewRates[k]);
+  if(own>0)return own;
+  const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
+  const def=Number(e&&e.billRate);
+  return def>0?def:0;
+}
+// What the crew on site bills, per hour, all in. Zero when nobody on this job
+// has a rate of their own, which is the signal to fall back to crew × flat.
+function _crewHourlyBill(){
+  if(!_estCrew.length)return 0;
+  return _estCrew.reduce((s,email)=>s+_billRateFor(email),0);
+}
+// The number the client is actually charged per hour. One place, so the rail,
+// the labor line, the day rate and the proposal cannot disagree (rule 18: one
+// definition, many mouths).
+function _tmHourlyBill(){
+  const crew=_crewHourlyBill();
+  return crew>0?crew:(_tmCrewCount*_tmRatePerMan);
+}
+// Set what somebody bills. `asDefault` writes it onto the person so it follows
+// them to the next job, which is the point of the rate living on the worker;
+// otherwise it is this job only.
+function _setBillRate(email,rate,asDefault){
+  const k=String(email||'').toLowerCase();
+  const r=Math.max(0,Number(rate)||0);
+  if(!k)return;
+  if(r>0)_estCrewRates[k]=r;else delete _estCrewRates[k];
+  if(asDefault){
+    const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
+    if(e){e.billRate=r||0;if(typeof _settingsChanged==='function')_settingsChanged();}
+  }
+  if(_geiIsTM&&typeof _tmInputChange==='function')_tmInputChange();
+  else{if(typeof _byoUpdateRail==='function')_byoUpdateRail();if(typeof _byoAutosave==='function')_byoAutosave();}
+}
+function _onBillRateInput(el,email){
+  if(!el)return;
+  const r=parseFloat(String(el.value).replace(/[^0-9.]/g,''))||0;
+  if(r===_billRateFor(email))return;
+  _setBillRate(email,r,false);
+}
+// Has this person billed the same figure often enough that it should just BE
+// their rate? Three of the same number is a habit, not a Tuesday. Tim offers it
+// once so the rate gets set on the person and never typed again.
+function _billRateHabit(email){
+  const k=String(email||'').toLowerCase();
+  const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
+  if(!e||Number(e.billRate)>0)return null;
+  const seen={};
+  (typeof bids!=='undefined'?bids:[]).forEach(b=>{
+    const r=Number(b&&b.estCrewRates&&b.estCrewRates[k]);
+    if(r>0)seen[r]=(seen[r]||0)+1;
+  });
+  const best=Object.keys(seen).map(Number).sort((a,b)=>seen[b]-seen[a])[0];
+  if(!best||seen[best]<3)return null;
+  return {rate:best,n:seen[best],name:(e.name||'').split(' ')[0]||e.name,email:k};
+}
+// "Marco at $95, Jess at $75". Said in names and figures, because that is how
+// he checks it, and it is what the line under the rate has to carry once the
+// rate is not one number any more.
+function _crewRateWords(){
+  return _estCrew.map(email=>{
+    const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===String(email).toLowerCase());
+    const first=((e&&e.name)||email||'').split(' ')[0]||email;
+    const r=_billRateFor(email);
+    return first+(r>0?(' at $'+r.toLocaleString()):'');
+  }).join(', ');
+}
+function _takeBillRateDefault(email,rate){
+  _setBillRate(email,rate,true);
+  if(typeof showToast==='function')showToast('That is their rate from now on','🔧',2400);
+}
+
+// ── Crew and rates ───────────────────────────────────────────────────────────
+//
+// One row per person actually on the job: what they cost, and the only number
+// he has to type, what they bill. Then the line that is the whole reason for
+// the feature, the total per hour that comes out of it, with the day behind it
+// and the cost under it.
+//
+// Nobody on the job means no table. The flat rate field above is still the
+// right control for a man working alone, and a two column grid asking him to
+// price a crew of nobody is noise.
+function _crewRatesHtml(emps){
+  if(!_estCrew.length)return '';
+  const rows=(emps||[]).filter(e=>_estCrew.indexOf(String(e.email||'').toLowerCase())>=0);
+  if(!rows.length)return '';
+  const canSeeCost=(typeof _canViewComp!=='function')||_canViewComp();
+  const cell='display:flex;align-items:center;justify-content:flex-end;padding:7px 0 7px 4px;border-top:1px solid var(--border);font-variant-numeric:tabular-nums';
+  let html='<div style="display:grid;grid-template-columns:minmax(0,1fr) 62px 76px;margin-bottom:8px">'+
+    '<div style="padding:5px 0;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Person</div>'+
+    '<div style="display:flex;align-items:center;justify-content:flex-end;padding:5px 0 5px 4px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+(canSeeCost?'Costs you':'')+'</div>'+
+    '<div style="display:flex;align-items:center;justify-content:flex-end;padding:5px 0 5px 4px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Bills at</div>';
+  rows.forEach(e=>{
+    const email=String(e.email||'').toLowerCase();
+    const first=(e.name||'').split(' ')[0]||e.name||email;
+    const loaded=(typeof _empLoadedFor==='function')?_empLoadedFor(email):0;
+    const bill=_billRateFor(email);
+    html+='<div style="padding:7px 0;border-top:1px solid var(--border);min-width:0;font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(first)+
+        (e.role?'<span style="display:block;font-size:10px;font-weight:500;color:var(--text3)">'+escHtml(e.role)+'</span>':'')+
+      '</div>'+
+      '<div style="'+cell+';font-size:12px;color:var(--text3)">'+(canSeeCost&&loaded>0?('$'+(Math.round(loaded*100)/100)):'')+'</div>'+
+      '<div style="'+cell+'">'+
+        '<span style="display:inline-flex;align-items:center;height:30px;padding:0 4px 0 8px;border-radius:var(--r-sm);background:var(--bg);box-shadow:0 0 0 1px var(--border2);font-size:13px;font-weight:700;color:var(--text)">$'+
+        '<input type="text" inputmode="decimal" value="'+(bill>0?bill:'')+'" placeholder="'+(_tmRatePerMan>0?_tmRatePerMan:'0')+'" '+
+          'aria-label="What '+escHtml(first)+' bills per hour" '+
+          'onchange="_onBillRateInput(this,'+escHtml(JSON.stringify(email))+')" '+
+          'style="width:44px;border:0;background:none;padding:0 4px;font-family:inherit;font-size:13px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums">'+
+        '</span>'+
+      '</div>';
+  });
+  html+='</div>';
+
+  const perHr=_crewHourlyBill();
+  if(perHr>0){
+    const ppl=_estCrew.length;
+    const day=perHr*8;
+    const cost=(typeof _estLaborCost==='function'&&_estLaborHours()>0)?Math.round(_estLaborCost()/_estLaborHours()*8):0;
+    html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:0 0 8px">'+
+      '<span style="min-width:0">'+
+        '<span style="display:block;font-size:12px;font-weight:600;color:var(--text)">'+
+          (ppl===1?'One on site bills ':(ppl===2?'Two on site bill ':ppl+' on site bill '))+'$'+perHr.toLocaleString()+' an hour</span>'+
+        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">An eight hour day is $'+day.toLocaleString()+'.'+
+          (canSeeCost&&cost>0?(' Costs you $'+cost.toLocaleString()+'.'):'')+'</span>'+
+      '</span>'+
+      '<span style="font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.3px;flex-shrink:0">$'+perHr.toLocaleString()+
+        '<span style="font-size:11px;font-weight:600;color:var(--text3)">/hr</span></span>'+
+    '</div>';
+  }
+
+  // Set it once. A rate he has typed on three jobs is the rate, and typing it a
+  // fourth time is the friction the whole feature exists to remove.
+  for(const e of rows){
+    const h=_billRateHabit(String(e.email||'').toLowerCase());
+    if(!h)continue;
+    html+='<div style="display:flex;align-items:flex-start;gap:8px;padding:9px 0 10px;border-top:1px solid var(--border)">'+
+      (typeof timMark==='function'?timMark(18,{style:'margin-top:1px'}):'')+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:11.5px;line-height:1.5;color:var(--text2)">'+escHtml(h.name)+' billed $'+h.rate+' on his last '+h.n+' jobs. Make that his default rate?</div>'+
+        '<div style="display:flex;gap:7px;margin-top:7px">'+
+          '<button type="button" onclick="_takeBillRateDefault('+escHtml(JSON.stringify(h.email))+','+h.rate+')" style="height:28px;padding:0 11px;border:0;border-radius:var(--r-sm);background:var(--blue);color:#fff;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer">Set as default</button>'+
+          '<button type="button" onclick="_setBillRate('+escHtml(JSON.stringify(h.email))+','+h.rate+',false)" style="height:28px;padding:0 11px;border:0;border-radius:var(--r-sm);background:var(--bg);box-shadow:0 0 0 1px var(--border2);color:var(--text2);font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer">Just this job</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+    break;   // one offer at a time, the same rule the dock pill follows
+  }
+  return html;
+}
+
 // Render the crew picker + red payroll-expense figure into {type}-labor-cost-wrap.
 // Hidden entirely when there are no employees (solo operator → cost is materials only).
 function _renderLaborPicker(type){
@@ -2466,6 +2697,7 @@ function _renderLaborPicker(type){
   wrap.innerHTML=
     '<div class="td-micro" style="margin-bottom:6px">Crew on this job <span style="font-weight:500;color:var(--text3);text-transform:none;letter-spacing:0">(their pay is your cost)</span></div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">'+chips+'</div>'+
+    _crewRatesHtml(emps)+
     '<div style="font-size:11px;line-height:1.5;min-height:14px">'+body+'</div>'+
     '<div class="summary-divider"></div>';
 }
@@ -2494,6 +2726,11 @@ function _geiRenderDriveLine(type,d){
     '</div>'+netNote+ask;
 }
 
+// THE BANDS, IN ONE PLACE. The gauge and the three money rows both colour and
+// both talk about the same thresholds, and two copies of 35 is how a screen
+// ends up calling the same job "below target" and "above your target" in the
+// same rail (rule 18: one definition, many mouths).
+const _MARGIN_BANDS={low:22,target:35,high:55};
 function _updateMarginGauge(type,total){
   const gWrap=document.getElementById(type+'-profit-gauge');
   if(!gWrap)return;
@@ -2520,9 +2757,9 @@ function _updateMarginGauge(type,total){
   const pos=Math.min(Math.max(margin,2),98);
   let color,msg;
   if(margin<0){color='#DC2626';msg='Below cost, you’re losing money on this job';}
-  else if(margin<22){color='#EF4444';msg='Underpriced: consider raising your rate';}
-  else if(margin<35){color='#F59E0B';msg='Below target, a bit of room to grow';}
-  else if(margin<55){color='#22C55E';msg='Priced right, solid margin for this job';}
+  else if(margin<_MARGIN_BANDS.low){color='#EF4444';msg='Underpriced: consider raising your rate';}
+  else if(margin<_MARGIN_BANDS.target){color='#F59E0B';msg='Below target, a bit of room to grow';}
+  else if(margin<_MARGIN_BANDS.high){color='#22C55E';msg='Priced right, solid margin for this job';}
   // Owner call (2026-07-06): green ending at 75% read as "everything's fine" on
   // margins that usually mean a cost got missed, green now tops out at 55%.
   else if(margin<75){color='#F59E0B';msg='High margin, double-check your cost numbers';}
@@ -3434,20 +3671,31 @@ function _tmInputChange(){
   // below.
   const daysInput=_moneyVal('tm-i-days');
   _tmEstHours=_tmRateOnly?0:daysInput*8;
-  const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
+  // THE HOUR IS PRICED BY WHO IS STANDING IN IT. With per-person rates set,
+  // what comes off the job per hour is the sum of those rates, not a crew count
+  // times one flat number. With none set, _tmHourlyBill returns exactly the old
+  // crew × flat, so every bid written before today prices the same to the cent.
+  const perHour=_tmHourlyBill();
+  const crewRates=_crewHourlyBill()>0;
+  const labor=perHour*_tmEstHours;
   // Upsert labor line in _geiLines (same shape the rest of the app expects)
   const idx=_geiLines.findIndex(l=>l._tmLabor);
-  const desc='Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
-  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
+  // The client sees what it costs per hour, and with two rates on the job he
+  // sees both, because "2 workers @ $85/hr" is not true when one bills 95 and
+  // the other 75 and the total is the same.
+  const desc=crewRates
+    ? ('Labor: '+_crewRateWords()+' · $'+perHour.toLocaleString()+'/hr on site')
+    : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr');
+  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(perHour),_tmLabor:true,total:Math.round(labor)};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
   // Stat tiles
-  const dayRate=_tmCrewCount*_tmRatePerMan*8;
+  const dayRate=perHour*8;
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
   setT('tm-stat-day','$'+dayRate.toLocaleString());
-  setT('tm-stat-day-s',_tmRatePerMan&&_tmCrewCount?_tmCrewCount+'-person crew · 8hr day':'enter rate & crew');
+  setT('tm-stat-day-s',perHour>0?(crewRates?_estCrew.length+'-person crew · 8hr day · their own rates':_tmCrewCount+'-person crew · 8hr day'):'enter rate & crew');
   setT('tm-stat-labor','$'+labor.toLocaleString());
-  setT('tm-stat-labor-s',(_tmRatePerMan&&daysInput)?daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'-');
+  setT('tm-stat-labor-s',(perHour&&daysInput)?(crewRates?(daysInput+'d × 8hr × $'+perHour.toLocaleString()+'/hr'):(daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan)):'-');
   setT('tm-stat-days',_tmEstHours);
   // Materials subtotal, shown at raw cost, no markup applied
   const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
@@ -3457,11 +3705,11 @@ function _tmInputChange(){
   setT('tm-rail-labor','$'+labor.toLocaleString());
   setT('tm-rail-mat','$'+matRaw.toLocaleString());
   // The rate head, which is what a rate sheet's rail says instead of a total.
-  setT('tm-rail-rate','$'+_tmRatePerMan.toLocaleString());
+  setT('tm-rail-rate','$'+perHour.toLocaleString());
   const _rateEl=document.getElementById('tm-rail-rate');
-  if(_rateEl)_rateEl.innerHTML='$'+_tmRatePerMan.toLocaleString()+'<span style="font-size:18px;font-weight:700">/hr</span>';
-  setT('tm-rail-rate-sub',_tmCrewCount>1?'per worker, '+_tmCrewCount+' on site':'per worker');
-  setT('tm-rail-rate-crew',String(_tmCrewCount));
+  if(_rateEl)_rateEl.innerHTML='$'+perHour.toLocaleString()+'<span style="font-size:18px;font-weight:700">/hr</span>';
+  setT('tm-rail-rate-sub',crewRates?_crewRateWords():(_tmCrewCount>1?'$'+_tmRatePerMan.toLocaleString()+' per worker, '+_tmCrewCount+' on site':'per worker'));
+  setT('tm-rail-rate-crew',String(crewRates?_estCrew.length:_tmCrewCount));
   setT('tm-rail-rate-day','$'+dayRate.toLocaleString());
   setT('tm-rail-rate-mat',matRaw>0?'$'+matRaw.toLocaleString()+' est.':'at cost');
   const _tmDeposit=Math.round(total*_geiDepositPct())/100;
@@ -3505,8 +3753,71 @@ function _tmInputChange(){
   _geiRenderDriveLine('tm',_tmDrive);
   const _tmCostEl=document.getElementById('tm-expected-cost');
   if(_tmCostEl&&!_tmCostEl.dataset.userSet){_tmCostEl.value=_tmTrueCost>0?_tmTrueCost:'';}
+  _tmRenderMoneyRows({bill:total,hours:_tmEstHours,perHour,crewRates,
+    pay:_tmCrewCost,materials:matRaw,drive:(_tmDrive&&_tmDrive.cost)||0,cost:_tmTrueCost});
   _updateMarginGauge('tm',total);
   _byoAutosave();
+}
+
+// ── You bill, it costs you, you keep ─────────────────────────────────────────
+//
+// Three rows, one number each, and not one word of the trade's own vocabulary.
+// No margin, no burdened rate, no mobilization. The owner read the coloured
+// version of this and said he did not know what any of it meant, and if he does
+// not, a contractor does not.
+//
+// Nothing here is new arithmetic: `bill` is the same total the rail prints,
+// `cost` is the same figure that feeds the gauge (rule 18, one definition).
+// This only says it in the order a man asks it in.
+function _tmRenderMoneyRows(n){
+  const el=document.getElementById('tm-money-rows');
+  if(!el)return;
+  const bill=Math.round(Number(n&&n.bill)||0);
+  const cost=Math.round(Number(n&&n.cost)||0);
+  // Nothing to say until both halves exist. A "you keep" figure computed
+  // against a cost of zero is the flattering number rule 18 exists to prevent.
+  if(bill<=0||cost<=0){el.innerHTML='';return;}
+  const keep=bill-cost;
+  const share=Math.round((keep/bill)*100);
+  const cents=Math.max(0,Math.min(100,share));
+  const money=v=>(typeof fmt==='function')?fmt(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
+  const target=_MARGIN_BANDS.target;
+  const colour=share>=_MARGIN_BANDS.target?'var(--c-green)':share>=_MARGIN_BANDS.low?'var(--c-amber)':'var(--c-red)';
+
+  const billSub=n.perHour>0&&n.hours>0
+    ? ('$'+Number(n.perHour).toLocaleString()+' an hour'+(n.crewRates?' for the crew':'')+', '+n.hours+' hours')
+    : 'labor and materials on this proposal';
+  const costBits=[];
+  if(n.pay>0)costBits.push('their pay '+money(n.pay));
+  if(n.materials>0)costBits.push('materials '+money(n.materials));
+  if(n.drive>0)costBits.push('driving '+money(n.drive));
+
+  const row=(label,sub,value,strong)=>
+    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:'+(strong?'9px 0 10px':'0 0 9px')+';'+(strong?'':'border-bottom:1px solid var(--border)')+'">'+
+      '<span style="min-width:0">'+
+        '<span style="display:block;font-size:12.5px;font-weight:'+(strong?'700':'600')+';color:var(--text)">'+label+'</span>'+
+        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(sub)+'</span>'+
+      '</span>'+
+      '<span style="font-size:'+(strong?'17px':'15px')+';font-weight:700;color:'+(strong?colour:'var(--text)')+';font-variant-numeric:tabular-nums;letter-spacing:-.2px;flex-shrink:0">'+value+'</span>'+
+    '</div>';
+
+  el.innerHTML=
+    '<div style="display:flex;align-items:center;gap:7px;padding:0 0 10px">'+
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M10.7 5.1a10.7 10.7 0 0 1 11.2 6.6 1 1 0 0 1 0 .7 10.7 10.7 0 0 1-1.4 2.5"></path><path d="M14.1 14.2a3 3 0 0 1-4.3-4.3"></path><path d="M17.5 17.5A10.8 10.8 0 0 1 2 12.3a1 1 0 0 1 0-.7 10.8 10.8 0 0 1 4.5-5.1"></path><path d="m2 2 20 20"></path></svg>'+
+      '<span style="font-size:11.5px;font-weight:600;color:var(--text2)">Your figures. Not on the proposal.</span>'+
+    '</div>'+
+    row('You bill',billSub,money(bill),false)+
+    row('It costs you',costBits.join(' · ')||'what this job takes',money(cost),false)+
+    row('You keep',cents+' cents on the dollar at these rates',money(keep),true)+
+    '<div style="height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-bottom:8px">'+
+      '<div style="width:'+cents+'%;height:100%;background:'+colour+'"></div>'+
+    '</div>'+
+    '<div style="font-size:11px;line-height:1.5;color:var(--text3);padding-bottom:4px">'+
+      (share>=target
+        ? ('Above your '+target+' percent target. Every hour past '+(n.hours||0)+' keeps the same share.')
+        : ('Under your '+target+' percent target by '+(target-share)+' points. Raising the rate is the only lever on a job billed by the hour.'))+
+    '</div>'+
+    '<div class="summary-divider"></div>';
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
@@ -4027,9 +4338,13 @@ function _geiRenderCartBar(){
   })();
   const{sub}=calcGeiTotal();
   const n=_geiLines.length;
-  if(!n||_geiStep!==2){bar.style.display='none';return;}
+  // Tim's dock stands on whatever is pinned to the bottom of the screen, so it
+  // has to be told when this bar comes and goes, or it lands on top of it.
+  const _lift=()=>{if(typeof timDockRefresh==='function')timDockRefresh();};
+  if(!n||_geiStep!==2){bar.style.display='none';_lift();return;}
   bar.style.display='flex';
   bar.innerHTML=`<span style="color:#fff;font-size:13px;font-weight:600">${n} item${n!==1?'s':''} added</span><span style="color:#fff;font-size:16px;font-weight:800">$${sub.toLocaleString('en-US',{maximumFractionDigits:0})} · Review →</span>`;
+  _lift();
 }
 
 function _geiRenderTemplates(){
@@ -4915,6 +5230,7 @@ function saveGenericEstimate(draft){
       // bid reaches a job with nothing to measure it against.
       b.estHours=_estLaborHours();
       b.estCrew=[..._estCrew];
+  b.estCrewRates=Object.assign({},_estCrewRates);
       b.estCrewSize=_estCrew.length||1;
       b.exclusions=[..._geiExclusions];
       if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));

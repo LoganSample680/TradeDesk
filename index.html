@@ -174,6 +174,14 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
   --c-deep:#2C0707;--c-deep-soft:#FFB8AE;
   --c-gray:#544D44;--c-gray-soft:#EEE7D8;--c-gray-edge:#CFC4AC;
   --text-cream:#F5EFE2;--text-cream-2:rgba(245,239,226,.62);--text-cream-3:rgba(245,239,226,.42);
+  /* Tim's two metals, and they are his alone. Brass is the mark: the cartoon
+     read as a cartoon because it was a face in safety yellow, and brass on a
+     warm paper disc holds at 16px in a row and at 58px on the dock without
+     turning into a drawing of a man. Hat yellow is the one place a figure is
+     allowed to shout, the badge and the number on the dock pill. Neither is a
+     status colour and neither goes anywhere else. */
+  --brass:#C9962F;--brass-deep:#9E7222;--brass-lift:#E4B554;
+  --hat:#F2A81C;--tim-disc:#F4F1EA;--tim-disc-edge:#D8D2C6;
   --r-xs:4px;--r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--r-pill:999px;--r-mark:9px;
   --shadow-card:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--line);
   --shadow-hover:0 3px 12px rgba(27,22,18,.08),0 0 0 1px var(--line);
@@ -334,6 +342,44 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .mmi:active{background:var(--ink-line)}
 .mmi svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;opacity:.7}
 .mmi.active-pg{color:var(--text-cream)}.mmi.active-pg svg{opacity:1}
+
+/* ── Tim's dock ──────────────────────────────────────────────────────────────
+   Bottom right, above the tab bar, the same corner and the same offset the
+   More menu already opens from (58px + the home indicator), so there is one
+   place on this app where a thing floats and it is this one.
+
+   The button is always there and is always silent. The PILL above it is the
+   whole feature: it appears only when Tim can name a dollar, a percentage or a
+   law about the job on screen, which is what makes it worth tapping. No pill,
+   no badge, no dot: he has nothing, and saying so with silence costs nothing.
+   js/tim-nudge.js enforces that, this only draws it. */
+#tim-dock{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:1400;
+  display:none;flex-direction:column;align-items:flex-end;gap:9px;pointer-events:none}
+@media(max-width:767px){#tim-dock{bottom:calc(66px + env(safe-area-inset-bottom,0px))}}
+#tim-dock.on{display:flex}
+#tim-dock-pill{display:none;align-items:center;gap:9px;max-width:min(268px,calc(100vw - 32px));
+  padding:9px 13px;border-radius:var(--r-md);background:var(--ink);box-shadow:0 4px 16px rgba(27,22,18,.22);
+  border:none;font-family:inherit;text-align:left;cursor:pointer;pointer-events:auto;
+  animation:tim-pill-in .22s cubic-bezier(.22,1,.36,1) both}
+#tim-dock-pill.on{display:flex}
+#tim-dock-pill .tim-pill-line{font-size:13px;font-weight:600;color:var(--text-cream);line-height:1.35}
+#tim-dock-pill .tim-pill-fig{font-size:13px;font-weight:800;color:var(--hat);font-variant-numeric:tabular-nums;flex-shrink:0;white-space:nowrap}
+#tim-dock-btn{width:58px;height:58px;border:0;border-radius:var(--r-pill);background:var(--ink);
+  box-shadow:0 4px 16px rgba(27,22,18,.28);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  position:relative;pointer-events:auto;padding:0;transition:transform .15s,opacity .15s}
+#tim-dock-btn:active{transform:scale(.96);opacity:.85}
+#tim-dock-badge{display:none;position:absolute;top:1px;right:1px;width:15px;height:15px;border-radius:var(--r-pill);
+  background:var(--hat);box-shadow:0 0 0 2.5px var(--ink);font-size:9px;font-weight:800;color:var(--ink);
+  align-items:center;justify-content:center}
+#tim-dock-badge.on{display:flex}
+@keyframes tim-pill-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media (prefers-reduced-motion:reduce){#tim-dock-pill{animation:none}}
+/* The waveform: 44 hairline bars mirrored about a centre line. Owner rejected
+   the chunky random blocks, and rejected holding the mic at all, so the bars
+   only ever say "still listening" and never ask for a thumb. */
+.tim-wave{display:flex;align-items:center;justify-content:space-between;height:32px;gap:2px}
+.tim-wave span{width:2px;border-radius:1px;background:var(--hat);flex:none}
+.tim-wave span.edge{background:rgba(242,168,28,.28)}
 
 /* ── Top bar ── */
 .tbar{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;gap:14px;flex-wrap:wrap}
@@ -2298,6 +2344,14 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-divider"></div>
           <!-- Crew labor cost, only rendered when the contractor has employees -->
           <div id="tm-labor-cost-wrap" style="display:none"></div>
+          <!-- THE MONEY AS THREE ROWS OF FIGURES: you bill, it costs you, you
+               keep. The gauge below still owns the band arithmetic; this states
+               the same three numbers in the order a contractor asks for them,
+               with one thin bar and one line of guidance. Owner 2026-09-19:
+               "im lost in 2a and dont know what any of this means", and the fix
+               was to stop naming the concepts (margin, burdened, mobilization)
+               and just say the numbers. -->
+          <div id="tm-money-rows"></div>
           <div id="tm-gauge-wrap"></div>
           <div class="summary-divider"></div>
           <div id="tm-deposit-wrap"></div>
@@ -4245,6 +4299,20 @@ body.dark .cal-cell.other{background:var(--cream)}
     </button>
   </div>
 </div>
+<!-- ── Tim's dock ──────────────────────────────────────────────────────────
+     Painted by timDockRender() in js/tim.js, which is called on every page
+     change and after anything that could change what he has found. The markup
+     is here rather than created on the fly so there is exactly one of it,
+     whatever order the scripts load in. -->
+<div id="tim-dock" aria-live="polite">
+  <button id="tim-dock-pill" type="button" onclick="openTim()">
+    <span class="tim-pill-line"></span><span class="tim-pill-fig"></span>
+  </button>
+  <button id="tim-dock-btn" type="button" onclick="openTim()" aria-label="Tim">
+    <span id="tim-dock-mark"></span>
+    <span id="tim-dock-badge"></span>
+  </button>
+</div>
 <!-- ── Mobile bottom tab bar ── -->
 <div id="mobile-tabbar">
   <div id="mtb-inner" style="display:contents">
@@ -4376,7 +4444,14 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/handoff.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/estimate-speak.js"></script>
+<!-- What Tim knows, and when he is allowed to say it. Both load before tim.js,
+     which is the only one of the three that touches the screen. -->
+<script src="js/tim-knowledge.js"></script>
+<script src="js/tim-nudge.js"></script>
 <script src="js/tim.js"></script>
+<!-- Reads the proposals already sent as a price book. Loads after tim.js
+     because it opens tim.js's sheet. -->
+<script src="js/tim-book.js"></script>
 <script src="js/equipment.js"></script>
 <script src="js/share-inbox.js"></script>
 <script src="js/bg-upload.js"></script>

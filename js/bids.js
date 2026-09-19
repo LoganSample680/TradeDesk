@@ -206,6 +206,42 @@ function cleanRoomName(room){
   for(const t of types){if(raw.endsWith(' '+t))return raw.slice(0,-(t.length+1)).trim();}
   return raw;
 }
+// Fold a bid's Tim-built supply lines into the supply list's own sections.
+//
+// The count is written the way the counter sells it, which is `timLineFigures`'
+// job and not this file's: 28 squares of shingle leaves here as 84 bundles with
+// "28 squares at 3 bundles" underneath, because 28 squares is not a thing that
+// can be put on a truck.
+//
+// Tolerant on purpose. A bid saved before Tim existed has no timSupply, a bid
+// synced from an older client may have junk in it, and neither may take the
+// supply list down on a man standing at a counter.
+function _timSupplyInto(sections,b){
+  try{
+    const rows=(b&&Array.isArray(b.timSupply))?b.timSupply:[];
+    if(!rows.length||typeof TIM_SUPPLY_SECTIONS==='undefined')return;
+    TIM_SUPPLY_SECTIONS.forEach(sec=>{
+      const mine=rows.filter(r=>r&&r.section===sec.id&&r.label);
+      if(!mine.length)return;
+      const items=mine.map(r=>{
+        const f=(typeof timLineFigures==='function')?timLineFigures(r):{qtyLabel:String(r.qty||1),packNote:null};
+        const sp=String(f.qtyLabel||'').indexOf(' ');
+        return {
+          label:r.label,
+          qty:sp>0?f.qtyLabel.slice(0,sp):f.qtyLabel,
+          unit:sp>0?f.qtyLabel.slice(sp+1):'',
+          cat:sec.id,
+          note:r.detail||'',
+          detail:f.packNote||'',
+        };
+      });
+      const have=sections.find(s=>s.id===sec.id);
+      if(have){have.items=have.items.concat(items);return;}
+      sections.push({id:sec.id,label:escHtml(sec.label),color:sec.color,bg:sec.bg,items});
+    });
+  }catch(_e){}
+}
+
 // Alias called by post-job debrief after saving hours
 function showSupplyList(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -360,7 +396,19 @@ function showSupplyList(bidId){
     {id:'prep',label:svgIcon('🔧',{size:11})+' Prep supplies',color:'#854F0B',bg:'#FFF7ED',items:scopeItems.filter(i=>i.cat==='prep')},
     {id:'tools',label:svgIcon('🪣',{size:11})+' Tools & protection',color:'#2d6a4f',bg:'#F0FBF4',items:[...coreItems,...scopeItems].filter(i=>i.cat==='tools')},
     {id:'rental',label:svgIcon('🏗',{size:11})+' Rentals',color:'#5B21B6',bg:'#F5F3FF',items:scopeItems.filter(i=>i.cat==='rental')},
-  ].filter(s=>s.items.length>0);
+  ];
+  // WHAT TIM TOOK OFF THE JOB GOES ON THE SAME LIST.
+  //
+  // This screen is built out of painting surfaces, which is right for a painter
+  // and empty for the electrician who told Tim "two rolls of 12-2 and a two
+  // hundred amp panel". Those items are already on the bid, and they belong
+  // here rather than on a second checklist for the same job with different
+  // buttons (7.3). The four painting categories keep their ids, so a painter's
+  // items merge into the sections he already knows and a rough-in adds the
+  // trade heads it needs underneath.
+  _timSupplyInto(sections,b);
+  const shown=sections.filter(s=>s.items.length>0);
+  sections.length=0;shown.forEach(s=>sections.push(s));
 
   // ── Build modal ────────────────────────────────────────────
   const c=getClientById(b.client_id);
