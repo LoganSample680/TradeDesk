@@ -7274,6 +7274,10 @@ function _geoFixDayLo(ms){
   return _geoFixDayLoV;
 }
 const _GEO_FIXLOG_KEEP_MS=8*86400000;
+// How far back the CoreMotion tape is worth asking about: iOS keeps roughly a
+// week of it. This is the TAPE window and nothing else. It used to double as
+// the boot rebuild's reach, which is why it is named the way it is; see
+// _geoDeriveRebuildDays, where that second job was taken away from it.
 const _GEO_DERIVE_DAYS=7;
 
 const _GEO_APPLOG_KEY='zp3_geo_applog';
@@ -8707,12 +8711,33 @@ function _geoDeriveVerSeenKey(){
   const uid=(_supaUser&&_supaUser.id)||'anon';
   return _GEO_DERIVE_VER_KEY+'_'+uid;
 }
+// ── AND A FINISHED DAY IS NOT REBUILT BY A PHONE (owner 2026-09-19) ──────
+// "I want something clean that actually works and won't overwrite, Jack is
+// pissed about the constant updating he can see."
+//
+// This used to reach back the FULL WEEK once per app version, on the
+// reasoning below: the rules only change with the version, so a version
+// change is the one moment an old day could legitimately come out different.
+// That reasoning was sound and the cost of it was invisible until tonight,
+// when five UAT rolls in an evening meant five whole-week rebuilds on his
+// phone, each one re-deriving Friday from this phone's own fix log and
+// writing the result over the day the server had just got right.
+//
+// The premise is also no longer true. The server derives with the same code
+// (scripts/gen-shared-deriver.mjs keeps them byte for byte, and CI fails if
+// they drift) and it re-derives on every batch that lands, so a rule change
+// reaches old days through ingest without this phone doing anything. What
+// the wider window added was not correctness, it was a second opinion, and a
+// second opinion is the whole bug: same function, two descriptions of one
+// day, and the phone's description is the one with iOS's replayed cached
+// coordinates still in it.
+//
+// So the phone derives the days that are still collecting evidence, today
+// and yesterday, and nothing else. Anything older belongs to the server, or
+// to somebody deliberately pressing Rebuild. Nothing is discarded and no
+// evidence is thrown away: the rows already written simply stop moving.
 function _geoDeriveRebuildDays(){
-  try{
-    const seen=localStorage.getItem(_geoDeriveVerSeenKey())||'';
-    const ver=_geoDeriveAppVer();
-    return (ver&&seen===ver)?_GEO_DERIVE_DAYS_LIVE:_GEO_DERIVE_DAYS;
-  }catch(_e){return _GEO_DERIVE_DAYS_LIVE;}
+  return _GEO_DERIVE_DAYS_LIVE;
 }
 // One rebuild at a time. _geoDeriveRebuiltAt is stamped when a rebuild
 // FINISHES, so a stale check arriving while one is still running (an

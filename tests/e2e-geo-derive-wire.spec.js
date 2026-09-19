@@ -1081,10 +1081,22 @@ test.describe('geo-derive wiring', () => {
           localStorage.removeItem('zp3_geo_derive_ver');
         }
       });
-      expect(r.blakeFirst, 'a build this account has not derived on rebuilds the week').toBe(7);
-      expect(r.blakeAgain, 'and not again on the next boot').toBe(2);
-      expect(r.loganAfter, 'the other account spending the marker must not cost him his rebuild').toBe(7);
-      expect(r.loganAgain).toBe(2);
+      // AMENDED 2026-09-19 (10.4). This asserted 7 / 2 / 7 / 2: a build an
+      // account had not yet derived on re-derived the whole week, and the
+      // point of the test was that the marker is per-uid so one account
+      // cannot spend the other's rebuild.
+      //
+      // The week-long reach is gone (see _geoDeriveRebuildDays). Owner
+      // 2026-09-19: "Jack is pissed about the constant updating he can see."
+      // Five UAT rolls in one evening meant five whole-week rebuilds on his
+      // phone, each re-deriving Friday from this phone's own fix log and
+      // writing it over the day the server had just got right. A finished day
+      // belongs to the server or to somebody pressing Rebuild.
+      //
+      // The per-uid marker is NOT gone and is still worth having: _geoTapeClaim
+      // reads it, and the test below still covers the device-wide one.
+      expect([r.blakeFirst, r.blakeAgain, r.loganAfter, r.loganAgain],
+        'the phone derives the days still collecting evidence, whoever is signed in').toEqual([2, 2, 2, 2]);
     });
 
     test('one account on the phone is never treated as shared', async () => {
@@ -2141,8 +2153,12 @@ test.describe('geo-derive wiring', () => {
           return { same, changed, stamped, stampedDevice, soon, later, ran: days.length };
         } finally { window._geoDeriveDayNow = origNow; window._geoDeriveServerFixes = real; }
       });
+      // AMENDED 2026-09-19 (10.4): was `same` 2 and `changed` 7. A rule
+      // change no longer widens the window, because the server derives with
+      // the same code on every batch that lands and reaches old days without
+      // this phone re-deriving them from its own log.
       expect(r.same).toBe(2);
-      expect(r.changed).toBe(7);
+      expect(r.changed, 'a new version no longer rewrites a finished week').toBe(2);
       expect(r.stamped).toBe(await page.evaluate(() => APP_VERSION));
       expect(r.stampedDevice, 'the device-wide marker is still written, for _geoTapeClaim').toBe(await page.evaluate(() => APP_VERSION));
       expect(r.soon).toBe(false);
@@ -2264,18 +2280,20 @@ test.describe('geo-derive wiring', () => {
         const orig = window._geoDeriveDayNow;
         window._geoDeriveDayNow = async (d) => { days.push(d); return { dwells: [], legs: [] }; };
         window._geoDeriveServerFixes = async () => [];
-        // A rule change (no stamp for this version) is what reaches back the
-        // full week; a locked week derives two days (the test above). The
-        // stamp is per-uid now, see the 10.4 note on the first of these.
+        // The stamp is cleared here for the same reason it always was: this
+        // used to be the case that reached back a week. It no longer widens
+        // anything (10.4 note below), and clearing it proves that.
         localStorage.removeItem(_geoDeriveVerSeenKey());
         localStorage.removeItem('zp3_geo_derive_ver');
         try { const n = await _geoDeriveRebuild(); return { n, days }; }
         finally { window._geoDeriveDayNow = orig; }
       });
-      expect(r.n).toBe(7);
-      expect(r.days).toHaveLength(7);
-      expect(new Set(r.days).size).toBe(7);
-      expect(r.days[6]).toBe(await page.evaluate(() => _geoDayKeyOf(Date.now(), 'America/Chicago')));
+      // AMENDED 2026-09-19 (10.4): was 7 days. The rebuild covers the days
+      // still collecting evidence, today and yesterday, and derives each once.
+      expect(r.n).toBe(2);
+      expect(r.days).toHaveLength(2);
+      expect(new Set(r.days).size).toBe(2);
+      expect(r.days[1], 'and it ends on today').toBe(await page.evaluate(() => _geoDayKeyOf(Date.now(), 'America/Chicago')));
     });
 
     test('_geoDeriveRebuildSoon runs once per boot', async () => {
