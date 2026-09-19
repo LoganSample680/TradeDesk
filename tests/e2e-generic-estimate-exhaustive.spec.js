@@ -2278,7 +2278,13 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         bids = bids.filter(x => x.client_id !== 88820);
         openGenericEstimate(c, null, 'general');
         _geiIsFreeForm = true; _geiIsTM = false;
-        goGeiStep(2); // render the BYO page so the shared #gei-sitenote field mounts
+        goGeiStep(2); // render the BYO page so the shared site-note row mounts
+        // ASSERTION CHANGED 2026-09-19 (protocol 10.4). The note used to be an
+        // always-open textarea, 480px of the first screen on a phone and empty
+        // on most jobs. It is one row now and the field is behind a tap, so the
+        // test opens it the way a contractor does. What it is checking, that
+        // the note lands on the CLIENT and never on the bid, is unchanged.
+        _geiToggleSiteNote('byo');
         document.getElementById('gei-notes').value = 'Client-facing scope + warranty';
         document.getElementById('gei-sitenote').value = 'Gate code 4412, dog in back';
         _geiLines = [{ desc: 'Work', qty: 1, rate: 500, total: 500 }];
@@ -2302,10 +2308,44 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 88820);
         openGenericEstimate(c, null, 'general');
-        goGeiStep(1); // generic wizard: field lives in step 1 (by the property context)
+        goGeiStep(1); // generic wizard: the row lives in step 1 (by the property context)
+        _geiToggleSiteNote('gen');
         return { loaded: document.getElementById('gei-sitenote').value };
       });
       expect(r.loaded).toBe('Gate code 4412, dog in back');
+    });
+
+    // THE STATE WITH THE VALUE IN IT. Collapsed, the row is not a label saying
+    // a note exists, it IS the note, because a gate code he can read without
+    // tapping is one he can read while the client is standing there. Clamped to
+    // two lines so a long note cannot push the scope of work off the screen,
+    // which is what the old always-open textarea did on every job.
+    test('collapsed, the row carries the note itself, not a label about it', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88825, name: 'Row Reads Client', addr: '11 Row Rd' };
+        clients = clients.filter(x => x.id !== 88825).concat([c]);
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false;
+        _tmShowPage();
+        const empty = document.getElementById('tm-sitenote-wrap').textContent;
+        _geiSiteNoteInput('Code 4417 on the side gate. Dog barks.');
+        _geiRenderSiteNoteField('tm');
+        const wrap = document.getElementById('tm-sitenote-wrap');
+        const line = wrap.querySelector('button span span');
+        return {
+          empty,
+          filled: wrap.textContent,
+          clamped: line ? getComputedStyle(line).webkitLineClamp : null,
+          fieldHidden: !document.getElementById('gei-sitenote'),
+        };
+      });
+      // Empty: an invitation, and the one thing worth saying about privacy.
+      expect(r.empty).toContain('Gate code, dog, where to park');
+      expect(r.empty).toContain('Never on the proposal');
+      // Filled: his words, and the field still behind a tap.
+      expect(r.filled).toContain('Code 4417 on the side gate');
+      expect(r.filled).not.toContain('Gate code, dog, where to park');
+      expect(r.clamped).toBe('2');
+      expect(r.fieldHidden).toBe(true);
     });
 
     test('PRIVACY: the client-facing proposal builder never reads the site note', async () => {
@@ -2319,23 +2359,43 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.proposalTouchesSite).toBe(false);
     });
 
-    test('one code path: the shared site-note field mounts in T&M AND BYO AND the generic wizard', async () => {
+    // ASSERTION CHANGED 2026-09-19 (protocol 10.4).
+    //
+    // Was: the textarea is VISIBLE in all three modes. Correct while the field
+    // was always open, and the visibility check was standing in for "it
+    // actually rendered in this mode".
+    //
+    // Now: the ROW is visible in all three and the field appears on tap. The
+    // thing this test exists for, one code path across T&M, BYO and the
+    // generic wizard with the id never duplicated, is asserted harder than
+    // before: once collapsed and once open.
+    test('one code path: the site-note row mounts in T&M AND BYO AND the generic wizard', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 88821, name: 'Shared Field Client', addr: '9 One Path Rd' };
         clients = clients.filter(x => x.id !== 88821).concat([c]);
-        const vis = () => { const e = document.getElementById('gei-sitenote'); return !!(e && e.offsetParent !== null); };
+        const shown = (el) => !!(el && el.offsetParent !== null);
         const ids = () => document.querySelectorAll('#gei-sitenote').length; // exactly one id, never duplicated
+        const look = (prefix) => {
+          const row = document.querySelector('#' + prefix + '-sitenote-wrap button');
+          const closed = { row: shown(row), field: !!document.getElementById('gei-sitenote'), count: ids() };
+          _geiToggleSiteNote(prefix);
+          const open = { field: shown(document.getElementById('gei-sitenote')), count: ids() };
+          return { closed, open };
+        };
         openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
-        const tm = { vis: vis(), count: ids() };
+        const tm = look('tm');
         openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
-        const byo = { vis: vis(), count: ids() };
+        const byo = look('byo');
         openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = false; goGeiStep(1);
-        const gen = { vis: vis(), count: ids() };
+        const gen = look('gen');
         return { tm, byo, gen };
       });
       for (const mode of ['tm', 'byo', 'gen']) {
-        expect(r[mode].vis, `${mode} field visible`).toBe(true);
-        expect(r[mode].count, `${mode} single id`).toBe(1);
+        expect(r[mode].closed.row, `${mode} row visible`).toBe(true);
+        expect(r[mode].closed.field, `${mode} field stays out of the DOM until tapped`).toBe(false);
+        expect(r[mode].closed.count, `${mode} no stray id while closed`).toBe(0);
+        expect(r[mode].open.field, `${mode} field visible once opened`).toBe(true);
+        expect(r[mode].open.count, `${mode} single id`).toBe(1);
       }
     });
 
@@ -2356,9 +2416,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         clients = clients.filter(x => x.id !== 88823).concat([c]);
         const precedes = (a, b) => !!(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
         openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
-        const tm = precedes(document.getElementById('gei-sitenote'), document.getElementById('tm-scopecard-wrap'));
+        const tm = precedes(document.getElementById('tm-sitenote-wrap'), document.getElementById('tm-scopecard-wrap'));
         openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
-        const byo = precedes(document.getElementById('gei-sitenote'), document.getElementById('byo-scopecard-wrap'));
+        const byo = precedes(document.getElementById('byo-sitenote-wrap'), document.getElementById('byo-scopecard-wrap'));
         return { tm, byo };
       });
       expect(r.tm, 'T&M note precedes scope card').toBe(true);
@@ -2376,11 +2436,15 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const b = { id: 771001, client_id: 88824, client_name: 'Two Homes LLC', addr: '200 Second Ave', amount: 1000 };
         bids = bids.filter(x => x.id !== 771001).concat([b]);
         openGenericEstimate(c, b.id, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        // The field is behind a tap now (10.4, see the mount test above). Opening
+        // it is what a contractor does and it is what reads the note back.
+        _geiToggleSiteNote('tm');
         const loadedSecondBlank = document.getElementById('gei-sitenote').value; // no note yet for 200 Second Ave
         _geiSiteNoteInput('Side gate, beware of dog');
         const cl = clients.find(x => x.id === 88824);
         // Reopen the FIRST (primary) estimate: should still show the first note, not the second.
         openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        _geiToggleSiteNote('tm');
         const reloadedFirst = document.getElementById('gei-sitenote').value;
         return {
           loadedSecondBlank,

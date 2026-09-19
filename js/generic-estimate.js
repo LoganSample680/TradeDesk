@@ -1315,6 +1315,37 @@ function _geiRenderExclusions(prefix){
   '</div>';
 }
 
+// ── Property access notes ────────────────────────────────────────────────────
+//
+// Owner 2026-09-19: "Property access notes, how can we make that look better?
+// It's ugly."
+//
+// It was, and the reason is worth writing down because it is a shape that
+// recurs. The field was 480px of the first 874px on the phone: a card header
+// with an emoji, a hairline, two sentences of grey explaining itself, and a
+// three row textarea. All of it above the scope of work, which is the thing he
+// opened the page to write. And on most jobs there is no gate code, so what he
+// saw first, every time, was a large empty box justifying its own existence.
+// The amber stripe made it worse by reading as a warning about a note.
+//
+// So it is one row now, the same shape as "On this contract": what it is, one
+// line saying why it is private, and a chevron. Two states that matter:
+//
+//   Empty      one quiet row inviting the note. Costs about 60px, not 480.
+//   Has a note THE NOTE ITSELF is the row. That is the state with the value in
+//              it, because a gate code he can read without tapping is a gate
+//              code he can read while the client is standing there.
+//
+// The explanation moved inside the expanded state, where somebody typing is the
+// only person who needs it. Nothing about where the note is stored changed: it
+// is still per property on the CLIENT record, never on the bid, so it can never
+// reach the proposal.
+let _geiSiteNoteOpen=false;
+function _geiToggleSiteNote(prefix){
+  _geiSiteNoteOpen=!_geiSiteNoteOpen;
+  _geiRenderSiteNoteField(prefix||(_geiIsTM?'tm':_geiIsFreeForm?'byo':'gen'));
+  if(_geiSiteNoteOpen)setTimeout(()=>document.getElementById('gei-sitenote')?.focus(),60);
+}
 function _geiRenderSiteNoteField(prefix){
   ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
   const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
@@ -1322,15 +1353,50 @@ function _geiRenderSiteNoteField(prefix){
   const addr=_geiSiteAddr();
   const val=c?getSiteNote(c,addr):'';
   const addrShort=(addr||'').split(',')[0].trim();
-  // Sits right under the address header, amber inset stripe marks it internal.
-  // One id (#gei-sitenote) across T&M, BYO, and the generic wizard.
-  wrap.innerHTML='<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">'+
-    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Property access notes</div></div>'+
-    '<div style="padding:12px 14px">'+
-      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Crew only, never on the proposal. Saved to '+(addrShort?'<strong>'+escHtml(addrShort)+'</strong> and auto-loads on every future job there':'this property')+'.</div>'+
-      '<textarea id="gei-sitenote" rows="3" oninput="_geiSiteNoteInput(this.value)" placeholder="Gate code, dog, where to park, tricky access..." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
-    '</div>'+
-  '</div>';
+  const has=!!String(val||'').trim();
+  const chev='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--border2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;transition:transform .18s cubic-bezier(.4,0,.2,1)'+
+    (_geiSiteNoteOpen?';transform:rotate(90deg)':'')+'"><path d="m9 18 6-6-6-6"></path></svg>';
+
+  // The row. When there is a note it IS the note, clamped to two lines so a
+  // long one cannot push the scope of work off the screen again.
+  const row=
+    '<button type="button" onclick="_geiToggleSiteNote('+escHtml(JSON.stringify(prefix))+')" '+
+      'aria-expanded="'+(_geiSiteNoteOpen?'true':'false')+'" '+
+      'style="display:flex;align-items:center;gap:11px;width:100%;padding:13px 16px;border:0;background:none;cursor:pointer;font-family:inherit;text-align:left">'+
+      '<span style="flex:1;min-width:0">'+
+        (has
+          ? '<span style="font-size:14px;font-weight:500;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+escHtml(val)+'</span>'
+          // Open, the row names the thing; the invitation would only repeat the
+          // placeholder sitting two lines under it.
+          : '<span style="display:block;font-size:14px;font-weight:500;color:var(--text)">'+
+              (_geiSiteNoteOpen?'Property access notes':'Gate code, dog, where to park')+'</span>')+
+        '<span style="display:block;font-size:11.5px;color:var(--text-3);margin-top:2px">'+
+          (has
+            ? (addrShort?escHtml(addrShort)+' · crew only':'Crew only')
+            : 'Crew only. Never on the proposal.')+
+        '</span>'+
+      '</span>'+
+      chev+
+    '</button>';
+
+  // Open: the field, and the one sentence that is worth saying to somebody who
+  // is actually typing into it.
+  const open=_geiSiteNoteOpen
+    ? '<div style="padding:0 16px 14px">'+
+        '<textarea id="gei-sitenote" rows="3" oninput="_geiSiteNoteInput(this.value)" '+
+          'placeholder="Gate code, dog, where to park, tricky access..." '+
+          'style="width:100%;box-sizing:border-box;padding:10px 12px;border:0;border-radius:var(--r);'+
+          'box-shadow:0 0 0 1px var(--border2);font-size:13.5px;font-family:inherit;background:var(--bg2);'+
+          'color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
+        '<div style="font-size:11.5px;line-height:1.5;color:var(--text-3);margin-top:8px">'+
+          (addrShort
+            ? 'Saved to <strong>'+escHtml(addrShort)+'</strong>, and it loads itself on every future job there.'
+            : 'Saved to this property, and it loads itself on every future job there.')+
+        '</div>'+
+      '</div>'
+    : '';
+
+  wrap.innerHTML='<div class="card card-pad-0" style="margin-bottom:12px">'+row+open+'</div>';
 }
 function _geiShowSharedChrome(prefix){
   const m=_GEI_MODES[prefix];if(!m)return;
@@ -1344,6 +1410,7 @@ function _geiShowSharedChrome(prefix){
   _geiRenderActionButtons(prefix,m.actionOpts);
   _geiRenderDepositField(prefix,m.depositOninput);
   _geiApplyDepositDefault(prefix);
+  _geiSiteNoteOpen=false;   // a new estimate opens shut, whatever the last one was left on
   _geiRenderSiteNoteField(prefix);
   _geiRenderExclusions(prefix);
   // Trade branding in title
