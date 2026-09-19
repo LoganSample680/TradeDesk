@@ -17,11 +17,11 @@ const DATA = {
   status: 'submitted', version: 1, total_min: 1000, submitted_at: '2026-09-05T23:42:00Z',
   approved_at: null, approved_name: null, rejected_at: null, reject_note: null,
   time: [
-    { id: 'a1', employee_user_id: 'jack', job_id: 'j1', arrived_at: '2026-08-25T13:00:00Z', departed_at: '2026-08-25T17:00:00Z', minutes: 240, source: 'geofence', client_key: 'd-1', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
-    { id: 'a2', employee_user_id: 'jack', job_id: null, arrived_at: '2026-08-25T12:40:00Z', departed_at: '2026-08-25T13:00:00Z', minutes: 20, source: 'drive', client_key: 'd-2', dest_place: null },
-    { id: 'a3', employee_user_id: 'jack', job_id: 'j1', arrived_at: '2026-08-27T13:00:00Z', departed_at: '2026-08-27T21:00:00Z', minutes: 480, source: 'geofence', client_key: 'd-5', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
+    { id: 'a1', job_id: 'j1', arrived_at: '2026-08-25T13:00:00Z', departed_at: '2026-08-25T17:00:00Z', minutes: 240, source: 'geofence', client_key: 'd-1', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
+    { id: 'a2', job_id: null, arrived_at: '2026-08-25T12:40:00Z', departed_at: '2026-08-25T13:00:00Z', minutes: 20, source: 'drive', client_key: 'd-2', dest_place: null },
+    { id: 'a3', job_id: 'j1', arrived_at: '2026-08-27T13:00:00Z', departed_at: '2026-08-27T21:00:00Z', minutes: 480, source: 'geofence', client_key: 'd-5', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
   ],
-  shop: [{ id: 's1', employee_user_id: 'jack', arrived_at: '2026-08-25T12:00:00Z', departed_at: '2026-08-25T12:40:00Z', minutes: 40, client_key: 'd-4' }],
+  shop: [{ id: 's1', arrived_at: '2026-08-25T12:00:00Z', departed_at: '2026-08-25T12:40:00Z', minutes: 40, client_key: 'd-4' }],
   manual: [{ id: 'm1', date: '2026-08-28', start_time: '2026-08-28T12:00:00Z', end_time: '2026-08-28T20:00:00Z', minutes: 480, logged_by_uid: 'jack', logged_by_name: 'Jack Sample', open: false }],
 };
 
@@ -375,6 +375,48 @@ test.describe('The public timesheet page', () => {
       }));
       expect(r.device).toBe('');
       expect(r.shown).toBe(true);
+    });
+  });
+
+  // ── The link draws what the app draws, off what the SERVER sends ───────
+  //
+  // Both of these shipped broken and neither had a failing test, for the same
+  // reason: the fixture above used to invent an `employee_user_id` on every
+  // row, a field timesheet_public has never returned. The field is gone from
+  // it now, so these two run against the shape the server actually sends.
+  //
+  // Found 2026-09-19 by pointing the real page at real rows in a real
+  // Postgres: a week with 13h 30m on it drew 12h 50m of "On site", no
+  // Driving, no Shop.
+  test.describe('the numbers are the app\'s numbers', () => {
+    test('a drive is Driving, not time on site', async ({ page }) => {
+      await openPage(page, DATA);
+      const r = await page.evaluate(() => ({
+        // The four predicates js/timelog.js guards on. All four were absent
+        // here, so every guard answered false and every drive fell through to
+        // the on-site bucket. js/geo-sources.js owns them now.
+        fns: ['_geoIsDriveSource', '_geoIsPlaceSource', '_geoIsHeldSource', '_geoIsOffJobSource']
+               .map(n => typeof window[n]),
+        legend: (document.querySelector('#tsp-body .tl-rail-legend') || {}).textContent || '',
+      }));
+      expect(r.fns, 'all four resolve on the shared page').toEqual(['function', 'function', 'function', 'function']);
+      expect(r.legend).toContain('Driving');
+      expect(r.legend).toMatch(/Driving\s*20m/);
+    });
+
+    test('shop time is on the sheet, not dropped on the floor', async ({ page }) => {
+      await openPage(page, DATA);
+      const r = await page.evaluate(() => ({
+        legend: (document.querySelector('#tsp-body .tl-rail-legend') || {}).textContent || '',
+        total: document.querySelector('#tsp-body .tl-monav-tot').textContent.trim(),
+      }));
+      // js/timelog.js drops any shop row with no employee on it, and the RPC
+      // sends none. 40m of shop time left the sheet without a word.
+      expect(r.legend).toMatch(/Shop\s*40m/);
+      // 240 + 20 + 480 derived, 40 in the shop, 480 manual: 21h exactly, the
+      // same number this file has asserted since the page shipped. Without
+      // the shop row it is 20h 20m, and nothing on the page would say why.
+      expect(r.total).toBe('21h');
     });
   });
 

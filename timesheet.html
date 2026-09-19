@@ -80,6 +80,10 @@ button{font-family:inherit}
 </div>
 <script src="js/icons.js"></script>
 <script src="js/utils.js"></script>
+<!-- js/timelog.js asks these four by `typeof ... === "function"`. Without
+     this file every guard was false here and every drive on a shared
+     timesheet counted as time on site. -->
+<script src="js/geo-sources.js"></script>
 <script src="js/timelog.js"></script>
 <script src="js/timesheet-public.js"></script>
 </body>
