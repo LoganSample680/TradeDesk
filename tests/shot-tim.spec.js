@@ -80,6 +80,22 @@ test.describe('tim screenshots', () => {
     // 4b: the T&M page, scope numbered in work order, dock in the corner.
     await page.screenshot({ path: OUT + '/app-4b-tm-page.png' });
 
+    // The property access note, all three states it actually has.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: OUT + '/app-note-empty.png', clip: { x: 0, y: 120, width: 402, height: 340 } });
+    await page.evaluate(() => { _geiToggleSiteNote('tm'); });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: OUT + '/app-note-open.png', clip: { x: 0, y: 120, width: 402, height: 340 } });
+    await page.evaluate(() => {
+      const el = document.getElementById('gei-sitenote');
+      el.value = 'Code 4417 on the side gate. Dog is friendly but barks. Park on the street, the driveway cracks.';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      _geiToggleSiteNote('tm');
+    });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: OUT + '/app-note-filled.png', clip: { x: 0, y: 120, width: 402, height: 340 } });
+
     // 4a + 4c: the rail, crew and rates then the three money rows.
     await page.evaluate(() => {
       const r = document.querySelector('.summary-rail');
