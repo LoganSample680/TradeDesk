@@ -118,10 +118,16 @@ export function daysToDerive(evs, nowMs) {
 // seconds later anyway, and the replay guard strips exact repeats, so the worst
 // case is one soft point beside a good one rather than a day at the wrong
 // address.
+// AMENDED 2026-09-19: the note above said a `fix` carries no age "whatsoever"
+// and waved it through for want of anything better to ask. It carries one now.
+// TdGeoPlugin.event() measures every position it builds against the
+// CLLocation's own timestamp and marks it over five minutes old, so the age
+// test that always governed a push-ping governs every type here. A row with no
+// age is fresh, which is every row written before that build, so no history
+// re-grades on this line alone.
 const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out", "visit"];
 function freshFix(e) {
-  if (FRESH_FIX_TYPES.includes(e.type)) return true;
-  if (e.type !== "push-ping") return false;
+  if (!FRESH_FIX_TYPES.includes(e.type) && e.type !== "push-ping") return false;
   const d = e.detail;
   const stale = d && typeof d === "object" ? Number(d.staleMs) : NaN;
   return !(stale > 0);

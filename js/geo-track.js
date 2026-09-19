@@ -5799,7 +5799,17 @@ async function _geoTdEvent(ev,replay){
   // A motion row's position is the plugin's last-known fix; after a wake it
   // can be a minute stale (fixAgeMs says how stale), and a stale point in
   // the trace is how a 3-mile drive read 6.1.
-  const _noTrack=(ev.type==='visit'||ev.type==='regionEnter'||ev.type==='regionExit'||
+  // ── AND A POSITION THAT SAYS IT IS OLD NEVER TRACKS (2026-09-19) ────────
+  // The second door into the trace, and the one Jack's stale fixes walked
+  // through: the fence machine is fed a synthetic ping from the event, and
+  // _geoOnPing writes anything not flagged here straight into the fix log.
+  // The list below is by TYPE, so a `fix` was waved past whatever its age,
+  // which is exactly the assumption TdGeoPlugin.event() has now stopped
+  // being able to make. One test, both doors (_geoFreshFixEv guards the
+  // other), and the flag still lets the coordinate drive the fence machine:
+  // where the phone WAS is worth knowing, it is just not where it is.
+  const _noTrack=(Number(ev.staleMs)>0||
+    ev.type==='visit'||ev.type==='regionEnter'||ev.type==='regionExit'||
     (ev.type==='motion'&&!(typeof ev.fixAgeMs==='number'&&ev.fixAgeMs<=30000)));
   try{
     return await _geoOnPing({
@@ -7783,8 +7793,20 @@ const _GEO_FRESH_FIX_TYPES=['fix','clock-in','clock-out','visit'];
 function _geoFreshFixEv(ev){
   if(!ev)return false;
   const t=String(ev.type||'');
-  if(_GEO_FRESH_FIX_TYPES.indexOf(t)>=0)return true;
-  if(t!=='push-ping')return false;
+  if(_GEO_FRESH_FIX_TYPES.indexOf(t)<0&&t!=='push-ping')return false;
+  // ── AND A `fix` IS ONLY AS FRESH AS ITS POSITION (owner 2026-09-19) ────
+  // This used to wave through every type in the list unconditionally, on the
+  // reading that a `fix` means the receiver just spoke. It does not: iOS
+  // hands didUpdateLocations its LAST KNOWN position on a significant-change
+  // wake, and the plugin stamped that with the wall clock, so a coordinate
+  // hours old arrived looking exactly like one from this second. Jack's
+  // 18 September is 11 of them, all the shop, all while he stood at a job
+  // site 768 ft away.
+  // TdGeoPlugin.event() now measures every position against the CLLocation's
+  // own timestamp and marks it (staleMs) when it is over five minutes old,
+  // so the same test that has always governed a push-ping governs all of
+  // them. A row with no staleMs is fresh, which is what every row written
+  // before that build says, so nothing in the history moves.
   return !(Number(ev.staleMs)>0);
 }
 const _GEO_FIX_QUERY_TYPES=_GEO_FRESH_FIX_TYPES.concat(['push-ping']);
@@ -7841,9 +7863,11 @@ async function _geoDeriveServerFixes(fromMs,toMs){
     // Same rule as _geoFreshFixEv, reading the age off the stored row rather
     // than off the live event (ingest-geo keeps it in `detail` since
     // 2026-09-18; a row older than that carries none and reads as fresh).
+    // ANY type, not just a push-ping (2026-09-19): a `fix` built from a
+    // last-known position is the same lie and now says so.
     ev.forEach(e=>{
       const t=Date.parse(e.ts);if(!(t>0))return;
-      if(String(e.type)==='push-ping'&&Number(e.detail&&e.detail.staleMs)>0)return;
+      if(Number(e.detail&&e.detail.staleMs)>0)return;
       out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});
     });
     const pg=await _geoPageAll(()=>_supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b));

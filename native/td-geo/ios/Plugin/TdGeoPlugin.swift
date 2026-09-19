@@ -1205,8 +1205,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             var out: [[String: Any]] = []
             var last = ""
             for a in acts ?? [] {
-                let kind = a.automotive ? "driving" : (a.cycling ? "cycling"
-                          : ((a.walking || a.running) ? "onFoot" : (a.stationary ? "still" : "unknown")))
+                // Same precedence as motionKind above (stationary is the
+                // narrower fact and wins), in this method's OWN older
+                // vocabulary, which the comment on the backfill explains is
+                // deliberately not the live stream's.
+                let kind = a.stationary ? "still" : (a.automotive ? "driving" : (a.cycling ? "cycling"
+                          : ((a.walking || a.running) ? "onFoot" : "unknown")))
                 if kind == "unknown" || kind == last { continue }
                 // Low-confidence samples flip constantly; a transition that
                 // stamps a payroll record has to be one the phone is sure of.
@@ -1616,6 +1620,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     func endBurstForTest() { endBurst(reason: "test") }
     static var blindPingBurstSecForTest: Double { blindPingBurstSec }
     static var blindPingStaleMsForTest: Double { blindPingStaleMs }
+    // event() is private and builds every positioned row; the tests reach it
+    // to prove the age rides along.
+    func eventForTest(type: String, loc: CLLocation?) -> [String: Any] {
+        event(type: type, loc: loc, regionId: nil)
+    }
     func fireWakeStopWatchdogForTest(stoppedSecondsAgo: Double = 5) {
         wakeStopWatchdogFired(stoppedAt: Date(timeIntervalSinceNow: -stoppedSecondsAgo))
     }
@@ -1692,6 +1701,29 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         return call.getString("reason") ?? ""
     }
 
+    // ── A POSITION'S AGE IS PART OF THE POSITION (owner 2026-09-19) ───────
+    // One rule, both callers: silentPush has measured its cached fix against
+    // the CLLocation's OWN timestamp since 2026-09-08, and every other event
+    // built here threw that away and stamped the wall clock instead. The
+    // deriver's own comment named the hole out loud ("a `fix` carries no age
+    // whatsoever", derive-day.mjs) and Jack's 18 September is what it costs:
+    // iOS handed didUpdateLocations its last-known position 11 times between
+    // 07:58 and 12:29, each one the shop coordinate locked at 07:39, each one
+    // recorded as a fresh `fix` at the moment of the wake. He was at a job
+    // site 768 ft away the whole time, and the cluster of repeats was the
+    // most-agreed-on position in the dwell, so it named the stop.
+    //
+    // The threshold is blindPingStaleMs, the number already chosen for this
+    // exact question. Fresh positions carry nothing, so nothing changes for
+    // them; a stale one says so and every reader already knows what to do
+    // with that (_geoFreshFixEv in js/geo-track.js, freshFix in
+    // derive-day.mjs). Nil rather than zero: absent means fresh, which is
+    // also how every row written before this build reads.
+    static func staleMsFor(_ l: CLLocation, now: Date = Date()) -> Double? {
+        let age = now.timeIntervalSince(l.timestamp) * 1000
+        return age > blindPingStaleMs ? age : nil
+    }
+
     private func event(type: String, loc: CLLocation?, regionId: String?) -> [String: Any] {
         var ev: [String: Any] = [
             "type": type,
@@ -1702,6 +1734,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             ev["lng"] = l.coordinate.longitude
             ev["acc"] = l.horizontalAccuracy
             ev["speed"] = l.speed
+            if let stale = TdGeoPlugin.staleMsFor(l) { ev["staleMs"] = stale }
         }
         if let rid = regionId { ev["regionId"] = rid }
         return ev
@@ -1763,7 +1796,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             ev["lat"] = l.coordinate.latitude
             ev["lng"] = l.coordinate.longitude
             ev["acc"] = l.horizontalAccuracy
-            if ageMs > TdGeoPlugin.blindPingStaleMs { ev["staleMs"] = ageMs }
+            if let stale = TdGeoPlugin.staleMsFor(l) { ev["staleMs"] = stale }
         }
         if cached == nil || ageMs > TdGeoPlugin.blindPingStaleMs {
             // A BLIND PING IS NOT A PING (Jack, 2026-09-08). This only ever
@@ -1811,6 +1844,33 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
     private static let blindPingBurstSec: Double = 4
     private static let blindPingStaleMs: Double = 5 * 60_000
+
+    // ── A PARKED TRUCK IS PARKED, WHATEVER IT IS PARKED IN ───────────────
+    // CMMotionActivity's flags are INDEPENDENT booleans, not a state, and the
+    // one compound that matters is automotive + stationary: a vehicle that is
+    // not moving. Reading automotive first called that driving, so a phone
+    // sitting in a truck at a job site reported automotive for as long as it
+    // sat there, and the tape said the drive never ended.
+    //
+    // Stationary wins because it is the narrower fact: "this device is not
+    // moving" is true or it is not, and no vehicle flag argues with it. A
+    // drive is unaffected, nothing reports stationary at 40mph, and a stop
+    // short of ten minutes does not end a journey anyway (the still-run rule
+    // in js/geo-derive.js), so a red light still costs nothing. A ten-minute
+    // stationary stretch mid-drive now splits the journey, which is the
+    // intended reading: that is a stop.
+    //
+    // Plain booleans rather than the CMMotionActivity itself so the rule is
+    // reachable from a test: CMMotionActivity has no public initializer.
+    static func motionKind(automotive: Bool, cycling: Bool, running: Bool,
+                           walking: Bool, stationary: Bool) -> String {
+        if stationary { return "still" }
+        if automotive { return "automotive" }
+        if cycling { return "cycling" }
+        if running { return "running" }
+        if walking { return "walking" }
+        return ""
+    }
 
     // MARK: - Shift heartbeat + motion stream (owner 2026-08-27)
 
@@ -1953,11 +2013,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         motionMgr.startActivityUpdates(to: .main) { [weak self] act in
             guard let self = self, let a = act else { return }
             if a.confidence == .low { return }
-            let kind = a.automotive ? "automotive"
-                : a.cycling ? "cycling"
-                : a.running ? "running"
-                : a.walking ? "walking"
-                : a.stationary ? "still" : ""
+            let kind = TdGeoPlugin.motionKind(automotive: a.automotive, cycling: a.cycling,
+                                              running: a.running, walking: a.walking,
+                                              stationary: a.stationary)
             if kind.isEmpty || kind == self.lastMotionKind { return }
             let prev = self.lastMotionKind
             self.lastMotionKind = kind
@@ -2520,11 +2578,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 // The LIVE stream's vocabulary, not the history query's older
                 // one. Two spellings for one fact is how the server ended up
                 // able to see that a transition happened and never what it was.
-                let kind = a.automotive ? "automotive"
-                    : a.cycling ? "cycling"
-                    : a.running ? "running"
-                    : a.walking ? "walking"
-                    : a.stationary ? "still" : ""
+                let kind = TdGeoPlugin.motionKind(automotive: a.automotive, cycling: a.cycling,
+                                                  running: a.running, walking: a.walking,
+                                                  stationary: a.stationary)
                 if kind.isEmpty || kind == last { continue }
                 last = kind
                 let ts = a.startDate.timeIntervalSince1970 * 1000

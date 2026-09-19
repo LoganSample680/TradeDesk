@@ -206,9 +206,15 @@ Deno.serve(async (req) => {
         // five-hour one. It refused all of them, which is why a parked day
         // has no positions in it even though the phone reported one every
         // thirty minutes.
+        // ── AND NOT ONLY A PUSH-PING (owner 2026-09-19) ─────────────────
+        // This was scoped to push-ping because it was the only event that
+        // measured its own age. Every positioned event does now
+        // (TdGeoPlugin.event), so every one of them gets to keep it: a `fix`
+        // built from a significant-change wake's last-known position is the
+        // same stale coordinate wearing a type the deriver trusts.
         detail: e.type === "radio"
           ? radioDetail(e)
-          : (e.type === "push-ping" && (typeof e.staleMs === "number" || e.blind === true)
+          : (typeof e.staleMs === "number" || e.blind === true
             ? {
               ...(typeof e.staleMs === "number" ? { staleMs: Math.round(e.staleMs) } : {}),
               ...(e.blind === true ? { blind: true } : {}),

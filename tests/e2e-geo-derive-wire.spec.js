@@ -1923,6 +1923,44 @@ test.describe('geo-derive wiring', () => {
       expect(r, 'the fresh one lands, the four-hour-old one does not').toEqual([1]);
     });
 
+    // ── AND A `fix` IS NO DIFFERENT (owner 2026-09-19) ────────────────────
+    // Jack's 18 September: iOS handed didUpdateLocations its last-known
+    // position 11 times between 07:58 and 12:29 on significant-change wakes,
+    // every one of them the shop coordinate locked at 07:39, every one
+    // recorded as a `fix` at the moment of the wake. He was at a job site
+    // 768 ft away for all of it, and because the repeats agreed with each
+    // other they were the most-vouched-for position in the dwell.
+    // TdGeoPlugin.event() measures every position it builds against the
+    // CLLocation's own timestamp now, so the age test that always governed a
+    // ping governs every positioned type.
+    test('a fix built from a stale last-known position stays out of the fix log', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_fixlog');
+        const ts = Date.now() - 60000;
+        const keepLive = window._geoDeriveLiveSoon, keepUpd = window._geoBgUpdateCheck;
+        window._geoDeriveLiveSoon = () => {}; window._geoBgUpdateCheck = () => {};
+        try {
+          await _geoTdEvent({ type: 'fix', ts: ts + 1, lat: 39.01, lng: -95.69, acc: 5 }, false);
+          await _geoTdEvent({ type: 'fix', ts: ts + 2, lat: 39.0456, lng: -95.7151, acc: 65, staleMs: 4 * 3600000 }, false);
+          await _geoTdEvent({ type: 'visit', ts: ts + 3, lat: 39.02, lng: -95.70, acc: 5, staleMs: 90 * 60000 }, false);
+          return _geoFixLogRead().filter(f => f.ts >= ts).map(f => f.ts - ts);
+        } finally { window._geoDeriveLiveSoon = keepLive; window._geoBgUpdateCheck = keepUpd; }
+      });
+      expect(r, 'only the position the receiver actually gave us').toEqual([1]);
+    });
+
+    test('an unmarked fix is still fresh, so nothing written before the build re-grades', async () => {
+      const r = await page.evaluate(() => [
+        _geoFreshFixEv({ type: 'fix', lat: 1, lng: 2 }),
+        _geoFreshFixEv({ type: 'fix', lat: 1, lng: 2, staleMs: 0 }),
+        _geoFreshFixEv({ type: 'fix', lat: 1, lng: 2, staleMs: 6 * 60000 }),
+        _geoFreshFixEv({ type: 'clock-in', staleMs: 6 * 60000 }),
+        _geoFreshFixEv({ type: 'wake-drop', lat: 1, lng: 2 }),
+        _geoFreshFixEv(null),
+      ]);
+      expect(r).toEqual([true, true, false, false, false, false]);
+    });
+
     test('today\'s open dwell is published for the screens, and only today\'s', async () => {
       const r = await page.evaluate(async ([SHOP, DOE]) => {
         window.mileage = []; window._geoOpenDwell = null;
@@ -2542,7 +2580,24 @@ test.describe('geo-derive wiring', () => {
       expect(body.includes('if cached == nil || ageMs > TdGeoPlugin.blindPingStaleMs {')).toBe(true);
       // A stale ping still carries where the phone WAS, marked with its age,
       // for the crew map's last-known dot.
-      expect(body.includes('if ageMs > TdGeoPlugin.blindPingStaleMs { ev["staleMs"] = ageMs }')).toBe(true);
+      // AMENDED 2026-09-19 (10.4). This pinned the inline comparison
+      // `if ageMs > TdGeoPlugin.blindPingStaleMs { ev["staleMs"] = ageMs }`,
+      // which was correct while silentPush was the only thing in the app that
+      // measured a position's age. Every positioned event does now, so the
+      // rule is one helper with two callers (§7.3) instead of two copies that
+      // would drift, and the ping calls it like everything else.
+      expect(body.includes('if let stale = TdGeoPlugin.staleMsFor(l) { ev["staleMs"] = stale }')).toBe(true);
+      expect(s.includes('static func staleMsFor(_ l: CLLocation, now: Date = Date()) -> Double? {')).toBe(true);
+      expect(s.includes('return age > blindPingStaleMs ? age : nil')).toBe(true);
+      // And event() itself, the one place every positioned row is built.
+      const evStart = s.indexOf('private func event(type: String, loc: CLLocation?, regionId: String?)');
+      expect(s.slice(evStart, evStart + 700)
+        .includes('if let stale = TdGeoPlugin.staleMsFor(l) { ev["staleMs"] = stale }')).toBe(true);
+      // A PARKED TRUCK IS PARKED: one mapping, stationary ahead of automotive,
+      // and no caller left spelling it out for itself.
+      expect(s.includes('if stationary { return "still" }')).toBe(true);
+      expect(s.includes('if automotive { return "automotive" }')).toBe(true);
+      expect(s.includes('a.automotive ? "automotive"')).toBe(false);
       expect(body.includes('reason: cached == nil ? "push-ping had no fix" : "push-ping fix was stale"')).toBe(true);
       expect(s.includes('private static let blindPingBurstSec: Double = 4')).toBe(true);
       expect(s.includes('private static let blindPingStaleMs: Double = 5 * 60_000')).toBe(true);
@@ -2550,6 +2605,9 @@ test.describe('geo-derive wiring', () => {
       expect(t.includes('testSilentPush_withNoCachedPositionSaysBlindAndBuysAShortBurst')).toBe(true);
       expect(t.includes('testBeginBurst_secondCallInsideARunningBurstOpensNoSecondSession')).toBe(true);
       expect(t.includes('testBlindPingStaleWindow_isMinutesAndMatchesTheDeriversIdeaOfCurrent')).toBe(true);
+      expect(t.includes('testMotionKind_aStoppedVehicleIsStillNotDriving')).toBe(true);
+      expect(t.includes('testStaleMsFor_anHourOldLastKnownPositionSaysSo')).toBe(true);
+      expect(t.includes('testEvent_aStalePositionRidesAlongMarked_andAFreshOneIsUnmarked')).toBe(true);
     });
   });
 

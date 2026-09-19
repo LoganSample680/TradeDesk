@@ -302,6 +302,42 @@ test.describe('the deriver on the server', () => {
     expect(w.p_miles.map((m) => m.from_name)).toEqual(['TradeDesk shop', 'John Doe']);
   });
 
+  // ── AND A `fix` THAT SAYS IT IS STALE IS NOT A FIX EITHER ─────────────
+  // Owner 2026-09-19, on Jack's 18 September. The rule above was right about
+  // motion and fence rows and wrong to stop there: iOS hands
+  // didUpdateLocations its LAST KNOWN position on a significant-change wake,
+  // and the plugin stamped that with the wall clock, so 11 copies of the shop
+  // coordinate he locked at 07:39 arrived as `fix` rows all morning while he
+  // stood at a job site 768 ft away. TdGeoPlugin.event() measures every
+  // position against the CLLocation's own timestamp now and marks it, and the
+  // server reads that mark off the row's detail exactly as it always has for
+  // a push-ping. This is the ops portal's Rebuild button, so it is the one
+  // that has to agree with the phone.
+  test('a fix that carries an age over the line is refused like a stale ping', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const liar = EVENTS.concat(
+      Array.from({ length: 12 }, (_, i) => ({
+        ts: iso(at(6, 30) + i * 60000), type: 'fix', lat: CLIENT.lat, lon: CLIENT.lon,
+        detail: { staleMs: 4 * 3600000 },
+      })));
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc({ ...TABLES, geo_events: liar }, rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.wrote).toBe(true);
+    const w = rpc.find((c) => c.name === 'geo_replace_day').args;
+    expect(w.p_miles.map((m) => m.from_name)).toEqual(['TradeDesk shop', 'John Doe']);
+  });
+
+  test('a fix with no age at all is still fresh, so no history re-grades', async () => {
+    // Every row written before that build carries no detail. They must read
+    // exactly as they always did.
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.wrote).toBe(true);
+    const w = rpc.find((c) => c.name === 'geo_replace_day').args;
+    expect(w.p_miles.map((m) => m.from_name)).toEqual(['TradeDesk shop', 'John Doe']);
+  });
+
   test('a refused write is reported, never swallowed as success', async () => {
     const { deriveDayServer } = await import(SHARED);
     const rpc = [];
