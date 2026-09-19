@@ -335,6 +335,48 @@ test.describe('Receipt-gated supply runs', () => {
       expect(r.noReceipt, 'landing where a no-receipt answer would have').toBe(true);
     });
 
+    // ── THE SAFE ANSWER UNDER THE THUMB (owner 2026-09-18) ───────────────
+    // "No keep it should be on the right not left". Opt-in per dialog, so the
+    // other ~57 .zmodal sites keep the order they have always had (§15.2).
+    test('the safe answer comes last, so it sits right of the red one', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-o1', supplyRunKey: 'ko', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunPersonal(encodeURIComponent('ko'));
+        const btns = [...document.querySelectorAll('.zmodal-btns button')].map(b => b.textContent);
+        // Geometry, not just source order: whichever way they wrap, the safe
+        // one must never be left of the destructive one on the same line.
+        const yes = document.querySelector('#zmodal-yes').getBoundingClientRect();
+        const no = document.querySelector('.zmodal-cancel').getBoundingClientRect();
+        document.querySelector('.zmodal-cancel').click();
+        return { btns, sameLine: Math.abs(yes.top - no.top) < 4,
+          noIsRight: no.left >= yes.left, noIsLower: no.top >= yes.top };
+      });
+      expect(r.btns, 'destructive first in the DOM, safe last').toEqual(
+        ['Delete it, it was personal', 'No, keep it']);
+      expect(r.sameLine ? r.noIsRight : r.noIsLower,
+        'side by side: safe on the right. stacked: safe on the bottom').toBe(true);
+    });
+
+    test('every other dialog keeps the order it always had', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-o2', supplyRunKey: 'ko2', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunNoReceipt(encodeURIComponent('ko2'));
+        const btns = [...document.querySelectorAll('.zmodal-btns button')].map(b => b.textContent);
+        document.querySelector('.zmodal-cancel').click();
+        // And a bare zConfirm, which is what the other sites are.
+        zConfirm('plain', () => {}, { title: 't' });
+        const plain = [...document.querySelectorAll('.zmodal-btns button')].map(b => b.textContent);
+        document.querySelector('.zmodal-cancel').click();
+        return { btns, plain };
+      });
+      expect(r.btns, 'No receipt is untouched').toEqual(['Cancel', 'Save as business']);
+      expect(r.plain, 'and so is every plain zConfirm').toEqual(['Cancel', 'Yes']);
+    });
+
     test('No, keep it changes nothing at all', async () => {
       const r = await page.evaluate(async () => {
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());

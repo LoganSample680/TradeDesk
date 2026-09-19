@@ -226,6 +226,31 @@ test.describe('traced trips', () => {
     });
   });
 
+  // ── "trip 1 is repeated 3 times" (owner 2026-09-18) ─────────────────────
+  // His three morning drives were three segments of one collapsed leg, so all
+  // three honestly read TRIP 1 and told him nothing. The trip is still the
+  // trip; the label now says which drive of it this is.
+  test('a collapsed trip names which drive of it you are looking at', async () => {
+    const day = await seed();
+    const r = await page.evaluate((d) => {
+      mileage.length = 0;
+      mileage.push({ id: 'j-a', legKey: 'j-a', gps: true, date: d, miles: 0.9,
+        segKeys: ['j-a', 'j-b', 'j-c'], collapsedStops: 3 });
+      mileage.push({ id: 'j-solo', legKey: 'j-solo', gps: true, date: d, miles: 4.5 });
+      const f = (k) => _mileTripLegForLeg(d, k);
+      return { a: f('j-a'), b: f('j-b'), c: f('j-c'), solo: f('j-solo'),
+        miss: f('nope'), nul: f(null) };
+    }, day);
+    expect(r.a, 'first drive of the chain').toMatchObject({ ix: 1, of: 3 });
+    expect(r.b, 'second').toMatchObject({ ix: 2, of: 3 });
+    expect(r.c, 'third').toMatchObject({ ix: 3, of: 3 });
+    expect(r.a.no, 'and all three are still the same trip').toBe(r.b.no);
+    expect(r.b.no).toBe(r.c.no);
+    expect(r.solo, 'a trip with one drive says nothing extra').toMatchObject({ ix: 1, of: 1 });
+    expect(r.miss, 'a key on no leg has no trip').toBeNull();
+    expect(r.nul).toBeNull();
+  });
+
   test.describe('the map', () => {
     test('a traced trip draws, says the miles are traced and unclaimed, and offers Save on the missing end', async () => {
       await seed();

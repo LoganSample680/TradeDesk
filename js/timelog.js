@@ -1848,7 +1848,17 @@ function _tlRailRow(r){
   // THE SAME TRIP NUMBER THE MILEAGE LOG SHOWS (owner 2026-09-08): one
   // definition, _mileTripNumbers, keyed by the leg id the drive row carries.
   let _tripNo=null;
-  try{if(kind==='drive'&&typeof _mileTripNumberForLeg==='function')_tripNo=_mileTripNumberForLeg(r.date,r.clientKey);}catch(_e){_tripNo=null;}
+  // "Trip 1" three times over told him nothing (owner 2026-09-18). A chain's
+  // segments all belong to one trip and the label now says which drive of it
+  // this is; a trip with a single drive is unchanged.
+  try{
+    if(kind==='drive'&&typeof _mileTripLegForLeg==='function'){
+      const _tl=_mileTripLegForLeg(r.date,r.clientKey);
+      _tripNo=_tl?(_tl.of>1?(_tl.no+' · drive '+_tl.ix+' of '+_tl.of):String(_tl.no)):null;
+    }else if(kind==='drive'&&typeof _mileTripNumberForLeg==='function'){
+      _tripNo=_mileTripNumberForLeg(r.date,r.clientKey);
+    }
+  }catch(_e){_tripNo=null;}
   const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+(_tripNo?('Trip '+_tripNo+' · '):'')+escHtml(m.word)+
     // A held visit carries no "unpaid": it is not counted YET, and the row
     // says so in words and offers the two answers underneath.
