@@ -1562,7 +1562,13 @@ const _TL_RAIL_META={
   // just not labour at a customer's address, which is the distinction the
   // split bar exists to draw.
   supply:{c:'#15803D',           icon:'🛒', word:'Supply house'},
-  office:{c:'#0E6B6B',           icon:'📋', word:'Office'},
+  // "Office time", not "Office" (owner 2026-09-19), for the same reason
+  // "Loading time" is not "Loading": every neighbour on this rail says what
+  // KIND of time it is, and the bare word beside Shop time and Drive time
+  // read like a place rather than a stretch of the day. With the unpaid
+  // suffix the row now says "Office time · unpaid", which is the whole rule
+  // in three words.
+  office:{c:'#0E6B6B',           icon:'📋', word:'Office time'},
   // A stretch at somebody's own address. It reads as its own thing rather
   // than as 'On site', which is what a house was drawn as when a home_office
   // dwell arrived as a bare 'place' (owner 2026-09-03, on Jack's rail). Grey,

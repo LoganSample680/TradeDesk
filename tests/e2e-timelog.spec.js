@@ -4097,6 +4097,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.all, 'and the office minutes are still there to be seen').toBe(525);
     });
 
+    test('an office row says what it is and what it is worth, in three words', async () => {
+      const r = await page.evaluate(() => _tlRailRow({ source: 'auto', rawSource: 'place-office',
+        minutes: 45, unpaid: true, clientName: '7402 SW 22nd Ct',
+        startTime: '2026-08-28T22:00:00Z', date: '2026-08-28' }));
+      expect(r).toContain('Office time · unpaid');
+      expect(r, 'and it is greyed, never hidden').toContain('data-unpaid="1"');
+    });
+
     test('the rail marks an unpaid row so it reads as not counting', async () => {
       const r = await page.evaluate(() => {
         const mk = (unpaid) => _tlRailRow({ source: 'auto', minutes: 45, unpaid,
