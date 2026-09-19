@@ -412,6 +412,72 @@ test.describe('geo-derive wiring', () => {
       expect(r.off).toEqual([['Mom', false], ['Cust', false]]);
     });
 
+    // ── EVERY PROPERTY HE HAS, NOT JUST THE FIRST (owner 2026-09-19) ─────
+    // "in lead client record if I add it it needs to carry over to mileage and
+    // time sheet to." A customer's second address has been part of the record
+    // for a long time (extraAddresses, the property cards on the client page),
+    // and this loop read c.addr and nothing else, so a landlord with four
+    // rentals had one fence and three job sites that derived as "unsaved
+    // address" forever.
+    test('a second property is its own fence, under the same customer', async () => {
+      const r = await page.evaluate(() => {
+        window.clients = [{ id: 601, name: 'Landlord', addr: '1 First St', lat: 39.01, lon: -95.70, geoAddr: '1 First St',
+          extraAddresses: [
+            { label: 'Duplex', addr: '2 Second St', lat: 39.02, lon: -95.71, geoAddr: '2 Second St' },
+            { label: 'Rental', addr: '3 Third St', lat: 39.03, lon: -95.72, geoAddr: '3 Third St' },
+          ] }];
+        window.jobs = []; window.bids = [];
+        localStorage.setItem('zp3_nearby_geo', '{}');
+        return _geoDeriveFences('2026-09-01').filter(f => f.kind === 'client')
+          .map(f => [f.id, f.name, f.addr, f.lat, f.clientId]);
+      });
+      expect(r).toEqual([
+        ['client-601', 'Landlord', '1 First St', 39.01, 601],
+        ['client-601-p0', 'Landlord (Duplex)', '2 Second St', 39.02, 601],
+        ['client-601-p1', 'Landlord (Rental)', '3 Third St', 39.03, 601],
+      ]);
+    });
+
+    test('a property carries the customer\'s own witnesses, because they are about the person', async () => {
+      const r = await page.evaluate(() => {
+        window.clients = [{ id: 602, name: 'Mom', addr: '1 Family Ln', lat: 39.01, lon: -95.70, geoAddr: '1 Family Ln',
+          personal: true, extraAddresses: [{ label: 'Cabin', addr: '9 Lake Rd', lat: 39.09, lon: -95.79, geoAddr: '9 Lake Rd' }] }];
+        window.jobs = [{ id: 9101, client_id: 602, name: 'Job', eventType: 'job', start: '2026-09-01', days: 1, status: 'upcoming' }];
+        window.bids = [];
+        localStorage.setItem('zp3_nearby_geo', '{}');
+        return _geoDeriveFences('2026-09-01').filter(f => f.kind === 'client')
+          .map(f => [f.id, !!f.scheduled, !!f.personal]);
+      });
+      expect(r).toEqual([['client-602', true, true], ['client-602-p0', true, true]]);
+    });
+
+    test('a property with no coordinates yet is not a fence, and neither is a stale one', async () => {
+      const r = await page.evaluate(() => {
+        window.clients = [{ id: 603, name: 'Cust', addr: '1 First St', lat: 39.01, lon: -95.70, geoAddr: '1 First St',
+          extraAddresses: [
+            { label: 'Typed, never looked up', addr: '4 Fourth St' },
+            // He moved: the address changed and the coordinates did not, which
+            // is the same guard the primary has had since 2026-09-11.
+            { label: 'Moved', addr: '5 New St', lat: 39.05, lon: -95.75, geoAddr: '5 Old St' },
+          ] }];
+        window.jobs = []; window.bids = [];
+        localStorage.setItem('zp3_nearby_geo', '{}');
+        return _geoDeriveFences('2026-09-01').filter(f => f.kind === 'client').map(f => f.id);
+      });
+      expect(r).toEqual(['client-603']);
+    });
+
+    test('a customer with no primary address still fences the property he does have', async () => {
+      const r = await page.evaluate(() => {
+        window.clients = [{ id: 604, name: 'Site only', addr: '',
+          extraAddresses: [{ label: 'Job site', addr: '7 Site Rd', lat: 39.07, lon: -95.77, geoAddr: '7 Site Rd' }] }];
+        window.jobs = []; window.bids = [];
+        localStorage.setItem('zp3_nearby_geo', '{}');
+        return _geoDeriveFences('2026-09-01').filter(f => f.kind === 'client').map(f => [f.id, f.addr]);
+      });
+      expect(r).toEqual([['client-604-p0', '7 Site Rd']]);
+    });
+
     // ── The coordinates live on the record now (owner 2026-09-11) ─────────
     //
     // "so we would need coordinates based on the address entered saved on the
