@@ -1854,14 +1854,18 @@ function _tlRailRow(r){
   // THE SAME TRIP NUMBER THE MILEAGE LOG SHOWS (owner 2026-09-08): one
   // definition, _mileTripNumbers, keyed by the leg id the drive row carries.
   let _tripNo=null;
-  // "Trip 1" three times over told him nothing (owner 2026-09-18). A chain's
-  // segments all belong to one trip and the label now says which drive of it
-  // this is; a trip with a single drive is unchanged.
+  // ── AND IT IS JUST THE TRIP NUMBER AGAIN (owner 2026-09-19) ────────────
+  // "Still have the 1 of 3 2 of 3 thing carrying over which I don't want."
+  //
+  // The suffix was added on 2026-09-18 to explain "Trip 1" appearing three
+  // times over, and he said at the time it was the wrong fix: they were three
+  // separate drives, not one trip in three parts. He was right. The chain was
+  // collapsing three real drives into one leg, that is fixed in the deriver
+  // (a work-length stop closes the chain), and each drive now carries its own
+  // trip number. With the cause gone the label has nothing left to explain
+  // and says the number, as it did before.
   try{
-    if(kind==='drive'&&typeof _mileTripLegForLeg==='function'){
-      const _tl=_mileTripLegForLeg(r.date,r.clientKey);
-      _tripNo=_tl?(_tl.of>1?(_tl.no+' · drive '+_tl.ix+' of '+_tl.of):String(_tl.no)):null;
-    }else if(kind==='drive'&&typeof _mileTripNumberForLeg==='function'){
+    if(kind==='drive'&&typeof _mileTripNumberForLeg==='function'){
       _tripNo=_mileTripNumberForLeg(r.date,r.clientKey);
     }
   }catch(_e){_tripNo=null;}
