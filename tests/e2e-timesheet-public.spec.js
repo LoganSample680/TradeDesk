@@ -420,6 +420,59 @@ test.describe('The public timesheet page', () => {
     });
   });
 
+  // ── A FULL DAY, EVERY BUCKET (owner 2026-09-19) ────────────────────────
+  //
+  // "It needs to show all the breakdowns, on site, drive times particularly
+  // supply house, all that." A load at the yard, out to the job, over to the
+  // supply house, back, and home: the shape of an actual day rather than the
+  // two rows the fixture above carries.
+  const FULL = Object.assign({}, DATA, {
+    time: [
+      { job_id: null, arrived_at: '2026-08-25T12:10:00Z', departed_at: '2026-08-25T12:35:00Z', minutes: 25, source: 'place-load',   client_key: 'p1', origin_place: null,               dest_place: 'TradeDesk yard' },
+      { job_id: null, arrived_at: '2026-08-25T12:35:00Z', departed_at: '2026-08-25T13:02:00Z', minutes: 27, source: 'drive',        client_key: 'p2', origin_place: 'TradeDesk yard',    dest_place: 'John Doe' },
+      { job_id: 'j1', arrived_at: '2026-08-25T13:02:00Z', departed_at: '2026-08-25T16:30:00Z', minutes: 208, source: 'geofence',    client_key: 'p3', origin_place: null,               dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
+      { job_id: null, arrived_at: '2026-08-25T16:30:00Z', departed_at: '2026-08-25T16:48:00Z', minutes: 18, source: 'drive',        client_key: 'p4', origin_place: 'John Doe',          dest_place: 'Ferguson Plumbing Supply' },
+      { job_id: null, arrived_at: '2026-08-25T16:48:00Z', departed_at: '2026-08-25T17:14:00Z', minutes: 26, source: 'place-supply', client_key: 'p5', origin_place: null,               dest_place: 'Ferguson Plumbing Supply' },
+      { job_id: null, arrived_at: '2026-08-25T17:14:00Z', departed_at: '2026-08-25T17:35:00Z', minutes: 21, source: 'drive',        client_key: 'p6', origin_place: 'Ferguson Plumbing Supply', dest_place: 'John Doe' },
+    ],
+    shop: [{ arrived_at: '2026-08-27T13:00:00Z', departed_at: '2026-08-27T14:35:00Z', minutes: 95, client_key: 's1' }],
+    manual: [{ id: 'm1', date: '2026-08-27', start_time: '2026-08-27T14:35:00Z', end_time: '2026-08-27T20:05:00Z', minutes: 330, open: false }],
+  });
+
+  test.describe('a full day, every breakdown', () => {
+    test('the week names every bucket the day spent time in', async ({ page }) => {
+      await openPage(page, FULL);
+      const r = await page.evaluate(() => ({
+        legend: [...document.querySelectorAll('#tsp-body .tl-rail-legend .tl-rail-leg')]
+                  .map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+      }));
+      // Not a list of strings this file made up: the app's own bucket table,
+      // so a renamed or added bucket comes through here without an edit.
+      const want = ['On site', 'Shop', 'Driving', 'Loading', 'Supply', 'Manual time'];
+      want.forEach((w) => expect(r.legend.some(l => l.startsWith(w)), w + ' is on the week').toBe(true));
+      expect(r.legend.find(l => l.startsWith('Supply'))).toMatch(/26m/);
+      expect(r.legend.find(l => l.startsWith('Loading'))).toMatch(/25m/);
+    });
+
+    test('a drive says where it started and where it ended', async ({ page }) => {
+      await openPage(page, FULL);
+      await page.evaluate(() => _tlDrillTo('day', '2026-08-25'));
+      await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-rail'));
+      const rows = await page.evaluate(() => [...document.querySelectorAll('#tsp-body .tl-rail-row')]
+        .map(r => r.textContent.replace(/\s+/g, ' ').trim()));
+      const txt = rows.join(' | ');
+      // timesheet_public sent dest_place and never origin_place, so every
+      // drive on a shared sheet could only name the far end (migration
+      // 20261027). The app has titled them with both since 2026-09-15.
+      expect(txt).toContain('TradeDesk yard \u2192 John Doe');
+      expect(txt).toContain('John Doe \u2192 Ferguson Plumbing Supply');
+      expect(txt).toContain('Ferguson Plumbing Supply \u2192 John Doe');
+      expect(txt, 'and the supply stop is named as a supply stop').toMatch(/SUPPLY HOUSE/i);
+      expect(txt, 'never the not-saved fallback when both ends are known')
+        .not.toContain('Destination not saved');
+    });
+  });
+
   test('layout (§15.3): no bleed, no overlapping controls at 320px and 390px', async ({ page }) => {
     for (const w of [320, 390]) {
       await page.setViewportSize({ width: w, height: 800 });

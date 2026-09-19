@@ -150,7 +150,15 @@ begin
 
   select coalesce(jsonb_agg(jsonb_build_object(
       'id', e.id, 'job_id', e.job_id, 'arrived_at', e.arrived_at, 'departed_at', e.departed_at,
-      'minutes', e.minutes, 'source', e.source, 'dest_place', e.dest_place, 'client_key', e.client_key,
+      'minutes', e.minutes, 'source', e.source, 'client_key', e.client_key,
+      -- BOTH ENDS OF A DRIVE, added 2026-09-19. js/timelog.js titles a drive
+      -- row "the yard -> John Doe" only when it holds origin_place AND
+      -- dest_place; with one end it falls back to the destination alone, and
+      -- with neither it prints "Destination not saved". This select sent
+      -- dest_place and never origin_place, so no drive on a shared timesheet
+      -- could ever name where it started. The app has the column, the boss
+      -- reading the link did not.
+      'origin_place', e.origin_place, 'dest_place', e.dest_place,
       'job_name', j.data->>'name', 'client_name', c.data->>'name',
       'addr', coalesce(j.data->>'addr', c.data->>'addr', '')
     ) order by e.arrived_at), '[]'::jsonb) into t_rows
