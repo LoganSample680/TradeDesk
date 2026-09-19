@@ -383,15 +383,16 @@ test.describe('geo-derive wiring', () => {
         _geoAppLogPush(t(10), 'active'); _geoAppLogPush(t(11), 'background');
         const res = await _geoDeriveDayNow(day, null);
         const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
-        return { res: res && res.dwells.map(d => [d.kind, d.minutes]), q: q.map(x => x.args.p_time.map(r => r.source)),
-          sweep: q.map(x => x.args.p_sweep) };
+        return { res: res && res.dwells.map(d => [d.kind, d.minutes]),
+          rows: res && res.rows.job_time_entries.map(r => r.source), queued: q.length };
       });
       expect(r.res).toEqual([['office', 60]]);
-      expect(r.q).toEqual([['place-office']]);
-      // NO TAPE, NO SWEEP: the office row may be added, but this derive had no
-      // motion history for the day, so it must not be allowed to retire
-      // anything geo_replace_day already holds for it.
-      expect(r.sweep).toEqual([false]);
+      // AMENDED 2026-09-19 (10.4). This read the queued write and then asserted
+      // p_sweep false ("no tape, no sweep"). The phone writes nothing now, so
+      // there is no sweep of its to bound; the row it DERIVED is the half worth
+      // keeping and it is asserted here directly.
+      expect(r.rows).toEqual(['place-office']);
+      expect(r.queued, 'and it is derived, not sent').toBe(0);
     });
   });
 
@@ -1182,24 +1183,28 @@ test.describe('geo-derive wiring', () => {
       push(T[4], SHOP);
     }, [tape, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)], DAY_START - 30 * 86400000]);
 
-    test('one queue item per day, carrying the whole day for geo_replace_day', async () => {
+    // ── AMENDED 2026-09-19 (10.4 and 7.1): THE PHONE WRITES NOTHING ──────
+    // This read the queue item the derive used to enqueue. Every SHAPE it
+    // checks is still produced and still worth checking; what is gone is the
+    // sending. Owner, on a week of measurement: "turn off the portion of the
+    // phone that can write then, we got our answer." So the same assertions
+    // read the derive's own output and the queue is asserted empty. p_sweep,
+    // p_day_start, p_day_end and p_employee were arguments to a call that no
+    // longer happens and have nothing left to assert.
+    test('a derive produces the whole day, and sends none of it', async () => {
       await seed();
       const r = await page.evaluate(async (DAY) => {
         window.mileage = [];
+        localStorage.removeItem('zp3_geo_queue');
         const res = await _geoDeriveDayNow(DAY, null);
         const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
-        return { res: { d: res.dwells.length, l: res.legs.length }, q: q.map(x => ({ rpc: x.rpc, key: x.row.client_key, args: x.args })) };
+        return { res: { d: res.dwells.length, l: res.legs.length }, rows: res.rows,
+          queued: q.length, rpcItems: q.filter(x => x && x.rpc).length };
       }, DAY);
       expect(r.res).toEqual({ d: 1, l: 2 });
-      expect(r.q).toHaveLength(1);
-      const it = r.q[0];
-      expect(it.rpc).toBe('geo_replace_day');
-      expect(it.key).toBe('rpc:' + DAY);
-      expect(it.args.p_sweep, 'the tape covered the day, so the sweep is allowed').toBe(true);
-      expect(it.args.p_day).toBe(DAY);
-      expect(it.args.p_employee).toBe(await page.evaluate(() => _supaUser.id));
-      expect(it.args.p_day_start).toBe(new Date(DAY_START).toISOString());
-      expect(it.args.p_day_end).toBe(new Date(DAY_END).toISOString());
+      expect(r.queued, 'nothing is queued at all').toBe(0);
+      expect(r.rpcItems, 'and certainly no geo_replace_day').toBe(0);
+      const it = { args: { p_time: r.rows.job_time_entries, p_shop: r.rows.shop_time_entries, p_miles: r.rows.td_mileage } };
       expect(it.args.p_time.map(x => x.source)).toEqual(['client', 'drive', 'drive']);
       expect(it.args.p_time[0].dest_place).toBe('John Doe');
       // ── AMENDED 2026-09-18, and the old assertion was right at the time ──
@@ -1209,12 +1214,33 @@ test.describe('geo-derive wiring', () => {
       // owner asked to end ("arrivals on site, current time on site"), so the
       // open dwell is a row now, with departed_at and minutes null until he
       // drives away. One row, unclosed, is the new correct answer here.
-      expect(it.args.p_shop).toHaveLength(1);
-      expect(it.args.p_shop[0].departed_at, 'the open row has no end yet').toBeNull();
-      expect(it.args.p_shop[0].minutes, 'and no minutes, rather than a zero or a guess').toBeNull();
-      expect(it.args.p_shop[0].client_key).toMatch(/^d-j-/);
+      // The open dwell rides in its own array: _geoWithOpen folded it in on
+      // the way to the write, and there is no write to fold it into.
+      const shopRows = it.args.p_shop.concat((r.rows.open || []).filter(x => x && x._table === 'shop_time_entries'));
+      expect(shopRows).toHaveLength(1);
+      expect(shopRows[0].departed_at, 'the open row has no end yet').toBeNull();
+      expect(shopRows[0].minutes, 'and no minutes, rather than a zero or a guess').toBeNull();
+      expect(shopRows[0].client_key).toMatch(/^d-j-/);
       expect(it.args.p_miles).toHaveLength(2);
       expect(it.args.p_miles[0].legKey).toBe(it.args.p_time[1].client_key);
+    });
+
+    // ── 7.1: THE ENTRY POINT IS GONE, NOT JUST UNUSED ────────────────────
+    test('nothing on this phone can put a derived day on file any more', async () => {
+      const r = await page.evaluate(() => ({
+        enqueueRpc: typeof window._geoEnqueueRpc,
+        // The drain still UNDERSTANDS an rpc item, deliberately: a queue
+        // written by an older build has to be able to empty itself after an
+        // update. What is gone is anything that can create one.
+        drain: typeof window._geoDrainQueue,
+      }));
+      expect(r.enqueueRpc, 'deleted, never hidden').toBe('undefined');
+      expect(r.drain, 'an old queue can still empty itself').toBe('function');
+      const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+      const code = src.replace(/\/\/[^\n]*/g, '');
+      expect(code.includes('function _geoEnqueueRpc('), 'no definition left behind').toBe(false);
+      expect(/_geoEnqueueRpc\s*\(/.test(code), 'and no call site outside a comment').toBe(false);
+      expect(/\bp_sweep\s*:/.test(code), 'the phone names no sweep, because it retires nothing').toBe(false);
     });
 
     // ── THE PHONE HAS TO SAY WHOSE DAY THIS IS (owner 2026-09-16) ────────
@@ -1328,32 +1354,15 @@ test.describe('geo-derive wiring', () => {
     // phone, we both have different core motions, what happens." The claim
     // starts at the swap. The morning's rows came from the other phone and are
     // not in this derive's set; a sweep would have retired them.
-    test('a phone claimed part-way through the day may add, never retire', async () => {
-      await seed();
-      const r = await page.evaluate(async (DAY) => {
-        window.mileage = [];
-        // Claimed at 10am on the day itself.
-        localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: Date.parse(DAY + 'T15:00:00Z') }));
-        const res = await _geoDeriveDayNow(DAY, null);
-        const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
-        return { rows: q[0] && q[0].args.p_time.length, sweep: q[0] && q[0].args.p_sweep, derived: !!res };
-      }, DAY);
-      expect(r.derived).toBe(true);
-      expect(r.rows, 'what it can prove still lands').toBeGreaterThan(0);
-      expect(r.sweep, 'but nothing from before the claim is retired').toBe(false);
-    });
+    // DELETED 2026-09-19 (§7). Two tests lived here: "a phone claimed
+    // part-way through the day may add, never retire" and "a second derive of
+    // the same day replaces the item, never stacks a second". Both described
+    // the phone's queue item and the p_sweep flag on it, and the phone no
+    // longer writes rows at all (see _geoDeriveDayNow). What they were
+    // protecting, that a partial claim must not retire another phone's
+    // morning, is the server's rule now and derive-day.mjs asserts it there.
 
-    test('a second derive of the same day replaces the item, never stacks a second', async () => {
-      await seed();
-      const r = await page.evaluate(async (DAY) => {
-        window.mileage = [];
-        await _geoDeriveDayNow(DAY, null);
-        await _geoDeriveDayNow(DAY, null);
-        const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
-        return q.map(x => x.row.client_key);
-      }, DAY);
-      expect(r).toEqual(['rpc:' + DAY]);
-    });
+
 
     test('an empty tape derives nothing and touches no queue: a browser cannot wipe a day', async () => {
       await seed();
@@ -1393,7 +1402,14 @@ test.describe('geo-derive wiring', () => {
       await seed();
       const r = await page.evaluate(async (DAY) => {
         window.mileage = [];
-        await _geoDeriveDayNow(DAY, null);
+        // AMENDED 2026-09-19: the derive used to leave this item behind. It
+        // writes nothing now, so the item is seeded by hand, which is exactly
+        // the case this still has to cover: a queue written by an OLDER build
+        // must be able to empty itself after an update.
+        const item = () => _geoQueueWrite([{ rpc: 'geo_replace_day',
+          args: { p_day: DAY, p_time: [{}, {}, {}], p_shop: [], p_miles: [] },
+          row: { client_key: 'rpc:' + DAY } }]);
+        item();
         const calls = [];
         const origSupa = window._supa;
         window._supa = { rpc: async (name, args) => { calls.push({ name, day: args.p_day, n: args.p_time.length }); return { data: { ok: true }, error: null }; },
@@ -1406,7 +1422,7 @@ test.describe('geo-derive wiring', () => {
           const left = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
           // Now a transient failure: the item must survive for the next drain.
           window._geoDrainQueue = () => {};
-          await _geoDeriveDayNow(DAY, null);
+          item();
           window._geoDrainQueue = window.__realDrain;
           window._supa = { rpc: async () => ({ data: null, error: { message: 'Failed to fetch' } }), from: origSupa.from.bind(origSupa) };
           await _geoDrainQueue();
@@ -1472,7 +1488,13 @@ test.describe('geo-derive wiring', () => {
     // It is the same rule the server path has always had, said the other way
     // round: absence of evidence is evidence of absence only where there IS
     // evidence.
-    test('a server fetch that came back short writes, but never sweeps', async () => {
+    // AMENDED 2026-09-19 (10.4). This was "a server fetch that came back short
+    // writes, but never sweeps", and both halves were about p_sweep on the
+    // phone's queued write. The phone retires nothing now, so the sweep half
+    // is the server's question (derive-day.mjs asks it there). What is still
+    // this file's question, and is the half that ever mattered to a person, is
+    // that a partial fetch still RESOLVES the day rather than throwing it away.
+    test('a server fetch that came back short still derives the day', async () => {
       await seed();
       const r = await page.evaluate(async ([DAY, SHOP, DOE, T]) => {
         localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
@@ -1489,22 +1511,13 @@ test.describe('geo-derive wiring', () => {
         };
         try {
           localStorage.setItem('zp3_geo_queue', '[]');
-          await _geoDeriveDayNow(DAY, null);
-          const short = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0];
-          // The same fetch, whole this time, is allowed to sweep.
-          const prev = window._geoDeriveServerFixes;
-          window._geoDeriveServerFixes = async (...a) => { const o = await prev(...a); o.complete = true; return o; };
-          localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
-          localStorage.setItem('zp3_geo_queue', '[]');
-          await _geoDeriveDayNow(DAY, null);
-          const whole = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0];
-          return { shortSweep: short && short.args.p_sweep, shortRows: short && short.args.p_time.length,
-                   wholeSweep: whole && whole.args.p_sweep };
+          const res = await _geoDeriveDayNow(DAY, null);
+          return { rows: res && res.rows.job_time_entries.length,
+                   queued: JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length };
         } finally { window._geoDeriveServerFixes = real; }
       }, [DAY, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)]]);
-      expect(r.shortSweep, 'a short fetch retires nothing').toBe(false);
-      expect(r.shortRows, 'but it still writes what it did find').toBeGreaterThan(0);
-      expect(r.wholeSweep, 'and a complete one sweeps exactly as before').toBe(true);
+      expect(r.rows, 'it still derives what it did find').toBeGreaterThan(0);
+      expect(r.queued, 'and sends none of it').toBe(0);
     });
 
     // The pager is where `complete` comes from, and it has to be honest about
@@ -1550,7 +1563,9 @@ test.describe('geo-derive wiring', () => {
         } finally { window._geoDeriveServerFixes = real; }
       }, [DAY, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)]]);
       expect(r.res, 'the server\'s fixes resolve the day').toEqual({ d: 1, l: 2 });
-      expect(r.q).toBe(1);
+      // AMENDED 2026-09-19: was 1, the queued write. The fetch, the seeding
+      // and the derive are all unchanged; only the sending is gone.
+      expect(r.q, 'fetched, seeded, derived, and nothing sent').toBe(0);
       expect(r.calls).toEqual([[DAY_START - 2 * 3600000, DAY_START + 86400000]]);
       expect(r.log, 'seeded, sorted, no fix twice').toEqual([T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)]);
       expect(r.app).toEqual([[T(12, 21) + 5000, 'active'], [T(12, 31) + 5000, 'background']]);
@@ -1595,21 +1610,22 @@ test.describe('geo-derive wiring', () => {
         localStorage.removeItem('zp3_geo_routes');
         const calls = [];
         window._routeDistance = async (a, b) => { calls.push([a.lat, b.lat]); return { miles: 3.2, mins: 9 }; };
+        // AMENDED 2026-09-19: these read the queued write's p_miles. The phone
+        // sends nothing now, so they read the derive's own output, which is
+        // the same array that used to be handed to the RPC.
         const first = await _geoDeriveDayNow(DAY, null);
-        const q1 = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0].args.p_miles;
+        const q1 = first.rows.td_mileage;
         // Same day again: the cache answers, the router is not asked twice.
         await _geoDeriveDayNow(DAY, null);
         const cache = JSON.parse(localStorage.getItem('zp3_geo_routes') || '{}');
         // A router that says less than the trace does not shrink the leg.
         window._routeDistance = async () => ({ miles: 0.4, mins: 2 });
         localStorage.removeItem('zp3_geo_routes');
-        await _geoDeriveDayNow(DAY, null);
-        const q3 = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0].args.p_miles;
+        const q3 = (await _geoDeriveDayNow(DAY, null)).rows.td_mileage;
         // A router that throws leaves the trace's number.
         window._routeDistance = async () => { throw new Error('offline'); };
         localStorage.removeItem('zp3_geo_routes');
-        await _geoDeriveDayNow(DAY, null);
-        const q4 = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0].args.p_miles;
+        const q4 = (await _geoDeriveDayNow(DAY, null)).rows.td_mileage;
         return { legs: first.legs.map(l => l.miles), q1: q1.map(m => [m.miles, m.routeMiles, m.calc_method]), calls: calls.length,
           cacheN: Object.keys(cache).length, q3: q3.map(m => [m.miles, m.calc_method]), q4: q4.map(m => [m.miles, m.calc_method]),
           inMem: mileage.map(m => m.miles) };
@@ -1643,7 +1659,12 @@ test.describe('geo-derive wiring', () => {
         window._supa = { rpc: async () => ({ data: { ok: true }, error: null }), from: (t) => t === 'td_mileage' ? { select: () => chain } : origSupa.from(t) };
         window._geoDrainQueue = window.__realDrain;
         try {
-          await _geoDrainQueue();
+          // AMENDED 2026-09-19: the read-back used to be triggered by the
+          // phone's own write draining. The phone writes nothing now and the
+          // rows arrive from the server, so the read-back is asked for
+          // directly. It is the same function doing the same job; only what
+          // wakes it has changed.
+          await _geoDeriveSyncMileage(DAY);
           await new Promise(r => setTimeout(r, 50));
           return { ids: mileage.map(m => m.id).sort(), veh: mileage.find(m => m.id === legIds[1]).vehicle, miles: mileage.filter(m => m.gps).map(m => m.miles),
             direct: await _geoDeriveSyncMileage(DAY), junk: [await _geoDeriveSyncMileage(''), await _geoDeriveSyncMileage(null)] };
@@ -1939,15 +1960,19 @@ test.describe('geo-derive wiring', () => {
         await new Promise(res => setTimeout(res, 300));
         const before = mileage.filter(m => m.gps).map(m => [m.miles > 0, m.calc_method]);
         const queuedBefore = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
-        release(); await p;
+        release(); const res = await p;
         const after = mileage.filter(m => m.gps).map(m => m.calc_method);
         const queuedAfter = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
-        return { before, queuedBefore, after, queuedAfter };
+        return { before, queuedBefore, after, queuedAfter, rows: res.rows.td_mileage.map(m => m.calc_method) };
       }, DAY);
       expect(r.before).toEqual([[true, 'derived-path'], [true, 'derived-path']]);
-      expect(r.queuedBefore, 'the table is written once the miles are final').toBe(0);
       expect(r.after).toEqual(['derived-routed', 'derived-routed']);
-      expect(r.queuedAfter).toBe(1);
+      // AMENDED 2026-09-19: the second assertion was `queuedAfter` 1, using the
+      // queued write as the clock for "the miles are final now". Nothing is
+      // queued any more, so the derive's own output says it instead, and both
+      // ends of the paint are still pinned.
+      expect([r.queuedBefore, r.queuedAfter], 'nothing is sent, before or after').toEqual([0, 0]);
+      expect(r.rows, 'and the miles it finished with are the routed ones').toEqual(['derived-routed', 'derived-routed']);
     });
 
     test('the phone\'s own fix log takes fresh positions only', async () => {
@@ -3346,135 +3371,17 @@ test.describe('the mileage paint is gated on an actual change', () => {
 // morning became nothing.
 //
 // Withholding a row must never mean deleting it.
-test.describe('a derive that is still mid-drive retires nothing', () => {
-  let page;
-  test.beforeAll(async ({ browser }) => {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
-    page = await ctx.newPage();
-    await mockAllExternal(page);
-    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await waitForAppBoot(page);
-  });
-  test.afterAll(async () => { await page.context().close(); });
-
-  // Same fixture as 'deriving a day' above, with the tape handed in so a test
-  // can choose whether the last journey ever closes.
-  const derive = (tape, fixesOver) => page.evaluate(async ([tape, SHOP, DOE, F, OWNED_SINCE, DAY]) => {
-    S.bizTz = 'America/Chicago';
-    S.officeLat = SHOP.lat; S.officeLon = SHOP.lng; S.bname = 'JS Solutions';
-    window.places = []; window.mileage = [];
-    window.clients = [{ id: 1788214075432, name: 'John Doe', addr: '2950 SW McClure Rd' }];
-    localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 1788214075432: { addr: '2950 SW McClure Rd', lat: DOE.lat, lon: DOE.lng } }));
-    window._geoDeriveTape = async () => tape;
-    localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: OWNED_SINCE }));
-    localStorage.removeItem('zp3_geo_tape_log');
-    localStorage.removeItem('zp3_geo_queue');
-    // AND THE FIX LOG, which this helper never cleared. Every test in the
-    // block seeded on top of the last one's readings; it went unnoticed only
-    // because they all seeded the identical five. The moment one test brought
-    // its own fixture (a moving truck, 2026-09-18) the leftovers from it
-    // decided the next test's day.
-    localStorage.removeItem('zp3_geo_fixlog');
-    window._geoDrainQueue = () => {};
-    window._routeDistance = async () => ({ miles: 0, mins: 0 });
-    // Jittered by the reading's own instant, for the reason spelled out in the
-    // 'deriving a day' seeder above: a real phone never reports one place with
-    // byte-equal floats hours apart, and the replay guard reads that equality
-    // as a cached CLLocation sent twice.
-    const jit = (v, ts, k) => v + (((Math.round(ts / 1000) * (k === 'lat' ? 2654435761 : 40503)) % 977) - 488) * 1e-9;
-    F.forEach(f => _geoFixLogPush(f[0], jit(f[1], f[0], 'lat'), jit(f[2], f[0], 'lng'), 5));
-    const res = await _geoDeriveDayNow(DAY, null);
-    const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
-    return { pending: !!(res && res.pending),
-      pendingStart: (res && res.pending && Number(res.pending.startTs)) || null,
-      legs: res ? res.legs.length : -1,
-      queued: q.length, sweep: q[0] && q[0].args.p_sweep,
-      sweepUntil: (q[0] && q[0].args.p_sweep_until) ? Date.parse(q[0].args.p_sweep_until) : null,
-      rows: q[0] ? q[0].args.p_time.length : -1 };
-  }, [tape, SHOP, DOE,
-      fixesOver ||
-      [[T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
-       [T(12, 21) + 5000, DOE.lat, DOE.lng], [T(12, 31) + 5000, SHOP.lat, SHOP.lng],
-       [T(13, 0), SHOP.lat, SHOP.lng]],
-      DAY_START - 30 * 86400000, DAY]);
-
-  const CLOSED = [
-    { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
-    { ts: T(12, 21), kind: 'driving' }, { ts: T(12, 31), kind: 'onFoot' },
-  ];
-  // Jack's shape: the last flip is into the truck and nothing closes it.
-  //
-  // AMENDED 2026-09-18. The tape alone is no longer enough to make a day
-  // "mid-drive": since a missing flip stopped being read as evidence of a
-  // departure, a journey the tape never closed still ends where the FIXES say
-  // the truck parked. The shared fixture's trailing readings sit at the shop
-  // from 12:31, so with this tape the day now resolves, which is correct and
-  // is the whole point of that change (his afternoon of the 18th was being
-  // thrown away by the old reading).
-  //
-  // A genuinely unresolved day therefore has to be genuinely unresolved: the
-  // truck is still moving when the readings run out. That is what MOVING_FIXES
-  // is for, and it is what these sweep tests actually mean to describe.
-  const STILL_DRIVING = [
-    { ts: T(7, 40), kind: 'onFoot' }, { ts: T(7, 52), kind: 'driving' }, { ts: T(8, 3), kind: 'onFoot' },
-    { ts: T(12, 21), kind: 'driving' },
-  ];
-  // The same day, except the last stretch is a phone in a moving truck rather
-  // than a phone sitting at the shop: no still run, so nothing can close the
-  // journey and the chain stays open.
-  const MOVING_FIXES = [
-    [T(7, 52) + 5000, SHOP.lat, SHOP.lng], [T(8, 3) + 5000, DOE.lat, DOE.lng],
-    [T(12, 21) + 5000, DOE.lat, DOE.lng],
-    [T(12, 25), DOE.lat + 0.02, DOE.lng + 0.02],
-    [T(12, 31), DOE.lat + 0.05, DOE.lng + 0.05],
-    [T(12, 40), DOE.lat + 0.09, DOE.lng + 0.09],
-    [T(12, 50), DOE.lat + 0.14, DOE.lng + 0.14],
-  ];
-
-  test('the control: a day whose drives all closed sweeps as it always did', async () => {
-    const r = await derive(CLOSED);
-    expect(r.pending).toBe(false);
-    expect(r.sweep).toBe(true);
-  });
-
-  test("Jack's shape: the stale morning row is inside the boundary, so it goes", async () => {
-    // His 08:00 dwell stood twice, once as shop and once as unsaved, same key,
-    // two tables, because a dwell that changes kind moves table. The sweep
-    // retires anything in the day not in the new key set, so it catches that
-    // on its own the moment it is allowed to run at all.
-    const r = await derive(STILL_DRIVING, MOVING_FIXES);
-    expect(r.sweep).toBe(true);
-    expect(r.sweepUntil, 'the 08:00 dwell is before the line, so it is swept').toBeGreaterThan(T(8, 30));
-  });
-
-  // AMENDED 2026-09-18, hours after it was written, and the old assertion is
-  // quoted so the change is legible: it read
-  //   expect(r.sweep, 'THE bug: this was true...').toBe(false);
-  //
-  // Turning the sweep off for the whole day was too blunt. One unresolved chain
-  // at the END of a day left every stale row from every earlier derive standing,
-  // and each rebuild stacked more beside them: "its all duplicative and things
-  // arent merged together" (owner, on Jack's rebuilt day). The sweep is on
-  // again, bounded instead, and the boundary is where the day stops being known.
-  test('a day still mid-drive sweeps what it can describe, and stops there', async () => {
-    const r = await derive(STILL_DRIVING, MOVING_FIXES);
-    expect(r.pending, 'the chain has not come to rest').toBe(true);
-    expect(r.queued).toBe(1);
-    expect(r.sweep, 'the settled morning is still swept').toBe(true);
-    // The boundary IS the deriver's own idea of where the unresolved chain
-    // began: this spec tests the wiring, and the deriver owns that instant.
-    expect(r.sweepUntil).toBe(r.pendingStart);
-    expect(r.sweepUntil, 'and the settled morning is safely inside it').toBeGreaterThan(T(8, 30));
-  });
-
-  test('a settled day sweeps the whole of itself, with no boundary at all', async () => {
-    const r = await derive(CLOSED);
-    expect(r.sweep).toBe(true);
-    expect(r.sweepUntil, 'null means the whole day').toBeNull();
-  });
-
-  test('no console errors', async () => { await assertNoErrors(page); });
-});
+// ── DELETED 2026-09-19 (§7) ───────────────────────────────────────────────
+// "a derive that is still mid-drive retires nothing" lived here: four tests
+// about p_sweep and p_sweep_until on the write the PHONE used to make. The
+// phone writes nothing now (js/geo-track.js, _geoDeriveDayNow), so it retires
+// nothing and there is no boundary of its to bound.
+//
+// What those tests were protecting is not lost, it moved with the write: the
+// server asks the same two questions in supabase/functions/_shared/derive-day.mjs
+// (`sweep = wantSweep && tapeCovers`, and p_sweep_until from res.pending), and
+// the reasoning behind both, including Jack's stale morning row, is carried
+// there in full.
 
 // ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ──────
 // He left the shop at 07:53:31 and parked 767 ft away, and all morning the day

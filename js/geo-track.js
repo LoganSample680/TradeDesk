@@ -8026,16 +8026,12 @@ function _geoWithOpen(rows,tbl){
   return base.concat(open.map(r=>{const o=Object.assign({},r);delete o._table;return o;}));
 }
 
-function _geoEnqueueRpc(dayKey,args){
-  if(typeof opsReadOnly==='function'&&opsReadOnly())return;
-  try{
-    const key='rpc:'+dayKey;
-    const q=_geoQueueRead().filter(x=>!(x&&x.row&&x.row.client_key===key));
-    q.push({rpc:'geo_replace_day',args,row:{client_key:key}});
-    _geoQueueWrite(q);
-  }catch(_e){}
-  _geoDrainQueue();
-}
+// _geoEnqueueRpc was DELETED 2026-09-19 (§7: deleted, never hidden). It was
+// the only way a phone could put a derived day on file, and a week of
+// measurement said it had never once contributed a row the server could not
+// derive from the same evidence. The drain still understands an `rpc` item,
+// deliberately: a queue written by an older build must still be able to empty
+// itself after an update.
 
 // The in-memory mileage array is what the settings-blob sweep compares the
 // server against, so the derived legs have to be in it or the next save
@@ -8567,63 +8563,34 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // reaches the server, so the paint does too.
     const _milesMoved=_geoDeriveApplyMileage(dayKey,rows.td_mileage);
     await _geoDeriveRouteMiles(rows.td_mileage);
-    // NO TAPE, NO SWEEP (owner 2026-09-04: "cant risk data going away ever").
-    // A derive without the phone's own motion history for this day (a
-    // laptop, a new phone, a shared iPad before this person's claim) may
-    // still ADD what it can prove from the app log, a Sunday of invoicing at
-    // the home office, but it may never retire a row it cannot see the
-    // evidence for. geo_replace_day skips its sweeps when p_sweep is false.
+    // ── THE PHONE NO LONGER WRITES ROWS (owner 2026-09-19) ───────────────
+    // "Turn off the portion of the phone that can write then, we got our
+    // answer."
     //
-    // AND ONLY WHEN THIS PHONE OWNED THE WHOLE DAY. Owner 2026-09-04, walking
-    // it through: "I sign out and sign in on jacks phone, we both have
-    // different core motions, what happens." The claim starts at the swap, so
-    // the tape says nothing about the morning; the morning's rows came from
-    // the other phone, they are not in this derive's set, and a sweep would
-    // have retired them. A partial day may add and refresh, never retire.
-    // Tomorrow's rebuild, with the claim covering the whole of today, sweeps
-    // it properly.
-    const tapeOwned=_geoTapeSince()<=b.start-2*3600000;
-    // ── AND THE EVIDENCE HAS TO BE WHOLE BEFORE ANYTHING IS RETIRED ───────
-    // Owner 2026-09-16: "I'm missing so many fucking drives now everywhere."
-    // Twenty-two rows off his last week, retired at 06:45 by the boot rebuild,
-    // no error anywhere. The fetch behind it stops silently on an error and at
-    // a page cap and hands back a partial set as though it were the whole one;
-    // the day then derives from part of the evidence and sweeps against all of
-    // it, so every row the missing pages would have produced reads as a row
-    // that should no longer exist.
+    // The answer, measured over a week on both live accounts:
+    //   - rows the phone wrote whose evidence the server does not have: 0 of 142.
+    //     It never knew anything the server could not derive for itself.
+    //   - overlapping automatic rows on file: 7 pairs, 70 minutes. geo_replace_day
+    //     REFUSES a set containing an overlap, so the server cannot make one
+    //     alone; every pair is two writers disagreeing about the same minutes,
+    //     and over half of it landed on Jack's 18 September.
+    //   - that day derived properly: the server produces 10 rows, all correct,
+    //     against about 20 on file. Rows the phone added that were right: none.
     //
-    // This is the same rule the server path has always had, said the other way
-    // round: absence of evidence is evidence of absence only where there IS
-    // evidence. A partial fetch still WRITES what it found, it just may not
-    // retire what it did not.
-    const whole=!(serverFixes||fetched)||!!(server&&server.complete);
-    // ── AND A DERIVE RETIRES ONLY WHAT IT HAS AN ANSWER FOR ───────────────
-    // Owner 2026-09-18, on Jack: "rebuilt his day... its all duplicative and
-    // things arent merged together."
+    // ingest-geo already runs deriveDayServer on every batch that lands, from
+    // the uploaded record, with byte-for-byte the same code (gen-shared-deriver,
+    // and CI fails if they drift). One deriver, one writer, one place it runs.
     //
-    // That was this guard, one revision ago. It started as `&& !res.pending`,
-    // because rule 14 withholds a traced leg while the chain is still moving
-    // and the withheld set was going to a SWEEPING write, which retired the
-    // good row it had just declined to re-send. Withholding a row must never
-    // mean deleting it, and that much was right.
+    // The derive above still RUNS and everything below still reads it: the open
+    // dwell for the on-site card, day-end's note, the mileage paint. What it no
+    // longer does is put its answer on file where it can argue with the server's.
     //
-    // The blast radius was wrong. ONE unresolved chain at the end of a day
-    // turned the sweep off for the WHOLE day, so every stale row from every
-    // earlier derive survived and every rebuild stacked more beside them. His
-    // 08:00 dwell stood twice, once as shop and once as unsaved, same key, two
-    // tables, because a dwell that changes kind moves table and the sweep that
-    // would have caught it never ran.
-    //
-    // Same rule, with a boundary: retire what this derive can describe, leave
-    // the stretch still being driven to whoever can see the end of it.
-    const sweepUntil = (res.pending && Number(res.pending.startTs) > 0)
-      ? new Date(Number(res.pending.startTs)).toISOString() : null;
-    _geoEnqueueRpc(dayKey,{
-      p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
-      p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
-      p_time:_geoWithOpen(rows,'job_time_entries'),p_shop:_geoWithOpen(rows,'shop_time_entries'),p_miles:rows.td_mileage,
-      p_sweep:!!(tapeCovers&&tapeOwned&&whole),p_sweep_until:sweepUntil,
-    });
+    // THE SWEEP GUARDS WENT WITH IT. tapeOwned ("no tape, no sweep", owner
+    // 2026-09-04: "cant risk data going away ever"), `whole` (a partial fetch
+    // may add and never retire, owner 2026-09-16) and sweepUntil (retire only
+    // what this derive can describe) all bounded what THIS PHONE could retire.
+    // It retires nothing now. The same three questions are asked on the server,
+    // where the write is, and derive-day.mjs carries that reasoning in full.
     // The only mileage paint this derive makes, the numbers in it are road
     // miles rather than trace miles (see the note above the router call), and
     // it happens at all only if the day actually came out different.
@@ -8645,6 +8612,10 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     try{if(typeof geoAnchorRecord==='function')geoAnchorRecord(res,_fences,{});}catch(_e){}
     try{_geoParkNote('derived',dayKey+' '+res.dwells.length+'d/'+res.legs.length+'l'+(res.pending?' pending':'')+(res.open?' open':''));}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+    // The rows this derive produced. They used to leave here inside a queue
+    // item and the only way to see what the deriver made was to read the
+    // queue; nothing sends them now, and they are still the honest output.
+    res.rows=rows;
     return res;
   }catch(_e){return null;}
 }
