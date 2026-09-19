@@ -3580,4 +3580,123 @@ extension TdGeoPluginTests {
         wait(for: [done], timeout: 5)
         XCTAssertTrue(true, "scheduling a flip from a background queue did not crash")
     }
+
+    // MARK: - A parked truck is parked (owner 2026-09-19)
+
+    // CMMotionActivity's flags are independent booleans and automotive +
+    // stationary means a vehicle that is not moving. Reading automotive first
+    // called that driving, so Jack's phone sat in a truck at a job site and
+    // the tape said he never stopped. CMMotionActivity has no public
+    // initializer, which is why the rule takes plain booleans.
+
+    func testMotionKind_aStoppedVehicleIsStillNotDriving() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: true, cycling: false, running: false,
+                                              walking: false, stationary: true), "still",
+                       "automotive + stationary is a parked truck, the one compound that matters")
+    }
+
+    func testMotionKind_amovingVehicleIsStillAutomotive() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: true, cycling: false, running: false,
+                                              walking: false, stationary: false), "automotive")
+    }
+
+    func testMotionKind_everySingleFlagKeepsItsOwnName() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: true, running: false,
+                                              walking: false, stationary: false), "cycling")
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: false, running: true,
+                                              walking: false, stationary: false), "running")
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: false, running: false,
+                                              walking: true, stationary: false), "walking")
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: false, running: false,
+                                              walking: false, stationary: true), "still")
+    }
+
+    func testMotionKind_nothingSetIsTheEmptyStringTheCallersSkipOn() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: false, running: false,
+                                              walking: false, stationary: false), "",
+                       "an activity with no flag is not a transition and both callers drop it")
+    }
+
+    func testMotionKind_everyFlagAtOnceStillResolvesToOneAnswer() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: true, cycling: true, running: true,
+                                              walking: true, stationary: true), "still",
+                       "junk in is one answer out, never a crash and never two")
+    }
+
+    func testMotionKind_isPureAndAgreesWithItselfAcrossConcurrentCalls() {
+        // One slot per iteration, so the assertion needs no lock of its own.
+        var out = [String](repeating: "", count: 200)
+        out.withUnsafeMutableBufferPointer { buf in
+            DispatchQueue.concurrentPerform(iterations: buf.count) { i in
+                buf[i] = TdGeoPlugin.motionKind(automotive: true, cycling: false, running: false,
+                                                walking: false, stationary: true)
+            }
+        }
+        XCTAssertEqual(Set(out), ["still"], "same input, same answer, from any thread")
+    }
+
+    // MARK: - A position's age is part of the position (owner 2026-09-19)
+
+    private func locAged(_ secondsAgo: TimeInterval) -> CLLocation {
+        CLLocation(coordinate: CLLocationCoordinate2D(latitude: 39.0456577, longitude: -95.7151106),
+                   altitude: 0, horizontalAccuracy: 10, verticalAccuracy: 10,
+                   timestamp: Date(timeIntervalSinceNow: -secondsAgo))
+    }
+
+    func testStaleMsFor_aFreshPositionCarriesNoAgeAtAll() {
+        XCTAssertNil(TdGeoPlugin.staleMsFor(locAged(1)),
+                     "absent means fresh, which is also how every pre-build row reads")
+    }
+
+    func testStaleMsFor_anHourOldLastKnownPositionSaysSo() {
+        let stale = TdGeoPlugin.staleMsFor(locAged(3600))
+        XCTAssertNotNil(stale)
+        XCTAssertEqual(stale ?? 0, 3_600_000, accuracy: 5_000)
+    }
+
+    func testStaleMsFor_theBoundaryIsTheSameFiveMinutesThePingAlreadyUses() {
+        let now = Date()
+        let exactly = CLLocation(coordinate: CLLocationCoordinate2D(latitude: 39.0, longitude: -95.7),
+                                 altitude: 0, horizontalAccuracy: 10, verticalAccuracy: 10,
+                                 timestamp: now.addingTimeInterval(-TdGeoPlugin.blindPingStaleMsForTest / 1000))
+        XCTAssertNil(TdGeoPlugin.staleMsFor(exactly, now: now), "exactly at the line is not over it")
+        let justOver = CLLocation(coordinate: CLLocationCoordinate2D(latitude: 39.0, longitude: -95.7),
+                                  altitude: 0, horizontalAccuracy: 10, verticalAccuracy: 10,
+                                  timestamp: now.addingTimeInterval(-(TdGeoPlugin.blindPingStaleMsForTest / 1000) - 1))
+        XCTAssertNotNil(TdGeoPlugin.staleMsFor(justOver, now: now))
+    }
+
+    func testStaleMsFor_aClockSkewedFuturePositionIsNotStale() {
+        XCTAssertNil(TdGeoPlugin.staleMsFor(locAged(-600)),
+                     "a negative age is a clock that moved, never a reason to drop a position")
+    }
+
+    func testEvent_aStalePositionRidesAlongMarked_andAFreshOneIsUnmarked() {
+        let stale = plugin.eventForTest(type: "fix", loc: locAged(3600))
+        XCTAssertEqual(stale["type"] as? String, "fix")
+        XCTAssertNotNil(stale["lat"], "a stale fix still carries where the phone WAS, for the map")
+        XCTAssertNotNil(stale["staleMs"], "Jack's 11 replayed shop coordinates, each one marked now")
+        let fresh = plugin.eventForTest(type: "fix", loc: locAged(2))
+        XCTAssertNil(fresh["staleMs"], "nothing changes for a position the receiver just gave us")
+    }
+
+    func testEvent_withNoPositionAtAllIsStillAWellFormedRowAndNeverStale() {
+        let ev = plugin.eventForTest(type: "app-active", loc: nil)
+        XCTAssertEqual(ev["type"] as? String, "app-active")
+        XCTAssertNotNil(ev["ts"])
+        XCTAssertNil(ev["staleMs"])
+        XCTAssertNil(ev["lat"])
+    }
+
+    func testEvent_theTimestampIsStillTheMomentObserved_notThePositionsOwn() {
+        // The age is reported, never substituted: ts stays the wall clock so
+        // the buffer, the flush and the server's ordering are untouched, and
+        // the READER decides what a stale position is worth.
+        let before = Date().timeIntervalSince1970 * 1000
+        let ev = plugin.eventForTest(type: "fix", loc: locAged(7200))
+        let after = Date().timeIntervalSince1970 * 1000
+        let ts = ev["ts"] as? Double ?? 0
+        XCTAssertGreaterThanOrEqual(ts, before)
+        XCTAssertLessThanOrEqual(ts, after)
+    }
 }
