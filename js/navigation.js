@@ -90,6 +90,9 @@ function goPg(id){
   if(id==='pg-money')renderMoneyPage();
   if(id!=='pg-est-generic'){window._wakeLockRelease&&window._wakeLockRelease();}
   if(id==='pg-client-hub')renderClientHubPage();
+  // Tim's dock re-reads the screen he just landed on. What he found on the last
+  // page is not true on this one, and a stale pill is worse than no pill.
+  if(typeof timDockRefresh==='function')timDockRefresh();
 }
 
 // ── REPAINT WHAT IS ON SCREEN, WITHOUT NAVIGATING TO IT ─────────────────────

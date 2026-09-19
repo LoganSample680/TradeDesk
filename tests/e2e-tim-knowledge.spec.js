@@ -1,0 +1,542 @@
+// @ts-check
+// ── What Tim knows ───────────────────────────────────────────────────────────
+//
+// Owner direction 2026-09-19 reversed half of the 2026-09-17 rule: Tim may hold
+// trade knowledge now. It kept the other half, and these tests exist to hold
+// THAT line, because it is the one a customer was promised: everything below
+// runs with no network, no key and no model, which is why the whole file is
+// pure evaluation against js/tim-knowledge.js.
+//
+// The other thing every test here is protecting: Tim states where a line came
+// from, in the contractor's own words, and he never silently changes a number
+// the contractor said.
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+
+// The materials sentence the owner wrote the feature for, said the way he said
+// it: gauges, degrees, packs and counts, no units and no punctuation to help.
+const ROUGH_IN = 'Two rolls of 12-2 and three of 14-2, one 6-3 for the range. '
+  + 'Two hundred amp panel, forty space, dozen twenty amp singles. '
+  + 'Box of single gangs and staples. '
+  + 'Four inch wyes, six forty fives and four twenty two and a halfs, eighty foot of three inch. '
+  + 'Twenty eight squares of architectural, six rolls of synthetic.';
+
+const PAINT_JOB = 'T and M for the Whitfields, three days. Second floor, so scaffold on the west side. '
+  + 'Gutters come off first and go back after. Five gallons of Duration in Iron Ore and a case of caulk.';
+
+// A book the size the feature is actually used at. The rare-word weighting in
+// timBookLines only means anything against a real spread of lines, so a two row
+// book would prove nothing.
+const BOOK = [
+  { desc: 'Strip and repaint, west elevation', rate: 2180, unit: 'lot', n: 5 },
+  { desc: 'Remove and reset gutters', rate: 340, unit: 'lot', n: 3 },
+  { desc: 'Body and trim, two coats', rate: 0.78, unit: 'sq ft', n: 9 },
+  { desc: 'Prep and pressure wash', rate: 320, unit: 'lot', n: 11 },
+  { desc: 'Replace rotted trim', rate: 25.65, unit: 'lin ft', n: 6 },
+  { desc: 'Strip failed paint', rate: 1.15, unit: 'sq ft', n: 4 },
+  { desc: 'Caulk windows and doors', rate: 14, unit: 'ea', n: 3 },
+  { desc: 'Paint front door', rate: 180, unit: 'ea', n: 2 },
+  { desc: 'Stain and seal deck', rate: 2.1, unit: 'sq ft', n: 2 },
+  { desc: 'Replace damaged siding boards', rate: 38, unit: 'ea', n: 2 },
+  { desc: 'Haul off and dispose', rate: 150, unit: 'lot', n: 7 },
+  { desc: 'Mask windows and fixtures', rate: 95, unit: 'lot', n: 4 },
+];
+
+test.describe('tim knows the trade', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // ── Numbers, the way a tradesman says them ────────────────────────────────
+  test.describe('spoken numbers', () => {
+    test('a run of number words is one number', async () => {
+      const r = await page.evaluate(() => [
+        timSpokenNumber('two'), timSpokenNumber('twenty eight'), timSpokenNumber('two hundred'),
+        timSpokenNumber('forty'), timSpokenNumber('twenty two and a half'), timSpokenNumber('a dozen'),
+      ]);
+      expect(r).toEqual([2, 28, 200, 40, 22.5, 12]);
+    });
+
+    // THE WHOLE REASON THIS IS NOT A MODEL. "six forty fives" is a count and a
+    // part with nothing between them, and a plain left-to-right adder reads it
+    // as 51 and gets the line wrong. A ones word in front of a tens word cannot
+    // be one spoken number, so it is two, and that single rule carries the
+    // entire sentence below.
+    test('a count touching a part is two numbers, not one', async () => {
+      const r = await page.evaluate(() => timDigits(' six forty fives and four twenty two and a halfs '));
+      expect(r.trim()).toBe('6 45s and 4 22.5s');
+    });
+
+    test('the whole rough-in sentence comes out in digits', async () => {
+      const r = await page.evaluate(t => timDigits(_timkNorm(t)), ROUGH_IN);
+      expect(r).toContain('2 rolls of 12-2');
+      expect(r).toContain('3 of 14-2');
+      expect(r).toContain('200 amp panel 40 space');
+      expect(r).toContain('12 20 amp singles');
+      expect(r).toContain('80 foot of 3 inch');
+      expect(r).toContain('28 squares of architectural');
+    });
+
+    test('nothing, junk and a sentence with no numbers all survive', async () => {
+      const r = await page.evaluate(() => [
+        timSpokenNumber(''), timSpokenNumber(null), timSpokenNumber('banana'),
+        timDigits(''), timDigits(null), timDigits('strip the south wall'),
+      ]);
+      expect(r).toEqual([null, null, null, '', '', 'strip the south wall']);
+    });
+  });
+
+  // ── Materials ─────────────────────────────────────────────────────────────
+  test.describe('materials, in the units the app already prices in', () => {
+    test('twelve items across three trades, each with the count he said', async () => {
+      const r = await page.evaluate(t => {
+        const m = timMaterials(t);
+        return {
+          n: m.length,
+          trades: timTradesOn(m).sort(),
+          rows: m.map(x => [x.id, x.qty, x.unit, x.label]),
+        };
+      }, ROUGH_IN);
+      expect(r.n).toBe(12);
+      expect(r.trades).toEqual(['electrical', 'plumbing', 'roofing']);
+      expect(r.rows).toContainEqual(['romex', 2, 'roll', '12-2 NM-B romex']);
+      expect(r.rows).toContainEqual(['romex', 3, 'roll', '14-2 NM-B romex']);
+      expect(r.rows).toContainEqual(['romex', 1, 'roll', '6-3 NM-B romex']);
+      expect(r.rows).toContainEqual(['panel', 1, 'ea', '200 A main lug panel']);
+      expect(r.rows).toContainEqual(['breaker', 12, 'ea', '20 A single pole breaker']);
+      expect(r.rows).toContainEqual(['fitting-deg', 6, 'ea', '4 in PVC wye, 45 degree']);
+      expect(r.rows).toContainEqual(['fitting-deg', 4, 'ea', '4 in PVC wye, 22.5 degree']);
+      expect(r.rows).toContainEqual(['shingle', 28, 'square', 'Architectural shingles']);
+    });
+
+    // The size said once in front of two counted parts is the size, not an
+    // eleventh fitting. "Four inch wyes, six forty fives and four twenty two
+    // and a halfs" is ten fittings, not eleven.
+    test('a size stated once is not counted as its own line', async () => {
+      const n = await page.evaluate(t => timMaterials(t).filter(m => m.id === 'wye').length, ROUGH_IN);
+      expect(n).toBe(0);
+    });
+
+    // Every unit here has to exist in _UNITS_BY_TRADE / _UNITS_EXTRA. Tim does
+    // not get to invent a unit, because a unit the rest of the app cannot price
+    // in is a line that cannot be edited anywhere else.
+    test('every unit is one the app already carries', async () => {
+      const bad = await page.evaluate(t => {
+        const known = new Set([].concat(
+          ...Object.values(_UNITS_BY_TRADE), _UNITS_EXTRA, _UNITS_COMMON, ['d', 'items'],
+        ).map(u => String(u).toLowerCase()));
+        return timMaterials(t).map(m => m.unit).filter(u => !known.has(String(u).toLowerCase()));
+      }, ROUGH_IN + ' ' + PAINT_JOB);
+      expect(bad).toEqual([]);
+    });
+
+    test('a count buys what the counter sells it in', async () => {
+      const r = await page.evaluate(t => {
+        const m = timMaterials(t);
+        const by = id => timLineFigures(m.find(x => x.id === id));
+        return { shingle: by('shingle'), romex: by('romex'), pvc: by('pvc-bare'), box: by('box') };
+      }, ROUGH_IN);
+      expect(r.shingle).toEqual({ qtyLabel: '84 bundles', packNote: '28 squares at 3 bundles' });
+      expect(r.romex).toEqual({ qtyLabel: '2 rolls', packNote: '250 ft' });
+      expect(r.pvc).toEqual({ qtyLabel: '80 lin ft', packNote: 'Eight 10 ft lengths' });
+      expect(r.box).toEqual({ qtyLabel: '1 box', packNote: 'of 100' });
+    });
+
+    // RULE 2 OF THE FILE HEADER. His own figures disagree, Tim says both and
+    // changes neither. A man who finds the app quietly editing his counts stops
+    // reading the list, and an unread list is worse than no list.
+    test('when his numbers disagree, both are said and neither is changed', async () => {
+      const r = await page.evaluate(t => {
+        const m = timMaterials(t);
+        return { notes: timCoverage(m), underlay: m.find(x => x.id === 'underlay').qty };
+      }, ROUGH_IN);
+      expect(r.notes.length).toBe(1);
+      expect(r.notes[0].line).toContain('84 bundles');
+      expect(r.notes[0].line).toContain('covers 60 squares');
+      expect(r.notes[0].line).toContain('I left it as you said it');
+      expect(r.underlay).toBe(6);   // untouched, which is the point
+    });
+
+    test('an empty prompt is an empty list, never a crash', async () => {
+      const r = await page.evaluate(() => [
+        timMaterials('').length, timMaterials(null).length, timMaterials(undefined).length,
+        timCoverage(null).length, timCoverage([]).length,
+      ]);
+      expect(r).toEqual([0, 0, 0, 0, 0]);
+    });
+  });
+
+  // ── The order the work happens in ─────────────────────────────────────────
+  test.describe('work order', () => {
+    test('a scope said backwards comes out forwards', async () => {
+      const r = await page.evaluate(() => timOrderScope([
+        'Haul off debris daily',
+        'Prime bare wood, two finish coats',
+        'Set scaffold on the west side',
+        'Strip failed paint',
+      ]).map(s => s.text));
+      expect(r).toEqual([
+        'Set scaffold on the west side',
+        'Strip failed paint',
+        'Prime bare wood, two finish coats',
+        'Haul off debris daily',
+      ]);
+    });
+
+    // Stable inside a stage: two steps Tim puts in the same stage keep the order
+    // the contractor gave them, because at that point he knows the job and Tim
+    // does not. Sorting is not rewriting.
+    test('two steps in the same stage keep his order', async () => {
+      const r = await page.evaluate(() => timOrderScope([
+        'Strip failed paint on the south elevation',
+        'Strip failed paint on the west elevation',
+      ]).map(s => s.text));
+      expect(r[0]).toContain('south');
+      expect(r[1]).toContain('west');
+    });
+
+    test('a step Tim cannot place holds its own position instead of being swept to one end', async () => {
+      const r = await page.evaluate(() => timOrderScope([
+        'Set scaffold',
+        'Call the inspector about the meter',
+        'Haul off debris',
+      ]).map(s => s.text));
+      expect(r[1]).toBe('Call the inspector about the meter');
+    });
+
+    test('a list already in order comes back identical', async () => {
+      const r = await page.evaluate(() => {
+        const l = ['Set scaffold', 'Strip failed paint', 'Prime and two coats', 'Haul off debris'];
+        return timOrderScope(l).map(s => s.text);
+      });
+      expect(r).toEqual(['Set scaffold', 'Strip failed paint', 'Prime and two coats', 'Haul off debris']);
+    });
+
+    test('nothing, junk and objects without text are all handled', async () => {
+      const r = await page.evaluate(() => [
+        timOrderScope(null).length, timOrderScope([]).length, timOrderScope(['', '  ']).length,
+        timOrderScope([{}, { text: '' }]).length, timOrderScope('not an array').length,
+      ]);
+      expect(r).toEqual([0, 0, 0, 0, 0]);
+    });
+  });
+
+  // ── What the job drags in with it ─────────────────────────────────────────
+  test.describe('what he did not say', () => {
+    // The owner's test for this whole feature: would a 55 year old master read
+    // it and think "oh yeah, I forgot that", or would it annoy him? That is why
+    // it is worded as a correction with a reason, not a suggestion.
+    test('second floor with no scaffold step is a correction, with the reason', async () => {
+      const r = await page.evaluate(t => timImplied(t, [{ text: 'Strip failed paint' }])
+        .find(x => x.id === 'access-scaffold'), PAINT_JOB);
+      expect(r.say).toBe('Scaffold goes up before anything is stripped');
+      expect(r.because).toBe('You never said scaffold up first. It has to be.');
+      expect(r.hours).toBe(6);
+      expect(r.stage).toBe('access');
+    });
+
+    test('a job that already has scaffold on it gets told nothing', async () => {
+      const r = await page.evaluate(t => timImplied(t, [{ text: 'Set scaffold, west side' }])
+        .some(x => x.id === 'access-scaffold'), PAINT_JOB);
+      expect(r).toBe(false);
+    });
+
+    test('gutters become two steps, at the two ends of the job', async () => {
+      const r = await page.evaluate(t => {
+        const g = timImplied(t, [{ text: 'Strip failed paint' }]).find(x => x.id === 'protect-gutters');
+        const order = timOrderScope([
+          { text: 'Strip failed paint' },
+          { text: g.step, stage: g.stage },
+          { text: g.pairs.step, stage: g.pairs.stage },
+        ]).map(s => s.text);
+        return { because: g.because, order };
+      }, PAINT_JOB);
+      expect(r.because).toBe('Off first, back on last, the way you said');
+      expect(r.order).toEqual(['Remove gutters', 'Strip failed paint', 'Rehang gutters']);
+    });
+
+    test('a rule he waved off on this job does not come back on it', async () => {
+      const r = await page.evaluate(t => timImplied(t, [{ text: 'Strip failed paint' }],
+        { rejected: ['access-scaffold'] }).some(x => x.id === 'access-scaffold'), PAINT_JOB);
+      expect(r).toBe(false);
+    });
+
+    test('a quiet job gets told nothing at all', async () => {
+      const r = await page.evaluate(() => timImplied('Replace the kitchen faucet', [{ text: 'Install faucet' }]));
+      expect(r).toEqual([]);
+    });
+  });
+
+  // ── Finding the line in his own book ──────────────────────────────────────
+  test.describe('his own book', () => {
+    // "gutters come off first and go back after" is plainly "Remove and reset
+    // gutters" and scores 0.33 on a word count, which is why spkServices misses
+    // it. Weighing the words against HIS book, where "gutters" appears in one
+    // line out of twelve, finds it. That weighting is the only learned thing in
+    // the file, and it is learned from the book he filled.
+    test('a line is found by the word that can only mean that line', async () => {
+      const r = await page.evaluate(([t, b]) => timBookLines(t, b, []).map(x => x.desc), [PAINT_JOB, BOOK]);
+      expect(r).toContain('Remove and reset gutters');
+      expect(r).toContain('Strip and repaint, west elevation');
+    });
+
+    test('a sentence about none of it finds none of it', async () => {
+      const r = await page.evaluate(b => timBookLines('what a morning', b, []), BOOK);
+      expect(r).toEqual([]);
+    });
+
+    test('an empty book falls through to the shipped catalogue, and says so', async () => {
+      const r = await page.evaluate(() => timBookLines('install a kitchen faucet', [],
+        [{ name: 'Install kitchen faucet', labor: 200, mat: 85 }]));
+      expect(r.length).toBe(1);
+      expect(r[0].from).toBe('catalog');
+      expect(r[0].rate).toBe(285);
+    });
+
+    test('no book and no catalogue is nothing, not a throw', async () => {
+      const r = await page.evaluate(() => [
+        timBookLines('anything', [], []).length, timBookLines('anything', null, null).length,
+        timBookLines(null, [{ desc: 'x', rate: 1 }], []).length,
+      ]);
+      expect(r).toEqual([0, 0, 0]);
+    });
+  });
+
+  // ── The whole spoken job ──────────────────────────────────────────────────
+  test.describe('one sentence, read back', () => {
+    const read = (said) => page.evaluate(([t, b]) => {
+      const j = timReadJob(t, { clients: [{ id: 1, name: 'Dana Whitfield' }], book: b, catalog: [] });
+      return {
+        client: j.client && j.client.name, type: j.type,
+        saidHours: j.saidHours, addedHours: j.addedHours, hours: j.hours,
+        fromBook: j.fromBook.map(s => [s.text, s.rate, s.why]),
+        implied: j.implied.map(r => r.say),
+        order: j.order.map(s => s.text),
+        supplies: j.materials.map(m => [m.label, m.qty, m.unit]),
+      };
+    }, [said, BOOK]);
+
+    test('the whole painting job, in work order, with the hours it really takes', async () => {
+      const j = await read(PAINT_JOB);
+      expect(j.client).toBe('Dana Whitfield');
+      expect(j.type).toBe('tm');
+      // Three days is 24 hours, plus 6 for setting and striking the scaffold.
+      expect(j.saidHours).toBe(24);
+      expect(j.addedHours).toBe(6);
+      expect(j.hours).toBe(30);
+      expect(j.order).toEqual([
+        'Set scaffold',
+        'Remove gutters',
+        'Strip and repaint, west elevation',
+        'Rehang gutters',
+        'Strike scaffold',
+        'Haul off debris and leave the site broom clean',
+      ]);
+    });
+
+    test('every priced line says where its price came from', async () => {
+      const j = await read(PAINT_JOB);
+      expect(j.fromBook.length).toBeGreaterThan(0);
+      j.fromBook.forEach(([, , why]) => expect(why).toBe('Your price, from the last five of these'));
+    });
+
+    // A rental is priced in days, and the days are the job's. Three days of work
+    // is three days on the yard ticket, not one.
+    test('the rental is as long as the job', async () => {
+      const j = await read(PAINT_JOB);
+      expect(j.supplies).toContainEqual(['Scaffold', 3, 'd']);
+    });
+
+    // A shopping list is a supply line, not a step. It is already below and it
+    // does not belong twice.
+    test('what he is buying does not become something he is doing', async () => {
+      const j = await read(PAINT_JOB);
+      expect(j.order.join(' | ')).not.toContain('gallons');
+      expect(j.supplies.map(s => s[0])).toContain('Duration exterior, Iron Ore');
+    });
+
+    test('an empty sentence reads back as nothing, not as a job', async () => {
+      const r = await page.evaluate(() => {
+        const j = timReadJob('', { clients: [], book: [], catalog: [] });
+        return { order: j.order.length, mats: j.materials.length, hours: j.hours };
+      });
+      expect(r).toEqual({ order: 0, mats: 0, hours: 0 });
+    });
+
+    test('null and junk options do not throw', async () => {
+      const threw = await page.evaluate(() => {
+        try { timReadJob(null); timReadJob(undefined, null); timReadJob(42, {}); return false; }
+        catch (e) { return true; }
+      });
+      expect(threw).toBe(false);
+    });
+  });
+
+  // ── What he accepted stops being a guess ──────────────────────────────────
+  test.describe('learning, at the same bar the price book uses', () => {
+    test.beforeEach(async () => { await page.evaluate(() => { S.timLearned = {}; }); });
+
+    // n:1, exactly as _pbLearn treats a price. One acceptance is a contractor
+    // being agreeable on a Tuesday. Two is a habit.
+    test('one yes is not settled, two is', async () => {
+      const r = await page.evaluate(() => {
+        const a = timKnows('implied', 'access-scaffold');
+        timLearn('implied', 'access-scaffold', true);
+        const b = timKnows('implied', 'access-scaffold');
+        timLearn('implied', 'access-scaffold', true);
+        return { none: a, one: b, two: timKnows('implied', 'access-scaffold') };
+      });
+      expect(r).toEqual({ none: false, one: false, two: true });
+    });
+
+    // He is allowed to teach Tim to shut up, and it has to stick, or the feature
+    // becomes the thing he turns off.
+    test('two noes drop it for good, and timImplied stops offering it', async () => {
+      const r = await page.evaluate(t => {
+        timLearn('implied', 'access-scaffold', false);
+        timLearn('implied', 'access-scaffold', false);
+        const job = timReadJob(t, { clients: [], book: [], catalog: [] });
+        return { dropped: timDropped('implied', 'access-scaffold'),
+          offered: job.implied.some(r2 => r2.id === 'access-scaffold') };
+      }, PAINT_JOB);
+      expect(r).toEqual({ dropped: true, offered: false });
+    });
+
+    test('it rides on S, so it saves and syncs like every other setting', async () => {
+      const r = await page.evaluate(() => {
+        timLearn('implied', 'clean-haul', true);
+        return !!(S.timLearned && S.timLearned['implied:clean-haul']);
+      });
+      expect(r).toBe(true);
+    });
+
+    test('junk keys change nothing and throw nothing', async () => {
+      const r = await page.evaluate(() => {
+        timLearn(null, null, true); timLearn('', '', false);
+        return [timKnows(null, null), timDropped(undefined, undefined), Object.keys(S.timLearned).length];
+      });
+      expect(r).toEqual([false, false, 0]);
+    });
+  });
+
+  // ── The line between Tim and the code books ───────────────────────────────
+  //
+  // Owner 2026-09-19: Tim will be fed code books. js/code-engine.js is where
+  // those live, and this group is the fence between the two. It is here before
+  // the first dataset lands rather than after, because the failure it prevents
+  // is a contractor reading one of Tim's habits as something his inspector
+  // will hold him to.
+  test.describe('tim does not speak for a code book', () => {
+    // Everything in TIM_IMPLIED is sequence and habit. None of it is law, and
+    // the flag is what the screen uses to keep the two under separate headings.
+    test('every rule Tim owns is marked as trade knowledge, not code', async () => {
+      const r = await page.evaluate(() => TIM_IMPLIED.map(x => [x.id, x.source]));
+      expect(r.length).toBeGreaterThan(0);
+      r.forEach(([, source]) => expect(source).toBe('trade'));
+    });
+
+    test('and it survives into what the screen is handed', async () => {
+      const r = await page.evaluate(t => timImplied(t, [{ text: 'Strip failed paint' }])
+        .map(x => x.source), PAINT_JOB);
+      expect(r.length).toBeGreaterThan(0);
+      r.forEach(source => expect(source).toBe('trade'));
+    });
+
+    // None of Tim's copy may cite a section, name a code family, or claim a
+    // requirement. "It has to be" is a fact about the sequence of work;
+    // "NEC 210.52 requires" is a different kind of claim entirely and does not
+    // belong in a hand-written table.
+    test('nothing Tim says cites a code, a section or a requirement', async () => {
+      const bad = await page.evaluate(() => {
+        const out = [];
+        TIM_IMPLIED.forEach(r => {
+          const copy = [r.say, r.because, r.step, r.pairs && r.pairs.step].filter(Boolean).join(' ');
+          if (/\b(NEC|IPC|IRC|IBC|UPC|NFPA|code|article|section|§)\b/i.test(copy)) out.push([r.id, copy]);
+          if (/\b(\d{3}\.\d+)\b/.test(copy)) out.push([r.id, copy]);
+        });
+        return out;
+      });
+      expect(bad).toEqual([]);
+    });
+
+    // THE GATE, and it is the engine's, not Tim's. No confirmed edition, an
+    // unverified dataset, or a rule that does not exist all return nothing, and
+    // Tim must not soften any of them into a rule of thumb. A plausible wrong
+    // answer on a permit is the worst thing this product could ship.
+    test('an unconfirmed edition gets no answer, not a guess', async () => {
+      const r = await page.evaluate(() => {
+        const was = S.codeEditions;
+        S.codeEditions = null;
+        try { return timCode('nec', 'dwelling-load', { sqft: 2200 }); }
+        finally { S.codeEditions = was; }
+      });
+      expect(r).toBeNull();
+    });
+
+    test('an unverified dataset gets no answer either', async () => {
+      const r = await page.evaluate(() => {
+        codeRegister({ family: 'tst', edition: '2099', verified: false,
+          rules: { thing: () => ({ ok: true, value: 42, items: [{ label: 'Should never appear', qty: 1 }] }) } });
+        return timCode('tst', 'thing', {}, { edition: '2099' });
+      });
+      expect(r).toBeNull();
+    });
+
+    test('a rule the edition does not have gets no answer', async () => {
+      const r = await page.evaluate(() => {
+        codeRegister({ family: 'tst2', edition: '2099', verified: true, rules: {} });
+        return timCode('tst2', 'missing-rule', {}, { edition: '2099' });
+      });
+      expect(r).toBeNull();
+    });
+
+    // When the engine DOES answer, Tim passes it through and adds nothing: the
+    // edition and the section ride along so the line can be told from his own,
+    // and no price is invented because his book prices it.
+    test('a verified answer comes through with its edition and citation, and no price', async () => {
+      const r = await page.evaluate(() => {
+        codeRegister({ family: 'tst3', edition: '2023', verified: true, rules: {
+          circuits: () => ({ ok: true, value: 2, unit: 'circuits', cite: '210.11(C)(1)',
+            items: [{ label: '20 A small appliance circuit', qty: 2, unit: 'ea', why: 'Two required' }],
+            assumed: ['kitchen'], warnings: [] }),
+        } });
+        return timCode('tst3', 'circuits', {}, { edition: '2023' });
+      });
+      expect(r.source).toBe('code');
+      expect(r.edition).toBe('2023');
+      expect(r.cite).toBe('210.11(C)(1)');
+      expect(r.heading).toBe('TST3 2023');
+      expect(r.items).toEqual([{ label: '20 A small appliance circuit', qty: 2, unit: 'ea', why: 'Two required' }]);
+      expect(r.assumed).toEqual(['kitchen']);
+      // His book prices it. The code book only says it is needed.
+      r.items.forEach(i => expect(i).not.toHaveProperty('rate'));
+    });
+
+    test('no engine on the page at all is silence, not a throw', async () => {
+      const r = await page.evaluate(() => {
+        const was = window.codeEval;
+        window.codeEval = undefined;
+        try { return timCode('nec', 'anything', {}); }
+        catch (e) { return 'threw'; }
+        finally { window.codeEval = was; }
+      });
+      expect(r).toBeNull();
+    });
+
+    test('junk arguments are silence too', async () => {
+      const r = await page.evaluate(() => [
+        timCode(null, null), timCode('', ''), timCode('nec'), timCode(undefined, undefined, undefined, undefined),
+      ]);
+      expect(r).toEqual([null, null, null, null]);
+    });
+  });
+
+  test('no console errors, tim-knowledge.js', async () => {
+    assertNoErrors(page, 'tim-knowledge.js');
+  });
+});

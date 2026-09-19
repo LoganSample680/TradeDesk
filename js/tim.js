@@ -3,20 +3,24 @@
 // "Tim, show me my books for last year."
 // "Tim, T and M for the Delaneys, about eight hours, water heater replacement."
 //
-// Owner direction 2026-09-17: Tim is an INTERFACE, not an intelligence. He does
-// the typing and the walking, nothing else. Every sentence he understands
-// resolves against something the app already holds: a screen in the table
-// below, a year in the books, a customer in the customer list, a service in the
-// price book. That is string matching, so he runs in a basement with no signal,
-// costs nothing per command, and nothing said to him ever leaves the phone.
+// Owner direction 2026-09-17: Tim runs on the phone. Every sentence he
+// understands resolves against something the app already holds: a screen in the
+// table below, a year in the books, a customer in the customer list, a service
+// in the price book. That is string matching, so he runs in a basement with no
+// signal, costs nothing per command, and nothing said to him ever leaves the
+// phone. That last part is a promise made to a real customer and nothing in
+// this file may break it.
 //
-// He owns no trade knowledge of his own and must not grow any. What a repipe
-// drags in with it (isolation valves, gas pipe work, a permit) is the price
-// book's job, written once at setup and priced by the contractor, never guessed
-// here at 7am. js/estimate-speak.js makes the same argument for the same reason
-// and Tim is that file's front door, not a replacement for it (7.3).
+// Owner direction 2026-09-19, which amends the above: "I want Tim to be his own
+// AI that knows this shit, we're basically training a local sandbox model." He
+// may now hold trade knowledge, and it lives in js/tim-knowledge.js, offline
+// and pure like everything else. A price book can say what scaffold costs; it
+// cannot say scaffold goes up before anything is stripped, and that ordering is
+// the part the owner asked for by name. js/tim-nudge.js decides when he is
+// allowed to interrupt, and the bar is a dollar, a percentage or a law.
 //
-// Everything below is pure except timRun and openTim, the two that touch the app.
+// This file is the screen. Everything above the dock section is pure; timRun,
+// openTim and the dock are the parts that touch the app.
 
 // Where he can take you. `say` is every way a contractor actually asks for the
 // screen, longest phrase winning, so "time log" cannot be eaten by "log".
@@ -182,18 +186,591 @@ function timRun(text){
   return p;
 }
 
-// ── The box ──────────────────────────────────────────────────────────────────
-// Centered modal, the app's one convention for a prompt (7.3). The mic is the
-// same on-device one every note field already uses (js/voice.js): the words are
-// transcribed on the phone, so a sentence said in a client's kitchen stays in
-// the kitchen.
 
-function _timClose(){document.getElementById('_tim-ov')?.remove();}
+// ── The mark ─────────────────────────────────────────────────────────────────
+//
+// One shape, five sizes, and it has to survive all of them: 16px inline in a
+// row of scope, 20px beside a line of his own copy, 26px in the sheet header,
+// 34px on the dock, 58px when the dock is the only thing on screen.
+//
+// The first version was a face and it read as a cartoon, which is the one thing
+// this product cannot afford. So the man stays but he is a silhouette, brass
+// instead of safety yellow, on a warm paper disc with a hairline ring. At 16px
+// it resolves to a brass bar on a pale disc, which is still a hardhat, and at
+// 58px it is still not a drawing of a person's face.
+//
+// It is built as a string rather than a component because the app has no
+// framework and this has to drop into innerHTML from six different files.
+function timMark(size,opts){
+  const s=Math.max(12,Math.round(Number(size)||24));
+  const o=opts||{};
+  const ring=o.onInk?'rgba(245,239,226,.22)':'var(--tim-disc-edge,#D8D2C6)';
+  const disc=o.onInk&&o.flat?'rgba(245,239,226,.14)':'var(--tim-disc,#F4F1EA)';
+  return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 28 28" aria-hidden="true" '+
+    'style="flex-shrink:0;display:block'+(o.style?';'+o.style:'')+'">'+
+    '<circle cx="14" cy="14" r="13.4" fill="'+disc+'" stroke="'+ring+'" stroke-width="1"></circle>'+
+    '<path d="M7.4 25.4a6.7 6.7 0 0 1 13.2 0z" fill="#1B1612"></path>'+
+    '<ellipse cx="14" cy="15" rx="3.7" ry="4.2" fill="#1B1612"></ellipse>'+
+    '<path d="M9.2 12.5a4.8 4.8 0 0 1 9.6 0z" fill="var(--brass,#C9962F)"></path>'+
+    '<rect x="6.2" y="12.2" width="15.6" height="2.1" rx="1.05" fill="var(--brass,#C9962F)"></rect>'+
+    '<rect x="6.2" y="13.6" width="15.6" height="0.7" fill="var(--brass-deep,#9E7222)"></rect>'+
+    '<path d="M14 8.6v3.2" stroke="var(--brass-deep,#9E7222)" stroke-width="1"></path>'+
+  '</svg>';
+}
 
+// ── The dock ─────────────────────────────────────────────────────────────────
+//
+// Bottom right, above the tab bar, on every screen. The owner picked this over
+// a docked strip and an edge handle for one reason: it is the corner his app
+// already floats things in, so there is nothing to learn, and it takes no
+// vertical space on a page that is mostly list.
+//
+// The button never says anything. The pill above it does, and only when
+// js/tim-nudge.js can put a dollar, a percentage or a law on it. Nothing else
+// ever appears there: no greeting, no count of Tim's own output, no offer to
+// help. A man reaching for the corner is reaching for a number.
+
+let _timDockNudge=null;
+
+function timDockRender(){
+  const dock=document.getElementById('tim-dock');
+  if(!dock)return;
+  // No page up yet means the boot screen or the sign-in gate still is, and Tim
+  // has nothing to be right about until there is a job on screen. A crew member
+  // gets no dock either: everything Tim can name is money or a contract, and
+  // both sit behind the wall the nav already puts them behind.
+  const booted=!!document.querySelector('.pg.active');
+  const crew=(typeof _isEmployee!=='undefined')&&!!_isEmployee;
+  if(!booted||crew){dock.classList.remove('on');return;}
+  dock.classList.add('on');
+
+  const markEl=document.getElementById('tim-dock-mark');
+  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(34,{onInk:true});
+  _timDockLift(dock);
+
+  const top=(typeof timTopNudge==='function'&&typeof timJobSnapshot==='function')
+    ? timTopNudge(timJobSnapshot()) : null;
+  _timDockNudge=top;
+
+  const pill=document.getElementById('tim-dock-pill');
+  const badge=document.getElementById('tim-dock-badge');
+  if(pill){
+    if(top){
+      pill.querySelector('.tim-pill-line').textContent=top.line;
+      pill.querySelector('.tim-pill-fig').textContent=top.figure;
+      pill.classList.add('on');
+      pill.setAttribute('aria-label',top.line+', '+top.figure);
+    }else{
+      pill.classList.remove('on');
+      pill.removeAttribute('aria-label');
+    }
+  }
+  if(badge){
+    if(top){badge.textContent='1';badge.classList.add('on');}
+    else{badge.textContent='';badge.classList.remove('on');}
+  }
+}
+// ── Getting out of the way ───────────────────────────────────────────────────
+//
+// The estimate builder puts a full-width blue bar across the bottom of the
+// screen while lines are being added (`_geiRenderCartBar`), and the send bar
+// does the same once a proposal is ready. A round button floating at a fixed
+// height lands straight on top of them, which is two interactive controls in
+// the same place and a layout failure under 15.3.
+//
+// So the dock measures what is already down there and stands on it. Nothing
+// registers itself: a bar is whatever is fixed to the bottom of the screen and
+// currently visible, and a new one added later is handled without touching
+// this, which is the point of measuring rather than listing.
+const _TIM_BOTTOM_BARS=['gei-cart-bar','gei-send-bar','byo-mob-bar','drive-banner'];
+function _timDockLift(dock){
+  let floor=0;
+  _TIM_BOTTOM_BARS.forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    const cs=getComputedStyle(el);
+    if(cs.display==='none'||cs.visibility==='hidden'||cs.position!=='fixed')return;
+    const r=el.getBoundingClientRect();
+    // Pinned to the bottom of the viewport, not something fixed near the top.
+    if(r.height<=0||r.bottom<window.innerHeight-2)return;
+    if(r.height>floor)floor=r.height;
+  });
+  const tabs=document.getElementById('mobile-tabbar');
+  const onPhone=tabs&&getComputedStyle(tabs).display!=='none';
+  const base=onPhone?66:16;
+  dock.style.bottom=floor>0
+    ? ('calc('+(base+Math.round(floor))+'px + env(safe-area-inset-bottom,0px))')
+    : '';   // back to the stylesheet's own value
+}
+
+// Cheap enough to call from anywhere that changes the job. Coalesced to one
+// paint a frame so a burst of field edits does not re-read the price book
+// thirty times.
+let _timDockPending=false;
+function timDockRefresh(){
+  if(_timDockPending)return;
+  _timDockPending=true;
+  requestAnimationFrame(()=>{_timDockPending=false;try{timDockRender();}catch(_e){}});
+}
+
+// ── The sheet ────────────────────────────────────────────────────────────────
+//
+// A sheet over the page with the page still readable behind it, which is the
+// app's own bottom-sheet shell (js/jobs.js `_extendJob`, js/dashboard.js, and
+// four others): `.zmodal-overlay` for the scrim and hit target, a fixed panel
+// rounded at the top, and the rAF fade-and-slide on open (7.3, 8.4).
+//
+// This is a deliberate divergence from `.zmodal`, which is the app's CENTERED
+// prompt and is what Tim used to be. The reason it changed: a centered box
+// covers the thing it is talking about. Tim's entire job here is "there is no
+// scaffold on THIS proposal", and the man has to be able to see the proposal
+// while he reads it. So it sits at the bottom, over the page, with the page
+// still showing, which is exactly what the design called for.
+
+function _timClose(){
+  const ov=document.getElementById('_tim-ov');
+  if(!ov)return;
+  _timTalkStop(true);
+  ov.remove();
+}
+
+function _timSheet(id,inner){
+  // Replacing the sheet while the mic is live would leave the recogniser and
+  // the waveform timer running behind a panel that no longer exists. Stopping
+  // first is a no-op when nothing is listening.
+  _timTalkStop(true);
+  document.getElementById('_tim-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';ov.id='_tim-ov';
+  ov.style.alignItems='flex-end';ov.style.padding='0';
+  ov.onclick=e=>{if(e.target===ov)_timClose();};
+  const sheet=document.createElement('div');
+  sheet.id=id;
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);'+
+    'border-radius:var(--r-xl) var(--r-xl) 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.15);'+
+    'max-height:88vh;overflow-y:auto;overscroll-behavior:contain;'+
+    'padding:9px 0 calc(28px + env(safe-area-inset-bottom,0px));'+
+    'opacity:0;transform:translateY(16px);'+
+    'transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  sheet.innerHTML='<div style="width:36px;height:4px;border-radius:var(--r-pill);background:var(--border2);margin:0 auto 13px"></div>'+inner;
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+  return sheet;
+}
+
+function _timHeadHtml(sub){
+  return '<div style="display:flex;align-items:center;gap:9px;padding:0 16px 13px;border-bottom:1px solid var(--border)">'+
+    timMark(26)+
+    '<span style="flex:1;min-width:0">'+
+      '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">Tim</span>'+
+      '<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:1px">'+escHtml(sub||'Reading this job and your price book')+'</span>'+
+    '</span>'+
+    '<button type="button" onclick="_timClose()" aria-label="Close" style="width:28px;height:28px;border:0;border-radius:var(--r-pill);background:var(--bg2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">'+
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>'+
+    '</button>'+
+  '</div>';
+}
+
+// The field and the mic, pinned under whatever else the sheet is carrying.
+// Tapping the mic starts listening. It does not have to be held: the owner was
+// explicit that he would never hold a button on a job site, and a thumb that
+// slides off mid-sentence losing the sentence is how a feature dies.
+function _timAskHtml(){
+  const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
+    ? '<button type="button" id="_tim-mic" onclick="_timTalkToggle()" aria-label="Talk to Tim" '+
+      'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-md);background:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative">'+
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
+        '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
+        '<path d="M12 19v3"></path><path d="M8 22h8"></path></svg>'+
+        '<span style="position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:var(--r-pill);background:var(--hat);box-shadow:0 0 0 2px var(--bg);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:var(--ink)">T</span>'+
+      '</button>'
+    : '';
+  return '<div style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
+    '<input id="_tim-say" type="text" autocomplete="off" placeholder="Tell Tim what changed" '+
+      'style="flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 13px;border:0;border-radius:var(--r-md);background:var(--bg2);box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text)">'+
+    mic+
+  '</div>'+
+  '<div id="_tim-read" style="min-height:17px;font-size:12.5px;font-weight:600;color:var(--text3);padding:8px 16px 0"></div>';
+}
+
+function openTim(){
+  const snap=(typeof timJobSnapshot==='function')?timJobSnapshot():{};
+  const found=(typeof timNudges==='function')?timNudges(snap).slice(0,2):[];
+  // HE TAPPED BECAUSE OF A NUMBER, SO THE NUMBER IS THE FIRST THING ON THE
+  // SHEET. Not a greeting, not a menu: the figure, what it is, why Tim thinks
+  // so, and a button that does the whole job.
+  const cards=found.map((n,i)=>
+    '<div style="padding:13px 16px;border-bottom:1px solid var(--border)">'+
+      (i===0?'<div style="font-size:26px;font-weight:700;color:var(--text);letter-spacing:-.6px;font-variant-numeric:tabular-nums;margin-bottom:7px">'+escHtml(n.title)+'</div>':'')+
+      '<div style="font-size:13.5px;line-height:1.5;color:var(--text);margin-bottom:'+(n.why?'5px':'11px')+'">'+escHtml(n.what||n.line)+'</div>'+
+      (n.why?'<div style="font-size:12px;line-height:1.5;color:var(--text3);margin-bottom:11px">'+escHtml(n.why)+'</div>':'')+
+      '<div style="display:flex;gap:9px">'+
+        '<button type="button" onclick="_timTakeNudge('+escHtml(JSON.stringify(n.id))+')" style="flex:1;height:44px;border:0;border-radius:var(--r-md);background:var(--blue);color:#fff;font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer">'+escHtml(n.cta)+'</button>'+
+        '<button type="button" onclick="_timDropNudge('+escHtml(JSON.stringify(n.id))+')" style="height:44px;padding:0 15px;border:0;border-radius:var(--r-md);background:var(--bg);box-shadow:0 0 0 1px var(--border2);color:var(--text2);font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer">'+escHtml(n.alt)+'</button>'+
+      '</div>'+
+    '</div>').join('');
+
+  // Nothing found is not an empty state to apologise for. He opened the dock,
+  // so he wants to say something: give him the field and get out of the way.
+  const quiet=found.length?'':
+    '<div style="padding:15px 16px 3px;font-size:13px;line-height:1.5;color:var(--text2)">'+
+      'Nothing on this one worth stopping you for. Say what changed and I will put it where it goes.'+
+    '</div>';
+
+  _timSheet('_tim-sheet',_timHeadHtml(found.length?null:'Nothing to flag on this job')+cards+quiet+_timAskHtml());
+
+  const el=document.getElementById('_tim-say');
+  el?.addEventListener('input',_timPreview);
+  el?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();_timGo();}});
+  _timPreview();
+  // No autofocus. A keyboard covering the page he came here to look at is the
+  // opposite of the point, and the mic is the way in on a job site anyway.
+}
+
+// ── What he presses ──────────────────────────────────────────────────────────
+function _timTakeNudge(id){
+  const n=(typeof timNudges==='function')?timNudges(timJobSnapshot()).find(x=>x.id===id):null;
+  if(typeof timAccepted==='function')timAccepted(id);
+  _timClose();
+  if(!n)return;
+  if(id==='access-missing'&&typeof timAddAccess==='function')timAddAccess(n);
+  else if(id==='under-book'&&typeof _timTakeBookPrice==='function')_timTakeBookPrice();
+  else if(id==='still-owes'&&typeof goPg==='function')goPg('pg-money');
+  else if(id==='state-blocks'&&typeof _geiToStylePicker==='function')_geiToStylePicker();
+  else if(id==='runs-over'&&typeof _timRaiseHours==='function')_timRaiseHours(n);
+  timDockRefresh();
+}
+function _timDropNudge(id){
+  if(typeof timDismiss==='function')timDismiss(typeof _timJobKey==='function'?_timJobKey():'_',id);
+  _timClose();
+  timDockRefresh();
+}
+
+// ── What "Add it to the job" actually does ───────────────────────────────────
+//
+// Each of these writes through the screen's own path, never straight into the
+// data, so the rail, the gauge, the payroll cost and the autosave all react the
+// way they do when he types it himself.
+
+// The access equipment he did not put on a job that needs it. It lands as a
+// material line at what it costs, plus the hours to set and strike, because a
+// scaffold that is on the money and not on the clock still loses him the day.
+function timAddAccess(n){
+  const cost=Math.round(Number(n&&n.amount)||0)||_timFigureDollars(n);
+  if(!(cost>0))return;
+  if(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines)){
+    _geiLines.push({desc:'Scaffold'+(n&&n.what&&/elevation/.test(n.what)?', '+n.what.replace(/^.*?,\s*/,'').replace(/\.$/,''):''),
+      qty:1,unit:'lot',rate:cost,total:cost,notes:'Set and strike',
+      _byoSection:(typeof _byoWorkSection==='function')?_byoWorkSection():'Work'});
+    if(typeof renderGeiLines==='function')renderGeiLines();
+    if(typeof calcGeiTotal==='function')calcGeiTotal();
+  }
+  _timAddHours(6);
+  if(typeof _byoAutosave==='function')_byoAutosave();
+  if(typeof showToast==='function')showToast('Scaffold added, 6 hours on the clock','🔧',2600);
+}
+// The T&M page asks for DAYS and derives hours from them (_tmInputChange), so
+// hours are written through that field rather than into _tmEstHours directly.
+// Writing the variable would show the right total on a page whose own input
+// still said something else, and the next keystroke would undo it.
+function _timSetHours(h){
+  const el=document.getElementById('tm-i-days');
+  if(!el)return false;
+  const days=Math.round((Math.max(0,Number(h)||0)/8)*10)/10;
+  el.value=String(days);
+  if(typeof _tmInputChange==='function')_tmInputChange();
+  return true;
+}
+function _timHours(){
+  const d=parseFloat((document.getElementById('tm-i-days')||{}).value)||0;
+  return d*8;
+}
+function _timAddHours(h){return _timSetHours(_timHours()+(Number(h)||0));}
+// Put the line back to the price he already charges. His book is the authority,
+// which is the only reason this is a button and not a suggestion.
+function _timTakeBookPrice(){
+  const u=(typeof _timUnderBook==='function')?_timUnderBook():null;
+  if(!u||typeof _geiLines==='undefined')return;
+  const l=_geiLines[u.at-1];
+  if(!l)return;
+  l.rate=u.bookRate;
+  l.total=Math.round(u.bookRate*(Number(l.qty)||1));
+  if(typeof renderGeiLines==='function')renderGeiLines();
+  if(typeof calcGeiTotal==='function')calcGeiTotal();
+  if(typeof _byoAutosave==='function')_byoAutosave();
+  if(typeof showToast==='function')showToast('Line '+u.at+' is back at your price','🔧',2400);
+}
+// His own clock says these run long. Putting the hours up is his call, and the
+// figure is the one the clock produced, not a pad.
+function _timRaiseHours(n){
+  const add=Math.round(Number(n&&n.amount)||0)||0;
+  const extra=add>0?add:_timOverrunHours();
+  if(!(extra>0))return;
+  if(_timAddHours(extra)&&typeof _byoAutosave==='function')_byoAutosave();
+}
+function _timOverrunHours(){const o=(typeof _timOverrun==='function')?_timOverrun():null;return o?o.hours:0;}
+function _timFigureDollars(n){
+  const m=String((n&&n.figure)||'').replace(/[^0-9.]/g,'');
+  const v=parseFloat(m);
+  return isNaN(v)?0:Math.round(v);
+}
+
+// ── Tap once, talk, tap again ────────────────────────────────────────────────
+//
+// The owner: "wouldn't ever want to hold a mic." So this is a toggle, and while
+// it is running the sheet turns into the dark listening panel with his words on
+// it and a full-width Done talking button. Nothing he says is added to anything
+// until he reads it back and presses the button at the end.
+//
+// The transcription is js/voice.js, which is the on-device recogniser every
+// note field already uses. Nothing is uploaded and nothing is stored: the same
+// promise the rest of Tim makes.
+let _timTalking=false,_timHeard='',_timWaveTimer=null,_timTalkStart=0;
+
+function _timWaveHtml(t){
+  const n=44;
+  let out='';
+  for(let i=0;i<n;i++){
+    // A smooth envelope so the bar field reads as a voice rather than noise:
+    // it swells toward the middle and two slow waves ride over it. The last six
+    // are the live edge and sit dim, which is what makes it look like it is
+    // still arriving.
+    const x=i/(n-1);
+    const env=Math.sin(Math.PI*x);
+    const ride=0.55+0.45*Math.sin(t*2.1+i*0.42)*Math.cos(t*0.9+i*0.17);
+    const h=Math.max(6,Math.round(8+20*env*Math.abs(ride)));
+    out+='<span class="'+(i>=n-6?'edge':'')+'" style="height:'+h+'px"></span>';
+  }
+  return out;
+}
+
+function _timTalkPanel(){
+  const secs=Math.max(0,Math.round((Date.now()-_timTalkStart)/1000));
+  const clock=Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0');
+  return '<div id="_tim-listen" style="background:var(--ink);margin:0 0 -28px;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px))">'+
+    '<div style="display:flex;align-items:center;gap:9px;margin-bottom:12px">'+
+      timMark(22)+
+      '<span style="font-size:12px;font-weight:600;color:var(--text-cream)">Tim is listening</span>'+
+      '<span style="flex:1"></span>'+
+      '<span id="_tim-clock" style="font-size:11.5px;color:var(--text-cream-2);font-variant-numeric:tabular-nums">'+clock+'</span>'+
+    '</div>'+
+    '<div id="_tim-transcript" style="font-size:13.5px;line-height:1.55;color:var(--text-cream);margin-bottom:14px;min-height:42px"></div>'+
+    '<div class="tim-wave" id="_tim-wave">'+_timWaveHtml(0)+'</div>'+
+    '<button type="button" onclick="_timTalkToggle()" style="width:100%;height:52px;margin-top:16px;border:0;border-radius:var(--r-md);background:var(--text-cream);color:var(--ink);font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px">'+
+      '<span style="width:13px;height:13px;border-radius:3px;background:var(--c-red)"></span>Done talking</button>'+
+    '<div style="text-align:center;font-size:12px;color:var(--text-cream-2);margin-top:10px">Keep going as long as you want. Nothing is added until you approve it.</div>'+
+  '</div>';
+}
+
+function _timTalkToggle(){_timTalking?_timTalkStop():_timTalkBegin();}
+
+function _timTalkBegin(){
+  const el=document.getElementById('_tim-say');
+  if(!el)return;
+  _timTalking=true;_timHeard='';_timTalkStart=Date.now();
+  const sheet=document.getElementById('_tim-sheet');
+  if(sheet)sheet.insertAdjacentHTML('beforeend',_timTalkPanel());
+  const tick=()=>{
+    if(!_timTalking)return;
+    const t=(Date.now()-_timTalkStart)/1000;
+    const w=document.getElementById('_tim-wave');
+    if(w)w.innerHTML=_timWaveHtml(t);
+    const c=document.getElementById('_tim-clock');
+    if(c)c.textContent=Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
+  };
+  _timWaveTimer=setInterval(tick,110);
+  if(typeof _voiceStart==='function'){
+    _voiceStart(el,(joined,heard)=>{
+      _timHeard=joined;
+      const tr=document.getElementById('_tim-transcript');
+      if(tr)tr.textContent=joined?('"'+joined+'"'):'';
+    });
+  }
+}
+
+function _timTalkStop(silent){
+  if(!_timTalking){return;}
+  _timTalking=false;
+  if(_timWaveTimer){clearInterval(_timWaveTimer);_timWaveTimer=null;}
+  document.getElementById('_tim-listen')?.remove();
+  const finish=(text)=>{
+    const said=String(text||_timHeard||'').trim();
+    const el=document.getElementById('_tim-say');
+    if(el&&said)el.value=said;
+    if(silent||!said)return;
+    _timShowRead(said);
+  };
+  if(typeof _voiceStop==='function')Promise.resolve(_voiceStop()).then(finish).catch(()=>finish(''));
+  else finish('');
+}
+
+// ── What Tim made of it ──────────────────────────────────────────────────────
+//
+// Three headings and nothing else, because three is what he can check standing
+// up. What came off his own book, at his own prices. What Tim moved or added
+// and the sentence saying why. What it takes to do the work, in the four
+// categories his Supply List already uses.
+//
+// The button at the bottom is the only thing that changes the proposal. Up to
+// that point this is a thing to read.
+let _timJob=null;
+
+function _timShowRead(said){
+  const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
+  const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
+  const catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[trade]))?TRADE_JOBS[trade]:[];
+  const job=(typeof timReadJob==='function')?timReadJob(said,{
+    clients:(typeof clients!=='undefined'?clients:[]),book,catalog,trade,
+  }):null;
+  if(!job){_timGo();return;}
+  _timJob=job;
+
+  const money=n=>(typeof fmt==='function')?fmt(Math.round(n||0)):('$'+Math.round(n||0));
+  const micro=t=>'<div style="padding:13px 16px 9px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+t+'</div>';
+
+  const who=(job.client&&job.client.name)||'This job';
+  const kind=job.type==='tm'?'time and materials':'proposal';
+
+  let html=
+    '<div style="display:flex;align-items:center;gap:9px;padding:0 16px 13px;border-bottom:1px solid var(--border)">'+
+      timMark(20)+
+      '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text)">'+escHtml(who)+' · '+kind+'</span>'+
+      '<span style="font-size:11.5px;color:var(--text3);font-variant-numeric:tabular-nums;flex-shrink:0">'+job.hours+' hrs</span>'+
+    '</div>';
+
+  if(job.fromBook.length){
+    html+=micro('Straight off your price book')+
+      job.fromBook.map(s=>
+        '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-top:1px solid var(--border)">'+
+          '<span style="flex:1;min-width:0;font-size:13px;color:var(--text)">'+escHtml(s.text)+
+            '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(s.why)+'</span></span>'+
+          '<span style="font-size:13px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;flex-shrink:0">'+money(s.rate)+'</span>'+
+        '</div>').join('');
+  }
+
+  if(job.implied.length){
+    html+='<div style="background:#FFFDF7;border-top:1px solid var(--border);margin-top:6px">'+
+      '<div style="padding:13px 16px 8px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--c-amber-deep)">Tim put these in the right place</div>'+
+      job.implied.map((r,i)=>
+        '<div style="display:flex;gap:11px;padding:9px 16px;align-items:baseline;border-top:1px solid #F3E7CE">'+
+          '<span style="font-size:11.5px;font-weight:600;color:var(--text3);font-variant-numeric:tabular-nums;flex-shrink:0">'+(i+1)+'</span>'+
+          '<span style="flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.4">'+escHtml(r.say)+
+            '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(r.because)+'</span></span>'+
+        '</div>').join('')+
+      '<div style="height:11px"></div></div>';
+  }
+
+  if(job.materials.length){
+    const secs=[];
+    (typeof TIM_SUPPLY_SECTIONS!=='undefined'?TIM_SUPPLY_SECTIONS:[]).forEach(sec=>{
+      const rows=job.materials.filter(m=>m.section===sec.id);
+      if(!rows.length)return;
+      secs.push('<div style="padding:8px 16px 7px;background:'+sec.bg+';border-top:1px solid var(--border);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:'+sec.color+'">'+escHtml(sec.label)+'</div>'+
+        rows.map(m=>{
+          const f=timLineFigures(m);
+          return '<div style="display:flex;align-items:flex-start;gap:8px;padding:9px 16px;border-top:1px solid var(--border)">'+
+            '<span style="flex:1;min-width:0;font-size:12.5px;color:var(--text)">'+escHtml(m.label)+
+              (m.detail?'<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(m.detail)+'</span>':'')+
+            '</span>'+
+            '<span style="font-size:12px;color:var(--text3);font-variant-numeric:tabular-nums;flex-shrink:0;text-align:right">'+escHtml(f.qtyLabel)+
+              (f.packNote?'<span style="display:block;font-size:10px">'+escHtml(f.packNote)+'</span>':'')+
+            '</span>'+
+          '</div>';
+        }).join(''));
+    });
+    const trades=(typeof timTradesOn==='function')?timTradesOn(job.materials).length:1;
+    html+='<div style="display:flex;align-items:baseline;gap:7px;padding:13px 16px 4px">'+
+        '<span style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Supply list</span>'+
+        '<span style="flex:1"></span>'+
+        '<span style="font-size:11px;color:var(--text3)">'+job.materials.length+' item'+(job.materials.length===1?'':'s')+
+          (trades>1?', '+trades+' trades':'')+'</span>'+
+      '</div>'+secs.join('');
+  }
+
+  (job.coverage||[]).forEach(c=>{
+    html+='<div style="display:flex;align-items:flex-start;gap:9px;padding:12px 16px;border-top:1px solid var(--border)">'+
+      timMark(20)+
+      '<div style="font-size:12.5px;line-height:1.5;color:var(--text2)">'+escHtml(c.line)+'</div>'+
+    '</div>';
+  });
+
+  if(job.addedHours>0){
+    html+='<div style="display:flex;align-items:baseline;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border)">'+
+      '<span style="font-size:13px;font-weight:600;color:var(--text)">Time on the contract</span>'+
+      '<span style="font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums">'+job.saidHours+' hrs, plus '+job.addedHours+' for the access</span>'+
+    '</div>';
+  }
+
+  const nothing=!job.fromBook.length&&!job.implied.length&&!job.materials.length;
+  html+='<div style="display:flex;gap:9px;padding:13px 16px 0;border-top:1px solid var(--border)">'+
+    '<button type="button" onclick="_timAcceptJob()" '+(nothing?'disabled ':'')+
+      'style="flex:1;height:48px;border:0;border-radius:var(--r-md);background:var(--blue);color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer'+(nothing?';opacity:.45':'')+'">Looks right, add it</button>'+
+    '<button type="button" onclick="_timChangeOne()" style="height:48px;padding:0 16px;border:0;border-radius:var(--r-md);background:var(--bg);box-shadow:0 0 0 1px var(--border2);color:var(--text2);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">Change one</button>'+
+  '</div>';
+
+  if(nothing){
+    html+='<div style="padding:10px 16px 0;font-size:12.5px;line-height:1.5;color:var(--text3)">'+
+      'I could not place any of that against your book. Say it with the work in it, or add the line yourself and I will know it next time.</div>';
+  }
+
+  _timSheet('_tim-sheet',_timHeadHtml('What I made of it')+html);
+}
+
+// The only function here that changes the proposal.
+function _timAcceptJob(){
+  const job=_timJob;
+  if(!job)return;
+  let landed=0;
+
+  // SCOPE, IN THE ORDER THE WORK HAPPENS. _geiScopeChips is the app's own scope
+  // store and it keeps its array order on render, so putting the steps in it in
+  // work order IS the ordering (7.3: the existing store, pointed at new data).
+  if(typeof _geiScopeChips!=='undefined'&&Array.isArray(_geiScopeChips)&&job.order.length){
+    const want=job.order.map(s=>s.text);
+    const keep=_geiScopeChips.filter(l=>want.indexOf(l)<0);
+    _geiScopeChips.length=0;
+    want.concat(keep).forEach(l=>_geiScopeChips.push(l));
+    if(typeof _geiScopeNoScope!=='undefined')_geiScopeNoScope=false;
+    landed+=want.length;
+    ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>{if(typeof _renderScopeChips==='function')_renderScopeChips(id);});
+    if(typeof _geiRenderScopeCard==='function')_geiRenderScopeCard(_geiIsTM?'tm':'byo');
+  }
+
+  // The supply list rides on the bid record, which already saves and syncs, so
+  // it needs no store of its own (7.3).
+  if(job.materials.length&&typeof _geiEditBidId!=='undefined'&&_geiEditBidId&&typeof bids!=='undefined'){
+    const b=bids.find(x=>x.id===_geiEditBidId);
+    if(b){b.timSupply=JSON.parse(JSON.stringify(job.materials));landed+=job.materials.length;}
+  }
+
+  // The hours he said, plus what the access adds. Written the way the screen
+  // writes them so the rail, the gauge and the payroll cost all recompute.
+  if(job.hours>0)_timSetHours(job.hours);
+
+  // What he accepted stops being a guess. Two of these and Tim stops asking.
+  (job.implied||[]).forEach(r=>{if(typeof timLearn==='function')timLearn('implied',r.id,true);});
+  if(typeof _byoAutosave==='function')_byoAutosave();
+  _timJob=null;
+  _timClose();
+  timDockRefresh();
+  if(typeof showToast==='function')showToast(landed?('Added '+landed+' to this proposal'):'Nothing to add','🔧',2400);
+}
+
+// "Change one" is not a form. It puts him back on the page with the sheet gone,
+// because every one of these lines is already editable where it lives, and a
+// second editor for the same data is the thing 7.3 exists to stop.
+function _timChangeOne(){
+  _timJob=null;
+  _timClose();
+  if(typeof showToast==='function')showToast('Tap any line on the page to change it','🔧',2600);
+}
+
+// ── The typed path ───────────────────────────────────────────────────────────
+// Unchanged from the box this sheet replaced: a sentence that names a screen or
+// a customer still just goes there.
 function _timPreview(){
   const el=document.getElementById('_tim-say');
   const out=document.getElementById('_tim-read');
-  const go=document.getElementById('_tim-go');
   if(!el||!out)return;
   const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
@@ -202,52 +779,18 @@ function _timPreview(){
   const line=timSay(p);
   out.textContent=line||(el.value.trim()?'Not sure what that is yet':'');
   out.style.color=line?'var(--text2)':'var(--text3)';
-  if(go)go.disabled=!line;
-  if(go)go.style.opacity=line?'1':'.45';
 }
 
 function _timGo(){
   const el=document.getElementById('_tim-say');
   const said=el?el.value:'';
+  if(!String(said||'').trim())return {text:'',kind:'none'};
+  // On an estimate he is describing work, not asking for a screen, so the read
+  // back comes first and the navigator is the fallback.
+  const onEstimate=!!document.getElementById('pg-est-generic')?.classList.contains('active');
+  if(onEstimate){_timShowRead(said);return {text:said,kind:'read'};}
   const p=timRun(said);
   if(p&&p.kind!=='none')_timClose();
-  else if(typeof showToast==='function')showToast('Say a screen, a year, or a bid','🔧',2600);
+  else if(typeof showToast==='function')showToast('Say a screen, a year, or what the work is','🔧',2600);
   return p;
-}
-
-function openTim(){
-  _timClose();
-  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_tim-ov';
-  ov.onclick=e=>{if(e.target===ov)_timClose();};
-  const box=document.createElement('div');box.className='zmodal';
-  box.style.animation='td-pg-enter .22s cubic-bezier(.22,1,.36,1) both';
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:2px">Tim</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Say where to go or what to build</div>'+
-    '<div style="position:relative;margin-bottom:8px">'+
-      '<input id="_tim-say" type="text" autocomplete="off" placeholder="show me my books for last year" '+
-        'style="width:100%;box-sizing:border-box;padding:12px 44px 12px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
-    '</div>'+
-    '<div id="_tim-read" style="min-height:18px;font-size:13px;font-weight:600;color:var(--text3);margin-bottom:12px"></div>'+
-    '<button id="_tim-go" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;opacity:.45">Go</button>'+
-    '<button id="_tim-cancel" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:10px">Cancel</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
-
-  const el=document.getElementById('_tim-say');
-  if(typeof _voiceAttach==='function'){
-    _voiceAttach('_tim-say',{
-      host:el&&el.parentElement,
-      style:'position:absolute;right:7px;top:7px;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border2);background:var(--bg);color:var(--text3)',
-      onText:_timPreview,
-      // Let go of the mic and he goes. Saying it out loud and then reaching for
-      // a button is two actions for one thought.
-      onDone:()=>{_timPreview();setTimeout(_timGo,120);},
-    });
-  }
-  el?.addEventListener('input',_timPreview);
-  el?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();_timGo();}});
-  document.getElementById('_tim-go').onclick=_timGo;
-  document.getElementById('_tim-cancel').onclick=_timClose;
-  _timPreview();
-  setTimeout(()=>el?.focus(),100);
 }

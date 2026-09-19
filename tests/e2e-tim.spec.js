@@ -1,11 +1,15 @@
 // @ts-check
 // ── Tim ─────────────────────────────────────────────────────────────────────
 //
-// Tim is an interface, not an intelligence (js/tim.js header). Every one of
-// these tests exists to hold that line: he resolves a sentence against the
-// screens the app already has, the years the books already hold, and the
-// customers and price book already on the phone. Nothing here calls anything,
-// which is the point, and is why the whole file runs offline.
+// This file is Tim's NAVIGATOR and his surface: the screens the app already
+// has, the years the books already hold, the customers and price book already
+// on the phone, and the dock and sheet he lives in. What he KNOWS about the
+// trade moved to js/tim-knowledge.js on 2026-09-19 and is tested next door in
+// e2e-tim-knowledge.spec.js.
+//
+// The line every one of these still holds, and the one that was a promise made
+// to a real customer: nothing here calls anything. No model, no key, no
+// network, which is why the whole file runs offline.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
 const CLIENTS = [
@@ -278,20 +282,46 @@ test.describe('tim', () => {
     });
   });
 
-  // ── The box ───────────────────────────────────────────────────────────────
-  test.describe('the box itself', () => {
+  // ── The sheet ─────────────────────────────────────────────────────────────
+  test.describe('the sheet itself', () => {
     test.afterEach(async () => { await page.evaluate(() => document.getElementById('_tim-ov')?.remove()); });
 
-    test('it is the app centered-modal convention, not a hand-rolled sheet', async () => {
+    // ASSERTION CHANGED 2026-09-19 (protocol 10.4).
+    //
+    // Was: Tim opened `.zmodal`, the app's CENTERED prompt. That was correct
+    // while Tim was a command box, because a command box is a prompt and 7.3
+    // says use the prompt we already have.
+    //
+    // Now: Tim's sentences are about the proposal on screen ("there is no
+    // scaffold on THIS job"), and a centered box covers the thing it is talking
+    // about. So he opens the app's OTHER existing shell, the bottom sheet that
+    // js/jobs.js `_extendJob` and five others already use: `.zmodal-overlay`
+    // for the scrim, a fixed panel rounded at the top, the same rAF slide.
+    // Still not hand-rolled, which is what the old assertion was protecting.
+    test('it is the app bottom-sheet shell, so the page stays readable behind it', async () => {
       const r = await page.evaluate(() => {
         openTim();
         const ov = document.getElementById('_tim-ov');
-        return { ov: !!ov, cls: ov?.className, box: !!ov?.querySelector('.zmodal'), input: !!document.getElementById('_tim-say') };
+        const sheet = document.getElementById('_tim-sheet');
+        const cs = sheet && getComputedStyle(sheet);
+        return {
+          ov: !!ov, cls: ov?.className,
+          sheet: !!sheet,
+          pinnedToBottom: cs?.position === 'fixed' && cs?.bottom === '0px',
+          roundedTopOnly: !!cs && parseFloat(cs.borderTopLeftRadius) > 0 && parseFloat(cs.borderBottomLeftRadius) === 0,
+          input: !!document.getElementById('_tim-say'),
+          // The page behind it is still there to read, which is the whole reason
+          // this is not a centered box any more.
+          pageStillUp: !!document.querySelector('.pg.active'),
+        };
       });
-      expect(r).toEqual({ ov: true, cls: 'zmodal-overlay', box: true, input: true });
+      expect(r).toEqual({
+        ov: true, cls: 'zmodal-overlay', sheet: true,
+        pinnedToBottom: true, roundedTopOnly: true, input: true, pageStillUp: true,
+      });
     });
 
-    test('opening it ten times without waiting leaves exactly one box', async () => {
+    test('opening it ten times without waiting leaves exactly one sheet', async () => {
       const n = await page.evaluate(() => {
         for (let i = 0; i < 10; i++) openTim();
         return document.querySelectorAll('#_tim-ov').length;
@@ -299,24 +329,28 @@ test.describe('tim', () => {
       expect(n).toBe(1);
     });
 
-    test('it reads the sentence back before it moves, and Go is dead until it can', async () => {
+    // ASSERTION CHANGED 2026-09-19 (protocol 10.4). The Go button is gone: the
+    // sheet's own buttons are the ones attached to a finding, and the typed
+    // path runs on Enter. What has NOT changed, and is what this test was
+    // really for, is that he sees what Tim understood before anything moves.
+    test('it reads the sentence back before it moves', async () => {
       const r = await page.evaluate(() => {
         openTim();
         const el = document.getElementById('_tim-say');
         const out = () => document.getElementById('_tim-read').textContent;
-        const go = () => document.getElementById('_tim-go').disabled;
-        const empty = { read: out(), dead: go() };
+        const empty = out();
         el.value = 'how about them chiefs';
         el.dispatchEvent(new Event('input', { bubbles: true }));
-        const lost = { read: out(), dead: go() };
+        const lost = out();
         el.value = 'show me my books for last year';
         el.dispatchEvent(new Event('input', { bubbles: true }));
-        const found = { read: out(), dead: go() };
-        return { empty, lost, found };
+        return { empty, lost, found: out() };
       });
-      expect(r.empty).toEqual({ read: '', dead: true });
-      expect(r.lost).toEqual({ read: 'Not sure what that is yet', dead: true });
-      expect(r.found).toEqual({ read: 'Open Books for 2025', dead: false });
+      expect(r).toEqual({
+        empty: '',
+        lost: 'Not sure what that is yet',
+        found: 'Open Books for 2025',
+      });
     });
 
     test('Enter runs it and closes the box', async () => {
@@ -344,17 +378,21 @@ test.describe('tim', () => {
       expect(open).toBe(true);
     });
 
-    test('cancel and the backdrop both close it', async () => {
+    // ASSERTION CHANGED 2026-09-19 (protocol 10.4). A sheet is dismissed by its
+    // close control and by the scrim, the way every other sheet in the app is,
+    // rather than by a full-width Cancel button underneath a Go button. Both
+    // ways out are still tested, which is what this was guarding.
+    test('the close control and the backdrop both close it', async () => {
       const r = await page.evaluate(() => {
         openTim();
-        document.getElementById('_tim-cancel').click();
-        const afterCancel = !!document.getElementById('_tim-ov');
+        document.querySelector('#_tim-sheet button[aria-label="Close"]').click();
+        const afterClose = !!document.getElementById('_tim-ov');
         openTim();
         const ov = document.getElementById('_tim-ov');
         ov.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        return { afterCancel, afterBackdrop: !!document.getElementById('_tim-ov') };
+        return { afterClose, afterBackdrop: !!document.getElementById('_tim-ov') };
       });
-      expect(r).toEqual({ afterCancel: false, afterBackdrop: false });
+      expect(r).toEqual({ afterClose: false, afterBackdrop: false });
     });
 
     // The preview and the runner both read elements that only exist while the
@@ -371,6 +409,181 @@ test.describe('tim', () => {
     test('the menu has a way in', async () => {
       const n = await page.locator('#mmi-tim').count();
       expect(n).toBe(1);
+    });
+
+    // The dock is the way in the owner picked (design 5b), over a docked strip
+    // and an edge handle, because it is the corner the app already floats
+    // things in. It has to exist exactly once and it has to open the sheet.
+    test('the dock is in the corner and opens the sheet', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timDockRender();
+        const dock = document.getElementById('tim-dock');
+        const btn = document.getElementById('tim-dock-btn');
+        btn.click();
+        return {
+          docks: document.querySelectorAll('#tim-dock').length,
+          shown: dock.classList.contains('on'),
+          hasMark: !!document.querySelector('#tim-dock-mark svg'),
+          opened: !!document.getElementById('_tim-sheet'),
+        };
+      });
+      expect(r).toEqual({ docks: 1, shown: true, hasMark: true, opened: true });
+    });
+  });
+
+  // ── The dock gets out of the way ──────────────────────────────────────────
+  //
+  // Rule 15.3: no two interactive controls may overlap, at 390px and at desktop
+  // width. A round button floating at a fixed height is exactly the shape of
+  // control that breaks that, and the estimate builder pins a full-width blue
+  // bar across the bottom of the screen the moment a line is added.
+  test.describe('the dock does not land on anything', () => {
+    test.afterEach(async () => {
+      await page.evaluate(() => {
+        document.getElementById('gei-cart-bar')?.remove();
+        document.getElementById('_tim-ov')?.remove();
+      });
+    });
+
+    test('it stands on a fixed bottom bar rather than on top of it', async () => {
+      const r = await page.evaluate(() => {
+        const bar = document.createElement('div');
+        bar.id = 'gei-cart-bar';
+        bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:64px;z-index:8000;background:#2D5DA8';
+        document.body.appendChild(bar);
+        timDockRender();
+        const d = document.getElementById('tim-dock-btn').getBoundingClientRect();
+        const b = bar.getBoundingClientRect();
+        return { overlaps: d.bottom > b.top, dockBottom: Math.round(d.bottom), barTop: Math.round(b.top) };
+      });
+      expect(r.overlaps).toBe(false);
+    });
+
+    test('with the bar gone it drops back to where the stylesheet puts it', async () => {
+      const r = await page.evaluate(() => {
+        const bar = document.createElement('div');
+        bar.id = 'gei-cart-bar';
+        bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:64px;z-index:8000';
+        document.body.appendChild(bar);
+        timDockRender();
+        const lifted = document.getElementById('tim-dock').style.bottom;
+        bar.remove();
+        timDockRender();
+        return { lifted, back: document.getElementById('tim-dock').style.bottom };
+      });
+      expect(r.lifted).not.toBe('');
+      expect(r.back).toBe('');
+    });
+
+    test('it never pushes the page sideways, at phone width or desktop', async () => {
+      for (const w of [390, 1280]) {
+        await page.setViewportSize({ width: w, height: 844 });
+        const over = await page.evaluate(() => {
+          timDockRender();
+          return document.documentElement.scrollWidth - window.innerWidth;
+        });
+        expect(over, 'horizontal bleed at ' + w + 'px').toBeLessThanOrEqual(1);
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
+    });
+
+    // Everything Tim can name is money or a contract, and both sit behind the
+    // wall the nav already puts them behind. A crew member gets no dock.
+    test('a crew member gets no dock', async () => {
+      const r = await page.evaluate(() => {
+        const was = _isEmployee;
+        _isEmployee = true;
+        try { timDockRender(); return document.getElementById('tim-dock').classList.contains('on'); }
+        finally { _isEmployee = was; timDockRender(); }
+      });
+      expect(r).toBe(false);
+    });
+
+    test('rendering it fifty times leaves one dock and throws nothing', async () => {
+      const r = await page.evaluate(() => {
+        let threw = false;
+        try { for (let i = 0; i < 50; i++) timDockRender(); } catch (e) { threw = true; }
+        return { threw, n: document.querySelectorAll('#tim-dock').length };
+      });
+      expect(r).toEqual({ threw: false, n: 1 });
+    });
+  });
+
+  // ── At the counter ────────────────────────────────────────────────────────
+  //
+  // Owner 2026-09-19: "we would never line item out all the shit on the client
+  // side but could do it on the contractor side so they could generate a list
+  // to check things off as they get it."
+  //
+  // The app already has that screen. What it did not have was anything on it
+  // for a trade that does not paint, which is why Tim's items fold into the
+  // Supply List's own sections rather than onto a second checklist (7.3).
+  test.describe('the pickup list carries what Tim took off the job', () => {
+    const SUPPLY = [
+      { id: 'romex', label: '12-2 NM-B romex', qty: 2, unit: 'roll', per: 250, section: 'wire', detail: 'Yellow jacket' },
+      { id: 'shingle', label: 'Architectural shingles', qty: 28, unit: 'square', per: 3, section: 'roof' },
+      { id: 'scaffold', label: 'Scaffold', qty: 3, unit: 'd', per: 1, section: 'rental' },
+    ];
+
+    test.afterEach(async () => {
+      await page.evaluate(() => { document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); });
+    });
+
+    test('a rough-in list shows up under its own trade heads', async () => {
+      const r = await page.evaluate(sup => {
+        const secs = [];
+        _timSupplyInto(secs, { timSupply: sup });
+        return secs.map(s => [s.id, s.items.length]);
+      }, SUPPLY);
+      expect(r).toContainEqual(['rental', 1]);
+      expect(r).toContainEqual(['wire', 1]);
+      expect(r).toContainEqual(['roof', 1]);
+    });
+
+    // A painter's own Rentals section is one section, not two with the same
+    // name, which is the whole reason the four ids were kept.
+    test('it merges into a section that is already there rather than repeating it', async () => {
+      const r = await page.evaluate(sup => {
+        const secs = [{ id: 'rental', label: 'Rentals', color: '#5B21B6', bg: '#F5F3FF',
+          items: [{ label: 'Pressure washer', qty: 1, unit: 'rental', cat: 'rental' }] }];
+        _timSupplyInto(secs, { timSupply: sup });
+        const rental = secs.filter(s => s.id === 'rental');
+        return { sections: rental.length, items: rental[0].items.map(i => i.label) };
+      }, SUPPLY);
+      expect(r.sections).toBe(1);
+      expect(r.items).toEqual(['Pressure washer', 'Scaffold']);
+    });
+
+    // 28 squares is not a thing that can be put on a truck. The counter sells
+    // bundles, so the pickup list says bundles and shows the conversion under it.
+    test('the count is what the counter sells, with the conversion under it', async () => {
+      const r = await page.evaluate(sup => {
+        const secs = [];
+        _timSupplyInto(secs, { timSupply: sup });
+        const sh = secs.find(s => s.id === 'roof').items[0];
+        return { qty: sh.qty, unit: sh.unit, detail: sh.detail };
+      }, SUPPLY);
+      expect(r).toEqual({ qty: '84', unit: 'bundles', detail: '28 squares at 3 bundles' });
+    });
+
+    // A bid written before Tim existed, and a bid that came back from sync with
+    // junk in it, must not take the supply list down on a man at a counter.
+    test('a bid with no list, or a corrupted one, changes nothing and throws nothing', async () => {
+      const r = await page.evaluate(() => {
+        const out = [];
+        let threw = false;
+        try {
+          [undefined, null, {}, { timSupply: null }, { timSupply: 'nope' },
+            { timSupply: [null, {}, { section: 'wire' }] }].forEach(b => {
+            const secs = [];
+            _timSupplyInto(secs, b);
+            out.push(secs.length);
+          });
+        } catch (e) { threw = true; }
+        return { threw, out };
+      });
+      expect(r).toEqual({ threw: false, out: [0, 0, 0, 0, 0, 0] });
     });
   });
 

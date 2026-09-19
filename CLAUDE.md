@@ -1976,9 +1976,8 @@ it runs with no signal, costs nothing per command, and nothing said to Tim
 leaves the phone. That last part is a promise made to a real customer, not a
 preference.
 
-- **Tim owns no trade knowledge and must not grow any.** What a repipe drags in
-  with it belongs in the price book, written once at setup and priced by the
-  contractor, never guessed at 7am. Same argument as `js/estimate-speak.js`.
+- ~~**Tim owns no trade knowledge and must not grow any.**~~ Reversed by the
+  owner on 2026-09-19, see §18.3. Everything else in this section stands.
 - **Every sentence Tim could not place gets logged.** That miss list is the
   vocabulary roadmap, written by real contractors instead of guessed. It is how
   he gets smarter without a model.
@@ -1987,3 +1986,43 @@ preference.
   (`pay_type` / `pay_rate` on `team_members`) is already per-person and already
   gated behind `_canViewComp()`. The BILL rate per person is a separate number
   from what you pay them and the two must never be conflated.
+  *Shipped 2026-09-19: `billRate` on the employee is the default that follows
+  them to the next job, `_estCrewRates` is the per-job override, `_tmHourlyBill`
+  is the one definition of what the job bills per hour.*
+
+### 18.3 Tim holds trade knowledge, and it stays on the phone (owner rule 2026-09-19)
+
+Owner, amending §18.2: *"I don't want an AI running this, I want Tim to be his
+own AI that knows this shit, we're basically training a local sandbox model."*
+
+**What is unchanged, and is not open for a trade-off:** no model call, no key,
+no network. A contractor in a crawlspace with no bars gets the same answer as
+one in the yard, it costs nothing per estimate, and nothing said to Tim leaves
+the device. That was a promise made to a real customer. Any proposal that ends
+in an API call is the wrong answer to whatever question prompted it.
+
+**What changed:** the old rule said the price book carries what a repipe drags
+in with it. That was right about PRICE and wrong about ORDER and EXISTENCE. A
+price book can say what scaffold costs. It cannot say scaffold goes up before
+anything is stripped, and it cannot know that a man who said "second floor" and
+never said "scaffold" is about to send a proposal that will not stand up. Those
+are the same on every job in the country, so they are Tim's, and they live in
+`js/tim-knowledge.js`.
+
+Three rules keep it honest, and a change that breaks one of them is a bug:
+
+1. **He says where it came from, in the contractor's own words.** Never "I
+   think", never a confidence score. "You never said scaffold up first. It has
+   to be." is a correction. "You might want scaffold" is noise.
+2. **He never silently changes a number the contractor said.** Where the
+   coverage math disagrees with his count, Tim states both and leaves what was
+   said (`timCoverage`). An app that quietly edits his counts is an app whose
+   lists stop being read.
+3. **Nothing he guessed is settled until it is accepted twice** (`timLearn` /
+   `timKnows`), the same n:1 bar `_pbLearn` uses on price. Refused twice and it
+   stops being offered at all: he is allowed to teach Tim to shut up.
+
+**When Tim may interrupt** (`js/tim-nudge.js`): only when he can name a dollar,
+a percentage or a law. No pill otherwise, and the dock stays silent. "Ask Tim
+anything", "Tim has 3 suggestions" and anything naming AI all fail that bar by
+construction and are covered by tests.

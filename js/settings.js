@@ -35,9 +35,28 @@ function renderPriceBookSettings(){
   const list=document.getElementById('pb-list');
   if(!list)return;
   const trades=_pbSettingsTrades();
+  // WHAT HE HAS ALREADY SENT IS A PRICE BOOK, it was just never read as one.
+  // Everything written before the book existed taught it nothing, so a man with
+  // fourteen proposals in the app still opened this screen to an empty list.
+  // Tim offers to read them, and only when there is something in them worth
+  // reading (js/tim-book.js).
+  let _offer='';
+  try{
+    const from=(typeof timBookNew==='function')?timBookNew():null;
+    if(from&&from.offer.length)_offer=
+      '<button type="button" onclick="openTimBook()" style="display:flex;align-items:center;gap:10px;width:100%;margin:0 0 14px;padding:13px 14px;border:0;border-radius:var(--rl);background:var(--bg2);box-shadow:0 0 0 1px var(--border);cursor:pointer;font-family:inherit;text-align:left">'+
+        (typeof timMark==='function'?timMark(24):'')+
+        '<span style="flex:1;min-width:0">'+
+          '<span style="display:block;font-size:13px;font-weight:700;color:var(--text)">'+from.offer.length+' price'+(from.offer.length===1?'':'s')+' in proposals you already sent</span>'+
+          '<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:2px">Read off '+from.proposals+' of them, with what you actually charged</span>'+
+        '</span>'+
+        '<span style="font-size:12px;font-weight:700;color:var(--blue);flex-shrink:0">Read them</span>'+
+      '</button>';
+  }catch(_e){_offer='';}
+
   if(!trades.length){
     if(tabs)tabs.innerHTML='';
-    list.innerHTML='<div style="padding:22px 4px;font-size:13px;color:var(--text3);line-height:1.6">'+
+    list.innerHTML=_offer+'<div style="padding:'+(_offer?'4px':'22px')+' 4px 22px;font-size:13px;color:var(--text3);line-height:1.6">'+
       'Nothing here yet, and that is on purpose. Write an estimate and the lines you use twice land here on their own, with what you charged.'+
       '</div>';
     return;
@@ -50,7 +69,7 @@ function renderPriceBookSettings(){
   }).join(''):'';
   const rows=(S.priceBook[_pbTradeTab]||[]).slice()
     .sort((a,b)=>((b.n||1)-(a.n||1))||String(b.last||'').localeCompare(String(a.last||'')));
-  list.innerHTML=rows.map((r,i)=>{
+  list.innerHTML=_offer+rows.map((r,i)=>{
     const used=(r.n||1)>=2?((r.n||1)+'x'):'once, not offered yet';
     return '<div style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
