@@ -40,12 +40,24 @@ const events = [
   { ts: new Date(T(16, 53)).toISOString(), type: 'motion', kind: 'onFoot' },
   { ts: new Date(T(6, 30)).toISOString(), type: 'app-active' },
 ];
+// Jittered by the reading's own instant (2026-09-18). These used to hand out
+// YARD.lat and HOME.lat byte-for-byte: the yard at 07:48 and again at 16:03
+// after a whole day at the customer, the same double to all seventeen digits.
+// The replay guard reads exact float equality as one cached CLLocation sent
+// twice, because two real readings never are, so the afternoon at the yard
+// looked like the morning played back and the drive home lost its destination.
+// Checked against production first rather than assumed: every byte-identical
+// repeat in location_pings over three weeks is a cache replay (one coordinate
+// 61 times across ten hours), never a genuine return.
+//
+// About a centimetre, deterministic, far below any fence.
+const jit = (v, ts, k) => v + (((Math.round(ts / 1000) * (k === 'lat' ? 2654435761 : 40503)) % 977) - 488) * 1e-9;
 const pings = [
   [T(7, 24) + 5000, HOME], [T(7, 48) + 5000, YARD], [T(7, 55), YARD],
   [T(7, 59) + 5000, YARD], [T(8, 24) + 5000, CUST], [T(12, 0), CUST],
   [T(15, 43) + 5000, CUST], [T(16, 3) + 5000, YARD], [T(16, 20), YARD],
   [T(16, 35) + 5000, YARD], [T(16, 53) + 5000, HOME], [T(18, 0), HOME],
-].map(([ts, p]) => ({ ts: new Date(ts).toISOString(), lat: p.lat, lon: p.lon, accuracy: 8 }));
+].map(([ts, p]) => ({ ts: new Date(ts).toISOString(), lat: jit(p.lat, ts, 'lat'), lon: jit(p.lon, ts, 'lon'), accuracy: 8 }));
 
 const fences = [
   { id: 'place-h', kind: 'home_office', name: '7402 SW 22nd Ct', lat: HOME.lat, lng: HOME.lon, commute: false },

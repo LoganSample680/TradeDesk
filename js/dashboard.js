@@ -444,6 +444,27 @@ function _paintDashVisitHold(el,rows){
         '</div>').join('');
   _dashHoldSync();
 }
+// The mileage half of the answer above. A time row's client_key is the leg's
+// id ('j-...') or that leg's dwell ('d-j-...'), so one strip of the 'd-' finds
+// the leg either way. Nothing is invented here: it only ever takes a personal
+// flag OFF, and only for the leg the answered row belongs to.
+function _visitAnswerUnpersonal(key){
+  try{
+    const leg=String(key||'').replace(/^d-/,'');
+    if(!leg||!Array.isArray(window.mileage))return 0;
+    let n=0;
+    mileage.forEach(m=>{
+      if(!m||!m.personal)return;
+      if(String(m.id)!==leg&&String(m.supplyRunKey||'')!==leg)return;
+      delete m.personal;m.noReceipt=true;n++;
+    });
+    if(n){
+      if(typeof saveAll==='function')saveAll();
+      try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}
+    }
+    return n;
+  }catch(_e){return 0;}
+}
 async function _visitHoldAnswer(id,mode){
   const m=(mode==='working')?'working':'personal';
   const row=(_visitHoldCache.rows||[]).find(r=>r&&String(r.id)===String(id))||null;
@@ -454,6 +475,22 @@ async function _visitHoldAnswer(id,mode){
   try{
     if(window._supa){const{error}=await _supa.rpc('geo_answer_visit',{p_id:String(id),p_mode:m});
       if(error)throw error;}
+    // ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-18) ───────────────
+    // "how do we have personal rows and neenans going to a fucking onsite"
+    //
+    // The mileage half of a trip has its own door (resolveSupplyRun, and its
+    // 'unpersonal' way back), and this one never spoke to it. So his Neenans
+    // run ended the day marked personal in mileage and, after he answered the
+    // rows Working, paid work on the timesheet: one trip, two stories, which
+    // is the exact thing the 2026-09-16 note says was fixed for the other
+    // door and was only ever fixed in that direction.
+    //
+    // Answering a row Working clears the matching leg's personal flag, the
+    // same way resolveSupplyRun('unpersonal') does, and leaves noReceipt set
+    // because he has still answered the receipt question. Local and immediate:
+    // the row is already gone off the card, and the mileage must not disagree
+    // with it for as long as a round trip to the server.
+    if(m==='working'&&row&&row.client_key)_visitAnswerUnpersonal(String(row.client_key));
     if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🏠');
     try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered(row&&row.client_key);}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
@@ -3959,7 +3996,8 @@ function renderProposalsPage(){
     const proj=b.addr||b.type||'-';
     const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
     const _lostLine=(b.status==='Closed Lost'&&b.lostReason)?'<div style="font-size:10px;color:#A32D2D;font-weight:600;margin-top:2px">'+escHtml(b.lostReason)+'</div>':'';
-    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
+    const amt=(b.isTM&&b.tmRateOnly)?bidAmountLabel(b,fmt)
+      :b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
     const revFn=(b.status==='Closed Won'||b.clientCancelled)?'openBidDetail('+b.id+',\'bid\')':'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     const _canCloseOut=b.signingToken&&b.status!=='Closed Won'&&b.status!=='Closed Lost'&&b.status!=='Abandoned'&&!b.clientCancelled;
     const _coBtn=_canCloseOut?'<button class="btn btn-sm" onclick="event.stopPropagation();openCloseOutEstimate('+b.id+')" style="font-size:11px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2;margin-right:6px">Close out</button>':'';
@@ -4030,7 +4068,8 @@ function renderEstimatesPage(){
   const rows=filtered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
     const proj=b.addr||b.type||'-';
-    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
+    const amt=(b.isTM&&b.tmRateOnly)?bidAmountLabel(b,fmt)
+      :b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
     const revFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
       '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+

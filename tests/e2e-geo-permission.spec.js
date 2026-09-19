@@ -1113,7 +1113,15 @@ test.describe('Crew location permission', () => {
       window.SUPA_URL = 'https://x.test';
       window._supa = { auth: { getSession: () => Promise.resolve({ data: { session: { access_token: 't' } } }) } };
       window.fetch = (url, init) => {
-        calls.push({ url, body: JSON.parse((init && init.body) || '{}') });
+        // ONLY THE ALERT COUNTS. This used to record every request the app
+        // made while the harness waited out its five ticks, so a version poll
+        // or a telemetry post landing in that window read as a second manager
+        // alert and failed the count (WebKit, shard 2, 2026-09-16: expected 1,
+        // received 2). _geoAlertManagers sends exactly one fetch, to one
+        // endpoint, so the count asks about that endpoint.
+        if (String(url).indexOf('/functions/v1/send-push') >= 0) {
+          calls.push({ url, body: JSON.parse((init && init.body) || '{}') });
+        }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
       };
       const out = _geoAlertManagers(o.kind);

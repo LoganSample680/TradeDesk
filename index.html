@@ -2174,9 +2174,25 @@ body.dark .cal-cell.other{background:var(--cream)}
         <!-- Scope of work chips -->
         <div id="tm-sitenote-wrap"></div>
         <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
+
+        <!-- ── WHAT THIS PROPOSAL CARRIES ────────────────────────────────────
+             Owner 2026-09-17: "just get the scope signed, no deposit no payment
+             upfront if they want it to work that way ... but those should only
+             be required in the states that require it."
+
+             So the page is the scope and Send. Everything else is a layer he
+             adds, and a state adds for him only where the law says it must.
+             Measured before this change: 2,509px tall on a phone, 35 live
+             controls, and the biggest block on it (612px, a quarter of the
+             page) was the optional exclusions list while scope of work, the
+             only part that is ever required, got 149px. -->
+        <div id="tm-add-row" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+
         <!-- Rates & crew -->
-        <div class="card">
-          <div class="td-h3" style="margin-bottom:10px">Rates &amp; crew</div>
+        <div class="card" id="tm-blk-rate" style="display:none">
+          <div class="row-bw" style="margin-bottom:10px">
+            <div class="td-h3">Rates &amp; crew</div>
+          </div>
           <div class="fg fg2">
             <div class="f">
               <label>Hourly rate · $/hr</label>
@@ -2190,23 +2206,23 @@ body.dark .cal-cell.other{background:var(--cream)}
                 <button onclick="_tmCrewStep(1)" type="button" style="width:42px;border:none;border-left:1px solid var(--border2);background:var(--blue);cursor:pointer;font-size:22px;color:#fff;font-family:inherit;flex-shrink:0;display:flex;align-items:center;justify-content:center">+</button>
               </div>
             </div>
-            <div class="f">
+            <div class="f" id="tm-days-f">
               <label>Estimated days</label>
               <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
+          <div id="tm-stat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
             <div class="stat-tile">
               <div class="stat-l">Day rate</div>
               <div class="stat-v" id="tm-stat-day">$0</div>
               <div class="stat-s" id="tm-stat-day-s">enter rate &amp; crew</div>
             </div>
-            <div class="stat-tile">
+            <div class="stat-tile" id="tm-stat-labor-tile">
               <div class="stat-l">Est. labor total</div>
               <div class="stat-v" id="tm-stat-labor">$0</div>
               <div class="stat-s" id="tm-stat-labor-s">-</div>
             </div>
-            <div class="stat-tile">
+            <div class="stat-tile" id="tm-stat-days-tile">
               <div class="stat-l">Total hours</div>
               <div class="stat-v" id="tm-stat-days">0</div>
               <div class="stat-s">at 8hr days</div>
@@ -2215,9 +2231,9 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
 
         <!-- Material categories -->
-        <div class="card">
+        <div class="card" id="tm-blk-mat" style="display:none">
           <div class="row-bw" style="margin-bottom:12px">
-            <div class="td-h3">Material categories</div>
+            <div class="td-h3" id="tm-mat-head">Material categories</div>
             <button class="btn btn-sm" onclick="_tmAddMatCat()">+ Add category</button>
           </div>
           <div class="tm-mat-list" id="tm-mat-list"></div>
@@ -2228,11 +2244,11 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
 
         <!-- Same rule as BYO: exclusions come after the work. -->
-        <div id="tm-excl-wrap"></div>
+        <div id="tm-blk-excl" style="display:none"><div id="tm-excl-wrap"></div></div>
 
         <!-- NTE cap -->
-        <div class="card">
-          <div class="td-h3" style="margin-bottom:10px">Not-to-exceed cap (optional)</div>
+        <div class="card" id="tm-blk-nte" style="display:none">
+          <div class="td-h3" id="tm-nte-head" style="margin-bottom:10px">The most it can cost them (optional)</div>
           <div class="fg fg2">
             <div class="f">
               <label>Cap amount</label>
@@ -2253,12 +2269,31 @@ body.dark .cal-cell.other{background:var(--cream)}
       <!-- Summary rail -->
       <div class="summary-rail">
         <div class="summary-card">
-          <div class="td-micro" style="margin-bottom:8px">Estimated total</div>
-          <div class="td-display summary-total" id="tm-rail-total">$0</div>
-          <div class="summary-meta">±15% normal for T&amp;M</div>
-          <div class="summary-divider"></div>
-          <div class="summary-row"><span>Labor</span><span id="tm-rail-labor">$0</span></div>
-          <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
+          <!-- THE RAIL CARRIES ONLY WHAT HE ADDED. With no layers on, a T&M
+               proposal is a scope and a signature, so the rail is the Send
+               button and nothing else. Every money block below is shown by
+               _tmApplyLayers. -->
+          <div id="tm-rail-money" style="display:none">
+          <!-- ONE OF THESE TWO HEADS THE RAIL, never both: the estimated total a
+               job with a day count carries, or the rate he is being hired at
+               when there is no total. -->
+          <div id="tm-rail-total-wrap">
+            <div class="td-micro" style="margin-bottom:8px">Estimated total</div>
+            <div class="td-display summary-total" id="tm-rail-total">$0</div>
+            <div class="summary-meta">±15% normal for T&amp;M</div>
+            <div class="summary-divider"></div>
+            <div class="summary-row"><span>Labor</span><span id="tm-rail-labor">$0</span></div>
+            <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
+          </div>
+          <div id="tm-rail-rate-wrap" style="display:none">
+            <div class="td-micro" style="margin-bottom:8px">Your rate</div>
+            <div class="td-display summary-total" id="tm-rail-rate">$0<span style="font-size:18px;font-weight:700">/hr</span></div>
+            <div class="summary-meta" id="tm-rail-rate-sub">per worker</div>
+            <div class="summary-divider"></div>
+            <div class="summary-row"><span>Crew on site</span><span id="tm-rail-rate-crew">1</span></div>
+            <div class="summary-row"><span>Day rate</span><span id="tm-rail-rate-day">$0</span></div>
+            <div class="summary-row"><span>Materials</span><span id="tm-rail-rate-mat">at cost</span></div>
+          </div>
           <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
           <!-- Crew labor cost, only rendered when the contractor has employees -->
@@ -2266,13 +2301,24 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div id="tm-gauge-wrap"></div>
           <div class="summary-divider"></div>
           <div id="tm-deposit-wrap"></div>
+          <!-- A PERCENT OF NOTHING IS NOTHING. With no estimated total there is
+               nothing to take 25% of, so a rate sheet asks for its mobilization
+               money as a flat figure he names. Blank means none. -->
+          <div id="tm-deposit-flat-wrap" style="display:none">
+            <div class="summary-row" style="align-items:center">
+              <span style="font-size:14px;font-weight:600">Mobilization deposit</span>
+              <div class="input-prefix" style="width:118px"><span>$</span><input type="text" inputmode="decimal" id="tm-i-dep-flat" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
+            </div>
+            <div class="summary-row" style="color:var(--text-3)"><span>Balance</span><span>billed as you go</span></div>
+          </div>
           <div class="summary-divider"></div>
-          <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <div class="td-micro" style="margin-bottom:6px" id="tm-cad-head">Billing cadence</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap" id="tm-cad-row">
             <span class="chip chip-int" id="tm-cad-weekly" onclick="_tmCadence('weekly')">Weekly</span>
             <span class="chip chip-int" id="tm-cad-milestone" onclick="_tmCadence('milestone')">By milestone</span>
             <span class="chip chip-int" id="tm-cad-completion" onclick="_tmCadence('completion')">On completion</span>
           </div>
+          </div><!-- /tm-rail-money -->
           <div id="tm-actions-wrap"></div>
         </div>
       </div>
@@ -2474,7 +2520,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div>
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer">
           <input type="checkbox" id="tm-nte-on" checked onchange="_tmCalcNte()" style="width:16px;height:16px;accent-color:var(--blue)">
-          <span style="font-size:13px;font-weight:600">Not-to-exceed cap</span>
+          <span style="font-size:13px;font-weight:600">Most it can cost</span>
         </label>
         <div id="tm-nte-wrap" style="margin-left:24px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
@@ -2827,7 +2873,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="card-hd">Scan a receipt
         <span><button class="btn btn-sm btn-p" onclick="triggerReceiptScan()"><span data-ico="📷" data-ico-size="14"></span> Scan</button></span>
       </div>
-      <div class="tip" id="scan-tip">Take a photo of any receipt, AI reads the vendor, amount, date and category automatically.</div>
+      <div class="tip" id="scan-tip">Take a photo of any receipt. The vendor, amount, date and category fill themselves in.</div>
       <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display:none" onchange="processReceiptPhoto(this)">
       <div id="scan-result" style="display:none"></div>
     </div>
@@ -4229,6 +4275,9 @@ body.dark .cal-cell.other{background:var(--cream)}
 <!-- ── More popup (tap-to-open, no swipe needed) ── -->
 <div id="mtb-more-popup" onclick="closeMobileMore()">
   <div id="mtb-more-menu" onclick="event.stopPropagation()">
+    <button class="mmi" id="mmi-tim" onclick="closeMobileMore();openTim()">
+      <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 015.4-5.4z"/><path d="M14.7 6.3L18 3l3 3-3.3 3.3"/></svg>Tim
+    </button>
     <button class="mmi" id="mmi-proposals" onclick="mobileNavTo('pg-proposals')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Proposals
     </button>
@@ -4299,7 +4348,11 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/mileage.js"></script>
 <!-- The day deriver: pure, loads before the engine that calls it. -->
 <script src="js/geo-derive.js"></script>
+<!-- What a time row's source MEANS: four predicates the whole app asks and
+     timesheet.html asks too, in a file small enough for a page to load. -->
+<script src="js/geo-sources.js"></script>
 <script src="js/geo-track.js"></script>
+<script src="js/geo-anchor.js"></script>
 <script src="js/geo-shadow.js"></script>
 <script src="js/crew-locate.js"></script>
 <script src="js/places.js"></script>
@@ -4323,6 +4376,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/handoff.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/estimate-speak.js"></script>
+<script src="js/tim.js"></script>
 <script src="js/equipment.js"></script>
 <script src="js/share-inbox.js"></script>
 <script src="js/bg-upload.js"></script>

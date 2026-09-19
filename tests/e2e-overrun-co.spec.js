@@ -370,9 +370,20 @@ test.describe('a job running long becomes a change order', () => {
 
   test('the job sheet offers the change order, once', async () => {
     await seed({ entries: [{ minutes: 360 }, { minutes: 360 }] });
+    // READ THE SHEET, NOT THE PAGE. This assertion used to scan
+    // document.body.textContent, which is the widest scope there is: any
+    // overlay still in the DOM from an earlier read could satisfy it or, on the
+    // second half, fail it. That is what the CI-only failures below looked
+    // like, a card reported present while the blame scan found nothing that
+    // qualified for one. Clear first, open, and read only what just opened.
     const before = await page.evaluate(cid => {
-      openJobSheet(cid);
-      const t = document.body.textContent || '';
+      window.__openSheet = c => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        openJobSheet(c);
+        const ovs = document.querySelectorAll('.zmodal-overlay');
+        return ovs.length ? (ovs[ovs.length - 1].textContent || '') : '';
+      };
+      const t = window.__openSheet(cid);
       const has = /Running long/.test(t) && /past the estimate/.test(t);
       document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
       return has;
@@ -383,12 +394,13 @@ test.describe('a job running long becomes a change order', () => {
       const b = bids.find(x => x.id === bid);
       b.changeOrders = [{ id: 1, coNum: 1, desc: 'covered', type: 'add', amount: 240, delta: 240,
         originalAmount: 2000, newAmount: 2240, overrun: { jobId: jid, addedHours: 4 }, signedAt: new Date().toISOString() }];
-      openJobSheet(cid);
-      const has = /Running long/.test(document.body.textContent || '');
-      // WHICH job kept the card up. This has failed twice in CI and passed
-      // every local run, in isolation and in file order, so the next failure
-      // has to carry its own cause rather than send anyone guessing. The card
-      // scans every job, so a stray one left by another test shows here.
+      const sheetText = window.__openSheet(cid);
+      const has = /Running long/.test(sheetText);
+      // WHICH job kept the card up. Kept from when this read the whole page:
+      // the failure it caught reported the card present with this list EMPTY,
+      // which is self-contradictory and is what pointed at the read scope
+      // rather than at a stray job. Left in place so a future failure still
+      // arrives with its own cause attached.
       const blame = has ? (typeof jobs !== 'undefined' ? jobs : []).filter(j => {
         try {
           const o = _jobOverrun(j.id); if (!o || !o.isOver) return false;

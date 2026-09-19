@@ -19,6 +19,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { APNS_HOST, APNS_TOPIC, apnsConfigured, apnsJwt } from "../_shared/apns.ts";
+// ONE FIELD LIST, NOT THREE (2026-09-16). ActivityKit drops a push silently
+// when one content-state key is missing, so the list was copied here, into
+// js/live-activity.js and into live-push.ts: three places to forget the next
+// time TdLiveAttributes.ContentState gains a field. It is one function now.
+import { liveContentState } from "../_shared/live-card.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -69,41 +74,8 @@ serve(async (req) => {
       return json({ ok: false, error: "not your account" }, 403);
     }
 
-    // Fill every ContentState field: a missing key makes iOS decode-fail and
-    // drop the push with no visible error anywhere.
     const st = (body.state && typeof body.state === "object" ? body.state : {}) as Record<string, unknown>;
-    const startedAt = Number(st.startedAt) || Math.floor(Date.now() / 1000);
-    const contentState = {
-      kind: String(st.kind ?? ""),
-      title: String(st.title ?? "").slice(0, 60),
-      detail: String(st.detail ?? "").slice(0, 60),
-      value: String(st.value ?? ""),
-      timer: !!st.timer,
-      startedAt,
-      // Added 2026-08-19 for the two-clock CLOCKED IN card. A caller that
-      // never sends these (every caller today, force-clock-out just ends the
-      // card) still fills both, same "every field must ship" rule as above.
-      siteStartedAt: Number(st.siteStartedAt) || startedAt,
-      dualTimer: !!st.dualTimer,
-      tint: String(st.tint ?? "#2D5DA8"),
-      // Lock-screen "Next"/"Clock out" button fields, added for the same
-      // reason siteStartedAt/dualTimer were: TdLiveAttributes.ContentState
-      // (native/td-live/ios/Plugin/TdLiveAttributes.swift) gained these
-      // fields, so EVERY push through this function must carry them too, or
-      // iOS silently drops the whole push on decode failure. The only caller
-      // today is force-clock-out, which is ending the card, not switching a
-      // scope, so empty/terminal defaults are correct here, not a stand-in
-      // for real values this function doesn't have.
-      jobId: String(st.jobId ?? ""),
-      contractorUserId: String(st.contractorUserId ?? ""),
-      loggedByUid: String(st.loggedByUid ?? ""),
-      currentScopeId: String(st.currentScopeId ?? ""),
-      nextScopeId: String(st.nextScopeId ?? ""),
-      nextScopeLabel: String(st.nextScopeLabel ?? ""),
-      isLastScope: st.isLastScope !== undefined ? !!st.isLastScope : true,
-      scopeQueue: String(st.scopeQueue ?? "[]"),
-      supaBaseUrl: String(st.supaBaseUrl ?? ""),
-    };
+    const contentState = liveContentState(st);
 
     const payload: Record<string, unknown> = {
       aps: {

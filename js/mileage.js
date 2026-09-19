@@ -1197,15 +1197,59 @@ function _supplyRunSettleByKeys(keys){
   });
   return n;
 }
-// The three doors. 'personal' deletes the held rows outright. 'noreceipt'
-// commits as business carrying a noReceipt flag (the disclaimer was shown
-// before calling this). 'receipt' commits and links the expense that
-// proved it.
+// ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-16) ───────────────────
+// "Personal should remove the mileage and the timesheet will then have a
+// personal hole and exclude itself from time."
+//
+// Personal only ever reached the MILEAGE row. Jack's Neenans run came off his
+// deductible miles and left forty-four minutes of drive and dwell sitting on
+// his timesheet as paid work, so the app told him two different stories about
+// one trip. geo_answer_supply_run (20261020) is the door for the time half,
+// and it is the same shape as every other answer: source 'dismissed' plus
+// answered_at, which the reader draws as a grey Personal row in no total.
+//
+// The "hole" he described is a ROW that says what it is, not a blank. A blank
+// is what _tlBlendManual fills back in with paid time under a running clock,
+// which is the exact bug his 15 September had.
+//
+// Fire and forget, after the local mark: the mileage half is already true on
+// this device and must not wait on the network to show it, and a failed call
+// leaves the time rows saying what the deriver said, which is the safe way to
+// be wrong.
+function _supplyRunAnswerTime(key,mode){
+  try{
+    if(!key||!window._supa||typeof opsReadOnly==='function'&&opsReadOnly())return;
+    Promise.resolve(_supa.rpc('geo_answer_supply_run',{p_key:String(key),p_mode:mode}))
+      .then(()=>{try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}})
+      .catch(()=>{});
+  }catch(_e){}
+}
+// The doors. 'personal' takes the run off BOTH books. 'noreceipt' commits as
+// business carrying a noReceipt flag (the disclaimer was shown before calling
+// this). 'receipt' commits and links the expense that proved it. 'unpersonal'
+// is the way back from a mis-tap, which is the whole reason it exists: Jack
+// meant no receipt and hit Personal, and until today there was no control
+// anywhere that could undo it (owner 2026-09-16: "he made a human mistake").
 function resolveSupplyRun(key,mode,expenseId){
   if(mode==='personal'){
     const n=_supplyRunSettleByKeys(new Set([key]));
     if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}typeof renderDash==='function'&&renderDash();}
+    _supplyRunAnswerTime(key,'personal');
     return n;
+  }
+  if(mode==='unpersonal'){
+    // Back to exactly where a "no receipt" answer would have left it: on the
+    // books, no receipt attached, hours restored. Not back to HELD: he has
+    // answered the receipt question, and asking it again is the app refusing
+    // to believe him.
+    let u=0;
+    (mileage||[]).forEach(m=>{
+      if(!m||m.supplyRunKey!==key||!m.personal)return;
+      delete m.personal;m.noReceipt=true;u++;
+    });
+    if(u){saveAll();typeof renderDash==='function'&&renderDash();try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}}
+    _supplyRunAnswerTime(key,'working');
+    return u;
   }
   let n=0;
   (mileage||[]).forEach(m=>{
@@ -1233,15 +1277,60 @@ function _supplyRunSweep(){
   if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}}
   return n;
 }
+// What this run costs him if he says personal, read off the legs themselves so
+// the warning names real numbers instead of a category.
+function _supplyRunCost(key){
+  let mi=0,mins=0,n=0;
+  (mileage||[]).forEach(m=>{
+    if(!m||String(m.supplyRunKey||'')!==String(key))return;
+    n++;
+    const a=Number(m.miles);if(isFinite(a))mi+=a;
+    const b=Number(m.mins);if(isFinite(b))mins+=b;
+  });
+  return {legs:n,miles:Math.round(mi*10)/10,mins:Math.round(mins)};
+}
+// ── THE FEAR BELONGS ON THE DESTRUCTIVE DOOR (owner 2026-09-18) ────────────
+//
+// "I think personal needs to be the most scary looking thing"
+//
+// It was the other way round, and the control log shows what that cost. At
+// 16:54:45 Jack tapped _supplyRunNoReceipt, then a dialog button, then
+// _supplyRunPersonal. No receipt is the harmless answer and it was the only
+// one carrying a warning ("The IRS may disallow..."), while Personal, which
+// takes the miles AND the hours off the books in one tap, had no confirm at
+// all. He hit the scary one, backed out, and took the door that looked safe.
+//
+// So the confirm moves to Personal and says what it actually does, with this
+// run's own numbers in it. No receipt keeps its tax note, because that note is
+// true, but it is no longer the red button: it is the ordinary business answer.
+//
+// AND THE LAST LINE IS HONEST. The owner's draft ended "taking this off
+// personal will not allow you to add back later". It does: resolveSupplyRun's
+// 'unpersonal' door exists for exactly this mis-tap and was built on his own
+// instruction (2026-09-16, "he made a human mistake"). A threat the app does
+// not honour teaches people to hide mistakes instead of undoing them, so the
+// warning is heavy about the consequence and straight about the way back.
 function _supplyRunPersonal(k){
-  resolveSupplyRun(decodeURIComponent(k),'personal');
-  if(typeof showToast==='function')showToast('Cleared, kept off the books','🚗');
+  const key=decodeURIComponent(k);
+  const c=_supplyRunCost(key);
+  const bits=[];
+  if(c.miles>0)bits.push(c.miles+' mi');
+  if(c.mins>0)bits.push(typeof _fmtMin==='function'?_fmtMin(c.mins):(c.mins+'m'));
+  const what=bits.length?bits.join(' and '):'the miles and the time';
+  zConfirm('<b>'+what+'</b> gets DELETED from your timesheet and from your mileage.<br><br>'+
+           'You do not get paid for that time, and nothing will ever prompt you to put it back.<br><br>'+
+           'Was this trip for work? Then hit <b>No, keep it</b> and answer <b>No receipt</b> instead.',
+    ()=>{resolveSupplyRun(key,'personal');if(typeof showToast==='function')showToast('Off the books, and off your hours','🚗');},
+    {title:'Read this before you tap',yes:'Delete it, it was personal',no:'No, keep it',
+     danger:true,safeRight:true});
 }
 function _supplyRunNoReceipt(k){
-  // Owner copy (2026-08-17): one plain line, not a tax lecture.
+  // Owner copy (2026-08-17): one plain line, not a tax lecture. No longer the
+  // red button (2026-09-18): this is the ordinary answer, and dressing it as
+  // the dangerous one is what pushed him onto Personal.
   zConfirm('Save this run as business without a receipt?\n\nThe IRS may disallow the mileage and the expense if no receipt is provided.',
     ()=>{resolveSupplyRun(decodeURIComponent(k),'noreceipt');if(typeof showToast==='function')showToast('Logged as business, no receipt on file','⚠️');},
-    {title:'No receipt',yes:'Save as business'});
+    {title:'No receipt',yes:'Save as business',danger:false});
 }
 // Scan door: the existing quick-expense modal (it carries the receipt
 // scanner). The run key rides INSIDE the modal as a hidden field, never a
@@ -2827,7 +2916,12 @@ function _milRenderTripList(shown,yr){
       const stateBadge=r.addressUnknown?'<div style="font-size:10px;font-weight:800;color:#B45309">Not on the books · no address</div>'
         :(r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
         :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'
-        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>'
+        :(r.personal?('<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>'+
+            // THE WAY BACK, ON THE ROW (owner 2026-09-16). Jack meant no
+            // receipt and hit Personal, twice, and no control anywhere could
+            // undo it: the card is gone once answered and the row only said
+            // what had happened to it. A mis-tap should cost ten seconds.
+            (r.supplyRunKey?'<button type="button" class="tl-rail-chip" style="margin-top:4px" onclick="event.stopPropagation();resolveSupplyRun(\''+escHtml(String(r.supplyRunKey))+'\',\'unpersonal\')">It was work</button>':''))
         :(r.pendingPurpose?'<div style="font-size:10px;font-weight:700;color:var(--amber)">Work or personal? · not counted yet</div>':''))));
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
@@ -3237,6 +3331,18 @@ function _mileTripNumberForLeg(dayKey,clientKey){
   if(ls)return nos['leg:'+String(ls.leg.legKey!=null?ls.leg.legKey:ls.leg.id)]||null;
   return nos['leg:'+String(clientKey).replace(/:\d+$/,'')]||null;
 }
+// ── AND WHICH DRIVE OF THAT TRIP IT IS (owner 2026-09-18) ─────────────────
+//
+// "the drive numbers on time sheet are off trip 1 is repeated 3 times"
+//
+// _mileTripLegForLeg was DELETED 2026-09-19 (§7). It added "· drive 2 of 3"
+// to a trip number, written on 2026-09-18 to explain why three plainly
+// different drives all read TRIP 1. The owner said at the time that was the
+// wrong fix, and he was right: they were three separate drives, and the chain
+// was wrongly collapsing them into one leg. That is fixed in the deriver (a
+// work-length stop closes the chain), so each drive carries its own trip
+// number and there is nothing left to explain. _mileTripNumberForLeg, below,
+// is what the rail asks again.
 // ── WHICH LEG A DRIVE ROW BELONGS TO, AND WHICH SEGMENT OF IT ──────────────
 // One place knows how a time row's key relates to a mileage leg, because two
 // screens ask (the rail's title and its trip number, js/timelog.js; the trip
@@ -3437,6 +3543,124 @@ async function _mileSaveKind(kind){
   // above), which is what this form has four boxes for.
   let parts=(found&&found.parts)||{street:'',city:'',state:'',zip:''};
   if(!parts.street){try{parts=await _reverseGeocode(p.lat,p.lng)||parts;}catch(_e){}}
+  // ── SOMEBODY HE ALREADY HAS, OR SOMEBODY NEW (owner 2026-09-19) ────────
+  // "add in a option for a picker on time sheet save address where we can
+  // pick a client or add new."
+  //
+  // This arm went straight to a NEW customer, which is right the first time
+  // somebody is quoted and wrong every time after. A second visit to a
+  // customer already on the books, a landlord's second rental, a job site
+  // for a builder he works for every week: all of them made a duplicate
+  // record, and the fence landed on the duplicate rather than on the person
+  // whose jobs and proposals rule 13 reads.
+  //
+  // So the pin asks WHOSE it is first. Picking somebody files the pin as a
+  // property on that record (_mileFileAddressOn), which is the same property
+  // card the client detail page draws, and the day re-derives against it.
+  // Add new is the old path, unchanged, one tap away.
+  _mileSaveAskWho(parts);
+  return true;
+}
+// Free of a geocode, deliberately: the pin IS the coordinate, so filing it on
+// a customer needs no round trip and works with no signal. The address string
+// is what the reverse lookup already gave the chooser.
+function _mileAddrLine(parts){
+  const p=parts||{};
+  return [p.street,p.city,[p.state,p.zip].filter(Boolean).join(' ')].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
+}
+function _mileSaveAskWho(parts){
+  document.getElementById('_mile-who-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';ov.id='_mile-who-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const line=_mileAddrLine(parts);
+  _mileAddressPending=Object.assign({},_mileAddressPending||{},{parts,addrLine:line});
+  ov.innerHTML='<div class="zmodal" style="max-width:380px">'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Whose address is this?</div>'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">'+escHtml(line||'This stop')+'</div>'+
+    '<input id="_mile-who-q" type="text" inputmode="search" placeholder="Search your customers" '+
+      'oninput="_mileWhoRender()" style="width:100%;box-sizing:border-box;padding:10px;border-radius:var(--r);'+
+      'border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;font-size:14px;margin-bottom:10px">'+
+    '<div id="_mile-who-hits" style="max-height:44vh;overflow:auto;-webkit-overflow-scrolling:touch"></div>'+
+    '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">'+
+    '<button class="btn" onclick="_mileWhoNew()">Add a new customer</button>'+
+    '<button class="btn" onclick="document.getElementById(\'_mile-who-ov\')?.remove()">Cancel</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  _mileWhoRender();
+  setTimeout(()=>{try{document.getElementById('_mile-who-q')?.focus();}catch(_e){}},60);
+}
+// The same predicate the new-client gate uses, so "who do I have" means one
+// thing in this app (§7.3). The subtitle says how many properties they already
+// have, because that is the number this is about to add to.
+function _mileWhoRender(){
+  const box=document.getElementById('_mile-who-hits');
+  if(!box)return;
+  const q=(document.getElementById('_mile-who-q')?.value||'');
+  const hits=(typeof _newcGateMatches==='function')?_newcGateMatches(q):[];
+  if(!hits.length){
+    box.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 2px">'+
+      (q.trim()?'Nobody by that name yet.':'No customers yet.')+'</div>';
+    return;
+  }
+  box.innerHTML=hits.map(c=>{
+    const props=(typeof _newcGateProps==='function')?_newcGateProps(c):[];
+    const sub=props.length?(props.length+' propert'+(props.length===1?'y':'ies')):'No address yet';
+    return '<button onclick="_mileWhoPick('+JSON.stringify(String(c.id))+')" '+
+      'style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r);'+
+      'border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">'+
+      '<span style="flex:1;min-width:0">'+
+        '<span style="display:block;font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name||'Customer')+'</span>'+
+        '<span style="display:block;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</span>'+
+      '</span></button>';
+  }).join('');
+}
+function _mileWhoNew(){
+  document.getElementById('_mile-who-ov')?.remove();
+  _mileOpenNewClientForm();
+}
+// Files the pin on a customer already on the books. The FIRST address a
+// customer has is their primary, because a record with no address and one
+// property card would read as a customer he never gave an address to;
+// everything after is a property card beside it, exactly as the client detail
+// page adds one (saveAddClientAddress, js/clients.js).
+async function _mileWhoPick(id){
+  document.getElementById('_mile-who-ov')?.remove();
+  const p=_mileAddressPending;
+  // By STRING, deliberately: the id arrives out of an onclick attribute, and
+  // getClientById compares with === against a numeric record id, so the
+  // obvious call silently finds nobody and the pin goes nowhere. Every other
+  // picker in this app emits the id unquoted and relies on it being a number;
+  // this one does not have to care what it is.
+  const c=(typeof clients!=='undefined'&&Array.isArray(clients))
+    ?clients.find(x=>x&&String(x.id)===String(id)):null;
+  if(!p||!c)return false;
+  const addr=p.addrLine||_mileAddrLine(p.parts);
+  if(!addr)return false;
+  const found=p.found||null;
+  if(!c.addr){
+    c.addr=addr;c.lat=p.lat;c.lon=p.lng;c.geoAddr=addr;
+  }else{
+    if(!Array.isArray(c.extraAddresses))c.extraAddresses=[];
+    // Already filed, by an earlier tap or an earlier day: keep one card.
+    const had=c.extraAddresses.find(a=>a&&a.addr===addr)||(c.addr===addr?{}:null);
+    if(!had)c.extraAddresses.push({label:(found&&found.name)||'Additional property',
+      addr,lat:p.lat,lon:p.lng,geoAddr:addr});
+    else if(had.addr&&had.lat==null){had.lat=p.lat;had.lon=p.lng;had.geoAddr=addr;}
+  }
+  try{if(typeof saveAll==='function')saveAll();}catch(_e){}
+  // The address just FILED, not the record's primary. On a day too old to
+  // re-derive, _mileNameUnsaved writes client.addr onto the row, and for a
+  // landlord's second rental the primary is the wrong house. Same function,
+  // same one path, handed the property this pin actually is.
+  await _mileAddressSaved({name:c.name,addr,clientId:c.id});
+  return true;
+}
+function _mileOpenNewClientForm(){
+  const p=_mileAddressPending;
+  if(!p)return false;
+  const parts=p.parts||{street:'',city:'',state:'',zip:''};
+  const found=p.found||null;
   try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
   if(typeof openNewClient==='function')openNewClient();
   const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};

@@ -710,11 +710,33 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     //
     // clock-in and clock-out joined it 2026-09-04. They pass the same test
     // push-ping failed: each is a getCurrentPosition read taken at the instant
-    // of the tap, never a cached position replayed from a wake. The rule this
-    // list encodes is unchanged, and wake-move is still not in it.
-    expect(r.types).toEqual(['fix', 'clock-in', 'clock-out']);
-    expect(r.types, 'a cached position never qualifies').not.toContain('push-ping');
+    // of the tap, never a cached position replayed from a wake.
+    //
+    // AMENDED 2026-09-18. This asserted exactly ['fix','clock-in','clock-out']
+    // and that push-ping was never in it. `visit` is in the list now and
+    // push-ping is admitted conditionally, and the reason the old line was
+    // right in September and wrong now is that the phone changed underneath
+    // it: since 2026-09-09 silentPush measures the cache against the
+    // CLLocation's OWN timestamp and marks anything over five minutes with
+    // staleMs, and a stale cache buys a four-second burst to replace itself.
+    // The 343 ft phantom-exit case this comment describes cannot happen to an
+    // unmarked ping any more, because unmarked now MEANS measured-fresh.
+    //
+    // What the old rule cost is Jack's 18 September: a correct position every
+    // thirty minutes all morning, on push-ping and visit rows, every one
+    // discarded, while the `fix` stream it trusted instead reported a shop he
+    // had left at 07:53. A visit is not a cache at all, it is CLVisit, iOS
+    // reporting a place a person stopped with its own arrival and departure
+    // times, and it was the best evidence in the system going straight in the
+    // bin.
+    expect(r.types).toEqual(['fix', 'clock-in', 'clock-out', 'visit']);
+    // Still not in the LIST, because whether a given push-ping qualifies is a
+    // question about the row, not the type: _geoFreshFixEv answers it.
+    expect(r.types, 'the type alone never qualifies a ping').not.toContain('push-ping');
     expect(r.types).not.toContain('wake-move');
+    // wake-drop stays out for the reason push-ping used to: wakeDrop takes
+    // mgr().location and measures no age at all.
+    expect(r.types).not.toContain('wake-drop');
   });
 
   // Owner 2026-09-03: the history query knew he was driving at 16:08:06, the

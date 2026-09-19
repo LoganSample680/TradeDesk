@@ -3000,3 +3000,242 @@ test.describe('TdScan: room dimensions that were overstating', () => {
     expect(r).toBe(false);
   });
 });
+
+// ── A SCAN'S PHOTOS BELONG IN THE CLIENT HUB (owner 2026-09-16) ──────────────
+//
+// "Scanner photos use receipts but a scanned room could dump it to the photos
+// section in the client hub."
+//
+// They can, and they now do, through the exact path the before/after card
+// already uses: the `gallery` bucket, _compressPhoto, _uploadPhotoThumb, a
+// td_photos row, refresh the hub. Receipts are a different bucket on purpose,
+// private with signed URLs, because a receipt is a financial document and a
+// room photo is something the customer is meant to see.
+//
+// The bug underneath the feature request, found while answering it: the path a
+// scan stored was
+//   /var/mobile/Containers/Data/Application/<UUID>/Documents/td_walk_*.jpg
+// and iOS reassigns that <UUID> on every reinstall. Sixty walk frames, one
+// reinstall from gone, and a second device drew "Re-walk the photos · 60
+// frames" over sixty broken images. Uploading fixes that whatever anybody
+// decides about what the customer should see.
+test.describe('scan photos reach the client hub', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { try { await page.context().close(); } catch (_e) { } });
+
+  // One scan with two shutter photos and a 20-frame walk, a stubbed storage
+  // bucket that records what it was handed, and no network anywhere.
+  const run = (over) => page.evaluate(async (ov) => {
+    const saved = {
+      scans: scans.slice(), photos: photos.slice(), clients: clients.slice(),
+      supa: window._supa, user: window._supaUser, en: window.supaEnabled,
+      cap: window.Capacitor, fetch: window.fetch, save: window.saveAll,
+      hub: window._uploadClientHub, comp: window._compressPhoto, thumb: window._uploadPhotoThumb,
+    };
+    const uploads = [];
+    try {
+      window._supaUser = { id: 'u1' };
+      window.supaEnabled = () => true;
+      window.saveAll = () => { };
+      window._uploadClientHub = () => Promise.resolve(null);
+      // The real helpers need createImageBitmap on a real JPEG; the thing under
+      // test is the routing, not the resize, so both are stubbed to their
+      // contracts and the raw blob rides through.
+      window._compressPhoto = async (b) => ({ blob: b, thumb: b, mime: 'image/jpeg', ext: 'jpg' });
+      window._uploadPhotoThumb = async (_t, mainPath) => ({ thumbUrl: 'https://cdn/t/' + mainPath, thumbPath: 't/' + mainPath });
+      window.Capacitor = { convertFileSrc: (p) => 'cap://' + p };
+      window.fetch = async (u) => (ov.missing
+        ? { ok: false }
+        : { ok: true, blob: async () => new Blob(['x'.repeat(64)], { type: 'image/jpeg' }) });
+      window._supa = {
+        storage: {
+          from: (bucket) => ({
+            upload: async (path) => { uploads.push({ bucket, path }); return ov.upErr ? { error: { message: 'no' } } : { error: null }; },
+            getPublicUrl: (path) => ({ data: { publicUrl: 'https://cdn/' + path } }),
+          }),
+        },
+      };
+      clients.length = 0;
+      clients.push({ id: 'c9', name: 'Aldi GUYS' });
+      photos.length = 0;
+      scans.length = 0;
+      const walk = [];
+      for (let i = 0; i < 20; i++) walk.push({ path: '/var/mobile/w' + i + '.jpg', cam: [] });
+      scans.push({
+        id: 's1', name: 'Scan 9/16/2026', clientId: 'c9',
+        rooms: [{ label: 'Kitchen' }],
+        photos: ov.noShutter ? [] : [{ path: '/var/mobile/p0.jpg', room: 0 }, { path: '/var/mobile/p1.jpg', room: 0 }],
+        walk,
+      });
+      // AWAITED INSIDE THE TRY. Returning the promise instead ran the finally
+      // (and tore every stub down) before a single upload had happened.
+      const out = await scanPhotosToHub('s1');
+      return JSON.parse(JSON.stringify({
+        out, uploads,
+        photoRows: photos.map(p => ({ url: p.url, type: p.type, caption: p.caption, client_id: p.client_id,
+          client_name: p.client_name, scanId: p.scanId, scanKind: p.scanKind, thumbUrl: p.thumbUrl })),
+        frameUrls: { shutter: (scans[0].photos || []).map(p => p.url || null),
+                     walk: (scans[0].walk || []).map(k => k.url || null) },
+      }));
+    } finally {
+      scans.length = 0; saved.scans.forEach(x => scans.push(x));
+      photos.length = 0; saved.photos.forEach(x => photos.push(x));
+      clients.length = 0; saved.clients.forEach(x => clients.push(x));
+      window._supa = saved.supa; window._supaUser = saved.user; window.supaEnabled = saved.en;
+      window.Capacitor = saved.cap; window.fetch = saved.fetch; window.saveAll = saved.save;
+      window._uploadClientHub = saved.hub; window._compressPhoto = saved.comp;
+      window._uploadPhotoThumb = saved.thumb;
+    }
+  }, over || {});
+
+  test('every shutter photo goes up, and the walk is thinned', async () => {
+    const r = await run();
+    // Two shutter photos, plus a 20-frame walk at every 4th: 2 + 5 = 7.
+    expect(r.out.uploaded).toBe(7);
+    expect(r.out.failed + r.out.missing).toBe(0);
+    expect(r.frameUrls.shutter, 'both shutter photos, never thinned').toEqual([
+      'https://cdn/u1/c9/scan-s1-shutter-0.jpg', 'https://cdn/u1/c9/scan-s1-shutter-1.jpg']);
+    const walkUp = r.frameUrls.walk.filter(Boolean).length;
+    expect(walkUp).toBe(5);
+    expect(r.frameUrls.walk[0], 'every 4th, starting at the first').not.toBe(null);
+    expect(r.frameUrls.walk[1], 'and not the ones between').toBe(null);
+  });
+
+  test('it is the gallery bucket, not receipts', async () => {
+    const r = await run();
+    // A receipt is private with a signed URL because it is a financial
+    // document. A room photo is for the customer, which is the hub's bucket.
+    expect([...new Set(r.uploads.map(u => u.bucket))]).toEqual(['gallery']);
+    expect(r.uploads.every(u => /^u1\/c9\/scan-s1-/.test(u.path)),
+      'and it is filed under the owner and the client, like every other hub photo').toBe(true);
+  });
+
+  test('each one becomes a client hub photo row, named for its room', async () => {
+    const r = await run();
+    expect(r.photoRows.length).toBe(7);
+    const p = r.photoRows[0];
+    expect(p.type).toBe('scan');
+    expect(p.caption, 'the room the shutter photo was taken in').toBe('Kitchen');
+    expect(p.client_id).toBe('c9');
+    expect(p.client_name).toBe('Aldi GUYS');
+    expect(p.scanId).toBe('s1');
+    expect(p.thumbUrl, 'a thumb, so the hub grid does not pull full frames').toBeTruthy();
+    expect(r.photoRows.filter(x => x.scanKind === 'shutter').length).toBe(2);
+    expect(r.photoRows.filter(x => x.scanKind === 'walk').length).toBe(5);
+  });
+
+  test('a scan with no shutter photos still fills the hub from its walk', async () => {
+    // Tonight's real scan is exactly this: sixty walk frames and not one
+    // shutter photo. It must not contribute nothing.
+    const r = await run({ noShutter: true });
+    expect(r.out.uploaded).toBe(5);
+    expect(r.photoRows.every(x => x.scanKind === 'walk')).toBe(true);
+  });
+
+  test('running it twice uploads nothing the second time', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { scans: scans.slice(), photos: photos.slice(), supa: window._supa,
+        user: window._supaUser, en: window.supaEnabled, cap: window.Capacitor,
+        fetch: window.fetch, save: window.saveAll, hub: window._uploadClientHub,
+        comp: window._compressPhoto, thumb: window._uploadPhotoThumb };
+      let calls = 0;
+      try {
+        window._supaUser = { id: 'u1' }; window.supaEnabled = () => true;
+        window.saveAll = () => { }; window._uploadClientHub = () => Promise.resolve(null);
+        window._compressPhoto = async (b) => ({ blob: b, thumb: b });
+        window._uploadPhotoThumb = async () => ({ thumbUrl: '', thumbPath: '' });
+        window.Capacitor = { convertFileSrc: (p) => 'cap://' + p };
+        window.fetch = async () => ({ ok: true, blob: async () => new Blob(['x'], { type: 'image/jpeg' }) });
+        window._supa = { storage: { from: () => ({
+          upload: async () => { calls++; return { error: null }; },
+          getPublicUrl: (p) => ({ data: { publicUrl: 'https://cdn/' + p } }) }) } };
+        photos.length = 0; scans.length = 0;
+        scans.push({ id: 's1', clientId: 'c9', rooms: [], photos: [{ path: '/a.jpg', room: 0 }], walk: [] });
+        await scanPhotosToHub('s1');
+        const first = calls;
+        const out2 = await scanPhotosToHub('s1');
+        return JSON.parse(JSON.stringify({ first, calls, out2, rows: photos.length }));
+      } finally {
+        scans.length = 0; saved.scans.forEach(x => scans.push(x));
+        photos.length = 0; saved.photos.forEach(x => photos.push(x));
+        window._supa = saved.supa; window._supaUser = saved.user; window.supaEnabled = saved.en;
+        window.Capacitor = saved.cap; window.fetch = saved.fetch; window.saveAll = saved.save;
+        window._uploadClientHub = saved.hub; window._compressPhoto = saved.comp;
+        window._uploadPhotoThumb = saved.thumb;
+      }
+    });
+    expect(r.calls, 'the second pass uploaded nothing').toBe(r.first);
+    expect(r.out2.skipped).toBe(1);
+    expect(r.out2.uploaded).toBe(0);
+    expect(r.rows, 'and did not duplicate the hub row').toBe(1);
+  });
+
+  test('a dead local path is counted, not crashed on', async () => {
+    // The reinstall case: the scan row survived, the files did not.
+    const r = await run({ missing: true });
+    expect(r.out.uploaded).toBe(0);
+    expect(r.out.missing).toBe(7);
+    expect(r.photoRows.length).toBe(0);
+  });
+
+  test('a failed upload writes no url and no row, so the next save retries it', async () => {
+    const r = await run({ upErr: true });
+    expect(r.out.failed).toBe(7);
+    expect(r.frameUrls.shutter.filter(Boolean).length).toBe(0);
+    expect(r.photoRows.length).toBe(0);
+  });
+
+  test('signed out, it does nothing at all', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { scans: scans.slice(), en: window.supaEnabled, user: window._supaUser };
+      try {
+        window.supaEnabled = () => false; window._supaUser = null;
+        scans.length = 0;
+        scans.push({ id: 's1', clientId: 'c9', rooms: [], photos: [{ path: '/a.jpg' }], walk: [] });
+        return JSON.parse(JSON.stringify(await scanPhotosToHub('s1')));
+      } finally {
+        scans.length = 0; saved.scans.forEach(x => scans.push(x));
+        window.supaEnabled = saved.en; window._supaUser = saved.user;
+      }
+    });
+    expect(r.uploaded).toBe(0);
+  });
+
+  test('a scan that does not exist, and junk, never throw', async () => {
+    const r = await page.evaluate(() => Promise.all([
+      scanPhotosToHub('nope'), scanPhotosToHub(null), scanPhotosToHub(undefined), scanPhotosToHub({}),
+    ]).then(a => JSON.parse(JSON.stringify(a))).catch(e => 'threw: ' + e.message));
+    expect(Array.isArray(r), 'nothing threw').toBe(true);
+    expect(r.every(x => x.uploaded === 0)).toBe(true);
+  });
+
+  // ── The reinstall net ──────────────────────────────────────────────────
+  test('the image prefers the local file and falls back to the upload', async () => {
+    const r = await page.evaluate(() => {
+      const saved = window.Capacitor;
+      try {
+        window.Capacitor = { convertFileSrc: (p) => 'cap://' + p };
+        const both = _scanImgAttrs({ path: '/a.jpg', url: 'https://cdn/a.jpg' });
+        const localOnly = _scanImgAttrs({ path: '/a.jpg' });
+        window.Capacitor = undefined;
+        const noCap = _scanImgAttrs({ path: '/a.jpg', url: 'https://cdn/a.jpg' });
+        return { both, localOnly, noCap };
+      } finally { window.Capacitor = saved; }
+    });
+    expect(r.both, 'the local file is what renders first').toContain('src="cap:///a.jpg"');
+    expect(r.both, 'and the upload catches it when that file is gone').toContain('onerror=');
+    expect(r.both).toContain('https://cdn/a.jpg');
+    expect(r.localOnly, 'nothing uploaded yet, so nothing to fall back to').not.toContain('onerror=');
+    expect(r.noCap, 'on a device with no local copy at all, the upload IS the source').toContain('src="https://cdn/a.jpg"');
+    expect(r.noCap, 'and it does not point onerror back at itself').not.toContain('onerror=');
+  });
+
+  test('no console errors', () => { assertNoErrors(page, 'scan photos to hub'); });
+});

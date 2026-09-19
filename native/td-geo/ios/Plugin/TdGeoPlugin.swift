@@ -83,6 +83,29 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // history has been read off the coprocessor, and a wake must never re-emit
     // transitions it already pulled.
     private let motionMarkKey = "td_geo_motion_hist_ts"
+    // ── COVERAGE, WHICH IS NOT THE SAME AS THE LAST THING THAT HAPPENED ────
+    // motionMarkKey is the newest FLIP pulled off the coprocessor. It is the
+    // wrong number to prove coverage with: a man standing still from 10:58 to
+    // 12:11 has his mark stuck at 10:58 the whole time, even though the phone
+    // asked at noon and was told nothing happened.
+    //
+    // This is the instant the query was asked THROUGH. "I put the question to
+    // the coprocessor about everything up to here, and this was all of it."
+    // That, and only that, lets the server treat an empty stretch as evidence
+    // of absence rather than evidence missing, which is the one thing standing
+    // between it and closing a day out without waking the phone.
+    //
+    // Advanced ONLY on a query that came back without an error, and only from
+    // backfillMotionHistory, whose events go straight into the native flush
+    // lane. motionSince() is not allowed to advance it: that one hands its
+    // events to JS, and JS may never post them, so claiming coverage there
+    // would promise the server data nobody sent.
+    private let motionReadKey = "td_geo_motion_read_ts"
+    // The coverage value the server has actually ACKED. Advanced on 2xx beside
+    // the event watermark, for the same reason: an upload that never landed
+    // proves nothing.
+    private let flushCoveredKey = "td_geo_flush_covered_ts"
+    private let flushInflightCovKey = "td_geo_flush_inflight_cov"
     // taskIdentifier -> the batch's max ts, persisted so a delegate callback
     // arriving after a relaunch can still advance the watermark.
     private let flushInflightKey = "td_geo_flush_inflight"
@@ -1182,8 +1205,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             var out: [[String: Any]] = []
             var last = ""
             for a in acts ?? [] {
-                let kind = a.automotive ? "driving" : (a.cycling ? "cycling"
-                          : ((a.walking || a.running) ? "onFoot" : (a.stationary ? "still" : "unknown")))
+                // Same precedence as motionKind above (stationary is the
+                // narrower fact and wins), in this method's OWN older
+                // vocabulary, which the comment on the backfill explains is
+                // deliberately not the live stream's.
+                let kind = a.stationary ? "still" : (a.automotive ? "driving" : (a.cycling ? "cycling"
+                          : ((a.walking || a.running) ? "onFoot" : "unknown")))
                 if kind == "unknown" || kind == last { continue }
                 // Low-confidence samples flip constantly; a transition that
                 // stamps a payroll record has to be one the phone is sure of.
@@ -1506,6 +1533,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // point; TdNativeTests is a DEBUG-configuration target (§3.3).
     func backfillMotionHistoryForTest() { backfillMotionHistory() }
     var motionMarkKeyForTest: String { motionMarkKey }
+    var motionReadKeyForTest: String { motionReadKey }
+    var flushCoveredKeyForTest: String { flushCoveredKey }
+    var flushInflightCovKeyForTest: String { flushInflightCovKey }
+    static var coverageIdleMsForTest: Double { coverageIdleMs }
     static var backfillFreshMsForTest: Double { backfillFreshMs }
     // The urgent lane, reachable without backgrounding a simulator. What the
     // tests can assert is that it survives being called from any queue, with
@@ -1518,6 +1549,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // crossing does not. The deadline itself is what gets asserted: waiting on
     // a real 20-second timer would put a 20-second floor under the suite.
     func scheduleFlushForTest(type: String) { scheduleFlush(for: type) }
+    func isUrgentFlushTypeForTest(_ t: String) -> Bool { isUrgentFlushType(t) }
     var flushDeadlineForTest: Date? { flushDeadline }
     var flushPendingForTest: Bool { flushPending }
     func driveFlushDelaySecForTest() -> Double { driveFlushDelaySec() }
@@ -1588,6 +1620,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     func endBurstForTest() { endBurst(reason: "test") }
     static var blindPingBurstSecForTest: Double { blindPingBurstSec }
     static var blindPingStaleMsForTest: Double { blindPingStaleMs }
+    // event() is private and builds every positioned row; the tests reach it
+    // to prove the age rides along.
+    func eventForTest(type: String, loc: CLLocation?) -> [String: Any] {
+        event(type: type, loc: loc, regionId: nil)
+    }
     func fireWakeStopWatchdogForTest(stoppedSecondsAgo: Double = 5) {
         wakeStopWatchdogFired(stoppedAt: Date(timeIntervalSinceNow: -stoppedSecondsAgo))
     }
@@ -1664,6 +1701,29 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         return call.getString("reason") ?? ""
     }
 
+    // ── A POSITION'S AGE IS PART OF THE POSITION (owner 2026-09-19) ───────
+    // One rule, both callers: silentPush has measured its cached fix against
+    // the CLLocation's OWN timestamp since 2026-09-08, and every other event
+    // built here threw that away and stamped the wall clock instead. The
+    // deriver's own comment named the hole out loud ("a `fix` carries no age
+    // whatsoever", derive-day.mjs) and Jack's 18 September is what it costs:
+    // iOS handed didUpdateLocations its last-known position 11 times between
+    // 07:58 and 12:29, each one the shop coordinate locked at 07:39, each one
+    // recorded as a fresh `fix` at the moment of the wake. He was at a job
+    // site 768 ft away the whole time, and the cluster of repeats was the
+    // most-agreed-on position in the dwell, so it named the stop.
+    //
+    // The threshold is blindPingStaleMs, the number already chosen for this
+    // exact question. Fresh positions carry nothing, so nothing changes for
+    // them; a stale one says so and every reader already knows what to do
+    // with that (_geoFreshFixEv in js/geo-track.js, freshFix in
+    // derive-day.mjs). Nil rather than zero: absent means fresh, which is
+    // also how every row written before this build reads.
+    static func staleMsFor(_ l: CLLocation, now: Date = Date()) -> Double? {
+        let age = now.timeIntervalSince(l.timestamp) * 1000
+        return age > blindPingStaleMs ? age : nil
+    }
+
     private func event(type: String, loc: CLLocation?, regionId: String?) -> [String: Any] {
         var ev: [String: Any] = [
             "type": type,
@@ -1674,6 +1734,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             ev["lng"] = l.coordinate.longitude
             ev["acc"] = l.horizontalAccuracy
             ev["speed"] = l.speed
+            if let stale = TdGeoPlugin.staleMsFor(l) { ev["staleMs"] = stale }
         }
         if let rid = regionId { ev["regionId"] = rid }
         return ev
@@ -1735,7 +1796,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             ev["lat"] = l.coordinate.latitude
             ev["lng"] = l.coordinate.longitude
             ev["acc"] = l.horizontalAccuracy
-            if ageMs > TdGeoPlugin.blindPingStaleMs { ev["staleMs"] = ageMs }
+            if let stale = TdGeoPlugin.staleMsFor(l) { ev["staleMs"] = stale }
         }
         if cached == nil || ageMs > TdGeoPlugin.blindPingStaleMs {
             // A BLIND PING IS NOT A PING (Jack, 2026-09-08). This only ever
@@ -1783,6 +1844,33 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
     private static let blindPingBurstSec: Double = 4
     private static let blindPingStaleMs: Double = 5 * 60_000
+
+    // ── A PARKED TRUCK IS PARKED, WHATEVER IT IS PARKED IN ───────────────
+    // CMMotionActivity's flags are INDEPENDENT booleans, not a state, and the
+    // one compound that matters is automotive + stationary: a vehicle that is
+    // not moving. Reading automotive first called that driving, so a phone
+    // sitting in a truck at a job site reported automotive for as long as it
+    // sat there, and the tape said the drive never ended.
+    //
+    // Stationary wins because it is the narrower fact: "this device is not
+    // moving" is true or it is not, and no vehicle flag argues with it. A
+    // drive is unaffected, nothing reports stationary at 40mph, and a stop
+    // short of ten minutes does not end a journey anyway (the still-run rule
+    // in js/geo-derive.js), so a red light still costs nothing. A ten-minute
+    // stationary stretch mid-drive now splits the journey, which is the
+    // intended reading: that is a stop.
+    //
+    // Plain booleans rather than the CMMotionActivity itself so the rule is
+    // reachable from a test: CMMotionActivity has no public initializer.
+    static func motionKind(automotive: Bool, cycling: Bool, running: Bool,
+                           walking: Bool, stationary: Bool) -> String {
+        if stationary { return "still" }
+        if automotive { return "automotive" }
+        if cycling { return "cycling" }
+        if running { return "running" }
+        if walking { return "walking" }
+        return ""
+    }
 
     // MARK: - Shift heartbeat + motion stream (owner 2026-08-27)
 
@@ -1925,11 +2013,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         motionMgr.startActivityUpdates(to: .main) { [weak self] act in
             guard let self = self, let a = act else { return }
             if a.confidence == .low { return }
-            let kind = a.automotive ? "automotive"
-                : a.cycling ? "cycling"
-                : a.running ? "running"
-                : a.walking ? "walking"
-                : a.stationary ? "still" : ""
+            let kind = TdGeoPlugin.motionKind(automotive: a.automotive, cycling: a.cycling,
+                                              running: a.running, walking: a.walking,
+                                              stationary: a.stationary)
             if kind.isEmpty || kind == self.lastMotionKind { return }
             let prev = self.lastMotionKind
             self.lastMotionKind = kind
@@ -2119,6 +2205,28 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             return
         }
         if UIApplication.shared.applicationState != .active { flushUrgently(); return }
+        // ── A FLIP IS NEVER DEBOUNCED (owner 2026-09-18) ────────────────────
+        // "If I arrive at John Doe and go from automotive to on foot, I want
+        // it to flush right away."
+        //
+        // Backgrounded, that already happened: the line above sends every wake
+        // straight out. FOREGROUND it did not, and foreground is where the
+        // damage is, because the next thing a person does after a flip is put
+        // the phone in their pocket. His 11 September: the app was active from
+        // 19:06, the automotive flip landed at 20:48:43 and armed a 1.5 second
+        // timer, the app backgrounded at 20:49:41, and the flip did not reach
+        // the server until 02:43. The dwell it closed could not be written for
+        // five hours and fifty-five minutes, because a dwell needs both ends.
+        //
+        // Same lesson as the clock punch (PR #84): a timer suspended with the
+        // app never fires, and every other event can afford the debounce
+        // because the person is still looking at the screen. A flip is the one
+        // they walk away from, and it is the event the whole engine turns on.
+        //
+        // The debounce keeps doing its job for the thing it was built for: a
+        // fix every two seconds through a drive, which must not become a POST
+        // every two seconds.
+        if isUrgentFlushType(type) { flushUrgently(); return }
         let delay = flushDelaySec(for: type)
         let due = Date().addingTimeInterval(delay)
         // An already-pending flush that lands at or before this one covers it.
@@ -2142,6 +2250,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // and any event at all outside a drive, keeps the interval it always had.
     // Split out of scheduleFlush so the decision can be asserted without a
     // simulator's app state or a real timer in the way.
+    // The one event that outranks the debounce. Deliberately narrow: widening
+    // this turns a drive, which samples a fix every couple of seconds, into a
+    // POST every couple of seconds.
+    private func isUrgentFlushType(_ t: String) -> Bool { t == "motion" }
+
     private func flushDelaySec(for type: String) -> Double {
         guard type == "fix", driveSamplingOn() else { return TdGeoPlugin.flushDebounceMs / 1000 }
         return driveFlushDelaySec()
@@ -2298,7 +2411,20 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let mark = d.double(forKey: flushMarkKey)
         let buf = (d.array(forKey: bufferKey) as? [[String: Any]]) ?? []
         let fresh = buf.filter { (num($0["ts"]) ?? 0) > mark }
-        if fresh.isEmpty { return }
+        // ── A QUIET WAKE STILL HAS SOMETHING TO SAY ────────────────────────
+        // An empty buffer used to end the flush here, which is right for
+        // events and wrong for coverage: "nothing happened since you last
+        // heard from me, and I have checked" is exactly the fact the server
+        // needs to close a day out, and it was the one fact that never left
+        // the phone. The half-hourly ping wake is usually this shape.
+        //
+        // Rate-limited so it cannot become a heartbeat: coverage has to have
+        // moved a real interval past what the server already acked, so a burst
+        // of wakes in one minute sends one POST, not six.
+        let covered = d.double(forKey: motionReadKey)
+        let coveredAcked = d.double(forKey: flushCoveredKey)
+        let coverageWorthSending = covered > coveredAcked + TdGeoPlugin.coverageIdleMs
+        if fresh.isEmpty && !coverageWorthSending { return }
         let batch = Array(fresh.prefix(400))
         let maxTs = batch.compactMap { num($0["ts"]) }.max() ?? mark
         // One upload per batch. Timers frozen through a suspension all fire
@@ -2307,9 +2433,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // already on its way is identified by its newest event.
         let inflightNow = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
         if inflightNow.values.contains(maxTs) { return }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "user_id": userId, "device_id": deviceId, "key": key, "events": batch
         ]
+        // Omitted rather than sent as zero when this phone has never completed
+        // a history read: the server must be able to tell "no coverage claimed"
+        // from "covered through the epoch".
+        if covered > 0 { payload["covered_through"] = covered }
         guard JSONSerialization.isValidJSONObject(payload),
               let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
         var req = URLRequest(url: target)
@@ -2336,6 +2466,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         var inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
         inflight[inflightKey(session, task)] = maxTs
         d.set(inflight, forKey: flushInflightKey)
+        // Coverage rides in its own map keyed the same way, so the 2xx handler
+        // advances exactly the value THIS upload carried rather than whatever
+        // the phone has read by the time the reply lands.
+        var inflightCov = (d.dictionary(forKey: flushInflightCovKey) as? [String: Double]) ?? [:]
+        inflightCov[inflightKey(session, task)] = covered
+        d.set(inflightCov, forKey: flushInflightCovKey)
         task.resume()
         countWake("flushSent")
         countWake(live ? "flushLive" : "flushDeferred")
@@ -2352,6 +2488,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // Never returning it is what iOS punishes by throttling the session: the
     // owner's raw event upload went silent mid-drive twice today and only
     // came back on a relaunch.
+    // Five minutes: long enough that a wake storm posts once, short enough
+    // that a day is never waiting on coverage for more than one ping cycle.
+    private static let coverageIdleMs: Double = 5 * 60_000
+
     public static var backgroundFlushCompletion: (() -> Void)?
 
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
@@ -2369,13 +2509,21 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // an upgrade must still be able to retire its own last batch.
         let tid = inflightKey(session, task)
         let bare = String(task.taskIdentifier)
+        var inflightCov = (d.dictionary(forKey: flushInflightCovKey) as? [String: Double]) ?? [:]
+        let sentCov = inflightCov[tid] ?? inflightCov[bare] ?? 0
         guard let maxTs = inflight[tid] ?? inflight[bare] else { return }
         inflight.removeValue(forKey: tid)
         inflight.removeValue(forKey: bare)
         d.set(inflight, forKey: flushInflightKey)
+        inflightCov.removeValue(forKey: tid)
+        inflightCov.removeValue(forKey: bare)
+        d.set(inflightCov, forKey: flushInflightCovKey)
         let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
         if error == nil && status >= 200 && status < 300 {
             if maxTs > d.double(forKey: flushMarkKey) { d.set(maxTs, forKey: flushMarkKey) }
+            // Same contract as the event watermark: the server has it, so the
+            // phone may stop re-claiming it.
+            if sentCov > d.double(forKey: flushCoveredKey) { d.set(sentCov, forKey: flushCoveredKey) }
             countWake("flushOk")
             flushRetryStep = 0
             flushRetryGen += 1          // cancel a retry armed by an earlier failure
@@ -2415,9 +2563,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let floorMs = nowMs - 7 * 24 * 3600 * 1000
         let mark = max(d.double(forKey: motionMarkKey), floorMs)
         let from = Date(timeIntervalSince1970: mark / 1000)
-        guard from < Date() else { return }
+        // Captured ONCE and used for both the query bound and the coverage
+        // mark, so the mark can never claim a millisecond the question did not
+        // actually cover.
+        let readThrough = Date()
+        guard from < readThrough else { return }
         let wakeLoc = mgr().location
-        motionMgr.queryActivityStarting(from: from, to: Date(), to: .main) { [weak self] acts, _ in
+        motionMgr.queryActivityStarting(from: from, to: readThrough, to: .main) { [weak self] acts, err in
             guard let self = self else { return }
             var last = ""
             var newest = mark
@@ -2426,11 +2578,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 // The LIVE stream's vocabulary, not the history query's older
                 // one. Two spellings for one fact is how the server ended up
                 // able to see that a transition happened and never what it was.
-                let kind = a.automotive ? "automotive"
-                    : a.cycling ? "cycling"
-                    : a.running ? "running"
-                    : a.walking ? "walking"
-                    : a.stationary ? "still" : ""
+                let kind = TdGeoPlugin.motionKind(automotive: a.automotive, cycling: a.cycling,
+                                                  running: a.running, walking: a.walking,
+                                                  stationary: a.stationary)
                 if kind.isEmpty || kind == last { continue }
                 last = kind
                 let ts = a.startDate.timeIntervalSince1970 * 1000
@@ -2449,6 +2599,15 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 self.record(ev)
             }
             if newest > mark { d.set(newest, forKey: self.motionMarkKey) }
+            // A failed query answered nothing, so it covered nothing. Leaving
+            // the mark where it was costs one repeated read on the next wake;
+            // moving it would tell the server a stretch was checked when the
+            // coprocessor never replied.
+            guard err == nil else { return }
+            let readMs = readThrough.timeIntervalSince1970 * 1000
+            if readMs > d.double(forKey: self.motionReadKey) {
+                d.set(readMs, forKey: self.motionReadKey)
+            }
         }
     }
 
