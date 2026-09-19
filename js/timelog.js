@@ -1917,7 +1917,16 @@ function _tlRailRow(r){
       '<span aria-hidden="true">\u22ef</span></button>'
     : '';
   const lp='';
-  return '<li class="tl-rail-row" data-kind="'+kind+'"'+lp+' style="--rail:'+m.c+'">'+
+  // ── AND IT LOOKS LIKE WHAT IT IS (owner 2026-09-19) ────────────────────
+  // "How do we soft grey it out, important to leave it." The duration has
+  // been muted for an unpaid row for a while; the rest of the row still read
+  // exactly like a paid one, so an Office stretch or a lunch break looked
+  // like hours somebody is owed. The row says so now, and it says it for
+  // every unpaid row rather than for Office alone, because "this is on the
+  // log and in no total" is one fact and the rail should have one way of
+  // showing it. A hole already has its own shape (data-kind="gap") and keeps
+  // it.
+  return '<li class="tl-rail-row" data-kind="'+kind+'"'+((r.unpaid&&!isGap)?' data-unpaid="1"':'')+lp+' style="--rail:'+m.c+'">'+
     '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
     '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
     '<div class="tl-rail-body">'+tag+body+'</div>'+

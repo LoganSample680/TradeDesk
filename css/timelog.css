@@ -78,6 +78,14 @@
 .tl-rail-dur{font-size:13px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;
   padding:9px 0 0 8px;white-space:nowrap}
 .tl-rail-dur.mute{font-weight:700;color:var(--text3)}
+/* ON THE LOG, IN NO TOTAL (owner 2026-09-19: "soft grey it out, important to
+   leave it"). An unpaid row is a real thing that happened and is not hours
+   anybody is owed: Office minutes, a lunch break, a stop the day could not
+   vouch for. Softened, never hidden, and the colour is the app's own muted
+   text rather than a new one, so it reads the same in both themes. The time,
+   the spine and the menu keep their contrast: the row still has to be
+   findable and tappable. */
+.tl-rail-row[data-unpaid="1"] .tl-rail-body{opacity:.62}
 /* .tl-rail-edit and .tl-rail-editwrap were DELETED 2026-09-13 (7: deleted,
    never hidden). Edit is the first action in the row menu now, for a manual
    clock and a tracked row alike, so the right column carries a duration and

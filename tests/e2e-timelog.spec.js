@@ -4054,23 +4054,83 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(home[0].minutes).toBe(30);
     });
 
-    test('home-office app time counts, even on a day with no drives at all', async () => {
+    test('home-office app time is on the log, and is not paid time', async () => {
       // Owner, 2026-09-01: "if it's a home office app time still counts."
       // The first cut of the base rule zeroed this: 45 minutes of real
       // paperwork rendered nothing at all, because 'place-office' matched the
       // same /^place/ predicate the raw dwell does. It is not the same thing.
       // place-office and place-load are the home-office rule's OWN output,
       // minutes the app or the motion chip already proved were work.
+      //
+      // AMENDED 2026-09-19 (10.4). This asserted `unpaid === false`, and that
+      // was the right reading of the sentence above while the only question
+      // anybody had asked was whether the row SURVIVES. It does, and that half
+      // is unchanged and still asserted here.
+      //
+      // What changed is what it is worth. Owner, today: "office time should
+      // never add itself to a table as running time ... important to leave it
+      // but need to mark it as unpaid since office time goes a part of the
+      // bill." Overhead, on the bill and in the record, never in the hours
+      // anybody is paid for. So the row keeps its minutes and its place on the
+      // rail, greyed, and _geoIsOffJobSource now says what it is.
       const rows = await rowsFor([
         { employee_user_id: 'me', minutes: 45, source: 'place-office', dest_place: HOME,
           arrived_at: '2026-08-28T14:00:00Z', departed_at: '2026-08-28T14:45:00Z' },
       ]);
       const mine = rows.filter(r => r.date === '2026-08-28');
       expect(mine.length, 'the paperwork is on the log').toBe(1);
-      expect(mine[0].minutes).toBe(45);
-      expect(mine[0].unpaid, 'and it COUNTS, no drive required').toBe(false);
+      expect(mine[0].minutes, 'with every minute of it').toBe(45);
+      expect(mine[0].unpaid, 'and it is overhead, not hours owed').toBe(true);
     });
 
+
+    // ── OFFICE TIME IS NEVER RUNNING TIME (owner rule 2026-09-19) ────────
+    test('office minutes stay out of the paid day, the week and the overtime', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { minutes: 480, unpaid: false, date: '2026-08-28', source: 'auto' },
+          { minutes: 45, unpaid: true, date: '2026-08-28', source: 'auto' },
+        ];
+        return { paid: _tlPaidMin(rows), all: rows.reduce((s, x) => s + x.minutes, 0) };
+      });
+      expect(r.paid, 'eight hours, not eight and three quarters').toBe(480);
+      expect(r.all, 'and the office minutes are still there to be seen').toBe(525);
+    });
+
+    test('the rail marks an unpaid row so it reads as not counting', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (unpaid) => _tlRailRow({ source: 'auto', minutes: 45, unpaid,
+          clientName: '7402 SW 22nd Ct', startTime: '2026-08-28T20:00:00Z', date: '2026-08-28' });
+        return { office: /data-unpaid="1"/.test(mk(true)), job: /data-unpaid="1"/.test(mk(false)),
+          muted: /tl-rail-dur mute/.test(mk(true)) };
+      });
+      expect(r.office, 'greyed, never hidden').toBe(true);
+      expect(r.job, 'and a paid row is untouched').toBe(false);
+      expect(r.muted).toBe(true);
+    });
+
+    test('a legacy place-home row re-grades the same way, with no rebuild', async () => {
+      // The deriver stopped writing place-home (rule 12) and the rows it wrote
+      // are still on both accounts. This is a question about the SOURCE, so
+      // they answer it too, the moment this ships.
+      const rows = await rowsFor([
+        { employee_user_id: 'me', minutes: 30, source: 'place-home', dest_place: HOME,
+          arrived_at: '2026-08-28T02:00:00Z', departed_at: '2026-08-28T02:30:00Z' },
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-27' || r.date === '2026-08-28');
+      expect(mine.length).toBe(1);
+      expect(mine[0].unpaid).toBe(true);
+    });
+
+    test('a shop row is untouched: shop time always counts (9.11)', async () => {
+      const rows = await rowsFor([
+        { employee_user_id: 'me', minutes: 60, source: 'place-supply', dest_place: 'Neenans Co',
+          arrived_at: '2026-08-28T14:00:00Z', departed_at: '2026-08-28T15:00:00Z' },
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-28');
+      expect(mine.length).toBe(1);
+      expect(mine[0].unpaid, 'a supply run is work').toBe(false);
+    });
 
     test('a supply house is NOT a base: it still ends the day', async () => {
       // The whole point of "the second fence crossing". Coming home is not

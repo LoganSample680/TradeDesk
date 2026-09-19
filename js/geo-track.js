@@ -2086,7 +2086,32 @@ function _geoCloseShopEntry(arrivedAt,departedIso){
 function _geoIsDriveSource(s){return /^drive/.test(String(s||''));}
 // Time outside every fence that is not driving: lunch, an errand, waiting on a
 // gate. Neither job labor nor drive time, and never silently folded into either.
-function _geoIsOffJobSource(s){return String(s||'')==='stop';}
+// ── OFFICE TIME IS NEVER RUNNING TIME (owner rule 2026-09-19) ────────────
+// "Office time should never add itself to a table as running time, right now
+// it does ... important to leave it but need to mark it as unpaid since
+// office time goes a part of the bill."
+//
+// Section 9.11 has said half of this since 2026-08-30 ("home office time only
+// counts when the app is open") and the deriver already enforces that half:
+// rule 10 writes an Office row only for app-open minutes inside a home fence,
+// and only OUTSIDE the working day. What nothing said was what the row is
+// worth once written, so it fell through to paid and added itself to the
+// day, the week and the overtime like a job site.
+//
+// It is overhead, not payroll: it belongs on the bill and in the record, and
+// not in the hours anybody is paid for. Said HERE rather than in a reader
+// because this one predicate is what every total already asks (the Time Log's
+// paid minutes and OT, Crew Cost's labour bucket), so one answer moves all of
+// them at once and cannot drift between screens.
+//
+// Nothing is deleted and nothing is rebuilt: the row keeps its place on the
+// rail, greyed, and because this is a question about the SOURCE it re-grades
+// every row already written, on every account, the moment this ships.
+//
+// 'place-home' rides along: the deriver stopped writing it (rule 12) but the
+// rows it wrote are still there and js/timelog.js still reads them on purpose.
+const _GEO_OFFICE_SOURCES={'place-office':1,'place-home':1};
+function _geoIsOffJobSource(s){const k=String(s||'');return k==='stop'||_GEO_OFFICE_SOURCES[k]===1;}
 // ── SHOWN, NEVER CLAIMED ──────────────────────────────────────────────────
 // A `-held` suffix means the deriver wrote this row but nothing in the day
 // vouched for it (js/geo-derive.js rules 13, 15 and 18): a visit at a family
