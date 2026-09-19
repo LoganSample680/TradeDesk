@@ -2505,7 +2505,11 @@ function _tlBarsHtml(groups,opts){
     '<i style="bottom:25%"></i><i style="bottom:50%"></i><i style="bottom:75%"></i><b></b></div>';
   // The key, only for the buckets actually on screen. Read from _TL_BUCKETS,
   // never retyped, so a renamed bucket renames here too.
-  const present=_TL_BUCKETS.filter(b=>folds.some(f=>(f[b.k]||0)>0));
+  // key:false when something ABOVE the chart already names the buckets. The
+  // week grew a split bar with hours on it (owner 2026-09-19), and a colour-
+  // only key repeating those same names four inches lower is the duplicate
+  // 15.1 bans. The month has no such header, so it keeps its key.
+  const present=o.key===false?[]:_TL_BUCKETS.filter(b=>folds.some(f=>(f[b.k]||0)>0));
   const key=present.length?'<div class="tl-wbar-key">'+present.map(b=>
     '<span><i style="background:'+b.c+'"></i>'+escHtml(b.label)+'</span>').join('')+'</div>':'';
   return '<div class="tl-wbar-wrap'+(o.level?' tl-wbar-'+String(o.level):'')+'">'+
@@ -2572,7 +2576,7 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
     aria:(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d),
     rows:byDay[d]||[],
     onclick:'_tlDrillTo(\'day\',\''+String(d)+'\')'
-  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week'});
+  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week',key:false});
 }
 // A MONTH: one bar per week, guided at 40 hours.
 //
@@ -2964,10 +2968,17 @@ function _tlLevelsHtml(moRows,selMo,opts){
   const wkRows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===_tlDrill.wk&&
     (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
   const days=_tlWeekDayDates(_tlDrill.wk);
+  // The week carries the same split bar the day does (owner 2026-09-19, of the
+  // shared timesheet link: "does it include the breakdown of where time went?
+  // I'm talking the totals"). The link opens on the week, so the level a
+  // client actually lands on was the one level with no answer to "where did
+  // the hours go": a total and seven bars, and the breakdown only after a tap
+  // into a day. Same component as the day (7.3), folded over the week's rows.
   if(_tlDrill.level==='week')
     return {head:_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
               _tlDrill.wk,o.backLabel||_bkMonthLabel(selMo),o.eyebrow),
-            body:_tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
+            body:_tlRailHeadHtml(wkRows,'',true)+
+                 _tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
   const dayKeys=days.filter(d=>wkRows.some(r=>r.date===d));
   if(dayKeys.indexOf(_tlDrill.day)<0)_tlDrill.day=dayKeys[dayKeys.length-1]||null;
   const dayRows=wkRows.filter(r=>r.date===_tlDrill.day);

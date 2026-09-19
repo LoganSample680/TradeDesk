@@ -80,7 +80,8 @@ test.describe('The public timesheet page', () => {
         arrowsHidden: [...document.querySelectorAll('#tsp-body .tl-monav-btn')].every(b => getComputedStyle(b).visibility === 'hidden'),
         back: document.querySelector('#tsp-body .tl-drill-back'),
         backHidden: !document.querySelector('#tsp-body .tl-drill-back') || getComputedStyle(document.querySelector('#tsp-body .tl-drill-back')).visibility === 'hidden',
-        key: document.querySelector('#tsp-body .tl-wbar-key') && document.querySelector('#tsp-body .tl-wbar-key').textContent,
+        key: document.querySelector('#tsp-body .tl-rail-legend') && document.querySelector('#tsp-body .tl-rail-legend').textContent,
+        under: document.querySelectorAll('#tsp-body .tl-wbar-key').length,
       };
     });
     expect(r.wrap).toBe(true);
@@ -92,7 +93,12 @@ test.describe('The public timesheet page', () => {
     expect(r.hours.join(' | ')).toMatch(/5h/);
     expect(r.arrowsHidden).toBe(true);
     expect(r.backHidden).toBe(true);
+    // The breakdown the boss opens on. It used to be a colour-only key under
+    // the chart; it is now the split bar's legend above it, with the hours on
+    // it, which is what the owner asked the shared link for (2026-09-19).
     expect(r.key).toContain('On site');
+    expect(r.key, 'and how long each bucket took, not just its colour').toMatch(/\dh|\dm/);
+    expect(r.under, 'one legend, not two').toBe(0);
   });
 
   test('tap a day: the rail, read only (no Edit), back to the week', async ({ page }) => {
