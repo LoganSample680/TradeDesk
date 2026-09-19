@@ -3986,6 +3986,7 @@ test.describe('Automatic mileage from drive legs', () => {
           jobArrived: _geoArrivedAt, shopArrived: _geoShopArrivedAt,
           leftover: _geoParkBackdate,
           noted: fresh.filter(n => n.ev === 'visit-backdate').map(n => n.x),
+          departed: fresh.filter(n => n.ev === 'visit-departure').map(n => n.x),
         };
       } finally { _supaUser = realUser; window._geoEnqueue = realEnq; Date.now = realNow; }
     }, [{ now: NOW, job: JOB, shop: SHOP }, ev, pre || null]);
@@ -4008,11 +4009,41 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.shopArrived).toBe(new Date(AGO(18)).toISOString());
     });
 
-    test('with no arrival time in the report, nothing is backdated', async () => {
+    // ── AMENDED 2026-09-18, and the old assertion is quoted so the change is
+    // ── legible: it read
+    // ──   expect(r.jobArrived, 'it stamps the delivery moment, exactly as
+    // ──   before').toBe(new Date(NOW).toISOString());
+    //
+    // That was right while the only question a visit answered was WHEN. The
+    // 2026-08-25 work above added the arrival date purely as a better clock,
+    // and a report without one kept the old behaviour: he is here, now.
+    //
+    // Jack's 2026-09-18 showed what that behaviour actually is. He left the
+    // shop at 07:53:31 and parked at an unsaved address 700 ft away. At
+    // 07:58:19 iOS delivered a visit carrying the SHOP's coordinates and no
+    // arrival date, which is iOS closing out the stay he had just ended. The
+    // engine placed him at the shop at 07:58:19, five minutes after he drove
+    // off, overlapping the drive that was still running.
+    //
+    // A visit with no usable arrival date cannot be told apart from a
+    // departure report, so it no longer places anybody. Same rule, said
+    // properly: a visit's coordinates are only as good as the arrival date
+    // that dates them.
+    test('with no arrival time in the report, nobody is placed at all', async () => {
       const r = await deliver(visitAt(JOB.lat, JOB.lon, null));
-      expect(r.jobArrived, 'it stamps the delivery moment, exactly as before')
-        .toBe(new Date(NOW).toISOString());
+      expect(r.jobArrived, 'undated coordinates are a place being left, not entered').toBeNull();
       expect(r.noted.length).toBe(0);
+      expect(r.departed.length).toBe(1);
+      expect(r.departed[0]).toContain('no arrival date');
+    });
+
+    // Jack's exact shape, so it can never come back: the visit names a fence
+    // he is no longer standing in.
+    test("a shop visit with no arrival date opens no shop dwell: Jack's 07:58:19", async () => {
+      const r = await deliver(visitAt(SHOP.lat, SHOP.lon, null));
+      expect(r.shopArrived, 'he drove away five minutes ago').toBeNull();
+      expect(r.jobArrived).toBeNull();
+      expect(r.departed.length).toBe(1);
     });
 
     test('a plain fix carrying an arrival time is never backdated: visits only', async () => {
@@ -4021,23 +4052,30 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.noted.length).toBe(0);
     });
 
+    // Same amendment as above: each of these three used to assert
+    // .toBe(new Date(NOW).toISOString()), the delivery moment. An arrival date
+    // this engine refuses is not a worse clock to fall back from, it is a
+    // report it cannot vouch for at all, so it places nobody either.
     test('time is never invented: future, ancient, and yesterday are all refused', async () => {
       const future = await deliver(visitAt(JOB.lat, JOB.lon, NOW + 5 * 60000));
-      expect(future.jobArrived, 'an arrival that has not happened yet').toBe(new Date(NOW).toISOString());
+      expect(future.jobArrived, 'an arrival that has not happened yet').toBeNull();
+      expect(future.departed.length).toBe(1);
 
       const ancient = await deliver(visitAt(JOB.lat, JOB.lon, AGO(3 * 60)));
-      expect(ancient.jobArrived, 'past the two-hour ceiling it is history, not a late stamp')
-        .toBe(new Date(NOW).toISOString());
+      expect(ancient.jobArrived, 'past the two-hour ceiling it is history, not a late stamp').toBeNull();
+      expect(ancient.departed[0]).toContain('180m old');
 
       const yesterday = await deliver(visitAt(JOB.lat, JOB.lon, Date.parse('2026-08-24T23:00:00.000Z')));
-      expect(yesterday.jobArrived, 'a report delivered after midnight never reaches back a day')
-        .toBe(new Date(NOW).toISOString());
+      expect(yesterday.jobArrived, 'a report delivered after midnight never reaches back a day').toBeNull();
+      expect(yesterday.departed.length).toBe(1);
     });
 
-    test('junk arrival times never throw and never stamp', async () => {
+    // Amended with the two above: was .toBe(new Date(NOW).toISOString()).
+    test('junk arrival times never throw, never stamp, and never place', async () => {
       for (const bad of [0, -1, NaN, 'noon', null, undefined, {}]) {
         const r = await deliver(visitAt(JOB.lat, JOB.lon, bad));
-        expect(r.jobArrived, String(bad) + ' is not a timestamp').toBe(new Date(NOW).toISOString());
+        expect(r.jobArrived, String(bad) + ' is not a timestamp').toBeNull();
+        expect(r.departed.length, String(bad) + ' is logged as a departure report').toBe(1);
       }
     });
 

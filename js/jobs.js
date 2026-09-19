@@ -516,6 +516,18 @@ function _isMyTimeEntry(e){
 // reason. timeEntries already tolerates an unmatched job_id gracefully
 // (crew-cost falls back to "Other"), so this rides that same tolerance
 // instead of a new data shape.
+// One door for both punches (7.3). _flushSaveNow is the single tracked entry
+// point for a push (see supaSaveDebounced's note on why a bare
+// supaSaveToCloud here would be invisible to the load guard), so this asks for
+// that and never invents a second one. It is fire-and-forget on purpose: a
+// clock never waits on the network and never fails because of it, exactly like
+// _geoClockPing below.
+function _tlFlushClockPunch(){
+  try{
+    if(typeof opsReadOnly==='function'&&opsReadOnly())return;
+    if(typeof _flushSaveNow==='function')Promise.resolve(_flushSaveNow()).catch(()=>{});
+  }catch(_e){}
+}
 function clockIn(jobId,scopeId,scopeLabel){
   const general=jobId===null;
   const j=general?null:jobs.find(x=>x.id===jobId);
@@ -559,6 +571,17 @@ function clockIn(jobId,scopeId,scopeLabel){
   const entryId=Date.now();
   timeEntries.push({id:entryId,job_id:jobId,date:todayKey(),start_time:new Date().toISOString(),end_time:null,minutes:null,scope_id:scopeId||null,scope_label:scopeLabel||null,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:true});
   saveAll();
+  // ── A PUNCH DOES NOT WAIT TWO SECONDS (owner 2026-09-16) ────────────────
+  // "He said he clocked in at 9am and I don't see his clock in time." saveAll
+  // queues a 2s debounce, and the phone goes back in the pocket in less than
+  // that: his app had ELEVEN SECONDS of foreground that morning and one second
+  // on the next wake. A timer suspended with the app never fires, and the punch
+  // lives only in local storage until something else rescues it.
+  //
+  // Every other edit in the app can afford the debounce, because the person is
+  // still looking at the screen. A clock punch is the one the person walks away
+  // from on purpose, and it is the row the whole day hangs off. It goes now.
+  _tlFlushClockPunch();
   _activeTimer={jobId,jobName,clientName:c?c.name:jobName,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
@@ -602,6 +625,7 @@ function clockOut(saveEntry,silent){
     const j=jobs.find(x=>x.id===jobId);
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
     saveAll();
+    _tlFlushClockPunch();   // same reasoning as clockIn: the pocket is next
     if(!silent){
       const label=scopeLabel?scopeLabel+', '+jobName:jobName;
       showToast(_fmtMin(minutes)+' logged · '+label,'⏱');

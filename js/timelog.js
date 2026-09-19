@@ -608,7 +608,19 @@ function _tlBlendManual(rows){
   });
   return rows;
 }
-async function _timeLogRows(sinceISO){
+// ── THE CREW HALF IS THE ONLY SLOW PART ───────────────────────────────────
+// Everything this function builds comes out of memory except one call:
+// _fetchCrewLabor, which is three Supabase queries (js/finance.js) and has no
+// cache of its own. So a tap that changes only LOCAL rows, answering a gap,
+// pays a network round trip before a single pixel moves (owner 2026-09-18:
+// "clicking the button makes the day rail laggy").
+//
+// _tlRowsCache above cannot help there: it holds the ASSEMBLED rows, so
+// painting from it would redraw the day without the row the tap just added.
+// This caches the crew PAYLOAD instead, one layer down, so the local half can
+// be rebuilt fresh around it with nothing awaited on the network.
+let _tlCrewCache=null;
+async function _timeLogRows(sinceISO,opts){
   const rows=[];
   timeEntries.forEach(e=>{
     // ── A RUNNING CLOCK IS STILL THE DAY (owner 2026-09-15) ───────────────
@@ -677,7 +689,16 @@ async function _timeLogRows(sinceISO){
       startTime:e.start_time||null,endTime:e.end_time||null
     });
   });
-  const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
+  // crewCached: paint now off the last payload, and the caller revalidates
+  // straight after. Only ever honoured when a payload was fetched for the
+  // SAME window, since sinceISO decides what is in it.
+  const _cc=!!(opts&&opts.crewCached&&_tlCrewCache&&_tlCrewCache.since===(sinceISO||null));
+  let crew;
+  if(_cc)crew=_tlCrewCache.payload;
+  else{
+    crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
+    _tlCrewCache={since:sinceISO||null,payload:crew};
+  }
   // WHERE I AM RIGHT NOW (owner 2026-09-02: "continue to update the time
   // log day rail in real time"). The deriver never writes an open dwell (no
   // departure yet), so the rail draws it from the live report, running to
@@ -755,6 +776,24 @@ async function _timeLogRows(sinceISO){
   });
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
+    // ── THE OPEN ROW IS STORED FOR EVERYONE ELSE, NOT FOR THIS SCREEN ──────
+    // (owner 2026-09-18)
+    //
+    // A dwell with no departure yet is a row now (js/geo-derive.js,
+    // geo_replace_day 20261024), so the ops portal, Crew Cost and anything
+    // else querying the database can see who is on site WITHOUT this phone
+    // being open. That was the whole point of storing it.
+    //
+    // This screen already had the same fact and a better version of it: the
+    // live row a few dozen lines up, built from window._geoOpenDwell, which
+    // ticks, says "On site now", and knows from the deriver whether it would
+    // bill (od.counts). Letting the stored row through as well would draw the
+    // SAME dwell twice, once live and once as a dead 0m row, which is the
+    // double-count this rule exists to prevent.
+    //
+    // The shop loop above has always skipped a null departure for its own
+    // reasons; this says it out loud for the job side.
+    if(!e.departed_at)return;
     // ── RULE 13, ANSWERED "PERSONAL" (owner 2026-09-16) ──────────────────
     // "Why is Laurie Schonfeldt sitting as manual time?" Because this line
     // used to `return`, and dropping the row out of `rows` is not the same as
@@ -1292,7 +1331,9 @@ async function _tlSaveEntry(kind,id){
     }
     if(typeof saveAll==='function')saveAll();
     document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
-    if(typeof renderTimeLog==='function')renderTimeLog();
+    // crewCached: the change is a local row, so the rail must be on screen in
+    // this same task, not after three Supabase queries (owner 2026-09-18).
+    if(typeof renderTimeLog==='function')renderTimeLog({crewCached:true});
     return;
   }
   if(!window._supa||!window._supaUser)return _tlEditErr('Not connected.');
@@ -1412,7 +1453,9 @@ function _tlAddUnaccounted(startIso,endIso,kind){
     if(typeof supaSaveToCloud==='function')supaSaveToCloud();
     if(typeof showToast==='function')showToast(k==='personal'?'Taken off the day':
       ('Changed to '+(k==='break'?('break, '+(unpaid?'unpaid':'paid')):'work time')),k==='personal'?'🏠':'⏱');
-    if(typeof renderTimeLog==='function')renderTimeLog();
+    // crewCached: the change is a local row, so the rail must be on screen in
+    // this same task, not after three Supabase queries (owner 2026-09-18).
+    if(typeof renderTimeLog==='function')renderTimeLog({crewCached:true});
     return;
   }
   timeEntries.push({
@@ -1440,7 +1483,7 @@ function _tlAddUnaccounted(startIso,endIso,kind){
        (k==='break'?('break, '+(unpaid?'unpaid':'paid')):'work time')),k==='personal'?'🏠':'⏱');
   // The gap row is derived, so it simply stops existing on the next build:
   // the span is now covered by a real row and no hole remains to report.
-  if(typeof renderTimeLog==='function')renderTimeLog();
+  if(typeof renderTimeLog==='function')renderTimeLog({crewCached:true});
 }
 // ── The day rail (owner-approved design 2026-08-29) ────────────────────────
 // "I like the day rail but what would a compliant day rail look like for ADA
@@ -1519,7 +1562,13 @@ const _TL_RAIL_META={
   // just not labour at a customer's address, which is the distinction the
   // split bar exists to draw.
   supply:{c:'#15803D',           icon:'🛒', word:'Supply house'},
-  office:{c:'#0E6B6B',           icon:'📋', word:'Office'},
+  // "Office time", not "Office" (owner 2026-09-19), for the same reason
+  // "Loading time" is not "Loading": every neighbour on this rail says what
+  // KIND of time it is, and the bare word beside Shop time and Drive time
+  // read like a place rather than a stretch of the day. With the unpaid
+  // suffix the row now says "Office time · unpaid", which is the whole rule
+  // in three words.
+  office:{c:'#0E6B6B',           icon:'📋', word:'Office time'},
   // A stretch at somebody's own address. It reads as its own thing rather
   // than as 'On site', which is what a house was drawn as when a home_office
   // dwell arrived as a bare 'place' (owner 2026-09-03, on Jack's rail). Grey,
@@ -1686,19 +1735,43 @@ function _tlRailRow(r){
     // row between two segments already says.
     const _ends=isDrive&&(r.originPlace||r.destPlace)
       ?_arrow(r.originPlace||'Unsaved address',r.destPlace||'Unsaved address'):'';
+    // ── ONE END KNOWN IS NOT THE ROW TITLING ITSELF (owner 2026-09-16) ────
+    // "On jacks 09/08 rows he has unsaved address to Tagen Lindstram when it
+    // should say JS Solutions shop to Tagen Lindstram."
+    //
+    // It should, and the name was never missing: the mileage leg for that
+    // drive says "JS Solutions shop → Tagen Lindstram" and always did. The
+    // row's origin_place is null only because the day was derived on 14
+    // September and origin_place landed on the 15th. The comment below has
+    // said since that day that such rows keep the join; this claimed them
+    // before the join could run, because it fired on EITHER end. So the one
+    // field the deriver had not written yet erased the one the log already
+    // had, and it hit every drive row derived before origin_place existed.
+    //
+    // A row titles itself when it knows BOTH ends. Knowing one is a question
+    // for the join, and _ends waits at the bottom of the chain to answer it
+    // if the join cannot: that is the only way "Unsaved address" stays the
+    // word for an end that genuinely is unsaved, rather than for an end
+    // nobody asked about.
+    const _both=!!(isDrive&&r.originPlace&&r.destPlace);
     // Below here is history: rows written before origin_place existed, on days
     // past the tape's seven that nothing will ever re-derive. They keep the
     // join, and they are the only reason it is still here.
-    const ttl=_ends?_ends
+    const ttl=_both?_ends
              :_segE?_arrow(_segE.from||'Unsaved address',_segE.to||'Unsaved address')
              // A leg the deriver did NOT split: its two ends are the row's two
-             // ends, which is what this always was.
-             :(leg&&_ls&&!_ls.split)?_arrow(leg.from_name,leg.to_name||r.clientName)
+             // ends, which is what this always was. Only when it actually
+             // HOLDS an origin: a leg out of an unsaved address has an empty
+             // from_name, and an em dash there is worse than the words.
+             :(leg&&_ls&&!_ls.split&&leg.from_name)?_arrow(leg.from_name,leg.to_name||r.clientName)
              // A segment written before segEnds existed. The leg's ends are
              // the journey's, not this row's, so the row says what it knows
              // about itself instead of borrowing them. The next derive of that
              // day rewrites the leg and the arrow comes back.
-             :_fallTtl;
+             // And last, the one end the row DOES know, with "Unsaved address"
+             // for the other: the join had nothing to add, so the end really
+             // is one nobody saved.
+             :(_ends||_fallTtl);
     // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
     // put tradedesk shop under the sub title that already says it ... can
     // just do the start and end time under there").
@@ -1781,7 +1854,21 @@ function _tlRailRow(r){
   // THE SAME TRIP NUMBER THE MILEAGE LOG SHOWS (owner 2026-09-08): one
   // definition, _mileTripNumbers, keyed by the leg id the drive row carries.
   let _tripNo=null;
-  try{if(kind==='drive'&&typeof _mileTripNumberForLeg==='function')_tripNo=_mileTripNumberForLeg(r.date,r.clientKey);}catch(_e){_tripNo=null;}
+  // ── AND IT IS JUST THE TRIP NUMBER AGAIN (owner 2026-09-19) ────────────
+  // "Still have the 1 of 3 2 of 3 thing carrying over which I don't want."
+  //
+  // The suffix was added on 2026-09-18 to explain "Trip 1" appearing three
+  // times over, and he said at the time it was the wrong fix: they were three
+  // separate drives, not one trip in three parts. He was right. The chain was
+  // collapsing three real drives into one leg, that is fixed in the deriver
+  // (a work-length stop closes the chain), and each drive now carries its own
+  // trip number. With the cause gone the label has nothing left to explain
+  // and says the number, as it did before.
+  try{
+    if(kind==='drive'&&typeof _mileTripNumberForLeg==='function'){
+      _tripNo=_mileTripNumberForLeg(r.date,r.clientKey);
+    }
+  }catch(_e){_tripNo=null;}
   const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+(_tripNo?('Trip '+_tripNo+' · '):'')+escHtml(m.word)+
     // A held visit carries no "unpaid": it is not counted YET, and the row
     // says so in words and offers the two answers underneath.
@@ -1840,7 +1927,16 @@ function _tlRailRow(r){
       '<span aria-hidden="true">\u22ef</span></button>'
     : '';
   const lp='';
-  return '<li class="tl-rail-row" data-kind="'+kind+'"'+lp+' style="--rail:'+m.c+'">'+
+  // ── AND IT LOOKS LIKE WHAT IT IS (owner 2026-09-19) ────────────────────
+  // "How do we soft grey it out, important to leave it." The duration has
+  // been muted for an unpaid row for a while; the rest of the row still read
+  // exactly like a paid one, so an Office stretch or a lunch break looked
+  // like hours somebody is owed. The row says so now, and it says it for
+  // every unpaid row rather than for Office alone, because "this is on the
+  // log and in no total" is one fact and the rail should have one way of
+  // showing it. A hole already has its own shape (data-kind="gap") and keeps
+  // it.
+  return '<li class="tl-rail-row" data-kind="'+kind+'"'+((r.unpaid&&!isGap)?' data-unpaid="1"':'')+lp+' style="--rail:'+m.c+'">'+
     '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
     '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
     '<div class="tl-rail-body">'+tag+body+'</div>'+
@@ -2409,7 +2505,11 @@ function _tlBarsHtml(groups,opts){
     '<i style="bottom:25%"></i><i style="bottom:50%"></i><i style="bottom:75%"></i><b></b></div>';
   // The key, only for the buckets actually on screen. Read from _TL_BUCKETS,
   // never retyped, so a renamed bucket renames here too.
-  const present=_TL_BUCKETS.filter(b=>folds.some(f=>(f[b.k]||0)>0));
+  // key:false when something ABOVE the chart already names the buckets. The
+  // week grew a split bar with hours on it (owner 2026-09-19), and a colour-
+  // only key repeating those same names four inches lower is the duplicate
+  // 15.1 bans. The month has no such header, so it keeps its key.
+  const present=o.key===false?[]:_TL_BUCKETS.filter(b=>folds.some(f=>(f[b.k]||0)>0));
   const key=present.length?'<div class="tl-wbar-key">'+present.map(b=>
     '<span><i style="background:'+b.c+'"></i>'+escHtml(b.label)+'</span>').join('')+'</div>':'';
   return '<div class="tl-wbar-wrap'+(o.level?' tl-wbar-'+String(o.level):'')+'">'+
@@ -2476,7 +2576,7 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
     aria:(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d),
     rows:byDay[d]||[],
     onclick:'_tlDrillTo(\'day\',\''+String(d)+'\')'
-  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week'});
+  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week',key:false});
 }
 // A MONTH: one bar per week, guided at 40 hours.
 //
@@ -2868,10 +2968,17 @@ function _tlLevelsHtml(moRows,selMo,opts){
   const wkRows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===_tlDrill.wk&&
     (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
   const days=_tlWeekDayDates(_tlDrill.wk);
+  // The week carries the same split bar the day does (owner 2026-09-19, of the
+  // shared timesheet link: "does it include the breakdown of where time went?
+  // I'm talking the totals"). The link opens on the week, so the level a
+  // client actually lands on was the one level with no answer to "where did
+  // the hours go": a total and seven bars, and the breakdown only after a tap
+  // into a day. Same component as the day (7.3), folded over the week's rows.
   if(_tlDrill.level==='week')
     return {head:_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
               _tlDrill.wk,o.backLabel||_bkMonthLabel(selMo),o.eyebrow),
-            body:_tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
+            body:_tlRailHeadHtml(wkRows,'',true)+
+                 _tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
   const dayKeys=days.filter(d=>wkRows.some(r=>r.date===d));
   if(dayKeys.indexOf(_tlDrill.day)<0)_tlDrill.day=dayKeys[dayKeys.length-1]||null;
   const dayRows=wkRows.filter(r=>r.date===_tlDrill.day);
@@ -3625,9 +3732,14 @@ async function renderTimeLog(opts){
   // down to el.innerHTML runs in the same task as the click and the new day
   // is on screen on the very next frame instead of two seconds later.
   const _cached=!!(opts&&opts.cached&&_tlRowsCache);
+  // crewCached: the rows genuinely changed (a gap was answered), so the
+  // assembled cache above is no use, but the change is entirely LOCAL. Rebuild
+  // the rows around the crew payload already in hand, which awaits nothing on
+  // the network, and revalidate after the paint exactly as a drill tap does.
+  const _crewCached=!_cached&&!!(opts&&opts.crewCached&&_tlCrewCache);
   if(_cached)allRows=_tlRowsCache;
   else{
-    try{allRows=await _timeLogRows(null);}
+    try{allRows=await _timeLogRows(null,{crewCached:_crewCached});}
     catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
     _tlRowsCache=allRows;_tlRowsAt=Date.now();
   }
@@ -3649,7 +3761,11 @@ async function renderTimeLog(opts){
   // The Time Log never writes (owner 2026-09-02). It used to run a repair
   // pass on every open; now it only checks that what it painted is what the
   // server holds.
-  if(_cached){try{_tlRevalidateRows(allRows,_gen);}catch(_e){}}
+  // force on the crew-cached path: the throttle exists to stop a held drill
+  // arrow firing three queries per tap, and this is one deliberate write, not
+  // a burst. Skipping it here would leave the crew half however stale the last
+  // fetch left it, with no second chance for half a minute.
+  if(_cached||_crewCached){try{_tlRevalidateRows(allRows,_gen,_crewCached);}catch(_e){}}
   // Set as soon as the rows are in hand, not at the end: the render has
   // several early returns after this point and every one of them is still a
   // completed first load as far as the placeholder is concerned.

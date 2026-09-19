@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.16.26.10';
+const APP_VERSION='09.19.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1377,13 +1377,58 @@ function _recordLocalDelete(tbl,...ids){
 // the user deleted, cascades included, and nothing a concurrent peer touched.
 // Usage: wrap the function body's mutation+save, e.g.
 //   function deleteBid(id){ if(!confirm)return; _userDelete(()=>{ bids=bids.filter(b=>b.id!==id); saveAll(); }); }
+// ── THE INTENT HAS TO EXIST BEFORE THE SAVE LOOKS FOR IT ───────────────────
+//
+// Owner, 2026-09-18: "I deleted Blake sample like 4 times over the last week
+// and she keeps coming back." Her row never carried a deleted_at at all. The
+// delete had not failed; it had never been sent.
+//
+// This function learns WHAT was deleted by diffing the arrays after fn() runs.
+// But several call sites end fn() with _flushSaveNow() (deleteClient,
+// delMileage), and supaSaveToCloud runs SYNCHRONOUSLY from there down into
+// _upsertTable: no await stands between them on an account with nothing
+// queued. So the save read _locallyDeletedIds while it was still empty, found
+// nothing changed and nothing pending, took its no-op fast path, and that path
+// advances _lastKnownIds to the array as it is NOW.
+//
+// That last step is what made it permanent rather than merely late. The sweep
+// only ever removes ids that were in _lastKnownIds and are not in the array
+// any more; the id had just been erased from _lastKnownIds, so no later save
+// could ever see it leave. The intent was recorded a moment later onto a
+// bookkeeping state that no longer had anywhere to apply it.
+//
+// So the save waits. Every _flushSaveNow raised while a delete is in flight is
+// remembered and fired once the diff below has run, which is the only point at
+// which the arrays and the delete list agree with each other. The debounced
+// path needs nothing: its timer could not fire this early anyway.
+let _userDeleteDepth=0;
+let _userDeletePendingFlush=false;
 function _userDelete(fn){
   const before={};
   for(const t of _TD_TABLES){ try{ before[t.t]=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ before[t.t]=new Set(); } }
-  const ret=fn();
-  for(const t of _TD_TABLES){
-    let now; try{ now=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ continue; }
-    before[t.t].forEach(id=>{ if(!now.has(id)) _recordLocalDelete(t.t,id); });
+  let ret;
+  _userDeleteDepth++;
+  // All of it in a finally, because a delete that throws part way through is
+  // the case that matters most. A client delete cascades across six arrays; if
+  // it dies on the fourth, the three that already shrank are REAL local
+  // deletions and the rows come back on the next load unless they are written
+  // down. The gate has to reopen on that path too, or one bad delete would shut
+  // every later save out of the cloud for the rest of the session.
+  try{ ret=fn(); }
+  finally{
+    _userDeleteDepth--;
+    try{
+      for(const t of _TD_TABLES){
+        let now; try{ now=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ continue; }
+        before[t.t].forEach(id=>{ if(!now.has(id)) _recordLocalDelete(t.t,id); });
+      }
+    }catch(_e){}
+    // Only the outermost delete releases: a nested one is still inside a set of
+    // arrays its caller is mid-way through changing.
+    if(!_userDeleteDepth&&_userDeletePendingFlush){
+      _userDeletePendingFlush=false;
+      try{_flushSaveNow();}catch(_e){}
+    }
   }
   return ret;
 }
@@ -6726,6 +6771,27 @@ function _offlinePendingBlob(){
     _dataOwner:(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
     clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
 }
+// The same blob, but never LOSING what is already pending. Used only while a
+// cloud load is in flight, when memory is the server's copy plus whatever the
+// person has done since, and the rows the load has not drained back yet exist
+// nowhere else. Current memory wins for an id both hold; a pending row memory
+// no longer has is carried across untouched.
+function _offlinePendingBlobMerged(){
+  try{
+    const prev=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
+    if(!prev)return _offlinePendingBlob();
+    const now=JSON.parse(_offlinePendingBlob());
+    for(const{t}of _TD_TABLES){
+      const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+      const cur=Array.isArray(now[key])?now[key]:[];
+      const old=Array.isArray(prev[key])?prev[key]:[];
+      if(!old.length)continue;
+      const have=new Set(cur.map(r=>String(r&&r.id)));
+      now[key]=cur.concat(old.filter(r=>r&&!have.has(String(r.id))));
+    }
+    return JSON.stringify(now);
+  }catch(_e){return _offlinePendingBlob();}
+}
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
 function _readOwnedOfflinePending(){
@@ -6762,8 +6828,28 @@ function supaSaveDebounced(){
   // before visibilitychange or the async catch block can run, but a synchronous
   // localStorage write completes atomically and survives any force-quit.
   // Cleared by supaSaveToCloud() on a successful push. Drain deduplicates on reload.
+  // ── A LOAD MAY NOT EMPTY THE NET (owner 2026-09-16, Jack's missing 9am
+  // clock-in) ────────────────────────────────────────────────────────────
+  // This blob is a SNAPSHOT OF MEMORY, not a queue of unsynced rows, and that
+  // is the whole hazard. A cloud load replaces every array with the server's
+  // copy and only drains the blob back in at the very END of the load. Any
+  // save that fires inside that window (applySettings alone reaches saveAll)
+  // rewrote the blob from arrays that no longer held the unsynced row, and the
+  // only record of it was gone before the drain ever looked.
+  //
+  // Jack's morning is that shape: a punch that had not reached the server, a
+  // resume, and a day that came back saying he was never clocked in. The blob
+  // is the force-quit safety net; a net the load can empty is not one.
+  //
+  // SKIPPING THE WRITE IS THE WRONG FIX, and CI caught it: a row CREATED
+  // during a load (a save is a save, the person is still using the app) would
+  // then never be snapshotted at all, which loses the new row instead of the
+  // old one. Both have to hold, so during a load the blob is MERGED rather
+  // than replaced: current memory wins per id, and anything pending that
+  // memory no longer holds rides along untouched.
   if(_supaCloudLoaded||_mergeOnSignIn){
-    try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',
+      _loadInProgress?_offlinePendingBlobMerged():_offlinePendingBlob());}catch(_e){}
   }
   // The fired save MUST be tracked in _pendingSavePromise (via _flushSaveNow), a bare
   // supaSaveToCloud() here is invisible to the silent-load guard in supaLoadFromCloud,
@@ -6780,6 +6866,11 @@ function supaSaveDebounced(){
 let _pendingSavePromise=null;
 function _flushSaveNow(){
   if(typeof opsReadOnly==='function'&&opsReadOnly())return;
+  // A delete is mid-flight and has not been written down yet (_userDelete):
+  // this save would sweep against an empty delete list and, worse, erase the
+  // id it needs from _lastKnownIds on the way past. Remember the ask and fire
+  // it the moment the intent is recorded.
+  if(_userDeleteDepth){_userDeletePendingFlush=true;return;}
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
   _pendingSavePromise=supaSaveToCloud().finally(()=>{_pendingSavePromise=null;});
   return _pendingSavePromise;

@@ -3082,6 +3082,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
       setTimeLogYear(2026);
       _tlDrill = { level: 'month', mo: '2026-08', wk: null, day: null };
       await renderTimeLog();
+      if (lv === 'week') {
+        _tlDrill = { level: 'week', mo: '2026-08', wk: '2026-08-16', day: null };
+        await renderTimeLog();
+      }
       if (lv === 'day') {
         // _tlDrillTo fires renderTimeLog() without awaiting it (the same
         // fire-and-forget convention setTimeLogYear uses), so reading straight
@@ -3201,6 +3205,39 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('a single day still shows the shared split bar, same as Team does', async () => {
       const me = await body('me', 'day');
       expect(me, 'Me used to render nothing at all on a day').toContain('tl-split-bar');
+    });
+
+    // ── The week answers "where did it go" too (owner 2026-09-19) ──────────
+    //
+    // Asked of the shared timesheet link, which opens on the WEEK: "does it
+    // include the breakdown of where time went? I'm talking the totals." It
+    // did not. The week printed a total and seven bars, and a client had to
+    // tap into a single day to learn that four of the hours were driving.
+    test('the week names its buckets, not just its total', async () => {
+      const wk = await body('me', 'week');
+      expect(wk, 'the week is the level the shared link opens on').toContain('tl-split-bar');
+      expect(wk, 'and it says which bucket each slice is').toContain('tl-rail-legend');
+      expect(wk, 'above the per-day bars, which stay').toContain('tl-wbar');
+      expect(wk.indexOf('tl-split-bar'), 'breakdown first, then the days')
+        .toBeLessThan(wk.indexOf('tl-wbar'));
+    });
+
+    // The whole point of putting it on the week is that it folds the WEEK. A
+    // bar that only ever showed the selected day's buckets would be the day
+    // view wearing the week's label.
+    test('and folds the whole week, not one day of it', async () => {
+      const r = await page.evaluate((rows) => {
+        const week = rows.slice();
+        const day = rows.filter(x => x.date === '2026-08-20');
+        const names = h => _TL_BUCKETS.map(b => b.label)
+          .filter(l => String(h).includes('>' + l + ' <b>'));
+        return { week: names(_tlRailHeadHtml(week, '', true)),
+                 day: names(_tlRailHeadHtml(day, '', true)) };
+      }, ROWS);
+      expect(r.day, 'Thursday is shop time and nothing else').toEqual(['Shop']);
+      expect(r.week.length, 'the week spent its hours on more than one thing')
+        .toBeGreaterThan(r.day.length);
+      expect(r.week).toEqual(expect.arrayContaining(['Shop', 'Driving']));
     });
   });
 
@@ -4054,23 +4091,91 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(home[0].minutes).toBe(30);
     });
 
-    test('home-office app time counts, even on a day with no drives at all', async () => {
+    test('home-office app time is on the log, and is not paid time', async () => {
       // Owner, 2026-09-01: "if it's a home office app time still counts."
       // The first cut of the base rule zeroed this: 45 minutes of real
       // paperwork rendered nothing at all, because 'place-office' matched the
       // same /^place/ predicate the raw dwell does. It is not the same thing.
       // place-office and place-load are the home-office rule's OWN output,
       // minutes the app or the motion chip already proved were work.
+      //
+      // AMENDED 2026-09-19 (10.4). This asserted `unpaid === false`, and that
+      // was the right reading of the sentence above while the only question
+      // anybody had asked was whether the row SURVIVES. It does, and that half
+      // is unchanged and still asserted here.
+      //
+      // What changed is what it is worth. Owner, today: "office time should
+      // never add itself to a table as running time ... important to leave it
+      // but need to mark it as unpaid since office time goes a part of the
+      // bill." Overhead, on the bill and in the record, never in the hours
+      // anybody is paid for. So the row keeps its minutes and its place on the
+      // rail, greyed, and _geoIsOffJobSource now says what it is.
       const rows = await rowsFor([
         { employee_user_id: 'me', minutes: 45, source: 'place-office', dest_place: HOME,
           arrived_at: '2026-08-28T14:00:00Z', departed_at: '2026-08-28T14:45:00Z' },
       ]);
       const mine = rows.filter(r => r.date === '2026-08-28');
       expect(mine.length, 'the paperwork is on the log').toBe(1);
-      expect(mine[0].minutes).toBe(45);
-      expect(mine[0].unpaid, 'and it COUNTS, no drive required').toBe(false);
+      expect(mine[0].minutes, 'with every minute of it').toBe(45);
+      expect(mine[0].unpaid, 'and it is overhead, not hours owed').toBe(true);
     });
 
+
+    // ── OFFICE TIME IS NEVER RUNNING TIME (owner rule 2026-09-19) ────────
+    test('office minutes stay out of the paid day, the week and the overtime', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { minutes: 480, unpaid: false, date: '2026-08-28', source: 'auto' },
+          { minutes: 45, unpaid: true, date: '2026-08-28', source: 'auto' },
+        ];
+        return { paid: _tlPaidMin(rows), all: rows.reduce((s, x) => s + x.minutes, 0) };
+      });
+      expect(r.paid, 'eight hours, not eight and three quarters').toBe(480);
+      expect(r.all, 'and the office minutes are still there to be seen').toBe(525);
+    });
+
+    test('an office row says what it is and what it is worth, in three words', async () => {
+      const r = await page.evaluate(() => _tlRailRow({ source: 'auto', rawSource: 'place-office',
+        minutes: 45, unpaid: true, clientName: '7402 SW 22nd Ct',
+        startTime: '2026-08-28T22:00:00Z', date: '2026-08-28' }));
+      expect(r).toContain('Office time · unpaid');
+      expect(r, 'and it is greyed, never hidden').toContain('data-unpaid="1"');
+    });
+
+    test('the rail marks an unpaid row so it reads as not counting', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (unpaid) => _tlRailRow({ source: 'auto', minutes: 45, unpaid,
+          clientName: '7402 SW 22nd Ct', startTime: '2026-08-28T20:00:00Z', date: '2026-08-28' });
+        return { office: /data-unpaid="1"/.test(mk(true)), job: /data-unpaid="1"/.test(mk(false)),
+          muted: /tl-rail-dur mute/.test(mk(true)) };
+      });
+      expect(r.office, 'greyed, never hidden').toBe(true);
+      expect(r.job, 'and a paid row is untouched').toBe(false);
+      expect(r.muted).toBe(true);
+    });
+
+    test('a legacy place-home row re-grades the same way, with no rebuild', async () => {
+      // The deriver stopped writing place-home (rule 12) and the rows it wrote
+      // are still on both accounts. This is a question about the SOURCE, so
+      // they answer it too, the moment this ships.
+      const rows = await rowsFor([
+        { employee_user_id: 'me', minutes: 30, source: 'place-home', dest_place: HOME,
+          arrived_at: '2026-08-28T02:00:00Z', departed_at: '2026-08-28T02:30:00Z' },
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-27' || r.date === '2026-08-28');
+      expect(mine.length).toBe(1);
+      expect(mine[0].unpaid).toBe(true);
+    });
+
+    test('a shop row is untouched: shop time always counts (9.11)', async () => {
+      const rows = await rowsFor([
+        { employee_user_id: 'me', minutes: 60, source: 'place-supply', dest_place: 'Neenans Co',
+          arrived_at: '2026-08-28T14:00:00Z', departed_at: '2026-08-28T15:00:00Z' },
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-28');
+      expect(mine.length).toBe(1);
+      expect(mine[0].unpaid, 'a supply run is work').toBe(false);
+    });
 
     test('a supply house is NOT a base: it still ends the day', async () => {
       // The whole point of "the second fence crossing". Coming home is not
@@ -5323,6 +5428,51 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const r = await render(DRIVE({ clientKey: 'j-nothing', originPlace: '', destPlace: '' }), []);
       expect(r).not.toContain('→');
       expect(r).toContain('Destination not saved');
+    });
+
+    // ── JACK'S 8 SEPTEMBER (owner 2026-09-16) ────────────────────────────
+    // "On jacks 09/08 rows he has unsaved address to Tagen Lindstram when it
+    // should say JS Solutions shop to Tagen Lindstram, then at 453 it should
+    // say Tagen Linstram to JS Soltuions shop."
+    //
+    // Both names were in the database the whole time. That day was derived on
+    // 14 September and origin_place landed on the 15th, so the rows carry a
+    // dest_place and a null origin_place while the mileage legs say
+    // "JS Solutions shop → Tagen Lindstram" and the reverse. The self-titling
+    // arm fired on EITHER end, claimed the row, and printed "Unsaved address"
+    // for the field that simply had not been written yet, shutting out the
+    // join that held the answer. It hit every drive row derived before 15
+    // September, and those days are past the tape so nothing re-derives them.
+    const S8 = { legKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+      from_name: 'JS Solutions shop', to_name: 'Tagen Lindstram' };
+    const S8BACK = { legKey: 'j-987ebc83-mtt7ijni', date: '2026-09-08',
+      from_name: 'Tagen Lindstram', to_name: 'JS Solutions shop' };
+
+    test('a row from before origin_place existed reads its origin off the leg', async () => {
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        clientName: 'Tagen Lindstram', destUnsaved: false,
+        originPlace: '', destPlace: 'Tagen Lindstram' }), [S8]);
+      expect(out).toContain('JS Solutions shop → Tagen Lindstram');
+      expect(out, 'the origin was never missing, only unasked for').not.toContain('Unsaved address');
+    });
+
+    test('and the 4:53 leg home reads the other way round', async () => {
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt7ijni', date: '2026-09-08',
+        rawId: 'srv-9', clientName: 'JS Solutions shop', destUnsaved: false,
+        originPlace: '', destPlace: 'JS Solutions shop' }), [S8BACK]);
+      expect(out).toContain('Tagen Lindstram → JS Solutions shop');
+      expect(out).not.toContain('Unsaved address');
+    });
+
+    test('but an origin that genuinely is unsaved still says so', async () => {
+      // Same shape, and this time the leg agrees the origin was nobody's
+      // address. The words must survive: a dash is worse than the truth.
+      const bare = { legKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        from_name: '', to_name: 'Tagen Lindstram' };
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        clientName: 'Tagen Lindstram', destUnsaved: false,
+        originPlace: '', destPlace: 'Tagen Lindstram' }), [bare]);
+      expect(out).toContain('Unsaved address → Tagen Lindstram');
     });
 
     test('only a DRIVE row is titled this way', async () => {

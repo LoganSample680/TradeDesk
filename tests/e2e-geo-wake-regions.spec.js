@@ -536,7 +536,10 @@ test.describe('Wake region set for the dead app', () => {
     let reloads = 0, fetches = 0;
     try {
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => o.hidden });
-      window.fetch = async (u) => { if (String(u).indexOf('version.json') >= 0) fetches++;
+      // COUNT THE WAKE'S PROBE, NOT THE FILENAME. Four paths fetch
+      // version.json and only one of them is under test here; `bg=1` is the
+      // wake's own marker (js/geo-track.js _geoBgUpdateCheck).
+      window.fetch = async (u) => { if (String(u).indexOf('bg=1') >= 0) fetches++;
         return { ok: true, json: async () => ({ version: o.serverVersion }) }; };
       window._autoSaveAndReload = async () => { reloads++; };
       _geoBgUpdAt = 0;
@@ -587,7 +590,8 @@ test.describe('Wake region set for the dead app', () => {
       try {
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
         const cur = APP_VERSION;
-        window.fetch = async (u) => { if (String(u).indexOf('version.json') >= 0) fetches++;
+        // Same narrowing as bgUpd: only the wake's own probe carries bg=1.
+        window.fetch = async (u) => { if (String(u).indexOf('bg=1') >= 0) fetches++;
           return { ok: true, json: async () => ({ version: cur }) }; };
         window._autoSaveAndReload = async () => {};
         _geoBgUpdAt = 0;
@@ -608,7 +612,9 @@ test.describe('Wake region set for the dead app', () => {
       let fetches = 0;
       try {
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-        window.fetch = async (u) => { if (String(u).indexOf('version.json') >= 0) fetches++;
+        // toBe(0) here, so the broad scan was the worse bug of the three: any
+        // unrelated version.json fetch on the page failed a test about replay.
+        window.fetch = async (u) => { if (String(u).indexOf('bg=1') >= 0) fetches++;
           return { ok: true, json: async () => ({ version: '99.99.99.9' }) }; };
         _geoBgUpdAt = 0;
         await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 }, true);

@@ -867,16 +867,34 @@ async function init(){
     if(_prop.clientAddr)document.getElementById('hero-client-addr').textContent=_prop.clientAddr;
     document.getElementById('hero-prop-num').textContent='PROP-'+String(_prop.id).slice(-6).toUpperCase();
     document.getElementById('hero-prop-date').textContent=new Date(_prop.createdAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+    // ── A RATE SHEET SHOWS A RATE WHERE A PROPOSAL SHOWS A TOTAL ───────────
+    // On a time-and-materials rate agreement there is no contract total, so
+    // _prop.amount is 0 on purpose (js/generic-estimate.js, _tmRateOnly). Every
+    // place that would print that 0 prints the hourly rate instead. The one
+    // number the client can owe today is the mobilization deposit.
+    const _rateOnly=!!_prop.rateOnly;
+    // THE RATE IS NOT SHOWN HERE EITHER. This page IS the document the customer
+    // reads, so "the hourly rate never gets exposed to the proposal" covers it.
+    // What heads the bar instead is the ceiling he chose to give them, or the
+    // words when he gave none.
+    const _rateTxt=_rateOnly?((Number(_prop.nteCap)||0)>0?fmt(_prop.nteCap):'Time & materials'):'';
+    const _cadTxt={weekly:'weekly',biweekly:'every two weeks',milestone:'by milestone',completion:'on completion'}[_prop.billingCycle||'weekly']||'weekly';
     // Sticky bar total
     const stickyTotal=document.getElementById('sticky-total');
-    if(stickyTotal)stickyTotal.textContent=fmt(_prop.amount);
-    document.getElementById('amt-total').textContent=fmt(_prop.amount);
+    if(stickyTotal)stickyTotal.textContent=_rateOnly?_rateTxt:fmt(_prop.amount);
+    document.getElementById('amt-total').textContent=_rateOnly?_rateTxt:fmt(_prop.amount);
     // Contractor-configurable, Settings → "Show 'Powered by'" (S.poweredBy, default true).
     if(_prop.poweredBy===false){const _pbf=document.getElementById('powered-by-footer');if(_pbf)_pbf.style.display='none';}
     // Deposit-first framing in the sticky bar, the action-sized number leads.
     const _sdl=document.getElementById('sticky-deposit-line');
     if(_sdl&&(_prop.deposit||0)>0){
       _sdl.innerHTML='<strong style="color:var(--ink)">'+fmt(_prop.deposit)+' today</strong> locks in your spot on the schedule';
+      _sdl.style.display='block';
+    }else if(_sdl&&_rateOnly){
+      // A rate sheet with no mobilization deposit still has something to say
+      // here, and it is the thing that makes signing feel safe: nothing leaves
+      // their pocket today.
+      _sdl.innerHTML='<strong style="color:var(--ink)">Nothing due today.</strong> You are billed '+_cadTxt+' for the time and materials actually used.';
       _sdl.style.display='block';
     }
     // Price-held-until chip, surfaces the REAL 30-day validity window the
@@ -891,15 +909,19 @@ async function init(){
       // stamp keep the old projection so nothing regresses for them.
       const _exp=_prop.validUntil?new Date(_prop.validUntil+'T12:00'):new Date(new Date(_prop.createdAt).getTime()+30*86400000);
       if(_exp>new Date()){
-        _phc.innerHTML=svgIcon('⏳',{size:13})+' This price is held for you until <strong style="color:var(--ink)">&nbsp;'+_exp.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'</strong>';
+        _phc.innerHTML=svgIcon('⏳',{size:13})+' This '+(_prop.rateOnly?'rate':'price')+' is held for you until <strong style="color:var(--ink)">&nbsp;'+_exp.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'</strong>';
         _phc.style.display='flex';
       }
     }
     // Update cash section with actual business name
     const _cashMsg=document.getElementById('cash-confirm-msg');
     if(_cashMsg)_cashMsg.textContent=' Your proposal is signed, you’re locked in on the schedule. '+_biz+' will collect the deposit when they arrive.';
-    document.getElementById('amt-dep').textContent='Deposit to start: '+fmt(_prop.deposit);
-    document.getElementById('amt-bal').textContent='Balance on completion: '+fmt(_prop.amount-_prop.deposit);
+    document.getElementById('amt-dep').textContent=_rateOnly
+      ?((_prop.deposit||0)>0?'Deposit to start: '+fmt(_prop.deposit):'Nothing due today')
+      :'Deposit to start: '+fmt(_prop.deposit);
+    document.getElementById('amt-bal').textContent=_rateOnly
+      ?((_prop.nteCap||0)>0?'Billed '+_cadTxt+' for the time and materials used. The most it can cost you is '+fmt(_prop.nteCap):'Billed '+_cadTxt+' for the time and materials used')
+      :'Balance on completion: '+fmt(_prop.amount-_prop.deposit);
     const _days=_prop.estDays;
     document.getElementById('sum-rows').innerHTML=
       (_days?'<div class="row"><span class="rl">Est. duration</span><span class="rv">'+_days+' day'+(_days!==1?'s':'')+'</span></div>':'');
@@ -1269,6 +1291,10 @@ function _selectPayTile(choice){
   _updatePayButtons();
 }
 function _renderPayTiles(){
+  // A RATE SHEET'S DEPOSIT IS A FLAT FIGURE. _depFrac's 0.25 fallback would
+  // label a $500 mobilization deposit "25% Deposit" against a total of zero,
+  // which is both wrong and the kind of number a client rings up about.
+  if(_prop?.rateOnly)return _renderRateSheetPayTiles();
   const _depFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
   const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100)/100:_prop?.deposit||0;
   const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
@@ -1295,7 +1321,35 @@ function _renderPayTiles(){
   const fullAmtEl=document.getElementById('pay-tile-full-amt');
   if(fullAmtEl)fullAmtEl.textContent=fmt(fullAmt);
 }
+// The payment screen for a rate agreement. There is one payable and it is the
+// mobilization deposit; when he asked for none, the screen says so rather than
+// offering to collect $0. Pay Later / Check / Cash still complete the signing
+// (_renderSignPayBtns always keeps one open), so nothing dead-ends.
+function _renderRateSheetPayTiles(){
+  const dep=Number(_prop?.deposit)||0;
+  _payFullAmount=false;
+  const cad={weekly:'weekly',biweekly:'every two weeks',milestone:'by milestone',completion:'on completion'}[_prop?.billingCycle||'weekly']||'weekly';
+  const tf=document.getElementById('pay-tile-full');
+  if(tf)tf.style.display='none';
+  const td=document.getElementById('pay-tile-dep');
+  if(td)td.classList.add('sel');
+  const badge=document.getElementById('pay-tile-dep-badge');
+  if(badge){badge.style.color='var(--denim)';badge.textContent=dep>0?'Mobilization deposit':'Due today';}
+  const amtEl=document.getElementById('pay-tile-dep-amt');
+  if(amtEl){amtEl.textContent=fmt(dep);amtEl.style.color='var(--denim)';}
+  const note=document.getElementById('pay-tile-dep-note');
+  if(note)note.textContent='Time and materials billed '+cad+((Number(_prop?.nteCap)||0)>0?'. The most it can cost you is '+fmt(_prop.nteCap):'');
+  const sel=td?td.querySelector('.sig-pay-opt-sel'):null;
+  if(sel){sel.innerHTML=svgIcon('✓',{size:14})+' Selected';sel.style.color='var(--denim)';}
+  const lbl=document.querySelector('.sig-pay-opts-label');
+  if(lbl)lbl.textContent=dep>0?'Your deposit to get on the schedule':'Nothing is due today';
+}
 function _updatePayButtons(){
+  if(_prop?.rateOnly){
+    const pndR=document.getElementById('pay-now-display');
+    if(pndR)pndR.textContent=fmt(Number(_prop?.deposit)||0);
+    return;
+  }
   const _depFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
   const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100)/100:_prop?.deposit||0;
   const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
@@ -1495,7 +1549,12 @@ function _closeStripeModal(){
 let _manualPayMethod='cash';
 function _renderSignPayBtns(){
   const container=document.getElementById('sign-pay-btns');if(!container)return;
-  const stripeOk=_prop?.stripeConnectEnabled!==false;
+  // Card checkout for $0 is a dead button. A rate sheet with no mobilization
+  // deposit has nothing to charge today, so it signs through the manual row
+  // (Pay Later is always kept open below) instead of opening a checkout for
+  // nothing.
+  const _rsNoMoney=!!_prop?.rateOnly&&!((Number(_prop?.deposit)||0)>0);
+  const stripeOk=_prop?.stripeConnectEnabled!==false&&!_rsNoMoney;
   let html='';
   if(stripeOk){
     // "Secure Checkout" not "Secure Checkout" (owner 2026-07-14): the processor

@@ -940,7 +940,7 @@ function _confirmReceiptDate(aiDate,statusEl){
   let displayDate=aiDate||'(no date found)';
   try{if(aiDate){const d=new Date(aiDate+'T12:00:00');displayDate=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}}catch(e){}
   div.innerHTML=
-    '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' AI read date as: <strong>'+displayDate+'</strong>, correct?</div>'+
+    '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' Date read as: <strong>'+displayDate+'</strong>, correct?</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+
       '<button id="rcpt-yes-btn" style="padding:8px;border-radius:var(--r);border:none;background:#D97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:12})+' Yes</button>'+
       '<button id="rcpt-no-btn" style="padding:8px;border-radius:var(--r);border:1px solid #D97706;background:#fff;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✗',{size:12})+' Let me fix it</button>'+

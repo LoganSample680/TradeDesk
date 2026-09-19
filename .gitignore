@@ -4,7 +4,13 @@ node_modules/
 .env
 package.json
 package-lock.json
-.claude/
+.claude/*
+# ...except the permission allowlist, which has to travel with the repo. A
+# Claude Code web session gets a fresh container from a fresh clone, so an
+# allowlist that lives only on disk is gone by the next session and every
+# Supabase call prompts again (owner 2026-09-19: "I have reset supabase mcp
+# but it still prompts me each time").
+!.claude/settings.json
 test-results/
 playwright-report/
 settings.local.json

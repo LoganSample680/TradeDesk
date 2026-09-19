@@ -2616,7 +2616,7 @@ function renderCDBids(){
         '</div>'+
         '<div style="text-align:right">'+
           (b.isTM?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 7px;margin-bottom:3px">'+svgIcon('⏱️')+' T&M</span><br>':'')+
-          '<div style="font-size:16px;font-weight:700;color:var(--green-mid)">'+(b.isTM&&b.tmNteCap?'Est. '+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):fmt(b.amount))+'</div>'+
+          '<div style="font-size:16px;font-weight:700;color:var(--green-mid)">'+bidAmountLabel(b,fmt)+'</div>'+
           (b.isTM&&b.tmDepositAmt?'<div style="font-size:11px;color:var(--text3)">Deposit: '+fmt(b.tmDepositAmt)+'</div>':'')+
           '<span class="bdg '+(SBADGE[b.status]||'')+'">'+b.status+'</span>'+
           (_rrpRequired?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:4px;padding:2px 6px;font-weight:700;margin-left:4px">RRP</span>':'')+
