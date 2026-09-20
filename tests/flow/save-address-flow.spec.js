@@ -165,6 +165,25 @@ test.describe('Name an unsaved stop from the day rail', () => {
             const lng = a.shop.lon - 0.022 - i * 0.0025;
             if (clear(lat, lng)) kerb = { lat, lon: lng };
           }
+          // ── AND SOMEWHERE ELSE TO FINISH, WHICH IS NOT OPTIONAL ───────
+          // Out to the kerb and back to the same shop is a ROUND TRIP, and
+          // the deriver collapses a loop into ONE leg with the stop as an
+          // interior `unsavedVia` rather than a destination. The run before
+          // this proved it: time [] and one Shop/2.8 leg, out and back, with
+          // no dwell row for the kerb at all.
+          //
+          // That is a real shape and it is not the owner's. His was a drive
+          // that ENDED somewhere nobody had saved (keyed `d-` + the leg id),
+          // which is the case that had no working Save button. So the day has
+          // to finish at a DIFFERENT fence from the one it started at: then
+          // the kerb is leg one's destination, the dwell is its own row, and
+          // the chip is the one he tapped.
+          let endAt = null;
+          for (const f of all) {
+            const farShop = Math.abs(f.lat - a.shop.lat) > 0.02 || Math.abs(f.lng - a.shop.lon) > 0.02;
+            const farKerb = kerb && (Math.abs(f.lat - kerb.lat) > 0.02 || Math.abs(f.lng - kerb.lon) > 0.02);
+            if (farShop && farKerb) { endAt = { lat: f.lat, lon: f.lng }; break; }
+          }
           // ── AND A DAY WITH NOTHING ON IT AT ALL ──────────────────────
           // geo_events dedupes, so re-posting the same hours is a no-op: five
           // runs re-derived the FIRST run's fixes at the FIRST run's kerb.
@@ -199,18 +218,19 @@ test.describe('Name an unsaved stop from the day rail', () => {
           const tooLate = !day;
           return { key, uid: _supaUser.id, url: _SUPA_DIRECT_URL, made, kerb,
                    fences: F.length, serverFences: SF.length, sfErr,
-                   startMs, tooLate, evErr, day, scanned: scanned.join(' '),
+                   startMs, tooLate, evErr, day, scanned: scanned.join(' '), endAt,
                    targetId: made[made.length - 1], err: error && error.message };
         }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET });
         return 0;
       },
       rule: async (p) => {
         const n = await p.evaluate((ids) => ids.filter(id => clients.some(c => c && c.id === id)).length, ctx.made);
-        return { ok: !ctx.err && n === 5 && !!ctx.kerb && !ctx.tooLate,
+        return { ok: !ctx.err && n === 5 && !!ctx.kerb && !!ctx.endAt && !ctx.tooLate,
                  got: ctx.err || (n + ' customers · ' + ctx.fences + ' local fences · ' +
                       ctx.serverFences + ' server fences' + (ctx.sfErr ? (' (' + ctx.sfErr + ')') : '') +
                       ' · kerb ' + (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR') +
                       ' · day ' + (ctx.day || 'NONE FREE') + ' [' + ctx.scanned + ']' +
+                      ' · ends at ' + (ctx.endAt ? (ctx.endAt.lat.toFixed(4) + ',' + ctx.endAt.lon.toFixed(4)) : 'NO SECOND FENCE') +
                       (ctx.tooLate ? ' every day in the tape window already has events on it' : '') +
                       (ctx.evErr ? (' (events: ' + ctx.evErr + ')') : '')) };
       },
@@ -230,7 +250,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
     const motion = (ts, kind) => ({ type: 'motion', ts, kind });
     // The kerb step 1 found, and the halfway point to it.
     const KERB = ctx.kerb || { lat: SHOP.lat + 0.022, lon: SHOP.lon - 0.022 };
+    const END = ctx.endAt;
     const ROAD = { lat: (SHOP.lat + KERB.lat) / 2, lon: (SHOP.lon + KERB.lon) / 2 };
+    const ROAD2 = { lat: (KERB.lat + END.lat) / 2, lon: (KERB.lon + END.lon) / 2 };
     const WIN = { a: at(0), b: at(62) };
     const events = [
       motion(at(0), 'stationary'), fix(at(0), SHOP), fix(at(5), SHOP),
@@ -239,9 +261,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
       motion(at(22), 'onFoot'),
       fix(at(22), KERB), fix(at(35), KERB), fix(at(44), KERB),
       motion(at(45), 'automotive'),
-      fix(at(45), KERB), fix(at(51), ROAD), fix(at(56), SHOP),
+      fix(at(45), KERB), fix(at(51), ROAD2), fix(at(56), END),
       motion(at(57), 'onFoot'),
-      fix(at(57), SHOP), fix(at(62), SHOP),
+      fix(at(57), END), fix(at(62), END),
     ];
 
     // ── 2. Flush it, the way a phone that was never open does ──────────────
@@ -273,9 +295,12 @@ test.describe('Name an unsaved stop from the day rail', () => {
             // this step is about.
             .gte('arrived_at', new Date(w.a - 3600000).toISOString())
             .lte('arrived_at', new Date(w.b + 3600000).toISOString());
-          const { data: m } = await _supa.from('td_mileage')
+          const { data: mAll } = await _supa.from('td_mileage')
             .select('id,data').eq('user_id', _supaUser.id).is('deleted_at', null)
             .gte('updated_at', new Date(Date.now() - 3600000).toISOString());
+          // The seeded day only. Without this a leg from another day that
+          // happened to be re-derived reads as though it were this run's.
+          const m = (mAll || []).filter(x => x && x.data && x.data.date === w.day);
           // THIS run's stop, not any unsaved stop. The day now carries every
           // earlier run's hour beside this one, and tapping somebody else's
           // chip would prove nothing about the kerb this run chose.
@@ -289,7 +314,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
                    leg: leg ? leg.id : null,
                    saw: (t || []).filter(mine).map(x => x.source + '@' + String(x.dest_place || '-') + ':' + x.minutes).join(', '),
                    miles: (m || []).map(x => (x.data && x.data.purpose) + '/' + (x.data && x.data.miles)).join(', ') };
-        }, { a: WIN.a, b: WIN.b, kerb: KERB });
+        }, { a: WIN.a, b: WIN.b, kerb: KERB, day: ctx.day });
         stopKey = r.stop && r.stop.key;
         // ── AND WHICH LIST MISSED IT ────────────────────────────────────
         // Step 1 passes, so its own `got` is never printed, and twice now the
