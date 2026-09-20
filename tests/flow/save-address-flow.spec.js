@@ -241,9 +241,32 @@ test.describe('Name an unsaved stop from the day rail', () => {
                    saw: (t || []).map(x => x.source + '@' + String(x.dest_place || '-') + ':' + x.minutes).join(', '),
                    miles: (m || []).map(x => (x.data && x.data.purpose) + '/' + (x.data && x.data.miles)).join(', ') };
         });
+        // ── AND WHICH LIST MISSED IT ────────────────────────────────────
+        // Step 1 passes, so its own `got` is never printed, and twice now the
+        // day has derived onto a fence the kerb was supposed to be clear of
+        // with no way to tell WHICH list failed to mention it. The nearest
+        // fence to the chosen kerb, from both lists, said here where the
+        // failure is actually read.
+        const near = await p.evaluate((a) => {
+          const d = (f) => Math.max(Math.abs(Number(f.lat) - a.kerb.lat),
+                                    Math.abs(Number(f.lng != null ? f.lng : f.lon) - a.kerb.lon));
+          const best = (list) => (list || []).filter(Boolean).map(f => ({ n: f.name || f.id || '?', d: d(f) }))
+            .filter(x => isFinite(x.d)).sort((x, y) => x.d - y.d)[0] || null;
+          let SF = [], err = '';
+          return Promise.resolve(_supa.rpc('geo_fences_for', { p_contractor: _supaUser.id, p_day: todayKey() }))
+            .then(r2 => { if (r2 && r2.error) err = r2.error.message || 'denied'; else SF = (r2 && r2.data) || []; })
+            .catch(e => { err = String(e && e.message || e); })
+            .then(() => ({ local: best(typeof _geoDeriveFences === 'function' ? _geoDeriveFences(todayKey()) : []),
+                           server: best(SF), serverN: SF.length, err }));
+        }, { kerb: KERB });
+        const fmt = (b) => b ? (b.n + '@' + b.d.toFixed(4)) : 'none';
         return { ok: !!(r.stop && r.leg),
                  got: 'post ' + (post && post.status) + ' · stop ' + JSON.stringify(r.stop) +
-                      ' · leg ' + r.leg + ' · time [' + r.saw + '] · mileage [' + r.miles + ']' };
+                      ' · leg ' + r.leg + ' · time [' + r.saw + '] · mileage [' + r.miles + ']' +
+                      ' · kerb ' + KERB.lat.toFixed(4) + ',' + KERB.lon.toFixed(4) +
+                      ' · nearest local ' + fmt(near.local) +
+                      ' · nearest server ' + fmt(near.server) + ' of ' + near.serverN +
+                      (near.err ? (' (rpc: ' + near.err + ')') : '') };
       },
     });
 
