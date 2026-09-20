@@ -84,7 +84,11 @@ test.describe('Name an unsaved stop from the day rail', () => {
   test('an unsaved stop becomes the customer you picked, and says so at once', async ({ page }) => {
     test.setTimeout(240000);
 
-    const tag = RUN_TAG.slice(-5) + '-' + String(process.pid).slice(-4);
+    // Unique per RUN, not per process. RUN_TAG and the pid both derive from the
+    // worker, and the self-hosted runner reuses pids across runs, so the old
+    // tag repeated and one run's seeded customers were indistinguishable from
+    // the last one's. A clock reading cannot repeat.
+    const tag = Date.now().toString(36).slice(-6) + '-' + String(process.pid).slice(-4);
     const DEV = 'e2e-save-addr-' + tag;
     // The five customers the picker has to choose between. Deliberately
     // similar: the who-picker exists because going straight to "new customer"
@@ -129,17 +133,37 @@ test.describe('Name an unsaved stop from the day rail', () => {
           // because something on this account already stood where the kerb
           // was. So it asks the deriver's OWN fence list where the account is
           // empty and parks there. Self-correcting as the junk accumulates.
+          //
+          // Asked of BOTH lists, because they are two different answers and
+          // only one of them decides. _geoDeriveFences is what this phone
+          // thinks; geo_fences_for is what the SERVER deriver will actually
+          // use, and the server is the only writer (§17). Checking the phone's
+          // alone is how the third run picked a kerb that was clear here and
+          // sat inside a client fence there.
           const F = (typeof _geoDeriveFences === 'function') ? _geoDeriveFences(todayKey()) : [];
-          const clear = (lat, lng) => F.every(f => !f ||
-            Math.abs(Number(f.lat) - lat) > 0.012 || Math.abs(Number(f.lng) - lng) > 0.012);
+          let SF = [], sfErr = '';
+          try {
+            const r = await _supa.rpc('geo_fences_for', { p_contractor: _supaUser.id, p_day: todayKey() });
+            if (r && r.error) sfErr = r.error.message || 'denied';
+            else SF = Array.isArray(r && r.data) ? r.data : [];
+          } catch (e) { sfErr = String(e && e.message || e); }
+          const pt = (f) => f && {
+            lat: Number(f.lat != null ? f.lat : f.latitude),
+            lng: Number(f.lng != null ? f.lng : f.lon),
+          };
+          const all = F.concat(SF).map(pt).filter(x => x && isFinite(x.lat) && isFinite(x.lng));
+          // 0.02deg is about 1.4 miles, far wider than any fence, so a near
+          // miss cannot claim the stop either.
+          const clear = (lat, lng) => all.every(f =>
+            Math.abs(f.lat - lat) > 0.02 || Math.abs(f.lng - lng) > 0.02);
           let kerb = null;
-          for (let i = 0; i < 80 && !kerb; i++) {
-            const lat = a.shop.lat + 0.014 + i * 0.0018;
-            const lng = a.shop.lon - 0.014 - i * 0.0018;
+          for (let i = 0; i < 120 && !kerb; i++) {
+            const lat = a.shop.lat + 0.022 + i * 0.0025;
+            const lng = a.shop.lon - 0.022 - i * 0.0025;
             if (clear(lat, lng)) kerb = { lat, lon: lng };
           }
           return { key, uid: _supaUser.id, url: _SUPA_DIRECT_URL, made, kerb,
-                   fences: F.length, fenceNames: F.map(f => f && f.name).filter(Boolean).slice(0, 12),
+                   fences: F.length, serverFences: SF.length, sfErr,
                    targetId: made[made.length - 1], err: error && error.message };
         }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET });
         return 0;
@@ -147,8 +171,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
       rule: async (p) => {
         const n = await p.evaluate((ids) => ids.filter(id => clients.some(c => c && c.id === id)).length, ctx.made);
         return { ok: !ctx.err && n === 5 && !!ctx.kerb,
-                 got: ctx.err || (n + ' customers on file · ' + ctx.fences + ' fences · kerb ' +
-                      (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR')) };
+                 got: ctx.err || (n + ' customers · ' + ctx.fences + ' local fences · ' +
+                      ctx.serverFences + ' server fences' + (ctx.sfErr ? (' (' + ctx.sfErr + ')') : '') +
+                      ' · kerb ' + (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR')) };
       },
     });
 
