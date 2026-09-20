@@ -3606,7 +3606,20 @@ function _mileWhoRender(){
   box.innerHTML=hits.map(c=>{
     const props=(typeof _newcGateProps==='function')?_newcGateProps(c):[];
     const sub=props.length?(props.length+' propert'+(props.length===1?'y':'ies')):'No address yet';
-    return '<button onclick="_mileWhoPick('+JSON.stringify(String(c.id))+')" '+
+    // Root cause: JSON.stringify(id) wraps the value in literal " characters,
+    // and this attribute is itself double-quoted (onclick="..."). Unescaped,
+    // the first " JSON.stringify writes ends the attribute right there, and
+    // WebKit compiles whatever text the HTML parser left inside it as the
+    // click handler's body: "_mileWhoPick(" alone, a syntax error that only
+    // surfaces when the button is actually tapped, sourced at the page's own
+    // URL rather than this file (owner report 2026-09-20, from the app: "[:1]
+    // SyntaxError: Unexpected token '}'"). escHtml turns those quotes into
+    // &quot; so the attribute parses whole. Every other picker in this app
+    // already does this (generic-estimate.js, proposals.js); this one line
+    // was the one that didn't, and it shipped with no test that ever clicked
+    // the real button to catch it (every _mileWhoPick test in
+    // e2e-mileage-traced.spec.js calls the function directly).
+    return '<button onclick="_mileWhoPick('+escHtml(JSON.stringify(String(c.id)))+')" '+
       'style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r);'+
       'border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">'+
       '<span style="flex:1;min-width:0">'+
