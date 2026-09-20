@@ -35,21 +35,28 @@ const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'timelog/name-an-unsaved-stop';
 
-// Own cell on a wide grid, for the reason every geo spec needs one: live tests
-// never clean up (§12.7), so fixed coordinates stack fences on top of each
+// ── ON A REAL STREET, ON PURPOSE (first live run, 2026-09-20) ────────────
+// This grid started on empty prairie (46N/102W) to stay clear of the other
+// geo specs, and the run got all the way to the who-picker and then filed
+// nothing: _mileWhoPick bails on `if (!addr) return false`, and out there the
+// reverse lookup has no street to give, so the address line was empty. The
+// spec is about naming a stop, so the stop has to be somewhere a map can
+// name. Topeka, where the rest of this account's world already is.
+//
+// Still a per-run cell, for the reason every geo spec needs one: live tests
+// never clean up (§12.7), so a fixed coordinate stacks fences on top of each
 // other forever and a later run starts resolving an earlier run's place.
-// 0.02deg is ~1.4mi, far outside any fence. Base 46N/102W keeps this clear of
-// drive-day-chain (44N/100W), drive-attribution (41N/98W), geo-stamp-places
-// (38N/96W) and geo-ingest (38.95N/95.35W).
-const CELL = (process.pid + Date.now()) % 10000;
-const B_LAT = 46.0 + (CELL % 100) * 0.02;
-const B_LON = -102.0 - (Math.floor(CELL / 100) % 100) * 0.02;
+// 24 x 24 cells at 0.0012deg (~440ft) spreads runs over about two miles,
+// which is wider than any fence and still inside the city.
+const CELL = (process.pid + Date.now()) % 576;
+const B_LAT = 39.0200 + (CELL % 24) * 0.0012;
+const B_LON = -95.6600 - (Math.floor(CELL / 24) % 24) * 0.0012;
 const SHOP = { lat: B_LAT, lon: B_LON };
-// The kerb the day is about: far enough from the shop to be a real drive, and
-// inside nobody's fence, which is what makes the stop "unsaved".
-const KERB = { lat: B_LAT + 0.0900, lon: B_LON - 0.0900 };
+// The kerb the day is about: about a mile and a half out, far enough to be a
+// real drive, and inside nobody's fence, which is what makes it "unsaved".
+const KERB = { lat: B_LAT + 0.0180, lon: B_LON - 0.0180 };
 // A point on the road between them, so the trace is a line and not two dots.
-const ROAD = { lat: B_LAT + 0.0450, lon: B_LON - 0.0450 };
+const ROAD = { lat: B_LAT + 0.0090, lon: B_LON - 0.0090 };
 
 // ── REACHING THE TIME LOG COSTS WHAT IT COSTS (12.6) ─────────────────────
 // #nb-timelog is the WIDE nav and it is zero-sized on a phone, which is how
@@ -311,11 +318,13 @@ test.describe('Name an unsaved stop from the day rail', () => {
       },
       rule: async (p) => {
         const r = await p.evaluate((a) => {
-          const withProp = clients.filter(c => c && a.made.includes(c.id) &&
-            ((Array.isArray(c.props) && c.props.length) || (c.lat != null && c.lon != null)));
+          // What _mileWhoPick actually writes: the pin becomes the record's
+          // primary address when it has none, else a card in extraAddresses.
+          const filed = (c) => !!(c && ((c.addr && c.lat != null && c.lon != null) ||
+            (Array.isArray(c.extraAddresses) && c.extraAddresses.length)));
+          const withProp = clients.filter(c => c && a.made.includes(c.id) && filed(c));
           const t = clients.find(c => c && c.id === a.targetId);
-          return { n: withProp.length, named: withProp.map(c => c.name),
-                   target: !!(t && ((Array.isArray(t.props) && t.props.length) || t.lat != null)) };
+          return { n: withProp.length, named: withProp.map(c => c.name), target: filed(t) };
         }, { made: ctx.made, targetId: ctx.targetId });
         return { ok: r.n === 1 && r.target, got: r.n + ' customers gained a property: ' + r.named.join(', ') };
       },
