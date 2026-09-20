@@ -284,26 +284,82 @@ function timDockRender(opts){
   if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(34,{onInk:true});
   _timDockLift(dock);
 
-  const top=_timDockTop(!!(opts&&opts.cached));
+  const finds=_timDockFinds(!!(opts&&opts.cached));
+  const top=finds.length?finds[0]:null;
   _timDockNudge=top;
+  _timDockFound=finds;
+
+  // He breathes only when he has something. A still disc is the honest resting
+  // state and it is the one he is in most of the day.
+  const btn=document.getElementById('tim-dock-btn');
+  if(btn)btn.classList.toggle('alive',finds.length>0);
 
   const pill=document.getElementById('tim-dock-pill');
   const badge=document.getElementById('tim-dock-badge');
   if(pill){
     if(top){
-      pill.querySelector('.tim-pill-line').textContent=top.line;
-      pill.querySelector('.tim-pill-fig').textContent=top.figure;
       pill.classList.add('on');
-      pill.setAttribute('aria-label',top.line+', '+top.figure);
+      pill.classList.toggle('multi',finds.length>1);
+      const dots=pill.querySelector('.tim-pill-dots');
+      if(dots&&dots.childElementCount!==finds.length){
+        dots.innerHTML=finds.map(()=>'<i></i>').join('');
+      }
+      _timDockShow(0);
+      _timDockRoll(finds.length);
     }else{
       pill.classList.remove('on');
+      pill.classList.remove('multi');
       pill.removeAttribute('aria-label');
+      _timDockRoll(0);
     }
   }
   if(badge){
-    if(top){badge.textContent='1';badge.classList.add('on');}
+    if(finds.length){badge.textContent=String(finds.length);badge.classList.add('on');}
     else{badge.textContent='';badge.classList.remove('on');}
   }
+}
+
+// ── Rolling through what he found ────────────────────────────────────────────
+// One timer for the whole dock, armed only when there is genuinely more than one
+// thing to say, and torn down the moment there is not. The lesson from putting
+// timDockRefresh on every navigation is still fresh: anything that runs when
+// nobody asked it to has to justify itself, and a carousel of one does not.
+let _timDockFound=[],_timDockAt=0,_timDockTimer=null;
+const _TIM_ROLL_MS=4200;
+
+function _timDockShow(i){
+  const pill=document.getElementById('tim-dock-pill');
+  const n=_timDockFound[i];
+  if(!pill||!n)return;
+  _timDockAt=i;
+  pill.querySelector('.tim-pill-line').textContent=n.line;
+  pill.querySelector('.tim-pill-fig').textContent=n.figure;
+  // The whole finding, not the fragment, because a screen reader gets the pill
+  // as one label and "you are under your own price on line 3" without the
+  // figure is the half that does not matter.
+  pill.setAttribute('aria-label',n.line+', '+n.figure);
+  const dots=pill.querySelectorAll('.tim-pill-dots i');
+  dots.forEach((d,k)=>d.classList.toggle('on',k===i));
+}
+
+function _timDockRoll(count){
+  if(_timDockTimer){clearInterval(_timDockTimer);_timDockTimer=null;}
+  if(count<2)return;
+  // Asked the OS to stop moving things: he shows his best one and holds it. The
+  // badge still says how many there are, so nothing is hidden, it just does not
+  // move on its own.
+  try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;}catch(_e){}
+  _timDockTimer=setInterval(()=>{
+    // A backgrounded tab is a phone in a pocket. Nothing to animate for.
+    if(document.hidden)return;
+    const pill=document.getElementById('tim-dock-pill');
+    if(!pill||!pill.classList.contains('on')){_timDockRoll(0);return;}
+    pill.classList.add('rolling');
+    setTimeout(()=>{
+      _timDockShow((_timDockAt+1)%_timDockFound.length);
+      pill.classList.remove('rolling');
+    },280);
+  },_TIM_ROLL_MS);
 }
 // ── Getting out of the way ───────────────────────────────────────────────────
 //
@@ -364,12 +420,14 @@ function _timDockLift(dock){
 // navigation that changed none of this, takes the cheap answer.
 const _TIM_TOP_MS=333;
 let _timTopCache=null,_timTopAt=0;
-function _timDockTop(cached){
-  if(typeof timTopNudge!=='function'||typeof timJobSnapshot!=='function')return null;
+function _timDockFinds(cached){
+  if(typeof timNudges!=='function'||typeof timJobSnapshot!=='function')return [];
   const now=Date.now();
-  if(cached&&_timTopAt&&(now-_timTopAt)<_TIM_TOP_MS)return _timTopCache;
+  if(cached&&_timTopAt&&(now-_timTopAt)<_TIM_TOP_MS)return _timTopCache||[];
   _timTopAt=now;
-  _timTopCache=timTopNudge(timJobSnapshot());
+  // Three at most. He ranked them; the fourth is not worth a man's attention on
+  // a driveway, and a pill that rolls forever is a carousel, not a colleague.
+  _timTopCache=(timNudges(timJobSnapshot())||[]).slice(0,3);
   return _timTopCache;
 }
 

@@ -880,6 +880,141 @@ test.describe('tim', () => {
     });
   });
 
+  // ── The pulse, and the lines rolling through it ────────────────────────────
+  // Owner, 2026-09-20, looking at the dock on his phone: a pulse glow that
+  // changes and rolls through to lines, and clicking him opens him up.
+  //
+  // The glow deliberately does NOT change colour. The token block in index.html
+  // reserves hat yellow for the badge and the pill figure and says it goes
+  // nowhere else, so a per-kind status ring would break a rule the design
+  // already wrote down, and would read as a notifications tray rather than as a
+  // man with something to say. What changes is whether he is breathing at all,
+  // and which of his findings is showing.
+  test.describe('the pulse and the roll', () => {
+    const findings = (page, list) => page.evaluate(ns => {
+      window.__realNudges = window.__realNudges || timNudges;
+      timNudges = () => ns.map((n, i) => ({ id: 'x' + i, line: n[0], figure: n[1],
+        title: n[1], what: n[0], why: '', cta: 'Do it', alt: 'No' }));
+      timDockRender();
+    }, list);
+    const restore = (page) => page.evaluate(() => {
+      if (window.__realNudges) timNudges = window.__realNudges;
+      timDockRender();
+    });
+
+    test('nothing found means he does not breathe, and says nothing', async () => {
+      const r = await page.evaluate(() => {
+        window.__realNudges = window.__realNudges || timNudges;
+        timNudges = () => [];
+        timDockRender();
+        return {
+          alive: document.getElementById('tim-dock-btn').classList.contains('alive'),
+          pill: document.getElementById('tim-dock-pill').classList.contains('on'),
+          badge: document.getElementById('tim-dock-badge').classList.contains('on'),
+          timer: !!_timDockTimer,
+        };
+      });
+      expect(r).toEqual({ alive: false, pill: false, badge: false, timer: false });
+      await restore(page);
+    });
+
+    test('one finding breathes and states it, with no carousel of one', async () => {
+      await findings(page, [['You are under your own price on line 3', '$640']]);
+      const r = await page.evaluate(() => ({
+        alive: document.getElementById('tim-dock-btn').classList.contains('alive'),
+        line: document.querySelector('#tim-dock-pill .tim-pill-line').textContent,
+        fig: document.querySelector('#tim-dock-pill .tim-pill-fig').textContent,
+        badge: document.getElementById('tim-dock-badge').textContent,
+        multi: document.getElementById('tim-dock-pill').classList.contains('multi'),
+        timer: !!_timDockTimer,
+      }));
+      expect(r.alive).toBe(true);
+      expect(r.line).toBe('You are under your own price on line 3');
+      expect(r.fig).toBe('$640');
+      expect(r.badge).toBe('1');
+      expect(r.multi).toBe(false);
+      expect(r.timer).toBe(false);
+      await restore(page);
+    });
+
+    test('several findings arm the roll, and the badge counts them', async () => {
+      await findings(page, [
+        ['No scaffold on a second floor job', '$285'],
+        ['Dana still owes you', '$1,240'],
+        ['You are under your own price on line 3', '$640'],
+      ]);
+      const r = await page.evaluate(() => ({
+        badge: document.getElementById('tim-dock-badge').textContent,
+        multi: document.getElementById('tim-dock-pill').classList.contains('multi'),
+        dots: document.querySelectorAll('#tim-dock-pill .tim-pill-dots i').length,
+        lit: [...document.querySelectorAll('#tim-dock-pill .tim-pill-dots i')]
+          .findIndex(d => d.classList.contains('on')),
+        timer: !!_timDockTimer,
+      }));
+      expect(r.badge).toBe('3');
+      expect(r.multi).toBe(true);
+      expect(r.dots).toBe(3);
+      expect(r.lit).toBe(0);
+      expect(r.timer).toBe(true);
+      await restore(page);
+    });
+
+    test('rolling swaps the whole finding, never a line onto the wrong figure', async () => {
+      // The mechanism, not a 4.2 second wait: the interval is pinned above, and
+      // a shard that sleeps through three rotations to watch text change is a
+      // shard nobody will keep. What matters is that a roll carries the line,
+      // the figure and the label together.
+      await findings(page, [
+        ['No scaffold on a second floor job', '$285'],
+        ['Dana still owes you', '$1,240'],
+      ]);
+      const r = await page.evaluate(() => {
+        _timDockShow(1);
+        const pill = document.getElementById('tim-dock-pill');
+        return {
+          line: pill.querySelector('.tim-pill-line').textContent,
+          fig: pill.querySelector('.tim-pill-fig').textContent,
+          label: pill.getAttribute('aria-label'),
+          lit: [...pill.querySelectorAll('.tim-pill-dots i')].findIndex(d => d.classList.contains('on')),
+        };
+      });
+      expect(r.line).toBe('Dana still owes you');
+      expect(r.fig).toBe('$1,240');
+      expect(r.label).toBe('Dana still owes you, $1,240');
+      expect(r.lit).toBe(1);
+      await restore(page);
+    });
+
+    test('going quiet tears the timer down rather than leaving it running', async () => {
+      await findings(page, [['a', '$1'], ['b', '$2']]);
+      const armed = await page.evaluate(() => !!_timDockTimer);
+      const r = await page.evaluate(() => {
+        timNudges = () => [];
+        timDockRender();
+        return { timer: !!_timDockTimer, alive: document.getElementById('tim-dock-btn').classList.contains('alive') };
+      });
+      expect(armed).toBe(true);
+      expect(r.timer).toBe(false);
+      expect(r.alive).toBe(false);
+      await restore(page);
+    });
+
+    test('he still opens on a tap, pill or disc', async () => {
+      await findings(page, [['Dana still owes you', '$1,240'], ['b', '$2']]);
+      const r = await page.evaluate(() => {
+        document.getElementById('tim-dock-pill').click();
+        const viaPill = !!document.getElementById('_tim-sheet');
+        document.getElementById('_tim-ov')?.remove();
+        document.getElementById('tim-dock-btn').click();
+        const viaDisc = !!document.getElementById('_tim-sheet');
+        document.getElementById('_tim-ov')?.remove();
+        return { viaPill, viaDisc };
+      });
+      expect(r).toEqual({ viaPill: true, viaDisc: true });
+      await restore(page);
+    });
+  });
+
   test('no console errors, tim.js', async () => {
     assertNoErrors(page, 'tim.js');
   });

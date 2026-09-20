@@ -373,7 +373,38 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
   align-items:center;justify-content:center}
 #tim-dock-badge.on{display:flex}
 @keyframes tim-pill-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-@media (prefers-reduced-motion:reduce){#tim-dock-pill{animation:none}}
+/* ── The pulse, and the lines rolling through it ──────────────────────────
+   He breathes only when he has something, so the glow is itself the signal:
+   a still disc means nothing is wrong, which is the state he is in most of
+   the day. NOT a status colour. The token block above reserves hat yellow for
+   the badge and the pill figure and says it goes nowhere else, so this rings
+   in brass, which is the metal his own silhouette is struck from and is not
+   claimed for anything. Two colours of glow would read as a notifications
+   tray; one that is simply present or absent reads as a man with something to
+   say. What CHANGES is which line is showing, not what colour he is. */
+#tim-dock-btn.alive{animation:tim-breathe 2.9s ease-in-out infinite}
+@keyframes tim-breathe{
+  0%,100%{box-shadow:0 4px 16px rgba(27,22,18,.28),0 0 0 0 rgba(201,150,47,.34)}
+  50%    {box-shadow:0 4px 16px rgba(27,22,18,.28),0 0 0 7px rgba(201,150,47,0)}
+}
+/* The line crossfades in place rather than sliding: the pill is 13px type on a
+   dark chip at arm's length on a job site, and text that moves while it is
+   being read is text that gets read twice. */
+#tim-dock-pill .tim-pill-line{transition:opacity .28s ease}
+#tim-dock-pill.rolling .tim-pill-line{opacity:0}
+#tim-dock-pill .tim-pill-dots{display:none;gap:3px;align-items:center;flex-shrink:0;margin-left:2px}
+#tim-dock-pill.multi .tim-pill-dots{display:flex}
+#tim-dock-pill .tim-pill-dots i{width:4px;height:4px;border-radius:var(--r-pill);
+  background:var(--text-cream-3);transition:background .2s}
+#tim-dock-pill .tim-pill-dots i.on{background:var(--text-cream-2)}
+@media (prefers-reduced-motion:reduce){
+  #tim-dock-pill{animation:none}
+  /* No breathing and no rotation. Someone who has asked the OS to stop moving
+     things has asked for that here too, so he shows his best finding and holds
+     it. The badge count still says there is more than one. */
+  #tim-dock-btn.alive{animation:none}
+  #tim-dock-pill .tim-pill-line{transition:none}
+}
 /* The waveform: 44 hairline bars mirrored about a centre line. Owner rejected
    the chunky random blocks, and rejected holding the mic at all, so the bars
    only ever say "still listening" and never ask for a thumb. */
@@ -4306,7 +4337,7 @@ body.dark .cal-cell.other{background:var(--cream)}
      whatever order the scripts load in. -->
 <div id="tim-dock" aria-live="polite">
   <button id="tim-dock-pill" type="button" onclick="openTim()">
-    <span class="tim-pill-line"></span><span class="tim-pill-fig"></span>
+    <span class="tim-pill-line"></span><span class="tim-pill-fig"></span><span class="tim-pill-dots"></span>
   </button>
   <button id="tim-dock-btn" type="button" onclick="openTim()" aria-label="Tim">
     <span id="tim-dock-mark"></span>
