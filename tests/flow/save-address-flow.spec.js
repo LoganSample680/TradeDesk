@@ -165,31 +165,41 @@ test.describe('Name an unsaved stop from the day rail', () => {
             const lng = a.shop.lon - 0.022 - i * 0.0025;
             if (clear(lat, lng)) kerb = { lat, lon: lng };
           }
-          // ── AND AN HOUR OF THE DAY NOBODY HAS USED ────────────────────
-          // geo_events dedupes, so re-posting the same hours is a no-op and
-          // the server re-derives the FIRST run's fixes at the FIRST run's
-          // kerb. Five runs died on that. The fix is not to fight the dedupe
-          // but to stop colliding with it: find the day's last event and put
-          // this run's hour after it, so every event is genuinely new and the
-          // journeys sit side by side instead of on top of each other.
-          const d0 = new Date(); d0.setHours(0, 0, 0, 0);
-          let lastTs = 0, evErr = '';
-          try {
-            const r = await _supa.from('geo_events').select('ts')
-              .eq('employee_user_id', _supaUser.id)
-              .gte('ts', new Date(d0.getTime()).toISOString())
-              .order('ts', { ascending: false }).limit(1);
-            if (r && r.error) evErr = r.error.message || 'denied';
-            else if (r && r.data && r.data[0]) lastTs = Date.parse(r.data[0].ts) || 0;
-          } catch (e) { evErr = String(e && e.message || e); }
-          // 7am at the earliest, half an hour clear of anything already on
-          // file, and the whole hour has to land before 7pm or the working-day
-          // window stops vouching for the drives.
-          const startMs = Math.max(d0.getTime() + 7 * 3600000, lastTs + 30 * 60000);
-          const tooLate = startMs + 65 * 60000 > d0.getTime() + 19 * 3600000;
+          // ── AND A DAY WITH NOTHING ON IT AT ALL ──────────────────────
+          // geo_events dedupes, so re-posting the same hours is a no-op: five
+          // runs re-derived the FIRST run's fixes at the FIRST run's kerb.
+          // Appending a later hour to the same day fixed the dedupe and broke
+          // something worse, because the first runs sat on empty prairie 700
+          // miles away: the deriver joined the last prairie fix to the first
+          // Topeka one and produced a 958-mile "Shop" leg that swallowed the
+          // day. A day cannot hold two runs that are two states apart.
+          //
+          // So the run takes a day nobody has touched. The tape window is
+          // seven days (_GEO_DERIVE_DAYS), so yesterday back to six days ago
+          // are all derivable, and geo events are written only by geo specs,
+          // so an empty one is easy to find. Yesterday first, because the
+          // nearer the day the more of the app behaves as it does live.
+          let day = '', dayMs = 0, evErr = '', scanned = [];
+          for (let back = 1; back <= 6 && !day; back++) {
+            const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - back);
+            const a0 = new Date(d); a0.setHours(0, 0, 0, 0);
+            const b0 = new Date(d); b0.setHours(23, 59, 59, 999);
+            try {
+              const r = await _supa.from('geo_events').select('ts')
+                .eq('employee_user_id', _supaUser.id)
+                .gte('ts', a0.toISOString()).lte('ts', b0.toISOString()).limit(1);
+              if (r && r.error) { evErr = r.error.message || 'denied'; break; }
+              scanned.push(dateKey(d) + ':' + (((r && r.data) || []).length ? 'busy' : 'free'));
+              if (!((r && r.data) || []).length) { day = dateKey(d); dayMs = a0.getTime(); }
+            } catch (e) { evErr = String(e && e.message || e); break; }
+          }
+          // 8am on that day. Nothing else is on it, so there is nothing to
+          // sit after and nothing to collide with.
+          const startMs = dayMs + 8 * 3600000;
+          const tooLate = !day;
           return { key, uid: _supaUser.id, url: _SUPA_DIRECT_URL, made, kerb,
                    fences: F.length, serverFences: SF.length, sfErr,
-                   startMs, tooLate, evErr, lastTs,
+                   startMs, tooLate, evErr, day, scanned: scanned.join(' '),
                    targetId: made[made.length - 1], err: error && error.message };
         }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET });
         return 0;
@@ -200,8 +210,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
                  got: ctx.err || (n + ' customers · ' + ctx.fences + ' local fences · ' +
                       ctx.serverFences + ' server fences' + (ctx.sfErr ? (' (' + ctx.sfErr + ')') : '') +
                       ' · kerb ' + (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR') +
-                      ' · window ' + new Date(ctx.startMs).toTimeString().slice(0, 5) +
-                      (ctx.tooLate ? ' TOO LATE IN THE DAY, the account has run out of daylight' : '') +
+                      ' · day ' + (ctx.day || 'NONE FREE') + ' [' + ctx.scanned + ']' +
+                      (ctx.tooLate ? ' every day in the tape window already has events on it' : '') +
                       (ctx.evErr ? (' (events: ' + ctx.evErr + ')') : '')) };
       },
     });
@@ -258,7 +268,11 @@ test.describe('Name an unsaved stop from the day rail', () => {
           const { data: t } = await _supa.from('job_time_entries')
             .select('id,source,client_key,dest_place,minutes,arrived_at')
             .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
-            .gte('arrived_at', new Date(Date.now() - 24 * 3600000).toISOString());
+            // The seeded day is days back, not today, so the window itself is
+            // the bound. A "last 24 hours" filter would exclude the very rows
+            // this step is about.
+            .gte('arrived_at', new Date(w.a - 3600000).toISOString())
+            .lte('arrived_at', new Date(w.b + 3600000).toISOString());
           const { data: m } = await _supa.from('td_mileage')
             .select('id,data').eq('user_id', _supaUser.id).is('deleted_at', null)
             .gte('updated_at', new Date(Date.now() - 3600000).toISOString());
@@ -320,7 +334,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
       act: async (p) => {
         let n = await openTimeLog(p);
         await p.waitForTimeout(1500);
-        await p.evaluate(() => _tlDrillTo('day', todayKey()));
+        await p.evaluate((d) => _tlDrillTo('day', d), ctx.day);
         n += 3;
         await p.waitForTimeout(600);
         return n;
@@ -496,7 +510,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
         await p.waitForTimeout(6000);
         let n = await openTimeLog(p);
         await p.waitForTimeout(1800);
-        await p.evaluate(() => _tlDrillTo('day', todayKey()));
+        await p.evaluate((d) => _tlDrillTo('day', d), ctx.day);
         n += 3;
         await p.waitForTimeout(800);
         return n;
