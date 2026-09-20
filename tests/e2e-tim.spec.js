@@ -797,6 +797,89 @@ test.describe('tim', () => {
     });
   });
 
+  // ── What a navigation is allowed to cost ───────────────────────────────────
+  // goPg calls timDockRefresh on every page change, which this branch added, and
+  // timDockRender was running the whole job analysis behind it: the estimate read
+  // off the DOM, every bid through getBidBalance (which walks payments), a scan
+  // of expenses for a rental rate, and the state-rule lookup. A frame of that
+  // after every navigation in the app is a tax on the whole product, and it got
+  // heavier the day _timOwedByClient started matching real rows instead of none.
+  //
+  // So the navigation path takes a cached answer and every other caller does not,
+  // the same split renderTimeLog(opts) draws for a drill tap. Both halves are
+  // pinned here, because a cache that never refreshes is a stale pill, and a
+  // stale pill about money is worse than no pill at all.
+  test.describe('a navigation does not redo the whole analysis', () => {
+    test('a direct render always recomputes, a navigation inside the window does not', async () => {
+      const r = await page.evaluate(() => {
+        const real = timJobSnapshot;
+        let n = 0;
+        timJobSnapshot = function () { n++; return real.apply(null, arguments); };
+        try {
+          timDockRender();                   // a real open: computes
+          const one = n;
+          timDockRender();                   // still a real open: computes again
+          const two = n;
+          timDockRender({ cached: true });    // a navigation: does not
+          timDockRender({ cached: true });
+          timDockRender({ cached: true });
+          return { one, two, afterThreeNavs: n };
+        } finally { timJobSnapshot = real; }
+      });
+      expect(r.one).toBe(1);
+      expect(r.two).toBe(2);
+      expect(r.afterThreeNavs).toBe(2);
+    });
+
+    test('the cached answer expires, so the pill cannot go stale', async () => {
+      const r = await page.evaluate(async () => {
+        const real = timJobSnapshot;
+        let n = 0;
+        timJobSnapshot = function () { n++; return real.apply(null, arguments); };
+        try {
+          timDockRender({ cached: true });
+          const before = n;
+          await new Promise(res => setTimeout(res, 420));
+          timDockRender({ cached: true });
+          return { before, after: n };
+        } finally { timJobSnapshot = real; }
+      });
+      expect(r.after).toBe(r.before + 1);
+    });
+
+    test('the geometry is never cached, because a dock on a cart bar is the bug', async () => {
+      const r = await page.evaluate(() => {
+        const dock = document.getElementById('tim-dock');
+        timDockRender({ cached: true });
+        const before = dock.style.bottom;
+        const bar = document.createElement('div');
+        bar.id = 'gei-cart-bar';
+        bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:64px';
+        document.body.appendChild(bar);
+        timDockRender({ cached: true });
+        const after = dock.style.bottom;
+        bar.remove();
+        timDockRender({ cached: true });
+        return { before, after, restored: dock.style.bottom };
+      });
+      // 130px, not 64: _timDockLift stands the dock ON the bar, so the offset
+      // is the phone tab bar's 66 plus the bar's 64. Asserting the raw bar
+      // height here would be asserting a number the dock never uses.
+      expect(r.after).not.toBe(r.before);
+      expect(r.after).toContain('calc(130px');
+      expect(r.restored).toBe(r.before);
+    });
+
+    test('navigating still refreshes the dock, it is just not doing it twice', async () => {
+      const r = await page.evaluate(async () => {
+        goPg('pg-dash');
+        await new Promise(res => requestAnimationFrame(() => res()));
+        return document.getElementById('tim-dock').classList.contains('on');
+      });
+      expect(r).toBe(true);
+    });
+  });
+
   test('no console errors, tim.js', async () => {
     assertNoErrors(page, 'tim.js');
   });

@@ -268,7 +268,7 @@ function timMark(size,opts){
 
 let _timDockNudge=null;
 
-function timDockRender(){
+function timDockRender(opts){
   const dock=document.getElementById('tim-dock');
   if(!dock)return;
   // No page up yet means the boot screen or the sign-in gate still is, and Tim
@@ -284,8 +284,7 @@ function timDockRender(){
   if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(34,{onInk:true});
   _timDockLift(dock);
 
-  const top=(typeof timTopNudge==='function'&&typeof timJobSnapshot==='function')
-    ? timTopNudge(timJobSnapshot()) : null;
+  const top=_timDockTop(!!(opts&&opts.cached));
   _timDockNudge=top;
 
   const pill=document.getElementById('tim-dock-pill');
@@ -339,6 +338,41 @@ function _timDockLift(dock){
     : '';   // back to the stylesheet's own value
 }
 
+// WHAT THE DOCK IS ALLOWED TO RECOMPUTE, AND HOW OFTEN.
+//
+// timJobSnapshot is not cheap and was never meant to be: it reads the estimate
+// off the DOM, walks every bid through getBidBalance (which itself walks
+// payments), scans expenses for a rental rate, and asks the state-rule table
+// for the law. That was fine when it ran because a man opened Tim.
+//
+// It stopped being fine when goPg started calling timDockRefresh on every
+// navigation, which this branch added: the whole analysis now ran a frame after
+// every page change in the app. Worse, it got more expensive the same day, for
+// a good reason. _timOwedByClient used to filter on a field name that matched
+// nothing, so it was O(bids) of doing nothing. Fixing it made it real work.
+//
+// The geometry still updates on every render, because a dock sitting on top of
+// a cart bar is the bug it was written to prevent and it costs two rect reads.
+// The ANALYSIS is throttled: the answer cannot meaningfully change in a third
+// of a second, and nothing that does change it (an edit, a save, opening the
+// sheet) goes through here without also going through the paths that clear it.
+// Only the NAVIGATION path is allowed the cached answer, which is the same
+// split renderTimeLog(opts) already draws in js/timelog.js: a drill tap reads
+// from memory, a real open re-reads. Anything calling timDockRender() straight
+// wants the truth now and gets it, so opening the sheet, finishing an edit, and
+// every test in the suite are all unaffected. Only goPg, which fires on a
+// navigation that changed none of this, takes the cheap answer.
+const _TIM_TOP_MS=333;
+let _timTopCache=null,_timTopAt=0;
+function _timDockTop(cached){
+  if(typeof timTopNudge!=='function'||typeof timJobSnapshot!=='function')return null;
+  const now=Date.now();
+  if(cached&&_timTopAt&&(now-_timTopAt)<_TIM_TOP_MS)return _timTopCache;
+  _timTopAt=now;
+  _timTopCache=timTopNudge(timJobSnapshot());
+  return _timTopCache;
+}
+
 // Cheap enough to call from anywhere that changes the job. Coalesced to one
 // paint a frame so a burst of field edits does not re-read the price book
 // thirty times.
@@ -346,7 +380,7 @@ let _timDockPending=false;
 function timDockRefresh(){
   if(_timDockPending)return;
   _timDockPending=true;
-  requestAnimationFrame(()=>{_timDockPending=false;try{timDockRender();}catch(_e){}});
+  requestAnimationFrame(()=>{_timDockPending=false;try{timDockRender({cached:true});}catch(_e){}});
 }
 
 // ── The sheet ────────────────────────────────────────────────────────────────
