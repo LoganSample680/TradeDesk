@@ -121,6 +121,7 @@ function _timLogGot(outcome,job){
     const n=(job.order||[]).length,m=(job.materials||[]).length;
     return n+(n===1?' step, ':' steps, ')+m+(m===1?' supply, ':' supplies, ')+(job.hours||0)+' hrs';
   }
+  if(o.kind==='ask')return 'Answered off your own numbers';
   if(o.kind==='none')return 'Nothing. He could not place it.';
   return o.kind?('Went to '+o.kind):'Nothing';
 }

@@ -1093,6 +1093,17 @@ function _timGoRun(){
     return {text:said,kind:'build',style:null,clientId:who.id};
   }
 
+  // ── A question about his own business ────────────────────────────────────
+  // Ahead of the estimate read, and safely so: timAskKind only fires on an
+  // explicit question phrase ("who owes me", "what did I charge"), and a man
+  // describing work says none of them. Ahead of the navigator too, because
+  // "who owes me money" deserves the figure, not the Collect screen with the
+  // figure somewhere on it (js/tim-ask.js).
+  if(typeof timAsk==='function'){
+    const ans=timAsk(said);
+    if(ans){_timShowAsk(ans);return {text:said,kind:'ask',ask:ans.id};}
+  }
+
   // On an estimate he is describing work, not asking for a screen, so the read
   // back comes first and the navigator is the fallback.
   const onEstimate=!!document.getElementById('pg-est-generic')?.classList.contains('active');

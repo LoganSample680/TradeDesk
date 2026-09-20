@@ -4457,6 +4457,10 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
      them is present, which is only a true answer once they have all had their
      chance to load. -->
 <script src="js/tim-log.js"></script>
+<!-- Answering questions about the owner's own books, off the arrays js/data.js
+     already holds in memory. After tim.js because it opens tim.js's sheet, and
+     after tim-log.js because it borrows its word splitter. -->
+<script src="js/tim-ask.js"></script>
 <script src="js/equipment.js"></script>
 <script src="js/share-inbox.js"></script>
 <script src="js/bg-upload.js"></script>

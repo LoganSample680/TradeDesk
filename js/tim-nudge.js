@@ -269,6 +269,25 @@ function _timUnderBook(){
     return worst;
   }catch(_e){return null;}
 }
+// WHAT THIS CUSTOMER STILL OWES, READ THE WAY THE COLLECT PAGE READS IT.
+//
+// This was wrong from the day it shipped and no test caught it, which is worth
+// recording rather than quietly fixing. It filtered on `b.clientId` and
+// `b.status==='invoiced'`. The app uses `b.client_id` (58 places against 2),
+// and 'invoiced' is not a bid status anywhere in this codebase: the statuses
+// are Closed Won, Pending, Closed Lost, Draft, Abandoned. So the filter matched
+// nothing, `amount` was always 0, and the still-owes nudge could never fire on
+// real data, on any job, ever.
+//
+// It passed CI because e2e-tim-nudge hands timNudges() a hand-built snapshot
+// with `owed: 1240` already in it. That tests the ranking, which is fine and
+// still what those tests are for, but it never runs the code that reads the
+// database. The seam between them had no test at all, so a field name that
+// matched nothing looked exactly like a customer who happened to be paid up.
+//
+// The rule now: this reads bids the way renderMoneyPage does (js/finance.js),
+// because that page IS the definition of what he is owed, and two different
+// answers to "what does Dana owe me" on two screens is worse than none.
 function _timOwedByClient(){
   const out={amount:0,name:'',days:0};
   try{
@@ -279,15 +298,17 @@ function _timOwedByClient(){
     const rows=(typeof bids!=='undefined'&&Array.isArray(bids))?bids:[];
     let oldest=null;
     rows.forEach(b=>{
-      if(!b||b.clientId!==id||b.status!=='invoiced')return;
+      if(!b||b.client_id!==id||b.status!=='Closed Won')return;
       const bal=(typeof getBidBalance==='function')?getBidBalance(b):0;
-      if(bal<=0)return;
+      if(bal<=0.01)return;
       out.amount+=bal;
-      const d=b.invoicedDate||b.date;
+      // Money is owed from the day the work finished, not the day the proposal
+      // was written, which is the same clock the Collect page counts on.
+      const d=b.completion_date||b.date;
       if(d&&(!oldest||String(d)<String(oldest)))oldest=d;
     });
     if(oldest){
-      const ms=Date.now()-new Date(oldest).getTime();
+      const ms=Date.now()-new Date(String(oldest)+'T12:00').getTime();
       out.days=Math.max(0,Math.round(ms/86400000));
     }
   }catch(_e){}
