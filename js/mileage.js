@@ -3925,10 +3925,90 @@ async function _mileNameUnsaved(p,client){
   // things with addresses saved should update any totals").
   if(!r.unsavedFrom&&!r.unsavedTo&&!r.unsavedVia)delete r.addressUnknown;
   r.fixedAt=new Date().toISOString();
+  // ── ONE PLACE, EVERY END OF IT (owner 2026-09-20) ────────────────────────
+  // "If I save an unsaved address the day rail and mileage SHALL populate and
+  // update in real time."
+  //
+  // This named the ONE leg the Save button was about, which is the leg that
+  // ARRIVED. A stop has two sides: the flow test caught it on a day that ran
+  // shop -> stop -> elsewhere, where the row above the stop took the name and
+  // the row below it still read "Unsaved address ->", and its miles stayed
+  // uncountable because addressUnknown never came off.
+  //
+  // A place is a place whichever direction you were going, so every unsaved
+  // end standing at the same coordinate on that day is the same place and
+  // gets the same name. Matched on the coordinate rather than on leg order:
+  // the deriver writes the dwell's own position into both legs, so they agree
+  // exactly, and a position cannot be knocked out of step by a leg the
+  // deriver dropped.
+  _mileNameSameStop(r,p,addr,nm);
   try{saveAll();_flushSaveNow();}catch(_e){}
   await _mileNameStopRow(p,client);
   try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
+  try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}
   return true;
+}
+// The coordinate of the end just named on `r`, which is the pin every other
+// row has to be compared against.
+function _mileNamedEndCoord(r,p){
+  if(!r)return null;
+  const c=(p&&p.which==='from')?r.fromCoord
+    :(Array.isArray(r.viaStops)&&r.viaStops.length&&p&&p.which!=='to')?r.viaStops[0]
+    :r.toCoord;
+  const lat=Number(c&&(c.lat!=null?c.lat:c.latitude));
+  const lng=Number(c&&(c.lng!=null?c.lng:c.lon));
+  return (isFinite(lat)&&isFinite(lng))?{lat,lng}:null;
+}
+// ~180ft. The two ends of one stop carry the SAME written coordinate, so this
+// only has to survive a rounding difference, not decide whether two nearby
+// places are one. Deliberately tighter than any fence radius for that reason.
+const _MILE_SAME_STOP_DEG=0.0005;
+function _mileSameSpot(a,b){
+  if(!a||!b)return false;
+  const lat=Number(b.lat!=null?b.lat:b.latitude),lng=Number(b.lng!=null?b.lng:b.lon);
+  return isFinite(lat)&&isFinite(lng)&&
+    Math.abs(a.lat-lat)<=_MILE_SAME_STOP_DEG&&Math.abs(a.lng-lng)<=_MILE_SAME_STOP_DEG;
+}
+// Every OTHER unsaved end on that day standing at the same pin. Returns what
+// it named, so the time rows can be told the same thing.
+function _mileNameSameStop(r,p,addr,nm){
+  const pin=_mileNamedEndCoord(r,p);
+  if(!pin)return [];
+  const day=r.date,out=[];
+  (typeof mileage!=='undefined'&&Array.isArray(mileage)?mileage:[]).forEach(x=>{
+    if(!x||x===r||x.date!==day||!x.addressUnknown)return;
+    let hit='';
+    if(x.unsavedFrom&&_mileSameSpot(pin,x.fromCoord)){
+      x.from=addr||nm;x.from_name=nm;x.unsavedFrom=false;hit='from';
+    }else if(x.unsavedTo&&_mileSameSpot(pin,x.toCoord)){
+      x.to=addr||nm;x.to_name=nm;x.unsavedTo=false;hit='to';
+    }else if(x.unsavedVia&&Array.isArray(x.viaStops)&&x.viaStops.some(v=>_mileSameSpot(pin,v))){
+      x.via_name=nm;x.via_addr=addr;x.unsavedVia=false;hit='via';
+    }
+    if(!hit)return;
+    // Same rule as the row above: the miles only count once NOTHING on the
+    // leg is still nameless.
+    if(!x.unsavedFrom&&!x.unsavedTo&&!x.unsavedVia)delete x.addressUnknown;
+    x.fixedAt=new Date().toISOString();
+    out.push({row:x,which:hit});
+  });
+  // The rail's own row for each of those legs, so the screen agrees with the
+  // book. A drive's row is keyed by its leg id and carries BOTH ends, so
+  // which end was named decides which column is written.
+  if(out.length)_mileNameTimeEnds(out,nm);
+  return out;
+}
+function _mileNameTimeEnds(list,nm){
+  try{
+    if(!window._supa||!window._supaUser||!nm)return;
+    (list||[]).forEach(h=>{
+      const key=String((h.row&&(h.row.legKey||h.row.id))||'');
+      if(!key||h.which==='via')return;
+      const patch=h.which==='from'?{origin_place:nm}:{dest_place:nm};
+      Promise.resolve(_supa.from('job_time_entries').update(patch)
+        .eq('employee_user_id',_supaUser.id).eq('client_key',key)).catch(()=>{});
+    });
+  }catch(_e){}
 }
 // The Time Log rail's own row for that same stop, on a day nothing can
 // rebuild. The deriver writes the row with no name on purpose (an unsaved
@@ -3961,7 +4041,7 @@ async function _mileNameStopRow(p,client){
       .eq('client_key',key);
     if(error)return false;
   }catch(_e){return false;}
-  try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+  try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e){}
   return true;
 }
 function openMileageEdit(id){

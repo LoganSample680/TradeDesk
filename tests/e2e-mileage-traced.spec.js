@@ -1025,6 +1025,77 @@ test.describe('traced trips', () => {
         expect(r.addressed).toContain('j-traced');
       });
 
+      // ── ONE PLACE, EVERY END OF IT (owner 2026-09-20) ──────────────────
+      // "If I save an unsaved address the day rail and mileage SHALL populate
+      // and update in real time."
+      //
+      // Naming a stop used to name the leg that ARRIVED and nothing else. The
+      // live flow test caught it on a day that ran shop -> stop -> elsewhere:
+      // the row above the stop took the name and the row below it still read
+      // "Unsaved address ->", with its miles still uncountable because
+      // addressUnknown never came off.
+      test('naming a stop names BOTH the drive in and the drive out', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          const STOP = { lat: 39.0412, lng: -95.7333 };
+          // In: shop -> the stop. Out: the stop -> somewhere else entirely.
+          mileage.push({ id: 'j-in', legKey: 'j-in', gps: true, date: d,
+            from_name: 'Shop', from: '1200 SW Oakley Ave', to: '', to_name: '',
+            miles: 4.1, mins: 12, purpose: 'Business', calc_method: 'derived-traced',
+            addressUnknown: true, unsavedTo: true, toCoord: STOP,
+            fromCoord: { lat: 39.0456, lng: -95.7151 },
+            startedIso: '2026-09-08T14:00:00.000Z', endedIso: '2026-09-08T14:12:00.000Z' });
+          mileage.push({ id: 'j-out', legKey: 'j-out', gps: true, date: d,
+            from: '', from_name: '', to_name: 'Menards', to: '5900 SW Huntoon St',
+            miles: 3.3, mins: 10, purpose: 'Business', calc_method: 'derived-traced',
+            addressUnknown: true, unsavedFrom: true, fromCoord: STOP,
+            toCoord: { lat: 39.0352, lng: -95.7714 },
+            startedIso: '2026-09-08T15:00:00.000Z', endedIso: '2026-09-08T15:10:00.000Z' });
+          _mileAddressPending = { legKey: 'j-in', day: d, which: 'to',
+                                  lat: STOP.lat, lng: STOP.lng, stopKey: 'd-j-in' };
+          await _mileAddressSaved({ id: 12, name: 'Aldi GUYS', addr: '2950 SW McClure Rd' });
+          const a = mileage.find(m => m.id === 'j-in'), b = mileage.find(m => m.id === 'j-out');
+          return { inTo: a.to, inUnknown: !!a.addressUnknown,
+                   outFrom: b.from, outName: b.from_name,
+                   outUnsavedFrom: !!b.unsavedFrom, outUnknown: !!b.addressUnknown,
+                   addressed: addressedTrips(mileage).map(m => m.id) };
+        }, day);
+        expect(r.inTo, 'the drive in takes the name, as it always did').toBe('2950 SW McClure Rd');
+        expect(r.outFrom, 'and so does the drive out').toBe('2950 SW McClure Rd');
+        expect(r.outName).toBe('Aldi GUYS');
+        expect([r.outUnsavedFrom, r.outUnknown], 'nothing on it is nameless now').toEqual([false, false]);
+        expect([r.inUnknown]).toEqual([false]);
+        expect(r.addressed, 'both legs count, in the same breath')
+          .toEqual(expect.arrayContaining(['j-in', 'j-out']));
+      });
+
+      test('a place somewhere else on the same day is left alone', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          mileage.push({ id: 'j-a', legKey: 'j-a', gps: true, date: d,
+            from_name: 'Shop', from: '1200 SW Oakley Ave', to: '', to_name: '',
+            miles: 4.1, mins: 12, purpose: 'Business', addressUnknown: true,
+            unsavedTo: true, toCoord: { lat: 39.0412, lng: -95.7333 },
+            startedIso: '2026-09-08T14:00:00.000Z', endedIso: '2026-09-08T14:12:00.000Z' });
+          // Two miles away: a different stop, still nameless, and none of this
+          // customer's business.
+          mileage.push({ id: 'j-b', legKey: 'j-b', gps: true, date: d,
+            from_name: 'Shop', from: '1200 SW Oakley Ave', to: '', to_name: '',
+            miles: 2.2, mins: 8, purpose: 'Business', addressUnknown: true,
+            unsavedTo: true, toCoord: { lat: 39.0712, lng: -95.7633 },
+            startedIso: '2026-09-08T16:00:00.000Z', endedIso: '2026-09-08T16:08:00.000Z' });
+          _mileAddressPending = { legKey: 'j-a', day: d, which: 'to',
+                                  lat: 39.0412, lng: -95.7333, stopKey: 'd-j-a' };
+          await _mileAddressSaved({ id: 13, name: 'Aldi GUYS', addr: '2950 SW McClure Rd' });
+          const b = mileage.find(m => m.id === 'j-b');
+          return { to: b.to, unsaved: !!b.unsavedTo, unknown: !!b.addressUnknown };
+        }, day);
+        expect(r.to, 'a different pin is a different place').toBe('');
+        expect([r.unsaved, r.unknown], 'and is still waiting to be named').toEqual([true, true]);
+      });
+
       test('a round trip names its STOP, never the two ends that were always the same fence', async () => {
         const day = await seed();
         await stale();

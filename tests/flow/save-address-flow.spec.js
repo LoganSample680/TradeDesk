@@ -518,7 +518,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
       label: 'the on-site row takes the name', page: 'pg-timelog', role: 'contractor',
       suspect: 'timelog.js _tlRowsFingerprint / _tlLiveRefresh · mileage.js _mileAddressSaved',
       ruleText: 'the stop must read the customer\'s name within a second of the save, without a reload',
-      expected: 'the rail shows the customer and drops the Save chip, with no reload',
+      expected: 'the customer named, the Save chip gone, nothing on the day still unsaved, no reload',
       act: async (p) => {
         flip = await p.evaluate(async (name) => {
           const t0 = Date.now();
@@ -551,20 +551,20 @@ test.describe('Name an unsaved stop from the day rail', () => {
       // broken and cannot jitter, that the name arrives WITHOUT A RELOAD and
       // the chip goes with it, and the time rides along in the ticket so a
       // slide from four seconds to forty is visible to anybody reading it.
-      // THE STOP, not the whole day. This first asserted that the words
-      // "Unsaved address" had left the rail entirely, and the run came back
-      // named after 3304ms, no reload, 0 Save chips and still failing: the
-      // stop took the name and the DRIVE AWAY from it still reads "Unsaved
-      // address ->", because naming a stop names the leg that ARRIVED and
-      // leaves the one that departed. That is a real gap and it is raised
-      // with the owner rather than asserted here, because this step's claim
-      // is the one he reported: the on-site row takes the name.
+      // THE WHOLE DAY, and the owner settled that: "if I save an unsaved
+      // address the day rail and mileage SHALL populate and update in real
+      // time." This step is what made the gap visible, on a day running shop
+      // -> stop -> elsewhere: the row above the stop took the name and the row
+      // below it still read "Unsaved address ->", because naming a stop named
+      // the leg that ARRIVED and left the one that departed. _mileNameSameStop
+      // names every end standing at the same pin now, so nothing on the day is
+      // left nameless and the assertion can say so.
       rule: async () => ({
-        ok: !!flip && flip.found && flip.chips === 0,
+        ok: !!flip && flip.found && !flip.unsaved && flip.chips === 0,
         got: flip && (flip.found ? ('named after ' + flip.ms + 'ms, no reload')
                                  : ('never named, still unsaved after ' + flip.ms + 'ms')) +
              ' · ' + (flip && flip.chips) + ' Save chips left' +
-             ' · "Unsaved address" elsewhere on the day: ' + (flip && flip.unsaved),
+             ' · "Unsaved address" left anywhere on the day: ' + (flip && flip.unsaved),
       }),
     });
 
@@ -594,11 +594,10 @@ test.describe('Name an unsaved stop from the day rail', () => {
                    chips: [...document.querySelectorAll('.tl-rail-chip')]
                      .filter(b => (b.getAttribute('onclick') || '').includes(a.key)).length };
         }, { name: TARGET, key: stopKey });
-        // Same narrowing as step 7: the stop is what has to survive the
-        // reload, and the departing leg's own unsaved end is a separate gap.
-        return { ok: r.named && r.chips === 0,
+        // Same standard as step 7: a name that only half landed is not saved.
+        return { ok: r.named && r.chips === 0 && !r.unsaved,
                  got: 'named ' + r.named + ' · ' + r.chips + ' Save chips for this stop' +
-                      ' · "Unsaved address" elsewhere on the day: ' + r.unsaved };
+                      ' · "Unsaved address" left anywhere on the day: ' + r.unsaved };
       },
     });
 
