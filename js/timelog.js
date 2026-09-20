@@ -3232,7 +3232,22 @@ function _tlLiveRefresh(now){
       // navigated away from during the debounce, and repainting a hidden page
       // is three Supabase queries for nothing.
       if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
-      try{_tlRevalidateRows(_tlRowsCache,undefined,true);}catch(_e){}
+      // ── AND A NEWER PAINT ALWAYS OWNS THE SCREEN ────────────────────────
+      // The generation is captured HERE, at the moment this decides to go,
+      // and _tlRevalidateRows compares it after its own fetch. Anything that
+      // painted in between (the viewer flipped scope, changed year, opened
+      // the page again) means this answer is about a screen that no longer
+      // exists, and it must not be drawn over the one that does.
+      //
+      // The live path used to pass undefined, which skips that check
+      // entirely, and it got away with it only because the fingerprint it
+      // compared was too coarse to ever say "repaint". The moment the print
+      // started noticing real changes, this became the same clobber
+      // _tlRepairAfterPaint's generation guard was added for: a repaint
+      // scheduled by render N landing on top of render N+1 (CI shard 6,
+      // 2026-09-20).
+      const gen=_tlRenderGen;
+      try{_tlRevalidateRows(_tlRowsCache,gen,true);}catch(_e){}
     };
     if(now){go();return;}
     _tlLiveTimer=setTimeout(go,_TL_LIVE_DEBOUNCE_MS);
