@@ -1124,6 +1124,27 @@ test.describe('traced trips', () => {
       expect(r.all, 'and the other door is right there').toContain('Add a new customer');
     });
 
+    // ── The real button, actually tapped ────────────────────────────────
+    //
+    // Owner report 2026-09-20, from the app itself: a red toast, "[:1]
+    // SyntaxError: Unexpected token '}'", the picker stuck open. Every test
+    // above this one calls _mileWhoPick() directly, which never asks the
+    // browser to parse the onclick ATTRIBUTE the render actually wrote, so
+    // none of them could have caught it. The bug: JSON.stringify(id) writes
+    // literal " characters into an attribute that is itself double-quoted,
+    // which truncates it, and WebKit only discovers the resulting syntax
+    // error the first time the button is pressed. A click is the only way
+    // to prove this stays fixed.
+    test('the rendered button survives an actual tap, not just the function call', async () => {
+      await arm({ clients: [{ id: 701, name: 'Neenan Builders', addr: '' }] });
+      await page.locator('#_mile-who-hits button').first().click();
+      await page.waitForTimeout(50);
+      const r = await shot();
+      expect(r.addr, 'the tap actually filed the address').toBe(ADDR);
+      const pageErrors = (page._consoleErrors || []).filter(e => /SyntaxError|Unexpected token/.test(e));
+      expect(pageErrors, pageErrors.join('\n')).toEqual([]);
+    });
+
     test('a customer with no address yet gets this one as their primary', async () => {
       await arm({ clients: [{ id: 702, name: 'Jane Doe', addr: '' }] });
       await page.evaluate(() => _mileWhoPick('702'));
