@@ -5307,6 +5307,31 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.notFiltered).toBe(true);
     });
 
+    // A repaint that answers a question about a screen that no longer exists
+    // must not be drawn over the one that does. The live path used to skip
+    // this check, and got away with it only because its fingerprint was too
+    // coarse to ever say "repaint" (CI shard 6, 2026-09-20).
+    test('a live repaint stands down when a newer render has already painted', async () => {
+      const r = await page.evaluate(async () => {
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.add('active');
+        const origRe = window._tlRevalidateRows;
+        let sawGen;
+        window._tlRevalidateRows = async (rows, gen) => { sawGen = gen; return false; };
+        try {
+          _tlLiveRefresh(true);
+          return { gen: sawGen, isNumber: typeof sawGen === 'number',
+                   src: /_tlRevalidateRows\(_tlRowsCache,gen,true\)/.test(String(_tlLiveRefresh).replace(/\s/g, '')) };
+        } finally {
+          window._tlRevalidateRows = origRe;
+          if (!wasActive) pg?.classList.remove('active');
+        }
+      });
+      expect(r.isNumber, 'it names the paint it is answering about').toBe(true);
+      expect(r.src, 'and it is the captured one, not undefined').toBe(true);
+    });
+
     test('the live path bypasses the drill throttle, because the screen is actually wrong', async () => {
       const r = await page.evaluate(async () => {
         // The min-gap exists to stop a held-down drill arrow firing three
