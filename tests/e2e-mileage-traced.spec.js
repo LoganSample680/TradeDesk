@@ -1124,7 +1124,7 @@ test.describe('traced trips', () => {
       test('the rail row for that stop is named too, and only that one', async () => {
         const day = await seed();
         await stale();
-        const r = await page.evaluate(async (d) => {
+        let r = await page.evaluate(async (d) => {
           const sent = [];
           window._supa = { from: (t) => ({ update: (u) => { const f = { _t: t, _u: u, _w: {} };
             f.eq = (k, v) => { f._w[k] = v; return f; };
@@ -1135,10 +1135,23 @@ test.describe('traced trips', () => {
           await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
           return sent;
         }, day);
-        expect(r.length, 'one write, to the time row').toBe(1);
-        expect(r[0].table).toBe('job_time_entries');
-        expect(r[0].where.client_key, 'the row that was pressed, written back under its own key')
-          .toBe('j-traced:s2');
+        // OLD, and right at the time: ONE write, to the stop row that was
+        // pressed. NEW (owner 2026-09-20, "if I save an unsaved address the
+        // day rail and mileage SHALL populate and update in real time"): the
+        // rail draws a DRIVE from both its ends, so a stop named without its
+        // drive left "Shop -> Unsaved address" sitting directly above a row
+        // that had just been named. Every end standing at that pin is written,
+        // which here is the stop itself and the leg that arrived at it.
+        const stop = r.find(x => x.where.client_key === 'j-traced:s2');
+        const leg = r.find(x => x.where.client_key === 'j-traced');
+        expect(r.length, 'the stop, and the drive that reached it').toBe(2);
+        expect(r.every(x => x.table === 'job_time_entries')).toBe(true);
+        expect(!!leg, 'the drive row no longer says Unsaved address at that end').toBe(true);
+        expect(leg.update.dest_place).toBe('Ace Hardware');
+        expect(leg.update.source, 'a drive is still a drive; only its end was missing')
+          .toBe(undefined);
+        expect(!!stop, 'the row that was pressed, written back under its own key').toBe(true);
+        r = [stop];
         expect(r[0].where.employee_user_id).toBe('emp-1');
         expect(r[0].update.dest_place, 'the client\'s name, the way a resolved dwell carries it')
           .toBe('Ace Hardware');

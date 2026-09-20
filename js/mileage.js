@@ -3941,8 +3941,24 @@ async function _mileNameUnsaved(p,client){
   // the deriver writes the dwell's own position into both legs, so they agree
   // exactly, and a position cannot be knocked out of step by a leg the
   // deriver dropped.
-  _mileNameSameStop(r,p,addr,nm);
+  // Includes r itself: the drive that ARRIVED carries the stop as its own
+  // dest_place, and the rail draws a drive from both its ends, so leaving it
+  // out left "Shop -> Unsaved address" sitting above a stop that had just
+  // been named.
+  const hits=_mileNameSameStop(r,p,addr,nm);
+  hits.unshift({row:r,which:p&&p.which==='from'?'from':(r.via_name!==undefined&&p&&p.which!=='to'?'via':'to')});
   try{saveAll();_flushSaveNow();}catch(_e){}
+  // ONLY WHEN THE SAVE CAME FROM THE RAIL, which `stopKey` is the mark of.
+  // A Save pressed on the MILEAGE LOG names a leg end and nothing else, and
+  // that is a deliberate rule with its own test: that screen has no rail row
+  // in hand and writing one from it would be a second author for a row the
+  // deriver owns.
+  //
+  // AWAITED, and that is the fix rather than a nicety: these were
+  // fire-and-forget, so the refresh below ran before the writes landed and
+  // the rail repainted the old words. Nothing else repaints afterwards, so
+  // "real time" meant "next time something else happens".
+  if(p&&p.stopKey)await _mileNameTimeEnds(hits,nm);
   await _mileNameStopRow(p,client);
   try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
   try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}
@@ -3992,23 +4008,25 @@ function _mileNameSameStop(r,p,addr,nm){
     x.fixedAt=new Date().toISOString();
     out.push({row:x,which:hit});
   });
-  // The rail's own row for each of those legs, so the screen agrees with the
-  // book. A drive's row is keyed by its leg id and carries BOTH ends, so
-  // which end was named decides which column is written.
-  if(out.length)_mileNameTimeEnds(out,nm);
   return out;
 }
-function _mileNameTimeEnds(list,nm){
+// The rail's own row for each of those legs, so the screen agrees with the
+// book. A drive's row is keyed by its leg id and carries BOTH ends, so which
+// end was named decides which column is written.
+async function _mileNameTimeEnds(list,nm){
   try{
-    if(!window._supa||!window._supaUser||!nm)return;
+    if(!window._supa||!window._supaUser||!nm)return false;
+    const jobs=[];
     (list||[]).forEach(h=>{
       const key=String((h.row&&(h.row.legKey||h.row.id))||'');
       if(!key||h.which==='via')return;
       const patch=h.which==='from'?{origin_place:nm}:{dest_place:nm};
-      Promise.resolve(_supa.from('job_time_entries').update(patch)
-        .eq('employee_user_id',_supaUser.id).eq('client_key',key)).catch(()=>{});
+      jobs.push(Promise.resolve(_supa.from('job_time_entries').update(patch)
+        .eq('employee_user_id',_supaUser.id).eq('client_key',key)).catch(()=>null));
     });
-  }catch(_e){}
+    if(jobs.length)await Promise.all(jobs);
+    return true;
+  }catch(_e){return false;}
 }
 // The Time Log rail's own row for that same stop, on a day nothing can
 // rebuild. The deriver writes the row with no name on purpose (an unsaved
