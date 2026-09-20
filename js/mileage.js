@@ -3716,32 +3716,68 @@ async function _mileSaveAddress(id,which){
 // drive, and the count would then open the lead form at the wrong stop.
 // No new lookup, no second source of truth: the leg the mileage log is
 // already drawing is the leg this reads.
-async function _mileSaveStopAddress(clientKey,day){
+// ── WHERE A RAIL STOP ACTUALLY IS ────────────────────────────────────────
+// Split out of _mileSaveStopAddress 2026-09-20 so the RAIL can ask the same
+// question before it draws the button. A chip that resolves to nothing is a
+// dead control, and three of them were logged in one minute (error_log 202,
+// 203, 204, again as 207-209 on the next version) while the owner sat there
+// tapping: "I'm hitting save this address and it's a dead button."
+//
+// A stop reaches this by one of three shapes, and the old code knew two:
+//
+//   1. An INTERIOR stop of a collapsed leg. The deriver lists it on viaStops
+//      with its own key, which is what the first arm matches.
+//   2. The legacy ':sN' key, from a day too old to re-derive.
+//   3. The leg's own DESTINATION, keyed 'd-' + the leg id, which is the
+//      identity rule every dwell row follows (js/geo-derive.js) and by far
+//      the commonest shape on the rail: any drive that simply ENDED
+//      somewhere nobody saved. It is not on viaStops (nothing was collapsed
+//      through) and it carries no ':sN', so it fell past both arms into
+//      `return false` and the chip did nothing, silently, for ever.
+//
+// Its coordinate is the leg's toCoord, which is the same coordinate door one
+// already hands to the same function for `which:'to'` (_mileSaveAddress), so
+// this is the existing answer reached by the other key rather than a second
+// idea of where the stop is (7.3).
+//
+// Returns null when the stop cannot be placed at all, which is a real state:
+// a drive with both ends unsaved writes no mileage leg (rules 18 and 20), so
+// there is no row anywhere holding a coordinate for it. The rail asks first
+// and draws no chip, instead of offering one that cannot work.
+function _mileStopCoord(clientKey,day){
   const key=String(clientKey||'');
-  if(!key)return false;
+  if(!key)return null;
   const list=(typeof mileage!=='undefined'?mileage:[]);
   const on=x=>x&&(!day||x.date===day);
+  const out=(r,c)=>(r&&c&&c.lat!=null&&(c.lng!=null||c.lon!=null))
+    ?{lat:c.lat,lng:c.lng!=null?c.lng:c.lon,legKey:r.legKey||r.id,date:r.date}:null;
+  // 1. An interior stop, named on the leg that collapsed through it.
   let r=list.find(x=>on(x)&&Array.isArray(x.viaStops)&&x.viaStops.some(v=>v&&v.key===key));
-  let c=null,ix=0;
-  if(r){ix=r.viaStops.findIndex(v=>v&&v.key===key);c=r.viaStops[ix];}
-  else{
-    // A day too old to re-derive keeps the old ':sN' shape forever, and its
-    // viaStops carry no key. Position is all there is, so position it is.
-    const m=/^(.*):s(\d+)$/.exec(key);
-    if(!m)return false;
-    ix=Number(m[2]);
-    r=list.find(x=>on(x)&&String(x.legKey||x.id)===m[1]);
-    if(!r)return false;
-    // viaCoord is the same stop on an older row written before the array
-    // existed, so a day nobody has re-derived yet still answers its first
-    // stop instead of doing nothing.
-    c=(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null;
+  if(r)return out(r,r.viaStops.find(v=>v&&v.key===key));
+  // 2. The leg's own destination: 'd-' + the leg id.
+  const d=/^d-(.+)$/.exec(key);
+  if(d){
+    r=list.find(x=>on(x)&&String(x.legKey||x.id)===d[1]);
+    if(r)return out(r,r.toCoord);
   }
+  // 3. The legacy ':sN' shape. Position is all there is, so position it is.
+  const m=/^(.*):s(\d+)$/.exec(key);
+  if(!m)return null;
+  const ix=Number(m[2]);
+  r=list.find(x=>on(x)&&String(x.legKey||x.id)===m[1]);
+  if(!r)return null;
+  // viaCoord is the same stop on an older row written before the array
+  // existed, so a day nobody has re-derived yet still answers its first
+  // stop instead of doing nothing.
+  return out(r,(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null);
+}
+async function _mileSaveStopAddress(clientKey,day){
+  const c=_mileStopCoord(clientKey,day);
   if(!c)return false;
   // WHICH stop, not just which leg: the fallback below names one rail row and
   // a leg can carry several. The row's own key rides along so naming it never
   // has to rebuild one.
-  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to',stopKey:key});
+  return _mileSaveAddressAt(c.lat,c.lng,{legKey:c.legKey,day:c.date,which:'to',stopKey:String(clientKey||'')});
 }
 // Called by saveClient once the new client's address has been geocoded (so
 // the fence exists). Re-derives the traced day; the real leg lands under the
@@ -3760,6 +3796,15 @@ async function _mileAddressSaved(client){
     // still could not reach the end, which is the same problem for the
     // person looking at it.
     if(_mileStillUnsaved(p))await _mileNameUnsaved(p,client);
+    // AND TELL THE SCREEN HE IS LOOKING AT (owner 2026-09-20: "adding people
+    // in the day rail didn't update in real time"). The save was landing: the
+    // derive ran, the row changed in the database, and the Time Log went on
+    // drawing "Unsaved address" until something else happened to repaint it.
+    // The rail is where he tapped Save from, so it is the screen that owes
+    // him the answer. Same door the supply-run answer already uses
+    // (_supplyRunAnswerTime), not a second refresh path (7.3).
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e2){}
+    try{if(typeof renderMileage==='function')renderMileage();}catch(_e2){}
     const n=_mileTripNumberForLeg(p.day,p.legKey);
     if(typeof showToast==='function')showToast(n?('Trip '+n+' is on the books'):'Address saved, day re-derived');
   }catch(_e){}

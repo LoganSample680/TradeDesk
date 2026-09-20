@@ -5526,7 +5526,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('a held stop still offers Save this address, which is how it stops being held', async () => {
       // Saving the address re-derives the day into two real legs, which is
       // the whole correction path for an under-counted trip.
-      expect(await render(STOP)).toMatch(/_mileSaveStopAddress/);
+      //
+      // The leg is seeded now (2026-09-20): the chip asks _mileStopCoord
+      // whether the stop can actually be placed before it is offered, so a
+      // stop with no leg behind it gets no chip. That gate is the fix for
+      // the dead button, and it means this test has to supply the leg its
+      // claim depends on.
+      const withLeg = await page.evaluate((x) => {
+        const keep = window.mileage;
+        window.mileage = [{ legKey: 'leg-1', id: 'leg-1', gps: true, date: '2026-09-11',
+          addressUnknown: true, unsavedVia: true,
+          fromCoord: { lat: 39.04, lng: -95.71 }, toCoord: { lat: 39.05, lng: -95.72 },
+          viaCoord: { lat: 39.061, lng: -95.697 } }];
+        try { return String(_tlRailRow(x)); } finally { window.mileage = keep; }
+      }, STOP);
+      expect(withLeg).toMatch(/_mileSaveStopAddress/);
     });
 
     test('the hours record never counts one', async () => {
@@ -5863,13 +5877,49 @@ test.describe('timelog.js: exhaustive coverage', () => {
     const STOP = { source: 'auto', rawSource: 'unsaved', clientName: 'Unsaved address',
                    clientKey: 'j-abc:s0', date: '2026-09-09', minutes: 95, personUid: null,
                    startTime: '2026-09-09T19:05:42.000Z', endTime: '2026-09-09T20:40:26.000Z' };
-    const render = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, STOP, over));
+    // ── THE LEG HAS TO BE THERE NOW (owner 2026-09-20) ──────────────────
+    //
+    // WAS: the row was rendered against whatever mileage happened to be in
+    // the page, and the chip was drawn for every unsaved stop regardless.
+    // That is precisely the defect: the rail offered a control for stops
+    // _mileSaveStopAddress could not place, and pressing one did nothing at
+    // all ("I'm hitting save this address and it's a dead button",
+    // error_log 202-204 and 207-209). The chip now asks _mileStopCoord
+    // first, so a test that wants the chip has to supply the leg the chip
+    // would act on. That is the honest pairing and it is what the app has.
+    const LEG = { legKey: 'j-abc', id: 'j-abc', gps: true, date: '2026-09-09',
+      addressUnknown: true, unsavedVia: true,
+      fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0123, lng: -95.7465 },
+      viaCoord: { lat: 39.061, lng: -95.697 } };
+    const render = (over, legs) => page.evaluate(([r, L]) => {
+      const keep = window.mileage;
+      window.mileage = L;
+      try { return String(_tlRailRow(r)); } finally { window.mileage = keep; }
+    }, [Object.assign({}, STOP, over), legs === undefined ? [LEG] : legs]);
 
     test('the stop offers Save, wired to the leg and the day it belongs to', async () => {
       const h = await render();
       expect(h).toMatch(/Save this address/);
       expect(h, 'the same chip the question row uses, not a new control').toMatch(/class="tl-rail-chip"/);
       expect(h).toMatch(/_mileSaveStopAddress\('j-abc:s0','2026-09-09'\)/);
+    });
+
+    // The whole point of the gate. A stop nothing can place gets no chip
+    // rather than a chip that does nothing: a drive with both ends unsaved
+    // writes no mileage leg at all (rules 18 and 20), and that is the shape
+    // that was sitting on his rail offering a dead button.
+    test('a stop nothing can place offers no button at all', async () => {
+      const h = await render({}, []);
+      expect(h, 'the stop is still stated').toMatch(/Unsaved address|UNSAVED/i);
+      expect(h, 'it just is not offered a control that cannot work')
+        .not.toMatch(/_mileSaveStopAddress/);
+    });
+
+    // The commonest shape on the rail, and the one that was dead: a drive
+    // that ended somewhere nobody saved, keyed 'd-' + the leg id.
+    test('a destination stop offers Save off the leg it ended', async () => {
+      const h = await render({ clientKey: 'd-j-abc' }, [LEG]);
+      expect(h).toMatch(/_mileSaveStopAddress\('d-j-abc','2026-09-09'\)/);
     });
 
     test('no other kind of row grows a Save button', async () => {
