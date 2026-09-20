@@ -446,34 +446,100 @@ test.describe('tim', () => {
       });
     });
 
-    test('it stands on a fixed bottom bar rather than on top of it', async () => {
+    // ── 10.4: these two assertions changed, and why ─────────────────────────
+    // WAS: the dock floated bottom-right, and _timDockLift measured every fixed
+    // bottom bar on each render and stood him on the tallest one. The old tests
+    // asserted the lift happened and that removing the bar dropped him back.
+    // That was correct while he lived at the bottom, and it did obey 15.3.
+    // NOW: he is tucked against the right edge at mid-height (owner, 2026-09-20,
+    // wanting him embedded rather than floating over the page). Nothing is
+    // fixed at the middle of the right edge, so there is nothing to collide
+    // with, nothing to measure, and no lift; the geometry is the stylesheet's
+    // (8.5) and the JS sets no style property at all.
+    // The RULE is unchanged and still the point of this group. 15.3 is now met
+    // by not being there rather than by dodging, so the assertions below say
+    // that instead: he clears a bottom bar no matter how tall it is, and he
+    // carries no inline position for anything to have written.
+    test('a bottom bar cannot reach him, whatever height it is', async () => {
       const r = await page.evaluate(() => {
-        const bar = document.createElement('div');
-        bar.id = 'gei-cart-bar';
-        bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:64px;z-index:8000;background:#2D5DA8';
-        document.body.appendChild(bar);
-        timDockRender();
-        const d = document.getElementById('tim-dock-btn').getBoundingClientRect();
-        const b = bar.getBoundingClientRect();
-        return { overlaps: d.bottom > b.top, dockBottom: Math.round(d.bottom), barTop: Math.round(b.top) };
+        const out = [];
+        [64, 120, 240].forEach(h => {
+          document.getElementById('gei-cart-bar')?.remove();
+          const bar = document.createElement('div');
+          bar.id = 'gei-cart-bar';
+          bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:8000;background:#2D5DA8;height:' + h + 'px';
+          document.body.appendChild(bar);
+          timDockRender();
+          const d = document.getElementById('tim-dock-btn').getBoundingClientRect();
+          out.push(d.bottom > bar.getBoundingClientRect().top);
+        });
+        return out;
       });
-      expect(r.overlaps).toBe(false);
+      expect(r).toEqual([false, false, false]);
     });
 
-    test('with the bar gone it drops back to where the stylesheet puts it', async () => {
+    test('the stylesheet owns where he sits, so the JS writes no position', async () => {
       const r = await page.evaluate(() => {
         const bar = document.createElement('div');
         bar.id = 'gei-cart-bar';
         bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:64px;z-index:8000';
         document.body.appendChild(bar);
         timDockRender();
-        const lifted = document.getElementById('tim-dock').style.bottom;
-        bar.remove();
-        timDockRender();
-        return { lifted, back: document.getElementById('tim-dock').style.bottom };
+        const dock = document.getElementById('tim-dock');
+        const cs = getComputedStyle(dock);
+        return {
+          inlineBottom: dock.style.bottom,
+          inlineTop: dock.style.top,
+          // Mid-height, from the stylesheet, bar or no bar.
+          centred: Math.abs(dock.getBoundingClientRect().top + dock.getBoundingClientRect().height / 2
+            - window.innerHeight / 2) < 2,
+          right: cs.right,
+        };
       });
-      expect(r.lifted).not.toBe('');
-      expect(r.back).toBe('');
+      expect(r.inlineBottom).toBe('');
+      expect(r.inlineTop).toBe('');
+      expect(r.centred).toBe(true);
+    });
+
+    test('quiet he is a tab on the edge, awake he comes out and is a disc', async () => {
+      const r = await page.evaluate(() => {
+        const real = window.__realNudges || timNudges;
+        window.__realNudges = real;
+        // Both the width and the edge gap are transitioned, so a rect read taken
+        // straight after a render returns the frame it is on, not the state it
+        // is going to. Killing the transitions for the measurement is the
+        // deterministic way to assert the END state; sleeping for 240ms would
+        // be asserting the animation's duration by proxy and would flake on a
+        // loaded runner, which is a lesson this suite has already taught twice
+        // today.
+        const stop = document.createElement('style');
+        stop.textContent = '#tim-dock,#tim-dock *{transition:none !important;animation:none !important}';
+        document.head.appendChild(stop);
+        const read = () => {
+          const btn = document.getElementById('tim-dock-btn').getBoundingClientRect();
+          return { w: Math.round(btn.width), h: Math.round(btn.height),
+            gap: Math.round(window.innerWidth - btn.right),
+            lit: document.getElementById('tim-dock').classList.contains('lit') };
+        };
+        timNudges = () => [];
+        timDockRender();
+        const quiet = read();
+        timNudges = () => ([{ id: 'a', line: 'Dana still owes you', figure: '$1,240' }]);
+        timDockRender();
+        const awake = read();
+        timNudges = real;
+        timDockRender();
+        stop.remove();
+        return { quiet, awake };
+      });
+      // Flush to the edge and narrow when there is nothing to say.
+      expect(r.quiet.gap).toBe(0);
+      expect(r.quiet.w).toBeLessThan(r.awake.w);
+      expect(r.quiet.lit).toBe(false);
+      // Out from the edge and round once there is.
+      expect(r.awake.gap).toBeGreaterThan(0);
+      expect(r.awake.w).toBe(r.awake.h);
+      expect(r.awake.lit).toBe(true);
     });
 
     test('it never pushes the page sideways, at phone width or desktop', async () => {
@@ -847,27 +913,40 @@ test.describe('tim', () => {
       expect(r.after).toBe(r.before + 1);
     });
 
-    test('the geometry is never cached, because a dock on a cart bar is the bug', async () => {
+    // 10.4: this assertion changed with the move to the right edge. It used to
+    // prove _timDockLift ran on the cached path too, so a cart bar appearing
+    // between navigations still pushed him up. There is no lift now and no
+    // bottom to be pushed off, so what has to hold instead is that the SHAPE
+    // still tracks the findings on the cached path: caching the analysis must
+    // not freeze him mid-state with a stale pill and the wrong silhouette.
+    test('a cached render redraws the shape, it does not skip it', async () => {
+      // The risk the cache introduces is not a stale ANSWER, which is the whole
+      // point of it and lasts a third of a second. It is that a navigation takes
+      // the cheap path and leaves him drawn wrong: the pill still up with no
+      // finding behind it, or the disc collapsed back to a tab while he has
+      // three things to say. So the shape is rebuilt from the answer on every
+      // render, cached or not, and this pins that.
       const r = await page.evaluate(() => {
+        const real = window.__realNudges || timNudges;
+        window.__realNudges = real;
+        const btn = document.getElementById('tim-dock-btn');
         const dock = document.getElementById('tim-dock');
-        timDockRender({ cached: true });
-        const before = dock.style.bottom;
-        const bar = document.createElement('div');
-        bar.id = 'gei-cart-bar';
-        bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:64px';
-        document.body.appendChild(bar);
-        timDockRender({ cached: true });
-        const after = dock.style.bottom;
-        bar.remove();
-        timDockRender({ cached: true });
-        return { before, after, restored: dock.style.bottom };
+        const shape = () => ({ alive: btn.classList.contains('alive'),
+          lit: dock.classList.contains('lit'),
+          pill: document.getElementById('tim-dock-pill').classList.contains('on') });
+        timNudges = () => ([{ id: 'a', line: 'Dana still owes you', figure: '$1,240' }]);
+        timDockRender();                    // computes: awake
+        const awake = shape();
+        btn.classList.remove('alive');      // something else stomps the DOM
+        dock.classList.remove('lit');
+        timDockRender({ cached: true });     // a navigation: must redraw it
+        const redrawn = shape();
+        timNudges = real;
+        timDockRender();
+        return { awake, redrawn };
       });
-      // 130px, not 64: _timDockLift stands the dock ON the bar, so the offset
-      // is the phone tab bar's 66 plus the bar's 64. Asserting the raw bar
-      // height here would be asserting a number the dock never uses.
-      expect(r.after).not.toBe(r.before);
-      expect(r.after).toContain('calc(130px');
-      expect(r.restored).toBe(r.before);
+      expect(r.awake).toEqual({ alive: true, lit: true, pill: true });
+      expect(r.redrawn).toEqual({ alive: true, lit: true, pill: true });
     });
 
     test('navigating still refreshes the dock, it is just not doing it twice', async () => {

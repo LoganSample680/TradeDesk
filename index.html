@@ -353,10 +353,24 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    law about the job on screen, which is what makes it worth tapping. No pill,
    no badge, no dot: he has nothing, and saying so with silence costs nothing.
    js/tim-nudge.js enforces that, this only draws it. */
-#tim-dock{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:1400;
-  display:none;flex-direction:column;align-items:flex-end;gap:9px;pointer-events:none}
-@media(max-width:767px){#tim-dock{bottom:calc(66px + env(safe-area-inset-bottom,0px))}}
+/* ── Where Tim waits ────────────────────────────────────────────────────────
+   Owner, 2026-09-20: quiet, he is embedded into the right centre of the screen
+   as a badge, and a tap brings him to life.
+   He used to float bottom-right, which put a 58px disc on top of whatever was
+   under it: in the render taken this morning he was sitting on the "Set up"
+   button of a card. That is rule 15.3 (no two interactive controls overlap)
+   being dodged rather than obeyed, and _timDockLift existed only to dodge it,
+   measuring the cart bar, the send bar and the tab bar on every render so he
+   could stand on them.
+   Tucked against the right edge at mid-height he obeys it instead. There is
+   nothing fixed at the middle of the right edge to collide with, the lift is
+   gone, and a thumb reaches him without crossing the screen. */
+#tim-dock{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:1400;
+  display:none;flex-direction:row;align-items:center;gap:9px;pointer-events:none;
+  transition:right .24s cubic-bezier(.22,1,.36,1)}
 #tim-dock.on{display:flex}
+/* Out from the edge once he has something. The move IS the coming to life. */
+#tim-dock.lit{right:14px}
 #tim-dock-pill{display:none;align-items:center;gap:9px;max-width:min(268px,calc(100vw - 32px));
   padding:9px 13px;border-radius:var(--r-md);background:var(--ink);box-shadow:0 4px 16px rgba(27,22,18,.22);
   border:none;font-family:inherit;text-align:left;cursor:pointer;pointer-events:auto;
@@ -364,9 +378,21 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 #tim-dock-pill.on{display:flex}
 #tim-dock-pill .tim-pill-line{font-size:13px;font-weight:600;color:var(--text-cream);line-height:1.35}
 #tim-dock-pill .tim-pill-fig{font-size:13px;font-weight:800;color:var(--hat);font-variant-numeric:tabular-nums;flex-shrink:0;white-space:nowrap}
-#tim-dock-btn{width:58px;height:58px;border:0;border-radius:var(--r-pill);background:var(--ink);
-  box-shadow:0 4px 16px rgba(27,22,18,.28);cursor:pointer;display:flex;align-items:center;justify-content:center;
-  position:relative;pointer-events:auto;padding:0;transition:transform .15s,opacity .15s}
+/* QUIET: a pull tab, not a button. Flush to the edge, rounded only on the side
+   that faces the page, 34px of him showing. Small enough that it reads as part
+   of the chrome and not as something dropped on top of it. */
+#tim-dock-btn{width:34px;height:52px;border:0;border-radius:16px 0 0 16px;background:var(--ink);
+  box-shadow:-2px 0 10px rgba(27,22,18,.16);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  position:relative;pointer-events:auto;padding:0;overflow:hidden;
+  transition:width .24s cubic-bezier(.22,1,.36,1),height .24s cubic-bezier(.22,1,.36,1),
+    border-radius .24s cubic-bezier(.22,1,.36,1),box-shadow .24s,transform .15s,opacity .15s}
+/* The mark is drawn once at 34px and scaled, rather than redrawn per state:
+   one SVG, no reflow on the transition. */
+#tim-dock-mark{display:flex;transition:transform .24s cubic-bezier(.22,1,.36,1)}
+#tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.6)}
+/* ALIVE: he comes out and becomes the disc he was. */
+#tim-dock-btn.alive{width:58px;height:58px;border-radius:var(--r-pill);overflow:visible;
+  box-shadow:0 4px 16px rgba(27,22,18,.28)}
 #tim-dock-btn:active{transform:scale(.96);opacity:.85}
 #tim-dock-badge{display:none;position:absolute;top:1px;right:1px;width:15px;height:15px;border-radius:var(--r-pill);
   background:var(--hat);box-shadow:0 0 0 2.5px var(--ink);font-size:9px;font-weight:800;color:var(--ink);

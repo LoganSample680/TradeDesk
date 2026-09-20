@@ -282,7 +282,6 @@ function timDockRender(opts){
 
   const markEl=document.getElementById('tim-dock-mark');
   if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(34,{onInk:true});
-  _timDockLift(dock);
 
   const finds=_timDockFinds(!!(opts&&opts.cached));
   const top=finds.length?finds[0]:null;
@@ -293,6 +292,9 @@ function timDockRender(opts){
   // state and it is the one he is in most of the day.
   const btn=document.getElementById('tim-dock-btn');
   if(btn)btn.classList.toggle('alive',finds.length>0);
+  // The tab comes out from the edge as he wakes. One class, the stylesheet owns
+  // the motion (8.5: the JS never touches a style property).
+  dock.classList.toggle('lit',finds.length>0);
 
   const pill=document.getElementById('tim-dock-pill');
   const badge=document.getElementById('tim-dock-badge');
@@ -363,37 +365,25 @@ function _timDockRoll(count){
 }
 // ── Getting out of the way ───────────────────────────────────────────────────
 //
-// The estimate builder puts a full-width blue bar across the bottom of the
-// screen while lines are being added (`_geiRenderCartBar`), and the send bar
-// does the same once a proposal is ready. A round button floating at a fixed
-// height lands straight on top of them, which is two interactive controls in
-// the same place and a layout failure under 15.3.
+// He used to float bottom-right, and the estimate builder pins a full-width bar
+// across the bottom of the screen the moment a line is added (`_geiRenderCartBar`,
+// then the send bar, then the mobile tab bar under both). A round button at a
+// fixed height lands straight on them: two interactive controls in one place,
+// which is a layout failure under 15.3.
 //
-// So the dock measures what is already down there and stands on it. Nothing
-// registers itself: a bar is whatever is fixed to the bottom of the screen and
-// currently visible, and a new one added later is handled without touching
-// this, which is the point of measuring rather than listing.
-const _TIM_BOTTOM_BARS=['gei-cart-bar','gei-send-bar','byo-mob-bar','drive-banner'];
-function _timDockLift(dock){
-  let floor=0;
-  _TIM_BOTTOM_BARS.forEach(id=>{
-    const el=document.getElementById(id);
-    if(!el)return;
-    const cs=getComputedStyle(el);
-    if(cs.display==='none'||cs.visibility==='hidden'||cs.position!=='fixed')return;
-    const r=el.getBoundingClientRect();
-    // Pinned to the bottom of the viewport, not something fixed near the top.
-    if(r.height<=0||r.bottom<window.innerHeight-2)return;
-    if(r.height>floor)floor=r.height;
-  });
-  const tabs=document.getElementById('mobile-tabbar');
-  const onPhone=tabs&&getComputedStyle(tabs).display!=='none';
-  const base=onPhone?66:16;
-  dock.style.bottom=floor>0
-    ? ('calc('+(base+Math.round(floor))+'px + env(safe-area-inset-bottom,0px))')
-    : '';   // back to the stylesheet's own value
-}
-
+// The answer used to be _timDockLift, which measured every fixed bottom bar on
+// every render and stood the dock on the tallest one. It worked, and it was the
+// wrong shape of answer: it obeyed the rule by dodging, it forced a layout read
+// per render, and it still left him covering whatever card happened to be under
+// him. A render taken 2026-09-20 had him sitting on a card's own button.
+//
+// Owner, same day, looking at that: quiet, he belongs embedded in the right
+// centre of the screen as a badge, and a tap brings him to life.
+//
+// So he is tucked against the right edge at mid-height. Nothing is fixed there
+// to collide with, so there is nothing to measure and nothing to dodge, and the
+// lift is gone rather than kept as a no-op. The geometry now lives entirely in
+// the stylesheet (8.5), which is where it should have been.
 // WHAT THE DOCK IS ALLOWED TO RECOMPUTE, AND HOW OFTEN.
 //
 // timJobSnapshot is not cheap and was never meant to be: it reads the estimate
