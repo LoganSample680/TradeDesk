@@ -457,6 +457,83 @@ test.describe('traced trips', () => {
       expect(r.text).toContain('Check it before you pick');
     });
 
+    // ── AND IT DOES NOT MOVE WHEN THE LOOKUP LANDS (owner 2026-09-20) ────
+    // On a clip of himself tapping Save this address: "see how the screen
+    // jumps up a bit? Needs to be perfectly smooth."
+    //
+    // Two causes, one line of code. The second paint went through
+    // ov.innerHTML, which REPLACES the .zmodal node, so its td-modal-in
+    // entrance (.24s scale, index.html) ran a second time on a box that had
+    // already settled; and the two text lines changed length between the
+    // paints, so margin:auto (.zmodal-overlay>*) re-centred a taller box and
+    // it rose. Measured here rather than eyeballed: same element, same
+    // rectangle, before the lookup and after it.
+    test('the kind prompt never moves when the lookup lands', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        const keep = window._mileWhatIsHere;
+        let release;
+        try {
+          // Held open on purpose, so "before" is genuinely the pre-lookup
+          // paint and not a race with a fixture that resolves immediately.
+          window._mileWhatIsHere = () => new Promise(res => { release = res; });
+          await _mileSaveAddress('j-traced', 'to');
+          const ov = document.getElementById('_mile-kind-ov');
+          const before = ov.querySelector('.zmodal');
+          const skel = ov.querySelectorAll('.td-skel').length;
+          // offsetHeight/offsetTop, not getBoundingClientRect: the rect
+          // includes td-modal-in's scale(.97), so measuring through it reads
+          // the entrance animation rather than the box (webkit, shard 3,
+          // 2026-09-20: 11px of scale on a box that never changed). These two
+          // are layout values, which is exactly what "it moved" means here.
+          // The entrance is waited out anyway rather than slept past, so the
+          // numbers are of a settled box either way.
+          await Promise.all(before.getAnimations().map(x => x.finished.catch(() => {})));
+          const b = { h: before.offsetHeight, top: before.offsetTop };
+          release({ parts: { addr: '3210 S Kansas Ave, Topeka, KS 66611' },
+                    name: 'Neenans Co', guess: '', supply: false });
+          await new Promise(r => setTimeout(r, 80));
+          const after = ov.querySelector('.zmodal');
+          const a = { h: after.offsetHeight, top: after.offsetTop };
+          return { skel, same: before === after, boxes: ov.querySelectorAll('.zmodal').length,
+                   dTop: b.top - a.top, dH: b.h - a.h,
+                   stillSkel: ov.querySelectorAll('.td-skel').length,
+                   named: after.textContent.includes('Neenans Co') };
+        } finally { window._mileWhatIsHere = keep;
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.skel, 'the name line shimmers while the lookup is out (8.4)').toBe(1);
+      expect(r.named, 'and the lookup really did land').toBe(true);
+      expect(r.stillSkel, 'the shimmer is gone once it has an answer').toBe(0);
+      expect(r.same, 'the same box, not a replacement that animates itself in again').toBe(true);
+      expect(r.boxes, 'and only ever one of it').toBe(1);
+      expect(r.dH, 'its height never changed').toBe(0);
+      expect(r.dTop, 'so it never moved').toBe(0);
+    });
+
+    // A lookup that never answers must not leave a shimmer spinning where a
+    // name was promised.
+    test('a lookup that fails clears the shimmer and asks evenly', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        const keep = window._mileWhatIsHere;
+        try {
+          window._mileWhatIsHere = () => Promise.reject(new Error('no signal'));
+          await _mileSaveAddress('j-traced', 'to');
+          for (let i = 0; i < 40 && document.querySelectorAll('#_mile-kind-ov .td-skel').length; i++) {
+            await new Promise(r => setTimeout(r, 25));
+          }
+          const ov = document.getElementById('_mile-kind-ov');
+          return { skel: ov.querySelectorAll('.td-skel').length, text: ov.textContent,
+                   btns: [...ov.querySelectorAll('button')].map(b => b.textContent) };
+        } finally { window._mileWhatIsHere = keep;
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.skel, 'nothing is still pretending to load').toBe(0);
+      expect(r.btns[0], 'and with nothing known, neither answer leads').toBe('Lead or client');
+      expect(r.text).toContain('A supply house is a place');
+    });
+
     test('a name that says what it is is read as a supply house', async () => {
       const r = await page.evaluate(() => [
         _mileGuessKind('Ferguson Plumbing Supply'), _mileGuessKind('Westlake Ace Hardware'),
