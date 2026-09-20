@@ -424,11 +424,62 @@ test.describe('tim', () => {
         return {
           docks: document.querySelectorAll('#tim-dock').length,
           shown: dock.classList.contains('on'),
-          hasMark: !!document.querySelector('#tim-dock-mark svg'),
+          // 10.4: this read `#tim-dock-mark svg` until the mark stopped being
+          // drawn. The assertion's intent is unchanged, the dock puts a mark in
+          // its slot; the mark is now the Style E portrait, which is a file.
+          hasMark: !!document.querySelector('#tim-dock-mark img'),
           opened: !!document.getElementById('_tim-sheet'),
         };
       });
       expect(r).toEqual({ docks: 1, shown: true, hasMark: true, opened: true });
+    });
+
+    // The mark used to be seven SVG primitives, so it could not fail to arrive:
+    // if the string was in the file it was on screen. It is a file now, and the
+    // failure mode of a file is silent. `serve -s` answers a missing path with
+    // index.html at 200, so a typo in the src does not 404, it hands the <img>
+    // a page of HTML and the browser draws nothing. The dock would still pass
+    // every test above it with an empty hole where the man is. naturalWidth is
+    // the only thing that knows the difference.
+    test('the mark is a file that actually arrived', async () => {
+      const r = await page.evaluate(async () => {
+        document.getElementById('_tim-ov')?.remove();
+        timDockRender();
+        const img = document.querySelector('#tim-dock-mark img');
+        if (!img) return { found: false };
+        if (!img.complete) await img.decode().catch(() => {});
+        return {
+          found: true,
+          natural: img.naturalWidth,
+          // Drawn awake-size so the tab scales DOWN to it, never up.
+          drawn: img.getAttribute('width'),
+          // Every density has to be listed or a 3x phone silently takes the
+          // one file it was given and softens it.
+          densities: (img.getAttribute('srcset') || '').split(',').length,
+        };
+      });
+      expect(r.found).toBe(true);
+      expect(r.natural).toBeGreaterThan(0);
+      expect(r.drawn).toBe('58');
+      expect(r.densities).toBe(3);
+    });
+
+    // He is inline in a row of scope at 16 and he is the biggest thing on the
+    // screen at 58, off the same three files. What must NOT happen is a caller
+    // getting a box of a different size than it asked for.
+    test('he holds at every size he is asked for', async () => {
+      const r = await page.evaluate(() =>
+        [16, 20, 26, 34, 58].map(n => {
+          const d = document.createElement('div');
+          d.innerHTML = timMark(n);
+          const i = d.firstChild;
+          return [i.tagName, Number(i.getAttribute('width')), Number(i.getAttribute('height')),
+            i.getAttribute('sizes')].join(':');
+        }));
+      expect(r).toEqual([
+        'IMG:16:16:16px', 'IMG:20:20:20px', 'IMG:26:26:26px',
+        'IMG:34:34:34px', 'IMG:58:58:58px',
+      ]);
     });
   });
 

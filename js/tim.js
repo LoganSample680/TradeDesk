@@ -229,29 +229,30 @@ function timRun(text){
 // row of scope, 20px beside a line of his own copy, 26px in the sheet header,
 // 34px on the dock, 58px when the dock is the only thing on screen.
 //
-// The first version was a face and it read as a cartoon, which is the one thing
-// this product cannot afford. So the man stays but he is a silhouette, brass
-// instead of safety yellow, on a warm paper disc with a hairline ring. At 16px
-// it resolves to a brass bar on a pale disc, which is still a hardhat, and at
-// 58px it is still not a drawing of a person's face.
+// Six hand-drawn versions of this were rejected and they were rejected for the
+// same reason each time: a face assembled out of seven primitives in a 28-unit
+// box is a face nobody drew. It read as a hardhat, then a padlock, then a
+// mummy. The answer was not a better bezier, it was to stop drawing. This is
+// the Style E portrait from the brand sheet, cropped square, masked to a circle
+// and exported at three densities: a bearded man in a ball cap with a wrench on
+// the crown and his overalls showing. That is the mascot the owner asked for,
+// and it holds at 16px because the silhouette does the work, not the detail.
+//
+// It carries its own gold field, so there is no disc, no ring and no onInk
+// variant to draw underneath it. The browser picks the density off srcset from
+// the rendered size, which is why width and height are attributes and not a
+// guess: a 16px mark on a 3x phone pulls the 64 and nothing larger.
 //
 // It is built as a string rather than a component because the app has no
 // framework and this has to drop into innerHTML from six different files.
 function timMark(size,opts){
   const s=Math.max(12,Math.round(Number(size)||24));
   const o=opts||{};
-  const ring=o.onInk?'rgba(245,239,226,.22)':'var(--tim-disc-edge,#D8D2C6)';
-  const disc=o.onInk&&o.flat?'rgba(245,239,226,.14)':'var(--tim-disc,#F4F1EA)';
-  return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 28 28" aria-hidden="true" '+
-    'style="flex-shrink:0;display:block'+(o.style?';'+o.style:'')+'">'+
-    '<circle cx="14" cy="14" r="13.4" fill="'+disc+'" stroke="'+ring+'" stroke-width="1"></circle>'+
-    '<path d="M7.4 25.4a6.7 6.7 0 0 1 13.2 0z" fill="#1B1612"></path>'+
-    '<ellipse cx="14" cy="15" rx="3.7" ry="4.2" fill="#1B1612"></ellipse>'+
-    '<path d="M9.2 12.5a4.8 4.8 0 0 1 9.6 0z" fill="var(--brass,#C9962F)"></path>'+
-    '<rect x="6.2" y="12.2" width="15.6" height="2.1" rx="1.05" fill="var(--brass,#C9962F)"></rect>'+
-    '<rect x="6.2" y="13.6" width="15.6" height="0.7" fill="var(--brass-deep,#9E7222)"></rect>'+
-    '<path d="M14 8.6v3.2" stroke="var(--brass-deep,#9E7222)" stroke-width="1"></path>'+
-  '</svg>';
+  return '<img src="/img/tim-128.png" '+
+    'srcset="/img/tim-64.png 64w, /img/tim-128.png 128w, /img/tim-256.png 256w" '+
+    'sizes="'+s+'px" width="'+s+'" height="'+s+'" '+
+    'alt="" aria-hidden="true" decoding="async" '+
+    'style="flex-shrink:0;display:block'+(o.style?';'+o.style:'')+'">';
 }
 
 // ── The dock ─────────────────────────────────────────────────────────────────
@@ -281,7 +282,9 @@ function timDockRender(opts){
   dock.classList.add('on');
 
   const markEl=document.getElementById('tim-dock-mark');
-  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(34,{onInk:true});
+  // Drawn at the awake size. The stylesheet scales him down to sit in the tab,
+  // so the quiet state costs no second render and no second file.
+  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(58);
 
   const finds=_timDockFinds(!!(opts&&opts.cached));
   const top=finds.length?finds[0]:null;

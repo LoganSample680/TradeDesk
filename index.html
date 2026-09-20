@@ -174,14 +174,15 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
   --c-deep:#2C0707;--c-deep-soft:#FFB8AE;
   --c-gray:#544D44;--c-gray-soft:#EEE7D8;--c-gray-edge:#CFC4AC;
   --text-cream:#F5EFE2;--text-cream-2:rgba(245,239,226,.62);--text-cream-3:rgba(245,239,226,.42);
-  /* Tim's two metals, and they are his alone. Brass is the mark: the cartoon
-     read as a cartoon because it was a face in safety yellow, and brass on a
-     warm paper disc holds at 16px in a row and at 58px on the dock without
-     turning into a drawing of a man. Hat yellow is the one place a figure is
+  /* Tim's two metals, and they are his alone. Gold is the field the portrait
+     sits on, lifted off the mark itself so the halo that pulses behind him is
+     the same gold as the coin it comes off: a brighter ring around a duller
+     disc read as a rendering fault. Hat yellow is the one place a figure is
      allowed to shout, the badge and the number on the dock pill. Neither is a
-     status colour and neither goes anywhere else. */
-  --brass:#C9962F;--brass-deep:#9E7222;--brass-lift:#E4B554;
-  --hat:#F2A81C;--tim-disc:#F4F1EA;--tim-disc-edge:#D8D2C6;
+     status colour and neither goes anywhere else. The brass pair and the paper
+     disc that used to live here died with the drawn mark, which had to build a
+     disc to stand on; the portrait brings its own. */
+  --tim-gold:#D4A54A;--hat:#F2A81C;
   --r-xs:4px;--r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--r-pill:999px;--r-mark:9px;
   --shadow-card:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--line);
   --shadow-hover:0 3px 12px rgba(27,22,18,.08),0 0 0 1px var(--line);
@@ -386,17 +387,32 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
   cursor:pointer;display:flex;align-items:center;justify-content:center;
   position:relative;pointer-events:auto;padding:0;
   transition:width .24s cubic-bezier(.22,1,.36,1),height .24s cubic-bezier(.22,1,.36,1),
-    border-radius .24s cubic-bezier(.22,1,.36,1),box-shadow .24s,transform .15s,opacity .15s}
+    border-radius .24s cubic-bezier(.22,1,.36,1),background .24s,box-shadow .24s,
+    transform .15s,opacity .15s}
 /* Tall enough to read as a piece of the chrome rather than a nub stuck to the
    edge, and wide enough that the mark is at a size a man can recognise without
    looking twice. The inset hairline on the left is the same one the dark
    surfaces elsewhere use: it gives the tab an edge instead of letting it read
-   as a hole cut in the page. */
+   as a hole cut in the page.
+   The mark is DRAWN at the awake size and scaled DOWN for the tab, not the
+   other way round. It is a photograph now, not a drawing: scaling a raster up
+   to fill the disc would soften the one state where he is the largest thing on
+   screen, and the srcset picks its density off the drawn size, so drawing him
+   small and stretching him would also pull the small file. */
 #tim-dock-mark{display:flex;transition:transform .24s cubic-bezier(.22,1,.36,1)}
-#tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.72)}
-/* ALIVE: he comes out and becomes the disc he was. */
+/* The scale is visual, the layout box stays 58 wide inside a 36 wide tab that
+   is flush to the right edge, so the clip is belt and braces against that box
+   counting as overflow and widening the document. It never reaches the mark:
+   .42 of 58 is 24, and it is 24 against 36 at every frame of the transition. */
+#tim-dock-btn:not(.alive){overflow:hidden}
+#tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.42)}
+/* ALIVE: he comes out and becomes the disc he was. The portrait IS the disc,
+   so the ink goes: a gold coin inside a dark ring read as a token dropped in a
+   slot, and the pulse was ringing the ring rather than the man. The background
+   stays gold underneath him so that a frame where the image has not decoded is
+   a gold disc and not a hole. */
 #tim-dock-btn.alive{width:58px;height:58px;border-radius:var(--r-pill);overflow:visible;
-  box-shadow:0 4px 16px rgba(27,22,18,.28)}
+  background:var(--tim-gold);box-shadow:0 4px 16px rgba(27,22,18,.28)}
 #tim-dock-btn:active{transform:scale(.96);opacity:.85}
 #tim-dock-badge{display:none;position:absolute;top:1px;right:1px;width:15px;height:15px;border-radius:var(--r-pill);
   background:var(--hat);box-shadow:0 0 0 2.5px var(--ink);font-size:9px;font-weight:800;color:var(--ink);
@@ -408,14 +424,14 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    a still disc means nothing is wrong, which is the state he is in most of
    the day. NOT a status colour. The token block above reserves hat yellow for
    the badge and the pill figure and says it goes nowhere else, so this rings
-   in brass, which is the metal his own silhouette is struck from and is not
+   in Tim's own gold, the exact field his portrait is struck on, and is not
    claimed for anything. Two colours of glow would read as a notifications
    tray; one that is simply present or absent reads as a man with something to
    say. What CHANGES is which line is showing, not what colour he is. */
 #tim-dock-btn.alive{animation:tim-breathe 2.9s ease-in-out infinite}
 @keyframes tim-breathe{
-  0%,100%{box-shadow:0 4px 16px rgba(27,22,18,.28),0 0 0 0 rgba(201,150,47,.34)}
-  50%    {box-shadow:0 4px 16px rgba(27,22,18,.28),0 0 0 7px rgba(201,150,47,0)}
+  0%,100%{box-shadow:0 4px 16px rgba(27,22,18,.28),0 0 0 0 rgba(212,165,74,.38)}
+  50%    {box-shadow:0 4px 16px rgba(27,22,18,.28),0 0 0 7px rgba(212,165,74,0)}
 }
 /* The line crossfades in place rather than sliding: the pill is 13px type on a
    dark chip at arm's length on a job site, and text that moves while it is
