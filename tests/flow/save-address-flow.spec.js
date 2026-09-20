@@ -460,23 +460,38 @@ test.describe('Name an unsaved stop from the day rail', () => {
       ruleText: 'the pin must file as a property on the customer that was tapped, and on no other',
       expected: 'exactly one customer gains a property, and it is the one picked',
       act: async (p) => {
-        let n = await type(p, '#_mile-who-q', 'Kinsella');
-        await p.waitForTimeout(400);
-        n += await tap(p, '#_mile-who-hits button');
-        await p.waitForTimeout(1500);
+        // THE TAG, not the surname. Live tests never clean up (§12.7), so the
+        // account already holds a "Kinsella Drywall" from every earlier run
+        // and the first hit for a surname is somebody else's. The run's own
+        // tag matches exactly one row, and the tap is then keyed on that
+        // customer's id so it cannot land on a neighbour either.
+        let n = await type(p, '#_mile-who-q', tag);
+        await p.waitForTimeout(500);
+        n += await tap(p, '#_mile-who-hits button[onclick*="' + ctx.targetId + '"]');
+        await p.waitForTimeout(2000);
         return n;
       },
       rule: async (p) => {
         const r = await p.evaluate((a) => {
+          // What the tap had to work with, so a refusal can say why.
+          const pend = (typeof _mileAddressPending !== 'undefined' && _mileAddressPending) || null;
           // What _mileWhoPick actually writes: the pin becomes the record's
           // primary address when it has none, else a card in extraAddresses.
           const filed = (c) => !!(c && ((c.addr && c.lat != null && c.lon != null) ||
             (Array.isArray(c.extraAddresses) && c.extraAddresses.length)));
           const withProp = clients.filter(c => c && a.made.includes(c.id) && filed(c));
           const t = clients.find(c => c && c.id === a.targetId);
-          return { n: withProp.length, named: withProp.map(c => c.name), target: filed(t) };
+          return { n: withProp.length, named: withProp.map(c => c.name), target: filed(t),
+                   hits: document.querySelectorAll('#_mile-who-hits button').length,
+                   open: !!document.getElementById('_mile-who-ov'),
+                   addrLine: pend ? (pend.addrLine || '') : '(no pending)',
+                   foundName: pend && pend.found ? (pend.found.name || '') : '' };
         }, { made: ctx.made, targetId: ctx.targetId });
-        return { ok: r.n === 1 && r.target, got: r.n + ' customers gained a property: ' + r.named.join(', ') };
+        return { ok: r.n === 1 && r.target,
+                 got: r.n + ' customers gained a property: ' + r.named.join(', ') +
+                      ' · picker ' + (r.open ? 'still open' : 'closed') + ' with ' + r.hits + ' hits' +
+                      ' · address line "' + r.addrLine + '"' +
+                      (r.foundName ? (' · map name "' + r.foundName + '"') : '') };
       },
     });
 
