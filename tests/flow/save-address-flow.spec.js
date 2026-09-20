@@ -193,13 +193,23 @@ test.describe('Name an unsaved stop from the day rail', () => {
           // Topeka one and produced a 958-mile "Shop" leg that swallowed the
           // day. A day cannot hold two runs that are two states apart.
           //
-          // So the run takes a day nobody has touched. The tape window is
-          // seven days (_GEO_DERIVE_DAYS), so yesterday back to six days ago
-          // are all derivable, and geo events are written only by geo specs,
-          // so an empty one is easy to find. Yesterday first, because the
-          // nearer the day the more of the app behaves as it does live.
+          // So the run takes a day nobody has touched.
+          //
+          // SIXTY DAYS, not seven, and the seven was my own mistake. I read
+          // _GEO_DERIVE_DAYS as the limit, but that is the PHONE's local tape
+          // window. deriveDayServer decides `tapeCovers` from the events in
+          // the request, so the server will derive any day it is handed motion
+          // for. Seven days is also a resource that runs out, and it did, in
+          // one evening: "day NONE FREE [09-19:busy 09-18:busy 09-17:busy
+          // 09-16:busy 09-15:busy 09-14:busy]", because the other geo specs
+          // live on those days too and their coordinates are hundreds of miles
+          // from this one. Sharing a day with them re-creates the teleport.
+          //
+          // Nearest first, because the nearer the day the more of the app
+          // behaves as it does live, and still inside the current year so the
+          // Time Log's year filter shows it.
           let day = '', dayMs = 0, evErr = '', scanned = [];
-          for (let back = 1; back <= 6 && !day; back++) {
+          for (let back = 1; back <= 60 && !day; back++) {
             const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - back);
             const a0 = new Date(d); a0.setHours(0, 0, 0, 0);
             const b0 = new Date(d); b0.setHours(23, 59, 59, 999);
@@ -208,7 +218,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
                 .eq('employee_user_id', _supaUser.id)
                 .gte('ts', a0.toISOString()).lte('ts', b0.toISOString()).limit(1);
               if (r && r.error) { evErr = r.error.message || 'denied'; break; }
-              scanned.push(dateKey(d) + ':' + (((r && r.data) || []).length ? 'busy' : 'free'));
+              // Only the tail of the scan is reported: sixty entries is noise,
+              // and what matters is where it stopped looking.
+              if (scanned.length < 8) scanned.push(dateKey(d) + ':' + (((r && r.data) || []).length ? 'busy' : 'free'));
               if (!((r && r.data) || []).length) { day = dateKey(d); dayMs = a0.getTime(); }
             } catch (e) { evErr = String(e && e.message || e); break; }
           }
@@ -231,7 +243,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
                       ' · kerb ' + (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR') +
                       ' · day ' + (ctx.day || 'NONE FREE') + ' [' + ctx.scanned + ']' +
                       ' · ends at ' + (ctx.endAt ? (ctx.endAt.lat.toFixed(4) + ',' + ctx.endAt.lon.toFixed(4)) : 'NO SECOND FENCE') +
-                      (ctx.tooLate ? ' every day in the tape window already has events on it' : '') +
+                      (ctx.tooLate ? ' every day in the last sixty already has events on it' : '') +
                       (ctx.evErr ? (' (events: ' + ctx.evErr + ')') : '')) };
       },
     });
