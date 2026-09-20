@@ -3272,6 +3272,43 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.retimed).toBe(true);
       expect(r.empty, 'null and empty are the same nothing').toBe(true);
     });
+
+    // ── AND A ROW THAT ONLY CHANGED ITS NAME (owner 2026-09-20) ───────────
+    // "went to go save things on the day rail and the onsite didn't
+    // immediately flip to the name I assigned, I want that."
+    //
+    // The print was a count and a total of minutes. Naming an address changes
+    // neither, so the revalidate fetched the renamed row, printed it, found
+    // the same string and returned without painting. The rail kept saying
+    // "Unsaved address" until something else repainted the page.
+    test('the fingerprint notices a row that only changed its name', async () => {
+      const r = await page.evaluate(() => {
+        const row = (o) => Object.assign({ id: 'a1', minutes: 42, source: 'auto',
+          rawSource: 'unsaved', clientName: 'Unsaved address', addr: '', jobName: '',
+          detail: '', clientKey: 'd-j-1', unpaid: false, dismissed: false,
+          startTime: '2026-09-20T15:00:00.000Z', endTime: '2026-09-20T15:42:00.000Z' }, o || {});
+        const base = [row()];
+        return {
+          named: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ clientName: 'Aldi GUYS' })]),
+          placed: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ rawSource: 'client' })]),
+          addressed: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ addr: '2950 SW McClure Rd' })]),
+          answered: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ dismissed: true })]),
+          // The open dwell's endTime is Date.now() at the moment it was built,
+          // so a print carrying it would differ on EVERY fetch and every
+          // revalidate would repaint, closing whatever the viewer just opened.
+          ticking: _tlRowsFingerprint(base) === _tlRowsFingerprint([row({ endTime: '2026-09-20T15:59:00.000Z' })]),
+          // Two fetches that came back in a different order are the same day.
+          reordered: _tlRowsFingerprint([row(), row({ id: 'a2' })])
+                  === _tlRowsFingerprint([row({ id: 'a2' }), row()]),
+        };
+      });
+      expect(r.named, 'this is the one he reported').toBe(true);
+      expect(r.placed, 'and an unsaved stop becoming a client').toBe(true);
+      expect(r.addressed).toBe(true);
+      expect(r.answered).toBe(true);
+      expect(r.ticking, 'a live row ticking is not a change worth a repaint').toBe(true);
+      expect(r.reordered, 'order is not news').toBe(true);
+    });
   });
 
   // ── The day rail (owner-approved design 2026-08-29) ─────────────────────
@@ -5231,6 +5268,43 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // A drive's flush lands a dozen rows in one second. Twelve renders would
       // be thirty-six Supabase queries and a chart flashing on a phone.
       expect(r.calls).toBe(1);
+    });
+
+    // One deliberate tap is not a realtime burst (owner 2026-09-20). The 2.5s
+    // coalesce is right for a flush of a dozen rows and wrong for the person
+    // who just pressed Save and is waiting to see the name.
+    test('a tap that asks for it now does not wait out the burst timer', async () => {
+      const r = await page.evaluate(async () => {
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.add('active');
+        let calls = 0;
+        const origRe = window._tlRevalidateRows;
+        window._tlRevalidateRows = async () => { calls++; return false; };
+        _tlLiveRefresh(true);
+        // No await at all: "immediately" has to mean in this same task, not
+        // on some shorter timer.
+        const immediate = calls;
+        await new Promise(r2 => setTimeout(r2, 3200));
+        window._tlRevalidateRows = origRe;
+        if (!wasActive) pg?.classList.remove('active');
+        return { immediate, after: calls };
+      });
+      expect(r.immediate, 'the tap repaints in the same breath').toBe(1);
+      expect(r.after, 'and does not also fire a debounced second one').toBe(1);
+    });
+
+    // It has to compare against what the screen was PAINTED from. _tlLastRows
+    // is that set already filtered to one scope and one year, so printing an
+    // unfiltered fetch against it compares two different questions.
+    test('the live path compares against the painted rows, not the filtered ones', async () => {
+      const r = await page.evaluate(() => {
+        const src = String(_tlLiveRefresh).replace(/\s/g, '');
+        return { cache: /_tlRevalidateRows\(_tlRowsCache/.test(src),
+                 notFiltered: !/_tlRevalidateRows\(_tlLastRows/.test(src) };
+      });
+      expect(r.cache).toBe(true);
+      expect(r.notFiltered).toBe(true);
     });
 
     test('the live path bypasses the drill throttle, because the screen is actually wrong', async () => {

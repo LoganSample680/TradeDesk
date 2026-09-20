@@ -3866,7 +3866,13 @@ async function _mileAddressSaved(client){
     // The rail is where he tapped Save from, so it is the screen that owes
     // him the answer. Same door the supply-run answer already uses
     // (_supplyRunAnswerTime), not a second refresh path (7.3).
-    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e2){}
+    //
+    // `true` is the no-debounce arm (owner 2026-09-20: "the onsite didn't
+    // immediately flip to the name I assigned, I want that"). The 2.5s wait
+    // is there to coalesce a realtime burst; this is one tap whose whole
+    // point is the name appearing, and the derive it follows has already
+    // landed on the server.
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e2){}
     try{if(typeof renderMileage==='function')renderMileage();}catch(_e2){}
     const n=_mileTripNumberForLeg(p.day,p.legKey);
     if(typeof showToast==='function')showToast(n?('Trip '+n+' is on the books'):'Address saved, day re-derived');
