@@ -51,6 +51,27 @@ const KERB = { lat: B_LAT + 0.0900, lon: B_LON - 0.0900 };
 // A point on the road between them, so the trace is a line and not two dots.
 const ROAD = { lat: B_LAT + 0.0450, lon: B_LON - 0.0450 };
 
+// ── REACHING THE TIME LOG COSTS WHAT IT COSTS (12.6) ─────────────────────
+// #nb-timelog is the WIDE nav and it is zero-sized on a phone, which is how
+// the first run of this spec failed: the tap found the element, and the
+// element had no box (412px viewport, covered by #mobile-topbar). On a narrow
+// screen the Time Log lives behind More, which is two taps, not one. That
+// difference is the whole reason this runs on three form factors, so it is
+// counted rather than routed around.
+const openTimeLog = async (p) => {
+  const wide = await p.evaluate(() => {
+    const b = document.getElementById('nb-timelog');
+    if (!b) return false;
+    const r = b.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  });
+  if (wide) return await tap(p, '#nb-timelog');
+  let n = await tap(p, '#mtb-more');
+  await p.waitForSelector('#mmi-timelog', { state: 'visible', timeout: 10000 });
+  n += await tap(p, '#mmi-timelog');
+  return n;
+};
+
 test.describe('Name an unsaved stop from the day rail', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
@@ -182,8 +203,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
       ruleText: 'the day rail must show the stop as unsaved AND offer a live Save this address',
       expected: 'a rail row reading "Unsaved address" with a Save this address chip on it',
       act: async (p) => {
-        let n = await tap(p, '#nb-timelog');
-        await p.waitForTimeout(1200);
+        let n = await openTimeLog(p);
+        await p.waitForTimeout(1500);
         await p.evaluate(() => _tlDrillTo('day', todayKey()));
         n += 3;
         await p.waitForTimeout(600);
@@ -353,8 +374,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
       act: async (p) => {
         await p.reload({ waitUntil: 'domcontentloaded' });
         await p.waitForTimeout(6000);
-        let n = await tap(p, '#nb-timelog');
-        await p.waitForTimeout(1500);
+        let n = await openTimeLog(p);
+        await p.waitForTimeout(1800);
         await p.evaluate(() => _tlDrillTo('day', todayKey()));
         n += 3;
         await p.waitForTimeout(800);
