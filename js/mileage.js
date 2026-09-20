@@ -1159,9 +1159,18 @@ function pendingSupplyRuns(){
     // When the visit happened: the earliest clock any of its legs carries.
     // The card shows date and time only (owner 2026-08-17: no miles, no legs).
     const at=rows.map(m=>m.startedIso||m.created_at).filter(Boolean).sort()[0]||'';
-    return {key:k,date:k.split('|')[0]||'',name:k.split('|').slice(1).join('|')||'Store',at,
+    // THE KEY NO LONGER SPELLS THESE (owner 2026-09-20). It used to be
+    // `day|store` and this split it back apart; it is the visit's own id now,
+    // so the day comes off the row that holds it and the store's name rides
+    // on the row as supplyRunName. A row written under the old key still
+    // answers: the fallback reads it exactly as this always did.
+    const old=k.indexOf('|')>=0?k.split('|'):null;
+    const named=rows.find(m=>m&&m.supplyRunName);
+    return {key:k,
+      date:(rows.find(m=>m&&m.date)||{}).date||(old?old[0]:'')||'',
+      name:(named&&named.supplyRunName)||(old?old.slice(1).join('|'):'')||'Store',at,
       miles:rows.reduce((s,m)=>s+(m.miles||0),0),count:rows.length,rows};
-  }).sort((a,b)=>b.date.localeCompare(a.date));
+  }).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
 }
 // One accordion per STORE (owner 2026-08-17): if a store has more than one
 // unanswered visit, they nest under a single card instead of piling up as

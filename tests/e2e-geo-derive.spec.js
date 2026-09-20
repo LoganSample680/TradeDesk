@@ -178,10 +178,62 @@ test.describe('geo-derive: the day deriver', () => {
     const legs = rows.td_mileage;
     expect(legs.map(l => l.to_name)).toEqual(['The Home Depot', 'John Doe']);
     expect(legs[0].pendingReceipt).toBe(true);
-    expect(legs[0].supplyRunKey).toBe('2026-09-01|The Home Depot');
+    // THE KEY IS THE VISIT, not the day and the store (owner 2026-09-20).
+    // Two runs to one store in one day have to be able to carry two
+    // different answers, so the key is the dwell's own id.
+    expect(legs[0].supplyRunKey).toBe('d-' + legs[0].id);
+    expect(legs[0].supplyRunName).toBe('The Home Depot');
     expect(legs[0].purpose).toBe('Supply run');
+    // And the leg out of the store is NOT swept in here: it goes on to a
+    // customer, so it is a business drive whatever the store stop was.
+    expect(legs[1].to_name).toBe('John Doe');
     expect(legs[1].pendingReceipt).toBeUndefined();
     expect(legs[1].supplyRunKey).toBeUndefined();
+  });
+
+  // ── A STORE RUN IS THE ROUND TRIP (owner 2026-09-20) ────────────────────
+  // "Home Depot runs aren't staying personal and aren't removing their drives
+  // from mileage or time sheet." The drive home was never in the run, so no
+  // answer could reach it: 13.2 deductible miles and 56 paid minutes stayed
+  // on his books across the 18th and 19th after he called those runs personal.
+  test('the drive home from the store belongs to the run that made it', async () => {
+    const t = [mo(T(7, 50), 'automotive'), mo(T(8, 5), 'onFoot'),
+      mo(T(8, 40), 'automotive'), mo(T(8, 55), 'onFoot')];
+    const f = [fix(T(7, 49), { lat: SHOP.lat, lng: SHOP.lng }),
+      fix(T(8, 5, 5), { lat: HD.lat, lng: HD.lng }), fix(T(8, 30), { lat: HD.lat, lng: HD.lng }),
+      fix(T(8, 55, 5), { lat: SHOP.lat, lng: SHOP.lng }), fix(T(9, 30), { lat: SHOP.lat, lng: SHOP.lng })];
+    const legs = await page.evaluate((inp) => {
+      const r = geoDeriveDay(inp);
+      return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' }).td_mileage));
+    }, base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+    expect(legs.map(l => [l.from_name, l.to_name]))
+      .toEqual([['TradeDesk shop', 'The Home Depot'], ['The Home Depot', 'TradeDesk shop']]);
+    // One key across both halves, so one answer settles the whole errand.
+    expect(legs[1].supplyRunKey).toBe(legs[0].supplyRunKey);
+    expect(legs[1].pendingReceipt, 'held, so it is in no total until answered').toBe(true);
+    expect(legs[1].supplyRunName).toBe('The Home Depot');
+  });
+
+  test('two runs to the same store in one day are two runs', async () => {
+    const t = [mo(T(7, 50), 'automotive'), mo(T(8, 5), 'onFoot'),
+      mo(T(8, 40), 'automotive'), mo(T(8, 55), 'onFoot'),
+      mo(T(14, 0), 'automotive'), mo(T(14, 15), 'onFoot'),
+      mo(T(15, 0), 'automotive'), mo(T(15, 15), 'onFoot')];
+    const f = [fix(T(7, 49), { lat: SHOP.lat, lng: SHOP.lng }),
+      fix(T(8, 5, 5), { lat: HD.lat, lng: HD.lng }), fix(T(8, 30), { lat: HD.lat, lng: HD.lng }),
+      fix(T(8, 55, 5), { lat: SHOP.lat, lng: SHOP.lng }), fix(T(13, 0), { lat: SHOP.lat, lng: SHOP.lng }),
+      fix(T(14, 15, 5), { lat: HD.lat, lng: HD.lng }), fix(T(14, 40), { lat: HD.lat, lng: HD.lng }),
+      fix(T(15, 15, 5), { lat: SHOP.lat, lng: SHOP.lng }), fix(T(16, 0), { lat: SHOP.lat, lng: SHOP.lng })];
+    const legs = await page.evaluate((inp) => {
+      const r = geoDeriveDay(inp);
+      return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' }).td_mileage));
+    }, base({ tape: t, fixes: f, nowMs: T(18, 0) }));
+    const keys = legs.map(l => l.supplyRunKey).filter(Boolean);
+    expect(keys.length, 'four legs, two errands, every leg keyed').toBe(4);
+    const distinct = [...new Set(keys)];
+    expect(distinct.length, 'the morning run and the afternoon run are NOT one answer').toBe(2);
+    // Each errand owns exactly its own two halves.
+    distinct.forEach(k => expect(keys.filter(x => x === k).length).toBe(2));
   });
 
   // ── AND THE DWELL SAYS SO TOO (owner 2026-09-16) ────────────────────────
@@ -5097,7 +5149,8 @@ test.describe('geo-derive: the day deriver', () => {
       const r = geoDeriveDay(i);
       return geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })
         .td_mileage.map(m => ({ id: m.id, to: m.to_name || m.to, collapsed: m.collapsedStops || 0,
-          held: !!m.pendingReceipt, key: m.supplyRunKey || null }));
+          held: !!m.pendingReceipt, key: m.supplyRunKey || null,
+          name: m.supplyRunName || null }));
     }, inp);
 
     // Yard, an unsaved stop, then on to the store: one chain, keyed by the
@@ -5141,7 +5194,12 @@ test.describe('geo-derive: the day deriver', () => {
       const held = r.filter(m => m.held);
       expect(held.length, 'this one IS the trip to the store').toBe(1);
       expect(held[0].collapsed).toBe(0);
-      expect(held[0].key).toContain('Neenans Co');
+      // AMENDED 2026-09-20 (10.4): was `key` containing the store name, when
+      // the key was `day|store`. The key is the VISIT's own id now, so two
+      // runs to one store in one day can carry two different answers, and the
+      // store's name rides on the row instead of inside the key.
+      expect(held[0].key).toMatch(/^d-/);
+      expect(held[0].name).toBe('Neenans Co');
     });
 
     test('no chain carries a supply key for an answer to land on', async () => {
