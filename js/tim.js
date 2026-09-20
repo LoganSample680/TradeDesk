@@ -468,7 +468,12 @@ function openTim(){
       'Nothing on this one worth stopping you for. Say what changed and I will put it where it goes.'+
     '</div>';
 
-  _timSheet('_tim-sheet',_timHeadHtml(found.length?null:'Nothing to flag on this job')+cards+quiet+_timAskHtml());
+  // The log row is last and is usually nothing at all: an empty log adds no
+  // furniture to a sheet he opened in order to talk. It only speaks up once
+  // there is something to read back, or when his knowledge did not load, which
+  // is the one state worth interrupting him about (js/tim-log.js).
+  const logRow=(typeof _timLogRowHtml==='function')?_timLogRowHtml():'';
+  _timSheet('_tim-sheet',_timHeadHtml(found.length?null:'Nothing to flag on this job')+cards+quiet+_timAskHtml()+logRow);
 
   const el=document.getElementById('_tim-say');
   el?.addEventListener('input',_timPreview);
@@ -1040,7 +1045,33 @@ function _timPreview(){
   out.style.color=line?'var(--text2)':'var(--text3)';
 }
 
+// THE LOG WRAPS THIS DOOR RATHER THAN SITTING INSIDE IT. _timGoRun has five
+// ways out, and every one of them is something he said that somebody may need
+// to read back later, the one that does nothing most of all. One wrapper means
+// one record and no call site that can be forgotten when a sixth way out gets
+// added, and the runner below keeps exactly the shape its tests assert on
+// (js/tim-log.js).
 function _timGo(){
+  const el=document.getElementById('_tim-say');
+  const said=el?el.value:'';
+  const p=_timGoRun();
+  try{
+    if(String(said||'').trim()&&typeof timLogSay==='function'){
+      // _timJob is whatever read was last shown, so it is this sentence's work
+      // only when this sentence is the one that produced a read. Handing over a
+      // stale one would credit Tim with placing words he never saw, which is
+      // the one way a miss list can lie in the direction that hides a gap.
+      timLogSay(said,{
+        kind:(p&&p.kind)||'none',
+        style:p&&p.style,
+        read:(p&&p.kind==='read')?_timJob:null,
+      });
+    }
+  }catch(_e){}
+  return p;
+}
+
+function _timGoRun(){
   const el=document.getElementById('_tim-say');
   const said=el?el.value:'';
   if(!String(said||'').trim())return {text:'',kind:'none'};

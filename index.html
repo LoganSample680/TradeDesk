@@ -4452,6 +4452,11 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <!-- Reads the proposals already sent as a price book. Loads after tim.js
      because it opens tim.js's sheet. -->
 <script src="js/tim-book.js"></script>
+<!-- What he was told and what he made of it, on this phone only. Loads last of
+     the four because it reports on the other three: it asks whether each of
+     them is present, which is only a true answer once they have all had their
+     chance to load. -->
+<script src="js/tim-log.js"></script>
 <script src="js/equipment.js"></script>
 <script src="js/share-inbox.js"></script>
 <script src="js/bg-upload.js"></script>
