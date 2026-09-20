@@ -381,15 +381,19 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 /* QUIET: a pull tab, not a button. Flush to the edge, rounded only on the side
    that faces the page, 34px of him showing. Small enough that it reads as part
    of the chrome and not as something dropped on top of it. */
-#tim-dock-btn{width:34px;height:52px;border:0;border-radius:16px 0 0 16px;background:var(--ink);
-  box-shadow:-2px 0 10px rgba(27,22,18,.16);cursor:pointer;display:flex;align-items:center;justify-content:center;
-  position:relative;pointer-events:auto;padding:0;overflow:hidden;
+#tim-dock-btn{width:36px;height:86px;border:0;border-radius:22px 0 0 22px;background:var(--ink);
+  box-shadow:-3px 0 14px rgba(27,22,18,.20),inset 1px 0 0 var(--ink-line-2);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  position:relative;pointer-events:auto;padding:0;
   transition:width .24s cubic-bezier(.22,1,.36,1),height .24s cubic-bezier(.22,1,.36,1),
     border-radius .24s cubic-bezier(.22,1,.36,1),box-shadow .24s,transform .15s,opacity .15s}
-/* The mark is drawn once at 34px and scaled, rather than redrawn per state:
-   one SVG, no reflow on the transition. */
+/* Tall enough to read as a piece of the chrome rather than a nub stuck to the
+   edge, and wide enough that the mark is at a size a man can recognise without
+   looking twice. The inset hairline on the left is the same one the dark
+   surfaces elsewhere use: it gives the tab an edge instead of letting it read
+   as a hole cut in the page. */
 #tim-dock-mark{display:flex;transition:transform .24s cubic-bezier(.22,1,.36,1)}
-#tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.6)}
+#tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.72)}
 /* ALIVE: he comes out and becomes the disc he was. */
 #tim-dock-btn.alive{width:58px;height:58px;border-radius:var(--r-pill);overflow:visible;
   box-shadow:0 4px 16px rgba(27,22,18,.28)}
