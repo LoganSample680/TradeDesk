@@ -598,6 +598,62 @@ test.describe('traced trips', () => {
         }
       });
 
+      // ── THE COMMONEST STOP OF ALL, AND THE ONE IT COULD NOT PLACE ──────
+      //
+      // A drive that simply ENDED somewhere nobody saved. Its dwell row is
+      // keyed 'd-' + the leg id (the identity rule, js/geo-derive.js), it is
+      // on no viaStops because nothing was collapsed through it, and it
+      // carries no ':sN'. So it matched neither arm and the rail's chip did
+      // nothing at all when pressed, silently.
+      //
+      // Geometry is the owner's real 2026-09-19 (error_log 202-204, 207-209,
+      // three dead taps in one minute): leg j-...mu8n60wd, shop to an unsaved
+      // address, and the rail row keyed d-j-...mu8n60wd.
+      test('a stop that is the leg\'s own destination resolves off toCoord', async () => {
+        await seed();
+        await page.evaluate(() => {
+          mileage.push({ id: 'j-30a2b589-mu8n60wd', legKey: 'j-30a2b589-mu8n60wd', gps: true,
+            date: todayKey(), from_name: 'TradeDesk shop', to_name: '', miles: 3.9, mins: 3,
+            addressUnknown: true, unsavedTo: true, calc_method: 'derived-traced',
+            fromCoord: { lat: 39.0307066, lng: -95.7112082 },
+            toCoord: { lat: 39.0451214, lng: -95.7584343 } });
+        });
+        const r = await save('d-j-30a2b589-mu8n60wd');
+        expect(r.ok, 'the button that was dead in his hand').toBe(true);
+        expect(r.pending).toEqual(expect.objectContaining(
+          { legKey: 'j-30a2b589-mu8n60wd', which: 'to', lat: 39.0451214, lng: -95.7584343 }));
+      });
+
+      // Both ends unsaved writes no mileage leg at all (rules 18 and 20), so
+      // there is genuinely nothing holding a coordinate for that stop. It
+      // must not throw, and the rail must not offer a chip for it.
+      test('a stop with no leg behind it resolves to nothing, and says so', async () => {
+        await seed();
+        const r = await page.evaluate(() => ({
+          coord: _mileStopCoord('d-j-30a2b589-mu8jn7va', todayKey()),
+          saved: null,
+        }));
+        expect(r.coord).toBe(null);
+        expect((await save('d-j-30a2b589-mu8jn7va')).ok).toBe(false);
+      });
+
+      // One resolver, so the chip and the handler can never disagree about
+      // whether a stop can be placed.
+      test('the resolver answers all three shapes and nothing else', async () => {
+        await seed(); await seedVia();
+        const r = await page.evaluate(() => {
+          mileage.push({ id: 'j-dest', legKey: 'j-dest', gps: true, date: todayKey(),
+            from_name: 'Shop', to_name: '', addressUnknown: true, unsavedTo: true,
+            fromCoord: { lat: 39.04, lng: -95.71 }, toCoord: { lat: 39.09, lng: -95.61 } });
+          const at = k => { const c = _mileStopCoord(k, todayKey()); return c ? [c.lat, c.lng] : null; };
+          return { via: at('j-chain:s0'), dest: at('d-j-dest'), junk: at('d-nope'), none: at('x') };
+        });
+        expect(r.via).toEqual([39.06146, -95.69681]);
+        expect(r.dest).toEqual([39.09, -95.61]);
+        expect(r.junk).toBe(null);
+        expect(r.none).toBe(null);
+      });
+
       // ── THE KEY, NOT THE POSITION (owner 2026-09-14) ──────────────────
       // A stop row is now keyed by the drive that ended there, because that
       // is a fact off the tape and its position in a list is not: a leg drops

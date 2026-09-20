@@ -1839,7 +1839,14 @@ function _tlRailRow(r){
         '<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+
         escHtml(String(r.rawId))+'\',\'working\')">It was work</button></div>';
     }
-    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)){
+    // ASK BEFORE OFFERING (owner 2026-09-20: "I'm hitting save this address
+    // and it's a dead button"). The chip used to be drawn for every unsaved
+    // stop, and _mileSaveStopAddress could place only some of them, so the
+    // rest were controls that did nothing at all when pressed. One resolver
+    // answers both questions now (_mileStopCoord, js/mileage.js): the chip
+    // appears exactly when there is a coordinate behind it to save.
+    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)&&
+       (typeof _mileStopCoord!=='function'||_mileStopCoord(r.clientKey,r.date))){
       body+='<div class="tl-rail-chips">'+
         '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
         escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
