@@ -3210,17 +3210,32 @@ function _tlTickOpenElapsed(){
 // answer actually moved. A drive that changes nothing costs one query.
 let _tlLiveTimer=null;
 const _TL_LIVE_DEBOUNCE_MS=2500;
-function _tlLiveRefresh(){
+// `now` skips the debounce. The 2.5s wait exists because a realtime flush can
+// land a dozen rows at once and each one calls this; one deliberate tap is the
+// opposite case, and 2.5 seconds after the tap is not what "immediately" means
+// to the person who made it (owner 2026-09-20). Same reasoning, and the same
+// shape, as the `force` flag _tlRevalidateRows already carries for the
+// throttle one layer down.
+//
+// It compares against _tlRowsCache, the rows the screen was actually painted
+// from, NOT _tlLastRows, which is that set already filtered to one scope and
+// one year. Printing an unfiltered fetch against a filtered paint compares two
+// different questions, and the answer was only ever right by luck: an account
+// whose rows are all this year and all one person made the two look equal, and
+// any other account made them differ on every tick and repainted for nothing.
+function _tlLiveRefresh(now){
   try{
     if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
     clearTimeout(_tlLiveTimer);
-    _tlLiveTimer=setTimeout(()=>{
+    const go=()=>{
       // Re-checked on the way out, not just on the way in: the page can be
       // navigated away from during the debounce, and repainting a hidden page
       // is three Supabase queries for nothing.
       if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
-      try{_tlRevalidateRows(_tlLastRows,undefined,true);}catch(_e){}
-    },_TL_LIVE_DEBOUNCE_MS);
+      try{_tlRevalidateRows(_tlRowsCache,undefined,true);}catch(_e){}
+    };
+    if(now){go();return;}
+    _tlLiveTimer=setTimeout(go,_TL_LIVE_DEBOUNCE_MS);
   }catch(_e){}
 }
 function _tlStopOpenRefresh(){
@@ -3648,10 +3663,33 @@ async function _tlShareWeek(){
 // Cheap enough to run on every open, and the only thing that decides whether
 // the repair earned a repaint. Count plus total minutes catches an added row,
 // a removed row, and a retimed one, which is everything the repair can do.
+// ── THE PRINT HAS TO COVER WHAT THE RAIL DRAWS (owner 2026-09-20) ─────────
+// "went to go save things on the day rail and the onsite didn't immediately
+// flip to the name I assigned, I want that."
+//
+// This was a count and a total of minutes, and naming an address changes
+// NEITHER of them. The derive rewrote the row, the server held the new name,
+// the revalidate below fetched it, compared two identical prints and returned
+// without painting. So the rail went on saying "Unsaved address" until
+// something else happened to repaint the page. Not "not immediate": never.
+//
+// The print is the row as the rail reads it now. Sorted, so it says nothing
+// about the order two fetches happened to come back in.
+//
+// endTime and `live` stay OUT on purpose: the open dwell's endTime is
+// Date.now() at the moment it was built, so a print carrying it would differ
+// on every single fetch and every revalidate would repaint. A repaint closes
+// whatever the viewer just opened by hand, which is the entire reason this
+// comparison exists.
 function _tlRowsFingerprint(rows){
-  let n=0,min=0;
-  (rows||[]).forEach(r=>{n++;min+=(r.minutes||0);});
-  return n+':'+min;
+  const out=[];
+  (rows||[]).forEach(r=>{
+    if(!r)return;
+    out.push([r.id,r.minutes||0,r.source||'',r.rawSource||'',r.clientName||'',
+      r.addr||'',r.jobName||'',r.detail||'',r.clientKey||'',
+      r.unpaid?1:0,r.dismissed?1:0,r.startTime||''].join('\u0001'));
+  });
+  return out.sort().join('\u0002');
 }
 let _tlRepairRunning=false;
 // When a repair last ran. Opening the page is a deliberate look at hours and

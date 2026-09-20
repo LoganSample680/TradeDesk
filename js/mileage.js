@@ -3492,39 +3492,74 @@ function _mileSaveAskKind(la,ln){
   const ov=document.createElement('div');
   ov.className='zmodal-overlay';ov.id='_mile-kind-ov';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  // ── THE BOX IS BUILT ONCE AND FILLED IN, NEVER REBUILT ────────────────────
+  // (owner 2026-09-20, on a clip of himself tapping Save this address: "see
+  // how the screen jumps up a bit? Needs to be perfectly smooth.")
+  //
+  // This used to paint the whole overlay twice, once with a placeholder and
+  // again when the reverse lookup landed, and both paints went through
+  // ov.innerHTML. Two separate things jumped, and both are in his clip:
+  //
+  // 1. Assigning ov.innerHTML REPLACES the .zmodal element, so its
+  //    td-modal-in entrance (.24s scale/slide, index.html) ran a SECOND time
+  //    a few hundred milliseconds after the box had already settled. The
+  //    modal animated itself in twice.
+  // 2. The two text lines changed length between the paints, and the overlay
+  //    centres its child with margin:auto (.zmodal-overlay>*), so a taller
+  //    box moves UP by half the difference. That is the jump he pointed at.
+  //
+  // So the shell is built once and only the slots inside it change. The two
+  // lines the lookup fills reserve their worst case (two lines each) and the
+  // name line holds the app's own .td-skel shimmer while the lookup is out,
+  // which is what 8.4 requires of an async slot and what the old "Looking up
+  // this address…" string was standing in for.
+  ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">What is this address?</div>'+
+    '<div id="_mile-kind-sub" style="font-size:14px;font-weight:700;color:var(--text);'+
+      'line-height:1.35;min-height:38px;margin-bottom:4px;display:flex;align-items:center">'+
+      '<div class="td-skel" style="height:12px;width:62%"></div></div>'+
+    '<div id="_mile-kind-why" style="font-size:12px;color:var(--text3);'+
+      'line-height:1.4;min-height:34px;margin-bottom:18px"></div>'+
+    '<div id="_mile-kind-acts" style="display:flex;flex-direction:column;gap:10px"></div>'+
+    '</div>';
+  const subEl=ov.querySelector('#_mile-kind-sub');
+  const whyEl=ov.querySelector('#_mile-kind-why');
+  const acts=ov.querySelector('#_mile-kind-acts');
+  const mk=(label,fn)=>{
+    const b=document.createElement('button');
+    b.type='button';b.className='btn';b.textContent=label;b.onclick=fn;
+    acts.appendChild(b);return b;
+  };
+  // ── NEITHER ANSWER IS EVER THE HEAVY BUTTON (owner 2026-09-16) ──────────
+  // "One problem with screenshot it leads click customer heavy, want them to
+  //  look at it twice to ensure it's right."
+  //
+  // He is right and it undoes the point of asking. A filled primary button is
+  // the app telling you where to tap, and this prompt exists precisely
+  // because the app's guess is the thing that was wrong: it made Neenans Co,
+  // a plumbing supply counter, into a sales lead. A crew member in a hurry
+  // taps the dark one and we are back to guessing, with his fingerprint on
+  // it. So the guess ORDERS the two and says itself in words, and both look
+  // identical, which is what makes him read them.
+  const client=mk('Lead or client',()=>_mileSaveKind('client'));
+  const supply=mk('Supply house',()=>_mileSaveKind('supply'));
+  mk('Somewhere else (shop, office, other)',()=>_mileSaveKind('place'));
+  mk('Cancel',()=>ov.remove());
   const paint=(found)=>{
     const nm=found&&found.name?found.name:'';
-    const sub=nm?escHtml(nm):(found&&found.parts&&found.parts.addr?escHtml(found.parts.addr):'Looking up this address…');
-    // The likely answer leads and is the filled button; the other is one tap
-    // away and nothing is decided by the guess alone.
     const g=found?found.guess:'';
-    // ── NEITHER ANSWER IS EVER THE HEAVY BUTTON (owner 2026-09-16) ──────
-    // "One problem with screenshot it leads click customer heavy, want them to
-    //  look at it twice to ensure it's right."
-    //
-    // He is right and it undoes the point of asking. A filled primary button is
-    // the app telling you where to tap, and this prompt exists precisely
-    // because the app's guess is the thing that was wrong: it made Neenans Co,
-    // a plumbing supply counter, into a sales lead. A crew member in a hurry
-    // taps the dark one and we are back to guessing, with his fingerprint on
-    // it. So the guess ORDERS the two and says itself in words, and both look
-    // identical, which is what makes him read them.
-    const supply='<button class="btn" onclick="_mileSaveKind(\'supply\')">Supply house</button>';
-    const client='<button class="btn" onclick="_mileSaveKind(\'client\')">Lead or client</button>';
-    ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
-      '<div style="font-size:17px;font-weight:800;margin-bottom:4px">What is this address?</div>'+
-      '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px">'+sub+'</div>'+
-      '<div style="font-size:12px;color:var(--text3);margin-bottom:18px">'+
-        (nm&&g==='supply'?'That reads like a supply house to us. Check it before you pick.'
-         :g==='client'?'No business at this pin, so it looks like a customer. Check it before you pick.'
-         :nm?'The map found that name but not what it is. Which one?'
-           :'A supply house is a place, so its trips wait for a receipt. A client is somebody you quote and invoice.')+
-      '</div>'+
-      '<div style="display:flex;flex-direction:column;gap:10px">'+
-      (g==='supply'?supply+client:client+supply)+
-      '<button class="btn" onclick="_mileSaveKind(\'place\')">Somewhere else (shop, office, other)</button>'+
-      '<button class="btn" onclick="document.getElementById(\'_mile-kind-ov\')?.remove()">Cancel</button>'+
-      '</div></div>';
+    // Only once the lookup has answered: until then the shimmer stands where
+    // the name will land, so the line never changes height under it.
+    if(found)subEl.textContent=nm||(found.parts&&found.parts.addr)||'';
+    whyEl.textContent=(nm&&g==='supply'?'That reads like a supply house to us. Check it before you pick.'
+      :g==='client'?'No business at this pin, so it looks like a customer. Check it before you pick.'
+      :nm?'The map found that name but not what it is. Which one?'
+        :'A supply house is a place, so its trips wait for a receipt. A client is somebody you quote and invoice.');
+    // The guess orders them, per the rule above. A MOVE, not a rebuild: the
+    // same two elements change places, so a finger already down on one is
+    // still on the button it touched rather than on a fresh node that just
+    // appeared in that slot.
+    if(g==='supply'&&acts.firstChild!==supply)acts.insertBefore(supply,client);
   };
   paint(null);
   document.body.appendChild(ov);
@@ -3534,7 +3569,12 @@ function _mileSaveAskKind(la,ln){
     if(!document.getElementById('_mile-kind-ov'))return;
     _mileAddressPending=Object.assign({},_mileAddressPending||{},{found});
     paint(found);
-  }).catch(()=>{});
+  }).catch(()=>{
+    // A lookup that never answers must not leave a shimmer running forever
+    // where a name was promised. Nothing is known, so it says nothing and
+    // offers both answers evenly, which is the honest version of this prompt.
+    try{if(document.getElementById('_mile-kind-ov'))paint({name:'',parts:{},guess:''});}catch(_e){}
+  });
 }
 // The two arms. _mileAddressPending is already set before the chooser opens, so
 // whichever he picks, the save re-derives the same day (_mileAddressSaved).
@@ -3826,7 +3866,13 @@ async function _mileAddressSaved(client){
     // The rail is where he tapped Save from, so it is the screen that owes
     // him the answer. Same door the supply-run answer already uses
     // (_supplyRunAnswerTime), not a second refresh path (7.3).
-    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e2){}
+    //
+    // `true` is the no-debounce arm (owner 2026-09-20: "the onsite didn't
+    // immediately flip to the name I assigned, I want that"). The 2.5s wait
+    // is there to coalesce a realtime burst; this is one tap whose whole
+    // point is the name appearing, and the derive it follows has already
+    // landed on the server.
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e2){}
     try{if(typeof renderMileage==='function')renderMileage();}catch(_e2){}
     const n=_mileTripNumberForLeg(p.day,p.legKey);
     if(typeof showToast==='function')showToast(n?('Trip '+n+' is on the books'):'Address saved, day re-derived');
