@@ -539,8 +539,23 @@ test.describe('Wake region set for the dead app', () => {
       // COUNT THE WAKE'S PROBE, NOT THE FILENAME. Four paths fetch
       // version.json and only one of them is under test here; `bg=1` is the
       // wake's own marker (js/geo-track.js _geoBgUpdateCheck).
-      window.fetch = async (u) => { if (String(u).indexOf('bg=1') >= 0) fetches++;
-        return { ok: true, json: async () => ({ version: o.serverVersion }) }; };
+      //
+      // ANSWER ONLY THE WAKE'S PROBE WITH THE MOVED VERSION (2026-09-20). The
+      // note below already says the FETCH count read 1 or 2 by shard
+      // composition and fixed that half by matching bg=1. The reload count had
+      // the same hole and it was left open: this stub told EVERY version.json
+      // fetch on the page that the server had moved, so any other checker that
+      // happened to poll inside these 60ms reloaded too and the count came back
+      // one high. That is the same "scan written too broadly" class, one layer
+      // down, and it is why WebKit shard 3 failed again the day 73 tests were
+      // added to unrelated specs. The three other paths now hear what is
+      // actually running, so they have nothing to do and the only reload left
+      // to count is the wake's, which is the thing under test.
+      window.fetch = async (u) => {
+        const bg = String(u).indexOf('bg=1') >= 0;
+        if (bg) fetches++;
+        return { ok: true, json: async () => ({ version: bg ? o.serverVersion : APP_VERSION }) };
+      };
       window._autoSaveAndReload = async () => { reloads++; };
       _geoBgUpdAt = 0;
       await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
