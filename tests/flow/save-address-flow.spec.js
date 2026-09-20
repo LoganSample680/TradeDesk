@@ -52,11 +52,8 @@ const CELL = (process.pid + Date.now()) % 576;
 const B_LAT = 39.0200 + (CELL % 24) * 0.0012;
 const B_LON = -95.6600 - (Math.floor(CELL / 24) % 24) * 0.0012;
 const SHOP = { lat: B_LAT, lon: B_LON };
-// The kerb the day is about: about a mile and a half out, far enough to be a
-// real drive, and inside nobody's fence, which is what makes it "unsaved".
-const KERB = { lat: B_LAT + 0.0180, lon: B_LON - 0.0180 };
-// A point on the road between them, so the trace is a line and not two dots.
-const ROAD = { lat: B_LAT + 0.0090, lon: B_LON - 0.0090 };
+// The kerb the day is about is NOT fixed here: step 1 asks the account's own
+// fence list where it is empty and parks there. See the note on that loop.
 
 // ── REACHING THE TIME LOG COSTS WHAT IT COSTS (12.6) ─────────────────────
 // #nb-timelog is the WIDE nav and it is zero-sized on a phone, which is how
@@ -124,14 +121,34 @@ test.describe('Name an unsaved stop from the day rail', () => {
           });
           saveAll();
           if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
-          return { key, uid: _supaUser.id, url: _SUPA_DIRECT_URL, made,
+          // ── THE KERB IS CHOSEN, NOT HARDCODED ─────────────────────────
+          // A fixed coordinate cannot stay unclaimed on an account that never
+          // cleans up (§12.7). This spec's whole premise is a stop no fence
+          // owns, and the second live run proved a hardcoded one does not
+          // survive: the day derived and produced no unsaved row at all,
+          // because something on this account already stood where the kerb
+          // was. So it asks the deriver's OWN fence list where the account is
+          // empty and parks there. Self-correcting as the junk accumulates.
+          const F = (typeof _geoDeriveFences === 'function') ? _geoDeriveFences(todayKey()) : [];
+          const clear = (lat, lng) => F.every(f => !f ||
+            Math.abs(Number(f.lat) - lat) > 0.012 || Math.abs(Number(f.lng) - lng) > 0.012);
+          let kerb = null;
+          for (let i = 0; i < 80 && !kerb; i++) {
+            const lat = a.shop.lat + 0.014 + i * 0.0018;
+            const lng = a.shop.lon - 0.014 - i * 0.0018;
+            if (clear(lat, lng)) kerb = { lat, lon: lng };
+          }
+          return { key, uid: _supaUser.id, url: _SUPA_DIRECT_URL, made, kerb,
+                   fences: F.length, fenceNames: F.map(f => f && f.name).filter(Boolean).slice(0, 12),
                    targetId: made[made.length - 1], err: error && error.message };
         }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET });
         return 0;
       },
       rule: async (p) => {
         const n = await p.evaluate((ids) => ids.filter(id => clients.some(c => c && c.id === id)).length, ctx.made);
-        return { ok: !ctx.err && n === 5, got: ctx.err || (n + ' customers on file') };
+        return { ok: !ctx.err && n === 5 && !!ctx.kerb,
+                 got: ctx.err || (n + ' customers on file · ' + ctx.fences + ' fences · kerb ' +
+                      (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR')) };
       },
     });
 
@@ -147,6 +164,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
     const at = (h, m) => { const d = new Date(NOW); d.setHours(h, m, 0, 0); return d.getTime(); };
     const fix = (ts, c) => ({ type: 'fix', ts, lat: c.lat, lng: c.lon, accuracy: 8 });
     const motion = (ts, kind) => ({ type: 'motion', ts, kind });
+    // The kerb step 1 found, and the halfway point to it.
+    const KERB = ctx.kerb || { lat: SHOP.lat + 0.018, lon: SHOP.lon - 0.018 };
+    const ROAD = { lat: (SHOP.lat + KERB.lat) / 2, lon: (SHOP.lon + KERB.lon) / 2 };
     const events = [
       motion(at(8, 0), 'stationary'), fix(at(8, 0), SHOP), fix(at(8, 25), SHOP),
       motion(at(8, 30), 'automotive'),
@@ -189,12 +209,16 @@ test.describe('Name an unsaved stop from the day rail', () => {
             .gte('updated_at', new Date(Date.now() - 3600000).toISOString());
           const stop = (t || []).find(x => /^unsaved/.test(String(x.source || '')));
           const leg = (m || []).find(x => x && x.data && x.data.unsavedTo && x.data.toCoord);
+          // WHAT IT FOUND, not just that it found nothing. The run before this
+          // said "stop null · 2 rows today" and left me guessing which two.
           return { stop: stop ? { key: stop.client_key, mins: stop.minutes } : null,
-                   leg: leg ? leg.id : null, rows: (t || []).length };
+                   leg: leg ? leg.id : null,
+                   saw: (t || []).map(x => x.source + '@' + String(x.dest_place || '-') + ':' + x.minutes).join(', '),
+                   miles: (m || []).map(x => (x.data && x.data.purpose) + '/' + (x.data && x.data.miles)).join(', ') };
         });
         return { ok: !!(r.stop && r.leg),
                  got: 'post ' + (post && post.status) + ' · stop ' + JSON.stringify(r.stop) +
-                      ' · leg ' + r.leg + ' · ' + r.rows + ' rows today' };
+                      ' · leg ' + r.leg + ' · time [' + r.saw + '] · mileage [' + r.miles + ']' };
       },
     });
 
