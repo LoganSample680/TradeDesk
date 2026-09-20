@@ -62,7 +62,12 @@ function timOwedAll(){
   const out=[];
   try{
     const rows=(typeof bids!=='undefined'&&Array.isArray(bids))?bids:[];
-    const today=(typeof todayKey==='function')?todayKey():new Date().toISOString().slice(0,10);
+    // todayKey(), bare and with no fallback, exactly as renderMoneyPage calls
+    // it. The fallback that was here sliced toISOString(), which is UTC: after
+    // 7pm Central that returns TOMORROW, so every evening this would have said
+    // a customer was a day later paying than he was. A guard test in
+    // e2e-utils-exhaustive forbids the pattern outright, and it is right to.
+    const today=todayKey();
     const by={};
     rows.forEach(b=>{
       if(!b||b.status!=='Closed Won')return;
