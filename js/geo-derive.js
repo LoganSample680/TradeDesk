@@ -3698,7 +3698,27 @@ function geoDeriveRows(result, ids) {
       // stops being a chain, which is what the deriver is for: once the
       // midday drives resolve, the run to the store is its own leg and asks
       // for its own receipt.
-      pendingReceipt: true, supplyRunKey: String(result.day || '') + '|' + (l.to.name || 'Store'),
+      // ── A RUN IS A VISIT, NOT A DAY AT A STORE (owner 2026-09-20) ──────
+      // WAS: `day + '|' + store name`. The owner went to Home Depot twice in
+      // one afternoon, one run business and one personal, and said it out
+      // loud: "it should stamp both as different runs though, they could have
+      // different answers." Under the old key both visits shared one string,
+      // so they were one card carrying one answer, and marking the evening
+      // run personal would have taken the afternoon's real supply run off the
+      // books with it. It only escaped notice because the afternoon leg
+      // happened to derive without a mileage row that day.
+      //
+      // The key is the VISIT: the dwell's own id, 'd-' + the arriving leg's,
+      // which is the identity rule every other answer path already keys on.
+      // That is safe to rely on now and was not before: two derivers with two
+      // motion tapes used to mint a different journey id for the same drive
+      // every rebuild (49 of his legs retired and replaced in 18 days). Since
+      // the phone stopped writing rows the server's tape is the only input,
+      // and that churn went to zero, measured the day this was written.
+      //
+      // The store's name rides along rather than being parsed back out of the
+      // key, because the key no longer spells it.
+      pendingReceipt: true, supplyRunKey: 'd-' + l.id, supplyRunName: l.to.name || 'Store',
     } : {}, l.traced ? {
       // Named as what it is, so the log and the map can say "traced" rather
       // than pretending a breadcrumb sum is a routed distance.
@@ -3730,6 +3750,61 @@ function geoDeriveRows(result, ids) {
       client_id: cut.lostLast ? null : (l.to.clientId != null ? l.to.clientId : null),
       client_name: cut.lostLast ? '' : (l.to.clientId != null ? (l.to.name || '') : ''),
     } : {}));
+  }
+  // ── A STORE RUN IS THE ROUND TRIP (owner 2026-09-20) ─────────────────────
+  //
+  // "Home Depot runs aren't staying personal and aren't removing their drives
+  // from mileage or time sheet." They were not, and the drive HOME is why.
+  //
+  // Only the leg INTO the store was ever stamped, because that is the leg
+  // whose destination is the supply fence. The leg back out ends at the shop,
+  // so it carried no run key, so neither book's answer could reach it: on his
+  // 18th and 19th that left 13.2 deductible miles and 56 paid minutes sitting
+  // on runs he had already called personal. He answered, watched the drives
+  // stay, and reasonably concluded the answer had not stuck.
+  //
+  // An errand is leave, stop, come back. The leg that DEPARTS the visit gets
+  // the same key as the leg that arrived, so one answer settles the whole
+  // trip in both books. Nothing downstream changes: resolveSupplyRun and
+  // geo_answer_supply_run both already sweep every row carrying the key, they
+  // were simply never given this one (7.3).
+  //
+  // ── AND ONLY WHEN IT IS ACTUALLY A ROUND TRIP ────────────────────────────
+  // The leg that leaves the store is part of the errand when it goes BACK
+  // where the errand started, and is not when it goes on somewhere else.
+  // shop -> Home Depot -> shop is one errand. shop -> Home Depot -> John Doe
+  // is an errand and then a drive to a customer with the materials on board,
+  // and that second drive is business however the store stop is answered.
+  // Without this the personal answer would have reached across and taken a
+  // real job-site drive off the books, which is the same class of mistake
+  // rule 5b's chain guard exists to prevent.
+  //
+  // Matched on the dwell's own ends and on the fence itself rather than on
+  // position in the array: a leg the deriver dropped (too short to bill, a
+  // commute taken out) would shift every index after it, and the cost of
+  // being wrong here is a real business drive silently going off the books.
+  const legsById = {};
+  for (const l of (result && result.legs) || []) if (l && l.id != null) legsById[String(l.id)] = l;
+  for (const d of (result && result.dwells) || []) {
+    if (!d || d.kind !== 'supply' || d.id == null) continue;
+    const key = String(d.id);
+    // The arriving leg is the one already stamped. Nothing to join if the
+    // deriver declined to stamp it (a collapsed chain, rule 5b): a chain
+    // cannot say which part of itself was the errand, so it asks nothing.
+    const outRow = miles.find(m => m && m.supplyRunKey === key);
+    if (!outRow) continue;
+    const outLeg = legsById[String(outRow.id)];
+    if (!outLeg || !outLeg.from) continue;
+    const backLeg = (result.legs || []).find(l2 => l2 && l2.id !== outLeg.id &&
+      Math.abs(l2.startTs - d.endTs) <= 1000 && _gdSameFence(l2.to, outLeg.from));
+    if (!backLeg) continue;
+    const back = miles.find(m => m && !m.supplyRunKey && String(m.id) === String(backLeg.id));
+    if (!back) continue;
+    back.supplyRunKey = key;
+    // Held, so it is out of every money total until the run is answered, and
+    // so the card counts its miles as part of the errand they belong to.
+    back.pendingReceipt = true;
+    back.supplyRunName = outRow.supplyRunName || 'Store';
   }
   // `held` is the spans this account declined, so the caller can say so
   // rather than the day quietly coming up short. Never written anywhere: the
