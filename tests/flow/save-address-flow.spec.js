@@ -98,6 +98,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
     const KIN = ['Kinsley Roofing', 'Kinsey Plumbing', 'Kinsler Electric', 'Kingsley HVAC'];
     const TARGET = 'Kinsella Drywall ' + tag;
     let ctx = null;
+    // The client_key of the row THIS run made, so the rail chip that belongs
+    // to it can be picked out from every other run's.
+    let stopKey = null;
 
     // ── 1. The world the tap happens in ────────────────────────────────────
     // ZERO interactions on purpose, and it is not a fudge: the ledger measures
@@ -162,18 +165,44 @@ test.describe('Name an unsaved stop from the day rail', () => {
             const lng = a.shop.lon - 0.022 - i * 0.0025;
             if (clear(lat, lng)) kerb = { lat, lon: lng };
           }
+          // ── AND AN HOUR OF THE DAY NOBODY HAS USED ────────────────────
+          // geo_events dedupes, so re-posting the same hours is a no-op and
+          // the server re-derives the FIRST run's fixes at the FIRST run's
+          // kerb. Five runs died on that. The fix is not to fight the dedupe
+          // but to stop colliding with it: find the day's last event and put
+          // this run's hour after it, so every event is genuinely new and the
+          // journeys sit side by side instead of on top of each other.
+          const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+          let lastTs = 0, evErr = '';
+          try {
+            const r = await _supa.from('geo_events').select('ts')
+              .eq('employee_user_id', _supaUser.id)
+              .gte('ts', new Date(d0.getTime()).toISOString())
+              .order('ts', { ascending: false }).limit(1);
+            if (r && r.error) evErr = r.error.message || 'denied';
+            else if (r && r.data && r.data[0]) lastTs = Date.parse(r.data[0].ts) || 0;
+          } catch (e) { evErr = String(e && e.message || e); }
+          // 7am at the earliest, half an hour clear of anything already on
+          // file, and the whole hour has to land before 7pm or the working-day
+          // window stops vouching for the drives.
+          const startMs = Math.max(d0.getTime() + 7 * 3600000, lastTs + 30 * 60000);
+          const tooLate = startMs + 65 * 60000 > d0.getTime() + 19 * 3600000;
           return { key, uid: _supaUser.id, url: _SUPA_DIRECT_URL, made, kerb,
                    fences: F.length, serverFences: SF.length, sfErr,
+                   startMs, tooLate, evErr, lastTs,
                    targetId: made[made.length - 1], err: error && error.message };
         }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET });
         return 0;
       },
       rule: async (p) => {
         const n = await p.evaluate((ids) => ids.filter(id => clients.some(c => c && c.id === id)).length, ctx.made);
-        return { ok: !ctx.err && n === 5 && !!ctx.kerb,
+        return { ok: !ctx.err && n === 5 && !!ctx.kerb && !ctx.tooLate,
                  got: ctx.err || (n + ' customers · ' + ctx.fences + ' local fences · ' +
                       ctx.serverFences + ' server fences' + (ctx.sfErr ? (' (' + ctx.sfErr + ')') : '') +
-                      ' · kerb ' + (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR')) };
+                      ' · kerb ' + (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR') +
+                      ' · window ' + new Date(ctx.startMs).toTimeString().slice(0, 5) +
+                      (ctx.tooLate ? ' TOO LATE IN THE DAY, the account has run out of daylight' : '') +
+                      (ctx.evErr ? (' (events: ' + ctx.evErr + ')') : '')) };
       },
     });
 
@@ -182,26 +211,27 @@ test.describe('Name an unsaved stop from the day rail', () => {
     // needed: a tape with no fixes resolves to nowhere and the server
     // correctly refuses to write the day (derive-day.mjs "no evidence").
     //
-    // 8:00 at the shop, 8:30 drive, 9:00 parked at the kerb, 11:00 drive,
-    // 11:30 back at the shop. Two legs and a two-hour dwell, all comfortably
-    // over every minimum.
-    const NOW = Date.now();
-    const at = (h, m) => { const d = new Date(NOW); d.setHours(h, m, 0, 0); return d.getTime(); };
+    // One compact hour rather than a whole morning, so a day has room for
+    // many runs' worth of them side by side: at the shop, out, a stop nobody
+    // saved, back. Every span is well over the deriver's floors.
+    const T0 = ctx.startMs;
+    const at = (m) => T0 + m * 60000;
     const fix = (ts, c) => ({ type: 'fix', ts, lat: c.lat, lng: c.lon, accuracy: 8 });
     const motion = (ts, kind) => ({ type: 'motion', ts, kind });
     // The kerb step 1 found, and the halfway point to it.
-    const KERB = ctx.kerb || { lat: SHOP.lat + 0.018, lon: SHOP.lon - 0.018 };
+    const KERB = ctx.kerb || { lat: SHOP.lat + 0.022, lon: SHOP.lon - 0.022 };
     const ROAD = { lat: (SHOP.lat + KERB.lat) / 2, lon: (SHOP.lon + KERB.lon) / 2 };
+    const WIN = { a: at(0), b: at(62) };
     const events = [
-      motion(at(8, 0), 'stationary'), fix(at(8, 0), SHOP), fix(at(8, 25), SHOP),
-      motion(at(8, 30), 'automotive'),
-      fix(at(8, 30), SHOP), fix(at(8, 45), ROAD), fix(at(8, 58), KERB),
-      motion(at(9, 0), 'onFoot'),
-      fix(at(9, 0), KERB), fix(at(10, 0), KERB), fix(at(10, 55), KERB),
-      motion(at(11, 0), 'automotive'),
-      fix(at(11, 0), KERB), fix(at(11, 15), ROAD), fix(at(11, 28), SHOP),
-      motion(at(11, 30), 'onFoot'),
-      fix(at(11, 30), SHOP), fix(at(11, 55), SHOP),
+      motion(at(0), 'stationary'), fix(at(0), SHOP), fix(at(5), SHOP),
+      motion(at(10), 'automotive'),
+      fix(at(10), SHOP), fix(at(16), ROAD), fix(at(21), KERB),
+      motion(at(22), 'onFoot'),
+      fix(at(22), KERB), fix(at(35), KERB), fix(at(44), KERB),
+      motion(at(45), 'automotive'),
+      fix(at(45), KERB), fix(at(51), ROAD), fix(at(56), SHOP),
+      motion(at(57), 'onFoot'),
+      fix(at(57), SHOP), fix(at(62), SHOP),
     ];
 
     // ── 2. Flush it, the way a phone that was never open does ──────────────
@@ -224,23 +254,29 @@ test.describe('Name an unsaved stop from the day rail', () => {
         return 0;
       },
       rule: async (p) => {
-        const r = await p.evaluate(async () => {
+        const r = await p.evaluate(async (w) => {
           const { data: t } = await _supa.from('job_time_entries')
-            .select('id,source,client_key,dest_place,minutes')
+            .select('id,source,client_key,dest_place,minutes,arrived_at')
             .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
             .gte('arrived_at', new Date(Date.now() - 24 * 3600000).toISOString());
           const { data: m } = await _supa.from('td_mileage')
             .select('id,data').eq('user_id', _supaUser.id).is('deleted_at', null)
             .gte('updated_at', new Date(Date.now() - 3600000).toISOString());
-          const stop = (t || []).find(x => /^unsaved/.test(String(x.source || '')));
-          const leg = (m || []).find(x => x && x.data && x.data.unsavedTo && x.data.toCoord);
+          // THIS run's stop, not any unsaved stop. The day now carries every
+          // earlier run's hour beside this one, and tapping somebody else's
+          // chip would prove nothing about the kerb this run chose.
+          const mine = (x) => { const ts = Date.parse(x.arrived_at || ''); return ts >= w.a && ts <= w.b; };
+          const stop = (t || []).find(x => /^unsaved/.test(String(x.source || '')) && mine(x));
+          const leg = (m || []).find(x => x && x.data && x.data.unsavedTo && x.data.toCoord &&
+            Math.abs(Number(x.data.toCoord.lat) - w.kerb.lat) < 0.002);
           // WHAT IT FOUND, not just that it found nothing. The run before this
           // said "stop null · 2 rows today" and left me guessing which two.
           return { stop: stop ? { key: stop.client_key, mins: stop.minutes } : null,
                    leg: leg ? leg.id : null,
-                   saw: (t || []).map(x => x.source + '@' + String(x.dest_place || '-') + ':' + x.minutes).join(', '),
+                   saw: (t || []).filter(mine).map(x => x.source + '@' + String(x.dest_place || '-') + ':' + x.minutes).join(', '),
                    miles: (m || []).map(x => (x.data && x.data.purpose) + '/' + (x.data && x.data.miles)).join(', ') };
-        });
+        }, { a: WIN.a, b: WIN.b, kerb: KERB });
+        stopKey = r.stop && r.stop.key;
         // ── AND WHICH LIST MISSED IT ────────────────────────────────────
         // Step 1 passes, so its own `got` is never printed, and twice now the
         // day has derived onto a fence the kerb was supposed to be clear of
@@ -290,18 +326,21 @@ test.describe('Name an unsaved stop from the day rail', () => {
         return n;
       },
       rule: async (p) => {
-        const r = await p.evaluate(() => {
+        const r = await p.evaluate((key) => {
           const el = document.getElementById('tl-list');
           const txt = el ? el.textContent : '';
           const chips = [...document.querySelectorAll('.tl-rail-chip')]
             .filter(b => /Save this address/.test(b.textContent || ''));
-          return { unsaved: /Unsaved address/.test(txt), chips: chips.length };
-        });
+          // MINE specifically: the day carries every earlier run's hour too.
+          const ours = chips.filter(b => (b.getAttribute('onclick') || '').includes(key));
+          return { unsaved: /Unsaved address/.test(txt), chips: chips.length, ours: ours.length };
+        }, stopKey);
         // The dead-button report is guarded right here: the chip is only drawn
         // when _mileStopCoord can actually place the stop behind it, so a chip
         // present at all is a chip with a coordinate under it.
-        return { ok: r.unsaved && r.chips >= 1,
-                 got: 'unsaved row ' + r.unsaved + ' · ' + r.chips + ' Save chips' };
+        return { ok: r.unsaved && r.ours === 1,
+                 got: 'unsaved row ' + r.unsaved + ' · ' + r.chips + ' Save chips, ' +
+                      r.ours + ' of them this run\'s (' + stopKey + ')' };
       },
     });
 
@@ -318,7 +357,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
       ruleText: 'the prompt opens and must not move or resize when the address lookup lands',
       expected: 'same height and same top before and after the name arrives',
       act: async (p) => {
-        const n = await tap(p, '.tl-rail-chip:has-text("Save this address")');
+        const n = await tap(p, '.tl-rail-chip[onclick*="' + stopKey + '"]');
         await p.waitForSelector('#_mile-kind-ov .zmodal', { timeout: 15000 });
         box = await p.evaluate(async () => {
           const ov = document.getElementById('_mile-kind-ov');
