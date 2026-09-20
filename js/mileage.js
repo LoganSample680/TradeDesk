@@ -1221,16 +1221,30 @@ function _supplyRunSettleByKeys(keys){
 // is what _tlBlendManual fills back in with paid time under a running clock,
 // which is the exact bug his 15 September had.
 //
-// Fire and forget, after the local mark: the mileage half is already true on
-// this device and must not wait on the network to show it, and a failed call
+// ── AND THE FAILURE IS NOT SWALLOWED ANY MORE (owner 2026-09-20) ─────────
+// This used to say fire and forget, on the reasoning that "a failed call
 // leaves the time rows saying what the deriver said, which is the safe way to
-// be wrong.
+// be wrong." That stopped being true the moment the RPC took ownership of
+// BOTH books (20261028): a failed call now leaves the whole answer unwritten
+// on the server while this device sits there showing it as answered, and the
+// next sync or the next device puts the question straight back. Which is
+// exactly what he saw: "Home Depot runs aren't staying personal."
+//
+// Still not awaited, because the card must come off the screen on the tap.
+// But a failure now says so, and puts the run back where he can answer it
+// again, rather than leaving him to discover it hours later on the dashboard.
 function _supplyRunAnswerTime(key,mode){
   try{
     if(!key||!window._supa||typeof opsReadOnly==='function'&&opsReadOnly())return;
     Promise.resolve(_supa.rpc('geo_answer_supply_run',{p_key:String(key),p_mode:mode}))
-      .then(()=>{try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}})
-      .catch(()=>{});
+      .then(r=>{
+        if(r&&r.error)throw r.error;
+        try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+      })
+      .catch(()=>{
+        try{if(typeof showToast==='function')showToast('That answer did not save, try it again');}catch(_e){}
+        try{if(typeof renderDash==='function')renderDash();}catch(_e){}
+      });
   }catch(_e){}
 }
 // The doors. 'personal' takes the run off BOTH books. 'noreceipt' commits as
