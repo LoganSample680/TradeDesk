@@ -182,7 +182,11 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
      status colour and neither goes anywhere else. The brass pair and the paper
      disc that used to live here died with the drawn mark, which had to build a
      disc to stand on; the portrait brings its own. */
-  --tim-gold:#D4A54A;--hat:#F2A81C;
+  /* Sampled out of img/tim-256.png, not picked by eye: the tab is this colour
+     and so is the field the portrait is printed on, so there is no seam where
+     one ends and the other starts. A gold that is close but not equal shows up
+     as a faint disc around his head at every size. */
+  --tim-gold:#D3A04B;--hat:#F2A81C;
   --r-xs:4px;--r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--r-pill:999px;--r-mark:9px;
   --shadow-card:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--line);
   --shadow-hover:0 3px 12px rgba(27,22,18,.08),0 0 0 1px var(--line);
@@ -297,7 +301,33 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 #app{padding-left:var(--nav-w);min-height:100vh}
 #supa-status{left:var(--nav-w);transition:opacity .25s cubic-bezier(.22,1,.36,1);opacity:0}
 .drive-banner{left:var(--nav-w)}
-.pg{display:none;padding:24px 28px 32px;max-width:1320px}
+/* --tim-lane is the strip down the right that Tim stands in. It is 0 until the
+   dock is actually up, which is owner-only and post-boot, so a crew member and
+   the sign-in screen pay nothing for it. It is set ONCE here and the page
+   padding adds it, which is why every .pg padding rule below (including the two
+   phone overrides) is written as a shorthand plus this, rather than each one
+   carrying its own magic number.
+   It exists because measuring beat reasoning: the dock has now twice obeyed
+   rule 15.3 in its comment and broken it on the screen, and at 390px the
+   dashboard's "Add places" button ran 11px under him while he was still QUIET.
+   A lane that is always there also means waking him reflows nothing.
+
+   20px is not a taste. It is pinned from BOTH sides and there is no room
+   either way:
+     from above, the BYO item row in e2e-layout-integrity-regression is a
+       deliberate worst case (seven-figure price, every action button) and was
+       measured lane by lane: it holds a four-letter title on one line up to
+       22px and wraps at 24. The first version of this lane was 30 and wrapped
+       it.
+     from below, 390 - 16 of page gutter - 20 leaves content ending at 354,
+       which is exactly Tim's left edge at 36 wide. One pixel less of lane and
+       a control sitting flush to a card's edge is under him again.
+   So the tab is 36 wide because the lane can only be 20, not the other way
+   round. Widening him means finding the width somewhere the estimate page can
+   afford to lose it, and it has none. */
+:root{--tim-lane:0px}
+body.tim-here{--tim-lane:20px}
+.pg{display:none;padding:24px calc(28px + var(--tim-lane)) 32px 28px;max-width:1320px}
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
 #pg-dash.active{animation:td-dash-enter .8s cubic-bezier(.16,1,.3,1) both}
 /* Boot waterfall (owner request): while the boot overlay fades, the home header +
@@ -365,13 +395,25 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    could stand on them.
    Tucked against the right edge at mid-height he obeys it instead. There is
    nothing fixed at the middle of the right edge to collide with, the lift is
-   gone, and a thumb reaches him without crossing the screen. */
+   gone, and a thumb reaches him without crossing the screen.
+
+   And then he did it again, 2026-09-20. Waking him moved him OUT from the
+   edge, 14px into the page, and grew him into a 58px disc: which put 72px of
+   Tim back on top of whatever was under him. On the dashboard that is the
+   "Add places" button of a card, so the one moment he has something worth
+   saying is the one moment he is standing on a control. Reserving a lane in
+   the page while he is lit fixes the overlap and buys a visible reflow under
+   the reader's thumb instead, which is not a trade worth making.
+
+   He does not leave the edge any more. Quiet and awake he is the same object
+   anchored to the same place; waking grows him ALONG the edge and lights him,
+   and the pill comes out beside him. Nothing he does can land on a control,
+   because there is no state in which any part of him is over the page. */
 #tim-dock{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:1400;
-  display:none;flex-direction:row;align-items:center;gap:9px;pointer-events:none;
-  transition:right .24s cubic-bezier(.22,1,.36,1)}
+  display:none;flex-direction:row;align-items:center;gap:9px;pointer-events:none}
 #tim-dock.on{display:flex}
-/* Out from the edge once he has something. The move IS the coming to life. */
-#tim-dock.lit{right:14px}
+/* .lit is the dock-level state flag the JS sets and the tests read. It no
+   longer moves him: the move WAS the bug. */
 #tim-dock-pill{display:none;align-items:center;gap:9px;max-width:min(268px,calc(100vw - 32px));
   padding:9px 13px;border-radius:var(--r-md);background:var(--ink);box-shadow:0 4px 16px rgba(27,22,18,.22);
   border:none;font-family:inherit;text-align:left;cursor:pointer;pointer-events:auto;
@@ -379,44 +421,56 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 #tim-dock-pill.on{display:flex}
 #tim-dock-pill .tim-pill-line{font-size:13px;font-weight:600;color:var(--text-cream);line-height:1.35}
 #tim-dock-pill .tim-pill-fig{font-size:13px;font-weight:800;color:var(--hat);font-variant-numeric:tabular-nums;flex-shrink:0;white-space:nowrap}
-/* QUIET: a pull tab, not a button. Flush to the edge, rounded only on the side
-   that faces the page, 34px of him showing. Small enough that it reads as part
-   of the chrome and not as something dropped on top of it. */
-#tim-dock-btn{width:36px;height:86px;border:0;border-radius:22px 0 0 22px;background:var(--ink);
-  box-shadow:-3px 0 14px rgba(27,22,18,.20),inset 1px 0 0 var(--ink-line-2);
-  cursor:pointer;display:flex;align-items:center;justify-content:center;
+/* QUIET: the tab IS him. It was an ink slab with a 24px portrait floating in
+   the middle of it, which is a circle inside a rectangle, which reads as a
+   sticker somebody stuck on the chrome, and at 24px the cap and the beard were
+   mud. One shape instead: a gold half-disc tucked into the edge, the portrait
+   filling its height, rounded only on the side that faces the page. He is
+   recognisable as a man at rest, which is the whole point of having a face.
+   The 6px nudge right pushes the portrait's dead centre past the screen edge
+   so that what is cropped is the back of his head, not his ear. */
+#tim-dock-btn{width:36px;height:62px;border:0;border-radius:26px 0 0 26px;background:var(--tim-gold);
+  box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-1px 0 0 rgba(27,22,18,.06),-4px 0 12px rgba(27,22,18,.11);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;
   position:relative;pointer-events:auto;padding:0;
   transition:width .24s cubic-bezier(.22,1,.36,1),height .24s cubic-bezier(.22,1,.36,1),
-    border-radius .24s cubic-bezier(.22,1,.36,1),background .24s,box-shadow .24s,
+    border-radius .24s cubic-bezier(.22,1,.36,1),box-shadow .24s,
     transform .15s,opacity .15s}
-/* Tall enough to read as a piece of the chrome rather than a nub stuck to the
-   edge, and wide enough that the mark is at a size a man can recognise without
-   looking twice. The inset hairline on the left is the same one the dark
-   surfaces elsewhere use: it gives the tab an edge instead of letting it read
-   as a hole cut in the page.
-   The mark is DRAWN at the awake size and scaled DOWN for the tab, not the
+/* The mark is DRAWN at the awake size and scaled DOWN for the tab, not the
    other way round. It is a photograph now, not a drawing: scaling a raster up
-   to fill the disc would soften the one state where he is the largest thing on
-   screen, and the srcset picks its density off the drawn size, so drawing him
-   small and stretching him would also pull the small file. */
+   would soften the one state where he is the largest thing on screen, and the
+   srcset picks its density off the drawn size, so drawing him small and
+   stretching him would also pull the small file. The gold behind him is the
+   field of the portrait itself, so a frame where the image has not decoded is
+   a gold tab and not a hole. */
+/* NOTHING OF HIM IS CUT. The portrait has no margin in it: the figure runs to
+   the edge of its own disc on all four sides (measured, the ink bbox is the
+   full 256), so any crop at all takes a slice out of the man. Pushing him
+   sideways to hide the crop just moves which slice. So the whole disc sits
+   INSIDE the tab and the tab's gold is the margin, which costs nothing because
+   the tab and the field are the same colour: 32 of 36, 2px of gold all round,
+   in both states. The clip then only ever has gold to eat. */
 #tim-dock-mark{display:flex;transition:transform .24s cubic-bezier(.22,1,.36,1)}
-/* The scale is visual, the layout box stays 58 wide inside a 36 wide tab that
-   is flush to the right edge, so the clip is belt and braces against that box
-   counting as overflow and widening the document. It never reaches the mark:
-   .42 of 58 is 24, and it is 24 against 36 at every frame of the transition. */
-#tim-dock-btn:not(.alive){overflow:hidden}
-#tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.42)}
-/* ALIVE: he comes out and becomes the disc he was. The portrait IS the disc,
-   so the ink goes: a gold coin inside a dark ring read as a token dropped in a
-   slot, and the pulse was ringing the ring rather than the man. The background
-   stays gold underneath him so that a frame where the image has not decoded is
-   a gold disc and not a hole. */
-#tim-dock-btn.alive{width:58px;height:58px;border-radius:var(--r-pill);overflow:visible;
-  background:var(--tim-gold);box-shadow:0 4px 16px rgba(27,22,18,.28)}
+#tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.55)}
+/* ALIVE: the SAME SHAPE. He does not grow at all, and that is not a
+   simplification, it is what the geometry leaves.
+   Wider is out: every horizontal pixel Tim takes has to be bought back out of
+   --tim-lane, the lane has 20px and no more, and the tab already spends all of
+   it. Taller was tried at 92px and looked worse than what it replaced: the
+   portrait is capped at 32 by the width, so the extra height is 30px of empty
+   gold above and below a small face, which is the dot-floating-in-a-slab that
+   the tab was drawn to get rid of, turned on its side.
+   So waking him is the pulse, the pill coming out beside him, and the count.
+   Three signals and no reflow, instead of a fourth signal that costs the page
+   width it does not have and looks worse for it. */
+#tim-dock-btn.alive{box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-1px 0 0 rgba(27,22,18,.06),-4px 0 12px rgba(27,22,18,.11)}
 #tim-dock-btn:active{transform:scale(.96);opacity:.85}
-#tim-dock-badge{display:none;position:absolute;top:1px;right:1px;width:15px;height:15px;border-radius:var(--r-pill);
-  background:var(--hat);box-shadow:0 0 0 2.5px var(--ink);font-size:9px;font-weight:800;color:var(--ink);
-  align-items:center;justify-content:center}
+/* Pinned to the dock's own top right, which is the screen edge, where the tab
+   corner is square and nothing curves away under it. pointer-events:none so it
+   cannot eat the tap that is meant for him. */
+#tim-dock-badge{display:none;position:absolute;top:4px;right:4px;width:15px;height:15px;border-radius:var(--r-pill);
+  background:var(--hat);box-shadow:0 0 0 2.5px var(--tim-gold);font-size:9px;font-weight:800;color:var(--ink);
+  align-items:center;justify-content:center;pointer-events:none}
 #tim-dock-badge.on{display:flex}
 @keyframes tim-pill-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 /* ── The pulse, and the lines rolling through it ──────────────────────────
@@ -430,8 +484,30 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    say. What CHANGES is which line is showing, not what colour he is. */
 #tim-dock-btn.alive{animation:tim-breathe 2.9s ease-in-out infinite}
 @keyframes tim-breathe{
-  0%,100%{box-shadow:0 4px 16px rgba(27,22,18,.28),0 0 0 0 rgba(212,165,74,.38)}
-  50%    {box-shadow:0 4px 16px rgba(27,22,18,.28),0 0 0 7px rgba(212,165,74,0)}
+  0%,100%{box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-4px 0 12px rgba(27,22,18,.11),0 0 0 0 rgba(211,160,75,.42)}
+  50%    {box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-4px 0 12px rgba(27,22,18,.11),0 0 0 9px rgba(211,160,75,0)}
+}
+/* ── Tim after dark ─────────────────────────────────────────────────────────
+   body.dark repoints --ink to #0A0A08 and --paper to #14110E, which are four
+   points of lightness apart. The pill is built on --ink, so in dark mode it was
+   a black chip on a black page: the one thing he says, invisible. It moves to
+   the card surface with the same hairline the rest of the dark UI uses.
+   The tab keeps his gold rather than getting a dark one of its own, because the
+   portrait's field is baked into the file and a darker tab behind it would put
+   a visible disc around his head. Dimming the whole button instead takes the
+   tab and the art down together, so there is still no seam, and it is the only
+   accent in the app that needs this: --hat and --blue stay full strength in
+   dark because nothing is printed next to them that has to match.
+   The pulse comes down too. A gold halo at .42 is a glance on white and a
+   headlight on #14110E. */
+body.dark #tim-dock-btn{filter:brightness(.92) saturate(.96);
+  box-shadow:inset 1px 0 0 rgba(27,22,18,.28)}
+body.dark #tim-dock-pill{background:var(--bg-card);
+  box-shadow:0 4px 16px rgba(0,0,0,.45),0 0 0 1px var(--line-2)}
+body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infinite}
+@keyframes tim-breathe-dark{
+  0%,100%{box-shadow:inset 1px 0 0 rgba(27,22,18,.28),0 0 0 0 rgba(211,160,75,.26)}
+  50%    {box-shadow:inset 1px 0 0 rgba(27,22,18,.28),0 0 0 8px rgba(211,160,75,0)}
 }
 /* The line crossfades in place rather than sliding: the pill is 13px type on a
    dark chip at arm's length on a job site, and text that moves while it is
@@ -1395,7 +1471,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   #supa-status{left:180px}
   .drive-banner{left:180px}
   #clock-banner{left:180px}
-  .pg{padding:18px 18px 28px;max-width:none}
+  .pg{padding:18px calc(18px + var(--tim-lane)) 28px 18px;max-width:none}
   .card{padding:14px}
   .card-hd{padding:12px 14px}
   .tbar{margin-bottom:14px}
@@ -1425,7 +1501,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   #app{padding-left:0;padding-top:calc(56px + env(safe-area-inset-top,0px));padding-bottom:110px}
   #supa-status{left:0;bottom:68px}
   .drive-banner{left:0;top:calc(56px + env(safe-area-inset-top,0px))}
-  .pg{padding:14px 16px 20px}
+  .pg{padding:14px calc(16px + var(--tim-lane)) 20px 16px}
   #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
   .drive-active .pg{padding-top:60px}
   .clock-active .pg{padding-top:60px}
@@ -4387,8 +4463,11 @@ body.dark .cal-cell.other{background:var(--cream)}
   </button>
   <button id="tim-dock-btn" type="button" onclick="openTim()" aria-label="Tim">
     <span id="tim-dock-mark"></span>
-    <span id="tim-dock-badge"></span>
   </button>
+  <!-- The count sits OUTSIDE the button. The button clips to its own rounded
+       edge so the portrait can fill it without spilling, and a badge inside a
+       clip is a badge with a bite out of it. -->
+  <span id="tim-dock-badge"></span>
 </div>
 <!-- ── Mobile bottom tab bar ── -->
 <div id="mobile-tabbar">

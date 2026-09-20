@@ -46,7 +46,12 @@ const TIM_NUDGE_RULES=[
     id:'under-book',
     kind:'dollar',
     when:s=>s.under&&s.under.gap>0,
-    line:s=>'You are under your own price on line '+s.under.at,
+    // Not "You are under your own price on line 3". The pill is the one part
+    // of Tim a man reads without having asked for it, often with a customer
+    // standing next to him, and a sentence that opens "You are" is a sentence
+    // about HIM rather than about the line. Same fact, subject changed to the
+    // thing that is actually wrong. The figure does the arguing.
+    line:s=>'Line '+s.under.at+' is under your own price',
     figure:s=>_timMoney(s.under.gap),
     title:s=>_timMoney(s.under.gap),
     what:s=>s.under.desc+' is at '+_timMoney(s.under.rate)+'.',
@@ -65,16 +70,24 @@ const TIM_NUDGE_RULES=[
     what:s=>s.clientName+' has '+_timMoney(s.owed)+' outstanding'+(s.owedDays?', '+s.owedDays+' days now':'')+'.',
     why:()=>'It is your money, sitting in a job you are about to do more work for.',
     cta:'Open what they owe',
-    alt:'Send it anyway',
+    // "Send it anyway" told him he was doing something reckless on the way to
+    // doing it. Half the time the reason is that he already knows, and the
+    // cheque is in the truck. The way out of a nudge should never carry a
+    // judgment about taking it.
+    alt:'Not now',
   },
   {
     id:'runs-over',
     kind:'percent',
     when:s=>s.overrun&&s.overrun.n>=3&&s.overrun.pct>=10,
-    line:()=>'Your last three of these ran over',
+    // "Your last three of these ran over" is a verdict on the man's work.
+    // "These take longer than the estimate" is a verdict on the ESTIMATE, which
+    // is the thing he is standing in front of and the thing he can change. The
+    // fact and the percentage are identical; only the thing being blamed moves.
+    line:()=>'These take longer than the estimate',
     figure:s=>s.overrun.pct+'%',
     title:s=>s.overrun.pct+'%',
-    what:s=>'The last '+s.overrun.n+' jobs like this took '+s.overrun.pct+' percent longer than you wrote down.',
+    what:s=>'The last '+s.overrun.n+' jobs like this took '+s.overrun.pct+' percent longer than the estimate said.',
     why:s=>'Off your own clock, not a guess. On this one that is about '+s.overrun.hours+' more hours.',
     cta:'Put the hours up',
     alt:'Leave it',

@@ -278,8 +278,18 @@ function timDockRender(opts){
   // both sit behind the wall the nav already puts them behind.
   const booted=!!document.querySelector('.pg.active');
   const crew=(typeof _isEmployee!=='undefined')&&!!_isEmployee;
-  if(!booted||crew){dock.classList.remove('on');return;}
+  // tim-here opens --tim-lane, the strip of right-hand page padding he stands
+  // in. It goes on and off with the dock itself, not with whether he has
+  // something to say: a lane that appeared when he woke would reflow the page
+  // under the reader's thumb, and a lane that is never there puts him on top
+  // of a card's button (measured: 11px onto "Add places" on the dashboard).
+  if(!booted||crew){
+    dock.classList.remove('on');
+    document.body.classList.remove('tim-here');
+    return;
+  }
   dock.classList.add('on');
+  document.body.classList.add('tim-here');
 
   const markEl=document.getElementById('tim-dock-mark');
   // Drawn at the awake size. The stylesheet scales him down to sit in the tab,

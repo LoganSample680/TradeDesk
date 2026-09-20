@@ -552,7 +552,15 @@ test.describe('tim', () => {
       expect(r.centred).toBe(true);
     });
 
-    test('quiet he is a tab on the edge, awake he comes out and is a disc', async () => {
+    // 10.4: this asserted "awake he comes out and is a disc", gap > 0 and
+    // width === height. Both are deleted rather than adjusted, because coming
+    // out from the edge is the behaviour that was wrong. Waking him moved 72px
+    // of Tim onto the page and he landed on the "Add places" button of a card
+    // on the dashboard: the one moment he has something worth saying was the
+    // one moment he was standing on a control. What replaces them is the
+    // property that makes that impossible, not a looser version of the old
+    // one: he is flush to the edge in BOTH states and only grows along it.
+    test('quiet or awake he never leaves the edge, he only grows along it', async () => {
       const r = await page.evaluate(() => {
         const real = window.__realNudges || timNudges;
         window.__realNudges = real;
@@ -583,15 +591,75 @@ test.describe('tim', () => {
         stop.remove();
         return { quiet, awake };
       });
-      // Flush to the edge and narrow when there is nothing to say.
+      // Flush to the edge with nothing to say, and STILL THE SAME BOX once
+      // there is. 10.4: this read quiet.w < awake.w, back when waking him grew
+      // him into a floating disc. Both halves of that are now the opposite of
+      // what is wanted. Every horizontal pixel he takes is bought out of
+      // --tim-lane, which has 20px and no more (the BYO worst-case row wraps at
+      // 24) and which the tab already spends in full; and growing him
+      // vertically instead just pads a 32px face with empty gold. So his box is
+      // fixed, and this pins it, because "he only gets a bit bigger" is exactly
+      // the kind of change that looks harmless in a diff and costs the estimate
+      // page a line of text at 390px.
       expect(r.quiet.gap).toBe(0);
-      expect(r.quiet.w).toBeLessThan(r.awake.w);
       expect(r.quiet.lit).toBe(false);
-      // Out from the edge and round once there is.
-      expect(r.awake.gap).toBeGreaterThan(0);
-      expect(r.awake.w).toBe(r.awake.h);
+      expect(r.awake.gap).toBe(0);
+      expect(r.awake.w).toBe(r.quiet.w);
+      expect(r.awake.h).toBe(r.quiet.h);
       expect(r.awake.lit).toBe(true);
     });
+
+    // 15.3, measured rather than reasoned about. Every version of this dock so
+    // far has obeyed the rule in its comment and broken it on the screen:
+    // first _timDockLift standing him on the tab bar, then the awake disc
+    // sitting on a card's button. A comment cannot catch that. This walks the
+    // live page and fails if his rect touches any control's rect, in either
+    // state, which is the test that would have caught both.
+    //
+    // It walks SEVERAL pages, not the one that happened to break. The lane that
+    // keeps him clear is bought out of the page's own width, and the first
+    // version of it was sized off a single card on the dashboard: 30px, which
+    // was more than that card needed and enough to wrap a four-letter BYO item
+    // title onto two lines. A number tuned to one screen is a number that is
+    // wrong on the next one, in one direction or the other.
+    const WALK = ['pg-dash', 'pg-clients', 'pg-jobs', 'pg-money', 'pg-tracker', 'pg-settings'];
+    for (const pg of WALK) {
+    test(`nothing he does lands on a control, quiet or awake: ${pg}`, async () => {
+      await page.evaluate(p => goPg(p), pg);
+      const hits = await page.evaluate(() => {
+        const real = window.__realNudges || timNudges;
+        window.__realNudges = real;
+        const stop = document.createElement('style');
+        stop.textContent = '#tim-dock,#tim-dock *{transition:none !important;animation:none !important}';
+        document.head.appendChild(stop);
+        const overlaps = () => {
+          const b = document.getElementById('tim-dock-btn').getBoundingClientRect();
+          return [...document.querySelectorAll('button,a[href],input,select,textarea,[role="button"]')]
+            .filter(el => !el.closest('#tim-dock'))
+            .filter(el => {
+              if (el.disabled || el.offsetParent === null) return false;
+              const r = el.getBoundingClientRect();
+              if (!r.width || !r.height) return false;
+              if (r.bottom < 0 || r.top > window.innerHeight) return false;   // off screen
+              return r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top;
+            })
+            .map(el => (el.id || el.className || el.tagName) + ' "' + (el.textContent || '').trim().slice(0, 24) + '"');
+        };
+        timNudges = () => [];
+        timDockRender();
+        const quiet = overlaps();
+        timNudges = () => ([{ id: 'a', line: 'Dana still owes you', figure: '$1,240' }]);
+        timDockRender();
+        const awake = overlaps();
+        timNudges = real;
+        timDockRender();
+        stop.remove();
+        return { quiet, awake };
+      });
+      expect(hits.quiet).toEqual([]);
+      expect(hits.awake).toEqual([]);
+    });
+    }
 
     test('it never pushes the page sideways, at phone width or desktop', async () => {
       for (const w of [390, 1280]) {
@@ -1049,7 +1117,7 @@ test.describe('tim', () => {
     });
 
     test('one finding breathes and states it, with no carousel of one', async () => {
-      await findings(page, [['You are under your own price on line 3', '$640']]);
+      await findings(page, [['Line 3 is under your own price', '$640']]);
       const r = await page.evaluate(() => ({
         alive: document.getElementById('tim-dock-btn').classList.contains('alive'),
         line: document.querySelector('#tim-dock-pill .tim-pill-line').textContent,
@@ -1059,7 +1127,7 @@ test.describe('tim', () => {
         timer: !!_timDockTimer,
       }));
       expect(r.alive).toBe(true);
-      expect(r.line).toBe('You are under your own price on line 3');
+      expect(r.line).toBe('Line 3 is under your own price');
       expect(r.fig).toBe('$640');
       expect(r.badge).toBe('1');
       expect(r.multi).toBe(false);
@@ -1071,7 +1139,7 @@ test.describe('tim', () => {
       await findings(page, [
         ['No scaffold on a second floor job', '$285'],
         ['Dana still owes you', '$1,240'],
-        ['You are under your own price on line 3', '$640'],
+        ['Line 3 is under your own price', '$640'],
       ]);
       const r = await page.evaluate(() => ({
         badge: document.getElementById('tim-dock-badge').textContent,
