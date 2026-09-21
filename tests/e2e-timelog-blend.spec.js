@@ -592,3 +592,105 @@ test.describe('the stored open row never doubles the live one', () => {
     expect(r.n).toBe(0);
   });
 });
+
+
+// ── SOMEBODY ELSE'S OPEN DWELL (owner 2026-09-21) ─────────────────────────
+//
+// The rule above is right about the VIEWER and wrong about everyone else.
+// window._geoOpenDwell is device-local, so the live row it builds only ever
+// knows where the person holding this phone is. Jack sat at the shop 2h44m,
+// clocked in, and the rail under his badge showed no start time at all: his
+// open row was stored correctly and then dropped by a guard written to stop
+// the viewer's own dwell being drawn twice. There is no second copy of a crew
+// member's dwell, so there is nothing to double: it draws.
+test.describe("somebody else's open dwell draws", () => {
+  let page;
+  const ME = 'owner-other', THEM = 'jack-other';
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(([ME]) => {
+      window.supaLoadFromCloud = async () => {};
+      window._supaUser = { id: ME, email: 'o@t.com' };
+      S.bizTz = 'America/Chicago'; S.bname = 'Plumbing Solutions by JS';
+    }, [ME]);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Today, because an open dwell only means "right now". Built off the page's
+  // own clock, which is pinned (§5.2.2), so the runner's hour never decides.
+  const draw = (entries, shop) => page.evaluate(async ([entries, shop, THEM, ME]) => {
+    const keepF = window._fetchCrewLabor, keepT = timeEntries.slice(), keepO = window._geoOpenDwell;
+    window._geoOpenDwell = null;              // the live row is its own test
+    window.timeEntries = [];
+    // Both ends built from the PAGE's clock, never the runner's (§5.2.2).
+    const stamp = (e) => ({ ...e, contractor_user_id: ME,
+      arrived_at: new Date(Date.now() - e.agoMin * 60000).toISOString(),
+      departed_at: e.agoMinEnd == null ? null : new Date(Date.now() - e.agoMinEnd * 60000).toISOString() });
+    window._fetchCrewLabor = async () => ({ name: { [ME]: 'Me', [THEM]: 'Jack' },
+      entries: entries.map(stamp), shopEntries: shop.map(stamp) });
+    try {
+      const today = _bizDateStr(new Date());
+      const rows = (await _timeLogRows(null)).filter(r => r.date === today);
+      return { rows: rows.map(r => ({ who: r.personUid, name: r.clientName, live: !!r.live,
+        minutes: r.minutes, start: r.startTime, detail: r.detail })),
+        finite: rows.every(r => Number.isFinite(Number(r.minutes))) };
+    } finally { window._fetchCrewLabor = keepF; window.timeEntries = keepT; window._geoOpenDwell = keepO; }
+  }, [entries, shop, THEM, ME]);
+
+  test("a crew member's open shop row draws, live, with a real start time", async () => {
+    const r = await draw([], [{ id: 'k1', employee_user_id: THEM, client_key: 'd-k1',
+      departed_at: null, minutes: null, agoMin: 164 }]);
+    expect(r.rows.length, 'exactly one row, not none and not two').toBe(1);
+    const row = r.rows[0];
+    expect(row.who).toBe(THEM);
+    expect(row.live, 'live, so the rail prints "7:27 AM -" and no duration').toBe(true);
+    expect(row.detail).toBe('On site now');
+    expect(row.start, 'the start time the owner went looking for').toBeTruthy();
+    // 2h44m, running to now, not the 0 a stored open row carries.
+    expect(row.minutes).toBeGreaterThanOrEqual(163);
+    expect(row.minutes).toBeLessThanOrEqual(166);
+    expect(r.finite).toBe(true);
+  });
+
+  test("the viewer's OWN open shop row still draws nothing", async () => {
+    // Unchanged rule: the live row from _geoOpenDwell owns this one, and two
+    // copies of the same dwell is the double-count the guard exists for.
+    const r = await draw([], [{ id: 'k2', employee_user_id: ME, client_key: 'd-k2',
+      departed_at: null, minutes: null, agoMin: 60 }]);
+    expect(r.rows.length).toBe(0);
+  });
+
+  test("a crew member's open job dwell draws under its own name", async () => {
+    const r = await draw([{ id: 'k3', source: 'open', job_id: null, employee_user_id: THEM,
+      client_key: 'd-k3', dest_place: 'John Doe (2950 SW McClure Rd)',
+      departed_at: null, minutes: null, agoMin: 95 }], []);
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].name).toBe('John Doe (2950 SW McClure Rd)');
+    expect(r.rows[0].live).toBe(true);
+    expect(r.rows[0].minutes).toBeGreaterThanOrEqual(94);
+    expect(r.rows[0].minutes).toBeLessThanOrEqual(97);
+  });
+
+  test('an open row left over from an earlier day draws nothing', async () => {
+    // A dwell nobody ever closed is not "right now", and running it to the
+    // current minute would put yesterday's arrival against today's clock.
+    const r = await draw([], [{ id: 'k4', employee_user_id: THEM, client_key: 'd-k4',
+      departed_at: null, minutes: null, agoMin: 26 * 60 }]);
+    expect(r.rows.length).toBe(0);
+  });
+
+  test('a closed crew row is untouched by any of this', async () => {
+    const r = await draw([], [{ id: 'k5', employee_user_id: THEM, client_key: 'd-k5',
+      minutes: 30, agoMin: 120, agoMinEnd: 90 }]);
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].live).toBe(false);
+    expect(r.rows[0].minutes).toBe(30);
+    expect(r.rows[0].detail).toBe('Shop time');
+  });
+
+  test('no console errors', async () => { assertNoErrors(page, 'other-open'); });
+});

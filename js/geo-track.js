@@ -7432,6 +7432,30 @@ const _GEO_OPEN_JOB={upcoming:1,active:1,'in progress':1,scheduled:1};
 const _GEO_OPEN_BID={Pending:1,sent:1,Sent:1,opportunity:1,Won:1,'Closed Won':1};
 
 // armed and the fence the deriver resolves are the same set.
+// ── A FENCE NAMED FOR A PERSON SAYS WHICH ADDRESS (Jack, 2026-09-21) ───────
+// "He asked if all onsites could mint the address in parenthesis."
+//
+// The SQL half is geo_street_line + the three name expressions in 20261030,
+// and these two are its mirror. They are a PAIR by contract: CI runs
+// scripts/ci/geo-fences-equivalence.sql against the same
+// tests/fixtures/geo-fences-case.json this file is checked against, so the two
+// lists cannot drift without the Migration lint going red. It went red on the
+// first push of 20261030, which is the gate working.
+//
+// The street line only: everything from the first comma is the town, and the
+// town is the same for every row on the rail. A drive prints BOTH ends, so two
+// postal addresses would not survive a phone (CLAUDE.md 15.1).
+function _geoStreetLine(addr){
+  const s=String(addr||'').split(',')[0].trim();
+  return s||'';
+}
+// Name, then where, and nothing at all when there is no where to say. Keeping
+// the join in one function is what stops the three call sites below drifting
+// into three slightly different parenthesis rules.
+function _geoFenceName(name,where){
+  const n=String(name||'').trim(),w=String(where||'').trim();
+  return w?(n+' ('+w+')'):n;
+}
 function _geoDeriveFences(dayKey){
   const out=[];
   try{
@@ -7490,7 +7514,7 @@ function _geoDeriveFences(dayKey){
       // untouched, so the invoice, the map and navigation are unaffected.
       const anc=(typeof _geoAnchorPoint==='function')?_geoAnchorPoint(c):null;
       if(c.addr&&hit&&hit.addr===c.addr&&hit.lat!=null){
-        out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:anc?anc.lat:Number(hit.lat),lng:anc?anc.lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks,anchored:anc?true:undefined});
+        out.push({id:'client-'+c.id,kind:'client',name:_geoFenceName(c.name||'Client',_geoStreetLine(c.addr)),lat:anc?anc.lat:Number(hit.lat),lng:anc?anc.lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks,anchored:anc?true:undefined});
       }
       // ── AND EVERY OTHER PROPERTY HE HAS (owner 2026-09-19) ─────────────
       // "in lead client record if I add it it needs to carry over to mileage
@@ -7519,7 +7543,7 @@ function _geoDeriveFences(dayKey){
         // editing the address retires the fence until it is geocoded again.
         if(!(a.lat!=null&&a.lon!=null&&a.geoAddr===a.addr))return;
         out.push({id:'client-'+c.id+'-p'+i,kind:'client',
-          name:(c.name||'Client')+(a.label?' ('+a.label+')':''),
+          name:_geoFenceName(c.name||'Client',(a.label&&String(a.label).trim())||_geoStreetLine(a.addr)),
           lat:Number(a.lat),lng:Number(a.lon),addr:a.addr,clientId:c.id,
           scheduled,personal:!!c.personal,onBooks});
       });
@@ -7529,7 +7553,7 @@ function _geoDeriveFences(dayKey){
       const active=(typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true;
       if(!active)return;
       const c=(typeof _geoJobCoords!=='undefined'&&_geoJobCoords[j.id])||((j.lat&&j.lon)?{lat:j.lat,lng:j.lon}:null);
-      if(c)out.push({id:'job-'+j.id,kind:'job',name:(typeof _tlJobClientInfo==='function'?(_tlJobClientInfo(j.id).clientName):null)||j.name||'Job',lat:Number(c.lat),lng:Number(c.lng),addr:j.addr||j.address||'',jobId:j.id});
+      if(c)out.push({id:'job-'+j.id,kind:'job',name:_geoFenceName((typeof _tlJobClientInfo==='function'?(_tlJobClientInfo(j.id).clientName):null)||j.name||'Job',_geoStreetLine(j.addr||j.address)),lat:Number(c.lat),lng:Number(c.lng),addr:j.addr||j.address||'',jobId:j.id});
     });
   }catch(_e){}
   return out;
