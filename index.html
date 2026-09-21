@@ -581,19 +581,25 @@ body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infini
   0%,62%,100%{opacity:.28;transform:translateY(0)}
   31%        {opacity:1;transform:translateY(-3px)}
 }
-/* ── The mic and the send trade places ──────────────────────────────────────
-   Owner: "there's no send arrow like iOS has next to the mic".
-   They SWAP, they do not sit side by side. An empty box has nothing to send, so
-   a send button on it is a dead control, and two live buttons on a 390px row is
-   a thumb choosing between them every single time. Empty, the mic, which is the
-   way in on a job site. One character typed, the arrow.
-   Done with :placeholder-shown rather than a class the JS toggles, so it cannot
-   get out of step with what is actually in the box: no keyup handler to miss a
-   paste, a dictation result, an autofill or an undo. It is also rule 8.5 for
-   free, since no JS touches a style property to make it happen. */
-#_tim-send{display:none;align-items:center;justify-content:center}
-#_tim-say:not(:placeholder-shown)~#_tim-send{display:flex}
-#_tim-say:not(:placeholder-shown)~#_tim-mic{display:none}
+/* ── The mic AND the send, both there, always ───────────────────────────────
+   These swapped at first, on the iMessage precedent. The owner sent back a
+   screenshot of the Claude app he was typing that message in: a mic and a send
+   arrow, side by side, both present. So does ChatGPT, so does WhatsApp. The
+   swap is the messaging-app pattern, not the assistant one, and "iOS does it
+   this way" was drawn from one app.
+   Both, then. The objection the swap answered was that a send button on an
+   empty box is a dead control, and that is still true, so the arrow DIMS and
+   stops taking taps until there is something to send. Present, so the thumb
+   knows where it will be; inert, so it never fires on nothing.
+   Still :placeholder-shown and not a class the JS toggles, so it tracks what is
+   really in the box with no event to miss: no keyup handler, so a paste, a
+   dictation result, an autofill or an undo cannot strand it in the wrong
+   state. Rule 8.5 comes free with that, since no JS touches a style property.
+   The mic is the secondary here and the arrow is the primary: two filled
+   buttons side by side on a 390px row is a row with no answer in it. */
+#_tim-send{display:flex;align-items:center;justify-content:center;
+  transition:opacity .15s,transform .15s}
+#_tim-say:placeholder-shown~#_tim-send{opacity:.32;pointer-events:none}
 #_tim-send:active{transform:scale(.94);opacity:.9}
 
 /* ── The send ───────────────────────────────────────────────────────────────

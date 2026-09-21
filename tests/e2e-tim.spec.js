@@ -1150,25 +1150,70 @@ test.describe('tim', () => {
   // and which of his findings is showing.
   // ── The send arrow ────────────────────────────────────────────────────────
   test.describe('the arrow that sends', () => {
-    test('it hides on an empty box and appears the moment there is something to send', async () => {
+    // 10.4: this asserted the arrow HID on an empty box and appeared when you
+    // typed, on the iMessage precedent. The owner sent back a screenshot of the
+    // Claude app he was typing in: a mic and a send arrow side by side, both
+    // present, and the same is true of ChatGPT and WhatsApp. The swap is the
+    // messaging pattern, not the assistant one.
+    // The objection it answered still stands though, so what is asserted now is
+    // the version that keeps both: always on the row so the thumb knows where
+    // it will be, and inert on an empty box so it can never fire on nothing.
+    test('it is always on the row, and inert until there is something to send', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_tim-ov')?.remove();
         timLogClear();
         openTim();
+        // The dim is transitioned, so reading opacity straight after changing
+        // the value returns the frame it is ON, not the state it is going to.
+        // Killing the transition is the deterministic way to assert the END
+        // state; sleeping would be asserting the duration by proxy and would
+        // flake on a loaded runner, which this suite has already taught twice.
+        const stop = document.createElement('style');
+        stop.textContent = '#_tim-send{transition:none !important}';
+        document.head.appendChild(stop);
         const box = document.getElementById('_tim-say');
-        const d = (id) => { const e = document.getElementById(id); return e ? getComputedStyle(e).display : 'ABSENT'; };
-        const empty = d('_tim-send');
+        const read = () => {
+          const e = document.getElementById('_tim-send');
+          const cs = getComputedStyle(e);
+          return { shown: cs.display !== 'none', taps: cs.pointerEvents !== 'none',
+            dim: Number(cs.opacity) < 0.9 };
+        };
+        const empty = read();
         box.value = 'who owes me money';
-        const typed = d('_tim-send');
+        const typed = read();
         box.value = '';
-        const cleared = d('_tim-send');
+        const cleared = read();
+        stop.remove();
         document.getElementById('_tim-ov')?.remove();
         return { empty, typed, cleared };
       });
-      // Driven by :placeholder-shown, so it tracks the VALUE with no event to
-      // miss: no keyup handler, so a paste, a dictation result, an autofill or
-      // an undo cannot leave the wrong button on screen.
-      expect(r).toEqual({ empty: 'none', typed: 'flex', cleared: 'none' });
+      // Present the whole time. Dim and untappable with nothing in the box.
+      expect(r.empty).toEqual({ shown: true, taps: false, dim: true });
+      expect(r.typed).toEqual({ shown: true, taps: true, dim: false });
+      // And back again, because :placeholder-shown tracks the VALUE with no
+      // event to miss: no keyup handler, so a paste, a dictation result, an
+      // autofill or an undo cannot strand it in the wrong state.
+      expect(r.cleared).toEqual({ shown: true, taps: false, dim: true });
+    });
+
+    test('the mic keeps its place beside it rather than being replaced', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        openTim();
+        const box = document.getElementById('_tim-say');
+        const micShown = () => {
+          const e = document.getElementById('_tim-mic');
+          return e ? getComputedStyle(e).display !== 'none' : 'ABSENT';
+        };
+        const empty = micShown();
+        box.value = 'who owes me money';
+        const typed = micShown();
+        document.getElementById('_tim-ov')?.remove();
+        return { empty, typed };
+      });
+      // ABSENT on a device with no speech recognition, which is correct and is
+      // covered below. What must never happen is it being there and then gone.
+      expect(r.typed).toBe(r.empty);
     });
 
     test('pressing it sends, without touching Enter', async () => {
