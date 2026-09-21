@@ -41,6 +41,44 @@ const TIM_ASKS=[
   {id:'who', say:[
     'address for','whats the address','phone number for','number for','email for',
     'how do i reach','where does','contact for']},
+
+  // ── The eight added 2026-09-20 ─────────────────────────────────────────────
+  // Owner: give him a pile of the things a contractor actually wants, so the
+  // training can be judged. Every one of these is answered off arrays already
+  // sitting in memory, so every one still works with the phone in airplane
+  // mode, which is the promise the whole file is built on.
+  //
+  // What is NOT here matters as much. There is no "how am I doing", no "what
+  // should I charge for a bathroom", no "is this a good job": those need an
+  // opinion or a market, and he has neither. A question he answers by guessing
+  // is worse than a question he declines, because the guess gets believed once.
+  {id:'made', say:[
+    'how much did i make','how much have i made','what did i make','what did i gross',
+    'my revenue','how much did i bring in','how much have i brought in','what did i take in',
+    'how much money did i make','my income this year','what did i earn']},
+  {id:'spent', say:[
+    'what did i spend','how much did i spend','what have i spent','my expenses',
+    'how much have i spent','what did i spend on','where is my money going',
+    'what am i spending','my costs this year']},
+  {id:'out', say:[
+    'whats out right now','what is out right now','what have i got out','open bids',
+    'whats pending','what is pending','what am i waiting to hear on','whats still open',
+    'what bids are open','what have i quoted','what is out there']},
+  {id:'winrate', say:[
+    'how many did i win','how many did i lose','win rate','how many jobs did i win',
+    'how many bids did i win','am i winning','how many have i won','what am i closing']},
+  {id:'best', say:[
+    'best customer','who is my best customer','biggest customer','who gives me the most work',
+    'who spends the most','my best client','top customer','who is worth the most']},
+  {id:'miles', say:[
+    'how many miles','my mileage','miles this year','how many miles did i drive',
+    'whats my mileage','what is my mileage','miles driven','my miles']},
+  {id:'hours', say:[
+    'how many hours','hours this week','how many hours did i work','hours worked',
+    'how many hours have i put in','my hours this week','how long have i worked']},
+  {id:'avg', say:[
+    'average job','whats my average job','average ticket','my average job size',
+    'what is my average job','average job size','typical job']},
 ];
 
 function timAskKind(text){
@@ -301,6 +339,360 @@ function _timAnswerWho(said){
 // _timGoRun fall through to the navigator exactly as it does today. Null is a
 // real answer here: a wrong figure about his own money is the one mistake this
 // file must never make.
+// ── Reading a year off a row ─────────────────────────────────────────────────
+//
+// income rows carry their date as '20260920' when they came in through the
+// cloud importer and as '2026-09-20' when a man typed them, and both are in the
+// same array. js/finance.js:3693 already handles it by stripping the dashes
+// before it compares, and this does the same rather than inventing a third
+// opinion. A bare .slice(0,4) reads '2026' out of one and '2026' out of the
+// other only by luck of the dash count; strip first and it is not luck.
+function _timYr4(d){
+  return String(d==null?'':d).replace(/-/g,'').slice(0,4);
+}
+// The year the QUESTION is about. timWhen already knows "last year", "this
+// year" and a bare 2024 because the navigator uses it to re-year the books, so
+// asking it here means "how much did I make last year" works without a second
+// parser that disagrees with the first one.
+function _timAskYear(said){
+  let y=null;
+  try{if(typeof timWhen==='function')y=timWhen(said);}catch(_e){y=null;}
+  if(y)return String(y);
+  // Not new Date().getFullYear(): todayKey is the app's own clock and is what
+  // every money screen counts against.
+  try{if(typeof todayKey==='function')return _timYr4(todayKey());}catch(_e){}
+  return String(new Date().getFullYear());
+}
+// Most expense rows carry catLabel, written by whichever screen logged them.
+// The ones that do not carry a bare id like 'marketing', and printing that at
+// him is the app showing its own column name. IRS_EXPENSE_CATS is where the
+// labels live and is already what the tax screen prints, so there is one
+// spelling of "Advertising & marketing" in the product rather than two.
+function _timCatLabel(cat){
+  const id=String(cat||'').trim();
+  if(!id)return '';
+  try{
+    if(typeof IRS_EXPENSE_CATS!=='undefined'&&Array.isArray(IRS_EXPENSE_CATS)){
+      const hit=IRS_EXPENSE_CATS.filter(c=>c&&c.id===id)[0];
+      if(hit&&hit.label)return hit.label;
+    }
+  }catch(_e){}
+  return id.charAt(0).toUpperCase()+id.slice(1);
+}
+// A bid stores client_id; client_name is written by some paths and not others.
+// Resolving through clients means a quote never comes back addressed to
+// "Customer" just because the row was made by a screen that did not denormalise
+// the name onto it.
+function _timBidWho(b){
+  if(!b)return 'Customer';
+  const cs=_timRows('clients');
+  const c=cs.filter(x=>x&&String(x.id)===String(b.client_id))[0];
+  return (c&&c.name)||b.client_name||b.name||'Customer';
+}
+function _timRows(name){
+  try{
+    const a=(typeof window!=='undefined')?window[name]:null;
+    return Array.isArray(a)?a:[];
+  }catch(_e){return [];}
+}
+// Money in, counted the way js/finance.js counts it for the books: income rows
+// AND payment rows, because a deposit against a bid lands in payments and never
+// reaches income. Counting one array would under-report every job that took a
+// deposit, which is most of them.
+function _timTookIn(yr){
+  const rows=[];
+  _timRows('income').forEach(r=>{
+    if(!r||!r.date||_timYr4(r.date)!==yr)return;
+    rows.push({when:r.date,who:r.client_name||'',amount:Number(r.amount)||0,what:r.type||'Income'});
+  });
+  _timRows('payments').forEach(p=>{
+    if(!p||!p.date||!p.amount||_timYr4(p.date)!==yr)return;
+    rows.push({when:p.date,who:p.client_name||'',amount:Number(p.amount)||0,
+      what:p.amount<0?'Refund':(p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment')});
+  });
+  return rows;
+}
+
+function _timAnswerMade(said){
+  const yr=_timAskYear(said);
+  const rows=_timTookIn(yr);
+  const total=rows.reduce((s,r)=>s+r.amount,0);
+  if(!rows.length){
+    return {id:'made',title:'Nothing in '+yr+' yet',
+      sub:'No payments and no income rows carry that year.',rows:[]};
+  }
+  // By month, because "how much did I make" on a phone is really "and when",
+  // and twelve rows is the most he can hand over without it becoming a report.
+  const by={};
+  rows.forEach(r=>{
+    const k=_timYr4(r.when)+'-'+String(r.when).replace(/-/g,'').slice(4,6);
+    (by[k]||(by[k]={k,amount:0,n:0})).amount+=r.amount;
+    by[k].n+=1;
+  });
+  const months=Object.keys(by).sort().map(k=>by[k]);
+  const best=months.slice().sort((a,b)=>b.amount-a.amount)[0];
+  const MON=['','January','February','March','April','May','June','July','August',
+    'September','October','November','December'];
+  const mname=k=>MON[Number(String(k).slice(5,7))||0]||k;
+  return {
+    id:'made',
+    title:_timAskMoney(total),
+    sub:'in '+yr+', across '+rows.length+' payment'+(rows.length===1?'':'s')+
+      (best?('. Best month was '+mname(best.k)+' at '+_timAskMoney(best.amount)):''),
+    rows:months.map(m=>({lead:mname(m.k),right:_timAskMoney(m.amount),
+      note:m.n+' payment'+(m.n===1?'':'s')})),
+    go:{label:'Open the books',fn:"goPg('pg-tracker')"},
+  };
+}
+
+function _timAnswerSpent(said){
+  const yr=_timAskYear(said);
+  const rows=_timRows('expenses').filter(e=>e&&e.date&&_timYr4(e.date)===yr);
+  const total=rows.reduce((s,e)=>s+(Number(e.amount)||0),0);
+  if(!rows.length){
+    return {id:'spent',title:'Nothing logged for '+yr,
+      sub:'No expenses carry that year.',rows:[]};
+  }
+  // If he named a vendor, the question was about that vendor. Matching on the
+  // stored name rather than a category, because a man says "Home Depot", not
+  // "materials", and the vendor string is what the receipt scanner writes.
+  const t=(typeof _timkNorm==='function')?_timkNorm(said):String(said||'').toLowerCase();
+  let vendor=null;
+  rows.forEach(e=>{
+    const v=String(e.vendor||'').trim();
+    if(!v)return;
+    // The stored vendor is "Sherwin-Williams #7043" and the man says "sherwin
+    // williams". Comparing the whole stored string never matches, because he
+    // does not say the store number: so walk the vendor's words from the front
+    // and take the LONGEST leading run that is actually in his sentence.
+    // "Sherwin Williams" matches, "Sherwin Williams 7043" does not, and a bare
+    // "Sherwin" is too short to count.
+    const words=v.toLowerCase().replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim().split(' ');
+    let head='';
+    for(let n=words.length;n>0;n--){
+      const run=words.slice(0,n).join(' ');
+      if(run.length>=5&&t.indexOf(run)>=0){head=run;break;}
+    }
+    if(!head)return;
+    if(!vendor||head.length>vendor.head.length)vendor={name:v,head};
+  });
+  if(vendor){
+    const mine=rows.filter(e=>String(e.vendor||'')===vendor.name);
+    const sub=mine.reduce((s,e)=>s+(Number(e.amount)||0),0);
+    return {
+      id:'spent',
+      title:_timAskMoney(sub),
+      sub:'at '+vendor.name+' in '+yr+', over '+mine.length+' receipt'+(mine.length===1?'':'s')+
+        '. That is '+(total?Math.round(sub/total*100):0)+' percent of everything you spent.',
+      rows:mine.slice().sort((a,b)=>(Number(b.amount)||0)-(Number(a.amount)||0)).slice(0,8)
+        .map(e=>({lead:String(e.date),right:_timAskMoney(e.amount),note:e.notes||e.catLabel||''})),
+      go:{label:'Open expenses',fn:"goPg('pg-taxes')"},
+    };
+  }
+  const by={};
+  rows.forEach(e=>{
+    const k=e.catLabel||_timCatLabel(e.cat)||'Uncategorised';
+    (by[k]||(by[k]={k,amount:0,n:0})).amount+=Number(e.amount)||0;
+    by[k].n+=1;
+  });
+  const cats=Object.keys(by).map(k=>by[k]).sort((a,b)=>b.amount-a.amount);
+  return {
+    id:'spent',
+    title:_timAskMoney(total),
+    sub:'in '+yr+', over '+rows.length+' receipt'+(rows.length===1?'':'s')+
+      (cats.length?('. Biggest is '+cats[0].k+' at '+_timAskMoney(cats[0].amount)):''),
+    rows:cats.map(c=>({lead:c.k,right:_timAskMoney(c.amount),
+      note:c.n+' receipt'+(c.n===1?'':'s')})),
+    go:{label:'Open expenses',fn:"goPg('pg-taxes')"},
+  };
+}
+
+function _timAnswerOut(){
+  const rows=_timRows('bids').filter(b=>b&&b.status==='Pending');
+  const total=rows.reduce((s,b)=>s+(Number(b.amount)||0),0);
+  if(!rows.length){
+    return {id:'out',title:'Nothing out',
+      sub:'No bid is sitting at Pending.',rows:[]};
+  }
+  // Oldest first. A quote nobody has answered in five weeks is the one he
+  // should be chasing, and it is the one the list on the bids page buries.
+  const today=(typeof todayKey==='function')?todayKey():'';
+  const age=d=>{
+    if(!d||!today)return null;
+    const a=Date.parse(String(d).length===8
+      ? String(d).slice(0,4)+'-'+String(d).slice(4,6)+'-'+String(d).slice(6,8) : d);
+    const b=Date.parse(today);
+    if(isNaN(a)||isNaN(b))return null;
+    return Math.max(0,Math.round((b-a)/86400000));
+  };
+  const list=rows.map(b=>({name:_timBidWho(b),
+    amount:Number(b.amount)||0,days:age(b.date)}))
+    .sort((a,b)=>(b.days==null?-1:b.days)-(a.days==null?-1:a.days));
+  const oldest=list[0];
+  return {
+    id:'out',
+    title:_timAskMoney(total),
+    sub:rows.length+' quote'+(rows.length===1?'':'s')+' waiting on an answer'+
+      ((oldest&&oldest.days!=null)?('. Oldest has been out '+oldest.days+' day'+(oldest.days===1?'':'s')):''),
+    rows:list.map(r=>({lead:r.name,right:_timAskMoney(r.amount),
+      note:r.days==null?'no date on it':('out '+r.days+' day'+(r.days===1?'':'s'))})),
+    go:{label:'Open bids',fn:"goPg('pg-leads')"},
+  };
+}
+
+function _timAnswerWinrate(said){
+  const yr=_timAskYear(said);
+  const all=_timRows('bids').filter(b=>b&&_timYr4(b.date)===yr);
+  const won=all.filter(b=>b.status==='Closed Won');
+  const lost=all.filter(b=>b.status==='Closed Lost');
+  const decided=won.length+lost.length;
+  if(!decided){
+    return {id:'winrate',title:'Nothing decided in '+yr,
+      sub:'No bid from that year has been won or lost yet.',rows:[]};
+  }
+  const pct=Math.round(won.length/decided*100);
+  const wonMoney=won.reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const lostMoney=lost.reduce((s,b)=>s+(Number(b.amount)||0),0);
+  return {
+    id:'winrate',
+    title:pct+'%',
+    // The count first and the percentage as the headline, because "eleven of
+    // eighteen" is the sentence he would say out loud and 61% is the one he
+    // would have to do arithmetic to get back to.
+    sub:won.length+' of '+decided+' decided in '+yr+', worth '+_timAskMoney(wonMoney)+
+      '. Still open: '+all.filter(b=>b.status==='Pending').length+'.',
+    rows:[
+      {lead:'Won',right:String(won.length),note:_timAskMoney(wonMoney)},
+      {lead:'Lost',right:String(lost.length),note:_timAskMoney(lostMoney)+' walked'},
+      {lead:'Still out',right:String(all.filter(b=>b.status==='Pending').length),note:'no answer yet'},
+    ],
+    go:{label:'Open bids',fn:"goPg('pg-leads')"},
+  };
+}
+
+function _timAnswerBest(){
+  const cs=_timRows('clients');
+  const by={};
+  _timRows('bids').forEach(b=>{
+    if(!b||b.status!=='Closed Won')return;
+    const id=b.client_id;
+    if(id==null)return;
+    (by[id]||(by[id]={id,amount:0,n:0})).amount+=Number(b.amount)||0;
+    by[id].n+=1;
+  });
+  const list=Object.keys(by).map(k=>{
+    const e=by[k];
+    const c=cs.filter(x=>x&&String(x.id)===String(e.id))[0];
+    return {name:(c&&c.name)||'Customer '+e.id,amount:e.amount,n:e.n};
+  }).sort((a,b)=>b.amount-a.amount);
+  if(!list.length){
+    return {id:'best',title:'No won work yet',
+      sub:'Nothing is marked Closed Won, so there is nobody to rank.',rows:[]};
+  }
+  const top=list[0];
+  const all=list.reduce((s,r)=>s+r.amount,0);
+  return {
+    id:'best',
+    title:top.name,
+    sub:_timAskMoney(top.amount)+' over '+top.n+' job'+(top.n===1?'':'s')+
+      (all?(', which is '+Math.round(top.amount/all*100)+' percent of everything you have won'):''),
+    rows:list.slice(0,8).map(r=>({lead:r.name,right:_timAskMoney(r.amount),
+      note:r.n+' job'+(r.n===1?'':'s')})),
+    go:{label:'Open customers',fn:"goPg('pg-clients')"},
+  };
+}
+
+function _timAnswerMiles(said){
+  const yr=_timAskYear(said);
+  const rows=_timRows('mileage').filter(m=>m&&m.date&&_timYr4(m.date)===yr);
+  const biz=rows.filter(m=>!m.purpose||String(m.purpose).toLowerCase()==='business');
+  const miles=biz.reduce((s,m)=>s+(Number(m.miles)||0),0);
+  if(!rows.length){
+    return {id:'miles',title:'Nothing logged for '+yr,
+      sub:'No drive carries that year.',rows:[]};
+  }
+  const r10=Math.round(miles*10)/10;
+  return {
+    id:'miles',
+    title:r10.toLocaleString('en-US')+' mi',
+    // No deduction figure. The IRS rate moves, it is different for the part of
+    // the year before a mid-year change, and a number he repeats to an
+    // accountant has to come off the tax screen that owns it, not off a man in
+    // the corner of the estimate page.
+    sub:'business miles in '+yr+', over '+biz.length+' drive'+(biz.length===1?'':'s')+
+      (rows.length>biz.length?('. '+(rows.length-biz.length)+' personal not counted'):''),
+    rows:[],
+    go:{label:'Open mileage',fn:"goPg('pg-taxes')"},
+  };
+}
+
+function _timAnswerHours(){
+  const rows=_timRows('timeEntries').filter(t=>t&&t.date&&!t.open&&Number(t.minutes)>0);
+  if(!rows.length){
+    return {id:'hours',title:'Nothing clocked',
+      sub:'No finished time entry to count.',rows:[]};
+  }
+  // The last seven days, and the sub says so. "This week" means a different
+  // thing to a man who starts on Sunday than to one who starts on Monday, and
+  // guessing which he means is a wrong number dressed as a right one.
+  const today=(typeof todayKey==='function')?todayKey():'';
+  const cut=(()=>{
+    const b=Date.parse(today);
+    if(isNaN(b))return null;
+    const d=new Date(b-6*86400000);
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+
+      String(d.getUTCDate()).padStart(2,'0');
+  })();
+  const recent=cut?rows.filter(t=>String(t.date)>=cut&&String(t.date)<=today):rows;
+  const mins=recent.reduce((s,t)=>s+(Number(t.minutes)||0),0);
+  const by={};
+  recent.forEach(t=>{
+    const k=t.logged_by_name||'You';
+    (by[k]||(by[k]={k,mins:0})).mins+=Number(t.minutes)||0;
+  });
+  const people=Object.keys(by).map(k=>by[k]).sort((a,b)=>b.mins-a.mins);
+  const hrs=m=>(Math.round(m/6)/10)+' hrs';
+  return {
+    id:'hours',
+    title:hrs(mins),
+    sub:'over the last 7 days, '+recent.length+' entr'+(recent.length===1?'y':'ies')+
+      (people.length>1?(', '+people.length+' people'):''),
+    rows:people.length>1?people.map(p=>({lead:p.k,right:hrs(p.mins),note:''})):[],
+    go:{label:'Open the time log',fn:"goPg('pg-timelog')"},
+  };
+}
+
+function _timAnswerAvg(said){
+  const yr=_timAskYear(said);
+  const won=_timRows('bids').filter(b=>b&&b.status==='Closed Won'&&_timYr4(b.date)===yr&&Number(b.amount)>0);
+  if(!won.length){
+    return {id:'avg',title:'No won work in '+yr,
+      sub:'Nothing from that year is Closed Won with an amount on it.',rows:[]};
+  }
+  const amounts=won.map(b=>Number(b.amount)||0).sort((a,b)=>a-b);
+  const mean=amounts.reduce((s,n)=>s+n,0)/amounts.length;
+  // The median as well as the mean, and this is not padding. One $40,000
+  // remodel in a year of $2,000 service calls drags the average somewhere he
+  // has never actually charged, and the average is the number a man quotes off
+  // the top of his head.
+  const mid=amounts.length%2
+    ? amounts[(amounts.length-1)/2]
+    : (amounts[amounts.length/2-1]+amounts[amounts.length/2])/2;
+  return {
+    id:'avg',
+    title:_timAskMoney(mean),
+    sub:'across '+won.length+' won job'+(won.length===1?'':'s')+' in '+yr+
+      '. Half of them were under '+_timAskMoney(mid)+'.',
+    rows:[
+      {lead:'Average',right:_timAskMoney(mean),note:'the total split evenly'},
+      {lead:'Middle job',right:_timAskMoney(mid),note:'half above, half below'},
+      {lead:'Smallest',right:_timAskMoney(amounts[0]),note:''},
+      {lead:'Biggest',right:_timAskMoney(amounts[amounts.length-1]),note:''},
+    ],
+    go:{label:'Open bids',fn:"goPg('pg-leads')"},
+  };
+}
+
 function timAsk(said){
   const hit=timAskKind(said);
   if(!hit)return null;
@@ -309,6 +701,14 @@ function timAsk(said){
     if(hit.id==='charged')return _timAnswerCharged(said);
     if(hit.id==='source')return _timAnswerSource();
     if(hit.id==='who')return _timAnswerWho(said);
+    if(hit.id==='made')return _timAnswerMade(said);
+    if(hit.id==='spent')return _timAnswerSpent(said);
+    if(hit.id==='out')return _timAnswerOut();
+    if(hit.id==='winrate')return _timAnswerWinrate(said);
+    if(hit.id==='best')return _timAnswerBest();
+    if(hit.id==='miles')return _timAnswerMiles(said);
+    if(hit.id==='hours')return _timAnswerHours();
+    if(hit.id==='avg')return _timAnswerAvg(said);
   }catch(_e){}
   return null;
 }

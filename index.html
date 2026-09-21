@@ -519,12 +519,52 @@ body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infini
 #tim-dock-pill .tim-pill-dots i{width:4px;height:4px;border-radius:var(--r-pill);
   background:var(--text-cream-3);transition:background .2s}
 #tim-dock-pill .tim-pill-dots i.on{background:var(--text-cream-2)}
+/* ── The shimmer ────────────────────────────────────────────────────────────
+   Owner, 2026-09-20: it has to scream click me.
+   A sheen crossing the metal, not a flash or a bounce. The mark is a brass
+   coin, and light moving across brass is the one piece of motion that is about
+   the OBJECT rather than about the software demanding attention. It also
+   survives being ignored: a bounce that repeats is a nag, a gleam that repeats
+   is just how the thing catches the light.
+   It is a pseudo-element rather than a background on the button because the
+   button's background is the gold that has to stay matched to the portrait, and
+   because the tab already clips to its own rounded edge, so the sweep runs off
+   under the corner instead of past it.
+   Two speeds, and the difference is the whole point:
+     AWAKE, every 3.4s. He has a dollar figure to hand over, so he is allowed to
+       ask twice.
+     QUIET, every 14s and at half the strength. This is discovery, not a nudge:
+       a gold tab that never moves is a gold tab a man never learns is a button,
+       and he is quiet most of the day by design. It is the smallest amount of
+       motion that answers "is that thing tappable".
+   Both are pure CSS on a compositor-only transform, so an idle phone is doing
+   no layout and no paint of the page underneath. */
+#tim-dock-btn::after{content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(104deg,transparent 43%,rgba(255,255,255,.30) 50%,transparent 57%);
+  transform:translateX(-160%);
+  animation:tim-shimmer 14s cubic-bezier(.4,0,.5,1) infinite}
+/* .44 and a 14-point band, not .80 and a 32-point one. The first pass washed
+   his eyes and beard out as the sweep crossed them: at that width and opacity
+   it stopped being light on brass and became a reflection on glass, and for a
+   third of a second there was no man in the tab at all. A gleam has to leave
+   the thing it is gleaming off legible. */
+#tim-dock-btn.alive::after{
+  background:linear-gradient(104deg,transparent 43%,rgba(255,255,255,.44) 50%,transparent 57%);
+  animation:tim-shimmer 3.4s cubic-bezier(.4,0,.5,1) infinite}
+/* The sweep is over in the first fifth of the cycle. The rest of the keyframe
+   is him sitting still off the right edge, which is what makes 14s read as
+   "occasionally" instead of "slowly". */
+@keyframes tim-shimmer{
+  0%{transform:translateX(-160%)}
+  18%,100%{transform:translateX(160%)}
+}
 @media (prefers-reduced-motion:reduce){
   #tim-dock-pill{animation:none}
-  /* No breathing and no rotation. Someone who has asked the OS to stop moving
-     things has asked for that here too, so he shows his best finding and holds
-     it. The badge count still says there is more than one. */
+  /* No breathing, no rotation and no shine. Someone who has asked the OS to
+     stop moving things has asked for that here too, so he shows his best
+     finding and holds it. The badge count still says there is more than one. */
   #tim-dock-btn.alive{animation:none}
+  #tim-dock-btn::after,#tim-dock-btn.alive::after{animation:none;opacity:0}
   #tim-dock-pill .tim-pill-line{transition:none}
 }
 /* The waveform: 44 hairline bars mirrored about a centre line. Owner rejected

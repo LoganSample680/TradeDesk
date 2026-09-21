@@ -1123,13 +1123,19 @@ test.describe('tim', () => {
         line: document.querySelector('#tim-dock-pill .tim-pill-line').textContent,
         fig: document.querySelector('#tim-dock-pill .tim-pill-fig').textContent,
         badge: document.getElementById('tim-dock-badge').textContent,
+        badgeOn: document.getElementById('tim-dock-badge').classList.contains('on'),
         multi: document.getElementById('tim-dock-pill').classList.contains('multi'),
         timer: !!_timDockTimer,
       }));
       expect(r.alive).toBe(true);
       expect(r.line).toBe('Line 3 is under your own price');
       expect(r.fig).toBe('$640');
-      expect(r.badge).toBe('1');
+      // 10.4: this asserted badge === '1'. A badge reading "1" sits beside a
+      // pill that is already showing that one finding: it is the app counting
+      // out loud, and it costs the badge its meaning by the time it says 3. It
+      // now means "and there are others", so on one finding there is no badge.
+      expect(r.badge).toBe('');
+      expect(r.badgeOn).toBe(false);
       expect(r.multi).toBe(false);
       expect(r.timer).toBe(false);
       await restore(page);

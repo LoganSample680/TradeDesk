@@ -329,7 +329,11 @@ function timDockRender(opts){
     }
   }
   if(badge){
-    if(finds.length){badge.textContent=String(finds.length);badge.classList.add('on');}
+    // Only from two up. A badge reading "1" next to a pill that is already
+    // showing that one finding is the app counting out loud: it adds a digit
+    // and no information, and it trains a man to ignore the badge by the time
+    // it says 3. The pill IS the one. The badge is "and there are others".
+    if(finds.length>1){badge.textContent=String(finds.length);badge.classList.add('on');}
     else{badge.textContent='';badge.classList.remove('on');}
   }
 }

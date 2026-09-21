@@ -64,6 +64,52 @@ const SEED = () => {
     { desc: 'Remove and reset gutters', rate: 340, unit: 'lot', n: 4, last: '2026-06-11' },
     { desc: 'Strip and repaint, west elevation', rate: 2180, unit: 'lot', n: 5, last: '2026-05-02' },
   ] };
+
+  // ── The books the eight added answers read ────────────────────────────────
+  // income rows deliberately carry BOTH date shapes, '20260715' and
+  // '2026-08-02', because the real array does: the cloud importer strips the
+  // dashes and a man typing one does not. An answer that reads the year with a
+  // bare slice(0,4) gets '2026' out of one and '2026' out of the other only by
+  // luck of the dash count, and silently drops half the year the first time
+  // that luck runs out.
+  income.length = 0; mileage.length = 0; timeEntries.length = 0;
+  income.push(
+    { id: 9001, client_name: 'Dana Whitfield', date: '20260715', type: 'Job payment', amount: 1200 },
+    { id: 9002, client_name: 'Marta Ochoa', date: '2026-08-02', type: 'Job payment', amount: 300 },
+    { id: 9003, client_name: 'Old Money', date: '2025-11-01', type: 'Job payment', amount: 9999 },
+  );
+  // The two payments above get dates so they can be counted as money IN as
+  // well as against their bid's balance. A deposit lands in payments and never
+  // reaches income, which is why the answer has to read both arrays.
+  payments[0].date = '2026-07-20'; payments[0].client_name = 'Dana Whitfield';
+  payments[1].date = '2026-05-25'; payments[1].client_name = 'Marta Ochoa';
+  expenses.push(
+    { cat: 'materials', catLabel: 'Materials & Supplies', vendor: 'Sherwin-Williams #7043',
+      amount: 412, date: '2026-07-02', notes: 'Exterior acrylic' },
+    { cat: 'materials', catLabel: 'Materials & Supplies', vendor: 'Sherwin-Williams #7043',
+      amount: 188, date: '2026-08-14', notes: 'Sundries' },
+    { cat: 'fuel', catLabel: 'Fuel', vendor: 'Kwik Shop', amount: 64, date: '2026-08-15' },
+  );
+  mileage.push(
+    { id: 9301, date: '2026-07-02', miles: 14.2, purpose: 'Business' },
+    { id: 9302, date: '2026-08-14', miles: 22.5, purpose: 'Business' },
+    { id: 9303, date: '2026-08-15', miles: 100, purpose: 'Personal' },
+    { id: 9304, date: '2025-08-15', miles: 500, purpose: 'Business' },
+  );
+  // Clocked against the app's own clock, not a hardcoded week. todayKey() is
+  // what the answer counts back from, so fixed dates here would pass today and
+  // fail whenever the suite is next run more than a week from now.
+  const _d = (back) => {
+    const x = new Date(Date.parse(todayKey()) - back * 86400000);
+    return x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0') +
+      '-' + String(x.getUTCDate()).padStart(2, '0');
+  };
+  timeEntries.push(
+    { id: 9401, date: _d(1), minutes: 255, logged_by_name: 'Sample Owner', open: false },
+    { id: 9402, date: _d(2), minutes: 215, logged_by_name: 'Andre Ruiz', open: false },
+    { id: 9403, date: _d(30), minutes: 480, logged_by_name: 'Sample Owner', open: false },
+    { id: 9404, date: _d(0), minutes: null, logged_by_name: 'Sample Owner', open: true },
+  );
 };
 
 test.describe('tim answering off your own books', () => {
@@ -273,6 +319,162 @@ test.describe('tim answering off your own books', () => {
     test('a name he cannot place is null, not the wrong customer', async () => {
       const r = await page.evaluate(() => timAsk('whats the address for Geronimo Blackwood'));
       expect(r).toBe(null);
+    });
+  });
+
+  // ── The eight added 2026-09-20 ────────────────────────────────────────────
+  //
+  // Every question here is phrased with the year in it ("in 2026") on purpose.
+  // The answers default to the current year off todayKey(), which is correct
+  // behaviour and untestable against fixed seed rows: a suite that hardcodes
+  // 2026 bids and asks "how much did I make" passes all year and then fails
+  // every test in this block at midnight on New Year's Eve. Naming the year
+  // exercises the year parser as well, which is the part that can actually be
+  // wrong.
+  test.describe('the rest of what he can answer', () => {
+    test('all twelve families are heard, and none of them steals another', async () => {
+      const r = await page.evaluate(() => [
+        ['who owes me money', 'owed'],
+        ['what did I charge for gutters', 'charged'],
+        ['which lead source is worth it', 'source'],
+        ['whats the address for Dana', 'who'],
+        ['how much did I make in 2026', 'made'],
+        ['what did I spend at Sherwin Williams', 'spent'],
+        ['whats out right now', 'out'],
+        ['how many did I win in 2026', 'winrate'],
+        ['who is my best customer', 'best'],
+        ['how many miles did I drive in 2026', 'miles'],
+        ['how many hours did I work', 'hours'],
+        ['whats my average job in 2026', 'avg'],
+      ].map(([s, want]) => [(timAskKind(s) || {}).id, want]));
+      r.forEach(([got, want]) => expect(got).toBe(want));
+    });
+
+    test('money in counts income AND payments, in both date shapes', async () => {
+      const r = await page.evaluate(() => timAsk('how much did I make in 2026'));
+      // income 1200 ('20260715') + 300 ('2026-08-02') + payments 2000 + 900.
+      // The 2025 row and its 9999 must not be in it.
+      expect(r.title).toBe('$4,400');
+      expect(r.sub).toContain('2026');
+      expect(r.sub).toContain('4 payments');
+    });
+
+    test('last year is a different answer, not the same one', async () => {
+      const r = await page.evaluate(() => timAsk('how much did I make in 2025'));
+      expect(r.title).toBe('$9,999');
+    });
+
+    test('spend comes back by category, biggest first', async () => {
+      const r = await page.evaluate(() => timAsk('what did I spend in 2026'));
+      // 600 + 2400 marketing, 812 + 412 + 188 materials, 64 fuel
+      expect(r.title).toBe('$4,476');
+      expect(r.rows[0].lead).toBe('Advertising & marketing');
+      expect(r.rows.map(x => x.lead)).toContain('Materials & Supplies');
+    });
+
+    test('naming a vendor asks about that vendor, not the whole year', async () => {
+      const r = await page.evaluate(() => timAsk('what did I spend at Sherwin Williams in 2026'));
+      // He says "sherwin williams", the receipt says "Sherwin-Williams #7043".
+      expect(r.title).toBe('$600');
+      expect(r.sub).toContain('Sherwin-Williams #7043');
+      expect(r.sub).toContain('2 receipts');
+    });
+
+    test('what is out is the pending bids, oldest first', async () => {
+      const r = await page.evaluate(() => timAsk('whats out right now'));
+      expect(r.title).toBe('$3,300');
+      expect(r.rows).toHaveLength(1);
+      expect(r.rows[0].lead).toBe('Dana Whitfield');
+    });
+
+    test('the win rate counts decided bids only, and says what is still out', async () => {
+      const r = await page.evaluate(() => timAsk('how many did I win in 2026'));
+      // Won 8801, 8802, 8803. Lost 8804. Pending 8805 is neither.
+      expect(r.title).toBe('75%');
+      expect(r.sub).toContain('3 of 4');
+      expect(r.rows.find(x => x.lead === 'Still out').right).toBe('1');
+    });
+
+    test('the best customer is by money won, not by job count', async () => {
+      const r = await page.evaluate(() => timAsk('who is my best customer'));
+      // Dana: one won job at 4000. Marta: 900 won plus a 2600 LOSS that must
+      // not count. Ray: 1500.
+      expect(r.title).toBe('Dana Whitfield');
+      expect(r.rows.map(x => x.lead)).toEqual(['Dana Whitfield', 'Ray Kellerman', 'Marta Ochoa']);
+    });
+
+    test('mileage counts business drives and leaves personal out of the figure', async () => {
+      const r = await page.evaluate(() => timAsk('how many miles did I drive in 2026'));
+      expect(r.title).toBe('36.7 mi');
+      expect(r.sub).toContain('2 drives');
+      expect(r.sub).toContain('1 personal not counted');
+    });
+
+    test('he does not turn mileage into a deduction', async () => {
+      // The IRS rate moves and splits mid-year. A number a man repeats to his
+      // accountant comes off the tax screen that owns it, not off Tim.
+      const r = await page.evaluate(() => timAsk('how many miles did I drive in 2026'));
+      expect(r.sub).not.toMatch(/deduct|write.?off|\$/i);
+      expect(r.title).not.toContain('$');
+    });
+
+    test('hours are the last seven days, an open clock is not counted', async () => {
+      const r = await page.evaluate(() => timAsk('how many hours did I work'));
+      // 255 + 215 within the window. The 30-day-old 480 and the open entry out.
+      expect(r.title).toBe('7.8 hrs');
+      expect(r.sub).toContain('last 7 days');
+      expect(r.sub).toContain('2 entries');
+      expect(r.rows.map(x => x.lead)).toEqual(['Sample Owner', 'Andre Ruiz']);
+    });
+
+    test('the average job carries the middle one too', async () => {
+      const r = await page.evaluate(() => timAsk('whats my average job in 2026'));
+      // Won: 4000, 1500, 900. Mean 2133, median 1500.
+      expect(r.title).toBe('$2,133');
+      expect(r.sub).toContain('$1,500');
+      expect(r.rows.find(x => x.lead === 'Middle job').right).toBe('$1,500');
+    });
+
+    test('empty books are an answer, not a crash and not a zero dressed as a fact', async () => {
+      const r = await page.evaluate(() => {
+        income.length = 0; payments.length = 0; expenses.length = 0;
+        mileage.length = 0; timeEntries.length = 0; bids.length = 0;
+        return ['how much did I make in 2026', 'what did I spend in 2026', 'whats out right now',
+          'how many did I win in 2026', 'who is my best customer',
+          'how many miles did I drive in 2026', 'how many hours did I work',
+          'whats my average job in 2026']
+          .map(s => { const a = timAsk(s); return a && a.title; });
+      });
+      expect(r).toEqual([
+        'Nothing in 2026 yet', 'Nothing logged for 2026', 'Nothing out',
+        'Nothing decided in 2026', 'No won work yet', 'Nothing logged for 2026',
+        'Nothing clocked', 'No won work in 2026',
+      ]);
+    });
+
+    test('junk in every array is still an answer, never a throw', async () => {
+      const r = await page.evaluate(() => {
+        income.length = 0; income.push(null, {}, { date: 'x', amount: 'nope' });
+        expenses.length = 0; expenses.push(null, { amount: NaN });
+        mileage.length = 0; mileage.push(null, { date: '2026-01-01', miles: 'ten' });
+        timeEntries.length = 0; timeEntries.push(null, { date: null, minutes: 'x' });
+        bids.length = 0; bids.push(null, { status: 'Closed Won' });
+        return ['how much did I make in 2026', 'what did I spend in 2026', 'whats out right now',
+          'how many did I win in 2026', 'who is my best customer',
+          'how many miles did I drive in 2026', 'how many hours did I work',
+          'whats my average job in 2026'].map(s => { try { return !!timAsk(s); } catch (e) { return 'THREW'; } });
+      });
+      expect(r).toEqual([true, true, true, true, true, true, true, true]);
+    });
+
+    test('describing work is still not a question, with twelve families listening', async () => {
+      const r = await page.evaluate(() => [
+        'strip and repaint the west elevation',
+        'three days, two men, scaffold on the west side',
+        'five gallons of Duration in Iron Ore',
+        'build a t and m for Logan Sample',
+      ].map(s => timAskKind(s)));
+      expect(r).toEqual([null, null, null, null]);
     });
   });
 
