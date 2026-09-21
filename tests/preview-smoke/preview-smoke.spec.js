@@ -226,6 +226,48 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     expect([200, 401], `/api/auth/v1/health returned ${status}: the /api proxy worker is down or not reaching Supabase`).toContain(status);
   });
 
+  // ── Static files a Pages Function may be standing in front of ─────────────
+  //
+  // This is the exact class of bug this suite exists for, and it got through
+  // anyway on 2026-09-21. Tim's portrait was added at /img/tim-256.png. There
+  // is a Pages Function mounted at /img/[[path]] that serves Supabase gallery
+  // objects and 404s everything else, so the file was never reached: Tim drew
+  // as a broken-image glyph in his dock and in his own sheet, on the owner's
+  // phone, while all 11,000 offline tests stayed green. They stayed green
+  // because `npx serve .` has no Functions, so locally that path resolves every
+  // single time.
+  //
+  // So fetch the app's real static assets over the real origin, with the real
+  // Functions in front of them. An asset the app references that 404s here is a
+  // broken image on a phone, which is the first thing a person sees.
+  test('the images the app references are actually served, Functions and all', async ({ page }) => {
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    // Tim's mark at all three densities, plus one PWA icon as a control: if the
+    // control fails too then the deploy is broken, not the routing.
+    const assets = ['/icons/tim-64.png', '/icons/tim-128.png', '/icons/tim-256.png', '/icons/icon-192.png'];
+    for (const a of assets) {
+      const res = await page.request.get(a, { failOnStatusCode: false, headers });
+      expect(res.status(), a + ' is referenced by the app and does not serve on the deployed origin').toBe(200);
+      expect(res.headers()['content-type'] || '', a + ' served with a non-image content type').toContain('image');
+      const body = await res.body();
+      expect(body.length, a + ' served empty or truncated').toBeGreaterThan(1000);
+    }
+  });
+
+  // The other half of that fix: /img/ must stop swallowing static paths. The
+  // gallery route falls through now instead of returning its own 404, so a
+  // non-gallery path gets the static handler, and Pages' own 404 when there is
+  // genuinely nothing there. What must never come back is THIS route's
+  // hand-rolled body, because that means it answered instead of deferring, and
+  // it would answer the same way for a path a file does exist at.
+  test('the /img gallery Function falls through instead of swallowing the path', async ({ page }) => {
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    const res = await page.request.get('/img/definitely-not-a-gallery-object.png', { failOnStatusCode: false, headers });
+    const body = (await res.text()).trim();
+    expect(body, 'the /img Function is still answering for non-gallery paths instead of falling through')
+      .not.toBe('Not found');
+  });
+
   // Apple's crawler fetches this exact path before Apple Pay may appear on the
   // hub's Payment Element, and only a live deploy can prove the Pages Function
   // route answers on the real origin, the same reason the /api check exists.

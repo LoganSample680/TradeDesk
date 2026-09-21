@@ -23,7 +23,19 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const objectPath = url.pathname.replace(/^\/img\//, '');
   if (!/^gallery\/[\w\-./%]+$/.test(objectPath) || objectPath.includes('..')) {
-    return new Response('Not found', { status: 404 });
+    // FALL THROUGH, do not 404. This route is mounted at /img/[[path]], so it
+    // intercepts EVERY path under /img/, including plain static files that have
+    // nothing to do with Supabase. Returning 404 here made the promise in the
+    // header above ("this route can never make an image unreachable") false:
+    // three static PNGs added under /img/ on 2026-09-21 shipped to UAT and drew
+    // as broken-image glyphs in Tim's dock and sheet, and no offline test could
+    // see it, because the local static server has no Pages Functions in front
+    // of it.
+    // context.next() hands the request back to the static asset handler, so an
+    // unmatched path gets the real file when one exists and Pages' own 404 when
+    // it does not. Supabase is still only ever touched for a gallery/ path, and
+    // a traversal attempt still never reaches upstream.
+    return context.next();
   }
 
   // Edge cache first, a hit costs Supabase nothing.

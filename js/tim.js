@@ -254,8 +254,18 @@ function timRun(text){
 function timMark(size,opts){
   const s=Math.max(12,Math.round(Number(size)||24));
   const o=opts||{};
-  return '<img src="/img/tim-128.png" '+
-    'srcset="/img/tim-64.png 64w, /img/tim-128.png 128w, /img/tim-256.png 256w" '+
+  // /icons/, NOT /img/. functions/img/[[path]].js is a Pages Function that owns
+  // every path under /img/ and serves exactly one thing, Supabase gallery
+  // objects; anything else got a hard 404 before the static file was ever
+  // looked at. So these three shipped to UAT and rendered as a broken-image
+  // glyph in the dock and in the sheet header. NO OFFLINE TEST COULD CATCH IT:
+  // `npx serve .` has no Functions, so /img/tim-256.png resolved locally every
+  // single time and every suite stayed green. The route is fixed too, it falls
+  // through to the static asset now instead of 404ing, but these live under
+  // /icons/ regardless, because nothing fronts that path and nothing can grow
+  // in front of it by accident.
+  return '<img src="/icons/tim-128.png" '+
+    'srcset="/icons/tim-64.png 64w, /icons/tim-128.png 128w, /icons/tim-256.png 256w" '+
     'sizes="'+s+'px" width="'+s+'" height="'+s+'" '+
     'alt="" aria-hidden="true" decoding="async" '+
     'style="flex-shrink:0;display:block'+(o.style?';'+o.style:'')+'">';
