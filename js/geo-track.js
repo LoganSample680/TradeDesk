@@ -3755,11 +3755,38 @@ const _GEO_THERMAL_WORDS=['nominal','fair','serious','critical'];
 let _geoTherm=null;
 function _geoBattPeek(){return _geoBatt;}
 function _geoThermPeek(){return _geoTherm;}
+// ── THE FIRST READ AFTER SWITCHING MONITORING ON IS ALWAYS -1 ──────────────
+// (owner 2026-09-21: "why cant we see his battery?")
+//
+// Jack's device_status row was healthy in every other column, current
+// checked_at, right app version, and battery_level null every single time. The
+// owner's three device rows: one number between them.
+//
+// TdGeoPlugin.stats() sets UIDevice.isBatteryMonitoringEnabled = true and
+// reads batteryLevel on the next line, in the same main-queue block. iOS does
+// not have the value ready that soon; it answers -1, which is the plugin's own
+// "could not read" and becomes null here. The value is there a moment later,
+// which is why a phone somebody keeps using eventually reports one and a phone
+// that is opened and pocketed never does. Jack opens it and pockets it.
+//
+// So a -1 is asked ONCE more, after a tick. Fixing it in Swift would mean an
+// iOS build (3.2) for a one-line delay; this needs neither, and it also covers
+// any other shell that answers slowly on the first call.
+const _GEO_BATT_RETRY_MS=300;
 async function _geoRefreshBattery(){
   try{
     const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
     if(!Td||typeof Td.stats!=='function'){_geoBatt=null;_geoTherm=null;return null;}
-    const st=await Td.stats();
+    let st=await Td.stats();
+    if(!(st&&+st.batteryLevel>=0)){
+      await new Promise(r=>setTimeout(r,_GEO_BATT_RETRY_MS));
+      // Once, never a loop: a shell that genuinely cannot read a battery must
+      // report "not reported" rather than spin asking.
+      try{
+        const st2=await Td.stats();
+        if(st2&&+st2.batteryLevel>=0)st=st2;
+      }catch(_e){}
+    }
     // -1 is the plugin's own "could not read", and must stay distinguishable
     // from a genuinely flat phone.
     const lvl=(st&&+st.batteryLevel>=0)?+st.batteryLevel:null;
