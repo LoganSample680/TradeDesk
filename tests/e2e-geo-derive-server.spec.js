@@ -132,6 +132,83 @@ const quietTables = () => ({
   ],
 });
 
+// ── THE DERIVER READS EVIDENCE, NEVER THE LEDGER (owner 2026-09-21) ────────
+//
+// "did we kill his battery today?" Jack's engine went into a park arm/exit
+// loop and wrote 21,491 `radio` rows in a day, one for every line that touched
+// the GPS receiver. The deriver has never USED one: there is no branch for
+// that type and freshFix refuses it. It still paid for them, because the read
+// was unfiltered and this function re-reads the whole day on every flush. His
+// day reached about 25,000 events and his timesheet stopped gaining rows at
+// 11:25am, through a 1:58pm drive whose motion flips reached the server in one
+// second.
+test.describe('the geo_events read asks only for what it can use', () => {
+  // A client that records the filters instead of ignoring them.
+  const spySvc = (tables, rpcLog, seen) => {
+    const q = (rows, tbl) => {
+      const o = {
+        select: () => o, eq: () => o, is: () => o, gte: () => o, lt: () => o,
+        in: (col, vals) => { if (tbl === 'geo_events') seen.push({ col, vals }); return o; },
+        order: () => o,
+        maybeSingle: async () => ({ data: rows[0] === undefined ? null : rows[0] }),
+        range: async (f, t) => ({ data: rows.slice(f, t + 1) }),
+        then: (res, rej) => Promise.resolve({ data: rows }).then(res, rej),
+      };
+      return o;
+    };
+    return {
+      from: (t) => q(tables[t] || [], t),
+      rpc: async (name, args) => {
+        rpcLog.push({ name, args });
+        if (name === 'geo_fences_for') return { data: tables.__fences || [] };
+        return { error: null, data: null };
+      },
+    };
+  };
+
+  test('it filters geo_events by type, and the ledger is not in the list', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const seen = [];
+    await deriveDayServer(spySvc(TABLES, [], seen), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(seen.length, 'the read is filtered at the query, not after').toBe(1);
+    expect(seen[0].col).toBe('type');
+    const v = seen[0].vals;
+    // Everything the loop can actually use.
+    for (const t of ['motion', 'regionEnter', 'regionExit', 'visit', 'push-ping',
+      'clock-in', 'clock-out', 'app-active', 'app-background', 'app-terminate',
+      'app-relaunch', 'fix']) expect(v, t).toContain(t);
+    // And nothing it cannot. `radio` is the one that buried Jack's day; the
+    // rest are the same kind of thing and would do the same.
+    for (const t of ['radio', 'heartbeat', 'sampling', 'wake-drop',
+      'wake-zombie-closed', 'wake-stop-stuck']) expect(v, t).not.toContain(t);
+  });
+
+  test('the list is DERIVED from the two that already decide it', async () => {
+    // Not a third hand-written copy. A type added to the trigger set or the
+    // fresh-fix set is read from that moment, and a diagnostic nobody has
+    // invented yet costs nothing by default. That is what makes this a fix
+    // rather than a patch (7.3).
+    const fs = require('fs');
+    const src = fs.readFileSync(path.join(ROOT, 'supabase/functions/_shared/derive-day.mjs'), 'utf8');
+    expect(src).toContain('const READ_TYPES = [...new Set([...TRIGGER_TYPES, ...FRESH_FIX_TYPES])]');
+    expect(src).toContain('.in("type", READ_TYPES)');
+  });
+
+  test('a day buried in ledger rows still derives, because it never reads them', async () => {
+    // The fixture the fake would have handed over unfiltered. Here the filter
+    // is honoured, so the day is the same day it always was.
+    const { deriveDayServer } = await import(SHARED);
+    const junk = Array.from({ length: 5000 }, (_, i) => ({
+      ts: iso(at(9, 0) + i * 100), type: 'radio', kind: null, lat: null, lon: null,
+    }));
+    const seen = [], rpc = [];
+    const tables = { ...TABLES, geo_events: [...TABLES.geo_events, ...junk] };
+    const r = await deriveDayServer(spySvc(tables, rpc, seen), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.wrote, r.reason).toBe(true);
+    expect(r.legs, 'out and back, exactly as with no junk at all').toBe(2);
+  });
+});
+
 test.describe('the deriver on the server', () => {
   test('the shared copy is generated from js/geo-derive.js, never edited beside it', () => {
     // THE WHOLE REASON THIS IS SAFE. If somebody changes a rule on the phone

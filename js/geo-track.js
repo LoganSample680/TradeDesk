@@ -4549,6 +4549,13 @@ function _geoPingBurst(){
   }catch(_e){return false;}
 }
 let _geoParkSpot=null;   // where to center the region when the countdown fires
+// ── AND HOW WIDE IT ARMED (owner 2026-09-21, on Jack's phone) ──────────────
+// The park exit used to be judged against _geoLastFenceLoc at the plain fence
+// radius, whatever the park had actually armed around. See the exit test for
+// what that cost; this is the number it needed and did not have. Metres, the
+// same unit _geoEnterParkMode computes it in. 0 means "no park armed by this
+// JS", and the exit test falls back to the old pair.
+let _geoParkRadiusM=0;
 // ── Park mode has to survive a reload, because the plugin's side does ───────
 //
 // THE BUG THIS EXISTS TO KILL (owner's own phone, 2026-09-05, measured on the
@@ -4581,6 +4588,9 @@ function _geoParkPersist(spot){
   try{
     localStorage.setItem(_GEO_PARK_KEY,JSON.stringify({
       spot:(spot&&isFinite(spot.lat)&&isFinite(spot.lng))?{lat:spot.lat,lng:spot.lng,name:spot.name||''}:null,
+      // The radius rides with the spot, or a reload mid-park would judge the
+      // exit at the plain fence radius again, which is the whole bug.
+      radiusM:Number(_geoParkRadiusM)||0,
       at:Date.now(),uid:(_supaUser&&_supaUser.id)||null
     }));
   }catch(_e){}
@@ -4612,6 +4622,7 @@ function _geoParkRestore(){
     if(s){
       _geoParkModeOn=true;
       if(s.spot)_geoParkSpot=s.spot;
+      if(Number(s.radiusM)>0)_geoParkRadiusM=Number(s.radiusM);
       _geoParkNote('park-restored',s.spot&&s.spot.name?s.spot.name:'');
       return true;
     }
@@ -4741,6 +4752,10 @@ function _geoEnterParkMode(spot){
   const radiusM=_at.name==='stop'
     ?Math.max(_geoFenceFt()*0.3048+60,250)
     :_geoFenceFt()*0.3048+60;
+  // The exit test reads these two. Set here, where the park is actually armed,
+  // so "am I still parked" can only ever be asked about the place this park is
+  // about (owner 2026-09-21, see the exit test).
+  _geoParkSpot=_at;_geoParkRadiusM=radiusM;
   _geoParkNote('park-try',_at.name||'stop');
   // The full wake set, not just this kerb: a force-closed app's ONLY way to
   // learn about tomorrow morning's drive is a region it armed tonight.
@@ -4856,6 +4871,7 @@ function _geoExitParkMode(){
   if(!_geoParkModeOn)return;
   _geoParkModeOn=false;
   _geoWakeArmed=false;
+  _geoParkRadiusM=0;
   _geoParkForget();
   // Fresh observation window on wake: if this exit was a real drive the next
   // fixes clear the quiet clock; if it was a walk out of the region, GPS gets
@@ -5640,8 +5656,34 @@ async function _geoTdEvent(ev,replay){
     return;
   }
   if(!replay&&_geoParkModeOn){
+    // ── PARKED WHERE? THE PARK'S OWN ANSWER (owner 2026-09-21, on Jack) ─────
+    //
+    // This asked whether the fix had left _geoLastFenceLoc, by the plain fence
+    // radius. _geoLastFenceLoc is the last fence the phone was INSIDE and it
+    // is never cleared on leaving one, so a park at an address nobody saved
+    // was measured against a customer he had driven away from twenty minutes
+    // earlier. Every fix read as "outside the fence", so the park exited on
+    // the spot, exiting restarts tracking, the stop detector parks again, and
+    // the next fix exits again.
+    //
+    // Measured on his phone: about 2,300 laps in eleven minutes, roughly three
+    // and a half a second, 13,794 radio rows in one hour against a normal one
+    // to three a minute, and 11,928 GPS receiver starts across the day. It
+    // also froze his timesheet, because every derive re-reads the whole day's
+    // events and his day had 25,000 of them.
+    //
+    // The park already knows where it armed and how wide (_geoParkSpot,
+    // _geoParkRadiusM, both set in _geoEnterParkMode). Ask THOSE. An
+    // anonymous stop arms at a 250m floor precisely because somebody on foot
+    // wanders, and judging its exit at 600ft threw that away.
+    //
+    // The old pair stays as the fallback for a park this JS did not arm (a
+    // restore from a build before the radius was persisted), which is the
+    // behaviour every version before today had.
+    const _pc=_geoParkSpot||_geoLastFenceLoc;
+    const _pr=(Number(_geoParkRadiusM)>0)?(Number(_geoParkRadiusM)/0.3048):_geoFenceFt();
     const out=ev.type==='regionExit'||
-      (hasFix&&_geoLastFenceLoc&&_geoDistFt({lat:ev.lat,lng:ev.lng},_geoLastFenceLoc)>_geoFenceFt());
+      (hasFix&&_pc&&_geoDistFt({lat:ev.lat,lng:ev.lng},_pc)>_pr);
     if(out)_geoExitParkMode();
   }
   // ── THE OTHER OPENER: a force-closed app seeing a fence exit ──────────────
@@ -6110,6 +6152,7 @@ function stopGeoTracking(){
   _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;_geoLastMotionKind='';_geoDrivePendingAt=null;
+  _geoParkSpot=null;_geoParkRadiusM=0;
   _geoDrivePendingId=null;_geoLegFlipId=null;
   // A real stop-then-restart (sign-out/in, account switch) must get a REAL
   // restore/drain on the next _geoTrackInit(), unlike the twin-write case this

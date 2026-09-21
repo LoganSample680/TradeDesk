@@ -126,6 +126,30 @@ export function daysToDerive(evs, nowMs) {
 // age is fresh, which is every row written before that build, so no history
 // re-grades on this line alone.
 const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out", "visit"];
+
+// ── THE DERIVER READS EVIDENCE, NEVER THE DIAGNOSTIC LEDGER ────────────────
+// (owner 2026-09-21, on Jack's phone)
+//
+// geo_events carries two different things. Evidence: motion flips, fence
+// crossings, lifecycle events, positions. And a LEDGER: `radio` (a row at
+// every line that touches the GPS receiver), `heartbeat`, `sampling`, the
+// `wake-*` rows. The ledger exists so a person can be shown why their battery
+// went, and the deriver has never read a single one of them: the loop below
+// has no branch for any of those types and freshFix refuses them.
+//
+// It still PAID for them, because the read was unfiltered and this function
+// re-reads the whole day on every flush. Jack's engine went into a park
+// arm/exit loop and wrote 21,491 radio rows in one day; his day reached about
+// 25,000 events, and his timesheet stopped gaining rows at 11:25am and never
+// moved again, through a 1:58pm drive whose motion flips reached the server
+// in one second.
+//
+// So the read is narrowed to the types this function can actually use. Built
+// from the two lists that already decide that, never a third hand-written
+// one: a type added to either is read from that moment, and a diagnostic
+// nobody has invented yet costs nothing by default. That is the part that
+// makes this a fix rather than a patch.
+const READ_TYPES = [...new Set([...TRIGGER_TYPES, ...FRESH_FIX_TYPES])];
 function freshFix(e) {
   if (!FRESH_FIX_TYPES.includes(e.type) && e.type !== "push-ping") return false;
   const d = e.detail;
@@ -312,7 +336,8 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   const [evRows, pingRows, fenceRes, clockRes, cfgRes] = await Promise.all([
     pageAll((f, t) => svc.from("geo_events")
       .select("ts,type,kind,lat,lon,region_id,detail")
-      .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
+      .eq("employee_user_id", uid).in("type", READ_TYPES)
+      .gte("ts", fromIso).lt("ts", toIso)
       .order("ts", { ascending: true }).range(f, t)),
     pageAll((f, t) => svc.from("location_pings")
       .select("ts,lat,lon,accuracy")
