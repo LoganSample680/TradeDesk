@@ -374,8 +374,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
     await step(page, {
       label: 'flush the day to ingest-geo and let the server derive it', page: 'pg-dash', role: 'contractor',
       suspect: 'supabase/functions/ingest-geo + _shared/derive-day.mjs deriveDayServer',
-      ruleText: 'a tape with fixes under it must derive into an unsaved on-site row plus the leg that reached it',
-      expected: 'job_time_entries has a source starting "unsaved", td_mileage has a leg with a toCoord',
+      ruleText: 'a tape with fixes under it must derive into an unsaved on-site row plus a leg that can place it',
+      expected: 'job_time_entries has a source starting "unsaved", and a td_mileage leg holds that stop as a via or as its destination',
       // ZERO, and for the same reason every other GPS flow says zero: a motion
       // transition is the phone noticing, not the person acting.
       act: async (p) => {
@@ -409,14 +409,43 @@ test.describe('Name an unsaved stop from the day rail', () => {
           // chip would prove nothing about the kerb this run chose.
           const mine = (x) => { const ts = Date.parse(x.arrived_at || ''); return ts >= w.a && ts <= w.b; };
           const stop = (t || []).find(x => /^unsaved/.test(String(x.source || '')) && mine(x));
-          const leg = (m || []).find(x => x && x.data && x.data.unsavedTo && x.data.toCoord &&
-            Math.abs(Number(x.data.toCoord.lat) - w.kerb.lat) < 0.002);
+          // ── EITHER SHAPE THE STOP CAN TAKE, because the app reads both ──
+          // The first green-ish live run failed here with "leg null" while the
+          // day had derived perfectly, and the assertion was what was wrong.
+          //
+          // It demanded the stop be a leg's DESTINATION (unsavedTo + toCoord
+          // at the kerb). The real row was a COLLAPSED leg, shop -> Kinsley
+          // Roofing, with the kerb buried in viaStops. That is rule 6 working
+          // exactly as written: this stop is 23 minutes, under the 60-minute
+          // workStopMs that closes a chain, so the chain stayed open and the
+          // deriver folded both drives into one leg. Measured on the row:
+          // collapsedStops 1, viaStops[0] at 39.1929,-95.8317, key
+          // d-j-e0b84aea-mua2njuo, the same key the timesheet row carries.
+          //
+          // Both shapes are real and the app already knows it: _mileStopCoord
+          // (js/mileage.js) tries viaStops FIRST and the leg's own toCoord
+          // second, which is why the Save chip places this stop correctly
+          // either way. So the test asks the same two questions in the same
+          // order rather than betting on one. Asked of the DATABASE rather
+          // than the page, because the derive that just wrote these rows is
+          // server-side and the tab has not synced them yet.
+          const atKerb = (c) => !!c && Math.abs(Number(c.lat) - w.kerb.lat) < 0.002 &&
+            Math.abs(Number(c.lng != null ? c.lng : c.lon) - w.kerb.lon) < 0.002;
+          const leg = (m || []).find(x => x && x.data && (
+            (Array.isArray(x.data.viaStops) && x.data.viaStops.some(v => v && v.key === (stop && stop.client_key) && atKerb(v))) ||
+            (x.data.unsavedTo && atKerb(x.data.toCoord))));
           // WHAT IT FOUND, not just that it found nothing. The run before this
           // said "stop null · 2 rows today" and left me guessing which two.
           return { stop: stop ? { key: stop.client_key, mins: stop.minutes } : null,
                    leg: leg ? leg.id : null,
                    saw: (t || []).filter(mine).map(x => x.source + '@' + String(x.dest_place || '-') + ':' + x.minutes).join(', '),
-                   miles: (m || []).map(x => (x.data && x.data.purpose) + '/' + (x.data && x.data.miles)).join(', ') };
+                   // The SHAPE of every leg on the day, not just its purpose
+                   // and miles. "leg null" beside "Client Consult/0.8" said
+                   // nothing about why, and the why was in the via list.
+                   miles: (m || []).map(x => (x.data && x.data.purpose) + '/' + (x.data && x.data.miles) +
+                     (x.data && Array.isArray(x.data.viaStops) && x.data.viaStops.length
+                       ? (' via' + x.data.viaStops.length) : '') +
+                     (x.data && x.data.unsavedTo ? ' unsavedTo' : '')).join(', ') };
         }, { a: WIN.a, b: WIN.b, kerb: KERB, day: ctx.day });
         stopKey = r.stop && r.stop.key;
         // ── AND WHICH LIST MISSED IT ────────────────────────────────────
