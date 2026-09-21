@@ -75,7 +75,35 @@ const TIM_ASKS=[
     'whats my mileage','what is my mileage','miles driven','my miles']},
   {id:'hours', say:[
     'how many hours','hours this week','how many hours did i work','hours worked',
-    'how many hours have i put in','my hours this week','how long have i worked']},
+    'how many hours have i put in','my hours this week','how long have i worked',
+    'my hours','total my hours','total up my hours','add up my hours','hours last week',
+    'hours for the week','how much did we work','how many hours did we work',
+    'hours by person','hours per person','who worked','who worked this week',
+    'who worked last week','crew hours','my time this week','time worked']},
+  // ── The three added 2026-09-21 ────────────────────────────────────────────
+  // Owner: "give me a breakdown of my last week by person and total up my
+  // hours, need their address so I can wrap up invoicing ... for john, one huge
+  // thing is ending the hours it takes for him to do paperwork."
+  //
+  // `sheet` is deliberately its own family rather than a flag on `hours`. They
+  // are different questions: hours is "how much did we work", sheet is "what do
+  // I bill and to whom", and the second one pivots on the job site and comes
+  // with a block of text to paste. Phrased the way the work is talked about on
+  // a Friday afternoon, not the way a menu is labelled.
+  {id:'sheet', say:[
+    'breakdown of my week','breakdown of last week','break down my week',
+    'breakdown by person','breakdown of my last week','give me a breakdown',
+    'wrap up invoicing','wrap up my invoicing','ready to invoice','what do i invoice',
+    'what can i invoice','who do i bill','what do i bill','time by address',
+    'hours by address','hours by job','who worked where','where did we work',
+    'my timesheet','the timesheet','timesheet for','billing summary','what do i charge for the week',
+    'what needs invoiced','what needs to be invoiced','invoice worksheet']},
+  // Small, and the one that makes every window above checkable. An assistant
+  // that says "last week" but cannot say what day it is has not earned the word.
+  {id:'clock', say:[
+    'what time is it','whats the time','what is the time','time right now',
+    'what day is it','what is today','whats today','todays date','whats the date',
+    'what is the date','what day is today','what is it today']},
   // ── The one a man actually opens with ─────────────────────────────────────
   // Owner typed "What's Going On Tim?" into the box and got a miss. It is the
   // most natural thing to say to somebody you just opened, and he had no answer
@@ -407,6 +435,225 @@ function _timBidWho(b){
   const c=cs.filter(x=>x&&String(x.id)===String(b.client_id))[0];
   return (c&&c.name)||b.client_name||b.name||'Customer';
 }
+// ── WHAT STRETCH OF DAYS HE IS BEING ASKED ABOUT ────────────────────────────
+//
+// Owner, 2026-09-21: "one thing I want tim to do is know the time, give me a
+// breakdown of my last week by person and total up my hours, need their address
+// so I can wrap up invoicing".
+//
+// "Last week" is the trap in that sentence, and this file already flagged it
+// once: the old hours answer refused to say "this week" at all, on the grounds
+// that a man who starts Sunday and a man who starts Monday mean different days
+// by it. Refusing was the wrong fix. The app has ALREADY decided, in the one
+// place that counts: _tlWeekKey (js/timelog.js) groups the timesheet, the
+// weekly totals and the FLSA overtime line by the Sunday of each week. So
+// "last week" here means the same Sunday-to-Saturday the timesheet means, and
+// every answer prints the two dates it used, so there is nothing left to guess
+// at and nothing for two screens to disagree about.
+//
+// Everything is measured off todayKey(), bare, for the reason written over
+// timOwedAll: it is the app's own clock and it is what every money screen
+// counts against. addDays/parseD are js/utils.js, so the arithmetic is the
+// app's too rather than a second calendar living in here.
+function _timWhen(said){
+  const t=_timkNorm(said);
+  const today=(typeof todayKey==='function')?todayKey():'';
+  const day=s=>{try{return parseD(s).getDay();}catch(_e){return 0;}};
+  const back=(s,n)=>{try{return addDays(s,-n);}catch(_e){return s;}};
+  const has=p=>t.indexOf(p)>=0;
+  if(!today)return null;
+
+  const sunThis=back(today,day(today));           // Sunday of the week we are in
+  // `label` is the phrase on its own ("last week"); `in` is the same phrase
+  // where a sentence needs a preposition in front of it ("in the last 7 days").
+  // Two fields rather than a rule, because English does not have one: it is
+  // "in the last 7 days" and "last week", never "in last week".
+  const mk=(from,to,label,ind,short)=>({from,to,label,in:ind,short:short||label});
+
+  // Order matters: "last week" contains "week", "yesterday" contains "day".
+  // Longest and most specific first, same rule timAskKind uses.
+  if(has('last week')||has('past week')||has('previous week')){
+    const to=back(sunThis,1);                     // Saturday just gone
+    return mk(back(to,6),to,'last week','last week','last wk');
+  }
+  if(has('this week')||has('current week')||has('week so far')){
+    return mk(sunThis,today,'this week','this week','this wk');
+  }
+  if(has('last 7 days')||has('last seven days')||has('past 7 days')||has('past seven days')){
+    return mk(back(today,6),today,'the last 7 days','in the last 7 days','7 days');
+  }
+  if(has('last 14 days')||has('last two weeks')||has('last 2 weeks')||has('past two weeks')){
+    return mk(back(today,13),today,'the last 14 days','in the last 14 days','14 days');
+  }
+  if(has('last 30 days')||has('past 30 days')||has('last month')){
+    // Deliberately 30 DAYS and not the previous calendar month. A man wrapping
+    // up invoicing says "last month" meaning "lately"; billing him for the
+    // wrong 30 days is the kind of error that reaches a customer.
+    return mk(back(today,29),today,'the last 30 days','in the last 30 days','30 days');
+  }
+  if(has('yesterday')){
+    const y=back(today,1);
+    return mk(y,y,'yesterday','yesterday','yesterday');
+  }
+  if(has('today')||has('so far today')){
+    return mk(today,today,'today','today','today');
+  }
+  return null;
+}
+// The default when he named no stretch at all. Seven days back, because that is
+// the window a man means when he says "my hours" with nothing after it, and it
+// never straddles a payroll boundary the way a bare calendar month can.
+function _timWhenOr7(said){
+  const w=_timWhen(said);
+  if(w)return w;
+  const today=(typeof todayKey==='function')?todayKey():'';
+  if(!today)return null;
+  let from=today;
+  try{from=addDays(today,-6);}catch(_e){}
+  return {from,to:today,label:'the last 7 days',in:'in the last 7 days',short:'7 days'};
+}
+// "Sun Sep 14" — short enough to sit in a subtitle, unambiguous enough to be
+// checked against a paper timesheet.
+function _timDayLabel(s){
+  try{
+    const d=parseD(s);
+    if(isNaN(d.getTime()))return s;
+    return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  }catch(_e){return s;}
+}
+function _timSpanLabel(w){
+  if(!w)return '';
+  if(w.from===w.to)return _timDayLabel(w.from);
+  return _timDayLabel(w.from)+' to '+_timDayLabel(w.to);
+}
+function _timHrs(min){
+  const h=Math.round((Number(min)||0)/6)/10;
+  return h+' hr'+(h===1?'':'s');
+}
+
+// ── THE WORKSHEET ───────────────────────────────────────────────────────────
+//
+// One pure function, two pivots, no DOM and no network, so it can be read out
+// loud by Tim today and consumed by a button tomorrow. Owner, same day: "I am
+// going to want a function that somebody can click to generate a quick invoice
+// for work done, even if we dont have a proposal in the system". That button
+// needs exactly this: the stretch of days, who worked, how long, and at whose
+// address. It is built here rather than inside an answer so there is one
+// definition of "what was worked" when it arrives, instead of an invoice that
+// quietly disagrees with the timesheet Tim just read out.
+//
+// WHAT IT CAN AND CANNOT SEE, stated plainly because a short total on an
+// invoice is worse than no total:
+//   IT SEES  timeEntries, the local array every manual clock in/out lands in,
+//            which is the whole of what this phone holds offline.
+//   IT DOES NOT SEE  job_time_entries, the GPS arrival/departure rows, which
+//            live in Supabase and are fetched by _tlTimeLogRows over the
+//            network. Tim does not make network calls, by the promise this
+//            file opens with, so the answers say "clocked" and never "worked",
+//            and hand off to the Time Log for the full picture.
+//
+// An open clock (still running) contributes no minutes, exactly as the Time
+// Log treats it, but IS reported, because a man reconciling a week wants to
+// know somebody is still on the clock before he invoices it.
+function timWorkSheet(win){
+  const w=win||_timWhenOr7('');
+  const out={win:w,total:0,open:0,entries:0,people:[],sites:[],days:0};
+  if(!w)return out;
+  const rows=_timRows('timeEntries').filter(e=>{
+    if(!e||!e.date)return false;
+    const d=String(e.date);
+    return d>=w.from&&d<=w.to;
+  });
+  if(!rows.length)return out;
+
+  const owner=(()=>{
+    try{return (typeof getOwnerName==='function'&&getOwnerName())||'You';}catch(_e){return 'You';}
+  })();
+  const site=id=>{
+    // The job-site address, via the one function that already resolves it
+    // (bid.addr, then job.addr, then the client's). Rule 7.3: an invoice that
+    // used a different precedence from the job card would bill a property
+    // manager at his office for work done on a rental.
+    try{
+      if(id==null)return {clientName:'General time',addr:'',jobName:''};
+      if(typeof _tlJobClientInfo==='function')return _tlJobClientInfo(id);
+    }catch(_e){}
+    return {clientName:'-',addr:'',jobName:''};
+  };
+
+  const byPerson={},bySite={},days={};
+  rows.forEach(e=>{
+    const mins=(e.open===true)?0:Math.max(0,Number(e.minutes)||0);
+    const unpaid=e.unpaid===true;
+    const who=e.logged_by_name||owner;
+    const uid=e.logged_by_uid||null;
+    const info=site(e.job_id);
+    // Keyed on the address when there is one, so two jobs at the same property
+    // land on one invoice line, and on the customer when there is not.
+    const key=(info.addr||('#'+(info.clientName||'-'))).toLowerCase().trim();
+
+    out.entries++;
+    if(e.open===true)out.open++;
+    // A day only counts as a day WORKED once minutes have landed on it. An
+    // open clock contributes nothing yet (same as the Time Log treats it), so
+    // a morning where somebody has clocked in and not out would otherwise add
+    // a day to the count and no hours to it, and "over 3 days" would be one
+    // more day than the total was earned in.
+    if(!unpaid&&mins>0){out.total+=mins;days[String(e.date)]=1;}
+
+    const p=byPerson[who]||(byPerson[who]={name:who,uid,min:0,unpaid:0,open:0,days:{},sites:{}});
+    const s=bySite[key]||(bySite[key]={client:info.clientName||'-',addr:info.addr||'',
+      job:info.jobName&&info.jobName!=='-'?info.jobName:'',
+      // Time clocked against no job at all. It is NOT dropped from the
+      // worksheet: paid hours that cannot be billed to anybody is the single
+      // most useful thing on a Friday, and a total that quietly leaves them
+      // out is the invoice looking better than the week was.
+      general:e.job_id==null,min:0,people:{},days:{}});
+    if(unpaid){p.unpaid+=mins;}
+    else if(mins>0){
+      p.min+=mins;p.days[String(e.date)]=1;if(info.addr)p.sites[key]=1;
+      s.min+=mins;s.days[String(e.date)]=1;s.people[who]=(s.people[who]||0)+mins;
+    }
+    if(e.open===true){p.open++;}
+  });
+
+  out.days=Object.keys(days).length;
+  out.people=Object.keys(byPerson).map(k=>{
+    const p=byPerson[k];
+    return {name:p.name,uid:p.uid,min:p.min,unpaid:p.unpaid,open:p.open,
+      days:Object.keys(p.days).length,sites:Object.keys(p.sites).length,
+      // FLSA, and ONLY FLSA: over 40 in a calendar week, the one overtime rule
+      // that is true in every state. _tlComputeOT says the same thing off the
+      // same threshold, and its comment is right that daily OT is state law and
+      // asserting it as a default would be wrong for most contractors.
+      ot:_timWeekOT(rows,p.name,owner)};
+  }).sort((a,b)=>b.min-a.min||a.name.localeCompare(b.name));
+  out.sites=Object.keys(bySite).map(k=>{
+    const s=bySite[k];
+    return {client:s.client,addr:s.addr,job:s.job,min:s.min,general:!!s.general,
+      days:Object.keys(s.days).length,
+      who:Object.keys(s.people).sort((a,b)=>s.people[b]-s.people[a])};
+  }).filter(s=>s.min>0).sort((a,b)=>b.min-a.min);
+  return out;
+}
+// Whether this person crossed 40 paid hours in ANY calendar week the rows
+// touch. Weeks are Sunday-keyed through _tlWeekKey, so Tim's overtime flag and
+// the timesheet's are the same flag rather than two that agree by luck.
+function _timWeekOT(rows,who,owner){
+  try{
+    if(typeof _tlWeekKey!=='function')return false;
+    const byWeek={};
+    rows.forEach(e=>{
+      if(!e||e.unpaid===true||e.open===true)return;
+      if((e.logged_by_name||owner)!==who)return;
+      const k=_tlWeekKey(String(e.date||''));
+      if(!k)return;
+      byWeek[k]=(byWeek[k]||0)+(Number(e.minutes)||0);
+    });
+    return Object.keys(byWeek).some(k=>byWeek[k]>2400);
+  }catch(_e){return false;}
+}
+
 function _timRows(name){
   try{
     const a=(typeof window!=='undefined')?window[name]:null;
@@ -644,40 +891,166 @@ function _timAnswerMiles(said){
   };
 }
 
-function _timAnswerHours(){
-  const rows=_timRows('timeEntries').filter(t=>t&&t.date&&!t.open&&Number(t.minutes)>0);
-  if(!rows.length){
-    return {id:'hours',title:'Nothing clocked',
-      sub:'No finished time entry to count.',rows:[]};
-  }
-  // The last seven days, and the sub says so. "This week" means a different
-  // thing to a man who starts on Sunday than to one who starts on Monday, and
-  // guessing which he means is a wrong number dressed as a right one.
+// ── What time is it, and what day ────────────────────────────────────────────
+// The smallest answer in the file and the one that makes the rest of them
+// legible. "Last week" is a claim about a calendar, and a man cannot check a
+// claim about a calendar against an assistant that does not know what day it
+// is. bizTime/bizTz, never the device clock: the whole timesheet is pinned to
+// the business's zone because a phone that lands in Denver must not move a
+// shift worked in Topeka (js/timelog.js _tlBizTz), and an assistant reading a
+// different clock from the timesheet is the same bug wearing a face.
+function _timAnswerClock(){
+  const now=new Date();
+  const t=(typeof bizTime==='function')?bizTime(now):now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
   const today=(typeof todayKey==='function')?todayKey():'';
-  const cut=(()=>{
-    const b=Date.parse(today);
-    if(isNaN(b))return null;
-    const d=new Date(b-6*86400000);
-    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+
-      String(d.getUTCDate()).padStart(2,'0');
-  })();
-  const recent=cut?rows.filter(t=>String(t.date)>=cut&&String(t.date)<=today):rows;
-  const mins=recent.reduce((s,t)=>s+(Number(t.minutes)||0),0);
-  const by={};
-  recent.forEach(t=>{
-    const k=t.logged_by_name||'You';
-    (by[k]||(by[k]={k,mins:0})).mins+=Number(t.minutes)||0;
-  });
-  const people=Object.keys(by).map(k=>by[k]).sort((a,b)=>b.mins-a.mins);
-  const hrs=m=>(Math.round(m/6)/10)+' hrs';
+  const zone=(()=>{try{return (typeof bizTz==='function')?bizTz():'';}catch(_e){return '';}})();
+  // The city off the IANA name, which is what a man recognises. "America/
+  // Chicago" is a database key; "Chicago time" is a sentence. A zone with no
+  // region in front of it is not a city (UTC, GMT, a bare offset), so it gets
+  // named plainly rather than dressed up as one.
+  const named=String(zone).indexOf('/')>0;
+  const city=named?String(zone).split('/').pop().replace(/_/g,' '):String(zone);
+  const sunThis=(()=>{try{return addDays(today,-parseD(today).getDay());}catch(_e){return '';}})();
+  return {
+    id:'clock',
+    title:t,
+    sub:_timDayLabel(today)+(city?(', '+(named?(city+' time'):city)):'')+
+      '. That is the clock every hour on your timesheet is stamped in.',
+    rows:[
+      {lead:'Today',right:_timDayLabel(today),note:today},
+      sunThis?{lead:'This week started',right:_timDayLabel(sunThis),
+        note:'Sunday, the same week your timesheet and your overtime are counted by'}:null,
+      {lead:'Time zone',right:city||'-',note:zone||''},
+    ].filter(Boolean),
+    foot:'No clock is fetched. This is your phone, read in the business zone.',
+  };
+}
+
+// ── The hours ────────────────────────────────────────────────────────────────
+// Window-aware now. It used to refuse to say "this week" at all and always
+// answer for seven days back, which made it wrong half the time it was asked a
+// question it had the data for.
+function _timAnswerHours(said){
+  const w=_timWhenOr7(said);
+  const sheet=timWorkSheet(w);
+  if(!sheet.total&&!sheet.open){
+    return {id:'hours',title:'Nothing clocked',
+      sub:'No time entry '+(w?w.in:'lately')+
+        (w?(', '+_timSpanLabel(w)):'')+'.',
+      rows:[],go:{label:'Open the time log',fn:"goPg('pg-timelog')"}};
+  }
+  const many=sheet.people.length>1;
   return {
     id:'hours',
-    title:hrs(mins),
-    sub:'over the last 7 days, '+recent.length+' entr'+(recent.length===1?'y':'ies')+
-      (people.length>1?(', '+people.length+' people'):''),
-    rows:people.length>1?people.map(p=>({lead:p.k,right:hrs(p.mins),note:''})):[],
+    title:_timHrs(sheet.total),
+    sub:w.label+', '+_timSpanLabel(w)+'. '+
+      sheet.entries+' entr'+(sheet.entries===1?'y':'ies')+
+      (many?(' across '+sheet.people.length+' people'):'')+
+      (sheet.days?(' over '+sheet.days+' day'+(sheet.days===1?'':'s')):'')+'.'+
+      (sheet.open?(' '+sheet.open+' still running, counted as nothing yet.'):''),
+    rows:sheet.people.map(p=>({
+      lead:p.name+(p.ot?' · OT':''),
+      right:_timHrs(p.min),
+      note:[p.days+' day'+(p.days===1?'':'s'),
+        p.sites?(p.sites+' address'+(p.sites===1?'':'es')):'',
+        p.unpaid?(_timHrs(p.unpaid)+' unpaid'):'',
+        p.ot?'over 40 in a week':''].filter(Boolean).join(', '),
+    })),
+    foot:_timClockedFoot(),
     go:{label:'Open the time log',fn:"goPg('pg-timelog')"},
   };
+}
+
+// ── The worksheet a man invoices off ─────────────────────────────────────────
+// Owner, 2026-09-21: "give me a breakdown of my last week by person and total
+// up my hours, need their address so I can wrap up invoicing (or however a
+// contractor would ask this question. I know for john, one huge thing is ending
+// the hours it takes for him to do paperwork)."
+//
+// So this is not the hours answer with an address bolted on. The hours answer
+// is "how much did we work"; this one is "what do I bill, and to whom". It
+// pivots on the JOB SITE, because that is the unit an invoice is written
+// against, names who was there and for how long under each, and hands over a
+// block of text he can paste straight into one. The Copy is the point: the
+// paperwork hours are the thing being ended, and reading a number off a screen
+// and typing it somewhere else is the paperwork.
+function _timAnswerSheet(said){
+  const w=_timWhenOr7(said);
+  const sheet=timWorkSheet(w);
+  if(!sheet.sites.length){
+    return {id:'sheet',title:'Nothing to invoice',
+      sub:'No clocked time '+(w?w.in:'lately')+(w?(', '+_timSpanLabel(w)):'')+
+        '. Nothing here is a claim about work that was never clocked.',
+      rows:[],go:{label:'Open the time log',fn:"goPg('pg-timelog')"}};
+  }
+  const loose=sheet.sites.filter(s=>s.general).reduce((n,s)=>n+s.min,0);
+  const rows=[];
+  sheet.sites.forEach(s=>{
+    rows.push({
+      lead:s.client+(s.job?(' · '+s.job):''),
+      right:_timHrs(s.min),
+      // The address on its own line under the name, because that is the line
+      // that gets copied onto the invoice and it should be readable as one.
+      note:[s.addr||(s.general?'not tied to a job, nothing to bill it to':'no address on file'),
+        s.who.join(', '),
+        s.days+' day'+(s.days===1?'':'s')].filter(Boolean).join('  ·  '),
+    });
+  });
+  return {
+    id:'sheet',
+    title:_timHrs(sheet.total),
+    // "Lines", not "addresses": one of these can be time clocked against no
+    // job, which has no address by definition, and calling it one would be the
+    // worksheet rounding itself up.
+    sub:w.label+', '+_timSpanLabel(w)+'. '+
+      sheet.sites.length+' line'+(sheet.sites.length===1?'':'s')+' to bill, '+
+      sheet.people.length+' '+(sheet.people.length===1?'person':'people')+'.'+
+      (loose?(' '+_timHrs(loose)+' is not on a job, so there is nobody to bill it to.'):'')+
+      (sheet.open?(' '+sheet.open+' clock still running.'):''),
+    rows,
+    groups:[
+      {title:'By person',rows:sheet.people.map(p=>({
+        lead:p.name+(p.ot?' · OT':''),right:_timHrs(p.min),
+        note:p.days+' day'+(p.days===1?'':'s')+(p.ot?', over 40 in a week':'')}))},
+    ],
+    copy:_timSheetText(sheet),
+    foot:_timClockedFoot(),
+    go:{label:'Open the time log',fn:"goPg('pg-timelog')"},
+  };
+}
+
+// The same worksheet as plain text, for pasting into an invoice, an email or a
+// message to a bookkeeper. Tabs between the columns so it lands in a spreadsheet
+// as columns rather than one mashed cell.
+function _timSheetText(sheet){
+  const w=sheet.win;
+  const L=[];
+  L.push('HOURS  '+_timSpanLabel(w));
+  L.push('');
+  L.push('BY ADDRESS');
+  sheet.sites.forEach(s=>{
+    L.push(s.client+(s.job?(' - '+s.job):''));
+    if(s.addr)L.push('  '+s.addr);
+    else if(s.general)L.push('  not tied to a job');
+    L.push('  '+_timHrs(s.min)+'\t'+s.who.join(', ')+'\t'+s.days+' day'+(s.days===1?'':'s'));
+  });
+  L.push('');
+  L.push('BY PERSON');
+  sheet.people.forEach(p=>{
+    L.push(p.name+'\t'+_timHrs(p.min)+(p.ot?'\tover 40 in a week':''));
+  });
+  L.push('');
+  L.push('TOTAL\t'+_timHrs(sheet.total));
+  if(sheet.open)L.push(sheet.open+' clock still running, counted as nothing.');
+  L.push('Clocked time only. GPS-tracked site time is in the Time Log.');
+  return L.join('\n');
+}
+
+// Said once, the same way, under every answer built off timeEntries. He reads
+// the clock in/out rows on this phone and nothing else, and a total that looks
+// complete but is not is the one way a timesheet answer can cost real money.
+function _timClockedFoot(){
+  return 'Clocked time only, off this phone. GPS-tracked site time lives in the Time Log.';
 }
 
 function _timAnswerAvg(said){
@@ -788,11 +1161,39 @@ function timAsk(said){
     if(hit.id==='winrate')return _timAnswerWinrate(said);
     if(hit.id==='best')return _timAnswerBest();
     if(hit.id==='miles')return _timAnswerMiles(said);
-    if(hit.id==='hours')return _timAnswerHours();
+    if(hit.id==='hours')return _timAnswerHours(said);
+    if(hit.id==='sheet')return _timAnswerSheet(said);
+    if(hit.id==='clock')return _timAnswerClock();
     if(hit.id==='avg')return _timAnswerAvg(said);
     if(hit.id==='brief')return _timAnswerBrief(said);
   }catch(_e){}
   return null;
+}
+
+// The text behind whatever Copy button is currently on screen. A module-level
+// one rather than an attribute on the button, because the worksheet is a
+// multi-line block with tabs in it and an HTML attribute is the wrong place for
+// one: escaping it through the DOM and back is a way to introduce a difference
+// between what he showed and what he copied.
+let _TIM_ASK_COPY='';
+// Same shape as _timLogCopy (js/tim-log.js): write through the Clipboard API,
+// say so on the button itself as well as in the toast, and return the text so a
+// test can assert what WOULD have been copied without needing clipboard
+// permission in a headless browser.
+function _timCopySheet(btn){
+  const t=_TIM_ASK_COPY;
+  if(!t)return '';
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(()=>{
+        if(btn)btn.textContent='Copied';
+        if(typeof showToast==='function')showToast('Copied','📋',1800);
+      },()=>{});
+      return t;
+    }
+  }catch(_e){}
+  if(btn)btn.textContent='Copied';
+  return t;
 }
 
 // ── The sheet ────────────────────────────────────────────────────────────────
@@ -803,28 +1204,66 @@ function _timShowAsk(ans){
   if(!ans)return null;
   const money=n=>(typeof timPrice==='function')?timPrice(n):('$'+Math.round(n||0));
 
+  // The header is a way BACK, not a label. _timSheet replaces the overlay
+  // rather than stacking on it, so without this the breakdown is a dead end and
+  // closing it drops you on the page instead of in the conversation you were
+  // having. The only caller is _timReopenAsk, which is reached from a bubble,
+  // so there is always a thread to go back to.
   let html=
-    '<div style="display:flex;align-items:center;gap:9px;padding:0 16px 13px;border-bottom:1px solid var(--border)">'+
+    '<button type="button" onclick="openTim()" '+
+      'style="display:flex;align-items:center;gap:9px;padding:0 16px 13px;width:100%;'+
+      'background:none;border:0;border-bottom:1px solid var(--border);font-family:inherit;'+
+      'cursor:pointer;text-align:left;-webkit-tap-highlight-color:transparent">'+
+      '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" '+
+        'style="stroke:var(--text3);stroke-width:2.2;fill:none;stroke-linecap:round;'+
+        'stroke-linejoin:round;flex-shrink:0"><polyline points="15 18 9 12 15 6"/></svg>'+
       (typeof timMark==='function'?timMark(20):'')+
-      '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text)">Tim</span>'+
-    '</div>'+
+      '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text)">Back to Tim</span>'+
+    '</button>'+
     '<div style="padding:15px 16px 13px;border-bottom:1px solid var(--border)">'+
       '<div style="font-size:26px;font-weight:700;color:var(--text);letter-spacing:-.6px;font-variant-numeric:tabular-nums;margin-bottom:6px">'+escHtml(ans.title)+'</div>'+
       (ans.sub?'<div style="font-size:13.5px;line-height:1.5;color:var(--text2)">'+escHtml(ans.sub)+'</div>':'')+
     '</div>';
 
-  if(ans.rows&&ans.rows.length){
-    html+=ans.rows.map(r=>
-      '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border)">'+
-        '<span style="flex:1;min-width:0;font-size:13px;color:var(--text)">'+escHtml(r.lead)+
-          (r.note?'<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(r.note)+'</span>':'')+
-        '</span>'+
-        (r.right?'<span style="font-size:13px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;flex-shrink:0">'+escHtml(r.right)+'</span>':'')+
-      '</div>').join('');
+  const rowsHtml=list=>list.map(r=>
+    '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border)">'+
+      '<span style="flex:1;min-width:0;font-size:13px;color:var(--text)">'+escHtml(r.lead)+
+        (r.note?'<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">'+escHtml(r.note)+'</span>':'')+
+      '</span>'+
+      (r.right?'<span style="font-size:13px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;flex-shrink:0">'+escHtml(r.right)+'</span>':'')+
+    '</div>').join('');
+
+  if(ans.rows&&ans.rows.length)html+=rowsHtml(ans.rows);
+
+  // A second pivot on the same numbers. The invoicing worksheet is read two
+  // ways by two different jobs on a Friday: by address to write the bill, by
+  // person to run payroll, and they have to be the same hours or one of them is
+  // a lie. Both come out of one timWorkSheet call for exactly that reason.
+  if(ans.groups&&ans.groups.length){
+    ans.groups.forEach(g=>{
+      if(!g||!g.rows||!g.rows.length)return;
+      html+='<div style="padding:13px 16px 7px;font-size:10.5px;font-weight:800;'+
+        'letter-spacing:.07em;text-transform:uppercase;color:var(--text3)">'+escHtml(g.title||'')+'</div>'+
+        rowsHtml(g.rows);
+    });
   }
 
   if(ans.foot){
-    html+='<div style="padding:11px 16px;font-size:11.5px;color:var(--text3)">'+escHtml(ans.foot)+'</div>';
+    html+='<div style="padding:11px 16px;font-size:11.5px;color:var(--text3);line-height:1.5">'+escHtml(ans.foot)+'</div>';
+  }
+
+  // The paperwork is the point. Owner, on what would get John off paper: "one
+  // huge thing is ending the hours it takes for him to do paperwork". Reading a
+  // number off a screen and typing it into an invoice IS the paperwork, so the
+  // worksheet leaves as text rather than as something to transcribe.
+  if(ans.copy){
+    _TIM_ASK_COPY=String(ans.copy);
+    html+='<div style="padding:12px 16px 0">'+
+      '<button type="button" onclick="_timCopySheet(this)" '+
+        'style="width:100%;height:42px;border:0;border-radius:var(--r-md);background:var(--bg2);'+
+        'box-shadow:inset 0 0 0 1px var(--border);color:var(--text);font-family:inherit;'+
+        'font-size:13.5px;font-weight:700;cursor:pointer">Copy the worksheet</button>'+
+      '</div>';
   }
 
   if(ans.go){
@@ -835,4 +1274,26 @@ function _timShowAsk(ans){
 
   _timSheet('_tim-ask-sheet',html);
   return ans;
+}
+
+// ── Details, from a bubble in the thread ─────────────────────────────────────
+// The thread carries the headline and the working, which is the answer; it does
+// not carry the rows, which are the working's working. Rather than store them
+// (a log entry is capped so a dictated paragraph cannot evict the rest of the
+// history, and a twelve-row breakdown would evict plenty), the sentence is run
+// again. Every answer in this file is a pure read of the local books, so a
+// re-run either gives the same answer or a newer one, and a newer one is the
+// right thing to show a man who tapped Details a week later.
+//
+// Nothing here bypasses the wall: timAsk returns null for crew before it looks
+// at anything, and a null falls through to the toast rather than an empty card.
+function _timReopenAsk(said){
+  try{
+    const ans=(typeof timAsk==='function')?timAsk(String(said||'')):null;
+    if(!ans){
+      if(typeof showToast==='function')showToast('That one has moved on since you asked it','🔧',2600);
+      return null;
+    }
+    return _timShowAsk(ans);
+  }catch(_e){return null;}
 }

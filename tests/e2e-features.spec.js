@@ -8180,6 +8180,45 @@ test.describe('Never-delete policy, archive + hold + edit', () => {
     }
   });
 
+  // Same class of bug, same shared device, different array. Tim's conversation
+  // thread (td_tim_log, js/tim-log.js) is account data: it holds the sentences a
+  // man said to Tim and what Tim answered back, so customer names, what they
+  // owe, what a job was charged at. Since 2026-09-21 it also holds a week's
+  // timesheet read out by job site, which puts crew names and the addresses
+  // they worked at in it too. It survived the wipe until then.
+  test('cross-account bleed guard: Tim\'s thread is cleared on account switch, his i is not', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _wipeLocalAccountData !== 'function' || typeof timLogSay !== 'function') return { skip: true };
+      timLogClear();
+      timLogSay('who owes me money', { kind: 'ask', title: '$3,500', sub: 'Dana Whitfield, 68 days' });
+      try {
+        localStorage.setItem('td_tim_met', '1');
+        // The last thing he said out loud on the bar. A finding id with a
+        // DOLLAR FIGURE on the end of it, so it leaves with the account too.
+        localStorage.setItem('td_tim_said', 'still-owes|$1,240');
+      } catch (_e) {}
+      const before = timLogEntries().length;
+      _wipeLocalAccountData();
+      return {
+        before,
+        after: timLogEntries().length,
+        said: (() => { try { return localStorage.getItem('td_tim_said'); } catch (_e) { return 'threw'; } })(),
+        raw: (() => { try { return localStorage.getItem('td_tim_log'); } catch (_e) { return 'threw'; } })(),
+        // A fact about this DEVICE having been shown the control once, not
+        // about whose books are on it. Clearing it would re-teach the i to a
+        // man who has been using Tim for a year, on every sign-out.
+        met: (() => { try { return localStorage.getItem('td_tim_met'); } catch (_e) { return null; } })(),
+      };
+    });
+    if (!r.skip) {
+      expect(r.before, 'the fixture has to actually write something').toBe(1);
+      expect(r.after, 'the outgoing account\'s conversation must not survive into the next login').toBe(0);
+      expect(r.raw === null || r.raw === '[]', 'and it must not be left on disk either').toBe(true);
+      expect(r.said, 'the figure he last spoke goes with it').toBe(null);
+      expect(r.met).toBe('1');
+    }
+  });
+
   test('editPayment: fixes the record in place (edit-not-delete)', async () => {
     const r = await page.evaluate(() => {
       const pid = 887101;

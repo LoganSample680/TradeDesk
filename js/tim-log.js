@@ -191,14 +191,31 @@ function _timThreadHtml(opts){
     const newest=i===last;
     const mine='<div class="tim-msg me'+(newest&&enter==='me'?' in':'')+'">'+
       '<span class="tim-b">'+escHtml(e.said)+'</span></div>';
+    // An ANSWER gets a card bubble: the figure at headline size, the working
+    // under it, and the button that opens the screen it came from. It used to
+    // replace the whole sheet with a card that had no input on it, which ended
+    // the conversation every time he answered something.
+    const isAsk=e.kind==='ask'&&!dots&&(e.sub||e.goFn);
+    const body=dots
+      ? '<span class="tim-dots" aria-label="Tim is typing"><i></i><i></i><i></i></span>'
+      : (isAsk
+        ? '<span class="tim-ans">'+
+            '<b>'+escHtml(e.got||'')+'</b>'+
+            (e.sub?'<i>'+escHtml(e.sub)+'</i>':'')+
+            ((e.goFn||e.rows)
+              ? '<span class="tim-ans-do">'+
+                  (e.goFn?'<button type="button" onclick="_timClose();'+escHtml(e.goFn)+'">'+
+                    escHtml(e.goLabel||'Open')+'</button>':'')+
+                  (e.rows?'<button type="button" class="alt" onclick="_timReopenAsk('+
+                    escHtml(JSON.stringify(String(e.said||'')))+')">Details</button>':'')+
+                '</span>'
+              : '')+
+          '</span>'
+        : escHtml(e.got||''));
     const his='<div class="tim-msg him'+(missed&&!dots?' miss':'')+
-      (newest&&enter==='him'?' in':'')+'">'+
+      (isAsk?' ans':'')+(newest&&enter==='him'?' in':'')+'">'+
       _timThreadAv()+
-      '<span class="tim-b">'+
-        (dots
-          ? '<span class="tim-dots" aria-label="Tim is typing"><i></i><i></i><i></i></span>'
-          : escHtml(e.got||''))+
-      '</span></div>';
+      '<span class="tim-b">'+body+'</span></div>';
     return mine+his;
   }).join('');
 }
@@ -219,6 +236,14 @@ function timLogSay(said,outcome){
       said:String(said||'').slice(0,240),
       kind:o.kind||'none',
       got:_timLogGot(o,job),
+      // What the thread needs to redraw his ANSWER as a bubble after a reopen,
+      // rather than just the headline figure. Capped like `said` is: this file
+      // is a ring buffer on a phone and one long sub should not be able to push
+      // the rest of the history out.
+      sub:o.sub?String(o.sub).slice(0,200):'',
+      goLabel:o.goLabel?String(o.goLabel).slice(0,40):'',
+      goFn:o.goFn?String(o.goFn).slice(0,120):'',
+      rows:!!o.rows,
       miss:timLogGaps(said,job).slice(0,12),
     };
     _timLog.push(e);

@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.21.26.9';
+const APP_VERSION='09.21.26.8';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -6558,6 +6558,22 @@ function _wipeLocalAccountData(){
   // Delta cursor + its sidecar are per-account too, drop both so the next account
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
+  // Tim's conversation thread (td_tim_log). It is account data and always was:
+  // it holds the sentences a man said to Tim and what Tim answered, which means
+  // customer names, what they owe, what jobs were charged at. Since 2026-09-21
+  // it also holds a week's timesheet read out by job site, so it carries crew
+  // names and the addresses they worked at.
+  // On a shop tablet two people sign into, leaving it behind is the same
+  // cross-account bleed every line in this function is here to stop. td_tim_met
+  // is deliberately NOT cleared next to it: that one is a fact about this
+  // DEVICE having been shown the control once, not about whose books are on it.
+  try{if(typeof timLogClear==='function')timLogClear();
+      else localStorage.removeItem('td_tim_log');}catch(_e){}
+  // td_tim_said is the last thing he said out loud on the bar, and it is a
+  // finding id with a DOLLAR FIGURE on the end of it. Same reasoning, same
+  // shared tablet, and leaving it would also mean the next account's first
+  // finding was silently treated as already spoken.
+  try{localStorage.removeItem('td_tim_said');}catch(_e){}
   _subBids=null;window._subBidsKicked=false; // incoming-bid cache is per-account
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
   // The fleet is a synced array now (td_vehicles), not a settings key, so it needs

@@ -60,6 +60,65 @@ const TIM_NUDGE_RULES=[
     cta:'Take it to your price',
     alt:'Leave it',
   },
+  // ── The three that work anywhere ──────────────────────────────────────────
+  //
+  // Everything above this reads the open estimate, which is why he was silent
+  // on every other screen in the app. These read the books, so they fire on
+  // Home, on Collect, in the truck, with nothing on screen at all.
+  //
+  // All three name a customer. "You have $4,500 out" is a fact about a spread-
+  // sheet; "Rick Delaney has been sitting 68 days" is a fact about a man with a
+  // phone number, and only one of those gets a call made.
+  {
+    id:'books-late',
+    kind:'dollar',
+    // Never alongside still-owes. That one is about the customer whose job is
+    // on screen right now, and saying both would be the app telling him about
+    // the same money twice in two different voices.
+    when:s=>!!s.books&&s.books.late.amount>=_TIM_BOOK_FLOOR&&!(s.owed>0&&s.clientName),
+    line:s=>s.books.late.who+' has been waiting '+s.books.late.days+' days',
+    figure:s=>_timMoney(s.books.late.amount),
+    title:s=>_timMoney(s.books.late.amount),
+    what:s=>_timMoney(s.books.late.amount)+' across '+s.books.late.jobs+
+      ' job'+(s.books.late.jobs===1?'':'s')+' finished and not paid for'+
+      (s.books.late.others?(', and '+s.books.late.others+' other customer'+
+        (s.books.late.others===1?'':'s')+' past thirty days'):'')+'.',
+    // Thirty is the same threshold _calcFinanceCharge uses, so the nudge and
+    // the finance charge agree about when late begins.
+    why:s=>'Past thirty days is where money starts going bad. You have '+
+      _timMoney(s.books.owedTotal)+' out in total.',
+    cta:'Open Collect',
+    alt:'I know',
+  },
+  {
+    id:'books-fresh',
+    kind:'dollar',
+    // The other side of the same split. Not late yet, which is exactly why it
+    // is worth saying: this is the week the money is easiest to collect.
+    when:s=>!!s.books&&s.books.fresh.amount>=_TIM_BOOK_FLOOR&&!(s.owed>0&&s.clientName),
+    line:s=>s.books.fresh.who+' finished and has not paid',
+    figure:s=>_timMoney(s.books.fresh.amount),
+    title:s=>_timMoney(s.books.fresh.amount),
+    what:s=>_timMoney(s.books.fresh.amount)+' on '+s.books.fresh.jobs+
+      ' job'+(s.books.fresh.jobs===1?'':'s')+
+      (s.books.fresh.days?(', done '+s.books.fresh.days+' day'+(s.books.fresh.days===1?'':'s')+' ago'):'')+'.',
+    why:()=>'The work is still fresh in their head. This is the cheapest week it will ever be to collect.',
+    cta:'Open Collect',
+    alt:'I know',
+  },
+  {
+    id:'bid-cold',
+    kind:'dollar',
+    when:s=>!!s.books&&s.books.cold.amount>=_TIM_BOOK_FLOOR,
+    line:s=>s.books.cold.who+' never answered on the quote',
+    figure:s=>_timMoney(s.books.cold.amount),
+    title:s=>_timMoney(s.books.cold.amount),
+    what:s=>_timMoney(s.books.cold.amount)+' quoted '+s.books.cold.days+
+      ' days ago, still not won and still not lost.',
+    why:()=>'Nobody has said no. It is a phone call, not a new bid.',
+    cta:'Open what is out',
+    alt:'It is dead',
+  },
   {
     id:'still-owes',
     kind:'dollar',
@@ -138,6 +197,20 @@ function _timStateName(st){
 // deal with later. Money outranks a percentage outranks a law, because a dollar
 // he is about to lose is the only one of the three that moves a man mid-task.
 const _TIM_NUDGE_WEIGHT={dollar:3,percent:2,law:1};
+// A second key, under the kind and above the amount, because the amount alone
+// gets the order wrong now that he can see the books. A $3,300 quote nobody
+// answered is a bigger number than $2,000 that is sixty-eight days late, and it
+// is not the more urgent sentence: one is money he might earn, the other is
+// money he HAS earned and is watching go bad.
+//   3  what is on the screen right now. A man standing in an estimate wants to
+//      hear about the estimate; the books will still be there in a minute.
+//   2  earned and late.
+//   1  earned and collectible.
+//   0  not earned yet.
+const _TIM_NUDGE_RANK={
+  'access-missing':3,'under-book':3,'still-owes':3,'runs-over':3,
+  'books-late':2,'books-fresh':1,'bid-cold':0,
+};
 function timNudges(snap){
   const s=snap||{};
   const off=new Set(Array.isArray(s.dismissed)?s.dismissed:[]);
@@ -160,10 +233,11 @@ function timNudges(snap){
       why:say(r.why),
       cta:r.cta,alt:r.alt,
       weight:_TIM_NUDGE_WEIGHT[r.kind]||0,
+      rank:_TIM_NUDGE_RANK[r.id]||0,
       amount:Number(s._amounts&&s._amounts[r.id])||0,
     });
   });
-  out.sort((a,b)=>(b.weight-a.weight)||(b.amount-a.amount));
+  out.sort((a,b)=>(b.weight-a.weight)||(b.rank-a.rank)||(b.amount-a.amount));
   return out;
 }
 // The single line on the dock, or nothing at all.
@@ -194,6 +268,30 @@ function timResetDismissals(){_timDismissed={};}
 // not compute any of them a second time (rule 18, one definition many mouths).
 function timJobSnapshot(){
   const s={dismissed:[],_amounts:{}};
+  // ── THE BOOKS, READ FIRST AND IN THEIR OWN TRY ──────────────────────────────
+  //
+  // Owner, 2026-09-21: "I want people to use this thing."
+  //
+  // He could not be used, because on every screen but the estimate builder he
+  // had nothing to say. Five of the six rules above read the OPEN ESTIMATE off
+  // the DOM (s.high, s.under, s.overrun, s.stateRule) and the sixth needs
+  // currentClientId. Probed with a real book on 2026-09-21: a customer nine
+  // weeks late on $2,000 sitting in `bids`, and zero findings on Home, Clients,
+  // Jobs, Collect, Leads and Books. The badge never lit, so the bubble never
+  // spoke, so there was never a reason to tap him anywhere a man actually sits.
+  // ServiceTitan's 2026 trades survey puts administration at the top of what
+  // contractors use AI for, 59%, and administration is not in the estimator.
+  //
+  // Its own try/catch, and FIRST, for a specific reason: everything below reads
+  // the estimate screen, and a throw down there used to take the whole snapshot
+  // with it. The books are the half that works on every screen, so they must
+  // not be able to be killed by the half that only works on one.
+  try{s.books=_timBooks();}catch(_e){s.books=null;}
+  if(s.books){
+    s._amounts['books-late']=s.books.late.amount;
+    s._amounts['books-fresh']=s.books.fresh.amount;
+    s._amounts['bid-cold']=s.books.cold.amount;
+  }
   try{
     const rule=(typeof _tmStateRule==='function')?_tmStateRule():{rule:'none',state:''};
     // Kansas, not KS. He reads the sentence, he does not decode a form field.
@@ -231,6 +329,86 @@ function timJobSnapshot(){
   }catch(_e){}
   return s;
 }
+// ── What the books say, from any screen ──────────────────────────────────────
+//
+// Pure arithmetic over `bids` and `payments`, which js/data.js already holds in
+// memory, so this works on every screen, offline, with nothing fetched.
+//
+// The owed half goes through timOwedAll (js/tim-ask.js) rather than walking the
+// bids again here. That function already reads them exactly the way
+// renderMoneyPage does, down to calling todayKey() bare, and rule 18 is one
+// definition with many mouths: a nudge that disagreed with the Collect screen
+// about what a man is owed would be worse than no nudge, because it would still
+// sound certain.
+//
+// THE FLOOR IS $200 AND IT IS DELIBERATE. Owner's line on what is worth
+// interrupting for: money only, over about two hundred dollars. A man on a
+// driveway does not want his phone lighting up over $40, and a rule that fires
+// on $40 teaches him to stop reading the ones that fire on $4,000.
+const _TIM_BOOK_FLOOR=200;
+// Thirty days is where money starts going bad, and it is not a number invented
+// here: js/bids.js _calcFinanceCharge starts charging at exactly thirty, so the
+// nudge and the finance charge agree about when late begins.
+const _TIM_LATE_DAYS=30;
+// Two weeks with no answer on a bid. Shorter and he is nagging a customer who
+// is still thinking; longer and the job is gone to somebody who followed up.
+const _TIM_COLD_DAYS=14;
+
+function _timBooks(){
+  const out={
+    late:{amount:0,who:'',days:0,jobs:0,others:0},
+    fresh:{amount:0,who:'',days:0,jobs:0},
+    cold:{amount:0,who:'',days:0},
+    owedTotal:0,
+  };
+  const owed=(typeof timOwedAll==='function')?timOwedAll():[];
+  owed.forEach(o=>{
+    if(!o||!(o.amount>0))return;
+    out.owedTotal+=o.amount;
+    // Late and fresh are the same money at two different ages, split at thirty
+    // days so they can never both fire on the same customer. `done` is false
+    // when nothing on the job has a completion date, and an undated job is not
+    // evidence of anything: it is left out of both rather than guessed into one.
+    if(!o.done)return;
+    const b=o.days>=_TIM_LATE_DAYS?out.late:out.fresh;
+    b.amount+=o.amount;
+    b.jobs+=(o.jobs||1);
+    // timOwedAll sorts oldest first, so the first customer to land in a bucket
+    // is the one that has been waiting longest, and that is the one worth
+    // naming. A man chasing payment starts with the one going bad, not the big
+    // one.
+    if(!b.who){b.who=o.name;b.days=o.days;}
+    else if(b===out.late)out.late.others++;
+  });
+
+  // A bid that is out and has gone quiet. Not a loss and not a win: the one
+  // that is still worth a phone call.
+  try{
+    const rows=(typeof bids!=='undefined'&&Array.isArray(bids))?bids:[];
+    const today=todayKey();
+    rows.forEach(b=>{
+      if(!b||b.draft)return;
+      // Anything not decided. Reading for the two CLOSED statuses rather than
+      // for 'Pending' on purpose: a bid parked in some other status is still a
+      // bid nobody has answered, and a whitelist here would go quietly blind
+      // the day another status is added.
+      if(b.status==='Closed Won'||b.status==='Closed Lost')return;
+      const amt=Number(b.amount)||0;
+      if(amt<_TIM_BOOK_FLOOR)return;
+      const d=b.date;
+      if(!d)return;
+      const days=Math.max(0,Math.floor((new Date(today+'T12:00')-new Date(String(d)+'T12:00'))/86400000));
+      if(!(days>=_TIM_COLD_DAYS))return;
+      // Oldest first, and the amount breaks a tie, same order as the owed list.
+      if(days>out.cold.days||(days===out.cold.days&&amt>out.cold.amount)){
+        const c=(typeof getClientById==='function')?getClientById(b.client_id):null;
+        out.cold={amount:amt,who:(c&&c.name)||b.client_name||'A customer',days};
+      }
+    });
+  }catch(_e){}
+  return out;
+}
+
 function _timJobKey(){
   try{
     if(typeof _geiBidId!=='undefined'&&_geiBidId)return 'bid:'+_geiBidId;
