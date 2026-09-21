@@ -211,14 +211,21 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
         marked = await p.evaluate(async (id) => {
           const before = photos.find(x => String(x.id) === String(id));
           const urlBefore = before.url;
+          window._pcAnnoLastError = null;
           tdAnnotatePhoto(id);
-          for (let i = 0; i < 80 && !(window._pcAnno && _pcAnno.img); i++) await new Promise(r => setTimeout(r, 25));
+          // 6 seconds, not 2: the recovery path adds a storage download and
+          // a blob decode, and a slow-but-working path must not read as a
+          // refusal.
+          for (let i = 0; i < 240 && !(window._pcAnno && _pcAnno.img); i++) await new Promise(r => setTimeout(r, 25));
           // Say WHY it did not open. The live run reported opened:false and
           // the other keys came back undefined, which JSON.stringify drops,
           // so the failure read as two booleans and explained nothing.
           if (!window._pcAnno || !_pcAnno.img) {
             return { opened: false, urlBefore, whyNotOpened: {
               ctxGone: !window._pcAnno, imgMissing: !!(window._pcAnno && !_pcAnno.img),
+              // The app now records the exact stage it failed at.
+              lastError: window._pcAnnoLastError || null,
+              host: String(before.url || '').split('/').slice(0, 3).join('/'),
               srcTried: String(before.url || '').slice(-40), hadData: !!before.data,
               storagePath: String(before.storagePath || '').slice(-40),
             } };

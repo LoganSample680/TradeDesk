@@ -698,25 +698,41 @@ function tdAnnotatePhoto(photoId){
   let _tried=0;
   im.onerror=()=>{
     _tried++;
+    _pcAnnoNote('img-error',{tried:_tried,src:String(im.src||'').slice(0,120)});
     if(_tried===1&&p.data&&im.src!==p.data){im.src=p.data;return;}
     _pcAnnoFromStorage(p,im);
   };
   im.src=src;
   return true;
 }
+// Why the editor could not open, kept where both a person and a test can
+// read it. Three live rounds were spent on a failure that said nothing, and
+// a mark-up that silently refuses to open is exactly the kind of thing a
+// contractor reports as "it just doesn't work".
+let _pcAnnoLastError=null;
+function _pcAnnoNote(stage,info){
+  try{
+    _pcAnnoLastError={stage,at:new Date().toISOString(),...(info||{})};
+    window._pcAnnoLastError=_pcAnnoLastError;
+  }catch(_e){}
+}
 // Fetch the photo's bytes through the Supabase client (it carries the
 // session, so this works on a private bucket too) and feed the editor a
 // blob url. Gives up only if there is nothing to fetch.
 async function _pcAnnoFromStorage(p,im){
   try{
-    if(!p.storagePath||!(typeof supaEnabled==='function'&&supaEnabled()&&_supa))throw new Error('no storage path');
+    if(!p.storagePath){_pcAnnoNote('no-storage-path');throw new Error('no storage path');}
+    if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supa)){_pcAnnoNote('no-supa');throw new Error('no client');}
+    _pcAnnoNote('download-start',{path:p.storagePath});
     const{data,error}=await _supa.storage.from('gallery').download(p.storagePath);
-    if(error||!data)throw error||new Error('no bytes');
-    if(!_pcAnno)return;
-    im.onerror=()=>{showToast('Could not open that photo to mark up','⚠️');tdCloseAnnotate();};
+    if(error||!data){_pcAnnoNote('download-failed',{path:p.storagePath,err:String((error&&error.message)||'no bytes')});throw error||new Error('no bytes');}
+    if(!_pcAnno){_pcAnnoNote('closed-while-downloading');return;}
+    _pcAnnoNote('download-ok',{bytes:data.size||0});
+    im.onerror=()=>{_pcAnnoNote('blob-decode-failed');showToast('Could not open that photo to mark up','⚠️');tdCloseAnnotate();};
     im.removeAttribute('crossorigin');
     im.src=URL.createObjectURL(data);
-  }catch(_e){
+  }catch(e){
+    _pcAnnoNote('gave-up',{err:String((e&&e.message)||e)});
     showToast('Could not open that photo to mark up','⚠️');
     tdCloseAnnotate();
   }
