@@ -414,5 +414,101 @@ test.describe('the tim log', () => {
     });
   });
 
+  // ── The thread ────────────────────────────────────────────────────────────
+  //
+  // The owner asked three questions, watched the sheet return to its opening
+  // line, and said Tim did nothing. Two of the three possible outcomes really
+  // did leave no trace on that sheet: a sentence he could not place got a 2.6
+  // second toast, and one he could place closed the sheet and navigated away.
+  // These pin that every sentence now leaves a mark on the sheet it was said
+  // into.
+  test.describe('the last things he was told, on the sheet', () => {
+    test('an empty log says so rather than drawing furniture', async () => {
+      const r = await page.evaluate(() => _timThreadHtml());
+      expect(r).toContain('Nothing asked yet');
+    });
+
+    test('every outcome lands in it, including the ones he could not place', async () => {
+      const r = await page.evaluate(() => {
+        timLogSay('who owes me money', { kind: 'ask', title: '$3,500' });
+        timLogSay('open my leads', { kind: 'nav', name: 'Leads' });
+        timLogSay('reglaze the transoms', { kind: 'none' });
+        const el = document.createElement('div');
+        el.innerHTML = _timThreadHtml();
+        // The two lines of a turn read separately: what was said, what came
+        // back. textContent on the wrapper runs them together, which says
+        // nothing about whether they are two distinct blocks on the screen.
+        return [...el.children].map(c => [...c.children].map(x => x.textContent.trim()));
+      });
+      expect(r).toEqual([
+        ['who owes me money', '$3,500'],
+        ['open my leads', 'Opened Leads'],
+        ['reglaze the transoms', 'I could not place that one.'],
+      ]);
+    });
+
+    // The figure, not a sentence about having produced a figure. A thread of
+    // "Answered off your own numbers" tells a man nothing he did not know.
+    test('an answer shows what he actually said', async () => {
+      const r = await page.evaluate(() => {
+        timLogSay('how much did I make in 2026', { kind: 'ask', title: '$4,400' });
+        return timLogEntries()[0].got;
+      });
+      expect(r).toBe('$4,400');
+    });
+
+    test('oldest at the top, newest at the bottom, and it stops at eight', async () => {
+      const r = await page.evaluate(() => {
+        for (let i = 1; i <= 11; i++) timLogSay('question ' + i, { kind: 'none' });
+        const el = document.createElement('div');
+        el.innerHTML = _timThreadHtml();
+        const said = [...el.children].map(c => c.firstChild.textContent.trim());
+        return { n: said.length, first: said[0], last: said[said.length - 1] };
+      });
+      expect(r).toEqual({ n: 8, first: 'question 4', last: 'question 11' });
+    });
+
+    test('a sentence with markup in it is printed, never rendered', async () => {
+      const r = await page.evaluate(() => {
+        timLogSay('<img src=x onerror=alert(1)>bill Dana', { kind: 'none' });
+        const el = document.createElement('div');
+        el.innerHTML = _timThreadHtml();
+        return { imgs: el.querySelectorAll('img').length, text: el.textContent };
+      });
+      expect(r.imgs).toBe(0);
+      expect(r.text).toContain('<img src=x onerror=alert(1)>bill Dana');
+    });
+
+    test('the sheet shows it, and saying something adds to it and clears the box', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timLogSay('earlier question', { kind: 'ask', title: '$1,240' });
+        openTim();
+        const before = document.getElementById('_tim-thread').textContent;
+        const el = document.getElementById('_tim-say');
+        el.value = 'reglaze the transoms';
+        _timGo();
+        const box = document.getElementById('_tim-thread');
+        const out = {
+          before: before.indexOf('earlier question') >= 0,
+          after: box.textContent.indexOf('reglaze the transoms') >= 0,
+          keptOld: box.textContent.indexOf('earlier question') >= 0,
+          boxCleared: document.getElementById('_tim-say').value,
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r).toEqual({ before: true, after: true, keptOld: true, boxCleared: '' });
+    });
+
+    test('refreshing it when the sheet is not open does nothing and throws nothing', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        try { _timThreadRefresh(); return 'ok'; } catch (e) { return 'THREW: ' + e.message; }
+      });
+      expect(r).toBe('ok');
+    });
+  });
+
   test('no console errors, tim-log.js', async () => { await assertNoErrors(page); });
 });
