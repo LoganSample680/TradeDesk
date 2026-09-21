@@ -508,9 +508,9 @@ test.describe('tim', () => {
     // (the bar is the masked element, or was; see the ring test).
     test('a saved tab order rearranges the tabs and leaves his seat in the middle', async () => {
       const r = await page.evaluate(() => {
-        _applyTabOrder(['jobs', 'clients', 'leads', 'dash']);
+        _applyTabOrder(['jobs', 'leads', 'dash']);
         const dragged = [...document.querySelectorAll('#mtb-inner > *')].map(e => e.id);
-        _applyTabOrder(['dash', 'leads', 'clients', 'jobs']);
+        _applyTabOrder(['dash', 'leads', 'jobs']);
         const restored = [...document.querySelectorAll('#mtb-inner > *')].map(e => e.id);
         return {
           dragged, restored,
@@ -518,11 +518,16 @@ test.describe('tim', () => {
           timInInner: !!document.querySelector('#mtb-inner > #mtb-tim'),
         };
       });
-      // The four tabs obey the saved order; the seat does not travel with them.
+      // The tabs obey the saved order; the seat does not travel with them, and
+      // it lands on the middle slot of the BAR rather than of this row, which
+      // is one further along because More sits outside #mtb-inner.
+      // 10.4: these were five long and named Clients until Clients moved into
+      // the More menu so Tim could be dead centre. Centring needs an ODD number
+      // of slots and the bar had six.
       expect(r.dragged).toEqual(
-        ['mtb-jobs', 'mtb-clients', 'mtb-tim-slot', 'mtb-leads', 'mtb-dash']);
+        ['mtb-jobs', 'mtb-leads', 'mtb-tim-slot', 'mtb-dash']);
       expect(r.restored).toEqual(
-        ['mtb-dash', 'mtb-leads', 'mtb-tim-slot', 'mtb-clients', 'mtb-jobs']);
+        ['mtb-dash', 'mtb-leads', 'mtb-tim-slot', 'mtb-jobs']);
       expect(r.timInInner, 'he is not one of the draggable tabs').toBe(false);
       expect(r.timInBar, 'and he is not inside the bar at all').toBe(false);
     });
@@ -748,7 +753,7 @@ test.describe('tim', () => {
       const r = await page.evaluate(() => {
         timDockRender();
         const w = document.getElementById('mtb-tim-word');
-        const tab = document.getElementById('mtb-clients');
+        const tab = document.getElementById('mtb-jobs');
         const cs = getComputedStyle(w), ts = getComputedStyle(tab);
         return {
           text: w.textContent,
@@ -2005,6 +2010,303 @@ test.describe('tim', () => {
         } finally { _isEmployee = was; timDockRender(); }
       });
       expect(r).toEqual({ said: false, key: false });
+    });
+  });
+
+
+  // ── The scroll belongs to the sheet ───────────────────────────────────────
+  // Owner, 2026-09-21, from his phone: "scroll in tim scrolls the page behind
+  // Tim rather than Tim."
+  // overscroll-behavior:contain was already on the sheet and on the thread and
+  // does not cover this: it stops a scroll CHAINING when a scroller reaches its
+  // end, and does nothing when the thing under the thumb was never scrollable.
+  // Most of the time the sheet is shorter than its 88vh cap and the thread is
+  // shorter than its 206px, so there is no scroller under the touch at all and
+  // iOS hands the gesture to the document behind.
+  test.describe('the page behind him holds still', () => {
+    const openOn = (pg) => page.evaluate((p) => {
+      document.getElementById('_tim-ov')?.remove();
+      timNudges = () => [];
+      goPg(p);
+      openTim();
+    }, pg);
+
+    // The listener has to be NON-PASSIVE or it is not allowed to cancel
+    // anything, and a passive one would look identical in every other respect.
+    test('the overlay listens for touchmove, and can actually cancel it', async () => {
+      const r = await page.evaluate(async () => {
+        document.getElementById('_tim-ov')?.remove();
+        timNudges = () => [];
+        goPg('pg-dash');
+        // Record what the sheet registers, at the moment it registers it.
+        const seen = [];
+        const orig = EventTarget.prototype.addEventListener;
+        EventTarget.prototype.addEventListener = function (t, f, o) {
+          if (t === 'touchmove' && this.id === '_tim-ov') seen.push(o);
+          return orig.call(this, t, f, o);
+        };
+        try { openTim(); } finally { EventTarget.prototype.addEventListener = orig; }
+        const out = { n: seen.length, passive: seen.map(o => o && o.passive) };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.n, 'nothing is listening, so nothing can be stopped').toBe(1);
+      expect(r.passive[0], 'a passive listener cannot preventDefault').toBe(false);
+    });
+
+    // The rule it enforces: a touchmove over something with nowhere to go is
+    // not a scroll, so it is cancelled. Dispatched rather than simulated with
+    // real touches, because what is being asserted is the DECISION, and a real
+    // gesture would also need a scrollable viewport to prove anything.
+    test('a drag over nothing scrollable is cancelled, and one over the thread is not', async () => {
+      await openOn('pg-dash');
+      const r = await page.evaluate(() => {
+        const fire = (el) => {
+          const e = new Event('touchmove', { bubbles: true, cancelable: true });
+          el.dispatchEvent(e);
+          return e.defaultPrevented;
+        };
+        const ov = document.getElementById('_tim-ov');
+        const thread = document.getElementById('_tim-thread');
+        const out = {};
+        // The backdrop above the sheet: there is nothing there to scroll.
+        out.backdrop = fire(ov);
+        // A thread with nothing in it cannot scroll either, so the page must
+        // still not move: "nothing happens" is the correct outcome, not "the
+        // page moves instead".
+        out.emptyThread = thread ? fire(thread) : null;
+        // Now give it more than it can show. 206px of cap against a dozen
+        // messages is a real scroller, and a real scroller is left alone.
+        for (let i = 0; i < 14; i++) timLogSay('line ' + i, { kind: 'none' });
+        document.getElementById('_tim-ov')?.remove();
+        openTim();
+        const t2 = document.getElementById('_tim-thread');
+        out.scrollable = t2 ? (t2.scrollHeight > t2.clientHeight + 1) : false;
+        out.fullThread = t2 ? fire(t2) : null;
+        timLogClear();
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.backdrop, 'the backdrop let the page scroll').toBe(true);
+      expect(r.emptyThread, 'an empty thread let the page scroll').toBe(true);
+      expect(r.scrollable, 'the fixture did not make a scroller').toBe(true);
+      expect(r.fullThread, 'a real scroller must be left alone').toBe(false);
+    });
+
+    // The sheet's own scroll, for the case that does overflow: his knowledge
+    // sheet and the log viewer both run long.
+    test('a sheet taller than its cap scrolls itself', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        const sheet = _timSheet('_tim-tall',
+          Array.from({ length: 60 }, (_, i) => '<div style="padding:18px">row ' + i + '</div>').join(''));
+        const fire = (el) => {
+          const e = new Event('touchmove', { bubbles: true, cancelable: true });
+          el.dispatchEvent(e); return e.defaultPrevented;
+        };
+        const out = {
+          overflows: sheet.scrollHeight > sheet.clientHeight + 1,
+          prevented: fire(sheet),
+          contain: getComputedStyle(sheet).overscrollBehaviorY,
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.overflows).toBe(true);
+      expect(r.prevented, 'the sheet has somewhere to go and was stopped anyway').toBe(false);
+      // And when it reaches its end it still does not hand the rest to the page.
+      expect(r.contain).toBe('contain');
+    });
+
+    // Closing him takes the listener with it. It lives on the overlay, so the
+    // overlay being removed is the teardown, and there is nothing left behind
+    // to swallow the page's own scrolling afterwards.
+    test('and closing him gives the page its scroll back', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timNudges = () => [];
+        goPg('pg-dash');
+        openTim();
+        const had = !!document.getElementById('_tim-ov');
+        _timClose();
+        const e = new Event('touchmove', { bubbles: true, cancelable: true });
+        document.body.dispatchEvent(e);
+        return { had, ov: !!document.getElementById('_tim-ov'), prevented: e.defaultPrevented };
+      });
+      expect(r.had).toBe(true);
+      expect(r.ov, 'the overlay outlived the close').toBe(false);
+      expect(r.prevented, 'something is still cancelling scrolls on the page').toBe(false);
+    });
+  });
+
+
+  // ── What he learns from, and what never leaves the phone ──────────────────
+  //
+  // Owner, 2026-09-21: "I need tim to learn what everybody puts in so I can
+  // improve him though, I need to know if he fails at a task."
+  //
+  // The thread cannot answer either question and should not try: it is one
+  // phone's localStorage, it never syncs, and it is wiped on sign-out. So a
+  // second, much smaller thing goes up. THE SCRUB IS THE WHOLE DESIGN, and
+  // these tests are mostly about it: the thread carries customer names, what
+  // they owe and where somebody worked, and none of that teaches Tim anything.
+  // The shape of the question is the entire lesson.
+  test.describe('what he learns from, and what stays on the phone', () => {
+    const SEED = () => {
+      clients.length = 0;
+      clients.push(
+        { id: 1, name: 'Dana Whitfield' },
+        { id: 2, name: 'Art Cheng' },
+        { id: 3, name: 'Bo' },                      // too short to be a name
+        { id: 4, name: 'Dana Whitfield Roofing' },  // longer, shares a prefix
+      );
+      try { localStorage.removeItem('td_tim_send'); } catch (_e) {}
+    };
+    test.beforeEach(async () => { await page.evaluate(SEED); });
+
+    test('a customer name never leaves the phone', async () => {
+      const r = await page.evaluate(() => [
+        'what does Dana Whitfield owe me',
+        'what does Dana owe me',
+        'what did I charge Art Cheng for gutters',
+      ].map(s => _timScrub(s)));
+      r.forEach(s => {
+        expect(s.toLowerCase(), 'a name got through: ' + s).not.toContain('dana');
+        expect(s.toLowerCase(), 'a name got through: ' + s).not.toContain('cheng');
+      });
+      // And the SHAPE survives, which is the point of scrubbing rather than
+      // dropping the sentence: this is the thing worth learning from.
+      expect(r[1]).toBe('what does <customer> owe me');
+    });
+
+    // Longest first, or "Dana Whitfield Roofing" comes back as
+    // "<customer> Roofing" and the company name is still on its way to a
+    // server.
+    test('the longest name wins, so half a name is never left behind', async () => {
+      const r = await page.evaluate(() => _timScrub('invoice Dana Whitfield Roofing'));
+      expect(r).toBe('invoice <customer>');
+    });
+
+    // A customer called Art must not eat the word "start", and a two-letter
+    // customer called Bo must not eat every "bo" in the language.
+    test('it matches names, not letters that happen to be inside words', async () => {
+      const r = await page.evaluate(() => [
+        _timScrub('start the job'),
+        _timScrub('book the boiler'),
+        _timScrub('Art Cheng'),
+      ]);
+      expect(r[0], 'it ate part of a word').toBe('start the job');
+      expect(r[1], 'a two-letter name should be skipped entirely').toBe('book the boiler');
+      expect(r[2]).toBe('<customer>');
+    });
+
+    test('and it never throws, whatever is in the address book', async () => {
+      const r = await page.evaluate(() => {
+        clients.length = 0;
+        clients.push(null, {}, { name: '' }, { name: 'A' }, { name: '.*+?[](){}' });
+        let threw = false;
+        let out = null;
+        try { out = _timScrub('what does .*+?[](){} owe me'); } catch (e) { threw = true; }
+        return { threw, out };
+      });
+      expect(r.threw).toBe(false);
+      expect(r.out).toContain('<customer>');
+    });
+
+    // What goes in the row, and just as importantly what does not. No figure,
+    // no answer, no address: the answer is a fact about his books and this is a
+    // record of what he ASKED.
+    test('the row carries the question and its outcome, never the answer', async () => {
+      const r = await page.evaluate(() => {
+        try { localStorage.removeItem('td_tim_send'); } catch (_e) {}
+        goPg('pg-dash');
+        timLearnFrom('what does Dana owe me',
+          { kind: 'ask', ask: 'owed', title: '$3,500', sub: 'Dana Whitfield, 68 days' });
+        const q = JSON.parse(localStorage.getItem('td_tim_send') || '[]');
+        return { n: q.length, row: q[0], keys: Object.keys(q[0] || {}).sort() };
+      });
+      expect(r.n).toBe(1);
+      expect(r.row.said).toBe('what does <customer> owe me');
+      expect(r.row.kind).toBe('ask');
+      expect(r.row.family).toBe('owed');
+      expect(r.row.page).toBe('pg-dash');
+      // The figure and the working are not in the row at all, and cannot be
+      // added by accident: this is the whole of the shape.
+      expect(r.keys).toEqual(['at', 'family', 'kind', 'page', 'said']);
+    });
+
+    // The failures are the rows the owner actually asked for. A miss is
+    // kind:'none' with no family, which is what makes them findable.
+    test('a miss is recorded as a miss, which is the point of the whole thing', async () => {
+      const r = await page.evaluate(() => {
+        try { localStorage.removeItem('td_tim_send'); } catch (_e) {}
+        timLearnFrom('how do I rewire a panel', { kind: 'none' });
+        const q = JSON.parse(localStorage.getItem('td_tim_send') || '[]');
+        return q[0];
+      });
+      expect(r.kind).toBe('none');
+      expect(r.family).toBe(null);
+      expect(r.said).toBe('how do I rewire a panel');
+    });
+
+    // Never awaited, never able to stop a sentence. A man talking to Tim must
+    // not be slowed by a log about it, let alone blocked by one.
+    test('nothing about sending can break saying', async () => {
+      const r = await page.evaluate(async () => {
+        try { localStorage.removeItem('td_tim_send'); } catch (_e) {}
+        const set = Storage.prototype.setItem;
+        Storage.prototype.setItem = () => { throw new Error('denied'); };
+        let threw = false;
+        try {
+          timLogClear();
+          goPg('pg-dash');
+          openTim();
+          document.getElementById('_tim-say').value = 'who owes me money';
+          _timGo();
+        } catch (e) { threw = true; }
+        finally { Storage.prototype.setItem = set; }
+        await new Promise(res => setTimeout(res, 600));
+        const out = { threw, answered: !!document.querySelector('.tim-msg.him') };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.threw, 'a storage failure reached the send path').toBe(false);
+      expect(r.answered, 'and it stopped him answering').toBe(true);
+    });
+
+    // Offline is not an error, it is later. The row waits rather than being
+    // dropped, because the driveway with no bars is where he gets used.
+    test('offline keeps the row rather than losing it', async () => {
+      const r = await page.evaluate(async () => {
+        try { localStorage.removeItem('td_tim_send'); } catch (_e) {}
+        const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+        Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+        try {
+          timLearnFrom('what am I owed', { kind: 'ask', ask: 'owed' });
+          const sent = await timLearnFlush();
+          const q = JSON.parse(localStorage.getItem('td_tim_send') || '[]');
+          return { sent, queued: q.length };
+        } finally {
+          if (desc) Object.defineProperty(Navigator.prototype, 'onLine', desc);
+          else delete navigator.onLine;
+        }
+      });
+      expect(r.sent).toBe(0);
+      expect(r.queued, 'the row was dropped instead of held').toBe(1);
+    });
+
+    // Capped, because an uncapped queue on a phone is a slow leak and the
+    // two-hundredth unsent sentence is never the one worth reading.
+    test('the queue is capped, and keeps the newest', async () => {
+      const r = await page.evaluate(() => {
+        try { localStorage.removeItem('td_tim_send'); } catch (_e) {}
+        for (let i = 0; i < 260; i++) timLearnFrom('line ' + i, { kind: 'none' });
+        const q = JSON.parse(localStorage.getItem('td_tim_send') || '[]');
+        return { n: q.length, first: q[0].said, last: q[q.length - 1].said };
+      });
+      expect(r.n).toBe(200);
+      expect(r.last).toBe('line 259');
+      expect(r.first).not.toBe('line 0');
     });
   });
 

@@ -220,6 +220,137 @@ function _timThreadHtml(opts){
   }).join('');
 }
 
+// ── WHAT HE LEARNS FROM, AND WHAT NEVER LEAVES THE PHONE ─────────────────────
+//
+// Owner, 2026-09-21: "I need tim to learn what everybody puts in so I can
+// improve him though, I need to know if he fails at a task."
+//
+// The thread above cannot answer either question and should not try: it is one
+// phone's localStorage, it never syncs, and it is wiped on sign-out. That is
+// right for a CONVERSATION and useless for improving him, because the sentence
+// he could not place is sitting on the one device nobody will ever look at.
+//
+// So a second, much smaller thing goes up: what was said, whether he placed it,
+// and which family placed it. One row per sentence (td_tim_asks).
+//
+// ── THE SCRUB IS THE WHOLE DESIGN ────────────────────────────────────────────
+// The thread carries customer names, what they owe, what a job was charged at
+// and the address somebody worked at. NONE of that teaches Tim anything. The
+// shape of the question is the entire lesson: "what does <customer> owe me" is
+// the thing to learn and the customer's name is not.
+//
+// So every client name is replaced with a placeholder BEFORE the sentence
+// leaves, on the device, and the figure, the answer and the rows are never
+// sent at all. A sentence that still contains a name after scrubbing is one
+// where the name was not in the address book, and there is nothing more this
+// can do about that without guessing, which is worse.
+//
+// Names are matched longest-first so "Dana Whitfield" cannot be half-replaced
+// by a "Dana" that also exists, and on a word boundary so a customer called
+// "Art" does not eat the word "start".
+const _TIM_SCRUB='<customer>';
+function _timScrub(said){
+  let t=String(said||'');
+  if(!t)return t;
+  try{
+    const names=[];
+    const rows=(typeof clients!=='undefined'&&Array.isArray(clients))?clients:[];
+    rows.forEach(c=>{
+      if(!c)return;
+      const n=String(c.name||'').trim();
+      // Two characters is not a name, it is a substring waiting to ruin a
+      // sentence. Skip it rather than scrub half the words in the language.
+      if(n.length<3)return;
+      names.push(n);
+      // First names too: a man says "what does Dana owe me", not "what does
+      // Dana Whitfield owe me". Only when it is long enough to be worth it.
+      const first=n.split(/\s+/)[0];
+      if(first&&first.length>=3&&first!==n)names.push(first);
+    });
+    // Longest first, so a full name is taken before either half of it.
+    names.sort((a,b)=>b.length-a.length);
+    const seen={};
+    names.forEach(n=>{
+      const k=n.toLowerCase();
+      if(seen[k])return;
+      seen[k]=1;
+      const esc=n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      t=t.replace(new RegExp('(^|[^a-z0-9])'+esc+'($|[^a-z0-9])','gi'),'$1'+_TIM_SCRUB+'$2');
+    });
+  }catch(_e){}
+  return t;
+}
+
+// The queue. Writes land here first and go up when there is a network and an
+// account, so a man on a driveway with no bars loses nothing and waits for
+// nothing: this is never awaited and never blocks a sentence.
+const _TIM_SEND_KEY='td_tim_send';
+const _TIM_SEND_MAX=200;
+function _timSendQueue(){
+  try{const r=JSON.parse(localStorage.getItem(_TIM_SEND_KEY));return Array.isArray(r)?r:[];}
+  catch(_e){return [];}
+}
+function _timSendWrite(q){
+  try{localStorage.setItem(_TIM_SEND_KEY,JSON.stringify(q.slice(-_TIM_SEND_MAX)));}catch(_e){}
+}
+function timLearnFrom(said,outcome){
+  try{
+    const o=outcome||{};
+    const t=String(said||'').trim();
+    if(!t)return null;
+    const row={
+      said:_timScrub(t).slice(0,240),
+      kind:o.kind||'none',
+      // The family that caught it, on an answer. Null on a miss, which is what
+      // makes "what is he nearly getting" answerable.
+      family:(o.kind==='ask'&&o.ask)?String(o.ask).slice(0,40):null,
+      page:(()=>{try{return (document.querySelector('.pg.active')||{}).id||'';}catch(_e){return '';}})(),
+      at:new Date().toISOString(),
+    };
+    const q=_timSendQueue();
+    q.push(row);
+    _timSendWrite(q);
+    // Opportunistic. If it fails the row stays queued and the next sentence
+    // tries again, which is the whole reason there is a queue.
+    timLearnFlush();
+    return row;
+  }catch(_e){return null;}
+}
+
+let _timFlushing=false;
+async function timLearnFlush(){
+  if(_timFlushing)return 0;
+  const q=_timSendQueue();
+  if(!q.length)return 0;
+  // Everything this needs before it can send anything: an account, a client,
+  // and a network. Missing any of them is not an error, it is later.
+  if(typeof navigator!=='undefined'&&navigator.onLine===false)return 0;
+  let supa=null,uid=null;
+  try{
+    supa=(typeof _supa!=='undefined')?_supa:null;
+    uid=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  }catch(_e){return 0;}
+  if(!supa||!uid)return 0;
+  _timFlushing=true;
+  try{
+    const dev=(()=>{try{return (typeof _deviceId!=='undefined')?_deviceId:null;}catch(_e){return null;}})();
+    const ver=(()=>{try{return (typeof APP_VERSION!=='undefined')?APP_VERSION:null;}catch(_e){return null;}})();
+    const send=q.slice(0,50);
+    const {error}=await supa.from('td_tim_asks').insert(send.map(r=>({
+      user_id:uid,device_id:dev,said:r.said,kind:r.kind,
+      family:r.family,page:r.page,app_version:ver,scrubbed:true,
+      created_at:r.at,
+    })));
+    if(error)return 0;
+    // Only what actually went is dropped. Anything added while this was in
+    // flight is still in there.
+    const now=_timSendQueue();
+    _timSendWrite(now.slice(send.length));
+    return send.length;
+  }catch(_e){return 0;}
+  finally{_timFlushing=false;}
+}
+
 // ── The one call site ────────────────────────────────────────────────────────
 // _timGo is the single door every sentence passes through and it already
 // classifies the outcome, so there is one hook here rather than a sprinkling of

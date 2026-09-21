@@ -3766,6 +3766,75 @@ test.describe('dashboard.js: exhaustive coverage', () => {
   // Final console-error check
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── The address, once ───────────────────────────────────────────────────
+  // Owner, 2026-09-21, from his phone: "why is John Doe address cutoff?"
+  // The card was drawing the same address twice and clipping both:
+  //   John Doe (2950 SW McClur...
+  //   2950 SW McClure Rd, Topeka, KS 6...
+  // A geofence records the address into its own NAME, so _od.name arrives with
+  // it already on the front and the addr line under it repeats it. The title is
+  // nowrap by design, because a name that wraps to three lines pushes the
+  // arrival time off a phone, so the redundancy showed up as an ellipsis rather
+  // than as a long line.
+  test('a place whose name already carries its address does not print it twice', async () => {
+    const r = await page.evaluate(() => {
+      const origNb = _nearbyJob, origTimer = _activeTimer, origDwell = window._geoOpenDwell;
+      _activeTimer = null; _nearbyJob = null;
+      const since = Date.now() - 171 * 60000;
+      const ADDR = '2950 SW McClure Rd, Topeka, KS 66614';
+      window._geoOpenDwell = { id: 'd-dupe', kind: 'client', sinceTs: since,
+        sinceIso: new Date(since).toISOString(), journeyId: 'j1',
+        name: 'John Doe (' + ADDR + ')',
+        fence: { id: 'f1', kind: 'client', name: 'John Doe', addr: ADDR } };
+      try {
+        renderDash();
+        const el = document.getElementById('dash-nearby');
+        const txt = (el ? el.textContent : '').replace(/\s+/g, ' ');
+        return { ok: true, txt,
+          // How many times the street number shows up on the card.
+          times: (txt.match(/2950 SW McClure/g) || []).length };
+      } catch (e) { return { ok: false, err: e.message }; }
+      finally { _nearbyJob = origNb; _activeTimer = origTimer; window._geoOpenDwell = origDwell; }
+    });
+    expect(r.ok).toBe(true);
+    expect(r.times, 'the address is on the card twice').toBe(1);
+    // The name survives, and the address survives IN FULL: it is the one that
+    // was being clipped, and a half-printed address is no use to anybody.
+    expect(r.txt).toContain('John Doe');
+    expect(r.txt).toContain('2950 SW McClure Rd, Topeka, KS 66614');
+  });
+
+  // Only a trailing parenthetical that really IS this card's address is
+  // touched. A customer genuinely called "Dana (the one on Oak)" keeps her
+  // parenthesis, and a place whose whole name is its address keeps it too,
+  // because a card headed with nothing is worse than one headed with a repeat.
+  test('but a parenthesis that is not the address is left alone', async () => {
+    const r = await page.evaluate(() => {
+      const origNb = _nearbyJob, origTimer = _activeTimer, origDwell = window._geoOpenDwell;
+      _activeTimer = null; _nearbyJob = null;
+      const since = Date.now() - 20 * 60000;
+      const at = (name, addr) => {
+        window._geoOpenDwell = { id: 'd-x', kind: 'client', sinceTs: since,
+          sinceIso: new Date(since).toISOString(), journeyId: 'j1',
+          name, fence: { id: 'f1', kind: 'client', name, addr } };
+        renderDash();
+        const el = document.getElementById('dash-nearby');
+        return (el ? el.textContent : '').replace(/\s+/g, ' ');
+      };
+      try {
+        return {
+          ok: true,
+          nickname: at('Dana (the one on Oak)', '88 Poplar Ave, Wichita KS'),
+          onlyAddr: at('(4 Vine Ct)', '4 Vine Ct'),
+        };
+      } catch (e) { return { ok: false, err: e.message }; }
+      finally { _nearbyJob = origNb; _activeTimer = origTimer; window._geoOpenDwell = origDwell; }
+    });
+    expect(r.ok).toBe(true);
+    expect(r.nickname).toContain('the one on Oak');
+    expect(r.onlyAddr).toContain('4 Vine Ct');
+  });
+
   test('no console errors, dashboard.js', () => {
     assertNoErrors(page, 'dashboard.js');
   });

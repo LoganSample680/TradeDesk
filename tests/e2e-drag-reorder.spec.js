@@ -21,12 +21,36 @@ test.describe('Drag-to-reorder: tab bar', () => {
 
     const tabDash = await page.locator('#mtb-dash[data-tab="dash"]').count();
     const tabLeads = await page.locator('#mtb-leads[data-tab="leads"]').count();
-    const tabClients = await page.locator('#mtb-clients[data-tab="clients"]').count();
     const tabJobs = await page.locator('#mtb-jobs[data-tab="jobs"]').count();
     expect(tabDash).toBe(1);
     expect(tabLeads).toBe(1);
-    expect(tabClients).toBe(1);
     expect(tabJobs).toBe(1);
+    // ── 10.4: Clients is not in this row any more ──────────────────────────
+    // Owner, 2026-09-21: Tim "needs to be dead center on all devices, looks
+    // awful the way it is now". Centring needs an ODD number of slots and the
+    // bar had six: four tabs, his seat, and More. No arrangement of an even
+    // row has a middle, and uneven tab widths cannot fake one (solving for it
+    // comes out at zero-width tabs), so the row gave up a slot. Clients was
+    // the cheapest of the four: Leads and Jobs carry live badges, Home is
+    // where the app opens, and the top-bar search reaches any customer by
+    // name in one tap. It lives in the More menu now.
+    const tabClients = await page.locator('#mtb-clients').count();
+    expect(tabClients, 'Clients moved to the More menu').toBe(0);
+    const inMore = await page.locator('#mmi-clients').count();
+    expect(inMore, 'and it has to actually be reachable there').toBe(1);
+
+    // Tim's seat rides in this row so the bar has a middle slot for him, and it
+    // is NOT a tab: no data-tab, so the drag never picks it up, and no taps.
+    const seat = await page.evaluate(() => {
+      const el = document.getElementById('mtb-tim-slot');
+      return el ? { inInner: el.parentElement.id === 'mtb-inner',
+        isTab: el.hasAttribute('data-tab'),
+        taps: getComputedStyle(el).pointerEvents } : null;
+    });
+    expect(seat).not.toBeNull();
+    expect(seat.inInner).toBe(true);
+    expect(seat.isTab, 'the seat must not look like a tab to the drag').toBe(false);
+    expect(seat.taps).toBe('none');
 
     // More button should NOT have data-tab (it's outside mtb-inner)
     const moreHasDataTab = await page.evaluate(() => {
@@ -55,26 +79,45 @@ test.describe('Drag-to-reorder: tab bar', () => {
       S.navTabOrder = saved;
       return result;
     });
-    expect(order).toEqual(['dash', 'leads', 'clients', 'jobs']);
+    expect(order).toEqual(['dash', 'leads', 'jobs']);
   });
 
   test('_applyTabOrder reorders buttons in DOM', async () => {
     // Apply a reversed order
-    await page.evaluate(() => _applyTabOrder(['jobs', 'clients', 'leads', 'dash']));
+    await page.evaluate(() => _applyTabOrder(['jobs', 'leads', 'dash']));
 
     const order = await page.evaluate(() => {
       const inner = document.getElementById('mtb-inner');
       return [...inner.querySelectorAll('.mtb[data-tab]')].map(b => b.dataset.tab);
     });
-    expect(order).toEqual(['jobs', 'clients', 'leads', 'dash']);
+    expect(order).toEqual(['jobs', 'leads', 'dash']);
 
     // Restore default order
-    await page.evaluate(() => _applyTabOrder(['dash', 'leads', 'clients', 'jobs']));
+    await page.evaluate(() => _applyTabOrder(['dash', 'leads', 'jobs']));
     const restored = await page.evaluate(() => {
       const inner = document.getElementById('mtb-inner');
       return [...inner.querySelectorAll('.mtb[data-tab]')].map(b => b.dataset.tab);
     });
-    expect(restored).toEqual(['dash', 'leads', 'clients', 'jobs']);
+    expect(restored).toEqual(['dash', 'leads', 'jobs']);
+
+    // And whichever way they are dragged, Tim's seat comes back to the middle
+    // slot of the BAR. That is one further along than the middle of this row,
+    // because More sits outside #mtb-inner: with n tabs the bar has n+2 slots.
+    // Left to itself, appendChild moves every named tab to the end and strands
+    // the seat FIRST, which already shipped once as a bug when Tim himself was
+    // in this row: on every phone with a saved order he became the left-most
+    // tab, and no test noticed, because a saved order only exists after
+    // somebody drags one.
+    const seatAt = await page.evaluate(() => {
+      const at = () => [...document.getElementById('mtb-inner').children]
+        .findIndex(e => e.id === 'mtb-tim-slot');
+      _applyTabOrder(['jobs', 'leads', 'dash']);
+      const dragged = at();
+      _applyTabOrder(['dash', 'leads', 'jobs']);
+      return { dragged, restored: at() };
+    });
+    expect(seatAt.dragged).toBe(2);
+    expect(seatAt.restored).toBe(2);
   });
 
   test('S.navTabOrder is persisted when _applyTabOrder is called and exit runs', async () => {

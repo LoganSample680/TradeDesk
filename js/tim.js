@@ -627,6 +627,24 @@ function _timClose(){
   _timJob=null;
 }
 
+// Walks up from whatever is under the thumb looking for a real scroller. The
+// walk stops at the overlay rather than the body on purpose: finding the page
+// itself scrollable is the bug, not the answer.
+function _timOvMove(e){
+  try{
+    let el=e.target;
+    while(el&&el.nodeType===1){
+      if(el.scrollHeight>el.clientHeight+1){
+        const st=getComputedStyle(el).overflowY;
+        if(st==='auto'||st==='scroll')return;   // it can scroll: let it
+      }
+      if(el.id==='_tim-ov')break;
+      el=el.parentNode;
+    }
+    if(e.cancelable)e.preventDefault();
+  }catch(_e){}
+}
+
 function _timSheet(id,inner){
   // Replacing the sheet while the mic is live would leave the recogniser and
   // the waveform timer running behind a panel that no longer exists. Stopping
@@ -637,6 +655,22 @@ function _timSheet(id,inner){
   ov.className='zmodal-overlay';ov.id='_tim-ov';
   ov.style.alignItems='flex-end';ov.style.padding='0';
   ov.onclick=e=>{if(e.target===ov)_timClose();};
+  // ── THE SCROLL BELONGS TO THE SHEET ────────────────────────────────────────
+  // Owner, 2026-09-21, from his phone: "scroll in tim scrolls the page behind
+  // Tim rather than Tim."
+  // overscroll-behavior:contain is already on the sheet and on the thread and
+  // it does not cover this case: it stops a scroll CHAINING when a scroller
+  // reaches its end, and does nothing at all when the thing under the thumb
+  // was never scrollable in the first place. Most of the time the sheet is
+  // shorter than its 88vh cap and the thread is shorter than its 206px, so
+  // there is no scroller anywhere under the touch, and iOS hands the gesture
+  // straight to the document behind.
+  // So a touchmove that is not over something with somewhere to go is not a
+  // scroll at all, and is cancelled. Anything that CAN scroll is let through
+  // untouched and keeps its own contain behaviour at the edges.
+  // Non-passive, because a passive listener is not allowed to preventDefault.
+  // Nothing to tear down: the listener is on the overlay and dies with it.
+  ov.addEventListener('touchmove',_timOvMove,{passive:false});
   const sheet=document.createElement('div');
   sheet.id=id;
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);'+
@@ -1450,6 +1484,12 @@ function _timGo(){
         goLabel:p&&p.goLabel,goFn:p&&p.goFn,
         rows:p&&p.rows,
       });
+      // And the half that goes UP: the sentence with every client name
+      // scrubbed out of it, whether he placed it, and which family did. Never
+      // awaited and never able to throw into the send path (timLearnFrom has
+      // its own try), because a man saying something to Tim must not be able
+      // to be slowed down, let alone stopped, by a log about it.
+      if(typeof timLearnFrom==='function')timLearnFrom(said,p||{});
     }
   }catch(_e){}
   // The thread is the receipt. Every sentence lands in it, INCLUDING the ones

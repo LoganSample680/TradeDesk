@@ -4319,9 +4319,17 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_MTB_DEFAULT_ORDER is defined with 4 tabs', async () => {
-    const r = await page.evaluate(() => typeof _MTB_DEFAULT_ORDER !== 'undefined' && _MTB_DEFAULT_ORDER.length === 4);
-    expect(r).toBe(true);
+  // ── 10.4: four became three, and the row gained a seat ──────────────────
+  // Owner, 2026-09-21: Tim "needs to be dead center on all devices, looks awful
+  // the way it is now". Centring needs an ODD number of slots and the bar had
+  // six: four tabs, Tim's seat, and More. No even row has a middle, and uneven
+  // tab widths cannot fake one, so Clients moved into the More menu.
+  // Asserting the CONTENTS rather than the count now: a length check passes
+  // just as happily on the wrong three.
+  test('_MTB_DEFAULT_ORDER is the three draggable tabs', async () => {
+    const r = await page.evaluate(() =>
+      (typeof _MTB_DEFAULT_ORDER !== 'undefined') ? _MTB_DEFAULT_ORDER.slice() : null);
+    expect(r).toEqual(['dash', 'leads', 'jobs']);
   });
 
   test('_initTabBarDrag is a function', async () => {
@@ -4339,8 +4347,22 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
       const tabs = [...document.querySelectorAll('#mtb-inner .mtb[data-tab]')];
       return tabs.map(b => b.dataset.tab);
     });
-    expect(r).toHaveLength(4);
-    expect(r).toContain('dash');
+    // Three, plus Tim's seat, plus More outside the row: five slots, and five
+    // is what has a middle for him to sit in.
+    expect(r).toEqual(['dash', 'leads', 'jobs']);
+  });
+
+  test('and Tim rides in the row without being one of them', async () => {
+    const r = await page.evaluate(() => {
+      const seat = document.querySelector('#mtb-inner > #mtb-tim-slot');
+      return seat ? { isTab: seat.hasAttribute('data-tab'),
+        classed: seat.classList.contains('mtb') } : null;
+    });
+    expect(r, 'his seat is not in the row').not.toBeNull();
+    // Not a tab and not classed as one, so the drag never picks it up and it
+    // can never be counted as a destination.
+    expect(r.isTab).toBe(false);
+    expect(r.classed).toBe(false);
   });
 
   test('dash-widget-root exists with td-dw children', async () => {
@@ -4362,10 +4384,10 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
   test('_applyTabOrder reorders tab bar DOM', async () => {
     const r = await page.evaluate(() => {
       if (typeof _applyTabOrder !== 'function') return null;
-      _applyTabOrder(['jobs', 'dash', 'clients', 'leads']);
+      _applyTabOrder(['jobs', 'dash', 'leads']);
       const tabs = [...document.querySelectorAll('#mtb-inner .mtb[data-tab]')];
       const order = tabs.map(b => b.dataset.tab);
-      _applyTabOrder(['dash', 'leads', 'clients', 'jobs']); // restore
+      _applyTabOrder(['dash', 'leads', 'jobs']); // restore
       return order;
     });
     if (!r) return;
