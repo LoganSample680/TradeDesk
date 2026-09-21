@@ -344,6 +344,32 @@ test.describe('Photo capture: the sheet itself', () => {
     await expect(page.locator('#pc-subject')).toHaveText('Dana Whitfield');
   });
 
+  // Both caught in a local screenshot: the hint contradicted a live
+  // viewfinder, and the stamp toggle sat on top of the subject pill.
+  test('the hint stops saying "open the camera" once a viewfinder is live', async () => {
+    const txt = await page.evaluate(async () => {
+      tdCaptureForBid(901, 'before');
+      // simulate the camera answering after the sheet was already drawn
+      document.getElementById('pc-sheet').classList.add('pc-live');
+      _pcStream = { getTracks: () => [] };
+      _pcPaint();
+      const t = document.getElementById('pc-hint').textContent;
+      _pcStream = null;
+      return t;
+    });
+    expect(txt).not.toContain('open the camera');
+  });
+
+  test('the stamp toggle does not sit on top of the subject pill', async () => {
+    await page.evaluate(() => tdCaptureForBid(901, 'before'));
+    const hit = await page.evaluate(() => {
+      const a = document.querySelector('#pc-sheet .pc-attach').getBoundingClientRect();
+      const b = document.getElementById('pc-stamp-toggle').getBoundingClientRect();
+      return !(b.top > a.bottom || b.bottom < a.top || b.left > a.right || b.right < a.left);
+    });
+    expect(hit).toBe(false);
+  });
+
   test('closing removes the sheet and stops the camera', async () => {
     await page.evaluate(() => tdCaptureForBid(901, 'before'));
     await page.evaluate(() => tdCloseCapture());
@@ -379,15 +405,15 @@ test.describe('Photo capture: the old copy is gone', () => {
     expect(src.split('\n').length).toBeLessThan(15);
   });
 
-  test('the Photo quick action exists and sits in slot 2', async () => {
+  test('the TrueShot quick action exists and sits in slot 2', async () => {
     const r = await page.evaluate(() => {
       const g = document.querySelector('.qa-grid');
       const labels = [...g.querySelectorAll('.qa')].map(b => b.textContent.trim());
       return { labels, hasHandler: !!document.getElementById('qa-photo-btn') };
     });
     expect(r.hasHandler).toBe(true);
-    expect(r.labels[1]).toBe('Photo');
-    // The owner's order: New lead, Photo, Log miles, Proposal (2026-09-21).
+    expect(r.labels[1]).toBe('TrueShot');
+    // The owner's order: New lead, TrueShot, Log miles, Proposal (2026-09-21).
     expect(r.labels[0]).toBe('New lead');
     expect(r.labels[2]).toBe('Log miles');
     expect(r.labels[3]).toBe('Proposal');
@@ -415,5 +441,297 @@ test.describe('Photo capture: the old copy is gone', () => {
 
   test('zero console errors across the whole photo path', async () => {
     assertNoErrors(page, 'photo-capture.js');
+  });
+});
+
+test.describe('TrueShot: the burned-in stamp', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  test.beforeEach(async () => {
+    await page.evaluate(seed());
+    await page.evaluate(() => { S.bname = 'Hollow Creek Painting'; S.photoStamp = undefined; });
+  });
+
+  // The stamp is the whole reason a photo is evidence rather than a picture.
+  // These pin WHAT it says; the drawing itself is pinned by the round-trip
+  // test below, which proves a real image comes back out bigger than nothing.
+  test('names the business, the moment, and the address of the job', async () => {
+    const lines = await page.evaluate(() => {
+      jobs.push({ id: 720, client_id: 501, name: 'Repipe', addr: '77 Job Site Rd' });
+      return _pcStampLines({ jobId: 720, clientId: 501 });
+    });
+    expect(lines[0]).toBe('Hollow Creek Painting');
+    expect(lines[1]).toMatch(/\d{2}\/\d{2}\/\d{4}\s+\d{1,2}:\d{2}/);
+    expect(lines[2]).toBe('77 Job Site Rd');
+  });
+
+  test('falls back to the customer address, then to raw coordinates', async () => {
+    const r = await page.evaluate(() => ({
+      viaClient: _pcStampLines({ clientId: 501 }),
+      viaCoords: _pcStampLines({ lat: 37.68891, lon: -97.33612 }),
+      bare: _pcStampLines({}),
+    }));
+    expect(r.viaClient[2]).toBe('1412 Oak Ridge Dr');
+    expect(r.viaCoords[2]).toBe('37.68891, -97.33612');
+    // No business, no place: still stamps the moment, never nothing.
+    expect(r.bare.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('a contractor with no business name set still gets a stamp', async () => {
+    const lines = await page.evaluate(() => { S.bname = ''; return _pcStampLines({ clientId: 501 }); });
+    expect(lines[0]).toMatch(/\d{2}\/\d{2}\/\d{4}/);
+    expect(lines).not.toContain('');
+  });
+
+  test('burning it in returns a real JPEG, and never destroys the photo on failure', async () => {
+    const r = await page.evaluate(async (b64) => {
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const file = new File([arr], 'shot.png', { type: 'image/png' });
+      const ok = await tdStampImage(file, ['Hollow Creek Painting', '09/21/2026  4:18 PM', '1412 Oak Ridge Dr']);
+      return {
+        type: ok && ok.type, size: ok && ok.size,
+        junk: await tdStampImage(new File(['not an image'], 'x.jpg', { type: 'image/jpeg' }), ['a']),
+        noLines: await tdStampImage(file, []),
+        noFile: await tdStampImage(null, ['a']),
+      };
+    }, PNG_B64);
+    expect(r.type).toBe('image/jpeg');
+    expect(r.size).toBeGreaterThan(0);
+    // Every failure path hands back null, and tdSavePhoto reads null as
+    // "upload what you had". A stamp must never be why a photo is lost.
+    expect(r.junk).toBe(null);
+    expect(r.noLines).toBe(null);
+    expect(r.noFile).toBe(null);
+  });
+
+  test('the toggle is a real setting, default on, and survives a read back', async () => {
+    const r = await page.evaluate(() => {
+      const dflt = _pcStampOn();
+      const off = tdTogglePhotoStamp();
+      const nowOff = _pcStampOn();
+      const on = tdTogglePhotoStamp();
+      return { dflt, off, nowOff, on, persisted: S.photoStamp };
+    });
+    expect(r.dflt).toBe(true);
+    expect(r.off).toBe(false);
+    expect(r.nowOff).toBe(false);
+    expect(r.on).toBe(true);
+    expect(r.persisted).toBe(true);
+  });
+
+  test('stamp off means the bytes are left alone', async () => {
+    const r = await page.evaluate(async (b64) => {
+      S.photoStamp = false;
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const before = arr.length;
+      const row = await tdSavePhoto({ file: new File([arr], 'shot.png', { type: 'image/png' }), type: 'before', bidId: 901 });
+      S.photoStamp = true;
+      return { wrote: !!row, before };
+    }, PNG_B64);
+    expect(r.wrote).toBe(true);
+  });
+});
+
+test.describe('TrueShot: marking a photo up', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  test.beforeEach(async () => {
+    await page.evaluate(seed());
+    await page.evaluate(() => { try { tdCloseAnnotate(); } catch (e) {} });
+  });
+
+  // The editor loads the photo by url. Offline, the mocked storage url does
+  // not resolve to real bytes, so the row is given a data: url here: that is
+  // the same thing a real Supabase public url is to the editor, an image it
+  // can decode and read back off a canvas.
+  const openEditor = async () => {
+    await shoot(page, { type: 'before', bidId: 901 });
+    return page.evaluate(async (b64) => {
+      const p = photos[photos.length - 1];
+      // A REAL-SIZED image: the 1x1 test png made every drag less than one
+      // image pixel long, which is how the scaled tap-vs-drag floor below
+      // came to be tested at all.
+      const seedCv = document.createElement('canvas');
+      seedCv.width = 400; seedCv.height = 300;
+      const sg = seedCv.getContext('2d');
+      sg.fillStyle = '#8899aa'; sg.fillRect(0, 0, 400, 300);
+      p.url = seedCv.toDataURL('image/png');
+      delete p.data;
+      const id = p.id;
+      const ok = tdAnnotatePhoto(id);
+      // the <img> decode is async; the canvas is sized in its onload
+      for (let i = 0; i < 40 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r => setTimeout(r, 25));
+      return { ok, ready: !!(_pcAnno && _pcAnno.img), id };
+    }, PNG_B64);
+  };
+
+  test('opens on a real photo and sizes the canvas to the image', async () => {
+    const r = await openEditor();
+    expect(r.ok).toBe(true);
+    expect(r.ready).toBe(true);
+    await expect(page.locator('#pc-anno')).toBeVisible();
+    const cv = await page.evaluate(() => { const c = document.getElementById('pc-anno-cv'); return { w: c.width, h: c.height }; });
+    expect(cv.w).toBeGreaterThan(0);
+    expect(cv.h).toBeGreaterThan(0);
+  });
+
+  // The floor is 1% of the short edge, so this also pins that a real thumb
+  // movement registers at any image size (a flat pixel count did not).
+  test('a drag lays down a mark, a tap does not', async () => {
+    await openEditor();
+    const box = await page.locator('#pc-anno-cv').boundingBox();
+    await page.mouse.move(box.x + 10, box.y + 10);
+    await page.mouse.down(); await page.mouse.up();            // a tap: no mark
+    const afterTap = await page.evaluate(() => _pcAnno.ops.length);
+    await page.mouse.move(box.x + 8, box.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 8, box.y + box.height - 8, { steps: 6 });
+    await page.mouse.up();                                      // a drag: a mark
+    const afterDrag = await page.evaluate(() => _pcAnno.ops.length);
+    expect(afterTap).toBe(0);
+    expect(afterDrag).toBe(1);
+  });
+
+  test('undo pops the last mark and is safe on an empty canvas', async () => {
+    await openEditor();
+    const r = await page.evaluate(() => {
+      _pcAnno.ops.push({ t: 'arrow', x1: 1, y1: 1, x2: 40, y2: 40, c: '#E5484D' });
+      _pcAnno.ops.push({ t: 'circle', x1: 5, y1: 5, x2: 50, y2: 50, c: '#E5484D' });
+      const first = tdAnnoUndo(), second = tdAnnoUndo(), third = tdAnnoUndo();
+      return { first, second, third, left: _pcAnno.ops.length };
+    });
+    expect(r.first).toBe(true);
+    expect(r.second).toBe(true);
+    expect(r.third).toBe(false);   // nothing left to undo, and no throw
+    expect(r.left).toBe(0);
+  });
+
+  test('the tool and the two colours switch, and only two colours exist', async () => {
+    await openEditor();
+    const r = await page.evaluate(() => {
+      tdAnnoTool('circle'); const t1 = _pcAnno.tool;
+      tdAnnoTool('text'); const t2 = _pcAnno.tool;
+      const c1 = _pcAnno.color; tdAnnoColor();
+      const c2 = _pcAnno.color; tdAnnoColor();
+      return { t1, t2, c1, c2, back: _pcAnno.color };
+    });
+    expect(r.t1).toBe('circle');
+    expect(r.t2).toBe('text');
+    expect(r.c1).toBe('#E5484D');
+    expect(r.c2).toBe('#F2A81C');
+    expect(r.back).toBe('#E5484D');
+  });
+
+  // The rule that matters: the untouched shot survives. A marked-up photo is
+  // still evidence only while the unmarked one exists.
+  test('saving keeps the original and never overwrites it on a second pass', async () => {
+    await openEditor();
+    const r = await page.evaluate(async () => {
+      const p = photos[photos.length - 1];
+      p.url = 'https://example.test/original.jpg';
+      p.storagePath = 'orig/one.jpg';
+      _pcAnno.ops.push({ t: 'arrow', x1: 1, y1: 1, x2: 30, y2: 30, c: '#E5484D' });
+      await tdSaveAnnotation();
+      const afterFirst = { originalUrl: p.originalUrl, annotated: p.annotated, hasData: !!p.data };
+      // mark it up a second time
+      p.url = 'https://example.test/marked-1.jpg';
+      tdAnnotatePhoto(p.id);
+      for (let i = 0; i < 40 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r2 => setTimeout(r2, 25));
+      if (_pcAnno) { _pcAnno.ops.push({ t: 'circle', x1: 2, y1: 2, x2: 40, y2: 40, c: '#F2A81C' }); await tdSaveAnnotation(); }
+      return { afterFirst, originalUrlNow: p.originalUrl, originalPath: p.originalPath };
+    });
+    expect(r.afterFirst.originalUrl).toBe('https://example.test/original.jpg');
+    expect(r.afterFirst.annotated).toBe(true);
+    // Still the FIRST original after the second pass, not the marked copy.
+    expect(r.originalUrlNow).toBe('https://example.test/original.jpg');
+    expect(r.originalPath).toBe('orig/one.jpg');
+  });
+
+  test('saving with no marks changes nothing and just closes', async () => {
+    await openEditor();
+    const r = await page.evaluate(async () => {
+      const p = photos[photos.length - 1];
+      const urlBefore = p.url;
+      const saved = await tdSaveAnnotation();
+      return { saved, sameUrl: p.url === urlBefore, annotated: !!p.annotated, open: !!document.getElementById('pc-anno') };
+    });
+    expect(r.saved).toBe(false);
+    expect(r.sameUrl).toBe(true);
+    expect(r.annotated).toBe(false);
+    expect(r.open).toBe(false);
+  });
+
+  test('a missing photo, junk, and a photo with no image never open an editor', async () => {
+    const r = await page.evaluate(() => {
+      const a = tdAnnotatePhoto('nope-1234');
+      const b = tdAnnotatePhoto(null);
+      photos.push({ id: 991, type: 'before', url: '', thumbUrl: '', data: '', client_id: 501 });
+      const c = tdAnnotatePhoto(991);
+      return { a, b, c, open: !!document.getElementById('pc-anno') };
+    });
+    expect(r).toEqual({ a: false, b: false, c: false, open: false });
+  });
+});
+
+test.describe('TrueShot: verified on site', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  test.beforeEach(async () => { await page.evaluate(seed()); });
+
+  test('the snapshot says verified when the photo was taken at the job, and never ships coordinates', async () => {
+    const r = await page.evaluate(() => {
+      jobs.push({ id: 730, bid_id: 901, client_id: 501, name: 'Repipe', start: '2026-09-18', status: 'done', lat: 37.6889, lon: -97.3361 });
+      photos.push({ id: 11, url: 'https://x.test/a.jpg', thumbUrl: '', type: 'before', client_id: 501, bid_id: 901, job_id: 730, lat: 37.68893, lon: -97.33607, uploadedAt: new Date().toISOString() });
+      photos.push({ id: 12, url: 'https://x.test/b.jpg', thumbUrl: '', type: 'after', client_id: 501, bid_id: 901, job_id: 730, lat: 40.7128, lon: -74.006, uploadedAt: new Date().toISOString() });
+      photos.push({ id: 13, url: 'https://x.test/c.jpg', thumbUrl: '', type: 'after', client_id: 501, bid_id: 901, job_id: 730, uploadedAt: new Date().toISOString() });
+      const snap = _buildClientHubSnapshot(501);
+      const jp = (snap.jobs[0] || {}).photos || [];
+      return {
+        onSite: jp.find(p => p.url.endsWith('a.jpg')).verified,
+        milesAway: jp.find(p => p.url.endsWith('b.jpg')).verified,
+        noFix: jp.find(p => p.url.endsWith('c.jpg')).verified,
+        leaks: JSON.stringify(snap).includes('37.68893'),
+      };
+    });
+    expect(r.onSite).toBe(true);
+    expect(r.milesAway).toBe(false);
+    expect(r.noFix).toBe(false);
+    // The client is told the verdict, never the coordinates.
+    expect(r.leaks).toBe(false);
+  });
+
+  test('falls back to the customer address when the job has no coordinates', async () => {
+    const v = await page.evaluate(() => {
+      jobs.push({ id: 731, bid_id: 901, client_id: 501, name: 'Repipe', status: 'done' });
+      photos.push({ id: 14, url: 'https://x.test/d.jpg', thumbUrl: '', type: 'before', client_id: 501, bid_id: 901, job_id: 731, lat: 37.68892, lon: -97.33608, uploadedAt: new Date().toISOString() });
+      const snap = _buildClientHubSnapshot(501);
+      return (snap.jobs[0].photos[0] || {}).verified;
+    });
+    expect(v).toBe(true);
   });
 });

@@ -38,7 +38,7 @@
 // job-sheet path always did.
 async function tdSavePhoto(opts){
   opts=opts||{};
-  const file=opts.file;
+  let file=opts.file;
   if(!file)return null;
   const type=opts.type||'before';
   const caption=String(opts.caption||'').trim().slice(0,60);
@@ -63,6 +63,20 @@ async function tdSavePhoto(opts){
     job_id:jobId,job_name:j?j.name||'':'',
     uploadedAt:new Date().toISOString()
   };
+
+  // ── The stamp is burned in BEFORE anything else sees the bytes ──────────
+  // A timestamp drawn by the app over the photo in the viewer is a caption; a
+  // timestamp burned into the pixels is evidence. This is the one CompanyCam
+  // feature contractors name when they explain why they pay for it: the
+  // insurance adjuster, the customer arguing the damage was already there,
+  // the dispute six months after the truck left. It has to survive being
+  // screenshotted, texted and re-saved, so it goes into the image itself.
+  // Failure returns the original file untouched: a stamp is never worth
+  // losing a photo over.
+  if(opts.stamp!==false&&_pcStampOn()){
+    const stamped=await tdStampImage(file,_pcStampLines({lat:opts.lat,lon:opts.lon,clientId,jobId,bidId}));
+    if(stamped)file=stamped;
+  }
 
   // The local copy lands FIRST and unconditionally. A photo taken in a
   // crawlspace with no bars is still a photo, and the job sheet has always
@@ -125,6 +139,93 @@ function _pcMarkPending(row,j,file){
     if(last&&!last.pendingUpload){last.pendingUpload=true;last._uploadExt=ext;last._uploadMime=mime;}
   }
   saveAll();
+}
+
+
+// ── The burned-in stamp (owner 2026-09-21) ──────────────────────────────────
+// What goes on it, and why exactly this and nothing else: the business (so a
+// photo forwarded out of the thread still says who took it), the date and
+// time to the minute, and WHERE. Anything more and it stops being readable on
+// a phone; anything less and it stops being usable as proof.
+//
+// It is a SETTING, not a law: a contractor sending a customer a finished
+// kitchen does not always want a date bar across it. Default on, because the
+// person who needs it most is the one who never thought to turn it on.
+function _pcStampOn(){
+  try{ return (typeof S==='undefined'||S.photoStamp===undefined)?true:!!S.photoStamp; }
+  catch(_e){ return true; }
+}
+function tdTogglePhotoStamp(on){
+  try{
+    S.photoStamp=(on===undefined)?!_pcStampOn():!!on;
+    saveAll();
+    _pcPaint();
+    return S.photoStamp;
+  }catch(_e){return true;}
+}
+// The lines to burn in, top to bottom. Kept separate from the drawing so the
+// CONTENT is testable without a canvas, and so a caller can preview it.
+function _pcStampLines(ctx){
+  ctx=ctx||{};
+  const out=[];
+  try{
+    const biz=(typeof S!=='undefined'&&S.bname)?String(S.bname).trim():'';
+    if(biz)out.push(biz);
+    const d=new Date();
+    out.push(d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+
+      '  '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}));
+    // WHERE, in the order a person would recognise it: the job's address, the
+    // customer's address, then raw coordinates. Coordinates are the fallback
+    // rather than the default because "1412 Oak Ridge Dr" settles an argument
+    // and "37.6889, -97.3361" starts one.
+    let where='';
+    const j=ctx.jobId!=null?jobs.find(x=>x.id===ctx.jobId):null;
+    if(j&&j.addr)where=j.addr;
+    if(!where&&ctx.clientId!=null){
+      const c=clients.find(x=>x.id===ctx.clientId);
+      if(c&&c.addr)where=c.addr;
+    }
+    if(!where&&ctx.lat!=null&&ctx.lon!=null)where=Number(ctx.lat).toFixed(5)+', '+Number(ctx.lon).toFixed(5);
+    if(where)out.push(where);
+  }catch(_e){}
+  return out;
+}
+// Draw the lines into the bottom-left of the image and hand back a new JPEG.
+// Returns null on ANY failure, and every caller treats null as "upload what
+// you had", so a decode problem can never cost a photo.
+async function tdStampImage(fileOrBlob,lines){
+  try{
+    if(!fileOrBlob||!lines||!lines.length)return null;
+    let bmp;
+    try{bmp=await createImageBitmap(fileOrBlob,{imageOrientation:'from-image'});}
+    catch(_e){bmp=await createImageBitmap(fileOrBlob);}
+    const w=bmp.width,h=bmp.height;
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+    const g=cv.getContext('2d');
+    g.drawImage(bmp,0,0,w,h);
+    // Scaled off the image, not fixed px: the same stamp has to be legible on
+    // a 4032px phone photo and on a 640px one.
+    const fs=Math.max(13,Math.round(Math.min(w,h)*0.032));
+    const pad=Math.round(fs*0.7), lh=Math.round(fs*1.32);
+    g.font='700 '+fs+'px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif';
+    g.textBaseline='top';
+    const widest=lines.reduce((m,t)=>Math.max(m,g.measureText(t).width),0);
+    const boxH=lines.length*lh+pad*1.2, boxW=Math.min(w-pad*2,widest+pad*2);
+    const x=pad, y=h-boxH-pad;
+    // A slab, not a drop shadow: a shadow disappears over a bright wall,
+    // which is most of a jobsite in daylight.
+    g.fillStyle='rgba(10,13,17,.62)';
+    const r=Math.round(fs*0.4);
+    g.beginPath();
+    if(g.roundRect)g.roundRect(x,y,boxW,boxH,r);else g.rect(x,y,boxW,boxH);
+    g.fill();
+    g.fillStyle='#fff';
+    lines.forEach((t,i)=>g.fillText(t,x+pad,y+pad*0.6+i*lh,boxW-pad*2));
+    const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.92));
+    if(!blob||!blob.size)return null;
+    blob.name=(fileOrBlob.name||'shot.jpg').replace(/\.[a-z0-9]+$/i,'')+'.jpg';
+    return blob;
+  }catch(_e){return null;}
 }
 
 // ── A bid's photos follow it into the job ───────────────────────────────────
@@ -263,6 +364,8 @@ function _pcSheetHTML(){
       '<span class="pc-attach-t" id="pc-subject">'+escHtml(_pcSubjectLabel())+'</span>'+
     '</div>'+
     '<div class="pc-hint" id="pc-hint"></div>'+
+    '<button type="button" class="pc-stamp-toggle" id="pc-stamp-toggle" onclick="tdTogglePhotoStamp()">'+
+      '<span class="dot"></span><span id="pc-stamp-label">Stamp on</span></button>'+
   '</div>'+
   '<div class="pc-seg">'+
     seg('before','Before','b4')+seg('progress','Progress','pr')+seg('after','After','af')+
@@ -283,6 +386,10 @@ async function _pcStartStream(){
     if(!v){_pcStopStream();return;}
     v.srcObject=_pcStream;
     document.getElementById('pc-sheet')?.classList.add('pc-live');
+    // Repaint: the sheet was drawn before the camera answered, so the hint
+    // still read "tap the shutter to open the camera" over a live viewfinder
+    // (caught in a screenshot, 2026-09-21).
+    _pcPaint();
   }catch(_e){
     // No camera stream: the shutter drives the native picker instead.
     _pcStream=null;
@@ -338,6 +445,8 @@ function _pcPaint(){
   }
   const sub=document.getElementById('pc-subject');
   if(sub)sub.textContent=_pcSubjectLabel();
+  const st=document.getElementById('pc-stamp-toggle'),stl=document.getElementById('pc-stamp-label');
+  if(st&&stl){const on=_pcStampOn();st.className='pc-stamp-toggle'+(on?'':' off');stl.textContent=on?'Stamp on':'Stamp off';}
   _pcPaintStrip();
 }
 function _pcPaintStrip(){
@@ -349,7 +458,7 @@ function _pcPaintStrip(){
     (_pcCtx.jobId==null&&_pcCtx.bidId==null&&_pcCtx.clientId!=null&&p.client_id===_pcCtx.clientId)));
   const shots=mine.slice(-4);
   const counts=['before','progress','after'].map(t=>({t,n:mine.filter(p=>p.type===t).length})).filter(x=>x.n);
-  strip.innerHTML=shots.map(p=>'<div class="pc-thumb" style="background-image:url(\''+(p.thumbUrl||p.url||p.data||'')+'\')"></div>').join('')+
+  strip.innerHTML=shots.map(p=>'<div class="pc-thumb'+(p.annotated?' marked':'')+'" title="Mark it up" onclick="tdAnnotatePhoto(\''+p.id+'\')" style="background-image:url(\''+(p.thumbUrl||p.url||p.data||'')+'\')"></div>').join('')+
     (counts.length?'<span class="pc-strip-lbl">'+counts.map(x=>x.n+' '+x.t.charAt(0).toUpperCase()+x.t.slice(1)).join(' · ')+'</span>':'');
 }
 // The shutter. With a live stream it grabs a frame and the sheet stays open,
@@ -376,9 +485,11 @@ function tdCaptureFromPicker(input){
 }
 async function _pcCommit(file){
   if(!_pcCtx)return;
+  const fix=_pcCurrentFix();
   const row=await tdSavePhoto({
     file,type:_pcCtx.type,caption:_pcCtx.caption,
-    clientId:_pcCtx.clientId,bidId:_pcCtx.bidId,jobId:_pcCtx.jobId
+    clientId:_pcCtx.clientId,bidId:_pcCtx.bidId,jobId:_pcCtx.jobId,
+    lat:fix.lat,lon:fix.lon
   });
   if(!row)return;
   // Where it was shot, kept on the row so the unfiled tray can guess the
@@ -387,6 +498,14 @@ async function _pcCommit(file){
   _pcShots++;
   _pcPaint();
   if(typeof _pcAfterSave==='function')_pcAfterSave(row);
+}
+// The fix we already hold, if any. Never waits on one: a photo must not be
+// slower to take because the phone is arguing with GPS.
+function _pcCurrentFix(){
+  try{
+    if(typeof _lastGeoFix==='object'&&_lastGeoFix&&_lastGeoFix.lat!=null)return{lat:_lastGeoFix.lat,lon:_lastGeoFix.lon};
+  }catch(_e){}
+  return{lat:null,lon:null};
 }
 function _pcStampGeo(row){
   try{
@@ -512,4 +631,214 @@ function tdOpenFilePicker(photoId){
     '<button class="btn btn-full" style="margin-top:12px" onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>'+
   '</div>';
   document.body.appendChild(ov);
+}
+
+// ── Annotation (owner 2026-09-21) ───────────────────────────────────────────
+// "Circle the rot, point at the joist, write 'replace this'." It is the most
+// used feature in CompanyCam and the reason a photo beats a paragraph: the
+// crew, the customer and the adjuster all read the same arrow.
+//
+// TWO RULES, and both are about not destroying evidence:
+//   1. The ORIGINAL is never overwritten. The flattened copy becomes the
+//      photo everyone sees; originalUrl/originalPath keep the untouched shot
+//      forever. A stamped photo that somebody drew on is still evidence only
+//      if the undrawn one still exists.
+//   2. The marks are flattened INTO the image rather than stored as an
+//      overlay. An overlay is lost the moment the photo is texted, emailed or
+//      screenshotted, which is every way a photo actually leaves this app.
+let _pcAnno=null;
+
+function tdAnnotatePhoto(photoId){
+  const p=photos.find(x=>String(x.id)===String(photoId));
+  if(!p)return false;
+  const src=p.data||p.url||p.thumbUrl||'';
+  if(!src)return false;
+  _pcAnno={photoId:p.id,ops:[],tool:'arrow',color:'#E5484D',drawing:null,img:null,saving:false};
+  document.getElementById('pc-anno')?.remove();
+  const el=document.createElement('div');
+  el.id='pc-anno';el.className='pc-anno';
+  el.innerHTML=
+    '<div class="pc-anno-top">'+
+      '<button type="button" class="pc-side" onclick="tdCloseAnnotate()">Cancel</button>'+
+      '<span class="pc-anno-title">Mark it up</span>'+
+      '<button type="button" class="pc-side go" id="pc-anno-save" onclick="tdSaveAnnotation()">Save</button>'+
+    '</div>'+
+    '<div class="pc-anno-stage" id="pc-anno-stage"><canvas id="pc-anno-cv"></canvas></div>'+
+    '<div class="pc-anno-tools">'+
+      '<button type="button" class="pc-tool on" data-tool="arrow" onclick="tdAnnoTool(\'arrow\')">Arrow</button>'+
+      '<button type="button" class="pc-tool" data-tool="circle" onclick="tdAnnoTool(\'circle\')">Circle</button>'+
+      '<button type="button" class="pc-tool" data-tool="text" onclick="tdAnnoTool(\'text\')">Text</button>'+
+      '<button type="button" class="pc-tool" id="pc-anno-color" onclick="tdAnnoColor()" style="color:#E5484D">Red</button>'+
+      '<button type="button" class="pc-tool" onclick="tdAnnoUndo()">Undo</button>'+
+    '</div>';
+  document.body.appendChild(el);
+  const cv=document.getElementById('pc-anno-cv');
+  const im=new Image();
+  im.crossOrigin='anonymous';
+  im.onload=()=>{
+    if(!_pcAnno)return;
+    _pcAnno.img=im;
+    cv.width=im.naturalWidth||im.width;cv.height=im.naturalHeight||im.height;
+    _pcAnnoBind(cv);
+    _pcAnnoRedraw();
+  };
+  // A cross-origin image the canvas cannot read taints it, and the flatten
+  // would throw at toBlob. Fall back to the local base64 copy when there is
+  // one; otherwise the editor says so rather than failing at Save.
+  im.onerror=()=>{ if(p.data&&im.src!==p.data){im.src=p.data;} else {showToast('Could not open that photo to mark up','⚠️');tdCloseAnnotate();} };
+  im.src=src;
+  return true;
+}
+function tdCloseAnnotate(){
+  _pcAnno=null;
+  document.getElementById('pc-anno')?.remove();
+}
+function tdAnnoTool(t){
+  if(!_pcAnno)return;
+  _pcAnno.tool=t;
+  document.querySelectorAll('#pc-anno .pc-tool[data-tool]').forEach(b=>{
+    b.className='pc-tool'+(b.dataset.tool===t?' on':'');
+  });
+}
+function tdAnnoColor(){
+  if(!_pcAnno)return;
+  // Two, not a picker: red for a defect, yellow for a note. A palette is a
+  // decision nobody standing on a roof wants to make.
+  const next=_pcAnno.color==='#E5484D'?'#F2A81C':'#E5484D';
+  _pcAnno.color=next;
+  const b=document.getElementById('pc-anno-color');
+  if(b){b.style.color=next;b.textContent=next==='#E5484D'?'Red':'Yellow';}
+}
+function tdAnnoUndo(){
+  if(!_pcAnno||!_pcAnno.ops.length)return false;
+  _pcAnno.ops.pop();
+  _pcAnnoRedraw();
+  return true;
+}
+// Canvas coordinates from a pointer event, in IMAGE pixels rather than screen
+// pixels, so a mark lands where the finger was at any zoom or device ratio.
+function _pcAnnoPoint(e,cv){
+  const r=cv.getBoundingClientRect();
+  return{x:(e.clientX-r.left)/r.width*cv.width,y:(e.clientY-r.top)/r.height*cv.height};
+}
+function _pcAnnoBind(cv){
+  cv.onpointerdown=e=>{
+    if(!_pcAnno)return;
+    e.preventDefault();
+    try{cv.setPointerCapture(e.pointerId);}catch(_e){}
+    const pt=_pcAnnoPoint(e,cv);
+    if(_pcAnno.tool==='text'){
+      const t=prompt('What does this say?');
+      if(t&&t.trim())_pcAnno.ops.push({t:'text',x:pt.x,y:pt.y,text:t.trim().slice(0,60),c:_pcAnno.color});
+      _pcAnnoRedraw();return;
+    }
+    _pcAnno.drawing={t:_pcAnno.tool,x1:pt.x,y1:pt.y,x2:pt.x,y2:pt.y,c:_pcAnno.color};
+  };
+  cv.onpointermove=e=>{
+    if(!_pcAnno||!_pcAnno.drawing)return;
+    const pt=_pcAnnoPoint(e,cv);
+    _pcAnno.drawing.x2=pt.x;_pcAnno.drawing.y2=pt.y;
+    _pcAnnoRedraw();
+  };
+  const end=()=>{
+    if(!_pcAnno||!_pcAnno.drawing)return;
+    const d=_pcAnno.drawing;_pcAnno.drawing=null;
+    // A tap with no drag is not a mark, or every mis-tap leaves a dot on the
+    // customer's photo. The floor SCALES with the image: a flat 6 was 6
+    // IMAGE pixels, which on a 4000px phone photo shown at 390px wide is
+    // about half a screen pixel, so it caught nothing at all on exactly the
+    // photos people shoot. 1% of the short edge is a real thumb movement at
+    // any size.
+    const minMove=Math.max(4,Math.min(cv.width,cv.height)*0.01);
+    if(Math.hypot(d.x2-d.x1,d.y2-d.y1)>minMove)_pcAnno.ops.push(d);
+    _pcAnnoRedraw();
+  };
+  cv.onpointerup=end;cv.onpointercancel=end;cv.onpointerleave=end;
+}
+function _pcAnnoRedraw(){
+  const cv=document.getElementById('pc-anno-cv');
+  if(!cv||!_pcAnno||!_pcAnno.img)return;
+  const g=cv.getContext('2d');
+  g.clearRect(0,0,cv.width,cv.height);
+  g.drawImage(_pcAnno.img,0,0,cv.width,cv.height);
+  const all=_pcAnno.ops.concat(_pcAnno.drawing?[_pcAnno.drawing]:[]);
+  all.forEach(op=>_pcAnnoDraw(g,op,cv));
+}
+function _pcAnnoDraw(g,op,cv){
+  // Stroke weight scales with the image so a mark reads the same on a 4032px
+  // phone photo as on a 640px one.
+  const w=Math.max(3,Math.round(Math.min(cv.width,cv.height)*0.008));
+  g.save();
+  g.strokeStyle=op.c;g.fillStyle=op.c;g.lineWidth=w;g.lineCap='round';g.lineJoin='round';
+  // A dark halo under every mark: red on a brick wall and yellow on a sunlit
+  // ceiling both vanish without it.
+  g.shadowColor='rgba(0,0,0,.55)';g.shadowBlur=w*1.4;
+  if(op.t==='arrow'){
+    g.beginPath();g.moveTo(op.x1,op.y1);g.lineTo(op.x2,op.y2);g.stroke();
+    const a=Math.atan2(op.y2-op.y1,op.x2-op.x1),head=w*4;
+    g.beginPath();
+    g.moveTo(op.x2,op.y2);
+    g.lineTo(op.x2-head*Math.cos(a-Math.PI/7),op.y2-head*Math.sin(a-Math.PI/7));
+    g.lineTo(op.x2-head*Math.cos(a+Math.PI/7),op.y2-head*Math.sin(a+Math.PI/7));
+    g.closePath();g.fill();
+  }else if(op.t==='circle'){
+    const cx=(op.x1+op.x2)/2,cy=(op.y1+op.y2)/2;
+    const rx=Math.abs(op.x2-op.x1)/2,ry=Math.abs(op.y2-op.y1)/2;
+    g.beginPath();g.ellipse(cx,cy,Math.max(rx,w),Math.max(ry,w),0,0,Math.PI*2);g.stroke();
+  }else if(op.t==='text'){
+    const fs=Math.max(16,Math.round(Math.min(cv.width,cv.height)*0.045));
+    g.font='800 '+fs+'px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif';
+    g.textBaseline='top';
+    g.fillText(op.text,op.x,op.y);
+  }
+  g.restore();
+}
+// Flatten and store. The marked copy replaces what everyone sees; the
+// untouched shot is kept under originalUrl and is never overwritten again on
+// a second pass, so annotating twice still leaves the first truth intact.
+async function tdSaveAnnotation(){
+  if(!_pcAnno||_pcAnno.saving)return false;
+  const cv=document.getElementById('pc-anno-cv');
+  const p=photos.find(x=>String(x.id)===String(_pcAnno.photoId));
+  if(!cv||!p)return false;
+  if(!_pcAnno.ops.length){tdCloseAnnotate();return false;}
+  _pcAnno.saving=true;
+  const btn=document.getElementById('pc-anno-save');
+  if(btn)btn.textContent='Saving…';
+  let blob=null;
+  try{ blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.92)); }catch(_e){ blob=null; }
+  if(!blob){
+    if(btn)btn.textContent='Save';
+    _pcAnno.saving=false;
+    showToast('Could not save the markup','⚠️');
+    return false;
+  }
+  blob.name='marked-'+Date.now()+'.jpg';
+  if(!p.originalUrl){p.originalUrl=p.url||'';p.originalPath=p.storagePath||'';}
+  p.annotated=true;
+  const dataUrl=await _pcReadDataUrl(blob);
+  if(dataUrl)p.data=dataUrl;
+  saveAll();
+  if(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa){
+    try{
+      const _cp=await _compressPhoto(blob);
+      const path=_supaUser.id+'/marked/'+p.id+'-'+Date.now()+'.jpg';
+      const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:blob,
+        {contentType:'image/jpeg',upsert:false,cacheControl:_PHOTO_CACHE});
+      if(!error){
+        const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+        if(urlData&&urlData.publicUrl){
+          const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
+          p.url=urlData.publicUrl;p.storagePath=path;p.thumbUrl=thumbUrl;p.thumbPath=thumbPath;
+          delete p.data;
+          saveAll();
+          if(p.client_id!=null&&typeof _uploadClientHub==='function')_uploadClientHub(p.client_id).catch(()=>{});
+        }
+      }
+    }catch(_e){}
+  }
+  tdCloseAnnotate();
+  _pcPaint();
+  showToast('Markup saved','✏️');
+  return true;
 }

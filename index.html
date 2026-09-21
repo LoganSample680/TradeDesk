@@ -1636,6 +1636,29 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-file-list{max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
 .pc-file-opt{text-align:left;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;font-family:inherit;font-size:14px;font-weight:700;color:var(--text);cursor:pointer;display:flex;flex-direction:column;gap:2px}
 .pc-file-opt span{font-size:12px;font-weight:500;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Mark-up editor. Same dark full-screen surface as the capture sheet: it is
+   the same job (look at a picture, act on it) and a second visual language
+   for it would read as a different app. */
+.pc-anno{position:fixed;inset:0;z-index:99995;background:#0E1116;display:flex;flex-direction:column;color:#fff;font-family:var(--font-ui);animation:fadein .16s ease}
+.pc-anno-top{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 10px}
+.pc-anno-title{flex:1;text-align:center;font-size:14px;font-weight:800}
+.pc-anno-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:6px 10px;min-height:0}
+.pc-anno-stage canvas{max-width:100%;max-height:100%;object-fit:contain;touch-action:none;border-radius:var(--r-md);background:#1a1f26}
+.pc-anno-tools{display:flex;gap:6px;padding:10px 12px calc(20px + env(safe-area-inset-bottom,0px));overflow-x:auto}
+.pc-tool{flex:1;min-width:64px;border:none;border-radius:var(--r-pill);padding:11px 0;font-size:13px;font-weight:800;background:rgba(255,255,255,.1);color:rgba(255,255,255,.78);font-family:var(--font-ui);touch-action:manipulation}
+.pc-tool.on{background:#fff;color:#0E1116}
+/* A shot in the strip is tappable: that is where marking up starts, while the
+   photo is still the thing in front of you. */
+.pc-thumb{cursor:pointer}
+.pc-thumb.marked:after{content:'✏';position:absolute;right:2px;bottom:1px;font-size:11px}
+.pc-thumb{position:relative}
+/* Bottom-left, not under the attach bar: at top:56px it collided with the
+   subject pill on a 390px screen (caught in a screenshot). Down here it sits
+   beside the hint and over the part of the frame nobody composes into. */
+.pc-stamp-toggle{display:inline-flex;align-items:center;gap:6px;background:rgba(10,13,17,.66);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:none;border-radius:var(--r-pill);color:#fff;font-size:11px;font-weight:800;padding:6px 11px;font-family:var(--font-ui);position:absolute;bottom:56px;left:12px;z-index:3}
+.pc-stamp-toggle.off{color:rgba(255,255,255,.55)}
+.pc-stamp-toggle .dot{width:7px;height:7px;border-radius:50%;background:#4ade80}
+.pc-stamp-toggle.off .dot{background:rgba(255,255,255,.35)}
 /* The photo chip that rides every estimate header */
 .pc-chip{display:inline-flex;align-items:center;gap:6px;background:var(--denim-soft);color:var(--denim-deep);border:1px solid var(--denim-edge);border-radius:var(--r-pill);padding:6px 12px 6px 9px;font-size:13px;font-weight:800;font-family:var(--font-ui);cursor:pointer;margin-left:auto;flex-shrink:0;touch-action:manipulation}
 .pc-chip .pc-chip-n{background:var(--denim);color:#fff;border-radius:var(--r-pill);min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;padding:0 5px}
@@ -1861,11 +1884,12 @@ body.dark .cal-cell.other{background:var(--cream)}
           <button class="qa qa-p" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">
             <span class="qa-ico"><span data-ico="👤" data-ico-size="24"></span></span><span>New lead</span>
           </button>
-          <!-- Photo sits in slot 2, where Log miles used to be (owner 2026-09-21):
+          <!-- TrueShot (named by the owner 2026-09-21, joining TrueBid /
+               TrueScan / TrueMeasure). It sits in slot 2, where Log miles used to be:
                the camera is the control he reaches for standing in someone's
                driveway, so it gets the first spot the thumb lands on. -->
           <button class="qa" id="qa-photo-btn" style="--qa-tint:linear-gradient(155deg,#117841 0%,#0B5430 100%);--qa-glow:rgba(17,120,65,.35)" onclick="quickAction('photo')">
-            <span class="qa-ico"><span data-ico="📷" data-ico-size="24"></span></span><span>Photo</span>
+            <span class="qa-ico"><span data-ico="📷" data-ico-size="24"></span></span><span>TrueShot</span>
           </button>
           <button class="qa" id="qa-drive-btn" style="--qa-tint:linear-gradient(155deg,#3D74C6 0%,#24508F 100%);--qa-glow:rgba(45,93,168,.35)" onclick="quickAction('drive')">
             <!-- "Log miles", not "Drive": Drive now means turn-by-turn navigation
