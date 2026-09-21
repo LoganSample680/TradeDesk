@@ -19,20 +19,31 @@ const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'photo-capture/estimate-to-hub';
 
-// A real 1x1 JPEG. The writer compresses through createImageBitmap, so a
-// fake byte string would take the "compression failed, upload the original"
-// branch and never exercise the thumbnail path the hub reads.
-const JPG_B64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
-
+// A PHOTO-SIZED frame, drawn in the page. The first version of this spec used
+// a 1x1 JPEG and the live run failed on it: there is nothing for the stamp to
+// draw onto at one pixel, so the "is the stamp in the bytes" assertion was
+// measuring an empty canvas (759 bytes, which is just what a 1x1 JPEG weighs).
+// A real photo also makes the writer take the real path: compress to a
+// 1600px long edge, build a 360px thumbnail, upload both.
 async function shootInPage(page, opts) {
   return page.evaluate(async (o) => {
-    const bin = atob(o.b64);
-    const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    const file = new File([arr], 'shot.jpg', { type: 'image/jpeg' });
-    const row = await tdSavePhoto({ file, type: o.type, caption: o.caption, clientId: o.clientId, bidId: o.bidId, jobId: o.jobId });
+    // Drawn here rather than passed in, so no eval and nothing for a CSP to
+    // object to. Seeded so every frame in a run is identical: the stamp
+    // proof below compares two uploads byte for byte and a varying source
+    // would make that comparison meaningless.
+    const cv = document.createElement('canvas');
+    cv.width = 1200; cv.height = 900;
+    const g = cv.getContext('2d');
+    const sky = g.createLinearGradient(0, 0, 0, 900);
+    sky.addColorStop(0, '#9fb4c7'); sky.addColorStop(.55, '#c3cdd6');
+    sky.addColorStop(.56, '#b9a98d'); sky.addColorStop(1, '#d8cbb2');
+    g.fillStyle = sky; g.fillRect(0, 0, 1200, 900);
+    g.fillStyle = 'rgba(120,110,95,.55)'; g.fillRect(120, 300, 420, 300);
+    const file = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+    file.name = 'shot.jpg';
+    const row = await tdSavePhoto({ file, type: o.type, caption: o.caption, clientId: o.clientId, bidId: o.bidId, jobId: o.jobId, stamp: o.stamp });
     return row ? { id: row.id, url: row.url, thumbUrl: row.thumbUrl, type: row.type, bid_id: row.bid_id, job_id: row.job_id, client_id: row.client_id, pending: !!row.pendingUpload } : null;
-  }, Object.assign({ b64: JPG_B64 }, opts));
+  }, opts);
 }
 
 test.describe('jobsite photos: estimate → job → client hub', () => {
@@ -93,21 +104,26 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
       },
     });
 
-    // THE STAMP IS IN THE BYTES, proven against the object that is actually in
-    // storage rather than against the canvas that made it. A stamped JPEG is
-    // strictly larger than the same frame unstamped, and this is the only
-    // place that can tell the difference: offline tests can only prove the
-    // stamper returns something.
-    const stampProof = await page.evaluate(async (url) => {
-      try {
-        const res = await fetch(url, { cache: 'no-store' });
-        const buf = await res.arrayBuffer();
-        return { ok: res.ok, bytes: buf.byteLength, type: res.headers.get('content-type') || '' };
-      } catch (e) { return { ok: false, err: String(e && e.message) }; }
-    }, beforeShots[0].url);
-    expect(stampProof.ok, 'the uploaded photo is fetchable from storage').toBe(true);
-    expect(stampProof.bytes, 'a stamped photo has real bytes behind it').toBeGreaterThan(1000);
-    expect(stampProof.type).toContain('image');
+    // THE STAMP IS IN THE BYTES, proven DIFFERENTIALLY against the objects
+    // that are actually in storage. "Bigger than some number" was the wrong
+    // test and the live run said so: the only honest proof is the SAME frame
+    // uploaded twice, once stamped and once not, and the stamped one carrying
+    // more bytes because it carries more pixels. Not charged to the ledger:
+    // the control shot is a measurement, not something a contractor does.
+    const control = await shootInPage(page, { type: 'progress', bidId, caption: 'stamp-off control', stamp: false });
+    const stampProof = await page.evaluate(async ({ stamped, plain }) => {
+      const get = async (u) => {
+        try { const r = await fetch(u, { cache: 'no-store' }); const b = await r.arrayBuffer(); return { ok: r.ok, bytes: b.byteLength, type: r.headers.get('content-type') || '' }; }
+        catch (e) { return { ok: false, err: String(e && e.message) }; }
+      };
+      return { stamped: await get(stamped), plain: await get(plain) };
+    }, { stamped: beforeShots[0].url, plain: control.url });
+    expect(stampProof.stamped.ok, 'the stamped photo is fetchable from storage').toBe(true);
+    expect(stampProof.plain.ok, 'the unstamped control is fetchable from storage').toBe(true);
+    expect(stampProof.stamped.type).toContain('image');
+    expect(stampProof.stamped.bytes,
+      `the stamped upload carries more than the same frame unstamped (${stampProof.stamped.bytes} vs ${stampProof.plain.bytes})`)
+      .toBeGreaterThan(stampProof.plain.bytes);
 
     // ── STEP 3: the estimate's photos follow the bid into the job ────────────
     await step(page, {
