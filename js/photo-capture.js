@@ -685,6 +685,15 @@ function tdAnnotatePhoto(photoId){
   im.crossOrigin='anonymous';
   im.onload=()=>{
     if(!_pcAnno)return;
+    // A response that is not a picture can still "load" (an empty 200 decodes
+    // to nothing in some engines). Zero pixels is a failure, not a photo, and
+    // it has to fall down the ladder or the editor sits on a blank canvas.
+    if(!(im.naturalWidth>0&&im.naturalHeight>0)){
+      _pcAnnoNote('img-empty',{src:String(im.src||'').slice(0,120)});
+      _annoFail();
+      return;
+    }
+    _annoStop();
     _pcAnno.img=im;
     cv.width=im.naturalWidth||im.width;cv.height=im.naturalHeight||im.height;
     _pcAnnoBind(cv);
@@ -703,14 +712,36 @@ function tdAnnotatePhoto(photoId){
   //      them, and hand the editor a blob url. Same origin by construction,
   //      so the canvas is never tainted and Save cannot throw.
   // Only after all three fail does it say so and close.
-  let _tried=0;
-  im.onerror=()=>{
+  //
+  // A fourth failure mode, found by WebKit on 2026-09-21: a source that
+  // neither loads NOR errors. An <img> whose bytes never decode can simply
+  // stall, and the editor then waits forever on an event that is not coming.
+  // So every attempt is on a clock, and a stalled attempt fails like any
+  // other one instead of hanging the sheet open on a blank canvas.
+  let _tried=0,_annoDone=false,_annoWatch=0;
+  const _annoStop=()=>{_annoDone=true;if(_annoWatch){clearTimeout(_annoWatch);_annoWatch=0;}};
+  const _annoArm=()=>{
+    if(_annoWatch)clearTimeout(_annoWatch);
+    _annoWatch=setTimeout(()=>{
+      _annoWatch=0;
+      if(_annoDone||!_pcAnno)return;
+      _pcAnnoNote('img-stalled',{tried:_tried,src:String(im.src||'').slice(0,120)});
+      _annoFail();
+    },4000);
+  };
+  const _annoFail=()=>{
+    if(_annoDone||!_pcAnno)return;
     _tried++;
-    _pcAnnoNote('img-error',{tried:_tried,src:String(im.src||'').slice(0,120)});
-    if(_tried===1&&p.data&&im.src!==p.data){im.src=p.data;return;}
+    if(_tried===1&&p.data&&im.src!==p.data){im.src=p.data;_annoArm();return;}
+    _annoStop();
     _pcAnnoFromStorage(p,im);
   };
+  im.onerror=()=>{
+    _pcAnnoNote('img-error',{tried:_tried+1,src:String(im.src||'').slice(0,120)});
+    _annoFail();
+  };
   im.src=src;
+  _annoArm();
   return true;
 }
 // Why the editor could not open, kept where both a person and a test can

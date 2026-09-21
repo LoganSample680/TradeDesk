@@ -723,17 +723,69 @@ test.describe('TrueShot: marking a photo up', () => {
       };
       photos.push({ id: 950, type: 'before', url: 'https://nope.invalid/gone.jpg', thumbUrl: '', storagePath: 'u/bid-1/before-1.png', client_id: 501, bid_id: 901, uploadedAt: new Date().toISOString() });
       const opened = tdAnnotatePhoto(950);
-      for (let i = 0; i < 120 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r2 => setTimeout(r2, 25));
+      for (let i = 0; i < 400 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r2 => setTimeout(r2, 25));
       const ready = !!(_pcAnno && _pcAnno.img);
       const w = ready ? document.getElementById('pc-anno-cv').width : 0;
       _supa.storage.from = realFrom;
       tdCloseAnnotate();
-      return { opened, ready, w, asked };
+      // The stage recorder rides along so a failure here names where it died
+      // instead of just saying false. Three live rounds were burned on a
+      // rule() that could not explain itself.
+      return { opened, ready, w, asked, stage: window._pcAnnoLastError };
     });
     expect(r.opened).toBe(true);
-    expect(r.ready).toBe(true);        // it recovered rather than closing
+    expect(r.ready, 'last stage: ' + JSON.stringify(r.stage)).toBe(true);
     expect(r.w).toBe(120);             // and sized itself to the real bytes
     expect(r.asked).toBe('u/bid-1/before-1.png');
+  });
+
+  // WebKit, CI, 2026-09-21: the source neither loaded nor errored, so the
+  // editor waited on an event that was never coming and sat open on a blank
+  // canvas. Every attempt is on a clock now, and a stalled one falls down
+  // the same ladder as a failed one.
+  test('a source that never loads and never errors still falls through to storage', async () => {
+    const r = await page.evaluate(async () => {
+      const cv = document.createElement('canvas');
+      cv.width = 140; cv.height = 100; cv.getContext('2d').fillRect(0, 0, 140, 100);
+      const bytes = await new Promise(res => cv.toBlob(res, 'image/png'));
+      let asked = '';
+      const realFrom = _supa.storage.from.bind(_supa.storage);
+      _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
+        download: async (path) => { asked = path; return { data: bytes, error: null }; }
+      });
+      // An image that swallows its src: no load event, no error event, ever.
+      const RealImage = window.Image;
+      window.Image = function () {
+        const im = new RealImage();
+        let held = '';
+        Object.defineProperty(im, 'src', {
+          configurable: true,
+          get: () => held,
+          set(v) {
+            held = v;
+            // The blob url from the storage fallback is allowed through, so
+            // the ladder can actually finish; only the first source stalls.
+            if (String(v).startsWith('blob:')) {
+              delete im.src; im.src = v;
+            }
+          }
+        });
+        return im;
+      };
+      photos.push({ id: 951, type: 'before', url: 'https://stalled.invalid/x.jpg', thumbUrl: '', storagePath: 'u/bid-1/stalled.png', client_id: 501, bid_id: 901, uploadedAt: new Date().toISOString() });
+      const opened = tdAnnotatePhoto(951);
+      for (let i = 0; i < 400 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r2 => setTimeout(r2, 25));
+      const ready = !!(_pcAnno && _pcAnno.img);
+      const w = ready ? document.getElementById('pc-anno-cv').width : 0;
+      window.Image = RealImage;
+      _supa.storage.from = realFrom;
+      tdCloseAnnotate();
+      return { opened, ready, w, asked, stage: window._pcAnnoLastError };
+    });
+    expect(r.opened).toBe(true);
+    expect(r.ready, 'last stage: ' + JSON.stringify(r.stage)).toBe(true);
+    expect(r.w).toBe(140);
+    expect(r.asked).toBe('u/bid-1/stalled.png');
   });
 
   test('a photo with a bad url AND no storage path gives up cleanly, no editor left open', async () => {
