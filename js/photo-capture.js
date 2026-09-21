@@ -682,12 +682,44 @@ function tdAnnotatePhoto(photoId){
     _pcAnnoBind(cv);
     _pcAnnoRedraw();
   };
-  // A cross-origin image the canvas cannot read taints it, and the flatten
-  // would throw at toBlob. Fall back to the local base64 copy when there is
-  // one; otherwise the editor says so rather than failing at Save.
-  im.onerror=()=>{ if(p.data&&im.src!==p.data){im.src=p.data;} else {showToast('Could not open that photo to mark up','⚠️');tdCloseAnnotate();} };
+  // ── Three ways in, tried in order (live run, 2026-09-21) ────────────────
+  // The editor used to give up if the <img> would not load, and the live run
+  // is where that showed: once a photo has uploaded its base64 copy is gone,
+  // so the editor had exactly ONE source, a plain <img> against the storage
+  // url. A cross-origin image also TAINTS the canvas, which makes toBlob
+  // throw at Save even when the picture is visible, so "it loaded" was never
+  // enough on its own.
+  //   1. the url as-is
+  //   2. the local base64 copy, if this device still holds one
+  //   3. DOWNLOAD the bytes with the same authenticated client that uploaded
+  //      them, and hand the editor a blob url. Same origin by construction,
+  //      so the canvas is never tainted and Save cannot throw.
+  // Only after all three fail does it say so and close.
+  let _tried=0;
+  im.onerror=()=>{
+    _tried++;
+    if(_tried===1&&p.data&&im.src!==p.data){im.src=p.data;return;}
+    _pcAnnoFromStorage(p,im);
+  };
   im.src=src;
   return true;
+}
+// Fetch the photo's bytes through the Supabase client (it carries the
+// session, so this works on a private bucket too) and feed the editor a
+// blob url. Gives up only if there is nothing to fetch.
+async function _pcAnnoFromStorage(p,im){
+  try{
+    if(!p.storagePath||!(typeof supaEnabled==='function'&&supaEnabled()&&_supa))throw new Error('no storage path');
+    const{data,error}=await _supa.storage.from('gallery').download(p.storagePath);
+    if(error||!data)throw error||new Error('no bytes');
+    if(!_pcAnno)return;
+    im.onerror=()=>{showToast('Could not open that photo to mark up','⚠️');tdCloseAnnotate();};
+    im.removeAttribute('crossorigin');
+    im.src=URL.createObjectURL(data);
+  }catch(_e){
+    showToast('Could not open that photo to mark up','⚠️');
+    tdCloseAnnotate();
+  }
 }
 function tdCloseAnnotate(){
   _pcAnno=null;

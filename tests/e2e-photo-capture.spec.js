@@ -679,6 +679,48 @@ test.describe('TrueShot: marking a photo up', () => {
     expect(r.open).toBe(false);
   });
 
+  // The live run found this one: once a photo has uploaded, its base64 copy
+  // is deleted, so the editor's only source was an <img> against the storage
+  // url. When that would not load, mark-up was simply impossible. It now
+  // falls back to downloading the bytes with the authenticated client, which
+  // also keeps the canvas untainted so Save cannot throw.
+  test('a photo whose url will not load still opens, via the storage download', async () => {
+    const r = await page.evaluate(async () => {
+      const cv = document.createElement('canvas');
+      cv.width = 120; cv.height = 90; cv.getContext('2d').fillRect(0, 0, 120, 90);
+      const bytes = await new Promise(res => cv.toBlob(res, 'image/png'));
+      let asked = '';
+      const realFrom = _supa.storage.from.bind(_supa.storage);
+      _supa.storage.from = (b) => {
+        const api = realFrom(b);
+        return Object.assign({}, api, { download: async (path) => { asked = path; return { data: bytes, error: null }; } });
+      };
+      photos.push({ id: 950, type: 'before', url: 'https://nope.invalid/gone.jpg', thumbUrl: '', storagePath: 'u/bid-1/before-1.png', client_id: 501, bid_id: 901, uploadedAt: new Date().toISOString() });
+      const opened = tdAnnotatePhoto(950);
+      for (let i = 0; i < 120 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r2 => setTimeout(r2, 25));
+      const ready = !!(_pcAnno && _pcAnno.img);
+      const w = ready ? document.getElementById('pc-anno-cv').width : 0;
+      _supa.storage.from = realFrom;
+      tdCloseAnnotate();
+      return { opened, ready, w, asked };
+    });
+    expect(r.opened).toBe(true);
+    expect(r.ready).toBe(true);        // it recovered rather than closing
+    expect(r.w).toBe(120);             // and sized itself to the real bytes
+    expect(r.asked).toBe('u/bid-1/before-1.png');
+  });
+
+  test('a photo with a bad url AND no storage path gives up cleanly, no editor left open', async () => {
+    const r = await page.evaluate(async () => {
+      photos.push({ id: 951, type: 'before', url: 'https://nope.invalid/gone.jpg', thumbUrl: '', storagePath: '', client_id: 501, uploadedAt: new Date().toISOString() });
+      tdAnnotatePhoto(951);
+      for (let i = 0; i < 60 && document.getElementById('pc-anno'); i++) await new Promise(r2 => setTimeout(r2, 25));
+      return { open: !!document.getElementById('pc-anno'), ctx: !!_pcAnno };
+    });
+    expect(r.open).toBe(false);
+    expect(r.ctx).toBe(false);
+  });
+
   test('a missing photo, junk, and a photo with no image never open an editor', async () => {
     const r = await page.evaluate(() => {
       const a = tdAnnotatePhoto('nope-1234');

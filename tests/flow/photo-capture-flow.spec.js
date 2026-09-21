@@ -213,7 +213,16 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
           const urlBefore = before.url;
           tdAnnotatePhoto(id);
           for (let i = 0; i < 80 && !(window._pcAnno && _pcAnno.img); i++) await new Promise(r => setTimeout(r, 25));
-          if (!window._pcAnno || !_pcAnno.img) return { opened: false, urlBefore };
+          // Say WHY it did not open. The live run reported opened:false and
+          // the other keys came back undefined, which JSON.stringify drops,
+          // so the failure read as two booleans and explained nothing.
+          if (!window._pcAnno || !_pcAnno.img) {
+            return { opened: false, urlBefore, whyNotOpened: {
+              ctxGone: !window._pcAnno, imgMissing: !!(window._pcAnno && !_pcAnno.img),
+              srcTried: String(before.url || '').slice(-40), hadData: !!before.data,
+              storagePath: String(before.storagePath || '').slice(-40),
+            } };
+          }
           const cv = document.getElementById('pc-anno-cv');
           _pcAnno.ops.push({ t: 'arrow', x1: cv.width * 0.2, y1: cv.height * 0.2, x2: cv.width * 0.6, y2: cv.height * 0.6, c: '#E5484D' });
           await tdSaveAnnotation();
@@ -239,6 +248,7 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
         const ok = marked.opened && marked.urlAfter && marked.urlAfter !== marked.urlBefore &&
           marked.originalUrl === marked.urlBefore && marked.annotated &&
           marked.markedReachable && marked.originalReachable;
+        if (!marked.opened) return { ok: false, got: 'editor never opened: ' + JSON.stringify(marked.whyNotOpened || {}) };
         return { ok: !!ok, got: JSON.stringify({ changed: marked.urlAfter !== marked.urlBefore, keptOriginal: marked.originalUrl === marked.urlBefore, marked: marked.markedReachable, original: marked.originalReachable, sameObject: marked.sameObject, rowsWithOriginal: marked.rowsWithOriginal, tail: marked.tail }) };
       },
     });
