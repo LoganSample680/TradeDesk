@@ -1203,6 +1203,56 @@ test.describe('traced trips', () => {
         expect(r.fixed, 'and it is not marked as a hand fix, because it is not one').toBe(false);
       });
 
+      // ── AND THE RAIL IS STILL TOLD (owner 2026-09-21) ──────────────────
+      // "I just saved this top address as Logan Sample and guess what, it
+      // didn't update."
+      //
+      // The test above is right that a day the deriver rebuilt keeps the
+      // deriver's answer in the MILEAGE book. It was also read as meaning
+      // nothing else happens, and that is what hid this: on his phone the
+      // derive succeeds, names the leg, and the timesheet row keeps source
+      // 'unsaved' and a null dest_place forever, because only the
+      // could-not-rebuild branch ever spoke to the rail.
+      //
+      // A CI runner has no CoreMotion tape, so the derive always bails there
+      // and the flow test always took the other branch. This one stubs the
+      // branch his phone actually takes.
+      test('a day that DID rebuild still tells the rail what the stop is', async () => {
+        const day = await seed();
+        const r = await page.evaluate(async (d) => {
+          const sent = [];
+          window._supa = { from: (t) => ({ update: (u) => { const f = { _t: t, _u: u, _w: {} };
+            f.eq = (k, v) => { f._w[k] = v; return f; };
+            f.then = (res) => { sent.push({ table: f._t, update: f._u, where: f._w }); return res({ error: null }); };
+            return f; } }) };
+          window._supaUser = { id: 'emp-1' };
+          // The derive resolves the end, exactly as it does inside the tape's
+          // window, and leaves nothing for the hand fix to do.
+          window._geoDeriveDayNow = async () => {
+            const row = mileage.find(m => m.id === 'j-traced');
+            row.to = '1 Derived Way'; row.to_name = 'Derived'; row.unsavedTo = false;
+            row.toCoord = { lat: 39.035, lng: -95.7 };
+            delete row.addressUnknown;
+            return {};
+          };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to',
+                                  lat: 39.035, lng: -95.7, stopKey: 'd-j-traced' };
+          await _mileAddressSaved({ id: 14, name: 'Logan Sample', addr: '6800 SW Tenth Ave' });
+          const row = mileage.find(m => m.id === 'j-traced');
+          return { to: row.to, fixed: !!row.fixedAt, sent };
+        }, day);
+        expect(r.to, 'the deriver had it, so the deriver still keeps it').toBe('1 Derived Way');
+        expect(r.fixed, 'and this is still not a hand fix').toBe(false);
+        const stop = r.sent.find(x => x.where.client_key === 'd-j-traced');
+        const leg = r.sent.find(x => x.where.client_key === 'j-traced');
+        expect(!!stop, 'the rail row for the stop is named').toBe(true);
+        expect(stop.update.dest_place).toBe('Logan Sample');
+        expect(stop.update.source, 'so it leaves the unpaid bucket').toBe('client');
+        expect(stop.update.fixed_at, 'never stamped, so a rebuild can still correct it').toBe(undefined);
+        expect(!!leg, 'and so is the drive that reached it').toBe(true);
+        expect(leg.update.dest_place).toBe('Logan Sample');
+      });
+
       test('junk cannot name anything', async () => {
         const day = await seed();
         await stale();

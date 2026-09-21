@@ -26,6 +26,30 @@
 // a Save this address chip on it, and the mileage leg behind it that makes the
 // chip live rather than dead.
 //
+// ── AND IT HAS TO BE HIS BRANCH, NOT A CONVENIENT ONE (owner 2026-09-21) ──
+// "It needs to follow real life to a T."
+//
+// The first green version of this spec proved the save worked and the bug it
+// was written for was still live on his phone the next morning. It passed
+// because it was quietly taking the OTHER road through _mileAddressSaved.
+// That function re-derives the day and then only repairs the row by hand when
+// the derive could NOT resolve it, and two things made the derive always bail
+// here:
+//
+//   1. THE DAY WAS TOO OLD. _geoDeriveDayNow needs positive evidence that the
+//      day is covered, and with no CoreMotion tape on a runner the only
+//      evidence left is the app log. The boot sweep seeds that log for TODAY
+//      AND YESTERDAY and nothing else (_GEO_DERIVE_DAYS_LIVE = 2), so a day
+//      twenty back could never clear the gate. The day is now yesterday or
+//      today, and the flush is followed by a real reload so the boot sweep
+//      seeds the log exactly as it does when he opens the app.
+//   2. THE CUSTOMER HAD NO ADDRESS YET. Five blank customers meant the pin
+//      always became somebody's PRIMARY address. His did not: "Logan Sample"
+//      already had a house on file, so the pin filed as a property card in
+//      extraAddresses, and until 20261029 the server's fence list did not read
+//      that column at all. The customer this run picks already has an address,
+//      so the pin takes the road his did.
+//
 // Seed data stays in the dev account per §12.7: the derived day, the clients,
 // and the property this files on one of them are all left for the owner to
 // poke at.
@@ -52,6 +76,16 @@ const CELL = (process.pid + Date.now()) % 576;
 const B_LAT = 39.0200 + (CELL % 24) * 0.0012;
 const B_LON = -95.6600 - (Math.floor(CELL / 24) % 24) * 0.0012;
 const SHOP = { lat: B_LAT, lon: B_LON };
+// ── AN HOUR OF ITS OWN, BECAUSE THE DAY IS NO LONGER FREE ────────────────
+// The day used to be chosen by scanning back up to sixty days for one with no
+// events on it at all. That is no longer available: the derive gate above
+// means the day must be yesterday or today, and those two days belong to every
+// other geo spec as well. So the run claims an HOUR instead of a day, keyed to
+// the same cell the coordinates come from. Seven slots two hours apart, and
+// the window each run fills is 62 minutes, so two runs that land on the same
+// day and different slots cannot touch. Step 1 still checks the slot is
+// actually empty before using it.
+const HOUR = 5 + 2 * (CELL % 7);
 // The kerb the day is about is NOT fixed here: step 1 asks the account's own
 // fence list where it is empty and parks there. See the note on that loop.
 
@@ -107,7 +141,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
     // what the PERSON spends on the journey being gated, and the journey here
     // starts at the rail. A shop address already in Settings, customers already
     // on the books and a device flush key are the account, not the flow. The
-    // budget below stays honest because every tap from step 3 on is real.
+    // budget below stays honest because every tap from step 4 on is real.
     await step(page, {
       label: 'shop fence, five similar customers, device flush key', page: 'pg-dash', role: 'contractor',
       suspect: 'live-helpers signIn + cloud.js supaSaveToCloud + migration 20260830 geo_flush_keys',
@@ -124,6 +158,35 @@ test.describe('Name an unsaved stop from the day rail', () => {
           a.names.concat([a.target]).forEach((n, i) => {
             const c = { id: Date.now() * 1000 + i, name: n, phone: '3165550' + (100 + i),
                         addr: '', email: '', source: 'E2E', _e2e: 'save-addr' };
+            // ── TWO OF THEM ALREADY LIVE SOMEWHERE ───────────────────────
+            // The first customer is where the day FINISHES. The day cannot
+            // end where it started (a round trip collapses the stop into an
+            // interior `unsavedVia` and there is no destination row to save,
+            // which an earlier run proved), and scavenging some other fence
+            // off the account for the purpose picked a different building
+            // every run and once picked one a hundred miles away. A customer
+            // this run puts half a mile from the shop is the same shape and
+            // is the same every time.
+            if (i === 0) {
+              c.addr = a.tag + ' Second Stop Rd, Topeka, KS';
+              c.geoAddr = c.addr;
+              c.lat = a.shop.lat + 0.006; c.lon = a.shop.lon + 0.006;
+            }
+            // THE LAST ONE IS THE TARGET, AND HE ALREADY HAS A HOUSE. This is
+            // the whole of "follow real life to a T": the owner's customer
+            // already had an address, so the pin he saved filed as a PROPERTY
+            // CARD rather than becoming the primary, and that is the branch
+            // the server's fence list could not read. A blank customer takes
+            // the easy road and proves the wrong thing.
+            //
+            // Far from Topeka on purpose (Abilene, about ninety miles), so
+            // this fence can never be mistaken for the stop the run is about
+            // and never lands inside the kerb search below.
+            if (n === a.target) {
+              c.addr = a.tag + ' Home Pl, Abilene, KS';
+              c.geoAddr = c.addr;
+              c.lat = 38.9167; c.lon = -97.2140;
+            }
             clients.push(c); made.push(c.id);
           });
           saveAll();
@@ -178,61 +241,59 @@ test.describe('Name an unsaved stop from the day rail', () => {
           // to finish at a DIFFERENT fence from the one it started at: then
           // the kerb is leg one's destination, the dwell is its own row, and
           // the chip is the one he tapped.
-          let endAt = null;
-          for (const f of all) {
-            const farShop = Math.abs(f.lat - a.shop.lat) > 0.02 || Math.abs(f.lng - a.shop.lon) > 0.02;
-            const farKerb = kerb && (Math.abs(f.lat - kerb.lat) > 0.02 || Math.abs(f.lng - kerb.lon) > 0.02);
-            if (farShop && farKerb) { endAt = { lat: f.lat, lon: f.lng }; break; }
-          }
-          // ── AND A DAY WITH NOTHING ON IT AT ALL ──────────────────────
-          // geo_events dedupes, so re-posting the same hours is a no-op: five
-          // runs re-derived the FIRST run's fixes at the FIRST run's kerb.
-          // Appending a later hour to the same day fixed the dedupe and broke
-          // something worse, because the first runs sat on empty prairie 700
-          // miles away: the deriver joined the last prairie fix to the first
-          // Topeka one and produced a 958-mile "Shop" leg that swallowed the
-          // day. A day cannot hold two runs that are two states apart.
           //
-          // So the run takes a day nobody has touched.
+          // It is the first seeded customer, not whatever fence the account
+          // happened to own. The kerb search above already guaranteed at
+          // least 0.02deg of clearance from every fence including this one,
+          // so the second leg is always a mile or two, never a hundred.
+          const first = clients.find(c => c && c.id === made[0]);
+          const endAt = (first && first.lat != null) ? { lat: first.lat, lon: first.lon } : null;
+          // ── AND AN HOUR NOBODY ELSE IS SITTING IN ─────────────────────
+          // This used to scan back sixty days for a day with NO events at all,
+          // and that is no longer a choice this spec gets to make. The save it
+          // is about only takes the owner's road through _mileAddressSaved on
+          // a day _geoDeriveDayNow will actually derive, and on a runner with
+          // no CoreMotion tape the only evidence of coverage left is the app
+          // log, which the boot sweep seeds for TODAY AND YESTERDAY and no
+          // further back (_GEO_DERIVE_DAYS_LIVE = 2, js/geo-track.js).
           //
-          // SIXTY DAYS, not seven, and the seven was my own mistake. I read
-          // _GEO_DERIVE_DAYS as the limit, but that is the PHONE's local tape
-          // window. deriveDayServer decides `tapeCovers` from the events in
-          // the request, so the server will derive any day it is handed motion
-          // for. Seven days is also a resource that runs out, and it did, in
-          // one evening: "day NONE FREE [09-19:busy 09-18:busy 09-17:busy
-          // 09-16:busy 09-15:busy 09-14:busy]", because the other geo specs
-          // live on those days too and their coordinates are hundreds of miles
-          // from this one. Sharing a day with them re-creates the teleport.
+          // Those two days belong to every other geo spec as well, so the run
+          // claims an HOUR rather than a day: the cell-keyed slot up top, on
+          // yesterday first and today second. Yesterday first because it is a
+          // finished day with no "now" sitting in the middle of it; today only
+          // if the slot has already gone by, since a day cannot be seeded into
+          // its own future.
           //
-          // Nearest first, because the nearer the day the more of the app
-          // behaves as it does live, and still inside the current year so the
-          // Time Log's year filter shows it.
+          // The window checked is the run's own 62 minutes plus 45 either
+          // side, so a neighbouring slot cannot bleed into this one and the
+          // deriver can never join somebody else's fix to ours.
           let day = '', dayMs = 0, evErr = '', scanned = [];
-          for (let back = 1; back <= 60 && !day; back++) {
+          for (let back = 1; back >= 0 && !day; back--) {
             const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - back);
             const a0 = new Date(d); a0.setHours(0, 0, 0, 0);
-            const b0 = new Date(d); b0.setHours(23, 59, 59, 999);
+            const slot = a0.getTime() + a.hour * 3600000;
+            const lo = slot - 45 * 60000, hi = slot + (62 + 45) * 60000;
+            // Never seed into the future: an hour that has not happened yet
+            // has no phone behind it and nowMs sits before the day's own end.
+            if (hi > Date.now()) { scanned.push(dateKey(d) + '@' + a.hour + ':future'); continue; }
             try {
               const r = await _supa.from('geo_events').select('ts')
                 .eq('employee_user_id', _supaUser.id)
-                .gte('ts', a0.toISOString()).lte('ts', b0.toISOString()).limit(1);
+                .gte('ts', new Date(lo).toISOString()).lte('ts', new Date(hi).toISOString()).limit(1);
               if (r && r.error) { evErr = r.error.message || 'denied'; break; }
-              // Only the tail of the scan is reported: sixty entries is noise,
-              // and what matters is where it stopped looking.
-              if (scanned.length < 8) scanned.push(dateKey(d) + ':' + (((r && r.data) || []).length ? 'busy' : 'free'));
-              if (!((r && r.data) || []).length) { day = dateKey(d); dayMs = a0.getTime(); }
+              const busy = (((r && r.data) || []).length > 0);
+              scanned.push(dateKey(d) + '@' + a.hour + ':' + (busy ? 'busy' : 'free'));
+              if (!busy) { day = dateKey(d); dayMs = slot; }
             } catch (e) { evErr = String(e && e.message || e); break; }
           }
-          // 8am on that day. Nothing else is on it, so there is nothing to
-          // sit after and nothing to collide with.
-          const startMs = dayMs + 8 * 3600000;
+          // The slot itself is the start: dayMs already carries the hour.
+          const startMs = dayMs;
           const tooLate = !day;
           return { key, uid: _supaUser.id, url: _SUPA_DIRECT_URL, made, kerb,
                    fences: F.length, serverFences: SF.length, sfErr,
                    startMs, tooLate, evErr, day, scanned: scanned.join(' '), endAt,
                    targetId: made[made.length - 1], err: error && error.message };
-        }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET });
+        }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET, hour: HOUR });
         return 0;
       },
       rule: async (p) => {
@@ -241,9 +302,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
                  got: ctx.err || (n + ' customers · ' + ctx.fences + ' local fences · ' +
                       ctx.serverFences + ' server fences' + (ctx.sfErr ? (' (' + ctx.sfErr + ')') : '') +
                       ' · kerb ' + (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR') +
-                      ' · day ' + (ctx.day || 'NONE FREE') + ' [' + ctx.scanned + ']' +
+                      ' · slot ' + (ctx.day || 'NONE FREE') + ' hour ' + HOUR + ' [' + ctx.scanned.replace(/,/g, ' ') + ']' +
                       ' · ends at ' + (ctx.endAt ? (ctx.endAt.lat.toFixed(4) + ',' + ctx.endAt.lon.toFixed(4)) : 'NO SECOND FENCE') +
-                      (ctx.tooLate ? ' every day in the last sixty already has events on it' : '') +
+                      (ctx.tooLate ? ' both of the two days the boot sweep reaches already have events in this hour' : '') +
                       (ctx.evErr ? (' (events: ' + ctx.evErr + ')') : '')) };
       },
     });
@@ -260,6 +321,18 @@ test.describe('Name an unsaved stop from the day rail', () => {
     const at = (m) => T0 + m * 60000;
     const fix = (ts, c) => ({ type: 'fix', ts, lat: c.lat, lng: c.lon, accuracy: 8 });
     const motion = (ts, kind) => ({ type: 'motion', ts, kind });
+    // ── AND THE APP BEING OPEN, WHICH IS EVIDENCE TOO ────────────────────
+    // A phone posts app-active/app-background beside the motion (js/geo-track.js
+    // line 6464), and those rows are the ONLY thing that can tell a machine
+    // with no CoreMotion tape that a day is covered: _geoDeriveDayNow reads
+    // its local app log and returns null when neither the tape nor the log
+    // says anything about the day. Without these rows the save in step 6
+    // silently takes the hand-repair road instead of the owner's, which is
+    // exactly how this spec passed green over a bug that was still live.
+    //
+    // Two short spans, at the shop and at the last stop. Neither is a home
+    // office, so rule 10's office carve-out has nothing to carve.
+    const app = (ts, kind) => ({ type: 'app-' + kind, ts });
     // The kerb step 1 found, and the halfway point to it.
     const KERB = ctx.kerb || { lat: SHOP.lat + 0.022, lon: SHOP.lon - 0.022 };
     const END = ctx.endAt;
@@ -267,6 +340,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
     const ROAD2 = { lat: (KERB.lat + END.lat) / 2, lon: (KERB.lon + END.lon) / 2 };
     const WIN = { a: at(0), b: at(62) };
     const events = [
+      app(at(0), 'active'), app(at(2), 'background'),
+      app(at(59), 'active'), app(at(62), 'background'),
       motion(at(0), 'stationary'), fix(at(0), SHOP), fix(at(5), SHOP),
       motion(at(10), 'automotive'),
       fix(at(10), SHOP), fix(at(16), ROAD), fix(at(21), KERB),
@@ -302,9 +377,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
           const { data: t } = await _supa.from('job_time_entries')
             .select('id,source,client_key,dest_place,minutes,arrived_at')
             .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
-            // The seeded day is days back, not today, so the window itself is
-            // the bound. A "last 24 hours" filter would exclude the very rows
-            // this step is about.
+            // The seeded hour is yesterday's or an earlier one today, so the
+            // window itself is the bound. A "last hour" filter would exclude
+            // the very rows this step is about.
             .gte('arrived_at', new Date(w.a - 3600000).toISOString())
             .lte('arrived_at', new Date(w.b + 3600000).toISOString());
           const { data: mAll } = await _supa.from('td_mileage')
@@ -357,7 +432,59 @@ test.describe('Name an unsaved stop from the day rail', () => {
       },
     });
 
-    // ── 3. Open the day the stop is on ─────────────────────────────────────
+    // ── 3. Open the app again, which is what actually arms the bug ────────
+    // Not a tidy-up and not free: this is the missing half of "follow real
+    // life to a T". The owner's phone had been open all day, so by the time
+    // he tapped Save its local app log covered the day and _geoDeriveDayNow
+    // ran for real. A browser that has been sitting on this page since before
+    // the day existed knows nothing about it, so the gate at the top of that
+    // function returns null and the save quietly takes the hand-repair road,
+    // which is not the road that was broken.
+    //
+    // The boot sweep is what closes that gap, and it is the app's own code
+    // doing it: _geoDeriveRebuild fetches the server's fixes and app events
+    // for today and yesterday, seeds them into the local logs, and derives
+    // both days. So the spec reloads and waits for it rather than writing
+    // anything into localStorage itself.
+    //
+    // ZERO interactions. Opening the app is not a step on the journey from
+    // the rail to a named stop; it is the state the journey starts in.
+    let boot = null;
+    await step(page, {
+      label: 'reload, and let the boot sweep take the day in', page: 'pg-dash', role: 'contractor',
+      suspect: 'geo-track.js _geoDeriveRebuildRun / _geoAppLogSeed / _geoDeriveDayNow',
+      ruleText: 'the phone must know the day is covered, or the save cannot take the road the owner took',
+      expected: 'the local app log holds the seeded hour, and a derive of that day returns a result',
+      act: async (p) => {
+        await p.reload({ waitUntil: 'domcontentloaded' });
+        await p.waitForTimeout(8000);
+        boot = await p.evaluate(async (w) => {
+          // Wait for the sweep, rather than guessing how long it takes.
+          for (let i = 0; i < 60; i++) {
+            if (_geoAppLogRead().some(e => e.ts >= w.a && e.ts <= w.b)) break;
+            await new Promise(r => setTimeout(r, 500));
+          }
+          const log = _geoAppLogRead().filter(e => e.ts >= w.a && e.ts <= w.b);
+          // THE GATE ITSELF, asked directly. A derive that returns null here
+          // is the whole failure mode this step exists to rule out, and it
+          // says so in the ticket instead of surfacing three steps later as
+          // a name that landed by the wrong route.
+          const res = await _geoDeriveDayNow(w.day, null);
+          return { app: log.length, kinds: log.map(e => e.kind).join('/'),
+                   derived: !!res,
+                   legs: res ? res.legs.length : 0, dwells: res ? res.dwells.length : 0 };
+        }, { a: WIN.a - 60000, b: WIN.b + 60000, day: ctx.day });
+        return 0;
+      },
+      rule: async () => ({
+        ok: !!boot && boot.app >= 2 && boot.derived,
+        got: 'app log ' + (boot && boot.app) + ' entries [' + (boot && boot.kinds) + ']' +
+             ' · derive ' + ((boot && boot.derived) ? ('ran, ' + boot.legs + ' legs / ' + boot.dwells + ' dwells')
+                                                    : 'RETURNED NULL, the gate did not open'),
+      }),
+    });
+
+    // ── 4. Open the day the stop is on ─────────────────────────────────────
     // Three taps counted for the drill (month, then week, then day) although
     // it is driven through _tlDrillTo rather than three bar taps. The physical
     // drill is e2e-timelog-daynav's subject and is proven there; counting it
@@ -395,7 +522,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
       },
     });
 
-    // ── 4. Tap Save, and watch the prompt hold still ───────────────────────
+    // ── 5. Tap Save, and watch the prompt hold still ───────────────────────
     // The owner filmed this one: the box used to be repainted wholesale when
     // the reverse lookup landed, which re-ran its entrance animation and moved
     // it up by half the height it gained. Measured in LAYOUT terms
@@ -439,7 +566,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
       }),
     });
 
-    // ── 5. It is a customer, not a supply house ────────────────────────────
+    // ── 6. It is a customer, not a supply house ────────────────────────────
     await step(page, {
       label: 'Lead or client → the who picker', page: 'pg-timelog', role: 'contractor',
       suspect: 'mileage.js _mileSaveKind / _mileSaveAskWho / _mileWhoRender',
@@ -459,7 +586,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
       },
     });
 
-    // ── 6. The RIGHT one out of several ────────────────────────────────────
+    // ── 7. The RIGHT one out of several ────────────────────────────────────
     // Typed key by key and then TAPPED, never called. The picker's buttons
     // carry their id through a JSON.stringify inside a double-quoted onclick,
     // and an unescaped quote there ended the attribute early and left WebKit
@@ -469,8 +596,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
     await step(page, {
       label: 'search, then tap the right customer', page: 'pg-timelog', role: 'contractor',
       suspect: 'mileage.js _mileWhoRender onclick escaping / _mileWhoPick / _mileFileAddressOn',
-      ruleText: 'the pin must file as a property on the customer that was tapped, and on no other',
-      expected: 'exactly one customer gains a property, and it is the one picked',
+      ruleText: 'the pin must file as a property card on the customer that was tapped, beside the house they already had',
+      expected: 'exactly one customer gains one extraAddresses card, it is the one picked, and their primary address is unchanged',
       act: async (p) => {
         // THE TAG, not the surname. Live tests never clean up (§12.7), so the
         // account already holds a "Kinsella Drywall" from every earlier run
@@ -487,27 +614,37 @@ test.describe('Name an unsaved stop from the day rail', () => {
         const r = await p.evaluate((a) => {
           // What the tap had to work with, so a refusal can say why.
           const pend = (typeof _mileAddressPending !== 'undefined' && _mileAddressPending) || null;
-          // What _mileWhoPick actually writes: the pin becomes the record's
-          // primary address when it has none, else a card in extraAddresses.
-          const filed = (c) => !!(c && ((c.addr && c.lat != null && c.lon != null) ||
-            (Array.isArray(c.extraAddresses) && c.extraAddresses.length)));
-          const withProp = clients.filter(c => c && a.made.includes(c.id) && filed(c));
+          // ── A PROPERTY CARD, NOT A NEW PRIMARY ────────────────────────
+          // This used to accept either, because every seeded customer was
+          // blank and the pin always became somebody's first address. The
+          // owner's did not: his customer already had a house, so _mileWhoPick
+          // took the extraAddresses road, and that is the road the server's
+          // fence list could not read until 20261029. Accepting either shape
+          // is how this step passed over the live bug, so it now names the one
+          // it means and checks the house is still where it was.
+          const cards = (c) => (c && Array.isArray(c.extraAddresses)) ? c.extraAddresses.length : 0;
+          const withProp = clients.filter(c => c && a.made.includes(c.id) && cards(c) > 0);
           const t = clients.find(c => c && c.id === a.targetId);
-          return { n: withProp.length, named: withProp.map(c => c.name), target: filed(t),
+          return { n: withProp.length, named: withProp.map(c => c.name + '×' + cards(c)),
+                   cards: cards(t), home: t ? String(t.addr || '') : '(gone)',
                    hits: document.querySelectorAll('#_mile-who-hits button').length,
                    open: !!document.getElementById('_mile-who-ov'),
                    addrLine: pend ? (pend.addrLine || '') : '(no pending)',
                    foundName: pend && pend.found ? (pend.found.name || '') : '' };
         }, { made: ctx.made, targetId: ctx.targetId });
-        return { ok: r.n === 1 && r.target,
-                 got: r.n + ' customers gained a property: ' + r.named.join(', ') +
+        // The house it already had is untouched, which is half the point: a
+        // second pin on a customer must never overwrite where they live.
+        const keptHome = r.home.indexOf('Abilene') >= 0;
+        return { ok: r.n === 1 && r.cards === 1 && keptHome,
+                 got: r.n + ' customers gained a property card: ' + r.named.join(', ') +
+                      ' · the target has ' + r.cards + ' and still lives at "' + r.home + '"' +
                       ' · picker ' + (r.open ? 'still open' : 'closed') + ' with ' + r.hits + ' hits' +
                       ' · address line "' + r.addrLine + '"' +
                       (r.foundName ? (' · map name "' + r.foundName + '"') : '') };
       },
     });
 
-    // ── 7. And the rail says so, at once ───────────────────────────────────
+    // ── 8. And the rail says so, at once ───────────────────────────────────
     // This is the report, in its own words: "the onsite didn't immediately flip
     // to the name I assigned, I want that." The elapsed time is measured inside
     // act() rather than left to step()'s eight-second settle poll, because a
@@ -520,23 +657,45 @@ test.describe('Name an unsaved stop from the day rail', () => {
       ruleText: 'the stop must read the customer\'s name within a second of the save, without a reload',
       expected: 'the customer named, the Save chip gone, nothing on the day still unsaved, no reload',
       act: async (p) => {
-        flip = await p.evaluate(async (name) => {
+        flip = await p.evaluate(async (a) => {
+          // MY CHIPS, not every chip on the day. The day is no longer a day
+          // nobody else has touched (it has to be yesterday or today for the
+          // derive gate to open at all), so another run's hour can sit beside
+          // this one with its own unsaved stop on it. A blanket count of the
+          // word "Unsaved" on screen would fail on that and prove nothing.
+          const mine = () => [...document.querySelectorAll('.tl-rail-chip')]
+            .filter(b => /Save this address/.test(b.textContent || '') &&
+                         (b.getAttribute('onclick') || '').includes(a.key)).length;
           const t0 = Date.now();
+          let found = false, ms = 0;
           for (let i = 0; i < 120; i++) {
             const el = document.getElementById('tl-list');
-            const txt = el ? el.textContent : '';
-            if (txt.includes(name)) return { ms: Date.now() - t0, found: true,
-              chips: [...document.querySelectorAll('.tl-rail-chip')]
-                .filter(b => /Save this address/.test(b.textContent || '')).length,
-              unsaved: /Unsaved address/.test(txt) };
+            if (el && (el.textContent || '').includes(a.name)) { found = true; ms = Date.now() - t0; break; }
             await new Promise(r => setTimeout(r, 100));
           }
-          const el = document.getElementById('tl-list');
-          return { ms: Date.now() - t0, found: false,
-                   unsaved: /Unsaved address/.test(el ? el.textContent : ''),
-                   chips: [...document.querySelectorAll('.tl-rail-chip')]
-                     .filter(b => /Save this address/.test(b.textContent || '')).length };
-        }, TARGET);
+          if (!found) ms = Date.now() - t0;
+          // ── AND THE ROWS THEMSELVES, WHICH IS WHERE THE BUG LIVED ──────
+          // The screen check above only proves the NAME arrived. The owner's
+          // report was the opposite shape: the mileage leg took the name and
+          // the timesheet row did not, so anything reading only one of them
+          // sees a pass. This reads every automatic row this run put on the
+          // day, straight out of the database, and refuses any that is still
+          // nameless. It also catches the departing leg, which is the other
+          // half he hit: naming a stop used to name the drive that ARRIVED
+          // and leave the one that left.
+          const { data: t } = await _supa.from('job_time_entries')
+            .select('id,source,dest_place,origin_place,client_key,minutes')
+            .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
+            .gte('arrived_at', new Date(a.a).toISOString())
+            .lte('arrived_at', new Date(a.b).toISOString());
+          const rows = (t || []);
+          const nameless = rows.filter(x => /^unsaved/.test(String(x.source || '')) ||
+            (String(x.source || '') === 'drive' && !(x.dest_place && x.origin_place)));
+          return { ms, found, chips: mine(),
+                   rows: rows.length,
+                   nameless: nameless.map(x => (x.source || '?') + '[' +
+                     String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', ') };
+        }, { name: TARGET, key: stopKey, a: WIN.a - 3600000, b: WIN.b + 3600000 });
         // No taps. Watching the screen do what it promised is not work the
         // contractor does.
         return 0;
@@ -551,31 +710,34 @@ test.describe('Name an unsaved stop from the day rail', () => {
       // broken and cannot jitter, that the name arrives WITHOUT A RELOAD and
       // the chip goes with it, and the time rides along in the ticket so a
       // slide from four seconds to forty is visible to anybody reading it.
-      // THE WHOLE DAY, and the owner settled that: "if I save an unsaved
-      // address the day rail and mileage SHALL populate and update in real
-      // time." This step is what made the gap visible, on a day running shop
-      // -> stop -> elsewhere: the row above the stop took the name and the row
-      // below it still read "Unsaved address ->", because naming a stop named
-      // the leg that ARRIVED and left the one that departed. _mileNameSameStop
-      // names every end standing at the same pin now, so nothing on the day is
-      // left nameless and the assertion can say so.
+      // THE WHOLE HOUR THIS RUN OWNS, and the owner settled that: "if I save
+      // an unsaved address the day rail and mileage SHALL populate and update
+      // in real time." This step is what made the gap visible, on a day
+      // running shop -> stop -> elsewhere: the row above the stop took the
+      // name and the row below it still read "Unsaved address ->", because
+      // naming a stop named the leg that ARRIVED and left the one that
+      // departed. _mileNameSameStop names every end standing at the same pin
+      // now, and _mileTellTheRail carries that to the timesheet row on the
+      // rebuilt branch too, so nothing this run put on the day is left
+      // nameless and the assertion can say so from the rows themselves.
       rule: async () => ({
-        ok: !!flip && flip.found && !flip.unsaved && flip.chips === 0,
+        ok: !!flip && flip.found && flip.chips === 0 && !flip.nameless,
         got: flip && (flip.found ? ('named after ' + flip.ms + 'ms, no reload')
                                  : ('never named, still unsaved after ' + flip.ms + 'ms')) +
-             ' · ' + (flip && flip.chips) + ' Save chips left' +
-             ' · "Unsaved address" left anywhere on the day: ' + (flip && flip.unsaved),
+             ' · ' + (flip && flip.chips) + ' Save chips left for this stop' +
+             ' · ' + (flip && flip.rows) + ' rows in this run\'s window, still nameless: [' +
+             (flip && flip.nameless) + ']',
       }),
     });
 
-    // ── 8. And it is still true after a reload ─────────────────────────────
+    // ── 9. And it is still true after a reload ─────────────────────────────
     // A name that only lives in this tab's memory is not saved. The fence is
     // real, so the row has to come back named from the server.
     await step(page, {
       label: 'reload, and read the day again', page: 'pg-timelog', role: 'contractor',
       suspect: 'geo_replace_day carry-across · mileage.js _mileFileAddressOn',
-      ruleText: 'the name has to survive a reload, because the fence it came from is on file',
-      expected: 'the rail still names the customer after a cold load, and offers no Save for it',
+      ruleText: 'the name has to survive a reload, because the property it came from is a fence the SERVER can see',
+      expected: 'the rail still names the customer after a cold load, geo_fences_for returns the property, and no row is nameless',
       act: async (p) => {
         await p.reload({ waitUntil: 'domcontentloaded' });
         await p.waitForTimeout(6000);
@@ -587,17 +749,43 @@ test.describe('Name an unsaved stop from the day rail', () => {
         return n;
       },
       rule: async (p) => {
-        const r = await p.evaluate((a) => {
+        const r = await p.evaluate(async (a) => {
           const el = document.getElementById('tl-list');
           const txt = el ? el.textContent : '';
-          return { named: txt.includes(a.name), unsaved: /Unsaved address/.test(txt),
+          // THE COLD LOAD RE-DERIVED THE DAY, which is the part that matters
+          // here and the part the migration pays for. The property card this
+          // run filed has to come back out of geo_fences_for, or the rebuild
+          // hands the stop straight back to "unsaved" and the save is undone
+          // by the app's own boot. Asked of the SERVER's list, because the
+          // server is the only writer (§17) and the phone's agreeing proves
+          // nothing about what the rebuild will do.
+          let fence = false, ferr = '';
+          try {
+            const q = await _supa.rpc('geo_fences_for', { p_contractor: _supaUser.id, p_day: a.day });
+            if (q && q.error) ferr = q.error.message || 'denied';
+            else fence = ((q && q.data) || []).some(f => String(f.client_id || '') === String(a.targetId) &&
+              String(f.id || '').indexOf('-p') > 0);
+          } catch (e) { ferr = String(e && e.message || e); }
+          // Scoped to this run's own rows, for the reason step 8 gives.
+          const { data: t } = await _supa.from('job_time_entries')
+            .select('source,dest_place,origin_place')
+            .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
+            .gte('arrived_at', new Date(a.a).toISOString())
+            .lte('arrived_at', new Date(a.b).toISOString());
+          const nameless = (t || []).filter(x => /^unsaved/.test(String(x.source || '')) ||
+            (String(x.source || '') === 'drive' && !(x.dest_place && x.origin_place)));
+          return { named: txt.includes(a.name), fence, ferr,
+                   nameless: nameless.map(x => (x.source || '?') + '[' +
+                     String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', '),
                    chips: [...document.querySelectorAll('.tl-rail-chip')]
                      .filter(b => (b.getAttribute('onclick') || '').includes(a.key)).length };
-        }, { name: TARGET, key: stopKey });
-        // Same standard as step 7: a name that only half landed is not saved.
-        return { ok: r.named && r.chips === 0 && !r.unsaved,
+        }, { name: TARGET, key: stopKey, targetId: ctx.targetId, day: ctx.day,
+             a: WIN.a - 3600000, b: WIN.b + 3600000 });
+        // Same standard as step 8: a name that only half landed is not saved.
+        return { ok: r.named && r.chips === 0 && !r.nameless && r.fence,
                  got: 'named ' + r.named + ' · ' + r.chips + ' Save chips for this stop' +
-                      ' · "Unsaved address" left anywhere on the day: ' + r.unsaved };
+                      ' · the property is a server fence: ' + r.fence + (r.ferr ? (' (' + r.ferr + ')') : '') +
+                      ' · still nameless in this run\'s window: [' + r.nameless + ']' };
       },
     });
 

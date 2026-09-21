@@ -3859,6 +3859,30 @@ async function _mileAddressSaved(client){
     // still could not reach the end, which is the same problem for the
     // person looking at it.
     if(_mileStillUnsaved(p))await _mileNameUnsaved(p,client);
+    // ── AND THE RAIL IS TOLD EITHER WAY (owner 2026-09-21) ───────────────
+    // "I just saved this top address as Logan Sample and guess what, it
+    // didn't update."
+    //
+    // It did not, and the branch above is why. _mileNameUnsaved is the only
+    // thing that ever named the rail's rows, and it runs ONLY when the derive
+    // could not resolve the stop. On a phone with a CoreMotion tape the
+    // derive DOES resolve it, names the mileage leg, and returns; the
+    // timesheet row keeps source 'unsaved' and a null dest_place and there is
+    // nothing left to tell it. His 10:48 stop, measured: the leg's `to`
+    // became "6800 SW Tenth Ave" at 23:57:21 and the time row was never
+    // touched at all.
+    //
+    // The flow test could not see it because a CI runner has no tape, so the
+    // derive always bails there and the save always takes the other branch.
+    // An offline test even asserts this one is correct ("a day that DID
+    // rebuild is left entirely alone"), and it WAS, until the phone stopped
+    // writing time rows on 2026-09-19.
+    //
+    // So telling the rail is no longer a consolation for a failed derive. It
+    // is what saving an address means, and it happens on both branches.
+    // Nothing here stamps fixed_at, for the reason _mileNameStopRow already
+    // gives at length: a rebuild must stay free to correct these rows.
+    await _mileTellTheRail(p,client);
     // AND TELL THE SCREEN HE IS LOOKING AT (owner 2026-09-20: "adding people
     // in the day rail didn't update in real time"). The save was landing: the
     // derive ran, the row changed in the database, and the Time Log went on
@@ -3945,23 +3969,39 @@ async function _mileNameUnsaved(p,client){
   // dest_place, and the rail draws a drive from both its ends, so leaving it
   // out left "Shop -> Unsaved address" sitting above a stop that had just
   // been named.
-  const hits=_mileNameSameStop(r,p,addr,nm);
-  hits.unshift({row:r,which:p&&p.which==='from'?'from':(r.via_name!==undefined&&p&&p.which!=='to'?'via':'to')});
+  _mileNameSameStop(r,p,addr,nm);
   try{saveAll();_flushSaveNow();}catch(_e){}
-  // ONLY WHEN THE SAVE CAME FROM THE RAIL, which `stopKey` is the mark of.
-  // A Save pressed on the MILEAGE LOG names a leg end and nothing else, and
-  // that is a deliberate rule with its own test: that screen has no rail row
-  // in hand and writing one from it would be a second author for a row the
-  // deriver owns.
-  //
-  // AWAITED, and that is the fix rather than a nicety: these were
-  // fire-and-forget, so the refresh below ran before the writes landed and
-  // the rail repainted the old words. Nothing else repaints afterwards, so
-  // "real time" meant "next time something else happens".
-  if(p&&p.stopKey)await _mileNameTimeEnds(hits,nm);
-  await _mileNameStopRow(p,client);
   try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
   try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}
+  return true;
+}
+// ── WHAT THE RAIL IS TOLD, WHOEVER NAMED THE BOOK ─────────────────────────
+// The pin is p.lat/p.lng: the coordinate the Save button resolved before any
+// of this ran, so it is the same answer whether the deriver named the legs or
+// _mileNameUnsaved did. Every leg on that day standing at the pin has its own
+// rail row, and a drive's row carries BOTH ends, so which end is at the pin
+// decides which column is written.
+//
+// ONLY FROM THE RAIL, which `stopKey` is the mark of. A Save pressed on the
+// MILEAGE LOG names a leg end and nothing else: that screen has no rail row in
+// hand and writing one from it would be a second author for a row the deriver
+// owns. That rule has its own test.
+async function _mileTellTheRail(p,client){
+  if(!p||!p.stopKey)return false;
+  const nm=String((client&&(client.name||client.addr))||'').trim();
+  if(!nm)return false;
+  const lat=Number(p.lat),lng=Number(p.lng);
+  const hits=[];
+  if(isFinite(lat)&&isFinite(lng)){
+    const pin={lat,lng};
+    (typeof mileage!=='undefined'&&Array.isArray(mileage)?mileage:[]).forEach(x=>{
+      if(!x||(p.day&&x.date!==p.day))return;
+      if(_mileSameSpot(pin,x.toCoord))hits.push({row:x,which:'to'});
+      else if(_mileSameSpot(pin,x.fromCoord))hits.push({row:x,which:'from'});
+    });
+  }
+  if(hits.length)await _mileNameTimeEnds(hits,nm);
+  await _mileNameStopRow(p,client);
   return true;
 }
 // The coordinate of the end just named on `r`, which is the pin every other
