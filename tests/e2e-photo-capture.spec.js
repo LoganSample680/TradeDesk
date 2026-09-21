@@ -32,7 +32,9 @@ async function shoot(page, opts) {
     const arr = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
     const file = new File([arr], 'shot.png', { type: 'image/png' });
-    const row = await tdSavePhoto({ file, type: o.type, caption: o.caption, clientId: o.clientId, bidId: o.bidId, jobId: o.jobId, lat: o.lat, lon: o.lon, stamp: o.stamp });
+    // Spread, never a field list: this helper already lost lat/lon once by
+    // enumerating what it passed through (see the flow spec's copy).
+    const row = await tdSavePhoto({ ...o, file });
     return row ? { id: row.id, type: row.type, client_id: row.client_id, bid_id: row.bid_id, job_id: row.job_id, caption: row.caption } : null;
   }, Object.assign({ b64: PNG_B64 }, opts));
 }

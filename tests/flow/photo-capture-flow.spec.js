@@ -41,7 +41,14 @@ async function shootInPage(page, opts) {
     g.fillStyle = 'rgba(120,110,95,.55)'; g.fillRect(120, 300, 420, 300);
     const file = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
     file.name = 'shot.jpg';
-    const row = await tdSavePhoto({ file, type: o.type, caption: o.caption, clientId: o.clientId, bidId: o.bidId, jobId: o.jobId, stamp: o.stamp });
+    // SPREAD, never a hand-written field list. This helper dropped lat/lon
+    // because it listed the fields it forwarded, and every shot therefore
+    // reached the writer with no GPS fix, which read in the hub as "not
+    // verified on site" and looked exactly like a product bug. The offline
+    // spec had the identical bug in the identical helper. A pass-through
+    // that enumerates its arguments will be wrong again the next time one
+    // is added.
+    const row = await tdSavePhoto({ ...o, file });
     return row ? { id: row.id, url: row.url, thumbUrl: row.thumbUrl, type: row.type, bid_id: row.bid_id, job_id: row.job_id, client_id: row.client_id, pending: !!row.pendingUpload } : null;
   }, opts);
 }
