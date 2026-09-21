@@ -488,6 +488,11 @@ function _markJobComplete(jobId){
     showToast('Job marked complete 🏁','✅');
     renderJobsPage&&renderJobsPage();
     renderDash&&setTimeout(renderDash,200);
+    // The After shots are the ones everybody forgets, and this is the only
+    // moment the contractor is guaranteed to still be standing on the site.
+    // Silent unless there is a Before set with no After yet, so it can never
+    // become a prompt people learn to dismiss (js/photo-capture.js).
+    if(typeof tdPromptAfterShots==='function')setTimeout(()=>tdPromptAfterShots(jobId),400);
   },{title:'Complete job',yes:'Mark complete',danger:false});
 }
 
@@ -1796,16 +1801,14 @@ function openJobSheet(clientId){
             '<div style="display:flex;gap:6px;flex-wrap:wrap;min-height:40px">'+
               beforePhotos.map((p,i)=>renderThumb(p,i,'before')).join('')+
             '</div>'+
-            '<label style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--amber);color:var(--amber);font-size:11px;font-weight:700;cursor:pointer;background:var(--amber-lt)">'+
-              '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'before\');this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ Before</label>'+
+            '<button type="button" onclick="document.querySelectorAll(\'.zmodal-overlay\').forEach(o=>o.remove());tdCaptureForJob('+photoJobId+',\'before\')" style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--amber);color:var(--amber);font-size:11px;font-weight:700;cursor:pointer;background:var(--amber-lt);font-family:inherit">+ Before</button>'+
           '</div>'+
           '<div>'+
             '<div style="font-size:11px;font-weight:700;color:var(--green-mid);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">After ('+afterPhotos.length+')</div>'+
             '<div style="display:flex;gap:6px;flex-wrap:wrap;min-height:40px">'+
               afterPhotos.map((p,i)=>renderThumb(p,i,'after')).join('')+
             '</div>'+
-            '<label style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--green-mid);color:var(--green-mid);font-size:11px;font-weight:700;cursor:pointer;background:var(--green-lt)">'+
-              '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'after\');this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ After</label>'+
+            '<button type="button" onclick="document.querySelectorAll(\'.zmodal-overlay\').forEach(o=>o.remove());tdCaptureForJob('+photoJobId+',\'after\')" style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--green-mid);color:var(--green-mid);font-size:11px;font-weight:700;cursor:pointer;background:var(--green-lt);font-family:inherit">+ After</button>'+
           '</div>'+
         '</div>'+
         '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">'+
@@ -1815,8 +1818,7 @@ function openJobSheet(clientId){
           '</div>'+
           '<div style="display:flex;gap:6px">'+
             '<input type="text" id="_progLbl-'+photoJobId+'" maxlength="60" placeholder="Label (optional): e.g. Framing, Rough-in" style="flex:1;min-width:0;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
-            '<label style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--denim);color:var(--denim);font-size:11px;font-weight:700;cursor:pointer;background:var(--bg2);flex-shrink:0;white-space:nowrap">'+
-              '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'progress\',document.getElementById(\'_progLbl-'+photoJobId+'\').value);this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ Photo</label>'+
+            '<button type="button" onclick="_jsProgressCapture('+photoJobId+')" style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--denim);color:var(--denim);font-size:11px;font-weight:700;cursor:pointer;background:var(--bg2);flex-shrink:0;white-space:nowrap;font-family:inherit">+ Photo</button>'+
           '</div>'+
         '</div>'+
         shareBtn+
@@ -2389,55 +2391,30 @@ async function _uploadPhotoThumb(thumbBlob,mainPath){
     return{thumbUrl:data?data.publicUrl||'':'',thumbPath};
   }catch(_e){return{thumbUrl:'',thumbPath:''};}
 }
+// One line over the shared writer (js/photo-capture.js). This used to be the
+// only camera in the app and carried its own compress/upload/row-building
+// copy of the sequence; tdSavePhoto is that sequence, now shared with every
+// estimate type, the dashboard quick action and the After prompt (§7.3).
 function addJobPhoto(jobId,input,type,caption){
-  const file=input.files[0];if(!file)return;
-  caption=(caption||'').trim().slice(0,60);
-  const reader=new FileReader();
-  reader.onload=async e=>{
-    const j=jobs.find(x=>x.id===jobId);if(!j)return;
-    if(!j.photos)j.photos=[];
-    j.photos.push({type,data:e.target.result,ts:new Date().toISOString(),caption});
-    saveAll();
-    showToast((type==='before'?'Before':type==='after'?'After':caption||'Progress')+' photo saved','📸');
-    // Upload to gallery storage → push to global photos[] → refresh client hub
-    if(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa){
-      try{
-        // Compress + thumbnail (egress fix). null → upload the original untouched.
-        const _cp=await _compressPhoto(file);
-        const ext=_cp?_cp.ext:(file.name.split('.').pop()||'jpg').toLowerCase();
-        const path=_supaUser.id+'/'+jobId+'/'+type+'-'+Date.now()+'.'+ext;
-        const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:file,{contentType:_cp?_cp.mime:(file.type||'image/jpeg'),upsert:false,cacheControl:_PHOTO_CACHE});
-        if(!error){
-          const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
-          const publicUrl=urlData?.publicUrl||'';
-          if(publicUrl){
-            const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
-            const c=clients.find(x=>x.id===j.client_id);
-            const _photoClientName=c?c.name||'':'';
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,thumbUrl,thumbPath,type,caption,client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
-            saveAll();
-            typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
-          }
-        }else{
-          // Storage offline, mark base64 for retry on reconnect
-          const lastPhoto=j.photos[j.photos.length-1];
-          if(lastPhoto){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
-        }
-      }catch(_e){
-        // Network error, mark for retry
-        const lastPhoto=j.photos[j.photos.length-1];
-        if(lastPhoto&&!lastPhoto.pendingUpload){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
-      }
-    }else{
-      // Not connected to Supabase, mark base64 for upload when online
-      const lastPhoto=j.photos[j.photos.length-1];
-      if(lastPhoto){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
-    }
-  };
-  reader.readAsDataURL(file);
+  const file=input&&input.files&&input.files[0];
+  if(!file)return;
+  const _t=type||'progress';
+  Promise.resolve(tdSavePhoto({file,type:_t,caption,jobId})).then(row=>{
+    if(!row)return;
+    showToast((_t==='before'?'Before':_t==='after'?'After':(row.caption||'Progress'))+' photo saved','📸');
+  });
 }
 // "What we used" entries live on the same job record the photos do. Reopen the
 // sheet after a change, matching the photo buttons' own refresh pattern.
+// The progress label is typed on the job sheet, then carried into the capture
+// sheet as the caption for every shot in that burst, so a five-shot rough-in
+// walk is labelled once rather than five times.
+function _jsProgressCapture(jobId){
+  const el=document.getElementById('_progLbl-'+jobId);
+  const caption=el?el.value:'';
+  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+  tdCaptureForJob(jobId,'progress',caption);
+}
 function addJobSpec(jobId,clientId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   const g=id=>document.getElementById(id);

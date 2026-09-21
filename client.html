@@ -252,6 +252,21 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-photo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:20px}
 @media(max-width:640px){.hub-photo-grid{grid-template-columns:repeat(2,1fr)}}
 .hub-photo-thumb{aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--bg);cursor:pointer;position:relative}
+/* ── Before/After, dragged rather than compared by eye (2026-09-21) ────────
+   Two thumbnails side by side make the customer do the work of lining the
+   pair up. One frame with a handle does it for them, and it is the frame
+   they screenshot and send to a neighbour, which is the referral. */
+.hub-ba{position:relative;border-radius:10px;overflow:hidden;aspect-ratio:4/3;background:var(--bg);touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.hub-ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.hub-ba .hub-ba-before{clip-path:inset(0 50% 0 0)}
+.hub-ba-handle{position:absolute;top:0;bottom:0;left:50%;width:3px;background:#fff;box-shadow:0 0 10px rgba(0,0,0,.45);z-index:3;pointer-events:none}
+.hub-ba-knob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:4;background:#fff;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;color:#161A1F;box-shadow:0 2px 8px rgba(0,0,0,.3);pointer-events:none}
+.hub-ba-tag{position:absolute;bottom:8px;z-index:5;color:#fff;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;letter-spacing:.03em}
+.hub-ba-tag.b{left:8px;background:rgba(159,91,0,.94)}
+.hub-ba-tag.a{right:8px;background:rgba(17,120,65,.94)}
+.hub-ba-hint{text-align:center;font-size:12px;color:var(--text3);margin-top:8px}
+.hub-ba-verified{text-align:center;font-size:11px;font-weight:700;color:var(--green-mid,#0E6B39);margin-top:4px;display:flex;align-items:center;justify-content:center;gap:4px}
+.hub-ba-more{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px;margin-top:10px}
 .hub-photo-thumb img{width:100%;height:100%;object-fit:cover}
 .hub-photo-tag{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase}
 .hub-log-item{padding:12px 0;border-bottom:1px solid var(--border);display:flex;gap:12px}
@@ -1560,6 +1575,70 @@ function _hubScanCards(scans){
   });
   return out;
 }
+/* ── One Before/After frame, dragged (2026-09-21) ─────────────────────────
+   Shows the newest Before under the newest After behind a draggable divider,
+   then every OTHER shot in the pair as thumbs beneath it. The old version
+   rendered only the last of each and silently dropped the rest, so a job with
+   six Before shots showed one and the customer never knew the others existed.
+   set = the array openLightbox should index into, expr = how to name it. */
+function _hubBeforeAfterHTML(before,after,set,expr,extraStyle){
+  const b=before.length?before[before.length-1]:null;
+  const a=after.length?after[after.length-1]:null;
+  const rest=[].concat(before.slice(0,-1),after.slice(0,-1));
+  let out='';
+  if(b&&a){
+    const id='ba'+(_hubBaSeq++);
+    out+='<div class="hub-ba" id="'+id+'" onpointerdown="_hubBaDrag(event,\''+id+'\')" onpointermove="_hubBaDrag(event,\''+id+'\')" onclick="if(!_hubBaMoved)openLightbox('+expr+','+set.indexOf(a)+');_hubBaMoved=false" style="'+(extraStyle||'')+'">';
+    out+='<img '+_hubImgAttrs(a,'parent')+' loading="lazy">';
+    out+='<img class="hub-ba-before" '+_hubImgAttrs(b,'parent')+' loading="lazy">';
+    out+='<div class="hub-ba-handle"></div><div class="hub-ba-knob">&#8646;</div>';
+    out+='<div class="hub-ba-tag b">Before</div><div class="hub-ba-tag a">After</div>';
+    out+='</div><div class="hub-ba-hint">Drag to compare</div>';
+    // One line, only when the photo's own coordinates agree with the job
+    // address. Said quietly on purpose: it is a fact the customer can lean on
+    // in a dispute, not a badge to wave at them.
+    if(b.verified||a.verified)out+='<div class="hub-ba-verified">'+svgIcon('📍',{size:12})+' Verified on site</div>';
+  }else{
+    // Only one side shot so far (every walkthrough starts here). Render the
+    // WHOLE side as a grid, not one photo blown up to the full card width:
+    // a single square the size of the phone reads as the hub being broken.
+    const side=before.length?before:after,label=before.length?'Before':'After';
+    out+='<div class="hub-photo-grid" style="'+(extraStyle||'')+'">';
+    side.forEach(p=>{
+      out+='<div class="hub-photo-thumb" onclick="openLightbox('+expr+','+set.indexOf(p)+')">';
+      out+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy">';
+      out+='<div class="hub-photo-tag">'+label+'</div></div>';
+    });
+    out+='</div>';
+    return out;   // rest is already covered: it IS this side
+  }
+  if(rest.length){
+    out+='<div class="hub-ba-more">';
+    rest.forEach(p=>{
+      out+='<div class="hub-photo-thumb" onclick="openLightbox('+expr+','+set.indexOf(p)+')">';
+      out+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy">';
+      out+='<div class="hub-photo-tag">'+(p.type==='before'?'Before':'After')+'</div></div>';
+    });
+    out+='</div>';
+  }
+  return out;
+}
+let _hubBaSeq=0,_hubBaMoved=false;
+/* The divider follows the finger. Pointer events cover mouse and touch in one
+   path; a drag is not a tap, so _hubBaMoved gates the lightbox below. */
+function _hubBaDrag(e,id){
+  if(e.type==='pointermove'&&!(e.buttons&1)&&e.pointerType==='mouse')return;
+  const el=document.getElementById(id);
+  if(!el)return;
+  if(e.type==='pointerdown'){_hubBaMoved=false;try{el.setPointerCapture(e.pointerId);}catch(_e){}}
+  else _hubBaMoved=true;
+  const r=el.getBoundingClientRect();
+  const pct=Math.max(0,Math.min(100,((e.clientX-r.left)/r.width)*100));
+  const img=el.querySelector('.hub-ba-before'),h=el.querySelector('.hub-ba-handle'),k=el.querySelector('.hub-ba-knob');
+  if(img)img.style.clipPath='inset(0 '+(100-pct)+'% 0 0)';
+  if(h)h.style.left=pct+'%';
+  if(k)k.style.left=pct+'%';
+}
 function renderProject(){
   if(!_hub)return;
   const h=_hub;
@@ -1597,22 +1676,8 @@ function renderProject(){
     html+='<span style="font-size:11px;font-weight:700;color:'+statusColor+';flex-shrink:0;margin-left:10px">'+statusLabel+'</span>';
     html+='</div>';
     if(beforePhotos.length||afterPhotos.length){
-      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px'+((progressPhotos.length||otherPhotos.length)?';margin-bottom:14px':'')+'">';
-      if(beforePhotos.length){
-        const b=beforePhotos[beforePhotos.length-1];
-        const bIdx=jobPhotos.indexOf(b);
-        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+bIdx+')" aria-label="Before">';
-        html+='<img '+_hubImgAttrs(b,'parent')+' loading="lazy">';
-        html+='<div class="hub-photo-tag">Before</div></div>';
-      }else html+='<div></div>';
-      if(afterPhotos.length){
-        const a=afterPhotos[afterPhotos.length-1];
-        const aIdx=jobPhotos.indexOf(a);
-        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+aIdx+')" aria-label="After">';
-        html+='<img '+_hubImgAttrs(a,'parent')+' loading="lazy">';
-        html+='<div class="hub-photo-tag">After</div></div>';
-      }else html+='<div></div>';
-      html+='</div>';
+      html+=_hubBeforeAfterHTML(beforePhotos,afterPhotos,jobPhotos,'_hub.jobs['+jobIdx+'].photos',
+        (progressPhotos.length||otherPhotos.length)?'margin-bottom:14px':'');
     }
     // Milestone timeline, one entry per progress photo, oldest first, dated and
     // (if the contractor typed one) labeled, so a multi-week remodel reads as a
@@ -1649,8 +1714,39 @@ function renderProject(){
     html+='</div>';
   });
 
-  // Orphan photos: not linked to any job in this snapshot (e.g. before/after share cards)
-  const orphanPhotos=allPhotos.filter(p=>!p.job_id||!jobIds.has(p.job_id));
+  // ── Photos on an estimate that has no job yet (2026-09-21) ───────────────
+  // These used to fall into "Other photos" below, unlabelled, because the hub
+  // only ever grouped by job. The walkthrough shots are the ones the customer
+  // looks at while they are still DECIDING, so they get a named card of their
+  // own the moment the estimate is sent.
+  const bidGroups=h.bidPhotos||[];
+  const bidGroupPhotoUrls=new Set();
+  bidGroups.forEach((g,gi)=>{
+    const gp=g.photos||[];
+    gp.forEach(p=>bidGroupPhotoUrls.add(p.url));
+    const gBefore=gp.filter(p=>p.type==='before');
+    const gAfter=gp.filter(p=>p.type==='after');
+    const gRest=gp.filter(p=>p.type!=='before'&&p.type!=='after');
+    html+='<div class="card" style="margin-bottom:12px">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">';
+    html+='<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(g.name||'Proposal')+'</div>';
+    html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">'+gp.length+' photo'+(gp.length===1?'':'s')+' from the walkthrough</div></div>';
+    html+='<span style="font-size:11px;font-weight:700;color:var(--text3);flex-shrink:0;margin-left:10px">Estimate</span>';
+    html+='</div>';
+    if(gBefore.length||gAfter.length)html+=_hubBeforeAfterHTML(gBefore,gAfter,gp,'_hub.bidPhotos['+gi+'].photos',gRest.length?'margin-bottom:14px':'');
+    if(gRest.length){
+      html+='<div class="hub-photo-grid">';
+      gRest.forEach(p=>{
+        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.bidPhotos['+gi+'].photos,'+gp.indexOf(p)+')">';
+        html+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy"></div>';
+      });
+      html+='</div>';
+    }
+    html+='</div>';
+  });
+
+  // Orphan photos: not linked to any job OR estimate card above.
+  const orphanPhotos=allPhotos.filter(p=>(!p.job_id||!jobIds.has(p.job_id))&&!bidGroupPhotoUrls.has(p.url));
   if(orphanPhotos.length){
     html+='<div class="card">';
     html+='<div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:12px">Other photos</div>';

@@ -685,6 +685,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(titleEl)titleEl.innerHTML=svgIcon(m.icon,{size:24})+' '+_tradeProposalLabel(trade);
   const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
   if(eyebrowEl)eyebrowEl.textContent=_tradeProposalLabel(trade,{lower:true});
+  _geiPaintPhotoChip();
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
   sf('gei-client',c?.name||'');
   sf('gei-addr',opts?.forceAddr||c?.addr||''); // forceAddr = property chosen at the type gate
@@ -1744,6 +1745,44 @@ function _editEstTitle(titleId,btnId){
 }
 function _editByoTitle(){_editEstTitle('byo-tbar-title','byo-edit-title-btn');}
 function _editTMTitle(){_editEstTitle('tm-tbar-title','tm-edit-title-btn');}
+
+// ── The camera on the estimate (owner 2026-09-21) ───────────────────────────
+// Every estimate type rides pg-est-generic, so one chip in this header covers
+// Time & Materials, Build Your Own and fixed scope at once. The photos attach
+// to the BID, not to a job, because at estimate time there is no job yet: they
+// become the job's Before set the moment the bid is scheduled
+// (tdInheritBidPhotos, js/photo-capture.js).
+//
+// openGenericEstimate pre-creates the draft stub and sets _geiEditBidId, so by
+// the time this header exists there is almost always a bid to hang a photo on.
+// In the one case there is not, the photo still lands on the CLIENT and the
+// hub shows it: shooting must never be the action that fails, and it must
+// never be the action that saves something he did not ask to save.
+function _geiCapturePhotos(){
+  if(typeof tdOpenCapture!=='function')return;
+  tdOpenCapture({
+    bidId:_geiEditBidId!=null?_geiEditBidId:null,
+    clientId:_geiClientId!=null?_geiClientId:null,
+    type:'before',
+    onDone:()=>_geiPaintPhotoChip()
+  });
+}
+// How many photos this estimate is carrying. Counts by bid when the draft has
+// an id, else by client, so the count is right from the very first shot even
+// before the estimate has been saved.
+function _geiPhotoCount(){
+  if(typeof photos==='undefined')return 0;
+  if(_geiEditBidId!=null)return photos.filter(p=>p&&p.bid_id===_geiEditBidId).length;
+  if(_geiClientId!=null)return photos.filter(p=>p&&p.client_id===_geiClientId&&p.bid_id==null&&p.job_id==null).length;
+  return 0;
+}
+function _geiPaintPhotoChip(){
+  const chip=document.getElementById('gei-photo-chip'),n=document.getElementById('gei-photo-n');
+  if(!chip||!n)return;
+  const c=_geiPhotoCount();
+  n.textContent=c;
+  chip.className='pc-chip'+(c?'':' empty');
+}
 function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn');}
 // ── A line is a QUANTITY at a RATE ──────────────────────────────────────────
 //

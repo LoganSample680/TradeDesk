@@ -3029,12 +3029,18 @@ function _cdWarrantyChip(completionDate){
   const bg=w.active?'var(--green-lt)':'var(--bg2)';
   return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:20px;margin-top:6px;background:${bg};color:${fg}"><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>${escHtml(w.label)}</span>`;
 }
+// Reads BOTH shapes: the job-local entries (base64, written by the device that
+// took the shot) and the synced photos[] rows (url + thumbnail). It used to
+// read `p.data` alone, so any photo whose base64 had been dropped after upload
+// rendered as a broken image, and a photo that arrived from another device
+// never had one at all. tdPhotoSrc picks the cheapest source that exists.
 function _cdPastThumbs(photos){
   if(!photos.length)return '';
   const shown=photos.slice(0,3);
   const extra=photos.length-shown.length;
+  const _src=p=>(typeof tdPhotoSrc==='function')?tdPhotoSrc(p):(p&&(p.thumbUrl||p.url||p.data))||'';
   return `<div style="display:flex;gap:6px;margin-bottom:10px">`+
-    shown.map(p=>`<img src="${p.data}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border2)">`).join('')+
+    shown.map(p=>`<img src="${_src(p)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border2)">`).join('')+
     (extra>0?`<div style="width:64px;height:64px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--text2)">+${extra}</div>`:'')+
   `</div>`;
 }
@@ -3065,7 +3071,12 @@ function _cdPastBidRow(b,hist,money){
   const name=b.type||b.name||'Job';
   let bodyHtml='';
   if(isOpen){
-    const photos=linked.flatMap(j=>Array.isArray(j.photos)?j.photos:[]);
+    // The walkthrough shots live on the BID (there was no job yet when they
+    // were taken, js/photo-capture.js), so reading only the job's photos hid
+    // them from the one screen a contractor opens to look a property up again.
+    const photos=(typeof tdPhotosFor==='function')
+      ? tdPhotosFor({clientId:b.client_id,bidIds:[b.id],jobIds:linked.map(j=>j.id)})
+      : linked.flatMap(j=>Array.isArray(j.photos)?j.photos:[]);
     const specs=linked.flatMap(j=>Array.isArray(j.specUsed)?j.specUsed:[]);
     const scope=(typeof _bidScopeLines==='function')?_bidScopeLines(b).slice(0,4).join('; '):'';
     const crew=[...new Set(linked.map(j=>{
@@ -3114,7 +3125,7 @@ function _cdPastJobRow(j,money){
   let bodyHtml='';
   if(isOpen){
     bodyHtml=`<div style="border-top:1px dashed var(--border2);margin-top:10px;padding-top:10px" onclick="event.stopPropagation()">
-      ${_cdPastThumbs(Array.isArray(j.photos)?j.photos:[])}
+      ${_cdPastThumbs((typeof tdPhotosFor==='function')?tdPhotosFor({clientId:j.client_id,bidIds:[j.bid_id],jobIds:[j.id]}):(Array.isArray(j.photos)?j.photos:[]))}
       ${_cdPastSpec(Array.isArray(j.specUsed)?j.specUsed:[])}
       ${_cdPastDetail('Notes',j.notes?escHtml(j.notes):'')}
     </div>`;

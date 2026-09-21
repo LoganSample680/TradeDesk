@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.21.26.10';
+const APP_VERSION='09.21.26.28';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1529,8 +1529,23 @@ const _TD_TABLES=[
   {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
   {t:'td_scans',       get:()=>scans,       set:v=>{scans.length=0;v.forEach(r=>scans.push(r));},           tx:null},
   {t:'td_equipment',   get:()=>equipment,   set:v=>{equipment.length=0;v.forEach(r=>equipment.push(r));},   tx:null},
+  // thumbUrl/thumbPath were NOT in this list until 2026-09-21, so every photo
+  // lost its thumbnail the moment the row round-tripped through the cloud: a
+  // second device (and the hub snapshot built on it) fell back to the full
+  // 1600px image in every 60px grid, which is exactly the egress the thumbnail
+  // was added to stop. bid_id/bid_name carry the estimate a photo was shot on
+  // (js/photo-capture.js), and a photo whose tag does not survive the sync is
+  // a photo that leaves the Before/After pair on one phone.
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
-    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
+    // originalUrl/originalPath/annotated are here for the SAME reason
+    // thumbUrl was missing and had to be added: a field the feature depends
+    // on that the sync drops is a field that exists only on the phone that
+    // wrote it. Caught by the live flow run, 2026-09-21: marking a photo up
+    // set originalUrl locally, the sync stripped it, the next delta load
+    // replaced the row, and the pointer to the UNTOUCHED original was gone.
+    // "The original is never destroyed" is the rule mark-up is built on, and
+    // an original nobody can find again is a destroyed original.
+    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
 ];
 // Root cause (found 2026-07-10): this used to be a hand-listed object literal
 // that fell out of sync with _TD_TABLES above, td_maintenance was missing.
@@ -6558,27 +6573,6 @@ function _wipeLocalAccountData(){
   // Delta cursor + its sidecar are per-account too, drop both so the next account
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
-  // Tim's conversation thread (td_tim_log). It is account data and always was:
-  // it holds the sentences a man said to Tim and what Tim answered, which means
-  // customer names, what they owe, what jobs were charged at. Since 2026-09-21
-  // it also holds a week's timesheet read out by job site, so it carries crew
-  // names and the addresses they worked at.
-  // On a shop tablet two people sign into, leaving it behind is the same
-  // cross-account bleed every line in this function is here to stop. td_tim_met
-  // is deliberately NOT cleared next to it: that one is a fact about this
-  // DEVICE having been shown the control once, not about whose books are on it.
-  try{if(typeof timLogClear==='function')timLogClear();
-      else localStorage.removeItem('td_tim_log');}catch(_e){}
-  // td_tim_said is the last thing he said out loud on the bar, and it is a
-  // finding id with a DOLLAR FIGURE on the end of it. Same reasoning, same
-  // shared tablet, and leaving it would also mean the next account's first
-  // finding was silently treated as already spoken.
-  try{localStorage.removeItem('td_tim_said');}catch(_e){}
-  // The unsent learn queue. Scrubbed of customer names, but still a record of
-  // what THIS account's owner typed, and it is stamped with their user_id when
-  // it goes up, so carrying it into the next sign-in would file one man's
-  // sentences under another man's account.
-  try{localStorage.removeItem('td_tim_send');}catch(_e){}
   _subBids=null;window._subBidsKicked=false; // incoming-bid cache is per-account
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
   // The fleet is a synced array now (td_vehicles), not a settings key, so it needs
@@ -8142,6 +8136,8 @@ function quickScheduleJob(bidId,startKey,clientId){
     time:'',hours:null,notes:bid.notes||'',status:'upcoming',
     loggedAt:new Date().toISOString()
   });
+  // The estimate's photos follow the bid into the job (js/photo-capture.js).
+  try{if(typeof tdInheritBidPhotos==='function')tdInheritBidPhotos(bidId,jobs[jobs.length-1].id);}catch(_e){}
   saveAll();renderDash();renderJobsPage&&renderJobsPage();
   window._currentScheduleAlert=null;
   document.getElementById('sched-suggest-overlay')?.remove();

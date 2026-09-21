@@ -5545,14 +5545,24 @@ test.describe('dashboard quick actions, accent chips', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('all six actions render an icon chip with an SVG inside; old .qa-emoji is deleted', async () => {
+  // Was `.toBe(6)` until 2026-09-21, and six was right: the grid held New
+  // lead, Log miles, Proposal, Schedule, Expense and Collect. The Photo action
+  // (owner 2026-09-21) makes it seven, and hardcoding seven would just move
+  // the same breakage to the next action anyone adds. What the test is
+  // actually for is the RULE: every action in the grid renders an SVG icon
+  // chip, and the old .qa-emoji class stayed deleted. So it counts the
+  // buttons and holds them to that, with a floor so an empty grid can never
+  // pass vacuously.
+  test('every action renders an icon chip with an SVG inside; old .qa-emoji is deleted', async () => {
     const r = await page.evaluate(() => ({
+      actions: document.querySelectorAll('#dash-quick .qa').length,
       chips: document.querySelectorAll('#dash-quick .qa-ico').length,
       svgs: document.querySelectorAll('#dash-quick .qa-ico svg').length,
       emojiClass: document.querySelectorAll('.qa-emoji').length, // removed, not renamed-and-left
     }));
-    expect(r.chips).toBe(6);
-    expect(r.svgs).toBe(6);
+    expect(r.actions).toBeGreaterThanOrEqual(7);
+    expect(r.chips).toBe(r.actions);
+    expect(r.svgs).toBe(r.actions);
     expect(r.emojiClass).toBe(0);
   });
 
