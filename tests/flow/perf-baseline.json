@@ -81,7 +81,7 @@
     "note": "Re-measured 2026-09-07, chromium and webkit identical. Breakdown: open 2 + Materials item (tap 1 + label 36 + price 3 + description 11 + confirm 1) + Interior item (tap 1 + label 38 + price 4 + description 16 + confirm 1) + send 1. Raised from 114 by ONE for the same entry-cost correction as generic-send/tm. 101 of the 115 are keystrokes in two item labels and their descriptions: the ratchet on this flow comes from the book filling those in, not from removing taps."
   },
   "photo-capture/estimate-to-hub": {
-    "clicks": 11,
-    "note": "First capture 2026-09-21 (deterministic from act() counts, \u00a712.3): open the camera on the estimate + 2 shutter taps 3, schedule/inherit 0 (the app noticing, not the person acting), After prompt + shutter 2, unfiled shoot and file 5, open the hub link 1. Client and bid creation is charged 0 here because the intake and estimate flows already measure it. The 5 on the unfiled path is the standing streamline target: four of those taps happen AFTER the photo already exists."
+    "clicks": 14,
+    "note": "First capture 2026-09-21 (deterministic from act() counts, \u00a712.3): open the camera on the estimate + 2 shutter taps 3, schedule/inherit 0 (the app noticing, not the person acting), After prompt + shutter 2, unfiled shoot and file 5, mark one up 3 (tap the shot, drag an arrow, Save), open the hub link 1. Raised from 11 to 14 in the same commit that added the mark-up step (\u00a712.2): a deliberate new step, not creep. Client and bid creation is charged 0 here because the intake and estimate flows already measure it. The 5 on the unfiled path is the standing streamline target: four of those taps happen AFTER the photo already exists."
   }
 }

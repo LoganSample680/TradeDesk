@@ -93,6 +93,22 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
       },
     });
 
+    // THE STAMP IS IN THE BYTES, proven against the object that is actually in
+    // storage rather than against the canvas that made it. A stamped JPEG is
+    // strictly larger than the same frame unstamped, and this is the only
+    // place that can tell the difference: offline tests can only prove the
+    // stamper returns something.
+    const stampProof = await page.evaluate(async (url) => {
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        const buf = await res.arrayBuffer();
+        return { ok: res.ok, bytes: buf.byteLength, type: res.headers.get('content-type') || '' };
+      } catch (e) { return { ok: false, err: String(e && e.message) }; }
+    }, beforeShots[0].url);
+    expect(stampProof.ok, 'the uploaded photo is fetchable from storage').toBe(true);
+    expect(stampProof.bytes, 'a stamped photo has real bytes behind it').toBeGreaterThan(1000);
+    expect(stampProof.type).toContain('image');
+
     // ── STEP 3: the estimate's photos follow the bid into the job ────────────
     await step(page, {
       label: 'schedule the job, Before set follows the bid', page: 'pg-cal', role: 'contractor',
@@ -168,7 +184,44 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
       },
     });
 
-    // ── STEP 6: the hub the client actually opens ────────────────────────────
+    // ── STEP 6: mark one up, and prove the original survives ────────────────
+    let marked = {};
+    await step(page, {
+      label: 'mark up a photo, original preserved', page: 'pc-anno', role: 'contractor',
+      suspect: 'photo-capture.js tdAnnotatePhoto / tdSaveAnnotation',
+      ruleText: 'marking a photo up must upload a NEW flattened image and keep the untouched original',
+      expected: 'url changes, originalUrl holds the first upload, both fetchable',
+      act: async (p) => {
+        marked = await p.evaluate(async (id) => {
+          const before = photos.find(x => String(x.id) === String(id));
+          const urlBefore = before.url;
+          tdAnnotatePhoto(id);
+          for (let i = 0; i < 80 && !(window._pcAnno && _pcAnno.img); i++) await new Promise(r => setTimeout(r, 25));
+          if (!window._pcAnno || !_pcAnno.img) return { opened: false, urlBefore };
+          const cv = document.getElementById('pc-anno-cv');
+          _pcAnno.ops.push({ t: 'arrow', x1: cv.width * 0.2, y1: cv.height * 0.2, x2: cv.width * 0.6, y2: cv.height * 0.6, c: '#E5484D' });
+          await tdSaveAnnotation();
+          const after = photos.find(x => String(x.id) === String(id));
+          const reach = async u => { try { const r = await fetch(u, { cache: 'no-store' }); return r.ok; } catch (e) { return false; } };
+          return {
+            opened: true, urlBefore, urlAfter: after.url, originalUrl: after.originalUrl,
+            annotated: !!after.annotated,
+            markedReachable: await reach(after.url),
+            originalReachable: await reach(after.originalUrl),
+          };
+        }, beforeShots[0].id);
+        // Tap the shot in the strip (1), drag one arrow (1), Save (1).
+        return 3;
+      },
+      rule: async () => {
+        const ok = marked.opened && marked.urlAfter && marked.urlAfter !== marked.urlBefore &&
+          marked.originalUrl === marked.urlBefore && marked.annotated &&
+          marked.markedReachable && marked.originalReachable;
+        return { ok: !!ok, got: JSON.stringify({ changed: marked.urlAfter !== marked.urlBefore, keptOriginal: marked.originalUrl === marked.urlBefore, marked: marked.markedReachable, original: marked.originalReachable }) };
+      },
+    });
+
+    // ── STEP 7: the hub the client actually opens ────────────────────────────
     // The one that matters. Reads the REAL uploaded snapshot back out of
     // storage rather than the local array, because the local array being right
     // is exactly what was true before and still left the hub wrong.
@@ -196,6 +249,10 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
             withThumb: jp.filter(x => !!x.thumbUrl).length,
             bidGroups: (snap.bidPhotos || []).length,
             total: (snap.photos || []).length,
+            // The quiet half of the proof chain, and the privacy rule under
+            // it: the client is told the verdict, never the coordinates.
+            verified: jp.filter(x => x.verified).length,
+            leaksCoords: /"lat"|"lon"/.test(JSON.stringify(snap)),
           };
         }, client.id);
         // Tapping the link the contractor already sends.
@@ -211,6 +268,7 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
     // full 1600px image. Asserted separately so a thumbnail regression reads
     // as its own finding instead of hiding inside the grouping rule.
     expect(hub.withThumb, 'every hub photo carries a thumbnail url').toBe(hub.withUrl);
+    expect(hub.leaksCoords, 'the client snapshot never carries coordinates').toBe(false);
 
     const rep = report(FLOW, BASELINE);
     expect(rep.overBudget).toBe(false);

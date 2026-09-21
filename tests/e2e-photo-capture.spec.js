@@ -735,3 +735,337 @@ test.describe('TrueShot: verified on site', () => {
     expect(v).toBe(true);
   });
 });
+
+// ── Every control, every combination, no dead buttons (owner ask 2026-09-21) ─
+// "did you write tests that test this live on all buttons all combos and run
+// it to make sure there are no dead functions."
+//
+// Two different failures are covered here, and they fail in different ways:
+//   1. A handler that names a function which does not exist. Silent in the
+//      browser (the click just throws into the console), invisible in a unit
+//      test that never renders the markup. Checked STATICALLY, per surface.
+//   2. A button that is wired but does nothing: the app's own "dead control"
+//      definition (§13.1) is a first click with zero DOM, navigation or state
+//      effect. Checked by CLICKING every control and diffing the page.
+test.describe('TrueShot: every control, and no dead ones', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  test.beforeEach(async () => {
+    await page.evaluate(seed());
+    await page.evaluate(() => { try { tdCloseCapture(); tdCloseAnnotate(); } catch (e) {} document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); });
+  });
+
+  // Every function this feature's markup names must actually exist. This is
+  // the check that would have caught a renamed helper, a typo in an onclick,
+  // or a handler left behind after a refactor.
+  const handlersIn = (html) => {
+    const names = new Set();
+    const re = /on[a-z]+="([^"]*)"/g;
+    let m;
+    while ((m = re.exec(html))) {
+      const fnRe = /([A-Za-z_$][\w$]*)\s*\(/g;
+      let f;
+      while ((f = fnRe.exec(m[1]))) names.add(f[1]);
+    }
+    return [...names];
+  };
+
+  test('every handler named by the capture sheet resolves to a real function', async () => {
+    const missing = await page.evaluate((src) => {
+      tdCaptureForBid(901, 'before');
+      const html = document.getElementById('pc-sheet').innerHTML;
+      const names = new Set();
+      const re = /on[a-z]+="([^"]*)"/g; let m;
+      while ((m = re.exec(html))) {
+        const fnRe = /(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g; let f;
+        while ((f = fnRe.exec(m[1]))) names.add(f[1]);
+      }
+      const skip = new Set(['if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'function']);
+      return [...names].filter(n => !skip.has(n) && typeof window[n] !== 'function');
+    });
+    expect(missing).toEqual([]);
+  });
+
+  test('every handler named by the mark-up editor, the After prompt and the tray resolves', async () => {
+    const missing = await page.evaluate(async () => {
+      const bad = [];
+      const scan = (html, where) => {
+        const names = new Set();
+        const re = /on[a-z]+="([^"]*)"/g; let m;
+        while ((m = re.exec(html))) {
+          // (?<![.\w$]) so `this.closest(...)` and `el.remove()` are read as
+          // METHODS, not as globals this feature failed to define.
+          const fnRe = /(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g; let f;
+          while ((f = fnRe.exec(m[1]))) names.add(f[1]);
+        }
+        const skip = new Set(['if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'function']);
+        [...names].forEach(n => { if (!skip.has(n) && typeof window[n] !== 'function') bad.push(where + ':' + n); });
+      };
+      // mark-up editor
+      photos.push({ id: 880, type: 'before', url: '', thumbUrl: '', data: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', client_id: 501, bid_id: 901, job_id: null, uploadedAt: new Date().toISOString() });
+      tdAnnotatePhoto(880);
+      scan(document.getElementById('pc-anno').innerHTML, 'anno');
+      tdCloseAnnotate();
+      // After prompt
+      jobs.push({ id: 881, client_id: 501, name: 'Repipe', status: 'done' });
+      photos.push({ id: 882, type: 'before', url: '', thumbUrl: '', data: '', client_id: 501, job_id: 881, uploadedAt: new Date().toISOString() });
+      tdPromptAfterShots(881);
+      scan(document.querySelector('.zmodal-overlay').innerHTML, 'prompt');
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      // unfiled tray + its file picker
+      photos.push({ id: 883, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
+      scan(tdUnfiledTrayHTML(), 'tray');
+      tdOpenFilePicker(883);
+      scan(document.querySelector('.zmodal-overlay').innerHTML, 'filepicker');
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      // the estimate header chip
+      scan(document.getElementById('gei-photo-chip').outerHTML, 'chip');
+      // the dashboard quick action
+      scan(document.getElementById('qa-photo-btn').outerHTML, 'qa');
+      return bad;
+    });
+    expect(missing).toEqual([]);
+  });
+
+  // Click EVERY control in the sheet, one at a time, and require each to
+  // change something. This is the app's own dead-control definition.
+  test('no control in the capture sheet is dead', async () => {
+    const dead = await page.evaluate(() => {
+      const dead = [];
+      const snap = () => JSON.stringify({
+        html: document.getElementById('pc-sheet') ? document.getElementById('pc-sheet').innerHTML.length : 0,
+        type: (typeof _pcCtx === 'object' && _pcCtx) ? _pcCtx.type : null,
+        ghost: (typeof _pcCtx === 'object' && _pcCtx) ? _pcCtx.ghost : null,
+        stamp: _pcStampOn(),
+        open: !!document.getElementById('pc-sheet'),
+        segOn: document.querySelector('#pc-sheet .pc-seg-btn.on') ? document.querySelector('#pc-sheet .pc-seg-btn.on').textContent : '',
+        hint: document.getElementById('pc-hint') ? document.getElementById('pc-hint').textContent : '',
+      });
+      // A Before on the same bid so the Ghost control has something to show.
+      photos.push({ id: 884, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: 501, bid_id: 901, job_id: null, uploadedAt: new Date().toISOString() });
+      const labels = ['Before', 'Progress', 'After', 'Ghost', 'Stamp'];
+      labels.forEach(label => {
+        // Open on the type the button does NOT select, or clicking it is a
+        // no-op by design and the sweep would read that as dead.
+        const openOn = label === 'Before' ? 'after' : label === 'Ghost' ? 'after' : 'before';
+        tdCaptureForBid(901, openOn);
+        const btns = [...document.querySelectorAll('#pc-sheet button')];
+        const btn = btns.find(b => (b.textContent || '').trim().toLowerCase().startsWith(label.toLowerCase()));
+        if (!btn) { dead.push(label + ' (missing)'); return; }
+        const before = snap();
+        btn.click();
+        if (snap() === before) dead.push(label);
+        tdCloseCapture();
+      });
+      // Done closes the sheet: its effect IS the close.
+      tdCaptureForBid(901, 'before');
+      const done = [...document.querySelectorAll('#pc-sheet button')].find(b => b.textContent.trim() === 'Done');
+      done && done.click();
+      if (document.getElementById('pc-sheet')) dead.push('Done');
+      return dead;
+    });
+    expect(dead).toEqual([]);
+  });
+
+  test('no control in the mark-up editor is dead', async () => {
+    const r = await page.evaluate(async () => {
+      const dead = [];
+      const seedCv = document.createElement('canvas');
+      seedCv.width = 300; seedCv.height = 200;
+      seedCv.getContext('2d').fillRect(0, 0, 300, 200);
+      photos.push({ id: 885, type: 'before', url: seedCv.toDataURL('image/png'), thumbUrl: '', client_id: 501, bid_id: 901, uploadedAt: new Date().toISOString() });
+      tdAnnotatePhoto(885);
+      for (let i = 0; i < 40 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r2 => setTimeout(r2, 25));
+      const snap = () => JSON.stringify({
+        tool: _pcAnno && _pcAnno.tool, color: _pcAnno && _pcAnno.color,
+        ops: _pcAnno ? _pcAnno.ops.length : -1,
+        onTool: document.querySelector('#pc-anno .pc-tool.on') ? document.querySelector('#pc-anno .pc-tool.on').dataset.tool : '',
+        colorLabel: document.getElementById('pc-anno-color').textContent,
+      });
+      // Opens on Arrow, so select something else first or the Arrow click is
+      // correctly a no-op.
+      tdAnnoTool('circle');
+      ['Arrow', 'Circle', 'Text', 'Red', 'Yellow'].forEach(label => {
+        if (label === 'Circle') tdAnnoTool('arrow');
+        const btn = [...document.querySelectorAll('#pc-anno .pc-tool')].find(b => b.textContent.trim() === label);
+        if (!btn) return;                      // Red/Yellow is the same button, one of the two always misses
+        const before = snap();
+        btn.click();
+        if (snap() === before) dead.push(label);
+      });
+      // Undo with marks on the canvas must remove one.
+      _pcAnno.ops.push({ t: 'arrow', x1: 1, y1: 1, x2: 50, y2: 50, c: '#E5484D' });
+      const n = _pcAnno.ops.length;
+      [...document.querySelectorAll('#pc-anno .pc-tool')].find(b => b.textContent.trim() === 'Undo').click();
+      if (_pcAnno.ops.length !== n - 1) dead.push('Undo');
+      // Cancel closes without saving.
+      [...document.querySelectorAll('#pc-anno button')].find(b => b.textContent.trim() === 'Cancel').click();
+      if (document.getElementById('pc-anno')) dead.push('Cancel');
+      return dead;
+    });
+    expect(r).toEqual([]);
+  });
+
+  test('no control in the After prompt or the unfiled tray is dead', async () => {
+    const dead = await page.evaluate(() => {
+      const dead = [];
+      jobs.push({ id: 886, client_id: 501, name: 'Repipe', status: 'done' });
+      photos.push({ id: 887, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: 501, job_id: 886, uploadedAt: new Date().toISOString() });
+      // "Not now" must close and do nothing else.
+      tdPromptAfterShots(886);
+      [...document.querySelectorAll('.zmodal-overlay button')].find(b => b.textContent.trim() === 'Not now').click();
+      if (document.querySelector('.zmodal-overlay')) dead.push('Not now');
+      // "Shoot the After set" must close the prompt AND open the sheet on After.
+      tdPromptAfterShots(886);
+      [...document.querySelectorAll('.zmodal-overlay button')].find(b => /Shoot the After/.test(b.textContent)).click();
+      if (!document.getElementById('pc-sheet') || _pcCtx.type !== 'after') dead.push('Shoot the After set');
+      tdCloseCapture();
+      // The tray's File button opens the picker; the picker's option files it.
+      photos.push({ id: 888, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
+      const host = document.createElement('div');
+      host.innerHTML = tdUnfiledTrayHTML();
+      document.body.appendChild(host);
+      const fileBtn = [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'File');
+      fileBtn && fileBtn.click();
+      const picker = document.querySelector('.zmodal-overlay');
+      if (!picker) dead.push('File');
+      else {
+        const opt = picker.querySelector('.pc-file-opt');
+        opt && opt.click();
+        const p = photos.find(x => String(x.id) === '888');
+        if (!p || p.client_id == null) dead.push('pick a customer');
+      }
+      // The guess pill files it in one tap, which is the whole point of it.
+      photos.push({ id: 889, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
+      host.innerHTML = tdUnfiledTrayHTML();
+      const pill = [...host.querySelectorAll('.pc-uf-pill.ok')].pop();
+      pill && pill.click();
+      if (!photos.find(x => String(x.id) === '889' && x.client_id === 501)) dead.push('guess pill');
+      host.remove();
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      return dead;
+    });
+    expect(dead).toEqual([]);
+  });
+
+  test('the estimate chip and the dashboard tile both actually open the camera', async () => {
+    const r = await page.evaluate(() => {
+      window._geiEditBidId = 901; window._geiClientId = 501;
+      document.getElementById('gei-photo-chip').click();
+      const fromChip = { open: !!document.getElementById('pc-sheet'), bid: _pcCtx ? _pcCtx.bidId : null };
+      tdCloseCapture();
+      document.getElementById('qa-photo-btn').click();
+      const fromTile = { open: !!document.getElementById('pc-sheet'), client: _pcCtx ? _pcCtx.clientId : 'none' };
+      tdCloseCapture();
+      window._geiEditBidId = null;
+      return { fromChip, fromTile };
+    });
+    expect(r.fromChip.open).toBe(true);
+    expect(r.fromChip.bid).toBe(901);
+    expect(r.fromTile.open).toBe(true);
+    // The quick action deliberately attaches nothing: shoot first, file after.
+    expect(r.fromTile.client).toBe(null);
+  });
+
+  // Every combination of the two toggles, against the one rule that matters:
+  // the shot always lands, tagged correctly, whatever the toggles say.
+  test('every type and stamp combination still writes a correctly tagged row', async () => {
+    const rows = await page.evaluate(async (b64) => {
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const mk = () => new File([arr], 'shot.png', { type: 'image/png' });
+      jobs.push({ id: 890, bid_id: 901, client_id: 501, name: 'Repipe', status: 'active' });
+      const out = [];
+      for (const stamp of [true, false]) {
+        S.photoStamp = stamp;
+        for (const type of ['before', 'progress', 'after']) {
+          for (const tag of [{ bidId: 901 }, { jobId: 890 }, { clientId: 501 }, {}]) {
+            const row = await tdSavePhoto(Object.assign({ file: mk(), type }, tag));
+            out.push({
+              stamp, type, tag: Object.keys(tag)[0] || 'none',
+              wrote: !!row,
+              client: row ? row.client_id : null,
+              bid: row ? row.bid_id : null,
+              job: row ? row.job_id : null,
+            });
+          }
+        }
+      }
+      S.photoStamp = true;
+      return out;
+    }, PNG_B64);
+    expect(rows.length).toBe(24);                 // 2 stamp x 3 types x 4 tag shapes
+    expect(rows.every(r => r.wrote)).toBe(true);  // every combination writes
+    rows.filter(r => r.tag === 'bidId').forEach(r => { expect(r.bid).toBe(901); expect(r.client).toBe(501); });
+    rows.filter(r => r.tag === 'jobId').forEach(r => { expect(r.job).toBe(890); expect(r.client).toBe(501); });
+    rows.filter(r => r.tag === 'clientId').forEach(r => { expect(r.client).toBe(501); });
+    rows.filter(r => r.tag === 'none').forEach(r => { expect(r.client).toBe(null); });
+  });
+});
+
+// ── Finding the photo again, which is the point of tagging it ───────────────
+test.describe('TrueShot: the photos come back', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  test.beforeEach(async () => { await page.evaluate(seed()); });
+
+  test('a property\'s past work shows the walkthrough shots, not just the job ones', async () => {
+    const r = await page.evaluate(() => {
+      jobs.push({ id: 860, bid_id: 901, client_id: 501, name: 'Exterior repaint', status: 'done' });
+      photos.push({ id: 21, type: 'before', url: 'https://x.test/walk.jpg', thumbUrl: 'https://x.test/walk-t.jpg', client_id: 501, bid_id: 901, job_id: null, uploadedAt: '2026-09-18T15:00:00.000Z' });
+      photos.push({ id: 22, type: 'after', url: 'https://x.test/done.jpg', thumbUrl: '', client_id: 501, bid_id: 901, job_id: 860, uploadedAt: '2026-09-21T15:00:00.000Z' });
+      const found = tdPhotosFor({ clientId: 501, bidIds: [901], jobIds: [860] });
+      return { n: found.length, order: found.map(p => p.id), html: _cdPastThumbs(found) };
+    });
+    // The bid-tagged walkthrough shot is there, and it is FIRST: oldest first,
+    // so the story reads Before then After.
+    expect(r.n).toBe(2);
+    expect(r.order).toEqual([21, 22]);
+    expect(r.html).toContain('walk-t.jpg');   // prefers the thumbnail
+    expect(r.html).toContain('done.jpg');     // falls back to the full url
+  });
+
+  test('a photo with no base64 left on it still renders, which it did not before', async () => {
+    const html = await page.evaluate(() => _cdPastThumbs([{ id: 23, type: 'before', url: 'https://x.test/only-url.jpg', thumbUrl: '', uploadedAt: '' }]));
+    expect(html).toContain('only-url.jpg');
+    expect(html).not.toContain('src=""');
+  });
+
+  test('one customer never sees another customer\'s photos', async () => {
+    const r = await page.evaluate(() => {
+      photos.push({ id: 24, type: 'before', url: 'a.jpg', client_id: 501, bid_id: 901, uploadedAt: '' });
+      photos.push({ id: 25, type: 'before', url: 'b.jpg', client_id: 502, bid_id: 902, uploadedAt: '' });
+      return {
+        mine: tdPhotosFor({ clientId: 501, bidIds: [901], jobIds: [] }).map(p => p.id),
+        whole: tdPhotosFor({ clientId: 501, wholeClient: true }).map(p => p.id),
+      };
+    });
+    expect(r.mine).toEqual([24]);
+    expect(r.whole).toEqual([24]);
+  });
+
+  test('an empty lookup is empty, never everything', async () => {
+    const r = await page.evaluate(() => ({
+      nothing: tdPhotosFor().length,
+      empty: tdPhotosFor({}).length,
+      noMatch: tdPhotosFor({ clientId: 999, bidIds: [999], jobIds: [999] }).length,
+      srcOfJunk: tdPhotoSrc(null),
+    }));
+    expect(r).toEqual({ nothing: 0, empty: 0, noMatch: 0, srcOfJunk: '' });
+  });
+});

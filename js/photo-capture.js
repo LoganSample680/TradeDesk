@@ -842,3 +842,37 @@ async function tdSaveAnnotation(){
   showToast('Markup saved','✏️');
   return true;
 }
+
+// ── Finding a photo again, months later ─────────────────────────────────────
+// The owner's test of whether this feature is real: "photos tag to a job or to
+// a client address for easy access later." A photo the app cannot hand back is
+// a photo that may as well not have been taken.
+//
+// One lookup, used by every in-app surface that shows a customer's history.
+// It unions the three tags rather than reading one of them, because the SAME
+// property's photos are spread across all three by design: the walkthrough
+// shots carry the bid, the job shots carry the job, and a drive-by carries
+// only the client.
+function tdPhotosFor(opts){
+  opts=opts||{};
+  const cid=opts.clientId!=null?opts.clientId:null;
+  const bidIds=(opts.bidIds||[]).filter(x=>x!=null).map(String);
+  const jobIds=(opts.jobIds||[]).filter(x=>x!=null).map(String);
+  const out=(typeof photos!=='undefined'?photos:[]).filter(p=>{
+    if(!p)return false;
+    if(jobIds.length&&p.job_id!=null&&jobIds.includes(String(p.job_id)))return true;
+    if(bidIds.length&&p.bid_id!=null&&bidIds.includes(String(p.bid_id)))return true;
+    // Client-only match is the fallback, and ONLY when the caller asked for
+    // the whole customer: otherwise a bid card would show the neighbour job's
+    // photos just because they share a customer.
+    if(opts.wholeClient&&cid!=null&&p.client_id===cid)return true;
+    return false;
+  });
+  return out.sort((a,b)=>String(a.uploadedAt||'').localeCompare(String(b.uploadedAt||'')));
+}
+// What to actually put in an <img src>. Order matters: the thumbnail is the
+// cheap one, the full url is the fallback, and the local base64 copy is last
+// because it only exists on the device that took the shot.
+function tdPhotoSrc(p){
+  return (p&&(p.thumbUrl||p.url||p.data))||'';
+}
