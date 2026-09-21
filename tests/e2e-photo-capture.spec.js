@@ -521,7 +521,11 @@ test.describe('Photo capture: the sheet itself', () => {
     const ids = await shootUnfiled(4);
     const r = await page.evaluate((ids) => {
       tdReviewAttach();
-      document.querySelector('.zmodal-overlay .pc-file-opt').click();
+      for (let step = 0; step < 3 && document.getElementById('pc-att'); step++) {
+        const opt = document.querySelector('#pc-att .pc-file-opt');
+        if (!opt) break;
+        opt.click();
+      }
       const mine = ids.map(id => photos.find(p => String(p.id) === String(id))).filter(Boolean);
       return {
         filed: mine.filter(p => p.client_id != null).length,
@@ -572,6 +576,162 @@ test.describe('Photo capture: the sheet itself', () => {
     expect(r.rows).toBe(2);
     expect(r.counts).toBe('5');          // the single shot carries no count badge
     expect(r.cells).toBe(1);             // newest burst first: the lone later shot
+  });
+
+  // ── Where exactly on the record (owner, 2026-09-21) ───────────────────────
+  // "If it's taken onsite gps coordinates search the record and attach where
+  // exactly on the client record?" So the card opens on what the coordinates
+  // prove, and only asks what the data cannot answer by itself.
+  const attachSeed = () => page.evaluate(() => {
+    clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+    clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS', lat: 37.6889, lon: -97.3361 });
+    clients.push({ id: 502, name: 'Far Away Co', addr: '900 Mile Rd', lat: 38.9, lon: -98.9 });
+    jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'active', addr: '412 Oak St, Wichita KS', lat: 37.6889, lon: -97.3361 });
+    photos.push({ id: 950, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, lat: 37.68892, lon: -97.33612, uploadedAt: new Date().toISOString() });
+    photos.push({ id: 951, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, lat: 37.68892, lon: -97.33612, uploadedAt: new Date().toISOString() });
+    tdReviewShots([950, 951]);
+    tdReviewAttach();
+  });
+
+  test('the coordinates put the right record at the top, with the distance', async () => {
+    await attachSeed();
+    const r = await page.evaluate(() => {
+      const near = [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent);
+      return { count: near.length, first: near[0] || '', matches: _pcNearbyMatches([950]).length };
+    });
+    expect(r.count).toBe(1);
+    expect(r.first).toContain('Dana Whitfield');
+    expect(r.first).toContain('412 Oak St');
+    expect(r.first).toContain('Repipe');
+    expect(r.first).toMatch(/\d+ ft away/);
+    expect(r.matches).toBe(1);          // the far customer is not a match
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  test('tapping the on-site match files the whole burst on that job, no more questions', async () => {
+    await attachSeed();
+    const r = await page.evaluate(() => {
+      document.querySelector('#pc-att .pc-file-opt.near').click();
+      const mine = [950, 951].map(id => photos.find(p => String(p.id) === String(id)));
+      return {
+        asked: !!document.getElementById('pc-att'),
+        filed: mine.filter(p => p && p.client_id === 501 && p.job_id === 601).length,
+        addr: mine[0] && mine[0].addr,
+      };
+    });
+    expect(r.asked).toBe(false);
+    expect(r.filed).toBe(2);
+    expect(r.addr).toBe('412 Oak St, Wichita KS');
+  });
+
+  test('the attach card opens ON TOP of the album, not behind it', async () => {
+    await attachSeed();
+    const r = await page.evaluate(() => ({
+      card: +getComputedStyle(document.getElementById('pc-att')).zIndex,
+      sheet: +getComputedStyle(document.getElementById('pc-rev')).zIndex,
+    }));
+    expect(r.card).toBeGreaterThan(r.sheet);
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  test('no fix on the photo means no guess, just the customer list', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St', lat: 37.6889, lon: -97.3361 });
+      photos.push({ id: 960, type: 'before', url: '', data: 'x', client_id: null, lat: null, lon: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([960]); tdReviewAttach();
+    });
+    const r = await page.evaluate(() => ({
+      near: document.querySelectorAll('#pc-att .pc-file-opt.near').length,
+      list: document.querySelectorAll('#pc-att .pc-file-opt').length,
+    }));
+    expect(r.near).toBe(0);
+    expect(r.list).toBe(1);
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  test('searching narrows the customer list', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+      clients.push({ id: 502, name: 'Marco Reyes', addr: '9 Vine Ave' });
+      photos.push({ id: 961, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([961]); tdReviewAttach();
+      _pcAttPaint('who', 'reyes');
+    });
+    const r = await page.evaluate(() => [...document.querySelectorAll('#pc-att .pc-file-opt')].map(b => b.textContent).join('|'));
+    expect(r).toContain('Marco Reyes');
+    expect(r).not.toContain('Dana');
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  test('two properties asks which one, and the answer sticks to the photo', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS', extraAddresses: [{ label: 'Rental', addr: '88 Pine Ct, Wichita KS' }] });
+      photos.push({ id: 962, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([962]); tdReviewAttach();
+      tdAttachPick(501);
+    });
+    const r = await page.evaluate(() => {
+      const opts = [...document.querySelectorAll('#pc-att .pc-file-opt')].map(b => b.textContent);
+      document.querySelectorAll('#pc-att .pc-file-opt')[1].click();   // the rental
+      const p = photos.find(x => String(x.id) === '962');
+      return { opts: opts.join('|'), addr: p.addr, client: p.client_id, closed: !document.getElementById('pc-att') };
+    });
+    expect(r.opts).toContain('412 Oak St');
+    expect(r.opts).toContain('88 Pine Ct');
+    expect(r.addr).toBe('88 Pine Ct, Wichita KS');
+    expect(r.client).toBe(501);
+    expect(r.closed).toBe(true);
+  });
+
+  test('one property and one open proposal is never a question', async () => {
+    const r = await page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+      bids.push({ id: 701, client_id: 501, title: 'Exterior repaint', status: 'draft', addr: '412 Oak St' });
+      photos.push({ id: 963, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([963]); tdReviewAttach();
+      tdAttachPick(501);
+      const p = photos.find(x => String(x.id) === '963');
+      return { asked: !!document.getElementById('pc-att'), bid: p.bid_id, name: p.bid_name };
+    });
+    expect(r.asked).toBe(false);
+    expect(r.bid).toBe(701);
+    expect(r.name).toBe('Exterior repaint');
+  });
+
+  test('a proposal AND a job at the same address is a real choice, including neither', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+      bids.push({ id: 701, client_id: 501, title: 'Exterior repaint', status: 'draft', addr: '412 Oak St' });
+      jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'active', addr: '412 Oak St' });
+      photos.push({ id: 964, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([964]); tdReviewAttach();
+      tdAttachPick(501);
+    });
+    const r = await page.evaluate(() => {
+      const opts = [...document.querySelectorAll('#pc-att .pc-file-opt')].map(b => b.textContent.trim());
+      tdAttachWork('job', 601);
+      const p = photos.find(x => String(x.id) === '964');
+      return { opts, job: p.job_id, bid: p.bid_id, addr: p.addr };
+    });
+    expect(r.opts.length).toBe(3);                      // proposal, job, just the customer
+    expect(r.opts[2]).toContain('Just the customer');
+    expect(r.job).toBe(601);
+    expect(r.bid == null).toBe(true);   // the proposal was not chosen, so nothing claims it
+    expect(r.addr).toBe('412 Oak St');
+  });
+
+  test('the property survives the trip to the cloud', async () => {
+    const r = await page.evaluate(() => {
+      const t = _TD_TABLES.find(x => x.t === 'td_photos');
+      const out = t.tx([{ id: 1, url: 'u', storagePath: 's', type: 'before', caption: '', client_id: 501, addr: '88 Pine Ct', uploadedAt: 'now' }]);
+      return out[0].addr;
+    });
+    expect(r).toBe('88 Pine Ct');
   });
 
   // §7.1: the single-photo picker it replaced is gone, not hidden.
@@ -1132,7 +1292,9 @@ test.describe('TrueShot: every control, and no dead ones', () => {
       tdReviewOpen(0);
       scan(document.getElementById('pc-rev').innerHTML, 'review-viewer');
       tdReviewAttach();
-      scan(document.querySelector('.zmodal-overlay').innerHTML, 'review-picker');
+      scan(document.getElementById('pc-att').innerHTML, 'attach-who');
+      tdAttachPick(501);
+      if (document.getElementById('pc-att')) scan(document.getElementById('pc-att').innerHTML, 'attach-next');
       document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
       tdReviewClose();
       // the estimate header chip
@@ -1247,9 +1409,13 @@ test.describe('TrueShot: every control, and no dead ones', () => {
       if (!document.getElementById('pc-rev')) dead.push('Review');
       else {
         tdReviewAttach();
-        const picker = document.querySelector('.zmodal-overlay');
-        const opt = picker && picker.querySelector('.pc-file-opt');
-        opt && opt.click();
+        // The card asks only what the data cannot answer, so click the first
+        // option on each step it does show, up to the three it can ask.
+        for (let step = 0; step < 3 && document.getElementById('pc-att'); step++) {
+          const opt = document.querySelector('#pc-att .pc-file-opt');
+          if (!opt) break;
+          opt.click();
+        }
         const p = photos.find(x => String(x.id) === '888');
         if (!p || p.client_id == null) dead.push('Attach to customer');
       }

@@ -1653,6 +1653,18 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-uf-file{background:none;border:none;color:var(--denim);font-weight:800;font-size:13px;font-family:inherit;padding:8px;cursor:pointer;flex-shrink:0}
 .pc-file-list{max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
 .pc-file-opt{text-align:left;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;font-family:inherit;font-size:14px;font-weight:700;color:var(--text);cursor:pointer;display:flex;flex-direction:column;gap:2px}
+/* The review sheet is above the modal layer, so its own attach card has to
+   be above THAT. Without this the card opens behind the album and the
+   button looks dead (caught in a local screenshot, 2026-09-21). */
+#pc-att{z-index:10060}
+.pc-att-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:6px}
+.pc-att-near{margin-bottom:12px;display:flex;flex-direction:column;gap:6px}
+/* What the coordinates already prove, so it reads as an answer rather than
+   one more row in a list of customers. */
+.pc-file-opt.near{border-color:var(--c-amber);background:var(--c-amber-soft)}
+/* The proof line is the point of this row, so it wraps rather than ending in an ellipsis. */
+.pc-file-opt.near span{white-space:normal;overflow:visible;text-overflow:clip}
+.pc-att-q{width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:10px;border:1.5px solid var(--line);border-radius:var(--r-md);font-family:inherit;font-size:14px;background:var(--bg-2);color:var(--text)}
 .pc-file-opt span{font-size:12px;font-weight:500;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Mark-up editor. Same dark full-screen surface as the capture sheet: it is
    the same job (look at a picture, act on it) and a second visual language

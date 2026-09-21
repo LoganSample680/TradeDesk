@@ -61,6 +61,9 @@ async function tdSavePhoto(opts){
     client_id:clientId,client_name:c?c.name||'':'',
     bid_id:bidId,bid_name:b?(b.title||b.name||''):'',
     job_id:jobId,job_name:j?j.name||'':'',
+    // The property this was shot at. A job or a proposal usually says it, but
+    // a customer with three houses and no job open still has to know which.
+    addr:opts.addr||(j?j.addr||'':'')||(b?b.addr||'':'')||(c?c.addr||'':''),
     // The fix the photo was taken at, KEPT, not just used for the stamp.
     // It was passed in for the stamp text and then thrown away, so only
     // photos shot through the capture sheet (which stamps the row
@@ -475,35 +478,178 @@ function tdReviewUndo(){
 }
 // One customer for the whole burst: they were all shot in the same place at
 // the same minute, so asking per photo is five taps to say the same thing.
+// ── Attaching a burst: where it was shot answers most of it ─────────────────
+// Owner, 2026-09-21: "if it's taken onsite gps coordinates search the record
+// and attach where exactly on the client record?" So the card opens on what
+// the coordinates already prove, and the customer list is the fallback rather
+// than the first question. Then: which property (only when there are two),
+// and which proposal or job (only when there is a choice). Never a step the
+// data can answer by itself.
+const _PC_NEAR_M=250;
+let _pcAtt=null;   // {ids, clientId, addr, bidId, jobId}
+// Everything the coordinates could plausibly mean, nearest first. A job
+// carries its own address, so a job hit answers the property question too.
+function _pcNearbyMatches(ids){
+  const rows=(ids||[]).map(id=>photos.find(x=>String(x.id)===String(id))).filter(Boolean);
+  const fix=rows.map(r=>({lat:r.lat,lon:r.lon})).find(f=>f.lat!=null&&f.lon!=null);
+  if(!fix)return [];
+  const out=[];
+  jobs.forEach(j=>{
+    if(j.lat==null||j.lon==null)return;
+    const d=_pcMeters(fix.lat,fix.lon,j.lat,j.lon);
+    if(d>_PC_NEAR_M)return;
+    const c=clients.find(x=>x.id===j.client_id);
+    out.push({clientId:j.client_id,name:(c&&c.name)||'',addr:j.addr||(c&&c.addr)||'',jobId:j.id,bidId:null,what:j.name||'Job',d});
+  });
+  clients.forEach(c=>{
+    if(c.lat==null||c.lon==null)return;
+    const d=_pcMeters(fix.lat,fix.lon,c.lat,c.lon);
+    if(d>_PC_NEAR_M)return;
+    if(out.some(m=>m.clientId===c.id))return;
+    out.push({clientId:c.id,name:c.name||'',addr:c.addr||'',jobId:null,bidId:null,what:'',d});
+  });
+  return out.sort((a,b)=>a.d-b.d).slice(0,4);
+}
+function _pcFeet(m){return Math.round(m*3.28084);}
 function tdReviewAttach(){
-  if(!_pcRev)return false;
-  const ids=_pcRev.ids.slice();
-  if(!ids.length)return false;
-  const opts=clients.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
-  const ov=document.createElement('div');
-  ov.className='zmodal-overlay';
-  ov.style.alignItems='center';
-  ov.innerHTML='<div class="zmodal">'+
-    '<div style="font-size:18px;font-weight:900;margin-bottom:4px">Whose '+(ids.length===1?'photo':'photos')+'?</div>'+
-    '<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">All '+ids.length+' land in their hub.</div>'+
-    '<div class="pc-file-list">'+
-      (opts.length?opts.map(c=>'<button type="button" class="pc-file-opt" onclick="tdReviewFileAll('+c.id+');this.closest(\'.zmodal-overlay\').remove()">'+
-        escHtml(c.name||'Unnamed')+'<span>'+escHtml(c.addr||'')+'</span></button>').join('')
-        :'<div style="font-size:13px;color:var(--text-3)">No customers yet.</div>')+
-    '</div>'+
-    '<button class="btn btn-full" style="margin-top:12px" onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>'+
-  '</div>';
-  document.body.appendChild(ov);
+  if(!_pcRev||!_pcRev.ids.length)return false;
+  _pcAtt={ids:_pcRev.ids.slice(),clientId:null,addr:'',bidId:null,jobId:null};
+  _pcAttPaint('who');
   return true;
 }
-function tdReviewFileAll(clientId){
-  if(!_pcRev)return 0;
-  const ids=_pcRev.ids.slice();
-  let n=0;
-  ids.forEach(id=>{if(tdFilePhoto(id,clientId))n++;});
+function _pcAttSheet(){
+  let ov=document.getElementById('pc-att');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='pc-att';ov.className='zmodal-overlay';ov.style.alignItems='center';
+    document.body.appendChild(ov);
+  }
+  return ov;
+}
+function tdAttachCancel(){
+  document.getElementById('pc-att')?.remove();
+  _pcAtt=null;
+  return true;
+}
+function _pcAttPaint(step,q){
+  if(!_pcAtt)return;
+  const ov=_pcAttSheet();
+  const n=_pcAtt.ids.length;
+  const head=(t,sub)=>'<div style="font-size:18px;font-weight:900;margin-bottom:4px">'+t+'</div>'+
+    '<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">'+sub+'</div>';
+  const cancel='<button class="btn btn-full" style="margin-top:12px" onclick="tdAttachCancel()">Cancel</button>';
+  if(step==='who'){
+    const near=_pcNearbyMatches(_pcAtt.ids);
+    const term=String(q||'').trim().toLowerCase();
+    const list=clients.filter(c=>!term||String(c.name||'').toLowerCase().includes(term)||String(c.addr||'').toLowerCase().includes(term))
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
+    ov.innerHTML='<div class="zmodal">'+
+      head('Whose '+(n===1?'photo':n+' photos')+'?','It lands on their record, and in the hub you send them.')+
+      (near.length?'<div class="pc-att-near"><div class="pc-att-lbl">Shot here</div>'+
+        near.map(m=>'<button type="button" class="pc-file-opt near" onclick="tdAttachPick('+m.clientId+','+(m.jobId!=null?m.jobId:'null')+')">'+
+          escHtml(m.name||'Unnamed')+'<span>'+escHtml(m.addr||'')+(m.what?' · '+escHtml(m.what):'')+' · '+_pcFeet(m.d)+' ft away</span></button>').join('')+
+        '</div>':'')+
+      '<input class="pc-att-q" id="pc-att-q" placeholder="Search customers" autocomplete="off" oninput="_pcAttPaint(\'who\',this.value)" value="'+escHtml(q||'')+'">'+
+      '<div class="pc-file-list">'+
+        (list.length?list.map(c=>'<button type="button" class="pc-file-opt" onclick="tdAttachPick('+c.id+')">'+
+          escHtml(c.name||'Unnamed')+'<span>'+escHtml(c.addr||'')+'</span></button>').join('')
+          :'<div style="font-size:13px;color:var(--text-3)">No customers match.</div>')+
+      '</div>'+cancel+'</div>';
+    const box=document.getElementById('pc-att-q');
+    if(q!=null&&box){box.focus();box.setSelectionRange(box.value.length,box.value.length);}
+    return;
+  }
+  if(step==='where'){
+    const c=clients.find(x=>x.id===_pcAtt.clientId);
+    const props=(typeof clientAddresses==='function')?clientAddresses(c):[];
+    ov.innerHTML='<div class="zmodal">'+
+      head('Which property?',escHtml((c&&c.name)||'')+' has '+props.length+' addresses.')+
+      '<div class="pc-file-list">'+props.map(a=>'<button type="button" class="pc-file-opt" onclick="tdAttachAddr('+JSON.stringify(a.addr).replace(/"/g,'&quot;')+')">'+
+        escHtml((a.addr||'').split(',')[0])+'<span>'+escHtml(a.label||'')+'</span></button>').join('')+'</div>'+cancel+'</div>';
+    return;
+  }
+  // 'work': the proposal or job on that customer, only ever asked when there
+  // is more than one thing it could be.
+  const c=clients.find(x=>x.id===_pcAtt.clientId);
+  const work=_pcAttWork();
+  ov.innerHTML='<div class="zmodal">'+
+    head('Attach to what?','On '+escHtml((c&&c.name)||'this customer')+'.')+
+    '<div class="pc-file-list">'+
+      work.map(w=>'<button type="button" class="pc-file-opt" onclick="tdAttachWork(\''+w.kind+'\','+w.id+')">'+
+        escHtml(w.label)+'<span>'+escHtml(w.sub)+'</span></button>').join('')+
+      '<button type="button" class="pc-file-opt" onclick="tdAttachWork(\'none\',0)">Just the customer<span>No proposal or job</span></button>'+
+    '</div>'+cancel+'</div>';
+}
+// The open work on this customer at this address: proposals first, because a
+// photo taken before the job exists is the walkthrough for the estimate.
+function _pcAttWork(){
+  if(!_pcAtt)return [];
+  const cid=_pcAtt.clientId,addr=_pcAtt.addr;
+  const same=(a)=>!addr||!a||String(a).trim().toLowerCase()===String(addr).trim().toLowerCase();
+  const out=[];
+  bids.filter(b=>b.client_id===cid&&b.status!=='lost'&&same(b.addr)).slice(0,8)
+    .forEach(b=>out.push({kind:'bid',id:b.id,label:b.title||b.name||'Proposal',sub:'Proposal'+(b.status?' · '+b.status:'')}));
+  jobs.filter(j=>j.client_id===cid&&j.status!=='cancelled'&&same(j.addr)).slice(0,8)
+    .forEach(j=>out.push({kind:'job',id:j.id,label:j.name||'Job',sub:'Job'+(j.status?' · '+j.status:'')}));
+  return out;
+}
+function tdAttachPick(clientId,jobId){
+  if(!_pcAtt)return false;
+  _pcAtt.clientId=clientId;
   const c=clients.find(x=>x.id===clientId);
+  if(jobId!=null){
+    const j=jobs.find(x=>x.id===jobId);
+    _pcAtt.jobId=jobId;_pcAtt.addr=(j&&j.addr)||(c&&c.addr)||'';
+    return tdAttachCommit();
+  }
+  const props=(typeof clientAddresses==='function')?clientAddresses(c):[];
+  if(props.length>1)return _pcAttPaint('where'),true;
+  _pcAtt.addr=props.length?props[0].addr:((c&&c.addr)||'');
+  return _pcAttAfterAddr();
+}
+function tdAttachAddr(addr){
+  if(!_pcAtt)return false;
+  _pcAtt.addr=addr||'';
+  return _pcAttAfterAddr();
+}
+function _pcAttAfterAddr(){
+  const work=_pcAttWork();
+  if(work.length===1){
+    // One open proposal or job at this address is the answer, not a question.
+    if(work[0].kind==='bid')_pcAtt.bidId=work[0].id;else _pcAtt.jobId=work[0].id;
+    return tdAttachCommit();
+  }
+  if(!work.length)return tdAttachCommit();
+  _pcAttPaint('work');
+  return true;
+}
+function tdAttachWork(kind,id){
+  if(!_pcAtt)return false;
+  if(kind==='bid')_pcAtt.bidId=id;
+  else if(kind==='job')_pcAtt.jobId=id;
+  return tdAttachCommit();
+}
+function tdAttachCommit(){
+  if(!_pcAtt)return false;
+  const{ids,clientId,addr,bidId,jobId}=_pcAtt;
+  let n=0;
+  ids.forEach(id=>{
+    if(!tdFilePhoto(id,clientId,bidId,jobId))return;
+    const p=photos.find(x=>String(x.id)===String(id));
+    // The property, kept on the row: a customer with three houses needs to
+    // know WHICH one this was, and a job or proposal is not always there to
+    // say it.
+    if(p&&addr)p.addr=addr;
+    n++;
+  });
+  saveAll();
+  const c=clients.find(x=>x.id===clientId);
+  tdAttachCancel();
   tdReviewClose();
-  if(typeof showToast==='function')showToast(n+(n===1?' photo':' photos')+' filed to '+((c&&c.name)||'the customer'),'\u2705');
+  if(typeof showToast==='function'){
+    const where=[(c&&c.name)||'the customer',(addr||'').split(',')[0]].filter(Boolean).join(' · ');
+    showToast(n+(n===1?' photo':' photos')+' filed to '+where,'\u2705');
+  }
   if(typeof renderDash==='function')try{renderDash();}catch(_e){}
   return n;
 }
@@ -816,8 +962,10 @@ function tdUnfiledTrayHTML(){
 function tdReviewFileBurst(firstId,clientId){
   const b=tdUnfiledBursts().find(x=>x.photos.some(p=>String(p.id)===String(firstId)));
   if(!b)return 0;
+  const c=clients.find(x=>x.id===clientId);
   let n=0;
-  b.photos.forEach(p=>{if(tdFilePhoto(p.id,clientId))n++;});
+  b.photos.forEach(p=>{if(tdFilePhoto(p.id,clientId)){if(c&&c.addr)p.addr=c.addr;n++;}});
+  saveAll();
   if(typeof renderDash==='function')try{renderDash();}catch(_e){}
   return n;
 }
