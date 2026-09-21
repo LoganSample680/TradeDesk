@@ -548,10 +548,34 @@ body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infini
   0%,62%,100%{opacity:.28;transform:translateY(0)}
   31%        {opacity:1;transform:translateY(-3px)}
 }
+/* ── The send ───────────────────────────────────────────────────────────────
+   Owner, 2026-09-21: "do they have that crisp iOS send shutter where it flows".
+   They did not: the thread is redrawn with innerHTML, so a new bubble simply
+   existed, with no more ceremony than a table row.
+   The bubble comes UP off the box it was typed in, overshoots by a hair and
+   settles. transform-origin is the corner nearest its own speaker, so it grows
+   out of the side it belongs to rather than out of the middle of the sheet:
+   that is the whole reason the iOS one reads as "sent" instead of "appeared".
+   ONLY the newest bubble carries .in. innerHTML replaces every node on every
+   draw, so an entrance on the class alone would replay the entire history each
+   time anybody said anything. */
+@keyframes tim-send{
+  0%  {opacity:0;transform:translateY(12px) scale(.90)}
+  55% {opacity:1;transform:translateY(-2px) scale(1.015)}
+  100%{opacity:1;transform:translateY(0) scale(1)}
+}
+.tim-msg.in .tim-b{animation:tim-send .32s cubic-bezier(.22,1,.36,1) both}
+.tim-msg.me.in .tim-b{transform-origin:100% 100%}
+.tim-msg.him.in .tim-b{transform-origin:0 100%}
+/* His avatar fades rather than springing: two things springing out of one
+   corner reads as a glitch, not a message. */
+@keyframes tim-av-in{from{opacity:0}to{opacity:1}}
+.tim-msg.him.in .tim-av{animation:tim-av-in .32s ease both}
 @media (prefers-reduced-motion:reduce){
   /* Still three dots, so the state is still legible. They just hold still, and
      js/tim.js skips the delay entirely so the reply is there immediately. */
   .tim-dots i{animation:none;opacity:.55}
+  .tim-msg.in .tim-b,.tim-msg.him.in .tim-av{animation:none}
 }
 /* ── The shimmer ────────────────────────────────────────────────────────────
    Owner, 2026-09-20: it has to scream click me.

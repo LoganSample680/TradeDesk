@@ -1221,23 +1221,41 @@ function _timThreadRefresh(opts){
     if(el)el.value='';
     if(typeof _timPreview==='function')_timPreview();
 
-    const bottom=()=>{try{box.scrollTop=box.scrollHeight;}catch(_e){}};
     // Somebody who asked the OS to stop moving things gets the answer straight
     // away, not three still dots and a wait. Same rule as the dock's breathing.
     const still=(typeof matchMedia==='function')&&
       matchMedia('(prefers-reduced-motion: reduce)').matches;
     const beat=(opts&&opts.instant)||still?0:_TIM_TYPING_MS;
+    // Smooth when the bubble is flying, instant when it is not: a smooth scroll
+    // with no animation attached to it is just a slow jump.
+    const bottom=(glide)=>{
+      try{
+        if(glide&&typeof box.scrollTo==='function')box.scrollTo({top:box.scrollHeight,behavior:'smooth'});
+        else box.scrollTop=box.scrollHeight;
+      }catch(_e){try{box.scrollTop=box.scrollHeight;}catch(_e2){}}
+    };
 
     clearTimeout(_timTypingT);
-    if(!beat){box.innerHTML=_timThreadHtml();bottom();return;}
-    box.innerHTML=_timThreadHtml({pending:true});
-    bottom();
+    if(!beat){box.innerHTML=_timThreadHtml();bottom(false);return;}
+
+    // The send. Your bubble comes up off the box, he starts typing, and the
+    // phone taps your thumb: the native Taptic 'select', the same one a picker
+    // uses, because sending a message is a small thing committing rather than
+    // something big landing. It is decoration and never delays the send
+    // (js/utils.js _tdHaptic never throws and never awaits).
+    box.innerHTML=_timThreadHtml({pending:true,enter:'me'});
+    bottom(true);
+    try{if(typeof _tdHaptic==='function')_tdHaptic('tick');}catch(_e){}
+
     _timTypingT=setTimeout(()=>{
       // The sheet can be gone by now: he may have navigated, or closed it.
       const b=document.getElementById('_tim-thread');
       if(!b)return;
-      b.innerHTML=_timThreadHtml();
-      try{b.scrollTop=b.scrollHeight;}catch(_e){}
+      b.innerHTML=_timThreadHtml({enter:'him'});
+      try{
+        if(typeof b.scrollTo==='function')b.scrollTo({top:b.scrollHeight,behavior:'smooth'});
+        else b.scrollTop=b.scrollHeight;
+      }catch(_e){}
     },beat);
   }catch(_e){}
 }

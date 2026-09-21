@@ -517,6 +517,75 @@ test.describe('the tim log', () => {
       expect(r.after).toEqual({ dots: 0, reply: true });
     });
 
+    // ── The send ────────────────────────────────────────────────────────────
+    test('only the newest bubble plays the send, never the whole history', async () => {
+      // The thread is redrawn with innerHTML on every send, so every node is
+      // new to the DOM every time. An entrance keyed on the bubble class alone
+      // would replay the entire conversation whenever anybody said anything,
+      // which is the failure this asserts against rather than the feature.
+      const r = await page.evaluate(() => {
+        timLogClear();
+        timLogSay('who owes me money', { kind: 'ask', title: '$3,500' });
+        timLogSay('how much did I make', { kind: 'ask', title: '$41,280' });
+        const el = document.createElement('div');
+        el.innerHTML = _timThreadHtml({ pending: true, enter: 'me' });
+        const ins = [...el.querySelectorAll('.tim-msg.in')];
+        return {
+          count: ins.length,
+          side: ins.length === 1 ? (ins[0].classList.contains('me') ? 'me' : 'him') : null,
+          text: ins.length === 1 ? ins[0].textContent.trim() : null,
+        };
+      });
+      expect(r).toEqual({ count: 1, side: 'me', text: 'how much did I make' });
+    });
+
+    test('his reply enters from his side, not yours', async () => {
+      const r = await page.evaluate(() => {
+        timLogClear();
+        timLogSay('reglaze the transoms', { kind: 'none' });
+        const el = document.createElement('div');
+        el.innerHTML = _timThreadHtml({ enter: 'him' });
+        const ins = [...el.querySelectorAll('.tim-msg.in')];
+        return { count: ins.length, him: ins.length === 1 && ins[0].classList.contains('him') };
+      });
+      expect(r).toEqual({ count: 1, him: true });
+    });
+
+    test('a plain redraw animates nothing', async () => {
+      // Reopening the sheet, or any refresh that is not a send, must not make
+      // the whole thread jump about.
+      const r = await page.evaluate(() => {
+        timLogClear();
+        timLogSay('who owes me money', { kind: 'ask', title: '$3,500' });
+        const el = document.createElement('div');
+        el.innerHTML = _timThreadHtml();
+        return el.querySelectorAll('.tim-msg.in').length;
+      });
+      expect(r).toBe(0);
+    });
+
+    test('sending taps the phone, through the app own haptic vocabulary', async () => {
+      // 7.3: _tdHaptic is the one hook for all ~200 call sites, and it is the
+      // only thing that works on iOS (navigator.vibrate has never existed in
+      // WKWebView). 'tick' is select-feedback: a small thing committing, not
+      // something big landing.
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timLogClear();
+        const seen = [];
+        const real = window._tdHaptic;
+        window._tdHaptic = (k) => { seen.push(k); };
+        try {
+          openTim();
+          document.getElementById('_tim-say').value = 'reglaze the transoms';
+          _timGo();
+        } finally { window._tdHaptic = real; }
+        document.getElementById('_tim-ov')?.remove();
+        return seen;
+      });
+      expect(r).toContain('tick');
+    });
+
     test('the beat is display only, the work already happened', async () => {
       // The reply exists in the log the moment _timGo returns, while the dots
       // are still on screen. This is what makes the beat honest: nothing is
