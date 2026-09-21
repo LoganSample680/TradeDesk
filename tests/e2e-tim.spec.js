@@ -1148,6 +1148,105 @@ test.describe('tim', () => {
   // already wrote down, and would read as a notifications tray rather than as a
   // man with something to say. What changes is whether he is breathing at all,
   // and which of his findings is showing.
+  // ── What he opens with ────────────────────────────────────────────────────
+  //
+  // Owner: "what Tim displays first makes zero sense." It did not. Three
+  // separate lines all assumed a job was on screen, and they were shown on
+  // every screen:
+  //   "Reading this job and your price book"   the header subtitle
+  //   "Nothing to flag on this job"            when he had no findings
+  //   "Nothing on this one worth stopping you for. Say what changed..."
+  // Opened from the dashboard, which is where the owner opened him, there is no
+  // "this job", no "this one" and nothing that "changed". The first thing he
+  // said was about a screen the man was not looking at.
+  test.describe('the first thing he says is true where he is standing', () => {
+    const open = async (pg) => page.evaluate((p) => {
+      document.getElementById('_tim-ov')?.remove();
+      window.__realNudges = window.__realNudges || timNudges;
+      timNudges = () => [];
+      timLogClear();
+      goPg(p);
+      openTim();
+      const t = document.getElementById('_tim-sheet').textContent;
+      document.getElementById('_tim-ov')?.remove();
+      return t;
+    }, pg);
+    test.afterAll(async () => {
+      await page.evaluate(() => { if (window.__realNudges) timNudges = window.__realNudges; });
+    });
+
+    test('off the estimate builder he never mentions a job that is not there', async () => {
+      const t = await open('pg-dash');
+      expect(t).not.toContain('this job');
+      expect(t).not.toContain('this one');
+      expect(t).not.toContain('what changed');
+      expect(t).toContain('Reading your books');
+    });
+
+    test('and he names what he can actually do from there', async () => {
+      const t = await open('pg-dash');
+      expect(t).toContain('what you are owed');
+      expect(t).toContain('what you charged');
+      expect(t).toContain('where your work is coming from');
+    });
+
+    test('on the estimate builder the job copy is right, so it stays', async () => {
+      const t = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timNudges = () => [];
+        timLogClear();
+        const c = { id: 96401, name: 'Opening Line', addr: '3 Opening St' };
+        clients = clients.filter(x => x.id !== 96401).concat([c]);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        openTim();
+        const out = document.getElementById('_tim-sheet').textContent;
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      // With nothing found, the subtitle IS the "nothing to flag" line, so the
+      // reading line is not also present: they occupy the same slot.
+      expect(t).toContain('Nothing to flag on this job');
+      expect(t).toContain('Say what changed');
+    });
+
+    test('with a finding up, the subtitle says what he read to get it', async () => {
+      const t = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timLogClear();
+        const c = { id: 96402, name: 'Subtitle Client', addr: '4 Subtitle St' };
+        clients = clients.filter(x => x.id !== 96402).concat([c]);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        timNudges = () => ([{ id: 'a', kind: 'dollar', line: 'Dana still owes on the last one',
+          figure: '$1,240', title: '$1,240', what: 'Dana has $1,240 outstanding.',
+          cta: 'Open what they owe', alt: 'Not now' }]);
+        openTim();
+        const out = document.getElementById('_tim-sheet').textContent;
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(t).toContain('Reading this job and your price book');
+      expect(t).not.toContain('Nothing to flag');
+    });
+
+    // The conversation is the content. Nobody wants a paragraph of
+    // introduction sitting on top of their own messages every time.
+    test('once there is a thread, the opening line gets out of the way', async () => {
+      const t = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timNudges = () => [];
+        timLogClear();
+        goPg('pg-dash');
+        timLogSay('who owes me money', { kind: 'ask', title: '$3,500' });
+        openTim();
+        const out = document.getElementById('_tim-sheet').textContent;
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(t).not.toContain('Ask me what you are owed');
+      expect(t).toContain('who owes me money');
+    });
+  });
+
   // ── The i, and the fact that it leaves ────────────────────────────────────
   //
   // Owner asked for a small i in the corner to get people to tap. The shimmer
