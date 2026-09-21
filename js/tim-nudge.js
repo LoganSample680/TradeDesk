@@ -46,7 +46,12 @@ const TIM_NUDGE_RULES=[
     id:'under-book',
     kind:'dollar',
     when:s=>s.under&&s.under.gap>0,
-    line:s=>'You are under your own price on line '+s.under.at,
+    // Not "You are under your own price on line 3". The pill is the one part
+    // of Tim a man reads without having asked for it, often with a customer
+    // standing next to him, and a sentence that opens "You are" is a sentence
+    // about HIM rather than about the line. Same fact, subject changed to the
+    // thing that is actually wrong. The figure does the arguing.
+    line:s=>'Line '+s.under.at+' is under your own price',
     figure:s=>_timMoney(s.under.gap),
     title:s=>_timMoney(s.under.gap),
     what:s=>s.under.desc+' is at '+_timMoney(s.under.rate)+'.',
@@ -65,16 +70,24 @@ const TIM_NUDGE_RULES=[
     what:s=>s.clientName+' has '+_timMoney(s.owed)+' outstanding'+(s.owedDays?', '+s.owedDays+' days now':'')+'.',
     why:()=>'It is your money, sitting in a job you are about to do more work for.',
     cta:'Open what they owe',
-    alt:'Send it anyway',
+    // "Send it anyway" told him he was doing something reckless on the way to
+    // doing it. Half the time the reason is that he already knows, and the
+    // cheque is in the truck. The way out of a nudge should never carry a
+    // judgment about taking it.
+    alt:'Not now',
   },
   {
     id:'runs-over',
     kind:'percent',
     when:s=>s.overrun&&s.overrun.n>=3&&s.overrun.pct>=10,
-    line:()=>'Your last three of these ran over',
+    // "Your last three of these ran over" is a verdict on the man's work.
+    // "These take longer than the estimate" is a verdict on the ESTIMATE, which
+    // is the thing he is standing in front of and the thing he can change. The
+    // fact and the percentage are identical; only the thing being blamed moves.
+    line:()=>'These take longer than the estimate',
     figure:s=>s.overrun.pct+'%',
     title:s=>s.overrun.pct+'%',
-    what:s=>'The last '+s.overrun.n+' jobs like this took '+s.overrun.pct+' percent longer than you wrote down.',
+    what:s=>'The last '+s.overrun.n+' jobs like this took '+s.overrun.pct+' percent longer than the estimate said.',
     why:s=>'Off your own clock, not a guess. On this one that is about '+s.overrun.hours+' more hours.',
     cta:'Put the hours up',
     alt:'Leave it',
@@ -269,6 +282,25 @@ function _timUnderBook(){
     return worst;
   }catch(_e){return null;}
 }
+// WHAT THIS CUSTOMER STILL OWES, READ THE WAY THE COLLECT PAGE READS IT.
+//
+// This was wrong from the day it shipped and no test caught it, which is worth
+// recording rather than quietly fixing. It filtered on `b.clientId` and
+// `b.status==='invoiced'`. The app uses `b.client_id` (58 places against 2),
+// and 'invoiced' is not a bid status anywhere in this codebase: the statuses
+// are Closed Won, Pending, Closed Lost, Draft, Abandoned. So the filter matched
+// nothing, `amount` was always 0, and the still-owes nudge could never fire on
+// real data, on any job, ever.
+//
+// It passed CI because e2e-tim-nudge hands timNudges() a hand-built snapshot
+// with `owed: 1240` already in it. That tests the ranking, which is fine and
+// still what those tests are for, but it never runs the code that reads the
+// database. The seam between them had no test at all, so a field name that
+// matched nothing looked exactly like a customer who happened to be paid up.
+//
+// The rule now: this reads bids the way renderMoneyPage does (js/finance.js),
+// because that page IS the definition of what he is owed, and two different
+// answers to "what does Dana owe me" on two screens is worse than none.
 function _timOwedByClient(){
   const out={amount:0,name:'',days:0};
   try{
@@ -279,15 +311,17 @@ function _timOwedByClient(){
     const rows=(typeof bids!=='undefined'&&Array.isArray(bids))?bids:[];
     let oldest=null;
     rows.forEach(b=>{
-      if(!b||b.clientId!==id||b.status!=='invoiced')return;
+      if(!b||b.client_id!==id||b.status!=='Closed Won')return;
       const bal=(typeof getBidBalance==='function')?getBidBalance(b):0;
-      if(bal<=0)return;
+      if(bal<=0.01)return;
       out.amount+=bal;
-      const d=b.invoicedDate||b.date;
+      // Money is owed from the day the work finished, not the day the proposal
+      // was written, which is the same clock the Collect page counts on.
+      const d=b.completion_date||b.date;
       if(d&&(!oldest||String(d)<String(oldest)))oldest=d;
     });
     if(oldest){
-      const ms=Date.now()-new Date(oldest).getTime();
+      const ms=Date.now()-new Date(String(oldest)+'T12:00').getTime();
       out.days=Math.max(0,Math.round(ms/86400000));
     }
   }catch(_e){}

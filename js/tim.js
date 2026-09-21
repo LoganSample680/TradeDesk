@@ -44,6 +44,12 @@ const TIM_PLACES=[
   {pg:'pg-client-hub',  name:'Client hub',  say:['client hub','the hub']},
   {pg:'pg-tracker',     name:'Books',       say:['receipts']},
   {pg:'pg-qr-leads',    name:'QR leads',    say:['qr','qr code','qr leads','my sign']},
+  // The id says checklist and the screen says Top Clients: it was renamed and
+  // the id never was. Tim goes by what is ON the screen, because that is the
+  // only name the owner has ever seen. No 'best clients' here on purpose, or it
+  // would steal "who is my best customer" off the answer that reads his books.
+  {pg:'pg-checklist',   name:'Top clients', say:['top clients','heavy hitters','my top clients',
+                                                 'client rankings','who are my top']},
   {pg:'pg-settings',    name:'Settings',    say:['settings','preferences','my account']},
 ];
 
@@ -229,29 +235,30 @@ function timRun(text){
 // row of scope, 20px beside a line of his own copy, 26px in the sheet header,
 // 34px on the dock, 58px when the dock is the only thing on screen.
 //
-// The first version was a face and it read as a cartoon, which is the one thing
-// this product cannot afford. So the man stays but he is a silhouette, brass
-// instead of safety yellow, on a warm paper disc with a hairline ring. At 16px
-// it resolves to a brass bar on a pale disc, which is still a hardhat, and at
-// 58px it is still not a drawing of a person's face.
+// Six hand-drawn versions of this were rejected and they were rejected for the
+// same reason each time: a face assembled out of seven primitives in a 28-unit
+// box is a face nobody drew. It read as a hardhat, then a padlock, then a
+// mummy. The answer was not a better bezier, it was to stop drawing. This is
+// the Style E portrait from the brand sheet, cropped square, masked to a circle
+// and exported at three densities: a bearded man in a ball cap with a wrench on
+// the crown and his overalls showing. That is the mascot the owner asked for,
+// and it holds at 16px because the silhouette does the work, not the detail.
+//
+// It carries its own gold field, so there is no disc, no ring and no onInk
+// variant to draw underneath it. The browser picks the density off srcset from
+// the rendered size, which is why width and height are attributes and not a
+// guess: a 16px mark on a 3x phone pulls the 64 and nothing larger.
 //
 // It is built as a string rather than a component because the app has no
 // framework and this has to drop into innerHTML from six different files.
 function timMark(size,opts){
   const s=Math.max(12,Math.round(Number(size)||24));
   const o=opts||{};
-  const ring=o.onInk?'rgba(245,239,226,.22)':'var(--tim-disc-edge,#D8D2C6)';
-  const disc=o.onInk&&o.flat?'rgba(245,239,226,.14)':'var(--tim-disc,#F4F1EA)';
-  return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 28 28" aria-hidden="true" '+
-    'style="flex-shrink:0;display:block'+(o.style?';'+o.style:'')+'">'+
-    '<circle cx="14" cy="14" r="13.4" fill="'+disc+'" stroke="'+ring+'" stroke-width="1"></circle>'+
-    '<path d="M7.4 25.4a6.7 6.7 0 0 1 13.2 0z" fill="#1B1612"></path>'+
-    '<ellipse cx="14" cy="15" rx="3.7" ry="4.2" fill="#1B1612"></ellipse>'+
-    '<path d="M9.2 12.5a4.8 4.8 0 0 1 9.6 0z" fill="var(--brass,#C9962F)"></path>'+
-    '<rect x="6.2" y="12.2" width="15.6" height="2.1" rx="1.05" fill="var(--brass,#C9962F)"></rect>'+
-    '<rect x="6.2" y="13.6" width="15.6" height="0.7" fill="var(--brass-deep,#9E7222)"></rect>'+
-    '<path d="M14 8.6v3.2" stroke="var(--brass-deep,#9E7222)" stroke-width="1"></path>'+
-  '</svg>';
+  return '<img src="/img/tim-128.png" '+
+    'srcset="/img/tim-64.png 64w, /img/tim-128.png 128w, /img/tim-256.png 256w" '+
+    'sizes="'+s+'px" width="'+s+'" height="'+s+'" '+
+    'alt="" aria-hidden="true" decoding="async" '+
+    'style="flex-shrink:0;display:block'+(o.style?';'+o.style:'')+'">';
 }
 
 // ── The dock ─────────────────────────────────────────────────────────────────
@@ -268,7 +275,7 @@ function timMark(size,opts){
 
 let _timDockNudge=null;
 
-function timDockRender(){
+function timDockRender(opts){
   const dock=document.getElementById('tim-dock');
   if(!dock)return;
   // No page up yet means the boot screen or the sign-in gate still is, and Tim
@@ -281,62 +288,150 @@ function timDockRender(){
   dock.classList.add('on');
 
   const markEl=document.getElementById('tim-dock-mark');
-  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(34,{onInk:true});
-  _timDockLift(dock);
+  // Drawn at the awake size. The stylesheet scales him down to sit in the tab,
+  // so the quiet state costs no second render and no second file.
+  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(58);
 
-  const top=(typeof timTopNudge==='function'&&typeof timJobSnapshot==='function')
-    ? timTopNudge(timJobSnapshot()) : null;
+  const finds=_timDockFinds(!!(opts&&opts.cached));
+  const top=finds.length?finds[0]:null;
   _timDockNudge=top;
+  _timDockFound=finds;
+
+  // He breathes only when he has something. A still disc is the honest resting
+  // state and it is the one he is in most of the day.
+  const btn=document.getElementById('tim-dock-btn');
+  if(btn)btn.classList.toggle('alive',finds.length>0);
+  // The tab comes out from the edge as he wakes. One class, the stylesheet owns
+  // the motion (8.5: the JS never touches a style property).
+  dock.classList.toggle('lit',finds.length>0);
 
   const pill=document.getElementById('tim-dock-pill');
   const badge=document.getElementById('tim-dock-badge');
   if(pill){
     if(top){
-      pill.querySelector('.tim-pill-line').textContent=top.line;
-      pill.querySelector('.tim-pill-fig').textContent=top.figure;
       pill.classList.add('on');
-      pill.setAttribute('aria-label',top.line+', '+top.figure);
+      pill.classList.toggle('multi',finds.length>1);
+      const dots=pill.querySelector('.tim-pill-dots');
+      if(dots&&dots.childElementCount!==finds.length){
+        dots.innerHTML=finds.map(()=>'<i></i>').join('');
+      }
+      _timDockShow(0);
+      _timDockRoll(finds.length);
     }else{
       pill.classList.remove('on');
+      pill.classList.remove('multi');
       pill.removeAttribute('aria-label');
+      _timDockRoll(0);
     }
   }
   if(badge){
-    if(top){badge.textContent='1';badge.classList.add('on');}
+    // Only from two up. A badge reading "1" next to a pill that is already
+    // showing that one finding is the app counting out loud: it adds a digit
+    // and no information, and it trains a man to ignore the badge by the time
+    // it says 3. The pill IS the one. The badge is "and there are others".
+    if(finds.length>1){badge.textContent=String(finds.length);badge.classList.add('on');}
     else{badge.textContent='';badge.classList.remove('on');}
   }
 }
+
+// ── Rolling through what he found ────────────────────────────────────────────
+// One timer for the whole dock, armed only when there is genuinely more than one
+// thing to say, and torn down the moment there is not. The lesson from putting
+// timDockRefresh on every navigation is still fresh: anything that runs when
+// nobody asked it to has to justify itself, and a carousel of one does not.
+let _timDockFound=[],_timDockAt=0,_timDockTimer=null;
+const _TIM_ROLL_MS=4200;
+
+function _timDockShow(i){
+  const pill=document.getElementById('tim-dock-pill');
+  const n=_timDockFound[i];
+  if(!pill||!n)return;
+  _timDockAt=i;
+  pill.querySelector('.tim-pill-line').textContent=n.line;
+  pill.querySelector('.tim-pill-fig').textContent=n.figure;
+  // The whole finding, not the fragment, because a screen reader gets the pill
+  // as one label and "you are under your own price on line 3" without the
+  // figure is the half that does not matter.
+  pill.setAttribute('aria-label',n.line+', '+n.figure);
+  const dots=pill.querySelectorAll('.tim-pill-dots i');
+  dots.forEach((d,k)=>d.classList.toggle('on',k===i));
+}
+
+function _timDockRoll(count){
+  if(_timDockTimer){clearInterval(_timDockTimer);_timDockTimer=null;}
+  if(count<2)return;
+  // Asked the OS to stop moving things: he shows his best one and holds it. The
+  // badge still says how many there are, so nothing is hidden, it just does not
+  // move on its own.
+  try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;}catch(_e){}
+  _timDockTimer=setInterval(()=>{
+    // A backgrounded tab is a phone in a pocket. Nothing to animate for.
+    if(document.hidden)return;
+    const pill=document.getElementById('tim-dock-pill');
+    if(!pill||!pill.classList.contains('on')){_timDockRoll(0);return;}
+    pill.classList.add('rolling');
+    setTimeout(()=>{
+      _timDockShow((_timDockAt+1)%_timDockFound.length);
+      pill.classList.remove('rolling');
+    },280);
+  },_TIM_ROLL_MS);
+}
 // ── Getting out of the way ───────────────────────────────────────────────────
 //
-// The estimate builder puts a full-width blue bar across the bottom of the
-// screen while lines are being added (`_geiRenderCartBar`), and the send bar
-// does the same once a proposal is ready. A round button floating at a fixed
-// height lands straight on top of them, which is two interactive controls in
-// the same place and a layout failure under 15.3.
+// He used to float bottom-right, and the estimate builder pins a full-width bar
+// across the bottom of the screen the moment a line is added (`_geiRenderCartBar`,
+// then the send bar, then the mobile tab bar under both). A round button at a
+// fixed height lands straight on them: two interactive controls in one place,
+// which is a layout failure under 15.3.
 //
-// So the dock measures what is already down there and stands on it. Nothing
-// registers itself: a bar is whatever is fixed to the bottom of the screen and
-// currently visible, and a new one added later is handled without touching
-// this, which is the point of measuring rather than listing.
-const _TIM_BOTTOM_BARS=['gei-cart-bar','gei-send-bar','byo-mob-bar','drive-banner'];
-function _timDockLift(dock){
-  let floor=0;
-  _TIM_BOTTOM_BARS.forEach(id=>{
-    const el=document.getElementById(id);
-    if(!el)return;
-    const cs=getComputedStyle(el);
-    if(cs.display==='none'||cs.visibility==='hidden'||cs.position!=='fixed')return;
-    const r=el.getBoundingClientRect();
-    // Pinned to the bottom of the viewport, not something fixed near the top.
-    if(r.height<=0||r.bottom<window.innerHeight-2)return;
-    if(r.height>floor)floor=r.height;
-  });
-  const tabs=document.getElementById('mobile-tabbar');
-  const onPhone=tabs&&getComputedStyle(tabs).display!=='none';
-  const base=onPhone?66:16;
-  dock.style.bottom=floor>0
-    ? ('calc('+(base+Math.round(floor))+'px + env(safe-area-inset-bottom,0px))')
-    : '';   // back to the stylesheet's own value
+// The answer used to be _timDockLift, which measured every fixed bottom bar on
+// every render and stood the dock on the tallest one. It worked, and it was the
+// wrong shape of answer: it obeyed the rule by dodging, it forced a layout read
+// per render, and it still left him covering whatever card happened to be under
+// him. A render taken 2026-09-20 had him sitting on a card's own button.
+//
+// Owner, same day, looking at that: quiet, he belongs embedded in the right
+// centre of the screen as a badge, and a tap brings him to life.
+//
+// So he is tucked against the right edge at mid-height. Nothing is fixed there
+// to collide with, so there is nothing to measure and nothing to dodge, and the
+// lift is gone rather than kept as a no-op. The geometry now lives entirely in
+// the stylesheet (8.5), which is where it should have been.
+// WHAT THE DOCK IS ALLOWED TO RECOMPUTE, AND HOW OFTEN.
+//
+// timJobSnapshot is not cheap and was never meant to be: it reads the estimate
+// off the DOM, walks every bid through getBidBalance (which itself walks
+// payments), scans expenses for a rental rate, and asks the state-rule table
+// for the law. That was fine when it ran because a man opened Tim.
+//
+// It stopped being fine when goPg started calling timDockRefresh on every
+// navigation, which this branch added: the whole analysis now ran a frame after
+// every page change in the app. Worse, it got more expensive the same day, for
+// a good reason. _timOwedByClient used to filter on a field name that matched
+// nothing, so it was O(bids) of doing nothing. Fixing it made it real work.
+//
+// The geometry still updates on every render, because a dock sitting on top of
+// a cart bar is the bug it was written to prevent and it costs two rect reads.
+// The ANALYSIS is throttled: the answer cannot meaningfully change in a third
+// of a second, and nothing that does change it (an edit, a save, opening the
+// sheet) goes through here without also going through the paths that clear it.
+// Only the NAVIGATION path is allowed the cached answer, which is the same
+// split renderTimeLog(opts) already draws in js/timelog.js: a drill tap reads
+// from memory, a real open re-reads. Anything calling timDockRender() straight
+// wants the truth now and gets it, so opening the sheet, finishing an edit, and
+// every test in the suite are all unaffected. Only goPg, which fires on a
+// navigation that changed none of this, takes the cheap answer.
+const _TIM_TOP_MS=333;
+let _timTopCache=null,_timTopAt=0;
+function _timDockFinds(cached){
+  if(typeof timNudges!=='function'||typeof timJobSnapshot!=='function')return [];
+  const now=Date.now();
+  if(cached&&_timTopAt&&(now-_timTopAt)<_TIM_TOP_MS)return _timTopCache||[];
+  _timTopAt=now;
+  // Three at most. He ranked them; the fourth is not worth a man's attention on
+  // a driveway, and a pill that rolls forever is a carousel, not a colleague.
+  _timTopCache=(timNudges(timJobSnapshot())||[]).slice(0,3);
+  return _timTopCache;
 }
 
 // Cheap enough to call from anywhere that changes the job. Coalesced to one
@@ -346,7 +441,7 @@ let _timDockPending=false;
 function timDockRefresh(){
   if(_timDockPending)return;
   _timDockPending=true;
-  requestAnimationFrame(()=>{_timDockPending=false;try{timDockRender();}catch(_e){}});
+  requestAnimationFrame(()=>{_timDockPending=false;try{timDockRender({cached:true});}catch(_e){}});
 }
 
 // ── The sheet ────────────────────────────────────────────────────────────────
@@ -468,7 +563,12 @@ function openTim(){
       'Nothing on this one worth stopping you for. Say what changed and I will put it where it goes.'+
     '</div>';
 
-  _timSheet('_tim-sheet',_timHeadHtml(found.length?null:'Nothing to flag on this job')+cards+quiet+_timAskHtml());
+  // The log row is last and is usually nothing at all: an empty log adds no
+  // furniture to a sheet he opened in order to talk. It only speaks up once
+  // there is something to read back, or when his knowledge did not load, which
+  // is the one state worth interrupting him about (js/tim-log.js).
+  const logRow=(typeof _timLogRowHtml==='function')?_timLogRowHtml():'';
+  _timSheet('_tim-sheet',_timHeadHtml(found.length?null:'Nothing to flag on this job')+cards+quiet+_timAskHtml()+logRow);
 
   const el=document.getElementById('_tim-say');
   el?.addEventListener('input',_timPreview);
@@ -1040,7 +1140,33 @@ function _timPreview(){
   out.style.color=line?'var(--text2)':'var(--text3)';
 }
 
+// THE LOG WRAPS THIS DOOR RATHER THAN SITTING INSIDE IT. _timGoRun has five
+// ways out, and every one of them is something he said that somebody may need
+// to read back later, the one that does nothing most of all. One wrapper means
+// one record and no call site that can be forgotten when a sixth way out gets
+// added, and the runner below keeps exactly the shape its tests assert on
+// (js/tim-log.js).
 function _timGo(){
+  const el=document.getElementById('_tim-say');
+  const said=el?el.value:'';
+  const p=_timGoRun();
+  try{
+    if(String(said||'').trim()&&typeof timLogSay==='function'){
+      // _timJob is whatever read was last shown, so it is this sentence's work
+      // only when this sentence is the one that produced a read. Handing over a
+      // stale one would credit Tim with placing words he never saw, which is
+      // the one way a miss list can lie in the direction that hides a gap.
+      timLogSay(said,{
+        kind:(p&&p.kind)||'none',
+        style:p&&p.style,
+        read:(p&&p.kind==='read')?_timJob:null,
+      });
+    }
+  }catch(_e){}
+  return p;
+}
+
+function _timGoRun(){
   const el=document.getElementById('_tim-say');
   const said=el?el.value:'';
   if(!String(said||'').trim())return {text:'',kind:'none'};
@@ -1060,6 +1186,17 @@ function _timGo(){
   if(who&&timWantsBuild(said)&&!style&&!/\b(hours?|hrs)\b/i.test(said)){
     _timAskStyle(who);
     return {text:said,kind:'build',style:null,clientId:who.id};
+  }
+
+  // ── A question about his own business ────────────────────────────────────
+  // Ahead of the estimate read, and safely so: timAskKind only fires on an
+  // explicit question phrase ("who owes me", "what did I charge"), and a man
+  // describing work says none of them. Ahead of the navigator too, because
+  // "who owes me money" deserves the figure, not the Collect screen with the
+  // figure somewhere on it (js/tim-ask.js).
+  if(typeof timAsk==='function'){
+    const ans=timAsk(said);
+    if(ans){_timShowAsk(ans);return {text:said,kind:'ask',ask:ans.id};}
   }
 
   // On an estimate he is describing work, not asking for a screen, so the read

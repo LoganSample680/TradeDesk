@@ -55,14 +55,76 @@ test.describe('when tim speaks', () => {
       });
     });
 
+    // 10.4: two of these five changed wording on 2026-09-20 and the facts
+    // behind them did not. "You are under your own price on line 3" became
+    // "Line 3 is under your own price"; "Your last three of these ran over"
+    // became "These take longer than the estimate". Same rule, same trigger,
+    // same figure. What moved is who the sentence is about. The tone test
+    // below is the reason, and it is the one that now holds the line.
     test('the exact lines the design called for, all five of them', async () => {
       const r = await nudge(LOUD);
       const said = r.map(n => [n.line, n.figure]);
       expect(said).toContainEqual(['No scaffold on a second floor job', '$285']);
-      expect(said).toContainEqual(['You are under your own price on line 3', '$640']);
+      expect(said).toContainEqual(['Line 3 is under your own price', '$640']);
       expect(said).toContainEqual(['Dana still owes on the last one', '$1,240']);
-      expect(said).toContainEqual(['Your last three of these ran over', '31%']);
+      expect(said).toContainEqual(['These take longer than the estimate', '31%']);
       expect(said).toContainEqual(['Kansas will not make you print a price', 'saves 4 taps']);
+    });
+
+    // ── He is not allowed to be a dick about it ──────────────────────────────
+    //
+    // The pill is the only part of Tim that speaks without being asked. It
+    // turns up mid-estimate, at a kitchen table, sometimes with the customer
+    // reading over the guy's shoulder. So the sentence has to be about the
+    // JOB. "You are under your own price" and "Your last three ran over" are
+    // both true and both about the man, and a man who feels graded by his own
+    // software turns it off and never turns it back on.
+    //
+    // This walks every line, title, what, why, cta and alt of every rule under
+    // a snapshot that fires all of them, and fails on a sentence that opens by
+    // pointing, or on a word that grades rather than reports. It is deliberately
+    // mechanical: tone is exactly the thing that rots one careless string at a
+    // time, and a comment asking the next person to be careful has never once
+    // stopped that. "you" and "your" are fine mid-sentence and everywhere in
+    // the body copy, because "your own price" and "your book" are the whole
+    // point: the number came off HIS books, not a market rate.
+    test('nothing he says opens by pointing at the man, or grades him', async () => {
+      const bad = await page.evaluate(() => {
+        const snap = { state: 'Kansas', stateRule: 'none', tm: true, moneyLayers: 2,
+          high: true, hasAccess: false, accessCost: 285, accessDays: 2, accessHours: 3,
+          under: { at: 3, gap: 640, rate: 1200, bookRate: 1450, desc: 'Repipe', n: 6 },
+          owed: 1240, owedDays: 47, clientName: 'Dana Reed', clientFirst: 'Dana',
+          overrun: { n: 3, pct: 31, hours: 6 } };
+        // Opening a sentence with "You are" / "You have" / "Your" makes the
+        // subject the reader. Anywhere else in the sentence it is possessive
+        // and welcome.
+        const points = /^(you|your)\b/i;
+        // Words that deliver a verdict rather than a fact. "over" and "under"
+        // are NOT here: "under your own price" measures a gap against his own
+        // book, which is a number, not an opinion.
+        const grades = /\b(should(n't)?|must|need to|failed?|wrong|mistake|careless|sloppy|too (low|slow|late)|again|always|never learn|bad)\b/i;
+        // The pointing rule is for the surfaces he shows UNASKED: the pill line
+        // and the heading it opens to. The body is different, and the first run
+        // of this test proved it by flagging "Your book says $1,450 and you have
+        // charged that on 6 of these" and "You said second floor" — which are
+        // the two most trustworthy sentences Tim owns. Both are him citing the
+        // man's own records back to him, which is the opposite of grading him,
+        // and both are read only after a deliberate tap. Grading is banned
+        // everywhere, because there is no surface where it helps.
+        const HEAD = ['line', 'title'], ALL = ['line', 'title', 'what', 'why', 'cta', 'alt'];
+        const out = [];
+        timNudges(snap).forEach(n => {
+          ALL.forEach(k => {
+            const t = String(n[k] == null ? '' : n[k]).trim();
+            if (!t) return;
+            if (HEAD.indexOf(k) >= 0 && points.test(t)) out.push(n.id + '.' + k + ' points: "' + t + '"');
+            const g = t.match(grades);
+            if (g) out.push(n.id + '.' + k + ' grades ("' + g[0] + '"): "' + t + '"');
+          });
+        });
+        return out;
+      });
+      expect(bad).toEqual([]);
     });
 
     // A job with nothing wrong on it gets NO pill. Not an empty state, not a

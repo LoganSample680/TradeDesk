@@ -299,12 +299,60 @@ job is giving Cloudflare Pages a stable alias that never changes with dev
 branch names: `https://uat.tradedesk-cyp.pages.dev`. The TestFlight beta shell
 points at this URL, so it must stay alive and stably named forever.
 
-- **Rolling to UAT** (only when the owner asks): fast-forward `uat` to the dev
-  branch tip, add one empty deploy commit WITHOUT `[CF-Pages-Skip]` so
-  Cloudflare builds, push. `git checkout -B uat <dev-branch> && git commit
-  --allow-empty -m "UAT deploy" && git push -u origin uat --force-with-lease`.
+**UAT IS SHARED, AND A ROLL IS ADDITIVE** (owner 2026-09-14, restated here
+2026-09-21 because this section still said the opposite).
+
+Several sessions roll to this one branch and more than one feature is usually
+sitting on it waiting to be tried, so a roll puts your work NEXT TO theirs. It
+never decides on their behalf that their testing is finished.
+
+- **Rolling to UAT** (only when the owner asks) is one command:
+  ```
+  bash scripts/uat-roll.sh <dev-branch>     # default: the current branch
+  ```
+  It merges rather than replacing, auto-resolves the version-stamp conflict
+  that happens on literally every roll (`version.json`, `sw.js`, `js/cloud.js`),
+  adds the empty deploy commit WITHOUT `[CF-Pages-Skip]` so Cloudflare builds,
+  and pushes without force. Do not hand-roll these steps: the script stops and
+  asks on a real conflict between two sessions, and it tells the stamp apart
+  from real code by reading the conflict hunks rather than trusting the
+  filename. That is the part that is easy to get wrong by hand.
+- **Never `--force` a push to `uat`, and never `checkout -B uat <branch>`.**
+  That pair is a branch REPLACEMENT, and until 2026-09-21 this section called
+  it a "fast-forward" and gave it as the command. Measured that day: running it
+  as written would have dropped 32 commits from `uat` that existed on no other
+  integration branch, including another session's geo/mileage and save-address
+  work and all of `tests/flow/save-address-flow.spec.js`. Nothing would have
+  errored. The feature would just have vanished from the beta, with no message,
+  for whoever was testing it on their phone.
+- **`--force-with-lease` does not protect against this.** It only asks whether
+  the remote moved since YOUR last fetch, so a session that fetched a moment
+  ago passes the lease while still dropping thirty commits. CONTAINMENT is the
+  real check, and it already runs in two places: `scripts/uat-guard.sh`
+  (pre-push, installed by `scripts/install-hooks.sh`) and
+  `.github/workflows/uat-guard.yml`, which both assert that whatever `uat`
+  pointed at before is still an ancestor of what it points at now. A
+  merge-based roll satisfies that by construction. A fresh clone has no hooks,
+  which is why the workflow exists as well.
+- **A rejected push is the system working**, not an obstacle to get around. It
+  means somebody rolled while you were rolling. Run the script again and the
+  merge picks up their work.
+- The ONE place a force is right is the recovery `uat-guard.yml` prints after a
+  bad push has already landed: there you check out the DROPPED sha, merge your
+  branch onto it and force, because `uat` has to move backwards to pick the
+  lost commits back up. That is restoring work, not replacing it.
+- **`uat` only ever receives. It never gives.** Never merge `uat` back into a
+  dev branch or into `main`: it carries other sessions' unmerged work, and
+  pulling it into your branch drags their features into your PR. Each feature
+  reaches `main` only through its own reviewed PR (§14.1.1).
+- **To try one feature on its own, use that branch's Pages preview URL**, which
+  every push already builds. `uat` is only special because the TestFlight shell
+  points at it, so spend it on what has to be on a phone.
 - **Never open a PR from `uat`**, and never develop on it. All work stays on
   the dev branch; `uat` only ever receives what the dev branch already has.
+- Resetting `uat` back to `main` is the one destructive operation, and it needs
+  an explicit owner ask naming it, because it discards whatever is still under
+  test.
 - Production is untouched by any of this: `main` still only moves via approved
   PR merge (§14.1.1), and the UAT roll is a separate, explicit owner ask.
 - One shared Supabase serves dev/UAT/production (owner decision 2026-08-07):

@@ -174,14 +174,19 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
   --c-deep:#2C0707;--c-deep-soft:#FFB8AE;
   --c-gray:#544D44;--c-gray-soft:#EEE7D8;--c-gray-edge:#CFC4AC;
   --text-cream:#F5EFE2;--text-cream-2:rgba(245,239,226,.62);--text-cream-3:rgba(245,239,226,.42);
-  /* Tim's two metals, and they are his alone. Brass is the mark: the cartoon
-     read as a cartoon because it was a face in safety yellow, and brass on a
-     warm paper disc holds at 16px in a row and at 58px on the dock without
-     turning into a drawing of a man. Hat yellow is the one place a figure is
+  /* Tim's two metals, and they are his alone. Gold is the field the portrait
+     sits on, lifted off the mark itself so the halo that pulses behind him is
+     the same gold as the coin it comes off: a brighter ring around a duller
+     disc read as a rendering fault. Hat yellow is the one place a figure is
      allowed to shout, the badge and the number on the dock pill. Neither is a
-     status colour and neither goes anywhere else. */
-  --brass:#C9962F;--brass-deep:#9E7222;--brass-lift:#E4B554;
-  --hat:#F2A81C;--tim-disc:#F4F1EA;--tim-disc-edge:#D8D2C6;
+     status colour and neither goes anywhere else. The brass pair and the paper
+     disc that used to live here died with the drawn mark, which had to build a
+     disc to stand on; the portrait brings its own. */
+  /* Sampled out of img/tim-256.png, not picked by eye: the tab is this colour
+     and so is the field the portrait is printed on, so there is no seam where
+     one ends and the other starts. A gold that is close but not equal shows up
+     as a faint disc around his head at every size. */
+  --tim-gold:#D3A04B;--hat:#F2A81C;
   --r-xs:4px;--r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--r-pill:999px;--r-mark:9px;
   --shadow-card:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--line);
   --shadow-hover:0 3px 12px rgba(27,22,18,.08),0 0 0 1px var(--line);
@@ -296,6 +301,25 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 #app{padding-left:var(--nav-w);min-height:100vh}
 #supa-status{left:var(--nav-w);transition:opacity .25s cubic-bezier(.22,1,.36,1);opacity:0}
 .drive-banner{left:var(--nav-w)}
+/* THERE IS NO TIM LANE, and the attempt is worth recording so nobody spends
+   the afternoon on it again.
+   Tim sits at the right edge and content scrolled under him, so --tim-lane
+   reserved a strip of right-hand page padding for him to stand in. It was
+   measured against the BYO item row in e2e-layout-integrity-regression, which
+   is that suite's deliberate worst case (seven-figure price, every action
+   button): on Chromium the row holds a four-letter title on one line up to
+   22px of lane and wraps at 24, so the lane was set to 20.
+   WebKit wraps it to THREE lines at 20. The row's label is
+   overflow-wrap:anywhere, so once it is squeezed past a word's width it breaks
+   inside the word, and WebKit squeezes it sooner. The engine that matters most
+   here is the one the iOS shell runs, and it had no 20px to give: the number
+   was measured on the engine that was convenient rather than the one that
+   ships.
+   Widening the row to make room would be rebuilding a guarded component to
+   suit a 36px tab, on an engine this container cannot run. So the page keeps
+   its width and Tim is an overlay, like every floating control in every app on
+   that phone. What he is NOT allowed to do is sit on a control's tappable
+   centre, and e2e-tim.spec.js measures that on six pages instead. */
 .pg{display:none;padding:24px 28px 32px;max-width:1320px}
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
 #pg-dash.active{animation:td-dash-enter .8s cubic-bezier(.16,1,.3,1) both}
@@ -353,10 +377,36 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    law about the job on screen, which is what makes it worth tapping. No pill,
    no badge, no dot: he has nothing, and saying so with silence costs nothing.
    js/tim-nudge.js enforces that, this only draws it. */
-#tim-dock{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:1400;
-  display:none;flex-direction:column;align-items:flex-end;gap:9px;pointer-events:none}
-@media(max-width:767px){#tim-dock{bottom:calc(66px + env(safe-area-inset-bottom,0px))}}
+/* ── Where Tim waits ────────────────────────────────────────────────────────
+   Owner, 2026-09-20: quiet, he is embedded into the right centre of the screen
+   as a badge, and a tap brings him to life.
+   He used to float bottom-right, which put a 58px disc on top of whatever was
+   under it: in the render taken this morning he was sitting on the "Set up"
+   button of a card. That is rule 15.3 (no two interactive controls overlap)
+   being dodged rather than obeyed, and _timDockLift existed only to dodge it,
+   measuring the cart bar, the send bar and the tab bar on every render so he
+   could stand on them.
+   Tucked against the right edge at mid-height he obeys it instead. There is
+   nothing fixed at the middle of the right edge to collide with, the lift is
+   gone, and a thumb reaches him without crossing the screen.
+
+   And then he did it again, 2026-09-20. Waking him moved him OUT from the
+   edge, 14px into the page, and grew him into a 58px disc: which put 72px of
+   Tim back on top of whatever was under him. On the dashboard that is the
+   "Add places" button of a card, so the one moment he has something worth
+   saying is the one moment he is standing on a control. Reserving a lane in
+   the page while he is lit fixes the overlap and buys a visible reflow under
+   the reader's thumb instead, which is not a trade worth making.
+
+   He does not leave the edge any more. Quiet and awake he is the same object
+   anchored to the same place; waking grows him ALONG the edge and lights him,
+   and the pill comes out beside him. Nothing he does can land on a control,
+   because there is no state in which any part of him is over the page. */
+#tim-dock{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:1400;
+  display:none;flex-direction:row;align-items:center;gap:9px;pointer-events:none}
 #tim-dock.on{display:flex}
+/* .lit is the dock-level state flag the JS sets and the tests read. It no
+   longer moves him: the move WAS the bug. */
 #tim-dock-pill{display:none;align-items:center;gap:9px;max-width:min(268px,calc(100vw - 32px));
   padding:9px 13px;border-radius:var(--r-md);background:var(--ink);box-shadow:0 4px 16px rgba(27,22,18,.22);
   border:none;font-family:inherit;text-align:left;cursor:pointer;pointer-events:auto;
@@ -364,16 +414,153 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 #tim-dock-pill.on{display:flex}
 #tim-dock-pill .tim-pill-line{font-size:13px;font-weight:600;color:var(--text-cream);line-height:1.35}
 #tim-dock-pill .tim-pill-fig{font-size:13px;font-weight:800;color:var(--hat);font-variant-numeric:tabular-nums;flex-shrink:0;white-space:nowrap}
-#tim-dock-btn{width:58px;height:58px;border:0;border-radius:var(--r-pill);background:var(--ink);
-  box-shadow:0 4px 16px rgba(27,22,18,.28);cursor:pointer;display:flex;align-items:center;justify-content:center;
-  position:relative;pointer-events:auto;padding:0;transition:transform .15s,opacity .15s}
+/* QUIET: the tab IS him. It was an ink slab with a 24px portrait floating in
+   the middle of it, which is a circle inside a rectangle, which reads as a
+   sticker somebody stuck on the chrome, and at 24px the cap and the beard were
+   mud. One shape instead: a gold half-disc tucked into the edge, the portrait
+   filling its height, rounded only on the side that faces the page. He is
+   recognisable as a man at rest, which is the whole point of having a face.
+   The 6px nudge right pushes the portrait's dead centre past the screen edge
+   so that what is cropped is the back of his head, not his ear. */
+#tim-dock-btn{width:36px;height:62px;border:0;border-radius:26px 0 0 26px;background:var(--tim-gold);
+  box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-1px 0 0 rgba(27,22,18,.06),-4px 0 12px rgba(27,22,18,.11);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  position:relative;pointer-events:auto;padding:0;
+  transition:width .24s cubic-bezier(.22,1,.36,1),height .24s cubic-bezier(.22,1,.36,1),
+    border-radius .24s cubic-bezier(.22,1,.36,1),box-shadow .24s,
+    transform .15s,opacity .15s}
+/* The mark is DRAWN at the awake size and scaled DOWN for the tab, not the
+   other way round. It is a photograph now, not a drawing: scaling a raster up
+   would soften the one state where he is the largest thing on screen, and the
+   srcset picks its density off the drawn size, so drawing him small and
+   stretching him would also pull the small file. The gold behind him is the
+   field of the portrait itself, so a frame where the image has not decoded is
+   a gold tab and not a hole. */
+/* NOTHING OF HIM IS CUT. The portrait has no margin in it: the figure runs to
+   the edge of its own disc on all four sides (measured, the ink bbox is the
+   full 256), so any crop at all takes a slice out of the man. Pushing him
+   sideways to hide the crop just moves which slice. So the whole disc sits
+   INSIDE the tab and the tab's gold is the margin, which costs nothing because
+   the tab and the field are the same colour: 32 of 36, 2px of gold all round,
+   in both states. The clip then only ever has gold to eat. */
+#tim-dock-mark{display:flex;transition:transform .24s cubic-bezier(.22,1,.36,1)}
+#tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.55)}
+/* ALIVE: the SAME SHAPE. He does not grow at all, and that is not a
+   simplification, it is what the geometry leaves.
+   Wider is out: every horizontal pixel Tim takes is a pixel further onto the
+   page, and with no lane to buy it back he pays for it by covering more of
+   whatever is under him. Taller was tried at 92px and looked worse than what
+   it replaced: the
+   portrait is capped at 32 by the width, so the extra height is 30px of empty
+   gold above and below a small face, which is the dot-floating-in-a-slab that
+   the tab was drawn to get rid of, turned on its side.
+   So waking him is the pulse, the pill coming out beside him, and the count.
+   Three signals and no reflow, instead of a fourth that reaches further across
+   the page and looks worse for it. */
+#tim-dock-btn.alive{box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-1px 0 0 rgba(27,22,18,.06),-4px 0 12px rgba(27,22,18,.11)}
 #tim-dock-btn:active{transform:scale(.96);opacity:.85}
-#tim-dock-badge{display:none;position:absolute;top:1px;right:1px;width:15px;height:15px;border-radius:var(--r-pill);
-  background:var(--hat);box-shadow:0 0 0 2.5px var(--ink);font-size:9px;font-weight:800;color:var(--ink);
-  align-items:center;justify-content:center}
+/* Pinned to the dock's own top right, which is the screen edge, where the tab
+   corner is square and nothing curves away under it. pointer-events:none so it
+   cannot eat the tap that is meant for him. */
+#tim-dock-badge{display:none;position:absolute;top:4px;right:4px;width:15px;height:15px;border-radius:var(--r-pill);
+  background:var(--hat);box-shadow:0 0 0 2.5px var(--tim-gold);font-size:9px;font-weight:800;color:var(--ink);
+  align-items:center;justify-content:center;pointer-events:none}
 #tim-dock-badge.on{display:flex}
 @keyframes tim-pill-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-@media (prefers-reduced-motion:reduce){#tim-dock-pill{animation:none}}
+/* ── The pulse, and the lines rolling through it ──────────────────────────
+   He breathes only when he has something, so the glow is itself the signal:
+   a still disc means nothing is wrong, which is the state he is in most of
+   the day. NOT a status colour. The token block above reserves hat yellow for
+   the badge and the pill figure and says it goes nowhere else, so this rings
+   in Tim's own gold, the exact field his portrait is struck on, and is not
+   claimed for anything. Two colours of glow would read as a notifications
+   tray; one that is simply present or absent reads as a man with something to
+   say. What CHANGES is which line is showing, not what colour he is. */
+#tim-dock-btn.alive{animation:tim-breathe 2.9s ease-in-out infinite}
+@keyframes tim-breathe{
+  0%,100%{box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-4px 0 12px rgba(27,22,18,.11),0 0 0 0 rgba(211,160,75,.42)}
+  50%    {box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-4px 0 12px rgba(27,22,18,.11),0 0 0 9px rgba(211,160,75,0)}
+}
+/* ── Tim after dark ─────────────────────────────────────────────────────────
+   body.dark repoints --ink to #0A0A08 and --paper to #14110E, which are four
+   points of lightness apart. The pill is built on --ink, so in dark mode it was
+   a black chip on a black page: the one thing he says, invisible. It moves to
+   the card surface with the same hairline the rest of the dark UI uses.
+   The tab keeps his gold rather than getting a dark one of its own, because the
+   portrait's field is baked into the file and a darker tab behind it would put
+   a visible disc around his head. Dimming the whole button instead takes the
+   tab and the art down together, so there is still no seam, and it is the only
+   accent in the app that needs this: --hat and --blue stay full strength in
+   dark because nothing is printed next to them that has to match.
+   The pulse comes down too. A gold halo at .42 is a glance on white and a
+   headlight on #14110E. */
+body.dark #tim-dock-btn{filter:brightness(.92) saturate(.96);
+  box-shadow:inset 1px 0 0 rgba(27,22,18,.28)}
+body.dark #tim-dock-pill{background:var(--bg-card);
+  box-shadow:0 4px 16px rgba(0,0,0,.45),0 0 0 1px var(--line-2)}
+body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infinite}
+@keyframes tim-breathe-dark{
+  0%,100%{box-shadow:inset 1px 0 0 rgba(27,22,18,.28),0 0 0 0 rgba(211,160,75,.26)}
+  50%    {box-shadow:inset 1px 0 0 rgba(27,22,18,.28),0 0 0 8px rgba(211,160,75,0)}
+}
+/* The line crossfades in place rather than sliding: the pill is 13px type on a
+   dark chip at arm's length on a job site, and text that moves while it is
+   being read is text that gets read twice. */
+#tim-dock-pill .tim-pill-line{transition:opacity .28s ease}
+#tim-dock-pill.rolling .tim-pill-line{opacity:0}
+#tim-dock-pill .tim-pill-dots{display:none;gap:3px;align-items:center;flex-shrink:0;margin-left:2px}
+#tim-dock-pill.multi .tim-pill-dots{display:flex}
+#tim-dock-pill .tim-pill-dots i{width:4px;height:4px;border-radius:var(--r-pill);
+  background:var(--text-cream-3);transition:background .2s}
+#tim-dock-pill .tim-pill-dots i.on{background:var(--text-cream-2)}
+/* ── The shimmer ────────────────────────────────────────────────────────────
+   Owner, 2026-09-20: it has to scream click me.
+   A sheen crossing the metal, not a flash or a bounce. The mark is a brass
+   coin, and light moving across brass is the one piece of motion that is about
+   the OBJECT rather than about the software demanding attention. It also
+   survives being ignored: a bounce that repeats is a nag, a gleam that repeats
+   is just how the thing catches the light.
+   It is a pseudo-element rather than a background on the button because the
+   button's background is the gold that has to stay matched to the portrait, and
+   because the tab already clips to its own rounded edge, so the sweep runs off
+   under the corner instead of past it.
+   Two speeds, and the difference is the whole point:
+     AWAKE, every 3.4s. He has a dollar figure to hand over, so he is allowed to
+       ask twice.
+     QUIET, every 14s and at half the strength. This is discovery, not a nudge:
+       a gold tab that never moves is a gold tab a man never learns is a button,
+       and he is quiet most of the day by design. It is the smallest amount of
+       motion that answers "is that thing tappable".
+   Both are pure CSS on a compositor-only transform, so an idle phone is doing
+   no layout and no paint of the page underneath. */
+#tim-dock-btn::after{content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(104deg,transparent 43%,rgba(255,255,255,.30) 50%,transparent 57%);
+  transform:translateX(-160%);
+  animation:tim-shimmer 14s cubic-bezier(.4,0,.5,1) infinite}
+/* .44 and a 14-point band, not .80 and a 32-point one. The first pass washed
+   his eyes and beard out as the sweep crossed them: at that width and opacity
+   it stopped being light on brass and became a reflection on glass, and for a
+   third of a second there was no man in the tab at all. A gleam has to leave
+   the thing it is gleaming off legible. */
+#tim-dock-btn.alive::after{
+  background:linear-gradient(104deg,transparent 43%,rgba(255,255,255,.44) 50%,transparent 57%);
+  animation:tim-shimmer 3.4s cubic-bezier(.4,0,.5,1) infinite}
+/* The sweep is over in the first fifth of the cycle. The rest of the keyframe
+   is him sitting still off the right edge, which is what makes 14s read as
+   "occasionally" instead of "slowly". */
+@keyframes tim-shimmer{
+  0%{transform:translateX(-160%)}
+  18%,100%{transform:translateX(160%)}
+}
+@media (prefers-reduced-motion:reduce){
+  #tim-dock-pill{animation:none}
+  /* No breathing, no rotation and no shine. Someone who has asked the OS to
+     stop moving things has asked for that here too, so he shows his best
+     finding and holds it. The badge count still says there is more than one. */
+  #tim-dock-btn.alive{animation:none}
+  #tim-dock-btn::after,#tim-dock-btn.alive::after{animation:none;opacity:0}
+  #tim-dock-pill .tim-pill-line{transition:none}
+}
 /* The waveform: 44 hairline bars mirrored about a centre line. Owner rejected
    the chunky random blocks, and rejected holding the mic at all, so the bars
    only ever say "still listening" and never ask for a thumb. */
@@ -4306,12 +4493,15 @@ body.dark .cal-cell.other{background:var(--cream)}
      whatever order the scripts load in. -->
 <div id="tim-dock" aria-live="polite">
   <button id="tim-dock-pill" type="button" onclick="openTim()">
-    <span class="tim-pill-line"></span><span class="tim-pill-fig"></span>
+    <span class="tim-pill-line"></span><span class="tim-pill-fig"></span><span class="tim-pill-dots"></span>
   </button>
   <button id="tim-dock-btn" type="button" onclick="openTim()" aria-label="Tim">
     <span id="tim-dock-mark"></span>
-    <span id="tim-dock-badge"></span>
   </button>
+  <!-- The count sits OUTSIDE the button. The button clips to its own rounded
+       edge so the portrait can fill it without spilling, and a badge inside a
+       clip is a badge with a bite out of it. -->
+  <span id="tim-dock-badge"></span>
 </div>
 <!-- ── Mobile bottom tab bar ── -->
 <div id="mobile-tabbar">
@@ -4452,6 +4642,15 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <!-- Reads the proposals already sent as a price book. Loads after tim.js
      because it opens tim.js's sheet. -->
 <script src="js/tim-book.js"></script>
+<!-- What he was told and what he made of it, on this phone only. Loads last of
+     the four because it reports on the other three: it asks whether each of
+     them is present, which is only a true answer once they have all had their
+     chance to load. -->
+<script src="js/tim-log.js"></script>
+<!-- Answering questions about the owner's own books, off the arrays js/data.js
+     already holds in memory. After tim.js because it opens tim.js's sheet, and
+     after tim-log.js because it borrows its word splitter. -->
+<script src="js/tim-ask.js"></script>
 <script src="js/equipment.js"></script>
 <script src="js/share-inbox.js"></script>
 <script src="js/bg-upload.js"></script>
