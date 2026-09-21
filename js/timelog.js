@@ -3362,6 +3362,24 @@ function _tlEmpWeekAgg(rows,cid){
     // produced Jack's Sept 1 legend: "On site 4h 59m" on a day whose rail holds
     // no on-site row at all, because every fence he crossed was the shop.
     else if(r.source==='manual')e.placeMin+=r.minutes||0;
+    // ── AND SO IS THE STRETCH THE CLOCK HANDED OVER (owner 2026-09-21) ────
+    // Surfaced while fixing the shared timesheet's double count, and it is
+    // the SAME fall-through this block's header describes twice already: a
+    // source with no arm of its own lands in the else and is billed as
+    // on-site job labour.
+    //
+    // _tlBlendManual turns each stretch a clock covers and no fence explains
+    // into a row with source 'site' and rawSource 'clock-span'. _tlRailKind
+    // has always called that 'off', grey Manual time, and says why in its own
+    // words: "this row has no address and never had one". Nothing here knew
+    // the name, so the rail drew those minutes grey while the week bar above
+    // it drew the very same minutes blue.
+    //
+    // One minute cannot be two things, and the note at the top of this
+    // function is explicit that the card and the rail must never be able to
+    // disagree about which. The rail's answer is the documented one, so this
+    // is the side that was wrong.
+    else if(_src==='clock-span')e.placeMin+=r.minutes||0;
     else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(_src))e.driveMin+=r.minutes||0;
     // Loading the truck is carved OUT of the supply/other bucket (owner
     // 2026-08-30, who wants it named on the day's legend). One aggregator
