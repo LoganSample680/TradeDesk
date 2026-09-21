@@ -3021,3 +3021,127 @@ test.describe('Crew location permission', () => {
     assertNoErrors(page, 'crew location permission');
   });
 });
+
+
+// ── THE BATTERY THAT NEVER CAME OVER (owner 2026-09-21) ────────────────────
+//
+// "I just dont understand why his isnt coming over."
+//
+// Jack's device_status row was healthy in every other column, current
+// checked_at, right app version, and battery_level null every single time. The
+// owner's three device rows carried one number between them.
+//
+// TdGeoPlugin.stats() switches UIDevice.isBatteryMonitoringEnabled on and
+// reads batteryLevel on the next line of the same main-queue block. iOS does
+// not have the value ready that soon and answers -1, which is the plugin's own
+// "could not read". A phone somebody keeps using makes a second call and gets
+// a number; a phone that is opened and pocketed makes exactly one per launch
+// and never does.
+test.describe('the battery read asks twice before giving up', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { try { await page.context().close(); } catch (_e) { } });
+
+  // Answers each call from a queue, so a test says exactly what iOS did.
+  const read = (answers) => page.evaluate(async (answers) => {
+    const saved = window._geoTdPlugin;
+    let calls = 0;
+    try {
+      window._geoTdPlugin = () => ({
+        stats: async () => { const a = answers[Math.min(calls, answers.length - 1)]; calls++; return a; },
+      });
+      await _geoRefreshBattery();
+      const b = _geoBattPeek();
+      return { calls, batt: b ? { level: b.level, charging: b.charging } : null, therm: _geoThermPeek() };
+    } finally { window._geoTdPlugin = saved; }
+  }, answers);
+
+  test("Jack's shape: -1 first, a real number a moment later", async () => {
+    const r = await read([
+      { batteryLevel: -1, charging: false, thermalState: 'nominal' },
+      { batteryLevel: 0.45, charging: false, thermalState: 'nominal' },
+    ]);
+    expect(r.calls, 'asked again, exactly once').toBe(2);
+    expect(r.batt).toEqual({ level: 0.45, charging: false });
+  });
+
+  test('a good first read is never asked twice', async () => {
+    const r = await read([{ batteryLevel: 0.82, charging: true, thermalState: 'fair' }]);
+    expect(r.calls).toBe(1);
+    expect(r.batt).toEqual({ level: 0.82, charging: true });
+  });
+
+  test('a shell that genuinely cannot read one still reports nothing', async () => {
+    // Not reported and flat are different answers, and a -1 must never become
+    // a zero percent battery on the roster.
+    const r = await read([{ batteryLevel: -1, charging: false, thermalState: 'nominal' }]);
+    expect(r.calls, 'asked once more, then it stops: never a loop').toBe(2);
+    expect(r.batt).toBe(null);
+  });
+
+  test('a zero percent phone is a real answer and is kept', async () => {
+    const r = await read([{ batteryLevel: 0, charging: false, thermalState: 'nominal' }]);
+    expect(r.calls).toBe(1);
+    expect(r.batt).toEqual({ level: 0, charging: false });
+  });
+
+  test('thermal rides the read that answered, and survives a first -1', async () => {
+    // A phone can be hot with an unreadable battery, and the retry must not
+    // lose the word the second call gave.
+    const r = await read([
+      { batteryLevel: -1, charging: false, thermalState: 'nominal' },
+      { batteryLevel: 0.31, charging: false, thermalState: 'serious' },
+    ]);
+    expect(r.therm).toBe('serious');
+    expect(r.batt.level).toBe(0.31);
+  });
+
+  test('a throwing second call leaves the first answer alone', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window._geoTdPlugin;
+      let calls = 0;
+      try {
+        window._geoTdPlugin = () => ({
+          stats: async () => {
+            calls++;
+            if (calls === 1) return { batteryLevel: -1, charging: false, thermalState: 'fair' };
+            throw new Error('plugin went away');
+          },
+        });
+        await _geoRefreshBattery();
+        return { calls, batt: _geoBattPeek(), therm: _geoThermPeek() };
+      } finally { window._geoTdPlugin = saved; }
+    });
+    expect(r.calls).toBe(2);
+    expect(r.batt, 'no number, and no throw either').toBe(null);
+    expect(r.therm, 'the first call still said how hot it was').toBe('fair');
+  });
+
+  test('no plugin at all is not a fault, and asks nothing', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window._geoTdPlugin;
+      try {
+        window._geoTdPlugin = () => null;
+        await _geoRefreshBattery();
+        return { batt: _geoBattPeek(), therm: _geoThermPeek() };
+      } finally { window._geoTdPlugin = saved; }
+    });
+    expect(r.batt).toBe(null);
+    expect(r.therm).toBe(null);
+  });
+
+  test('junk answers never throw and never invent a level', async () => {
+    for (const a of [null, undefined, {}, { batteryLevel: 'nope' }, { batteryLevel: NaN }, 'nope', 7]) {
+      const r = await read([a, a]);
+      expect(r.batt, JSON.stringify(a)).toBe(null);
+    }
+  });
+
+  test('no console errors', () => { assertNoErrors(page, 'battery read'); });
+});
