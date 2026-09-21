@@ -1680,9 +1680,39 @@ function geoDeriveDay(input) {
   // drives gone (the evening gym run, rule 16): the stop is gone with them.
   // Every drive around it held: the stop is held, the amber row. A plain
   // drive on either side: the stop is a plain row, as the segment gap was.
+  //
+  // ── AND A PARTS STORE IS JUDGED THE SAME WAY (owner 2026-09-21) ────────
+  // "It honestly should have no rows." Holding the drives was not enough on
+  // its own: with both of Jack's Sunday drives thrown away, the 78 minutes
+  // nobody saved went with them and a 16-minute row at Menards stayed behind,
+  // because a supply dwell is not `unsaved` and nothing else asked about it.
+  //
+  // It belongs in the same sentence as the unsaved stop for the same reason
+  // the vouching rule now says so: standing in a hardware store is not
+  // evidence of work, and the drives either side are the only evidence there
+  // is. On a working day this is a no-op, and provably so: a supply place
+  // vouches for its own drives on a working day, so those drives always
+  // survive and the dwell always has something to stand on.
+  //
+  // AND A COMMUTE IS NOT A DRIVE THAT CAN VOUCH FOR ONE. His Sunday came out
+  // of the fix above with exactly one row left, the 16 minutes at the store,
+  // because the last hop home survived the ladder and sat against it. That
+  // hop is a COMMUTE (rule 20): the app has already decided it bills nothing
+  // and is not work. It cannot then be the evidence that the stop at the far
+  // end of it was. Off-week days only, so a working day is untouched by
+  // construction: a supply place vouches for its own drives on a working day,
+  // so they survive the ladder and the dwell always has a real drive to stand
+  // on. And only for the parts store, never the unsaved stop: a stop is
+  // somewhere he actually went and stayed, and on a weekday a man who drives
+  // from his house to one job site and home again has nothing BUT commutes
+  // either side of a real day's work.
+  const _gdOffWeek = !_gdDayShape(inp).workDay;
+  const _gdDriveJudged = (d) => d && (d.unsaved === true || d.kind === 'supply');
+  const _gdCanVouch = (d, l) => !(_gdOffWeek && d.kind === 'supply' && l.commute === true);
   const judged = asked.filter((d) => {
-    if (!d || d.unsaved !== true) return true;
-    const near = realLegs.filter(l => l && (Number(l.endTs) === Number(d.startTs) || Number(l.startTs) === Number(d.endTs)));
+    if (!_gdDriveJudged(d)) return true;
+    const near = realLegs.filter(l => l && _gdCanVouch(d, l) &&
+      (Number(l.endTs) === Number(d.startTs) || Number(l.startTs) === Number(d.endTs)));
     if (!near.length) return false;
     d.held = near.every(l => l.held === true);
     return true;
@@ -2250,6 +2280,52 @@ function _gdLearnedHours(inp) {
   if (!(a >= 0 && b > a)) return null;
   return { a: a * 60000 - GEO_LEARNED_PAD_MS, b: b * 60000 + GEO_LEARNED_PAD_MS };
 }
+// ── WHICH DAYS HE ACTUALLY WORKS (owner 2026-09-21) ───────────────────────
+// Jack's Sunday derived 78 minutes at an address nobody saved, a drive, and a
+// stop at a hardware store, all of it counting. The day of the week never
+// entered the decision, and even when it does the company default says Monday
+// to Saturday, so his Saturday could only ever be held rather than dropped.
+//
+// His thirteen punches over the three weeks to 18 September are every one of
+// them Monday to Friday. Nobody had to type that anywhere; it is simply what
+// he does, and it is already in the same clockHistory the hours are learned
+// from. So the week learns itself, exactly like the window above, and a
+// contractor who never opens Settings still gets a week that fits.
+//
+// WEEKS, not punches, is the confidence test, and that is the whole safety of
+// it. Five punches can all be one Monday-to-Friday stretch and say nothing
+// about whether he works weekends; three separate weeks with no Saturday in
+// them is a pattern. The buckets are plain 7-day blocks from the epoch, since
+// only their COUNT matters here, never where they start.
+//
+// It may widen as well as narrow, and that is correct: somebody who really
+// does punch in on Sundays has Sunday learned as a work day, whatever the
+// company setting says. Nothing here reads the setting at all once a pattern
+// exists, which is rule 19's own standard ("what this person actually does
+// REPLACES what the company wrote down").
+//
+// AND IT ONLY EVER ARBITRATES, same as the window: a drive between two saved
+// fences counts on any day, a clock outranks everything, and a scheduled job
+// is untouched. The worst a wrong answer here can do is hold a trip that
+// vouches for nothing, which is the trip this exists to hold.
+const GEO_LEARNED_MIN_WEEKS = 3;
+function _gdLearnedDays(inp) {
+  const day = String((inp && inp.day) || '');
+  const rows = (Array.isArray(inp && inp.clockHistory) ? inp.clockHistory : [])
+    .filter(r => r && typeof r.inMin === 'number' && typeof r.outMin === 'number'
+      && r.outMin > r.inMin && /^\d{4}-\d{2}-\d{2}$/.test(String(r.day || ''))
+      && String(r.day) <= day);
+  if (rows.length < GEO_LEARNED_MIN_DAYS) return null;
+  const dow = new Set(), weeks = new Set();
+  for (const r of rows) {
+    const t = Date.parse(String(r.day) + 'T12:00:00Z');
+    if (!(t > 0)) continue;
+    dow.add(new Date(t).getUTCDay());
+    weeks.add(Math.floor(t / (7 * 86400000)));
+  }
+  if (!dow.size || weeks.size < GEO_LEARNED_MIN_WEEKS) return null;
+  return Array.from(dow);
+}
 // The working day, as one answer: its bounds in ms after local midnight, and
 // whether this is a working day at all. One definition, because rule 13 asks
 // it about visits and rule 16 asks it about drives, and they cannot disagree.
@@ -2274,9 +2350,16 @@ function _gdDayShape(inp) {
   // that one of those is a gym run.
   const learned = _gdLearnedHours(inp);
   if (learned) { whA = learned.a; whB = learned.b; }
-  const days = Array.isArray(wh.days) ? wh.days.map(Number) : [1, 2, 3, 4, 5, 6];
+  // RULE 19'S OTHER HALF: WHICH DAYS, not just which hours (owner 2026-09-21,
+  // on Jack's weekend: "globally they shouldn't be there"). The company
+  // setting says Monday to Saturday for everybody, which is a guess about a
+  // trade, not a fact about a person. His own punches are the person, and
+  // they are the same evidence the window above is already learned from.
+  const learnedDays = _gdLearnedDays(inp);
+  const days = learnedDays || (Array.isArray(wh.days) ? wh.days.map(Number) : [1, 2, 3, 4, 5, 6]);
   const dow = new Date(String((inp && inp.day) || '') + 'T12:00:00Z').getUTCDay();
-  return { whA, whB, learned: !!learned, workDay: Number.isFinite(dow) && days.indexOf(dow) >= 0 };
+  return { whA, whB, learned: !!learned, learnedDays: !!learnedDays,
+    workDay: Number.isFinite(dow) && days.indexOf(dow) >= 0 };
 }
 
 // ── THE CLOCK IS THE BRACKET (owner 2026-09-16) ──────────────────────────
@@ -2813,10 +2896,36 @@ function _gdHeldLegs(legs, dwells, inp, dayStart, fences, opts) {
   const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
     .map(c => c && { a: Number(c.start), b: Number(c.end) })
     .filter(c => c && c.a > 0 && c.b > c.a);
+  const { workDay } = _gdDayShape(inp);
   const vouches = (e) => {
     if (!e || e.unsaved === true) return false;
     if (e.jobId != null) return true;
-    if (e.kind === 'supply') return true;
+    // ── A PARTS STORE IS NOT A COMMITMENT (owner 2026-09-21) ────────────
+    // "His Sunday should've went held, it honestly should have no rows."
+    //
+    // His Sunday, measured: out of the house, 78 minutes at an address nobody
+    // saved, six minutes down the road, 16 minutes at a hardware store, home.
+    // Every row of it counted, and this line is the whole reason. A leg is
+    // claimed when EITHER end is a business address, and a supply place is a
+    // business address, so one stop at Lowe's vouched for the unsaved 78
+    // minutes and both drives around it.
+    //
+    // The evidence is not the same kind on both sides of that OR. A customer,
+    // a job and a clock punch are COMMITMENTS somebody made in the app before
+    // the drive happened; you cannot manufacture one by driving somewhere. A
+    // supply house is a building, and anybody can go to Lowe's on a Sunday for
+    // their own deck. That is exactly what this day looks like.
+    //
+    // So on a day this person does not work, a parts store stops vouching. A
+    // client, a job and a clock still do, so a genuine weekend call-out is
+    // untouched, and on a working day nothing here changes at all.
+    //
+    // THE SHOP IS DELIBERATELY NOT INCLUDED. Going to your own yard is being
+    // at your own place of business, which is a good deal more than being seen
+    // in a car park, and rule 11 already treats a day at the yard as a shift.
+    // If that turns out to be wrong it is a separate decision with its own
+    // evidence, not a line to widen quietly while nobody is looking.
+    if (e.kind === 'supply') return workDay;
     // ── A SHOP THAT IS YOUR HOUSE IS YOUR HOUSE (owner 2026-09-12) ───────
     // "How does a day with automatic drives end? Right now they can't and my
     // own account is proof."

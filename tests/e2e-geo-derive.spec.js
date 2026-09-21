@@ -5364,6 +5364,211 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 19, SECOND HALF: THE WEEKEND (owner 2026-09-21) ────────────────
+  //
+  // "Jacks day, why do we have unsaved address then drive from unsaved
+  //  address to Lowes then supply house at Menards... none of this should
+  //  have fired to paid."
+  // "Yeah his Sunday should've went held, it honestly should have no rows."
+  //
+  // His real Sunday, 20 September, as the phone recorded it and as the server
+  // wrote it: out of his house at 10:47, 78 minutes at an address nobody has
+  // saved, six minutes down the road, 16 minutes at a hardware store, home by
+  // 12:33. Three rows, all of them counting, on a day he did not work.
+  //
+  // Two things let it through and both are fixed here.
+  //   1. A leg is claimed when EITHER end is a business address, and a supply
+  //      place counted as one unconditionally. So one stop at Lowe's vouched
+  //      for the unsaved 78 minutes and both drives around it.
+  //   2. The day of the week never got asked. _gdEmptyDayLegs drops a held leg
+  //      on a non-working day, but nothing on this Sunday was ever held, so
+  //      the test sat downstream of the very thing that short-circuited it.
+  //
+  // The fences and the clock here are his, read off the account.
+  test.describe('rule 19: a weekend vouches for nothing on its own', () => {
+    const SUN = '2026-09-20';                             // a real Sunday
+    const SUN_START = Date.parse('2026-09-20T05:00:00Z');
+    const TS = (h, m, s) => SUN_START + h * 3600000 + m * 60000 + (s || 0) * 1000;
+    const JHOME = { id: 'p-jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const YARD  = { id: 'p-yard', kind: 'shop', name: 'JS Solutions shop', lat: 39.0456577, lng: -95.7151106 };
+    const LOWES = { id: 'p-low', kind: 'supply', name: "Lowe's", placeId: 11, lat: 39.03787, lng: -95.768885 };
+    const CUST  = { id: 'client-77', kind: 'client', name: 'Bill Lorson', clientId: 77, lat: 39.10721, lng: -95.6650246 };
+    const STOP  = { lat: 39.0513, lng: -95.7813 };        // the 78 minutes nobody saved
+    const F = [JHOME, YARD, LOWES, CUST];
+
+    // His Sunday, to the minute, with the destination swappable so the same
+    // shape can be pointed at a customer instead of a parts store.
+    const sunday = (over) => Object.assign({
+      day: SUN, dayStart: SUN_START, dayEnd: SUN_START + 86400000,
+      personId: 'jack', fences: F, crew: true, nowMs: TS(20, 0),
+      clocks: [], clockHistory: [],
+      tape: [mo(TS(10, 30), 'onFoot'), mo(TS(10, 47), 'automotive'), mo(TS(11, 7), 'onFoot'),
+        mo(TS(12, 11), 'automotive'), mo(TS(12, 19), 'onFoot'),
+        mo(TS(12, 28), 'automotive'), mo(TS(12, 33), 'onFoot')],
+      fixes: [fix(TS(10, 30), JHOME), fix(TS(10, 45), JHOME),
+        fix(TS(11, 7, 30), STOP), fix(TS(11, 30), STOP), fix(TS(12, 0), STOP), fix(TS(12, 10), STOP),
+        fix(TS(12, 19, 30), LOWES), fix(TS(12, 24), LOWES), fix(TS(12, 27), LOWES),
+        fix(TS(12, 33, 30), JHOME), fix(TS(13, 30), JHOME)],
+    }, over || {});
+    // The identical day moved to the Tuesday before it, so any difference in
+    // the result is the WEEKDAY and nothing else.
+    const weekday = (over) => {
+      const d = sunday(over), shift = -5 * 86400000;
+      const mv = (x) => Object.assign({}, x, { ts: x.ts + shift });
+      return Object.assign({}, d, {
+        day: '2026-09-15', dayStart: d.dayStart + shift, dayEnd: d.dayEnd + shift,
+        nowMs: d.nowMs + shift, tape: d.tape.map(mv), fixes: d.fixes.map(mv),
+        clocks: (d.clocks || []).map(c => ({ start: c.start + shift, end: c.end + shift })),
+      });
+    };
+    // ROWS, not the deriver's internals, because "no rows" is the ask. A
+    // commute leg stays in r.legs by design (rule 20 marks it rather than
+    // deleting it: the map and the route still need the drive) and writes no
+    // mileage row and no drive time row, so counting legs here would report a
+    // drive the contractor never sees.
+    const shape = async (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'jack' });
+      return JSON.parse(JSON.stringify({
+        time: rows.job_time_entries.concat(rows.shop_time_entries || [])
+          .sort((a, b) => a.arrived_at < b.arrived_at ? -1 : 1)
+          .map(t => [t.source || 'shop', String(t.dest_place || '')]),
+        miles: rows.td_mileage.map(m => [m.from_name || m.from || '', m.to_name || m.to || '']),
+      }));
+    }, inp);
+
+    test('his 20 September writes nothing at all', async () => {
+      const r = await shape(sunday());
+      // The whole of the report, in his words: "it honestly should have no
+      // rows." Not held rows. None.
+      expect(r.time, 'no 78 minutes, no drive, no 16 minutes at the store').toEqual([]);
+      expect(r.miles, 'and not a mile on the books').toEqual([]);
+    });
+
+    test('the same day on a Tuesday is a full working day, untouched', async () => {
+      // The control, and the only thing that makes the test above mean
+      // anything: same tape, same fixes, same fences, five days earlier.
+      const r = await shape(weekday());
+      expect(r.time.map(t => t[0]), 'the stop, the drive to the store, and the store')
+        .toEqual(['unsaved', 'drive', 'place-supply']);
+      expect(r.miles.length, 'and the drive is on the books').toBe(1);
+    });
+
+    test('a clock punch outranks the calendar, exactly as it always has', async () => {
+      // He came out on a Sunday and said so at the time. No rule in this file
+      // gets to argue with that.
+      const r = await shape(sunday({ clocks: [{ start: TS(10, 30), end: TS(13, 0) }] }));
+      // FIVE rows, not the weekday's three, and the two extra are not this
+      // rule's doing: _gdCommuteMark excludes a clocked leg from commute
+      // marking altogether, so the hop out and the hop home bill as well. That
+      // is long-standing behaviour and it is the right one. A man who punched
+      // in before he left the house and out after he got back drove both of
+      // those on the clock.
+      expect(r.time.map(t => t[0]), 'everything the weekend rule held back is back')
+        .toEqual(['drive', 'unsaved', 'drive', 'place-supply', 'drive']);
+    });
+
+    test('a weekend call-out at a real customer still counts', async () => {
+      // THIS is the case the rule must never eat, and it is why a customer and
+      // a parts store are not the same evidence: a client is a commitment
+      // somebody made in the app before the drive, and nobody drives to a
+      // customer's house on a Sunday for fun.
+      const at = (ts, p) => fix(ts, p);
+      const r = await shape(sunday({
+        fixes: [at(TS(10, 30), JHOME), at(TS(10, 45), JHOME),
+          at(TS(11, 7, 30), STOP), at(TS(11, 30), STOP), at(TS(12, 0), STOP), at(TS(12, 10), STOP),
+          at(TS(12, 19, 30), CUST), at(TS(12, 24), CUST), at(TS(12, 27), CUST),
+          at(TS(12, 33, 30), JHOME), at(TS(13, 30), JHOME)],
+      }));
+      expect(r.time.some(t => t[0] === 'client' || t[1] === 'Bill Lorson'),
+        'her visit is a row').toBe(true);
+      expect(r.miles.length, 'and the drive to her is on the books').toBeGreaterThan(0);
+    });
+
+    test('the yard still vouches on a Sunday, and that is deliberate', async () => {
+      // Named rather than assumed (js/geo-derive.js, the vouches note): being
+      // at your own place of business is not the same as being seen in a car
+      // park, and rule 11 already calls a day at the yard a shift. If this is
+      // ever wrong it is its own decision with its own evidence.
+      const r = await shape(sunday({
+        fixes: [fix(TS(10, 30), JHOME), fix(TS(10, 45), JHOME),
+          fix(TS(11, 7, 30), STOP), fix(TS(11, 30), STOP), fix(TS(12, 0), STOP), fix(TS(12, 10), STOP),
+          fix(TS(12, 19, 30), YARD), fix(TS(12, 24), YARD), fix(TS(12, 27), YARD),
+          fix(TS(12, 33, 30), JHOME), fix(TS(13, 30), JHOME)],
+      }));
+      expect(r.time.some(t => t[0] === 'shop' || /shop/i.test(t[1])),
+        'his time at his own yard is a row').toBe(true);
+    });
+
+    // ── And the week learns itself from his punches ───────────────────────
+    //
+    // The company setting says Monday to Saturday for everybody, which is a
+    // guess about a trade rather than a fact about a person, and it is why his
+    // SATURDAY could only ever be held rather than dropped. His thirteen real
+    // punches in the three weeks to 18 September are every one Monday to
+    // Friday. Nobody typed that anywhere.
+    const shapeOf = (over) => page.evaluate((i) => {
+      const r = _gdDayShape(i);
+      return { workDay: r.workDay, learnedDays: r.learnedDays };
+    }, Object.assign({ day: SUN, workHours: null }, over || {}));
+    // Three separate weeks of Monday-to-Friday punches, which is what makes it
+    // a pattern rather than one stretch of days.
+    const MON_FRI = [];
+    for (let w = 0; w < 3; w++) {
+      for (let d = 0; d < 5; d++) {
+        const t = Date.parse('2026-08-31T12:00:00Z') + (w * 7 + d) * 86400000;
+        MON_FRI.push({ day: new Date(t).toISOString().slice(0, 10), inMin: 7 * 60 + 50, outMin: 16 * 60 + 30 });
+      }
+    }
+
+    test('three weeks of Monday-to-Friday makes Saturday a day off', async () => {
+      const sat = await shapeOf({ day: '2026-09-19', clockHistory: MON_FRI });
+      expect(sat.learnedDays, 'the pattern is his, not the company default').toBe(true);
+      expect(sat.workDay, 'so his Saturday is not a working day').toBe(false);
+      const fri = await shapeOf({ day: '2026-09-18', clockHistory: MON_FRI });
+      expect(fri.workDay, 'and his Friday still is').toBe(true);
+    });
+
+    test('it widens as readily as it narrows', async () => {
+      // Somebody who really does punch in on Sundays has Sunday learned as a
+      // work day, whatever the company wrote down. The setting is the fallback
+      // for anybody with no pattern, never a ceiling over one (rule 19).
+      const withSun = MON_FRI.concat([0, 7, 14].map((n) => {
+        const t = Date.parse('2026-09-06T12:00:00Z') + n * 86400000;
+        return { day: new Date(t).toISOString().slice(0, 10), inMin: 9 * 60, outMin: 14 * 60 };
+      }));
+      const r = await shapeOf({ day: SUN, clockHistory: withSun, workHours: { days: [1, 2, 3, 4, 5] } });
+      expect(r.workDay, 'his Sunday is a work day because he works Sundays').toBe(true);
+    });
+
+    test('one stretch of days is not three weeks, so the company still stands', async () => {
+      // §10.4: this is also the guard on every fixture already in this file.
+      // clocksBefore() builds SEVEN CONSECUTIVE days, which spans one or two
+      // week buckets and never three, so no existing test learns a week and
+      // none of them changed when this rule landed. Lowering
+      // GEO_LEARNED_MIN_WEEKS silently re-dates all of them, and this is what
+      // fails when somebody tries.
+      const r = await shapeOf({ day: SUN, clockHistory: clocksBefore(SUN) });
+      expect(r.learnedDays).toBe(false);
+      expect(r.workDay, 'Sunday falls back to the company Monday-to-Saturday').toBe(false);
+      const sat = await shapeOf({ day: '2026-09-19', clockHistory: clocksBefore('2026-09-19') });
+      expect(sat.workDay, 'and Saturday is still in it').toBe(true);
+    });
+
+    test('too few punches, junk punches and future punches teach nothing', async () => {
+      const future = MON_FRI.map((c, n) => ({
+        day: new Date(Date.parse(SUN + 'T12:00:00Z') + (n + 1) * 86400000).toISOString().slice(0, 10),
+        inMin: c.inMin, outMin: c.outMin,
+      }));
+      const junk = [null, {}, { day: 'nope', inMin: 1, outMin: 2 },
+        { day: '2026-09-01', inMin: 500, outMin: 400 }, { inMin: 1, outMin: 2 }];
+      for (const h of [null, 'nope', [], junk, MON_FRI.slice(0, 4), future]) {
+        const r = await shapeOf({ day: SUN, clockHistory: h });
+        expect(r.learnedDays, 'no pattern from ' + JSON.stringify(h && h.length)).toBe(false);
+      }
+    });
+  });
+
   test('no console errors across the deriver', async () => {
     assertNoErrors(page, 'geo-derive');
   });
