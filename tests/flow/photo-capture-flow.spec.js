@@ -306,6 +306,13 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
             // it: the client is told the verdict, never the coordinates.
             verified: jp.filter(x => x.verified).length,
             leaksCoords: /"lat"|"lon"/.test(JSON.stringify(snap)),
+            // Tells apart the three ways `verified` can come back zero:
+            // the writer never stored the fix, the sync dropped it before
+            // the hub read the row, or the distance test is wrong. Without
+            // this the number alone accuses the wrong one.
+            localWithFix: photos.filter(x => x.job_id === (snap.jobs[0] || {}).id && x.lat != null).length,
+            localOnJob: photos.filter(x => x.job_id === (snap.jobs[0] || {}).id).length,
+            clientHasFix: (() => { const cc = clients.find(x => x.id === cid); return !!(cc && cc.lat != null); })(),
           };
         }, client.id);
         // Tapping the link the contractor already sends.
