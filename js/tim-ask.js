@@ -76,6 +76,17 @@ const TIM_ASKS=[
   {id:'hours', say:[
     'how many hours','hours this week','how many hours did i work','hours worked',
     'how many hours have i put in','my hours this week','how long have i worked']},
+  // ── The one a man actually opens with ─────────────────────────────────────
+  // Owner typed "What's Going On Tim?" into the box and got a miss. It is the
+  // most natural thing to say to somebody you just opened, and he had no answer
+  // for it, which made him look stupid on the most forgiving question there is.
+  // It is not small talk either: it means "tell me where I stand", and every
+  // number needed to answer it is already computed by the families below.
+  {id:'brief', say:[
+    'whats going on','what is going on','how are we doing','how am i doing',
+    'where do i stand','give me the rundown','whats up','what should i know',
+    'catch me up','how is business','hows business','state of things','brief me',
+    'whats the damage','sum it up','where are we at']},
   {id:'avg', say:[
     'average job','whats my average job','average ticket','my average job size',
     'what is my average job','average job size','typical job']},
@@ -700,6 +711,62 @@ function _timAnswerAvg(said){
   };
 }
 
+// ── Where you stand, in four lines ──────────────────────────────────────────
+// Built entirely out of the other answers rather than a fifth opinion on the
+// same arrays: a brief that disagreed with the individual question would be the
+// worst thing in this file, because it is the one a man reads fastest and
+// trusts most.
+//
+// What goes in it is what a contractor can DO something about before supper:
+// money already earned and not collected, money still out for an answer, money
+// in this year, and whatever Tim would have interrupted him about anyway. No
+// vanity numbers, no "you are doing great", no trend line. He asked where he
+// stands, not how he feels.
+function _timAnswerBrief(said){
+  const rows=[];
+  const owed=timOwedAll();
+  const owedTotal=owed.reduce((s,r)=>s+r.amount,0);
+  if(owedTotal>0.01){
+    const oldest=owed[0];
+    rows.push({lead:'Waiting to be paid',right:_timAskMoney(owedTotal),
+      note:owed.length===1?(oldest.name+', '+_timAskDays(oldest.days))
+        :(owed.length+' customers, oldest is '+_timAskDays(oldest.days))});
+  }
+  const out=_timRows('bids').filter(b=>b&&b.status==='Pending');
+  if(out.length){
+    rows.push({lead:'Out for an answer',
+      right:_timAskMoney(out.reduce((s,b)=>s+(Number(b.amount)||0),0)),
+      note:out.length+' quote'+(out.length===1?'':'s')});
+  }
+  const yr=_timAskYear(said);
+  const inYear=_timTookIn(yr).reduce((s,r)=>s+r.amount,0);
+  if(inYear>0.01)rows.push({lead:'Taken in this year',right:_timAskMoney(inYear),note:'across '+yr});
+
+  // Whatever the dock would have said. It is the same engine, so the brief can
+  // never contradict the pill sitting behind it.
+  let flag=null;
+  try{
+    if(typeof timNudges==='function'&&typeof timJobSnapshot==='function'){
+      flag=(timNudges(timJobSnapshot())||[])[0]||null;
+    }
+  }catch(_e){}
+  if(flag)rows.push({lead:flag.line,right:String(flag.figure||''),note:'worth a look'});
+
+  if(!rows.length){
+    return {id:'brief',title:'All square',
+      sub:'Nothing owed to you, nothing out for an answer, and nothing on this job worth flagging.',rows:[]};
+  }
+  // The headline is the money he is owed, because that is the number that is
+  // his and is not in his account. Nothing out means the headline is what he
+  // has taken in instead, and if neither exists it is the count of open quotes.
+  const title=owedTotal>0.01?_timAskMoney(owedTotal)
+    :(inYear>0.01?_timAskMoney(inYear):_timAskMoney(out.reduce((s,b)=>s+(Number(b.amount)||0),0)));
+  const sub=owedTotal>0.01?'is yours and not in your account yet'
+    :(inYear>0.01?('taken in across '+yr):'out for an answer');
+  return {id:'brief',title,sub,rows,
+    go:{label:'Open Collect',fn:"goPg('pg-money')"}};
+}
+
 function timAsk(said){
   // THE BOUNDARY. Every one of these answers is owner-only business data:
   // revenue, receivables, win rate, the best customer, the average job. This is
@@ -723,6 +790,7 @@ function timAsk(said){
     if(hit.id==='miles')return _timAnswerMiles(said);
     if(hit.id==='hours')return _timAnswerHours();
     if(hit.id==='avg')return _timAnswerAvg(said);
+    if(hit.id==='brief')return _timAnswerBrief(said);
   }catch(_e){}
   return null;
 }

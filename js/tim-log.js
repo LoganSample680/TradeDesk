@@ -127,7 +127,10 @@ function _timLogGot(outcome,job){
   if(o.kind==='ask')return o.title?String(o.title):'Answered off your own numbers';
   if(o.kind==='nav')return o.name?('Opened '+o.name):'Opened the screen';
   if(o.kind==='newclient')return 'Started a new customer';
-  if(o.kind==='none')return 'I could not place that one.';
+  // Not "I could not place that one." That is a dead end: it reports the
+  // failure and hands the man nothing, and he is left retyping blind. Same
+  // fact, plus the way out, in the words the answers are actually keyed on.
+  if(o.kind==='none')return 'Not one I know yet. Try what you are owed, what you charged, or what is out.';
   return o.kind?('Went to '+o.kind):'Nothing';
 }
 

@@ -581,6 +581,21 @@ body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infini
   0%,62%,100%{opacity:.28;transform:translateY(0)}
   31%        {opacity:1;transform:translateY(-3px)}
 }
+/* ── The mic and the send trade places ──────────────────────────────────────
+   Owner: "there's no send arrow like iOS has next to the mic".
+   They SWAP, they do not sit side by side. An empty box has nothing to send, so
+   a send button on it is a dead control, and two live buttons on a 390px row is
+   a thumb choosing between them every single time. Empty, the mic, which is the
+   way in on a job site. One character typed, the arrow.
+   Done with :placeholder-shown rather than a class the JS toggles, so it cannot
+   get out of step with what is actually in the box: no keyup handler to miss a
+   paste, a dictation result, an autofill or an undo. It is also rule 8.5 for
+   free, since no JS touches a style property to make it happen. */
+#_tim-send{display:none;align-items:center;justify-content:center}
+#_tim-say:not(:placeholder-shown)~#_tim-send{display:flex}
+#_tim-say:not(:placeholder-shown)~#_tim-mic{display:none}
+#_tim-send:active{transform:scale(.94);opacity:.9}
+
 /* ── The send ───────────────────────────────────────────────────────────────
    Owner, 2026-09-21: "do they have that crisp iOS send shutter where it flows".
    They did not: the thread is redrawn with innerHTML, so a new bubble simply

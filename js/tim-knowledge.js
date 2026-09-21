@@ -79,6 +79,19 @@ const _TIM_STAGE_IX={};TIM_STAGES.forEach((s,i)=>{_TIM_STAGE_IX[s.k]=i;});
 function _timkNorm(t){
   return ' '+String(t||'').toLowerCase()
     .replace(/&/g,' and ')
+    // Apostrophes are DELETED, not turned into a space, and this is not a
+    // nicety. The line below replaces every other stray character with a
+    // space, which turned "what's" into "what s" and broke the match against
+    // every phrase in TIM_ASKS written the way a man types it: "whats owed",
+    // "whats the address", "whats out right now", "whats pending", "hows
+    // business". iOS autocorrects "whats" TO "what's" by default, so the
+    // keyboard was reliably rewriting his question into one Tim could not
+    // hear. Found 2026-09-21 from a screenshot of the owner asking "What's
+    // Going On Tim?" and getting a miss, with the keyboard visible above it
+    // offering the apostrophe.
+    // Both shapes: the straight one a keyboard sends and the curly one iOS
+    // substitutes as you type.
+    .replace(/['\u2018\u2019\u02BC]/g,'')
     .replace(/[^a-z0-9.\-\/\s]/g,' ')
     .replace(/\s+/g,' ').trim()+' ';
 }
