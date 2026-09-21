@@ -2122,11 +2122,11 @@ test.describe('geo-derive wiring', () => {
     // CHANGED, so the one attempt at the arrival instant was all there was:
     // a bridge that wasn't ready yet left the island empty for the whole
     // dwell with nothing to retry it. Every publish must re-assert it.
-    test('an unchanged open dwell still re-asserts the on-site Live Activity', async () => {
+    test('an unchanged open dwell still re-asserts the rail Live Activity', async () => {
       const r = await page.evaluate(async () => {
-        const keep = window._liveActOnSite;
+        const keep = window._liveActRail;
         const seen = [];
-        window._liveActOnSite = (d) => { seen.push(d ? String(d.name || '') : null); return true; };
+        window._liveActRail = (d) => { seen.push(d ? String(d.name || '') : null); return true; };
         try {
           const since = Date.now() - 20 * 60000;
           const mk = () => ({ open: { id: 'd-same', name: 'John Doe', kind: 'client', sinceTs: since, journeyId: 'j1',
@@ -2138,7 +2138,7 @@ test.describe('geo-derive wiring', () => {
           _geoOpenDwellPublish(today, mk());          // identical dwell: must assert again
           _geoOpenDwellPublish(today, mk());
           return { first, total: seen.length, names: seen };
-        } finally { window._liveActOnSite = keep; }
+        } finally { window._liveActRail = keep; }
       });
       expect(r.first).toBe(1);
       expect(r.total).toBe(3);

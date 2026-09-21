@@ -620,22 +620,43 @@ test.describe("somebody else's open dwell draws", () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  // Today, because an open dwell only means "right now". Built off the page's
-  // own clock, which is pinned (§5.2.2), so the runner's hour never decides.
+  // Today, because an open dwell only means "right now". Both ends are built
+  // from the PAGE's clock, never the runner's (§5.2.2).
+  //
+  // AND THE HOUR NEVER DECIDES THE RESULT. The first cut of this asked for a
+  // dwell 164 minutes old; the midnight job runs at 00:20, where 164 minutes
+  // ago is YESTERDAY, so the row was correctly not drawn and the test failed
+  // on a fixture rather than on the code. `ago` is clamped to what is left of
+  // the business day and the assertions read the clamped number back, so the
+  // case under test ("somebody else is on site right now") is the same case at
+  // every hour. `raw` opts out, for the one test whose whole point is a stale
+  // arrival from an earlier day.
   const draw = (entries, shop) => page.evaluate(async ([entries, shop, THEM, ME]) => {
     const keepF = window._fetchCrewLabor, keepT = timeEntries.slice(), keepO = window._geoOpenDwell;
     window._geoOpenDwell = null;              // the live row is its own test
     window.timeEntries = [];
-    // Both ends built from the PAGE's clock, never the runner's (§5.2.2).
-    const stamp = (e) => ({ ...e, contractor_user_id: ME,
-      arrived_at: new Date(Date.now() - e.agoMin * 60000).toISOString(),
-      departed_at: e.agoMinEnd == null ? null : new Date(Date.now() - e.agoMinEnd * 60000).toISOString() });
+    const today = _bizDateStr(new Date());
+    const isToday = (ago) => _bizDateStr(new Date(Date.now() - ago * 60000)) === today;
+    const clampAgo = (want) => {
+      if (isToday(want)) return want;
+      let lo = 0, hi = want;
+      while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (isToday(mid)) lo = mid; else hi = mid - 1; }
+      return lo;
+    };
+    const used = {};
+    const stamp = (e) => {
+      const a = e.raw ? e.agoMin : clampAgo(e.agoMin);
+      const b = e.agoMinEnd == null ? null : Math.max(0, a - (e.agoMin - e.agoMinEnd));
+      used[e.id] = a;
+      return { ...e, contractor_user_id: ME,
+        arrived_at: new Date(Date.now() - a * 60000).toISOString(),
+        departed_at: b == null ? null : new Date(Date.now() - b * 60000).toISOString() };
+    };
     window._fetchCrewLabor = async () => ({ name: { [ME]: 'Me', [THEM]: 'Jack' },
       entries: entries.map(stamp), shopEntries: shop.map(stamp) });
     try {
-      const today = _bizDateStr(new Date());
       const rows = (await _timeLogRows(null)).filter(r => r.date === today);
-      return { rows: rows.map(r => ({ who: r.personUid, name: r.clientName, live: !!r.live,
+      return { used, rows: rows.map(r => ({ who: r.personUid, name: r.clientName, live: !!r.live,
         minutes: r.minutes, start: r.startTime, detail: r.detail })),
         finite: rows.every(r => Number.isFinite(Number(r.minutes))) };
     } finally { window._fetchCrewLabor = keepF; window.timeEntries = keepT; window._geoOpenDwell = keepO; }
@@ -650,9 +671,9 @@ test.describe("somebody else's open dwell draws", () => {
     expect(row.live, 'live, so the rail prints "7:27 AM -" and no duration').toBe(true);
     expect(row.detail).toBe('On site now');
     expect(row.start, 'the start time the owner went looking for').toBeTruthy();
-    // 2h44m, running to now, not the 0 a stored open row carries.
-    expect(row.minutes).toBeGreaterThanOrEqual(163);
-    expect(row.minutes).toBeLessThanOrEqual(166);
+    // Running to now, not the 0 a stored open row carries.
+    expect(row.minutes).toBeGreaterThanOrEqual(r.used.k1 - 1);
+    expect(row.minutes).toBeLessThanOrEqual(r.used.k1 + 1);
     expect(r.finite).toBe(true);
   });
 
@@ -671,15 +692,15 @@ test.describe("somebody else's open dwell draws", () => {
     expect(r.rows.length).toBe(1);
     expect(r.rows[0].name).toBe('John Doe (2950 SW McClure Rd)');
     expect(r.rows[0].live).toBe(true);
-    expect(r.rows[0].minutes).toBeGreaterThanOrEqual(94);
-    expect(r.rows[0].minutes).toBeLessThanOrEqual(97);
+    expect(r.rows[0].minutes).toBeGreaterThanOrEqual(r.used.k3 - 1);
+    expect(r.rows[0].minutes).toBeLessThanOrEqual(r.used.k3 + 1);
   });
 
   test('an open row left over from an earlier day draws nothing', async () => {
     // A dwell nobody ever closed is not "right now", and running it to the
     // current minute would put yesterday's arrival against today's clock.
     const r = await draw([], [{ id: 'k4', employee_user_id: THEM, client_key: 'd-k4',
-      departed_at: null, minutes: null, agoMin: 26 * 60 }]);
+      departed_at: null, minutes: null, agoMin: 26 * 60, raw: true }]);
     expect(r.rows.length).toBe(0);
   });
 

@@ -120,6 +120,18 @@ const TABLES = {
   __fences: FENCES,
 };
 
+// A day with a tape over it and nothing on it: he never got in the truck. No
+// journeys, so no legs and no bounded dwell, which is what rule 19 leaves
+// behind on a weekend it refuses to vouch for. The motion row is what makes
+// tapeCovers true, so this is an EMPTY day rather than an unreported one.
+const quietTables = () => ({
+  ...TABLES,
+  geo_events: [
+    { ts: iso(at(6, 30)), type: 'motion', kind: 'still', lat: null, lon: null },
+    ...sit(SHOP, at(6, 30), at(14, 0), 20).map((e) => ({ ...e, ts: iso(e.ts) })),
+  ],
+});
+
 test.describe('the deriver on the server', () => {
   test('the shared copy is generated from js/geo-derive.js, never edited beside it', () => {
     // THE WHOLE REASON THIS IS SAFE. If somebody changes a rule on the phone
@@ -226,6 +238,59 @@ test.describe('the deriver on the server', () => {
       expect(write.args.p_sweep_until, 'and it stops where the day stops being known').toBeTruthy();
       expect(r.sweepAsked).toBe(true);
       expect(r.tapeCovers).toBe(true);
+    });
+
+    // ── AN EMPTY DAY IS AN ANSWER, AND A REBUILD HAS TO BE ABLE TO SAY IT ──
+    // (owner 2026-09-21, on Jack's Sunday)
+    //
+    // Rule 19 derives a weekend that vouches for nothing as NO ROWS, which is
+    // the point of it. The rows already on that day were written before the
+    // rule existed, so a rebuild is the only thing that can take them off, and
+    // deriveDayServer used to return "nothing to add" before it ever called
+    // the writer. He pressed Rebuild and got both stale rows back.
+    //
+    // The day that most needs clearing must not be the one day that cannot
+    // clear itself. An empty derive that MAY retire now writes, carrying empty
+    // arrays, and the sweep inside geo_replace_day is what does the work. An
+    // empty derive that may not retire still skips, because there a write
+    // really is a round trip for nothing.
+    test('a rebuild of a day that derives to nothing still sweeps it', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(quietTables(), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(write, 'the writer is reached, which is the whole fix').toBeTruthy();
+      expect(write.args.p_sweep).toBe(true);
+      expect(write.args.p_time, 'nothing to add, said out loud').toEqual([]);
+      expect(write.args.p_shop).toEqual([]);
+      expect(write.args.p_miles).toEqual([]);
+      expect(r.wrote).toBe(true);
+      expect([r.time, r.shop, r.miles]).toEqual([0, 0, 0]);
+    });
+
+    test('the same empty day on the ingest path writes nothing at all', async () => {
+      // Unchanged, and it has to stay unchanged: this caller may not retire,
+      // so an empty write would be a round trip that changes nothing.
+      const { deriveDayServer } = await import(SHARED);
+      for (const opts of [undefined, { sweep: false }]) {
+        const rpc = [];
+        const r = await deriveDayServer(fakeSvc(quietTables(), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, opts);
+        expect(rpc.find((c) => c.name === 'geo_replace_day')).toBeFalsy();
+        expect(r.wrote).toBe(false);
+        expect(r.reason).toBe('nothing to add');
+        expect(r.sweep, 'and it says why it could not sweep').toBe(false);
+      }
+    });
+
+    test('an empty day with no tape covering it is still refused', async () => {
+      // "No evidence" outranks everything: a day nobody uploaded is not an
+      // empty day, and asking for a sweep cannot turn it into one.
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc({ ...quietTables(), geo_events: [] }, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      expect(rpc.find((c) => c.name === 'geo_replace_day')).toBeFalsy();
+      expect(r.wrote).toBe(false);
+      expect(r.reason).toBe('no evidence');
     });
 
     test('a settled day has no boundary at all: the whole day is known', async () => {

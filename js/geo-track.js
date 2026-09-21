@@ -8803,7 +8803,16 @@ function _geoOpenDwellPublish(dayKey,res){
     // yet (or a start that failed) left the island empty for the whole
     // dwell with nothing to retry it. _liveActSet dedups on a signature, so
     // re-asserting an unchanged dwell costs nothing.
-    try{if(typeof _liveActOnSite==='function')_liveActOnSite(next);}catch(_e){}
+    // BOTH HALVES OF THE RAIL'S LIVE ROW (owner 2026-09-21). The lock-screen
+    // card mirrors the day rail now, so it needs the drive as well as the
+    // dwell: standing still is only half of what the rail says. Published on
+    // window the same way the dwell is, so _liveActForeground can re-assert
+    // it after a relaunch that found the card already up.
+    window._geoOpenPending=(res&&res.pending&&Number(res.pending.startTs)>0)
+      ?{startTs:Number(res.pending.startTs),
+        origin:res.pending.origin?{name:String(res.pending.origin.name||'')}:null}
+      :null;
+    try{if(typeof _liveActRail==='function')_liveActRail(next,window._geoOpenPending);}catch(_e){}
     if(same){
       if(deNew){try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}}
       return;

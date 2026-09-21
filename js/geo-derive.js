@@ -1039,7 +1039,7 @@ function geoDeriveDay(input) {
     // a still-open journey either (rule 5), so the day just loses the person:
     // the on-site card falls back to the proximity prompt with no arrival
     // stamp, the Time Log shows the visit ending at the flip, and
-    // _liveActOnSite is handed null so the Dynamic Island and lock screen go
+    // _liveActRail is handed null so the Dynamic Island and lock screen go
     // dark and stay dark.
     //
     // Owner, at John Doe from 08:01 and never away: an open journey minted at
@@ -1465,7 +1465,7 @@ function geoDeriveDay(input) {
     // 300 ft fence. That lone outlier closed a visit that was still running:
     // the Time Log cut the afternoon, and because the closed dwell means
     // `open` is null, _geoOpenDwellPublish had nothing to publish, so
-    // _liveActOnSite was never called and the Dynamic Island and lock screen
+    // _liveActRail was never called and the Dynamic Island and lock screen
     // stayed empty all day with no error anywhere to explain it.
     //
     // geo_events stores no accuracy column, so every server fix arrives with
