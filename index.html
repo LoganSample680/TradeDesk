@@ -186,7 +186,7 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
      and so is the field the portrait is printed on, so there is no seam where
      one ends and the other starts. A gold that is close but not equal shows up
      as a faint disc around his head at every size. */
-  --tim-gold:#D3A04B;--hat:#F2A81C;
+  --tim-gold:#D29E47;--hat:#F2A81C;
   --r-xs:4px;--r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--r-pill:999px;--r-mark:9px;
   --shadow-card:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--line);
   --shadow-hover:0 3px 12px rgba(27,22,18,.08),0 0 0 1px var(--line);
@@ -422,8 +422,28 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    recognisable as a man at rest, which is the whole point of having a face.
    The 6px nudge right pushes the portrait's dead centre past the screen edge
    so that what is cropped is the back of his head, not his ear. */
-#tim-dock-btn{width:36px;height:62px;border:0;border-radius:26px 0 0 26px;background:var(--tim-gold);
-  box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-1px 0 0 rgba(27,22,18,.06),-4px 0 12px rgba(27,22,18,.11);
+/* ELEVATION. Owner, 2026-09-21: "how can we elevate it more".
+   Not with the fill. The portrait covers 32 of the 36px, so a gradient on the
+   tab is invisible behind him and shows as a flat disc on a graded field in the
+   2px that IS visible. What is left is the light on its edges and the shadow
+   under it, which is what elevation actually is.
+   Three things, in the order a real object makes them:
+     a warm top highlight and a cool bottom shade, 1px each, so the tab has
+       thickness instead of being a coloured rectangle;
+     a CONTACT shadow, tight and close, which is what says the tab is sitting ON
+       the page rather than printed into it;
+     an AMBIENT shadow, wide and faint, which is what says how far above.
+   One soft shadow on its own (what was here) gives the second without the
+   first, and that reads as a sticker every time.
+   68px tall, up from 62: height is the one dimension that costs the page
+   nothing, and a taller tab reads as fitted chrome rather than a nub. */
+#tim-dock-btn{width:36px;height:68px;border:0;border-radius:28px 0 0 28px;background:var(--tim-gold);
+  box-shadow:inset 0 1px 0 rgba(255,246,228,.34),
+    inset 1px 0 0 rgba(27,22,18,.20),
+    inset 0 -1px 0 rgba(27,22,18,.16),
+    -1px 0 0 rgba(27,22,18,.07),
+    -2px 1px 4px rgba(27,22,18,.14),
+    -9px 6px 22px rgba(27,22,18,.14);
   cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;
   position:relative;pointer-events:auto;padding:0;
   transition:width .24s cubic-bezier(.22,1,.36,1),height .24s cubic-bezier(.22,1,.36,1),
@@ -457,7 +477,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    So waking him is the pulse, the pill coming out beside him, and the count.
    Three signals and no reflow, instead of a fourth that reaches further across
    the page and looks worse for it. */
-#tim-dock-btn.alive{box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-1px 0 0 rgba(27,22,18,.06),-4px 0 12px rgba(27,22,18,.11)}
+#tim-dock-btn.alive{box-shadow:inset 0 1px 0 rgba(255,246,228,.34),inset 1px 0 0 rgba(27,22,18,.20),inset 0 -1px 0 rgba(27,22,18,.16),-2px 1px 4px rgba(27,22,18,.14),-9px 6px 22px rgba(27,22,18,.14)}
 #tim-dock-btn:active{transform:scale(.96);opacity:.85}
 /* Pinned to the dock's own top right, which is the screen edge, where the tab
    corner is square and nothing curves away under it. pointer-events:none so it
@@ -478,8 +498,8 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    say. What CHANGES is which line is showing, not what colour he is. */
 #tim-dock-btn.alive{animation:tim-breathe 2.9s ease-in-out infinite}
 @keyframes tim-breathe{
-  0%,100%{box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-4px 0 12px rgba(27,22,18,.11),0 0 0 0 rgba(211,160,75,.42)}
-  50%    {box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-4px 0 12px rgba(27,22,18,.11),0 0 0 9px rgba(211,160,75,0)}
+  0%,100%{box-shadow:inset 0 1px 0 rgba(255,246,228,.34),inset 1px 0 0 rgba(27,22,18,.20),inset 0 -1px 0 rgba(27,22,18,.16),-2px 1px 4px rgba(27,22,18,.14),-9px 6px 22px rgba(27,22,18,.14),0 0 0 0 rgba(210,158,71,.42)}
+  50%    {box-shadow:inset 0 1px 0 rgba(255,246,228,.34),inset 1px 0 0 rgba(27,22,18,.20),inset 0 -1px 0 rgba(27,22,18,.16),-2px 1px 4px rgba(27,22,18,.14),-9px 6px 22px rgba(27,22,18,.14),0 0 0 9px rgba(210,158,71,0)}
 }
 /* ── Tim after dark ─────────────────────────────────────────────────────────
    body.dark repoints --ink to #0A0A08 and --paper to #14110E, which are four
@@ -494,14 +514,18 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    dark because nothing is printed next to them that has to match.
    The pulse comes down too. A gold halo at .42 is a glance on white and a
    headlight on #14110E. */
+/* Dark keeps the BEVEL and drops the ambient shadow: a soft dark shadow on a
+   #14110E page is invisible, so it is all cost and no lift. The 1px highlight
+   and the 1px bottom shade are what carry the thickness here, and they carry it
+   harder, because there is no shadow underneath doing any of the work. */
 body.dark #tim-dock-btn{filter:brightness(.92) saturate(.96);
-  box-shadow:inset 1px 0 0 rgba(27,22,18,.28)}
+  box-shadow:inset 0 1px 0 rgba(255,246,228,.22),inset 1px 0 0 rgba(0,0,0,.42),inset 0 -1px 0 rgba(0,0,0,.34)}
 body.dark #tim-dock-pill{background:var(--bg-card);
   box-shadow:0 4px 16px rgba(0,0,0,.45),0 0 0 1px var(--line-2)}
 body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infinite}
 @keyframes tim-breathe-dark{
-  0%,100%{box-shadow:inset 1px 0 0 rgba(27,22,18,.28),0 0 0 0 rgba(211,160,75,.26)}
-  50%    {box-shadow:inset 1px 0 0 rgba(27,22,18,.28),0 0 0 8px rgba(211,160,75,0)}
+  0%,100%{box-shadow:inset 0 1px 0 rgba(255,246,228,.22),inset 1px 0 0 rgba(0,0,0,.42),inset 0 -1px 0 rgba(0,0,0,.34),0 0 0 0 rgba(210,158,71,.26)}
+  50%    {box-shadow:inset 0 1px 0 rgba(255,246,228,.22),inset 1px 0 0 rgba(0,0,0,.42),inset 0 -1px 0 rgba(0,0,0,.34),0 0 0 8px rgba(210,158,71,0)}
 }
 /* The line crossfades in place rather than sliding: the pill is 13px type on a
    dark chip at arm's length on a job site, and text that moves while it is
