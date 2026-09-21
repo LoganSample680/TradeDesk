@@ -1040,6 +1040,34 @@ test.describe('TrueShot: the photos come back', () => {
     expect(r.html).toContain('done.jpg');     // falls back to the full url
   });
 
+  // Caught by e2e-past-work, not by this file: switching the lookup to the
+  // global array alone made a job-local-only photo disappear from a
+  // property's history. Those exist for two real reasons: a photo taken
+  // before this feature shipped, and one taken offline whose upload has not
+  // drained yet.
+  test('a photo that exists ONLY on the job record is still found', async () => {
+    const r = await page.evaluate(() => {
+      jobs.push({ id: 861, bid_id: 901, client_id: 501, name: 'Old job', status: 'done',
+        photos: [{ type: 'after', data: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', ts: '2026-01-02T10:00:00.000Z', caption: '' }] });
+      const found = tdPhotosFor({ clientId: 501, bidIds: [901], jobIds: [861] });
+      return { n: found.length, type: found[0] && found[0].type, html: _cdPastThumbs(found) };
+    });
+    expect(r.n).toBe(1);
+    expect(r.type).toBe('after');
+    expect(r.html).toContain('data:image/gif');
+  });
+
+  test('a photo in BOTH shapes is shown once, not twice', async () => {
+    const n = await page.evaluate(() => {
+      const ts = '2026-03-04T10:00:00.000Z';
+      jobs.push({ id: 862, bid_id: 901, client_id: 501, name: 'Synced job', status: 'done',
+        photos: [{ type: 'before', data: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', ts, caption: '' }] });
+      photos.push({ id: 31, type: 'before', url: 'https://x.test/synced.jpg', thumbUrl: '', client_id: 501, bid_id: 901, job_id: 862, uploadedAt: ts });
+      return tdPhotosFor({ clientId: 501, bidIds: [901], jobIds: [862] }).length;
+    });
+    expect(n).toBe(1);
+  });
+
   test('a photo with no base64 left on it still renders, which it did not before', async () => {
     const html = await page.evaluate(() => _cdPastThumbs([{ id: 23, type: 'before', url: 'https://x.test/only-url.jpg', thumbUrl: '', uploadedAt: '' }]));
     expect(html).toContain('only-url.jpg');

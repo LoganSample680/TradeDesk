@@ -868,6 +868,28 @@ function tdPhotosFor(opts){
     if(opts.wholeClient&&cid!=null&&p.client_id===cid)return true;
     return false;
   });
+  // ── The job-local copies count too ─────────────────────────────────────
+  // A job carries its own photos[] of base64 entries, written by the device
+  // that took the shot. Usually there is a matching row in the global array,
+  // but NOT always: a photo taken before this file existed has only the local
+  // entry, and so does one taken offline whose upload has not drained yet.
+  // Reading the global array alone made both of those vanish from a
+  // property's history, which is the exact failure this lookup exists to
+  // prevent. Matched on the timestamp, which the writer puts on both.
+  const seen=new Set(out.map(p=>String(p.uploadedAt||'')));
+  jobIds.forEach(jid=>{
+    const j=(typeof jobs!=='undefined'?jobs:[]).find(x=>String(x.id)===jid);
+    if(!j||!Array.isArray(j.photos))return;
+    j.photos.forEach(e=>{
+      if(!e)return;
+      const ts=String(e.ts||'');
+      if(ts&&seen.has(ts))return;
+      if(ts)seen.add(ts);
+      out.push({id:'local-'+jid+'-'+ts,type:e.type,caption:e.caption||'',data:e.data||'',
+        url:'',thumbUrl:'',client_id:j.client_id!=null?j.client_id:null,
+        bid_id:j.bid_id!=null?j.bid_id:null,job_id:j.id,uploadedAt:ts});
+    });
+  });
   return out.sort((a,b)=>String(a.uploadedAt||'').localeCompare(String(b.uploadedAt||'')));
 }
 // What to actually put in an <img src>. Order matters: the thumbnail is the
