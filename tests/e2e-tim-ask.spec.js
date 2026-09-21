@@ -573,6 +573,40 @@ test.describe('tim answering off your own books', () => {
       r.forEach(([got, want]) => expect(got).toBe(want));
     });
 
+    // The preview under the box reads from timParse, which knows doors, years
+    // and work and nothing at all about these twelve families. So the one
+    // question in the app most likely to be typed first previewed as "Not sure
+    // what that is yet" right up until you pressed send and got a full answer.
+    // A preview that contradicts what is about to happen talks a man out of
+    // asking.
+    test('the line under the box does not call it a miss before he answers it', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        openTim();
+        const el = document.getElementById('_tim-say');
+        const read = (v) => { el.value = v; _timPreview(); return document.getElementById('_tim-read').textContent; };
+        const out = {
+          brief: read("What's going on Tim?"),
+          owed: read('who owes me money'),
+          junk: read('qwertyuiop asdfgh'),
+          empty: read(''),
+          // A build outranks an ask in _timGoRun, so it has to here too.
+          build: read('build me a t and m for Dana Whitfield'),
+          // And a plain screen request is still a screen.
+          nav: read('open the schedule'),
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.brief).toBe('Answer that off your own books');
+      expect(r.owed).toBe('Answer that off your own books');
+      // And a genuine miss still says so, or the preview means nothing.
+      expect(r.junk).toBe('Not sure what that is yet');
+      expect(r.empty).toBe('');
+      expect(r.build).toContain('Dana');
+      expect(r.nav).toBe('Open Schedule');
+    });
+
     test('it is the money he can do something about, worst first', async () => {
       const r = await page.evaluate(() => timAsk('whats going on'));
       // Owed 3,500 (Dana 2,000 of 4,000 unpaid + Ray 1,500). Out: the 3,300

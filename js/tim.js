@@ -613,18 +613,21 @@ function _timHeadHtml(sub){
 function _timAskHtml(){
   const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
     ? '<button type="button" id="_tim-mic" onclick="_timTalkToggle()" aria-label="Talk to Tim" '+
-      'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-md);background:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative">'+
-        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
+      // Secondary, not filled. It used to be an ink block, which next to a
+      // filled blue arrow is two primaries on one row and no answer to which
+      // one is the way out.
+      'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-pill);background:var(--bg2);box-shadow:0 0 0 1px var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative">'+
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
         '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
         '<path d="M12 19v3"></path><path d="M8 22h8"></path></svg>'+
-        '<span style="position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:var(--r-pill);background:var(--hat);box-shadow:0 0 0 2px var(--bg);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:var(--ink)">T</span>'+
+        '<span style="position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:var(--r-pill);background:var(--hat);box-shadow:0 0 0 2px var(--bg-card,#fff);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:var(--ink)">T</span>'+
       '</button>'
     : '';
-  // The send, and it SWAPS with the mic rather than sitting beside it. That is
-  // what iOS does and it is not decoration: an empty box has nothing to send,
-  // so a send button on it is a dead control, and two live buttons on a 390px
-  // row is a thumb choosing between them every time. Empty box, the mic (the
-  // way in on a job site). A character typed, the arrow.
+  // The send, BESIDE the mic and not instead of it. Both are always on the
+  // row: that is what the assistant apps do (Claude, ChatGPT, WhatsApp) and
+  // the swap was borrowed from iMessage, which is a different kind of app.
+  // The arrow dims and stops taking taps on an empty box, so it is never a
+  // dead control; see the stylesheet, which owns both states.
   const send='<button type="button" id="_tim-send" onclick="_timGo()" aria-label="Send" '+
     // No display in here on purpose: an inline style beats the stylesheet, and
     // the stylesheet is what does the swap off :placeholder-shown.
@@ -1279,7 +1282,26 @@ function _timPreview(){
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
   const catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[trade]))?TRADE_JOBS[trade]:[];
   const p=timParse(el.value,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog});
-  const line=timSay(p);
+  let line=timSay(p);
+  // timParse knows doors, years and work. It knows nothing about the twelve
+  // question families, so "What's going on Tim?" previewed as "Not sure what
+  // that is yet" right up until you pressed send and got a full answer. A
+  // preview that contradicts what is about to happen is worse than no preview:
+  // it talks a man out of asking.
+  // timAskKind and not timAsk: this runs on every keystroke, and the kind is
+  // phrase matching while the answer walks every bid, payment and receipt.
+  //
+  // It mirrors _timGoRun's PRECEDENCE, it does not just fill a gap. "who owes
+  // me money" is in the navigator's list too, so it previewed "Open Collect"
+  // while send gave the figure, which is the same contradiction pointing the
+  // other way. The order there is build, then ask, then read, then navigate:
+  // so a build still wins here, and an ask beats a screen.
+  if(typeof timAskKind==='function'&&!_timCrew()){
+    const build=p&&(p.kind==='estimate'||p.kind==='newclient');
+    if(!build&&(!line||(p&&p.kind==='nav'))&&timAskKind(el.value)){
+      line='Answer that off your own books';
+    }
+  }
   out.textContent=line||(el.value.trim()?'Not sure what that is yet':'');
   out.style.color=line?'var(--text2)':'var(--text3)';
 }
