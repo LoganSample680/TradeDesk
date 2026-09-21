@@ -73,7 +73,7 @@ async function _liveActReady(){
 //
 // Lives in JS on purpose (§3.2): the Swift layer takes the tint off the payload
 // rather than owning a palette, so this is a UAT roll and never an iOS build.
-const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C',onsite:'#F2A93B'};
+const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C',onsite:'#F2A93B',rail:'#F2A93B'};
 
 // Track what was last sent per channel so an unchanged ping is never spent.
 // ActivityKit budgets updates, and the geo engine pings far more often than the
@@ -130,10 +130,16 @@ const _liveWant={};
 // server's own derive keeps it honest (supabase/functions/_shared/live-card.mjs)
 // whatever screen anybody is on.
 //
-// 'drive' is deliberately NOT here. Its value is the running mileage tally,
-// which lives on the phone and nowhere else, so a server push could only ever
-// tell it something it already knows better.
-const _LIVE_PUSH_CHANNELS={clock:true,onsite:true};
+// 'rail' replaced both 'onsite' and 'drive' on 2026-09-21. 'drive' used to be
+// deliberately absent from this list, on the grounds that its value is the
+// running mileage tally which lives on the phone and nowhere else, so a server
+// push could only ever tell it something it already knew better. True of the
+// NUMBER and wrong about the card: the words ("on the road, from the shop")
+// are exactly what the server knows and the sleeping phone does not, and a
+// silent lock screen for the whole of a drive was the price. The rail card
+// takes its words from the server and its miles from the phone, and `value` is
+// kept out of the signature so the two never fight.
+const _LIVE_PUSH_CHANNELS={clock:true,rail:true};
 
 // Report a Live Activity outcome to telemetry (analytics_events via
 // ingest-telemetry). console.warn is NOT captured by js/observability.js, only
@@ -176,8 +182,20 @@ function _liveActReport(event, ctx){
 // drawing two clocks.
 function _liveActSig(payload){
   const p=payload||{};
+  // `value` counts on the RAIL CHANNEL ONLY (owner 2026-09-21). Its DRIVING
+  // face carries both a timer and the mileage tally, and with value reachable
+  // only when timer is false the number would have been deduped away after the
+  // first paint and never moved again. Every other card keeps the old rule,
+  // which this file's own test names: a per-second tick is not a change, and
+  // hashing it would spend an ActivityKit update on every geo ping.
+  //
+  // Deliberately NOT the same rule as the server's liveCardSig, which leaves
+  // value out on purpose. Two different questions: the server asks "did the
+  // WORDS change", because it has no number and must not re-blank the one the
+  // phone wrote; the phone asks "did anything I am showing change".
   return [p.kind,p.title,p.detail,
     p.timer?('T'+p.startedAt+(p.dualTimer?('/'+p.siteStartedAt):'')):p.value,
+    p.channel==='rail'?p.value:'',
     p.tint,p.dualTimer?'D':'',p.nextScopeId,p.isLastScope?'L':''].join('|');
 }
 
@@ -330,10 +348,21 @@ async function _liveActEnd(channel){
   // This launch has now asked ActivityKit to end this channel, so the polling
   // paths above can stop asking until something starts one again.
   _liveEnded[channel]=true;
-  _liveActDropToken(channel);
+  // ── END THE CARD FIRST, FORGET THE TOKEN SECOND (owner 2026-09-21) ───────
+  // This dropped the token before it asked ActivityKit for anything, so every
+  // path where the plugin is missing or end() throws deleted the one thing
+  // that could ever reach that card again and left the card on the screen.
+  // The server then answers "no live card" on every flush forever, the phone
+  // is asleep, and an ActivityKit timer ticks from its start date with no
+  // input at all, so a dead card looks perfectly alive. That is exactly what
+  // the owner was looking at on 2026-09-21: still standing at John Doe on the
+  // lock screen forty minutes into a drive, with live_activity_tokens empty.
+  //
+  // The token is only useless once the card is actually gone, so it is
+  // forgotten only once the card is actually gone.
   const P=_liveActPlugin();
-  if(!P||typeof P.end!=='function')return;
-  try{await P.end({channel});}catch(_e){}
+  if(P&&typeof P.end==='function'){try{await P.end({channel});}catch(_e){}}
+  _liveActDropToken(channel);
 }
 
 // ── Server-driven updates (owner 2026-08-17) ─────────────────────────────────
@@ -394,11 +423,14 @@ function _liveActRemoteEnd(targetUid,channel){
 // lock exists to prevent.
 async function _liveActEndAll(){
   Object.keys(_liveLast).forEach(k=>delete _liveLast[k]);
-  ['drive','clock','onsite'].forEach(k=>{_liveEnded[k]=true;});
-  _liveActDropToken(null);   // all channels: the session is over
+  // 'drive' and 'onsite' are the two channels the rail card replaced. They are
+  // still listed because a phone that has not reloaded yet may have one up.
+  ['drive','clock','onsite','rail'].forEach(k=>{_liveEnded[k]=true;});
+  _railState.open=null;_railState.pending=null;_railState.drive=null;
+  // Cards first, tokens second, for the reason spelled out in _liveActEnd.
   const P=_liveActPlugin();
-  if(!P||typeof P.endAll!=='function')return;
-  try{await P.endAll();}catch(_e){}
+  if(P&&typeof P.endAll==='function'){try{await P.endAll();}catch(_e){}}
+  _liveActDropToken(null);   // all channels: the session is over
 }
 
 // The moment they arrived on THIS site. Two sources, best one wins:
@@ -488,9 +520,15 @@ function _liveActClockIn(t){
   const{loggedByUid}=(typeof _tlLoggedByInfo==='function')?_tlLoggedByInfo():{loggedByUid:null};
   const contractorUserId=(typeof _effectiveUid==='function'&&_effectiveUid())||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';
   const nextInfo=_liveActNextScopeInfo(t.jobId,t.scopeId);
-  // One timer for one spot: the clock card carries the site clock, so the
-  // on-site card steps aside (it comes back on clock-out, see below).
-  _liveActEndIfLive('onsite');
+  // One timer for one spot: the clock card carries the site clock, so the rail
+  // card's ON SITE face steps aside (it comes back on clock-out, see below).
+  // Told explicitly rather than read off _liveLast, because _liveActSet fills
+  // that a tick later and the face would otherwise decide on the state as it
+  // was a moment ago. Same option the server's railCardFor takes, by the same
+  // name. The DRIVING face does NOT yield, which is why this is a repaint and
+  // no longer a flat end: "clocked in" and "on the road" are two different
+  // facts and neither says the other.
+  _railPaint({clockCardUp:true});
   _liveActSet('clock',{
     kind:'CLOCKED IN',
     title:who,
@@ -514,100 +552,148 @@ function _liveActClockIn(t){
 }
 async function _liveActClockOut(){
   await _liveActEnd('clock');
-  // The clock card yielded the island; if they are still on a site the
-  // deriver knows about, the on-site card takes the spot back.
-  try{if(typeof window!=='undefined'&&window._geoOpenDwell)_liveActOnSite(window._geoOpenDwell);}catch(_e){}
+  // The clock card yielded the island; if they are still on a site the rail
+  // knows about, its ON SITE face takes the spot back. A repaint of the state
+  // the rail already holds, never a re-read of window: _liveActEnd above has
+  // already cleared _liveLast.clock, so the face un-yields on its own.
+  try{_railPaint();}catch(_e){}
 }
 
-// ── The drive card ───────────────────────────────────────────────────────────
-// Driven by the same state the dashboard's DRIVING banner reads, so the lock
-// screen and the app can never disagree. Called from the geo engine's ping
-// handler; it is safe to call on every ping because _liveActSet drops
-// unchanged ones.
+// ── ONE CARD, THE SHAPE OF THE DAY RAIL (owner 2026-09-21) ──────────────────
+//
+// "I want a new one to throw down though, it mirrors the day rail."
+//
+// There used to be two cards here and they could not both be right. The drive
+// card was phone-driven because the mileage tally only exists on the phone;
+// the on-site card was server-driven so it could move with the app shut. So
+// the lock screen went silent for the whole of every drive the app slept
+// through, which is most of every drive, and the island only shows two cards
+// anyway with the clock card already holding one.
+//
+// One card now. Its face is whatever the day rail's live row says: DRIVING,
+// or ON SITE, or nothing. The words come from the deriver, the same two facts
+// the Time Log's live row reads, so the lock screen and the app cannot name
+// different places. The server pushes those words on every motion flip
+// (supabase/functions/_shared/live-card.mjs railCardFor, the twin of the face
+// builder below, held to the same answers by tests/e2e-live-card.spec.js) and
+// the phone overlays the running miles whenever it is awake to compute them.
+//
+// Not a native change (3.2): the widget renders state.kind as a chip and does
+// not branch on channel, so a new channel and new words are pure data. UAT
+// roll, never a build.
+const _railState={open:null,pending:null,drive:null};
+
+// The face, from the two halves. The twin of railCardFor; keep them in step.
+function _liveActRailFace(opts){
+  const o=opts||{};
+  const d=_railState.open||null;
+  const p=_railState.pending||_railState.drive||null;
+  const mi=(_railState.drive&&_railState.drive.value)?String(_railState.drive.value):'';
+  if(d&&Number(d.sinceTs)>0){
+    // HOME IS NOT A CARD (owner 2026-09-03: "I need it to go away or be very
+    // small, right now it's wasted space running when I'm home and done
+    // working"). The deriver decides this, not this file: a home office and a
+    // shop at one address are two fences and the shop outranks the home
+    // office, so the dwell at his own house arrives as kind 'shop' with
+    // atHome set. A clock-in at home still shows, through the clock channel,
+    // because that is the person saying they ARE working.
+    if(d.atHome)return null;
+    // A person CLOCKED IN already has the green clock card carrying the site
+    // clock, so the ON SITE face yields rather than stacking a second timer
+    // for the same spot. The DRIVING face below does NOT yield: "clocked in"
+    // and "on the road" are two different facts and neither says the other.
+    if(o.clockCardUp||_liveLast.clock!=null)return null;
+    const kind=String(d.kind||'');
+    const where=String(d.name||'')||(kind==='shop'?'The shop':'On site');
+    const addr=(d.fence&&d.fence.addr)?String(d.fence.addr):'';
+    let arrived='';
+    try{arrived=new Date(Number(d.sinceTs)).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){arrived='';}
+    const detail=(addr&&addr!==where)?addr:(arrived?('Arrived '+arrived):'');
+    return {kind:kind==='shop'?'AT THE SHOP':'ON SITE',title:where,detail,value:mi,
+      timer:true,startedAt:Math.floor(Number(d.sinceTs)/1000),tint:_LIVE_TINT.onsite};
+  }
+  if(p&&Number(p.startTs)>0){
+    // The engine tracks an ORIGIN, not a destination, so promising a
+    // destination here would be inventing one and the lock screen and the app
+    // would disagree the moment the guess was wrong. Same words the
+    // dashboard's DRIVING banner uses.
+    const org=(p.origin&&p.origin.name)?String(p.origin.name):'';
+    return {kind:'DRIVING',title:'On the road',detail:org?('From '+org):'Mileage is logging',
+      value:mi,timer:true,startedAt:Math.floor(Number(p.startTs)/1000),tint:_LIVE_TINT.drive};
+  }
+  return null;
+}
+
+// The two channels the rail card replaced, ended once per launch from the
+// foreground pass below, which is already where a card from a previous session
+// is reconciled. A phone that has not reloaded since the change can be
+// carrying either of them, and an orphaned card is exactly the bug this whole
+// change exists to stop.
+//
+// Not inside _railPaint: the paint runs on every ping, and a retirement that
+// rides along with it puts an end call in the middle of every other card's
+// call sequence for no reason.
+let _railLegacyEnded=false;
+function _railEndLegacy(){
+  if(_railLegacyEnded)return;
+  _railLegacyEnded=true;
+  ['onsite','drive'].forEach(ch=>{try{_liveActEndIfLive(ch);}catch(_e){}});
+}
+
+function _railPaint(opts){
+  const face=_liveActRailFace(opts);
+  if(!face){_liveActEndIfLive('rail');return false;}
+  _liveActSet('rail',face);
+  return true;
+}
+
+// The deriver's own two halves, straight from _geoOpenDwellPublish. Runs on
+// EVERY publish, not just a changed dwell: the request is one shot at the
+// arrival instant otherwise, so a bridge that was not ready yet (or a start
+// that failed) left the island empty for the whole dwell with nothing to
+// retry it. _liveActSet dedups on a signature, so re-asserting costs nothing.
+function _liveActRail(dwell,pending){
+  _railState.open=dwell||null;
+  _railState.pending=(pending&&Number(pending.startTs)>0)
+    ?{startTs:Number(pending.startTs),origin:pending.origin?{name:String(pending.origin.name||'')}:null}
+    :null;
+  return _railPaint();
+}
+
+// ── The miles, which only this phone can compute ─────────────────────────────
+// Road miles come from a router on the handset (MapKit, then Valhalla and OSRM
+// raced), so the server can never fill this in. Called from the geo engine's
+// ping handler; safe on every ping because _liveActSet drops unchanged ones.
+//
+// It also carries the DRIVE WINDOW, which is the drive before the deriver has
+// a pending chain to describe it (owner 2026-09-01: the card goes up the
+// moment the flip and the ping pair, not two minutes of banner-fade later).
+// _liveActRailFace prefers the deriver's pending and falls back to this.
 function _liveActDrive(){
   let driving=false;
   try{driving=(typeof _geoDriving==='function')&&_geoDriving();}catch(_e){driving=false;}
-  // The drive window IS the drive now (owner 2026-09-01): the card goes up
-  // the moment the flip and the ping pair, before the tally has moved, and
-  // comes down when the window closes, not two minutes of banner-fade later.
   try{if(!driving&&typeof _geoDriveWindowOn==='function'&&_geoDriveWindowOn())driving=true;}catch(_e){}
-  if(!driving){
-    _liveActEndIfLive('drive');
-    return;
-  }
+  if(!driving){_railState.drive=null;return _railPaint();}
   let miles=0,steps=0;
   try{miles=Number(_geoDriveMiles)||0;steps=Number(_geoDriveSteps)||0;}catch(_e){}
-  // The SAME words the dashboard's DRIVING card uses: "On the road", and where
-  // the leg started. The engine tracks an origin, not a destination, so
-  // promising a destination here would be inventing one, and the lock screen
-  // and the app would disagree the moment the guess was wrong.
   let org='';
   try{org=(typeof _geoLegOrigin!=='undefined'&&_geoLegOrigin&&_geoLegOrigin.name)?String(_geoLegOrigin.name):'';}catch(_e){org='';}
+  // WHEN THIS DRIVE STARTED, and it must not move. The deriver's pending chain
+  // is the real answer and it arrives a few seconds later; until then this is
+  // the instant the drive window first opened, REMEMBERED, because reading the
+  // clock afresh on every ping would reset the card's timer to zero every few
+  // seconds.
+  const prev=_railState.drive;
+  const pend=_railState.pending;
+  const since=(pend&&Number(pend.startTs)>0)?Number(pend.startTs)
+    :(prev&&Number(prev.startTs)>0)?Number(prev.startTs):Date.now();
   // Under a handful of accumulation hops the tally is a guess, not a road
   // trace (geo-track.js's own honesty rule), so the number is withheld rather
   // than shown wrong on a lock screen the contractor cannot correct. Rounded
   // to a tenth, which is also the granularity that keeps updates rare.
-  const value=steps>=3?(miles.toFixed(1)+' mi'):'logging';
-  _liveActSet('drive',{
-    kind:'DRIVING',
-    title:'On the road',
-    detail:org?('From '+org):'Mileage is logging',
-    value,
-    timer:false,
-    tint:_LIVE_TINT.drive
-  });
-}
-
-// ── The on-site card (owner 2026-09-02) ─────────────────────────────────────
-// "A popup on the dynamic island and lock screen when we arrive with a
-// running timer of how long we're there ... it says this is where I am."
-// Driven by the deriver's open dwell (_geoOpenDwellPublish, js/geo-track.js):
-// the same fact the dashboard card and the Time Log's live row read, so the
-// lock screen can never name a different place than the app. Started once
-// at the arrival instant and left to tick; ended when the dwell closes.
-// A person CLOCKED IN already has the green clock card with the site clock
-// on it, and the island shows two cards at most, so the on-site card yields
-// to the clock card rather than stacking a second timer for the same spot.
-function _liveActOnSite(dwell){
-  const d=dwell||null;
-  // HOME IS NOT A CARD (owner 2026-09-03: "I need it to go away or be very
-  // small, right now it's wasted space running when I'm home and done
-  // working"). The lock screen and the island are for work in progress. Being
-  // at your own house is the one dwell nobody needs told about, and it is also
-  // the longest one of the day, so it is exactly the card that would sit there
-  // all evening earning nothing.
-  //
-  // The deriver decides this, not this file: a home office and a shop at the
-  // same address are two fences and the shop outranks the home office, so the
-  // dwell at the owner's own house arrives here as kind 'shop'. atHome is the
-  // deriver's answer to "is this the house", from the same test rule 11 uses.
-  //
-  // Deliberately not a size tweak: a smaller card at home is still a card
-  // about nothing. A clock-in at home still shows, because that is the person
-  // saying they ARE working, and it comes through the clock channel.
-  if(d&&d.atHome){
-    _liveActEndIfLive('onsite');
-    return false;
-  }
-  if(!d||!(Number(d.sinceTs)>0)||_liveLast.clock!=null){
-    _liveActEndIfLive('onsite');
-    return false;
-  }
-  const kind=String(d.kind||'');
-  const where=String(d.name||'')||(kind==='shop'?'The shop':'On site');
-  const addr=(d.fence&&d.fence.addr)?String(d.fence.addr):'';
-  let arrived='';
-  try{arrived=new Date(Number(d.sinceTs)).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){arrived='';}
-  const detail=(addr&&addr!==where)?addr:(arrived?('Arrived '+arrived):'');
-  _liveActSet('onsite',{
-    kind:kind==='shop'?'AT THE SHOP':'ON SITE',
-    title:where,
-    detail,
-    timer:true,
-    startedAt:Math.floor(Number(d.sinceTs)/1000),
-    tint:_LIVE_TINT.onsite
-  });
-  return true;
+  _railState.drive={startTs:since,origin:org?{name:org}:null,
+    value:steps>=3?(miles.toFixed(1)+' mi'):'logging'};
+  return _railPaint();
 }
 
 // ── The foreground is the only place a card can be BORN ──────────────────────
@@ -644,9 +730,24 @@ async function _liveActForeground(){
         delete _liveEnded[ch];
       }catch(_e){}
     }
+    // The two channels the rail card replaced, retired once per launch.
+    _railEndLegacy();
     // Re-assert from the live state too: a dwell that was published while the
     // app was closed never got as far as a refusal to remember.
-    try{if(typeof window!=='undefined'&&window._geoOpenDwell&&typeof _liveActOnSite==='function')_liveActOnSite(window._geoOpenDwell);}catch(_e){}
+    //
+    // SEEDED FROM window ONLY WHEN THE RAIL HAS NOTHING. _railState is module
+    // memory and a relaunch wipes it, while _geoPersistDwell restores
+    // window._geoOpenDwell, so that is where a fresh process finds the dwell.
+    // But a re-read cannot be unconditional: it would overwrite state the rail
+    // already holds with a window that has not caught up, and on a phone
+    // carrying a card that was just replayed that lands as an end.
+    try{
+      if(typeof window!=='undefined'&&!_railState.open&&window._geoOpenDwell){
+        _railState.open=window._geoOpenDwell;
+        if(!_railState.pending&&window._geoOpenPending)_railState.pending=window._geoOpenPending;
+      }
+      _railPaint();
+    }catch(_e){}
     try{if(typeof _liveActDrive==='function')_liveActDrive();}catch(_e){}
   }catch(_e){}
 }

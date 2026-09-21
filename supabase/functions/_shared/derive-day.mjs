@@ -523,8 +523,22 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
         fence: res.open.fence ? { addr: String(res.open.fence.addr || "") } : null }
     : null;
 
+  // ── AND THE DRIVE RIDES OUT BESIDE IT (owner 2026-09-21) ───────────────
+  // One card now, and it mirrors the day rail, so the lock screen needs both
+  // halves of the rail's live row: the dwell he is standing in AND the chain
+  // he is still driving. Only the phone could ever see the drive before this,
+  // and the phone is asleep for most of every drive, which is exactly when
+  // the card matters. Narrowed to what railCardFor reads, nothing more.
+  //
+  // NOT called `pending`: the success return already carries `pending` as a
+  // boolean, and the ops portal reads it to say which guard stopped a sweep.
+  const drivingCard = res.pending
+    ? { startTs: Number(res.pending.startTs) || 0,
+        origin: res.pending.origin ? { name: String(res.pending.origin.name || "") } : null }
+    : null;
+
   const resolvedAny = !!(res.legs.length || res.dwells.length || res.pending || res.open);
-  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard, fixesSeen, fixesDropped };
+  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard, driving: drivingCard, fixesSeen, fixesDropped };
 
   const rows = geoDeriveRows(res, { contractorId: cid, employeeId: uid, shared: false, clocks });
   const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length;
@@ -547,7 +561,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   // call that may NOT retire still returns here, because for that one a write
   // really is a no-op with a round trip attached. What a person wrote,
   // corrected or answered is protected inside the RPC, not by this line.
-  if (nothing && !sweep) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard, fixesSeen, fixesDropped, sweep, sweepAsked: wantSweep, tapeCovers };
+  if (nothing && !sweep) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard, driving: drivingCard, fixesSeen, fixesDropped, sweep, sweepAsked: wantSweep, tapeCovers };
 
   // Before the write, not after: geo_replace_day is the only writer and a
   // second pass to correct a number it just stored would be the reconciler
@@ -561,10 +575,10 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     p_time: withOpen(rows, "job_time_entries"), p_shop: withOpen(rows, "shop_time_entries"), p_miles: rows.td_mileage,
     p_sweep: sweep, p_sweep_until: sweepUntil,
   });
-  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard, fixesSeen, fixesDropped };
+  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard, driving: drivingCard, fixesSeen, fixesDropped };
 
   return {
-    day, wrote: true, open: openCard,
+    day, wrote: true, open: openCard, driving: drivingCard,
     dwells: res.dwells.length, legs: res.legs.length,
     time: rows.job_time_entries.length, shop: rows.shop_time_entries.length,
     miles: rows.td_mileage.length, held: rows.held.length, routed,

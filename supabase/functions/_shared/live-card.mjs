@@ -31,59 +31,124 @@
 // The tints js/live-activity.js uses, by the same names. Copied rather than
 // imported because that file is a browser script, and kept in one object so a
 // change to either is a one-line diff in a test.
-export const LIVE_TINT = Object.freeze({ onsite: "#F2A93B" });
+// The tints js/live-activity.js uses, by the same names. Copied rather than
+// imported because that file is a browser script, and kept in one object so a
+// change to either is a one-line diff in a test.
+export const LIVE_TINT = Object.freeze({ onsite: "#F2A93B", drive: "#0085E7" });
 
-// The card an open dwell asks for, or an 'end' when it asks for none.
-// `open` is the deriver's own open-dwell shape: {name, kind, sinceTs, atHome,
-// fence:{addr}}. Returns {channel, event, state} and never null, so a caller
-// that pushes on change never has to decide what "no card" means.
-export function liveCardFor(open, opts) {
+// ── ONE CARD, THE SHAPE OF THE DAY RAIL (owner 2026-09-21) ─────────────────
+//
+// "I want a new one to throw down though, it mirrors the day rail."
+//
+// There used to be two cards and they could not both be right. 'onsite' was
+// server-driven and knew where he was standing; 'drive' was phone-driven and
+// knew the mileage tally, which only the phone has. So the lock screen said
+// nothing at all for the whole drive whenever the app was asleep, which is
+// most of every drive. Two cards, two owners, two ways to be stale, and the
+// Dynamic Island only shows two at once with the clock card already holding
+// one of them.
+//
+// One card now, and it says whatever the day rail's live row says: driving,
+// or on site, or nothing. The words come from the server on every motion
+// flip, so they are right with the app shut; the phone overlays the running
+// miles when it happens to be awake. `value` is deliberately NOT part of
+// liveCardSig below, so the phone's mileage overlay and the server's word
+// push never fight over the same card.
+//
+// `rail` is the deriver's own output, narrowed: {open, pending}. open is the
+// dwell he is standing in; pending is the chain he is still driving. They are
+// the same two facts the Time Log's live row reads, which is what makes this
+// a mirror rather than a second opinion.
+export function railCardFor(rail, opts) {
   const o = (opts || {});
-  const end = { channel: "onsite", event: "end", state: {} };
-  const d = open || null;
-  if (!d) return end;
-  // HOME IS NOT A CARD (owner 2026-09-03: "I need it to go away or be very
-  // small, right now it's wasted space running when I'm home and done
-  // working"). The deriver answers this, not this file: a home office and a
-  // shop at one address are two fences and the shop outranks the home office,
-  // so the dwell at his own house arrives here as kind 'shop' with atHome set.
-  if (d.atHome) return end;
-  const since = Number(d.sinceTs);
-  if (!(since > 0)) return end;
-  // A person CLOCKED IN already has the green clock card carrying the site
-  // clock, and the island shows two cards at most, so the on-site card yields
-  // rather than stacking a second timer for the same spot. The phone knows
-  // this from _liveLast.clock; the server is told by the caller.
-  if (o.clockCardUp) return end;
+  const end = { channel: "rail", event: "end", state: {} };
+  const r = rail || {};
+  const d = r.open || null;
+  const p = r.pending || null;
 
-  const kind = String(d.kind || "");
-  const where = String(d.name || "") || (kind === "shop" ? "The shop" : "On site");
-  const addr = (d.fence && d.fence.addr) ? String(d.fence.addr) : "";
-  let arrived = "";
-  try {
-    arrived = new Intl.DateTimeFormat("en-US", {
-      timeZone: o.tz || "America/Chicago", hour: "numeric", minute: "2-digit",
-    }).format(new Date(since));
-  } catch { arrived = ""; }
-  const detail = (addr && addr !== where) ? addr : (arrived ? "Arrived " + arrived : "");
-  return {
-    channel: "onsite",
-    event: "update",
-    state: {
-      kind: kind === "shop" ? "AT THE SHOP" : "ON SITE",
-      title: where,
-      detail,
-      timer: true,
-      startedAt: Math.floor(since / 1000),
-      tint: LIVE_TINT.onsite,
-    },
-  };
+  // ── ON SITE, and it outranks the drive ────────────────────────────────
+  // A dwell is a place he is standing; a pending chain is a drive that has
+  // not closed yet. When the deriver hands back both, the dwell is the newer
+  // fact and the one worth a card.
+  if (d && Number(d.sinceTs) > 0) {
+    // HOME IS NOT A CARD (owner 2026-09-03: "I need it to go away or be very
+    // small, right now it's wasted space running when I'm home and done
+    // working"). The deriver answers this, not this file: a home office and a
+    // shop at one address are two fences and the shop outranks the home
+    // office, so the dwell at his own house arrives here as kind 'shop' with
+    // atHome set.
+    if (d.atHome) return end;
+    // A person CLOCKED IN already has the green clock card carrying the site
+    // clock, and the island shows two cards at most, so the ON SITE face
+    // yields rather than stacking a second timer for the same spot. The
+    // DRIVING face below does NOT yield: "clocked in" and "on the road" are
+    // two different facts and neither says the other.
+    if (o.clockCardUp) return end;
+    const since = Number(d.sinceTs);
+    const kind = String(d.kind || "");
+    const where = String(d.name || "") || (kind === "shop" ? "The shop" : "On site");
+    const addr = (d.fence && d.fence.addr) ? String(d.fence.addr) : "";
+    let arrived = "";
+    try {
+      arrived = new Intl.DateTimeFormat("en-US", {
+        timeZone: o.tz || "America/Chicago", hour: "numeric", minute: "2-digit",
+      }).format(new Date(since));
+    } catch { arrived = ""; }
+    const detail = (addr && addr !== where) ? addr : (arrived ? "Arrived " + arrived : "");
+    return {
+      channel: "rail",
+      event: "update",
+      state: {
+        kind: kind === "shop" ? "AT THE SHOP" : "ON SITE",
+        title: where,
+        detail,
+        // The miles the phone last put on this card, carried across so a word
+        // push at an arrival does not blank a number the phone cannot
+        // immediately replace. Empty from the server, which has none.
+        value: String(o.value || ""),
+        timer: true,
+        startedAt: Math.floor(since / 1000),
+        tint: LIVE_TINT.onsite,
+      },
+    };
+  }
+
+  // ── DRIVING ────────────────────────────────────────────────────────────
+  // The engine tracks an ORIGIN, not a destination, so promising a
+  // destination here would be inventing one and the lock screen and the app
+  // would disagree the moment the guess was wrong. Same words the dashboard's
+  // DRIVING banner uses.
+  if (p && Number(p.startTs) > 0) {
+    const org = (p.origin && p.origin.name) ? String(p.origin.name) : "";
+    return {
+      channel: "rail",
+      event: "update",
+      state: {
+        kind: "DRIVING",
+        title: "On the road",
+        detail: org ? ("From " + org) : "Mileage is logging",
+        // Only the phone can fill this: road miles come from a router on the
+        // handset. The server ships the words and leaves the number alone.
+        value: String(o.value || ""),
+        timer: true,
+        startedAt: Math.floor(Number(p.startTs) / 1000),
+        tint: LIVE_TINT.drive,
+      },
+    };
+  }
+
+  return end;
 }
 
-// What makes this card DIFFERENT from the last one pushed. The arrival instant
+// What makes this card DIFFERENT from the last one pushed. The start instant
 // and the words, nothing else: the timer ticks on the phone, so re-pushing an
 // unchanged card every thirty seconds would spend APNs budget and battery to
 // say what the card is already saying.
+//
+// `value` is left out ON PURPOSE (owner 2026-09-21). It is the mileage tally,
+// which only the phone can compute, so it changes constantly and the server
+// can never match it. Including it would make every server push look like a
+// change and re-blank the number the phone just wrote.
 export function liveCardSig(card) {
   const c = card || {};
   const s = c.state || {};
