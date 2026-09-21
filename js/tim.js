@@ -543,12 +543,26 @@ function _timSheet(id,inner){
   return sheet;
 }
 
+// Is there a job on screen at all. Three separate pieces of copy assumed there
+// was, and the same test was already written inline in two other places, so it
+// is one function now (7.3).
+function _timOnEstimate(){
+  return !!document.getElementById('pg-est-generic')?.classList.contains('active');
+}
+
+// What he says he is doing, and it has to be TRUE where he is standing. The
+// default was "Reading this job and your price book", which is right on the
+// estimate builder and nonsense everywhere else: opened from the dashboard he
+// is reading no job, and saying so is the app talking about a screen the man is
+// not looking at. Off the builder he is reading the books, which is exactly
+// what the twelve question families read.
 function _timHeadHtml(sub){
+  const dflt=_timOnEstimate()?'Reading this job and your price book':'Reading your books';
   return '<div style="display:flex;align-items:center;gap:9px;padding:0 16px 13px;border-bottom:1px solid var(--border)">'+
     timMark(26)+
     '<span style="flex:1;min-width:0">'+
       '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">Tim</span>'+
-      '<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:1px">'+escHtml(sub||'Reading this job and your price book')+'</span>'+
+      '<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:1px">'+escHtml(sub||dflt)+'</span>'+
     '</span>'+
     '<button type="button" onclick="_timClose()" aria-label="Close" style="width:28px;height:28px;border:0;border-radius:var(--r-pill);background:var(--bg2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">'+
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>'+
@@ -572,9 +586,7 @@ function _timAskHtml(){
     : '';
   return '<div style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
     '<input id="_tim-say" type="text" autocomplete="off" placeholder="'+
-      (document.getElementById('pg-est-generic')?.classList.contains('active')
-        ? 'Tell Tim what changed'
-        : 'Build a T and M for Dana')+'" '+
+      (_timOnEstimate() ? 'Tell Tim what changed' : 'Build a T and M for Dana')+'" '+
       'style="flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 13px;border:0;border-radius:var(--r-md);background:var(--bg2);box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text)">'+
     mic+
   '</div>'+
@@ -604,9 +616,26 @@ function openTim(){
 
   // Nothing found is not an empty state to apologise for. He opened the dock,
   // so he wants to say something: give him the field and get out of the way.
-  const quiet=found.length?'':
+  //
+  // But it has to be true where he is standing. This said "Nothing on this one
+  // worth stopping you for. Say what changed and I will put it where it goes."
+  // on EVERY screen. Opened from the dashboard, "this one" is nothing, "what
+  // changed" is nothing, and the man is reading a sentence about a job that is
+  // not on his screen. That was the first thing he saw, and it was the first
+  // thing that made no sense.
+  //
+  // Three states now, and the third is the important one: once there IS a
+  // thread, there is no opening line at all. The conversation is the content,
+  // and nobody wants a paragraph of introduction sitting on top of their own
+  // messages every time they open them.
+  const hasThread=(typeof timLogEntries==='function')&&timLogEntries().length>0;
+  const quiet=found.length||hasThread?'':
     '<div style="padding:15px 16px 3px;font-size:13px;line-height:1.5;color:var(--text2)">'+
-      'Nothing on this one worth stopping you for. Say what changed and I will put it where it goes.'+
+      (_timOnEstimate()
+        ? 'Nothing on this one worth stopping you for. Say what changed and I will put it where it goes.'
+        // Not a greeting and not a menu: three things he can actually do from
+        // here, named in the words a man would use to ask for them.
+        : 'Ask me what you are owed, what you charged for something, or where your work is coming from.')+
     '</div>';
 
   // The log row is last and is usually nothing at all: an empty log adds no
@@ -624,7 +653,10 @@ function openTim(){
       'border-bottom:1px solid var(--border);padding:4px 0 6px">'+_timThreadHtml()+'</div>'
     : '';
 
-  _timSheet('_tim-sheet',_timHeadHtml(found.length?null:'Nothing to flag on this job')+cards+quiet+thread+_timAskHtml()+logRow);
+  // "Nothing to flag on this job" is only true when a job is up. Off the
+  // builder the header falls back to what he is actually reading.
+  const sub=found.length?null:(_timOnEstimate()?'Nothing to flag on this job':null);
+  _timSheet('_tim-sheet',_timHeadHtml(sub)+cards+quiet+thread+_timAskHtml()+logRow);
 
   const el=document.getElementById('_tim-say');
   el?.addEventListener('input',_timPreview);
@@ -1333,7 +1365,7 @@ function _timGoRun(){
 
   // On an estimate he is describing work, not asking for a screen, so the read
   // back comes first and the navigator is the fallback.
-  const onEstimate=!!document.getElementById('pg-est-generic')?.classList.contains('active');
+  const onEstimate=_timOnEstimate();
   if(onEstimate){_timShowRead(said);return {text:said,kind:'read'};}
   const p=timRun(said);
   if(p&&p.kind!=='none')_timClose();
