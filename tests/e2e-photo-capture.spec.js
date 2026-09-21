@@ -396,6 +396,58 @@ test.describe('Photo capture: the sheet itself', () => {
     expect(hit).toBe(false);
   });
 
+  // The pill was cut in half by the Dynamic Island on the owner's phone the
+  // first time this ran on a real device. The sheet is full-bleed over the
+  // camera, so nothing else reserves that space for it.
+  test('the subject pill clears the status bar and the Dynamic Island', async () => {
+    await page.evaluate(() => tdCaptureForBid(901, 'before'));
+    const top = await page.evaluate(() =>
+      getComputedStyle(document.querySelector('#pc-sheet .pc-attach')).top);
+    // env() is 0 in a desktop browser, so the assertion is on the rule
+    // surviving, not on a device number: 14px plus an inset that is only
+    // non-zero where an island exists.
+    const css = await page.evaluate(() =>
+      [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch (e) { return []; } })
+        .filter(r => r.selectorText === '.pc-attach').map(r => r.style.top).join(''));
+    expect(css).toContain('safe-area-inset-top');
+    expect(parseFloat(top)).toBeGreaterThanOrEqual(14);
+  });
+
+  // Six shots with nobody attached went into the tray and the dashboard was
+  // never repainted, so from the outside they vanished (owner, first UAT run).
+  test('shooting with no customer says where the photos went, and paints the tray', async () => {
+    const r = await page.evaluate(async () => {
+      const said = [];
+      const realToast = window.showToast, realDash = window.renderDash;
+      let painted = 0;
+      window.showToast = (m) => { said.push(m); };
+      window.renderDash = () => { painted++; };
+      tdCaptureUnfiled();
+      await tdSavePhoto({ type: 'before', file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
+      _pcShots = 1;
+      tdCloseCapture();
+      window.showToast = realToast; window.renderDash = realDash;
+      return { said: said.join(' | '), painted };
+    });
+    expect(r.painted).toBeGreaterThanOrEqual(1);
+    expect(r.said).toContain('dashboard');
+  });
+
+  test('shooting for a customer does not tell you to go file it', async () => {
+    const r = await page.evaluate(async () => {
+      const said = [];
+      const realToast = window.showToast, realDash = window.renderDash;
+      window.showToast = (m) => { said.push(m); };
+      window.renderDash = () => {};
+      tdCaptureForBid(901, 'before');
+      _pcShots = 1;
+      tdCloseCapture();
+      window.showToast = realToast; window.renderDash = realDash;
+      return said.join(' | ');
+    });
+    expect(r).not.toContain('dashboard');
+  });
+
   test('closing removes the sheet and stops the camera', async () => {
     await page.evaluate(() => tdCaptureForBid(901, 'before'));
     await page.evaluate(() => tdCloseCapture());

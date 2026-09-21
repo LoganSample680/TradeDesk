@@ -343,8 +343,19 @@ function tdCloseCapture(){
   const el=document.getElementById('pc-sheet');
   if(el)el.remove();
   const done=_pcCtx&&_pcCtx.onDone,n=_pcShots;
+  const unfiled=!!(_pcCtx&&_pcCtx.clientId==null&&_pcCtx.jobId==null&&_pcCtx.bidId==null);
   _pcCtx=null;_pcShots=0;
   if(done)try{done(n);}catch(_e){}
+  // Closing the sheet has to SHOW where the photos went. Six shots with no
+  // customer on them went straight into the unfiled tray and the dashboard
+  // was never repainted, so from the outside they simply vanished (owner,
+  // first UAT run, 2026-09-21). The tray is the answer; say so, and paint it.
+  if(n>0){
+    if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+    if(unfiled&&typeof showToast==='function'){
+      showToast(n+(n===1?' photo saved':' photos saved')+' · file them on the dashboard','\uD83D\uDCF8');
+    }
+  }
 }
 function _pcSubjectLabel(){
   if(!_pcCtx)return '';

@@ -1592,7 +1592,7 @@ body.dark .cal-cell.other{background:var(--cream)}
    pale After frame readable under it; screen washed both out to white. */
 .pc-ghost{position:absolute;inset:0;display:none;opacity:.42;background-size:cover;background-position:center;pointer-events:none}
 .pc-ghostframe{position:absolute;inset:12px;display:none;border:2px dashed rgba(242,168,28,.95);border-radius:var(--r-md);pointer-events:none}
-.pc-attach{position:absolute;top:14px;left:12px;right:12px;background:rgba(10,13,17,.66);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-radius:var(--r-pill);padding:9px 14px;display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700}
+.pc-attach{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:12px;right:12px;background:rgba(10,13,17,.66);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-radius:var(--r-pill);padding:9px 14px;display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700}
 .pc-attach-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.2);flex-shrink:0}
 .pc-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);border-radius:var(--r-pill);padding:6px 14px;font-size:12px;font-weight:800;background:rgba(10,13,17,.74);white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}
