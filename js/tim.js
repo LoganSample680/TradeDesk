@@ -578,12 +578,25 @@ function openTim(){
   // there is something to read back, or when his knowledge did not load, which
   // is the one state worth interrupting him about (js/tim-log.js).
   const logRow=(typeof _timLogRowHtml==='function')?_timLogRowHtml():'';
-  _timSheet('_tim-sheet',_timHeadHtml(found.length?null:'Nothing to flag on this job')+cards+quiet+_timAskHtml()+logRow);
+
+  // The last few things said to him, above the box he says them in. Capped in
+  // height so a long history cannot push the input off a phone screen: the
+  // thing he came here to do is type, and the history is context, not the
+  // point.
+  const thread=(typeof _timThreadHtml==='function')
+    ? '<div id="_tim-thread" style="max-height:206px;overflow-y:auto;-webkit-overflow-scrolling:touch;'+
+      'border-bottom:1px solid var(--border);padding:4px 0 6px">'+_timThreadHtml()+'</div>'
+    : '';
+
+  _timSheet('_tim-sheet',_timHeadHtml(found.length?null:'Nothing to flag on this job')+cards+quiet+thread+_timAskHtml()+logRow);
 
   const el=document.getElementById('_tim-say');
   el?.addEventListener('input',_timPreview);
   el?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();_timGo();}});
   _timPreview();
+  // Open on the newest, the way every thread on the phone does.
+  const box=document.getElementById('_tim-thread');
+  if(box)box.scrollTop=box.scrollHeight;
   // No autofocus. A keyboard covering the page he came here to look at is the
   // opposite of the point, and the mic is the way in on a job site anyway.
 }
@@ -1170,10 +1183,36 @@ function _timGo(){
         kind:(p&&p.kind)||'none',
         style:p&&p.style,
         read:(p&&p.kind==='read')?_timJob:null,
+        // What he actually answered, and where he actually went. Without these
+        // the thread can only say that something happened, which is what the
+        // owner was already looking at when he said Tim did nothing.
+        title:p&&p.title,
+        name:p&&p.name,
       });
     }
   }catch(_e){}
+  // The thread is the receipt. Every sentence lands in it, INCLUDING the ones
+  // he could not place: the old answer to those was a 2.6 second toast, which
+  // on a job site is no answer at all, and three of them in a row look exactly
+  // like an assistant that ignored you.
+  _timThreadRefresh();
   return p;
+}
+
+// Redraw the thread in place and clear the box, so the sheet behaves like the
+// conversation it is. Does nothing when the thread is not on screen, which is
+// the case for the answer sheet and the two build steps: those replace the
+// sheet, and the exchange is already in the log waiting for the next open.
+function _timThreadRefresh(){
+  try{
+    const box=document.getElementById('_tim-thread');
+    if(!box||typeof _timThreadHtml!=='function')return;
+    box.innerHTML=_timThreadHtml();
+    box.scrollTop=box.scrollHeight;
+    const el=document.getElementById('_tim-say');
+    if(el)el.value='';
+    if(typeof _timPreview==='function')_timPreview();
+  }catch(_e){}
 }
 
 function _timGoRun(){
@@ -1206,7 +1245,9 @@ function _timGoRun(){
   // figure somewhere on it (js/tim-ask.js).
   if(typeof timAsk==='function'){
     const ans=timAsk(said);
-    if(ans){_timShowAsk(ans);return {text:said,kind:'ask',ask:ans.id};}
+    // The title rides along so the thread can show what he ACTUALLY said
+    // ("$4,400"), not merely that he said something.
+    if(ans){_timShowAsk(ans);return {text:said,kind:'ask',ask:ans.id,title:ans.title};}
   }
 
   // On an estimate he is describing work, not asking for a screen, so the read

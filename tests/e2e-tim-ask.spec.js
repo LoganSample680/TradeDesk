@@ -573,7 +573,13 @@ test.describe('tim answering off your own books', () => {
         return { kind: e.kind, got: e.got };
       });
       expect(r.kind).toBe('ask');
-      expect(r.got).toContain('your own numbers');
+      // 10.4: this read `toContain('your own numbers')` while the log was only
+      // ever read by a diagnostics panel, where "Answered off your own numbers"
+      // was a fine description of what happened. The log is the conversation
+      // thread now, and in a thread that line is the app narrating itself. It
+      // records the FIGURE he gave, which is both the better assertion and the
+      // better thing to show a man reading back what he asked.
+      expect(r.got).toBe('$3,500');
     });
 
     test('saying a screen name still navigates, so nothing was stolen', async () => {

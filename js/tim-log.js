@@ -121,9 +121,59 @@ function _timLogGot(outcome,job){
     const n=(job.order||[]).length,m=(job.materials||[]).length;
     return n+(n===1?' step, ':' steps, ')+m+(m===1?' supply, ':' supplies, ')+(job.hours||0)+' hrs';
   }
-  if(o.kind==='ask')return 'Answered off your own numbers';
-  if(o.kind==='none')return 'Nothing. He could not place it.';
+  // The ANSWER, not the fact that there was one. "$4,400" is what he said;
+  // "Answered off your own numbers" is a status line about himself, and a
+  // thread full of those reads like a machine describing its own paperwork.
+  if(o.kind==='ask')return o.title?String(o.title):'Answered off your own numbers';
+  if(o.kind==='nav')return o.name?('Opened '+o.name):'Opened the screen';
+  if(o.kind==='newclient')return 'Started a new customer';
+  if(o.kind==='none')return 'I could not place that one.';
   return o.kind?('Went to '+o.kind):'Nothing';
+}
+
+// ── The thread ───────────────────────────────────────────────────────────────
+//
+// Owner, 2026-09-21, after firing off three questions and watching the sheet go
+// back to its opening line: "this is what tim did, nothing... it should be a
+// text block that goes center aligned and I can see the last messages with
+// him."
+//
+// He was right that it looked like nothing, and the reason is worse than a
+// missing feature. Two of the three possible outcomes left NO trace on the
+// sheet: a sentence Tim could not place got a 2.6 second toast, and a sentence
+// he could place closed the sheet and navigated away. Either way, opening him
+// again showed the same blank opening line, so three questions with three
+// different outcomes were indistinguishable from being ignored.
+//
+// Every one of those exchanges was already in this log. It was just filed in a
+// diagnostics sheet behind a tap, which is the wrong place for the one thing
+// that tells a man whether he was heard. It is the conversation now.
+//
+// Centred, as asked, and it suits the contents: these are short lines, a
+// question and a figure, not paragraphs. Oldest at the top so it reads downward
+// like a thread, newest last, and the box scrolls to the bottom on every draw.
+const _TIM_THREAD_SHOW=8;
+
+function _timThreadHtml(){
+  const rows=_timLog.slice(-_TIM_THREAD_SHOW);
+  if(!rows.length){
+    return '<div style="padding:5px 16px 3px;text-align:center;font-size:12px;color:var(--text3)">'+
+      'Nothing asked yet. Whatever you say lands here.'+
+    '</div>';
+  }
+  return rows.map(e=>{
+    // A sentence he could not place is called out in the red the rest of the
+    // app uses for a problem, not dressed up as a result. The whole point of
+    // showing it is that the owner can SEE the gap and say so.
+    const missed=e.kind==='none';
+    return '<div style="padding:9px 16px;text-align:center">'+
+      '<div style="font-size:13.5px;font-weight:600;color:var(--text);line-height:1.4">'+
+        escHtml(e.said)+'</div>'+
+      '<div style="margin-top:3px;font-size:12.5px;line-height:1.45;color:'+
+        (missed?'var(--red,#B22A20)':'var(--text2)')+'">'+
+        escHtml(e.got||'')+'</div>'+
+    '</div>';
+  }).join('');
 }
 
 // ── The one call site ────────────────────────────────────────────────────────
