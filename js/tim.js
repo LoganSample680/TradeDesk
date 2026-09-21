@@ -339,9 +339,41 @@ function timDockRender(opts){
     // showing that one finding is the app counting out loud: it adds a digit
     // and no information, and it trains a man to ignore the badge by the time
     // it says 3. The pill IS the one. The badge is "and there are others".
-    if(finds.length>1){badge.textContent=String(finds.length);badge.classList.add('on');}
-    else{badge.textContent='';badge.classList.remove('on');}
+    //
+    // And when there is nothing to count, the same corner teaches the control
+    // ONCE. A gold tab on the edge of the screen is a thing a man has never
+    // seen before, and a shimmer says "look" without ever saying "tap". The i
+    // says tap. It is gone for good the first time he opens Tim, because an
+    // introduction that repeats is not an introduction, it is clutter with a
+    // reason attached.
+    badge.classList.remove('hint');
+    if(finds.length>1){
+      badge.textContent=String(finds.length);
+      badge.classList.add('on');
+    }else if(!finds.length&&!_timMet()){
+      badge.textContent='i';
+      badge.classList.add('on','hint');
+    }else{
+      badge.textContent='';
+      badge.classList.remove('on');
+    }
   }
+}
+
+// ── Whether he has ever been opened on this phone ────────────────────────────
+// localStorage, not S: this is a per-device teaching state, not a preference.
+// Syncing it would mean a man who met Tim on his phone never gets the hint on
+// the tablet in the truck, which is the one place he has not met him.
+const _TIM_MET_KEY='td_tim_met';
+function _timMet(){
+  try{return localStorage.getItem(_TIM_MET_KEY)==='1';}catch(_e){return true;}
+}
+function _timMarkMet(){
+  try{
+    if(localStorage.getItem(_TIM_MET_KEY)==='1')return false;
+    localStorage.setItem(_TIM_MET_KEY,'1');
+    return true;
+  }catch(_e){return false;}
 }
 
 // ── Rolling through what he found ────────────────────────────────────────────
@@ -550,6 +582,10 @@ function _timAskHtml(){
 }
 
 function openTim(){
+  // He has now been met, so the i on the tab retires. Redrawn straight away
+  // rather than on the next render, or it sits there behind the open sheet and
+  // is still there when the sheet closes, having taught nothing.
+  if(_timMarkMet()&&typeof timDockRender==='function')timDockRender({cached:true});
   const snap=(typeof timJobSnapshot==='function')?timJobSnapshot():{};
   const found=(typeof timNudges==='function')?timNudges(snap).slice(0,2):[];
   // HE TAPPED BECAUSE OF A NUMBER, SO THE NUMBER IS THE FIRST THING ON THE
