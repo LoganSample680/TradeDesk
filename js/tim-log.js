@@ -154,25 +154,40 @@ function _timLogGot(outcome,job){
 // like a thread, newest last, and the box scrolls to the bottom on every draw.
 const _TIM_THREAD_SHOW=8;
 
-function _timThreadHtml(){
+// The avatar beside his bubbles. Drawn small and only once per reply; an
+// avatar on every line of a run of replies is a wall of faces.
+function _timThreadAv(){
+  return '<span class="tim-av">'+
+    ((typeof timMark==='function')?timMark(22):'')+
+  '</span>';
+}
+
+// opts.pending renders the LAST reply as the typing dots instead of its text.
+// The reply is already known when this is called, because Tim is local and
+// instant: the dots are a display beat, not a wait for anything, and js/tim.js
+// owns how long they run. Said plainly here so nobody later reads them as a
+// sign that work is in flight.
+function _timThreadHtml(opts){
+  const pending=!!(opts&&opts.pending);
   const rows=_timLog.slice(-_TIM_THREAD_SHOW);
   if(!rows.length){
-    return '<div style="padding:5px 16px 3px;text-align:center;font-size:12px;color:var(--text3)">'+
+    return '<div style="padding:7px 16px 5px;text-align:center;font-size:12px;color:var(--text3)">'+
       'Nothing asked yet. Whatever you say lands here.'+
     '</div>';
   }
-  return rows.map(e=>{
-    // A sentence he could not place is called out in the red the rest of the
-    // app uses for a problem, not dressed up as a result. The whole point of
-    // showing it is that the owner can SEE the gap and say so.
+  const last=rows.length-1;
+  return rows.map((e,i)=>{
     const missed=e.kind==='none';
-    return '<div style="padding:9px 16px;text-align:center">'+
-      '<div style="font-size:13.5px;font-weight:600;color:var(--text);line-height:1.4">'+
-        escHtml(e.said)+'</div>'+
-      '<div style="margin-top:3px;font-size:12.5px;line-height:1.45;color:'+
-        (missed?'var(--red,#B22A20)':'var(--text2)')+'">'+
-        escHtml(e.got||'')+'</div>'+
-    '</div>';
+    const dots=pending&&i===last;
+    const mine='<div class="tim-msg me"><span class="tim-b">'+escHtml(e.said)+'</span></div>';
+    const his='<div class="tim-msg him'+(missed&&!dots?' miss':'')+'">'+
+      _timThreadAv()+
+      '<span class="tim-b">'+
+        (dots
+          ? '<span class="tim-dots" aria-label="Tim is typing"><i></i><i></i><i></i></span>'
+          : escHtml(e.got||''))+
+      '</span></div>';
+    return mine+his;
   }).join('');
 }
 
