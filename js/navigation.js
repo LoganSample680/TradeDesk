@@ -43,14 +43,17 @@ function goPg(id){
     'pg-client-detail':window._clientDetailOrigin==='leads'?'nb-leads':'nb-clients'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
   // Sync mobile bottom tab bar
-  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-clients':'mtb-clients','pg-jobs':'mtb-jobs',
-    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':'mtb-clients'};
+  // No mtb-clients any more: Clients moved into the More menu so Tim could be
+  // dead centre, so it lights More, the same as every other page in there. A
+  // client opened FROM Leads still lights Leads, which is where he came from.
+  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-jobs':'mtb-jobs',
+    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':''};
   document.querySelectorAll('.mtb').forEach(b=>b.classList.remove('active'));
   const _mtb=document.getElementById(_mtbMap[id]||'');
   if(_mtb)_mtb.classList.add('active');
   else{const _mm=document.getElementById('mtb-more');if(_mm)_mm.classList.add('active');}
   document.querySelectorAll('.mmi').forEach(b=>b.classList.remove('active-pg'));
-  const _mmiKey={'pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog'}[id];
+  const _mmiKey={'pg-clients':'mmi-clients','pg-client-detail':'mmi-clients','pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog'}[id];
   if(_mmiKey){const _mi=document.getElementById(_mmiKey);if(_mi)_mi.classList.add('active-pg');}
   window.scrollTo({top:0,left:0,behavior:"instant"});document.body.scrollTop=0;document.documentElement.scrollTop=0;
   if(id==='pg-dash')renderDash();
@@ -317,7 +320,9 @@ function _hatSwitcherMenu(){
 }
 
 // ── Tab bar drag-to-reorder ────────────────────────────────────────────────
-const _MTB_DEFAULT_ORDER = ['dash','leads','clients','jobs'];
+// Clients left the bar so Tim could be dead centre (see index.html). Three
+// tabs, his seat, and More is five slots, and five has a middle.
+const _MTB_DEFAULT_ORDER = ['dash','leads','jobs'];
 
 function _getTabOrder() {
   const saved = S.navTabOrder;
@@ -340,8 +345,13 @@ function _applyTabOrder(order) {
   // middle of them is not.
   const seat = document.getElementById('mtb-tim-slot');
   if (seat) {
+    // Where the seat goes is NOT the middle of the tabs, it is the middle of
+    // the BAR, and the bar has one more slot in it than this row does: More
+    // sits outside #mtb-inner. With n tabs the bar has n+2 slots and the middle
+    // one is index (n+1)/2, which is 2 for the three tabs shipped here. Using
+    // the middle of the tabs instead put him one slot left of centre.
     const kids = [...inner.children].filter(el => el !== seat);
-    const mid = Math.floor(kids.length / 2);
+    const mid = Math.floor((kids.length + 1) / 2);
     if (kids[mid]) inner.insertBefore(seat, kids[mid]);
     else inner.appendChild(seat);
   }

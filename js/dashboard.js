@@ -1428,6 +1428,40 @@ function renderDash(){
         setTimeout(()=>{_nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';},380);
       }
       const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
+      // ── The address, once ───────────────────────────────────────────────
+      // Owner, 2026-09-21, from his phone: "why is John Doe address cutoff?"
+      // The card was drawing
+      //   John Doe (2950 SW McClur...
+      //   2950 SW McClure Rd, Topeka, KS 6...
+      // The same address twice, and both clipped, because the TITLE now
+      // carries it: a geofence records the address into its own name, so
+      // _od.name arrives as "John Doe (2950 SW McClure Rd, Topeka, KS 66614)"
+      // and the addr line under it repeats what is already up there. The title
+      // is nowrap by design (a name that wraps to three lines pushes the
+      // arrival time off a phone) so the redundancy showed up as an ellipsis
+      // rather than as a long line.
+      // Stripped rather than left to the name: the line under the title is the
+      // address's proper home, it has a pin next to it, and a title is for the
+      // thing's NAME. Only a trailing parenthetical is touched, and only when
+      // it really is this card's address, so a customer genuinely called
+      // "Dana (the one on Oak)" keeps her parenthesis.
+      const _cardName=(name,addr)=>{
+        const n=String(name||'').trim(),a=String(addr||'').trim();
+        if(!n||!a)return n;
+        const m=/^([\s\S]*?)\s*\(([^()]*)\)\s*$/.exec(n);
+        if(!m)return n;
+        const norm=x=>String(x).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+        const inside=norm(m[2]),full=norm(a);
+        if(!inside||!full)return n;
+        // Either way round: the name may carry the whole address or only the
+        // front of it, and a fence's name is often truncated at the source.
+        if(full===inside||full.indexOf(inside)===0||inside.indexOf(full)===0){
+          // Unless the parenthesis was the whole of it. A card headed with
+          // nothing is worse than one headed with a repeated address.
+          return m[1].trim()||n;
+        }
+        return n;
+      };
       // badge defaults to ON SITE, the case every caller but one wants. On
       // lunch the pin is still on the job but the man is not working it, and a
       // live green ON SITE there would be the card asserting something untrue.
@@ -1440,7 +1474,7 @@ function renderDash(){
           '</div>'+
           '<div style="flex:1;min-width:0">'+
             '<span style="display:inline-flex;align-items:center;gap:6px;background:'+(badge?'#8a6d3b':'#0E6B39')+';color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px">'+(badge?'':'<span style="width:6px;height:6px;border-radius:50%;background:#7CFFB0;animation:tdNearbyDot 1.4s ease-in-out infinite"></span>')+escHtml(badge||'ON SITE')+'</span>'+
-            '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B1612" title="You\'re here">'+escHtml(name)+'</div>'+
+            '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B1612" title="You\'re here">'+escHtml(_cardName(name,addr))+'</div>'+
             (addr?'<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:600;margin-top:3px"><span style="flex-shrink:0">'+_svgPin('#0E6B39',12)+'</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(addr)+'</span></div>':'')+
             (extra||'')+
           '</div>'+
