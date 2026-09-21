@@ -513,6 +513,46 @@ body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infini
 #tim-dock-pill .tim-pill-dots i{width:4px;height:4px;border-radius:var(--r-pill);
   background:var(--text-cream-3);transition:background .2s}
 #tim-dock-pill .tim-pill-dots i.on{background:var(--text-cream-2)}
+/* ── His thread ─────────────────────────────────────────────────────────────
+   Owner, 2026-09-21: "does the thread look like a message thread with 3 dot
+   typing when he's responding".
+   It did not. It was a centred transcript, which records what happened without
+   looking like anything a man has used before. This is the shape every phone
+   already teaches: what YOU said on the right in the app's blue, what HE said
+   on the left with his face next to it, and the corner nearest the speaker
+   squared off so the two sides read at a glance without needing a label.
+   The bubbles cap at 74% so there is always visible gutter on the far side;
+   a bubble that reaches both edges stops reading as a side. */
+.tim-msg{display:flex;align-items:flex-end;gap:7px;padding:4px 14px}
+.tim-msg.me{justify-content:flex-end}
+.tim-msg .tim-b{max-width:74%;padding:8px 12px;border-radius:16px;font-size:13.5px;
+  line-height:1.42;word-wrap:break-word;overflow-wrap:anywhere}
+.tim-msg.me .tim-b{background:var(--blue);color:#fff;border-bottom-right-radius:5px}
+.tim-msg.him .tim-b{background:var(--bg2);color:var(--text);
+  box-shadow:0 0 0 1px var(--border);border-bottom-left-radius:5px}
+/* A sentence he could not place is the one thing in here that is not an
+   answer, so it does not get to look like one. Same red the rest of the app
+   uses for a problem, on the same bubble, because it is still him talking. */
+.tim-msg.him.miss .tim-b{color:var(--c-red,#B22A20);background:var(--c-red-soft,#FAD6CF);
+  box-shadow:0 0 0 1px var(--c-red-edge,#EAB1A4)}
+.tim-msg .tim-av{width:22px;height:22px;flex-shrink:0;border-radius:var(--r-pill);overflow:hidden;display:block}
+.tim-msg .tim-av img{width:22px;height:22px;display:block}
+/* Typing. Three dots, and the middle of the lift is what reads as a person:
+   all three at once is a loading spinner, staggered is somebody thinking. */
+.tim-dots{display:inline-flex;align-items:center;gap:4px;height:15px}
+.tim-dots i{width:6px;height:6px;border-radius:var(--r-pill);background:var(--text3);
+  animation:tim-typing 1.15s ease-in-out infinite}
+.tim-dots i:nth-child(2){animation-delay:.16s}
+.tim-dots i:nth-child(3){animation-delay:.32s}
+@keyframes tim-typing{
+  0%,62%,100%{opacity:.28;transform:translateY(0)}
+  31%        {opacity:1;transform:translateY(-3px)}
+}
+@media (prefers-reduced-motion:reduce){
+  /* Still three dots, so the state is still legible. They just hold still, and
+     js/tim.js skips the delay entirely so the reply is there immediately. */
+  .tim-dots i{animation:none;opacity:.55}
+}
 /* ── The shimmer ────────────────────────────────────────────────────────────
    Owner, 2026-09-20: it has to scream click me.
    A sheen crossing the metal, not a flash or a bounce. The mark is a brass

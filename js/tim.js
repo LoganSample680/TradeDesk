@@ -1199,19 +1199,46 @@ function _timGo(){
   return p;
 }
 
+// How long the three dots run before his reply appears. He is local: the reply
+// exists before the dots are drawn, so this is a DISPLAY beat and nothing is
+// being waited on. It is here because a reply that lands in the same frame as
+// the question does not read as an answer, it reads as the box clearing, which
+// is most of what "Tim did nothing" was. 420ms is under the ~500ms where a
+// person starts to feel held up, and it costs the work nothing: the navigation
+// or the answer sheet has already fired by the time the first dot is painted.
+const _TIM_TYPING_MS=420;
+let _timTypingT=null;
+
 // Redraw the thread in place and clear the box, so the sheet behaves like the
 // conversation it is. Does nothing when the thread is not on screen, which is
 // the case for the answer sheet and the two build steps: those replace the
 // sheet, and the exchange is already in the log waiting for the next open.
-function _timThreadRefresh(){
+function _timThreadRefresh(opts){
   try{
     const box=document.getElementById('_tim-thread');
     if(!box||typeof _timThreadHtml!=='function')return;
-    box.innerHTML=_timThreadHtml();
-    box.scrollTop=box.scrollHeight;
     const el=document.getElementById('_tim-say');
     if(el)el.value='';
     if(typeof _timPreview==='function')_timPreview();
+
+    const bottom=()=>{try{box.scrollTop=box.scrollHeight;}catch(_e){}};
+    // Somebody who asked the OS to stop moving things gets the answer straight
+    // away, not three still dots and a wait. Same rule as the dock's breathing.
+    const still=(typeof matchMedia==='function')&&
+      matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const beat=(opts&&opts.instant)||still?0:_TIM_TYPING_MS;
+
+    clearTimeout(_timTypingT);
+    if(!beat){box.innerHTML=_timThreadHtml();bottom();return;}
+    box.innerHTML=_timThreadHtml({pending:true});
+    bottom();
+    _timTypingT=setTimeout(()=>{
+      // The sheet can be gone by now: he may have navigated, or closed it.
+      const b=document.getElementById('_tim-thread');
+      if(!b)return;
+      b.innerHTML=_timThreadHtml();
+      try{b.scrollTop=b.scrollHeight;}catch(_e){}
+    },beat);
   }catch(_e){}
 }
 

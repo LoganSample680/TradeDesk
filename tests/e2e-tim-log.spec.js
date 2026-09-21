@@ -435,15 +435,15 @@ test.describe('the tim log', () => {
         timLogSay('reglaze the transoms', { kind: 'none' });
         const el = document.createElement('div');
         el.innerHTML = _timThreadHtml();
-        // The two lines of a turn read separately: what was said, what came
-        // back. textContent on the wrapper runs them together, which says
-        // nothing about whether they are two distinct blocks on the screen.
-        return [...el.children].map(c => [...c.children].map(x => x.textContent.trim()));
+        // Side and text together: a bubble on the wrong side is as wrong as
+        // the wrong words in it, and textContent alone cannot tell them apart.
+        return [...el.querySelectorAll('.tim-msg')].map(m =>
+          [m.classList.contains('me') ? 'me' : 'him', m.querySelector('.tim-b').textContent.trim()]);
       });
       expect(r).toEqual([
-        ['who owes me money', '$3,500'],
-        ['open my leads', 'Opened Leads'],
-        ['reglaze the transoms', 'I could not place that one.'],
+        ['me', 'who owes me money'], ['him', '$3,500'],
+        ['me', 'open my leads'], ['him', 'Opened Leads'],
+        ['me', 'reglaze the transoms'], ['him', 'I could not place that one.'],
       ]);
     });
 
@@ -462,7 +462,7 @@ test.describe('the tim log', () => {
         for (let i = 1; i <= 11; i++) timLogSay('question ' + i, { kind: 'none' });
         const el = document.createElement('div');
         el.innerHTML = _timThreadHtml();
-        const said = [...el.children].map(c => c.firstChild.textContent.trim());
+        const said = [...el.querySelectorAll('.tim-msg.me .tim-b')].map(b => b.textContent.trim());
         return { n: said.length, first: said[0], last: said[said.length - 1] };
       });
       expect(r).toEqual({ n: 8, first: 'question 4', last: 'question 11' });
@@ -473,10 +473,67 @@ test.describe('the tim log', () => {
         timLogSay('<img src=x onerror=alert(1)>bill Dana', { kind: 'none' });
         const el = document.createElement('div');
         el.innerHTML = _timThreadHtml();
-        return { imgs: el.querySelectorAll('img').length, text: el.textContent };
+        return {
+          // Scoped to the BUBBLE, not the whole thread: Tim's avatar is a real
+          // <img> and counting every img in here would pass whether or not the
+          // injected one rendered, which is the worst kind of green.
+          imgsInBubbles: el.querySelectorAll('.tim-b img').length,
+          avatars: el.querySelectorAll('.tim-av img').length,
+          text: el.querySelector('.tim-msg.me .tim-b').textContent,
+        };
       });
-      expect(r.imgs).toBe(0);
-      expect(r.text).toContain('<img src=x onerror=alert(1)>bill Dana');
+      expect(r.imgsInBubbles).toBe(0);
+      expect(r.avatars).toBeGreaterThan(0);
+      expect(r.text).toBe('<img src=x onerror=alert(1)>bill Dana');
+    });
+
+    // ── The dots ────────────────────────────────────────────────────────────
+    test('he types for a beat, then the reply lands', async () => {
+      const r = await page.evaluate(async () => {
+        document.getElementById('_tim-ov')?.remove();
+        timLogClear();
+        openTim();
+        document.getElementById('_tim-say').value = 'reglaze the transoms';
+        _timGo();
+        const box = document.getElementById('_tim-thread');
+        const during = {
+          dots: box.querySelectorAll('.tim-dots').length,
+          // His words must NOT be on screen while the dots are, or the dots are
+          // decoration sitting next to the answer they claim to be replacing.
+          reply: box.textContent.indexOf('could not place') >= 0,
+          mine: box.textContent.indexOf('reglaze the transoms') >= 0,
+        };
+        await new Promise(x => setTimeout(x, 620));
+        const after = {
+          dots: box.querySelectorAll('.tim-dots').length,
+          reply: box.textContent.indexOf('could not place') >= 0,
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return { during, after };
+      });
+      // Straight away: your bubble is up, he is typing, he has not answered.
+      expect(r.during).toEqual({ dots: 1, reply: false, mine: true });
+      // After the beat: dots gone, answer there.
+      expect(r.after).toEqual({ dots: 0, reply: true });
+    });
+
+    test('the beat is display only, the work already happened', async () => {
+      // The reply exists in the log the moment _timGo returns, while the dots
+      // are still on screen. This is what makes the beat honest: nothing is
+      // being waited on, and a navigation or an answer sheet has already fired.
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timLogClear();
+        openTim();
+        document.getElementById('_tim-say').value = 'reglaze the transoms';
+        _timGo();
+        const dots = document.querySelectorAll('#_tim-thread .tim-dots').length;
+        const logged = timLogEntries()[0];
+        document.getElementById('_tim-ov')?.remove();
+        return { dots, got: logged.got };
+      });
+      expect(r.dots).toBe(1);
+      expect(r.got).toBe('I could not place that one.');
     });
 
     test('the sheet shows it, and saying something adds to it and clears the box', async () => {
