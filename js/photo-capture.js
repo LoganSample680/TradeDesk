@@ -61,6 +61,14 @@ async function tdSavePhoto(opts){
     client_id:clientId,client_name:c?c.name||'':'',
     bid_id:bidId,bid_name:b?(b.title||b.name||''):'',
     job_id:jobId,job_name:j?j.name||'':'',
+    // The fix the photo was taken at, KEPT, not just used for the stamp.
+    // It was passed in for the stamp text and then thrown away, so only
+    // photos shot through the capture sheet (which stamps the row
+    // afterwards) ever carried coordinates. Everything else lost them, and
+    // with them the "verified on site" verdict and the unfiled address
+    // guess, which are the two things the fix exists for.
+    lat:opts.lat!=null?opts.lat:null,
+    lon:opts.lon!=null?opts.lon:null,
     uploadedAt:new Date().toISOString()
   };
 

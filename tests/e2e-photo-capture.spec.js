@@ -32,7 +32,7 @@ async function shoot(page, opts) {
     const arr = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
     const file = new File([arr], 'shot.png', { type: 'image/png' });
-    const row = await tdSavePhoto({ file, type: o.type, caption: o.caption, clientId: o.clientId, bidId: o.bidId, jobId: o.jobId });
+    const row = await tdSavePhoto({ file, type: o.type, caption: o.caption, clientId: o.clientId, bidId: o.bidId, jobId: o.jobId, lat: o.lat, lon: o.lon, stamp: o.stamp });
     return row ? { id: row.id, type: row.type, client_id: row.client_id, bid_id: row.bid_id, job_id: row.job_id, caption: row.caption } : null;
   }, Object.assign({ b64: PNG_B64 }, opts));
 }
@@ -74,6 +74,30 @@ test.describe('Photo capture: the shared writer', () => {
     expect(r.job_id).toBe(701);
     expect(r.client_id).toBe(501);
     expect(r.caption).toBe('Rough-in');
+  });
+
+  // The writer used to accept lat/lon for the STAMP and then drop them, so
+  // any caller that was not the capture sheet produced a photo with no fix:
+  // no "verified on site" in the hub, no address guess in the unfiled tray.
+  test('a photo keeps the coordinates it was taken at', async () => {
+    const r = await shoot(page, { type: 'before', bidId: 901, lat: 37.6889, lon: -97.3361 });
+    const row = await page.evaluate((id) => {
+      const p = photos.find(x => String(x.id) === String(id));
+      return { lat: p.lat, lon: p.lon };
+    }, r.id);
+    expect(row.lat).toBe(37.6889);
+    expect(row.lon).toBe(-97.3361);
+  });
+
+  test('a photo taken with no fix carries null, never undefined', async () => {
+    const r = await shoot(page, { type: 'before', bidId: 901 });
+    const row = await page.evaluate((id) => {
+      const p = photos.find(x => String(x.id) === String(id));
+      return { lat: p.lat, lon: p.lon, hasKeys: ('lat' in p) && ('lon' in p) };
+    }, r.id);
+    expect(row.hasKeys).toBe(true);
+    expect(row.lat).toBe(null);
+    expect(row.lon).toBe(null);
   });
 
   test('the caption is capped at 60 characters, not stored raw', async () => {

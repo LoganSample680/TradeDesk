@@ -53,7 +53,10 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
 
   test('shoot on the estimate, on the job, and unfiled, and read them all back out of the real hub', async ({ page }) => {
     const stamp = Date.now() * 1000 + (process.pid % 1000);
-    const client = { id: stamp, name: `E2E Photo ${RUN_TAG.slice(-5)}`, addr: '414 Test Ave, Wichita, KS 67202', phone: '3165550414' };
+    // Coordinates on the customer AND on the shots, because "verified on
+    // site" is the whole proof chain and a flow that never sets a fix can
+    // only ever prove it is absent.
+    const client = { id: stamp, name: `E2E Photo ${RUN_TAG.slice(-5)}`, addr: '414 Test Ave, Wichita, KS 67202', phone: '3165550414', lat: 37.68890, lon: -97.33610 };
     const bidId = stamp + 1;
     const jobId = stamp + 2;
 
@@ -65,7 +68,7 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
       expected: 'client and bid present',
       act: async (p) => {
         await p.evaluate(({ c, bidId }) => {
-          clients.push({ id: c.id, name: c.name, addr: c.addr, phone: c.phone });
+          clients.push({ id: c.id, name: c.name, addr: c.addr, phone: c.phone, lat: c.lat, lon: c.lon });
           bids.push({ id: bidId, client_id: c.id, client_name: c.name, title: 'Exterior repaint', amount: 2300, status: 'Pending' });
           saveAll();
         }, { c: client, bidId });
@@ -90,8 +93,8 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
       expected: 'two rows with a public url, bid_id set, client_id inferred, nothing pending',
       act: async (p) => {
         beforeShots = [
-          await shootInPage(p, { type: 'before', bidId, caption: 'South elevation' }),
-          await shootInPage(p, { type: 'before', bidId, caption: 'Trim, bare wood' }),
+          await shootInPage(p, { type: 'before', bidId, caption: 'South elevation', lat: 37.68893, lon: -97.33607 }),
+          await shootInPage(p, { type: 'before', bidId, caption: 'Trim, bare wood', lat: 37.68888, lon: -97.33612 }),
         ];
         // Open the sheet (1) + two shutter taps (2). The type toggle is not
         // charged: Before is the default on an estimate.
@@ -155,7 +158,7 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
       ruleText: 'the After shot uploads for real and pairs with the Before set on the same job',
       expected: 'after row with a url on the job, and the prompt no longer fires',
       act: async (p) => {
-        afterShot = await shootInPage(p, { type: 'after', jobId, caption: 'South elevation' });
+        afterShot = await shootInPage(p, { type: 'after', jobId, caption: 'South elevation', lat: 37.68891, lon: -97.33609 });
         // Prompt tap (1) + shutter (1).
         return 2;
       },
@@ -292,6 +295,7 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
           const jp = job.photos || [];
           return {
             jobs: (snap.jobs || []).length,
+            jobPhotos: jp.length,
             before: jp.filter(x => x.type === 'before').length,
             after: jp.filter(x => x.type === 'after').length,
             withUrl: jp.filter(x => /^https?:\/\//.test(x.url || '')).length,
@@ -308,7 +312,14 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
         return 1;
       },
       rule: async () => {
-        const ok = hub && !hub.err && hub.before === 2 && hub.after === 1 && hub.withUrl === hub.before + hub.after + (hub.total ? 0 : 0);
+        // EVERY photo on the job carries a url, not just the pair: the job
+        // also holds the stamp-off control shot, which is why the old
+        // `withUrl === before + after` was wrong (and its `+ (total ? 0 : 0)`
+        // was a no-op that hid the mistake).
+        const ok = hub && !hub.err &&
+          hub.before === 2 && hub.after === 1 &&
+          hub.withUrl === hub.jobPhotos && hub.withThumb === hub.jobPhotos &&
+          hub.verified >= 1 && hub.leaksCoords === false;
         return { ok: !!ok, got: JSON.stringify(hub) };
       },
     });
@@ -318,6 +329,7 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
     // as its own finding instead of hiding inside the grouping rule.
     expect(hub.withThumb, 'every hub photo carries a thumbnail url').toBe(hub.withUrl);
     expect(hub.leaksCoords, 'the client snapshot never carries coordinates').toBe(false);
+    expect(hub.verified, 'the hub says the work was verified on site').toBeGreaterThan(0);
 
     const rep = report(FLOW, BASELINE);
     expect(rep.overBudget).toBe(false);
