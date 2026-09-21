@@ -723,24 +723,51 @@ test.describe('Name an unsaved stop from the day rail', () => {
           // The screen check above only proves the NAME arrived. The owner's
           // report was the opposite shape: the mileage leg took the name and
           // the timesheet row did not, so anything reading only one of them
-          // sees a pass. This reads every automatic row this run put on the
-          // day, straight out of the database, and refuses any that is still
-          // nameless. It also catches the departing leg, which is the other
-          // half he hit: naming a stop used to name the drive that ARRIVED
-          // and leave the one that left.
+          // sees a pass.
+          //
+          // THE THREE ROWS THE SAVE IS RESPONSIBLE FOR, and no others. A first
+          // cut read everything within an hour either side and failed on two
+          // rows that had nothing to do with the save: the day's own 193-minute
+          // tail dwell from a different journey, and the neighbouring run's
+          // hour, because slots sit two hours apart and an hour of padding on a
+          // 62-minute span reaches straight into them. Naming one stop does not
+          // name the rest of the day and was never supposed to.
+          //
+          // So: the stop itself, the drive that ARRIVED at it (its key is the
+          // stop's minus the "d-"), and the drive that LEFT it, which is the
+          // other half the owner hit ("naming a stop named the leg that arrived
+          // and left the one that departed"). The departing drive belongs to
+          // the NEXT journey, so it is found by the name rather than by a key.
+          //
+          // Each row is judged only at the end that touches the stop. The far
+          // end is the deriver's business and can still be settling: the 00:45
+          // drive here read "Kinsella Drywall → -" at this instant and "Kinsella
+          // Drywall → DEV B shop" moments later. Asserting on that is a race,
+          // and step 9 checks the settled day after the reload anyway.
+          const legKey = String(a.key || '').replace(/^d-/, '');
           const { data: t } = await _supa.from('job_time_entries')
             .select('id,source,dest_place,origin_place,client_key,minutes')
             .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
             .gte('arrived_at', new Date(a.a).toISOString())
             .lte('arrived_at', new Date(a.b).toISOString());
           const rows = (t || []);
-          const nameless = rows.filter(x => /^unsaved/.test(String(x.source || '')) ||
-            (String(x.source || '') === 'drive' && !(x.dest_place && x.origin_place)));
-          return { ms, found, chips: mine(),
-                   rows: rows.length,
-                   nameless: nameless.map(x => (x.source || '?') + '[' +
-                     String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', ') };
-        }, { name: TARGET, key: stopKey, a: WIN.a - 3600000, b: WIN.b + 3600000 });
+          const named = (v) => String(v || '').indexOf(a.name) >= 0;
+          const stopRow = rows.find(x => x.client_key === a.key);
+          const inDrive = rows.find(x => x.client_key === legKey);
+          const outDrive = rows.find(x => x.client_key !== legKey && named(x.origin_place));
+          const bad = [];
+          if (!stopRow) bad.push('the stop row is gone');
+          else if (/^unsaved/.test(String(stopRow.source || '')) || !named(stopRow.dest_place)) {
+            bad.push('stop ' + stopRow.source + '[' + String(stopRow.dest_place || '-') + ']');
+          }
+          if (!inDrive) bad.push('no arriving drive ' + legKey);
+          else if (!named(inDrive.dest_place)) bad.push('arriving drive ends at ' + String(inDrive.dest_place || '-'));
+          if (!outDrive) bad.push('no drive leaves the stop named');
+          return { ms, found, chips: mine(), rows: rows.length,
+                   saw: [stopRow, inDrive, outDrive].filter(Boolean).map(x => (x.source || '?') + '[' +
+                     String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', '),
+                   nameless: bad.join('; ') };
+        }, { name: TARGET, key: stopKey, a: WIN.a - 600000, b: WIN.b + 600000 });
         // No taps. Watching the screen do what it promised is not work the
         // contractor does.
         return 0;
@@ -770,8 +797,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
         got: flip && (flip.found ? ('named after ' + flip.ms + 'ms, no reload')
                                  : ('never named, still unsaved after ' + flip.ms + 'ms')) +
              ' · ' + (flip && flip.chips) + ' Save chips left for this stop' +
-             ' · ' + (flip && flip.rows) + ' rows in this run\'s window, still nameless: [' +
-             (flip && flip.nameless) + ']',
+             ' · the stop and both its drives: [' + (flip && flip.saw) + ']' +
+             ' · wrong: [' + (flip && flip.nameless) + ']',
       }),
     });
 
@@ -811,26 +838,37 @@ test.describe('Name an unsaved stop from the day rail', () => {
             else fence = ((q && q.data) || []).some(f => String(f.client_id || '') === String(a.targetId) &&
               String(f.id || '').indexOf('-p') > 0);
           } catch (e) { ferr = String(e && e.message || e); }
-          // Scoped to this run's own rows, for the reason step 8 gives.
+          // Scoped to this run's own stop and the two drives that touch it,
+          // for the reason step 8 gives at length. The difference here is that
+          // the day has SETTLED: the reload waited out the boot sweep, so the
+          // far ends are done moving and a drive is judged on both of them.
+          const legKey = String(a.key || '').replace(/^d-/, '');
           const { data: t } = await _supa.from('job_time_entries')
-            .select('source,dest_place,origin_place')
+            .select('source,dest_place,origin_place,client_key')
             .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
             .gte('arrived_at', new Date(a.a).toISOString())
             .lte('arrived_at', new Date(a.b).toISOString());
-          const nameless = (t || []).filter(x => /^unsaved/.test(String(x.source || '')) ||
+          const named = (v) => String(v || '').indexOf(a.name) >= 0;
+          const rows = (t || []);
+          const mineRows = rows.filter(x => x.client_key === a.key || x.client_key === legKey ||
+            named(x.origin_place) || named(x.dest_place));
+          const nameless = mineRows.filter(x => /^unsaved/.test(String(x.source || '')) ||
             (String(x.source || '') === 'drive' && !(x.dest_place && x.origin_place)));
           return { named: txt.includes(a.name), fence, ferr,
                    nameless: nameless.map(x => (x.source || '?') + '[' +
                      String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', '),
+                   saw: mineRows.map(x => (x.source || '?') + '[' +
+                     String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', '),
                    chips: [...document.querySelectorAll('.tl-rail-chip')]
                      .filter(b => (b.getAttribute('onclick') || '').includes(a.key)).length };
         }, { name: TARGET, key: stopKey, targetId: ctx.targetId, day: ctx.day,
-             a: WIN.a - 3600000, b: WIN.b + 3600000 });
+             a: WIN.a - 600000, b: WIN.b + 600000 });
         // Same standard as step 8: a name that only half landed is not saved.
         return { ok: r.named && r.chips === 0 && !r.nameless && r.fence,
                  got: 'named ' + r.named + ' · ' + r.chips + ' Save chips for this stop' +
                       ' · the property is a server fence: ' + r.fence + (r.ferr ? (' (' + r.ferr + ')') : '') +
-                      ' · still nameless in this run\'s window: [' + r.nameless + ']' };
+                      ' · the stop and its drives: [' + r.saw + ']' +
+                      ' · still nameless: [' + r.nameless + ']' };
       },
     });
 
