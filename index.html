@@ -182,11 +182,12 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
      status colour and neither goes anywhere else. The brass pair and the paper
      disc that used to live here died with the drawn mark, which had to build a
      disc to stand on; the portrait brings its own. */
-  /* Sampled out of icons/tim-256.png, not picked by eye: the tab is this colour
-     and so is the field the portrait is printed on, so there is no seam where
-     one ends and the other starts. A gold that is close but not equal shows up
-     as a faint disc around his head at every size. */
-  --tim-gold:#D29E47;--hat:#F2A81C;
+  /* Hat yellow is still the badge and the pill figure, which are a COUNT and a
+     FIGURE and are allowed to shout. The gold that used to fill Tim's tab is
+     gone with the gold disc his portrait was printed on: the tab is a surface
+     now and the mark takes its colour from it, which is what the owner was
+     asking for when he said he was not in love with the yellow. */
+  --hat:#F2A81C;
   --r-xs:4px;--r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--r-pill:999px;--r-mark:9px;
   --shadow-card:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--line);
   --shadow-hover:0 3px 12px rgba(27,22,18,.08),0 0 0 1px var(--line);
@@ -437,13 +438,10 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    first, and that reads as a sticker every time.
    68px tall, up from 62: height is the one dimension that costs the page
    nothing, and a taller tab reads as fitted chrome rather than a nub. */
-#tim-dock-btn{width:36px;height:78px;border:0;border-radius:30px 0 0 30px;background:var(--tim-gold);
-  box-shadow:inset 0 1px 0 rgba(255,246,228,.34),
-    inset 1px 0 0 rgba(27,22,18,.20),
-    inset 0 -1px 0 rgba(27,22,18,.16),
-    -1px 0 0 rgba(27,22,18,.07),
-    -2px 1px 4px rgba(27,22,18,.14),
-    -9px 6px 22px rgba(27,22,18,.14);
+#tim-dock-btn{width:36px;height:78px;border:0;border-radius:30px 0 0 30px;background:var(--bg-card,#fff);
+  box-shadow:inset 0 0 0 1px var(--line),
+    -2px 1px 4px rgba(27,22,18,.10),
+    -9px 6px 24px rgba(27,22,18,.13);
   cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;
   position:relative;pointer-events:auto;padding:0;
   transition:width .24s cubic-bezier(.22,1,.36,1),height .24s cubic-bezier(.22,1,.36,1),
@@ -477,13 +475,13 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    So waking him is the pulse, the pill coming out beside him, and the count.
    Three signals and no reflow, instead of a fourth that reaches further across
    the page and looks worse for it. */
-#tim-dock-btn.alive{box-shadow:inset 0 1px 0 rgba(255,246,228,.34),inset 1px 0 0 rgba(27,22,18,.20),inset 0 -1px 0 rgba(27,22,18,.16),-2px 1px 4px rgba(27,22,18,.14),-9px 6px 22px rgba(27,22,18,.14)}
+#tim-dock-btn.alive{box-shadow:inset 0 0 0 1px var(--line),-2px 1px 4px rgba(27,22,18,.10),-9px 6px 24px rgba(27,22,18,.13)}
 #tim-dock-btn:active{transform:scale(.96);opacity:.85}
 /* Pinned to the dock's own top right, which is the screen edge, where the tab
    corner is square and nothing curves away under it. pointer-events:none so it
    cannot eat the tap that is meant for him. */
 #tim-dock-badge{display:none;position:absolute;top:4px;right:4px;width:15px;height:15px;border-radius:var(--r-pill);
-  background:var(--hat);box-shadow:0 0 0 2.5px var(--tim-gold);font-size:9px;font-weight:800;color:var(--ink);
+  background:var(--hat);box-shadow:0 0 0 2.5px var(--bg-card,#fff);font-size:9px;font-weight:800;color:var(--ink);
   align-items:center;justify-content:center;pointer-events:none}
 #tim-dock-badge.on{display:flex}
 /* The COUNT is hat yellow, because a count is "there is more here" and hat
@@ -494,21 +492,21 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    does not get eaten by the radius. */
 #tim-dock-badge.hint{background:var(--ink);color:var(--text-cream);
   font-size:10px;font-weight:700;font-style:italic;font-family:var(--font-display);
-  box-shadow:0 0 0 2px var(--tim-gold)}
+  box-shadow:0 0 0 2px var(--bg-card,#fff)}
 @keyframes tim-pill-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 /* ── The pulse, and the lines rolling through it ──────────────────────────
    He breathes only when he has something, so the glow is itself the signal:
    a still disc means nothing is wrong, which is the state he is in most of
-   the day. NOT a status colour. The token block above reserves hat yellow for
-   the badge and the pill figure and says it goes nowhere else, so this rings
-   in Tim's own gold, the exact field his portrait is struck on, and is not
-   claimed for anything. Two colours of glow would read as a notifications
+   the day. NOT a status colour. It used to ring in the gold the portrait was
+   struck on; the portrait has no gold any more and the owner never liked it, so
+   it rings in the app's own denim, which is what the send arrow and every
+   primary control already are. Two colours of glow would read as a notifications
    tray; one that is simply present or absent reads as a man with something to
    say. What CHANGES is which line is showing, not what colour he is. */
 #tim-dock-btn.alive{animation:tim-breathe 2.9s ease-in-out infinite}
 @keyframes tim-breathe{
-  0%,100%{box-shadow:inset 0 1px 0 rgba(255,246,228,.34),inset 1px 0 0 rgba(27,22,18,.20),inset 0 -1px 0 rgba(27,22,18,.16),-2px 1px 4px rgba(27,22,18,.14),-9px 6px 22px rgba(27,22,18,.14),0 0 0 0 rgba(210,158,71,.42)}
-  50%    {box-shadow:inset 0 1px 0 rgba(255,246,228,.34),inset 1px 0 0 rgba(27,22,18,.20),inset 0 -1px 0 rgba(27,22,18,.16),-2px 1px 4px rgba(27,22,18,.14),-9px 6px 22px rgba(27,22,18,.14),0 0 0 9px rgba(210,158,71,0)}
+  0%,100%{box-shadow:inset 0 0 0 1px var(--line),-2px 1px 4px rgba(27,22,18,.10),-9px 6px 24px rgba(27,22,18,.13),0 0 0 0 rgba(45,93,168,.34)}
+  50%    {box-shadow:inset 0 0 0 1px var(--line),-2px 1px 4px rgba(27,22,18,.10),-9px 6px 24px rgba(27,22,18,.13),0 0 0 9px rgba(45,93,168,0)}
 }
 /* ── Tim after dark ─────────────────────────────────────────────────────────
    body.dark repoints --ink to #0A0A08 and --paper to #14110E, which are four
@@ -527,14 +525,19 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    #14110E page is invisible, so it is all cost and no lift. The 1px highlight
    and the 1px bottom shade are what carry the thickness here, and they carry it
    harder, because there is no shadow underneath doing any of the work. */
-body.dark #tim-dock-btn{filter:brightness(.92) saturate(.96);
-  box-shadow:inset 0 1px 0 rgba(255,246,228,.22),inset 1px 0 0 rgba(0,0,0,.42),inset 0 -1px 0 rgba(0,0,0,.34)}
+body.dark #tim-dock-btn{background:var(--bg-card);
+  box-shadow:inset 0 0 0 1px var(--line-2),-2px 1px 4px rgba(0,0,0,.45),-9px 6px 24px rgba(0,0,0,.40)}
+/* The mark is ink line art on transparency, so on a dark tab it would be ink on
+   ink. Inverting it is exact rather than approximate: it is one colour, so the
+   invert produces the cream the rest of the dark UI already uses and nothing
+   else shifts. */
+body.dark #tim-dock-mark img,body.dark .tim-msg .tim-av img{filter:invert(1)}
 body.dark #tim-dock-pill{background:var(--bg-card);
   box-shadow:0 4px 16px rgba(0,0,0,.45),0 0 0 1px var(--line-2)}
 body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infinite}
 @keyframes tim-breathe-dark{
-  0%,100%{box-shadow:inset 0 1px 0 rgba(255,246,228,.22),inset 1px 0 0 rgba(0,0,0,.42),inset 0 -1px 0 rgba(0,0,0,.34),0 0 0 0 rgba(210,158,71,.26)}
-  50%    {box-shadow:inset 0 1px 0 rgba(255,246,228,.22),inset 1px 0 0 rgba(0,0,0,.42),inset 0 -1px 0 rgba(0,0,0,.34),0 0 0 8px rgba(210,158,71,0)}
+  0%,100%{box-shadow:inset 0 0 0 1px var(--line-2),-2px 1px 4px rgba(0,0,0,.45),-9px 6px 24px rgba(0,0,0,.40),0 0 0 0 rgba(74,159,232,.30)}
+  50%    {box-shadow:inset 0 0 0 1px var(--line-2),-2px 1px 4px rgba(0,0,0,.45),-9px 6px 24px rgba(0,0,0,.40),0 0 0 8px rgba(74,159,232,0)}
 }
 /* The line crossfades in place rather than sliding: the pill is 13px type on a
    dark chip at arm's length on a job site, and text that moves while it is
@@ -568,7 +571,8 @@ body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infini
    uses for a problem, on the same bubble, because it is still him talking. */
 .tim-msg.him.miss .tim-b{color:var(--c-red,#B22A20);background:var(--c-red-soft,#FAD6CF);
   box-shadow:0 0 0 1px var(--c-red-edge,#EAB1A4)}
-.tim-msg .tim-av{width:22px;height:22px;flex-shrink:0;border-radius:var(--r-pill);overflow:hidden;display:block}
+.tim-msg .tim-av{width:22px;height:22px;flex-shrink:0;border-radius:var(--r-pill);overflow:hidden;
+  display:block;background:var(--bg2);box-shadow:0 0 0 1px var(--line)}
 .tim-msg .tim-av img{width:22px;height:22px;display:block}
 /* Typing. Three dots, and the middle of the lift is what reads as a person:
    all three at once is a loading spinner, staggered is somebody thinking. */
@@ -632,44 +636,36 @@ body.dark #tim-dock-btn.alive{animation:tim-breathe-dark 2.9s ease-in-out infini
   .tim-msg.in .tim-b,.tim-msg.him.in .tim-av{animation:none}
 }
 /* ── The shimmer ────────────────────────────────────────────────────────────
-   Owner, 2026-09-20: it has to scream click me.
-   A sheen crossing the metal, not a flash or a bounce. The mark is a brass
-   coin, and light moving across brass is the one piece of motion that is about
-   the OBJECT rather than about the software demanding attention. It also
-   survives being ignored: a bounce that repeats is a nag, a gleam that repeats
-   is just how the thing catches the light.
-   It is a pseudo-element rather than a background on the button because the
-   button's background is the gold that has to stay matched to the portrait, and
-   because the tab already clips to its own rounded edge, so the sweep runs off
-   under the corner instead of past it.
-   Two speeds, and the difference is the whole point:
-     AWAKE, every 3.4s. He has a dollar figure to hand over, so he is allowed to
-       ask twice.
-     QUIET, every 14s and at half the strength. This is discovery, not a nudge:
-       a gold tab that never moves is a gold tab a man never learns is a button,
-       and he is quiet most of the day by design. It is the smallest amount of
-       motion that answers "is that thing tappable".
-   Both are pure CSS on a compositor-only transform, so an idle phone is doing
-   no layout and no paint of the page underneath. */
-#tim-dock-btn::after{content:'';position:absolute;inset:0;pointer-events:none;
-  background:linear-gradient(104deg,transparent 43%,rgba(255,255,255,.30) 50%,transparent 57%);
-  transform:translateX(-160%);
-  animation:tim-shimmer 14s cubic-bezier(.4,0,.5,1) infinite}
-/* .44 and a 14-point band, not .80 and a 32-point one. The first pass washed
-   his eyes and beard out as the sweep crossed them: at that width and opacity
-   it stopped being light on brass and became a reflection on glass, and for a
-   third of a second there was no man in the tab at all. A gleam has to leave
-   the thing it is gleaming off legible. */
+   Owner, 2026-09-21, pointing at AXL: "a green shimmer that goes top down then
+   down and back up, looks pretty slick".
+   So it runs VERTICALLY and it comes back, rather than the diagonal one-way
+   sweep that was here. Down, then up, then down: animation-direction alternate,
+   which is why the travel is the whole cycle instead of a flick followed by a
+   long wait. On a 78px tab a vertical run has three times the distance of a
+   horizontal one, which is most of why theirs reads as a sheen and a 36px
+   sideways sweep read as a flash.
+   It is a band of the app's own denim, not white and not gold: on a white tab a
+   white sheen is invisible, and the gold is the thing the owner kept saying he
+   did not like. AXL's is their brand colour, and this is ours.
+   ONE gradient on a pseudo-element and one transform, so it is compositor work
+   and an idle phone is not repainting the page underneath. */
+#tim-dock-btn::after{content:'';position:absolute;left:0;right:0;top:0;height:100%;
+  pointer-events:none;border-radius:inherit;
+  background:linear-gradient(180deg,transparent 34%,rgba(45,93,168,.20) 50%,transparent 66%);
+  transform:translateY(-105%);
+  animation:tim-shimmer 9s ease-in-out infinite alternate}
+/* Awake he has a figure to hand over, so it runs closer together and harder. */
 #tim-dock-btn.alive::after{
-  background:linear-gradient(104deg,transparent 43%,rgba(255,255,255,.44) 50%,transparent 57%);
-  animation:tim-shimmer 3.4s cubic-bezier(.4,0,.5,1) infinite}
-/* The sweep is over in the first fifth of the cycle. The rest of the keyframe
-   is him sitting still off the right edge, which is what makes 14s read as
-   "occasionally" instead of "slowly". */
+  background:linear-gradient(180deg,transparent 30%,rgba(45,93,168,.34) 50%,transparent 70%);
+  animation:tim-shimmer 2.6s ease-in-out infinite alternate}
 @keyframes tim-shimmer{
-  0%{transform:translateX(-160%)}
-  18%,100%{transform:translateX(160%)}
+  from{transform:translateY(-105%)}
+  to  {transform:translateY(105%)}
 }
+body.dark #tim-dock-btn::after{
+  background:linear-gradient(180deg,transparent 34%,rgba(74,159,232,.26) 50%,transparent 66%)}
+body.dark #tim-dock-btn.alive::after{
+  background:linear-gradient(180deg,transparent 30%,rgba(74,159,232,.42) 50%,transparent 70%)}
 @media (prefers-reduced-motion:reduce){
   #tim-dock-pill{animation:none}
   /* No breathing, no rotation and no shine. Someone who has asked the OS to
