@@ -360,42 +360,88 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .mtb.active{color:var(--text-cream)}
 .mtb svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .mtb-dot{position:absolute;top:7px;right:calc(50% - 16px);width:8px;height:8px;background:var(--denim);border-radius:50%;border:2px solid var(--ink)}
-/* ── Tim, raised off the bar ────────────────────────────────────────────────
-   Owner, 2026-09-21: "kinda diggin tim raised off the bar in the center but
-   instead of a circle he can be a more rounded rectangle, if theres insights
-   to see then we get the raised red notification".
-   He was a sixth tab for one commit and it was the wrong answer for a reason
-   worth writing down: a tab is one of five equals, and he is not one of the
-   five. He is the thing you ask when the five did not answer it. Raised, he
-   reads as an action rather than a destination, which is what he is.
-   He sits on the bar's centreline and his bottom edge is flush with its top
-   edge: bottom:100% puts him entirely ABOVE the padding box, so he takes not
-   one pixel off the tap target of whichever tab is under him (rule 15.3). The
-   ink border makes the two shapes kiss instead of merely touching, and the
-   shadow is cast upward only, so he grows out of the bar rather than hovering
-   over the page.
-   Rounded rectangle, not a circle, and wider than tall: a circle is the FAB
-   every app ships and it reads as "compose". This reads as a key on a bar.
-   His colour is --denim, which is the app's own accent and already the colour
-   of .mtb-dot two lines up. Ten rounds of restyling failed on gold because
-   gold was invented for him; this is borrowed. */
+/* ── Tim, set into the bar ──────────────────────────────────────────────────
+   Owner, 2026-09-21, twice. First: "kinda diggin tim raised off the bar in the
+   center but instead of a circle he can be a more rounded rectangle, if theres
+   insights to see then we get the raised red notification". Then, looking at
+   that: "I want Tim more engraved into the bar, like gently popping out".
+   The first pass answered the shape and missed the material. He was a denim
+   chip with a heavy ink outline and a drop shadow, floating clear above the
+   bar, and the outline is what gave it away: an object with its own edge
+   drawn all the way round is an object sitting ON something, not part of it.
+   Two pieces now, and the sentence has two halves:
+   ENGRAVED INTO THE BAR is #mtb-tim itself, which is no longer a button shape
+   at all. It is the bar's own ink, with the bar's own hairline (--ink-line,
+   the same value as #mobile-tabbar's border-top) traced up and over its
+   shoulders and no border along the bottom. So the bar's top EDGE rises here
+   rather than something being stuck to it, and it is opaque, so the hairline
+   running across the rest of the bar stops at the swell and picks up again on
+   the far side. There is no drop shadow, because material does not cast one
+   onto itself.
+   GENTLY POPPING OUT is #mtb-tim-mark, the denim key seated in that swell with
+   six pixels of ink framing it on every side. It carries the bevel: a light
+   inset top edge and a dark inset bottom edge, which is what reads as raised,
+   and a short contact shadow where it meets its setting.
+   Still a rounded rectangle and still wider than tall, which is the part the
+   owner liked: a circle is the FAB every app ships and it reads as "compose".
+   Still --denim, the app's own accent and already the colour of .mtb-dot. Ten
+   rounds of restyling failed on gold because gold was invented for him.
+   bottom:100% still puts the whole assembly ABOVE the bar's padding box, so it
+   takes not one pixel off the tap target of the tab underneath (rule 15.3). It
+   covers the 1px border line at its own base, which is the point. */
 #mtb-tim{
   position:absolute;left:50%;bottom:100%;transform:translateX(-50%);
-  width:60px;height:46px;border-radius:17px;
-  background:var(--denim);border:3px solid var(--ink);
-  box-shadow:0 -3px 14px rgba(0,0,0,.30);
-  display:flex;align-items:center;justify-content:center;
-  padding:0;margin:0;cursor:pointer;-webkit-tap-highlight-color:transparent;
-  transition:transform .13s cubic-bezier(.22,1,.36,1),box-shadow .13s;
+  width:80px;height:44px;
+  background:none;border:0;
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:0 0 4px;margin:0;cursor:pointer;-webkit-tap-highlight-color:transparent;
   z-index:1}
 #mtb-tim[hidden]{display:none}
-#mtb-tim:active{transform:translateX(-50%) translateY(2px) scale(.955);
-  box-shadow:0 -1px 7px rgba(0,0,0,.30)}
+/* THE SWELL. The bar's own ink, its own hairline traced up and over the rise
+   and no border along the bottom, so what is drawn is the bar's top EDGE
+   lifting rather than an object stuck on top of it. Opaque, so the hairline
+   running across the rest of the bar stops at the rise and picks up again on
+   the far side. No drop shadow: material does not cast one onto itself.
+   The radius is past half the width so it clamps to an ellipse and the curve
+   never stops. A smaller radius leaves a flat run between two rounded corners,
+   which reads as a plinth somebody set down there. */
+#mtb-tim::before{
+  content:'';position:absolute;left:2px;right:2px;bottom:0;height:16px;
+  /* It HUGS the key: 76px of socket around a 48px key, so fourteen pixels of
+     ink show either side. Every wider version was tried and every one of them
+     read as a second black bar laid over the first, because a rise broad
+     enough to be a rise stops being a seat. Sixteen pixels tall, which is the
+     "gently" in the brief: the bar's edge lifts by a thumbnail, not a step. */
+  border-radius:13px 13px 0 0;
+  background:var(--ink);
+  border:1px solid var(--ink-line);border-bottom:0;
+  pointer-events:none}
+/* AND THE KEY POPPING OUT OF IT. The half that was missing: the key used to
+   sit wholly INSIDE the swell, so the swell was the outermost shape and
+   nothing popped out of anything. It breaches the rise now, two thirds of its
+   height clear of it and the bottom third set into it.
+   The bevel is what reads as raised, and it is only two lines: a light inset
+   edge along the top, a dark one along the bottom. Plus a short contact shadow
+   where it meets its setting, which is the only shadow in the assembly. */
+#mtb-tim-mark{width:48px;height:30px;border-radius:11px;
+  background:var(--denim);position:relative;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.24),
+             inset 0 -1.5px 0 rgba(0,0,0,.34),
+             0 2px 5px rgba(0,0,0,.42);
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .12s cubic-bezier(.22,1,.36,1),box-shadow .12s}
+/* The key presses down into its setting and the setting does not move: the
+   swell is part of the bar, and the bar does not flinch when you touch it. */
+#mtb-tim:active #mtb-tim-mark{transform:translateY(2px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.10),
+             inset 0 -1px 0 rgba(0,0,0,.28),
+             0 0 0 rgba(0,0,0,.42)}
 /* The mark is ink line art on transparency and this is a denim field, so one
-   colour in, cream out. 26px rather than the 22px the tab icons use, because
-   he has a whole key to himself and a face at icon size stops being a face. */
-#mtb-tim-mark{width:26px;height:26px;display:flex;align-items:center;justify-content:center}
-#mtb-tim-mark img{width:26px;height:26px;display:block;filter:invert(1)}
+   colour in, cream out. 24px: bigger than the 22px of the tab icons beside
+   him, because he has a whole key to himself and a face at icon size stops
+   being a face, and small enough to leave the key a margin to be a key. */
+#mtb-tim-mark img{width:24px;height:24px;display:block;filter:invert(1)}
+@media (prefers-reduced-motion:reduce){#mtb-tim-mark{transition:none}}
 /* The raised red. Deliberately NOT var(--red): that token flips with the theme
    (#B22A20 light, #FF7070 dark) and this badge sits on the same ink bar in
    both, so a token would be dimmer in light mode for no reason. One literal
@@ -406,7 +452,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    counting out loud and the badge only started at two. There is no pill on a
    raised key, so one finding has nothing else saying it, and "1" is the whole
    of what he can say without being tapped. */
-#mtb-tim-dot{position:absolute;top:-7px;right:-7px;min-width:20px;height:20px;
+#mtb-tim-dot{position:absolute;top:0;right:18px;z-index:2;min-width:20px;height:20px;
   padding:0 5px;box-sizing:border-box;border-radius:10px;
   background:#E5483B;border:2.5px solid var(--ink);color:#fff;
   font-family:inherit;font-size:11px;font-weight:800;line-height:1;
@@ -421,7 +467,6 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    with a reason attached. */
 #mtb-tim-dot.hint{background:var(--text-cream);color:var(--ink);font-size:11.5px;
   font-weight:800;font-style:italic;padding:0 4px}
-@media (prefers-reduced-motion:reduce){#mtb-tim{transition:none}}
 /* More popup, sits above the More button, no swipe needed */
 #mtb-more-popup{display:none;position:fixed;inset:0;z-index:1999}
 #mtb-more-menu{position:absolute;bottom:calc(58px + env(safe-area-inset-bottom,0px));right:6px;background:var(--ink);border-radius:14px;overflow:hidden;box-shadow:0 -4px 32px rgba(0,0,0,.5);min-width:192px;animation:fadeup .15s ease}

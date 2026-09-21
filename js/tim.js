@@ -328,7 +328,7 @@ function timDockRender(opts){
   tab.hidden=false;
 
   const markEl=document.getElementById('mtb-tim-mark');
-  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(26);
+  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(24);
 
   const finds=_timDockFinds(!!(opts&&opts.cached));
   _timDockNudge=finds.length?finds[0]:null;

@@ -527,9 +527,11 @@ test.describe('tim', () => {
         return {
           found: true,
           natural: img.naturalWidth,
-          // 26 on the raised key, not the 22 the tab icons beside it use: he
-          // has a whole key to himself, and a face at icon size stops being a
-          // face. 10.4: this was '58' when he was a floating disc.
+          // 24 on the key, not the 22 the tab icons beside it use: he has a
+          // whole key to himself, and a face at icon size stops being a face.
+          // 10.4: '58' when he was a floating disc, then '26' on the first
+          // raised version, now 24 because the key is a seated inlay with a
+          // margin to be a key rather than a chip the mark fills.
           drawn: img.getAttribute('width'),
           // Every density has to be listed or a 3x phone silently takes the
           // one file it was given and softens it.
@@ -538,7 +540,7 @@ test.describe('tim', () => {
       });
       expect(r.found).toBe(true);
       expect(r.natural).toBeGreaterThan(0);
-      expect(r.drawn).toBe('26');
+      expect(r.drawn).toBe('24');
       expect(r.densities).toBe(3);
     });
 
@@ -629,6 +631,59 @@ test.describe('tim', () => {
       expect(r.tabs.filter(t => t.hits).map(t => t.id)).toEqual([]);
       // And the tabs he is standing over are still full-size targets.
       r.tabs.forEach(t => expect(t.h, t.id + ' height').toBeGreaterThanOrEqual(56));
+    });
+
+    // ── Engraved into the bar, gently popping out ───────────────────────────
+    // Owner, 2026-09-21, looking at the first raised version: "I want Tim more
+    // engraved into the bar, like gently popping out."
+    // That first version was a denim chip with a heavy ink outline and a drop
+    // shadow, floating clear above the bar, and the outline is what gave it
+    // away: a shape with its own edge drawn all the way round is a shape
+    // sitting ON something rather than part of it.
+    // The sentence has two halves and so does the assembly, and both halves
+    // are geometry rather than taste, so both can be pinned:
+    //   ENGRAVED is the socket (#mtb-tim::before), which is the bar's own ink
+    //   and the bar's own hairline, lifting out of its top edge.
+    //   POPPING OUT is the key (#mtb-tim-mark), which BREACHES that socket.
+    // The breach is the part worth a test. Every earlier attempt had the key
+    // sitting wholly inside the rise, which made the rise the outermost shape
+    // and meant nothing popped out of anything.
+    test('the key is seated in the bar own material and breaches it', async () => {
+      const r = await page.evaluate(() => {
+        timDockRender();
+        const btn = document.getElementById('mtb-tim');
+        const mark = document.getElementById('mtb-tim-mark');
+        const bar = document.getElementById('mobile-tabbar');
+        const sock = getComputedStyle(btn, '::before');
+        const b = btn.getBoundingClientRect(), m = mark.getBoundingClientRect();
+        const sockH = parseFloat(sock.height);
+        // The socket's top edge, in the same coordinates as the key.
+        const sockTop = b.bottom - sockH;
+        return {
+          // The bar's material, not a colour invented for him.
+          sockBg: sock.backgroundColor,
+          barBg: getComputedStyle(bar).backgroundColor,
+          // The bar's own hairline traced over the rise, and no line along the
+          // bottom, so the two shapes are one edge rather than two.
+          sockBorderTop: sock.borderTopColor,
+          barBorderTop: getComputedStyle(bar).borderTopColor,
+          sockBorderBottom: parseFloat(sock.borderBottomWidth),
+          // And it is scenery: the button takes the taps, not the rise.
+          sockEvents: sock.pointerEvents,
+          breach: Math.round(sockTop - m.top),     // how far the key stands clear
+          seated: Math.round(m.bottom - sockTop),  // how much of it is in the socket
+          markH: Math.round(m.height),
+        };
+      });
+      expect(r.sockBg, 'the socket is the bar\'s own ink').toBe(r.barBg);
+      expect(r.sockBorderTop, 'and the bar\'s own hairline').toBe(r.barBorderTop);
+      expect(r.sockBorderBottom, 'no line where it meets the bar').toBe(0);
+      expect(r.sockEvents).toBe('none');
+      expect(r.breach, 'the key has to stand clear of the socket').toBeGreaterThan(6);
+      expect(r.seated, 'and it has to be sitting IN it, not on it').toBeGreaterThan(6);
+      // Neither half runs away with it: this is "gently", not a pedestal.
+      expect(r.breach).toBeLessThan(r.markH);
+      expect(r.seated).toBeLessThan(r.markH);
     });
 
     // "in the center" was the owner's word for it, and off-centre on a raised
