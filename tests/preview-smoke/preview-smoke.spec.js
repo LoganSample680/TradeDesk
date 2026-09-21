@@ -244,7 +244,7 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
     // Tim's mark at all three densities, plus one PWA icon as a control: if the
     // control fails too then the deploy is broken, not the routing.
-    const assets = ['/icons/tim-64.png', '/icons/tim-128.png', '/icons/tim-256.png', '/icons/icon-192.png'];
+    const assets = ['/icons/tim-mark-64.png', '/icons/tim-mark-128.png', '/icons/tim-mark-256.png', '/icons/icon-192.png'];
     for (const a of assets) {
       const res = await page.request.get(a, { failOnStatusCode: false, headers });
       expect(res.status(), a + ' is referenced by the app and does not serve on the deployed origin').toBe(200);

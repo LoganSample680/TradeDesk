@@ -254,6 +254,15 @@ function timRun(text){
 function timMark(size,opts){
   const s=Math.max(12,Math.round(Number(size)||24));
   const o=opts||{};
+  // THE FIGURE ONLY, on transparency. It used to be the whole Style E portrait
+  // including its gold disc, which meant the tab had to BE that gold for the
+  // two to merge, and that gold is what the owner kept saying he did not like.
+  // Pulled off its field (alpha is how far each pixel travelled from the gold
+  // toward the ink, so the beard keeps its soft edges instead of becoming a
+  // 1-bit stencil) it is a mark rather than a sticker: it takes the colour of
+  // whatever it is set on, which is how AXL's does it and is why theirs sits on
+  // a plain white tab without looking stuck to it.
+  //
   // /icons/, NOT /img/. functions/img/[[path]].js is a Pages Function that owns
   // every path under /img/ and serves exactly one thing, Supabase gallery
   // objects; anything else got a hard 404 before the static file was ever
@@ -264,8 +273,8 @@ function timMark(size,opts){
   // through to the static asset now instead of 404ing, but these live under
   // /icons/ regardless, because nothing fronts that path and nothing can grow
   // in front of it by accident.
-  return '<img src="/icons/tim-128.png" '+
-    'srcset="/icons/tim-64.png 64w, /icons/tim-128.png 128w, /icons/tim-256.png 256w" '+
+  return '<img src="/icons/tim-mark-128.png" '+
+    'srcset="/icons/tim-mark-64.png 64w, /icons/tim-mark-128.png 128w, /icons/tim-mark-256.png 256w" '+
     'sizes="'+s+'px" width="'+s+'" height="'+s+'" '+
     'alt="" aria-hidden="true" decoding="async" '+
     'style="flex-shrink:0;display:block'+(o.style?';'+o.style:'')+'">';
