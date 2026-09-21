@@ -301,33 +301,26 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 #app{padding-left:var(--nav-w);min-height:100vh}
 #supa-status{left:var(--nav-w);transition:opacity .25s cubic-bezier(.22,1,.36,1);opacity:0}
 .drive-banner{left:var(--nav-w)}
-/* --tim-lane is the strip down the right that Tim stands in. It is 0 until the
-   dock is actually up, which is owner-only and post-boot, so a crew member and
-   the sign-in screen pay nothing for it. It is set ONCE here and the page
-   padding adds it, which is why every .pg padding rule below (including the two
-   phone overrides) is written as a shorthand plus this, rather than each one
-   carrying its own magic number.
-   It exists because measuring beat reasoning: the dock has now twice obeyed
-   rule 15.3 in its comment and broken it on the screen, and at 390px the
-   dashboard's "Add places" button ran 11px under him while he was still QUIET.
-   A lane that is always there also means waking him reflows nothing.
-
-   20px is not a taste. It is pinned from BOTH sides and there is no room
-   either way:
-     from above, the BYO item row in e2e-layout-integrity-regression is a
-       deliberate worst case (seven-figure price, every action button) and was
-       measured lane by lane: it holds a four-letter title on one line up to
-       22px and wraps at 24. The first version of this lane was 30 and wrapped
-       it.
-     from below, 390 - 16 of page gutter - 20 leaves content ending at 354,
-       which is exactly Tim's left edge at 36 wide. One pixel less of lane and
-       a control sitting flush to a card's edge is under him again.
-   So the tab is 36 wide because the lane can only be 20, not the other way
-   round. Widening him means finding the width somewhere the estimate page can
-   afford to lose it, and it has none. */
-:root{--tim-lane:0px}
-body.tim-here{--tim-lane:20px}
-.pg{display:none;padding:24px calc(28px + var(--tim-lane)) 32px 28px;max-width:1320px}
+/* THERE IS NO TIM LANE, and the attempt is worth recording so nobody spends
+   the afternoon on it again.
+   Tim sits at the right edge and content scrolled under him, so --tim-lane
+   reserved a strip of right-hand page padding for him to stand in. It was
+   measured against the BYO item row in e2e-layout-integrity-regression, which
+   is that suite's deliberate worst case (seven-figure price, every action
+   button): on Chromium the row holds a four-letter title on one line up to
+   22px of lane and wraps at 24, so the lane was set to 20.
+   WebKit wraps it to THREE lines at 20. The row's label is
+   overflow-wrap:anywhere, so once it is squeezed past a word's width it breaks
+   inside the word, and WebKit squeezes it sooner. The engine that matters most
+   here is the one the iOS shell runs, and it had no 20px to give: the number
+   was measured on the engine that was convenient rather than the one that
+   ships.
+   Widening the row to make room would be rebuilding a guarded component to
+   suit a 36px tab, on an engine this container cannot run. So the page keeps
+   its width and Tim is an overlay, like every floating control in every app on
+   that phone. What he is NOT allowed to do is sit on a control's tappable
+   centre, and e2e-tim.spec.js measures that on six pages instead. */
+.pg{display:none;padding:24px 28px 32px;max-width:1320px}
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
 #pg-dash.active{animation:td-dash-enter .8s cubic-bezier(.16,1,.3,1) both}
 /* Boot waterfall (owner request): while the boot overlay fades, the home header +
@@ -454,15 +447,16 @@ body.tim-here{--tim-lane:20px}
 #tim-dock-btn:not(.alive) #tim-dock-mark{transform:scale(.55)}
 /* ALIVE: the SAME SHAPE. He does not grow at all, and that is not a
    simplification, it is what the geometry leaves.
-   Wider is out: every horizontal pixel Tim takes has to be bought back out of
-   --tim-lane, the lane has 20px and no more, and the tab already spends all of
-   it. Taller was tried at 92px and looked worse than what it replaced: the
+   Wider is out: every horizontal pixel Tim takes is a pixel further onto the
+   page, and with no lane to buy it back he pays for it by covering more of
+   whatever is under him. Taller was tried at 92px and looked worse than what
+   it replaced: the
    portrait is capped at 32 by the width, so the extra height is 30px of empty
    gold above and below a small face, which is the dot-floating-in-a-slab that
    the tab was drawn to get rid of, turned on its side.
    So waking him is the pulse, the pill coming out beside him, and the count.
-   Three signals and no reflow, instead of a fourth signal that costs the page
-   width it does not have and looks worse for it. */
+   Three signals and no reflow, instead of a fourth that reaches further across
+   the page and looks worse for it. */
 #tim-dock-btn.alive{box-shadow:inset 1px 0 0 rgba(27,22,18,.16),-1px 0 0 rgba(27,22,18,.06),-4px 0 12px rgba(27,22,18,.11)}
 #tim-dock-btn:active{transform:scale(.96);opacity:.85}
 /* Pinned to the dock's own top right, which is the screen edge, where the tab
@@ -1511,7 +1505,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   #supa-status{left:180px}
   .drive-banner{left:180px}
   #clock-banner{left:180px}
-  .pg{padding:18px calc(18px + var(--tim-lane)) 28px 18px;max-width:none}
+  .pg{padding:18px 18px 28px;max-width:none}
   .card{padding:14px}
   .card-hd{padding:12px 14px}
   .tbar{margin-bottom:14px}
@@ -1541,7 +1535,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   #app{padding-left:0;padding-top:calc(56px + env(safe-area-inset-top,0px));padding-bottom:110px}
   #supa-status{left:0;bottom:68px}
   .drive-banner{left:0;top:calc(56px + env(safe-area-inset-top,0px))}
-  .pg{padding:14px calc(16px + var(--tim-lane)) 20px 16px}
+  .pg{padding:14px 16px 20px}
   #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
   .drive-active .pg{padding-top:60px}
   .clock-active .pg{padding-top:60px}

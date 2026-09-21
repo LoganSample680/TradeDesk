@@ -616,15 +616,29 @@ test.describe('tim', () => {
     // live page and fails if his rect touches any control's rect, in either
     // state, which is the test that would have caught both.
     //
-    // It walks SEVERAL pages, not the one that happened to break. The lane that
-    // keeps him clear is bought out of the page's own width, and the first
-    // version of it was sized off a single card on the dashboard: 30px, which
-    // was more than that card needed and enough to wrap a four-letter BYO item
-    // title onto two lines. A number tuned to one screen is a number that is
-    // wrong on the next one, in one direction or the other.
+    // WHAT IT ASSERTS, AND WHY IT IS NOT "NEVER TOUCHES".
+    //
+    // The first version of this demanded that his rect not intersect any
+    // control's rect at all. Buying that needed a strip of right-hand page
+    // padding, and the page had none to sell: at 20px the BYO item row in
+    // e2e-layout-integrity-regression wrapped a four-letter title onto THREE
+    // lines on WebKit, which is the engine the iOS shell runs. The number that
+    // said 20px was safe was measured on Chromium, because Chromium is what
+    // this container can run. That is the whole lesson: a constraint measured
+    // on the convenient engine is not a constraint.
+    //
+    // So Tim is an overlay, like every floating control on that phone, and the
+    // guarantee shrinks to the one that actually decides whether a button is
+    // usable: he may clip a control's EDGE, he may not sit on the point a thumb
+    // aims at. A 107px-wide button with 3px of Tim over its right edge is still
+    // a button you hit every time. The same button with Tim over its middle is
+    // not, and that is what the old awake disc was doing to "Add places".
+    //
+    // It walks SIX pages, not the one that happened to break, because a rule
+    // checked on one screen is a rule that is wrong on the next one.
     const WALK = ['pg-dash', 'pg-clients', 'pg-jobs', 'pg-money', 'pg-tracker', 'pg-settings'];
     for (const pg of WALK) {
-    test(`nothing he does lands on a control, quiet or awake: ${pg}`, async () => {
+    test(`he never sits on a control's tappable centre, quiet or awake: ${pg}`, async () => {
       await page.evaluate(p => goPg(p), pg);
       const hits = await page.evaluate(() => {
         const real = window.__realNudges || timNudges;
@@ -641,7 +655,9 @@ test.describe('tim', () => {
               const r = el.getBoundingClientRect();
               if (!r.width || !r.height) return false;
               if (r.bottom < 0 || r.top > window.innerHeight) return false;   // off screen
-              return r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top;
+              // The point a thumb aims at, not the whole box.
+              const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+              return cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom;
             })
             .map(el => (el.id || el.className || el.tagName) + ' "' + (el.textContent || '').trim().slice(0, 24) + '"');
         };
