@@ -63,6 +63,50 @@ test.describe('tim', () => {
       });
     }
 
+    // ── Every screen in the app, accounted for ────────────────────────────────
+    //
+    // Owner asked why he cannot reach every screen. The answer was that three
+    // were missing and nobody had ever counted: pg-checklist was a plain
+    // omission (its id says checklist, its heading says Top Clients, and it was
+    // renamed without the id ever following), and two need a SUBJECT before
+    // they mean anything.
+    //
+    // A question that needs counting to answer is a question that will have a
+    // different answer next month. This counts. Every .pg in index.html is
+    // either somewhere Tim can take you by name, or it is on the list below
+    // with the reason it cannot be, and a new screen added to the app fails
+    // here until somebody decides which it is.
+    const NEEDS_A_SUBJECT = {
+      'pg-client-detail': 'one customer\'s file. Tim opens it BY NAME, off the ' +
+        'who-is-this answer, because "open the customer" with no customer named ' +
+        'is a blank screen. Reachable, just never as a bare page.',
+      'pg-est-generic': 'the estimate builder. It is opened with a client and a ' +
+        'mode by openGenericEstimate, which is the whole estimate path Tim ' +
+        'already drives. Landing on it cold shows a form bound to nobody.',
+    };
+    test('every screen in the app is either reachable by name or listed as needing a subject', async () => {
+      const r = await page.evaluate(() => ({
+        pages: [...document.querySelectorAll('.pg[id]')].map(el => el.id).sort(),
+        tim: [...new Set(TIM_PLACES.map(w => w.pg))].sort(),
+      }));
+      const unreachable = r.pages.filter(p => r.tim.indexOf(p) < 0);
+      expect(unreachable.sort()).toEqual(Object.keys(NEEDS_A_SUBJECT).sort());
+      // And nothing in his table points at a screen that is not there any more.
+      expect(r.tim.filter(p => r.pages.indexOf(p) < 0)).toEqual([]);
+    });
+
+    test('the screen he names is the name written on it, not the name in the id', async () => {
+      // pg-checklist renders "Top Clients". A man who asks for the checklist is
+      // asking for something this app no longer has; a man who asks for his top
+      // clients is asking for that screen. Tim goes by the heading.
+      const r = await page.evaluate(() => [
+        (timWhere('show me my top clients') || {}).pg,
+        (timWhere('pull up the heavy hitters') || {}).pg,
+        (timWhere('who are my top customers') || {}).pg,
+      ]);
+      expect(r).toEqual(['pg-checklist', 'pg-checklist', 'pg-checklist']);
+    });
+
     // The reason timWhere scores on phrase length: "time log" and "the hub"
     // both contain a shorter alias belonging to a different screen, and a
     // word-set match sends the contractor to the wrong page.

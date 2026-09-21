@@ -478,6 +478,72 @@ test.describe('tim answering off your own books', () => {
     });
   });
 
+  // ── The buttons on his answers are CLICKED here, not read ─────────────────
+  //
+  // Every answer carries a `go`, and `go.fn` is a string of JavaScript that
+  // gets written into an onclick. Nothing checks that the function it names
+  // exists, so a typo is a button that throws ReferenceError and leaves the man
+  // looking at a sheet that did nothing. That is not hypothetical: the
+  // who-is-this answer shipped calling openClient(id) for weeks. There is no
+  // openClient in this codebase and there never has been; the real one is
+  // openClientDetail(cid, origin). Every test above passed, because they all
+  // read the object and none of them pressed the button.
+  test.describe('the button on the answer actually works', () => {
+    const ANSWERS = [
+      ['who owes me money', 'pg-money'],
+      ['how much did I make in 2026', 'pg-tracker'],
+      ['what did I spend in 2026', 'pg-taxes'],
+      ['whats out right now', 'pg-leads'],
+      ['how many did I win in 2026', 'pg-leads'],
+      ['who is my best customer', 'pg-clients'],
+      ['how many miles did I drive in 2026', 'pg-taxes'],
+      ['how many hours did I work', 'pg-timelog'],
+      ['whats my average job in 2026', 'pg-leads'],
+    ];
+    for (const [said, want] of ANSWERS) {
+      test(`"${said}" lands on ${want}`, async () => {
+        const got = await page.evaluate((s) => {
+          goPg('pg-dash');
+          const ans = timAsk(s);
+          if (!ans || !ans.go) return 'NO GO BUTTON';
+          try { (0, eval)(ans.go.fn); } catch (e) { return 'THREW: ' + e.message; }
+          return (document.querySelector('.pg.active') || {}).id || 'NOTHING ACTIVE';
+        }, said);
+        expect(got).toBe(want);
+      });
+    }
+
+    test('the customer answer opens that customer, by the name that exists', async () => {
+      const got = await page.evaluate(() => {
+        goPg('pg-dash');
+        const ans = timAsk('whats the address for Dana');
+        try { (0, eval)(ans.go.fn); } catch (e) { return 'THREW: ' + e.message; }
+        return { pg: (document.querySelector('.pg.active') || {}).id, who: currentClientId };
+      });
+      expect(got).toEqual({ pg: 'pg-client-detail', who: 7101 });
+    });
+
+    // The cheap guard that would have caught it on day one, for every answer at
+    // once: the function each button names has to be a function.
+    test('every function an answer names exists', async () => {
+      const bad = await page.evaluate(() => {
+        const out = [];
+        ['who owes me money', 'what did I charge for gutters', 'which lead source is worth it',
+          'whats the address for Dana', 'how much did I make in 2026', 'what did I spend in 2026',
+          'whats out right now', 'how many did I win in 2026', 'who is my best customer',
+          'how many miles did I drive in 2026', 'how many hours did I work',
+          'whats my average job in 2026'].forEach(s => {
+          const a = timAsk(s);
+          if (!a || !a.go) return;
+          const name = String(a.go.fn).split('(')[0].trim();
+          if (typeof window[name] !== 'function') out.push(s + ' -> ' + name);
+        });
+        return out;
+      });
+      expect(bad).toEqual([]);
+    });
+  });
+
   test.describe('through the real door', () => {
     test('a question answers instead of navigating', async () => {
       const r = await page.evaluate(() => {

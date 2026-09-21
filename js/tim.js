@@ -44,6 +44,12 @@ const TIM_PLACES=[
   {pg:'pg-client-hub',  name:'Client hub',  say:['client hub','the hub']},
   {pg:'pg-tracker',     name:'Books',       say:['receipts']},
   {pg:'pg-qr-leads',    name:'QR leads',    say:['qr','qr code','qr leads','my sign']},
+  // The id says checklist and the screen says Top Clients: it was renamed and
+  // the id never was. Tim goes by what is ON the screen, because that is the
+  // only name the owner has ever seen. No 'best clients' here on purpose, or it
+  // would steal "who is my best customer" off the answer that reads his books.
+  {pg:'pg-checklist',   name:'Top clients', say:['top clients','heavy hitters','my top clients',
+                                                 'client rankings','who are my top']},
   {pg:'pg-settings',    name:'Settings',    say:['settings','preferences','my account']},
 ];
 

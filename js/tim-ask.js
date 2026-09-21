@@ -330,7 +330,14 @@ function _timAnswerWho(said){
     title:c.name,
     sub:owed?(_timAskMoney(owed.amount)+' still out, '+_timAskDays(owed.days)):'Paid up',
     rows,
-    go:{label:'Open '+(String(c.name).split(' ')[0]||'customer'),fn:"openClient("+Number(c.id)+")"},
+    // openClientDetail, not openClient. openClient has never existed anywhere in
+    // this codebase: the button threw ReferenceError on click and the sheet
+    // just sat there, which is the exact shape of the complaint that started
+    // all of this ("Tim didn't do shit"). Nothing caught it because the answer
+    // tests read the returned object and never clicked the button it describes.
+    // The test below now clicks it.
+    go:{label:'Open '+(String(c.name).split(' ')[0]||'customer'),
+      fn:"openClientDetail("+Number(c.id)+",'clients')"},
   };
 }
 
