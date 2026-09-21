@@ -814,10 +814,23 @@ async function tdSaveAnnotation(){
     return false;
   }
   blob.name='marked-'+Date.now()+'.jpg';
-  if(!p.originalUrl){p.originalUrl=p.url||'';p.originalPath=p.storagePath||'';}
-  p.annotated=true;
+  // ── Write to the LIVE row, never to the one captured before an await ────
+  // A delta or realtime merge REPLACES the objects in photos[] (the table's
+  // set() does photos.length=0 then re-pushes), so any reference held across
+  // an await can be a dead object whose fields nobody will ever read again.
+  // _uploadClientHub learned this the hard way with `clients` and re-finds
+  // its row for the same reason. Every write below goes through this.
+  const live=()=>photos.find(x=>String(x.id)===String(_pcAnno&&_pcAnno.photoId))||p;
+  // The url this markup is being made FROM, captured once, before anything
+  // can move: this is what originalUrl has to end up holding.
+  const srcUrl=p.url||'';
+  const srcPath=p.storagePath||'';
+  const stamp=r=>{ if(!r.originalUrl){r.originalUrl=srcUrl;r.originalPath=srcPath;} r.annotated=true; };
+  stamp(p);
   const dataUrl=await _pcReadDataUrl(blob);
-  if(dataUrl)p.data=dataUrl;
+  const r1=live();
+  stamp(r1);
+  if(dataUrl)r1.data=dataUrl;
   saveAll();
   if(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa){
     try{
@@ -829,10 +842,15 @@ async function tdSaveAnnotation(){
         const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
         if(urlData&&urlData.publicUrl){
           const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
-          p.url=urlData.publicUrl;p.storagePath=path;p.thumbUrl=thumbUrl;p.thumbPath=thumbPath;
-          delete p.data;
+          // Re-found AFTER the uploads, then stamped again: the row may have
+          // been replaced while those were in flight, and the replacement
+          // carries whatever the server had, which is not this markup.
+          const r2=live();
+          stamp(r2);
+          r2.url=urlData.publicUrl;r2.storagePath=path;r2.thumbUrl=thumbUrl;r2.thumbPath=thumbPath;
+          delete r2.data;
           saveAll();
-          if(p.client_id!=null&&typeof _uploadClientHub==='function')_uploadClientHub(p.client_id).catch(()=>{});
+          if(r2.client_id!=null&&typeof _uploadClientHub==='function')_uploadClientHub(r2.client_id).catch(()=>{});
         }
       }
     }catch(_e){}

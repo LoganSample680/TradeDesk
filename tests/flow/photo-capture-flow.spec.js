@@ -224,6 +224,12 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
             annotated: !!after.annotated,
             markedReachable: await reach(after.url),
             originalReachable: await reach(after.originalUrl),
+            // Diagnostics, so a failure says WHY rather than just "false".
+            // The first live failure here reported only booleans and cost a
+            // round trip to learn nothing.
+            sameObject: before === after,
+            rowsWithOriginal: photos.filter(x => x.originalUrl).length,
+            tail: { before: String(urlBefore).slice(-34), after: String(after.url).slice(-34), orig: String(after.originalUrl).slice(-34) },
           };
         }, beforeShots[0].id);
         // Tap the shot in the strip (1), drag one arrow (1), Save (1).
@@ -233,7 +239,7 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
         const ok = marked.opened && marked.urlAfter && marked.urlAfter !== marked.urlBefore &&
           marked.originalUrl === marked.urlBefore && marked.annotated &&
           marked.markedReachable && marked.originalReachable;
-        return { ok: !!ok, got: JSON.stringify({ changed: marked.urlAfter !== marked.urlBefore, keptOriginal: marked.originalUrl === marked.urlBefore, marked: marked.markedReachable, original: marked.originalReachable }) };
+        return { ok: !!ok, got: JSON.stringify({ changed: marked.urlAfter !== marked.urlBefore, keptOriginal: marked.originalUrl === marked.urlBefore, marked: marked.markedReachable, original: marked.originalReachable, sameObject: marked.sameObject, rowsWithOriginal: marked.rowsWithOriginal, tail: marked.tail }) };
       },
     });
 
