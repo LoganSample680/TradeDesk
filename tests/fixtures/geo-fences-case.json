@@ -1,5 +1,5 @@
 {
-  "note": "ONE fixture, TWO implementations. _geoDeriveFences (js/geo-track.js) runs it in the browser; geo_fences_for (20260929) runs it in Postgres. Both are asserted against `expect` below, so the two cannot drift without a test going red. Day is 2026-09-01: job 9001 is active (Sep 1 to 2), 9002 ended Aug 20, 9003 is canceled, 9004 is done. A job fence is named for its CLIENT, not the job (js/geo-track.js uses _tlJobClientInfo(j.id).clientName, falling back to the job name, then 'Job'); the SQL half got that wrong on its first run and this fixture is what caught it. c6 is marked family (owner 2026-09-12): identical to c2 in every way except the flag, so a half that drops `personal` fails on that one row alone. Rule 13 third witness (2026-09-12): c6 is family with only a DRAFT bid and must ask; c7 is identical but carries a Pending proposal and counts as work. c2 shows the whole point of the witness: its job 9002 is still 'upcoming' but dated Aug 20, so scheduled is FALSE (wrong day) and on_books is TRUE (still open work). c6 carries both a Draft and a Closed Lost and stays off the books.",
+  "note": "ONE fixture, TWO implementations. _geoDeriveFences (js/geo-track.js) runs it in the browser; geo_fences_for (20260929) runs it in Postgres. Both are asserted against `expect` below, so the two cannot drift without a test going red. Day is 2026-09-01: job 9001 is active (Sep 1 to 2), 9002 ended Aug 20, 9003 is canceled, 9004 is done. A job fence is named for its CLIENT, not the job (js/geo-track.js uses _tlJobClientInfo(j.id).clientName, falling back to the job name, then 'Job'); the SQL half got that wrong on its first run and this fixture is what caught it. c6 is marked family (owner 2026-09-12): identical to c2 in every way except the flag, so a half that drops `personal` fails on that one row alone. Rule 13 third witness (2026-09-12): c6 is family with only a DRAFT bid and must ask; c7 is identical but carries a Pending proposal and counts as work. c2 shows the whole point of the witness: its job 9002 is still 'upcoming' but dated Aug 20, so scheduled is FALSE (wrong day) and on_books is TRUE (still open work). c6 carries both a Draft and a Closed Lost and stays off the books. Address in the name (Jack via the owner, 2026-09-21): a fence named for a PERSON carries the street line in parentheses, so a customer's primary address reads 'Scheduled Client (10 A St)' and a job reads its own street. A property card keeps a typed label and falls back to its street. Places are untouched: a supply house's name is which store it is. geo_street_line (20261030) and _geoStreetLine/_geoFenceName (js/geo-track.js) are the pair this fixture holds together.",
   "day": "2026-09-01",
   "settings": {
     "officeLat": 39.05,
@@ -183,7 +183,7 @@
     {
       "id": "client-c1",
       "kind": "client",
-      "name": "Scheduled Client",
+      "name": "Scheduled Client (10 A St)",
       "lat": 39.1,
       "lng": -95.8,
       "scheduled": true,
@@ -194,7 +194,7 @@
     {
       "id": "client-c2",
       "kind": "client",
-      "name": "Unscheduled Client",
+      "name": "Unscheduled Client (11 B St)",
       "lat": 39.11,
       "lng": -95.81,
       "scheduled": false,
@@ -205,7 +205,7 @@
     {
       "id": "job-9001",
       "kind": "job",
-      "name": "Scheduled Client",
+      "name": "Scheduled Client (20 Job Rd)",
       "lat": 39.2,
       "lng": -95.9,
       "scheduled": null,
@@ -216,7 +216,7 @@
     {
       "id": "client-c6",
       "kind": "client",
-      "name": "Mom",
+      "name": "Mom (14 F St)",
       "lat": 39.14,
       "lng": -95.84,
       "scheduled": false,
@@ -227,7 +227,7 @@
     {
       "id": "client-c7",
       "kind": "client",
-      "name": "Dad, mid-job",
+      "name": "Dad, mid-job (14 F St)",
       "lat": 39.14,
       "lng": -95.84,
       "scheduled": false,
