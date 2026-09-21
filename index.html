@@ -1627,6 +1627,24 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-uf-row{display:flex;gap:11px;align-items:center;padding:9px;border:1px solid var(--line);border-radius:var(--r-md);margin-bottom:8px}
 .pc-uf-row:last-child{margin-bottom:0}
 .pc-uf-thumb{width:60px;height:60px;flex:0 0 auto;border-radius:var(--r-md);background:var(--cream) center/cover no-repeat}
+/* A burst reads as a stack of prints: one thing to deal with, with the count
+   on it, rather than six identical rows down the dashboard. */
+.pc-uf-thumb{position:relative}
+.pc-uf-thumb.stack{box-shadow:3px -3px 0 -1px var(--bg-card),3px -3px 0 0 var(--line),6px -6px 0 -1px var(--bg-card),6px -6px 0 0 var(--line)}
+.pc-uf-n{position:absolute;right:3px;bottom:3px;background:rgba(10,13,17,.82);color:#fff;border-radius:var(--r-pill);padding:1px 7px;font-size:11px;font-weight:800}
+/* ── The burst review sheet (shoot → triage → attach, all on site) ───────── */
+.pc-rev{position:fixed;inset:0;z-index:10050;background:#0E1116;color:#fff;display:flex;flex-direction:column;animation:fadein .16s ease}
+.pc-rev-top{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 10px}
+.pc-rev-title{flex:1;text-align:center;font-size:15px;font-weight:900}
+.pc-rev-sp{min-width:92px}
+.pc-rev-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:4px 12px 12px;align-content:start}
+.pc-rev-cell{position:relative;aspect-ratio:1;border:none;padding:0;border-radius:var(--r-md);background:#2a3038 center/cover no-repeat;touch-action:manipulation}
+.pc-rev-tag{position:absolute;left:5px;bottom:5px;background:rgba(10,13,17,.8);color:#fff;border-radius:var(--r-pill);padding:2px 8px;font-size:10px;font-weight:800;text-transform:capitalize}
+.pc-rev-stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px}
+.pc-rev-img{max-width:100%;max-height:100%;border-radius:var(--r-md)}
+.pc-rev-foot{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px calc(20px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
+.pc-rev-attach{flex:1;min-width:180px}
+.pc-side.danger{background:rgba(229,72,77,.22);color:#ff9b9e}
 .pc-uf-meta{flex:1;min-width:0}
 .pc-uf-when{font-size:14px;font-weight:800;color:var(--text)}
 .pc-uf-sub{font-size:12px;color:var(--text-3);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

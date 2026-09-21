@@ -415,37 +415,169 @@ test.describe('Photo capture: the sheet itself', () => {
 
   // Six shots with nobody attached went into the tray and the dashboard was
   // never repainted, so from the outside they vanished (owner, first UAT run).
-  test('shooting with no customer says where the photos went, and paints the tray', async () => {
-    const r = await page.evaluate(async () => {
-      const said = [];
-      const realToast = window.showToast, realDash = window.renderDash;
-      let painted = 0;
-      window.showToast = (m) => { said.push(m); };
-      window.renderDash = () => { painted++; };
-      tdCaptureUnfiled();
-      await tdSavePhoto({ type: 'before', file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
-      _pcShots = 1;
-      tdCloseCapture();
-      window.showToast = realToast; window.renderDash = realDash;
-      return { said: said.join(' | '), painted };
-    });
-    expect(r.painted).toBeGreaterThanOrEqual(1);
-    expect(r.said).toContain('dashboard');
+  // The answer is not a better tray: the decision belongs at the end of the
+  // shoot, while the contractor is still standing there.
+  const shootUnfiled = (n) => page.evaluate(async (count) => {
+    tdCaptureUnfiled();
+    const ids = [];
+    for (let i = 0; i < count; i++) {
+      const r = await tdSavePhoto({ type: 'before', file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
+      ids.push(r.id); _pcSessionIds.push(r.id); _pcShots++;
+    }
+    tdCloseCapture();
+    return ids;
+  }, n);
+
+  test('finishing a shoot with no customer opens the burst, all of it', async () => {
+    const ids = await shootUnfiled(6);
+    const r = await page.evaluate(() => ({
+      open: !!document.getElementById('pc-rev'),
+      cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+      title: document.querySelector('#pc-rev .pc-rev-title').textContent,
+    }));
+    expect(r.open).toBe(true);
+    expect(r.cells).toBe(6);
+    expect(r.title).toBe('6 shots');
+    expect(ids.length).toBe(6);
+    await page.evaluate(() => tdReviewClose());
   });
 
-  test('shooting for a customer does not tell you to go file it', async () => {
+  test('a shoot that already has a customer closes without asking again', async () => {
     const r = await page.evaluate(async () => {
-      const said = [];
-      const realToast = window.showToast, realDash = window.renderDash;
-      window.showToast = (m) => { said.push(m); };
-      window.renderDash = () => {};
       tdCaptureForBid(901, 'before');
-      _pcShots = 1;
+      await tdSavePhoto({ type: 'before', bidId: 901, file: new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
+      _pcShots++;
       tdCloseCapture();
-      window.showToast = realToast; window.renderDash = realDash;
-      return said.join(' | ');
+      return !!document.getElementById('pc-rev');
     });
-    expect(r).not.toContain('dashboard');
+    expect(r).toBe(false);
+  });
+
+  test('a shot opens full size, steps both ways, and wraps', async () => {
+    await shootUnfiled(3);
+    const r = await page.evaluate(() => {
+      const seen = [];
+      tdReviewOpen(0);
+      seen.push(document.querySelector('.pc-rev-title').textContent);
+      tdReviewStep(1); seen.push(document.querySelector('.pc-rev-title').textContent);
+      tdReviewStep(-1); tdReviewStep(-1); seen.push(document.querySelector('.pc-rev-title').textContent);
+      const img = !!document.getElementById('pc-rev-img');
+      tdReviewGrid();
+      const backToGrid = document.querySelectorAll('#pc-rev .pc-rev-cell').length;
+      return { seen: seen.join(','), img, backToGrid };
+    });
+    expect(r.seen).toBe('1 of 3,2 of 3,3 of 3');   // it wraps rather than sticking
+    expect(r.img).toBe(true);
+    expect(r.backToGrid).toBe(3);
+    await page.evaluate(() => tdReviewClose());
+  });
+
+  test('a bad shot is binned on one tap and comes back on Undo', async () => {
+    const ids = await shootUnfiled(3);
+    const r = await page.evaluate((ids) => {
+      tdReviewOpen(1);
+      tdReviewDelete();
+      const afterDel = {
+        cells: (tdReviewGrid(), document.querySelectorAll('#pc-rev .pc-rev-cell').length),
+        inPhotos: photos.some(p => String(p.id) === String(ids[1])),
+      };
+      tdReviewUndo();
+      return {
+        afterDel,
+        cellsBack: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+        backInPhotos: photos.some(p => String(p.id) === String(ids[1])),
+      };
+    }, ids);
+    expect(r.afterDel.cells).toBe(2);
+    expect(r.afterDel.inPhotos).toBe(false);
+    expect(r.cellsBack).toBe(3);
+    expect(r.backInPhotos).toBe(true);
+    await page.evaluate(() => tdReviewClose());
+  });
+
+  // Nothing leaves storage while Undo is still on screen.
+  test('deleting only reaches storage once the sheet is closed', async () => {
+    await shootUnfiled(2);
+    const r = await page.evaluate(() => {
+      const removed = [];
+      const realFrom = _supa.storage.from.bind(_supa.storage);
+      _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
+        remove: async (paths) => { removed.push(...paths); return { data: null, error: null }; }
+      });
+      tdReviewOpen(0);
+      const p = photos.find(x => String(x.id) === String(_pcRev.ids[0]));
+      p.storagePath = 'u/unfiled/one.jpg';
+      tdReviewDelete();
+      const duringSheet = removed.length;
+      tdReviewClose();
+      _supa.storage.from = realFrom;
+      return { duringSheet, afterClose: removed.join(',') };
+    });
+    expect(r.duringSheet).toBe(0);
+    expect(r.afterClose).toContain('u/unfiled/one.jpg');
+  });
+
+  test('one customer, one tap, the whole burst lands on them', async () => {
+    const ids = await shootUnfiled(4);
+    const r = await page.evaluate((ids) => {
+      tdReviewAttach();
+      document.querySelector('.zmodal-overlay .pc-file-opt').click();
+      const mine = ids.map(id => photos.find(p => String(p.id) === String(id))).filter(Boolean);
+      return {
+        filed: mine.filter(p => p.client_id != null).length,
+        sheetGone: !document.getElementById('pc-rev'),
+        pickerGone: !document.querySelector('.zmodal-overlay'),
+      };
+    }, ids);
+    expect(r.filed).toBe(4);
+    expect(r.sheetGone).toBe(true);
+    expect(r.pickerGone).toBe(true);
+  });
+
+  test('"Not now" keeps them, it never throws them away', async () => {
+    const ids = await shootUnfiled(2);
+    const r = await page.evaluate((ids) => {
+      document.querySelector('#pc-rev .pc-rev-top .pc-side').click();
+      return {
+        gone: !document.getElementById('pc-rev'),
+        kept: ids.filter(id => photos.some(p => String(p.id) === String(id))).length,
+        unfiled: tdUnfiledPhotos().length,
+      };
+    }, ids);
+    expect(r.gone).toBe(true);
+    expect(r.kept).toBe(2);
+    expect(r.unfiled).toBeGreaterThanOrEqual(2);
+  });
+
+  // The tray is the safety net for a burst you walked away from, and it shows
+  // the burst as one thing, the way the review sheet does.
+  test('the tray groups a burst into one row and reopens it', async () => {
+    const r = await page.evaluate(() => {
+      const t0 = Date.parse('2026-09-21T17:00:00.000Z');
+      photos.length = 0;
+      for (let i = 0; i < 5; i++) photos.push({ id: 700 + i, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, uploadedAt: new Date(t0 + i * 20000).toISOString() });
+      // an hour later is a different walkthrough, not the same burst
+      photos.push({ id: 799, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, uploadedAt: new Date(t0 + 3600000).toISOString() });
+      const host = document.createElement('div');
+      host.innerHTML = tdUnfiledTrayHTML();
+      document.body.appendChild(host);
+      const rows = host.querySelectorAll('.pc-uf-row').length;
+      const counts = [...host.querySelectorAll('.pc-uf-n')].map(n => n.textContent).join(',');
+      [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'Review').click();
+      const cells = document.querySelectorAll('#pc-rev .pc-rev-cell').length;
+      host.remove(); tdReviewClose();
+      return { bursts: tdUnfiledBursts().length, rows, counts, cells };
+    });
+    expect(r.bursts).toBe(2);
+    expect(r.rows).toBe(2);
+    expect(r.counts).toBe('5');          // the single shot carries no count badge
+    expect(r.cells).toBe(1);             // newest burst first: the lone later shot
+  });
+
+  // §7.1: the single-photo picker it replaced is gone, not hidden.
+  test('the one-photo file picker is gone, replaced by the burst attach', async () => {
+    const still = await page.evaluate(() => typeof tdOpenFilePicker);
+    expect(still).toBe('undefined');
   });
 
   test('closing removes the sheet and stops the camera', async () => {
@@ -994,9 +1126,15 @@ test.describe('TrueShot: every control, and no dead ones', () => {
       // unfiled tray + its file picker
       photos.push({ id: 883, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
       scan(tdUnfiledTrayHTML(), 'tray');
-      tdOpenFilePicker(883);
-      scan(document.querySelector('.zmodal-overlay').innerHTML, 'filepicker');
+      // the burst review sheet and its attach picker
+      tdReviewShots([883]);
+      scan(document.getElementById('pc-rev').innerHTML, 'review-grid');
+      tdReviewOpen(0);
+      scan(document.getElementById('pc-rev').innerHTML, 'review-viewer');
+      tdReviewAttach();
+      scan(document.querySelector('.zmodal-overlay').innerHTML, 'review-picker');
       document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      tdReviewClose();
       // the estimate header chip
       scan(document.getElementById('gei-photo-chip').outerHTML, 'chip');
       // the dashboard quick action
@@ -1099,20 +1237,21 @@ test.describe('TrueShot: every control, and no dead ones', () => {
       [...document.querySelectorAll('.zmodal-overlay button')].find(b => /Shoot the After/.test(b.textContent)).click();
       if (!document.getElementById('pc-sheet') || _pcCtx.type !== 'after') dead.push('Shoot the After set');
       tdCloseCapture();
-      // The tray's File button opens the picker; the picker's option files it.
+      // The tray's Review button opens the burst sheet; Attach files the lot.
       photos.push({ id: 888, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
       const host = document.createElement('div');
       host.innerHTML = tdUnfiledTrayHTML();
       document.body.appendChild(host);
-      const fileBtn = [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'File');
-      fileBtn && fileBtn.click();
-      const picker = document.querySelector('.zmodal-overlay');
-      if (!picker) dead.push('File');
+      const revBtn = [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'Review');
+      revBtn && revBtn.click();
+      if (!document.getElementById('pc-rev')) dead.push('Review');
       else {
-        const opt = picker.querySelector('.pc-file-opt');
+        tdReviewAttach();
+        const picker = document.querySelector('.zmodal-overlay');
+        const opt = picker && picker.querySelector('.pc-file-opt');
         opt && opt.click();
         const p = photos.find(x => String(x.id) === '888');
-        if (!p || p.client_id == null) dead.push('pick a customer');
+        if (!p || p.client_id == null) dead.push('Attach to customer');
       }
       // The guess pill files it in one tap, which is the whole point of it.
       photos.push({ id: 889, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });

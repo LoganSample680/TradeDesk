@@ -314,7 +314,7 @@ function tdFilePhoto(photoId,clientId,bidId,jobId){
 // native picker (`<input capture="environment">`), which is exactly what the
 // job sheet used before. Nothing is ever unreachable because a permission was
 // refused; the ghost overlay is simply absent on that path.
-let _pcCtx=null,_pcStream=null,_pcShots=0;
+let _pcCtx=null,_pcStream=null,_pcShots=0,_pcSessionIds=[];
 
 function tdOpenCapture(opts){
   opts=opts||{};
@@ -344,18 +344,182 @@ function tdCloseCapture(){
   if(el)el.remove();
   const done=_pcCtx&&_pcCtx.onDone,n=_pcShots;
   const unfiled=!!(_pcCtx&&_pcCtx.clientId==null&&_pcCtx.jobId==null&&_pcCtx.bidId==null);
-  _pcCtx=null;_pcShots=0;
+  const ids=_pcSessionIds.slice();
+  _pcCtx=null;_pcShots=0;_pcSessionIds=[];
   if(done)try{done(n);}catch(_e){}
-  // Closing the sheet has to SHOW where the photos went. Six shots with no
-  // customer on them went straight into the unfiled tray and the dashboard
-  // was never repainted, so from the outside they simply vanished (owner,
-  // first UAT run, 2026-09-21). The tray is the answer; say so, and paint it.
-  if(n>0){
-    if(typeof renderDash==='function')try{renderDash();}catch(_e){}
-    if(unfiled&&typeof showToast==='function'){
-      showToast(n+(n===1?' photo saved':' photos saved')+' · file them on the dashboard','\uD83D\uDCF8');
-    }
+  if(!n)return;
+  if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+  // The decision "whose is this" belongs HERE, while the contractor is still
+  // standing in front of the thing they photographed, not on a dashboard card
+  // they have to find later (owner, first UAT run, 2026-09-21). A tagged
+  // shoot already has its answer and closes silently, so the flow that had a
+  // customer never pays a tap for the flow that did not.
+  if(unfiled)tdReviewShots(ids);
+}
+
+// ── Review the burst: swipe, bin the bad ones, attach the rest ──────────────
+// Six shots come back as ONE thing to deal with, not six rows. Deleting is
+// immediate because triaging a burst one confirm-dialog at a time is worse
+// than the problem: the bin is held until the sheet closes, so Undo is real
+// and nothing is removed from storage until the contractor walks away from it.
+let _pcRev=null;
+function tdReviewShots(ids){
+  const list=(ids||[]).map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+  if(!list.length)return false;
+  _pcRev={ids:list.map(p=>p.id),i:-1,trash:[]};
+  document.getElementById('pc-rev')?.remove();
+  const el=document.createElement('div');
+  el.id='pc-rev';el.className='pc-rev';
+  document.body.appendChild(el);
+  _pcRevPaint();
+  return true;
+}
+function _pcRevRows(){
+  if(!_pcRev)return [];
+  return _pcRev.ids.map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+}
+function _pcRevPaint(){
+  const el=document.getElementById('pc-rev');
+  if(!el||!_pcRev)return;
+  const rows=_pcRevRows();
+  if(!rows.length){tdReviewClose();return;}
+  el.innerHTML=(_pcRev.i>=0&&rows[_pcRev.i])?_pcRevViewerHTML(rows):_pcRevGridHTML(rows);
+  if(_pcRev.i>=0)_pcRevBindSwipe();
+}
+function _pcRevGridHTML(rows){
+  const n=rows.length;
+  return '<div class="pc-rev-top">'+
+      '<button type="button" class="pc-side" onclick="tdReviewClose()">Not now</button>'+
+      '<span class="pc-rev-title">'+n+(n===1?' shot':' shots')+'</span>'+
+      '<span class="pc-rev-sp"></span>'+
+    '</div>'+
+    '<div class="pc-rev-grid">'+rows.map((p,i)=>
+      '<button type="button" class="pc-rev-cell" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" onclick="tdReviewOpen('+i+')">'+
+        '<span class="pc-rev-tag">'+escHtml(p.type)+'</span></button>').join('')+
+    '</div>'+
+    '<div class="pc-rev-foot">'+
+      (_pcRev.trash.length?'<button type="button" class="pc-side" onclick="tdReviewUndo()">Undo delete</button>':'')+
+      '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'+
+    '</div>';
+}
+function _pcRevViewerHTML(rows){
+  const p=rows[_pcRev.i];
+  return '<div class="pc-rev-top">'+
+      '<button type="button" class="pc-side" onclick="tdReviewGrid()">All shots</button>'+
+      '<span class="pc-rev-title">'+(_pcRev.i+1)+' of '+rows.length+'</span>'+
+      '<span class="pc-rev-sp"></span>'+
+    '</div>'+
+    '<div class="pc-rev-stage" id="pc-rev-stage">'+
+      '<img class="pc-rev-img" id="pc-rev-img" src="'+_pcEscUrl(tdPhotoSrc(p))+'" alt="">'+
+    '</div>'+
+    '<div class="pc-rev-foot">'+
+      '<button type="button" class="pc-side" onclick="tdReviewStep(-1)">Prev</button>'+
+      '<button type="button" class="pc-side danger" onclick="tdReviewDelete()">Delete</button>'+
+      '<button type="button" class="pc-side" onclick="tdAnnotatePhoto(\''+p.id+'\')">Mark up</button>'+
+      '<button type="button" class="pc-side" onclick="tdReviewStep(1)">Next</button>'+
+    '</div>';
+}
+function _pcEscUrl(u){return String(u||'').replace(/'/g,'%27').replace(/"/g,'&quot;');}
+// A thumb is a tap target on a phone, so the viewer is also a swipe: the
+// gesture people already use for a camera roll.
+function _pcRevBindSwipe(){
+  const st=document.getElementById('pc-rev-stage');
+  if(!st)return;
+  let x0=null;
+  st.addEventListener('touchstart',e=>{x0=e.touches&&e.touches[0]?e.touches[0].clientX:null;},{passive:true});
+  st.addEventListener('touchend',e=>{
+    if(x0==null)return;
+    const x1=e.changedTouches&&e.changedTouches[0]?e.changedTouches[0].clientX:x0;
+    const dx=x1-x0;x0=null;
+    if(Math.abs(dx)>40)tdReviewStep(dx<0?1:-1);
+  },{passive:true});
+}
+function tdReviewOpen(i){
+  if(!_pcRev)return false;
+  _pcRev.i=i;_pcRevPaint();return true;
+}
+function tdReviewGrid(){
+  if(!_pcRev)return false;
+  _pcRev.i=-1;_pcRevPaint();return true;
+}
+function tdReviewStep(d){
+  if(!_pcRev)return false;
+  const n=_pcRevRows().length;
+  if(!n)return false;
+  _pcRev.i=(_pcRev.i+d+n)%n;
+  _pcRevPaint();return true;
+}
+function tdReviewDelete(){
+  if(!_pcRev)return false;
+  const rows=_pcRevRows();
+  const p=rows[_pcRev.i];
+  if(!p)return false;
+  _pcRev.trash.push(p);
+  _pcRev.ids=_pcRev.ids.filter(id=>String(id)!==String(p.id));
+  photos=photos.filter(x=>String(x.id)!==String(p.id));
+  saveAll();
+  const left=_pcRevRows().length;
+  if(!left){tdReviewClose();return true;}
+  if(_pcRev.i>=left)_pcRev.i=left-1;
+  _pcRevPaint();
+  return true;
+}
+function tdReviewUndo(){
+  if(!_pcRev||!_pcRev.trash.length)return false;
+  const p=_pcRev.trash.pop();
+  photos.push(p);
+  _pcRev.ids.push(p.id);
+  saveAll();
+  _pcRevPaint();
+  return true;
+}
+// One customer for the whole burst: they were all shot in the same place at
+// the same minute, so asking per photo is five taps to say the same thing.
+function tdReviewAttach(){
+  if(!_pcRev)return false;
+  const ids=_pcRev.ids.slice();
+  if(!ids.length)return false;
+  const opts=clients.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';
+  ov.style.alignItems='center';
+  ov.innerHTML='<div class="zmodal">'+
+    '<div style="font-size:18px;font-weight:900;margin-bottom:4px">Whose '+(ids.length===1?'photo':'photos')+'?</div>'+
+    '<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">All '+ids.length+' land in their hub.</div>'+
+    '<div class="pc-file-list">'+
+      (opts.length?opts.map(c=>'<button type="button" class="pc-file-opt" onclick="tdReviewFileAll('+c.id+');this.closest(\'.zmodal-overlay\').remove()">'+
+        escHtml(c.name||'Unnamed')+'<span>'+escHtml(c.addr||'')+'</span></button>').join('')
+        :'<div style="font-size:13px;color:var(--text-3)">No customers yet.</div>')+
+    '</div>'+
+    '<button class="btn btn-full" style="margin-top:12px" onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>'+
+  '</div>';
+  document.body.appendChild(ov);
+  return true;
+}
+function tdReviewFileAll(clientId){
+  if(!_pcRev)return 0;
+  const ids=_pcRev.ids.slice();
+  let n=0;
+  ids.forEach(id=>{if(tdFilePhoto(id,clientId))n++;});
+  const c=clients.find(x=>x.id===clientId);
+  tdReviewClose();
+  if(typeof showToast==='function')showToast(n+(n===1?' photo':' photos')+' filed to '+((c&&c.name)||'the customer'),'\u2705');
+  if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+  return n;
+}
+function tdReviewClose(){
+  const trash=_pcRev?_pcRev.trash.slice():[];
+  _pcRev=null;
+  document.getElementById('pc-rev')?.remove();
+  // Only now, once the contractor has walked away from the sheet, do the
+  // deleted shots actually leave storage. Undo is free until this point.
+  if(trash.length&&typeof supaEnabled==='function'&&supaEnabled()&&_supa){
+    const paths=trash.map(p=>p.storagePath).filter(Boolean)
+      .concat(trash.map(p=>p.thumbPath).filter(Boolean));
+    if(paths.length)_supa.storage.from('gallery').remove(paths).catch(()=>{});
   }
+  if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+  return true;
 }
 function _pcSubjectLabel(){
   if(!_pcCtx)return '';
@@ -515,6 +679,7 @@ async function _pcCommit(file){
   // customer later. Best effort: a denied location never blocks a photo.
   _pcStampGeo(row);
   _pcShots++;
+  _pcSessionIds.push(row.id);
   _pcPaint();
   if(typeof _pcAfterSave==='function')_pcAfterSave(row);
 }
@@ -600,20 +765,45 @@ function tdPromptAfterShots(jobId){
 }
 
 // ── The unfiled tray (dashboard) ────────────────────────────────────────────
+// A burst is ONE thing on the dashboard, not six rows. Shots taken in the
+// same stretch are the same walkthrough, so they are grouped by the gap
+// between them and reopened in the same review sheet the shoot ends with.
+// Derived at read time rather than stamped on the row: no new column, and
+// history groups itself the day this ships.
+const _PC_BURST_GAP=15*60*1000;
+function tdUnfiledBursts(){
+  const un=tdUnfiledPhotos().slice().sort((a,b)=>Date.parse(a.uploadedAt||0)-Date.parse(b.uploadedAt||0));
+  const out=[];
+  un.forEach(p=>{
+    const last=out[out.length-1];
+    const t=Date.parse(p.uploadedAt||0)||0;
+    if(last&&Math.abs(t-last.at)<=_PC_BURST_GAP){last.photos.push(p);last.at=t;}
+    else out.push({photos:[p],at:t});
+  });
+  return out.reverse();
+}
+function tdReviewBurst(firstId){
+  const b=tdUnfiledBursts().find(x=>x.photos.some(p=>String(p.id)===String(firstId)));
+  if(!b)return false;
+  return tdReviewShots(b.photos.map(p=>p.id));
+}
 function tdUnfiledTrayHTML(){
   const un=tdUnfiledPhotos();
   if(!un.length)return '';
-  const rows=un.slice(-4).reverse().map(p=>{
-    const guess=tdGuessClientFor(p);
+  const rows=tdUnfiledBursts().slice(0,4).map(b=>{
+    const p=b.photos[b.photos.length-1];
+    const guess=tdGuessClientFor(p)||b.photos.map(tdGuessClientFor).find(Boolean);
     const when=_pcShotTime(p);
+    const n=b.photos.length;
     const pill=guess
-      ?'<span class="pc-uf-pill ok" onclick="tdFilePhoto(\''+p.id+'\','+guess.id+');renderDash()">'+escHtml(guess.name)+'?</span>'
+      ?'<span class="pc-uf-pill ok" onclick="tdReviewFileBurst(\''+p.id+'\','+guess.id+')">'+escHtml(guess.name)+'?</span>'
       :'<span class="pc-uf-pill">Pick a customer</span>';
     return '<div class="pc-uf-row">'+
-      '<div class="pc-uf-thumb" style="background-image:url(\''+(p.thumbUrl||p.url||p.data||'')+'\')"></div>'+
-      '<div class="pc-uf-meta"><div class="pc-uf-when">Shot '+escHtml(when)+'</div>'+
+      '<div class="pc-uf-thumb'+(n>1?' stack':'')+'" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')">'+
+        (n>1?'<span class="pc-uf-n">'+n+'</span>':'')+'</div>'+
+      '<div class="pc-uf-meta"><div class="pc-uf-when">'+(n>1?n+' shots · ':'Shot ')+escHtml(when)+'</div>'+
         '<div class="pc-uf-sub">'+(guess?escHtml(guess.addr||''):'No address match')+'</div>'+pill+'</div>'+
-      '<button type="button" class="pc-uf-file" onclick="tdOpenFilePicker(\''+p.id+'\')">File</button>'+
+      '<button type="button" class="pc-uf-file" onclick="tdReviewBurst(\''+p.id+'\')">Review</button>'+
     '</div>';
   }).join('');
   return '<div class="card" id="dash-unfiled-photos">'+
@@ -622,6 +812,15 @@ function tdUnfiledTrayHTML(){
       '<span class="pc-uf-count">'+un.length+'</span></div>'+
     rows+'</div>';
 }
+// The address guess, accepted for the whole burst in one tap.
+function tdReviewFileBurst(firstId,clientId){
+  const b=tdUnfiledBursts().find(x=>x.photos.some(p=>String(p.id)===String(firstId)));
+  if(!b)return 0;
+  let n=0;
+  b.photos.forEach(p=>{if(tdFilePhoto(p.id,clientId))n++;});
+  if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+  return n;
+}
 function _pcShotTime(p){
   try{
     const d=new Date(p.uploadedAt);
@@ -629,29 +828,6 @@ function _pcShotTime(p){
     return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
   }catch(_e){return '';}
 }
-// File one photo: pick the customer, and then the open estimate or job on that
-// customer if there is exactly one, because that is the answer nine times out
-// of ten and asking twice is a tap nobody needs.
-function tdOpenFilePicker(photoId){
-  const p=photos.find(x=>String(x.id)===String(photoId));
-  if(!p)return;
-  const opts=clients.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
-  const ov=document.createElement('div');
-  ov.className='zmodal-overlay';
-  ov.style.alignItems='center';
-  ov.innerHTML='<div class="zmodal">'+
-    '<div style="font-size:18px;font-weight:900;margin-bottom:4px">Whose photo is this?</div>'+
-    '<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">It lands in their hub under '+escHtml(p.type)+'.</div>'+
-    '<div class="pc-file-list">'+
-      (opts.length?opts.map(c=>'<button type="button" class="pc-file-opt" onclick="tdFilePhoto(\''+p.id+'\','+c.id+');this.closest(\'.zmodal-overlay\').remove();typeof renderDash===\'function\'&&renderDash()">'+
-        escHtml(c.name||'Unnamed')+'<span>'+escHtml(c.addr||'')+'</span></button>').join('')
-        :'<div style="font-size:13px;color:var(--text-3)">No customers yet.</div>')+
-    '</div>'+
-    '<button class="btn btn-full" style="margin-top:12px" onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>'+
-  '</div>';
-  document.body.appendChild(ov);
-}
-
 // ── Annotation (owner 2026-09-21) ───────────────────────────────────────────
 // "Circle the rot, point at the joist, write 'replace this'." It is the most
 // used feature in CompanyCam and the reason a photo beats a paragraph: the
