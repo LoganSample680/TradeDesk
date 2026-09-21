@@ -324,11 +324,25 @@ function timDockRender(opts){
   // rule 8.5, and it is the honest one anyway, since #mtb-tim is display:flex
   // and the old style.display='' was restoring the wrong default.
   const booted=!!document.querySelector('.pg.active');
-  if(!booted||_timCrew()){tab.hidden=true;return;}
+  if(!booted||_timCrew()){
+    tab.hidden=true;
+    try{document.querySelectorAll('.tim-atwork').forEach(el=>{el.hidden=true;});}catch(_e){}
+    return;
+  }
   tab.hidden=false;
 
   const markEl=document.getElementById('mtb-tim-mark');
-  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(24);
+  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(36);
+  // The strips at the point of the work (Collect, the Timesheet). Same wall as
+  // the key: a crew member gets no Tim anywhere, and a hidden control is not a
+  // closed one, so this hides the markup rather than trusting the page it is on.
+  try{
+    document.querySelectorAll('.tim-atwork').forEach(el=>{
+      el.hidden=false;
+      const m=el.querySelector('.tim-atwork-mark');
+      if(m&&!m.firstChild)m.innerHTML=timMark(26);
+    });
+  }catch(_e){}
 
   const finds=_timDockFinds(!!(opts&&opts.cached));
   _timDockNudge=finds.length?finds[0]:null;
@@ -410,6 +424,80 @@ function _timSaySomething(tab,finds){
     void tab.offsetWidth;
     tab.classList.add('noticed');
   }catch(_e){}
+}
+
+// ── The first move, already loaded ───────────────────────────────────────────
+//
+// Owner, 2026-09-21: "I want people to use this thing."
+//
+// This used to be a sentence of prose: "Ask me what you are owed, what you
+// charged for something, or where your work is coming from." It names three
+// things he can do, in the right words, and it is still the wrong shape,
+// because reading a description of a question and then typing that question
+// yourself is two steps where there should be none.
+//
+// Jobber shipped the most prominent entry point available to them, a sparkle in
+// the top navigation of every screen, and then had to publish a marketing page
+// called "50 of the Best Prompts To Try in Jobber AI". That page exists because
+// a blank box teaches nobody anything. ServiceTitan's 2026 trades survey names
+// the same wall from the other side: after training and integration, the top
+// barrier is "difficulty understanding how to use the tools".
+//
+// So the prompts go IN the product, as things to touch. One tap from opening
+// him to a number on the screen.
+//
+// THE RULES FOR WHAT IS ALLOWED ON A CHIP:
+//   It must be a question he can really answer, offline, right now. A chip that
+//   misses is worse than no chip: it is the app promising something in its own
+//   voice and then failing in front of the man it promised.
+//   It must be phrased the way he would say it, not the way a menu would label
+//   it. "What am I owed", not "Accounts receivable".
+//   Three. Four is a menu and a menu is something to read rather than tap.
+const TIM_CHIPS=[
+  {say:'who owes me money',chip:'What am I owed'},
+  {say:'how many hours did we work last week',chip:'Hours last week'},
+  {say:'what do I invoice for last week',chip:'What do I invoice'},
+];
+
+function _timHelloHtml(){
+  // On the estimate builder he is standing in a job, and the job is the
+  // subject. The chips are about the books, which are not what he is looking
+  // at, so there he still gets the sentence.
+  if(_timOnEstimate()){
+    return '<div id="_tim-hello" style="padding:15px 16px 3px;font-size:13px;line-height:1.5;color:var(--text2)">'+
+      'Nothing on this one worth stopping you for. Say what changed and I will put it where it goes.'+
+      '</div>';
+  }
+  return '<div id="_tim-hello" style="padding:13px 16px 2px">'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:9px">Tap one, or say your own</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:7px">'+
+      TIM_CHIPS.map(c=>
+        '<button type="button" class="tim-chip" onclick="_timChip('+
+          escHtml(JSON.stringify(c.say))+')">'+escHtml(c.chip)+'</button>').join('')+
+    '</div></div>';
+}
+
+// A chip is the man typing it, exactly. It goes in the box and down the same
+// door every sentence goes down (_timGo), so it is logged as his, it lands in
+// the thread as his, and the answer comes back as a bubble like any other. No
+// second path, which is also why a chip cannot drift out of step with what
+// typing the same words would do.
+// A door at the work rather than the global one on the bar. Same sentence, same
+// door underneath: openTim then the ordinary send path, so it is logged as his,
+// lands in the thread as his, and cannot drift out of step with what typing the
+// words would do.
+function _timAskFrom(said){
+  if(_timCrew())return;
+  openTim();
+  _timChip(said);
+}
+
+function _timChip(said){
+  const el=document.getElementById('_tim-say');
+  if(!el)return;
+  el.value=String(said||'');
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+  _timGo();
 }
 
 // ── Whether he has ever been opened on this phone ────────────────────────────
@@ -714,14 +802,7 @@ function openTim(){
   // the first thing into an empty sheet. The line is an introduction to a
   // conversation, so the moment there is one it is in the way, and it used to
   // sit there above his own first question taking a third of the sheet.
-  const quiet=found.length||hasThread?'':
-    '<div id="_tim-hello" style="padding:15px 16px 3px;font-size:13px;line-height:1.5;color:var(--text2)">'+
-      (_timOnEstimate()
-        ? 'Nothing on this one worth stopping you for. Say what changed and I will put it where it goes.'
-        // Not a greeting and not a menu: three things he can actually do from
-        // here, named in the words a man would use to ask for them.
-        : 'Ask me what you are owed, what you charged for something, or where your work is coming from.')+
-    '</div>';
+  const quiet=found.length||hasThread?'':_timHelloHtml();
 
   // The log row is last and is usually nothing at all: an empty log adds no
   // furniture to a sheet he opened in order to talk. It only speaks up once
@@ -923,6 +1004,11 @@ function _timTakeNudge(id){
   if(id==='access-missing'&&typeof timAddAccess==='function')timAddAccess(n);
   else if(id==='under-book'&&typeof _timTakeBookPrice==='function')_timTakeBookPrice();
   else if(id==='still-owes'&&typeof goPg==='function')goPg('pg-money');
+  // The three that read the books rather than the estimate. All three are about
+  // money already earned or already quoted, so all three end at a screen he can
+  // act on rather than at a form he has to fill in.
+  else if((id==='books-late'||id==='books-fresh')&&typeof goPg==='function')goPg('pg-money');
+  else if(id==='bid-cold'&&typeof goPg==='function')goPg('pg-leads');
   else if(id==='state-blocks'&&typeof _geiToStylePicker==='function')_geiToStylePicker();
   else if(id==='runs-over'&&typeof _timRaiseHours==='function')_timRaiseHours(n);
   timDockRefresh();

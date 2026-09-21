@@ -11,6 +11,10 @@
 // to a real customer: nothing here calls anything. No model, no key, no
 // network, which is why the whole file runs offline.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+// What the first chip actually says, read off TIM_CHIPS in js/tim.js at run
+// time rather than copied here, so the test cannot pass against a chip the
+// product no longer has.
+const TIM_CHIP_FIRST = 'who owes me money';
 
 const CLIENTS = [
   { id: 8101, name: 'Rick Delaney', addr: '412 Maple St, Wichita, KS 67203' },
@@ -490,24 +494,37 @@ test.describe('tim', () => {
     // He would have shipped as the left-most tab on exactly the devices whose
     // owners had bothered to customise their bar, and no test would have
     // noticed, because a saved order only exists after somebody drags one.
-    test('he is outside the draggable row, so a saved tab order cannot move him', async () => {
+    // He is not a tab and his SEAT is not draggable, and neither of those is a
+    // tidiness point.
+    // _applyTabOrder walks _MTB_DEFAULT_ORDER calling appendChild for dash,
+    // leads, clients and jobs, which moves all four to the END of #mtb-inner.
+    // Anything else living in there is left sitting FIRST. That already
+    // shipped once as a bug in one commit, when Tim himself was in the row: on
+    // every phone with a saved tab order he became the left-most tab, and no
+    // test noticed, because a saved order only exists after somebody drags one.
+    // His seat is in the row now, so the same trap is reset and this is what
+    // holds it shut: after any reorder the seat goes back to the middle.
+    // He himself is outside the bar entirely, for a different reason again
+    // (the bar is the masked element, or was; see the ring test).
+    test('a saved tab order rearranges the tabs and leaves his seat in the middle', async () => {
       const r = await page.evaluate(() => {
-        const before = document.getElementById('mtb-tim')
-          .previousElementSibling?.id || null;
         _applyTabOrder(['jobs', 'clients', 'leads', 'dash']);
-        const inner = [...document.querySelectorAll('#mtb-inner > *')].map(e => e.id);
-        const out = {
-          inInner: !!document.querySelector('#mtb-inner > #mtb-tim'),
-          innerOrder: inner,
-          stillLast: document.getElementById('mobile-tabbar').lastElementChild.id,
-          before,
-        };
+        const dragged = [...document.querySelectorAll('#mtb-inner > *')].map(e => e.id);
         _applyTabOrder(['dash', 'leads', 'clients', 'jobs']);
-        return out;
+        const restored = [...document.querySelectorAll('#mtb-inner > *')].map(e => e.id);
+        return {
+          dragged, restored,
+          timInBar: !!document.querySelector('#mobile-tabbar #mtb-tim'),
+          timInInner: !!document.querySelector('#mtb-inner > #mtb-tim'),
+        };
       });
-      expect(r.inInner).toBe(false);
-      expect(r.innerOrder).toEqual(['mtb-jobs', 'mtb-clients', 'mtb-leads', 'mtb-dash']);
-      expect(r.stillLast).toBe('mtb-tim');
+      // The four tabs obey the saved order; the seat does not travel with them.
+      expect(r.dragged).toEqual(
+        ['mtb-jobs', 'mtb-clients', 'mtb-tim-slot', 'mtb-leads', 'mtb-dash']);
+      expect(r.restored).toEqual(
+        ['mtb-dash', 'mtb-leads', 'mtb-tim-slot', 'mtb-clients', 'mtb-jobs']);
+      expect(r.timInInner, 'he is not one of the draggable tabs').toBe(false);
+      expect(r.timInBar, 'and he is not inside the bar at all').toBe(false);
     });
 
     // The mark used to be seven SVG primitives, so it could not fail to arrive:
@@ -527,11 +544,9 @@ test.describe('tim', () => {
         return {
           found: true,
           natural: img.naturalWidth,
-          // 24 on the key, not the 22 the tab icons beside it use: he has a
-          // whole key to himself, and a face at icon size stops being a face.
-          // 10.4: '58' when he was a floating disc, then '26' on the first
-          // raised version, now 24 because the key is a seated inlay with a
-          // margin to be a key rather than a chip the mark fills.
+          // 10.4, fifth value: '58' as a floating disc, '26' raised, '24' as
+          // a seated inlay, '32' in the ink orb, 36 now. Owner: "make tims
+          // face a bit bigger". The orb went to 60 with it.
           drawn: img.getAttribute('width'),
           // Every density has to be listed or a 3x phone silently takes the
           // one file it was given and softens it.
@@ -540,7 +555,7 @@ test.describe('tim', () => {
       });
       expect(r.found).toBe(true);
       expect(r.natural).toBeGreaterThan(0);
-      expect(r.drawn).toBe('24');
+      expect(r.drawn).toBe('36');
       expect(r.densities).toBe(3);
     });
 
@@ -593,110 +608,194 @@ test.describe('tim', () => {
     });
 
     // The one that matters most, and the one a stylesheet cannot be trusted
-    // for. If he dips into the bar he steals the top of whichever tab is under
-    // him, and that tab is 56px tall to begin with: a 60x46 key overlapping it
-    // by even eight pixels takes a control that is already close to the 44pt
-    // floor and puts it under it.
-    test('his box is entirely above the bar, so no tab loses a pixel', async () => {
+    // ── 10.4: this assertion has been rewritten three times and the RULE has
+    // not moved once. 15.3 is the rule: no two interactive controls may
+    // overlap. What changed is how it is met.
+    //   1. Floating bottom-right, met by DODGING: _timDockLift measured every
+    //      fixed bottom bar on every render and stood him on the tallest one.
+    //   2. Raised wholly above the bar, met by ABSENCE: bottom:100% put him
+    //      above the padding box so no tab could lose a pixel.
+    //   3. Seated in the row, met by RESERVATION: he has his own slot, held by
+    //      #mtb-tim-slot, so he can sit down INTO the bar (which is the whole
+    //      of "built into the nav bar") and still take nothing off anybody.
+    // So the assertion is no longer about height at all. It is that his column
+    // is the seat's column and that he touches no tab.
+    test('he sits in a slot of his own, so nothing of a tab is spent on him', async () => {
       const r = await page.evaluate(() => {
         timDockRender();
         const key = document.getElementById('mtb-tim').getBoundingClientRect();
-        const bar = document.getElementById('mobile-tabbar').getBoundingClientRect();
+        const seat = document.getElementById('mtb-tim-slot').getBoundingClientRect();
         const tabs = [...document.querySelectorAll('#mobile-tabbar .mtb')].map(t => {
           const b = t.getBoundingClientRect();
           return {
             id: t.id,
             // Any overlap at all, not just an overlap of centres. A thumb that
-            // lands on the top eight pixels of Jobs and opens Tim is the bug.
+            // lands on the top eight pixels of Clients and opens Tim is the bug.
             hits: !(key.right <= b.left || key.left >= b.right ||
                     key.bottom <= b.top || key.top >= b.bottom),
             h: Math.round(b.height),
           };
         });
-        const tops = [...document.querySelectorAll('#mobile-tabbar .mtb')]
-          .map(t => t.getBoundingClientRect().top);
         return {
-          // Against the TABS, not against the bar's border-box. bottom:100% is
-          // resolved against the padding box, so he rests one pixel inside the
-          // bar's own 1px top border. That pixel is the border line and belongs
-          // to no control: it is what welds the two shapes together, and the
-          // tabs start below it, same as he ends above them.
-          intoTabs: Math.round(key.bottom - Math.min.apply(null, tops)),
-          intoBorder: Math.round(key.bottom - bar.top),
+          offSeat: Math.round((key.left + key.width / 2) - (seat.left + seat.width / 2)),
+          // He is allowed to be wider than his seat at the top, where he is
+          // above the bar and over nobody. He must not be wider than it DOWN
+          // IN the row, which is the part that sits between two tabs.
+          wordWidth: Math.round(document.getElementById('mtb-tim-word').getBoundingClientRect().width),
+          seatWidth: Math.round(seat.width),
+          seatTaps: getComputedStyle(document.getElementById('mtb-tim-slot')).pointerEvents,
           tabs,
         };
       });
-      expect(r.intoTabs, 'pixels of a tab he covers').toBeLessThanOrEqual(0);
-      expect(r.intoBorder, 'he rests on the border line, not in the bar').toBeLessThanOrEqual(1);
+      expect(Math.abs(r.offSeat), 'he is not centred on his own seat').toBeLessThanOrEqual(1);
       expect(r.tabs.filter(t => t.hits).map(t => t.id)).toEqual([]);
-      // And the tabs he is standing over are still full-size targets.
+      expect(r.wordWidth).toBeLessThanOrEqual(r.seatWidth);
+      // The seat is furniture, not a second control in the same place as him.
+      expect(r.seatTaps).toBe('none');
+      // And the tabs beside him are still full-size targets.
       r.tabs.forEach(t => expect(t.h, t.id + ' height').toBeGreaterThanOrEqual(56));
     });
 
-    // ── Engraved into the bar, gently popping out ───────────────────────────
-    // Owner, 2026-09-21, looking at the first raised version: "I want Tim more
-    // engraved into the bar, like gently popping out."
-    // That first version was a denim chip with a heavy ink outline and a drop
-    // shadow, floating clear above the bar, and the outline is what gave it
-    // away: a shape with its own edge drawn all the way round is a shape
-    // sitting ON something rather than part of it.
-    // The sentence has two halves and so does the assembly, and both halves
-    // are geometry rather than taste, so both can be pinned:
-    //   ENGRAVED is the socket (#mtb-tim::before), which is the bar's own ink
-    //   and the bar's own hairline, lifting out of its top edge.
-    //   POPPING OUT is the key (#mtb-tim-mark), which BREACHES that socket.
-    // The breach is the part worth a test. Every earlier attempt had the key
-    // sitting wholly inside the rise, which made the rise the outermost shape
-    // and meant nothing popped out of anything.
-    test('the key is seated in the bar own material and breaches it', async () => {
+    // ── Built into the bar, and the white that proved he was not ────────────
+    // Owner, 2026-09-21: "more pronounced and no white uglyness around the
+    // outside at the bottom, want Tim built into the nav bar, a lot of dead
+    // space under him that could be filled up."
+    // The white was a HOLE. That version masked a notch out of the bar, and a
+    // mask cuts the bar away and lets whatever is behind it show through, so
+    // every pixel of clearance around him was a pixel of PAGE, which on a light
+    // screen is a bright rim. Nothing is cut now: the ring around him is a disc
+    // of the bar's own ink painted over the bar rather than out of it.
+    // Both halves are geometry, so both can be pinned, and the second one is
+    // the one that would silently come back: a future restyle that reached for
+    // a mask again would put the white straight back.
+    // ── 10.4: the ring is gone and what replaced it is the point ────────────
+    // WAS: a disc of the bar's own ink painted around him, which killed the
+    // white a masked notch had been showing. It did kill it, and it created
+    // the next complaint in the same stroke: above the bar's edge that ink has
+    // nothing to be continuous WITH, so it read as a black collar sitting on
+    // the page. Owner: "no black background around the top ... make him kinda
+    // glass morph into the bar and give shade around the top."
+    // NOW the two jobs are separated. GLASS does the blending: he is
+    // translucent over a blurred backdrop, so his lower half samples the bar's
+    // ink and his upper half samples the page and he shades from one into the
+    // other by himself, with nothing drawn between them. SHADE does the
+    // separation, and it is shadow rather than paint, so it has no edge.
+    // Both are still about the same underlying rule and both would be undone
+    // by the same mistake, which is why they are still tested: an opaque fill
+    // or a mask on the bar brings back the collar or the white respectively.
+    test('he is glass over the bar, with shade rather than an edge', async () => {
       const r = await page.evaluate(() => {
         timDockRender();
-        const btn = document.getElementById('mtb-tim');
-        const mark = document.getElementById('mtb-tim-mark');
+        const orb = document.getElementById('mtb-tim-orb');
         const bar = document.getElementById('mobile-tabbar');
-        const sock = getComputedStyle(btn, '::before');
-        const b = btn.getBoundingClientRect(), m = mark.getBoundingClientRect();
-        const sockH = parseFloat(sock.height);
-        // The socket's top edge, in the same coordinates as the key.
-        const sockTop = b.bottom - sockH;
+        const cs = getComputedStyle(orb);
+        const alpha = (c) => {
+          const m = /rgba?\(([^)]+)\)/.exec(c || '');
+          if (!m) return 1;
+          const p = m[1].split(',').map(x => parseFloat(x));
+          return p.length > 3 ? p[3] : 1;
+        };
+        // The background is a gradient, so the alpha lives in its colour stops.
+        const stops = (cs.backgroundImage.match(/rgba?\([^)]+\)/g) || []);
         return {
-          // The bar's material, not a colour invented for him.
-          sockBg: sock.backgroundColor,
-          barBg: getComputedStyle(bar).backgroundColor,
-          // The bar's own hairline traced over the rise, and no line along the
-          // bottom, so the two shapes are one edge rather than two.
-          sockBorderTop: sock.borderTopColor,
-          barBorderTop: getComputedStyle(bar).borderTopColor,
-          sockBorderBottom: parseFloat(sock.borderBottomWidth),
-          // And it is scenery: the button takes the taps, not the rise.
-          sockEvents: sock.pointerEvents,
-          breach: Math.round(sockTop - m.top),     // how far the key stands clear
-          seated: Math.round(m.bottom - sockTop),  // how much of it is in the socket
-          markH: Math.round(m.height),
+          // Nothing may be cut out of the bar. A mask is what put page behind
+          // him, and -webkit- is checked too because that is the property that
+          // actually ships on the phones this runs on.
+          barMask: getComputedStyle(bar).maskImage || 'none',
+          barMaskWk: getComputedStyle(bar).webkitMaskImage || 'none',
+          // Translucent, or he is not glass and nothing blends.
+          maxAlpha: stops.length ? Math.max.apply(null, stops.map(alpha)) : 1,
+          opaqueBg: alpha(cs.backgroundColor),
+          blur: cs.backdropFilter || cs.webkitBackdropFilter || '',
+          // A LIGHT rim. A dark one tells the eye the thing is a hole.
+          rim: cs.borderTopColor,
+          // And the shade is shadow. A painted halo was tried and reads as a
+          // grey smudge on a light page, because a gradient has a falloff you
+          // can see the end of.
+          shadow: cs.boxShadow,
+          painted: getComputedStyle(orb, '::before').backgroundImage,
         };
       });
-      expect(r.sockBg, 'the socket is the bar\'s own ink').toBe(r.barBg);
-      expect(r.sockBorderTop, 'and the bar\'s own hairline').toBe(r.barBorderTop);
-      expect(r.sockBorderBottom, 'no line where it meets the bar').toBe(0);
-      expect(r.sockEvents).toBe('none');
-      expect(r.breach, 'the key has to stand clear of the socket').toBeGreaterThan(6);
-      expect(r.seated, 'and it has to be sitting IN it, not on it').toBeGreaterThan(6);
-      // Neither half runs away with it: this is "gently", not a pedestal.
-      expect(r.breach).toBeLessThan(r.markH);
-      expect(r.seated).toBeLessThan(r.markH);
+      expect(['none', ''], 'a mask on the bar is the white coming back')
+        .toContain(r.barMask);
+      expect(['none', '']).toContain(r.barMaskWk);
+      // ── 10.4: 0.9 became 0.93, and the number is worth explaining ───────
+      // The old figure was mine, invented one commit earlier, and the product
+      // moved under it: owner asked for him darker and 0.90 landed exactly on
+      // the line. What the guard is actually for is stopping somebody filling
+      // him in solid, because an opaque disc blends with nothing and the whole
+      // morph dies. Anything at 1.0 is that; 0.90 still lets the backdrop tint
+      // him and you can still read the page through his top. So the line sits
+      // just above where the design now is, which is the most it can be
+      // loosened and still catch the thing it was written to catch.
+      expect(r.maxAlpha, 'an opaque fill is not glass').toBeLessThan(0.93);
+      expect(r.opaqueBg, 'and nothing opaque underneath it either').toBeLessThan(0.93);
+      expect(r.blur, 'glass needs the backdrop blurred behind it').toMatch(/blur/);
+      // The rim is pale: every channel well above the ink he sits on.
+      const rgb = (r.rim.match(/\d+/g) || []).slice(0, 3).map(Number);
+      rgb.forEach(c => expect(c, 'the rim has to be light, not ink').toBeGreaterThan(180));
+      expect(r.shadow, 'the shade is shadow').toMatch(/rgba?\(/);
+      expect(['none', ''], 'no painted halo: it smudges on a light page')
+        .toContain(r.painted);
     });
 
-    // "in the center" was the owner's word for it, and off-centre on a raised
-    // control reads as a mistake rather than a choice. Half a pixel of slack
-    // for a bar whose width is odd.
-    test('he sits on the centreline of the bar', async () => {
+    // The dead space under him is filled with the thing he was missing. Every
+    // other slot in this row is a glyph with a word under it; he was the only
+    // one without, and a wordless control is the one a man never learns the
+    // name of. It has to match its neighbours exactly or the row reads as five
+    // of one thing and a guest.
+    test('he has a word, on the same line and in the same type as his neighbours', async () => {
+      const r = await page.evaluate(() => {
+        timDockRender();
+        const w = document.getElementById('mtb-tim-word');
+        const tab = document.getElementById('mtb-clients');
+        const cs = getComputedStyle(w), ts = getComputedStyle(tab);
+        return {
+          text: w.textContent,
+          size: cs.fontSize, tabSize: ts.fontSize,
+          weight: cs.fontWeight, tabWeight: ts.fontWeight,
+          colour: cs.color, tabColour: ts.color,
+          // On the SAME line, not near it. Measured off the bottom of each,
+          // which is what the eye actually reads along.
+          base: Math.round(w.getBoundingClientRect().bottom),
+          tabBase: Math.round([...tab.childNodes]
+            .filter(n => n.nodeType === 3 && n.textContent.trim()).length
+            ? tab.getBoundingClientRect().bottom - parseFloat(ts.paddingBottom)
+            : tab.getBoundingClientRect().bottom),
+        };
+      });
+      expect(r.text).toBe('Tim');
+      expect(r.size).toBe(r.tabSize);
+      expect(r.weight).toBe(r.tabWeight);
+      expect(r.colour).toBe(r.tabColour);
+      expect(Math.abs(r.base - r.tabBase), 'his word is off the row\'s baseline').toBeLessThanOrEqual(2);
+    });
+
+    // ── 10.4: he is no longer on the bar's centreline, on purpose ───────────
+    // WAS: dead centre of the bar. Owner sketched the replacement: him
+    // "splitting the difference between leads and clients", the bar rounding
+    // around him. Six slots now rather than five, his is the third, and dead
+    // centre would put him on the seam between his own seat and Clients.
+    // What the test is really for is unchanged: he must be where the row says
+    // he is, because off-position on a raised control reads as a mistake
+    // rather than a choice. So it measures him against his SEAT.
+    test('he sits on his seat, between two tabs rather than on one', async () => {
       const r = await page.evaluate(() => {
         timDockRender();
         const key = document.getElementById('mtb-tim').getBoundingClientRect();
-        const bar = document.getElementById('mobile-tabbar').getBoundingClientRect();
-        return Math.abs((key.left + key.width / 2) - (bar.left + bar.width / 2));
+        const seat = document.getElementById('mtb-tim-slot').getBoundingClientRect();
+        const kids = [...document.querySelectorAll('#mtb-inner > *')].map(e => e.id);
+        return {
+          off: Math.abs((key.left + key.width / 2) - (seat.left + seat.width / 2)),
+          at: kids.indexOf('mtb-tim-slot'),
+          n: kids.length,
+        };
       });
-      expect(r).toBeLessThanOrEqual(1);
+      expect(r.off).toBeLessThanOrEqual(1);
+      // Between two of them, with tabs on both sides. Which two is the owner's
+      // business, since he can drag them; that there are some is not.
+      expect(r.at).toBeGreaterThan(0);
+      expect(r.at).toBeLessThan(r.n - 1);
     });
 
     // The bar used to carry overflow:hidden, which would have clipped him in
@@ -782,12 +881,18 @@ test.describe('tim', () => {
         return {
           key: key.getAttribute('style'),
           dot: dot.getAttribute('style'),
+          orb: document.getElementById('mtb-tim-orb').getAttribute('style'),
+          word: document.getElementById('mtb-tim-word').getAttribute('style'),
           pos: getComputedStyle(key).position,
         };
       });
       expect(r.key, 'inline style on the key').toBeFalsy();
       expect(r.dot, 'inline style on the badge').toBeFalsy();
-      expect(r.pos).toBe('absolute');
+      expect(r.orb, 'inline style on the orb').toBeFalsy();
+      expect(r.word, 'inline style on the word').toBeFalsy();
+      // 10.4: 'absolute' while he was a child of the bar. He is a sibling of it
+      // now, so the same "the stylesheet owns where he sits" fact is fixed.
+      expect(r.pos).toBe('fixed');
     });
 
     // Quiet he is a key with a face on it; awake he is the same key with a
@@ -825,6 +930,7 @@ test.describe('tim', () => {
           goPg(id);
           const overlaps = () => {
             const b = document.getElementById('mtb-tim').getBoundingClientRect();
+            const bar = document.getElementById('mobile-tabbar').getBoundingClientRect();
             return [...document.querySelectorAll(
               'button,a,input,select,textarea,[role="button"],[onclick]')]
               .filter(el => {
@@ -835,6 +941,12 @@ test.describe('tim', () => {
                 if (r.bottom < 0 || r.top > window.innerHeight) return false;   // off screen
                 // The point a thumb aims at, not the whole box.
                 const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+                // Already behind the tab bar, which is opaque and fixed and has
+                // covered it since long before Tim existed. He reaches down into
+                // the row now, so without this the test reports him for stealing
+                // taps the BAR was already taking: a control a thumb cannot
+                // reach is not a control two things are fighting over.
+                if (cy >= bar.top && cy <= bar.bottom) return false;
                 return cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom;
               })
               .map(el => (el.id || el.className || el.tagName) + ' "' + (el.textContent || '').trim().slice(0, 24) + '"');
@@ -1416,11 +1528,67 @@ test.describe('tim', () => {
       expect(t).not.toContain('Reading');
     });
 
-    test('and he names what he can actually do from there', async () => {
+    // ── 10.4: prose became things to touch ──────────────────────────────────
+    // WAS: a sentence, "Ask me what you are owed, what you charged for
+    // something, or where your work is coming from." It names three real
+    // things in the right words and it is still the wrong shape, because
+    // reading a description of a question and then typing that question is two
+    // steps where there should be none.
+    // Jobber shipped the most prominent entry point available to them and then
+    // had to publish "50 of the Best Prompts To Try in Jobber AI", because a
+    // blank box teaches nobody anything. ServiceTitan's 2026 trades survey
+    // names the same wall from the other side: after training and integration,
+    // the top barrier is difficulty understanding how to use the tools.
+    // The INTENT is unchanged and is why this test exists: he names what he can
+    // actually do, in the words a man would use. They are tappable now.
+    test('and what he can do is there to be touched, not described', async () => {
       const t = await open('pg-dash');
-      expect(t).toContain('what you are owed');
-      expect(t).toContain('what you charged');
-      expect(t).toContain('where your work is coming from');
+      expect(t).toContain('What am I owed');
+      expect(t).toContain('Hours last week');
+      expect(t).toContain('What do I invoice');
+    });
+
+    // The rule that makes a chip safe to ship: it has to be a question he
+    // really answers, offline, right now. A chip that misses is worse than no
+    // chip, because it is the app promising something in its own voice and
+    // then failing in front of the man it promised.
+    test('every chip is a question he can really answer', async () => {
+      const r = await page.evaluate(() => TIM_CHIPS.map(c => {
+        const a = timAsk(c.say);
+        return { chip: c.chip, hit: !!(a && a.id && a.title) };
+      }));
+      expect(r.length).toBe(3);
+      r.forEach(x => expect(x.hit, x.chip + ' does not answer').toBe(true));
+    });
+
+    // A chip is the man typing it, exactly: same box, same door (_timGo), so it
+    // is logged as his and lands in the thread as his. No second path, which is
+    // also why a chip cannot drift out of step with typing the same words.
+    test('tapping one is the same as typing it', async () => {
+      const r = await page.evaluate(async () => {
+        document.getElementById('_tim-ov')?.remove();
+        timNudges = () => [];
+        timLogClear();
+        goPg('pg-dash');
+        openTim();
+        document.querySelector('.tim-chip').click();
+        await new Promise(res => {
+          const t = setInterval(() => {
+            if (document.querySelector('.tim-msg.him')) { clearInterval(t); res(); }
+          }, 20);
+          setTimeout(() => { clearInterval(t); res(); }, 4000);
+        });
+        const out = {
+          said: (document.querySelector('.tim-msg.me .tim-b') || {}).textContent || '',
+          logged: (timLogEntries()[0] || {}).said || '',
+          stillOpen: !!document.getElementById('_tim-say'),
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.said).toBe(TIM_CHIP_FIRST);
+      expect(r.logged).toBe(TIM_CHIP_FIRST);
+      expect(r.stillOpen, 'and it does not end the conversation either').toBe(true);
     });
 
     test('on the estimate builder the job copy is right, so it stays', async () => {

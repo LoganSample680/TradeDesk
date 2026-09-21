@@ -354,9 +354,22 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 /* overflow was hidden on the bar itself. It is visible now so Tim can stand
    proud of the top edge, and the clipping it was there for moved onto .mtb,
    which is the thing that actually had something to clip (a long label). */
-#mobile-tabbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--ink);border-top:1px solid var(--ink-line);padding-bottom:env(safe-area-inset-bottom,0px);flex-wrap:nowrap;overflow:visible}
+/* One number each, because three things have to agree about them: the notch
+   cut out of the bar, the bubble sitting in it, and the arc tracing it. They
+   live on :root rather than on the bar because the bubble is no longer inside
+   the bar and cannot inherit from it. */
+:root{--tim-seat:41.667%;--mtb-h:56px;--tim-seat-w:64px}
+#mobile-tabbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--ink);border-top:1px solid var(--ink-line);padding-bottom:env(safe-area-inset-bottom,0px);flex-wrap:nowrap;overflow:visible;}
+/* The seat itself: width only, nothing drawn, nothing tappable.
+   A FIXED width, not flex:1, and Tim is set to the same --tim-seat-w. flex:1
+   shares the free space but the tabs' own labels set their min-content width,
+   so the seat settled at 61.7px of a 65px share and Tim, sized at a clean
+   sixth of the viewport, hung a pixel over Leads and two over Clients. A real
+   15.3 overlap, found by measuring and invisible to the eye. One number that
+   both of them read is the only way they cannot drift apart. */
+#mtb-tim-slot{flex:0 0 var(--tim-seat-w);min-width:0;pointer-events:none}
 @media(max-width:767px){#mobile-tabbar{display:flex}}
-.mtb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--text-cream-2);cursor:pointer;padding:8px 2px 10px;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.01em;-webkit-tap-highlight-color:transparent;position:relative;min-height:56px;transition:color .15s;overflow:hidden}
+.mtb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--text-cream-2);cursor:pointer;padding:8px 2px 10px;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.01em;-webkit-tap-highlight-color:transparent;position:relative;min-height:var(--mtb-h);transition:color .15s;overflow:hidden}
 .mtb.active{color:var(--text-cream)}
 .mtb svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .mtb-dot{position:absolute;top:7px;right:calc(50% - 16px);width:8px;height:8px;background:var(--denim);border-radius:50%;border:2px solid var(--ink)}
@@ -389,13 +402,93 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    bottom:100% still puts the whole assembly ABOVE the bar's padding box, so it
    takes not one pixel off the tap target of the tab underneath (rule 15.3). It
    covers the 1px border line at its own base, which is the point. */
+/* ── Tim, built INTO the bar ────────────────────────────────────────────────
+   Owner, 2026-09-21, on the version that cut a hole: "more pronounced and no
+   white uglyness around the outside at the bottom, want Tim built into the nav
+   bar, a lot of dead space under him that could be filled up."
+   The white was the hole. A mask cuts the bar away and whatever is behind it
+   shows through, so every pixel of clearance around him was a pixel of page,
+   and on a light screen that is a bright rim. There is no mask now and nothing
+   is cut: a disc of the bar's OWN INK rises above its top edge with him seated
+   in it, painted over the bar rather than out of it, so the clearance around
+   him is bar instead of background and there is nothing left to be ugly.
+   And the dead space under him is where the word goes. Every other slot in
+   this row is a glyph with a word under it; he was the only one without, and
+   the gap he left was exactly the size of the thing he was missing. */
 #mtb-tim{
-  position:absolute;left:50%;bottom:100%;transform:translateX(-50%);
-  width:80px;height:44px;
-  background:none;border:0;
-  display:flex;align-items:flex-end;justify-content:center;
-  padding:0 0 4px;margin:0;cursor:pointer;-webkit-tap-highlight-color:transparent;
-  z-index:1}
+  display:none;position:fixed;left:var(--tim-seat);transform:translateX(-50%);
+  /* The same 10px of bottom padding .mtb uses, so his word sits on the same
+     line as Home, Leads, Clients, Jobs and More rather than near it. */
+  bottom:calc(10px + env(safe-area-inset-bottom,0px));
+  /* His seat's width, less two pixels. Set exactly equal he lands 0.09px
+     outside it, because --tim-seat is a percentage and the tabs either side
+     round to whole pixels at some widths and not others. Sub-pixel, invisible,
+     and still a tab losing a sliver to him under 15.3. Two pixels of slack
+     costs nothing and cannot round the wrong way. */
+  width:calc(var(--tim-seat-w) - 2px);box-sizing:border-box;
+  flex-direction:column;align-items:center;gap:3px;
+  background:none;border:0;padding:0;margin:0;
+  font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  z-index:1001}
+@media(max-width:767px){#mtb-tim:not([hidden]){display:flex}}
+/* ── The orb ────────────────────────────────────────────────────────────────
+   Owner, 2026-09-21: "no black background around the top but make tims face a
+   bit bigger, make him kinda glass morph into the bar and give shade around
+   the top."
+   The black was the ring. Painting a disc of the bar's own ink around him
+   killed the white, which is what it was for, but above the bar's edge that
+   ink has nothing to be continuous WITH: it is just a black collar sitting on
+   the page. Two different jobs were being done by one shape, and only the half
+   below the edge was doing its job.
+   So the collar goes and the two jobs are split:
+   GLASS does the blending. He is translucent with the backdrop blurred behind
+   him, so his lower half samples the bar's ink and his upper half samples the
+   page, and he shades from one into the other by himself. That is the morph:
+   nothing is drawn between him and the bar, he simply becomes it. It also puts
+   the bar's own top hairline BEHIND him rather than stopping at him, which is
+   what glass does to a line.
+   SHADE does the separation. A soft radial fall-off instead of a hard rim, so
+   he sits on the page without a collar drawn round him. It is shadow, not
+   paint: there is no edge to it anywhere. */
+#mtb-tim-orb{
+  position:relative;width:60px;height:60px;border-radius:50%;
+  /* Denim, but let go of about a quarter of it so the backdrop reads through.
+     Darker at the bottom than the top, which is the direction the light comes
+     from everywhere else in this app. */
+  /* Deep denim rather than denim: --denim-deep at the foot, --denim at the
+     head, and both held at a high enough alpha that the backdrop tints him
+     without lifting him. The first pass let go of nearly half of it and his
+     top half went pale over a white dashboard, which is glass but is not him.
+     Glass you can see through is the effect; glass you can see the page
+     through more than the man is the effect eating the subject. */
+  background:linear-gradient(180deg,rgba(45,93,168,.90),rgba(20,48,98,.84));
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  backdrop-filter:blur(18px) saturate(150%);
+  /* The rim is LIGHT, not ink. A pale edge is what tells the eye a thing is
+     glass; a dark one tells it the thing is a hole. */
+  border:1px solid rgba(255,255,255,.24);
+  display:flex;align-items:center;justify-content:center;
+  /* The shade is SHADOW, not a painted halo. A radial gradient was tried and
+     it reads as a grey smudge on a light page, because a gradient has a
+     falloff you can see the end of; a blurred shadow has no edge anywhere in
+     it by construction. One spread all round for the shade, one cast downward
+     so he sits on something. */
+  box-shadow:0 0 22px 2px rgba(0,0,0,.24),
+             0 8px 18px rgba(0,0,0,.24),
+             inset 0 1px 0 rgba(255,255,255,.30),
+             inset 0 -3px 8px rgba(0,0,0,.26);
+  transition:transform .13s cubic-bezier(.22,1,.36,1),box-shadow .13s}
+#mtb-tim:active #mtb-tim-orb{transform:scale(.94);
+  box-shadow:0 0 12px 1px rgba(0,0,0,.18),
+             0 2px 6px rgba(0,0,0,.20),
+             inset 0 1px 0 rgba(255,255,255,.20),
+             inset 0 -2px 5px rgba(0,0,0,.18)}
+/* The word. Exactly the .mtb label: same size, same weight, same tracking, same
+   cream, so the row reads as six of one thing rather than five and a guest. */
+#mtb-tim-word{
+  font-size:10px;font-weight:700;letter-spacing:.01em;line-height:1;
+  color:var(--text-cream-2);transition:color .15s}
+#mtb-tim:active #mtb-tim-word{color:var(--text-cream)}
 #mtb-tim[hidden]{display:none}
 /* THE SWELL. The bar's own ink, its own hairline traced up and over the rise
    and no border along the bottom, so what is drawn is the bar's top EDGE
@@ -405,17 +498,6 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    The radius is past half the width so it clamps to an ellipse and the curve
    never stops. A smaller radius leaves a flat run between two rounded corners,
    which reads as a plinth somebody set down there. */
-#mtb-tim::before{
-  content:'';position:absolute;left:2px;right:2px;bottom:0;height:16px;
-  /* It HUGS the key: 76px of socket around a 48px key, so fourteen pixels of
-     ink show either side. Every wider version was tried and every one of them
-     read as a second black bar laid over the first, because a rise broad
-     enough to be a rise stops being a seat. Sixteen pixels tall, which is the
-     "gently" in the brief: the bar's edge lifts by a thumbnail, not a step. */
-  border-radius:13px 13px 0 0;
-  background:var(--ink);
-  border:1px solid var(--ink-line);border-bottom:0;
-  pointer-events:none}
 /* AND THE KEY POPPING OUT OF IT. The half that was missing: the key used to
    sit wholly INSIDE the swell, so the swell was the outermost shape and
    nothing popped out of anything. It breaches the rise now, two thirds of its
@@ -423,24 +505,20 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    The bevel is what reads as raised, and it is only two lines: a light inset
    edge along the top, a dark one along the bottom. Plus a short contact shadow
    where it meets its setting, which is the only shadow in the assembly. */
-#mtb-tim-mark{width:48px;height:30px;border-radius:11px;
-  background:var(--denim);position:relative;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.24),
-             inset 0 -1.5px 0 rgba(0,0,0,.34),
-             0 2px 5px rgba(0,0,0,.42);
-  display:flex;align-items:center;justify-content:center;
-  transition:transform .12s cubic-bezier(.22,1,.36,1),box-shadow .12s}
+#mtb-tim-mark{display:flex;align-items:center;justify-content:center}
 /* The key presses down into its setting and the setting does not move: the
    swell is part of the bar, and the bar does not flinch when you touch it. */
-#mtb-tim:active #mtb-tim-mark{transform:translateY(2px);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.10),
-             inset 0 -1px 0 rgba(0,0,0,.28),
-             0 0 0 rgba(0,0,0,.42)}
 /* The mark is ink line art on transparency and this is a denim field, so one
    colour in, cream out. 24px: bigger than the 22px of the tab icons beside
    him, because he has a whole key to himself and a face at icon size stops
    being a face, and small enough to leave the key a margin to be a key. */
-#mtb-tim-mark img{width:24px;height:24px;display:block;filter:invert(1)}
+/* The figure carries its own shadow now. The glass samples whatever page is
+   behind him, and that is not a fixed colour: on a white dashboard his top
+   half goes pale and a white mark on pale blue starts to disappear. A one
+   pixel shadow costs nothing and holds him against any backdrop the glass
+   picks up. */
+#mtb-tim-mark img{width:36px;height:36px;display:block;
+  filter:invert(1) drop-shadow(0 1px 1.5px rgba(0,0,0,.45))}
 @media (prefers-reduced-motion:reduce){#mtb-tim-mark{transition:none}}
 /* The raised red. Deliberately NOT var(--red): that token flips with the theme
    (#B22A20 light, #FF7070 dark) and this badge sits on the same ink bar in
@@ -452,7 +530,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    counting out loud and the badge only started at two. There is no pill on a
    raised key, so one finding has nothing else saying it, and "1" is the whole
    of what he can say without being tapped. */
-#mtb-tim-dot{position:absolute;top:0;right:18px;z-index:2;min-width:20px;height:20px;
+#mtb-tim-dot{position:absolute;top:-2px;right:-4px;z-index:2;min-width:20px;height:20px;
   padding:0 5px;box-sizing:border-box;border-radius:10px;
   background:#E5483B;border:2.5px solid var(--ink);color:#fff;
   font-family:inherit;font-size:11px;font-weight:800;line-height:1;
@@ -490,14 +568,19 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    shadow where the socket does not, because this one really IS floating over
    the page, and saying so is more honest than pretending it grew there. */
 #mtb-tim-say{
-  position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);
-  max-width:min(300px,calc(100vw - 40px));box-sizing:border-box;
+  position:absolute;bottom:calc(100% + 9px);left:50%;transform:translateX(-50%);
+  /* width:max-content first, THEN the clamp. Without it the flex box sizes to
+     its MIN-content the moment wrapping is allowed, and the bubble collapses
+     to the width of the longest single word rather than growing to the
+     sentence and wrapping only if it has to. max-width is a ceiling, never a
+     width. */
+  width:max-content;max-width:min(344px,calc(100vw - 22px));box-sizing:border-box;
   display:flex;align-items:baseline;gap:7px;
   padding:8px 13px;border-radius:15px;
   background:var(--ink);border:1px solid var(--ink-line);
   box-shadow:0 5px 20px rgba(0,0,0,.34);
-  font-family:inherit;font-size:12.5px;line-height:1.25;
-  color:var(--text-cream-2);white-space:nowrap;
+  font-family:inherit;font-size:12.5px;line-height:1.3;
+  color:var(--text-cream-2);
   opacity:0;visibility:hidden;
   animation:tim-say 7.2s cubic-bezier(.22,1,.36,1) forwards}
 #mtb-tim-say[hidden]{display:none}
@@ -505,7 +588,14 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    number is the reason and the sentence is the explanation. */
 #mtb-tim-say b{color:var(--text-cream);font-weight:800;font-variant-numeric:tabular-nums;
   flex-shrink:0}
-#mtb-tim-say i{font-style:normal;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* Two lines, then it gives up. One line was clipping "Rick Delaney has been
+   waiting 68 days" to "...has been waiting", which throws away the half of the
+   sentence that makes it urgent: the money is in the figure, and the AGE is
+   the reason to move on it today. A second line costs nothing, and the clamp
+   is still there so a freak name cannot grow the bubble off the screen. */
+#mtb-tim-say i{font-style:normal;min-width:0;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden}
 /* The tail, so it is clearly HIS and not a toast that happened to land there. */
 #mtb-tim-say::after{
   content:'';position:absolute;bottom:-4px;left:50%;width:9px;height:9px;
@@ -588,6 +678,47 @@ body.dark .tim-msg .tim-av img{filter:invert(1)}
   0%,62%,100%{opacity:.28;transform:translateY(0)}
   31%        {opacity:1;transform:translateY(-3px)}
 }
+/* ── Tim at the point of the work ───────────────────────────────────────────
+   One row, full width, under the page header. It reads as a suggestion the
+   page is making rather than as a control on a toolbar, which is why it is a
+   soft card rather than a button with a fill: a filled button up here would
+   compete with the page's own primary action, and the page's own action is
+   what the man came for. */
+.tim-atwork{
+  display:flex;align-items:center;gap:11px;width:100%;box-sizing:border-box;
+  margin:0 0 12px;padding:11px 13px;border:0;border-radius:var(--r-md);
+  background:var(--bg2);box-shadow:inset 0 0 0 1px var(--border);
+  font-family:inherit;text-align:left;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:background .12s,transform .12s}
+.tim-atwork[hidden]{display:none}
+.tim-atwork:active{transform:scale(.995);background:var(--bg3,var(--bg2))}
+.tim-atwork-mark{width:26px;height:26px;flex-shrink:0;display:flex;
+  align-items:center;justify-content:center}
+.tim-atwork-mark img{width:26px;height:26px;display:block}
+body.dark .tim-atwork-mark img{filter:invert(1)}
+.tim-atwork-say{flex:1;min-width:0}
+.tim-atwork-say b{display:block;font-size:13px;font-weight:700;color:var(--text);
+  line-height:1.3}
+.tim-atwork-say i{display:block;font-style:normal;font-size:11.5px;color:var(--text3);
+  margin-top:2px;line-height:1.35}
+.tim-atwork svg{width:16px;height:16px;flex-shrink:0;stroke:var(--text3);
+  stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-reduced-motion:reduce){.tim-atwork{transition:none}}
+
+/* ── The first move, already loaded ─────────────────────────────────────────
+   Three things he can really answer, as things to touch rather than a sentence
+   describing them. Sized and coloured like the secondary buttons the rest of
+   the app uses rather than as anything new: a chip that looks like a novelty
+   reads as a demo, and a man does not tap a demo twice. */
+.tim-chip{
+  border:0;border-radius:var(--r-pill);padding:9px 14px;
+  background:var(--bg2);box-shadow:inset 0 0 0 1px var(--border);
+  color:var(--text);font-family:inherit;font-size:12.5px;font-weight:600;
+  line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:transform .12s,background .12s}
+.tim-chip:active{transform:scale(.96);background:var(--bg3,var(--bg2))}
+@media (prefers-reduced-motion:reduce){.tim-chip{transition:none}}
+
 /* ── An answer, IN the thread ───────────────────────────────────────────────
    Owner, 2026-09-21: "why did the mileage question go to a section where I
    couldn't continue the convo".
@@ -3169,6 +3300,22 @@ body.dark .cal-cell.other{background:var(--cream)}
          page that needs a person: the hours nobody has accounted for. -->
     <div class="tbar-sub">Every hour your phone recorded, sorted into driving, on site, shop and loading. Anything it could not place is flagged for you to answer.</div>
   </div>
+  <!-- ── Tim, at the point of the work ──────────────────────────────────────
+       The bar is his global door. This is a door at the work, and the two do
+       different jobs. Housecall Pro puts "Write it for me" inline wherever you
+       are composing rather than behind one assistant button, and ServiceTitan's
+       2026 trades survey has 59% of contractors using AI that is built into
+       software they already have, against 42% for general-purpose tools.
+       The test a strip like this has to pass is that it does something THIS
+       SCREEN CANNOT. This page shows the hours; it cannot group them by job site, name who was on each one and hand back a block of text to paste into a bill.
+       Hidden until timDockRender says otherwise, same wall as the rest of him:
+       everything Tim can name is money or a contract, and crew get neither. -->
+  <button type="button" class="tim-atwork" hidden
+    onclick="_timAskFrom('what do I invoice for last week')">
+    <span class="tim-atwork-mark" aria-hidden="true"></span>
+    <span class="tim-atwork-say"><b>Turn last week into an invoice worksheet</b><i>By job site, with the address and who was on it</i></span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+  </button>
   <div id="tl-scope-toggle" class="tl-scope-toggle" style="display:none"></div>
   <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Year</div>
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
@@ -4373,6 +4520,22 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ Manual invoice</button>
     </div>
   </div>
+  <!-- ── Tim, at the point of the work ──────────────────────────────────────
+       The bar is his global door. This is a door at the work, and the two do
+       different jobs. Housecall Pro puts "Write it for me" inline wherever you
+       are composing rather than behind one assistant button, and ServiceTitan's
+       2026 trades survey has 59% of contractors using AI that is built into
+       software they already have, against 42% for general-purpose tools.
+       The test a strip like this has to pass is that it does something THIS
+       SCREEN CANNOT. This page shows what has been billed and not paid. It cannot show the other hole, which is work already done that nobody has billed at all.
+       Hidden until timDockRender says otherwise, same wall as the rest of him:
+       everything Tim can name is money or a contract, and crew get neither. -->
+  <button type="button" class="tim-atwork" hidden
+    onclick="_timAskFrom('what do I invoice for last week')">
+    <span class="tim-atwork-mark" aria-hidden="true"></span>
+    <span class="tim-atwork-say"><b>What have I worked and not billed</b><i>Last week's hours, by customer and address</i></span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+  </button>
   <div id="money-summary" style="margin-bottom:12px"></div>
   <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
     <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All owed</button>
@@ -4608,6 +4771,13 @@ body.dark .cal-cell.other{background:var(--cream)}
       <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
       Leads
     </button>
+    <!-- Tim's seat. Owner sketched it 2026-09-21: the bar rounded around a
+         bubble, him "splitting the difference between leads and clients".
+         It is a SPACER, not a control: it reserves the slot so the notch has
+         somewhere to be cut and nothing of anybody's tap target is spent on
+         it. Inside #mtb-inner so it sits between two tabs, and held at index 2
+         by _applyTabOrder however the four tabs are dragged around it. -->
+    <span id="mtb-tim-slot" aria-hidden="true"></span>
     <button class="mtb" id="mtb-clients" data-tab="clients" onclick="goPg('pg-clients')">
       <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
       Clients
@@ -4622,32 +4792,30 @@ body.dark .cal-cell.other{background:var(--cream)}
     <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></svg>
     More
   </button>
-  <!-- Tim, 2026-09-21. Raised off the bar, on its centreline, and deliberately
-       OUTSIDE #mtb-inner. Two reasons for outside:
-       1. #mtb-inner is the drag-to-reorder container and _applyTabOrder walks
-          _MTB_DEFAULT_ORDER (dash, leads, clients, jobs) calling appendChild.
-          Tim is not in that list, so on any phone with a saved tab order the
-          four named tabs moved to the end and Tim was left sitting FIRST. He
-          would have shipped as the left-most tab on exactly the devices whose
-          owners had bothered to customise the bar.
-       2. He is not one of the five equals in that row. The row is where you
-          go; he is who you ask when going there did not answer it.
-       He is absolutely positioned so he costs the row no width: four tabs plus
-       More still split the bar at 78px each, wider than the 65px they had when
-       he was a sixth tab, and nothing was demoted to the More menu to make
-       room for him. -->
-  <button id="mtb-tim" onclick="openTim()" aria-label="Tim" hidden>
-    <!-- His voice. Empty and hidden until the nudge engine can name a dollar,
-         a percentage or a law, and it retires itself seven seconds later. It
-         lives INSIDE the button so that tapping the words opens him: a man who
-         reaches for a sentence that just told him he is owed $1,240 is
-         reaching for the $1,240, and handing that tap to whatever list is
-         behind it would be the worst possible answer to it. -->
-    <span id="mtb-tim-say" hidden></span>
+</div>
+<!-- Tim, 2026-09-21. OUTSIDE #mobile-tabbar, and that is not tidiness either.
+     The bar carries a mask to cut the notch, and a mask has NO COVERAGE outside
+     its element's border box: as a child of the bar he was simply deleted above
+     its top edge, which is where half of him lives. The arc that traces the
+     notch went the same way, for the same reason, so it rides on him now.
+     He is fixed to the same --tim-seat the notch is cut at, so the two cannot
+     drift apart, and he is not in #mtb-inner so no saved tab order can move
+     him. His seat in the row is held by #mtb-tim-slot, which takes no taps, so
+     the notch costs nothing off anybody's target (15.3). -->
+<button id="mtb-tim" onclick="openTim()" aria-label="Tim" hidden>
+  <!-- His voice. Empty and hidden until the nudge engine can name a dollar, a
+       percentage or a law, and it retires itself seven seconds later. Inside
+       the button so that tapping the words opens him: a man reaching for a
+       sentence that just told him he is owed $1,240 is reaching for the
+       $1,240, and handing that tap to whatever list is behind it would be the
+       worst possible answer to it. -->
+  <span id="mtb-tim-say" hidden></span>
+  <span id="mtb-tim-orb">
     <span id="mtb-tim-dot" hidden></span>
     <span id="mtb-tim-mark"></span>
-  </button>
-</div>
+  </span>
+  <span id="mtb-tim-word">Tim</span>
+</button>
 <!-- ── More popup (tap-to-open, no swipe needed) ── -->
 <div id="mtb-more-popup" onclick="closeMobileMore()">
   <div id="mtb-more-menu" onclick="event.stopPropagation()">

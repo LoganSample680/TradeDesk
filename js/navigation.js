@@ -332,6 +332,19 @@ function _applyTabOrder(order) {
     const btn = document.getElementById('mtb-' + id);
     if (btn) inner.appendChild(btn);
   });
+  // Tim's seat goes back to the middle of the row afterwards. appendChild above
+  // moves the four named tabs to the end, so without this the spacer ends up
+  // FIRST on every phone that has ever had its bar dragged, and the notch is
+  // cut on the left edge with Tim floating over the Home tab. Which of the four
+  // tabs ends up either side of him is the owner's business; that he is in the
+  // middle of them is not.
+  const seat = document.getElementById('mtb-tim-slot');
+  if (seat) {
+    const kids = [...inner.children].filter(el => el !== seat);
+    const mid = Math.floor(kids.length / 2);
+    if (kids[mid]) inner.insertBefore(seat, kids[mid]);
+    else inner.appendChild(seat);
+  }
 }
 
 function _initTabBarDrag() {
