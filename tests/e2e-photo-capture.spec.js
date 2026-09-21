@@ -1097,3 +1097,62 @@ test.describe('TrueShot: the photos come back', () => {
     expect(r).toEqual({ nothing: 0, empty: 0, noMatch: 0, srcOfJunk: '' });
   });
 });
+
+// ── The sync must carry every field the feature depends on ─────────────────
+// Two fields have now been lost this way: thumbUrl (photos served full-size
+// into 60px grids on any second device) and originalUrl (the pointer to the
+// untouched shot, dropped the moment a delta load replaced the row, which
+// breaks the one rule mark-up is built on). Both were invisible offline
+// because the local array kept them. This test reads the REAL transform out
+// of _TD_TABLES, so a field added to a photo row and forgotten here fails
+// immediately instead of on somebody's second phone.
+test.describe('TrueShot: the sync keeps what the feature needs', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('every field a photo needs survives the cloud transform', async () => {
+    const r = await page.evaluate(() => {
+      const entry = _TD_TABLES.find(t => t.t === 'td_photos');
+      const row = {
+        id: 5150, url: 'https://x.test/marked.jpg', storagePath: 'u/marked/5150.jpg',
+        thumbUrl: 'https://x.test/t-marked.jpg', thumbPath: 'u/marked/t-5150.jpg',
+        originalUrl: 'https://x.test/original.jpg', originalPath: 'u/bid-9/before-1.jpg',
+        annotated: true, type: 'before', caption: 'South elevation',
+        client_id: 501, client_name: 'Dana Whitfield',
+        bid_id: 901, bid_name: 'Exterior repaint',
+        job_id: 860, job_name: 'Exterior repaint',
+        lat: 37.6889, lon: -97.3361, uploadedAt: '2026-09-21T15:00:00.000Z',
+      };
+      const out = entry.tx([row])[0] || {};
+      const lost = Object.keys(row).filter(k => JSON.stringify(out[k]) !== JSON.stringify(row[k]));
+      return { lost, out };
+    });
+    expect(r.lost).toEqual([]);
+  });
+
+  test('a photo with nothing optional set still transforms cleanly', async () => {
+    const out = await page.evaluate(() => {
+      const entry = _TD_TABLES.find(t => t.t === 'td_photos');
+      return entry.tx([{ id: 1, url: 'https://x.test/a.jpg', type: 'before', caption: '', client_id: null, client_name: '', job_id: null, job_name: '', uploadedAt: '' }])[0];
+    });
+    expect(out.originalUrl).toBe('');
+    expect(out.annotated).toBe(false);
+    expect(out.bid_id).toBe(null);
+    expect(out.lat).toBe(null);
+  });
+
+  test('a row with no storage behind it is still not synced', async () => {
+    const n = await page.evaluate(() => {
+      const entry = _TD_TABLES.find(t => t.t === 'td_photos');
+      return entry.tx([{ id: 2, url: '', storagePath: '', type: 'before' }]).length;
+    });
+    expect(n).toBe(0);
+  });
+});
