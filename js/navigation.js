@@ -161,8 +161,17 @@ function _applyEmployeeNavGating(){
   // nb-taxes/mmi-taxes are owned exclusively by applyPermissions()'s canSeeTaxes() check
   // (a finer-grained owner/co-owner test), not listed here to avoid two functions
   // fighting over the same element.
+  // mmi-tim added 2026-09-21. Tim has been owner-only since he was built (the
+  // dock refuses to draw for a crew member, with the reason written beside it)
+  // but this button calls openTim() directly and was never gated, so it stayed
+  // a way in to every money answer he has: revenue, receivables, the best
+  // customer, the average job. None of those route through goPg, so the
+  // _empBlocked list above never saw them and pg-money being shut meant
+  // nothing. openTim and timAsk both refuse for crew now too; this only removes
+  // the invitation.
   const _gatedIds=['nb-tracker','nb-team','nb-settings','nb-licensing','nb-contracts','nb-hub','nb-money',
    'mmi-tracker','mmi-team','mmi-settings','mmi-licensing','mmi-contracts','mmi-hub','mmi-money',
+   'mmi-tim',
   ];
   const _show=!_isEmployee;
   _gatedIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_show?'':'none';});

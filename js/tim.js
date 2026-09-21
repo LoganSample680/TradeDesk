@@ -543,6 +543,36 @@ function _timSheet(id,inner){
   return sheet;
 }
 
+// ── WHO IS ALLOWED TO ASK HIM ANYTHING ──────────────────────────────────────
+//
+// Tim is owner and co-owner only, and that was ALWAYS the intent: the dock has
+// refused to draw for a crew member since it was built, with the reason written
+// next to it ("everything Tim can name is money or a contract, and both sit
+// behind the wall the nav already puts them behind").
+//
+// The wall had a door in it. timDockRender was the only thing enforcing it, and
+// the dock is not the only way in: #mmi-tim in the More menu calls openTim()
+// directly and was never added to navigation.js's _gatedIds, so it stayed
+// visible to crew. Reproduced 2026-09-21 on a seeded book, signed in as an
+// employee with no permissions:
+//
+//   "how much did I make in 2026"   -> $31,000, and the best month
+//   "who owes me money"             -> $60,500, the customer, 172 days out
+//   "who is my best customer"       -> the name, the total, the share
+//   "whats my average job"          -> $30,250
+//
+// None of it goes near goPg, so _empBlocked never fired. pg-money, pg-tracker
+// and pg-taxes were all correctly shut, and every figure on them was readable
+// from the More menu on a shared tablet.
+//
+// Three layers, because hiding a button is not a guard: the button goes
+// (navigation.js), openTim refuses, and timAsk refuses. The last one is the
+// real boundary, because it is where the figures are computed: anything that
+// reaches it by any route gets nothing.
+function _timCrew(){
+  try{return (typeof _isEmployee!=='undefined')&&!!_isEmployee;}catch(_e){return false;}
+}
+
 // Is there a job on screen at all. Three separate pieces of copy assumed there
 // was, and the same test was already written inline in two other places, so it
 // is one function now (7.3).
@@ -594,6 +624,9 @@ function _timAskHtml(){
 }
 
 function openTim(){
+  // Layer two. The More-menu button is hidden for crew now, but an onclick is
+  // still callable and a hidden control is not a closed one.
+  if(_timCrew())return;
   // He has now been met, so the i on the tab retires. Redrawn straight away
   // rather than on the next render, or it sits there behind the open sheet and
   // is still there when the sheet closes, having taught nothing.

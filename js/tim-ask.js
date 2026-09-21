@@ -701,6 +701,13 @@ function _timAnswerAvg(said){
 }
 
 function timAsk(said){
+  // THE BOUNDARY. Every one of these answers is owner-only business data:
+  // revenue, receivables, win rate, the best customer, the average job. This is
+  // where the figures are actually computed, so it is the only guard that holds
+  // no matter which route got here, and it is checked before the question is
+  // even parsed. A crew member gets null, which is the same thing he gets for a
+  // question Tim cannot place: no answer, and no hint that there was one.
+  if(typeof _timCrew==='function'&&_timCrew())return null;
   const hit=timAskKind(said);
   if(!hit)return null;
   try{

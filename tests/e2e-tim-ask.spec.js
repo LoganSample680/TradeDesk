@@ -544,6 +544,85 @@ test.describe('tim answering off your own books', () => {
     });
   });
 
+  // ── A CREW MEMBER GETS NOTHING ────────────────────────────────────────────
+  //
+  // Every answer in this file is owner-only business data. Tim has been
+  // owner-only since he was built, and timDockRender has refused to draw for a
+  // crew member from the start, but that was the ONLY thing enforcing it.
+  //
+  // Reproduced 2026-09-21, signed in as an employee with no permissions, on a
+  // seeded book: the dock was correctly hidden, and #mmi-tim in the More menu
+  // was still visible, still called openTim(), and every money question
+  // answered in full. $31,000 of revenue, $60,500 outstanding with the
+  // customer's name and how many days, the best customer and their share, the
+  // average job. pg-money, pg-tracker and pg-taxes were all correctly shut the
+  // whole time: none of these answers route through goPg, so the employee page
+  // block never saw them.
+  //
+  // This walks every family, because the leak was not that one answer was
+  // wrong, it was that nobody had ever asked this question of the set.
+  test.describe('a crew member cannot get a figure out of him', () => {
+    const asCrew = (fn) => page.evaluate((body) => {
+      const wasEmp = _isEmployee, wasRec = _employeeRecord;
+      _isEmployee = true; _employeeRecord = { role: 'employee', permissions: {} };
+      try { return (0, eval)('(' + body + ')')(); }
+      finally { _isEmployee = wasEmp; _employeeRecord = wasRec; }
+    }, fn.toString());
+
+    test('every question family answers null, not a number', async () => {
+      const r = await asCrew(() => [
+        'who owes me money',
+        'what did I charge for gutters',
+        'which lead source is worth it',
+        'whats the address for Dana',
+        'how much did I make in 2026',
+        'what did I spend in 2026',
+        'whats out right now',
+        'how many did I win in 2026',
+        'who is my best customer',
+        'how many miles did I drive in 2026',
+        'how many hours did I work',
+        'whats my average job in 2026',
+      ].map(s => timAsk(s)));
+      expect(r).toEqual(new Array(12).fill(null));
+    });
+
+    test('the sheet will not open for him at all', async () => {
+      const r = await asCrew(() => {
+        document.getElementById('_tim-ov')?.remove();
+        openTim();
+        const opened = !!document.getElementById('_tim-sheet');
+        document.getElementById('_tim-ov')?.remove();
+        return opened;
+      });
+      expect(r).toBe(false);
+    });
+
+    test('and the More menu stops inviting him in', async () => {
+      const r = await page.evaluate(() => {
+        const wasEmp = _isEmployee, wasRec = _employeeRecord;
+        const el = document.getElementById('mmi-tim');
+        _isEmployee = true; _employeeRecord = { role: 'employee', permissions: {} };
+        applyPermissions();
+        const crew = getComputedStyle(el).display;
+        _isEmployee = wasEmp; _employeeRecord = wasRec;
+        applyPermissions();
+        const owner = getComputedStyle(el).display;
+        return { crew, ownerShown: owner !== 'none' };
+      });
+      expect(r.crew).toBe('none');
+      // And it comes back for the owner, or the fix costs the owner the feature.
+      expect(r.ownerShown).toBe(true);
+    });
+
+    test('the owner still gets every one of them, so the guard is not a wall', async () => {
+      const r = await page.evaluate(() => [
+        'who owes me money', 'how much did I make in 2026', 'who is my best customer',
+      ].map(s => { const a = timAsk(s); return a && a.title; }));
+      expect(r).toEqual(['$3,500', '$4,400', 'Dana Whitfield']);
+    });
+  });
+
   test.describe('through the real door', () => {
     test('a question answers instead of navigating', async () => {
       const r = await page.evaluate(() => {
