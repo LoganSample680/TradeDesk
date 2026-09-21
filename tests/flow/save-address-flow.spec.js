@@ -85,7 +85,14 @@ const SHOP = { lat: B_LAT, lon: B_LON };
 // the window each run fills is 62 minutes, so two runs that land on the same
 // day and different slots cannot touch. Step 1 still checks the slot is
 // actually empty before using it.
-const HOUR = 5 + 2 * (CELL % 7);
+const SLOTS = [5, 7, 9, 11, 13, 15, 17];
+// The run STARTS at its own cell-keyed slot so two runs spread out, and step 1
+// walks the rest of them from there. The first live run proved why that matters:
+// it tried its one hour on two days and gave up ("slot NONE FREE hour 11
+// [2026-09-20@11:busy 2026-09-21@11:future]"), because the note above described
+// seven slots and the loop only ever tried one. Seven slots on two days is
+// fourteen chances; one slot on two days is what actually ran.
+const SLOT_ORDER = SLOTS.slice(CELL % 7).concat(SLOTS.slice(0, CELL % 7));
 // The kerb the day is about is NOT fixed here: step 1 asks the account's own
 // fence list where it is empty and parks there. See the note on that loop.
 
@@ -267,24 +274,32 @@ test.describe('Name an unsaved stop from the day rail', () => {
           // The window checked is the run's own 62 minutes plus 45 either
           // side, so a neighbouring slot cannot bleed into this one and the
           // deriver can never join somebody else's fix to ours.
+          //
+          // EVERY slot on both days, starting at this run's own. Yesterday
+          // first because it is a finished day with no "now" sitting in the
+          // middle of it, and today only for hours that have already gone by.
           let day = '', dayMs = 0, evErr = '', scanned = [];
           for (let back = 1; back >= 0 && !day; back--) {
-            const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - back);
-            const a0 = new Date(d); a0.setHours(0, 0, 0, 0);
-            const slot = a0.getTime() + a.hour * 3600000;
-            const lo = slot - 45 * 60000, hi = slot + (62 + 45) * 60000;
-            // Never seed into the future: an hour that has not happened yet
-            // has no phone behind it and nowMs sits before the day's own end.
-            if (hi > Date.now()) { scanned.push(dateKey(d) + '@' + a.hour + ':future'); continue; }
-            try {
-              const r = await _supa.from('geo_events').select('ts')
-                .eq('employee_user_id', _supaUser.id)
-                .gte('ts', new Date(lo).toISOString()).lte('ts', new Date(hi).toISOString()).limit(1);
-              if (r && r.error) { evErr = r.error.message || 'denied'; break; }
-              const busy = (((r && r.data) || []).length > 0);
-              scanned.push(dateKey(d) + '@' + a.hour + ':' + (busy ? 'busy' : 'free'));
-              if (!busy) { day = dateKey(d); dayMs = slot; }
-            } catch (e) { evErr = String(e && e.message || e); break; }
+            for (const hour of a.slots) {
+              if (day) break;
+              const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - back);
+              const a0 = new Date(d); a0.setHours(0, 0, 0, 0);
+              const slot = a0.getTime() + hour * 3600000;
+              const lo = slot - 45 * 60000, hi = slot + (62 + 45) * 60000;
+              // Never seed into the future: an hour that has not happened yet
+              // has no phone behind it and nowMs sits before the day's own end.
+              if (hi > Date.now()) { scanned.push(dateKey(d) + '@' + hour + ':future'); continue; }
+              try {
+                const r = await _supa.from('geo_events').select('ts')
+                  .eq('employee_user_id', _supaUser.id)
+                  .gte('ts', new Date(lo).toISOString()).lte('ts', new Date(hi).toISOString()).limit(1);
+                if (r && r.error) { evErr = r.error.message || 'denied'; break; }
+                const busy = (((r && r.data) || []).length > 0);
+                scanned.push(dateKey(d) + '@' + hour + ':' + (busy ? 'busy' : 'free'));
+                if (!busy) { day = dateKey(d); dayMs = slot; }
+              } catch (e) { evErr = String(e && e.message || e); break; }
+            }
+            if (evErr) break;
           }
           // The slot itself is the start: dayMs already carries the hour.
           const startMs = dayMs;
@@ -292,8 +307,9 @@ test.describe('Name an unsaved stop from the day rail', () => {
           return { key, uid: _supaUser.id, url: _SUPA_DIRECT_URL, made, kerb,
                    fences: F.length, serverFences: SF.length, sfErr,
                    startMs, tooLate, evErr, day, scanned: scanned.join(' '), endAt,
+                   hour: dayMs ? new Date(dayMs).getHours() : null,
                    targetId: made[made.length - 1], err: error && error.message };
-        }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET, hour: HOUR });
+        }, { dev: DEV, shop: SHOP, tag, names: KIN, target: TARGET, slots: SLOT_ORDER });
         return 0;
       },
       rule: async (p) => {
@@ -302,7 +318,7 @@ test.describe('Name an unsaved stop from the day rail', () => {
                  got: ctx.err || (n + ' customers · ' + ctx.fences + ' local fences · ' +
                       ctx.serverFences + ' server fences' + (ctx.sfErr ? (' (' + ctx.sfErr + ')') : '') +
                       ' · kerb ' + (ctx.kerb ? (ctx.kerb.lat.toFixed(4) + ',' + ctx.kerb.lon.toFixed(4)) : 'NOWHERE CLEAR') +
-                      ' · slot ' + (ctx.day || 'NONE FREE') + ' hour ' + HOUR + ' [' + ctx.scanned.replace(/,/g, ' ') + ']' +
+                      ' · slot ' + (ctx.day || 'NONE FREE') + '@' + ctx.hour + ' [' + ctx.scanned.replace(/,/g, ' ') + ']' +
                       ' · ends at ' + (ctx.endAt ? (ctx.endAt.lat.toFixed(4) + ',' + ctx.endAt.lon.toFixed(4)) : 'NO SECOND FENCE') +
                       (ctx.tooLate ? ' both of the two days the boot sweep reaches already have events in this hour' : '') +
                       (ctx.evErr ? (' (events: ' + ctx.evErr + ')') : '')) };
@@ -358,8 +374,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
     await step(page, {
       label: 'flush the day to ingest-geo and let the server derive it', page: 'pg-dash', role: 'contractor',
       suspect: 'supabase/functions/ingest-geo + _shared/derive-day.mjs deriveDayServer',
-      ruleText: 'a tape with fixes under it must derive into an unsaved on-site row plus the leg that reached it',
-      expected: 'job_time_entries has a source starting "unsaved", td_mileage has a leg with a toCoord',
+      ruleText: 'a tape with fixes under it must derive into an unsaved on-site row plus a leg that can place it',
+      expected: 'job_time_entries has a source starting "unsaved", and a td_mileage leg holds that stop as a via or as its destination',
       // ZERO, and for the same reason every other GPS flow says zero: a motion
       // transition is the phone noticing, not the person acting.
       act: async (p) => {
@@ -393,14 +409,43 @@ test.describe('Name an unsaved stop from the day rail', () => {
           // chip would prove nothing about the kerb this run chose.
           const mine = (x) => { const ts = Date.parse(x.arrived_at || ''); return ts >= w.a && ts <= w.b; };
           const stop = (t || []).find(x => /^unsaved/.test(String(x.source || '')) && mine(x));
-          const leg = (m || []).find(x => x && x.data && x.data.unsavedTo && x.data.toCoord &&
-            Math.abs(Number(x.data.toCoord.lat) - w.kerb.lat) < 0.002);
+          // ── EITHER SHAPE THE STOP CAN TAKE, because the app reads both ──
+          // The first green-ish live run failed here with "leg null" while the
+          // day had derived perfectly, and the assertion was what was wrong.
+          //
+          // It demanded the stop be a leg's DESTINATION (unsavedTo + toCoord
+          // at the kerb). The real row was a COLLAPSED leg, shop -> Kinsley
+          // Roofing, with the kerb buried in viaStops. That is rule 6 working
+          // exactly as written: this stop is 23 minutes, under the 60-minute
+          // workStopMs that closes a chain, so the chain stayed open and the
+          // deriver folded both drives into one leg. Measured on the row:
+          // collapsedStops 1, viaStops[0] at 39.1929,-95.8317, key
+          // d-j-e0b84aea-mua2njuo, the same key the timesheet row carries.
+          //
+          // Both shapes are real and the app already knows it: _mileStopCoord
+          // (js/mileage.js) tries viaStops FIRST and the leg's own toCoord
+          // second, which is why the Save chip places this stop correctly
+          // either way. So the test asks the same two questions in the same
+          // order rather than betting on one. Asked of the DATABASE rather
+          // than the page, because the derive that just wrote these rows is
+          // server-side and the tab has not synced them yet.
+          const atKerb = (c) => !!c && Math.abs(Number(c.lat) - w.kerb.lat) < 0.002 &&
+            Math.abs(Number(c.lng != null ? c.lng : c.lon) - w.kerb.lon) < 0.002;
+          const leg = (m || []).find(x => x && x.data && (
+            (Array.isArray(x.data.viaStops) && x.data.viaStops.some(v => v && v.key === (stop && stop.client_key) && atKerb(v))) ||
+            (x.data.unsavedTo && atKerb(x.data.toCoord))));
           // WHAT IT FOUND, not just that it found nothing. The run before this
           // said "stop null · 2 rows today" and left me guessing which two.
           return { stop: stop ? { key: stop.client_key, mins: stop.minutes } : null,
                    leg: leg ? leg.id : null,
                    saw: (t || []).filter(mine).map(x => x.source + '@' + String(x.dest_place || '-') + ':' + x.minutes).join(', '),
-                   miles: (m || []).map(x => (x.data && x.data.purpose) + '/' + (x.data && x.data.miles)).join(', ') };
+                   // The SHAPE of every leg on the day, not just its purpose
+                   // and miles. "leg null" beside "Client Consult/0.8" said
+                   // nothing about why, and the why was in the via list.
+                   miles: (m || []).map(x => (x.data && x.data.purpose) + '/' + (x.data && x.data.miles) +
+                     (x.data && Array.isArray(x.data.viaStops) && x.data.viaStops.length
+                       ? (' via' + x.data.viaStops.length) : '') +
+                     (x.data && x.data.unsavedTo ? ' unsavedTo' : '')).join(', ') };
         }, { a: WIN.a, b: WIN.b, kerb: KERB, day: ctx.day });
         stopKey = r.stop && r.stop.key;
         // ── AND WHICH LIST MISSED IT ────────────────────────────────────
@@ -678,24 +723,51 @@ test.describe('Name an unsaved stop from the day rail', () => {
           // The screen check above only proves the NAME arrived. The owner's
           // report was the opposite shape: the mileage leg took the name and
           // the timesheet row did not, so anything reading only one of them
-          // sees a pass. This reads every automatic row this run put on the
-          // day, straight out of the database, and refuses any that is still
-          // nameless. It also catches the departing leg, which is the other
-          // half he hit: naming a stop used to name the drive that ARRIVED
-          // and leave the one that left.
+          // sees a pass.
+          //
+          // THE THREE ROWS THE SAVE IS RESPONSIBLE FOR, and no others. A first
+          // cut read everything within an hour either side and failed on two
+          // rows that had nothing to do with the save: the day's own 193-minute
+          // tail dwell from a different journey, and the neighbouring run's
+          // hour, because slots sit two hours apart and an hour of padding on a
+          // 62-minute span reaches straight into them. Naming one stop does not
+          // name the rest of the day and was never supposed to.
+          //
+          // So: the stop itself, the drive that ARRIVED at it (its key is the
+          // stop's minus the "d-"), and the drive that LEFT it, which is the
+          // other half the owner hit ("naming a stop named the leg that arrived
+          // and left the one that departed"). The departing drive belongs to
+          // the NEXT journey, so it is found by the name rather than by a key.
+          //
+          // Each row is judged only at the end that touches the stop. The far
+          // end is the deriver's business and can still be settling: the 00:45
+          // drive here read "Kinsella Drywall → -" at this instant and "Kinsella
+          // Drywall → DEV B shop" moments later. Asserting on that is a race,
+          // and step 9 checks the settled day after the reload anyway.
+          const legKey = String(a.key || '').replace(/^d-/, '');
           const { data: t } = await _supa.from('job_time_entries')
             .select('id,source,dest_place,origin_place,client_key,minutes')
             .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
             .gte('arrived_at', new Date(a.a).toISOString())
             .lte('arrived_at', new Date(a.b).toISOString());
           const rows = (t || []);
-          const nameless = rows.filter(x => /^unsaved/.test(String(x.source || '')) ||
-            (String(x.source || '') === 'drive' && !(x.dest_place && x.origin_place)));
-          return { ms, found, chips: mine(),
-                   rows: rows.length,
-                   nameless: nameless.map(x => (x.source || '?') + '[' +
-                     String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', ') };
-        }, { name: TARGET, key: stopKey, a: WIN.a - 3600000, b: WIN.b + 3600000 });
+          const named = (v) => String(v || '').indexOf(a.name) >= 0;
+          const stopRow = rows.find(x => x.client_key === a.key);
+          const inDrive = rows.find(x => x.client_key === legKey);
+          const outDrive = rows.find(x => x.client_key !== legKey && named(x.origin_place));
+          const bad = [];
+          if (!stopRow) bad.push('the stop row is gone');
+          else if (/^unsaved/.test(String(stopRow.source || '')) || !named(stopRow.dest_place)) {
+            bad.push('stop ' + stopRow.source + '[' + String(stopRow.dest_place || '-') + ']');
+          }
+          if (!inDrive) bad.push('no arriving drive ' + legKey);
+          else if (!named(inDrive.dest_place)) bad.push('arriving drive ends at ' + String(inDrive.dest_place || '-'));
+          if (!outDrive) bad.push('no drive leaves the stop named');
+          return { ms, found, chips: mine(), rows: rows.length,
+                   saw: [stopRow, inDrive, outDrive].filter(Boolean).map(x => (x.source || '?') + '[' +
+                     String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', '),
+                   nameless: bad.join('; ') };
+        }, { name: TARGET, key: stopKey, a: WIN.a - 600000, b: WIN.b + 600000 });
         // No taps. Watching the screen do what it promised is not work the
         // contractor does.
         return 0;
@@ -725,8 +797,8 @@ test.describe('Name an unsaved stop from the day rail', () => {
         got: flip && (flip.found ? ('named after ' + flip.ms + 'ms, no reload')
                                  : ('never named, still unsaved after ' + flip.ms + 'ms')) +
              ' · ' + (flip && flip.chips) + ' Save chips left for this stop' +
-             ' · ' + (flip && flip.rows) + ' rows in this run\'s window, still nameless: [' +
-             (flip && flip.nameless) + ']',
+             ' · the stop and both its drives: [' + (flip && flip.saw) + ']' +
+             ' · wrong: [' + (flip && flip.nameless) + ']',
       }),
     });
 
@@ -766,26 +838,37 @@ test.describe('Name an unsaved stop from the day rail', () => {
             else fence = ((q && q.data) || []).some(f => String(f.client_id || '') === String(a.targetId) &&
               String(f.id || '').indexOf('-p') > 0);
           } catch (e) { ferr = String(e && e.message || e); }
-          // Scoped to this run's own rows, for the reason step 8 gives.
+          // Scoped to this run's own stop and the two drives that touch it,
+          // for the reason step 8 gives at length. The difference here is that
+          // the day has SETTLED: the reload waited out the boot sweep, so the
+          // far ends are done moving and a drive is judged on both of them.
+          const legKey = String(a.key || '').replace(/^d-/, '');
           const { data: t } = await _supa.from('job_time_entries')
-            .select('source,dest_place,origin_place')
+            .select('source,dest_place,origin_place,client_key')
             .eq('employee_user_id', _supaUser.id).is('deleted_at', null)
             .gte('arrived_at', new Date(a.a).toISOString())
             .lte('arrived_at', new Date(a.b).toISOString());
-          const nameless = (t || []).filter(x => /^unsaved/.test(String(x.source || '')) ||
+          const named = (v) => String(v || '').indexOf(a.name) >= 0;
+          const rows = (t || []);
+          const mineRows = rows.filter(x => x.client_key === a.key || x.client_key === legKey ||
+            named(x.origin_place) || named(x.dest_place));
+          const nameless = mineRows.filter(x => /^unsaved/.test(String(x.source || '')) ||
             (String(x.source || '') === 'drive' && !(x.dest_place && x.origin_place)));
           return { named: txt.includes(a.name), fence, ferr,
                    nameless: nameless.map(x => (x.source || '?') + '[' +
                      String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', '),
+                   saw: mineRows.map(x => (x.source || '?') + '[' +
+                     String(x.origin_place || '-') + '→' + String(x.dest_place || '-') + ']').join(', '),
                    chips: [...document.querySelectorAll('.tl-rail-chip')]
                      .filter(b => (b.getAttribute('onclick') || '').includes(a.key)).length };
         }, { name: TARGET, key: stopKey, targetId: ctx.targetId, day: ctx.day,
-             a: WIN.a - 3600000, b: WIN.b + 3600000 });
+             a: WIN.a - 600000, b: WIN.b + 600000 });
         // Same standard as step 8: a name that only half landed is not saved.
         return { ok: r.named && r.chips === 0 && !r.nameless && r.fence,
                  got: 'named ' + r.named + ' · ' + r.chips + ' Save chips for this stop' +
                       ' · the property is a server fence: ' + r.fence + (r.ferr ? (' (' + r.ferr + ')') : '') +
-                      ' · still nameless in this run\'s window: [' + r.nameless + ']' };
+                      ' · the stop and its drives: [' + r.saw + ']' +
+                      ' · still nameless: [' + r.nameless + ']' };
       },
     });
 
