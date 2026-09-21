@@ -167,8 +167,14 @@ function _timThreadAv(){
 // instant: the dots are a display beat, not a wait for anything, and js/tim.js
 // owns how long they run. Said plainly here so nobody later reads them as a
 // sign that work is in flight.
+//
+// opts.enter is 'me' or 'him' and marks exactly ONE bubble, the newest, to
+// play the send animation. It has to be one and not a class on all of them,
+// because this redraws every node every time: an entrance keyed on the bubble
+// class alone would replay the whole history on every send.
 function _timThreadHtml(opts){
   const pending=!!(opts&&opts.pending);
+  const enter=(opts&&opts.enter)||null;
   const rows=_timLog.slice(-_TIM_THREAD_SHOW);
   if(!rows.length){
     return '<div style="padding:7px 16px 5px;text-align:center;font-size:12px;color:var(--text3)">'+
@@ -179,8 +185,11 @@ function _timThreadHtml(opts){
   return rows.map((e,i)=>{
     const missed=e.kind==='none';
     const dots=pending&&i===last;
-    const mine='<div class="tim-msg me"><span class="tim-b">'+escHtml(e.said)+'</span></div>';
-    const his='<div class="tim-msg him'+(missed&&!dots?' miss':'')+'">'+
+    const newest=i===last;
+    const mine='<div class="tim-msg me'+(newest&&enter==='me'?' in':'')+'">'+
+      '<span class="tim-b">'+escHtml(e.said)+'</span></div>';
+    const his='<div class="tim-msg him'+(missed&&!dots?' miss':'')+
+      (newest&&enter==='him'?' in':'')+'">'+
       _timThreadAv()+
       '<span class="tim-b">'+
         (dots
