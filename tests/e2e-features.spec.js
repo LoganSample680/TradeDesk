@@ -8191,12 +8191,18 @@ test.describe('Never-delete policy, archive + hold + edit', () => {
       if (typeof _wipeLocalAccountData !== 'function' || typeof timLogSay !== 'function') return { skip: true };
       timLogClear();
       timLogSay('who owes me money', { kind: 'ask', title: '$3,500', sub: 'Dana Whitfield, 68 days' });
-      try { localStorage.setItem('td_tim_met', '1'); } catch (_e) {}
+      try {
+        localStorage.setItem('td_tim_met', '1');
+        // The last thing he said out loud on the bar. A finding id with a
+        // DOLLAR FIGURE on the end of it, so it leaves with the account too.
+        localStorage.setItem('td_tim_said', 'still-owes|$1,240');
+      } catch (_e) {}
       const before = timLogEntries().length;
       _wipeLocalAccountData();
       return {
         before,
         after: timLogEntries().length,
+        said: (() => { try { return localStorage.getItem('td_tim_said'); } catch (_e) { return 'threw'; } })(),
         raw: (() => { try { return localStorage.getItem('td_tim_log'); } catch (_e) { return 'threw'; } })(),
         // A fact about this DEVICE having been shown the control once, not
         // about whose books are on it. Clearing it would re-teach the i to a
@@ -8208,6 +8214,7 @@ test.describe('Never-delete policy, archive + hold + edit', () => {
       expect(r.before, 'the fixture has to actually write something').toBe(1);
       expect(r.after, 'the outgoing account\'s conversation must not survive into the next login').toBe(0);
       expect(r.raw === null || r.raw === '[]', 'and it must not be left on disk either').toBe(true);
+      expect(r.said, 'the figure he last spoke goes with it').toBe(null);
       expect(r.met).toBe('1');
     }
   });

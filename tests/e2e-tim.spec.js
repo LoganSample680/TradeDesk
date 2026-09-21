@@ -1657,6 +1657,189 @@ test.describe('tim', () => {
     });
   });
 
+
+  // ── The part that actually gets him tapped ────────────────────────────────
+  //
+  // Owner, 2026-09-21, after five rounds on the shape of him: "Does it scream
+  // click me though... I want people to use this thing."
+  //
+  // It did not, and the shape was never going to fix it. What got the old
+  // floating dock tapped was the pill beside it speaking the top finding with
+  // the figure on the front, and that died in the move to the bar for a layout
+  // reason rather than a product one. A badge reading "2" reports that a number
+  // exists. "$1,240, Dana still owes on the last one" is a reason to put a
+  // thumb on something.
+  //
+  // THE GATE IS THE DESIGN, and that is what most of this group is about. A
+  // bubble that speaks on every render is a nag, and a nag is dismissed forever
+  // after about two days, which costs more attention than it ever bought.
+  test.describe('he says it out loud, once, and then stops', () => {
+    const FIND = (id, line, figure) => page.evaluate(([i, l, f]) => {
+      window.__realNudges = window.__realNudges || timNudges;
+      timNudges = () => (f === null ? [] : [{ id: i, line: l, figure: f,
+        title: f, what: l, why: '', cta: 'Do it', alt: 'No' }]);
+      timDockRender();
+    }, [id, line, figure]);
+    const bubble = () => page.evaluate(() => {
+      const s = document.getElementById('mtb-tim-say');
+      return { on: !s.hidden, fig: (s.querySelector('b') || {}).textContent || '',
+        line: (s.querySelector('i') || {}).textContent || '' };
+    });
+    const forget = () => page.evaluate(() => {
+      document.getElementById('_tim-ov')?.remove();
+      try { localStorage.removeItem('td_tim_said'); localStorage.setItem('td_tim_met', '1'); } catch (_e) {}
+      const s = document.getElementById('mtb-tim-say');
+      if (s) { s.hidden = true; s.innerHTML = ''; }
+    });
+    test.afterAll(async () => {
+      await page.evaluate(() => {
+        if (window.__realNudges) timNudges = window.__realNudges;
+        try { localStorage.removeItem('td_tim_said'); } catch (_e) {}
+        timDockRender();
+      });
+    });
+
+    test('a finding is spoken with the figure on the front of it', async () => {
+      await forget();
+      await FIND('still-owes', 'Dana still owes on the last one', '$1,240');
+      expect(await bubble()).toEqual({ on: true,
+        fig: '$1,240', line: 'Dana still owes on the last one' });
+    });
+
+    // The nag gate. timDockRender runs on every navigation, so without this he
+    // would say the same sentence on every screen for the rest of the day.
+    test('the same thing is not said twice, however many times he is drawn', async () => {
+      await forget();
+      await FIND('still-owes', 'Dana still owes on the last one', '$1,240');
+      const spoke = await bubble();
+      await page.evaluate(() => {
+        document.getElementById('mtb-tim-say').hidden = true;
+        for (let i = 0; i < 8; i++) { goPg('pg-dash'); timDockRender(); }
+      });
+      expect(spoke.on).toBe(true);
+      expect((await bubble()).on, 'he repeated himself').toBe(false);
+    });
+
+    // But the SAME customer owing MORE is news. The signature is the finding's
+    // id and its figure together for exactly this reason: an id alone would go
+    // quiet forever the first time it fired, and a figure alone would speak
+    // again every time two unrelated findings happened to cost the same.
+    test('but a changed figure is news, and he says it again', async () => {
+      await forget();
+      await FIND('still-owes', 'Dana still owes on the last one', '$1,240');
+      await page.evaluate(() => { document.getElementById('mtb-tim-say').hidden = true; });
+      await FIND('still-owes', 'Dana still owes on the last one', '$2,980');
+      expect(await bubble()).toEqual({ on: true,
+        fig: '$2,980', line: 'Dana still owes on the last one' });
+    });
+
+    test('nothing found is nothing said', async () => {
+      await forget();
+      await FIND('none', '', null);
+      expect((await bubble()).on).toBe(false);
+    });
+
+    // A figure with no sentence is a number nobody can act on, and a sentence
+    // with no figure is not worth interrupting anybody for.
+    test('half a finding is not worth interrupting a man for', async () => {
+      await forget();
+      await FIND('half', 'Something is off', '');
+      expect((await bubble()).on, 'no figure').toBe(false);
+      await forget();
+      await FIND('half', '', '$900');
+      expect((await bubble()).on, 'no sentence').toBe(false);
+    });
+
+    test('he does not talk over himself while his sheet is open', async () => {
+      await forget();
+      await page.evaluate(() => { openTim(); });
+      await FIND('still-owes', 'Dana still owes on the last one', '$1,240');
+      const out = await bubble();
+      await page.evaluate(() => document.getElementById('_tim-ov')?.remove());
+      expect(out.on, 'a bubble behind his own open sheet is shouting into a conversation').toBe(false);
+    });
+
+    test('and answering him retires it on the spot', async () => {
+      await forget();
+      await FIND('still-owes', 'Dana still owes on the last one', '$1,240');
+      const after = await page.evaluate(() => {
+        openTim();
+        const out = !document.getElementById('mtb-tim-say').hidden;
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(after).toBe(false);
+    });
+
+    // A phone in private mode, or with site data blocked, cannot remember being
+    // told. SILENCE is the right failure there: the alternative is a bubble on
+    // every single render, forever, on the one device that can do nothing about
+    // it. So it writes the signature first and speaks only if the write took.
+    test('a phone that cannot remember stays quiet rather than repeating forever', async () => {
+      const r = await page.evaluate(() => {
+        const set = Storage.prototype.setItem, get = Storage.prototype.getItem;
+        Storage.prototype.getItem = () => null;
+        Storage.prototype.setItem = () => { throw new Error('denied'); };
+        try {
+          timNudges = () => ([{ id: 'x', line: 'Something worth money', figure: '$500' }]);
+          timDockRender();
+          return !document.getElementById('mtb-tim-say').hidden;
+        } finally { Storage.prototype.setItem = set; Storage.prototype.getItem = get; }
+      });
+      expect(r).toBe(false);
+    });
+
+    // It is a transient overlay, the same category as .toast, and that is the
+    // whole of why it is allowed to cover page content at all. The retirement
+    // is a CSS animation ending in visibility:hidden, so it leaves hit-testing
+    // on its own with no JS timer touching a style property (8.5).
+    test('it retires itself, and stops taking taps when it does', async () => {
+      await forget();
+      await FIND('still-owes', 'Dana still owes on the last one', '$1,240');
+      const hits = () => page.evaluate(() => {
+        const s = document.getElementById('mtb-tim-say');
+        const r = s.getBoundingClientRect();
+        const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { vis: getComputedStyle(s).visibility, mine: !!(el && el.closest('#mtb-tim')) };
+      });
+      // While it is up, the words belong to him: a man reaching for a sentence
+      // that just told him he is owed $1,240 is reaching for the $1,240, and
+      // handing that tap to whatever list is behind it is the worst answer to it.
+      expect(await hits()).toEqual({ vis: 'visible', mine: true });
+      await page.waitForTimeout(7600);
+      expect(await hits()).toEqual({ vis: 'hidden', mine: false });
+    });
+
+    test('a long line does not push the page sideways, at 320px or 390px', async () => {
+      for (const w of [320, 390]) {
+        await page.setViewportSize({ width: w, height: 844 });
+        await forget();
+        await FIND('long', 'Kansas will not make you print a price on a time and materials contract', '$12,480');
+        const over = await page.evaluate(() =>
+          document.documentElement.scrollWidth - window.innerWidth);
+        expect(over, 'horizontal bleed at ' + w + 'px').toBeLessThanOrEqual(1);
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
+    });
+
+    // Everything Tim can name is money or a contract. A crew member gets no
+    // Tim, so a crew member gets no figure shouted at him off the bar either.
+    test('a crew member is told nothing', async () => {
+      await forget();
+      const r = await page.evaluate(() => {
+        const was = _isEmployee;
+        _isEmployee = true;
+        try {
+          timNudges = () => ([{ id: 'owed', line: 'Dana still owes', figure: '$1,240' }]);
+          timDockRender();
+          return { said: !document.getElementById('mtb-tim-say').hidden,
+            key: !document.getElementById('mtb-tim').hidden };
+        } finally { _isEmployee = was; timDockRender(); }
+      });
+      expect(r).toEqual({ said: false, key: false });
+    });
+  });
+
   test('no console errors, tim.js', async () => {
     assertNoErrors(page, 'tim.js');
   });

@@ -351,9 +351,65 @@ function timDockRender(opts){
     dot.textContent=finds.length?String(finds.length):(hint?'i':'');
     dot.hidden=!finds.length&&!hint;
   }
+  _timSaySomething(tab,finds);
   tab.setAttribute('aria-label',finds.length
     ? ('Tim, '+finds.length+' thing'+(finds.length===1?'':'s')+' to look at')
     : 'Tim');
+}
+
+// ── WHETHER HE SAYS IT OUT LOUD ──────────────────────────────────────────────
+//
+// Owner, after five rounds on the shape of him: "Does it scream click me
+// though... I want people to use this thing."
+//
+// It did not, and the shape was never going to fix it. What got the old
+// floating dock tapped was the pill beside it speaking the top finding with the
+// figure on the front, and that died in the move to the bar for a layout reason
+// rather than a product one. A badge saying "2" reports that a number exists.
+// "$1,240, Dana still owes on the last one" is a reason to put a thumb on
+// something.
+//
+// THE WHOLE DESIGN IS THE GATE. A pill that speaks on every render is a nag,
+// and a nag gets dismissed forever after about two days, which costs more
+// attention than it ever buys. So he speaks only when the thing he would say
+// has CHANGED: the signature is the finding's id and its figure together, so
+// the same customer owing the same money says nothing twice, and the same
+// customer owing more says it again. Stored per device, like td_tim_met, which
+// is the right scope for "this phone has already been told".
+//
+// He also never talks over himself: if his sheet is open he is already being
+// read, and a bubble behind it would be shouting into a conversation.
+const _TIM_SAID_KEY='td_tim_said';
+function _timSaidSig(){
+  try{return localStorage.getItem(_TIM_SAID_KEY)||'';}catch(_e){return '';}
+}
+function _timSaySomething(tab,finds){
+  const say=document.getElementById('mtb-tim-say');
+  if(!say)return;
+  const top=finds&&finds.length?finds[0]:null;
+  if(!top)return;
+  // Both halves, because a figure with no sentence is a number nobody can act
+  // on and a sentence with no figure is not worth interrupting anybody for.
+  const fig=String(top.figure||'').trim(),line=String(top.line||'').trim();
+  if(!fig||!line)return;
+  const sig=String(top.id||'')+'|'+fig;
+  if(sig===_timSaidSig())return;
+  // His sheet is open: he is already being read.
+  if(document.getElementById('_tim-sheet'))return;
+  // A phone that cannot remember being told would be told on every render,
+  // which is the nag this whole function exists to avoid. Silence is the safe
+  // failure here, so it writes FIRST and only speaks if the write took.
+  try{localStorage.setItem(_TIM_SAID_KEY,sig);}catch(_e){return;}
+  say.innerHTML='<b>'+escHtml(fig)+'</b><i>'+escHtml(line)+'</i>';
+  say.hidden=false;
+  // One rise of the key to go with it. Restarted by hand because re-adding a
+  // class the element already carries does not replay an animation, and he may
+  // well have something new to say twice in one session.
+  try{
+    tab.classList.remove('noticed');
+    void tab.offsetWidth;
+    tab.classList.add('noticed');
+  }catch(_e){}
 }
 
 // ── Whether he has ever been opened on this phone ────────────────────────────
@@ -618,6 +674,10 @@ function openTim(){
   // rather than on the next render, or it sits there behind the open sheet and
   // is still there when the sheet closes, having taught nothing.
   if(_timMarkMet()&&typeof timDockRender==='function')timDockRender({cached:true});
+  // The bubble has done its job the moment it is answered, and leaving it to
+  // finish its seven seconds behind the open sheet would have him saying the
+  // thing he is already in the middle of saying properly.
+  try{const say=document.getElementById('mtb-tim-say');if(say)say.hidden=true;}catch(_e){}
   const snap=(typeof timJobSnapshot==='function')?timJobSnapshot():{};
   const found=(typeof timNudges==='function')?timNudges(snap).slice(0,2):[];
   // HE TAPPED BECAUSE OF A NUMBER, SO THE NUMBER IS THE FIRST THING ON THE

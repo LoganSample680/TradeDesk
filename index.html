@@ -467,6 +467,76 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    with a reason attached. */
 #mtb-tim-dot.hint{background:var(--text-cream);color:var(--ink);font-size:11.5px;
   font-weight:800;font-style:italic;padding:0 4px}
+/* ── AND THE PART THAT ACTUALLY GETS HIM TAPPED ─────────────────────────────
+   Owner, 2026-09-21, after five rounds of shape: "Does it scream click me
+   though... I want people to use this thing."
+   It did not, and no amount of shape was going to make it. A silent key with a
+   face on it says nothing about what it is for, and a badge reading "2" says
+   only that a number exists. The thing that ever got the old floating dock
+   tapped was the PILL beside it, which spoke the top finding out loud with the
+   dollar figure on the front of it, and that was deleted in the move to the bar
+   for a layout reason rather than a product one. This is it back.
+   "$1,240  Dana still owes on the last one" is a reason to touch something.
+   "Tim" is a name, and a name is not a reason.
+   IT RETIRES BY ITSELF, which is the whole of why it is allowed to exist. The
+   retirement is a CSS animation ending in visibility:hidden, so it leaves
+   hit-testing without any JS timer touching a style property (8.5) and without
+   anything to leak if the page is torn down mid-flight.
+   It is a transient overlay, the same category as .toast, not persistent
+   chrome: it speaks, it goes, and what is left is the badge. That is what makes
+   it an invitation rather than a nag, and it is also why 15.3 is satisfied the
+   way the toast satisfies it rather than by geometry.
+   The bar's own ink and hairline again, so it is the bar talking. It carries a
+   shadow where the socket does not, because this one really IS floating over
+   the page, and saying so is more honest than pretending it grew there. */
+#mtb-tim-say{
+  position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);
+  max-width:min(300px,calc(100vw - 40px));box-sizing:border-box;
+  display:flex;align-items:baseline;gap:7px;
+  padding:8px 13px;border-radius:15px;
+  background:var(--ink);border:1px solid var(--ink-line);
+  box-shadow:0 5px 20px rgba(0,0,0,.34);
+  font-family:inherit;font-size:12.5px;line-height:1.25;
+  color:var(--text-cream-2);white-space:nowrap;
+  opacity:0;visibility:hidden;
+  animation:tim-say 7.2s cubic-bezier(.22,1,.36,1) forwards}
+#mtb-tim-say[hidden]{display:none}
+/* The figure first and in the cream the bar uses for an active tab, because the
+   number is the reason and the sentence is the explanation. */
+#mtb-tim-say b{color:var(--text-cream);font-weight:800;font-variant-numeric:tabular-nums;
+  flex-shrink:0}
+#mtb-tim-say i{font-style:normal;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* The tail, so it is clearly HIS and not a toast that happened to land there. */
+#mtb-tim-say::after{
+  content:'';position:absolute;bottom:-4px;left:50%;width:9px;height:9px;
+  transform:translateX(-50%) rotate(45deg);
+  background:var(--ink);border-right:1px solid var(--ink-line);
+  border-bottom:1px solid var(--ink-line);border-radius:0 0 2px 0}
+@keyframes tim-say{
+  0%       {opacity:0;visibility:visible;transform:translateX(-50%) translateY(7px) scale(.97)}
+  7%,86%   {opacity:1;visibility:visible;transform:translateX(-50%) translateY(0) scale(1)}
+  100%     {opacity:0;visibility:hidden;transform:translateX(-50%) translateY(-4px) scale(.99)}
+}
+/* ONE rise, once, when he has something new. Not a loop: a control that moves
+   forever is a control a man learns to stop seeing, and that is worse than one
+   that never moved, because it burned the attention to get there. */
+@keyframes tim-notice{
+  0%,100%{transform:translateY(0)}
+  35%    {transform:translateY(-4px)}
+  70%    {transform:translateY(0.5px)}
+}
+#mtb-tim.noticed #mtb-tim-mark{animation:tim-notice .62s cubic-bezier(.22,1,.36,1) .12s both}
+@media (prefers-reduced-motion:reduce){
+  /* Asked the OS to stop moving things: he still SAYS it, he just does not fly
+     in or bounce to say it. The sentence is the point; the motion was only ever
+     how it arrived. */
+  #mtb-tim-say{animation:tim-say-still 7.2s steps(1,end) forwards}
+  #mtb-tim.noticed #mtb-tim-mark{animation:none}
+}
+@keyframes tim-say-still{
+  0%,86%{opacity:1;visibility:visible}
+  100%  {opacity:0;visibility:hidden}
+}
 /* More popup, sits above the More button, no swipe needed */
 #mtb-more-popup{display:none;position:fixed;inset:0;z-index:1999}
 #mtb-more-menu{position:absolute;bottom:calc(58px + env(safe-area-inset-bottom,0px));right:6px;background:var(--ink);border-radius:14px;overflow:hidden;box-shadow:0 -4px 32px rgba(0,0,0,.5);min-width:192px;animation:fadeup .15s ease}
@@ -4567,6 +4637,13 @@ body.dark .cal-cell.other{background:var(--cream)}
        he was a sixth tab, and nothing was demoted to the More menu to make
        room for him. -->
   <button id="mtb-tim" onclick="openTim()" aria-label="Tim" hidden>
+    <!-- His voice. Empty and hidden until the nudge engine can name a dollar,
+         a percentage or a law, and it retires itself seven seconds later. It
+         lives INSIDE the button so that tapping the words opens him: a man who
+         reaches for a sentence that just told him he is owed $1,240 is
+         reaching for the $1,240, and handing that tap to whatever list is
+         behind it would be the worst possible answer to it. -->
+    <span id="mtb-tim-say" hidden></span>
     <span id="mtb-tim-dot" hidden></span>
     <span id="mtb-tim-mark"></span>
   </button>
