@@ -1198,3 +1198,40 @@ test.describe('TrueShot: the sync keeps what the feature needs', () => {
     expect(n).toBe(0);
   });
 });
+
+// ── The trap that cost three live rounds ───────────────────────────────────
+// `let` at the top level of a classic script creates a binding in the global
+// LEXICAL environment, not a property on window. A test that reads
+// window._pcAnno gets undefined forever and concludes the feature is broken
+// while it is working perfectly. This pins the shape so the next test author
+// (me, in a month) finds out in 15 seconds instead of six CI rounds.
+test.describe('TrueShot: module state is lexical, not on window', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the editor context is reachable by name and absent from window', async () => {
+    await page.evaluate(seed());
+    const r = await page.evaluate(async () => {
+      const cv = document.createElement('canvas');
+      cv.width = 60; cv.height = 40; cv.getContext('2d').fillRect(0, 0, 60, 40);
+      photos.push({ id: 960, type: 'before', url: cv.toDataURL('image/png'), thumbUrl: '', storagePath: '', client_id: 501, bid_id: 901, uploadedAt: new Date().toISOString() });
+      tdAnnotatePhoto(960);
+      for (let i = 0; i < 80 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r2 => setTimeout(r2, 25));
+      const out = { byName: !!(_pcAnno && _pcAnno.img), onWindow: typeof window._pcAnno };
+      tdCloseAnnotate();
+      return out;
+    });
+    // Reachable by name...
+    expect(r.byName).toBe(true);
+    // ...and NOT on window. If this ever flips to 'object', someone exposed
+    // it deliberately and the comment above needs rewriting.
+    expect(r.onWindow).toBe('undefined');
+  });
+});

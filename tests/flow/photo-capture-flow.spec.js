@@ -213,16 +213,26 @@ test.describe('jobsite photos: estimate → job → client hub', () => {
           const urlBefore = before.url;
           window._pcAnnoLastError = null;
           tdAnnotatePhoto(id);
-          // 6 seconds, not 2: the recovery path adds a storage download and
-          // a blob decode, and a slow-but-working path must not read as a
+          // ── Read the BARE binding, never window._pcAnno ──────────────────
+          // _pcAnno is declared with `let` at the top level of a classic
+          // script, which creates a binding in the global LEXICAL scope and
+          // NOT a property on window. window._pcAnno is therefore undefined
+          // forever. This test polled that and so waited out the whole
+          // timeout and reported "the editor never opened" no matter what
+          // the app did: three live rounds chased a failure that was this
+          // line. The offline spec used the bare name, which is exactly why
+          // it passed while this one did not.
+          const ctx = () => (typeof _pcAnno !== 'undefined' ? _pcAnno : null);
+          // 6 seconds: the recovery path can add a storage download and a
+          // blob decode, and a slow-but-working path must not read as a
           // refusal.
-          for (let i = 0; i < 240 && !(window._pcAnno && _pcAnno.img); i++) await new Promise(r => setTimeout(r, 25));
+          for (let i = 0; i < 240 && !(ctx() && ctx().img); i++) await new Promise(r => setTimeout(r, 25));
           // Say WHY it did not open. The live run reported opened:false and
           // the other keys came back undefined, which JSON.stringify drops,
           // so the failure read as two booleans and explained nothing.
-          if (!window._pcAnno || !_pcAnno.img) {
+          if (!ctx() || !ctx().img) {
             return { opened: false, urlBefore, whyNotOpened: {
-              ctxGone: !window._pcAnno, imgMissing: !!(window._pcAnno && !_pcAnno.img),
+              ctxGone: !ctx(), imgMissing: !!(ctx() && !ctx().img),
               // The app now records the exact stage it failed at.
               lastError: window._pcAnnoLastError || null,
               host: String(before.url || '').split('/').slice(0, 3).join('/'),
