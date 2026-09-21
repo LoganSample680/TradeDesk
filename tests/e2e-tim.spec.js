@@ -1148,6 +1148,97 @@ test.describe('tim', () => {
   // already wrote down, and would read as a notifications tray rather than as a
   // man with something to say. What changes is whether he is breathing at all,
   // and which of his findings is showing.
+  // ── The i, and the fact that it leaves ────────────────────────────────────
+  //
+  // Owner asked for a small i in the corner to get people to tap. The shimmer
+  // says "look" and never says "tap", so on a phone that has never opened him a
+  // gold tab on the edge of the screen is a thing nobody has seen before.
+  //
+  // The whole design rests on it RETIRING. An introduction that repeats is not
+  // an introduction, it is clutter with a reason attached, and it would sit in
+  // the corner of every screen forever on the app of a man who has been using
+  // Tim daily for a year. These tests are mostly about it going away.
+  test.describe('the i that teaches the tab, once', () => {
+    const fresh = async () => {
+      await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        try { localStorage.removeItem('td_tim_met'); } catch (_e) {}
+        window.__realNudges = window.__realNudges || timNudges;
+        timNudges = () => [];
+        timDockRender();
+      });
+    };
+    const badge = () => page.evaluate(() => {
+      const b = document.getElementById('tim-dock-badge');
+      return { text: b.textContent, on: b.classList.contains('on'), hint: b.classList.contains('hint') };
+    });
+    test.afterAll(async () => {
+      await page.evaluate(() => {
+        if (window.__realNudges) timNudges = window.__realNudges;
+        try { localStorage.setItem('td_tim_met', '1'); } catch (_e) {}
+        timDockRender();
+      });
+    });
+
+    test('a phone that has never opened him gets the i', async () => {
+      await fresh();
+      expect(await badge()).toEqual({ text: 'i', on: true, hint: true });
+    });
+
+    test('opening him retires it on the spot, not on the next render', async () => {
+      // If it only cleared on the next timDockRender it would sit behind the
+      // open sheet and still be there when the sheet closed, having taught
+      // nothing.
+      await fresh();
+      const after = await page.evaluate(() => {
+        openTim();
+        const b = document.getElementById('tim-dock-badge');
+        const out = { text: b.textContent, on: b.classList.contains('on'), hint: b.classList.contains('hint') };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(after).toEqual({ text: '', on: false, hint: false });
+    });
+
+    test('and it never comes back', async () => {
+      await page.evaluate(() => { timNudges = () => []; timDockRender(); });
+      expect(await badge()).toEqual({ text: '', on: false, hint: false });
+    });
+
+    test('a real count outranks it, and the i never rides alongside findings', async () => {
+      await fresh();
+      const r = await page.evaluate(() => {
+        timNudges = () => ([
+          { id: 'a', line: 'Dana still owes', figure: '$1,240' },
+          { id: 'b', line: 'Line 3 is under your own price', figure: '$640' },
+          { id: 'c', line: 'Kansas will not print a price', figure: 'saves 4 taps' }]);
+        timDockRender();
+        const b = document.getElementById('tim-dock-badge');
+        return { text: b.textContent, hint: b.classList.contains('hint') };
+      });
+      expect(r).toEqual({ text: '3', hint: false });
+    });
+
+    test('no localStorage is no hint, rather than a hint that never goes away', async () => {
+      // A phone in private mode, or with site data blocked, cannot remember
+      // being taught. Showing the i forever there is worse than never showing
+      // it: it becomes permanent furniture on the one device that can do
+      // nothing about it.
+      const r = await page.evaluate(() => {
+        const get = Storage.prototype.getItem, set = Storage.prototype.setItem;
+        Storage.prototype.getItem = () => { throw new Error('denied'); };
+        Storage.prototype.setItem = () => { throw new Error('denied'); };
+        try {
+          timNudges = () => [];
+          timDockRender();
+          const b = document.getElementById('tim-dock-badge');
+          return { text: b.textContent, on: b.classList.contains('on') };
+        } finally { Storage.prototype.getItem = get; Storage.prototype.setItem = set; }
+      });
+      expect(r).toEqual({ text: '', on: false });
+    });
+  });
+
   test.describe('the pulse and the roll', () => {
     const findings = (page, list) => page.evaluate(ns => {
       window.__realNudges = window.__realNudges || timNudges;
