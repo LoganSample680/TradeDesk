@@ -544,6 +544,75 @@ test.describe('tim answering off your own books', () => {
     });
   });
 
+  // ── The one he opens with ─────────────────────────────────────────────────
+  test.describe('where do I stand', () => {
+    test('the exact sentence the owner typed and got a miss on', async () => {
+      const r = await page.evaluate(() => timAsk("What's Going On Tim?"));
+      expect(r).not.toBeNull();
+      expect(r.id).toBe('brief');
+    });
+
+    // The bug underneath the miss, and it was never about this one family.
+    // _timkNorm turned every stray character into a SPACE, so "what's" became
+    // "what s" and matched nothing. iOS autocorrects "whats" TO "what's" as you
+    // type, so the keyboard was reliably rewriting his question into one Tim
+    // could not hear, across every phrase in the list written the plain way.
+    test('the apostrophe iOS insists on adding does not break the match', async () => {
+      const r = await page.evaluate(() => [
+        // straight, curly, and the plain form, for the phrases that carry one
+        ["what's going on", 'brief'],
+        ['what\u2019s going on', 'brief'],
+        ['whats going on', 'brief'],
+        ["what's owed", 'owed'],
+        ['what\u2019s owed', 'owed'],
+        ["what's out right now", 'out'],
+        ["what's the address for Dana", 'who'],
+        ["what's my average job", 'avg'],
+        ["how's business", 'brief'],
+      ].map(([said, want]) => [(timAskKind(said) || {}).id, want]));
+      r.forEach(([got, want]) => expect(got).toBe(want));
+    });
+
+    test('it is the money he can do something about, worst first', async () => {
+      const r = await page.evaluate(() => timAsk('whats going on'));
+      // Owed 3,500 (Dana 2,000 of 4,000 unpaid + Ray 1,500). Out: the 3,300
+      // Pending. In: income 1,500 + payments 2,900.
+      expect(r.title).toBe('$3,500');
+      expect(r.sub).toContain('not in your account');
+      const leads = r.rows.map(x => x.lead);
+      expect(leads[0]).toBe('Waiting to be paid');
+      expect(leads).toContain('Out for an answer');
+      expect(leads).toContain('Taken in this year');
+    });
+
+    test('it never disagrees with the single question it is summarising', async () => {
+      // A brief that contradicts the detailed answer is the worst thing in this
+      // file: it is the one read fastest and trusted most.
+      const r = await page.evaluate(() => {
+        const brief = timAsk('where do I stand');
+        const owed = timAsk('who owes me money');
+        const out = timAsk('whats out right now');
+        return {
+          briefOwed: (brief.rows.find(x => x.lead === 'Waiting to be paid') || {}).right,
+          owedTitle: owed.title,
+          briefOut: (brief.rows.find(x => x.lead === 'Out for an answer') || {}).right,
+          outTitle: out.title,
+        };
+      });
+      expect(r.briefOwed).toBe(r.owedTitle);
+      expect(r.briefOut).toBe(r.outTitle);
+    });
+
+    test('an empty book says all square, it does not invent a number', async () => {
+      const r = await page.evaluate(() => {
+        bids.length = 0; payments.length = 0; income.length = 0;
+        return timAsk('how is business');
+      });
+      expect(r.title).toBe('All square');
+      expect(r.rows).toEqual([]);
+    });
+  });
+
   // ── A CREW MEMBER GETS NOTHING ────────────────────────────────────────────
   //
   // Every answer in this file is owner-only business data. Tim has been
@@ -583,8 +652,9 @@ test.describe('tim answering off your own books', () => {
         'how many miles did I drive in 2026',
         'how many hours did I work',
         'whats my average job in 2026',
+        'whats going on',
       ].map(s => timAsk(s)));
-      expect(r).toEqual(new Array(12).fill(null));
+      expect(r).toEqual(new Array(13).fill(null));
     });
 
     test('the sheet will not open for him at all', async () => {

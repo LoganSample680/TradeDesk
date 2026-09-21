@@ -19,6 +19,12 @@
 //      names, site addresses and prices.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
+// What he says when he cannot place a sentence. Named once here because three
+// tests assert it and the wording is the kind of thing that gets tuned: "I
+// could not place that one" was a dead end that reported the failure and handed
+// the man nothing, so it now carries the way out as well.
+const _MISS = 'Not one I know yet. Try what you are owed, what you charged, or what is out.';
+
 const SEED = () => {
   _activeTrade = 'painting';
   S.priceBook = { painting: [
@@ -169,7 +175,7 @@ test.describe('the tim log', () => {
       });
       expect(r.n).toBe(1);
       expect(r.said).toBe('reglaze the transoms on the north side');
-      expect(r.got).toContain('could not place');
+      expect(r.got).toBe(_MISS);
     });
 
     test('a sentence he did place is not a blank', async () => {
@@ -443,7 +449,7 @@ test.describe('the tim log', () => {
       expect(r).toEqual([
         ['me', 'who owes me money'], ['him', '$3,500'],
         ['me', 'open my leads'], ['him', 'Opened Leads'],
-        ['me', 'reglaze the transoms'], ['him', 'I could not place that one.'],
+        ['me', 'reglaze the transoms'], ['him', _MISS],
       ]);
     });
 
@@ -500,13 +506,13 @@ test.describe('the tim log', () => {
           dots: box.querySelectorAll('.tim-dots').length,
           // His words must NOT be on screen while the dots are, or the dots are
           // decoration sitting next to the answer they claim to be replacing.
-          reply: box.textContent.indexOf('could not place') >= 0,
+          reply: box.textContent.indexOf('Not one I know yet') >= 0,
           mine: box.textContent.indexOf('reglaze the transoms') >= 0,
         };
         await new Promise(x => setTimeout(x, 620));
         const after = {
           dots: box.querySelectorAll('.tim-dots').length,
-          reply: box.textContent.indexOf('could not place') >= 0,
+          reply: box.textContent.indexOf('Not one I know yet') >= 0,
         };
         document.getElementById('_tim-ov')?.remove();
         return { during, after };
@@ -602,7 +608,7 @@ test.describe('the tim log', () => {
         return { dots, got: logged.got };
       });
       expect(r.dots).toBe(1);
-      expect(r.got).toBe('I could not place that one.');
+      expect(r.got).toBe(_MISS);
     });
 
     test('the sheet shows it, and saying something adds to it and clears the box', async () => {

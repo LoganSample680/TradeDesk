@@ -587,12 +587,18 @@ function _timOnEstimate(){
 // not looking at. Off the builder he is reading the books, which is exactly
 // what the twelve question families read.
 function _timHeadHtml(sub){
-  const dflt=_timOnEstimate()?'Reading this job and your price book':'Reading your books';
+  // Off the builder there is NO subtitle. "Reading your books" was the app
+  // narrating its own filing: it told a man nothing he did not know and it made
+  // a message thread header look like a status bar. Every thread on his phone
+  // shows a name and a face and nothing else, and that is the whole job of this
+  // row. On the builder the subtitle survives, because there it is about the
+  // JOB in front of him rather than about Tim.
+  const dflt=_timOnEstimate()?'Reading this job and your price book':'';
   return '<div style="display:flex;align-items:center;gap:9px;padding:0 16px 13px;border-bottom:1px solid var(--border)">'+
     timMark(26)+
     '<span style="flex:1;min-width:0">'+
       '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">Tim</span>'+
-      '<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:1px">'+escHtml(sub||dflt)+'</span>'+
+      ((sub||dflt)?'<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:1px">'+escHtml(sub||dflt)+'</span>':'')+
     '</span>'+
     '<button type="button" onclick="_timClose()" aria-label="Close" style="width:28px;height:28px;border:0;border-radius:var(--r-pill);background:var(--bg2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">'+
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>'+
@@ -614,11 +620,25 @@ function _timAskHtml(){
         '<span style="position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:var(--r-pill);background:var(--hat);box-shadow:0 0 0 2px var(--bg);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:var(--ink)">T</span>'+
       '</button>'
     : '';
+  // The send, and it SWAPS with the mic rather than sitting beside it. That is
+  // what iOS does and it is not decoration: an empty box has nothing to send,
+  // so a send button on it is a dead control, and two live buttons on a 390px
+  // row is a thumb choosing between them every time. Empty box, the mic (the
+  // way in on a job site). A character typed, the arrow.
+  const send='<button type="button" id="_tim-send" onclick="_timGo()" aria-label="Send" '+
+    // No display in here on purpose: an inline style beats the stylesheet, and
+    // the stylesheet is what does the swap off :placeholder-shown.
+    'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-pill);'+
+    'background:var(--blue);cursor:pointer;padding:0">'+
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" '+
+      'stroke-linecap="round" stroke-linejoin="round">'+
+      '<path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>'+
+    '</button>';
   return '<div style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
     '<input id="_tim-say" type="text" autocomplete="off" placeholder="'+
       (_timOnEstimate() ? 'Tell Tim what changed' : 'Build a T and M for Dana')+'" '+
       'style="flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 13px;border:0;border-radius:var(--r-md);background:var(--bg2);box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text)">'+
-    mic+
+    mic+send+
   '</div>'+
   '<div id="_tim-read" style="min-height:17px;font-size:12.5px;font-weight:600;color:var(--text3);padding:8px 16px 0"></div>';
 }

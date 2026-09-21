@@ -1148,6 +1148,68 @@ test.describe('tim', () => {
   // already wrote down, and would read as a notifications tray rather than as a
   // man with something to say. What changes is whether he is breathing at all,
   // and which of his findings is showing.
+  // ── The send arrow ────────────────────────────────────────────────────────
+  test.describe('the arrow that sends', () => {
+    test('it hides on an empty box and appears the moment there is something to send', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timLogClear();
+        openTim();
+        const box = document.getElementById('_tim-say');
+        const d = (id) => { const e = document.getElementById(id); return e ? getComputedStyle(e).display : 'ABSENT'; };
+        const empty = d('_tim-send');
+        box.value = 'who owes me money';
+        const typed = d('_tim-send');
+        box.value = '';
+        const cleared = d('_tim-send');
+        document.getElementById('_tim-ov')?.remove();
+        return { empty, typed, cleared };
+      });
+      // Driven by :placeholder-shown, so it tracks the VALUE with no event to
+      // miss: no keyup handler, so a paste, a dictation result, an autofill or
+      // an undo cannot leave the wrong button on screen.
+      expect(r).toEqual({ empty: 'none', typed: 'flex', cleared: 'none' });
+    });
+
+    test('pressing it sends, without touching Enter', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        timLogClear();
+        openTim();
+        document.getElementById('_tim-say').value = 'reglaze the transoms';
+        document.getElementById('_tim-send').click();
+        const e = timLogEntries()[0];
+        const boxNow = document.getElementById('_tim-say').value;
+        document.getElementById('_tim-ov')?.remove();
+        return { said: e && e.said, boxNow };
+      });
+      expect(r.said).toBe('reglaze the transoms');
+      expect(r.boxNow).toBe('');
+    });
+
+    test('a phone with no speech recognition still has a way to send', async () => {
+      // The mic only renders when _voiceCapable() is true, which it is not in
+      // a headless browser and is not on every device. The arrow is not a
+      // companion to the mic, it is the control: if it only existed alongside
+      // one, those phones would have a box with no way out of it but the
+      // keyboard's return key.
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        openTim();
+        const out = {
+          voice: typeof _voiceCapable === 'function' ? _voiceCapable() : null,
+          mic: !!document.getElementById('_tim-mic'),
+          send: !!document.getElementById('_tim-send'),
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.send).toBe(true);
+      // And when there IS no mic, the arrow is on its own, which is correct.
+      if (!r.voice) expect(r.mic).toBe(false);
+    });
+  });
+
   // ── What he opens with ────────────────────────────────────────────────────
   //
   // Owner: "what Tim displays first makes zero sense." It did not. Three
@@ -1180,7 +1242,12 @@ test.describe('tim', () => {
       expect(t).not.toContain('this job');
       expect(t).not.toContain('this one');
       expect(t).not.toContain('what changed');
-      expect(t).toContain('Reading your books');
+      // And no subtitle at all off the builder. "Reading your books" was the
+      // app narrating its own filing: it told the owner nothing he did not
+      // know and made a message-thread header read like a status bar. Every
+      // thread on his phone shows a name and a face and nothing else.
+      expect(t).not.toContain('Reading your books');
+      expect(t).not.toContain('Reading');
     });
 
     test('and he names what he can actually do from there', async () => {
