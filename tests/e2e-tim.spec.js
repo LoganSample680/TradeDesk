@@ -455,47 +455,81 @@ test.describe('tim', () => {
       expect(n).toBe(1);
     });
 
-    // The dock is the way in the owner picked (design 5b), over a docked strip
-    // and an edge handle, because it is the corner the app already floats
-    // things in. It has to exist exactly once and it has to open the sheet.
-    test('the dock is in the corner and opens the sheet', async () => {
+    // ── 10.4: this assertion changed with the control it is about ───────────
+    // WAS: `#tim-dock` and `#tim-dock-btn`, a disc that floated bottom-right
+    // and then tucked against the right edge at mid-height.
+    // NOW: `#mtb-tim`, a rounded rectangle raised off the CENTRE of the bottom
+    // bar, its bottom edge flush with the bar's top edge. Owner, 2026-09-21:
+    // "kinda diggin tim raised off the bar in the center but instead of a
+    // circle he can be a more rounded rectangle, if theres insights to see then
+    // we get the raised red notification."
+    // The INTENT is untouched and is the whole reason this test exists: there
+    // is exactly one of him, he carries his mark rather than a line icon, and
+    // tapping him opens the sheet. Only the selector moved.
+    test('the raised key is on the bar and opens the sheet', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_tim-ov')?.remove();
         timDockRender();
-        const dock = document.getElementById('tim-dock');
-        const btn = document.getElementById('tim-dock-btn');
-        btn.click();
+        const key = document.getElementById('mtb-tim');
+        key.click();
         return {
-          docks: document.querySelectorAll('#tim-dock').length,
-          shown: dock.classList.contains('on'),
-          // 10.4: this read `#tim-dock-mark svg` until the mark stopped being
-          // drawn. The assertion's intent is unchanged, the dock puts a mark in
-          // its slot; the mark is now the Style E portrait, which is a file.
-          hasMark: !!document.querySelector('#tim-dock-mark img'),
+          keys: document.querySelectorAll('#mtb-tim').length,
+          shown: !key.hidden,
+          hasMark: !!document.querySelector('#mtb-tim-mark img'),
           opened: !!document.getElementById('_tim-sheet'),
         };
       });
-      expect(r).toEqual({ docks: 1, shown: true, hasMark: true, opened: true });
+      expect(r).toEqual({ keys: 1, shown: true, hasMark: true, opened: true });
+    });
+
+    // He is NOT one of the tabs, and this is not a tidiness point.
+    // _applyTabOrder (js/navigation.js) walks _MTB_DEFAULT_ORDER calling
+    // appendChild for dash, leads, clients and jobs. Tim is not in that list,
+    // so for the one commit he lived inside #mtb-inner, every phone with a
+    // saved tab order moved those four to the end and left him sitting FIRST.
+    // He would have shipped as the left-most tab on exactly the devices whose
+    // owners had bothered to customise their bar, and no test would have
+    // noticed, because a saved order only exists after somebody drags one.
+    test('he is outside the draggable row, so a saved tab order cannot move him', async () => {
+      const r = await page.evaluate(() => {
+        const before = document.getElementById('mtb-tim')
+          .previousElementSibling?.id || null;
+        _applyTabOrder(['jobs', 'clients', 'leads', 'dash']);
+        const inner = [...document.querySelectorAll('#mtb-inner > *')].map(e => e.id);
+        const out = {
+          inInner: !!document.querySelector('#mtb-inner > #mtb-tim'),
+          innerOrder: inner,
+          stillLast: document.getElementById('mobile-tabbar').lastElementChild.id,
+          before,
+        };
+        _applyTabOrder(['dash', 'leads', 'clients', 'jobs']);
+        return out;
+      });
+      expect(r.inInner).toBe(false);
+      expect(r.innerOrder).toEqual(['mtb-jobs', 'mtb-clients', 'mtb-leads', 'mtb-dash']);
+      expect(r.stillLast).toBe('mtb-tim');
     });
 
     // The mark used to be seven SVG primitives, so it could not fail to arrive:
     // if the string was in the file it was on screen. It is a file now, and the
     // failure mode of a file is silent. `serve -s` answers a missing path with
     // index.html at 200, so a typo in the src does not 404, it hands the <img>
-    // a page of HTML and the browser draws nothing. The dock would still pass
-    // every test above it with an empty hole where the man is. naturalWidth is
-    // the only thing that knows the difference.
+    // a page of HTML and the browser draws nothing. He would still pass every
+    // test above with an empty hole where the man is. naturalWidth is the only
+    // thing that knows the difference.
     test('the mark is a file that actually arrived', async () => {
       const r = await page.evaluate(async () => {
         document.getElementById('_tim-ov')?.remove();
         timDockRender();
-        const img = document.querySelector('#tim-dock-mark img');
+        const img = document.querySelector('#mtb-tim-mark img');
         if (!img) return { found: false };
         if (!img.complete) await img.decode().catch(() => {});
         return {
           found: true,
           natural: img.naturalWidth,
-          // Drawn awake-size so the tab scales DOWN to it, never up.
+          // 26 on the raised key, not the 22 the tab icons beside it use: he
+          // has a whole key to himself, and a face at icon size stops being a
+          // face. 10.4: this was '58' when he was a floating disc.
           drawn: img.getAttribute('width'),
           // Every density has to be listed or a 3x phone silently takes the
           // one file it was given and softens it.
@@ -504,7 +538,7 @@ test.describe('tim', () => {
       });
       expect(r.found).toBe(true);
       expect(r.natural).toBeGreaterThan(0);
-      expect(r.drawn).toBe('58');
+      expect(r.drawn).toBe('26');
       expect(r.densities).toBe(3);
     });
 
@@ -527,13 +561,28 @@ test.describe('tim', () => {
     });
   });
 
-  // ── The dock gets out of the way ──────────────────────────────────────────
+  // ── The raised key gets out of the way ────────────────────────────────────
   //
   // Rule 15.3: no two interactive controls may overlap, at 390px and at desktop
-  // width. A round button floating at a fixed height is exactly the shape of
-  // control that breaks that, and the estimate builder pins a full-width blue
-  // bar across the bottom of the screen the moment a line is added.
-  test.describe('the dock does not land on anything', () => {
+  // width. This group has outlived three different Tims and the rule is the
+  // only thing in it that has not changed.
+  //
+  // 1. Floating bottom-right. The estimate builder pins a full-width blue bar
+  //    across the bottom the moment a line is added, so _timDockLift measured
+  //    every fixed bottom bar on each render and stood him on the tallest one.
+  //    It obeyed 15.3 by DODGING, and it still left him covering whatever card
+  //    was underneath.
+  // 2. Tucked against the right edge at mid-height. Nothing fixed lives there,
+  //    so 15.3 was met by not being there rather than by dodging.
+  // 3. Raised off the centre of the bottom bar, bottom edge flush with its top
+  //    edge. 15.3 is met by CONSTRUCTION: bottom:100% puts him wholly above the
+  //    bar's padding box, so the tab underneath him keeps every pixel of its
+  //    tap target, and there is still nothing to measure.
+  //
+  // The tests below say that third thing, and they say it by measuring rather
+  // than by reading the stylesheet back, because a rule that is overridden
+  // somewhere else still reads correctly where it was written.
+  test.describe('the raised key does not land on anything', () => {
     test.afterEach(async () => {
       await page.evaluate(() => {
         document.getElementById('gei-cart-bar')?.remove();
@@ -541,184 +590,213 @@ test.describe('tim', () => {
       });
     });
 
-    // ── 10.4: these two assertions changed, and why ─────────────────────────
-    // WAS: the dock floated bottom-right, and _timDockLift measured every fixed
-    // bottom bar on each render and stood him on the tallest one. The old tests
-    // asserted the lift happened and that removing the bar dropped him back.
-    // That was correct while he lived at the bottom, and it did obey 15.3.
-    // NOW: he is tucked against the right edge at mid-height (owner, 2026-09-20,
-    // wanting him embedded rather than floating over the page). Nothing is
-    // fixed at the middle of the right edge, so there is nothing to collide
-    // with, nothing to measure, and no lift; the geometry is the stylesheet's
-    // (8.5) and the JS sets no style property at all.
-    // The RULE is unchanged and still the point of this group. 15.3 is now met
-    // by not being there rather than by dodging, so the assertions below say
-    // that instead: he clears a bottom bar no matter how tall it is, and he
-    // carries no inline position for anything to have written.
-    test('a bottom bar cannot reach him, whatever height it is', async () => {
+    // The one that matters most, and the one a stylesheet cannot be trusted
+    // for. If he dips into the bar he steals the top of whichever tab is under
+    // him, and that tab is 56px tall to begin with: a 60x46 key overlapping it
+    // by even eight pixels takes a control that is already close to the 44pt
+    // floor and puts it under it.
+    test('his box is entirely above the bar, so no tab loses a pixel', async () => {
+      const r = await page.evaluate(() => {
+        timDockRender();
+        const key = document.getElementById('mtb-tim').getBoundingClientRect();
+        const bar = document.getElementById('mobile-tabbar').getBoundingClientRect();
+        const tabs = [...document.querySelectorAll('#mobile-tabbar .mtb')].map(t => {
+          const b = t.getBoundingClientRect();
+          return {
+            id: t.id,
+            // Any overlap at all, not just an overlap of centres. A thumb that
+            // lands on the top eight pixels of Jobs and opens Tim is the bug.
+            hits: !(key.right <= b.left || key.left >= b.right ||
+                    key.bottom <= b.top || key.top >= b.bottom),
+            h: Math.round(b.height),
+          };
+        });
+        const tops = [...document.querySelectorAll('#mobile-tabbar .mtb')]
+          .map(t => t.getBoundingClientRect().top);
+        return {
+          // Against the TABS, not against the bar's border-box. bottom:100% is
+          // resolved against the padding box, so he rests one pixel inside the
+          // bar's own 1px top border. That pixel is the border line and belongs
+          // to no control: it is what welds the two shapes together, and the
+          // tabs start below it, same as he ends above them.
+          intoTabs: Math.round(key.bottom - Math.min.apply(null, tops)),
+          intoBorder: Math.round(key.bottom - bar.top),
+          tabs,
+        };
+      });
+      expect(r.intoTabs, 'pixels of a tab he covers').toBeLessThanOrEqual(0);
+      expect(r.intoBorder, 'he rests on the border line, not in the bar').toBeLessThanOrEqual(1);
+      expect(r.tabs.filter(t => t.hits).map(t => t.id)).toEqual([]);
+      // And the tabs he is standing over are still full-size targets.
+      r.tabs.forEach(t => expect(t.h, t.id + ' height').toBeGreaterThanOrEqual(56));
+    });
+
+    // "in the center" was the owner's word for it, and off-centre on a raised
+    // control reads as a mistake rather than a choice. Half a pixel of slack
+    // for a bar whose width is odd.
+    test('he sits on the centreline of the bar', async () => {
+      const r = await page.evaluate(() => {
+        timDockRender();
+        const key = document.getElementById('mtb-tim').getBoundingClientRect();
+        const bar = document.getElementById('mobile-tabbar').getBoundingClientRect();
+        return Math.abs((key.left + key.width / 2) - (bar.left + bar.width / 2));
+      });
+      expect(r).toBeLessThanOrEqual(1);
+    });
+
+    // The bar used to carry overflow:hidden, which would have clipped him in
+    // half. The clipping moved onto .mtb, which is the thing that actually had
+    // a label to clip, so this asserts he is whole AND that the tabs kept the
+    // protection the bar was giving them.
+    test('the bar does not clip him, and the tabs still clip themselves', async () => {
+      const r = await page.evaluate(() => {
+        timDockRender();
+        const key = document.getElementById('mtb-tim');
+        return {
+          bar: getComputedStyle(document.getElementById('mobile-tabbar')).overflowY,
+          tab: getComputedStyle(document.getElementById('mtb-dash')).overflowY,
+          h: Math.round(key.getBoundingClientRect().height),
+        };
+      });
+      expect(r.bar).not.toBe('hidden');
+      expect(r.tab).toBe('hidden');
+      expect(r.h, 'his full height, not a clipped one').toBeGreaterThanOrEqual(40);
+    });
+
+    // ── The estimate builder's cart bar, which is the real case ─────────────
+    //
+    // This test used to assert he was geometrically CLEAR of any bottom bar,
+    // whatever its height, and he is not: _geiRenderCartBar pins a full-width
+    // blue bar at bottom:0 on step 2 of the builder, and a tall one reaches
+    // past the tab bar's top edge and into him.
+    //
+    // Asserting clearance was asserting the wrong thing. 15.3 is about a thumb
+    // landing on a control the man did not mean, and paint order decides that,
+    // not bounding boxes. That bar is z-index 8000 against the tab bar's 1000,
+    // so it covers the ENTIRE tab bar already, every tab, and has done since
+    // long before Tim existed. He is part of that chrome now and he is covered
+    // with it: no tap of his is stolen, and none of his steals one, because in
+    // any pixel they share the bar is what the browser hands the tap to.
+    //
+    // So the question is put to the browser directly rather than to arithmetic:
+    // over a grid across his whole box, what would a thumb actually hit? The
+    // answer has to be him or the bar on top of him, and never a tab.
+    test('a bottom bar over the tab bar covers him with it, it never splits a tap', async () => {
       const r = await page.evaluate(() => {
         const out = [];
-        [64, 120, 240].forEach(h => {
-          document.getElementById('gei-cart-bar')?.remove();
-          const bar = document.createElement('div');
-          bar.id = 'gei-cart-bar';
-          bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:8000;background:#2D5DA8;height:' + h + 'px';
-          document.body.appendChild(bar);
-          timDockRender();
-          const d = document.getElementById('tim-dock-btn').getBoundingClientRect();
-          out.push(d.bottom > bar.getBoundingClientRect().top);
-        });
-        return out;
-      });
-      expect(r).toEqual([false, false, false]);
-    });
-
-    test('the stylesheet owns where he sits, so the JS writes no position', async () => {
-      const r = await page.evaluate(() => {
         const bar = document.createElement('div');
         bar.id = 'gei-cart-bar';
-        bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;height:64px;z-index:8000';
+        // The real one's geometry and stacking, from _geiRenderCartBar.
+        bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:8000;background:#2D5DA8';
         document.body.appendChild(bar);
+        [56, 88, 140].forEach(h => {
+          bar.style.height = h + 'px';
+          timDockRender();
+          const k = document.getElementById('mtb-tim').getBoundingClientRect();
+          // Only the tabs are asked about. A point on one of his rounded
+          // corners is not his pixel and resolves to whatever page content is
+          // behind him, which is correct: a corner he does not paint is a
+          // corner he has no claim on. What must never happen is a thumb aimed
+          // at him landing on Leads.
+          const wrong = [];
+          for (let x = 1; x < k.width; x += 4) {
+            for (let y = 1; y < k.height; y += 4) {
+              const el = document.elementFromPoint(k.left + x, k.top + y);
+              if (el && el.closest('.mtb')) wrong.push(el.closest('.mtb').id + '@' + h);
+            }
+          }
+          out.push([...new Set(wrong)]);
+        });
+        bar.remove();
         timDockRender();
-        const dock = document.getElementById('tim-dock');
-        const cs = getComputedStyle(dock);
-        return {
-          inlineBottom: dock.style.bottom,
-          inlineTop: dock.style.top,
-          // Mid-height, from the stylesheet, bar or no bar.
-          centred: Math.abs(dock.getBoundingClientRect().top + dock.getBoundingClientRect().height / 2
-            - window.innerHeight / 2) < 2,
-          right: cs.right,
-        };
+        return out;
       });
-      expect(r.inlineBottom).toBe('');
-      expect(r.inlineTop).toBe('');
-      expect(r.centred).toBe(true);
+      expect(r, 'a thumb aimed at him landed on a tab').toEqual([[], [], []]);
     });
 
-    // 10.4: this asserted "awake he comes out and is a disc", gap > 0 and
-    // width === height. Both are deleted rather than adjusted, because coming
-    // out from the edge is the behaviour that was wrong. Waking him moved 72px
-    // of Tim onto the page and he landed on the "Add places" button of a card
-    // on the dashboard: the one moment he has something worth saying was the
-    // one moment he was standing on a control. What replaces them is the
-    // property that makes that impossible, not a looser version of the old
-    // one: he is flush to the edge in BOTH states and only grows along it.
-    test('quiet or awake he never leaves the edge, he only grows along it', async () => {
+    // 8.5: the stylesheet owns where he sits and how he is shown, so the JS
+    // writes no style property at all. He is toggled with the `hidden`
+    // attribute, which is also the honest one: he is display:flex, so the old
+    // style.display='' was restoring the wrong default and only worked because
+    // nothing measured it.
+    test('the stylesheet owns him, so the JS writes no style property', async () => {
       const r = await page.evaluate(() => {
-        const real = window.__realNudges || timNudges;
-        window.__realNudges = real;
-        // Both the width and the edge gap are transitioned, so a rect read taken
-        // straight after a render returns the frame it is on, not the state it
-        // is going to. Killing the transitions for the measurement is the
-        // deterministic way to assert the END state; sleeping for 240ms would
-        // be asserting the animation's duration by proxy and would flake on a
-        // loaded runner, which is a lesson this suite has already taught twice
-        // today.
-        const stop = document.createElement('style');
-        stop.textContent = '#tim-dock,#tim-dock *{transition:none !important;animation:none !important}';
-        document.head.appendChild(stop);
-        const read = () => {
-          const btn = document.getElementById('tim-dock-btn').getBoundingClientRect();
-          return { w: Math.round(btn.width), h: Math.round(btn.height),
-            gap: Math.round(window.innerWidth - btn.right),
-            lit: document.getElementById('tim-dock').classList.contains('lit') };
+        timDockRender();
+        const key = document.getElementById('mtb-tim');
+        const dot = document.getElementById('mtb-tim-dot');
+        return {
+          key: key.getAttribute('style'),
+          dot: dot.getAttribute('style'),
+          pos: getComputedStyle(key).position,
         };
-        timNudges = () => [];
-        timDockRender();
-        const quiet = read();
-        timNudges = () => ([{ id: 'a', line: 'Dana still owes you', figure: '$1,240' }]);
-        timDockRender();
-        const awake = read();
-        timNudges = real;
-        timDockRender();
-        stop.remove();
-        return { quiet, awake };
       });
-      // Flush to the edge with nothing to say, and STILL THE SAME BOX once
-      // there is. 10.4: this read quiet.w < awake.w, back when waking him grew
-      // him into a floating disc. Both halves of that are now the opposite of
-      // what is wanted. Every horizontal pixel he takes is bought out of
-      // --tim-lane, which has 20px and no more (the BYO worst-case row wraps at
-      // 24) and which the tab already spends in full; and growing him
-      // vertically instead just pads a 32px face with empty gold. So his box is
-      // fixed, and this pins it, because "he only gets a bit bigger" is exactly
-      // the kind of change that looks harmless in a diff and costs the estimate
-      // page a line of text at 390px.
-      expect(r.quiet.gap).toBe(0);
-      expect(r.quiet.lit).toBe(false);
-      expect(r.awake.gap).toBe(0);
-      expect(r.awake.w).toBe(r.quiet.w);
-      expect(r.awake.h).toBe(r.quiet.h);
-      expect(r.awake.lit).toBe(true);
+      expect(r.key, 'inline style on the key').toBeFalsy();
+      expect(r.dot, 'inline style on the badge').toBeFalsy();
+      expect(r.pos).toBe('absolute');
     });
 
-    // 15.3, measured rather than reasoned about. Every version of this dock so
-    // far has obeyed the rule in its comment and broken it on the screen:
-    // first _timDockLift standing him on the tab bar, then the awake disc
-    // sitting on a card's button. A comment cannot catch that. This walks the
-    // live page and fails if his rect touches any control's rect, in either
-    // state, which is the test that would have caught both.
-    //
-    // WHAT IT ASSERTS, AND WHY IT IS NOT "NEVER TOUCHES".
-    //
-    // The first version of this demanded that his rect not intersect any
-    // control's rect at all. Buying that needed a strip of right-hand page
-    // padding, and the page had none to sell: at 20px the BYO item row in
-    // e2e-layout-integrity-regression wrapped a four-letter title onto THREE
-    // lines on WebKit, which is the engine the iOS shell runs. The number that
-    // said 20px was safe was measured on Chromium, because Chromium is what
-    // this container can run. That is the whole lesson: a constraint measured
-    // on the convenient engine is not a constraint.
-    //
-    // So Tim is an overlay, like every floating control on that phone, and the
-    // guarantee shrinks to the one that actually decides whether a button is
-    // usable: he may clip a control's EDGE, he may not sit on the point a thumb
-    // aims at. A 107px-wide button with 3px of Tim over its right edge is still
-    // a button you hit every time. The same button with Tim over its middle is
-    // not, and that is what the old awake disc was doing to "Add places".
-    //
-    // It walks SIX pages, not the one that happened to break, because a rule
-    // checked on one screen is a rule that is wrong on the next one.
-    const WALK = ['pg-dash', 'pg-clients', 'pg-jobs', 'pg-money', 'pg-tracker', 'pg-settings'];
-    for (const pg of WALK) {
-    test(`he never sits on a control's tappable centre, quiet or awake: ${pg}`, async () => {
-      await page.evaluate(p => goPg(p), pg);
-      const hits = await page.evaluate(() => {
-        const real = window.__realNudges || timNudges;
-        window.__realNudges = real;
-        const stop = document.createElement('style');
-        stop.textContent = '#tim-dock,#tim-dock *{transition:none !important;animation:none !important}';
-        document.head.appendChild(stop);
-        const overlaps = () => {
-          const b = document.getElementById('tim-dock-btn').getBoundingClientRect();
-          return [...document.querySelectorAll('button,a[href],input,select,textarea,[role="button"]')]
-            .filter(el => !el.closest('#tim-dock'))
-            .filter(el => {
-              if (el.disabled || el.offsetParent === null) return false;
-              const r = el.getBoundingClientRect();
-              if (!r.width || !r.height) return false;
-              if (r.bottom < 0 || r.top > window.innerHeight) return false;   // off screen
-              // The point a thumb aims at, not the whole box.
-              const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-              return cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom;
-            })
-            .map(el => (el.id || el.className || el.tagName) + ' "' + (el.textContent || '').trim().slice(0, 24) + '"');
+    // Quiet he is a key with a face on it; awake he is the same key with a
+    // badge in its corner. What must not happen is the badge growing the
+    // control itself, because then he moves every time the books change.
+    test('a badge changes what he says, never where he is or how big he is', async () => {
+      const box = await page.evaluate(() => {
+        const real = timNudges;
+        const at = () => {
+          timDockRender();
+          const r = document.getElementById('mtb-tim').getBoundingClientRect();
+          return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
         };
         timNudges = () => [];
-        timDockRender();
-        const quiet = overlaps();
+        const quiet = at();
         timNudges = () => ([{ id: 'a', line: 'Dana still owes you', figure: '$1,240' }]);
-        timDockRender();
-        const awake = overlaps();
+        const one = at();
+        timNudges = () => ([
+          { id: 'a', line: 'a', figure: '$1' }, { id: 'b', line: 'b', figure: '$2' },
+          { id: 'c', line: 'c', figure: '$3' }]);
+        const three = at();
         timNudges = real;
         timDockRender();
-        stop.remove();
-        return { quiet, awake };
+        return { quiet, one, three };
       });
-      expect(hits.quiet).toEqual([]);
-      expect(hits.awake).toEqual([]);
+      expect(box.one).toEqual(box.quiet);
+      expect(box.three).toEqual(box.quiet);
     });
+
+    const PAGES = ['pg-dash', 'pg-clients', 'pg-jobs', 'pg-money', 'pg-tracker', 'pg-settings'];
+    for (const pg of PAGES) {
+      test(`he never sits on a control's tappable centre, quiet or awake: ${pg}`, async () => {
+        const hits = await page.evaluate((id) => {
+          const real = timNudges;
+          goPg(id);
+          const overlaps = () => {
+            const b = document.getElementById('mtb-tim').getBoundingClientRect();
+            return [...document.querySelectorAll(
+              'button,a,input,select,textarea,[role="button"],[onclick]')]
+              .filter(el => {
+                if (el.id === 'mtb-tim' || el.closest('#mtb-tim')) return false;
+                if (el.closest('#_tim-ov')) return false;
+                const r = el.getBoundingClientRect();
+                if (!r.width || !r.height) return false;
+                if (r.bottom < 0 || r.top > window.innerHeight) return false;   // off screen
+                // The point a thumb aims at, not the whole box.
+                const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+                return cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom;
+              })
+              .map(el => (el.id || el.className || el.tagName) + ' "' + (el.textContent || '').trim().slice(0, 24) + '"');
+          };
+          timNudges = () => [];
+          timDockRender();
+          const quiet = overlaps();
+          timNudges = () => ([{ id: 'a', line: 'Dana still owes you', figure: '$1,240' }]);
+          timDockRender();
+          const awake = overlaps();
+          timNudges = real;
+          timDockRender();
+          return { quiet, awake };
+        }, pg);
+        expect(hits.quiet).toEqual([]);
+        expect(hits.awake).toEqual([]);
+      });
     }
 
     test('it never pushes the page sideways, at phone width or desktop', async () => {
@@ -734,22 +812,22 @@ test.describe('tim', () => {
     });
 
     // Everything Tim can name is money or a contract, and both sit behind the
-    // wall the nav already puts them behind. A crew member gets no dock.
-    test('a crew member gets no dock', async () => {
+    // wall the nav already puts them behind. A crew member gets no Tim.
+    test('a crew member gets no key', async () => {
       const r = await page.evaluate(() => {
         const was = _isEmployee;
         _isEmployee = true;
-        try { timDockRender(); return document.getElementById('tim-dock').classList.contains('on'); }
+        try { timDockRender(); return document.getElementById('mtb-tim').hidden; }
         finally { _isEmployee = was; timDockRender(); }
       });
-      expect(r).toBe(false);
+      expect(r).toBe(true);
     });
 
-    test('rendering it fifty times leaves one dock and throws nothing', async () => {
+    test('rendering it fifty times leaves one key and throws nothing', async () => {
       const r = await page.evaluate(() => {
         let threw = false;
         try { for (let i = 0; i < 50; i++) timDockRender(); } catch (e) { threw = true; }
-        return { threw, n: document.querySelectorAll('#tim-dock').length };
+        return { threw, n: document.querySelectorAll('#mtb-tim').length };
       });
       expect(r).toEqual({ threw: false, n: 1 });
     });
@@ -1092,62 +1170,50 @@ test.describe('tim', () => {
       expect(r.after).toBe(r.before + 1);
     });
 
-    // 10.4: this assertion changed with the move to the right edge. It used to
-    // prove _timDockLift ran on the cached path too, so a cart bar appearing
-    // between navigations still pushed him up. There is no lift now and no
-    // bottom to be pushed off, so what has to hold instead is that the SHAPE
-    // still tracks the findings on the cached path: caching the analysis must
-    // not freeze him mid-state with a stale pill and the wrong silhouette.
-    test('a cached render redraws the shape, it does not skip it', async () => {
+    // 10.4: this assertion has now changed twice, and the INTENT has not moved
+    // either time. It began by proving _timDockLift ran on the cached path too,
+    // so a cart bar appearing between navigations still pushed him up; the lift
+    // went with the move off the bottom. Then the pill and the breathing disc
+    // went with the move onto the bar. What is left is what all three versions
+    // were really about: caching the ANALYSIS must not leave him drawn for a
+    // state he is no longer in.
+    test('a cached render redraws what he says, it does not skip it', async () => {
       // The risk the cache introduces is not a stale ANSWER, which is the whole
       // point of it and lasts a third of a second. It is that a navigation takes
-      // the cheap path and leaves him drawn wrong: the pill still up with no
-      // finding behind it, or the disc collapsed back to a tab while he has
-      // three things to say. So the shape is rebuilt from the answer on every
-      // render, cached or not, and this pins that.
+      // the cheap path and leaves the badge behind: a red 1 with no finding
+      // behind it, or silence while he has three things to say. So the badge is
+      // rebuilt from the answer on every render, cached or not, and this pins
+      // that.
       const r = await page.evaluate(() => {
         const real = window.__realNudges || timNudges;
         window.__realNudges = real;
-        const btn = document.getElementById('tim-dock-btn');
-        const dock = document.getElementById('tim-dock');
-        const shape = () => ({ alive: btn.classList.contains('alive'),
-          lit: dock.classList.contains('lit'),
-          pill: document.getElementById('tim-dock-pill').classList.contains('on') });
+        const dot = document.getElementById('mtb-tim-dot');
+        const shape = () => ({ text: dot.textContent, on: !dot.hidden });
         timNudges = () => ([{ id: 'a', line: 'Dana still owes you', figure: '$1,240' }]);
-        timDockRender();                    // computes: awake
+        timDockRender();                    // computes: one finding
         const awake = shape();
-        btn.classList.remove('alive');      // something else stomps the DOM
-        dock.classList.remove('lit');
+        dot.hidden = true;                  // something else stomps the DOM
+        dot.textContent = '';
         timDockRender({ cached: true });     // a navigation: must redraw it
         const redrawn = shape();
         timNudges = real;
         timDockRender();
         return { awake, redrawn };
       });
-      expect(r.awake).toEqual({ alive: true, lit: true, pill: true });
-      expect(r.redrawn).toEqual({ alive: true, lit: true, pill: true });
+      expect(r.awake).toEqual({ text: '1', on: true });
+      expect(r.redrawn).toEqual({ text: '1', on: true });
     });
 
-    test('navigating still refreshes the dock, it is just not doing it twice', async () => {
+    test('navigating still refreshes him, it is just not doing it twice', async () => {
       const r = await page.evaluate(async () => {
         goPg('pg-dash');
         await new Promise(res => requestAnimationFrame(() => res()));
-        return document.getElementById('tim-dock').classList.contains('on');
+        return !document.getElementById('mtb-tim').hidden;
       });
       expect(r).toBe(true);
     });
   });
 
-  // ── The pulse, and the lines rolling through it ────────────────────────────
-  // Owner, 2026-09-20, looking at the dock on his phone: a pulse glow that
-  // changes and rolls through to lines, and clicking him opens him up.
-  //
-  // The glow deliberately does NOT change colour. The token block in index.html
-  // reserves hat yellow for the badge and the pill figure and says it goes
-  // nowhere else, so a per-kind status ring would break a rule the design
-  // already wrote down, and would read as a notifications tray rather than as a
-  // man with something to say. What changes is whether he is breathing at all,
-  // and which of his findings is showing.
   // ── The send arrow ────────────────────────────────────────────────────────
   test.describe('the arrow that sends', () => {
     // 10.4: this asserted the arrow HID on an empty box and appeared when you
@@ -1357,19 +1423,58 @@ test.describe('tim', () => {
       expect(t).not.toContain('Ask me what you are owed');
       expect(t).toContain('who owes me money');
     });
+
+    // The three states above all decide at OPEN time, and none of them can see
+    // the fourth: the man typing the first thing into an empty sheet. The line
+    // stayed, so his own first question and the answer under it were pushed
+    // down by a paragraph introducing a conversation that had already started.
+    test('and it goes the moment he says something, not on the next open', async () => {
+      const t = await page.evaluate(async () => {
+        document.getElementById('_tim-ov')?.remove();
+        timNudges = () => [];
+        timLogClear();
+        goPg('pg-dash');
+        openTim();
+        const before = !!document.getElementById('_tim-hello');
+        document.getElementById('_tim-say').value = 'who owes me money';
+        _timGo();
+        await new Promise(res => {
+          const t2 = setInterval(() => {
+            if (document.querySelector('.tim-msg.him')) { clearInterval(t2); res(); }
+          }, 20);
+          setTimeout(() => { clearInterval(t2); res(); }, 4000);
+        });
+        const out = { before, after: !!document.getElementById('_tim-hello'),
+          thread: document.querySelectorAll('.tim-msg').length };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(t.before, 'an empty sheet still gets the line').toBe(true);
+      expect(t.after, 'and it is gone once there is a conversation').toBe(false);
+      expect(t.thread).toBeGreaterThan(0);
+    });
   });
 
-  // ── The i, and the fact that it leaves ────────────────────────────────────
+  // ── The badge, and the i that leaves ──────────────────────────────────────
   //
-  // Owner asked for a small i in the corner to get people to tap. The shimmer
-  // says "look" and never says "tap", so on a phone that has never opened him a
-  // gold tab on the edge of the screen is a thing nobody has seen before.
+  // Owner asked for a small i in the corner to get people to tap, and then, on
+  // the raised key: "if theres insights to see then we get the raised red
+  // notification". So one element says both things, because they are the same
+  // sentence in two moods: there is something here worth a tap.
   //
-  // The whole design rests on it RETIRING. An introduction that repeats is not
-  // an introduction, it is clutter with a reason attached, and it would sit in
-  // the corner of every screen forever on the app of a man who has been using
-  // Tim daily for a year. These tests are mostly about it going away.
-  test.describe('the i that teaches the tab, once', () => {
+  // ── 10.4: one assertion in this group changed its VALUE ──────────────────
+  // WAS: the badge only appeared from TWO findings up, because a pill sat
+  // beside the dock already speaking the single one aloud, and a badge reading
+  // "1" next to it was the app counting out loud.
+  // NOW: there is no pill. A raised key has no room beside it for a sentence,
+  // so the count IS the whole of what he can say without being tapped, and it
+  // starts at one. Nothing else about the group moved.
+  //
+  // The rest still rests on the i RETIRING. An introduction that repeats is not
+  // an introduction, it is clutter with a reason attached, and it would sit on
+  // the bar of every screen forever on the app of a man who has been using Tim
+  // daily for a year. These tests are mostly about it going away.
+  test.describe('the badge counts, and the i that teaches it leaves', () => {
     const fresh = async () => {
       await page.evaluate(() => {
         document.getElementById('_tim-ov')?.remove();
@@ -1380,9 +1485,16 @@ test.describe('tim', () => {
       });
     };
     const badge = () => page.evaluate(() => {
-      const b = document.getElementById('tim-dock-badge');
-      return { text: b.textContent, on: b.classList.contains('on'), hint: b.classList.contains('hint') };
+      const b = document.getElementById('mtb-tim-dot');
+      return { text: b.textContent, on: !b.hidden, hint: b.classList.contains('hint') };
     });
+    const findings = (n) => page.evaluate(count => {
+      window.__realNudges = window.__realNudges || timNudges;
+      timNudges = () => Array.from({ length: count }, (_, i) =>
+        ({ id: 'x' + i, line: 'finding ' + i, figure: '$' + (i + 1),
+          title: '$' + (i + 1), what: 'finding ' + i, why: '', cta: 'Do it', alt: 'No' }));
+      timDockRender();
+    }, n);
     test.afterAll(async () => {
       await page.evaluate(() => {
         if (window.__realNudges) timNudges = window.__realNudges;
@@ -1403,8 +1515,8 @@ test.describe('tim', () => {
       await fresh();
       const after = await page.evaluate(() => {
         openTim();
-        const b = document.getElementById('tim-dock-badge');
-        const out = { text: b.textContent, on: b.classList.contains('on'), hint: b.classList.contains('hint') };
+        const b = document.getElementById('mtb-tim-dot');
+        const out = { text: b.textContent, on: !b.hidden, hint: b.classList.contains('hint') };
         document.getElementById('_tim-ov')?.remove();
         return out;
       });
@@ -1416,18 +1528,28 @@ test.describe('tim', () => {
       expect(await badge()).toEqual({ text: '', on: false, hint: false });
     });
 
-    test('a real count outranks it, and the i never rides alongside findings', async () => {
+    // The change from the pill era, written down. One finding is a red 1.
+    test('one finding is a red one, not a silent key', async () => {
+      await findings(1);
+      expect(await badge()).toEqual({ text: '1', on: true, hint: false });
+    });
+
+    test('a real count outranks the i, and the i never rides alongside findings', async () => {
       await fresh();
-      const r = await page.evaluate(() => {
-        timNudges = () => ([
-          { id: 'a', line: 'Dana still owes', figure: '$1,240' },
-          { id: 'b', line: 'Line 3 is under your own price', figure: '$640' },
-          { id: 'c', line: 'Kansas will not print a price', figure: 'saves 4 taps' }]);
-        timDockRender();
-        const b = document.getElementById('tim-dock-badge');
-        return { text: b.textContent, hint: b.classList.contains('hint') };
-      });
-      expect(r).toEqual({ text: '3', hint: false });
+      await findings(3);
+      expect(await badge()).toEqual({ text: '3', on: true, hint: false });
+    });
+
+    // The badge is his whole unprompted voice, so what it says has to reach
+    // somebody who cannot see it.
+    test('the count is on the control for a screen reader too', async () => {
+      await findings(2);
+      const label = await page.evaluate(() =>
+        document.getElementById('mtb-tim').getAttribute('aria-label'));
+      expect(label).toBe('Tim, 2 things to look at');
+      await findings(1);
+      expect(await page.evaluate(() =>
+        document.getElementById('mtb-tim').getAttribute('aria-label'))).toBe('Tim, 1 thing to look at');
     });
 
     test('no localStorage is no hint, rather than a hint that never goes away', async () => {
@@ -1442,142 +1564,41 @@ test.describe('tim', () => {
         try {
           timNudges = () => [];
           timDockRender();
-          const b = document.getElementById('tim-dock-badge');
-          return { text: b.textContent, on: b.classList.contains('on') };
+          const b = document.getElementById('mtb-tim-dot');
+          return { text: b.textContent, on: !b.hidden };
         } finally { Storage.prototype.getItem = get; Storage.prototype.setItem = set; }
       });
       expect(r).toEqual({ text: '', on: false });
     });
-  });
 
-  test.describe('the pulse and the roll', () => {
-    const findings = (page, list) => page.evaluate(ns => {
-      window.__realNudges = window.__realNudges || timNudges;
-      timNudges = () => ns.map((n, i) => ({ id: 'x' + i, line: n[0], figure: n[1],
-        title: n[1], what: n[0], why: '', cta: 'Do it', alt: 'No' }));
-      timDockRender();
-    }, list);
-    const restore = (page) => page.evaluate(() => {
-      if (window.__realNudges) timNudges = window.__realNudges;
-      timDockRender();
-    });
-
-    test('nothing found means he does not breathe, and says nothing', async () => {
-      const r = await page.evaluate(() => {
-        window.__realNudges = window.__realNudges || timNudges;
+    // Nothing found and nothing to teach is silence, and silence costs nothing.
+    // A badge that is always there is a badge nobody reads.
+    test('nothing found and nothing to teach means no badge at all', async () => {
+      await page.evaluate(() => {
+        try { localStorage.setItem('td_tim_met', '1'); } catch (_e) {}
         timNudges = () => [];
         timDockRender();
-        return {
-          alive: document.getElementById('tim-dock-btn').classList.contains('alive'),
-          pill: document.getElementById('tim-dock-pill').classList.contains('on'),
-          badge: document.getElementById('tim-dock-badge').classList.contains('on'),
-          timer: !!_timDockTimer,
-        };
       });
-      expect(r).toEqual({ alive: false, pill: false, badge: false, timer: false });
-      await restore(page);
+      expect(await badge()).toEqual({ text: '', on: false, hint: false });
     });
 
-    test('one finding breathes and states it, with no carousel of one', async () => {
-      await findings(page, [['Line 3 is under your own price', '$640']]);
-      const r = await page.evaluate(() => ({
-        alive: document.getElementById('tim-dock-btn').classList.contains('alive'),
-        line: document.querySelector('#tim-dock-pill .tim-pill-line').textContent,
-        fig: document.querySelector('#tim-dock-pill .tim-pill-fig').textContent,
-        badge: document.getElementById('tim-dock-badge').textContent,
-        badgeOn: document.getElementById('tim-dock-badge').classList.contains('on'),
-        multi: document.getElementById('tim-dock-pill').classList.contains('multi'),
-        timer: !!_timDockTimer,
-      }));
-      expect(r.alive).toBe(true);
-      expect(r.line).toBe('Line 3 is under your own price');
-      expect(r.fig).toBe('$640');
-      // 10.4: this asserted badge === '1'. A badge reading "1" sits beside a
-      // pill that is already showing that one finding: it is the app counting
-      // out loud, and it costs the badge its meaning by the time it says 3. It
-      // now means "and there are others", so on one finding there is no badge.
-      expect(r.badge).toBe('');
-      expect(r.badgeOn).toBe(false);
-      expect(r.multi).toBe(false);
-      expect(r.timer).toBe(false);
-      await restore(page);
-    });
-
-    test('several findings arm the roll, and the badge counts them', async () => {
-      await findings(page, [
-        ['No scaffold on a second floor job', '$285'],
-        ['Dana still owes you', '$1,240'],
-        ['Line 3 is under your own price', '$640'],
-      ]);
-      const r = await page.evaluate(() => ({
-        badge: document.getElementById('tim-dock-badge').textContent,
-        multi: document.getElementById('tim-dock-pill').classList.contains('multi'),
-        dots: document.querySelectorAll('#tim-dock-pill .tim-pill-dots i').length,
-        lit: [...document.querySelectorAll('#tim-dock-pill .tim-pill-dots i')]
-          .findIndex(d => d.classList.contains('on')),
-        timer: !!_timDockTimer,
-      }));
-      expect(r.badge).toBe('3');
-      expect(r.multi).toBe(true);
-      expect(r.dots).toBe(3);
-      expect(r.lit).toBe(0);
-      expect(r.timer).toBe(true);
-      await restore(page);
-    });
-
-    test('rolling swaps the whole finding, never a line onto the wrong figure', async () => {
-      // The mechanism, not a 4.2 second wait: the interval is pinned above, and
-      // a shard that sleeps through three rotations to watch text change is a
-      // shard nobody will keep. What matters is that a roll carries the line,
-      // the figure and the label together.
-      await findings(page, [
-        ['No scaffold on a second floor job', '$285'],
-        ['Dana still owes you', '$1,240'],
-      ]);
+    test('he opens on a tap whether or not he is carrying a badge', async () => {
       const r = await page.evaluate(() => {
-        _timDockShow(1);
-        const pill = document.getElementById('tim-dock-pill');
-        return {
-          line: pill.querySelector('.tim-pill-line').textContent,
-          fig: pill.querySelector('.tim-pill-fig').textContent,
-          label: pill.getAttribute('aria-label'),
-          lit: [...pill.querySelectorAll('.tim-pill-dots i')].findIndex(d => d.classList.contains('on')),
-        };
-      });
-      expect(r.line).toBe('Dana still owes you');
-      expect(r.fig).toBe('$1,240');
-      expect(r.label).toBe('Dana still owes you, $1,240');
-      expect(r.lit).toBe(1);
-      await restore(page);
-    });
-
-    test('going quiet tears the timer down rather than leaving it running', async () => {
-      await findings(page, [['a', '$1'], ['b', '$2']]);
-      const armed = await page.evaluate(() => !!_timDockTimer);
-      const r = await page.evaluate(() => {
+        const out = {};
         timNudges = () => [];
         timDockRender();
-        return { timer: !!_timDockTimer, alive: document.getElementById('tim-dock-btn').classList.contains('alive') };
-      });
-      expect(armed).toBe(true);
-      expect(r.timer).toBe(false);
-      expect(r.alive).toBe(false);
-      await restore(page);
-    });
-
-    test('he still opens on a tap, pill or disc', async () => {
-      await findings(page, [['Dana still owes you', '$1,240'], ['b', '$2']]);
-      const r = await page.evaluate(() => {
-        document.getElementById('tim-dock-pill').click();
-        const viaPill = !!document.getElementById('_tim-sheet');
+        document.getElementById('mtb-tim').click();
+        out.quiet = !!document.getElementById('_tim-sheet');
         document.getElementById('_tim-ov')?.remove();
-        document.getElementById('tim-dock-btn').click();
-        const viaDisc = !!document.getElementById('_tim-sheet');
+        timNudges = () => ([{ id: 'a', line: 'Dana still owes you', figure: '$1,240',
+          title: '$1,240', what: 'Dana still owes you', why: '', cta: 'Do it', alt: 'No' }]);
+        timDockRender();
+        document.getElementById('mtb-tim').click();
+        out.awake = !!document.getElementById('_tim-sheet');
         document.getElementById('_tim-ov')?.remove();
-        return { viaPill, viaDisc };
+        return out;
       });
-      expect(r).toEqual({ viaPill: true, viaDisc: true });
-      await restore(page);
+      expect(r).toEqual({ quiet: true, awake: true });
     });
   });
 

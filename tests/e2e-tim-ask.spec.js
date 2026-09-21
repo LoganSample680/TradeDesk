@@ -346,6 +346,14 @@ test.describe('tim answering off your own books', () => {
         ['how many miles did I drive in 2026', 'miles'],
         ['how many hours did I work', 'hours'],
         ['whats my average job in 2026', 'avg'],
+        // The three added 2026-09-21, on the owner's ask for a week he can
+        // invoice off. `sheet` has to beat `hours` on a sentence carrying both
+        // ("breakdown of my last week ... total up my hours"), which is what
+        // the longest-phrase rule is for.
+        ['give me a breakdown of my last week by person', 'sheet'],
+        ['what do I invoice', 'sheet'],
+        ['what time is it', 'clock'],
+        ['what day is it', 'clock'],
       ].map(([s, want]) => [(timAskKind(s) || {}).id, want]));
       r.forEach(([got, want]) => expect(got).toBe(want));
     });
@@ -418,13 +426,62 @@ test.describe('tim answering off your own books', () => {
       expect(r.title).not.toContain('$');
     });
 
-    test('hours are the last seven days, an open clock is not counted', async () => {
+    // ── 10.4: two assertions changed here, from one change ───────────────────
+    // The answer used to always count seven days back and REFUSED to understand
+    // "this week" or "last week", on the stated grounds that a man who starts
+    // Sunday means different days from one who starts Monday. Refusing was the
+    // wrong fix: the app had already decided, in _tlWeekKey, which is what
+    // groups the timesheet and the overtime line. So the window is parsed now,
+    // it is that same Sunday-keyed week, and every answer prints the two dates
+    // it used so nothing is left to be guessed at.
+    // WAS: sub said "2 entries" and named no span.
+    // NOW: it names the span, and counts the open clock as an ENTRY while still
+    // counting none of its minutes and none of its day.
+    test('hours are the last seven days by default, an open clock adds no minutes', async () => {
       const r = await page.evaluate(() => timAsk('how many hours did I work'));
-      // 255 + 215 within the window. The 30-day-old 480 and the open entry out.
+      // 255 + 215 within the window. The 30-day-old 480 is out; the open entry
+      // is inside it and is reported, but contributes nothing.
       expect(r.title).toBe('7.8 hrs');
-      expect(r.sub).toContain('last 7 days');
-      expect(r.sub).toContain('2 entries');
+      expect(r.sub).toContain('the last 7 days');
+      expect(r.sub).toContain('3 entries');
+      expect(r.sub).toContain('1 still running');
+      // And the day it is running on is not a day worked, because no hours have
+      // landed on it yet.
+      expect(r.sub).toContain('over 2 days');
       expect(r.rows.map(x => x.lead)).toEqual(['Sample Owner', 'Andre Ruiz']);
+    });
+
+    test('he says which days he counted, rather than leaving it to be guessed', async () => {
+      const r = await page.evaluate(() => {
+        const out = {};
+        ['how many hours did I work', 'my hours this week', 'total up my hours last week']
+          .forEach(s => { const a = timAsk(s); out[s] = a && a.sub; });
+        return out;
+      });
+      // Every one carries two real dates. Whatever the window means to him, it
+      // cannot be read wrong once it says which days it used.
+      Object.keys(r).forEach(k => {
+        expect(r[k], k).toMatch(/[A-Z][a-z]{2}, [A-Z][a-z]{2} \d+ to [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+/);
+      });
+      expect(r['my hours this week']).toContain('this week');
+      expect(r['total up my hours last week']).toContain('last week');
+    });
+
+    // The Sunday is not a preference, it is the app's own. _tlWeekKey groups the
+    // timesheet, the weekly running total and the FLSA overtime flag by it, and
+    // Tim reading a different week from the screen that owns the hours is the
+    // one way two right answers can disagree with each other.
+    test('his week is the timesheet own week, Sunday to Saturday', async () => {
+      const r = await page.evaluate(() => {
+        const w = _timWhen('what did we do last week');
+        return { from: w.from, sunKey: _tlWeekKey(w.from),
+          fromDay: parseD(w.from).getDay(), toDay: parseD(w.to).getDay(),
+          span: Math.round((parseD(w.to) - parseD(w.from)) / 86400000) };
+      });
+      expect(r.fromDay).toBe(0);      // Sunday
+      expect(r.toDay).toBe(6);        // Saturday
+      expect(r.span).toBe(6);         // seven days inclusive
+      expect(r.sunKey).toBe(r.from);
     });
 
     test('the average job carries the middle one too', async () => {
@@ -727,21 +784,352 @@ test.describe('tim answering off your own books', () => {
     });
   });
 
-  test.describe('through the real door', () => {
-    test('a question answers instead of navigating', async () => {
+  // ── The week a man invoices off ───────────────────────────────────────────
+  //
+  // Owner, 2026-09-21: "one thing I want tim to do is know the time, give me a
+  // breakdown of my last week by person and total up my hours, need their
+  // address so I can wrap up invoicing ... I know for john, one huge thing is
+  // ending the hours it takes for him to do paperwork. The stuff we just rolled
+  // for time sheets is the key here."
+  //
+  // And, the same day, where it is going: "eventually I am going to want a
+  // function that somebody can click to generate a quick invoice for work done,
+  // even if we dont have a proposal in the system". That is why timWorkSheet is
+  // a pure function with no DOM in it and is tested here directly. The button,
+  // when it arrives, calls this and not a copy of it, so an invoice can never
+  // quietly disagree with the timesheet Tim just read out loud.
+  test.describe('the week, by person and by address', () => {
+    // Sunday-keyed, off the app's own clock, so this is the same week
+    // _tlWeekKey groups the timesheet by however far in the future it is run.
+    const WEEK = () => {
+      const today = todayKey();
+      const lastSat = addDays(today, -(parseD(today).getDay() + 1));
+      const d = n => addDays(lastSat, -n);
+      clients.length = 0; clients.push(
+        { id: 501, name: 'Rick Delaney', addr: '412 Maple St, Wichita, KS 67203' },
+        { id: 502, name: 'Sandra Ruiz', addr: '2100 Oak Ave, Wichita, KS 67208' });
+      bids.length = 0; bids.push(
+        { id: 601, client_id: 501, addr: '412 Maple St, Wichita, KS 67203' },
+        // No addr on the bid: the client's own address is the fallback, same
+        // precedence the job cards use (_tlJobClientInfo).
+        { id: 602, client_id: 502, addr: '' });
+      jobs.length = 0; jobs.push(
+        { id: 701, bid_id: 601, name: 'Water heater swap', client_id: 501 },
+        { id: 702, bid_id: 602, name: 'Faucet and disposal', client_id: 502 });
+      timeEntries.length = 0; timeEntries.push(
+        { id: 1, date: d(5), minutes: 480, job_id: 701, logged_by_name: 'John Reyes', logged_by_uid: 'u1' },
+        { id: 2, date: d(4), minutes: 465, job_id: 701, logged_by_name: 'John Reyes', logged_by_uid: 'u1' },
+        { id: 3, date: d(3), minutes: 300, job_id: 702, logged_by_name: 'John Reyes', logged_by_uid: 'u1' },
+        // A named meal break. Tracked, never paid, never billed, never OT.
+        { id: 4, date: d(3), minutes: 45, job_id: 702, logged_by_name: 'John Reyes', logged_by_uid: 'u1', unpaid: true },
+        { id: 5, date: d(4), minutes: 390, job_id: 702, logged_by_name: 'Andre Ruiz', logged_by_uid: 'u2' },
+        // Clocked against no job at all: real paid time with nobody to bill.
+        { id: 6, date: d(2), minutes: 255, job_id: null, logged_by_name: 'Andre Ruiz', logged_by_uid: 'u2' },
+        // THIS week, so it must not appear in last week's total.
+        { id: 7, date: todayKey(), minutes: 120, job_id: 701, logged_by_name: 'John Reyes', logged_by_uid: 'u1' });
+    };
+    test.beforeEach(async () => { await page.evaluate(WEEK); });
+
+    test('the total is last week only, and it is the same both ways he can read it', async () => {
+      const r = await page.evaluate(() =>
+        ['give me a breakdown of my last week by person', 'total up my hours last week']
+          .map(s => { const a = timAsk(s); return { id: a.id, title: a.title }; }));
+      // 480 + 465 + 300 + 390 + 255 = 1890 min. The 45 is unpaid; today's 120
+      // is this week. Both answers are built from one timWorkSheet call, which
+      // is the point: two totals for one week is worse than one.
+      expect(r).toEqual([
+        { id: 'sheet', title: '31.5 hrs' },
+        { id: 'hours', title: '31.5 hrs' },
+      ]);
+    });
+
+    test('by person, with the unpaid break out of the paid total', async () => {
+      const r = await page.evaluate(() => timAsk('total up my hours last week').rows);
+      expect(r.map(x => [x.lead, x.right])).toEqual([
+        ['John Reyes', '20.8 hrs'],    // 1245 min, the 45 not in it
+        ['Andre Ruiz', '10.8 hrs'],    // 645 min
+      ]);
+      expect(r[0].note).toContain('0.8 hrs unpaid');
+      expect(r[1].note).not.toContain('unpaid');
+    });
+
+    test('by address, which is the line an invoice is actually written against', async () => {
+      const r = await page.evaluate(() => timAsk('what do I invoice for last week').rows);
+      expect(r.map(x => [x.lead, x.right])).toEqual([
+        ['Rick Delaney · Water heater swap', '15.8 hrs'],
+        ['Sandra Ruiz · Faucet and disposal', '11.5 hrs'],
+        ['General time', '4.3 hrs'],
+      ]);
+      // The job-site address, through the same resolver the job card uses, so
+      // a property manager is never billed at his office for a rental.
+      expect(r[0].note).toContain('412 Maple St, Wichita, KS 67203');
+      // Bid has no addr, so the client's own is the fallback.
+      expect(r[1].note).toContain('2100 Oak Ave, Wichita, KS 67208');
+      // Two men on one address land on one line, both named.
+      expect(r[1].note).toContain('Andre Ruiz, John Reyes');
+    });
+
+    // Paid hours with nobody to bill them to is the single most useful thing on
+    // a Friday, so it is shown and flagged rather than quietly dropped. A total
+    // that leaves it out is the invoice looking better than the week was.
+    test('time on no job is still on the worksheet, and says it cannot be billed', async () => {
+      const r = await page.evaluate(() => timAsk('what do I invoice for last week'));
+      expect(r.sub).toContain('4.3 hrs is not on a job');
+      expect(r.rows[2].note).toContain('nothing to bill it to');
+    });
+
+    test('both pivots are on the card, off one set of numbers', async () => {
       const r = await page.evaluate(() => {
+        const a = timAsk('give me a breakdown of my last week by person');
+        const byPerson = (a.groups || []).find(g => g.title === 'By person');
+        const sumOf = rows => rows.reduce((n, x) => n + parseFloat(x.right), 0);
+        return { titles: (a.groups || []).map(g => g.title),
+          person: sumOf(byPerson.rows), site: sumOf(a.rows), title: a.title };
+      });
+      expect(r.titles).toEqual(['By person']);
+      // The two pivots have to add to the same number or one of them is a lie.
+      // Each line is rounded to a tenth for reading, so a three-line pivot can
+      // land a tenth off a two-line one and off the headline; what must never
+      // happen is the two disagreeing with EACH OTHER, because then the payroll
+      // read and the billing read of one week are different weeks.
+      expect(r.person).toBeCloseTo(r.site, 1);
+      expect(r.person).toBeCloseTo(parseFloat(r.title), 0);
+      expect(r.site).toBeCloseTo(parseFloat(r.title), 0);
+    });
+
+    // The paperwork is the thing being ended. Reading a number off a screen and
+    // typing it into an invoice IS the paperwork, so the worksheet leaves as
+    // text, with tabs so it lands in a spreadsheet as columns.
+    test('it leaves as text he can paste, and the text agrees with the card', async () => {
+      const t = await page.evaluate(() => {
+        _timShowAsk(timAsk('give me a breakdown of my last week by person'));
+        const btn = [...document.querySelectorAll('#_tim-ask-sheet button')]
+          .find(b => b.textContent === 'Copy the worksheet');
+        const out = { has: !!btn, text: _timCopySheet(btn) };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(t.has).toBe(true);
+      expect(t.text).toContain('412 Maple St, Wichita, KS 67203');
+      expect(t.text).toContain('John Reyes\t20.8 hrs');
+      expect(t.text).toContain('TOTAL\t31.5 hrs');
+      // And it says what it could not see, in the text as well as on screen.
+      expect(t.text).toContain('Clocked time only');
+    });
+
+    // FLSA, and only FLSA: over 40 in a calendar week is the one overtime rule
+    // that is true in every state. Daily OT is state law, and asserting it as a
+    // default would be actively wrong for most contractors, which is the same
+    // line _tlComputeOT holds.
+    test('over forty in a week is flagged, at the same threshold the timesheet uses', async () => {
+      const r = await page.evaluate(() => {
+        // Three paid days at fifteen hours: 2700 minutes, past the 2400 that
+        // _tlComputeOT uses for the same flag on the same week.
+        timeEntries.forEach(e => { if (e.logged_by_uid === 'u1' && !e.unpaid) e.minutes = 900; });
+        const a = timAsk('total up my hours last week');
+        return { john: a.rows.find(x => x.lead.indexOf('John') === 0),
+          andre: a.rows.find(x => x.lead.indexOf('Andre') === 0) };
+      });
+      expect(r.john.lead).toContain('OT');
+      expect(r.john.note).toContain('over 40 in a week');
+      expect(r.andre.lead).not.toContain('OT');
+    });
+
+    // He reads timeEntries and nothing else, because job_time_entries is a
+    // Supabase fetch and he makes no network calls. A total that looks complete
+    // and is not is the one way a timesheet answer costs real money, so it says
+    // so every time rather than once in a help screen.
+    test('he says out loud that GPS-tracked time is not in the number', async () => {
+      const r = await page.evaluate(() => [
+        timAsk('total up my hours last week').foot,
+        timAsk('what do I invoice for last week').foot]);
+      r.forEach(f => {
+        expect(f).toContain('Clocked time only');
+        expect(f).toContain('Time Log');
+      });
+    });
+
+    test('an empty week is an answer, not a zero dressed up as one', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries.length = 0;
+        const a = timAsk('what do I invoice for last week');
+        const b = timAsk('total up my hours last week');
+        return [a.title, a.sub, b.title];
+      });
+      expect(r[0]).toBe('Nothing to invoice');
+      expect(r[1]).toContain('Nothing here is a claim about work that was never clocked');
+      expect(r[2]).toBe('Nothing clocked');
+    });
+
+    test('junk in the entries changes nothing and throws nothing', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries.push(null, { date: null, minutes: 'x' }, { date: '2026-13-40', minutes: -5 },
+          { date: addDays(todayKey(), -3), minutes: NaN, job_id: 99999 });
+        const a = timAsk('what do I invoice for last week');
+        return { title: a.title, rows: a.rows.length };
+      });
+      expect(r.title).toBe('31.5 hrs');
+      expect(r.rows).toBe(3);
+    });
+  });
+
+  // ── Knowing what day it is ────────────────────────────────────────────────
+  // The smallest answer in the file and the one that makes the rest legible.
+  // "Last week" is a claim about a calendar, and a man cannot check a claim
+  // about a calendar against an assistant that does not know what day it is.
+  test.describe('he knows the time', () => {
+    test('he says the time, the day, and which clock he is reading', async () => {
+      const r = await page.evaluate(() => {
+        const a = timAsk('what time is it');
+        return { id: a.id, title: a.title, sub: a.sub,
+          rows: a.rows.map(x => x.lead), foot: a.foot, today: todayKey() };
+      });
+      expect(r.id).toBe('clock');
+      expect(r.title).toMatch(/^\d{1,2}:\d{2} (AM|PM)$/);
+      expect(r.rows).toEqual(['Today', 'This week started', 'Time zone']);
+      // The business's zone, never the device's. The whole timesheet is pinned
+      // to it because a phone that lands in Denver must not move a shift worked
+      // in Topeka (js/timelog.js _tlBizTz), and an assistant reading a
+      // different clock from the timesheet is that same bug wearing a face.
+      expect(r.sub).toContain('the clock every hour on your timesheet is stamped in');
+      expect(r.foot).toContain('No clock is fetched');
+    });
+
+    test('the Sunday he names is the Sunday his weeks are counted from', async () => {
+      const r = await page.evaluate(() => {
+        const a = timAsk('what day is it');
+        const sun = a.rows.find(x => x.lead === 'This week started');
+        return { shown: sun.right, week: _timWhen('this week'), today: todayKey() };
+      });
+      expect(r.shown).toBe(await page.evaluate(d => _timDayLabel(d), r.week.from));
+      expect(await page.evaluate(d => parseD(d).getDay(), r.week.from)).toBe(0);
+    });
+
+    test('asking the date does not get mistaken for asking about a week of work', async () => {
+      const r = await page.evaluate(() => ['what time is it', 'whats todays date',
+        'what day is today'].map(s => (timAskKind(s) || {}).id));
+      expect(r).toEqual(['clock', 'clock', 'clock']);
+    });
+  });
+
+  test.describe('through the real door', () => {
+    // ── 10.4: this assertion changed, and it changed because it was wrong ───
+    // WAS: `#_tim-ask-sheet` had to exist and carry the figure. It did, and
+    // that was the bug. _timShowAsk swapped the WHOLE sheet for an answer card
+    // with a headline, a button and no input box, so asking him something he
+    // could answer was the one thing that ended the conversation, while asking
+    // something he could not was the only way to keep talking.
+    // Owner found it on his own phone, 2026-09-21: "why did the mileage
+    // question go to a section where I couldn't continue the convo".
+    // NOW: the answer lands in the thread as a bubble like everything else he
+    // says, and the box is still under his thumb. The INTENT is untouched: a
+    // question is answered where a navigation would have opened a screen, and
+    // the figure is on screen without another tap. Only where it lands moved.
+    test('a question answers in the thread, it does not navigate or end the conversation', async () => {
+      const r = await page.evaluate(async () => {
+        timLogClear();
         goPg('pg-dash');
         openTim();
         document.getElementById('_tim-say').value = 'who owes me money';
         const out = _timGo();
-        const html = document.getElementById('_tim-ask-sheet').innerHTML;
+        // He types before he answers (_TIM_TYPING_MS), which is the whole point
+        // of the thread looking like a thread. Waiting on the bubble rather
+        // than on a duration: a sleep here would be asserting the beat by
+        // proxy and would flake on a loaded runner.
+        await new Promise(res => {
+          const t = setInterval(() => {
+            if (document.querySelector('.tim-msg.him.ans')) { clearInterval(t); res(); }
+          }, 20);
+          setTimeout(() => { clearInterval(t); res(); }, 4000);
+        });
+        const sheet = document.getElementById('_tim-sheet');
+        const res = {
+          kind: out.kind, ask: out.ask,
+          // He is still open, on the same sheet, with somewhere to type.
+          stillOpen: !!sheet,
+          card: !!document.getElementById('_tim-ask-sheet'),
+          canType: !!document.getElementById('_tim-say'),
+          html: sheet ? sheet.innerHTML : '',
+        };
         document.getElementById('_tim-ov')?.remove();
-        return { kind: out.kind, ask: out.ask, html };
+        return res;
       });
       expect(r.kind).toBe('ask');
       expect(r.ask).toBe('owed');
+      expect(r.stillOpen).toBe(true);
+      expect(r.card, 'the answer must not replace the sheet').toBe(false);
+      expect(r.canType, 'there has to be somewhere to say the next thing').toBe(true);
       expect(r.html).toContain('$3,500');
-      expect(r.html).toContain('Dana Whitfield');
+    });
+
+    // The bubble is not just the figure. It carries the working under it and
+    // the button the old card had, so nothing was traded away for being able to
+    // keep talking.
+    test('the answer bubble carries the working and the way through', async () => {
+      const r = await page.evaluate(async () => {
+        timLogClear();
+        goPg('pg-dash');
+        openTim();
+        document.getElementById('_tim-say').value = 'who owes me money';
+        _timGo();
+        await new Promise(res => {
+          const t = setInterval(() => {
+            if (document.querySelector('.tim-msg.him.ans')) { clearInterval(t); res(); }
+          }, 20);
+          setTimeout(() => { clearInterval(t); res(); }, 4000);
+        });
+        const b = document.querySelector('.tim-msg.him.ans .tim-ans');
+        const out = {
+          fig: b ? b.querySelector('b').textContent : null,
+          sub: b ? !!b.querySelector('i') : false,
+          go: b ? (b.querySelector('.tim-ans-do button') || {}).textContent : null,
+          details: b ? [...b.querySelectorAll('.tim-ans-do button')]
+            .map(x => x.textContent).includes('Details') : false,
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.fig).toBe('$3,500');
+      expect(r.sub).toBe(true);
+      expect(r.go).toBe('Open Collect');
+      expect(r.details).toBe(true);
+    });
+
+    // Details re-runs the sentence rather than storing the rows, because the
+    // log entry is capped and a twelve-row breakdown would evict the rest of
+    // the history. Every answer in tim-ask.js is a pure read of the local
+    // books, so a re-run gives the same answer or a newer one.
+    test('Details opens the full working, and leaves a way back to the thread', async () => {
+      const r = await page.evaluate(async () => {
+        timLogClear();
+        goPg('pg-dash');
+        openTim();
+        document.getElementById('_tim-say').value = 'who owes me money';
+        _timGo();
+        await new Promise(res => {
+          const t = setInterval(() => {
+            if (document.querySelector('.tim-msg.him.ans')) { clearInterval(t); res(); }
+          }, 20);
+          setTimeout(() => { clearInterval(t); res(); }, 4000);
+        });
+        const btn = [...document.querySelectorAll('.tim-ans-do button')]
+          .find(x => x.textContent === 'Details');
+        btn.click();
+        const card = document.getElementById('_tim-ask-sheet');
+        const out = {
+          opened: !!card,
+          rows: card ? card.textContent.includes('Dana Whitfield') : false,
+          back: card ? card.textContent.includes('Back to Tim') : false,
+        };
+        // And the way back really goes back to a thread with a box in it.
+        card.querySelector('button').click();
+        out.backToThread = !!document.getElementById('_tim-say');
+        out.threadKept = document.querySelectorAll('.tim-msg').length > 0;
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r).toEqual({ opened: true, rows: true, back: true,
+        backToThread: true, threadKept: true });
     });
 
     test('it is logged as an answer, not as a miss', async () => {

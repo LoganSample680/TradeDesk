@@ -295,78 +295,65 @@ function timMark(size,opts){
 let _timDockNudge=null;
 
 function timDockRender(opts){
-  const dock=document.getElementById('tim-dock');
-  if(!dock)return;
-  // No page up yet means the boot screen or the sign-in gate still is, and Tim
-  // has nothing to be right about until there is a job on screen. A crew member
-  // gets no dock either: everything Tim can name is money or a contract, and
-  // both sit behind the wall the nav already puts them behind.
+  // HE IS RAISED OFF THE BOTTOM BAR NOW, not a thing floating loose on the page
+  // and not a sixth tab either.
+  //
+  // The floating dock went first, and the reason is worth keeping: he was the
+  // only persistent floating object in TradeDesk. Everything else fixed here is
+  // full-width chrome or a transient overlay, so he had no siblings to inherit
+  // a colour, a shadow or a shape from, and ten rounds of restyling never fixed
+  // what was actually wrong with him. Owner's brief for the move: "I just want
+  // it somewhere somebody will click."
+  //
+  // The sixth tab answered that and read flat, because a tab is one of five
+  // equals and he is not one of the five. Owner: "kinda diggin tim raised off
+  // the bar in the center". Raised, on the bar's centreline, flush to its top
+  // edge, so he borrows the bar's thumb zone and its ink without pretending to
+  // be a destination.
+  //
+  // What he loses either way is the pill: the figure used to be readable
+  // without tapping, and now the red dot says only THAT there is something. The
+  // sheet still leads with the finding one tap later.
+  const tab=document.getElementById('mtb-tim');
+  if(!tab)return;
+  // No page up yet means the boot screen or the sign-in gate still is. A crew
+  // member gets no Tim at all: everything he can name is money or a contract,
+  // and both sit behind the wall the nav already puts them behind.
+  //
+  // The `hidden` attribute rather than a style property, here and on the dot:
+  // rule 8.5, and it is the honest one anyway, since #mtb-tim is display:flex
+  // and the old style.display='' was restoring the wrong default.
   const booted=!!document.querySelector('.pg.active');
-  const crew=(typeof _isEmployee!=='undefined')&&!!_isEmployee;
-  if(!booted||crew){dock.classList.remove('on');return;}
-  dock.classList.add('on');
+  if(!booted||_timCrew()){tab.hidden=true;return;}
+  tab.hidden=false;
 
-  const markEl=document.getElementById('tim-dock-mark');
-  // Drawn at the awake size. The stylesheet scales him down to sit in the tab,
-  // so the quiet state costs no second render and no second file.
-  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(58);
+  const markEl=document.getElementById('mtb-tim-mark');
+  if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(26);
 
   const finds=_timDockFinds(!!(opts&&opts.cached));
-  const top=finds.length?finds[0]:null;
-  _timDockNudge=top;
+  _timDockNudge=finds.length?finds[0]:null;
   _timDockFound=finds;
 
-  // He breathes only when he has something. A still disc is the honest resting
-  // state and it is the one he is in most of the day.
-  const btn=document.getElementById('tim-dock-btn');
-  if(btn)btn.classList.toggle('alive',finds.length>0);
-  // The tab comes out from the edge as he wakes. One class, the stylesheet owns
-  // the motion (8.5: the JS never touches a style property).
-  dock.classList.toggle('lit',finds.length>0);
-
-  const pill=document.getElementById('tim-dock-pill');
-  const badge=document.getElementById('tim-dock-badge');
-  if(pill){
-    if(top){
-      pill.classList.add('on');
-      pill.classList.toggle('multi',finds.length>1);
-      const dots=pill.querySelector('.tim-pill-dots');
-      if(dots&&dots.childElementCount!==finds.length){
-        dots.innerHTML=finds.map(()=>'<i></i>').join('');
-      }
-      _timDockShow(0);
-      _timDockRoll(finds.length);
-    }else{
-      pill.classList.remove('on');
-      pill.classList.remove('multi');
-      pill.removeAttribute('aria-label');
-      _timDockRoll(0);
-    }
+  // The badge is the whole of his unprompted voice now, so it carries the
+  // COUNT rather than merely existing. It appears only when the nudge engine
+  // can name a dollar, a percentage or a law, which is the same bar the pill
+  // was held to: no findings, no badge, and silence costs nothing.
+  //
+  // With nothing to count, the same corner teaches the control ONCE. A raised
+  // key with a face on it is a thing a man has never seen before, and nothing
+  // about it says tap. The i says tap. It goes for good the first time he is
+  // opened; _timMet is per-device on purpose, since it is a fact about this
+  // phone's owner having seen it and not about the account.
+  const dot=document.getElementById('mtb-tim-dot');
+  if(dot){
+    const hint=!finds.length&&!_timMet();
+    dot.classList.toggle('hint',hint);
+    dot.textContent=finds.length?String(finds.length):(hint?'i':'');
+    dot.hidden=!finds.length&&!hint;
   }
-  if(badge){
-    // Only from two up. A badge reading "1" next to a pill that is already
-    // showing that one finding is the app counting out loud: it adds a digit
-    // and no information, and it trains a man to ignore the badge by the time
-    // it says 3. The pill IS the one. The badge is "and there are others".
-    //
-    // And when there is nothing to count, the same corner teaches the control
-    // ONCE. A gold tab on the edge of the screen is a thing a man has never
-    // seen before, and a shimmer says "look" without ever saying "tap". The i
-    // says tap. It is gone for good the first time he opens Tim, because an
-    // introduction that repeats is not an introduction, it is clutter with a
-    // reason attached.
-    badge.classList.remove('hint');
-    if(finds.length>1){
-      badge.textContent=String(finds.length);
-      badge.classList.add('on');
-    }else if(!finds.length&&!_timMet()){
-      badge.textContent='i';
-      badge.classList.add('on','hint');
-    }else{
-      badge.textContent='';
-      badge.classList.remove('on');
-    }
-  }
+  tab.setAttribute('aria-label',finds.length
+    ? ('Tim, '+finds.length+' thing'+(finds.length===1?'':'s')+' to look at')
+    : 'Tim');
 }
 
 // ── Whether he has ever been opened on this phone ────────────────────────────
@@ -385,69 +372,37 @@ function _timMarkMet(){
   }catch(_e){return false;}
 }
 
-// ── Rolling through what he found ────────────────────────────────────────────
-// One timer for the whole dock, armed only when there is genuinely more than one
-// thing to say, and torn down the moment there is not. The lesson from putting
-// timDockRefresh on every navigation is still fresh: anything that runs when
-// nobody asked it to has to justify itself, and a carousel of one does not.
-let _timDockFound=[],_timDockAt=0,_timDockTimer=null;
-const _TIM_ROLL_MS=4200;
+// What he found, kept so openTim can lead with it without asking the nudge
+// engine a second question it has already answered.
+let _timDockFound=[];
 
-function _timDockShow(i){
-  const pill=document.getElementById('tim-dock-pill');
-  const n=_timDockFound[i];
-  if(!pill||!n)return;
-  _timDockAt=i;
-  pill.querySelector('.tim-pill-line').textContent=n.line;
-  pill.querySelector('.tim-pill-fig').textContent=n.figure;
-  // The whole finding, not the fragment, because a screen reader gets the pill
-  // as one label and "you are under your own price on line 3" without the
-  // figure is the half that does not matter.
-  pill.setAttribute('aria-label',n.line+', '+n.figure);
-  const dots=pill.querySelectorAll('.tim-pill-dots i');
-  dots.forEach((d,k)=>d.classList.toggle('on',k===i));
-}
-
-function _timDockRoll(count){
-  if(_timDockTimer){clearInterval(_timDockTimer);_timDockTimer=null;}
-  if(count<2)return;
-  // Asked the OS to stop moving things: he shows his best one and holds it. The
-  // badge still says how many there are, so nothing is hidden, it just does not
-  // move on its own.
-  try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;}catch(_e){}
-  _timDockTimer=setInterval(()=>{
-    // A backgrounded tab is a phone in a pocket. Nothing to animate for.
-    if(document.hidden)return;
-    const pill=document.getElementById('tim-dock-pill');
-    if(!pill||!pill.classList.contains('on')){_timDockRoll(0);return;}
-    pill.classList.add('rolling');
-    setTimeout(()=>{
-      _timDockShow((_timDockAt+1)%_timDockFound.length);
-      pill.classList.remove('rolling');
-    },280);
-  },_TIM_ROLL_MS);
-}
 // ── Getting out of the way ───────────────────────────────────────────────────
 //
-// He used to float bottom-right, and the estimate builder pins a full-width bar
-// across the bottom of the screen the moment a line is added (`_geiRenderCartBar`,
-// then the send bar, then the mobile tab bar under both). A round button at a
-// fixed height lands straight on them: two interactive controls in one place,
-// which is a layout failure under 15.3.
+// Three homes, and the last one is the only one that needed no geometry at all.
 //
-// The answer used to be _timDockLift, which measured every fixed bottom bar on
-// every render and stood the dock on the tallest one. It worked, and it was the
-// wrong shape of answer: it obeyed the rule by dodging, it forced a layout read
-// per render, and it still left him covering whatever card happened to be under
-// him. A render taken 2026-09-20 had him sitting on a card's own button.
+// 1. Floating bottom-right. The estimate builder pins a full-width bar across
+//    the bottom the moment a line is added (`_geiRenderCartBar`, then the send
+//    bar, then the mobile tab bar under both), so _timDockLift measured every
+//    fixed bottom bar on every render and stood him on the tallest one. It
+//    obeyed 15.3 by dodging, cost a layout read per render, and still left him
+//    covering whatever card was under him: a render taken 2026-09-20 had him
+//    sitting on a card's own button.
+// 2. Tucked against the right edge at mid-height, with a pill that spoke the
+//    top finding and a timer that rolled through the rest. Nothing fixed lives
+//    there, so nothing to measure. The owner never liked the look of it, over
+//    ten rounds, and the reason turned out not to be the colour: he was the
+//    only persistent floating object in the app, so every value chosen for him
+//    was invented rather than borrowed.
+// 3. Raised off the bottom bar, on its centreline, bottom edge flush with the
+//    bar's top edge. He inherits the bar's ink and its thumb zone, he cannot
+//    land on anything because bottom:100% puts him wholly above the padding
+//    box, and there is nothing to measure or dodge.
 //
-// Owner, same day, looking at that: quiet, he belongs embedded in the right
-// centre of the screen as a badge, and a tap brings him to life.
+// The pill and its carousel died with home 2: a raised key has no room beside
+// it for a sentence, and the badge count plus the sheet one tap later say the
+// same thing without a timer running in a pocket. The geometry lives entirely
+// in the stylesheet (8.5), which is where it should have been from the start.
 //
-// So he is tucked against the right edge at mid-height. Nothing is fixed there
-// to collide with, so there is nothing to measure and nothing to dodge, and the
-// lift is gone rather than kept as a no-op. The geometry now lives entirely in
-// the stylesheet (8.5), which is where it should have been.
 // WHAT THE DOCK IS ALLOWED TO RECOMPUTE, AND HOW OFTEN.
 //
 // timJobSnapshot is not cheap and was never meant to be: it reads the estimate
@@ -694,8 +649,13 @@ function openTim(){
   // and nobody wants a paragraph of introduction sitting on top of their own
   // messages every time they open them.
   const hasThread=(typeof timLogEntries==='function')&&timLogEntries().length>0;
+  // Given an id so it can LEAVE. The three states below decide whether it is
+  // drawn when he opens; they cannot see the fourth, which is the man typing
+  // the first thing into an empty sheet. The line is an introduction to a
+  // conversation, so the moment there is one it is in the way, and it used to
+  // sit there above his own first question taking a third of the sheet.
   const quiet=found.length||hasThread?'':
-    '<div style="padding:15px 16px 3px;font-size:13px;line-height:1.5;color:var(--text2)">'+
+    '<div id="_tim-hello" style="padding:15px 16px 3px;font-size:13px;line-height:1.5;color:var(--text2)">'+
       (_timOnEstimate()
         ? 'Nothing on this one worth stopping you for. Say what changed and I will put it where it goes.'
         // Not a greeting and not a menu: three things he can actually do from
@@ -1340,6 +1300,9 @@ function _timGo(){
         // owner was already looking at when he said Tim did nothing.
         title:p&&p.title,
         name:p&&p.name,
+        sub:p&&p.sub,
+        goLabel:p&&p.goLabel,goFn:p&&p.goFn,
+        rows:p&&p.rows,
       });
     }
   }catch(_e){}
@@ -1369,6 +1332,10 @@ function _timThreadRefresh(opts){
   try{
     const box=document.getElementById('_tim-thread');
     if(!box||typeof _timThreadHtml!=='function')return;
+    // He has said something, so the introduction is over. Removed rather than
+    // hidden: 8.5 forbids the JS touching a style property, and a node that is
+    // gone cannot be scrolled past by a screen reader either.
+    document.getElementById('_tim-hello')?.remove();
     const el=document.getElementById('_tim-say');
     if(el)el.value='';
     if(typeof _timPreview==='function')_timPreview();
@@ -1444,7 +1411,24 @@ function _timGoRun(){
     const ans=timAsk(said);
     // The title rides along so the thread can show what he ACTUALLY said
     // ("$4,400"), not merely that he said something.
-    if(ans){_timShowAsk(ans);return {text:said,kind:'ask',ask:ans.id,title:ans.title};}
+    // The answer lands IN THE THREAD, it does not replace it.
+    //
+    // It used to call _timShowAsk, which swaps the whole sheet for an answer
+    // card with a headline, a CTA and NO input box. The owner asked what his
+    // mileage was, got 32.5 mi and "Open mileage", and that was the end of the
+    // conversation: no thread, nothing to type into, and the only way back was
+    // to close and reopen him. Every answer was a dead end, which is a strange
+    // thing for the one part of the app you are supposed to talk to.
+    //
+    // Everything needed to draw it as a bubble travels with the outcome. The
+    // full card with its rows is still one tap away from that bubble, so the
+    // detail is not lost, it just stopped being compulsory.
+    if(ans){
+      return {text:said,kind:'ask',ask:ans.id,title:ans.title,
+        sub:ans.sub||'',
+        goLabel:(ans.go&&ans.go.label)||'',goFn:(ans.go&&ans.go.fn)||'',
+        rows:!!(ans.rows&&ans.rows.length)};
+    }
   }
 
   // On an estimate he is describing work, not asking for a screen, so the read
