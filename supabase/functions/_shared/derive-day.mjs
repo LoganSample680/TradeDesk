@@ -528,9 +528,26 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
 
   const rows = geoDeriveRows(res, { contractorId: cid, employeeId: uid, shared: false, clocks });
   const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length;
-  // Nothing to add, and this call may never retire: a write would be a no-op
-  // with a round trip attached.
-  if (nothing) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard, fixesSeen, fixesDropped };
+  // ── AN EMPTY DAY IS AN ANSWER, WHEN THIS CALL MAY SWEEP (owner 2026-09-21) ─
+  // This used to return unconditionally, and the comment on it said why:
+  // "nothing to add, and this call may never retire, so a write would be a
+  // no-op with a round trip attached." That was true while ingest was the only
+  // caller. It stopped being true when a rebuild got the sweep, and nobody
+  // moved the line.
+  //
+  // Rule 19 then made it bite. Jack's Sunday derives to NOTHING on purpose (a
+  // weekend vouches for nothing on its own), so the rows sitting on it from
+  // before the rule are exactly what a rebuild exists to remove, and this line
+  // returned "nothing to add" before the writer was ever called. He pressed
+  // Rebuild and got the two stale rows back, unchanged. The day that most
+  // needs clearing was the one day that could never clear itself.
+  //
+  // So: an empty derive still goes to geo_replace_day when this call is
+  // allowed to retire, carrying empty arrays, and the sweep does the work. A
+  // call that may NOT retire still returns here, because for that one a write
+  // really is a no-op with a round trip attached. What a person wrote,
+  // corrected or answered is protected inside the RPC, not by this line.
+  if (nothing && !sweep) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard, fixesSeen, fixesDropped, sweep, sweepAsked: wantSweep, tapeCovers };
 
   // Before the write, not after: geo_replace_day is the only writer and a
   // second pass to correct a number it just stored would be the reconciler
