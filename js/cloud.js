@@ -1529,8 +1529,15 @@ const _TD_TABLES=[
   {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
   {t:'td_scans',       get:()=>scans,       set:v=>{scans.length=0;v.forEach(r=>scans.push(r));},           tx:null},
   {t:'td_equipment',   get:()=>equipment,   set:v=>{equipment.length=0;v.forEach(r=>equipment.push(r));},   tx:null},
+  // thumbUrl/thumbPath were NOT in this list until 2026-09-21, so every photo
+  // lost its thumbnail the moment the row round-tripped through the cloud: a
+  // second device (and the hub snapshot built on it) fell back to the full
+  // 1600px image in every 60px grid, which is exactly the egress the thumbnail
+  // was added to stop. bid_id/bid_name carry the estimate a photo was shot on
+  // (js/photo-capture.js), and a photo whose tag does not survive the sync is
+  // a photo that leaves the Before/After pair on one phone.
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
-    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
+    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
 ];
 // Root cause (found 2026-07-10): this used to be a hand-listed object literal
 // that fell out of sync with _TD_TABLES above, td_maintenance was missing.
@@ -8121,6 +8128,8 @@ function quickScheduleJob(bidId,startKey,clientId){
     time:'',hours:null,notes:bid.notes||'',status:'upcoming',
     loggedAt:new Date().toISOString()
   });
+  // The estimate's photos follow the bid into the job (js/photo-capture.js).
+  try{if(typeof tdInheritBidPhotos==='function')tdInheritBidPhotos(bidId,jobs[jobs.length-1].id);}catch(_e){}
   saveAll();renderDash();renderJobsPage&&renderJobsPage();
   window._currentScheduleAlert=null;
   document.getElementById('sched-suggest-overlay')?.remove();

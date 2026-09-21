@@ -219,9 +219,32 @@ function _buildClientHubSnapshot(clientId){
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
   const clientPhotos=photos.filter(p=>p.client_id===clientId);
+  // ── A photo belongs to the deepest tag it carries (owner 2026-09-21) ──────
+  // job, else bid, else the client. This grouping used to be job_id ONLY,
+  // which meant a Before shot taken while WRITING the estimate (there is no
+  // job at that point, js/photo-capture.js) fell through to an unnamed "other
+  // photos" strip at the bottom of the hub with no Before/After label on it.
+  // The estimate camera is pointless if its output lands somewhere the client
+  // reads as a leftovers pile.
+  const _hubPhoto=p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',uploadedAt:p.uploadedAt||''});
   const snapshotJobs=cjobs.map(j=>{
-    const jPhotos=clientPhotos.filter(p=>p.job_id===j.id).map(p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',uploadedAt:p.uploadedAt||''}));
+    // A job's photos are the ones tagged to it PLUS any still tagged only to
+    // the bid it came from, so the pair is whole even if the inheritance
+    // stamp has not run on this device yet.
+    const jPhotos=clientPhotos.filter(p=>p.job_id===j.id||(p.job_id==null&&j.bid_id!=null&&p.bid_id===j.bid_id)).map(_hubPhoto);
     return {id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||'',photos:jPhotos};
+  });
+  // Photos on an estimate that has no job yet. These render as their own
+  // Before/After card in the hub the moment the estimate is sent, which is the
+  // whole point: the customer sees the walkthrough shots while they are still
+  // deciding, not after the work is done.
+  const _jobBidIds=new Set(cjobs.map(j=>j.bid_id).filter(x=>x!=null));
+  const _bidPhotoGroups=[];
+  cbids.forEach(b=>{
+    if(_jobBidIds.has(b.id))return;
+    const ps=clientPhotos.filter(p=>p.job_id==null&&p.bid_id===b.id);
+    if(!ps.length)return;
+    _bidPhotoGroups.push({bid_id:b.id,name:b.title||b.name||'Proposal',photos:ps.map(_hubPhoto)});
   });
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
   // Floor plans (TdScan). THE GATE LIVES HERE, server-side of the client:
@@ -243,7 +266,7 @@ function _buildClientHubSnapshot(clientId){
       }
       return base;
     });
-  const jobPhotos=clientPhotos.map(p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null,uploadedAt:p.uploadedAt||''}));
+  const jobPhotos=clientPhotos.map(p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null,bid_id:p.bid_id||null,uploadedAt:p.uploadedAt||''}));
   // Extract optional chaining BEFORE the return object, Safari crashes on ?. inside { }
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
@@ -325,7 +348,8 @@ function _buildClientHubSnapshot(clientId){
     cancelDays:_snapCancelDays,
     cancelStatute:_snapCancelStatute,
     hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
-    bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos
+    bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos,
+    bidPhotos:_bidPhotoGroups
   };
 }
 function _ensureClientToken(clientId){
