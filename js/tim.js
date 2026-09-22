@@ -1476,11 +1476,19 @@ function _timChangeOne(){
 // answer and the stylesheet reads it. One source of truth rather than two that
 // can disagree, set from the input listener, which now fires on typing and on
 // every programmatic write alike (_timSetSaid).
+// Set on the STYLED ELEMENTS, not only on the row. A descendant selector keyed
+// on an ancestor's attribute (#_tim-row[data-empty] #_tim-mic) did flip the
+// attribute on WebKit and did not repaint the button, twice, so the selector is
+// now self-referential: the element whose paint changes is the element whose
+// attribute changed. That is the invalidation path with the least room to be
+// wrong, and it costs one extra setAttribute.
 function _timRowEmpty(){
   const el=document.getElementById('_tim-say');
-  const row=document.getElementById('_tim-row');
-  if(!row)return;
-  row.setAttribute('data-empty',(el&&String(el.value||'').trim())?'0':'1');
+  const v=(el&&String(el.value||'').trim())?'0':'1';
+  ['_tim-row','_tim-mic','_tim-send'].forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.setAttribute('data-empty',v);
+  });
 }
 
 function _timPreview(){

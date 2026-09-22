@@ -2571,7 +2571,22 @@ test.describe('tim: the mic is the way in', () => {
       const m = getComputedStyle(mic), s = getComputedStyle(send);
       const rgb = (c) => (c.match(/\d+/g) || []).slice(0, 3).map(Number);
       const lum = (c) => { const [r, g, b] = rgb(c); return (0.299 * r + 0.587 * g + 0.114 * b); };
-      return { micLum: lum(m.backgroundColor), sendOpacity: parseFloat(s.opacity), sendTaps: s.pointerEvents };
+      // WHY, not just WHAT. This assertion has failed twice on a browser that
+      // cannot be installed behind this proxy, and "expected > 110, received
+      // 23" says nothing about which link in the chain broke. These four say
+      // whether the value landed, whether the attribute followed it, whether
+      // the selector matches, and how many of these rows are even in the DOM.
+      return { micLum: lum(m.backgroundColor), sendOpacity: parseFloat(s.opacity), sendTaps: s.pointerEvents,
+        _diag: {
+          said: JSON.stringify((document.getElementById('_tim-say') || {}).value),
+          micAttr: mic.getAttribute('data-empty'),
+          rowAttr: (document.getElementById('_tim-row') || {}).getAttribute
+            ? document.getElementById('_tim-row').getAttribute('data-empty') : 'NOROW',
+          matches: mic.matches('#_tim-mic[data-empty="1"]'),
+          rows: document.querySelectorAll('#_tim-row').length,
+          mics: document.querySelectorAll('#_tim-mic').length,
+          bg: m.backgroundColor,
+        } };
     });
   };
 
@@ -2579,7 +2594,8 @@ test.describe('tim: the mic is the way in', () => {
     await openWithMic();
     const r = await micState('');
     // Filled ink, not a pale chip: the one thing he can do reads as the thing to do.
-    expect(r.micLum, 'the mic is not a filled dark key on an empty box').toBeLessThan(110);
+    expect(r.micLum, 'the mic is not a filled dark key on an empty box. '
+      + JSON.stringify(r._diag)).toBeLessThan(110);
     expect(r.sendOpacity).toBeLessThan(0.5);
     expect(r.sendTaps).toBe('none');
   });
@@ -2589,7 +2605,8 @@ test.describe('tim: the mic is the way in', () => {
     await micState('');
     const r = await micState('who owes me money');
     // Pale again. Never two filled buttons on one 390px row.
-    expect(r.micLum, 'the mic stayed filled while the arrow lit up, two primaries').toBeGreaterThan(110);
+    expect(r.micLum, 'the mic stayed filled while the arrow lit up, two primaries. '
+      + JSON.stringify(r._diag)).toBeGreaterThan(110);
     expect(r.sendOpacity).toBe(1);
     expect(r.sendTaps).not.toBe('none');
   });

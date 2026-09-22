@@ -788,7 +788,7 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
    there is anything in the box. */
 #_tim-send{display:flex;align-items:center;justify-content:center;
   transition:opacity .15s,transform .15s}
-#_tim-row[data-empty="1"] #_tim-send{opacity:.32;pointer-events:none}
+#_tim-send[data-empty="1"]{opacity:.32;pointer-events:none}
 #_tim-send:active{transform:scale(.94);opacity:.9}
 
 /* ── Talking is the easy way in ─────────────────────────────────────────────
@@ -804,8 +804,8 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 #_tim-mic{background:var(--bg2);box-shadow:0 0 0 1px var(--border);
   transition:background .15s,box-shadow .15s,transform .15s}
 #_tim-mic svg{stroke:var(--text2);transition:stroke .15s}
-#_tim-row[data-empty="1"] #_tim-mic{background:var(--ink);box-shadow:none}
-#_tim-row[data-empty="1"] #_tim-mic svg{stroke:var(--text-cream,#fff)}
+#_tim-mic[data-empty="1"]{background:var(--ink);box-shadow:none}
+#_tim-mic[data-empty="1"] svg{stroke:var(--text-cream,#fff)}
 #_tim-mic:active{transform:scale(.94)}
 
 /* ── The send ───────────────────────────────────────────────────────────────
