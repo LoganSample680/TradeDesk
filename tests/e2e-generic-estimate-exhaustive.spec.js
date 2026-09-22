@@ -3059,6 +3059,14 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         // no total by design. So the estimate layer is turned on explicitly,
         // which is what a man who wants a total now does on the screen.
         _tmLayers = new Set(['rate', 'est']); _tmRateOnly = false;
+        // And no ceiling, stated rather than assumed. An earlier test in this
+        // file leaves one in the field, and as of 2026-09-22 a T&M proposal
+        // WITH a cap leads on the cap instead of an estimated total, so this
+        // one has to say which of the two documents it means. It means the
+        // plain totalled one.
+        ['tm-nte-cap', 'tm-i-nte'].forEach(id => {
+          const e = document.getElementById(id); if (e) e.value = '';
+        });
         _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
         await sendGenericProposal(true);

@@ -4070,13 +4070,26 @@ function _tmDelMatCat(idx){
 // two concepts for one idea: a T&M proposal with no day count IS a rate sheet,
 // so "rate only" is simply the Rate layer without the Estimate layer, and
 // _tmRateOnly is derived from that below instead of being its own toggle.
+// ORDER IS THE ADVICE. Cap sits second, ahead of Estimate, because that is the
+// truth about time and materials: of the ten states that force a number onto a
+// T&M job, nine want a CEILING ("the total amount to be paid", "a cap the total
+// cannot exceed") and only Pennsylvania names an estimate. _tmLockedLayers has
+// always locked rate and cap and never est, so the legal position was already
+// this; only the row disagreed, by putting Estimate next to Rate and leaving
+// the cap sixth, where it read as an afterthought.
+//
+// Owner, 2026-09-22: "does time and materials even need estimate cause why put
+// a price on time and materials???" It does not, mostly. An estimate is a guess
+// at the hours; a ceiling is a promise about the bill. The second is what a
+// homeowner is asking for and what the statutes want, so it is what the row
+// offers first.
 const TM_LAYERS = [
-  {k:'rate', label:'Rate',         blk:'tm-blk-rate'},
-  {k:'est',  label:'Estimate',     needs:'rate'},   // the day count, inside the rate block
-  {k:'mat',  label:'Materials',    blk:'tm-blk-mat'},
-  {k:'dep',  label:'Deposit'},                       // rail only
+  {k:'rate', label:'Rate',          blk:'tm-blk-rate'},
   {k:'cap',  label:'Not to exceed', blk:'tm-blk-nte'},
-  {k:'excl', label:'Exclusions',   blk:'tm-blk-excl'},
+  {k:'est',  label:'Estimate',      needs:'rate'},   // the day count, inside the rate block
+  {k:'mat',  label:'Materials',     blk:'tm-blk-mat'},
+  {k:'dep',  label:'Deposit'},                       // rail only
+  {k:'excl', label:'Exclusions',    blk:'tm-blk-excl'},
 ];
 let _tmLayers=new Set();
 Object.defineProperty(window,'_tmLayers',{get:()=>_tmLayers,set:v=>{_tmLayers=(v instanceof Set)?v:new Set(v||[]);},configurable:true});
@@ -4242,7 +4255,10 @@ function _tmShape(){
   if(L.has('rate')&&!L.has('est')){
     return {head:'A rate, no total',
       body:'They see your hourly rate and crew size. There is no total on it, because nothing has told it how many days.'+
-        (L.has('cap')?' The cap is the only number they see.':' Add Estimate to put a number on it.')+
+        // NOT "add Estimate" any more. If they want a number, the honest one
+        // on a T&M job is the ceiling, not a guess at the hours dressed up as
+        // a total. Estimate is still there for whoever wants it.
+        (L.has('cap')?' The cap is the only number they see.':' If they want a number, give them the ceiling.')+
         ' The rate is also what Tim bills the clocked hours at when this job is done.'};
   }
   if(L.has('rate')&&L.has('est')){
@@ -4258,6 +4274,68 @@ function _tmShape(){
   }
   return {head:'A cap, nothing else',
     body:'They see the most it can cost and no working behind it.'};
+}
+
+// What is actually in the cap field right now, as opposed to whether the layer
+// is switched on. A ceiling nobody typed a number into is not a ceiling.
+function _tmCapVal(){
+  try{return (typeof _moneyVal==='function')?(Number(_moneyVal('tm-i-nte'))||0):0;}catch(_e){return 0;}
+}
+// Has he said what the work is? Any of the ways this app lets him say it, plus
+// the deliberate "no scope" answer, which is an answer.
+function _tmScopeDone(){
+  try{
+    if(typeof _geiScopeNoScope!=='undefined'&&_geiScopeNoScope)return true;
+    if(typeof _geiJobScope!=='undefined'&&String(_geiJobScope||'').trim())return true;
+    if(typeof _geiScopeChips!=='undefined'&&(_geiScopeChips||[]).length)return true;
+    if(typeof _geiLines!=='undefined'&&(_geiLines||[]).some(l=>l&&!l._tmLabor))return true;
+  }catch(_e){}
+  return false;
+}
+
+// ── WHAT TO DO NEXT, NUMBERED ───────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "need clear action item steps that look clean and
+// understand what's going on."
+//
+// Six chips answered "what can I add" and never "what do I do". This answers
+// the second question in the order the job is actually done, and it is four
+// lines because a fifth would be a form. Everything that is genuinely optional
+// stays in the chip row underneath, where optional belongs.
+//
+// Pure: it reads state and returns the list. Nothing here touches the DOM, so
+// a test can ask what the screen is telling him without rendering it.
+function _tmSteps(){
+  const L=_tmLayers,locked=_tmLockedLayers();
+  const rateOn=L.has('rate')&&Number(_tmRatePerMan)>0;
+  const capOn=L.has('cap')&&_tmCapVal()>0;
+  const capLocked=locked.has('cap');
+  const sh=_tmShape();
+  const out=[];
+  out.push({k:'scope',n:1,label:'What the work is',done:_tmScopeDone(),
+    hint:_tmScopeDone()?'Written above.':'Say what you will do, up at the top. That part is the proposal.'});
+  out.push({k:'rate',n:2,label:'What an hour costs',done:rateOn,act:rateOn?null:'rate',
+    hint:rateOn
+      ?('$'+Number(_tmRatePerMan).toLocaleString()+' per worker, per hour. Tim bills the clocked hours at this.')
+      :'The one term a time and materials contract actually has. Tim needs it to invoice the hours.'});
+  // The reason this row got reordered. Whether it is the NEXT thing is decided
+  // below, not here: a ceiling is not the next move while there is still no
+  // rate on the job.
+  out.push({k:'cap',n:3,label:'The most it can cost them',done:capOn,act:capOn?null:'cap',
+    req:capLocked,
+    hint:capOn
+      ?('Capped at $'+_tmCapVal().toLocaleString()+'. They cannot be billed past it without approving more in writing.')
+      :(capLocked
+        ?'Your state requires a ceiling on this contract.'
+        :'This is the question they are really asking, and it is what closes a T and M job. You are not pricing the work, you are promising a limit.')});
+  out.push({k:'send',n:4,label:'Send it',done:false,
+    hint:sh.head+'. '+sh.body});
+  // EXACTLY ONE NEXT MOVE. Two steps both saying "do this next", each with its
+  // own filled button, is the six-chips problem again in a taller box. The
+  // first thing he has not done that he can do from here is the one marked.
+  const next=out.filter(s=>!s.done&&s.act)[0];
+  if(next)next.rec=true;
+  return out;
 }
 
 // The row of chips. An added layer reads as added and can be tapped back off,
@@ -4298,8 +4376,51 @@ function _tmRenderAddRow(rule,locked){
   const head='<div style="width:100%;margin-bottom:2px">'+
     '<div class="td-h3" style="margin-bottom:2px">How this one bills</div>'+
     '<div style="font-size:11.5px;color:var(--text3);line-height:1.45">'+
-      'The scope above is the proposal. Add only what this job actually charges on.'+
+      'Four steps. The scope above is already the proposal.'+
     '</div></div>';
+  // The steps. Numbered, in the order the job is done, with exactly one thing
+  // marked as the next move so there is never a question of where to look.
+  // Blocked states get no steps, because in California none of this is legal
+  // and a checklist would be telling him to do something he must not do.
+  const steps=(rule.rule==='block')?'':
+    '<div style="width:100%;margin:2px 0 4px;border-radius:var(--r-md);background:var(--bg2);'+
+      'box-shadow:inset 0 0 0 1px var(--border);overflow:hidden">'+
+    _tmSteps().map((s,i)=>{
+      const isSend=s.k==='send';
+      // Done is an ink tick, the recommended one is a blue number, everything
+      // else is a quiet number. Three states, three weights, no legend needed.
+      const badge=s.done
+        ? '<span style="flex-shrink:0;width:20px;height:20px;border-radius:var(--r-pill,999px);background:var(--ink);'+
+          'color:var(--text-cream,#fff);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">✓</span>'
+        : '<span style="flex-shrink:0;width:20px;height:20px;border-radius:var(--r-pill,999px);background:'+
+          (s.rec?'var(--blue)':'transparent')+';color:'+(s.rec?'#fff':'var(--text3)')+
+          ';box-shadow:'+(s.rec?'none':'inset 0 0 0 1.5px var(--border2)')+
+          ';font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">'+s.n+'</span>';
+      const tag=s.rec
+        ? '<span style="margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue)">Do this next</span>'
+        : (s.req?'<span style="margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#92400E">Required here</span>':'');
+      // One tap that both switches the layer on AND puts him in the field. A
+      // chip that only makes a box appear somewhere below is half an answer.
+      // Only the next move is filled. A second filled button on the same panel
+      // is a second primary, and then neither of them is one.
+      const act=s.act
+        ? '<button type="button" onclick="_tmStepAct(\''+s.act+'\')" style="flex-shrink:0;align-self:center;'+
+          'padding:6px 12px;border-radius:var(--r-pill,999px);font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;'+
+          (s.rec
+            ? 'border:0;background:var(--blue);color:#fff'
+            : 'border:1.5px solid var(--border2);background:transparent;color:var(--text2)')+
+          '">Add</button>'
+        : '';
+      return '<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 12px'+
+        (i?';border-top:1px solid var(--border)':'')+'">'+badge+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:12.5px;font-weight:800;color:'+(isSend?'var(--text)':'var(--text)')+'">'+
+            escHtml(s.label)+tag+'</div>'+
+          '<div style="font-size:11.5px;color:var(--text2);line-height:1.45;margin-top:1px">'+escHtml(s.hint)+'</div>'+
+        '</div>'+act+'</div>';
+    }).join('')+'</div>'+
+    '<div style="width:100%;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;'+
+      'color:var(--text3);margin:4px 0 -2px">Or add to it</div>';
   // Estimate is the one chip with a dependency and the only place the page can
   // lie by omission: tapping it turns Rate on too (_tmAddLayer follows `needs`),
   // which is right, and silently doing it would leave him wondering what he
@@ -4308,15 +4429,21 @@ function _tmRenderAddRow(rule,locked){
     ? '<div style="width:100%;font-size:11px;color:var(--text3);margin-top:2px">'+
       'Estimate turns on Rate with it: a day count has nothing to multiply on its own.</div>'
     : '';
-  const sh=_tmShape();
-  const shape=(rule.rule==='block')?'':
-    '<div style="width:100%;margin-top:9px;padding:10px 12px;border-radius:var(--r-md);'+
-      'background:var(--bg2);box-shadow:inset 0 0 0 1px var(--border)">'+
-      '<div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:2px">'+
-        'Send it now and they get: '+escHtml(sh.head)+'</div>'+
-      '<div style="font-size:11.5px;color:var(--text2);line-height:1.5">'+escHtml(sh.body)+'</div>'+
-    '</div>';
-  row.innerHTML=head+chips+dep+forced+blocked+shape;
+  // The shape sentence is NOT a card of its own any more: it is step 4's hint,
+  // which is where it belongs and which is how the steps were added without
+  // making the panel taller. _tmShape is still the one thing that says it.
+  row.innerHTML=head+steps+chips+dep+forced+blocked;
+}
+// Turning a step on and landing him in the field it is about. The chip alone
+// only makes a box appear somewhere further down the page, which on a phone is
+// off screen: he taps Add, sees nothing happen, and taps it again.
+function _tmStepAct(k){
+  _tmAddLayer(k);
+  const id=(k==='cap')?'tm-i-nte':(k==='rate')?'tm-i-rate':null;
+  const el=id?document.getElementById(id):null;
+  if(!el)return;
+  try{el.scrollIntoView({block:'center'});}catch(_e){}
+  try{el.focus();}catch(_e){}
 }
 // WHAT A BID SAVED BEFORE LAYERS ACTUALLY CARRIES. Read from its own values,
 // never guessed: a resumed proposal must come back showing exactly the blocks
@@ -6016,9 +6143,27 @@ async function sendGenericProposal(previewOnly,opts){
   // TOTAL is the one number a client should remember, sized and weighted like a
   // deliberate focal point (matches the confident-number treatment sign.html's own
   // amount display uses), not just another table row.
+  // ON A T&M JOB WITH A CEILING, THE CEILING IS THE NUMBER.
+  //
+  // This used to print ESTIMATED TOTAL in the accent bar in 21px, the exact
+  // slot a fixed price occupies on a fixed-price proposal, while the cap
+  // appeared nowhere in the money footer at all: it was one clause of eleven in
+  // the terms, in 11px. So the figure a customer remembered was a guess at the
+  // hours, and the promise that actually protected them was fine print. Then
+  // the job runs 20% over and the guess is what gets argued about.
+  //
+  // With a cap, the cap leads and the estimate drops to a quiet row above it,
+  // so nothing is hidden and only one number is loud. Without a cap, nothing
+  // changes.
+  const _tmCapLeads=_geiIsTM&&!_tmRateOnly&&_tmNteCap>0;
+  const _estQuietRow=_tmCapLeads
+    ?`<tr style="background:#f8fafc"><td style="padding:9px 18px;font-size:11px;font-weight:600;color:#64748b">Estimated at today&apos;s scope (not a fixed price)</td><td style="padding:9px 18px;text-align:right;font-size:12px;font-weight:700;color:#334155;white-space:nowrap">${totalFmt}</td></tr>`
+    :'';
+  const _bigLabel=_tmCapLeads?'THE MOST THIS CAN COST YOU':(_geiIsTM?'ESTIMATED TOTAL':'TOTAL');
+  const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
+    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Unless you approve more in writing</div>':''}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't

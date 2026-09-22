@@ -888,11 +888,22 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     // The distinction the code has always drawn and never explained:
     // _tmRateOnly is rate without est, and a rate with no day count behind it
     // has no total to print.
-    test('a rate with no day count says there is no total, and why', async () => {
+    // ASSERTION CHANGED 2026-09-22 (§10.4). It used to require the sentence to
+    // say "Add Estimate". Owner: "does time and materials even need estimate
+    // cause why put a price on time and materials???" Fair question, and the
+    // answer is mostly no: nine of the ten states that force a number onto a
+    // T&M job want a CEILING, and only Pennsylvania names an estimate. So the
+    // page no longer answers "they want a number" by offering a guess at the
+    // hours dressed up as a total. It offers the ceiling, which is the honest
+    // number and the one they were asking for. Estimate is still one tap away
+    // in the chip row; it is just not the advice any more.
+    test('a rate with no day count says there is no total, and points at the ceiling', async () => {
       const t = await shapeIn(['rate']);
       expect(t).toContain('A rate, no total');
       expect(t).toContain('nothing has told it how many days');
-      expect(t).toContain('Add Estimate');
+      expect(t).toContain('give them the ceiling');
+      expect(t, 'the old advice was to add an estimate, which is the thing T&M exists not to do')
+        .not.toContain('Add Estimate to put a number on it');
     });
 
     test('a rate with a day count says there is one', async () => {
@@ -1197,5 +1208,202 @@ test.describe('keeping the rate off the proposal', () => {
       return out;
     });
     expect(r, 'the preference overwrote what the customer was actually sent').toBe(false);
+  });
+});
+
+
+// ── WHY PUT A PRICE ON TIME AND MATERIALS ────────────────────────────────────
+//
+// Owner, 2026-09-22: "So does time and materials even need estimate cause why
+// put a price on time and materials???"
+//
+// Mostly it does not, and the file already knew: _tmLockedLayers has always
+// locked rate and cap and never est, because of the ten states that force a
+// number onto a T&M job, nine want a CEILING ("the total amount to be paid",
+// "a cap the total cannot exceed") and only Pennsylvania names an estimate.
+// Only the screen disagreed. It put Estimate second, left the cap sixth where
+// it read as an afterthought, and printed ESTIMATED TOTAL in 21px in the accent
+// bar while the ceiling that actually protected the customer sat in the terms
+// in 11px.
+//
+// These hold the corrected order: an estimate is a guess at the hours, a cap is
+// a promise about the bill, and only one of those belongs in the big type.
+
+test.describe('the ceiling leads, not the guess', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // ── THE ROW ───────────────────────────────────────────────────────────────
+
+  test('the cap chip sits second, ahead of Estimate', async () => {
+    const order = await page.evaluate(() => TM_LAYERS.map(l => l.k));
+    expect(order.slice(0, 3)).toEqual(['rate', 'cap', 'est']);
+  });
+
+  test('nothing in the ordering broke the dependency or the locks', async () => {
+    const r = await page.evaluate(() => ({
+      // Estimate still cannot stand on its own: a day count has nothing to
+      // multiply without a rate.
+      needs: (TM_LAYERS.filter(l => l.k === 'est')[0] || {}).needs,
+      // Each layer still owns the block it shows, cap included.
+      blocks: TM_LAYERS.filter(l => l.blk).map(l => l.k).sort(),
+      keys: TM_LAYERS.map(l => l.k).sort(),
+    }));
+    expect(r.needs).toBe('rate');
+    expect(r.keys).toEqual(['cap', 'dep', 'est', 'excl', 'mat', 'rate']);
+    expect(r.blocks).toEqual(['cap', 'excl', 'mat', 'rate']);
+  });
+
+  // ── THE STEPS ─────────────────────────────────────────────────────────────
+  //
+  // Owner, same message: "need clear action item steps that look clean and
+  // understand what's going on."
+
+  const stepsIn = (setup) => page.evaluate((s) => {
+    _geiIsTM = true;
+    const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+    sv('gei-addr', s.addr || '700 Rate Rd, Wichita KS 67202');
+    _geiScopeChips = s.scope ? ['x'] : [];
+    _geiJobScope = ''; _geiScopeNoScope = false; _geiLines = [];
+    _tmRatePerMan = s.rate || 0; sv('tm-i-rate', s.rate ? String(s.rate) : '');
+    sv('tm-i-nte', s.cap ? String(s.cap) : '');
+    _tmLayers = new Set(s.layers);
+    return _tmSteps().map(x => ({ n: x.n, k: x.k, done: !!x.done, rec: !!x.rec, act: x.act || null }));
+  }, setup);
+
+  test('there are four of them, in the order the job is actually done', async () => {
+    const s = await stepsIn({ layers: ['rate'] });
+    expect(s.map(x => x.k)).toEqual(['scope', 'rate', 'cap', 'send']);
+  });
+
+  // The whole point of a numbered list is that exactly one line is the next
+  // move. Two "do this next" tags, each with its own filled button, is the
+  // six-chips problem again in a taller box.
+  test('exactly one step is ever marked as the next move', async () => {
+    for (const setup of [
+      { layers: ['rate'] },
+      { layers: ['rate'], scope: true },
+      { layers: ['rate'], scope: true, rate: 95 },
+      { layers: ['rate', 'cap'], scope: true, rate: 95, cap: 3000 },
+    ]) {
+      const s = await stepsIn(setup);
+      expect(s.filter(x => x.rec).length,
+        'more than one next move on ' + JSON.stringify(setup)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  // And it has to be the FIRST thing he has not done. A ceiling is not the next
+  // move while there is still no rate on the job.
+  test('the next move is the rate while there is no rate', async () => {
+    const s = await stepsIn({ layers: ['rate'], scope: true });
+    expect((s.filter(x => x.rec)[0] || {}).k).toBe('rate');
+  });
+
+  test('and it becomes the ceiling the moment the rate is in', async () => {
+    const s = await stepsIn({ layers: ['rate'], scope: true, rate: 95 });
+    expect((s.filter(x => x.rec)[0] || {}).k).toBe('cap');
+  });
+
+  // Nothing left to press: the steps go quiet rather than inventing a chore.
+  test('with the rate and the ceiling both in, nothing is nagging him', async () => {
+    const s = await stepsIn({ layers: ['rate', 'cap'], scope: true, rate: 95, cap: 3000 });
+    expect(s.filter(x => x.rec).length).toBe(0);
+    expect(s.filter(x => x.done).map(x => x.k)).toEqual(['scope', 'rate', 'cap']);
+  });
+
+  // A layer switched on with an empty box is not a step done. This is the
+  // difference between the chip row (what is on) and the steps (what is true).
+  test('a cap layer with no number in it does not count as done', async () => {
+    const s = await stepsIn({ layers: ['rate', 'cap'], scope: true, rate: 95, cap: 0 });
+    expect((s.filter(x => x.k === 'cap')[0] || {}).done).toBe(false);
+  });
+
+  test('the steps render into the row, and the send step carries the shape sentence', async () => {
+    const t = await page.evaluate(() => {
+      _geiIsTM = true;
+      _tmLayers = new Set(['rate']); _tmRatePerMan = 95;
+      const e = document.getElementById('tm-i-rate'); if (e) e.value = '95';
+      _tmApplyLayers();
+      const row = document.getElementById('tm-add-row');
+      return (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
+    });
+    expect(t).toContain('Do this next');
+    expect(t).toContain('The most it can cost them');
+    expect(t).toContain('Send it');
+    // Folded into step 4 rather than sitting in a card of its own, which is how
+    // four steps were added without making the panel taller.
+    expect(t).toContain('A rate, no total');
+    expect(t).not.toContain('Send it now and they get');
+  });
+
+  // California will not take a T&M home improvement contract at all, so a
+  // checklist there would be walking him through something he must not do.
+  test('a state that forbids T&M gets the warning and no steps', async () => {
+    const t = await page.evaluate(() => {
+      const e = document.getElementById('gei-addr');
+      if (e) e.value = '1 Ocean Ave, Los Angeles CA 90291';
+      _geiIsTM = true; _tmLayers = new Set(['rate']);
+      _tmApplyLayers();
+      const row = document.getElementById('tm-add-row');
+      const out = (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
+      if (e) e.value = '700 Rate Rd, Wichita KS 67202';
+      _tmApplyLayers();
+      return out;
+    });
+    expect(t).toContain('does not allow');
+    expect(t, 'it walked him through a contract his state will not take').not.toContain('Do this next');
+  });
+
+  // ── THE DOCUMENT ──────────────────────────────────────────────────────────
+
+  const doc = (cap) => page.evaluate((c) => {
+    const prev = { tm: _geiIsTM, rate: _tmRatePerMan, only: _tmRateOnly, layers: [..._tmLayers] };
+    _geiIsTM = true; _geiIsFreeForm = false;
+    _tmLayers = new Set(['rate', 'est']); _tmRateOnly = false;
+    _tmRatePerMan = 95; _tmEstHours = 40; _tmCrewCount = 2;
+    const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+    sv('gei-addr', '700 Rate Rd, Wichita KS 67202');
+    sv('tm-i-rate', '95'); sv('tm-i-days', '5');
+    sv('tm-nte-cap', c ? String(c) : ''); sv('tm-i-nte', c ? String(c) : '');
+    let h = '';
+    try { h = sendGenericProposal(true, { silent: true }); } catch (e) { h = 'THREW:' + e.message; }
+    document.getElementById('_prop-preview-ov')?.remove();
+    _geiIsTM = prev.tm; _tmRatePerMan = prev.rate; _tmRateOnly = prev.only;
+    _tmLayers = new Set(prev.layers);
+    return h;
+  }, cap);
+
+  // The old shape, still correct where there is no ceiling to lead with.
+  test('with no ceiling, the estimated total is still the big number', async () => {
+    const h = await doc(0);
+    expect(h).toContain('ESTIMATED TOTAL');
+    expect(h).not.toContain('THE MOST THIS CAN COST YOU');
+  });
+
+  // The fix. The cap used to appear NOWHERE in the money footer when there was
+  // an estimate: it was one clause of eleven in the terms, in 11px, while a
+  // guess at the hours sat in the accent bar in 21px.
+  test('with a ceiling, the ceiling is the big number and the guess steps down', async () => {
+    const h = await doc(12000);
+    expect(h).toContain('THE MOST THIS CAN COST YOU');
+    expect(h).toContain('$12,000');
+    // Nothing is hidden: the estimate is still on the page, just not shouting.
+    expect(h).toContain('not a fixed price');
+    // And it is not still claiming to be the total.
+    expect(h).not.toContain('ESTIMATED TOTAL');
+  });
+
+  // A ceiling with no qualifier is a promise he cannot keep: approved extras
+  // are exactly how a T&M job legitimately passes its cap.
+  test('the big ceiling says what lifts it', async () => {
+    const h = await doc(12000);
+    expect(h).toContain('Unless you approve more in writing');
   });
 });

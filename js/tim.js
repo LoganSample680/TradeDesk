@@ -469,7 +469,13 @@ function _timHelloHtml(){
       '</div>';
   }
   return '<div id="_tim-hello" style="padding:13px 16px 2px">'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:9px">Tap one, or say your own</div>'+
+    // "Say your own" was ambiguous next to a text box: say it how? Where there
+    // is a mic, the sentence names it, because a control nobody knows is the
+    // easy way is not the easy way.
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:9px">'+
+      ((typeof _voiceCapable==='function'&&_voiceCapable())
+        ? 'Tap one, or tap the mic and just talk'
+        : 'Tap one, or type your own')+'</div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:7px">'+
       TIM_CHIPS.map(c=>
         '<button type="button" class="tim-chip" onclick="_timChip('+
@@ -755,10 +761,19 @@ function _timHeadHtml(sub){
 function _timAskHtml(){
   const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
     ? '<button type="button" id="_tim-mic" onclick="_timTalkToggle()" aria-label="Talk to Tim" '+
-      // Secondary, not filled. It used to be an ink block, which next to a
-      // filled blue arrow is two primaries on one row and no answer to which
-      // one is the way out.
-      'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-pill);background:var(--bg2);box-shadow:0 0 0 1px var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative">'+
+      // NO background or box-shadow in here ON PURPOSE, the same trick the send
+      // arrow plays with display: an inline style beats the stylesheet, and the
+      // stylesheet is what swaps this between primary and secondary off
+      // :placeholder-shown.
+      //
+      // It used to be permanently secondary, reasoning that an ink block next
+      // to a filled blue arrow is two primaries on one row. That was right
+      // about a row with text in it and wrong about an empty one, where the
+      // arrow is already dimmed to 32% and takes no taps: nothing was primary,
+      // and the only thing he could actually do from there was the quietest
+      // control on the row. Owner, 2026-09-22: "I really want people to use Tim
+      // to speak it since speak is easier then typing."
+      'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-pill);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
         '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
         '<path d="M12 19v3"></path><path d="M8 22h8"></path></svg>'+

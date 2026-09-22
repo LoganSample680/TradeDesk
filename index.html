@@ -774,12 +774,31 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
    really in the box with no event to miss: no keyup handler, so a paste, a
    dictation result, an autofill or an undo cannot strand it in the wrong
    state. Rule 8.5 comes free with that, since no JS touches a style property.
-   The mic is the secondary here and the arrow is the primary: two filled
-   buttons side by side on a 390px row is a row with no answer in it. */
+   Two filled buttons side by side on a 390px row is a row with no answer in
+   it, so exactly one of these is ever filled, and WHICH one depends on whether
+   there is anything in the box. */
 #_tim-send{display:flex;align-items:center;justify-content:center;
   transition:opacity .15s,transform .15s}
 #_tim-say:placeholder-shown~#_tim-send{opacity:.32;pointer-events:none}
 #_tim-send:active{transform:scale(.94);opacity:.9}
+
+/* ── Talking is the easy way in ─────────────────────────────────────────────
+   Owner, 2026-09-22: "I really want people to use Tim to speak it since speak
+   is easier then typing."
+   On an EMPTY box the arrow above is already dimmed and inert, so the row had
+   no primary at all and the one thing he could actually do, talk, was the
+   quietest control on it. Empty, the mic is the filled ink key. The moment
+   there is text the arrow takes over and the mic drops back to an outline, so
+   there is never more than one filled button and never a dead one.
+   Driven off :placeholder-shown like the arrow, for the same reason: it tracks
+   what is really in the box, so dictation, paste, autofill and undo cannot
+   strand it in the wrong state, and no JS touches a style property (8.5). */
+#_tim-mic{background:var(--bg2);box-shadow:0 0 0 1px var(--border);
+  transition:background .15s,box-shadow .15s,transform .15s}
+#_tim-mic svg{stroke:var(--text2);transition:stroke .15s}
+#_tim-say:placeholder-shown~#_tim-mic{background:var(--ink);box-shadow:none}
+#_tim-say:placeholder-shown~#_tim-mic svg{stroke:var(--text-cream,#fff)}
+#_tim-mic:active{transform:scale(.94)}
 
 /* ── The send ───────────────────────────────────────────────────────────────
    Owner, 2026-09-21: "do they have that crisp iOS send shutter where it flows".

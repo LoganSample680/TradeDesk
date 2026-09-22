@@ -2465,3 +2465,108 @@ test.describe('tim', () => {
     assertNoErrors(page, 'tim.js');
   });
 });
+
+
+// ── TALKING IS THE EASY WAY IN ───────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "I really want people to use Tim to speak it since speak
+// is easier then typing."
+//
+// The mic was permanently secondary, on the reasoning that a filled ink block
+// next to a filled blue arrow is two primaries on one row. True of a row with
+// text in it. False of an EMPTY one, where the arrow is already dimmed to 32%
+// and takes no taps: nothing was primary, and the only thing he could actually
+// do from there was the quietest control on the row.
+//
+// So the two swap, driven off :placeholder-shown like the arrow already is,
+// which means no JS touches a style property (8.5) and dictation, paste,
+// autofill and undo cannot strand either one in the wrong state.
+test.describe('tim: the mic is the way in', () => {
+  let page;
+
+  // The mic only draws where a device can actually dictate, which in a browser
+  // is nowhere. _voiceCapable is stubbed so the markup exists to measure; that
+  // is the only lie told here, and the swap under test is pure CSS.
+  const openWithMic = () => page.evaluate(() => {
+    window._voiceCapable = () => true;
+    document.getElementById('_tim-ov')?.remove();
+    openTim();
+  });
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the mic carries no inline fill, so the stylesheet can own both states', async () => {
+    const r = await page.evaluate(() => {
+      window._voiceCapable = () => true;
+      const h = _timAskHtml();
+      // The BUTTON's own style attribute only. The little "T" badge nested
+      // inside it legitimately carries a background of its own, and slicing to
+      // the closing tag swallows it.
+      const at = h.slice(h.indexOf('id="_tim-mic"'));
+      const m = (at.match(/style="([^"]*)"/) || [])[1] || '';
+      return { has: h.indexOf('id="_tim-mic"') >= 0, bg: /background:/.test(m), sh: /box-shadow:/.test(m) };
+    });
+    expect(r.has).toBe(true);
+    // An inline style beats the stylesheet, so either of these would freeze the
+    // mic in one state and the swap would silently never happen.
+    expect(r.bg, 'an inline background would beat the stylesheet and freeze the swap').toBe(false);
+    expect(r.sh).toBe(false);
+  });
+
+  // The fill is TRANSITIONED, so it has to be read after the transition rather
+  // than in the same task that changed the box: computed style in that task is
+  // still the start value, and a test that reads it there passes and fails for
+  // reasons that have nothing to do with the rule.
+  const micState = async (value) => {
+    await page.evaluate((v) => {
+      const say = document.getElementById('_tim-say');
+      if (say) say.value = v;
+    }, value);
+    await page.waitForTimeout(280);
+    return page.evaluate(() => {
+      const mic = document.getElementById('_tim-mic'), send = document.getElementById('_tim-send');
+      const m = getComputedStyle(mic), s = getComputedStyle(send);
+      const rgb = (c) => (c.match(/\d+/g) || []).slice(0, 3).map(Number);
+      const lum = (c) => { const [r, g, b] = rgb(c); return (0.299 * r + 0.587 * g + 0.114 * b); };
+      return { micLum: lum(m.backgroundColor), sendOpacity: parseFloat(s.opacity), sendTaps: s.pointerEvents };
+    });
+  };
+
+  test('on an empty box the mic is the filled key and the arrow is inert', async () => {
+    await openWithMic();
+    const r = await micState('');
+    // Filled ink, not a pale chip: the one thing he can do reads as the thing to do.
+    expect(r.micLum, 'the mic is not a filled dark key on an empty box').toBeLessThan(110);
+    expect(r.sendOpacity).toBeLessThan(0.5);
+    expect(r.sendTaps).toBe('none');
+  });
+
+  test('the moment there is text, the arrow takes over and the mic steps back', async () => {
+    await openWithMic();
+    await micState('');
+    const r = await micState('who owes me money');
+    // Pale again. Never two filled buttons on one 390px row.
+    expect(r.micLum, 'the mic stayed filled while the arrow lit up, two primaries').toBeGreaterThan(110);
+    expect(r.sendOpacity).toBe(1);
+    expect(r.sendTaps).not.toBe('none');
+  });
+
+  // "Say your own" next to a text box is ambiguous: say it how? Where there is
+  // a mic, the sentence names it, because a control nobody knows about is not
+  // the easy way regardless of how easy it is.
+  test('the empty sheet tells him he can talk, and only where he can', async () => {
+    const withMic = await page.evaluate(() => { window._voiceCapable = () => true; return _timHelloHtml(); });
+    expect(withMic).toContain('tap the mic and just talk');
+
+    const without = await page.evaluate(() => { window._voiceCapable = () => false; return _timHelloHtml(); });
+    expect(without, 'it offered a mic to a device that has none').not.toContain('mic');
+    expect(without).toContain('type your own');
+  });
+});
