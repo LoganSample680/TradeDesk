@@ -180,6 +180,18 @@ function _showE2EResults(results){
 // Errors show as a red toast so you don't need DevTools open on iOS.
 window.addEventListener('error',e=>{
   if(!e.message||e.message==='Script error.')return; // cross-origin, no info
+  // Benign browser noise never reaches the user OR the log. "ResizeObserver
+  // loop completed with undelivered notifications" is a Chromium/WebKit
+  // internal race in the ResizeObserver spec, not an app bug, and this handler
+  // was showing it as an EIGHT SECOND RED TOAST on the dashboard and then
+  // console.error-ing it into the hot lane (error_log 223). The toast is the
+  // part that actually cost something: a contractor mid-job being told the app
+  // errored, for a notification with no effect on anything.
+  //
+  // One shared predicate from js/observability.js, which loads before this
+  // file, rather than a second copy of the pattern here (§7.3). If it is
+  // somehow absent, nothing is suppressed, which is the safe direction.
+  if(typeof window._tdIsBenignBrowserNoise==='function'&&window._tdIsBenignBrowserNoise(e.message))return;
   const loc=e.filename?e.filename.replace(/.*\//,'')+':'+e.lineno:'';
   const msg=(loc?'['+loc+'] ':'')+e.message;
   if(typeof showToast==='function'){

@@ -51,8 +51,27 @@
   // no app-code fix: every site using ResizeObserver (directly or via a
   // library) sees it. Filtered at capture, same as the MapKit outage filter
   // above, so it never re-pages the hot lane.
-  var _BENIGN_BROWSER_NOISE = /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/i;
+  //
+  // NOT anchored, and that is the whole of hotfix 223. The original was
+  // /^ResizeObserver loop .../ which only ever matched the browser's BARE
+  // message on the window 'error' path. The same notification also arrives
+  // here through the console.error wrapper below, because js/e2e.js has its
+  // own window 'error' listener that prefixes the text with
+  // "[TradeDesk JS Error] [file:line] " before logging it. Against that string
+  // the ^ anchor can never match, so the noise walked straight past a filter
+  // written specifically to stop it and re-paged the hot lane (error_log 64,
+  // 65, now 223).
+  //
+  // Matching the wording wherever it appears is still narrow: the two exact
+  // ResizeObserver sentences are not text any app message would contain by
+  // accident, and nothing else is suppressed.
+  var _BENIGN_BROWSER_NOISE = /ResizeObserver loop (completed with undelivered notifications|limit exceeded)/i;
   function _isBenignBrowserNoise(msg) { try { return _BENIGN_BROWSER_NOISE.test(String(msg || '')); } catch (_e) { return false; } }
+  // Shared with js/e2e.js's global error handler, which loads after this file.
+  // §7.3: one definition of what counts as benign browser noise, not two that
+  // drift. That handler uses it to skip the red toast AND the console.error,
+  // so the noise is never generated rather than generated and then filtered.
+  window._tdIsBenignBrowserNoise = _isBenignBrowserNoise;
   function _logError(kind, message, stack, ctx) {
     try {
       if (!_ready()) return;
