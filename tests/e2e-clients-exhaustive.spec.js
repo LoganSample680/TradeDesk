@@ -3072,6 +3072,165 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.propertyType).toBe('New construction');
     });
 
+    // ── A WRONG ADDRESS HAD ONLY ONE EXIT, AND IT WAS DELETE ───────────────
+    // (owner 2026-09-22: "add in edit button to the client record on
+    // properties in case someone puts the wrong address in")
+    //
+    // Fixing a typo meant Remove then Add, which loses the property record kept
+    // against that address (year built, value, owner, the pre-1978 lead
+    // trigger) because all of it is keyed BY address, and it routed every small
+    // mistake through the one control on the card that cannot be undone.
+    test('editing a property corrects it in place, label and all', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970140;
+        const c = { id: cid, name: 'Typo Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '99 Wromg Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal(1);                       // index 1 = the first extra
+        const prefAddr = document.getElementById('_aa-addr').value;
+        const prefLabel = document.getElementById('_aa-label').value;
+        document.getElementById('_aa-addr').value = '99 Wrong Ave, Town, KS 60000';
+        saveAddClientAddress(1);
+        return { prefAddr, prefLabel,
+          n: c.extraAddresses.length,
+          addr: c.extraAddresses[0].addr, label: c.extraAddresses[0].label,
+          primary: c.addr };
+      });
+      expect(r.prefAddr, 'the modal opens on what is already there').toBe('99 Wromg Ave, Town, KS 60000');
+      expect(r.prefLabel).toBe('Rental');
+      expect(r.n, 'corrected in place, never added beside').toBe(1);
+      expect(r.addr).toBe('99 Wrong Ave, Town, KS 60000');
+      expect(r.label, 'the label survives an address-only fix').toBe('Rental');
+      expect(r.primary, 'the primary is untouched').toBe('1 Main St, Town, KS 60000');
+    });
+
+    test('the property record moves with the corrected address', async () => {
+      // Year built, value and the pre-1978 lead trigger are keyed BY address.
+      // A typo fix that orphaned them would silently un-answer the one question
+      // that decides whether a job needs RRP.
+      const r = await page.evaluate(() => {
+        const cid = 970141;
+        const c = { id: cid, name: 'Facts Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '12 Oak Steet, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        setPropertyData(c, '12 Oak Steet, Town, KS 60000', { yearBuilt: 1948, estimatedValue: 210000 });
+        openAddAddressModal(1);
+        document.getElementById('_aa-addr').value = '12 Oak Street, Town, KS 60000';
+        saveAddClientAddress(1);
+        const moved = getProperty(c, '12 Oak Street, Town, KS 60000');
+        return { yearBuilt: moved.yearBuilt, value: moved.estimatedValue };
+      });
+      expect(r.yearBuilt, 'the lead-paint answer followed the fix').toBe(1948);
+      expect(r.value).toBe(210000);
+    });
+
+    test('a moved address drops its stale coordinates, so no fence stays on the old house', async () => {
+      // geo_fences_for and _geoDeriveFences only build a fence when geoAddr
+      // still equals addr. Leaving the old pair behind is exactly the "customer
+      // moved, fence stayed" case that guard exists for.
+      const r = await page.evaluate(() => {
+        const cid = 970142;
+        const c = { id: cid, name: 'Moved Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '5 Old Rd, Town, KS 60000',
+            lat: 39.01, lon: -95.74, geoAddr: '5 Old Rd, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal(1);
+        document.getElementById('_aa-addr').value = '7 New Rd, Town, KS 60000';
+        saveAddClientAddress(1);
+        const e = c.extraAddresses[0];
+        return { lat: e.lat, lon: e.lon, geoAddr: e.geoAddr, addr: e.addr };
+      });
+      expect(r.addr).toBe('7 New Rd, Town, KS 60000');
+      expect(r.lat, 'the old coordinate is gone').toBe(undefined);
+      expect(r.lon).toBe(undefined);
+      expect(r.geoAddr).toBe(undefined);
+    });
+
+    test('a label-only edit keeps the coordinates, because nothing moved', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970143;
+        const c = { id: cid, name: 'Relabel Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '5 Old Rd, Town, KS 60000',
+            lat: 39.01, lon: -95.74, geoAddr: '5 Old Rd, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal(1);
+        document.getElementById('_aa-label').value = 'Duplex';
+        saveAddClientAddress(1);
+        const e = c.extraAddresses[0];
+        return { label: e.label, lat: e.lat, geoAddr: e.geoAddr };
+      });
+      expect(r.label).toBe('Duplex');
+      expect(r.lat, 'a rename is not a move: re-geocoding it would be waste').toBe(39.01);
+      expect(r.geoAddr).toBe('5 Old Rd, Town, KS 60000');
+    });
+
+    test('index 0 edits the client\'s own address, and asks for no label', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970144;
+        const c = { id: cid, name: 'Primary Co', addr: '1 Mian St, Town, KS 60000',
+          lat: 39.02, lon: -95.75, geoAddr: '1 Mian St, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal(0);
+        // The primary has no label of its own: "Primary" is the section's word.
+        const hasLabel = !!document.getElementById('_aa-label');
+        const pref = document.getElementById('_aa-addr').value;
+        document.getElementById('_aa-addr').value = '1 Main St, Town, KS 60000';
+        saveAddClientAddress(0);
+        return { hasLabel, pref, addr: c.addr, extras: c.extraAddresses.length, lat: c.lat };
+      });
+      expect(r.hasLabel, 'no label field on the primary').toBe(false);
+      expect(r.pref).toBe('1 Mian St, Town, KS 60000');
+      expect(r.addr).toBe('1 Main St, Town, KS 60000');
+      expect(r.extras, 'a primary fix never becomes a new property').toBe(0);
+      expect(r.lat, 'and its fence waits for the new geocode too').toBe(undefined);
+    });
+
+    test('adding still adds: the shared modal did not become edit-only', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970145;
+        const c = { id: cid, name: 'Still Adds Co', addr: '1 Main St, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        for (const arg of [undefined, null, '']) {
+          openAddAddressModal(arg);
+          document.getElementById('_aa-addr').value = 'A' + c.extraAddresses.length + ' New Rd, Town, KS 60000';
+          saveAddClientAddress(arg);
+        }
+        return { n: c.extraAddresses.length, label: c.extraAddresses[0].label };
+      });
+      expect(r.n, 'undefined, null and empty all still mean add').toBe(3);
+      expect(r.label).toBe('Additional property');
+    });
+
+    test('an empty address is refused, and an out-of-range index does nothing', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970146;
+        const c = { id: cid, name: 'Junk Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '5 Old Rd, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        let threw = 0;
+        openAddAddressModal(1);
+        document.getElementById('_aa-addr').value = '   ';
+        try { saveAddClientAddress(1); } catch (_e) { threw++; }
+        const afterBlank = c.extraAddresses[0].addr;
+        // An index past the end opens nothing and writes nothing.
+        try { openAddAddressModal(9); } catch (_e) { threw++; }
+        const opened = !!document.getElementById('_aa-addr');
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return { threw, afterBlank, opened, n: c.extraAddresses.length, addr: c.addr };
+      });
+      expect(r.threw).toBe(0);
+      expect(r.afterBlank, 'a blank address never wipes the one on file').toBe('5 Old Rd, Town, KS 60000');
+      expect(r.n).toBe(1);
+      expect(r.addr).toBe('1 Main St, Town, KS 60000');
+    });
+
     // Regression: an address entered on an estimate must roll into the client's
     // property list (accordion), not just live on the bid. Owner-reported bug.
     test('_geiEnsureClientProperty: a new estimate address rolls into the client properties (dedup-safe)', async () => {
