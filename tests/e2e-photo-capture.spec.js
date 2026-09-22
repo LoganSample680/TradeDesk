@@ -1521,7 +1521,50 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r.closed).toBe(0);
     });
 
+    // What the owner saw: six shots, each stamped "Before", under a chip row
+    // that already said Before 6, with Progress 0 and After 0 taking a quarter
+    // of that row and doing nothing. A label repeated on every tile carries no
+    // information, and a filter for a stage nobody shot is not a filter.
+    test('a single-stage property shows no stage labels and no chip row', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        __house();
+        photos.forEach(p => { p.type = 'before'; });
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const out = {
+          cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+          tags: document.querySelectorAll('#pc-rev .pc-rev-tag').length,
+          chips: document.querySelectorAll('#pc-rev .pc-fold-chips .fb').length,
+        };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.cells).toBeGreaterThan(0);
+      expect(r.tags, 'nothing to distinguish, so nothing to label').toBe(0);
+      expect(r.chips, 'nothing to filter, so no row at all').toBe(0);
+    });
+
+    test('a mixed visit keeps its labels, because there they mean something', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        __house();
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const chips = [...document.querySelectorAll('#pc-rev .pc-fold-chips .fb')].map(b => b.textContent);
+        // Newest-first, so visit 0 is the afternoon trip back: one shot, one
+        // stage, no labels earned. The MORNING is the mixed one.
+        document.querySelectorAll('#pc-rev .pc-fold-visit-hd')[1].click();
+        const tags = [...document.querySelectorAll('#pc-rev .pc-fold-visit .pc-rev-tag')].map(t => t.textContent);
+        tdReviewClose();
+        return { chips, tags };
+      });
+      expect(r.tags.length, 'a visit with two stages still says which is which').toBeGreaterThan(0);
+      // every stage present gets a chip, and none that is absent does
+      expect(r.chips.some(c => /Progress/.test(c))).toBe(true);
+      expect(r.chips.every(c => !/ 0$/.test(c)), 'no chip counts to zero').toBe(true);
+    });
+
     test('an empty property opens nothing rather than an empty sheet', async () => {
+      await house();
       const r = await page.evaluate(() => {
         __house();
         photos.length = 0;

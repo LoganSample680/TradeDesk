@@ -578,9 +578,16 @@ function tdFolderVisit(key){
   _pcFolder.open=(_pcFolder.open===key)?'':key;
   _pcFolderPaint();return true;
 }
-function _pcFolderCell(p){
+// The tag is only worth the pixels when the set it sits in is MIXED. Six
+// shots all labelled Before, under a chip row already saying Before 6, is the
+// same word printed seven times (owner, looking at his own porch, 2026-09-22).
+function _pcFolderCell(p,tag){
   return '<button type="button" class="pc-rev-cell" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" '+
-    'onclick="tdFolderOpen(\''+p.id+'\')"><span class="pc-rev-tag">'+escHtml(p.type)+'</span></button>';
+    'onclick="tdFolderOpen(\''+p.id+'\')">'+(tag===false?'':'<span class="pc-rev-tag">'+escHtml(p.type)+'</span>')+'</button>';
+}
+// True when these photos are all the same stage, so their labels say nothing.
+function _pcOneStage(list){
+  return (list||[]).every(p=>p.type===(list[0]||{}).type);
 }
 // Straight into the viewer that already exists, on the shot that was tapped.
 function tdFolderOpen(photoId){
@@ -601,20 +608,29 @@ function _pcFolderPaint(){
   const pair=_pcFolder.stage==='all'?tdPropertyPair(all):null;
   const chip=(v,label,n)=>'<button type="button" class="fb'+(_pcFolder.stage===v?' active':'')+'" onclick="tdFolderStage(\''+v+'\')">'+label+' '+n+'</button>';
   const when=t=>{try{return new Date(t).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});}catch(_e){return '';}};
+  // The newest shot IS the cover. The screen used to open on a title, a
+  // subtitle and four pills, with the work itself starting below the fold and
+  // black space under it; a property album should open on the property.
+  const cover=all[0]&&tdPhotoSrc(all[0]);
+  // A stage nobody shot is not a filter, it is a 0 taking up a quarter of the
+  // row. And when every shot is the same stage there is nothing to filter at
+  // all, so the row goes entirely.
+  const stages=[['before','Before'],['progress','Progress'],['after','After']].filter(x=>count(x[0])>0);
   el.innerHTML=
-    '<div class="pc-rev-top">'+
+    '<div class="pc-rev-top ghost">'+
       '<button type="button" class="pc-side" onclick="tdReviewClose()">Close</button>'+
-      '<span class="pc-rev-title">Photos</span>'+
       '<span class="pc-rev-sp"></span>'+
     '</div>'+
     '<div class="pc-fold">'+
-      '<div class="pc-fold-hd">'+
-        '<div class="pc-fold-addr">'+escHtml((_pcFolder.addr||'').split(',')[0]||'This property')+'</div>'+
-        '<div class="pc-fold-sub">'+all.length+(all.length===1?' photo':' photos')+' \u00b7 '+
-          visits.length+(visits.length===1?' visit':' visits')+(c?' \u00b7 '+escHtml(c.name||''):'')+'</div>'+
+      '<div class="pc-fold-hero"'+(cover?' style="background-image:url(\''+_pcEscUrl(cover)+'\')"':'')+'>'+
+        '<div class="pc-fold-hd">'+
+          '<div class="pc-fold-addr">'+escHtml((_pcFolder.addr||'').split(',')[0]||'This property')+'</div>'+
+          '<div class="pc-fold-sub">'+all.length+(all.length===1?' photo':' photos')+' \u00b7 '+
+            visits.length+(visits.length===1?' visit':' visits')+(c?' \u00b7 '+escHtml(c.name||''):'')+'</div>'+
+        '</div>'+
       '</div>'+
-      '<div class="pc-fold-chips">'+chip('all','All',all.length)+chip('before','Before',count('before'))+
-        chip('progress','Progress',count('progress'))+chip('after','After',count('after'))+'</div>'+
+      (stages.length>1?'<div class="pc-fold-chips">'+chip('all','All',all.length)+
+        stages.map(x=>chip(x[0],x[1],count(x[0]))).join('')+'</div>':'')+
       (pair?'<div class="pc-fold-ba">'+
         '<div class="pc-fold-ba-hd"><div style="flex:1;min-width:0">'+
           '<div class="pc-fold-ba-lbl">Before &amp; After</div>'+
@@ -622,6 +638,7 @@ function _pcFolderPaint(){
           '<button type="button" class="pc-side" onclick="tdFolderSendPair()">Send</button>'+
         '</div>'+
         '<div class="pc-fold-ba-grid">'+_pcFolderCell(pair.before)+_pcFolderCell(pair.after)+'</div>'+
+        '<div class="pc-fold-ba-ft"><span>Before</span><span>After</span></div>'+
       '</div>':'')+
       visits.map(v=>{
         const open=_pcFolder.open===v.key;
@@ -629,12 +646,12 @@ function _pcFolderPaint(){
           '<button type="button" class="pc-fold-visit-hd" onclick="tdFolderVisit(\''+v.key+'\')">'+
             '<span class="pc-fold-visit-t">'+
               '<span class="pc-fold-visit-day">'+escHtml(when(v.at))+'</span>'+
-              '<span class="pc-fold-visit-what">'+escHtml(v.what||'No job \u00b7 just photos')+'</span>'+
+              '<span class="pc-fold-visit-what">'+escHtml(v.what||'Walkthrough')+'</span>'+
             '</span>'+
             '<span class="pc-fold-visit-n">'+v.photos.length+'</span>'+
             '<span class="pc-fold-caret'+(open?' open':'')+'">\u2304</span>'+
           '</button>'+
-          (open?'<div class="pc-rev-grid flat">'+v.photos.map(_pcFolderCell).join('')+'</div>':'')+
+          (open?'<div class="pc-rev-grid flat">'+v.photos.map(x=>_pcFolderCell(x,!_pcOneStage(v.photos))).join('')+'</div>':'')+
         '</div>';
       }).join('')+
     '</div>';

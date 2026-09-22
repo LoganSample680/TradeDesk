@@ -1635,24 +1635,38 @@ body.dark .cal-cell.other{background:var(--cream)}
 /* ── The burst review sheet (shoot → triage → attach, all on site) ───────── */
 .pc-rev{position:fixed;inset:0;z-index:10050;background:#0E1116;color:#fff;display:flex;flex-direction:column;animation:fadein .16s ease}
 .pc-rev-top{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 10px}
+/* Over the hero: the bar floats on the photo instead of sitting on a black
+   band above it, and Close stops being the heaviest thing on the screen. */
+.pc-rev-top.ghost{position:absolute;top:0;left:0;right:0;z-index:2;background:none}
+.pc-rev-top.ghost .pc-side{background:rgba(0,0,0,.42);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-color:rgba(255,255,255,.18)}
 .pc-rev-title{flex:1;text-align:center;font-size:15px;font-weight:900}
 .pc-rev-sp{min-width:92px}
 .pc-rev-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:4px 12px 12px;align-content:start}
 /* ── The property folder: the visit is the folder ───────────────────────── */
-.pc-rev-grid.flat{flex:none;overflow:visible;padding:9px 0 4px}
-.pc-fold{flex:1;overflow-y:auto;padding:2px 14px calc(24px + env(safe-area-inset-bottom,0px))}
-.pc-fold-addr{font-size:20px;font-weight:900;line-height:1.15}
-.pc-fold-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:3px}
-.pc-fold-chips{display:flex;gap:6px;overflow-x:auto;padding:12px 0 2px}
+.pc-rev-grid.flat{flex:none;overflow:visible;padding:9px 0 4px;grid-template-columns:1fr 1fr;gap:7px}
+.pc-rev-grid.flat .pc-rev-cell{aspect-ratio:4/5}
+.pc-fold{flex:1;overflow-y:auto;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))}
+/* The album opens ON the property. The newest shot runs full bleed behind the
+   address, under a scrim heavy enough at the base to keep the type legible on
+   a bright photo and light enough at the top to let the image read. The top
+   bar sits over it, so .pc-rev-top.ghost drops its background. */
+.pc-fold-hero{position:relative;padding:calc(84px + env(safe-area-inset-top,0px)) 16px 16px;background:#20262e center/cover no-repeat;display:flex;align-items:flex-end;min-height:250px}
+.pc-fold-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(14,17,22,.42) 0%,rgba(14,17,22,.06) 34%,rgba(14,17,22,.94) 100%)}
+.pc-fold-hd{position:relative;z-index:1;width:100%}
+.pc-fold-addr{font-size:26px;font-weight:900;line-height:1.1;letter-spacing:-.02em;text-shadow:0 1px 14px rgba(0,0,0,.5)}
+.pc-fold-sub{font-size:12.5px;color:rgba(255,255,255,.82);margin-top:4px;text-shadow:0 1px 10px rgba(0,0,0,.5)}
+.pc-fold-chips{display:flex;gap:6px;overflow-x:auto;padding:13px 16px 2px}
 .pc-fold-chips .fb{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.75)}
 .pc-fold-chips .fb.active{background:#fff;color:#0E1116;border-color:#fff}
-.pc-fold-ba{margin-top:14px;border:1px solid var(--c-amber);background:rgba(242,168,28,.14);border-radius:var(--r-md);padding:11px}
+.pc-fold-ba{margin:14px 16px 0;border:1px solid var(--c-amber);background:rgba(242,168,28,.14);border-radius:var(--r-md);padding:11px}
 .pc-fold-ba-hd{display:flex;align-items:center;gap:9px;margin-bottom:9px}
 .pc-fold-ba-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#F2A81C}
 .pc-fold-ba-name{font-size:13px;font-weight:800;color:#fff}
 .pc-fold-ba-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .pc-fold-ba-grid .pc-rev-cell{aspect-ratio:1}
-.pc-fold-visit{border-top:1px solid rgba(255,255,255,.1)}
+.pc-fold-visit{border-top:1px solid rgba(255,255,255,.1);margin:0 16px}
+.pc-fold-ba-ft{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:5px}
+.pc-fold-ba-ft span{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,.55);text-align:center}
 .pc-fold-visit-hd{display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;padding:13px 0 2px;color:inherit;font-family:inherit;text-align:left;touch-action:manipulation}
 .pc-fold-visit-t{flex:1;min-width:0}
 .pc-fold-visit-day{display:block;font-size:14px;font-weight:800;color:#fff}
