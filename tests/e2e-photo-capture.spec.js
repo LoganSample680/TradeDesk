@@ -468,6 +468,140 @@ test.describe('Photo capture: the sheet itself', () => {
     expect(r).toBe(false);
   });
 
+  // ── The swipe ─────────────────────────────────────────────────────────────
+  // These DRAG. The gesture it replaced was a flick detector that passed any
+  // test asserting "after a swipe the index moved", which is exactly why it
+  // shipped feeling wrong: nothing tracked the thumb and nothing of the next
+  // photo was ever on screen. So what is asserted here is the motion, not just
+  // the outcome.
+  test.describe('swiping through', () => {
+    // A real pointer drag, in steps, the way a thumb arrives.
+    const drag = (page, from, to, steps) => page.evaluate(async ([from, to, steps]) => {
+      const track = document.getElementById('pc-rev-track');
+      if (!track) return { moved: [], noTrack: true };
+      const moved = [];
+      const ev = (type, x) => {
+        const e = new PointerEvent(type, { clientX: x, clientY: 400, bubbles: true,
+          cancelable: true, pointerId: 1, button: 0, isPrimary: true });
+        track.dispatchEvent(e);
+      };
+      ev('pointerdown', from);
+      for (let i = 1; i <= steps; i++) {
+        ev('pointermove', from + (to - from) * (i / steps));
+        moved.push(track.style.transform);
+      }
+      ev('pointerup', to);
+      await new Promise(r => setTimeout(r, 380));   // let the settle finish
+      return { moved };
+    }, [from, to, steps]);
+
+    test('the next photo is already on screen before the thumb commits', async () => {
+      await shootUnfiled(3);
+      const r = await page.evaluate(() => {
+        tdReviewOpen(1);
+        const panes = [...document.querySelectorAll('#pc-rev-track .pc-rev-pane img')].map(i => i.src);
+        const rows = _pcRevRows();
+        return { panes: panes.length, prev: panes[0], cur: panes[1], next: panes[2],
+          wantPrev: tdPhotoSrc(rows[0]), wantCur: tdPhotoSrc(rows[1]), wantNext: tdPhotoSrc(rows[2]) };
+      });
+      expect(r.panes, 'previous, current and next are all rendered').toBe(3);
+      expect(r.prev).toBe(r.wantPrev);
+      expect(r.cur).toBe(r.wantCur);
+      expect(r.next).toBe(r.wantNext);
+    });
+
+    test('the track follows the thumb rather than waiting for the release', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(0));
+      const r = await drag(page, 300, 180, 4);
+      // Every move produced a new transform, and they travel in one direction.
+      expect(r.moved.length).toBe(4);
+      expect(new Set(r.moved).size, 'the track moves on every pointermove').toBe(4);
+      // The browser normalises calc(-33.3333% + -30px) to calc(... - 30px), so
+      // the sign has to be read off the operator, not assumed to be inside the
+      // number.
+      const px = r.moved.map(t => { const m = t.match(/([+-]) ([\d.]+)px/); return m ? (m[1] === '-' ? -1 : 1) * parseFloat(m[2]) : NaN; });
+      expect(px.every(v => !Number.isNaN(v)), 'the transform is readable').toBe(true);
+      expect(px.every((v, i) => i === 0 || v < px[i - 1]), 'and it tracks leftward with the thumb').toBe(true);
+    });
+
+    test('a decisive drag lands on the next photo', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(0));
+      await drag(page, 340, 40, 6);
+      expect(await page.evaluate(() => document.querySelector('.pc-rev-title').textContent)).toBe('2 of 3');
+    });
+
+    test('dragging back the other way goes back', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(1));
+      await drag(page, 40, 340, 6);
+      expect(await page.evaluate(() => document.querySelector('.pc-rev-title').textContent)).toBe('1 of 3');
+    });
+
+    test('a short drag springs back and changes nothing', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(1));
+      await drag(page, 300, 275, 3);
+      const r = await page.evaluate(() => ({
+        title: document.querySelector('.pc-rev-title').textContent,
+        parked: document.getElementById('pc-rev-track').style.transform,
+      }));
+      expect(r.title, 'a 25px change of mind is not a swipe').toBe('2 of 3');
+      expect(r.parked, 'and the track is back on centre').toBe('');
+    });
+
+    test('a vertical drag belongs to the page, not to the carousel', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(1));
+      const r = await page.evaluate(async () => {
+        const track = document.getElementById('pc-rev-track');
+        const ev = (type, x, y) => track.dispatchEvent(new PointerEvent(type,
+          { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0, isPrimary: true }));
+        ev('pointerdown', 200, 300);
+        ev('pointermove', 206, 380);          // mostly down
+        ev('pointermove', 210, 460);
+        const moved = track.style.transform;
+        ev('pointerup', 210, 460);
+        await new Promise(r => setTimeout(r, 380));
+        return { moved, title: document.querySelector('.pc-rev-title').textContent };
+      });
+      expect(r.moved, 'the track never moved').toBe('');
+      expect(r.title).toBe('2 of 3');
+    });
+
+    test('one photo is not a carousel', async () => {
+      await shootUnfiled(1);
+      const r = await page.evaluate(() => {
+        tdReviewOpen(0);
+        return { track: !!document.getElementById('pc-rev-track'),
+          img: !!document.getElementById('pc-rev-img') };
+      });
+      expect(r.track, 'no track to drag when there is nowhere to go').toBe(false);
+      expect(r.img, 'but the photo is still shown').toBe(true);
+    });
+
+    test('the arrow keys work, because a laptop has no thumb', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(0));
+      await page.keyboard.press('ArrowRight');
+      expect(await page.evaluate(() => document.querySelector('.pc-rev-title').textContent)).toBe('2 of 3');
+      await page.keyboard.press('ArrowLeft');
+      await page.keyboard.press('ArrowLeft');
+      expect(await page.evaluate(() => document.querySelector('.pc-rev-title').textContent)).toBe('3 of 3');
+      await page.keyboard.press('Escape');
+      expect(await page.evaluate(() => document.querySelectorAll('#pc-rev .pc-rev-cell').length)).toBe(3);
+    });
+
+    test('the keys stop being the viewer\'s once the sheet is closed', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => { tdReviewOpen(0); tdReviewClose(); });
+      await page.keyboard.press('ArrowRight');
+      const err = await page.evaluate(() => typeof _pcRev);
+      expect(err, 'no sheet, no state, no throw').toBe('object');
+    });
+  });
+
   test('a shot opens full size, steps both ways, and wraps', async () => {
     await shootUnfiled(3);
     const r = await page.evaluate(() => {

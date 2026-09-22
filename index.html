@@ -1676,8 +1676,18 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-fold-caret.open{transform:rotate(0)}
 .pc-rev-cell{position:relative;aspect-ratio:1;border:none;padding:0;border-radius:var(--r-md);background:#2a3038 center/cover no-repeat;touch-action:manipulation}
 .pc-rev-tag{position:absolute;left:5px;bottom:5px;background:rgba(10,13,17,.8);color:#fff;border-radius:var(--r-pill);padding:2px 8px;font-size:10px;font-weight:800;text-transform:capitalize}
-.pc-rev-stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px}
-.pc-rev-img{max-width:100%;max-height:100%;border-radius:var(--r-md)}
+.pc-rev-stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px;position:relative}
+/* Three panes wide, parked on the middle one, so the neighbour is already
+   rendered and follows the thumb instead of appearing after the gesture ends.
+   pan-y hands vertical back to the page: only the horizontal is ours. */
+/* ABSOLUTE, not a flex item. As a child of the flex stage it was shrunk to fit
+   like any other item, so width:300% collapsed and each pane rendered at a
+   third of nothing (caught in a local screenshot before this ever deployed). */
+.pc-rev-track{position:absolute;top:0;left:0;height:100%;width:300%;display:flex;transform:translate3d(-33.3333%,0,0);touch-action:pan-y;will-change:transform;cursor:grab}
+.pc-rev-track:active{cursor:grabbing}
+.pc-rev-track.snap{transition:transform .3s cubic-bezier(.22,1,.36,1)}
+.pc-rev-pane{flex:0 0 33.3333%;width:33.3333%;height:100%;display:flex;align-items:center;justify-content:center;padding:0 8px;box-sizing:border-box}
+.pc-rev-img{max-width:100%;max-height:100%;border-radius:var(--r-md);-webkit-user-select:none;user-select:none;-webkit-user-drag:none;pointer-events:none}
 .pc-rev-foot{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px calc(20px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
 /* The confirmation Jack asked for: the app says the address out loud, in
    green, and a person agrees with it. Never an automatic filing. */

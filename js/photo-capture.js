@@ -419,6 +419,11 @@ function _pcRevPaint(){
   if(_pcRev.folder&&!(_pcRev.i>=0&&rows[_pcRev.i])){_pcFolderPaint();return;}
   el.innerHTML=(_pcRev.i>=0&&rows[_pcRev.i])?_pcRevViewerHTML(rows):_pcRevGridHTML(rows);
   if(_pcRev.i>=0)_pcRevBindSwipe();
+  // Bound once on the document rather than per repaint, because the viewer
+  // rebuilds its own markup on every step and a listener added here would
+  // stack up one deep per photo looked at.
+  document.removeEventListener('keydown',_pcRevKey);
+  document.addEventListener('keydown',_pcRevKey);
 }
 function _pcRevGridHTML(rows){
   const n=rows.length;
@@ -704,9 +709,7 @@ function _pcRevViewerHTML(rows){
       '<span class="pc-rev-title">'+(_pcRev.i+1)+' of '+rows.length+'</span>'+
       '<span class="pc-rev-sp"></span>'+
     '</div>'+
-    '<div class="pc-rev-stage" id="pc-rev-stage">'+
-      '<img class="pc-rev-img" id="pc-rev-img" src="'+_pcEscUrl(tdPhotoSrc(p))+'" alt="">'+
-    '</div>'+
+    _pcRevStageHTML(rows)+
     '<div class="pc-rev-foot">'+
       '<button type="button" class="pc-side" onclick="tdReviewStep(-1)">Prev</button>'+
       '<button type="button" class="pc-side danger" onclick="tdReviewDelete()">Delete</button>'+
@@ -717,19 +720,110 @@ function _pcRevViewerHTML(rows){
     '</div>';
 }
 function _pcEscUrl(u){return String(u||'').replace(/'/g,'%27').replace(/"/g,'&quot;');}
-// A thumb is a tap target on a phone, so the viewer is also a swipe: the
-// gesture people already use for a camera roll.
+// ── The swipe (owner 2026-09-22: "cant scroll through like you can ios
+// images") ──────────────────────────────────────────────────────────────────
+//
+// What was here was a flick DETECTOR: touchstart, touchend, and if the finger
+// had travelled 40px, jump an index and repaint the whole sheet. Nothing moved
+// under the thumb, nothing of the next photo was ever visible, a slow drag did
+// nothing at all, and the jump was a hard innerHTML swap with no motion. That
+// is not the gesture people know from a camera roll, it is a button you happen
+// to draw on.
+//
+// So the stage is a THREE PANE track, previous, current and next, parked on
+// the middle one. The finger moves the track 1:1, which means the neighbour is
+// already on screen and following your thumb before you have decided to commit
+// to it. Let go and it either carries through or springs back.
+//
+// Wrapping, rather than an iOS rubber band at the ends, because tdReviewStep
+// already wraps for the Prev and Next buttons and has a test pinning it. One
+// behaviour for both, so the gesture and the button never disagree.
+function _pcRevStageHTML(rows){
+  const n=rows.length,i=_pcRev.i;
+  const img=(p,id)=>'<div class="pc-rev-pane">'+
+    '<img class="pc-rev-img"'+(id?' id="'+id+'"':'')+' src="'+_pcEscUrl(tdPhotoSrc(p))+'" alt="">'+
+  '</div>';
+  // One photo is not a carousel. No track, no panes, no listeners: a drag on a
+  // set of one can only ever land back where it started.
+  if(n<2){
+    return '<div class="pc-rev-stage" id="pc-rev-stage">'+
+      '<img class="pc-rev-img" id="pc-rev-img" src="'+_pcEscUrl(tdPhotoSrc(rows[i]))+'" alt="">'+
+    '</div>';
+  }
+  return '<div class="pc-rev-stage" id="pc-rev-stage">'+
+    '<div class="pc-rev-track" id="pc-rev-track">'+
+      img(rows[(i-1+n)%n])+img(rows[i],'pc-rev-img')+img(rows[(i+1)%n])+
+    '</div>'+
+  '</div>';
+}
+// Distance OR speed, the way a phone does it: a slow deliberate drag past a
+// third of the screen commits, and so does a quick flick that never got that
+// far. Judging on distance alone makes a real flick feel ignored.
+// A flick still has to BE a movement. Velocity alone would turn a 25px twitch
+// of the thumb into a page turn, because a fast enough tiny movement clears any
+// speed bar you set (caught by its own test, 2026-09-22). So speed can only
+// commit a drag that already travelled a real distance.
+const _PC_SWIPE_FRACTION=0.28, _PC_SWIPE_VELOCITY=0.45, _PC_SWIPE_MIN=44;
 function _pcRevBindSwipe(){
-  const st=document.getElementById('pc-rev-stage');
-  if(!st)return;
-  let x0=null;
-  st.addEventListener('touchstart',e=>{x0=e.touches&&e.touches[0]?e.touches[0].clientX:null;},{passive:true});
-  st.addEventListener('touchend',e=>{
-    if(x0==null)return;
-    const x1=e.changedTouches&&e.changedTouches[0]?e.changedTouches[0].clientX:x0;
-    const dx=x1-x0;x0=null;
-    if(Math.abs(dx)>40)tdReviewStep(dx<0?1:-1);
-  },{passive:true});
+  const track=document.getElementById('pc-rev-track');
+  if(!track)return;
+  const W=()=>(track.parentElement?track.parentElement.clientWidth:0)||1;
+  let x0=0,y0=0,t0=0,dx=0,active=false,decided=false;
+  const at=(px)=>{track.style.transform='translate3d(calc(-33.3333% + '+px+'px),0,0)';};
+  const settle=(to,then)=>{
+    track.classList.add('snap');
+    track.style.transform='translate3d(calc(-33.3333% + '+to+'px),0,0)';
+    let done=false;
+    const fin=()=>{if(done)return;done=true;track.removeEventListener('transitionend',fin);then();};
+    track.addEventListener('transitionend',fin);
+    // A transform that does not change fires no transitionend, and a dropped
+    // frame can swallow one, so the index must never depend on the event alone.
+    setTimeout(fin,320);
+  };
+  const down=(e)=>{
+    if(e.button!=null&&e.button!==0)return;
+    active=true;decided=false;dx=0;
+    x0=e.clientX;y0=e.clientY;t0=Date.now();
+    track.classList.remove('snap');
+    try{track.setPointerCapture&&track.setPointerCapture(e.pointerId);}catch(_e){}
+  };
+  const move=(e)=>{
+    if(!active)return;
+    const ex=e.clientX-x0,ey=e.clientY-y0;
+    // The first movement decides whose gesture this is. Vertical belongs to the
+    // page, and stealing it would trap a thumb that meant to scroll.
+    if(!decided){
+      if(Math.abs(ex)<6&&Math.abs(ey)<6)return;
+      decided=true;
+      if(Math.abs(ey)>Math.abs(ex)){active=false;return;}
+    }
+    dx=ex;at(dx);
+    if(e.cancelable)e.preventDefault();
+  };
+  const up=()=>{
+    if(!active){active=false;return;}
+    active=false;
+    const w=W(),dt=Math.max(1,Date.now()-t0),v=Math.abs(dx)/dt;
+    const go=Math.abs(dx)>w*_PC_SWIPE_FRACTION
+          ||(Math.abs(dx)>_PC_SWIPE_MIN&&v>_PC_SWIPE_VELOCITY);
+    if(!go||!dx){settle(0,()=>{track.classList.remove('snap');track.style.transform='';});return;}
+    const d=dx<0?1:-1;
+    settle(d<0?w:-w,()=>{tdReviewStep(d);});
+  };
+  track.addEventListener('pointerdown',down);
+  track.addEventListener('pointermove',move,{passive:false});
+  track.addEventListener('pointerup',up);
+  track.addEventListener('pointercancel',up);
+}
+// A keyboard is a real way to look through photos on a laptop, and it costs
+// two lines.
+function _pcRevKey(e){
+  if(!_pcRev||_pcRev.i<0)return;
+  if(e.key==='ArrowRight')tdReviewStep(1);
+  else if(e.key==='ArrowLeft')tdReviewStep(-1);
+  else if(e.key==='Escape')tdReviewGrid();
+  else return;
+  e.preventDefault();
 }
 function tdReviewOpen(i){
   if(!_pcRev)return false;
@@ -966,6 +1060,9 @@ function tdAttachCommit(){
 function tdReviewClose(){
   const trash=_pcRev?_pcRev.trash.slice():[];
   _pcRev=null;_pcFolder=null;
+  // The sheet is gone, so the arrow keys belong to whatever is underneath it
+  // again. _pcRevKey guards on _pcRev too, so this is belt and braces.
+  document.removeEventListener('keydown',_pcRevKey);
   document.getElementById('pc-rev')?.remove();
   // Only now, once the contractor has walked away from the sheet, do the
   // deleted shots actually leave storage. Undo is free until this point.
