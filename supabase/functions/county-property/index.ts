@@ -164,7 +164,14 @@ const ENRICHERS: Record<string, {
         return "https://gis.sncoapps.us/arcgis2/rest/services/Appraiser/AppraisalDataPro/MapServer/4/query?" +
           new URLSearchParams({
             where: `PADDRESS = '${safe}'`,
-            outFields: "QUICKREFID,PADDRESS,ONAME,TOTVAL,BLDGVAL,LDVAL,ACRES",
+            // "*" and not a named list. The named list was seven fields, and
+            // the parse below reads PID, DBOOKPAGE, NBHD, USD and the polygon
+            // area, none of which were in it: every one of them came back
+            // undefined and was silently stored as null. A field list that has
+            // to be kept in sync with a parse by hand is a field list that
+            // drifts, and the drift is invisible because a missing attribute
+            // reads exactly like a county that does not publish it.
+            outFields: "*",
             returnGeometry: "false",
             f: "json",
           });
@@ -385,7 +392,11 @@ async function cacheBack(svc: ReturnType<typeof createClient>, out: Record<strin
 
   // The parcel already exists (a bulk load put it there): patch it in place.
   if (hit?.parcel_id) {
-    await svc.from("td_county_parcels").update(patch)
+    // source_url rides along so a row loaded before the link was per-parcel
+    // (or under an older URL shape) is corrected rather than left stale. The
+    // upsert branch below already sets it at creation; without it here, only
+    // brand-new rows would ever carry a working link.
+    await svc.from("td_county_parcels").update({ ...patch, ...(out.source_url ? { source_url: out.source_url } : {}) })
       .eq("county_fips", out.county_fips).eq("parcel_id", hit.parcel_id);
     return;
   }

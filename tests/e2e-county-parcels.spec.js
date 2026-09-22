@@ -575,6 +575,18 @@ test.describe('county parcel records', () => {
       }
     });
 
+    test('the GIS query asks for every field, not a hand-kept list', () => {
+      // It was a list of seven while the parse read PID, DBOOKPAGE, NBHD, USD
+      // and the polygon area, none of which were in it. Every one came back
+      // undefined and was stored as null, and the drift was invisible because
+      // a missing attribute reads exactly like a county that does not publish
+      // it. A field list kept in sync with a parse by hand is a field list that
+      // drifts.
+      const s = fn();
+      expect(s, 'the parcel layer must be queried with outFields "*"').toMatch(/outFields:\s*"\*"/);
+      expect(s, 'a hand-kept list is the bug this replaced').not.toMatch(/outFields:\s*"QUICKREFID,/);
+    });
+
     test('building_count sums every structure type, not just houses', () => {
       // A detached garage or a second building is scope nobody quoted.
       const s = fn();
