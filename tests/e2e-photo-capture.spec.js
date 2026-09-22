@@ -1664,9 +1664,17 @@ test.describe('TrueShot: marking a photo up', () => {
   // the same thing a real Supabase public url is to the editor, an image it
   // can decode and read back off a canvas.
   const openEditor = async () => {
-    await shoot(page, { type: 'before', bidId: 901 });
+    // ONE evaluate, deliberately: this used to shoot in one round trip and
+    // then reach for photos[photos.length-1] in the next. A cloud load landing
+    // between the two replaces the photos array wholesale, so the row was gone
+    // and p was undefined (webkit shard 3, 59293e5). Shooting and seeding in
+    // the same evaluate leaves no gap for a load to land in.
     return page.evaluate(async (b64) => {
-      const p = photos[photos.length - 1];
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const p = await tdSavePhoto({ type: 'before', bidId: 901, file: new File([arr], 'shot.png', { type: 'image/png' }) });
+      if (!p) return { ok: false, ready: false, id: null, saved: false };
       // A REAL-SIZED image: the 1x1 test png made every drag less than one
       // image pixel long, which is how the scaled tap-vs-drag floor below
       // came to be tested at all.
@@ -1680,8 +1688,14 @@ test.describe('TrueShot: marking a photo up', () => {
       const ok = tdAnnotatePhoto(id);
       // the <img> decode is async; the canvas is sized in its onload
       for (let i = 0; i < 40 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r => setTimeout(r, 25));
-      return { ok, ready: !!(_pcAnno && _pcAnno.img), id };
-    }, PNG_B64);
+      return { ok, ready: !!(_pcAnno && _pcAnno.img), id, saved: true };
+    }, PNG_B64).then((r) => {
+      // Said out loud, because every caller below assumes the editor opened on
+      // a real row. A silent null here used to surface as an unrelated
+      // assertion four lines later.
+      expect(r.saved, 'the editor needs a photo that actually saved').toBe(true);
+      return r;
+    });
   };
 
   test('opens on a real photo and sizes the canvas to the image', async () => {
