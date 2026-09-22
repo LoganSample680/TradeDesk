@@ -1123,6 +1123,72 @@ test.describe('keeping the rate off the proposal', () => {
     expect(l.desc).toContain('$95/hr');
   });
 
+  // ── A RATE SHEET CAN BE SIGNED ────────────────────────────────────────────
+  //
+  // Owner, 2026-09-22: "tried to sign in person and got a toast that said add
+  // items before signing." He had scope and a rate on it, which is a complete
+  // T&M proposal and in most states a legal one, and the gate would not let
+  // him sign the exact shape this whole feature exists to produce.
+  //
+  // Same fault the SEND button had in September, same fix: the question is
+  // whether there is anything to sign, not whether there is a dollar total.
+  test('scope and a rate are enough to sign in person, with no total anywhere', async () => {
+    const r = await page.evaluate(() => {
+      const toasts = [];
+      const realToast = window.showToast;
+      window.showToast = (m) => { toasts.push(String(m)); };
+      try {
+        clients = clients.filter(c => c.id !== 77712).concat([{ id: 77712, name: 'Rate Sheet Sign',
+          addr: '712 Sign Rd, Wichita KS 67202', phone: '316-555-7712' }]);
+        openGenericEstimate(clients.filter(c => c.id === 77712)[0], null, 'plumbing');
+        _geiIsTM = true; _geiIsFreeForm = false;
+        _tmLayers = new Set(['rate']); _tmRateOnly = true;
+        const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+        sv('tm-i-rate', '95'); sv('tm-i-days', ''); sv('tm-i-nte', '12,000');
+        _geiScopeChips = ['Locate and cut out the failed section of main'];
+        _tmInputChange(); _tmApplyLayers();
+        _geiSignInPerson();
+        const ov = document.getElementById('_gei-ip-ov');
+        const txt = ov ? ov.textContent.replace(/\s+/g, ' ') : '';
+        ov?.remove();
+        return { toasts, opened: !!ov, txt };
+      } finally { window.showToast = realToast; }
+    });
+    expect(r.toasts.join(' | '), 'the rate sheet was refused at the signing table')
+      .not.toContain('before signing');
+    expect(r.opened, 'the signing sheet never opened').toBe(true);
+    // And it does not print "$0.00" next to the words "Contract total", which
+    // is the lie the rate sheet exists to stop, on the one screen where the
+    // customer is reading over his shoulder.
+    expect(r.txt).not.toContain('Contract total');
+    expect(r.txt).toContain('Time & materials');
+    expect(r.txt).toContain('Up to $12,000');
+  });
+
+  // An empty one is still refused. The gate was wrong, not pointless.
+  test('nothing on it at all is still refused, in words that say what to do', async () => {
+    const r = await page.evaluate(() => {
+      const toasts = [];
+      const realToast = window.showToast;
+      window.showToast = (m) => { toasts.push(String(m)); };
+      try {
+        openGenericEstimate(clients.filter(c => c.id === 77712)[0], null, 'plumbing');
+        _geiIsTM = true;
+        _tmLayers = new Set(); _tmRateOnly = false; _tmRatePerMan = 0;
+        const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+        sv('tm-i-rate', ''); sv('tm-i-nte', ''); sv('tm-i-days', '');
+        _geiScopeChips = []; _geiLines = [];
+        _tmInputChange();
+        _geiSignInPerson();
+        const ov = document.getElementById('_gei-ip-ov');
+        ov?.remove();
+        return { toasts, opened: !!ov };
+      } finally { window.showToast = realToast; }
+    });
+    expect(r.opened).toBe(false);
+    expect(r.toasts.join(' ')).toContain('scope or a rate');
+  });
+
   // ── AND NOT IN THE FILE BEHIND THE PAGE EITHER ────────────────────────────
   //
   // sendGenericProposal writes a proposals/<uid>/<id>_<token>.json that the
@@ -1547,6 +1613,31 @@ test.describe('the ceiling leads, not the guess', () => {
       expect((await state('tm-blk-rate')).fold).toBe('0');
       // And the one he did not open is still folded.
       expect((await state('tm-blk-nte')).fold).toBe('1');
+    });
+
+    // Owner, 2026-09-22: "the rates and crew updating it was a extra tap I had
+    // ti hit to edit." Before the fold, the rate field was on screen and
+    // editing it was one tap. Folded it was two, on the card he touches on
+    // every single job, which is the opposite of a 30 second proposal.
+    test('opening a card puts the caret in it, so the fold costs no taps', async () => {
+      const id = await page.evaluate(() => {
+        // The PAGE has to be on screen. An element inside a display:none
+        // ancestor cannot take focus, and reads as visible from its own
+        // computed style, so a test that skips this passes or fails for
+        // reasons that have nothing to do with the fold.
+        clients = clients.filter(c => c.id !== 77714).concat([{ id: 77714,
+          name: 'Fold Focus', addr: '714 Fold Rd, Wichita KS 67202' }]);
+        openGenericEstimate(clients.filter(c => c.id === 77714)[0], null, 'plumbing');
+        _geiIsTM = true; _tmShowPage();
+        _tmLayers = new Set(['rate', 'cap']);
+        const sv = (i, v) => { const e = document.getElementById(i); if (e) e.value = v; };
+        sv('tm-i-rate', '95'); sv('tm-i-nte', '12,000');
+        _tmOpen = new Set();
+        _tmInputChange(); _tmApplyLayers();
+        _tmFoldToggle('tm-blk-rate');
+        return document.activeElement ? document.activeElement.id : null;
+      });
+      expect(id, 'he still has to go find the field himself').toBe('tm-i-rate');
     });
 
     test('tapping it again puts it away', async () => {
