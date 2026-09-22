@@ -528,6 +528,115 @@ test.describe('county parcel records', () => {
     });
   });
 
+  // ── WE ONLY GET TO ASK ONCE, SO KEEP THE WHOLE ANSWER ────────────────────
+  //
+  // Owner, 2026-09-22: "I want all facts we can pull that would increase the
+  // potential for selling" and "if it can feed my guy tim, I want it."
+  //
+  // county_claim_ask is what makes this a correctness rule rather than a
+  // preference: an address is contacted ONCE, EVER, so a field the parse drops
+  // is a field that cannot be recovered without re-asking the whole county,
+  // which is the exact behaviour the gate exists to prevent. We were reading
+  // nine fields out of a fifty-six field response.
+  test.describe('the whole county answer is captured', () => {
+    const fn = () => readSrc(FN);
+    const MIG35 = 'supabase/migrations/20261035_county_capture_everything.sql';
+
+    test('the raw response is kept verbatim, per source', () => {
+      const s = fn();
+      expect(s, 'the appraiser row').toMatch(/_raw_building:\s*r,/);
+      expect(s, 'the parcel row').toMatch(/_raw_parcel:\s*a,/);
+      expect(s, 'and both are folded into one jsonb column').toMatch(/building:\s*out\._raw_building/);
+      expect(readSrc(MIG35), 'which has to exist').toMatch(/add column if not exists raw\s+jsonb/);
+    });
+
+    test('the raw blobs never reach the browser', () => {
+      // Tens of kilobytes of county bookkeeping the card never reads, on every
+      // saved address, on a phone.
+      expect(fn()).toMatch(/delete out\._raw_building;\s*delete out\._raw_parcel;/);
+    });
+
+    test('the raw keys can never land as columns', () => {
+      // They are stripped from the patch before the upsert; an _raw_ key
+      // reaching the table would fail the write for every address.
+      const s = fn();
+      expect(s).toMatch(/if \(raw\) patch\.raw = raw;/);
+      expect(s, 'the patch must be built from named fields, never spread from out')
+        .not.toMatch(/const patch: Record<string, unknown> = \{\s*\.\.\.out/);
+    });
+
+    test('every sell-relevant field the county publishes is parsed', () => {
+      const s = fn();
+      for (const f of ['year_built_to', 'parcel_number', 'deed_book_page', 'building_count',
+                       'living_units', 'frontage_ft', 'depth_ft', 'basement_desc',
+                       'subdivision', 'neighborhood', 'school_district', 'land_sqft']) {
+        expect(s, `${f} must be parsed`).toMatch(new RegExp(`${f}:`));
+        expect(s, `${f} must be persisted`).toMatch(new RegExp(`${f}: out\\.${f}`));
+      }
+    });
+
+    test('building_count sums every structure type, not just houses', () => {
+      // A detached garage or a second building is scope nobody quoted.
+      const s = fn();
+      expect(s).toMatch(/resBldgCount[\s\S]{0,80}comBldgCount[\s\S]{0,80}mhCount/);
+    });
+
+    test('the lookup hands every new column back', () => {
+      // Third time this has had to be written: a column property_lookup does
+      // not name is a column the app can never read.
+      const m = readSrc(MIG35);
+      for (const f of ['year_built_to', 'parcel_number', 'deed_book_page', 'building_count',
+                       'living_units', 'frontage_ft', 'depth_ft', 'basement_desc',
+                       'subdivision', 'neighborhood', 'school_district', 'land_sqft']) {
+        expect(m, `${f} must be in the returns-table`).toMatch(new RegExp(`${f}\\s+(int|text|numeric)`));
+        expect(m, `${f} must be in the select list`).toMatch(new RegExp(`p\\.${f}`));
+      }
+    });
+  });
+
+  // ── §18: ONE DEFINITION PER FACT, AND ONLY ONE ───────────────────────────
+  // ops_account_brief shipped with its metrics written out twice and adding one
+  // meant editing both in agreement forever. The same trap opens here the
+  // moment two readers want these fields, and there are already two: the
+  // property card and Tim.
+  test.describe('the county field registry', () => {
+    const MIG35 = 'supabase/migrations/20261035_county_capture_everything.sql';
+
+    test('it names every fact once, with a label and a format', () => {
+      const m = readSrc(MIG35);
+      expect(m).toMatch(/create or replace function public\.county_field_defs\(\)/);
+      expect(m, 'label, format, and whether Tim should say it unprompted')
+        .toMatch(/key\s+text,[\s\S]{0,120}label\s+text,[\s\S]{0,120}fmt\s+text,[\s\S]{0,120}sell\s+boolean/);
+    });
+
+    test('it is readable by any signed-in contractor, not just ops', () => {
+      // These describe PUBLIC records and every contractor's own property card
+      // reads them. Gating it on ops admin would make the card unrenderable.
+      expect(readSrc(MIG35)).toMatch(/grant execute on function public\.county_field_defs\(\) to authenticated/);
+    });
+
+    test('every registry key is a real column or a real parse field', () => {
+      // A row for a field nothing produces is a label nobody can ever fill.
+      const m = readSrc(MIG35);
+      const keys = [...m.matchAll(/^\s*\('([a-z_]+)',\s*'[^']*',\s*'[a-z]+',/gm)].map((x) => x[1]);
+      expect(keys.length, 'the registry must not be empty').toBeGreaterThan(15);
+      const known = readSrc(FN) + m + readSrc('supabase/migrations/20261032_county_parcels.sql')
+        + readSrc('supabase/migrations/20261034_county_commercial_and_deep_link.sql');
+      for (const k of keys) expect(known, `${k} is named in the registry but produced nowhere`).toContain(k);
+    });
+
+    test('no JS file hardcodes a county field label or format', () => {
+      // The whole point of the registry. The moment a reader hardcodes "frontage
+      // is feet", it is two places again and they drift.
+      const m = readSrc(MIG35);
+      const labels = [...m.matchAll(/^\s*\('[a-z_]+',\s*'([^']{3,})',\s*'[a-z]+',/gm)].map((x) => x[1]);
+      const js = ['js/tim.js', 'js/ops-view.js'].filter((f) => fs.existsSync(repo(f))).map(readSrc).join('\n');
+      for (const L of labels) {
+        expect(js, `"${L}" must come from county_field_defs(), not a literal`).not.toContain(`'${L}'`);
+      }
+    });
+  });
+
   test.describe('county configs', () => {
     const dir = repo('scripts/counties');
     const names = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));

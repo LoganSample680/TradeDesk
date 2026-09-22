@@ -120,11 +120,27 @@ const ENRICHERS: Record<string, {
         return {
           parcel_id: r.quickRef || null,
           year_built: yearOrNull(r.resBldgYearBuiltFrom) ?? yearOrNull(r.comBldgYearBuiltFrom),
+          // Built-from 2001, built-to 2017 means the building was added to,
+          // twice. Proven appetite to spend on that address.
+          year_built_to: yearOrNull(r.resBldgYearBuiltTo) ?? yearOrNull(r.comBldgYearBuiltTo),
           sqft: intOrNull(r.resBldgTotalArea) ?? intOrNull(r.comBldgTotalArea),
           // What the parcel IS, in the county's own words. On a commercial card
           // with no beds and no baths, this is most of what there is to say.
           property_type: r.propertyType || null,
           use_desc: r.functionCodeDescription || null,
+          parcel_number: r.parcelNumber || null,
+          // Scope that is otherwise only found by walking the lot.
+          building_count: (intOrNull(r.resBldgCount) || 0) + (intOrNull(r.comBldgCount) || 0) + (intOrNull(r.mhCount) || 0) || null,
+          living_units: intOrNull(r.numLivingUnits),
+          // Linear feet, for a fence or a gutter run, without a site visit.
+          frontage_ft: numOrNull(r.frontageFt),
+          depth_ft: numOrNull(r.depthFt),
+          basement_desc: r.primaryResBldgBasementCodeDescription || null,
+          subdivision: r.subdivisionCodeDescription || null,
+          // Everything the county sent, verbatim. We contact an address ONCE,
+          // ever (county_claim_ask), so a field not kept here is a field we
+          // cannot go back for without re-asking the whole county.
+          _raw_building: r,
           beds: numOrNull(r.resBldgTotalBedrooms),
           // A county reporting 1 full + 1 half is 1.5 baths. Rounding either
           // way makes us wrong about somebody's house.
@@ -167,6 +183,16 @@ const ENRICHERS: Record<string, {
           improvement_value: intOrNull(a.BLDGVAL),
           land_value: intOrNull(a.LDVAL),
           acres: numOrNull(a.ACRES),
+          parcel_number: a.PID ? String(a.PID).trim() : null,
+          // The recorded instrument. Shawnee publishes no sale price and no
+          // sale date, so the year prefix here ('2022R20196') is the closest
+          // this county gets to "when did they buy it".
+          deed_book_page: a.DBOOKPAGE ? String(a.DBOOKPAGE).trim() : null,
+          neighborhood: a.NBHD ? String(a.NBHD).trim() : null,
+          school_district: a.USD ? String(a.USD).trim() : null,
+          // True lot area off the parcel polygon, not a rounded acreage.
+          land_sqft: numOrNull(a["Shape.STArea()"]),
+          _raw_parcel: a,
         };
       },
     },
@@ -303,6 +329,9 @@ serve(async (req) => {
     //    touch this address gets it from the join with no county traffic.
     await cacheBack(svc, out, hit).catch(() => {});
 
+    // The raw blobs are for the shared parcel row, not for the browser: they
+    // are tens of kilobytes of county bookkeeping the card never reads.
+    delete out._raw_building; delete out._raw_parcel;
     return json(out);
   } catch (e) {
     console.error("[county-property]", e instanceof Error ? e.message : String(e));
@@ -314,8 +343,27 @@ serve(async (req) => {
 // especially: with the demand-driven path there IS no bulk load, so a value not
 // written here is a value nobody ever sees again.
 async function cacheBack(svc: ReturnType<typeof createClient>, out: Record<string, any>, hit: any) {
+  // The two _raw_* keys are the whole county response per source. They are
+  // folded into one jsonb column rather than written as fields, and they are
+  // stripped from the patch below so they can never land as columns.
+  const raw = (out._raw_building || out._raw_parcel)
+    ? { building: out._raw_building ?? null, parcel: out._raw_parcel ?? null, at: new Date().toISOString() }
+    : null;
+
   const patch: Record<string, unknown> = {
     year_built: out.year_built ?? null,
+    year_built_to: out.year_built_to ?? null,
+    parcel_number: out.parcel_number ?? null,
+    deed_book_page: out.deed_book_page ?? null,
+    building_count: out.building_count ?? null,
+    living_units: out.living_units ?? null,
+    frontage_ft: out.frontage_ft ?? null,
+    depth_ft: out.depth_ft ?? null,
+    basement_desc: out.basement_desc ?? null,
+    subdivision: out.subdivision ?? null,
+    neighborhood: out.neighborhood ?? null,
+    school_district: out.school_district ?? null,
+    land_sqft: out.land_sqft ?? null,
     sqft: out.sqft ?? null,
     beds: out.beds ?? null,
     baths: out.baths ?? null,
@@ -332,6 +380,7 @@ async function cacheBack(svc: ReturnType<typeof createClient>, out: Record<strin
     zip: out.zip ?? null,
   };
   for (const k of Object.keys(patch)) if (patch[k] == null) delete patch[k];
+  if (raw) patch.raw = raw;
   if (!Object.keys(patch).length) return;
 
   // The parcel already exists (a bulk load put it there): patch it in place.
