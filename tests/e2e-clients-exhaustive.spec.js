@@ -3843,14 +3843,25 @@ test.describe('clients.js: exhaustive coverage', () => {
       const savedSupa = window._supa;
       const savedSave = window.saveAll;
       let asked = null;
-      window._supa = { rpc: async (_fn, args) => { asked = args.p_addrs; return { data: reply, error: null }; } };
+      // Spread the real mock and override only rpc. A bare { rpc } stub has no
+      // .from, which supaSaveToCloud calls, so a debounced save queued before
+      // this helper ran would throw "_supa.from is not a function" inside the
+      // stub window and surface at the assertNoErrors at the end of this file.
+      // Stubbing saveAll does not help: that save was already scheduled.
+      window._supa = { ...savedSupa, rpc: async (_fn, args) => { asked = args.p_addrs; return { data: reply, error: null }; } };
       window.saveAll = () => {};
       clients.length = 0; rows.forEach((r) => clients.push(r));
       let threw = null;
-      try { await _syncPropertyData(); } catch (e) { threw = String((e && e.message) || e); }
-      const after = clients.filter(Boolean).map((c) => ({ id: c.id, props: c.properties || null }));
-      clients.length = 0; saved.forEach((c) => clients.push(c));
-      window._supa = savedSupa; window.saveAll = savedSave;
+      let after = [];
+      try {
+        try { await _syncPropertyData(); } catch (e) { threw = String((e && e.message) || e); }
+        after = clients.filter(Boolean).map((c) => ({ id: c.id, props: c.properties || null }));
+      } finally {
+        // Restore in a finally: a throw here must not strand the stub on window
+        // and take every later test in this file with it.
+        clients.length = 0; saved.forEach((c) => clients.push(c));
+        window._supa = savedSupa; window.saveAll = savedSave;
+      }
       return { threw, asked, after };
     }, { rows: list, reply: rpcRows || [] });
 
@@ -4042,12 +4053,25 @@ test.describe('clients.js: exhaustive coverage', () => {
         const saved = clients.slice();
         const savedSupa = window._supa, savedSave = window.saveAll;
         let calls = 0;
-        window._supa = { rpc: async () => { calls++; await new Promise((r2) => setTimeout(r2, 40)); return { data: [], error: null }; } };
+        // SPREAD the real mock and override only rpc. A bare { rpc } stub is
+        // missing .from, which supaSaveToCloud calls, so a debounced cloud save
+        // scheduled by an EARLIER test whose timer lands inside this ~40ms
+        // window threw "_supa.from is not a function" and was caught by the
+        // assertNoErrors at the end of this file. Stubbing saveAll (below)
+        // does not prevent that: the save was already queued before this test
+        // installed the stub. WebKit's timer scheduling lands in the window;
+        // Chromium's does not, which is why it only ever went red in CI.
+        window._supa = { ...savedSupa, rpc: async () => { calls++; await new Promise((r2) => setTimeout(r2, 40)); return { data: [], error: null }; } };
         window.saveAll = () => {};
         clients.length = 0; clients.push({ id: 9020, addr: '20 Real St' });
-        await Promise.all([_syncPropertyData(), _syncPropertyData(), _syncPropertyData()]);
-        clients.length = 0; saved.forEach((c) => clients.push(c));
-        window._supa = savedSupa; window.saveAll = savedSave;
+        try {
+          await Promise.all([_syncPropertyData(), _syncPropertyData(), _syncPropertyData()]);
+        } finally {
+          // Restore in a finally so a throw cannot strand the stub on window
+          // and take every later test in this file with it.
+          clients.length = 0; saved.forEach((c) => clients.push(c));
+          window._supa = savedSupa; window.saveAll = savedSave;
+        }
         return { calls };
       });
       expect(r.calls, 'the guard must let exactly one pass through').toBe(1);
