@@ -102,56 +102,79 @@ Production stays on Supabase cloud — this is the **test/dev** environment only
 
 ## Property data — county assessor records (replaced the Zillow proxy, 2026-09-22)
 
-**There is no property proxy any more, and nothing here runs on jarvis.** The old
-`scripts/property-proxy.js` scraped Zillow from a home residential IP because Zillow
-bot-challenges datacenter IPs. It is deleted. Zillow now serves a hard 403 to it, and
-the "Kansas caveat" this section used to carry (KS returning null since ~late June
-2026) was the first sign of the block, not a KS quirk.
+**There is no property proxy any more, and nothing in this feature runs on jarvis.** The
+old `scripts/property-proxy.js` scraped Zillow from a home residential IP because Zillow
+bot-challenges datacenter IPs. It is deleted. Zillow serves it a hard 403 now, and the
+"Kansas caveat" this section used to carry (KS returning null since ~late June 2026) was
+the first sign of that block, not a KS quirk.
 
-Property facts come from the county assessor now, which is where they always
-originated: Zillow buys county records from an aggregator, so the scraper was
-laundering Shawnee County's own data back to us through two middlemen.
+Facts come from the county assessor now, which is where they always originated: Zillow
+buys county records from an aggregator, so the scraper was laundering Shawnee County's
+own data back to us through two middlemen.
 
-- **Load a county:** run the `Load County Assessor Data` workflow
-  (`.github/workflows/county-load.yml`) with the config name, or locally:
-  ```bash
-  node scripts/county-load.js ks-shawnee --print     # check the field map, writes nothing
-  node scripts/county-load.js ks-shawnee             # load the county
-  node scripts/county-load.js ks-shawnee --enrich 250  # fill year built
-  ```
-- **Add a county:** copy `scripts/counties/ks-shawnee.json`, change the URLs and the
-  field names, run `--print` until the columns look right. No code change.
-- **Fill the whole county in the background (the drip).** The bulk layer lands every
-  parcel in ~16 requests, but year built comes one address at a time, and 77,006 of
-  those on a fixed timer is 5.3 hours of metronomic traffic: the exact shape that gets
-  a range blocked. `scripts/setup-county-drip.sh` installs a systemd timer on jarvis
-  that visits every 30 minutes (randomized), works only 07:00-21:00 local, caps each
-  visit at 25 minutes, and leaves gaps of 12 to 60 seconds with an occasional few
-  minute break. That is ~1,000 addresses a day, so Shawnee County lands in about
-  eleven weeks with no hour that looks unusual from their side.
-  ```bash
-  sudo bash scripts/setup-county-drip.sh ks-shawnee   # then fill in /etc/tradedesk/county-drip.env
-  journalctl -u county-drip.service -f                # watch it
-  systemctl list-timers county-drip.timer             # next visit
-  ```
-  **It runs on jarvis but nothing waits on jarvis.** This is a pre-warm, not the live
-  path: turn the box off and every lookup still works, it just asks the county on
-  first touch instead of already knowing. That is the whole difference between this
-  and the Zillow proxy that used to live there. It is NOT a GitHub Action because the
-  pace means ~14 hours of wall clock a day, which would burn ~25,000 Actions minutes a
-  month on a hosted runner and would starve the flow tests on the self-hosted one.
-- **A county is asked about any one address exactly once, ever.** `county_claim_ask`
-  (migration `20261033_county_ask_gate.sql`) records the ask itself, before the request
-  goes out, so an address the county cannot answer (a vacant lot, an address it has no
-  record of) is retired instead of being re-asked forever by every contractor who
-  touches it. The API route and the loader both claim through it and share one daily
-  cap per county (`COUNTY_DAILY_CAP`, default 500) as a circuit breaker. It fails
+### It is DEMAND-DRIVEN. Nothing is pre-loaded.
+
+Owner, 2026-09-22: *"We're not loading all of Shawnee county, we're just bringing them in
+when a address is saved through the day rail or lead record."*
+
+A county is asked about an address at the moment a contractor saves that address, and
+never otherwise. Two triggers, both already wired:
+
+| Trigger | Where |
+|---|---|
+| A lead/client record is saved with an address | `saveClient` (`js/clients.js`) |
+| A day-rail stop is filed onto an existing client | `_mileWhoPick` (`js/mileage.js`) |
+
+That costs **two county requests per saved address** (the appraiser's search for the
+building, the GIS parcel layer for the money), cached forever. A contractor saves a
+handful of addresses a day, so the county sees a handful of requests a day, paced by a
+person actually working. There is no bulk load, no backfill drip, and nothing to throttle.
+
+### Where each piece runs, because this is easy to mix up
+
+| Piece | Runs on | When |
+|---|---|---|
+| **The lookup** (`functions/api/property.js`) | **Cloudflare Pages Function**, because that is where the app is deployed | Every time an address is saved |
+| **The match** (`property_lookup`) | **Supabase**, one SQL join | Every sign-in, for addresses already answered |
+| **`county-load.js`** | **GitHub Actions**, manual dispatch only | Rarely, and optional: a bulk pre-load or a bounded manual backfill of an existing client book |
+
+Cloudflare is not a choice here, it is just where the app already lives. GitHub Actions
+only runs the optional batch tooling, never the live path.
+
+### Setting up a county
+
+Two things, both small:
+
+1. **Seed its zips** into `td_county_zips` so an address can be routed to it. Run the
+   `Load County Assessor Data` workflow, or `node scripts/county-load.js <county> --zips`.
+2. **Add its entry to `ENRICHERS`** in `functions/api/property.js` (the two source URLs
+   and their field maps) and a matching `scripts/counties/<county>.json`.
+
+That is the whole county onboarding. No parcel data needs loading first; the first saved
+address in that county fetches its own.
+
+```bash
+node scripts/county-load.js ks-shawnee --print   # check the field map, writes nothing
+node scripts/county-load.js ks-shawnee --zips    # seed the routing table
+```
+
+Optional, not required: `node scripts/county-load.js ks-shawnee` bulk-loads every parcel's
+owner and assessed value in ~16 paged requests, and `--enrich N --human` runs a bounded,
+paced backfill of addresses already on file. Neither is part of the normal path.
+
+### Guardrails
+
+- **Any one address is asked about exactly once, ever.** `county_claim_ask` (migration
+  `20261033_county_ask_gate.sql`) records the ask itself, before the request goes out, so
+  an address the county cannot answer (a vacant lot, an address it has no record of) is
+  retired instead of being re-asked forever by every contractor who touches it. It fails
   closed: a crashed request leaves the address claimed rather than re-asking.
-- **Lookups are a SQL join,** not a network call: `property_lookup` (migration
-  `20261032_county_parcels.sql`) matches every address a contractor has in one round
-  trip. `functions/api/property.js` is only the single-address enrichment path behind
-  the "Look up property" button, and it needs `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`
-  in Cloudflare Pages env. `PROPERTY_TUNNEL_URL` is gone; delete it if it is still set.
+- **One daily cap per county** (`COUNTY_DAILY_CAP`, default 1000), shared by the live
+  lookup and any batch tooling, as a circuit breaker against a loop.
+- **A transport failure is not an answer.** Both sources must actually respond before an
+  address is retired, or a blip would leave a house with a value and no year built forever.
+- `functions/api/property.js` needs `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` in Cloudflare
+  Pages env. `PROPERTY_TUNNEL_URL` is gone; delete it if it is still set.
 
 ## Hosted-runner mode — no jarvis needed (added 2026-08-21)
 

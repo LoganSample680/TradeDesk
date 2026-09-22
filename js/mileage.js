@@ -3653,6 +3653,16 @@ async function _mileWhoPick(id){
   // re-derive, _mileNameUnsaved writes client.addr onto the row, and for a
   // landlord's second rental the primary is the wrong house. Same function,
   // same one path, handed the property this pin actually is.
+  // The OTHER demand-driven trigger, alongside saveClient (js/clients.js). An
+  // address filed onto an existing client from the day rail never went through
+  // the new-lead form, so nothing else ever asks the county about it, and the
+  // property card for that address would sit empty forever. One lookup, for the
+  // address actually filed, not the client's primary: on a landlord's second
+  // rental those are different houses.
+  if(typeof _lookupPropertyData==='function'){
+    const _pp=(typeof _parseAddrParts==='function')?_parseAddrParts(addr):null;
+    if(_pp&&_pp.street)_lookupPropertyData(c.id,_pp);
+  }
   await _mileAddressSaved({name:c.name,addr,clientId:c.id});
   return true;
 }

@@ -34,43 +34,91 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, 
 // the range without ever telling anybody.
 const UA = 'TradeDeskCRM/1.0 (county assessor public record lookup; +https://tradedesk-cyp.pages.dev)';
 
-// Per-county enrichment. Keyed by the same county_fips the parcel rows carry, so
-// adding a county here is an entry, not a branch. Mirrors the "enrich" block of
-// scripts/counties/<county>.json; when these disagree, the JSON config is the
-// one the loader uses and this one only serves live single lookups.
+// Per-county lookup. Keyed by the same county_fips the parcel rows carry, so
+// adding a county here is an entry, not a branch.
+//
+// TWO SOURCES PER COUNTY, because Shawnee splits the record in two and most
+// counties do. The appraiser's search knows what the BUILDING is (year built,
+// sqft, beds, baths); the GIS layer knows what it is WORTH (assessed, land,
+// improvement) and who owns it. Neither knows the other's half.
+//
+// Both are queried on the same demand-driven lookup so a saved address is
+// complete in one pass. That is what lets this work with no bulk pre-load at
+// all: two requests per address a contractor actually saves, cached forever,
+// instead of 77,006 requests for a county he may never work half of.
 const ENRICHERS = {
-  // Shawnee County, KS. Tyler/Epona "ARES" public search. The page renders
-  // client side from this JSON endpoint, so we ask it directly rather than
-  // parsing HTML: no markup to break on when they restyle the site.
   '20177': {
     name: 'Shawnee',
     state: 'KS',
-    url: 'https://ares.sncoapps.us/BasicSearch/ResultsJson',
-    countyCode: '089',
     sourceUrl: 'https://ares.sncoapps.us/',
-    parse(rows) {
-      // Exactly one hit or we decline to answer. An ambiguous match on a number
-      // that gates a federal lead-paint disclosure is worse than no answer,
-      // because a wrong year silently disarms the warning.
-      if (!Array.isArray(rows) || rows.length !== 1) return null;
-      const r = rows[0];
-      const full = r.propertyAddress || '';
-      const zip = (full.match(/\b(\d{5})(?:-\d{4})?\s*$/) || [])[1] || null;
-      const city = (full.match(/,\s*([^,]+),\s*[A-Z]{2}\s/) || [])[1] || null;
-      const fullBaths = numOrNull(r.resBldgTotalFullBathrooms);
-      const halfBaths = numOrNull(r.resBldgTotalHalfBathrooms);
-      return {
-        parcel_id:  r.quickRef || null,
-        year_built: yearOrNull(r.resBldgYearBuiltFrom),
-        sqft:       intOrNull(r.resBldgTotalArea),
-        beds:       numOrNull(r.resBldgTotalBedrooms),
-        // A county reporting 1 full + 1 half is 1.5 baths. Rounding either way
-        // makes us wrong about somebody's house.
-        baths: fullBaths == null && halfBaths == null ? null : (fullBaths || 0) + (halfBaths || 0) * 0.5,
-        owner_name: r.ownerName || null,
-        city: city ? city.trim() : null,
-        zip,
-      };
+
+    // The building. Tyler/Epona "ARES" public search: the page renders client
+    // side from this JSON endpoint, so we ask it directly rather than parsing
+    // HTML, and there is no markup to break on when they restyle the site.
+    building: {
+      url(street) {
+        return `https://ares.sncoapps.us/BasicSearch/ResultsJson?${new URLSearchParams({
+          searchCriteria: street, countyCode: '089', listMode: 'card', searchBy: 'address',
+        })}`;
+      },
+      parse(body) {
+        const rows = Array.isArray(body) ? body : (body && body.data) || [];
+        // Exactly one hit or we decline to answer. An ambiguous match on a
+        // number that gates a federal lead-paint disclosure is worse than no
+        // answer, because a wrong year silently disarms the warning.
+        if (rows.length !== 1) return null;
+        const r = rows[0];
+        const full = r.propertyAddress || '';
+        const fullBaths = numOrNull(r.resBldgTotalFullBathrooms);
+        const halfBaths = numOrNull(r.resBldgTotalHalfBathrooms);
+        return {
+          parcel_id:  r.quickRef || null,
+          year_built: yearOrNull(r.resBldgYearBuiltFrom),
+          sqft:       intOrNull(r.resBldgTotalArea),
+          beds:       numOrNull(r.resBldgTotalBedrooms),
+          // A county reporting 1 full + 1 half is 1.5 baths. Rounding either
+          // way makes us wrong about somebody's house.
+          baths: fullBaths == null && halfBaths == null ? null : (fullBaths || 0) + (halfBaths || 0) * 0.5,
+          owner_name: r.ownerName || null,
+          acres: numOrNull(r.totalAcres),
+          city: (full.match(/,\s*([^,]+),\s*[A-Z]{2}\s/) || [])[1]?.trim() || null,
+          zip:  (full.match(/\b(\d{5})(?:-\d{4})?\s*$/) || [])[1] || null,
+        };
+      },
+    },
+
+    // The money. The county's own ArcGIS parcel layer, filtered to one address.
+    // A real JSON API with server-side filtering, not a scrape.
+    parcel: {
+      url(street) {
+        // Escape quotes before they reach the where clause. A street line is
+        // user input that arrives from a client record, and "O'Brien St" would
+        // otherwise terminate the string and change the query.
+        const safe = street.replace(/'/g, "''").toUpperCase();
+        return 'https://gis.sncoapps.us/arcgis2/rest/services/Appraiser/AppraisalDataPro/MapServer/4/query?'
+          + new URLSearchParams({
+            where: `PADDRESS = '${safe}'`,
+            outFields: 'QUICKREFID,PADDRESS,ONAME,TOTVAL,BLDGVAL,LDVAL,ACRES',
+            returnGeometry: 'false',
+            f: 'json',
+          });
+      },
+      parse(body) {
+        const feats = (body && body.features) || [];
+        // Same rule as the building side: one unambiguous parcel or nothing.
+        if (feats.length !== 1) return null;
+        const a = feats[0].attributes || {};
+        return {
+          parcel_id: a.QUICKREFID ? String(a.QUICKREFID).trim() : null,
+          owner_name: a.ONAME ? String(a.ONAME).trim() : null,
+          // A value of 0 is a real assessment (exempt property), so `?? null`
+          // rather than a truthiness check: 0 must survive, missing must not.
+          assessed_value:    intOrNull(a.TOTVAL),
+          improvement_value: intOrNull(a.BLDGVAL),
+          land_value:        intOrNull(a.LDVAL),
+          acres:             numOrNull(a.ACRES),
+        };
+      },
     },
   },
 };
@@ -165,13 +213,6 @@ export async function onRequest(context) {
       return hit ? json(hit) : json({ found: false, reason: claim });
     }
 
-    // 3. Ask the county for the gap. Exactly once, for this address, ever.
-    const url = `${enricher.url}?${new URLSearchParams({
-      searchCriteria: addr.split(',')[0].trim(),
-      countyCode: enricher.countyCode,
-      listMode: 'card',
-      searchBy: 'address',
-    })}`;
     // Every exit from here on closes the claim, or the address is stranded as
     // 'pending' and nothing retries it for an hour. `close` is best effort on
     // purpose: the contractor's answer never waits on bookkeeping, and the
@@ -180,21 +221,39 @@ export async function onRequest(context) {
       supaRpc(env, 'county_record_ask', { p_fips: fips, p_addr: addr, p_outcome: outcome }).catch(() => {})
     );
 
-    const cRes = await fetch(url, {
-      headers: { 'User-Agent': UA, Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-      signal: AbortSignal.timeout(10000),
-    });
-    // A refused or broken request is NOT proof the county has nothing, so it is
-    // left 'pending' rather than recorded as empty: the one-hour window lets it
-    // be tried again, and nothing hammers them in the meantime.
-    if (!cRes.ok) return hit ? json(hit) : json({ found: false });
+    // 3. Ask the county. Both halves of the record, in parallel, once ever for
+    //    this address. The street line only: the county's own search wants
+    //    "2015 SW RANDOLPH AVE", not the city and zip the client record carries.
+    const street = addr.split(',')[0].trim();
+    const ask = async (src) => {
+      if (!src) return null;
+      try {
+        const res = await fetch(src.url(street), {
+          headers: { 'User-Agent': UA, Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          signal: AbortSignal.timeout(10000),
+        });
+        // A refused or broken request is NOT proof the county has nothing. It
+        // returns undefined (distinct from null) so the caller can tell a
+        // transport failure apart from a genuine "no such address".
+        if (!res.ok) return undefined;
+        return src.parse(await res.json());
+      } catch (_e) { return undefined; }
+    };
 
-    const body = await cRes.json();
-    const got = enricher.parse(Array.isArray(body) ? body : (body.data || []));
-    // The county answered and had nothing for this address. That is a real
-    // answer and it is recorded as one, which is what stops the address coming
-    // back around forever.
-    if (!got) { close('empty'); return hit ? json(hit) : json({ found: false }); }
+    const [building, parcel] = await Promise.all([ask(enricher.building), ask(enricher.parcel)]);
+
+    // Both sides failed to answer at all: leave the claim pending so the
+    // one-hour window can retry, rather than burning the address on a blip.
+    if (building === undefined && parcel === undefined) {
+      return hit ? json(hit) : json({ found: false });
+    }
+
+    // Merge what came back. The parcel side is listed second so its assessed
+    // figures win, and the building side supplies everything about the structure.
+    const got = { ...(building || {}), ...(parcel || {}) };
+    // Both answered and neither had this address. That is a real answer and it
+    // is recorded as one, which is what stops the address coming back forever.
+    if (!Object.keys(got).length) { close('empty'); return hit ? json(hit) : json({ found: false }); }
 
     const out = {
       ...(hit || {}),
@@ -206,10 +265,17 @@ export async function onRequest(context) {
       source_url: (hit && hit.source_url) || enricher.sourceUrl,
     };
 
-    // An answer with no year built in it is still an answer: the county holds
-    // the parcel but has no year for it (vacant land, some commercial). Asking
-    // again tomorrow gets the same nothing, so it is retired as empty.
-    close(out.year_built != null ? 'hit' : 'empty');
+    // Close the claim ONLY when both sides actually answered. If one of them
+    // merely failed to respond, retiring the address would lose that half of
+    // the record permanently on a blip: a transient ares failure would leave a
+    // house with a value and no year built, forever, with nothing to retry it.
+    // Leaving it pending costs one hour and one more request.
+    if (building !== undefined && parcel !== undefined) {
+      // An answer with no year built in it is still an answer: the county holds
+      // the parcel but has no year for it (vacant land, some commercial).
+      // Asking again tomorrow gets the same nothing, so it is retired.
+      close(out.year_built != null ? 'hit' : 'empty');
+    }
 
     // 4. Write it back to the shared parcel row, so the next contractor to touch
     //    this address gets it from the join with no county traffic at all.
@@ -237,11 +303,20 @@ async function supaRpc(env, fn, args) {
 }
 
 async function cacheBack(env, out, hit) {
+  // Everything both sources can produce. The assessed figures were missing here
+  // while a bulk load was assumed to have supplied them; with the demand-driven
+  // path there IS no bulk load, so a value not written here is a value nobody
+  // ever sees again.
   const patch = {
     year_built: out.year_built ?? null,
     sqft: out.sqft ?? null,
     beds: out.beds ?? null,
     baths: out.baths ?? null,
+    acres: out.acres ?? null,
+    assessed_value: out.assessed_value ?? null,
+    land_value: out.land_value ?? null,
+    improvement_value: out.improvement_value ?? null,
+    owner_name: out.owner_name ?? null,
     city: out.city ?? null,
     zip: out.zip ?? null,
   };

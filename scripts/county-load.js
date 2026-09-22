@@ -40,6 +40,11 @@ const DRY_RUN    = ARGS.includes('--dry-run');
 // names its year column BUILT_YR, YRBLT, or ACTUALYEARBUILT, and a typo shows
 // up as a column of nulls rather than as an error).
 const PRINT      = ARGS.includes('--print');
+// Seed the zip -> county routing table and stop. This is the ONLY step a county
+// genuinely needs before it can answer: the lookup path is demand-driven, so the
+// first address saved in that county fetches its own parcel row. Everything else
+// this script can do (a bulk parcel load, a paced enrich batch) is optional.
+const ZIPS_ONLY  = ARGS.includes('--zips');
 const LIMIT      = intArg('--limit', 0);
 const ENRICH     = intArg('--enrich', 0);
 // Deliberate floor for the BULK layer (a county's ArcGIS endpoint, 16 paged
@@ -102,7 +107,11 @@ function intArg(flag, dflt) {
 }
 
 if (!COUNTY) {
-  console.error('usage: node scripts/county-load.js <county-config> [--dry-run] [--limit N] [--enrich N]');
+  console.error('usage: node scripts/county-load.js <county-config> [--print] [--zips] [--dry-run] [--limit N] [--enrich N --human]');
+  console.error('  --print  check the field map, writes nothing, needs no credential');
+  console.error('  --zips   seed zip -> county routing (the only step a county actually needs)');
+  console.error('  --enrich bounded, paced backfill of addresses already on file (optional)');
+  console.error('  (no flag) bulk-load every parcel: optional, the live path does not need it');
   console.error('available:', fs.readdirSync(path.join(__dirname, 'counties')).filter(f => f.endsWith('.json')).map(f => f.replace(/\.json$/, '')).join(', '));
   process.exit(1);
 }
@@ -510,6 +519,14 @@ async function recordAsk(street, outcome) {
   if (!DRY_RUN && !PRINT) {
     if (!SUPABASE_URL) { console.error('ERROR: set SUPABASE_URL or SUPABASE_PROJECT_REF'); process.exit(1); }
     await resolveServiceKey();
+  }
+
+  if (ZIPS_ONLY) {
+    const n = await upsertZips();
+    await writeStatus(0);
+    console.log(`[county-load] zips: ${n} seeded. This county can now answer address lookups.`);
+    console.log(`[county-load] no parcels loaded, and none are needed: the first address saved in this county fetches its own.\n`);
+    return;
   }
 
   const src = SOURCES[CFG.bulk.kind];

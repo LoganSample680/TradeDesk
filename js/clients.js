@@ -1358,8 +1358,12 @@ function saveClient(){
   else _clientCommitNew(c);
   saveAll();
   const _prevAddr=_existingClient?.addr||'';
-  const _noPropData=!_existingClient?.propDataFetchedAt;
-  if(street&&city&&(addr!==_prevAddr||_noPropData))_lookupPropertyData(c.id,{street,city,state,zip});
+  // _propAnswered, not propDataFetchedAt. The dead Zillow scraper stamped that
+  // on its own failures, so gating on it means an existing client whose lookup
+  // failed in June is never asked about again. This is also THE demand-driven
+  // trigger: an address saved on a lead record is looked up right here, once,
+  // which is why no bulk county pre-load is needed.
+  if(street&&city&&(addr!==_prevAddr||!_propAnswered(_existingClient)))_lookupPropertyData(c.id,{street,city,state,zip});
   // Warm the nearby-job/geofence cache the moment the address is entered, not
   // on the next passive checkNearbyJob heartbeat (§ eager geocode, js/jobs.js).
   if(addr&&addr!==_prevAddr&&typeof _eagerGeocodeClient==='function'){

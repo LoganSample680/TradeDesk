@@ -246,11 +246,94 @@ test.describe('county parcel records', () => {
     test('a failed request is left pending, not recorded as empty', () => {
       // A refused or broken request is not proof the county has nothing. Marking
       // it empty would retire a perfectly good address for 180 days on one blip.
+      //
+      // Two sources are asked per address now (the building from the appraiser's
+      // search, the money from the GIS parcel layer), so this got stricter: the
+      // claim closes only when BOTH answered. A transient failure on one side
+      // would otherwise leave a house with a value and no year built, forever,
+      // with nothing left to retry it.
       const src = readSrc('functions/api/property.js');
-      const idx = src.indexOf('if (!cRes.ok)');
-      expect(idx, 'the not-ok branch must exist').toBeGreaterThan(-1);
-      const branch = src.slice(idx, idx + 200);
-      expect(branch, 'a transport failure must not close the claim').not.toMatch(/close\(/);
+      // undefined is the transport-failure signal, deliberately distinct from
+      // null, which means "answered, and has no such address".
+      expect(src, 'a failed fetch must be distinguishable from a genuine miss')
+        .toMatch(/if \(!res\.ok\) return undefined;/);
+      expect(src, 'the claim closes only when both sources actually answered')
+        .toMatch(/if \(building !== undefined && parcel !== undefined\) \{[\s\S]{0,400}?close\(/);
+      // And a double failure returns before any close at all.
+      expect(src).toMatch(/if \(building === undefined && parcel === undefined\)/);
+    });
+  });
+
+  // ── Demand-driven: a county is asked when an address is SAVED ────────────
+  //
+  // Owner, 2026-09-22: "We're not loading all of Shawnee county, we're just
+  // bringing them in when a address is saved through the day rail or lead
+  // record."
+  //
+  // That is the whole volume story. A contractor saves a handful of addresses a
+  // day, so the county sees a handful of requests a day, naturally paced by a
+  // person actually working. No bulk pre-load, no drip, nothing to throttle.
+  // These tests exist because the trigger is easy to lose in a refactor and its
+  // absence is silent: property cards would just quietly stop filling in.
+  test.describe('demand-driven triggers', () => {
+    test('saving a lead record with an address asks the county', () => {
+      const src = readSrc('js/clients.js');
+      const fn = src.slice(src.indexOf('function saveClient('));
+      expect(fn.slice(0, 12000), 'saveClient must trigger the lookup')
+        .toMatch(/_lookupPropertyData\(c\.id,\s*\{street,city,state,zip\}\)/);
+    });
+
+    test('the lead trigger is not gated on the dead scraper\'s stamp', () => {
+      // propDataFetchedAt was set by the Zillow scraper on its own FAILURES, so
+      // gating on it means a client whose lookup failed in June is never asked
+      // about again, and the demand-driven path silently skips exactly the
+      // records it exists to fill.
+      const src = readSrc('js/clients.js');
+      const i = src.indexOf('const _prevAddr=');
+      const branch = src.slice(i, i + 700);
+      expect(branch, 'the save trigger must use _propAnswered').toMatch(/_propAnswered\(_existingClient\)/);
+      expect(branch, 'and must not gate on the old stamp').not.toMatch(/_existingClient\?\.propDataFetchedAt/);
+    });
+
+    test('filing an address from the day rail asks the county too', () => {
+      // _mileWhoPick attaches a stop's address to an EXISTING client, so it
+      // never passes through the new-lead form. Without its own trigger the
+      // property card for that address stays empty forever.
+      const src = readSrc('js/mileage.js');
+      const fn = src.slice(src.indexOf('async function _mileWhoPick('));
+      const body = fn.slice(0, fn.indexOf('\n}'));
+      expect(body, '_mileWhoPick must trigger the lookup').toMatch(/_lookupPropertyData\(/);
+      // For the address actually filed, not the client's primary: on a
+      // landlord's second rental those are different houses.
+      expect(body).toMatch(/_parseAddrParts\(addr\)/);
+    });
+
+    test('one saved address costs exactly two county requests', () => {
+      // The building (year built, sqft, beds, baths) and the money (assessed,
+      // land, improvement, owner) live in two different county systems. Both
+      // are asked on the same lookup so a saved address is complete in one
+      // pass, which is what removes any need for a bulk pre-load.
+      const src = readSrc('functions/api/property.js');
+      expect(src).toMatch(/building:\s*\{/);
+      expect(src).toMatch(/parcel:\s*\{/);
+      expect(src, 'both are asked together, not one after the other')
+        .toMatch(/Promise\.all\(\[ask\(enricher\.building\), ask\(enricher\.parcel\)\]\)/);
+      // And the whole pair sits behind ONE claim, so the gate still counts an
+      // address as one ask however many systems it took to answer.
+      const claimAt = src.indexOf('county_claim_ask');
+      const askAt = src.indexOf('Promise.all([ask(');
+      expect(claimAt, 'the claim must come first').toBeLessThan(askAt);
+    });
+
+    test('the assessed figures are written back, or nobody ever sees them', () => {
+      // These came from the bulk load before. With no bulk load, a value not
+      // cached here is a value that is fetched and then thrown away.
+      const src = readSrc('functions/api/property.js');
+      const fn = src.slice(src.indexOf('async function cacheBack('));
+      const patch = fn.slice(0, fn.indexOf('};'));
+      for (const f of ['assessed_value', 'land_value', 'improvement_value', 'owner_name', 'acres']) {
+        expect(patch, `cacheBack must persist ${f}`).toMatch(new RegExp(`${f}:`));
+      }
     });
   });
 
@@ -402,35 +485,30 @@ test.describe('county parcel records', () => {
       expect(at(23), '11pm must be idle').toBe(false);
     });
 
-    test('a visit is time-boxed, so the drip is many short sessions', () => {
-      // A client that is connected every minute of every day is not a person,
-      // however well paced its requests are.
+    test('a visit is time-boxed, so a manual batch cannot run away', () => {
+      // --enrich is a bounded manual backfill now, not a standing drip. The
+      // clock bound is what keeps a hand-run batch from becoming an all-day
+      // session against a county server.
       expect(src()).toMatch(/MAX_MIN && \(Date\.now\(\) - startedAt\) > MAX_MIN \* 60000/);
-      const unit = readSrc('scripts/county-drip.service');
-      expect(unit, 'the installed unit must actually pass the flags').toMatch(/--human/);
-      expect(unit).toMatch(/--max-minutes\s+\d+/);
+      const wf = readSrc('.github/workflows/county-load.yml');
+      expect(wf, 'the workflow must pace and bound its enrich mode').toMatch(/--human/);
+      expect(wf).toMatch(/--max-minutes\s+\d+/);
     });
 
-    test('the timer does not fire on the exact same second forever', () => {
-      // Arrivals at :00:00 and :30:00 for eleven weeks is a scheduler, and a
-      // scheduler is not a person.
-      const timer = readSrc('scripts/county-drip.timer');
-      expect(timer).toMatch(/RandomizedDelaySec=\d+/);
-      const jitter = parseInt(timer.match(/RandomizedDelaySec=(\d+)/)[1], 10);
-      expect(jitter, 'the jitter must be minutes, not seconds').toBeGreaterThanOrEqual(60);
-      // Persistent=true would fire every missed tick at once after a reboot,
-      // which is a burst, which is the one shape being avoided throughout.
-      expect(timer).toMatch(/Persistent=false/);
-    });
-
-    test('the drip is a pre-warm, never something the app waits on', () => {
-      // The Zillow proxy that used to live on this box was in the LIVE path, so
-      // the feature died whenever the house lost power. This must not be that.
-      const unit = readSrc('scripts/county-drip.service');
-      expect(unit).toMatch(/pre-warm|PRE-WARM/i);
-      // Nothing in the app may reference the drip host, the units, or the timer.
-      for (const f of ['js/clients.js', 'js/cloud.js', 'functions/api/property.js']) {
-        expect(readSrc(f), `${f} must not depend on the drip`).not.toMatch(/county-drip/);
+    test('there is no standing drip installed anywhere', () => {
+      // Owner, 2026-09-22: "We're not loading all of Shawnee county, we're just
+      // bringing them in when a address is saved." The systemd drip that would
+      // have walked all 77,006 parcels is deleted, not disabled (§7), and §7.1
+      // wants CI to prove the entry point is gone rather than merely unused.
+      for (const f of [
+        'scripts/county-drip.service',
+        'scripts/county-drip.timer',
+        'scripts/setup-county-drip.sh',
+      ]) {
+        expect(fs.existsSync(repo(f)), `${f} must be deleted`).toBe(false);
+      }
+      for (const f of ['js/clients.js', 'js/cloud.js', 'js/mileage.js', 'functions/api/property.js']) {
+        expect(readSrc(f), `${f} must not reference a drip`).not.toMatch(/county-drip/);
       }
     });
 
