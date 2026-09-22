@@ -402,12 +402,23 @@ test.describe('tim', () => {
       const say = timSay(p);
       timRun('photos at 412 Oak');
       const out = { say, album: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+        addr: document.querySelector('.pc-fold-addr')?.textContent || null,
+        visits: document.querySelectorAll('#pc-rev .pc-fold-visit').length,
         asked: !!document.getElementById('_tim-ov') };
       tdReviewClose();
       return out;
     });
     expect(r.say).toBe('Open 412 Oak St, 2 photos');
-    expect(r.album).toBe(2);
+    // WHERE he lands changed, not whether he lands. This used to open the flat
+    // viewer, which lists every shot and never says whose house they are, so
+    // the answer arrived with the address missing from it. It opens the
+    // property folder now, and a folder groups by visit with the newest one
+    // expanded: these two shots are a day apart, so they are two visits and
+    // one of them is showing. The header carries the address the flat viewer
+    // never had.
+    expect(r.addr).toBe('412 Oak St');
+    expect(r.visits).toBe(2);
+    expect(r.album).toBe(1);
     expect(r.asked).toBe(false);
   });
 
@@ -482,6 +493,48 @@ test.describe('tim', () => {
     });
     expect(r.open).toBe(true);
     expect(r.val).toBe('qqqq zzzz');
+  });
+
+  // The sentence the owner actually said. It used to leave "where are
+  // whitfield" as the search term, match nothing, and do nothing, while still
+  // classifying correctly as a photo question, so Tim looked like he had
+  // simply ignored him (2026-09-22).
+  test('a question phrased as a question still finds the photos', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ['where are my photos for whitfield',
+      "show me whitfield's pictures", 'do i have any photos of whitfield', 'whitfield photos']
+      .map(s => { const p = timParse(s, { clients: [], photos }); return { q: p.q, n: (p.places || []).length }; }));
+    r.forEach(x => expect(x.q, 'no question words left in the search term').toBe('whitfield'));
+    r.forEach(x => expect(x.n, 'and it still finds both of their properties').toBe(2));
+  });
+
+  // Word order is how people talk, so every word has to land rather than the
+  // leftover phrase matching as one string.
+  test('the words can arrive in any order', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ({
+      a: tdPhotoSearch('whitfield oak', photos).length,
+      b: tdPhotoSearch('oak whitfield', photos).length,
+      c: tdPhotoSearch('whitfield nowhere', photos).length,
+    }));
+    expect(r.a).toBe(1);
+    expect(r.b, 'the same question, said the other way round').toBe(1);
+    expect(r.c, 'a word that matches nothing still rules the photo out').toBe(0);
+  });
+
+  // He lands somewhere that NAMES the house. The flat viewer shows the shots
+  // and never says whose they are.
+  test('one place opens the property folder, not the bare viewer', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('where are my photos at 412 Oak');
+      const out = { addr: document.querySelector('.pc-fold-addr')?.textContent || null,
+        cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length };
+      if (typeof tdReviewClose === 'function') tdReviewClose();
+      return out;
+    });
+    expect(r.addr, 'the folder header names the property').toBe('412 Oak St');
+    expect(r.cells).toBeGreaterThan(0);
   });
 
   test('cancel on the chooser opens nothing', async () => {

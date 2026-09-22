@@ -1248,8 +1248,17 @@ function _pcHaystack(p){
 function tdPhotoSearch(q,list){
   const term=String(q||'').toLowerCase().trim();
   if(!term)return [];
+  // EVERY word has to land, not the phrase as one string. Tim hands this
+  // whatever is left of a spoken sentence, so the words arrive in the order a
+  // person says them and with the odd one still attached: "pepe 17th" and
+  // "17th pepe" are the same question, and one stray word used to sink both.
+  const words=term.split(/\s+/).filter(Boolean);
   const src=list||(typeof photos!=='undefined'?photos:[]);
-  const hits=(src||[]).filter(p=>p&&_pcHaystack(p).includes(term));
+  const hits=(src||[]).filter(p=>{
+    if(!p)return false;
+    const hay=_pcHaystack(p);
+    return words.every(w=>hay.includes(w));
+  });
   const by={};
   hits.forEach(p=>{
     // One bucket per property. A photo with no address yet falls back to the
@@ -1270,8 +1279,15 @@ function tdPhotoSearch(q,list){
 // there is one photo surface in the app rather than a second one for looking
 // back (§7.3).
 function tdOpenPropertyPhotos(key){
-  const g=(tdPhotoSearch.lastResults||[]).find(x=>x.key===key);
-  if(!g||!g.photos.length)return false;
+  return tdOpenPhotoGroup((tdPhotoSearch.lastResults||[]).find(x=>x.key===key));
+}
+// One way in, for the search and for Tim both. Tim used to drop into the flat
+// viewer, which shows the shots and never says whose house they are, so the
+// answer to "where are my photos for pepe" arrived with the address missing
+// from it (owner 2026-09-22). The folder is the answer; this is how anything
+// opens one.
+function tdOpenPhotoGroup(g){
+  if(!g||!g.photos||!g.photos.length)return false;
   const cid=g.photos.map(p=>p.client_id).find(x=>x!=null);
   return tdOpenPropertyFolder(cid!=null?cid:null,g.addr,g.photos);
 }
