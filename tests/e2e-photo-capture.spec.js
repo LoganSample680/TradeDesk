@@ -971,7 +971,13 @@ test.describe('Photo capture: the sheet itself', () => {
   // behind. Every number below is his: the fix his phone recorded, the
   // property coordinates on Pepe's record, and Pepe's primary eight km away.
   test.describe("TrueShot: the second house", () => {
+    // Page-owned, like house() below and for the same reason: seeding in one
+    // page.evaluate and reading in the next leaves a gap, and the app's
+    // periodic cloud pull replaces the photos array wholesale if it lands in
+    // it. Tests that need the rows in hand call __pepe() inside their own
+    // evaluate; the ones that only need ids can still await pepe().
     const pepe = () => page.evaluate(() => {
+      window.__pepe = () => {
       clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
       clients.push({ id: 901, name: 'Pepe Miranda', addr: '306 SW Elmwood Ave, Topeka, KS 66606',
         lat: 39.0614613, lon: -95.69654,
@@ -985,6 +991,8 @@ test.describe('Photo capture: the sheet itself', () => {
           uploadedAt: new Date(Date.parse('2026-09-22T14:51:12.965Z') + i * 6000).toISOString() });
       }
       return ids;
+      };
+      return window.__pepe();
     });
 
     test("a customer's SECOND property is matched, not just their primary", async () => {
@@ -1164,6 +1172,7 @@ test.describe('Photo capture: the sheet itself', () => {
     test('the Open button on a property survives being put in real HTML', async () => {
       await pepe();
       const r = await page.evaluate(() => {
+        __pepe();
         const c = clients.find(x => x.id === 901);
         // The button only exists once the property HAS photos, so file one.
         photos[0].client_id = 901; photos[0].addr = '6912 SW 17th St, Topeka, KS 66615';
