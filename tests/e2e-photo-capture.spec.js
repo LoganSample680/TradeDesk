@@ -419,16 +419,29 @@ test.describe('Photo capture: the sheet itself', () => {
   // never repainted, so from the outside they vanished (owner, first UAT run).
   // The answer is not a better tray: the decision belongs at the end of the
   // shoot, while the contractor is still standing there.
-  const shootUnfiled = (n) => page.evaluate(async (count) => {
-    tdCaptureUnfiled();
-    const ids = [];
-    for (let i = 0; i < count; i++) {
-      const r = await tdSavePhoto({ type: 'before', file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
-      ids.push(r.id); _pcSessionIds.push(r.id); _pcShots++;
-    }
-    tdCloseCapture();
-    return ids;
-  }, n);
+  // Every shot this fixture takes has to still BE there when the sheet opens.
+  // A save writes through saveAll, and a cloud load that lands mid-loop
+  // REPLACES the photos array wholesale (js/cloud.js), so a row can be saved
+  // and then quietly dropped before tdReviewShots looks for it. That is what
+  // made WebKit fail twice on two different tests: the album came up holding
+  // fewer shots than were taken, and the assertion blamed the code under
+  // test. The helper now returns what it saved AND what survived, and every
+  // caller asserts they match, so the next time it happens it says so.
+  const shootUnfiled = async (n) => {
+    const r = await page.evaluate(async (count) => {
+      tdCaptureUnfiled();
+      const ids = [];
+      for (let i = 0; i < count; i++) {
+        const row = await tdSavePhoto({ type: 'before', file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
+        if (row) { ids.push(row.id); _pcSessionIds.push(row.id); _pcShots++; }
+      }
+      tdCloseCapture();
+      return { ids, survived: ids.filter(id => photos.some(p => String(p.id) === String(id))).length };
+    }, n);
+    expect(r.ids.length, 'every shot has to save').toBe(n);
+    expect(r.survived, 'and still be in photos when the sheet opens').toBe(n);
+    return r.ids;
+  };
 
   test('finishing a shoot with no customer opens the burst, all of it', async () => {
     const ids = await shootUnfiled(6);
