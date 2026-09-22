@@ -3505,11 +3505,14 @@ function saveAddClientAddress(editIdx){
   if(!c.extraAddresses)c.extraAddresses=[];
   const ptype=document.getElementById('_aa-ptype')?.value||'';
   const _edit=(editIdx!=null&&editIdx!==''&&Number(editIdx)>=0)?Number(editIdx):null;
-  let was='';
+  let was='',wasLabel='';
   if(_edit!=null){
     const cur=clientAddresses(c)[_edit];
     if(!cur)return;
     was=cur.addr||'';
+    // Captured BEFORE the write below: the rename pass needs the label the
+    // fence was named with, and by then the record already holds the new one.
+    wasLabel=String(cur.label||'').trim();
     if(_edit===0)c.addr=addr;
     else{
       const e=c.extraAddresses[_edit-1];
@@ -3521,9 +3524,9 @@ function saveAddClientAddress(editIdx){
       // guard that stops a customer who moved keeping a fence on the old
       // house. Leaving stale coords here would be exactly that case, so the
       // pair is dropped and the next geocode sweep fills it from the new
-      // address. Rows already derived keep the name they were written with:
-      // origin_place and dest_place are text snapshots, so history does not
-      // move under anybody (17).
+      // address. Rows already derived are re-labelled by the rename pass at
+      // the end of this function: their times, ids and miles are untouched,
+      // only the spelling of the place moves.
       if(was&&was!==addr){delete e.lat;delete e.lon;delete e.geoAddr;}
     }
     if(_edit===0&&was&&was!==addr){delete c.lat;delete c.lon;delete c.geoAddr;}
@@ -3539,6 +3542,26 @@ function saveAddClientAddress(editIdx){
   }
   if(ptype&&typeof setPropertyData==='function')setPropertyData(c,addr,{propertyType:ptype,isRental:/rental/i.test(ptype)||undefined});
   saveAll();
+  // ── AND EVERY ROW THAT ALREADY NAMED THE OLD ONE (owner 2026-09-22) ──────
+  // A corrected house number has to reach the mileage log and the day rail,
+  // not just the card. Both store the label as text written at derive time,
+  // so nothing re-reads this record; _mileRenamePlace (js/mileage.js) rewrites
+  // the old spelling wherever it was stored. No prompt: the person is editing
+  // the address precisely because it is wrong, and asking whether they also
+  // meant the trips it is on is a question with only one answer.
+  //
+  // The name is rebuilt exactly as _geoDeriveFences builds it: the primary is
+  // the client name over the street line, an extra property is the client name
+  // over its label. Two places computing one name is how they drift, so if a
+  // third case ever appears, it belongs in _geoFenceName's callers, not here.
+  if(_edit!=null&&was&&was!==addr){
+    const _street=(v)=>(typeof _geoStreetLine==='function')?_geoStreetLine(v):String(v||'').split(',')[0].trim();
+    const _fn=(w)=>(typeof _geoFenceName==='function')?_geoFenceName(c.name||'Client',w)
+      :((c.name||'Client')+(w?' ('+w+')':''));
+    const _wasWhere=(_edit===0)?_street(was):(wasLabel||_street(was));
+    const _nowWhere=(_edit===0)?_street(addr):(label||_street(addr));
+    try{if(typeof _mileRenamePlace==='function')_mileRenamePlace(_fn(_wasWhere),_fn(_nowWhere),was,addr);}catch(_e){}
+  }
   document.querySelector('.zmodal-overlay')?.remove();
   renderCDAddresses();
   // The primary address is printed on proposals and drawn on the client
