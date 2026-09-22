@@ -851,4 +851,790 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     });
     expect(h).toContain('not to exceed');
   });
+
+  // ── WHAT HE IS ABOUT TO SEND, SAID OUT LOUD ───────────────────────────────
+  //
+  // Owner, 2026-09-22, on this screen: "I'm honestly lost on what I even need
+  // to do ... the flow just seems broken, doesn't seem natural."
+  //
+  // The page was six ＋ chips with nothing above them. It KNEW things it never
+  // said: that the scope alone is already a complete proposal, that a rate with
+  // no day count prints no total, that Estimate needs Rate. Six equal buttons
+  // give a man no way to tell whether he is finished.
+  // So the row answers the question he is actually asking, which is not "what
+  // can I add" (the chips already show that) but "what happens if I send this
+  // now". These tests are about that sentence being TRUE in each shape, because
+  // a status line that lies is worse than no status line.
+  test.describe('the row says what this proposal currently is', () => {
+    const shapeIn = (layers) => page.evaluate((ks) => {
+      const prev = [..._tmLayers];
+      _tmLayers = new Set(ks);
+      _tmApplyLayers();
+      const row = document.getElementById('tm-add-row');
+      const txt = (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
+      _tmLayers = new Set(prev); _tmApplyLayers();
+      return txt;
+    }, layers);
+
+    // The state nobody believes is finished, and the one the owner explicitly
+    // asked for in September: "just get the scope signed, no deposit no payment
+    // upfront if they want it to work that way".
+    test('scope on its own is named as a complete proposal, not an empty one', async () => {
+      const t = await shapeIn([]);
+      // Mid-sentence now ("They get scope only, no price."), hence the case.
+      expect(t).toContain('They get scope only, no price');
+      expect(t).toContain('complete proposal');
+    });
+
+    // The distinction the code has always drawn and never explained:
+    // _tmRateOnly is rate without est, and a rate with no day count behind it
+    // has no total to print.
+    // ASSERTION CHANGED 2026-09-22 (§10.4). It used to require the sentence to
+    // say "Add Estimate". Owner: "does time and materials even need estimate
+    // cause why put a price on time and materials???" Fair question, and the
+    // answer is mostly no: nine of the ten states that force a number onto a
+    // T&M job want a CEILING, and only Pennsylvania names an estimate. So the
+    // page no longer answers "they want a number" by offering a guess at the
+    // hours dressed up as a total. It offers the ceiling, which is the honest
+    // number and the one they were asking for. Estimate is still one tap away
+    // in the chip row; it is just not the advice any more.
+    test('a rate with no day count says there is no total, and points at the ceiling', async () => {
+      const t = await shapeIn(['rate']);
+      expect(t).toContain('They get a rate, no total');
+      // Sentence-initial now that the line was shortened, hence the capital.
+      expect(t).toContain('Nothing has told it how many days');
+      expect(t).toContain('give them the ceiling');
+      expect(t, 'the old advice was to add an estimate, which is the thing T&M exists not to do')
+        .not.toContain('Add Estimate to put a number on it');
+    });
+
+    test('a rate with a day count says there is one', async () => {
+      const t = await shapeIn(['rate', 'est']);
+      expect(t).toContain('They get a rate and a total');
+      expect(t).not.toContain('no total');
+    });
+
+    // Everything on: the sentence has to grow with it rather than going stale,
+    // because a status line that stops tracking is the thing that made the page
+    // untrustworthy in the first place.
+    test('and it names every layer that is actually on', async () => {
+      const t = await shapeIn(['rate', 'est', 'mat', 'dep', 'cap']);
+      expect(t).toContain('plus materials');
+      expect(t).toContain('deposit due up front');
+      expect(t).toContain('cannot go past the cap');
+    });
+
+    // ASSERTION CHANGED 2026-09-22 (§10.4). It used to require the prose
+    // "Add Rate unless the labor is agreed some other way". That sentence was
+    // deleted when the shape line became step 4's hint and had to stop being
+    // the longest thing on the panel. The advice did not go anywhere: it is
+    // step 2, sitting above it with its own Add button, which is a better way
+    // to say "add the rate" than a sentence telling him to go find a chip.
+    test('materials with no rate says the labor is missing, and offers the rate', async () => {
+      const t = await shapeIn(['mat']);
+      expect(t).toContain('no labor rate');
+      expect(t).toContain('Your rate');
+    });
+
+    // Tapping Estimate turns Rate on with it (_tmAddLayer follows `needs`),
+    // which is right and was silent. A man should know what he just pressed.
+    test('the one dependency on the row is stated, and only while it matters', async () => {
+      const off = await shapeIn([]);
+      expect(off).toContain('Estimate turns on Rate with it');
+      const on = await shapeIn(['rate']);
+      expect(on, 'it kept saying it after Rate was already on').not.toContain('Estimate turns on Rate with it');
+    });
+
+    // American spelling, because every other money word on this screen is
+    // (the rail says Labor) and a proposal that mixes them reads as bought in.
+    test('it speaks the same English as the rest of the screen', async () => {
+      const t = await shapeIn(['mat']);
+      expect(t).not.toContain('labour');
+    });
+  });
+
+});
+
+
+// ── HIS RATE IS HIS BUSINESS, EXCEPT WHERE IT IS NOT ─────────────────────────
+//
+// Owner, 2026-09-22: "we want rate because then Tim can feed a quick invoice"
+// and then "how do we give contractors the opportunity to hide the rate in the
+// proposal but it be something they have to toggle, if they usually hide their
+// rate does it persist?"
+//
+// Those two sentences are one flag away from contradicting each other, so the
+// code separates the facts they are each about: the rate is ON THE JOB (it
+// runs the hours and feeds the invoice) and separately the customer DOES OR
+// DOES NOT READ IT. Turning the second off must not reach the first, or the
+// invoice he turned the rate on for goes back to zero.
+//
+// Everything below guards one of three promises: hidden means hidden in every
+// place the number reaches a customer, a statute outranks the toggle, and the
+// answer follows him to the next job without following a sent proposal back.
+
+test.describe('keeping the rate off the proposal', () => {
+  let page;
+
+  // The builder, in T&M, with a rate on it and nothing statutory in the way.
+  // The INPUTS are filled, not just the variables, because _tmInputChange reads
+  // the fields back on every keystroke and on every flip of this toggle: a test
+  // that set only the variables would be testing a state the app cannot be in.
+  // 2 workers at $95 over 5 days = $190/hr, 40 hr, $7,600.
+  const openTM = (addr) => page.evaluate((a) => {
+    _geiIsTM = true; _geiIsFreeForm = false;
+    _geiEditBidId = null;
+    _tmLayers = new Set(['rate', 'est']);
+    _tmRateOnly = false;
+    const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+    sv('gei-addr', a || '');
+    sv('tm-i-rate', '95');
+    sv('tm-i-days', '5');
+    const crew = document.getElementById('tm-i-crew-count');
+    if (crew) crew.textContent = '2';
+    _tmApplyLayers();
+    _tmInputChange();
+  }, addr);
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.beforeEach(async () => {
+    // A Kansas address: nothing in STATE_PRICE_RULE locks the rate there, so
+    // the toggle is his to make. Cleared preference, so nothing leaks between.
+    await page.evaluate(() => { try { if (S) S.tmHideRate = false; } catch (_e) {} });
+    await openTM('700 Rate Rd, Wichita KS 67202');
+    await page.evaluate(() => _tmSetHideRate(false));
+  });
+  test.afterAll(async () => {
+    await page.evaluate(() => { try { if (S) S.tmHideRate = false; } catch (_e) {} });
+    await page.context().close();
+  });
+
+  const terms = () => page.evaluate(() => _geiBuildTermsHtml());
+
+  // ── HIDDEN MEANS HIDDEN ────────────────────────────────────────────────────
+
+  // Shown first, so the test below is proving a removal and not an absence
+  // that was there all along.
+  test('shown, the terms state the rate in dollars per hour', async () => {
+    const h = await terms();
+    expect(h).toContain('$95 per hour');
+  });
+
+  test('hidden, the whole rate clause comes out of the terms', async () => {
+    await page.evaluate(() => _tmSetHideRate(true));
+    const h = await terms();
+    expect(h).not.toContain('per hour');
+    expect(h, 'the clause was softened instead of removed').not.toContain('95');
+    // And the contract is still a time-and-materials contract, not a silence.
+    expect(h).toContain('Time &amp; Materials');
+  });
+
+  // The second place the number reaches him, and the one that is easy to
+  // forget: a line reading "40 hr @ $190" hands back by division exactly what
+  // the clause above just stopped printing.
+  test('the labor line stops being hours at a rate and becomes one lump', async () => {
+    const shown = await page.evaluate(() => {
+      _tmInputChange();
+      return _geiLines.filter(l => l._tmLabor)[0] || null;
+    });
+    expect(shown).toMatchObject({ unit: 'hr', qty: 40, rate: 190 });
+
+    const hid = await page.evaluate(() => {
+      _tmSetHideRate(true);
+      return _geiLines.filter(l => l._tmLabor)[0] || null;
+    });
+    expect(hid.unit).toBe('lot');
+    expect(hid.qty).toBe(1);
+    // Same money owed. Only the arithmetic that recovers the rate is gone.
+    expect(hid.total).toBe(shown.total);
+    expect(hid.rate).toBe(shown.total);
+    expect(hid.desc).not.toContain('/hr');
+    expect(hid.desc).not.toContain('95');
+  });
+
+  // The whole point of the owner's sentence: the rate is still ON the job.
+  // If hiding it zeroed _tmRatePerMan, Tim's worksheet would price those hours
+  // at nothing and the invoice he turned the rate on for would come out empty.
+  test('hiding it does not take the rate off the job', async () => {
+    const r = await page.evaluate(() => {
+      _tmSetHideRate(true);
+      return { rate: _tmRatePerMan, saved: (() => {
+        const b = {}; b.tmRatePerMan = _tmRatePerMan; b.tmHideRate = !!_tmHideRate; return b;
+      })() };
+    });
+    expect(r.rate).toBe(95);
+    expect(r.saved).toEqual({ tmRatePerMan: 95, tmHideRate: true });
+  });
+
+  // ── WHERE IT IS NOT HIS CALL ──────────────────────────────────────────────
+
+  // Pennsylvania's HICPA defines T&M as payment "based on the actual cost of
+  // labor at a specified hourly rate". A PA proposal with the rate hidden is
+  // not a T&M contract. The boundary reused here is the one the file already
+  // draws (a statute that LOCKS the rate layer), so this test is really
+  // holding that the two stay tied together.
+  test('a state that requires the rate does not offer the toggle at all', async () => {
+    const r = await page.evaluate(() => {
+      const el = document.getElementById('gei-addr');
+      if (el) el.value = '12 Main St, Philadelphia PA 19103';
+      _tmApplyLayers();
+      const wrap = document.getElementById('tm-hide-rate-wrap');
+      return {
+        can: _tmCanHideRate(),
+        box: !!document.getElementById('tm-hide-rate'),
+        txt: (wrap ? wrap.textContent : '').replace(/\s+/g, ' ').trim(),
+      };
+    });
+    expect(r.can).toBe(false);
+    expect(r.box, 'a checkbox he cannot legally use was still tappable').toBe(false);
+    // Told why, and told by whom, rather than just missing.
+    expect(r.txt).toContain('Pennsylvania');
+    expect(r.txt).toContain('73 P.S. 517.7');
+  });
+
+  // The proposal he started in Kansas and finished on a Philadelphia job.
+  // The flag travels with the draft; the printing rule is decided where the
+  // work is, at the moment the document is built.
+  test('a proposal carried into that state prints the rate anyway', async () => {
+    const h = await page.evaluate(() => {
+      _tmSetHideRate(true);
+      const el = document.getElementById('gei-addr');
+      if (el) el.value = '12 Main St, Philadelphia PA 19103';
+      return _geiBuildTermsHtml();
+    });
+    expect(h).toContain('$95 per hour');
+  });
+
+  test('and the labor line comes back as hours at a rate there too', async () => {
+    const l = await page.evaluate(() => {
+      _tmSetHideRate(true);
+      const el = document.getElementById('gei-addr');
+      if (el) el.value = '12 Main St, Philadelphia PA 19103';
+      _tmInputChange();
+      return _geiLines.filter(x => x._tmLabor)[0] || null;
+    });
+    expect(l.unit).toBe('hr');
+    expect(l.desc).toContain('$95/hr');
+  });
+
+  // ── AND NOT IN THE FILE BEHIND THE PAGE EITHER ────────────────────────────
+  //
+  // sendGenericProposal writes a proposals/<uid>/<id>_<token>.json that the
+  // customer's browser downloads to render sign.html, and it carried an
+  // hourlyRate field. Nothing in sign.html reads it, so nothing on screen was
+  // wrong, and that is exactly why it would have survived: a number he
+  // deliberately kept off the document sitting in the payload behind it, one
+  // devtools tab away.
+  //
+  // This one reads the source rather than the running app, because reaching
+  // that object at runtime means standing up an upload. It is guarding the
+  // shape of one expression, which is all that went wrong.
+  test('the payload that reaches the customer does not carry the rate', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'generic-estimate.js'), 'utf8');
+    const line = src.split('\n').filter(l => /^\s*hourlyRate:/.test(l))[0] || '';
+    expect(line, 'hourlyRate: left the proposal payload entirely').toBeTruthy();
+    expect(line, 'hourlyRate went back to shipping the rate unconditionally')
+      .toContain('_tmHideRate');
+    expect(line).toContain('_tmCanHideRate');
+  });
+
+  // ── DOES IT PERSIST ───────────────────────────────────────────────────────
+
+  // "if they usually hide their rate does it persist?" On S, not on the device,
+  // so it follows him to the tablet in the truck rather than living on one
+  // phone. A man who hides his rate hides it on every job and should not have
+  // to remember to say so on every job.
+  test('the answer is remembered on the account, not the phone', async () => {
+    const on = await page.evaluate(() => { _tmSetHideRate(true); return !!S.tmHideRate; });
+    expect(on).toBe(true);
+    const off = await page.evaluate(() => { _tmSetHideRate(false); return !!S.tmHideRate; });
+    expect(off).toBe(false);
+    // Assigning it onto S is not remembering it: S only reaches disk when
+    // something calls the save. This asserts the write, not the variable.
+    const stored = await page.evaluate(() => {
+      _tmSetHideRate(true);
+      try { return !!JSON.parse(localStorage.getItem('zp3_S') || '{}').tmHideRate; }
+      catch (_e) { return 'UNPARSEABLE'; }
+    });
+    expect(stored, 'the preference never reached storage, so it dies with the tab').toBe(true);
+  });
+
+  test('a brand new proposal opens the way he left the last one', async () => {
+    const r = await page.evaluate(() => {
+      S.tmHideRate = true;
+      const was = _tmHideRateDefault();
+      // What openGenericEstimate does on a fresh one, without the navigation.
+      _tmHideRate = _tmHideRateDefault();
+      return { def: was, fresh: _tmHideRate };
+    });
+    expect(r).toEqual({ def: true, fresh: true });
+  });
+
+  // The one case where the preference must NOT win. He sent a proposal with
+  // the rate printed, then turned the preference on. Reopening that proposal
+  // has to show him what the customer is holding, not what he does now.
+  test('a saved proposal resumes the way it was sent, not the way he works now', async () => {
+    const r = await page.evaluate(() => {
+      S.tmHideRate = true;
+      const line = (b) => (b.tmHideRate !== undefined) ? !!b.tmHideRate : _tmHideRateDefault();
+      return {
+        sentShown: line({ tmHideRate: false }),
+        sentHidden: line({ tmHideRate: true }),
+        // A bid saved before this existed has no answer of its own, so the
+        // standing preference is all there is to go on.
+        legacy: line({}),
+      };
+    });
+    expect(r).toEqual({ sentShown: false, sentHidden: true, legacy: true });
+  });
+
+  // Same rule, run through the real resume path rather than a copy of its
+  // arithmetic, so the two cannot drift apart.
+  test('the real resume path honours the bid over the preference', async () => {
+    const r = await page.evaluate(async () => {
+      S.tmHideRate = true;
+      clients = clients.filter(c => c.id !== 77709);
+      bids = bids.filter(b => b.id !== 66609);
+      clients.push({ id: 77709, name: 'Resume Client', phone: '316-555-7779',
+        addr: '709 Resume Rd, Wichita KS 67202' });
+      bids.push({ id: 66609, client_id: 77709, client_name: 'Resume Client', amount: 7600,
+        deposit: 0, status: 'Pending', bid_date: '2026-03-04', trade_type: 'plumbing',
+        type: 'Repipe', geiLines: [], isTM: true, tmCrewCount: 2, tmRatePerMan: 95,
+        tmEstHours: 40, tmBillingCycle: 'weekly', tmHideRate: false });
+      try { openGenericEstimate(clients.filter(c => c.id === 77709)[0], 66609, 'plumbing'); }
+      catch (_e) {}
+      const out = !!_tmHideRate;
+      clients = clients.filter(c => c.id !== 77709);
+      bids = bids.filter(b => b.id !== 66609);
+      return out;
+    });
+    expect(r, 'the preference overwrote what the customer was actually sent').toBe(false);
+  });
+});
+
+
+// ── WHY PUT A PRICE ON TIME AND MATERIALS ────────────────────────────────────
+//
+// Owner, 2026-09-22: "So does time and materials even need estimate cause why
+// put a price on time and materials???"
+//
+// Mostly it does not, and the file already knew: _tmLockedLayers has always
+// locked rate and cap and never est, because of the ten states that force a
+// number onto a T&M job, nine want a CEILING ("the total amount to be paid",
+// "a cap the total cannot exceed") and only Pennsylvania names an estimate.
+// Only the screen disagreed. It put Estimate second, left the cap sixth where
+// it read as an afterthought, and printed ESTIMATED TOTAL in 21px in the accent
+// bar while the ceiling that actually protected the customer sat in the terms
+// in 11px.
+//
+// These hold the corrected order: an estimate is a guess at the hours, a cap is
+// a promise about the bill, and only one of those belongs in the big type.
+
+test.describe('the ceiling leads, not the guess', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // ── THE ROW ───────────────────────────────────────────────────────────────
+
+  test('the cap chip sits second, ahead of Estimate', async () => {
+    const order = await page.evaluate(() => TM_LAYERS.map(l => l.k));
+    expect(order.slice(0, 3)).toEqual(['rate', 'cap', 'est']);
+  });
+
+  test('nothing in the ordering broke the dependency or the locks', async () => {
+    const r = await page.evaluate(() => ({
+      // Estimate still cannot stand on its own: a day count has nothing to
+      // multiply without a rate.
+      needs: (TM_LAYERS.filter(l => l.k === 'est')[0] || {}).needs,
+      // Each layer still owns the block it shows, cap included.
+      blocks: TM_LAYERS.filter(l => l.blk).map(l => l.k).sort(),
+      keys: TM_LAYERS.map(l => l.k).sort(),
+    }));
+    expect(r.needs).toBe('rate');
+    expect(r.keys).toEqual(['cap', 'dep', 'est', 'excl', 'mat', 'rate']);
+    expect(r.blocks).toEqual(['cap', 'excl', 'mat', 'rate']);
+  });
+
+  // ── THE STEPS ─────────────────────────────────────────────────────────────
+  //
+  // Owner, same message: "need clear action item steps that look clean and
+  // understand what's going on."
+
+  const stepsIn = (setup) => page.evaluate((s) => {
+    _geiIsTM = true;
+    const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+    sv('gei-addr', s.addr || '700 Rate Rd, Wichita KS 67202');
+    _geiScopeChips = s.scope ? ['x'] : [];
+    _geiJobScope = ''; _geiScopeNoScope = false; _geiLines = [];
+    _tmRatePerMan = s.rate || 0; sv('tm-i-rate', s.rate ? String(s.rate) : '');
+    sv('tm-i-nte', s.cap ? String(s.cap) : '');
+    _tmLayers = new Set(s.layers);
+    return _tmSteps().map(x => ({ n: x.n, k: x.k, done: !!x.done, rec: !!x.rec,
+      act: x.act || null, value: x.value, why: x.why }));
+  }, setup);
+
+  test('there are four of them, in the order the job is actually done', async () => {
+    const s = await stepsIn({ layers: ['rate'] });
+    expect(s.map(x => x.k)).toEqual(['scope', 'rate', 'cap', 'send']);
+  });
+
+  // The whole point of a numbered list is that exactly one line is the next
+  // move. Two "do this next" tags, each with its own filled button, is the
+  // six-chips problem again in a taller box.
+  test('exactly one step is ever marked as the next move', async () => {
+    for (const setup of [
+      { layers: ['rate'] },
+      { layers: ['rate'], scope: true },
+      { layers: ['rate'], scope: true, rate: 95 },
+      { layers: ['rate', 'cap'], scope: true, rate: 95, cap: 3000 },
+    ]) {
+      const s = await stepsIn(setup);
+      expect(s.filter(x => x.rec).length,
+        'more than one next move on ' + JSON.stringify(setup)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  // And it has to be the FIRST thing he has not done. A ceiling is not the next
+  // move while there is still no rate on the job.
+  test('the next move is the rate while there is no rate', async () => {
+    const s = await stepsIn({ layers: ['rate'], scope: true });
+    expect((s.filter(x => x.rec)[0] || {}).k).toBe('rate');
+  });
+
+  test('and it becomes the ceiling the moment the rate is in', async () => {
+    const s = await stepsIn({ layers: ['rate'], scope: true, rate: 95 });
+    expect((s.filter(x => x.rec)[0] || {}).k).toBe('cap');
+  });
+
+  // Nothing left to press: the steps go quiet rather than inventing a chore.
+  test('with the rate and the ceiling both in, nothing is nagging him', async () => {
+    const s = await stepsIn({ layers: ['rate', 'cap'], scope: true, rate: 95, cap: 3000 });
+    expect(s.filter(x => x.rec).length).toBe(0);
+    expect(s.filter(x => x.done).map(x => x.k)).toEqual(['scope', 'rate', 'cap']);
+  });
+
+  // A layer switched on with an empty box is not a step done. This is the
+  // difference between the chip row (what is on) and the steps (what is true).
+  test('a cap layer with no number in it does not count as done', async () => {
+    const s = await stepsIn({ layers: ['rate', 'cap'], scope: true, rate: 95, cap: 0 });
+    expect((s.filter(x => x.k === 'cap')[0] || {}).done).toBe(false);
+  });
+
+  test('the steps render into the row, and the send step carries the shape sentence', async () => {
+    const t = await page.evaluate(() => {
+      _geiIsTM = true;
+      _tmLayers = new Set(['rate']); _tmRatePerMan = 95;
+      const e = document.getElementById('tm-i-rate'); if (e) e.value = '95';
+      _tmApplyLayers();
+      const row = document.getElementById('tm-add-row');
+      return (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
+    });
+    // "Next", not "Do this next": the step that is next is now the only one
+    // with a card, a sentence and a button, so the tag stopped carrying the
+    // whole signal and got out of the label's way.
+    expect(t).toContain('Next');
+    expect(t).toContain('The most it can cost');
+    // Folded into step 4 rather than sitting in a card of its own, which is how
+    // four steps were added without making the panel taller.
+    expect(t).toContain('They get a rate, no total');
+  });
+
+  // ── SHORT ────────────────────────────────────────────────────────────────
+  //
+  // Owner, 2026-09-22: "it has to be short and fucking beautiful."
+  //
+  // The panel was four cards of prose, ~500px, and the longest paragraph on it
+  // was the step he could not act on. A step already DONE has nothing to argue:
+  // it gets a tick and its figure on one line. Only the step he has not done
+  // gets a card, a sentence and a button. These hold that split, because it is
+  // the only thing keeping the panel short, and the first hint anybody adds
+  // back to a finished row will quietly undo it.
+  test('a finished step states its figure and stops talking', async () => {
+    const s = await stepsIn({ layers: ['rate'], scope: true, rate: 95 });
+    const rate = s.filter(x => x.k === 'rate')[0];
+    expect(rate.done).toBe(true);
+    expect(rate.value).toBe('$95/hr each');
+  });
+
+  test('the ceiling shows the figure once it has one, and says so when it does not', async () => {
+    const off = await stepsIn({ layers: ['rate'], scope: true, rate: 95 });
+    expect(off.filter(x => x.k === 'cap')[0].value).toBe('None');
+    const on = await stepsIn({ layers: ['rate', 'cap'], scope: true, rate: 95, cap: 12000 });
+    expect(on.filter(x => x.k === 'cap')[0].value).toBe('$12,000');
+  });
+
+  // The measurable half of "short": only one step's sentence is on the page.
+  test('only one step is explaining itself at a time', async () => {
+    for (const setup of [
+      { layers: ['rate'] },
+      { layers: ['rate'], scope: true },
+      { layers: ['rate'], scope: true, rate: 95 },
+    ]) {
+      const t = await page.evaluate((cfg) => {
+        _geiIsTM = true;
+        const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+        sv('gei-addr', '700 Rate Rd, Wichita KS 67202');
+        _geiScopeChips = cfg.scope ? ['x'] : [];
+        _geiJobScope = ''; _geiScopeNoScope = false; _geiLines = [];
+        _tmRatePerMan = cfg.rate || 0; sv('tm-i-rate', cfg.rate ? String(cfg.rate) : '');
+        sv('tm-i-nte', '');
+        _tmLayers = new Set(cfg.layers);
+        _tmApplyLayers();
+        const row = document.getElementById('tm-add-row');
+        const txt = (row ? row.textContent : '');
+        return _tmSteps().filter(x => x.k !== 'send' && txt.indexOf(x.why) >= 0).length;
+      }, setup);
+      expect(t, 'more than one step had its sentence on screen for ' + JSON.stringify(setup)).toBe(1);
+    }
+  });
+
+  // REPLACED 2026-09-22 (§10.4). This used to require all four steps to be
+  // listed, on the reasoning that collapsing them must not hide what is coming.
+  // Then the owner saw the whole page: "its overwhelming even to me, sure as
+  // shit would be overwleming to a client." He was right, and the reason was
+  // this panel. A finished step showed a tick and its figure, and the rail
+  // further down the same page states every one of those figures again, next to
+  // the button he presses. Two read-backs of the same three numbers.
+  //
+  // So the two stopped competing. THIS says what is missing; the rail says what
+  // it is. The contract now is the opposite of the old one: a step he has
+  // finished says nothing at all here.
+  test('a finished step says nothing, because the rail already says it', async () => {
+    const t = await page.evaluate(() => {
+      _geiIsTM = true;
+      _tmLayers = new Set(['rate']); _tmRatePerMan = 95;
+      const e = document.getElementById('tm-i-rate'); if (e) e.value = '95';
+      const n = document.getElementById('tm-i-nte'); if (n) n.value = '';
+      _geiScopeChips = ['x'];
+      _tmApplyLayers();
+      const row = document.getElementById('tm-add-row');
+      return (row ? row.textContent : '').replace(/\s+/g, ' ');
+    });
+    // Done: the work and the rate. Neither is mentioned.
+    expect(t, 'a finished step was still taking a line').not.toContain('The work');
+    expect(t, 'the rate is stated twice on one page').not.toContain('Your rate');
+    expect(t, 'the figure belongs to the rail').not.toContain('$95/hr each');
+    // Not done: the ceiling, which is the only thing he is asked for.
+    expect(t).toContain('The most it can cost');
+    expect(t).toContain('Next');
+    // And what he would be sending if he stopped here.
+    expect(t).toContain('They get a rate, no total');
+  });
+
+  // ── A SECTION HE HAS ANSWERED SAYS ONE LINE ───────────────────────────────
+  //
+  // Owner, 2026-09-22: "is T&M built into a easy to flow wizard?" It is not,
+  // and it should not be. Same-day proposals close at roughly twice the rate of
+  // follow ups, so what is being optimised is seconds from seeing the job to
+  // pressing send, on a driveway. A wizard taxes every job with extra taps to
+  // solve a first-job problem and hides the document at the moment he turns the
+  // phone around to show it.
+  //
+  // What a wizard is good at, never showing more than is needed, comes from
+  // folding instead: a card he has filled says its label and its figure, the
+  // one he has not is open and waiting.
+  test.describe('the page grows as he answers', () => {
+    const state = (id) => page.evaluate((x) => {
+      const card = document.getElementById(x);
+      const bar = card && card.querySelector(':scope > .tm-fold');
+      return {
+        fold: card && card.getAttribute('data-fold'),
+        bar: !!bar,
+        text: bar ? bar.textContent.replace(/\s+/g, ' ').trim() : '',
+      };
+    }, id);
+
+    const fill = (rate, cap) => page.evaluate((c) => {
+      _geiIsTM = true;
+      _tmLayers = new Set(['rate', 'cap']);
+      const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+      sv('gei-addr', '700 Rate Rd, Wichita KS 67202');
+      sv('tm-i-rate', c.rate == null ? '' : String(c.rate));
+      sv('tm-i-nte', c.cap == null ? '' : String(c.cap));
+      const crew = document.getElementById('tm-i-crew-count');
+      if (crew) crew.textContent = '2';
+      _tmOpen = new Set();
+      _tmInputChange();
+      _tmApplyLayers();
+    }, { rate, cap });
+
+    // A fold with nothing behind it is a door to an empty room.
+    test('a section with nothing in it stays open', async () => {
+      await fill(null, null);
+      const r = await state('tm-blk-nte');
+      expect(r.fold).toBe('0');
+    });
+
+    test('a section he has answered folds to its label and its figure', async () => {
+      await fill(95, '12,000');
+      const cap = await state('tm-blk-nte');
+      expect(cap.fold).toBe('1');
+      expect(cap.text).toContain('The most it can cost');
+      expect(cap.text).toContain('$12,000');
+    });
+
+    // The figure is his, down to the crew standing in it.
+    test('the rate line says the rate and who is on site', async () => {
+      await fill(95, '12,000');
+      const r = await state('tm-blk-rate');
+      expect(r.fold).toBe('1');
+      expect(r.text).toContain('$95/hr each');
+      expect(r.text).toContain('2 on site');
+    });
+
+    // THE ONE THE FOLD BROKE. The hide-rate toggle lives inside this card, so
+    // folding it hid the most consequential fact about the number on the line
+    // above. And the preference is sticky (S.tmHideRate follows him to the
+    // tablet), so a man who turned it on months ago and forgot would fold this
+    // card on every job and never be told again.
+    test('the folded rate line says when the customer will not see it', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => _tmSetHideRate(true));
+      const on = await state('tm-blk-rate');
+      expect(on.fold, 'it had to still be folded for this to mean anything').toBe('1');
+      expect(on.text).toContain('$95/hr each');
+      expect(on.text, 'the fold hid whether the rate is even on the proposal')
+        .toContain('off the proposal');
+      await page.evaluate(() => _tmSetHideRate(false));
+      const off = await state('tm-blk-rate');
+      // Printing the rate is what a T&M contract normally does. Only the
+      // exception is marked; a badge on every proposal is the noise this page
+      // spent the day shedding.
+      expect(off.text).not.toContain('off the proposal');
+      expect(off.text).toContain('$95/hr each');
+    });
+
+    // Where a statute makes the rate a required term the flag is forced off, so
+    // the line must never claim a proposal is missing a term it is carrying.
+    test('a state that requires the rate never shows that line', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => {
+        _tmSetHideRate(true);
+        const a = document.getElementById('gei-addr');
+        if (a) a.value = '12 Main St, Philadelphia PA 19103';
+        _tmInputChange(); _tmApplyLayers();
+      });
+      const r = await state('tm-blk-rate');
+      expect(r.text).not.toContain('off the proposal');
+      await page.evaluate(() => {
+        const a = document.getElementById('gei-addr');
+        if (a) a.value = '700 Rate Rd, Wichita KS 67202';
+        _tmSetHideRate(false); _tmApplyLayers();
+      });
+    });
+
+    test('tapping one opens it, and it stays open through a redraw', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => _tmFoldToggle('tm-blk-rate'));
+      expect((await state('tm-blk-rate')).fold).toBe('0');
+      // Anything at all can trigger _tmApplyLayers. It must not shut under his
+      // thumb while he is typing in it.
+      await page.evaluate(() => { _tmInputChange(); _tmApplyLayers(); });
+      expect((await state('tm-blk-rate')).fold).toBe('0');
+      // And the one he did not open is still folded.
+      expect((await state('tm-blk-nte')).fold).toBe('1');
+    });
+
+    test('tapping it again puts it away', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => { _tmFoldToggle('tm-blk-rate'); _tmFoldToggle('tm-blk-rate'); });
+      expect((await state('tm-blk-rate')).fold).toBe('1');
+    });
+
+    // Emptying a field has to reopen it, or the only way back to a box he just
+    // cleared is to remember it is behind a line that now says nothing.
+    test('clearing the figure opens the section back up', async () => {
+      await fill(95, '12,000');
+      expect((await state('tm-blk-nte')).fold).toBe('1');
+      await fill(95, null);
+      expect((await state('tm-blk-nte')).fold).toBe('0');
+    });
+
+    test('the bar is one control per section, not one per redraw', async () => {
+      await fill(95, '12,000');
+      const n = await page.evaluate(() => {
+        for (let i = 0; i < 5; i++) _tmApplyLayers();
+        return document.getElementById('tm-blk-rate').querySelectorAll(':scope > .tm-fold').length;
+      });
+      expect(n, 'a fold bar was appended on every render').toBe(1);
+    });
+  });
+
+  // California will not take a T&M home improvement contract at all, so a
+  // checklist there would be walking him through something he must not do.
+  test('a state that forbids T&M gets the warning and no steps', async () => {
+    const t = await page.evaluate(() => {
+      const e = document.getElementById('gei-addr');
+      if (e) e.value = '1 Ocean Ave, Los Angeles CA 90291';
+      _geiIsTM = true; _tmLayers = new Set(['rate']);
+      _tmApplyLayers();
+      const row = document.getElementById('tm-add-row');
+      const out = (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
+      if (e) e.value = '700 Rate Rd, Wichita KS 67202';
+      _tmApplyLayers();
+      return out;
+    });
+    expect(t).toContain('does not allow');
+    expect(t, 'it walked him through a contract his state will not take').not.toContain('Send it and they get');
+  });
+
+  // ── THE DOCUMENT ──────────────────────────────────────────────────────────
+
+  const doc = (cap) => page.evaluate((c) => {
+    const prev = { tm: _geiIsTM, rate: _tmRatePerMan, only: _tmRateOnly, layers: [..._tmLayers] };
+    _geiIsTM = true; _geiIsFreeForm = false;
+    _tmLayers = new Set(['rate', 'est']); _tmRateOnly = false;
+    _tmRatePerMan = 95; _tmEstHours = 40; _tmCrewCount = 2;
+    const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+    sv('gei-addr', '700 Rate Rd, Wichita KS 67202');
+    sv('tm-i-rate', '95'); sv('tm-i-days', '5');
+    sv('tm-nte-cap', c ? String(c) : ''); sv('tm-i-nte', c ? String(c) : '');
+    let h = '';
+    try { h = sendGenericProposal(true, { silent: true }); } catch (e) { h = 'THREW:' + e.message; }
+    document.getElementById('_prop-preview-ov')?.remove();
+    _geiIsTM = prev.tm; _tmRatePerMan = prev.rate; _tmRateOnly = prev.only;
+    _tmLayers = new Set(prev.layers);
+    return h;
+  }, cap);
+
+  // The old shape, still correct where there is no ceiling to lead with.
+  test('with no ceiling, the estimated total is still the big number', async () => {
+    const h = await doc(0);
+    expect(h).toContain('ESTIMATED TOTAL');
+    expect(h).not.toContain('THE MOST THIS CAN COST YOU');
+  });
+
+  // The fix. The cap used to appear NOWHERE in the money footer when there was
+  // an estimate: it was one clause of eleven in the terms, in 11px, while a
+  // guess at the hours sat in the accent bar in 21px.
+  test('with a ceiling, the ceiling is the big number and the guess steps down', async () => {
+    const h = await doc(12000);
+    expect(h).toContain('THE MOST THIS CAN COST YOU');
+    expect(h).toContain('$12,000');
+    // Nothing is hidden: the estimate is still on the page, just not shouting.
+    expect(h).toContain('not a fixed price');
+    // And it is not still claiming to be the total.
+    expect(h).not.toContain('ESTIMATED TOTAL');
+  });
+
+  // A ceiling with no qualifier is a promise he cannot keep: approved extras
+  // are exactly how a T&M job legitimately passes its cap.
+  test('the big ceiling says what lifts it', async () => {
+    const h = await doc(12000);
+    expect(h).toContain('Unless you approve more in writing');
+  });
 });

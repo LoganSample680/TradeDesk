@@ -1416,9 +1416,14 @@ test.describe('tim', () => {
             dim: Number(cs.opacity) < 0.9 };
         };
         const empty = read();
-        box.value = 'who owes me money';
+        // Through the app's own setter (it fires input) rather than a bare
+        // write. CHANGED 2026-09-22 with the mechanism: this used to lean on
+        // :placeholder-shown reacting to the value alone, which WebKit does not
+        // do, so the bare write was driving a path the app does not have. The
+        // app never sets this box without firing input any more.
+        _timSetSaid(box, 'who owes me money');
         const typed = read();
-        box.value = '';
+        _timSetSaid(box, '');
         const cleared = read();
         stop.remove();
         document.getElementById('_tim-ov')?.remove();
@@ -1427,8 +1432,8 @@ test.describe('tim', () => {
       // Present the whole time. Dim and untappable with nothing in the box.
       expect(r.empty).toEqual({ shown: true, taps: false, dim: true });
       expect(r.typed).toEqual({ shown: true, taps: true, dim: false });
-      // And back again, because :placeholder-shown tracks the VALUE with no
-      // event to miss: no keyup handler, so a paste, a dictation result, an
+      // And back again, because the row's data-empty tracks the VALUE through
+      // one listener that every write goes through: a paste, a dictation result, an
       // autofill or an undo cannot strand it in the wrong state.
       expect(r.cleared).toEqual({ shown: true, taps: false, dim: true });
     });
@@ -2448,7 +2453,350 @@ test.describe('tim', () => {
   });
 
 
+
+  // ── Take them off, and they stay off ──────────────────────────────────────
+  //
+  // Owner, 2026-09-21, on the T&M screen: "Tim's insights with take them off
+  // don't even remove it."
+  //
+  // Four separate faults were stacked under that one sentence, and any one of
+  // them alone was enough to produce it:
+  //   1. s.dismissed was the LAST line of timJobSnapshot's big try, after a
+  //      dozen reads of the estimate screen. Anything above it throwing left
+  //      it as [] and silently un-dismissed everything.
+  //   2. _timJobKey is '_' until the first autosave hands the bid an id and
+  //      'bid:N' after, so a nudge waved off while building a NEW proposal
+  //      came back the moment it saved. Same proposal, same man, new key.
+  //   3. The book nudges are not about the job at all, so dismissing them
+  //      against one meant they reappeared on the next screen.
+  //   4. None of it was persisted, so a reload brought all of it back, and a
+  //      reload is what happens when he closes the app on a driveway.
+  test.describe('a nudge waved off stays waved off', () => {
+    const BOOKS = () => {
+      const today = todayKey(), ago = n => addDays(today, -n);
+      clients.length = 0; clients.push({ id: 7101, name: 'Rick Delaney' });
+      bids.length = 0; bids.push({ id: 8801, client_id: 7101, status: 'Closed Won',
+        amount: 4000, date: ago(90), completion_date: ago(68) });
+      payments.length = 0; payments.push({ bid_id: 8801, amount: 2000 });
+      timResetDismissals();
+      window._geiBidId = null;
+      // The REAL rules, not whichever stub the last describe left behind.
+      // Half this file replaces timNudges to control what he finds, and a
+      // describe that forgets to put it back makes these tests assert against
+      // a fixed list that no dismissal could ever change. It passed alone and
+      // failed in the file, which is the signature of exactly that.
+      if (window.__realNudges) timNudges = window.__realNudges;
+    };
+    const ids = () => page.evaluate(() => (timNudges(timJobSnapshot()) || []).map(n => n.id));
+    test.beforeEach(async () => { await page.evaluate(BOOKS); await page.evaluate(() => goPg('pg-dash')); });
+    test.afterAll(async () => {
+      await page.evaluate(() => { window._geiBidId = null; timResetDismissals(); });
+    });
+
+    test('and the bid getting an id does not bring it back', async () => {
+      expect(await ids()).toContain('books-late');
+      await page.evaluate(() => _timDropNudge('books-late'));
+      expect(await ids(), 'it came back on the spot').not.toContain('books-late');
+      // The autosave hands the proposal an id. Same proposal, new job key.
+      await page.evaluate(() => { window._geiBidId = 8801; });
+      expect(await ids(), 'the first autosave brought it back').not.toContain('books-late');
+      await page.evaluate(() => { window._geiBidId = null; });
+      expect(await ids(), 'leaving the proposal brought it back').not.toContain('books-late');
+    });
+
+    // The one that makes "I know" honest rather than permanent. A man who
+    // knows Rick owes him $2,000 has not asked never to be told that Rick now
+    // owes him $4,400.
+    test('but the money moving brings it back, because that is news', async () => {
+      await page.evaluate(() => _timDropNudge('books-late'));
+      expect(await ids()).not.toContain('books-late');
+      const back = await page.evaluate(() => {
+        // He did more work on the same job and it is still not paid for.
+        bids[0].amount = 6400;
+        return (timNudges(timJobSnapshot()) || []).map(n => n.id);
+      });
+      expect(back, 'the figure changed and he said nothing').toContain('books-late');
+    });
+
+    // A JOB nudge is a fact about one proposal, so it is right that it comes
+    // back on the next one. That distinction is the whole reason there are two
+    // buckets, and losing it would make "not on this job" mean "never again".
+    test('a job nudge is off for THIS job and back on the next', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        window._geiBidId = 111;
+        timDismiss(_timJobKey(), 'under-book');
+        const onThis = timDismissedOn(_timJobKey());
+        window._geiBidId = 222;
+        const onNext = timDismissedOn(_timJobKey());
+        window._geiBidId = null;
+        return { onThis, onNext };
+      });
+      expect(r.onThis).toContain('under-book');
+      expect(r.onNext, 'it followed him to a different proposal').not.toContain('under-book');
+    });
+
+    // Fault 1, pinned on its own: s.dismissed must survive the estimate screen
+    // throwing, because that is what it used to be downstream of.
+    test('and it survives the estimate screen falling over', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        timDismiss('_', 'books-late', '2000');
+        const real = window._tmStateRule;
+        window._tmStateRule = () => { throw new Error('estimate screen is not here'); };
+        try {
+          const s = timJobSnapshot();
+          return { dismissed: s.dismissed, ids: (timNudges(s) || []).map(n => n.id) };
+        } finally { window._tmStateRule = real; }
+      });
+      expect(Array.isArray(r.dismissed), 's.dismissed was never assigned').toBe(true);
+      expect(r.ids, 'a throw upstream un-dismissed it').not.toContain('books-late');
+    });
+
+    // Fault 4. A reload is not a request to be told everything again.
+    test('and a reload does not resurrect it', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        _timDropNudge('books-late');
+        const stored = localStorage.getItem('td_tim_off');
+        // Wipe what is in memory, exactly as a fresh load would have it, and
+        // let the file's own loader read it back.
+        _timDismissed = {}; _timDismissedBooks = {};
+        const before = (timNudges(timJobSnapshot()) || []).map(n => n.id);
+        const r2 = JSON.parse(stored || '{}');
+        _timDismissed = r2.job || {}; _timDismissedBooks = r2.books || {};
+        const after = (timNudges(timJobSnapshot()) || []).map(n => n.id);
+        return { stored: !!stored, before, after };
+      });
+      expect(r.stored, 'nothing was written to disk at all').toBe(true);
+      expect(r.before, 'the fixture did not actually clear memory').toContain('books-late');
+      expect(r.after, 'it did not come back off disk').not.toContain('books-late');
+    });
+
+    // The foot-gun that made the first attempt at this fix worse than the bug:
+    // a caller that does not hand over the figure must not silently no-op.
+    test('dismissing without naming the figure still dismisses', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        timDismiss(_timJobKey(), 'books-late');   // no third argument
+        return (timNudges(timJobSnapshot()) || []).map(n => n.id);
+      });
+      expect(r, 'the two-argument call silently did nothing').not.toContain('books-late');
+    });
+
+    // "I know" twice is a man who knows about his late money, not a man saying
+    // the whole idea was bad. timLearn drops a KIND of nudge for good after two
+    // noes, and that must not fire for the books.
+    test('knowing about your own money does not teach him to stop looking', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        const seen = [];
+        const real = window.timLearn;
+        window.timLearn = (kind, id, ok) => { seen.push([kind, id, ok]); };
+        try {
+          timDismiss('_', 'books-late', '2000');
+          timDismiss('_', 'under-book');
+          return seen;
+        } finally { window.timLearn = real; }
+      });
+      expect(r.map(x => x[1]), 'a book nudge taught him to drop it').not.toContain('books-late');
+      expect(r.map(x => x[1]), 'a job nudge should still teach').toContain('under-book');
+    });
+  });
+
   test('no console errors, tim.js', async () => {
     assertNoErrors(page, 'tim.js');
+  });
+});
+
+
+// ── TALKING IS THE EASY WAY IN ───────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "I really want people to use Tim to speak it since speak
+// is easier then typing."
+//
+// The mic was permanently secondary, on the reasoning that a filled ink block
+// next to a filled blue arrow is two primaries on one row. True of a row with
+// text in it. False of an EMPTY one, where the arrow is already dimmed to 32%
+// and takes no taps: nothing was primary, and the only thing he could actually
+// do from there was the quietest control on the row.
+//
+// So the two swap, driven off :placeholder-shown like the arrow already is,
+// which means no JS touches a style property (8.5) and dictation, paste,
+// autofill and undo cannot strand either one in the wrong state.
+test.describe('tim: the mic is the way in', () => {
+  let page;
+
+  // The mic only draws where a device can actually dictate, which in a browser
+  // is nowhere. _voiceCapable is stubbed so the markup exists to measure; that
+  // is the only lie told here, and the swap under test is pure CSS.
+  const openWithMic = () => page.evaluate(() => {
+    window._voiceCapable = () => true;
+    document.getElementById('_tim-ov')?.remove();
+    openTim();
+  });
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // The mechanism itself. :placeholder-shown looked right and did not survive
+  // WebKit, so this asserts the thing that replaced it rather than the paint
+  // alone: one attribute on the row, tracking the box through typed AND
+  // programmatic writes, which is what an iPhone actually does all day.
+  test('the row states whether the box is empty, through either kind of write', async () => {
+    await openWithMic();
+    const r = await page.evaluate(() => {
+      const row = () => document.getElementById('_tim-row').getAttribute('data-empty');
+      const say = document.getElementById('_tim-say');
+      const out = { start: row() };
+      _timSetSaid(say, 'who owes me money');
+      out.afterSet = row();
+      _timSetSaid(say, '');
+      out.afterClear = row();
+      // Typed, the native way: the listener is the same one.
+      say.value = 'x';
+      say.dispatchEvent(new Event('input', { bubbles: true }));
+      out.afterType = row();
+      // Whitespace is not something to send.
+      _timSetSaid(say, '   ');
+      out.afterSpaces = row();
+      _timSetSaid(say, '');
+      return out;
+    });
+    expect(r).toEqual({ start: '1', afterSet: '0', afterClear: '1', afterType: '0', afterSpaces: '1' });
+  });
+
+  test('the mic carries no inline fill, so the stylesheet can own both states', async () => {
+    const r = await page.evaluate(() => {
+      window._voiceCapable = () => true;
+      const h = _timAskHtml();
+      // The BUTTON's own style attribute only. The little "T" badge nested
+      // inside it legitimately carries a background of its own, and slicing to
+      // the closing tag swallows it.
+      const at = h.slice(h.indexOf('id="_tim-mic"'));
+      const m = (at.match(/style="([^"]*)"/) || [])[1] || '';
+      return { has: h.indexOf('id="_tim-mic"') >= 0, bg: /background:/.test(m), sh: /box-shadow:/.test(m) };
+    });
+    expect(r.has).toBe(true);
+    // An inline style beats the stylesheet, so either of these would freeze the
+    // mic in one state and the swap would silently never happen.
+    expect(r.bg, 'an inline background would beat the stylesheet and freeze the swap').toBe(false);
+    expect(r.sh).toBe(false);
+  });
+
+  // THE TRANSITION IS KILLED, NOT WAITED OUT. This assertion failed three times
+  // on webkit and only the third one carried diagnostics, which said: the value
+  // landed, data-empty flipped to "0", the selector correctly stopped matching,
+  // and getComputedStyle still reported the ink it had before. That is a
+  // transition that never advanced, because headless WebKit need not paint a
+  // frame for a sleeping test, and a computed style mid-transition is the frame
+  // it is ON, not the state it is going to.
+  //
+  // The arrow test three describes up has said exactly this since it was
+  // written: "Killing the transition is the deterministic way to assert the END
+  // state; sleeping would be asserting the duration by proxy and would flake on
+  // a loaded runner, which this suite has already taught twice." It has now
+  // taught it three times, to me, at a cost of two CI cycles. Same trick here.
+  const micState = async (value) => {
+    await page.evaluate((v) => {
+      if (!document.getElementById('_tim-nofx')) {
+        const stop = document.createElement('style');
+        stop.id = '_tim-nofx';
+        stop.textContent = '#_tim-mic,#_tim-mic svg,#_tim-send{transition:none !important}';
+        document.head.appendChild(stop);
+      }
+      const say = document.getElementById('_tim-say');
+      // Through the app's own setter, which fires the input event the row's
+      // data-empty is driven from. A bare .value write is a path the app does
+      // not have.
+      if (say) _timSetSaid(say, v);
+    }, value);
+    return page.evaluate(() => {
+      const mic = document.getElementById('_tim-mic'), send = document.getElementById('_tim-send');
+      const m = getComputedStyle(mic), s = getComputedStyle(send);
+      const rgb = (c) => (c.match(/\d+/g) || []).slice(0, 3).map(Number);
+      const lum = (c) => { const [r, g, b] = rgb(c); return (0.299 * r + 0.587 * g + 0.114 * b); };
+      // WHY, not just WHAT. This assertion has failed twice on a browser that
+      // cannot be installed behind this proxy, and "expected > 110, received
+      // 23" says nothing about which link in the chain broke. These four say
+      // whether the value landed, whether the attribute followed it, whether
+      // the selector matches, and how many of these rows are even in the DOM.
+      return { micLum: lum(m.backgroundColor), sendOpacity: parseFloat(s.opacity), sendTaps: s.pointerEvents,
+        _diag: {
+          said: JSON.stringify((document.getElementById('_tim-say') || {}).value),
+          micAttr: mic.getAttribute('data-empty'),
+          rowAttr: (document.getElementById('_tim-row') || {}).getAttribute
+            ? document.getElementById('_tim-row').getAttribute('data-empty') : 'NOROW',
+          matches: mic.matches('#_tim-mic[data-empty="1"]'),
+          rows: document.querySelectorAll('#_tim-row').length,
+          mics: document.querySelectorAll('#_tim-mic').length,
+          bg: m.backgroundColor,
+        } };
+    });
+  };
+
+  test('on an empty box the mic is the filled key and the arrow is inert', async () => {
+    await openWithMic();
+    const r = await micState('');
+    // Filled ink, not a pale chip: the one thing he can do reads as the thing to do.
+    expect(r.micLum, 'the mic is not a filled dark key on an empty box. '
+      + JSON.stringify(r._diag)).toBeLessThan(110);
+    expect(r.sendOpacity).toBeLessThan(0.5);
+    expect(r.sendTaps).toBe('none');
+  });
+
+  test('the moment there is text, the arrow takes over and the mic steps back', async () => {
+    await openWithMic();
+    await micState('');
+    const r = await micState('who owes me money');
+    // Pale again. Never two filled buttons on one 390px row.
+    expect(r.micLum, 'the mic stayed filled while the arrow lit up, two primaries. '
+      + JSON.stringify(r._diag)).toBeGreaterThan(110);
+    expect(r.sendOpacity).toBe(1);
+    expect(r.sendTaps).not.toBe('none');
+  });
+
+  // ── THE ONE THAT ACTUALLY BIT ─────────────────────────────────────────────
+  //
+  // Sending clears the box from script. On WebKit, which is iOS, which is the
+  // only platform the mic exists on, that left :placeholder-shown stale: the
+  // arrow stayed lit and tappable over an empty box (the dead control the
+  // design exists to prevent) and the mic stayed pale instead of returning to
+  // the key. Every send, every time.
+  test('after a send the row is back to an empty box, not a lit arrow over nothing', async () => {
+    await openWithMic();
+    await micState('who owes me money');
+    const r = await page.evaluate(() => {
+      _timGo();
+      document.getElementById('_tim-ov')?.remove();
+      return null;
+    }).then(() => page.evaluate(() => {
+      window._voiceCapable = () => true;
+      openTim();
+      const say = document.getElementById('_tim-say');
+      return say ? say.value : 'GONE';
+    }));
+    expect(r, 'the box kept what was sent').toBe('');
+    const st = await micState('');
+    expect(st.micLum, 'the mic did not come back to the key after sending').toBeLessThan(110);
+    expect(st.sendTaps, 'the arrow still took taps over an empty box').toBe('none');
+  });
+
+  // "Say your own" next to a text box is ambiguous: say it how? Where there is
+  // a mic, the sentence names it, because a control nobody knows about is not
+  // the easy way regardless of how easy it is.
+  test('the empty sheet tells him he can talk, and only where he can', async () => {
+    const withMic = await page.evaluate(() => { window._voiceCapable = () => true; return _timHelloHtml(); });
+    expect(withMic).toContain('tap the mic and just talk');
+
+    const without = await page.evaluate(() => { window._voiceCapable = () => false; return _timHelloHtml(); });
+    expect(without, 'it offered a mic to a device that has none').not.toContain('mic');
+    expect(without).toContain('type your own');
   });
 });

@@ -1647,7 +1647,15 @@ function _schedSiteNote(clientId){
   // shown is the one for THIS property, not a sibling property of the same client.
   const _sa=document.getElementById('s-addr');
   const sn=(c?getSiteNote(c,(_sa&&_sa.value)||c.addr):'').trim();
-  el.textContent=sn;row.style.display=sn?'':'none';
+  // CHIPS AND THE SENTENCE, not one or the other. This is the screen somebody
+  // reads at the gate, so the facts go on top for the glance and his own words
+  // stay underneath for the detail the chips cannot carry ("the driveway
+  // cracks", "ring twice"). _geiSiteChips returns '' when it recognised
+  // nothing, and then this is exactly what it always was.
+  const chips=(typeof _geiSiteChips==='function')?_geiSiteChips(sn):'';
+  if(chips)el.innerHTML=chips+'<span style="display:block;margin-top:7px">'+escHtml(sn)+'</span>';
+  else el.textContent=sn;
+  row.style.display=sn?'':'none';
 }
 function pullClient(){
   const cid=parseInt(v('s-client-sel'));if(!cid)return;

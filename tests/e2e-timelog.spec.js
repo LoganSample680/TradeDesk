@@ -2199,10 +2199,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('the drill opens on the current month', async () => {
       const r = await page.evaluate(async () => {
+        // STATES ITS OWN PRECONDITIONS. renderTimeLog returns early on "No time
+        // logged in <year>", which leaves _tlDrill.mo exactly as it was found,
+        // so an empty or team-filtered fixture and a genuinely broken default
+        // look identical from here. This failed in CI at mo:null while passing
+        // alone and in a full local run: the fixture had not survived the gap.
+        window.__seedTimelogFixtures();
+        _tlScope = 'me';
+        _tlYear = null;              // open on the year the rows are in
         _tlDrill = { level: 'month', mo: null, wk: null, day: null };
         await renderTimeLog();
-        return { mo: _tlDrill.mo, cur: todayKey().slice(0, 7), level: _tlDrill.level };
+        return { mo: _tlDrill.mo, cur: todayKey().slice(0, 7), level: _tlDrill.level,
+          rows: (_tlLastRows || []).length };
       });
+      expect(r.rows, 'nothing to render, so this proves nothing about the default')
+        .toBeGreaterThan(0);
       // The month you are in is the one you almost always want, and it is the
       // page rather than a row somebody still has to tap open.
       expect(r.mo).toBe(r.cur);

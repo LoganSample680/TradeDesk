@@ -770,16 +770,76 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
    empty box is a dead control, and that is still true, so the arrow DIMS and
    stops taking taps until there is something to send. Present, so the thumb
    knows where it will be; inert, so it never fires on nothing.
-   Still :placeholder-shown and not a class the JS toggles, so it tracks what is
-   really in the box with no event to miss: no keyup handler, so a paste, a
-   dictation result, an autofill or an undo cannot strand it in the wrong
-   state. Rule 8.5 comes free with that, since no JS touches a style property.
-   The mic is the secondary here and the arrow is the primary: two filled
-   buttons side by side on a 390px row is a row with no answer in it. */
+   This was :placeholder-shown, chosen so it would track what is really in the
+   box with no event to miss. Elegant, and wrong on the platform that matters:
+   WebKit does not re-evaluate that pseudo-class when the value is written from
+   script, and every interesting write here IS from script (the send clears the
+   box, dictation fills it, a chip fills it). On an iPhone, the only place the
+   mic exists at all, the arrow stayed lit and tappable over an empty box after
+   every send. Caught by [webkit] "the moment there is text, the arrow takes
+   over": the mic's fill stayed ink after the value changed.
+   So the row carries data-empty and the stylesheet reads it. An attribute
+   change invalidates reliably everywhere, it is one source of truth rather
+   than two that can disagree, and 8.5 still holds: an attribute is not a style
+   property, and _timSetSaid makes every programmatic write fire input, so the
+   dictation result, the paste, the autofill and the undo all still land.
+   Two filled buttons side by side on a 390px row is a row with no answer in
+   it, so exactly one of these is ever filled, and WHICH one depends on whether
+   there is anything in the box. */
 #_tim-send{display:flex;align-items:center;justify-content:center;
   transition:opacity .15s,transform .15s}
-#_tim-say:placeholder-shown~#_tim-send{opacity:.32;pointer-events:none}
+#_tim-send[data-empty="1"]{opacity:.32;pointer-events:none}
 #_tim-send:active{transform:scale(.94);opacity:.9}
+
+/* ── A SECTION THAT IS ANSWERED SAYS ONE LINE ────────────────────────────────
+   Owner, 2026-09-22: "its overwhelming even to me", and then, on whether this
+   should be a wizard: a wizard trades taps for hand holding, and the taps are
+   the expensive part. Same day proposals close at about twice the rate of
+   follow ups, so the thing being optimised is seconds from seeing the job to
+   pressing send, standing on a driveway with the homeowner watching. A wizard
+   also hides the document at the exact moment he turns the phone around.
+   So: one screen that starts nearly empty and grows only as he answers. A card
+   he has filled in folds to its label and its figure; the one he has not is
+   open and waiting. Driven by an attribute, because that is what invalidates
+   reliably (see the mic), and no JS touches a style property.
+   display:none on the children rather than height, per 8.5. */
+.tm-fold{display:flex;align-items:center;gap:10px;width:100%;padding:13px 15px;border:0;
+  background:none;font-family:inherit;cursor:pointer;text-align:left}
+.tm-fold-l{font-size:13.5px;font-weight:700;color:var(--text2);min-width:0}
+/* WRAPS, never ellipsis. With nowrap the hidden-rate line truncated to "not
+   on the pro..." and the one word that mattered was the one that got cut.
+   These values are figures and short counts, so wrapping costs a second line
+   only in the rare case that needs it, and an ellipsis on a contract term is
+   worse than a tall row. */
+.tm-fold-v{flex:1;min-width:0;text-align:right;font-size:13.5px;font-weight:800;color:var(--text);
+  font-variant-numeric:tabular-nums;line-height:1.35}
+.tm-fold-c{flex-shrink:0;color:var(--text3);display:flex}
+.card[data-fold="1"]{padding:0}
+.card[data-fold="1"] > *:not(.tm-fold){display:none}
+.card[data-fold="0"] > .tm-fold{display:none}
+
+/* The listening panel when there is no sheet to sit in: dictating the scope
+   happens on the estimate page. Fixed to the bottom so the Done button is
+   where the thumb already is, above the tab bar so it is not half covered. */
+#_tim-listen-host{position:fixed;left:0;right:0;bottom:0;z-index:70}
+#_tim-listen-host #_tim-listen{margin:0}
+
+/* ── Talking is the easy way in ─────────────────────────────────────────────
+   Owner, 2026-09-22: "I really want people to use Tim to speak it since speak
+   is easier then typing."
+   On an EMPTY box the arrow above is already dimmed and inert, so the row had
+   no primary at all and the one thing he could actually do, talk, was the
+   quietest control on it. Empty, the mic is the filled ink key. The moment
+   there is text the arrow takes over and the mic drops back to an outline, so
+   there is never more than one filled button and never a dead one.
+   Driven off the row's data-empty like the arrow, and off the same single
+   answer, so the two can never disagree about which one is the primary. */
+#_tim-mic{background:var(--bg2);box-shadow:0 0 0 1px var(--border);
+  transition:background .15s,box-shadow .15s,transform .15s}
+#_tim-mic svg{stroke:var(--text2);transition:stroke .15s}
+#_tim-mic[data-empty="1"]{background:var(--ink);box-shadow:none}
+#_tim-mic[data-empty="1"] svg{stroke:var(--text-cream,#fff)}
+#_tim-mic:active{transform:scale(.94)}
 
 /* ── The send ───────────────────────────────────────────────────────────────
    Owner, 2026-09-21: "do they have that crisp iOS send shutter where it flows".
@@ -2862,6 +2922,11 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
             </div>
           </div>
+          <!-- Whether the customer reads the rate. Separate from whether the
+               job HAS one, because the rate is also what bills the clocked
+               hours later (timWorkSheet, js/tim-ask.js). Rendered by
+               _tmApplyLayers, because in some states it is not his to decide. -->
+          <div id="tm-hide-rate-wrap"></div>
           <div id="tm-stat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
             <div class="stat-tile">
               <div class="stat-l">Day rate</div>

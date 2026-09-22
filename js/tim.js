@@ -521,7 +521,13 @@ function _timHelloHtml(){
       '</div>';
   }
   return '<div id="_tim-hello" style="padding:13px 16px 2px">'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:9px">Tap one, or say your own</div>'+
+    // "Say your own" was ambiguous next to a text box: say it how? Where there
+    // is a mic, the sentence names it, because a control nobody knows is the
+    // easy way is not the easy way.
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:9px">'+
+      ((typeof _voiceCapable==='function'&&_voiceCapable())
+        ? 'Tap one, or tap the mic and just talk'
+        : 'Tap one, or type your own')+'</div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:7px">'+
       TIM_CHIPS.map(c=>
         '<button type="button" class="tim-chip" onclick="_timChip('+
@@ -544,10 +550,23 @@ function _timAskFrom(said){
   _timChip(said);
 }
 
+// ── SETTING THE BOX IS NOT THE SAME AS TYPING IN IT ──────────────────────────
+//
+// The mic and the send arrow swap on the row's data-empty, which _timPreview
+// sets from the input listener. Typing fires that listener by itself; a script
+// write does not, so every script write goes through here and says so, exactly
+// as _voiceStop already does after dictation. Nothing downstream has to know
+// whether a sentence was typed, dictated, pasted or tapped from a chip.
+function _timSetSaid(el,v){
+  if(!el)return;
+  el.value=String(v==null?'':v);
+  try{el.dispatchEvent(new Event('input',{bubbles:true}));}catch(_e){}
+}
+
 function _timChip(said){
   const el=document.getElementById('_tim-say');
   if(!el)return;
-  el.value=String(said||'');
+  _timSetSaid(el,String(said||''));
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
   _timGo();
 }
@@ -807,10 +826,19 @@ function _timHeadHtml(sub){
 function _timAskHtml(){
   const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
     ? '<button type="button" id="_tim-mic" onclick="_timTalkToggle()" aria-label="Talk to Tim" '+
-      // Secondary, not filled. It used to be an ink block, which next to a
-      // filled blue arrow is two primaries on one row and no answer to which
-      // one is the way out.
-      'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-pill);background:var(--bg2);box-shadow:0 0 0 1px var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative">'+
+      // NO background or box-shadow in here ON PURPOSE, the same trick the send
+      // arrow plays with display: an inline style beats the stylesheet, and the
+      // stylesheet is what swaps this between primary and secondary off the
+      // row's data-empty.
+      //
+      // It used to be permanently secondary, reasoning that an ink block next
+      // to a filled blue arrow is two primaries on one row. That was right
+      // about a row with text in it and wrong about an empty one, where the
+      // arrow is already dimmed to 32% and takes no taps: nothing was primary,
+      // and the only thing he could actually do from there was the quietest
+      // control on the row. Owner, 2026-09-22: "I really want people to use Tim
+      // to speak it since speak is easier then typing."
+      'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-pill);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
         '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
         '<path d="M12 19v3"></path><path d="M8 22h8"></path></svg>'+
@@ -824,14 +852,14 @@ function _timAskHtml(){
   // dead control; see the stylesheet, which owns both states.
   const send='<button type="button" id="_tim-send" onclick="_timGo()" aria-label="Send" '+
     // No display in here on purpose: an inline style beats the stylesheet, and
-    // the stylesheet is what does the swap off :placeholder-shown.
+    // the stylesheet is what does the swap off the row's data-empty.
     'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-pill);'+
     'background:var(--blue);cursor:pointer;padding:0">'+
       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" '+
       'stroke-linecap="round" stroke-linejoin="round">'+
       '<path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>'+
     '</button>';
-  return '<div style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
+  return '<div id="_tim-row" data-empty="1" style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
     '<input id="_tim-say" type="text" autocomplete="off" placeholder="'+
       (_timOnEstimate() ? 'Tell Tim what changed' : 'Build a T and M for Dana')+'" '+
       'style="flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 13px;border:0;border-radius:var(--r-md);background:var(--bg2);box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text)">'+
@@ -1096,11 +1124,23 @@ function _timTakeNudge(id){
   else if((id==='books-late'||id==='books-fresh')&&typeof goPg==='function')goPg('pg-money');
   else if(id==='bid-cold'&&typeof goPg==='function')goPg('pg-leads');
   else if(id==='state-blocks'&&typeof _geiToStylePicker==='function')_geiToStylePicker();
+  // The button that never did anything. "Take the total off" now takes the
+  // total off: the est layer is what puts one on, and _tmDropLayer is the same
+  // door the chip uses, so this cannot drift out of step with tapping it.
+  else if(id==='state-frees'&&typeof _tmDropLayer==='function')_tmDropLayer('est');
   else if(id==='runs-over'&&typeof _timRaiseHours==='function')_timRaiseHours(n);
   timDockRefresh();
 }
 function _timDropNudge(id){
-  if(typeof timDismiss==='function')timDismiss(typeof _timJobKey==='function'?_timJobKey():'_',id);
+  // The figure rides along so a book finding can come back when the money
+  // moves. Read off the same snapshot the nudge was built from rather than
+  // recomputed, or the two could disagree and it would never come back at all.
+  let sig=null;
+  try{
+    const snap=(typeof timJobSnapshot==='function')?timJobSnapshot():null;
+    if(snap&&snap._amounts)sig=String(snap._amounts[id]||0);
+  }catch(_e){}
+  if(typeof timDismiss==='function')timDismiss(typeof _timJobKey==='function'?_timJobKey():'_',id,sig);
   _timClose();
   timDockRefresh();
 }
@@ -1232,12 +1272,28 @@ function _timTalkToggle(target){
   _timTalkBegin();
 }
 
+// WHERE THE LISTENING PANEL LIVES. Inside Tim's sheet when the sheet is open,
+// which is every case this started with. But dictating the scope happens on the
+// estimate page with no sheet anywhere, and the panel carries the waveform, the
+// clock and the only Done button there is: without a host it went nowhere and
+// the mic could be started and never stopped.
+function _timTalkHost(){
+  const sheet=document.getElementById('_tim-sheet');
+  if(sheet)return sheet;
+  let f=document.getElementById('_tim-listen-host');
+  if(!f){
+    f=document.createElement('div');
+    f.id='_tim-listen-host';
+    document.body.appendChild(f);
+  }
+  return f;
+}
+
 function _timTalkBegin(){
   const el=document.getElementById(_timTalkTarget);
   if(!el)return;
   _timTalking=true;_timHeard='';_timTalkStart=Date.now();
-  const sheet=document.getElementById('_tim-sheet');
-  if(sheet)sheet.insertAdjacentHTML('beforeend',_timTalkPanel());
+  _timTalkHost().insertAdjacentHTML('beforeend',_timTalkPanel());
   const tick=()=>{
     if(!_timTalking)return;
     const t=(Date.now()-_timTalkStart)/1000;
@@ -1261,6 +1317,7 @@ function _timTalkStop(silent){
   _timTalking=false;
   if(_timWaveTimer){clearInterval(_timWaveTimer);_timWaveTimer=null;}
   document.getElementById('_tim-listen')?.remove();
+  document.getElementById('_tim-listen-host')?.remove();
   const finish=(text)=>{
     const said=String(text||_timHeard||'').trim();
     const el=document.getElementById(_timTalkTarget);
@@ -1475,9 +1532,40 @@ function _timChangeOne(){
 // ── The typed path ───────────────────────────────────────────────────────────
 // Unchanged from the box this sheet replaced: a sentence that names a screen or
 // a customer still just goes there.
+// ── WHICH OF THE TWO IS THE PRIMARY ──────────────────────────────────────────
+//
+// This was :placeholder-shown, which is the elegant answer and the wrong one on
+// the platform that matters. WebKit does not re-evaluate that pseudo-class when
+// the value is written from script, and every interesting write here is from
+// script: the send clears the box, dictation fills it, a chip fills it. On an
+// iPhone, which is the only place the mic exists at all, the arrow stayed lit
+// and tappable over an empty box after every single send.
+//
+// An ATTRIBUTE change invalidates reliably everywhere, so the row carries the
+// answer and the stylesheet reads it. One source of truth rather than two that
+// can disagree, set from the input listener, which now fires on typing and on
+// every programmatic write alike (_timSetSaid).
+// Set on the STYLED ELEMENTS, not only on the row. A descendant selector keyed
+// on an ancestor's attribute (#_tim-row[data-empty] #_tim-mic) did flip the
+// attribute on WebKit and did not repaint the button, twice, so the selector is
+// now self-referential: the element whose paint changes is the element whose
+// attribute changed. That is the invalidation path with the least room to be
+// wrong, and it costs one extra setAttribute.
+function _timRowEmpty(){
+  const el=document.getElementById('_tim-say');
+  const v=(el&&String(el.value||'').trim())?'0':'1';
+  ['_tim-row','_tim-mic','_tim-send'].forEach(id=>{
+    const n=document.getElementById(id);
+    if(n)n.setAttribute('data-empty',v);
+  });
+}
+
 function _timPreview(){
   const el=document.getElementById('_tim-say');
   const out=document.getElementById('_tim-read');
+  // Before any early return: the row's state is not conditional on a preview
+  // target existing.
+  _timRowEmpty();
   if(!el||!out)return;
   const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
@@ -1608,7 +1696,7 @@ function _timThreadRefresh(opts){
     // gone cannot be scrolled past by a screen reader either.
     document.getElementById('_tim-hello')?.remove();
     const el=document.getElementById('_tim-say');
-    if(el)el.value='';
+    if(el)_timSetSaid(el,'');
     if(typeof _timPreview==='function')_timPreview();
 
     // Somebody who asked the OS to stop moving things gets the answer straight

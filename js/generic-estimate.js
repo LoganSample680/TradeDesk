@@ -352,9 +352,23 @@ let _estCrewRates={};
 Object.defineProperty(window,'_estCrewRates',{get:()=>_estCrewRates,set:v=>{_estCrewRates=(v&&typeof v==='object')?v:{};},configurable:true});
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+// ── THE RATE IS ON THE JOB. WHETHER THE CUSTOMER SEES IT IS A SEPARATE THING ─
+//
+// Owner, 2026-09-22: "how do we give contractors the opportunity to hide the
+// rate in the proposal but it be something they have to toggle, if they usually
+// hide their rate does it persist?"
+//
+// One flag was doing two jobs. Turning Rate off took the rate off the BID,
+// which is also what Tim multiplies the clocked hours by to bill the job
+// (timWorkSheet, js/tim-ask.js), so a man who simply did not want his hourly
+// rate printed was throwing away his own invoicing to get that.
+// They are separate now: the rate is on the job either way, and this says
+// whether it is printed.
+let _tmHideRate=false;
 Object.defineProperty(window,'_geiIsTM',{get:()=>_geiIsTM,set:v=>{_geiIsTM=v;},configurable:true});
 Object.defineProperty(window,'_tmCrewCount',{get:()=>_tmCrewCount,set:v=>{_tmCrewCount=v;},configurable:true});
 Object.defineProperty(window,'_tmRatePerMan',{get:()=>_tmRatePerMan,set:v=>{_tmRatePerMan=v;},configurable:true});
+Object.defineProperty(window,'_tmHideRate',{get:()=>_tmHideRate,set:v=>{_tmHideRate=!!v;},configurable:true});
 Object.defineProperty(window,'_tmEstHours',{get:()=>_tmEstHours,set:v=>{_tmEstHours=v;},configurable:true});
 Object.defineProperty(window,'_tmBillingCycle',{get:()=>_tmBillingCycle,set:v=>{_tmBillingCycle=v;},configurable:true});
 let _tmCapAction='Stop & get re-approval';
@@ -671,11 +685,27 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
-  // A NEW T&M PROPOSAL STARTS AT NOTHING. Scope and Send, and whatever the job
-  // address's own statute forces on (_tmApplyLayers adds those). His last
-  // proposal's shape is not carried over: the fast path is the empty one, and
-  // a man who wants a rate on every job is one tap from it.
-  _tmLayers=new Set();_tmRateOnly=false;
+  // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
+  //
+  // It started at NOTHING until 2026-09-22, and the reasoning then was sound:
+  // scope and Send is a complete proposal, the statute adds what it must, and
+  // a man who wants a rate is one tap from it.
+  //
+  // What changed is not the argument, it is what the rate is FOR. Owner:
+  // "we want rate because then Tim can feed a quick invoice." The rate is no
+  // longer only a number the customer reads; it is the multiplier that turns
+  // the hours his crew clocks against this job into an invoice, through
+  // timWorkSheet (js/tim-ask.js). A T&M job with no rate on its bid gives Tim
+  // hours and nothing to bill them at, and that is discovered on the Friday
+  // somebody wants paid, which is the worst possible moment to find it.
+  //
+  // So it is ON, pre-filled with his own labor rate (_facts.laborRate below),
+  // and one tap from OFF for the job that really is agreed some other way.
+  // Nothing is required here that was not required before: the statute is
+  // still the only thing that can lock a layer.
+  _tmLayers=new Set(['rate']);_tmRateOnly=true;
+  // His standing answer, not a fresh question on every job.
+  _tmHideRate=_tmHideRateDefault();
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -725,6 +755,10 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||_facts.laborRate;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
+        // A proposal comes back the way it was SENT. Falling through to the
+        // standing preference here would silently reprint a rate on a job he
+        // had already hidden it on, or hide one a customer has already seen.
+        _tmHideRate=(b.tmHideRate!==undefined)?!!b.tmHideRate:_tmHideRateDefault();
         // The BID's own answer wins over the account default: a rate sheet he
         // saved stays a rate sheet, and a totalled T&M he saved before he ever
         // turned the default on does not silently lose its total on resume.
@@ -783,7 +817,8 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       // isTM precedence, legacy dual-flag rows (see _byoAutosave note) must
       // resume as T&M, never as an empty BYO.
-      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;}
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;
+        _tmHideRate=(_b.tmHideRate!==undefined)?!!_b.tmHideRate:_tmHideRateDefault();}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       if(Array.isArray(_b.exclusions))_geiExclusions=[..._b.exclusions];
@@ -936,8 +971,18 @@ function _tmRecalc(){
   if(fml)fml.textContent=(_tmRatePerMan&&_tmEstHours)?_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' × $'+_tmRatePerMan+'/hr × '+_tmEstHours+'hrs':'Enter rate & hours above';
   // Upsert labor line
   const idx=_geiLines.findIndex(l=>l._tmLabor);
-  const desc='Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
-  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
+  // The OTHER place the rate reaches him. Shown, the line is hours at a rate;
+  // hidden, it is one lump with the same total and no per-hour figure anywhere
+  // on it, because a line that says "120 hr @ $760" hands back by division
+  // exactly what the clause above just stopped printing.
+  const _hideR=_tmHideRate&&_tmCanHideRate();
+  const desc=_hideR
+    ? ('Labor'+(_tmCrewCount>1?(', '+_tmCrewCount+' workers'):''))
+    : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr');
+  const _laborTotal=Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours);
+  const line=_hideR
+    ? {desc,qty:1,unit:'lot',rate:_laborTotal,_tmLabor:true,total:_laborTotal}
+    : {desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:_laborTotal};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
   renderGeiLines();calcGeiTotal();
@@ -1033,7 +1078,9 @@ function _geiRenderScopeCard(prefix){
     '<div class="card-hd">'+
       // "in order" is a promise the list now keeps, so the heading says it.
       '<div class="card-hd-title">Scope of work, in order</div>'+
-      (mode==='full'?'<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>':'')+
+      // Points at the box, not the picker. The list is still reachable from
+      // inside the box, which is where somebody who wants it will look.
+      (mode==='full'?'<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_geiScopeSayMore(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>':'')+
     '</div>'+
     (mode==='legacy'?'<div style="padding:11px 16px 2px;font-size:11.5px;color:var(--text-3);line-height:1.5">Your line items and their descriptions are the scope on this proposal now. These older entries still print, remove any you do not want.</div>':'')+
     '<div id="'+prefix+'-scope-wrap"></div>';
@@ -1347,6 +1394,31 @@ function _geiToggleSiteNote(prefix){
   _geiRenderSiteNoteField(prefix||(_geiIsTM?'tm':_geiIsFreeForm?'byo':'gen'));
   if(_geiSiteNoteOpen)setTimeout(()=>document.getElementById('gei-sitenote')?.focus(),60);
 }
+// THE NOTE, READ RATHER THAN QUOTED. A paragraph clamped to two lines is not
+// readable by somebody standing at a gate with a toolbox in one hand, and that
+// is the only posture this field is ever read in. timSiteFacts pulls out the
+// three things that stop a crew at the kerb; his sentence is untouched and one
+// tap away in the editor.
+//
+// Returns '' when nothing was recognised, and the caller falls back to the
+// clamped sentence. Half a reading is worse than none: if Tim cannot see the
+// facts, the man's own words are still the best thing to show.
+function _geiSiteChips(val,opts){
+  if(typeof timSiteFacts!=='function')return '';
+  let facts=[];
+  try{facts=timSiteFacts(val)||[];}catch(_e){return '';}
+  if(!facts.length)return '';
+  const o=opts||{};
+  return '<span style="display:flex;flex-wrap:wrap;gap:6px'+(o.gapTop?';margin-top:2px':'')+'">'+
+    facts.map(f=>
+      '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:var(--r-pill,999px);'+
+        'background:'+(f.k==='dog'?'var(--amber-lt,#FEF3C7)':'var(--bg2)')+';'+
+        'box-shadow:inset 0 0 0 1px '+(f.k==='dog'?'#F0C674':'var(--border)')+';'+
+        'font-size:12px;font-weight:700;color:'+(f.k==='dog'?'#92400E':'var(--text)')+';white-space:nowrap">'+
+        (typeof svgIcon==='function'?svgIcon(f.icon,{size:12}):'')+escHtml(f.label)+'</span>').join('')+
+  '</span>';
+}
+
 function _geiRenderSiteNoteField(prefix){
   ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
   const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
@@ -1366,7 +1438,8 @@ function _geiRenderSiteNoteField(prefix){
       'style="display:flex;align-items:center;gap:11px;width:100%;padding:13px 16px;border:0;background:none;cursor:pointer;font-family:inherit;text-align:left">'+
       '<span style="flex:1;min-width:0">'+
         (has
-          ? '<span style="font-size:14px;font-weight:500;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+escHtml(val)+'</span>'
+          ? (_geiSiteChips(val)
+            || '<span style="font-size:14px;font-weight:500;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+escHtml(val)+'</span>')
           // Open, the row names the thing; the invitation would only repeat the
           // placeholder sitting two lines under it.
           : '<span style="display:block;font-size:14px;font-weight:500;color:var(--text)">'+
@@ -1389,6 +1462,20 @@ function _geiRenderSiteNoteField(prefix){
           'style="width:100%;box-sizing:border-box;padding:10px 12px;border:0;border-radius:var(--r);'+
           'box-shadow:0 0 0 1px var(--border2);font-size:13.5px;font-family:inherit;background:var(--bg2);'+
           'color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
+        // Said, not typed. This is a note a man writes standing in the
+        // driveway looking at the gate he is describing, which is the worst
+        // possible place to type and the best possible place to talk. Same
+        // door as the scope box: _timTalkToggle takes the field id.
+        ((typeof _voiceCapable==='function'&&_voiceCapable())
+          ? '<button type="button" onclick="_timTalkToggle(\'gei-sitenote\')" '+
+            'style="margin-top:9px;display:inline-flex;align-items:center;gap:7px;padding:8px 13px;'+
+            'border-radius:var(--r-pill,999px);border:0;background:var(--ink);color:var(--text-cream,#fff);'+
+            'font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">'+
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+              'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
+              '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>'+
+              '<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Say it</button>'
+          : '')+
         '<div style="font-size:11.5px;line-height:1.5;color:var(--text-3);margin-top:8px">'+
           (addrShort
             ? 'Saved to <strong>'+escHtml(addrShort)+'</strong>, and it loads itself on every future job there.'
@@ -1566,6 +1653,177 @@ function _updateScopeSheetBtn(label){
   const ck=btn.querySelector('._sc-ck');
   if(ck){ck.style.background=on?'var(--blue)':'transparent';ck.style.borderColor=on?'var(--blue)':'var(--border2)';ck.innerHTML=on?svgIcon('✓',{size:9,color:'#fff'}):'';}
 }
+// ── SAY THE JOB, GET THE SCOPE ───────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "I really want to retire the scope picker on every bid,
+// instead I want you to type up what youre doing or speak it to tim and he
+// builds the scope in order broken down by steps in order. Tim cant forget a
+// step."
+//
+// The picker asked a man to find his own job in somebody else's list, on every
+// bid, forever. He has already said the job out loud twice before he opens the
+// app: once on the driveway and once to whoever is going to do it. So the box
+// takes that sentence. js/tim-knowledge.js does the work (timScopeBuild), which
+// is pure, offline and tested on its own; this only has to ask and then show.
+//
+// The list is still there behind "pick from a list", because retiring a thing
+// people rely on is a one way door and this has been live for one afternoon.
+
+// What he last said, and what Tim reckoned he left out. On the module rather
+// than the DOM so a re-render cannot lose it mid-decision.
+let _geiScopeSaid='';
+let _geiScopeMissed=[];
+Object.defineProperty(window,'_geiScopeMissed',{get:()=>_geiScopeMissed,set:v=>{_geiScopeMissed=v||[];},configurable:true});
+
+function _geiScopeComposerHtml(containerId){
+  const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
+    ? '<button type="button" onclick="_geiScopeTalk()" style="flex-shrink:0;display:inline-flex;align-items:center;gap:7px;'+
+      'padding:10px 14px;border-radius:var(--r-pill,999px);border:0;background:var(--ink);color:var(--text-cream,#fff);'+
+      'font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
+        '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
+        '<path d="M12 19v3"></path></svg>Say it</button>'
+    : '';
+  return '<div style="padding:12px 16px 14px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">Tell me what you are doing</div>'+
+    '<div style="font-size:11.5px;color:var(--text3);line-height:1.45;margin-bottom:9px">'+
+      'The way you would say it to your crew. I will break it into steps and tell you what you left out.</div>'+
+    '<textarea id="gei-scope-say" rows="3" placeholder="Tear out the old vanity, run new supply lines, '+
+      'set the new one and top, then caulk it and test everything" '+
+      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:0;border-radius:var(--r-md);background:var(--bg2);'+
+      'box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text);line-height:1.5;resize:vertical"></textarea>'+
+    '<div style="display:flex;gap:8px;align-items:center;margin-top:9px">'+
+      mic+
+      '<button type="button" onclick="_geiScopeBuild(\''+containerId+'\')" style="flex:1;min-width:0;padding:10px 14px;'+
+        'border-radius:var(--r-pill,999px);border:0;background:var(--blue);color:#fff;font-size:13px;font-weight:800;'+
+        'cursor:pointer;font-family:inherit">Build the steps</button>'+
+    '</div>'+
+    '<button type="button" onclick="_openScopeSheet(\''+containerId+'\')" style="margin-top:9px;border:0;background:none;'+
+      'padding:2px 0;font-size:12px;color:var(--text3);cursor:pointer;font-family:inherit;text-decoration:underline">'+
+      'Or pick from a list</button>'+
+  '</div>';
+}
+
+// Tap to start, tap to stop. The owner was explicit that he would never hold a
+// button on a job site, and a scope is thirty seconds of talking, not three.
+function _geiScopeTalk(){
+  if(typeof _timTalkToggle!=='function')return;
+  _timTalkToggle('gei-scope-say');
+}
+
+function _geiScopeBuild(containerId){
+  const el=document.getElementById('gei-scope-say');
+  const said=el?String(el.value||''):'';
+  if(!said.trim()){
+    if(typeof showToast==='function')showToast('Say what the job is first','🔧',2200);
+    return;
+  }
+  if(typeof timScopeBuild!=='function')return;
+  const rejected=(typeof timDropped==='function')?[]:[];
+  const built=timScopeBuild(said,{rejected});
+  if(!built.steps.length){
+    if(typeof showToast==='function')showToast('I could not find a step in that','🔧',2600);
+    return;
+  }
+  _geiScopeSaid=said;
+  // ADDED TO what is there, never replacing it: he may build twice, once from
+  // the driveway and once after he has walked the crawlspace.
+  built.steps.forEach(st=>{
+    if(!_geiScopeChips.some(c=>String(c).toLowerCase()===st.text.toLowerCase()))_geiScopeChips.push(st.text);
+  });
+  // The whole point of the feature, held until he says yes to each one.
+  // ONLY THE ONES THAT ARE STEPS. TIM_IMPLIED also carries supply-only rules
+  // (prep-consumables is primer, masking and sandpaper) and those belong on the
+  // supply list, not numbered on a contract a homeowner signs. A rule with a
+  // `step` is a thing you do; a rule without one is a thing you buy.
+  _geiScopeMissed=(built.implied||[]).filter(im=>im&&im.step)
+    .filter(im=>!_geiScopeChips.some(c=>String(c).toLowerCase()===String(im.step).toLowerCase()));
+  _geiScopeNoScope=false;
+  // CARD FIRST, ROWS SECOND. _geiRenderScopeCard rebuilds the wrap the rows
+  // live in, so painting them before it throws them away, which is how the
+  // first build landed four steps in _geiScopeChips and an empty card.
+  if(typeof _geiRenderScopeCard==='function')_geiRenderScopeCard(_geiIsTM?'tm':'byo');
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+  if(typeof _byoAutosave==='function')_byoAutosave();
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+}
+
+// What he did not say. Each one carries the reason in his own words, and
+// nothing moves until he taps it: rule 3 of js/tim-knowledge.js is that nothing
+// Tim guessed becomes a fact until the contractor accepts it.
+function _geiScopeMissedHtml(){
+  if(!_geiScopeMissed.length)return '';
+  const rows=_geiScopeMissed.map(im=>
+    '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(im.say||'')+'</div>'+
+        '<div style="font-size:11.5px;color:var(--text3);line-height:1.45;margin-top:1px">'+escHtml(im.because||'')+'</div>'+
+      '</div>'+
+      '<button type="button" onclick="_geiScopeTakeMissed('+escHtml(JSON.stringify(String(im.id||'')))+')" '+
+        'style="flex-shrink:0;align-self:center;padding:6px 12px;border-radius:var(--r-pill,999px);border:0;'+
+        'background:var(--ink);color:var(--text-cream,#fff);font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Add</button>'+
+      '<button type="button" onclick="_geiScopeDropMissed('+escHtml(JSON.stringify(String(im.id||'')))+')" '+
+        'aria-label="No" style="flex-shrink:0;align-self:center;border:0;background:none;color:var(--text3);'+
+        'font-size:17px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1;font-family:inherit">×</button>'+
+    '</div>').join('');
+  return '<div style="border-top:1px solid var(--border);background:var(--bg2)">'+
+    '<div style="display:flex;align-items:center;gap:8px;padding:11px 16px 2px">'+
+      (typeof timMark==='function'?timMark(15):'')+
+      '<span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+
+        'You did not say'+'</span></div>'+
+    rows+'</div>';
+}
+
+// The composer again, under a list that already exists. Rendered in place
+// rather than as a sheet, because a man adding one more step should not lose
+// sight of the nine he already has.
+function _geiScopeSayMore(containerId){
+  const wrap=document.getElementById(containerId);
+  if(!wrap)return;
+  if(document.getElementById('gei-scope-say')){
+    document.getElementById('gei-scope-say').focus();
+    return;
+  }
+  wrap.insertAdjacentHTML('beforeend',_geiScopeComposerHtml(containerId));
+  document.getElementById('gei-scope-say')?.focus();
+}
+
+// Where a step goes when Tim adds it. Not the end of the list, which is the
+// one place a scaffold step is useless.
+function _geiScopePlace(text,stage,last){
+  const t=String(text||'').trim();
+  if(!t)return;
+  if(_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))return;
+  if(last||stage==='restore'||stage==='clean'){_geiScopeChips.push(t);return;}
+  if(stage==='access'||stage==='protect'){_geiScopeChips.unshift(t);return;}
+  _geiScopeChips.push(t);
+}
+
+function _geiScopeTakeMissed(id){
+  const im=_geiScopeMissed.filter(x=>String(x.id)===String(id))[0];
+  if(!im)return;
+  // `say` is the correction, `step` is the line. "Scaffold goes up before
+  // anything is stripped" is Tim talking to the contractor; a homeowner reading
+  // the contract gets "Set scaffold".
+  _geiScopePlace(im.step||im.say,im.stage,false);
+  // AND THE ONE THAT COMES WITH IT. Scaffold goes up and scaffold comes down,
+  // gutters come off and gutters go back on, and the second of each pair is the
+  // step everybody forgets, which is the whole reason this feature exists.
+  if(im.pairs&&im.pairs.step)_geiScopePlace(im.pairs.step,im.pairs.stage,!!im.pairs.last);
+  // Accepted makes it a fact he keeps. Rule 3, and the same n:1 the price book
+  // already uses.
+  if(typeof timLearn==='function')try{timLearn('implied',im.id,true);}catch(_e){}
+  _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+
+function _geiScopeDropMissed(id){
+  if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
+  _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+}
+
 function _renderScopeChips(containerId){
   const wrap=document.getElementById(containerId);if(!wrap)return;
   wrap.style.display='block';
@@ -1578,10 +1836,7 @@ function _renderScopeChips(containerId){
         '<span onclick="_toggleScopeNone()" style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);color:var(--blue);border:1.5px solid var(--blue);font-size:12px;font-weight:700;cursor:pointer">&#8709; None<span style="font-size:11px;font-weight:900;opacity:.6;margin-left:2px">&#xd7;</span></span>'+
       '</div>';
     }else{
-      wrap.innerHTML='<div style="padding:10px 16px">'+
-        '<button type="button" onclick="_openScopeSheet(\''+containerId+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;background:var(--bg2);border:1.5px dashed var(--border2);font-size:13px;font-weight:600;color:var(--text3);cursor:pointer;font-family:inherit">'+
-        '<span style="font-size:16px;line-height:1">+</span> Add scope of work</button>'+
-      '</div>';
+      wrap.innerHTML=_geiScopeComposerHtml(containerId);
     }
     return;
   }
@@ -1616,6 +1871,15 @@ function _renderScopeChips(containerId){
       '<span style="font-size:13.5px;font-weight:600;color:var(--blue)">Put these in work order</span>'+
     '</button>';
   }
+  // What he left out, under the list it belongs to, and only ever an offer.
+  html+=_geiScopeMissedHtml();
+  // Saying more once there is already a list. Same box, same door, so a second
+  // pass after he has walked the crawlspace adds to the scope rather than
+  // making him start again.
+  html+='<div style="border-top:1px solid var(--border);padding:9px 16px">'+
+    '<button type="button" onclick="_geiScopeSayMore(\''+containerId+'\')" style="border:0;background:none;padding:2px 0;'+
+      'font-size:12.5px;font-weight:700;color:var(--blue);cursor:pointer;font-family:inherit">+ Say or type more</button>'+
+  '</div>';
   wrap.innerHTML=html;
 }
 
@@ -2221,6 +2485,10 @@ function _byoAutosave(){
     b.isFreeForm=false;
     b.tmRateOnly=!!_tmRateOnly;
     b.tmLayers=[..._tmLayers];
+    // On the BID as well as on S: the preference is what he usually does, this
+    // is what THIS proposal did, and a resumed one has to come back the way it
+    // was sent rather than the way he has since changed his mind.
+    b.tmHideRate=!!_tmHideRate;
     if(_tmRateOnly){
       // Same reason as saveGenericEstimate: the flat figure is the deposit, and
       // the percent the shared block just wrote off a phantom total is wrong.
@@ -3804,10 +4072,20 @@ function _tmInputChange(){
   // The client sees what it costs per hour, and with two rates on the job he
   // sees both, because "2 workers @ $85/hr" is not true when one bills 95 and
   // the other 75 and the total is the same.
-  const desc=crewRates
-    ? ('Labor: '+_crewRateWords()+' · $'+perHour.toLocaleString()+'/hr on site')
-    : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr');
-  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(perHour),_tmLabor:true,total:Math.round(labor)};
+  // ...unless he has kept the rate off this proposal. The LINE carries the
+  // rate as surely as the terms clause does: "320 hr @ $190" hands it straight
+  // back by division, and the per-person wording hands back more than the
+  // clause ever printed. Hidden, it is one lump for the same money with no
+  // arithmetic on it that recovers an hourly figure.
+  const _hideRate=_tmHideRate&&_tmCanHideRate();
+  const desc=_hideRate
+    ? ('Labor'+(_tmCrewCount>1?(', '+_tmCrewCount+' workers'):''))
+    : (crewRates
+      ? ('Labor: '+_crewRateWords()+' · $'+perHour.toLocaleString()+'/hr on site')
+      : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr'));
+  const line=_hideRate
+    ? {desc,qty:1,unit:'lot',rate:Math.round(labor),_tmLabor:true,total:Math.round(labor)}
+    : {desc,qty:_tmEstHours,unit:'hr',rate:Math.round(perHour),_tmLabor:true,total:Math.round(labor)};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
   // Stat tiles
@@ -4050,13 +4328,26 @@ function _tmDelMatCat(idx){
 // two concepts for one idea: a T&M proposal with no day count IS a rate sheet,
 // so "rate only" is simply the Rate layer without the Estimate layer, and
 // _tmRateOnly is derived from that below instead of being its own toggle.
+// ORDER IS THE ADVICE. Cap sits second, ahead of Estimate, because that is the
+// truth about time and materials: of the ten states that force a number onto a
+// T&M job, nine want a CEILING ("the total amount to be paid", "a cap the total
+// cannot exceed") and only Pennsylvania names an estimate. _tmLockedLayers has
+// always locked rate and cap and never est, so the legal position was already
+// this; only the row disagreed, by putting Estimate next to Rate and leaving
+// the cap sixth, where it read as an afterthought.
+//
+// Owner, 2026-09-22: "does time and materials even need estimate cause why put
+// a price on time and materials???" It does not, mostly. An estimate is a guess
+// at the hours; a ceiling is a promise about the bill. The second is what a
+// homeowner is asking for and what the statutes want, so it is what the row
+// offers first.
 const TM_LAYERS = [
-  {k:'rate', label:'Rate',         blk:'tm-blk-rate'},
-  {k:'est',  label:'Estimate',     needs:'rate'},   // the day count, inside the rate block
-  {k:'mat',  label:'Materials',    blk:'tm-blk-mat'},
-  {k:'dep',  label:'Deposit'},                       // rail only
+  {k:'rate', label:'Rate',          blk:'tm-blk-rate'},
   {k:'cap',  label:'Not to exceed', blk:'tm-blk-nte'},
-  {k:'excl', label:'Exclusions',   blk:'tm-blk-excl'},
+  {k:'est',  label:'Estimate',      needs:'rate'},   // the day count, inside the rate block
+  {k:'mat',  label:'Materials',     blk:'tm-blk-mat'},
+  {k:'dep',  label:'Deposit'},                       // rail only
+  {k:'excl', label:'Exclusions',    blk:'tm-blk-excl'},
 ];
 let _tmLayers=new Set();
 Object.defineProperty(window,'_tmLayers',{get:()=>_tmLayers,set:v=>{_tmLayers=(v instanceof Set)?v:new Set(v||[]);},configurable:true});
@@ -4070,6 +4361,52 @@ function _tmStateRule(){
   const r=(typeof statePriceRule==='function')?statePriceRule(st):{rule:'none'};
   return Object.assign({state:st},r);
 }
+// ── WHERE HIDING IT IS NOT HIS TO DECIDE ────────────────────────────────────
+//
+// The rate is a REQUIRED TERM in some states, not a courtesy. Pennsylvania's
+// HICPA defines a time-and-materials contract as payment "based on the actual
+// cost of labor at a specified hourly rate", so a PA proposal with the rate
+// hidden is not a T&M contract at all.
+//
+// Rather than write a second legal table and have to be right about nine more
+// states, this reuses the boundary the file already draws: wherever a statute
+// LOCKS the rate layer on, the rate also has to be printed. That is
+// conservative, and conservative is the correct direction to be wrong in on a
+// contract term. Everywhere else it is his call.
+function _tmCanHideRate(){return !_tmLockedLayers().has('rate');}
+// STATE_NAMES already exists in js/legal.js (§18: one definition, many mouths).
+// The code is the fallback, for the case where the address parsed to something
+// that map has never heard of.
+function _tmStateName(st){
+  const k=String(st||'').toUpperCase();
+  try{if(typeof STATE_NAMES!=='undefined'&&STATE_NAMES[k])return STATE_NAMES[k];}catch(_e){}
+  return st||'';
+}
+// What he did last time, because a man who hides his rate hides it on every
+// job and should not have to say so on every job. On S, so it follows him to
+// the tablet in the truck rather than living on one phone.
+function _tmHideRateDefault(){
+  try{return (typeof S!=='undefined'&&S)?!!S.tmHideRate:false;}catch(_e){return false;}
+}
+function _tmSetHideRate(v){
+  if(!_tmCanHideRate()){_tmHideRate=false;}
+  else _tmHideRate=!!v;
+  // PERSISTED the way every other account preference is, not just assigned.
+  // An assignment alone lives until the tab closes, which is not "remembered"
+  // and is certainly not "follows him to the tablet in the truck".
+  try{
+    if(typeof S!=='undefined'&&S){
+      S.tmHideRate=_tmHideRate;
+      if(typeof _settingsChanged==='function')_settingsChanged();
+    }
+  }catch(_e){}
+  // The labor LINE carries the rate too, so it has to be rebuilt, not just
+  // re-rendered: hidden, it becomes one lump with no per-hour figure on it.
+  if(typeof _tmInputChange==='function')_tmInputChange();
+  if(typeof _tmApplyLayers==='function')_tmApplyLayers();
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+
 // A layer a statute put there cannot be tapped off.
 function _tmLockedLayers(){
   const r=_tmStateRule();
@@ -4091,6 +4428,93 @@ function _tmDropLayer(k){
 }
 function _tmToggleLayer(k){_tmLayers.has(k)?_tmDropLayer(k):_tmAddLayer(k);}
 
+// ── A SECTION HE HAS ANSWERED SAYS ONE LINE ─────────────────────────────────
+//
+// Owner, 2026-09-22: "its overwhelming even to me, sure as shit would be
+// overwleming to a client", and then "is T&M built into a easy to flow wizard?"
+//
+// Not a wizard. Same-day proposals close at roughly twice the rate of follow
+// ups and a day back at the office costs about 10% of the close, so what is
+// being optimised is seconds from seeing the job to pressing send, on a
+// driveway, with the homeowner watching. A wizard taxes every job with extra
+// taps to solve a first-job problem, and it hides the document at the exact
+// moment he turns the phone around to show it.
+//
+// So one screen that starts nearly empty and grows as he answers. A card he has
+// filled folds to its label and its figure; the one he has not is open. Nothing
+// is hidden that he has not already decided.
+//
+// Which ones he has pushed back open, so a re-render does not shut them again
+// under his thumb.
+let _tmOpen=new Set();
+Object.defineProperty(window,'_tmOpen',{get:()=>_tmOpen,set:v=>{_tmOpen=(v instanceof Set)?v:new Set(v||[]);},configurable:true});
+
+function _tmFoldToggle(id){
+  if(_tmOpen.has(id))_tmOpen.delete(id);else _tmOpen.add(id);
+  _tmApplyLayers();
+  // Opening a card below the fold should put him in it, not leave him looking
+  // at the line he just tapped.
+  if(_tmOpen.has(id)){
+    const el=document.getElementById(id);
+    if(el)try{el.scrollIntoView({block:'center'});}catch(_e){}
+  }
+}
+
+// One card. `value` empty means there is nothing answered yet, so it stays open
+// and is not foldable: a fold with nothing behind it is a door to an empty room.
+function _tmFold(id,label,value){
+  const card=document.getElementById(id);
+  if(!card)return;
+  const has=!!String(value||'').trim();
+  const open=!has||_tmOpen.has(id);
+  let bar=card.querySelector(':scope > .tm-fold');
+  if(!bar){
+    bar=document.createElement('button');
+    bar.type='button';
+    bar.className='tm-fold';
+    bar.addEventListener('click',()=>_tmFoldToggle(id));
+    card.insertBefore(bar,card.firstChild);
+  }
+  bar.innerHTML='<span class="tm-fold-l">'+escHtml(label)+'</span>'+
+    '<span class="tm-fold-v">'+escHtml(value||'')+'</span>'+
+    '<span class="tm-fold-c"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" '+
+      'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'+
+      '<path d="m9 18 6-6-6-6"></path></svg></span>';
+  bar.setAttribute('aria-label',(open?'Hide ':'Edit ')+label);
+  card.setAttribute('data-fold',open?'0':'1');
+}
+
+// What each one says when it is folded. Only ever what he actually put in it.
+function _tmFoldAll(){
+  const money=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+  const rate=Number(_tmRatePerMan)||0;
+  const crew=Math.max(1,Number(_tmCrewCount)||1);
+  // WHETHER THEY READ IT BELONGS ON THE FOLDED LINE. The toggle lives inside
+  // this card, so folding it hid the most consequential fact about the number
+  // on the line above: "$95/hr each" says nothing about whether the customer
+  // ever sees $95, and if anything implies they do.
+  //
+  // It is worse than a blank, because the preference is STICKY (S.tmHideRate,
+  // so it follows him to the tablet). A man who turned it on months ago and
+  // forgot would fold this card on every job and never be told again.
+  //
+  // Only the exceptional state is marked. Printing the rate is what a T&M
+  // contract normally does, and a badge on every proposal saying so is the
+  // noise this page has spent all day shedding.
+  const hidden=_tmHideRate&&_tmCanHideRate();
+  _tmFold('tm-blk-rate','Your rate',
+    rate>0?(money(rate)+'/hr each'+(hidden?' \u00b7 off the proposal':(crew>1?(' \u00b7 '+crew+' on site'):''))):'');
+  const cap=_tmCapVal();
+  _tmFold('tm-blk-nte','The most it can cost',cap>0?money(cap):'');
+  // The same rows _tmRenderMatList draws, counted the same way: everything in
+  // _geiLines that is not the labor line.
+  const mats=(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))
+    ?_geiLines.filter(l=>l&&!l._tmLabor).length:0;
+  _tmFold('tm-blk-mat','Materials',mats?(mats+' categor'+(mats>1?'ies':'y')):'');
+  const ex=(typeof _geiExclusions!=='undefined'&&Array.isArray(_geiExclusions))?_geiExclusions.length:0;
+  _tmFold('tm-blk-excl','Not included',ex?(ex+' item'+(ex>1?'s':'')):'');
+}
+
 // Everything the layers show, hide and say, in one place, so a flip and a
 // resume paint the same page.
 function _tmApplyLayers(){
@@ -4108,6 +4532,10 @@ function _tmApplyLayers(){
   show('tm-stat-days-tile',_tmLayers.has('est'));
   const grid=document.getElementById('tm-stat-grid');
   if(grid)grid.style.gridTemplateColumns=_tmLayers.has('est')?'repeat(3,1fr)':'1fr';
+  // Without an estimate this grid is one tile saying the day rate, and the rail
+  // further down says the day rate. One of them had to go, and the rail is the
+  // one standing next to the send button.
+  show('tm-stat-grid',_tmLayers.has('est'));
   // The rail carries only what he added.
   const anyMoney=['rate','est','mat','dep','cap'].some(k=>_tmLayers.has(k));
   show('tm-rail-money',anyMoney);
@@ -4117,13 +4545,169 @@ function _tmApplyLayers(){
   show('tm-deposit-flat-wrap',_tmLayers.has('dep')&&!_tmLayers.has('est'));
   show('tm-cad-head',_tmLayers.has('rate'));
   show('tm-cad-row',_tmLayers.has('rate'));
+  // The toggle lives IN the rate block, next to the number it is about, rather
+  // than in a settings screen he would have to know exists.
+  const hr=document.getElementById('tm-hide-rate-wrap');
+  if(hr){
+    const can=_tmCanHideRate();
+    if(!can)_tmHideRate=false;
+    hr.innerHTML=can
+      ? '<label style="display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer">'+
+          '<input type="checkbox" id="tm-hide-rate" '+(_tmHideRate?'checked':'')+
+          ' onchange="_tmSetHideRate(this.checked)" style="width:18px;height:18px;flex-shrink:0">'+
+          '<span style="min-width:0">'+
+            '<span style="display:block;font-size:13px;font-weight:700;color:var(--text)">Keep my rate off the proposal</span>'+
+            '<span style="display:block;font-size:11.5px;color:var(--text3);line-height:1.45;margin-top:1px">'+
+              'It still bills the hours. Remembered for next time.</span>'+
+          '</span></label>'
+      // Named, not abbreviated: a man reading why he cannot turn something off
+      // is owed the state's name and the statute behind it, not a two-letter
+      // code he has to decode to know which law is talking to him.
+      : '<div style="margin-top:12px;font-size:11.5px;color:#92400E;line-height:1.45">'+
+          escHtml(_tmStateName(rule.state))+' requires the hourly rate on a time and materials contract, so it stays on this proposal. '+
+          escHtml(rule.statute||'')+'</div>';
+  }
   const nteH=document.getElementById('tm-nte-head');
   if(nteH)nteH.textContent=locked.has('cap')
     ?'Guaranteed maximum price'   // the statutes' phrase, where a statute forces it
-    :(_tmRateOnly?'The most it can cost them (the only number they see)':'The most it can cost them (optional)');
+    // One heading, short. The parentheses were explaining the feature to him
+    // every time he opened the page, and the block underneath already says what
+    // happens at the cap.
+    :'The most it can cost them';
   const matH=document.getElementById('tm-mat-head');
   if(matH)matH.textContent='Material categories';
+  // Last, so every figure it reads is the one this pass just settled.
+  _tmFoldAll();
   _tmRenderAddRow(rule,locked);
+}
+
+// ── WHAT THIS PROPOSAL IS, RIGHT NOW, IN ONE SENTENCE ───────────────────────
+//
+// Owner, 2026-09-22, on this screen: "I'm honestly lost on what I even need to
+// do ... the flow just seems broken, doesn't seem natural."
+//
+// The page was a row of six ＋ chips with nothing above them. It knew things it
+// never said: that the scope alone is already a complete proposal, that a rate
+// with no day count prints no total, that Estimate needs Rate. A man looking at
+// six equal buttons has no way to know which of those are true, so he cannot
+// tell whether he is finished.
+//
+// So the row says what he has. Not what he could add, which is what the chips
+// already show, but what he would be SENDING if he stopped now. That is the
+// question somebody standing on a driveway is actually asking.
+function _tmShape(){
+  const L=_tmLayers;
+  if(!L.has('rate')&&!L.has('mat')&&!L.has('cap')){
+    // The state of it after picking Time & Materials and writing the scope, and
+    // the one nobody believes is finished. It usually is. It is no longer where
+    // a new one STARTS, though, because the rate has a second job now.
+    return {head:'Scope only, no price',
+      // The one shape that gets two sentences, because it is the one nobody
+      // believes is finished and the reassurance is the point.
+      body:'A complete proposal, and in most states a legal one. Without a rate, Tim cannot turn the clocked hours into an invoice.'};
+  }
+  if(L.has('rate')&&!L.has('est')){
+    return {head:'A rate, no total',
+      // SHORT. This is step 4's hint, and step 4 is the one line he cannot act
+      // on, so it must not be the longest thing on the panel. What the rate is
+      // for and what the cap does are already said by steps 2 and 3, one inch
+      // above it; repeating them there is how a checklist turns back into a
+      // paragraph.
+      //
+      // NOT "add Estimate" any more. If they want a number, the honest one on
+      // a T&M job is the ceiling, not a guess at the hours dressed up as a
+      // total. Estimate is still there for whoever wants it.
+      body:L.has('cap')
+        ? 'Nothing has told it how many days, so the cap is the only number on it.'
+        : 'Nothing has told it how many days. If they want a number, give them the ceiling.'};
+  }
+  if(L.has('rate')&&L.has('est')){
+    return {head:'A rate and a total',
+      body:'The rate, the days, and what that comes to'+
+        (L.has('mat')?', plus materials':'')+
+        (L.has('dep')?', with a deposit due up front':'')+
+        (L.has('cap')?', and it cannot go past the cap':'')+'.'};
+  }
+  if(L.has('mat')&&!L.has('rate')){
+    return {head:'Materials, no labor rate',
+      body:'What the materials cost, and nothing about your time.'};
+  }
+  return {head:'A cap, nothing else',
+    body:'The most it can cost, and no working behind it.'};
+}
+
+// What is actually in the cap field right now, as opposed to whether the layer
+// is switched on. A ceiling nobody typed a number into is not a ceiling.
+function _tmCapVal(){
+  try{return (typeof _moneyVal==='function')?(Number(_moneyVal('tm-i-nte'))||0):0;}catch(_e){return 0;}
+}
+// Has he said what the work is? Any of the ways this app lets him say it, plus
+// the deliberate "no scope" answer, which is an answer.
+function _tmScopeDone(){
+  try{
+    if(typeof _geiScopeNoScope!=='undefined'&&_geiScopeNoScope)return true;
+    if(typeof _geiJobScope!=='undefined'&&String(_geiJobScope||'').trim())return true;
+    if(typeof _geiScopeChips!=='undefined'&&(_geiScopeChips||[]).length)return true;
+    if(typeof _geiLines!=='undefined'&&(_geiLines||[]).some(l=>l&&!l._tmLabor))return true;
+  }catch(_e){}
+  return false;
+}
+
+// ── WHAT TO DO NEXT ─────────────────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "need clear action item steps that look clean and
+// understand what's going on", then "it has to be short and fucking beautiful."
+//
+// Those two pull against each other only if every step talks. A step he has
+// already done does not need persuading; it needs a tick and its figure, on one
+// line, like a receipt. Only the step he has NOT done has anything to argue,
+// and it is the only one that gets a card, a sentence and a button. Everything
+// after it stays collapsed so he can still see what is coming.
+//
+// So each step carries two things: `value`, the one short fact a finished line
+// shows, and `why`, the sentence that only ever appears on the step that is
+// actually next. That split is what makes the panel a third of its old height
+// without losing a word he needs at the moment he needs it.
+//
+// Pure: it reads state and returns the list. Nothing here touches the DOM, so
+// a test can ask what the screen is telling him without rendering it.
+// "A rate, no total" reads as a fragment after "They get". Only the first
+// letter moves, because the rest may carry a figure or a proper noun.
+function _tmLower(t){
+  const v=String(t||'');
+  return v?(v.charAt(0).toLowerCase()+v.slice(1)):v;
+}
+function _tmSteps(){
+  const L=_tmLayers,locked=_tmLockedLayers();
+  const rateOn=L.has('rate')&&Number(_tmRatePerMan)>0;
+  const capOn=L.has('cap')&&_tmCapVal()>0;
+  const capLocked=locked.has('cap');
+  const sh=_tmShape();
+  const out=[
+    {k:'scope',n:1,label:'The work',done:_tmScopeDone(),
+      value:_tmScopeDone()?'Written above':'Nothing yet',
+      why:'Say what you will do, up at the top. That part is the proposal.'},
+    {k:'rate',n:2,label:'Your rate',done:rateOn,act:rateOn?null:'rate',
+      value:rateOn?('$'+Number(_tmRatePerMan).toLocaleString()+'/hr each'):'Not set',
+      why:'The one term a time and materials contract actually has, and what Tim invoices the clocked hours at.'},
+    // The reason this row got reordered. Whether it is the NEXT thing is
+    // decided below, not here: a ceiling is not the next move while there is
+    // still no rate on the job.
+    {k:'cap',n:3,label:'The most it can cost',done:capOn,act:capOn?null:'cap',req:capLocked,
+      value:capOn?('$'+_tmCapVal().toLocaleString()):(capLocked?'Required here':'None'),
+      why:capLocked
+        ?'Your state requires a ceiling on this contract, so it stays on.'
+        :'What they are really asking, and what closes a T and M job. You are not pricing the work, you are promising a limit.'},
+    // Not a step he can tick. It is the read-back of what the other three add
+    // up to, which is why it sits under a rule rather than in the list.
+    {k:'send',n:4,label:'Send it',done:false,value:sh.head,why:sh.body},
+  ];
+  // EXACTLY ONE EXPANDED STEP. The first thing he has not done, whether or not
+  // there is a button for it: an unwritten scope has no Add, but it is still
+  // the thing standing between him and a proposal, so it still does the talking.
+  const next=out.filter(s=>!s.done&&s.k!=='send')[0];
+  if(next)next.rec=true;
+  return out;
 }
 
 // The row of chips. An added layer reads as added and can be tapped back off,
@@ -4138,10 +4722,12 @@ function _tmRenderAddRow(rule,locked){
     const fg=lock?'#92400E':on?'var(--text-cream,#fff)':'var(--text2)';
     const bd=lock?'1.5px solid #D97706':on?'1.5px solid var(--ink)':'1.5px solid var(--border2)';
     const mark=lock?'🔒':on?'✓':'＋';
+    // SMALLER, and on one line. Six pills at 13px over two rows read as six
+    // decisions facing him. They are a switchboard, not the job.
     return '<button type="button" onclick="_tmToggleLayer(\''+l.k+'\')"'+
       (lock?' title="'+escHtml(rule.note||'')+'"':'')+
-      ' style="padding:8px 13px;border-radius:var(--r-pill,999px);border:'+bd+';background:'+bg+';color:'+fg+
-      ';font-size:13px;font-weight:700;cursor:'+(lock?'default':'pointer')+';font-family:inherit">'+
+      ' style="padding:5px 10px;border-radius:var(--r-pill,999px);border:'+bd+';background:'+bg+';color:'+fg+
+      ';font-size:11.5px;font-weight:700;cursor:'+(lock?'default':'pointer')+';font-family:inherit;white-space:nowrap">'+
       mark+' '+escHtml(l.label)+'</button>';
   }).join('');
   // A state that will not take a T&M contract at all has to say so where he is
@@ -4158,7 +4744,97 @@ function _tmRenderAddRow(rule,locked){
     :rule.rule==='warn'
     ?'<div style="width:100%;font-size:11px;color:#92400E;margin-top:2px">'+escHtml(rule.note)+'</div>'
     :'';
-  row.innerHTML=chips+forced+blocked;
+  // The heading, so the row is a question with an answer rather than six
+  // buttons. "How this one bills" and not "Options": a man is not choosing
+  // features, he is describing a deal he has already half agreed on a driveway.
+  const head='<div style="width:100%;margin-bottom:2px">'+
+    '<div class="td-h3" style="margin-bottom:2px">How this one bills</div>'+
+    '</div>';
+  // The steps. Numbered, in the order the job is done, with exactly one thing
+  // marked as the next move so there is never a question of where to look.
+  // Blocked states get no steps, because in California none of this is legal
+  // and a checklist would be telling him to do something he must not do.
+  const steps=(rule.rule==='block')?'':
+    '<div style="width:100%;margin:2px 0 6px">'+
+    _tmSteps().map(s=>{
+      // ── THE READ-BACK ────────────────────────────────────────────────────
+      // Not a step. What the three above add up to in the customer's hands,
+      // under a rule, so the list reads as three things and an outcome.
+      if(s.k==='send'){
+        // No all-caps label over it any more. The block had a heading, a
+        // sub, a label and another label, which is four pieces of chrome
+        // around one sentence and a chip row. The sentence says what it is
+        // on its own.
+        return '<div style="margin-top:2px">'+
+          '<span style="font-size:12px;color:var(--text2);line-height:1.5">'+
+            '<b style="color:var(--text)">They get '+escHtml(_tmLower(s.value))+'.</b> '+escHtml(s.why)+'</span>'+
+        '</div>';
+      }
+      // ── THE ONE THAT TALKS ───────────────────────────────────────────────
+      // A white card off the grey page, which is the whole signal. No coloured
+      // ring as well: one thing saying "here" is louder than three.
+      if(s.rec){
+        const act=s.act
+          ? '<button type="button" onclick="_tmStepAct(\''+s.act+'\')" style="flex-shrink:0;align-self:center;'+
+            'padding:7px 14px;border-radius:var(--r-pill,999px);border:0;background:var(--blue);color:#fff;'+
+            'font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">Add</button>'
+          : '';
+        const tag=s.req
+          ? '<span style="margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#92400E">Required here</span>'
+          : '<span style="margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue)">Next</span>';
+        return '<div style="display:flex;gap:10px;align-items:flex-start;margin:5px 0;padding:11px 12px;'+
+          'border-radius:var(--r-md);background:var(--card,#fff);'+
+          'box-shadow:0 0 0 1px var(--border),0 1px 3px rgba(0,0,0,.07)">'+
+          '<span style="flex-shrink:0;width:20px;height:20px;border-radius:var(--r-pill,999px);background:var(--blue);'+
+            'color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">'+s.n+'</span>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:13px;font-weight:800;color:var(--text)">'+escHtml(s.label)+tag+'</div>'+
+            '<div style="font-size:11.5px;color:var(--text2);line-height:1.45;margin-top:2px">'+escHtml(s.why)+'</div>'+
+          '</div>'+act+'</div>';
+      }
+      // ── EVERYTHING ELSE: NOTHING ─────────────────────────────────────────
+      // A finished step used to get a tick and its figure here. That was a
+      // second read-back of numbers the rail already states in full, further
+      // down the same page, next to the button he presses. Owner, 2026-09-22:
+      // "its overwhelming even to me, sure as shit would be overwleming to a
+      // client."
+      //
+      // So the two stopped competing and each took a job. THIS says what is
+      // MISSING. The rail says what it IS. A step he has finished is not
+      // missing, so it says nothing at all, and once the job is described this
+      // whole block is one sentence.
+      return '';
+    }).join('')+'</div>'+
+    '<div style="width:100%;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;'+
+      // Not "Or add to it": half of them are on by the time he reads it, and a
+      // switchboard that calls itself an add list is lying about the ticked
+      // ones. It is the full set of pieces, on or off, and it stays complete
+      // rather than hiding the ones the steps above also cover, because a
+      // switch that vanishes when you flip it is worse than a repeated word.
+      'color:var(--text3);margin:4px 0 -2px">What is on this one</div>';
+  // Estimate is the one chip with a dependency and the only place the page can
+  // lie by omission: tapping it turns Rate on too (_tmAddLayer follows `needs`),
+  // which is right, and silently doing it would leave him wondering what he
+  // just pressed.
+  const dep=(!_tmLayers.has('rate')&&!locked.has('rate'))
+    ? '<div style="width:100%;font-size:11px;color:var(--text3);margin-top:2px">'+
+      'Estimate turns on Rate with it: a day count has nothing to multiply on its own.</div>'
+    : '';
+  // The shape sentence is NOT a card of its own any more: it is step 4's hint,
+  // which is where it belongs and which is how the steps were added without
+  // making the panel taller. _tmShape is still the one thing that says it.
+  row.innerHTML=head+steps+chips+dep+forced+blocked;
+}
+// Turning a step on and landing him in the field it is about. The chip alone
+// only makes a box appear somewhere further down the page, which on a phone is
+// off screen: he taps Add, sees nothing happen, and taps it again.
+function _tmStepAct(k){
+  _tmAddLayer(k);
+  const id=(k==='cap')?'tm-i-nte':(k==='rate')?'tm-i-rate':null;
+  const el=id?document.getElementById(id):null;
+  if(!el)return;
+  try{el.scrollIntoView({block:'center'});}catch(_e){}
+  try{el.focus();}catch(_e){}
 }
 // WHAT A BID SAVED BEFORE LAYERS ACTUALLY CARRIES. Read from its own values,
 // never guessed: a resumed proposal must come back showing exactly the blocks
@@ -5460,7 +6136,11 @@ function _geiBuildTermsHtml(){
   // is what the trade says happens without it: the contractors who got burned
   // on T&M were not burned by showing a rate, they were burned by never fixing
   // one in writing and then arguing about it afterwards.
-  const _tmRateClause=(_geiIsTM&&Number(_tmRatePerMan)>0)?[['Rate',
+  // Hidden means hidden: the clause that states the rate is the main place the
+  // customer reads it, so it comes out entirely rather than being softened.
+  // _tmCanHideRate is consulted and not just the flag, so a proposal carried
+  // across a state line cannot arrive with a required term missing.
+  const _tmRateClause=(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()))?[['Rate',
     `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate. Materials are billed at actual cost.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
@@ -5854,9 +6534,27 @@ async function sendGenericProposal(previewOnly,opts){
   // TOTAL is the one number a client should remember, sized and weighted like a
   // deliberate focal point (matches the confident-number treatment sign.html's own
   // amount display uses), not just another table row.
+  // ON A T&M JOB WITH A CEILING, THE CEILING IS THE NUMBER.
+  //
+  // This used to print ESTIMATED TOTAL in the accent bar in 21px, the exact
+  // slot a fixed price occupies on a fixed-price proposal, while the cap
+  // appeared nowhere in the money footer at all: it was one clause of eleven in
+  // the terms, in 11px. So the figure a customer remembered was a guess at the
+  // hours, and the promise that actually protected them was fine print. Then
+  // the job runs 20% over and the guess is what gets argued about.
+  //
+  // With a cap, the cap leads and the estimate drops to a quiet row above it,
+  // so nothing is hidden and only one number is loud. Without a cap, nothing
+  // changes.
+  const _tmCapLeads=_geiIsTM&&!_tmRateOnly&&_tmNteCap>0;
+  const _estQuietRow=_tmCapLeads
+    ?`<tr style="background:#f8fafc"><td style="padding:9px 18px;font-size:11px;font-weight:600;color:#64748b">Estimated at today&apos;s scope (not a fixed price)</td><td style="padding:9px 18px;text-align:right;font-size:12px;font-weight:700;color:#334155;white-space:nowrap">${totalFmt}</td></tr>`
+    :'';
+  const _bigLabel=_tmCapLeads?'THE MOST THIS CAN COST YOU':(_geiIsTM?'ESTIMATED TOTAL':'TOTAL');
+  const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
+    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Unless you approve more in writing</div>':''}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
@@ -5921,7 +6619,11 @@ async function sendGenericProposal(previewOnly,opts){
     amount:(_geiIsTM&&_tmRateOnly)?0:total,
     deposit:(_geiIsTM&&_tmRateOnly)?_rsFlatDep:_tmDepAmt,
     rateOnly:!!(_geiIsTM&&_tmRateOnly),
-    hourlyRate:_geiIsTM?_tmRatePerMan:0,
+    // THIS JSON LANDS IN THE CUSTOMER'S BROWSER. Nothing in sign.html reads
+    // hourlyRate today, but a number he deliberately kept off the document has
+    // no business riding along in the payload behind it where a devtools tab
+    // reads it back. Hidden is hidden in the file as well as on the page.
+    hourlyRate:(_geiIsTM&&!(_tmHideRate&&_tmCanHideRate()))?_tmRatePerMan:0,
     crewCount:_geiIsTM?_tmCrewCount:0,
     nteCap:_geiIsTM?_tmNteCap:0,
     billingCycle:_geiIsTM?(_tmBillingCycle||'weekly'):'',

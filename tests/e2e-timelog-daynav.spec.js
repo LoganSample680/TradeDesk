@@ -478,9 +478,11 @@ test.describe('the crew payload is cached so a local write paints at once', () =
     const r = await page.evaluate(async () => {
       const keepF = window._fetchCrewLabor, keepT = timeEntries.slice();
       let hits = 0, slow = false;
+      // 2500, not 400. See the budget at the bottom for why the stub delay and
+      // the budget have to be far apart.
       window._fetchCrewLabor = async () => {
         hits++;
-        if (slow) await new Promise(x => setTimeout(x, 400));
+        if (slow) await new Promise(x => setTimeout(x, 2500));
         return { name: {}, entries: [], shopEntries: [] };
       };
       try {
@@ -491,7 +493,7 @@ test.describe('the crew payload is cached so a local write paints at once', () =
         const t0 = Date.now();
         _tlAddUnaccounted(a, b, 'work');
         // One macrotask. If the paint were still behind _fetchCrewLabor the
-        // 400ms stub could not have resolved and the row would not be there.
+        // stub could not have resolved and the row would not be there.
         await new Promise(x => setTimeout(x, 0));
         const rows = await _timeLogRows(null, { crewCached: true });
         return { added: timeEntries.length - before, ms: Date.now() - t0,
@@ -500,7 +502,19 @@ test.describe('the crew payload is cached so a local write paints at once', () =
     });
     expect(r.added).toBe(1);
     expect(r.landed).toBe(true);
-    expect(r.ms).toBeLessThan(400);
+    // BUDGET WIDENED 2026-09-22 (§10.4), and the stub slowed to match. It used
+    // to stub 400ms and assert under 400ms, which left no gap at all: the two
+    // numbers being equal meant a loaded runner could blow the budget WITHOUT
+    // the code ever having awaited the fetch, which is what happened on webkit
+    // in CI (509ms, with `added` and `landed` both correct). The assertion was
+    // measuring the machine, not the behaviour.
+    //
+    // What this test actually means is "the row painted instead of waiting on
+    // the network", so the stub is now 2500ms and the budget 1200ms. Correct
+    // behaviour finishes in single-digit milliseconds and has a second of slack
+    // to be slow in; a regression that goes back to awaiting the fetch cannot
+    // come in under 2500 and still fails, harder than before.
+    expect(r.ms).toBeLessThan(1200);
   });
 
   // The revalidate is fired but never awaited, and an async function runs to
