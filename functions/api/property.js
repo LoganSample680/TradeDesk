@@ -142,22 +142,59 @@ export async function onRequest(context) {
     const enricher = fips ? ENRICHERS[fips] : null;
     if (!enricher) return hit ? json(hit) : new Response(null, { status: 204 });
 
-    // 3. Ask the county for the gap.
+    // 2b. MAY we contact the county about this address at all?
+    //
+    // This is the whole answer to "only call the address one time". Checking
+    // year_built is null was not enough on its own: it caches the successes and
+    // nothing else, so an address the county CANNOT answer (a vacant lot, a
+    // commercial parcel, an address it has no record of) came back null every
+    // time and was re-asked forever, by every contractor who ever touched it.
+    // Those are precisely the requests that look like probing from the county's
+    // side. county_claim_ask records the ask itself, before it happens, so one
+    // address is one request ever. See 20261033_county_ask_gate.sql.
+    const claim = await supaRpc(env, 'county_claim_ask', {
+      p_fips: fips,
+      p_addr: addr,
+      p_daily_cap: parseInt(env.COUNTY_DAILY_CAP || '500', 10),
+    });
+    if (claim !== 'go') {
+      // 'already' is the normal, healthy case: asked before, nothing more to
+      // learn. 'capped' means the day's budget for this county is spent. Either
+      // way the county is not contacted, and the contractor gets whatever we
+      // hold, which may be a complete record minus the year.
+      return hit ? json(hit) : json({ found: false, reason: claim });
+    }
+
+    // 3. Ask the county for the gap. Exactly once, for this address, ever.
     const url = `${enricher.url}?${new URLSearchParams({
       searchCriteria: addr.split(',')[0].trim(),
       countyCode: enricher.countyCode,
       listMode: 'card',
       searchBy: 'address',
     })}`;
+    // Every exit from here on closes the claim, or the address is stranded as
+    // 'pending' and nothing retries it for an hour. `close` is best effort on
+    // purpose: the contractor's answer never waits on bookkeeping, and the
+    // unclosed 'pending' row still blocks re-asking, which is the safe side.
+    const close = (outcome) => context.waitUntil(
+      supaRpc(env, 'county_record_ask', { p_fips: fips, p_addr: addr, p_outcome: outcome }).catch(() => {})
+    );
+
     const cRes = await fetch(url, {
       headers: { 'User-Agent': UA, Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       signal: AbortSignal.timeout(10000),
     });
+    // A refused or broken request is NOT proof the county has nothing, so it is
+    // left 'pending' rather than recorded as empty: the one-hour window lets it
+    // be tried again, and nothing hammers them in the meantime.
     if (!cRes.ok) return hit ? json(hit) : json({ found: false });
 
     const body = await cRes.json();
     const got = enricher.parse(Array.isArray(body) ? body : (body.data || []));
-    if (!got) return hit ? json(hit) : json({ found: false });
+    // The county answered and had nothing for this address. That is a real
+    // answer and it is recorded as one, which is what stops the address coming
+    // back around forever.
+    if (!got) { close('empty'); return hit ? json(hit) : json({ found: false }); }
 
     const out = {
       ...(hit || {}),
@@ -169,11 +206,13 @@ export async function onRequest(context) {
       source_url: (hit && hit.source_url) || enricher.sourceUrl,
     };
 
-    // 4. Write it back to the shared parcel row so this county is asked once per
-    //    address, ever, across every contractor. Best effort on purpose: the
-    //    contractor already has their answer above, and a failed cache write is
-    //    not worth failing their lookup over. It just means the next person
-    //    pays for one more county request.
+    // An answer with no year built in it is still an answer: the county holds
+    // the parcel but has no year for it (vacant land, some commercial). Asking
+    // again tomorrow gets the same nothing, so it is retired as empty.
+    close(out.year_built != null ? 'hit' : 'empty');
+
+    // 4. Write it back to the shared parcel row, so the next contractor to touch
+    //    this address gets it from the join with no county traffic at all.
     context.waitUntil(cacheBack(env, out, hit).catch(() => {}));
 
     return json(out);

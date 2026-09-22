@@ -154,6 +154,106 @@ test.describe('county parcel records', () => {
     });
   });
 
+  // ── One ask per address, ever ────────────────────────────────────────────
+  //
+  // Owner, 2026-09-22: "I want it only to call the address one time and once
+  // saved it's good, don't want my shit to get blocked."
+  //
+  // The first cut of this feature did not deliver that. It gated county calls on
+  // `year_built is null`, which caches the SUCCESSES and nothing else, so the
+  // addresses a county cannot answer were re-asked forever. Those are exactly
+  // the requests that look like probing from the county's side. Every guard
+  // below stands between us and a county blocking the range.
+  //
+  // The gate's BEHAVIOUR is executed against a real Postgres (verified
+  // 2026-09-22: one address asked five times yields one 'go' and four
+  // 'already'; a different spelling of the same address gets no second bite; a
+  // cap of 5 across 10 addresses yields exactly five 'go'). The offline shard
+  // has no database, so what is frozen here is the contract around it.
+  test.describe('county ask gate', () => {
+    const GATE = 'supabase/migrations/20261033_county_ask_gate.sql';
+    const gate = () => readSrc(GATE);
+
+    test('a resolved address is never asked about again', () => {
+      const fn = gate().match(/create or replace function county_claim_ask[\s\S]*?\$\$;/);
+      expect(fn, 'county_claim_ask must exist').toBeTruthy();
+      expect(fn[0], "a 'hit' must retire the address with no time window at all")
+        .toMatch(/outcome = 'hit' then\s*\n\s*return 'already'/);
+    });
+
+    test('an address the county had nothing for is also retired', () => {
+      // Hole 2 and the vacant-lot case. A parcel with no year built stays null
+      // no matter how often it is asked, so "empty" has to be a remembered
+      // answer rather than a reason to try again.
+      expect(gate()).toMatch(/outcome = 'empty' and prior\.asked_at > now\(\) - interval '180 days'/);
+    });
+
+    test('the gate claims BEFORE the request, so a crash fails closed', () => {
+      // The row is written as 'pending' before the county is contacted. If the
+      // worker dies mid-request the address stays claimed and nothing re-asks
+      // it. Failing closed costs one hand-typed year; failing open costs a retry
+      // loop against a county server.
+      const fn = gate().match(/create or replace function county_claim_ask[\s\S]*?\$\$;/)[0];
+      expect(fn).toMatch(/insert into td_county_asks[\s\S]*'pending'/);
+      expect(fn).toMatch(/outcome = 'pending' and prior\.asked_at > now\(\) - interval '1 hour'/);
+    });
+
+    test('a daily cap per county exists as a circuit breaker', () => {
+      const fn = gate().match(/create or replace function county_claim_ask[\s\S]*?\$\$;/)[0];
+      expect(fn).toMatch(/return 'capped'/);
+      expect(fn, 'the cap must count real recent asks, not a static number')
+        .toMatch(/count\(\*\) into today from td_county_asks/);
+    });
+
+    test('the enrich queue excludes addresses already asked about', () => {
+      // Hole 3: the loader selected `year_built is null`, which walked straight
+      // back over every previous failure on every run.
+      const fn = gate().match(/create or replace function county_enrich_queue[\s\S]*?\$\$;/);
+      expect(fn, 'county_enrich_queue must exist').toBeTruthy();
+      expect(fn[0]).toMatch(/left join td_county_asks/);
+      expect(fn[0]).toMatch(/a\.addr_key is null/);
+    });
+
+    test('contractors cannot write to the gate', () => {
+      const s = gate();
+      expect(s).toMatch(/alter table td_county_asks enable row level security/);
+      // A contractor who could write here could retire an address for everybody,
+      // or burn a whole county's daily cap, from a browser console.
+      expect(s, 'no write policy may exist on the gate')
+        .not.toMatch(/create policy[^\n]*on td_county_asks\s*\n\s*for (insert|update|delete|all)/);
+      expect(s).toMatch(/revoke all on function county_claim_ask\(text, text, int\)\s+from public/);
+      expect(s).toMatch(/revoke all on function county_record_ask\(text, text, text\) from public/);
+    });
+
+    test('both paths to a county go through the gate', () => {
+      // The API route and the loader must BOTH claim, or the one that does not
+      // bypasses the cap and the one-ask rule for everybody.
+      expect(readSrc('functions/api/property.js'), 'the api route must claim before contacting a county')
+        .toMatch(/county_claim_ask/);
+      const loader = readSrc('scripts/county-load.js');
+      expect(loader, 'the loader must claim before contacting a county').toMatch(/county_claim_ask/);
+      expect(loader, 'the loader must use the queue, not a bare year_built filter')
+        .toMatch(/county_enrich_queue/);
+      expect(loader, 'the loader must not re-introduce the null-select hole')
+        .not.toMatch(/year_built=is\.null/);
+    });
+
+    test('both paths record the outcome, or nothing is ever retired', () => {
+      expect(readSrc('functions/api/property.js')).toMatch(/county_record_ask/);
+      expect(readSrc('scripts/county-load.js')).toMatch(/county_record_ask/);
+    });
+
+    test('a failed request is left pending, not recorded as empty', () => {
+      // A refused or broken request is not proof the county has nothing. Marking
+      // it empty would retire a perfectly good address for 180 days on one blip.
+      const src = readSrc('functions/api/property.js');
+      const idx = src.indexOf('if (!cRes.ok)');
+      expect(idx, 'the not-ok branch must exist').toBeGreaterThan(-1);
+      const branch = src.slice(idx, idx + 200);
+      expect(branch, 'a transport failure must not close the claim').not.toMatch(/close\(/);
+    });
+  });
+
   // ── County configs ───────────────────────────────────────────────────────
   // Onboarding a county is meant to be a config file and nothing else. That only
   // stays true while the configs are actually complete, and the failure mode of

@@ -45,6 +45,10 @@ const ENRICH     = intArg('--enrich', 0);
 // Deliberate floor. 250ms is four requests a second at a county GIS server that
 // exists to serve a few dozen title clerks.
 const PAUSE_MS   = intArg('--pause', 250);
+// The circuit breaker, shared with the live API route through td_county_asks so
+// both paths draw on ONE budget. Not a throttle for normal use (an address is
+// asked once ever); this is what caps the damage when something loops.
+const DAILY_CAP  = intArg('--daily-cap', parseInt(process.env.COUNTY_DAILY_CAP || '500', 10));
 
 function intArg(flag, dflt) {
   const i = ARGS.indexOf(flag);
@@ -356,14 +360,38 @@ async function enrichPass(n) {
   const enrich = CFG.enrich;
   if (!enrich || !ENRICHERS[enrich.kind]) { console.log('  (no enricher configured, skipping)'); return 0; }
 
-  const sel = await supaRetry('GET',
-    `/rest/v1/td_county_parcels?county_fips=eq.${CFG.county_fips}&year_built=is.null&select=id,street&limit=${n}`);
-  if (sel.error) throw new Error(`enrich select failed: ${sel.error.message}`);
+  // county_enrich_queue, NOT a bare "year_built is null" select. That was the
+  // third re-ask hole (20261033): an address the county cannot answer stays null
+  // forever, so selecting on null walked straight back over every previous
+  // failure on every run. The queue excludes anything already asked about.
+  const sel = await supaRetry('POST', '/rest/v1/rpc/county_enrich_queue',
+    { p_fips: CFG.county_fips, p_limit: n });
+  if (sel.error) throw new Error(`enrich queue failed: ${sel.error.message}`);
   const rows = JSON.parse(sel.data || '[]');
-  if (!rows.length) { console.log('  nothing left to enrich'); return 0; }
+  if (!rows.length) { console.log('  nothing left to enrich (every remaining row has already been asked about)'); return 0; }
 
-  let filled = 0, missed = 0;
+  let filled = 0, missed = 0, skipped = 0;
   for (const row of rows) {
+    // Claim before contacting, exactly as the API route does. The queue above
+    // already excludes asked addresses, but the claim is what makes that true
+    // under concurrency: a contractor tapping "Look up property" while this pass
+    // is running must not produce a second request for the same address, and the
+    // daily cap has to count both paths or it counts neither.
+    const claim = await supaRetry('POST', '/rest/v1/rpc/county_claim_ask',
+      { p_fips: CFG.county_fips, p_addr: row.street, p_daily_cap: DAILY_CAP });
+    const verdict = (claim.data || '').replace(/"/g, '').trim();
+    if (claim.error || verdict !== 'go') {
+      skipped++;
+      // 'capped' means the county's budget for today is spent. Stopping is the
+      // point of the cap, so stop rather than spinning through the rest of the
+      // list collecting refusals.
+      if (verdict === 'capped') {
+        process.stdout.write(`\n  daily cap reached for this county, stopping. Re-run tomorrow to continue.\n`);
+        break;
+      }
+      continue;
+    }
+
     try {
       const got = await ENRICHERS[enrich.kind](enrich, row.street);
       if (got && (got.year_built != null || got.sqft != null)) {
@@ -382,16 +410,31 @@ async function enrichPass(n) {
           if (up.error) throw new Error(up.error.message);
         }
         filled++;
-      } else missed++;
+        await recordAsk(row.street, 'hit');
+      } else {
+        // The county answered and had nothing, or had no year for this parcel.
+        // Recording that is what retires the address: without it, the next run
+        // asks again, and the run after that, forever.
+        missed++;
+        await recordAsk(row.street, 'empty');
+      }
     } catch (e) {
+      // A thrown request is not proof the county has nothing, so the claim is
+      // left 'pending' rather than closed as empty. It re-opens in an hour.
       missed++;
       if (missed <= 3) console.warn(`\n  enrich failed for "${row.street}": ${e.message}`);
     }
-    process.stdout.write(`\r  enriched ${filled}, no match ${missed} of ${rows.length}…`);
+    process.stdout.write(`\r  enriched ${filled}, no data ${missed}${skipped ? `, already asked ${skipped}` : ''} of ${rows.length}…`);
     await sleep(PAUSE_MS);
   }
   process.stdout.write('\n');
   return filled;
+}
+
+async function recordAsk(street, outcome) {
+  if (DRY_RUN) return;
+  await supaRetry('POST', '/rest/v1/rpc/county_record_ask',
+    { p_fips: CFG.county_fips, p_addr: street, p_outcome: outcome });
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────

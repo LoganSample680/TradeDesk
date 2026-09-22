@@ -121,6 +121,13 @@ laundering Shawnee County's own data back to us through two middlemen.
   ```
 - **Add a county:** copy `scripts/counties/ks-shawnee.json`, change the URLs and the
   field names, run `--print` until the columns look right. No code change.
+- **A county is asked about any one address exactly once, ever.** `county_claim_ask`
+  (migration `20261033_county_ask_gate.sql`) records the ask itself, before the request
+  goes out, so an address the county cannot answer (a vacant lot, an address it has no
+  record of) is retired instead of being re-asked forever by every contractor who
+  touches it. The API route and the loader both claim through it and share one daily
+  cap per county (`COUNTY_DAILY_CAP`, default 500) as a circuit breaker. It fails
+  closed: a crashed request leaves the address claimed rather than re-asking.
 - **Lookups are a SQL join,** not a network call: `property_lookup` (migration
   `20261032_county_parcels.sql`) matches every address a contractor has in one round
   trip. `functions/api/property.js` is only the single-address enrichment path behind
