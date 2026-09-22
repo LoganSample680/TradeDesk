@@ -142,7 +142,12 @@ function timParse(text,opts){
     return {text:said,kind:'newclient',subject};
 
   const pho=timPhotoQuery(said);
-  if(pho)return {text:said,kind:'photos',q:pho.q};
+  if(pho){
+    // Resolved here, not at run time, so the preview line can say what is
+    // about to happen: one place opens, several ask which, none searches.
+    const hits=(pho.q&&typeof tdPhotoSearch==='function')?tdPhotoSearch(pho.q,o.photos||[]):[];
+    return {text:said,kind:'photos',q:pho.q,places:hits};
+  }
 
   const where=timWhere(said);
   const year=timWhen(said,o.now);
@@ -158,7 +163,16 @@ function timParse(text,opts){
 function timSay(p){
   if(!p||p.kind==='none')return '';
   if(p.kind==='nav')return 'Open '+p.name+(p.year?' for '+p.year:'');
-  if(p.kind==='photos')return p.q?'Find photos for '+p.q:'Search photos';
+  if(p.kind==='photos'){
+    const n=(p.places||[]).length;
+    if(n===1){
+      const g=p.places[0];
+      const where=(g.addr||'').split(',')[0]||g.name||'those';
+      return 'Open '+where+', '+g.photos.length+(g.photos.length===1?' photo':' photos');
+    }
+    if(n>1)return 'Pick which address, '+n+' match';
+    return p.q?'Search photos for '+p.q:'Search photos';
+  }
   if(p.kind==='newclient')return 'Start '+p.subject+' as a new customer';
   if(p.kind==='estimate'){
     const pl=p.plan||{};
@@ -177,7 +191,8 @@ function timRun(text){
   const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
   const catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[trade]))?TRADE_JOBS[trade]:[];
-  const p=timParse(text,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog});
+  const p=timParse(text,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,
+    photos:(typeof photos!=='undefined'?photos:[])});
 
   if(p.kind==='estimate'&&typeof tdSpeakEstimate==='function'){tdSpeakEstimate(text);return p;}
 
@@ -191,10 +206,20 @@ function timRun(text){
     return p;
   }
 
-  if(p.kind==='photos'&&typeof openSearch==='function'){
-    openSearch();
-    const box=document.getElementById('global-search-input');
-    if(box&&p.q){box.value=p.q;if(typeof runSearch==='function')runSearch(p.q);}
+  if(p.kind==='photos'){
+    const places=p.places||[];
+    // One place is not a question. Several is, and he asks it himself rather
+    // than handing over a list of search results to read.
+    if(places.length===1&&typeof tdReviewShots==='function'){
+      tdReviewShots(places[0].photos.map(x=>x.id));
+      return p;
+    }
+    if(places.length>1){_timPickPlace(places);return p;}
+    if(typeof openSearch==='function'){
+      openSearch();
+      const box=document.getElementById('global-search-input');
+      if(box&&p.q){box.value=p.q;if(typeof runSearch==='function')runSearch(p.q);}
+    }
     return p;
   }
 
@@ -225,7 +250,8 @@ function _timPreview(){
   const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
   const catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[trade]))?TRADE_JOBS[trade]:[];
-  const p=timParse(el.value,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog});
+  const p=timParse(el.value,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,
+    photos:(typeof photos!=='undefined'?photos:[])});
   const line=timSay(p);
   out.textContent=line||(el.value.trim()?'Not sure what that is yet':'');
   out.style.color=line?'var(--text2)':'var(--text3)';
@@ -236,10 +262,54 @@ function _timPreview(){
 function _timGo(){
   const el=document.getElementById('_tim-say');
   const said=el?el.value:'';
-  const p=timRun(said);
-  if(p&&p.kind!=='none')_timClose();
-  else if(typeof showToast==='function')showToast('Say a screen, a year, or a bid','🔧',2600);
-  return p;
+  // Close BEFORE acting, not after. Running first and closing second tore
+  // down whatever the action had just opened in the same overlay: the photo
+  // chooser appeared and vanished in one frame (caught in a screenshot,
+  // 2026-09-22). A sentence he cannot place keeps the box open, because
+  // closing it would throw away what the contractor just typed.
+  const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
+  const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
+  const catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[trade]))?TRADE_JOBS[trade]:[];
+  const peek=timParse(said,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,
+    photos:(typeof photos!=='undefined'?photos:[])});
+  if(!peek||peek.kind==='none'){
+    if(typeof showToast==='function')showToast('Say a screen, a year, or a bid','🔧',2600);
+    return peek;
+  }
+  _timClose();
+  return timRun(said);
+}
+
+// "Which one?", asked the way Tim asks everything else: his modal, one tap per
+// answer, and the tap lands you in the photos rather than in a list about them.
+let _timPlaces=[];
+function _timPickPlace(places){
+  _timPlaces=places||[];
+  if(!_timPlaces.length)return false;
+  _timClose();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_tim-ov';
+  ov.onclick=e=>{if(e.target===ov)_timClose();};
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.animation='td-pg-enter .22s cubic-bezier(.22,1,.36,1) both';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:2px">Which one?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+_timPlaces.length+' places have photos</div>'+
+    '<div class="pc-file-list">'+
+      _timPlaces.map((g,i)=>'<button type="button" class="pc-file-opt" onclick="_timOpenPlace('+i+')">'+
+        escHtml((g.addr||'').split(',')[0]||g.name||'Unfiled')+
+        '<span>'+escHtml(g.name||'')+(g.name&&g.photos.length?' \u00b7 ':'')+g.photos.length+
+        (g.photos.length===1?' photo':' photos')+'</span></button>').join('')+
+    '</div>'+
+    '<button id="_tim-cancel" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:10px">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  document.getElementById('_tim-cancel').onclick=_timClose;
+  return true;
+}
+function _timOpenPlace(i){
+  const g=_timPlaces[i];
+  if(!g)return false;
+  _timClose();
+  return(typeof tdReviewShots==='function')?tdReviewShots(g.photos.map(x=>x.id)):false;
 }
 
 function openTim(){

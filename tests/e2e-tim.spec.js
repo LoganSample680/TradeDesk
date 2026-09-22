@@ -377,30 +377,122 @@ test.describe('tim', () => {
   // The Gallery page is gone; photos are found by place through the search.
   // So a photo sentence is a lookup, and the words that are not about photos
   // are the search term.
-  test('a photo sentence becomes a search, and the address is the term', async () => {
-    const r = await page.evaluate(() => [
-      'show me the photos at 412 Oak',
-      'pull up pictures for Whitfield',
-      'job photos 412 Oak',
-      'photos',
-    ].map(s => { const p = timParse(s, { clients: [] }); return { kind: p.kind, q: p.q, say: timSay(p) }; }));
-    expect(r[0]).toEqual({ kind: 'photos', q: '412 oak', say: 'Find photos for 412 oak' });
-    expect(r[1].q).toBe('whitfield');
-    expect(r[2].kind).toBe('photos');          // "job photos" is not the Jobs page
-    expect(r[2].q).toBe('412 oak');
-    expect(r[3]).toEqual({ kind: 'photos', q: '', say: 'Search photos' });
+  const photoSeed = () => page.evaluate(() => {
+    photos.length = 0;
+    const mk = (id, name, addr, iso) => photos.push({ id, type: 'before', url: 'https://x/' + id + '.jpg',
+      thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, client_name: name, addr, uploadedAt: iso });
+    mk(801, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-09-10T15:00:00.000Z');
+    mk(802, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-09-11T15:00:00.000Z');
+    mk(803, 'Dana Whitfield', '88 Pine Ct, Wichita KS', '2026-08-01T15:00:00.000Z');
   });
 
-  test('running it opens the search box with the term already in it', async () => {
+  test('a photo sentence is a lookup, and the words that are left are the term', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ['show me the photos at 412 Oak', 'job photos 412 Oak', 'photos']
+      .map(s => { const p = timParse(s, { clients: [], photos }); return { kind: p.kind, q: p.q, n: (p.places || []).length }; }));
+    expect(r[0]).toEqual({ kind: 'photos', q: '412 oak', n: 1 });
+    expect(r[1].kind).toBe('photos');          // "job photos" is not the Jobs page
+    expect(r[2]).toEqual({ kind: 'photos', q: '', n: 0 });
+  });
+
+  test('one address is not a question: it opens the photos', async () => {
+    await photoSeed();
     const r = await page.evaluate(() => {
-      timRun('show me the photos at 412 Oak');
+      const p = timParse('photos at 412 Oak', { clients: [], photos });
+      const say = timSay(p);
+      timRun('photos at 412 Oak');
+      const out = { say, album: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+        asked: !!document.getElementById('_tim-ov') };
+      tdReviewClose();
+      return out;
+    });
+    expect(r.say).toBe('Open 412 Oak St, 2 photos');
+    expect(r.album).toBe(2);
+    expect(r.asked).toBe(false);
+  });
+
+  test('two addresses: he asks which, and the answer opens the viewer', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      const say = timSay(timParse('photos for Whitfield', { clients: [], photos }));
+      timRun('photos for Whitfield');
+      const asked = !!document.getElementById('_tim-ov');
+      const opts = [...document.querySelectorAll('#_tim-ov .pc-file-opt')].map(b => b.textContent);
+      document.querySelectorAll('#_tim-ov .pc-file-opt')[1].click();   // 88 Pine Ct
+      const out = { say, asked, opts, gone: !document.getElementById('_tim-ov'),
+        album: document.querySelectorAll('#pc-rev .pc-rev-cell').length };
+      tdReviewClose();
+      return out;
+    });
+    expect(r.say).toBe('Pick which address, 2 match');
+    expect(r.asked).toBe(true);
+    expect(r.opts[0]).toContain('412 Oak St');
+    expect(r.opts[0]).toContain('2 photos');
+    expect(r.opts[1]).toContain('88 Pine Ct');
+    expect(r.gone).toBe(true);
+    expect(r.album).toBe(1);                    // the Pine Ct shot, not all three
+  });
+
+  test('nothing matches, so he opens the search rather than guessing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('photos at 9 Nowhere Ln');
       const box = document.getElementById('global-search-input');
       const out = { open: !!document.getElementById('global-search-overlay'), val: box ? box.value : null };
       if (typeof closeSearch === 'function') closeSearch();
       return out;
     });
     expect(r.open).toBe(true);
-    expect(r.val).toBe('412 oak');
+    expect(r.val).toBe('9 nowhere ln');
+  });
+
+  // Through the actual button, not just timRun: Go used to close the overlay
+  // AFTER acting, which tore down the chooser in the same frame.
+  test('the Go button leaves the chooser standing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      openTim();
+      const el = document.getElementById('_tim-say');
+      el.value = 'photos for Whitfield';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      _timGo();
+      const out = {
+        asked: !!document.getElementById('_tim-ov'),
+        opts: document.querySelectorAll('#_tim-ov .pc-file-opt').length,
+        stillTyping: !!document.getElementById('_tim-say'),
+      };
+      _timClose();
+      return out;
+    });
+    expect(r.asked).toBe(true);
+    expect(r.opts).toBe(2);
+    expect(r.stillTyping).toBe(false);   // the chooser replaced the box, not stacked on it
+  });
+
+  test('Go on a sentence he cannot place keeps the box and what was typed', async () => {
+    const r = await page.evaluate(() => {
+      openTim();
+      const el = document.getElementById('_tim-say');
+      el.value = 'qqqq zzzz';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      _timGo();
+      const out = { open: !!document.getElementById('_tim-ov'), val: document.getElementById('_tim-say')?.value };
+      _timClose();
+      return out;
+    });
+    expect(r.open).toBe(true);
+    expect(r.val).toBe('qqqq zzzz');
+  });
+
+  test('cancel on the chooser opens nothing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('photos for Whitfield');
+      document.getElementById('_tim-cancel').click();
+      return { gone: !document.getElementById('_tim-ov'), album: document.querySelectorAll('#pc-rev').length };
+    });
+    expect(r.gone).toBe(true);
+    expect(r.album).toBe(0);
   });
 
   test('a sentence with no photo word is untouched by any of this', async () => {

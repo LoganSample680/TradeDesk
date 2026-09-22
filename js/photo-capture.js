@@ -945,10 +945,13 @@ function _pcHaystack(p){
     .filter(Boolean).join(' ').toLowerCase();
 }
 // Properties, newest first, each carrying its matching shots in date order.
-function tdPhotoSearch(q){
+// The list is an argument so a caller that has to stay pure (Tim's parser)
+// can resolve a sentence without reaching for a global.
+function tdPhotoSearch(q,list){
   const term=String(q||'').toLowerCase().trim();
   if(!term)return [];
-  const hits=(photos||[]).filter(p=>p&&_pcHaystack(p).includes(term));
+  const src=list||(typeof photos!=='undefined'?photos:[]);
+  const hits=(src||[]).filter(p=>p&&_pcHaystack(p).includes(term));
   const by={};
   hits.forEach(p=>{
     // One bucket per property. A photo with no address yet falls back to the
