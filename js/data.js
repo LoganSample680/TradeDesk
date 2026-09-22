@@ -581,7 +581,11 @@ async function _countyProperty(addr,signal){
     if(!_tok)return null;
     const res=await fetch(SUPA_URL+'/functions/v1/county-property',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tok},
+      // apikey alongside the user token, because that is what the Supabase
+      // gateway expects and its absence is a 401 the caller cannot tell apart
+      // from "no county", so the card would just quietly stop filling in.
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tok,
+               ...(typeof SUPA_KEY!=='undefined'&&SUPA_KEY?{apikey:SUPA_KEY}:{})},
       body:JSON.stringify({addr}),
       signal,
     });
