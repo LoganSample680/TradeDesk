@@ -2552,20 +2552,33 @@ test.describe('tim: the mic is the way in', () => {
     expect(r.sh).toBe(false);
   });
 
-  // The fill is TRANSITIONED, so it has to be read after the transition rather
-  // than in the same task that changed the box: computed style in that task is
-  // still the start value, and a test that reads it there passes and fails for
-  // reasons that have nothing to do with the rule.
+  // THE TRANSITION IS KILLED, NOT WAITED OUT. This assertion failed three times
+  // on webkit and only the third one carried diagnostics, which said: the value
+  // landed, data-empty flipped to "0", the selector correctly stopped matching,
+  // and getComputedStyle still reported the ink it had before. That is a
+  // transition that never advanced, because headless WebKit need not paint a
+  // frame for a sleeping test, and a computed style mid-transition is the frame
+  // it is ON, not the state it is going to.
+  //
+  // The arrow test three describes up has said exactly this since it was
+  // written: "Killing the transition is the deterministic way to assert the END
+  // state; sleeping would be asserting the duration by proxy and would flake on
+  // a loaded runner, which this suite has already taught twice." It has now
+  // taught it three times, to me, at a cost of two CI cycles. Same trick here.
   const micState = async (value) => {
     await page.evaluate((v) => {
+      if (!document.getElementById('_tim-nofx')) {
+        const stop = document.createElement('style');
+        stop.id = '_tim-nofx';
+        stop.textContent = '#_tim-mic,#_tim-mic svg,#_tim-send{transition:none !important}';
+        document.head.appendChild(stop);
+      }
       const say = document.getElementById('_tim-say');
-      // Through the app's own setter, which fires an input event. WebKit does
-      // not re-evaluate :placeholder-shown on a bare script write, so a test
-      // that set .value directly was driving a path the app does not have and
-      // asserting a repaint no iPhone would ever do.
+      // Through the app's own setter, which fires the input event the row's
+      // data-empty is driven from. A bare .value write is a path the app does
+      // not have.
       if (say) _timSetSaid(say, v);
     }, value);
-    await page.waitForTimeout(280);
     return page.evaluate(() => {
       const mic = document.getElementById('_tim-mic'), send = document.getElementById('_tim-send');
       const m = getComputedStyle(mic), s = getComputedStyle(send);
