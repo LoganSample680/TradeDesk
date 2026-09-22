@@ -1149,6 +1149,54 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r.onPrimary).toBe(0);
     });
 
+    // The Open button on the property card, CLICKED, not read. Its address was
+    // interpolated with JSON.stringify straight into a double-quoted onclick,
+    // so the attribute ended at the address's own quote and the handler body
+    // was cut off mid-call. The browser wraps an inline handler in
+    // function onclick(event){...}, so it hit that wrapper's brace next and
+    // threw SyntaxError: Unexpected token '}' (owner, ops portal on Jack's
+    // account, 2026-09-22). It only ever appeared once a property HAD photos,
+    // because that is the only time the button renders.
+    //
+    // Reading the attribute string would not have caught this. The string
+    // looks fine; it is the HTML parser that truncates it. So the test puts
+    // the markup in the DOM and presses the button.
+    test('the Open button on a property survives being put in real HTML', async () => {
+      await pepe();
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 901);
+        // The button only exists once the property HAS photos, so file one.
+        photos[0].client_id = 901; photos[0].addr = '6912 SW 17th St, Topeka, KS 66615';
+        // The card's own markup generator, then a REAL parse of it. The string
+        // it returns always looked correct; the damage happened when the HTML
+        // parser read it, so the string is never what gets asserted.
+        // EXPANDED, or there is no body and therefore no button: a property
+        // card is an accordion whenever the customer has more than one, and
+        // the photo row lives in the body (the same collapse footgun as 10.6).
+        window['_cdpropOpen_901_1'] = true;
+        const host = document.createElement('div');
+        host.innerHTML = _cdPropCardHtml(c, clientAddresses(c)[1], 1, 2);
+        document.body.appendChild(host);
+        const btn = [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'Open');
+        if (!btn) { host.remove(); return { found: false }; }
+        const compiled = typeof btn.onclick === 'function';
+        let threw = null, opened = false;
+        try { btn.click(); opened = !!document.getElementById('pc-rev'); }
+        catch (e) { threw = String(e); }
+        const sawAddr = _pcRev && _pcRev.folderAddr;
+        document.getElementById('pc-rev')?.remove();
+        host.remove();
+        delete window['_cdpropOpen_901_1'];
+        return { found: true, compiled, threw, opened, sawAddr };
+      });
+      expect(r.found, 'the Open button renders once the property has photos').toBe(true);
+      // The bug: the browser could not compile the handler it was handed, so
+      // btn.onclick was null and the click did nothing but log a SyntaxError.
+      expect(r.compiled, 'the browser could parse the handler at all').toBe(true);
+      expect(r.threw).toBe(null);
+      expect(r.opened, 'and pressing it opens the folder').toBe(true);
+    });
+
     test('a photo with no fix gets no guess at all', async () => {
       await page.evaluate(() => {
         photos.length = 0;
@@ -1312,23 +1360,34 @@ test.describe('Photo capture: the sheet itself', () => {
 
   // ── The property folder (owner 2026-09-22) ────────────────────────────────
   test.describe('TrueShot: the folder is the visit', () => {
+    // The page OWNS the fixture, and every test calls it inside the same
+    // evaluate as its assertions. It used to be a page.evaluate of its own,
+    // which left a gap: the app's periodic cloud pull replaces the photos
+    // array wholesale (_TD_TABLES td_photos set, js/cloud.js), so a pull
+    // landing between the seed and the test emptied it and the folder closed
+    // itself on zero rows. Same root cause as the shoot fixture and the
+    // editor before it; seeding in the acting round trip is what actually
+    // closes it, rather than a third patch at a third call site.
     const house = () => page.evaluate(() => {
-      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
-      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS' });
-      const mk = (id, type, iso, job) => photos.push({ id, type, url: 'https://x/' + id + '.jpg',
-        thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, client_name: 'Dana Whitfield',
-        job_id: job ? 601 : null, job_name: job ? 'Repipe' : '', addr: '412 Oak St, Wichita KS', uploadedAt: iso });
-      // one morning's work, then an afternoon trip back, then March
-      mk(1, 'before', '2026-09-22T14:00:00.000Z', true);
-      mk(2, 'progress', '2026-09-22T14:40:00.000Z', true);
-      mk(3, 'after', '2026-09-22T20:30:00.000Z', true);
-      mk(4, 'before', '2026-03-02T15:00:00.000Z', false);
-      return photos.map(p => p.id);
+      window.__house = () => {
+        clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS' });
+        const mk = (id, type, iso, job) => photos.push({ id, type, url: 'https://x/' + id + '.jpg',
+          thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, client_name: 'Dana Whitfield',
+          job_id: job ? 601 : null, job_name: job ? 'Repipe' : '', addr: '412 Oak St, Wichita KS', uploadedAt: iso });
+        // one morning's work, then an afternoon trip back, then March
+        mk(1, 'before', '2026-09-22T14:00:00.000Z', true);
+        mk(2, 'progress', '2026-09-22T14:40:00.000Z', true);
+        mk(3, 'after', '2026-09-22T20:30:00.000Z', true);
+        mk(4, 'before', '2026-03-02T15:00:00.000Z', false);
+        return photos.map(p => p.id);
+      };
+      return window.__house();
     });
 
     test('a visit is a stretch of work, not a calendar day', async () => {
       await house();
-      const r = await page.evaluate(() => tdPropertyVisits(photos).map(v => v.photos.length));
+      const r = await page.evaluate(() => (__house(), tdPropertyVisits(photos)).map(v => v.photos.length));
       // The 14:00 and 14:40 shots are one visit; 20:30 is a trip back.
       expect(r).toEqual([1, 2, 1]);
     });
@@ -1336,6 +1395,7 @@ test.describe('Photo capture: the sheet itself', () => {
     test('the folder names the house, counts the visits, and opens the newest', async () => {
       await house();
       const r = await page.evaluate(() => {
+        __house();
         tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
         const out = {
           addr: document.querySelector('.pc-fold-addr').textContent,
@@ -1361,6 +1421,7 @@ test.describe('Photo capture: the sheet itself', () => {
     test('Before and After pin to the top once a job has both', async () => {
       await house();
       const r = await page.evaluate(() => {
+        __house();
         tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
         const ba = document.querySelector('.pc-fold-ba');
         const out = { pinned: !!ba, name: ba && ba.querySelector('.pc-fold-ba-name').textContent,
@@ -1379,6 +1440,7 @@ test.describe('Photo capture: the sheet itself', () => {
     // estimate, the After on the job it became. Two different tags, one house.
     test('a walkthrough Before pairs with the job After', async () => {
       const r = await page.evaluate(() => {
+        __house();
         photos.length = 0;
         photos.push({ id: 11, type: 'before', url: 'u', thumbUrl: '', storagePath: 's11', client_id: 501,
           bid_id: 701, bid_name: 'Repipe', addr: '412 Oak St', uploadedAt: '2026-08-01T15:00:00.000Z' });
@@ -1395,6 +1457,7 @@ test.describe('Photo capture: the sheet itself', () => {
 
     test('a job with no After yet pins nothing, because there is no pair', async () => {
       const r = await page.evaluate(() => {
+        __house();
         photos.length = 0;
         photos.push({ id: 9, type: 'before', url: 'u', thumbUrl: '', storagePath: 's', client_id: 501,
           job_id: 601, job_name: 'Repipe', addr: '412 Oak St, Wichita KS', uploadedAt: new Date().toISOString() });
@@ -1406,6 +1469,7 @@ test.describe('Photo capture: the sheet itself', () => {
     test('a stage chip filters the whole property', async () => {
       await house();
       const r = await page.evaluate(() => {
+        __house();
         tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
         const chips = [...document.querySelectorAll('.pc-fold-chips .fb')].map(b => b.textContent);
         tdFolderStage('before');
@@ -1422,8 +1486,9 @@ test.describe('Photo capture: the sheet itself', () => {
     });
 
     test('tapping a shot drops into the viewer that already exists', async () => {
-      const ids = await house();
-      const r = await page.evaluate((ids) => {
+      await house();
+      const r = await page.evaluate(() => {
+        const ids = __house();
         tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
         tdFolderOpen(ids[3]);         // the March shot, inside a closed visit
         const out = { img: !!document.getElementById('pc-rev-img'),
@@ -1431,7 +1496,7 @@ test.describe('Photo capture: the sheet itself', () => {
           move: [...document.querySelectorAll('#pc-rev .pc-side')].some(b => b.textContent === 'Move') };
         tdReviewClose();
         return out;
-      }, ids);
+      });
       expect(r.img).toBe(true);
       expect(r.markUp).toBe(true);
       expect(r.move).toBe(true);
@@ -1440,6 +1505,7 @@ test.describe('Photo capture: the sheet itself', () => {
     test('a visit header opens and closes its own shots', async () => {
       await house();
       const r = await page.evaluate(() => {
+        __house();
         tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
         const heads = document.querySelectorAll('.pc-fold-visit-hd');
         const before = document.querySelectorAll('.pc-fold-visit .pc-rev-cell').length;
@@ -1457,6 +1523,7 @@ test.describe('Photo capture: the sheet itself', () => {
 
     test('an empty property opens nothing rather than an empty sheet', async () => {
       const r = await page.evaluate(() => {
+        __house();
         photos.length = 0;
         return { opened: tdOpenPropertyFolder(501, '412 Oak St'), sheet: document.querySelectorAll('#pc-rev').length };
       });
@@ -2245,6 +2312,38 @@ test.describe('TrueShot: the photos come back', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => { await page.evaluate(seed()); });
+
+  // Not "is it in the DOM": elementFromPoint, because the whole bug was that
+  // the rows WERE in the DOM the entire time. They sat at z-index 9999 under
+  // an opaque full-screen album at 10050, so a thumb pressing an address hit
+  // the album behind it and nothing happened. A presence assertion passes
+  // happily through that and tells you the feature works.
+  test('a customer with several properties can actually be tapped, not just rendered', async () => {
+    const r = await page.evaluate(() => {
+      clients.length = 0; photos.length = 0; bids.length = 0; jobs.length = 0;
+      clients.push({ id: 77, name: 'Logan Sample', addr: '5900 SW Huntoon, Topeka KS',
+        extraAddresses: [{ addr: '6800 SW Tenth Ave, Topeka KS', label: 'Rental' },
+                         { addr: '1 Other St, Topeka KS', label: 'Shop' }] });
+      photos.push({ id: 9001, type: 'before', url: 'https://x/a.jpg', uploadedAt: '2026-09-22T12:00:00Z' });
+      tdReviewBurst('9001');
+      [...document.querySelectorAll('#pc-rev button')].find(b => /Attach/.test(b.textContent)).click();
+      [...document.querySelectorAll('#pc-att .pc-file-opt')].find(b => /Logan Sample/.test(b.textContent)).click();
+      const rows = [...document.querySelectorAll('#_addrpick-sheet div[onclick^="_addrPickChoose"]')];
+      const reachable = rows.filter((row) => {
+        const b = row.getBoundingClientRect();
+        const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return !!(hit && row.contains(hit));
+      }).length;
+      // and the tap has to land the photo on the property it names
+      rows[1].click();
+      const p = photos.find(x => String(x.id) === '9001');
+      return { rows: rows.length, reachable, addr: p && p.addr, client: p && p.client_id };
+    });
+    expect(r.rows, 'all three properties are offered').toBe(3);
+    expect(r.reachable, 'and every one of them is under the thumb, not under the album').toBe(3);
+    expect(r.addr).toBe('6800 SW Tenth Ave, Topeka KS');
+    expect(r.client).toBe(77);
+  });
 
   test('a property\'s past work shows the walkthrough shots, not just the job ones', async () => {
     const r = await page.evaluate(() => {

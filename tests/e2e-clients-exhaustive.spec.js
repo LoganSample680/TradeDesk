@@ -3286,7 +3286,8 @@ test.describe('clients.js: exhaustive coverage', () => {
     const pepeLegs = () => ([
       { id: 'leg-a', legKey: 'leg-a', date: '2026-09-18', gps: true, miles: 7.1,
         from: '900 Shop Rd, Topeka, KS 66614', from_name: 'Shop',
-        to: PEPE_OLD, to_name: 'Pepe Miranda (6912 SW 17th St)' },
+        to: PEPE_OLD, to_name: 'Pepe Miranda (6912 SW 17th St)',
+        client_name: 'Pepe Miranda (6912 SW 17th St)' },
       { id: 'leg-b', legKey: 'leg-b', date: '2026-09-19', gps: true, miles: 7.1,
         from: PEPE_OLD, from_name: 'Pepe Miranda (6912 SW 17th St)',
         to: '900 Shop Rd, Topeka, KS 66614', to_name: 'Shop' },
@@ -3306,6 +3307,10 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(b.from_name).toBe('Pepe Miranda (6908 SW 17th St)');
       expect(a.miles, 'the miles are not re-decided').toBe(7.1);
       expect(a.id).toBe('leg-a');
+      // The THIRD place the leg stores the same label, and the one this pass
+      // missed the first time it ran against Jack's real rows: both ends read
+      // 6908 while the client column still said 6912.
+      expect(a.client_name).toBe('Pepe Miranda (6908 SW 17th St)');
     });
 
     test('somebody else\'s trip is left exactly alone', async () => {

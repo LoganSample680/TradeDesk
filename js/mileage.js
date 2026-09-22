@@ -4154,6 +4154,11 @@ function _mileRenamePlaceLocal(oldName,newName,oldAddr,newAddr){
     if(nameMoved){
       if(String(r.from_name||'').trim()===on){r.from_name=nn;hit=true;}
       if(String(r.to_name||'').trim()===on){r.to_name=nn;hit=true;}
+      // client_name is the DESTINATION fence's name again (geo-derive.js), the
+      // third place one label is stored on a leg and the one this pass missed
+      // on its first outing: two of Jack's rows still read 6912 in the client
+      // column after both ends had been corrected.
+      if(String(r.client_name||'').trim()===on){r.client_name=nn;hit=true;}
       if(Array.isArray(r.segEnds))r.segEnds.forEach(se=>{
         if(!se)return;
         if(String(se.from||'').trim()===on){se.from=nn;hit=true;}
