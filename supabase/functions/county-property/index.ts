@@ -75,12 +75,19 @@ type Src = { url: (street: string) => string; parse: (body: any) => Record<strin
 // Per-county lookup, keyed by the same county_fips the parcel rows carry, so
 // adding a county is an entry rather than a branch.
 const ENRICHERS: Record<string, {
-  name: string; state: string; sourceUrl: string; building?: Src; parcel?: Src;
+  name: string; state: string; sourceUrl: (street: string) => string; building?: Src; parcel?: Src;
 }> = {
   "20177": {
     name: "Shawnee",
     state: "KS",
-    sourceUrl: "https://ares.sncoapps.us/",
+    // Per PARCEL, not per county, because a link every row shares is a link
+    // that lands nobody anywhere (owner, 2026-09-22: "takes us to the search
+    // page"). ARES has no per-parcel route at all, results are drawn client
+    // side and every /Property/… and /Detail/… path 404s, so the closest this
+    // county can get is its search with the address already filled in.
+    sourceUrl: (street: string) =>
+      "https://ares.sncoapps.us/BasicSearch/Index?" +
+      new URLSearchParams({ searchCriteria: street, countyCode: "089", searchBy: "address", listMode: "card" }),
 
     // The building. Tyler/Epona "ARES" public search: the page renders client
     // side from this JSON endpoint, so we ask it directly rather than parsing
@@ -100,10 +107,24 @@ const ENRICHERS: Record<string, {
         const full = String(r.propertyAddress || "");
         const fullBaths = numOrNull(r.resBldgTotalFullBathrooms);
         const halfBaths = numOrNull(r.resBldgTotalHalfBathrooms);
+        // The appraiser splits building facts by property type and publishes
+        // only the half that applies: resBldg* for a house, comBldg* for a
+        // store. Reading only the residential half is why every commercial
+        // parcel answered with an owner, a value and nothing else, and why the
+        // owner said commercial "wasn't coming over" (2026-09-22).
+        //
+        // It is not cosmetic. A pre-1978 COMMERCIAL building is covered by the
+        // EPA RRP rule exactly as a house is, because a child-occupied facility
+        // (a daycare, a preschool) is usually somebody's commercial building.
+        // A null year silently disarmed that warning on every commercial bid.
         return {
           parcel_id: r.quickRef || null,
-          year_built: yearOrNull(r.resBldgYearBuiltFrom),
-          sqft: intOrNull(r.resBldgTotalArea),
+          year_built: yearOrNull(r.resBldgYearBuiltFrom) ?? yearOrNull(r.comBldgYearBuiltFrom),
+          sqft: intOrNull(r.resBldgTotalArea) ?? intOrNull(r.comBldgTotalArea),
+          // What the parcel IS, in the county's own words. On a commercial card
+          // with no beds and no baths, this is most of what there is to say.
+          property_type: r.propertyType || null,
+          use_desc: r.functionCodeDescription || null,
           beds: numOrNull(r.resBldgTotalBedrooms),
           // A county reporting 1 full + 1 half is 1.5 baths. Rounding either
           // way makes us wrong about somebody's house.
@@ -263,7 +284,7 @@ serve(async (req) => {
       county_fips: fips,
       county_name: hit?.county_name ?? enricher.name,
       state: hit?.state ?? enricher.state,
-      source_url: hit?.source_url ?? enricher.sourceUrl,
+      source_url: enricher.sourceUrl(street),
     };
 
     // Close the claim ONLY when both sides actually answered. If one of them
@@ -303,6 +324,10 @@ async function cacheBack(svc: ReturnType<typeof createClient>, out: Record<strin
     land_value: out.land_value ?? null,
     improvement_value: out.improvement_value ?? null,
     owner_name: out.owner_name ?? null,
+    // Without these two the column exists and stays empty forever: the parse
+    // reads them, the response carries them, and the write drops them.
+    property_type: out.property_type ?? null,
+    use_desc: out.use_desc ?? null,
     city: out.city ?? null,
     zip: out.zip ?? null,
   };

@@ -432,6 +432,102 @@ test.describe('county parcel records', () => {
   // Onboarding a county is meant to be a config file and nothing else. That only
   // stays true while the configs are actually complete, and the failure mode of
   // an incomplete one is a column of nulls rather than an error.
+  // ── A COMMERCIAL PARCEL IS NOT A PARCEL WITH NOTHING ON IT ───────────────
+  //
+  // Owner, 2026-09-22: "commercial addresses arent coming over." They were,
+  // with an owner and an assessed value and nothing else, because Shawnee
+  // publishes building facts under resBldg* for a house and comBldg* for a
+  // store and we only ever read the residential half. Seven parcels on his own
+  // book sat at null year built; three of them are pre-1978, which means the
+  // EPA RRP lead gate was disarmed on every one of those bids.
+  test.describe('commercial buildings', () => {
+    const fn = () => readSrc(FN);
+
+    test('year built falls back to the commercial field', () => {
+      const s = fn();
+      expect(s, 'a commercial parcel has comBldgYearBuiltFrom, not resBldgYearBuiltFrom')
+        .toMatch(/year_built:\s*yearOrNull\(r\.resBldgYearBuiltFrom\)\s*\?\?\s*yearOrNull\(r\.comBldgYearBuiltFrom\)/);
+    });
+
+    test('square footage falls back to the commercial field', () => {
+      expect(fn()).toMatch(/sqft:\s*intOrNull\(r\.resBldgTotalArea\)\s*\?\?\s*intOrNull\(r\.comBldgTotalArea\)/);
+    });
+
+    test('?? and not ||, so a genuine zero is not read as missing', () => {
+      // yearOrNull already rejects a placeholder year, so the only thing || would
+      // add here is swallowing a real 0 sqft. ?? falls through on null alone.
+      const s = fn();
+      expect(s, 'resBldg values must fall through on null, never on falsy')
+        .not.toMatch(/resBldg(YearBuiltFrom|TotalArea)\)\s*\|\|/);
+    });
+
+    test('the county classification is captured and persisted', () => {
+      const s = fn();
+      expect(s, 'the appraiser already says what the building is').toMatch(/use_desc:\s*r\.functionCodeDescription/);
+      expect(s, 'and what class it is').toMatch(/property_type:\s*r\.propertyType/);
+      // Parsed but never written is the same as never parsed.
+      expect(s, 'cacheBack must persist property_type').toMatch(/property_type:\s*out\.property_type/);
+      expect(s, 'cacheBack must persist use_desc').toMatch(/use_desc:\s*out\.use_desc/);
+    });
+
+    test('the lookup hands both new columns back', () => {
+      // A column property_lookup does not name is a column the app can never
+      // read, however well the loader fills it.
+      const m = readSrc('supabase/migrations/20261034_county_commercial_and_deep_link.sql');
+      expect(m).toMatch(/property_type\s+text/);
+      expect(m).toMatch(/use_desc\s+text/);
+      expect(m, 'the select list has to carry them too').toMatch(/p\.owner_name,\s*p\.property_type,\s*p\.use_desc/);
+    });
+
+    test('the county keeps its own word for the use, apart from the contractor\'s', () => {
+      // propertyType is set by hand and drives isRental and the card icon.
+      // Overwriting it with "Commercial" would silently re-type a property
+      // somebody already classified themselves.
+      const c = readSrc('js/clients.js');
+      expect(c).toMatch(/pd\.propDataUse\s*=/);
+      expect(c, 'the county must never write the contractor-owned field')
+        .not.toMatch(/pd\.propertyType\s*=\s*d\.(property_type|use_desc)/);
+      expect(readSrc('js/data.js'), 'and it has to survive a save').toMatch(/'propDataUse'/);
+    });
+  });
+
+  // ── THE RECORD LINK HAS TO LAND ON THE RECORD ────────────────────────────
+  // Owner, same message: "linking to the records doesnt take you right to the
+  // address, takes us to the search page." It did, because source_url was the
+  // county root, identical on every row.
+  test.describe('the county record link', () => {
+    test('it is built per parcel, not taken from the county config', () => {
+      const s = readSrc(FN);
+      expect(s, 'sourceUrl must be a function of the street').toMatch(/sourceUrl:\s*\(street:\s*string\)\s*=>/);
+      expect(s, 'and the response must use it').toMatch(/source_url:\s*enricher\.sourceUrl\(street\)/);
+      expect(s, 'a bare county root on every row is the bug this replaced')
+        .not.toMatch(/sourceUrl:\s*"https:\/\/ares\.sncoapps\.us\/"/);
+    });
+
+    test('it carries the address the contractor is looking at', () => {
+      const s = readSrc(FN);
+      expect(s).toMatch(/searchCriteria:\s*street/);
+    });
+
+    test('rows loaded before the fix are backfilled, and only those', () => {
+      const m = readSrc('supabase/migrations/20261034_county_commercial_and_deep_link.sql');
+      expect(m).toMatch(/update td_county_parcels/);
+      // A county whose deep link IS per-parcel must never be flattened by this.
+      expect(m, 'only rows still carrying the old root may be rewritten')
+        .toMatch(/source_url is null or source_url = 'https:\/\/ares\.sncoapps\.us\/'/);
+    });
+
+    test('the commercial parcels are released for one more ask, houses are not', () => {
+      // They were retired as 'empty' because the answer had no year, which was
+      // true of the answer and false of the county. A house the county has no
+      // record of is still a house the county has no record of.
+      const m = readSrc('supabase/migrations/20261034_county_commercial_and_deep_link.sql');
+      expect(m).toMatch(/delete from td_county_asks/);
+      expect(m, 'only rows the county actually answered about').toMatch(/assessed_value is not null/);
+      expect(m).toMatch(/year_built is null/);
+    });
+  });
+
   test.describe('county configs', () => {
     const dir = repo('scripts/counties');
     const names = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
