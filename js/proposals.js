@@ -80,17 +80,18 @@ function _buildClientHubSnapshot(clientId){
       proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
-  // ── What the customer is allowed to see (owner 2026-09-22) ───────────────
+  // ── What the customer sees, and where (owner 2026-09-22) ─────────────────
   // "Point the before and after at client hub, pictures in between don't
-  // belong out there."
+  // belong out there." Then: "progress photos will show when tagged as
+  // progress."
   //
-  // Before and After are the story: this is what we found, this is what we
-  // left. Progress shots are working notes, the wall open, the mess, the
-  // half-done run, and they are for the crew and the file, not for the
-  // customer's link. One predicate here, so every group below inherits it and
-  // no future surface can leak them by forgetting.
-  const _HUB_TYPES={before:1,after:1};
-  const clientPhotos=photos.filter(p=>p.client_id===clientId&&_HUB_TYPES[p.type]);
+  // Both hold, because the hub already keeps them apart. Before and After are
+  // the story and they pair up at the top of the job. A Progress shot is not
+  // mixed into that pair; it lands in the milestone timeline underneath,
+  // where a contractor put it ON PURPOSE by tagging it. Tagging is the
+  // consent: an untagged working note is never a Progress photo by accident,
+  // because the capture sheet makes you choose.
+  const clientPhotos=photos.filter(p=>p.client_id===clientId);
   // ── A photo belongs to the deepest tag it carries (owner 2026-09-21) ──────
   // job, else bid, else the client. This grouping used to be job_id ONLY,
   // which meant a Before shot taken while WRITING the estimate (there is no

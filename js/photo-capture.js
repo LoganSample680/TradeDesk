@@ -412,6 +412,8 @@ function _pcRevPaint(){
   if(!el||!_pcRev)return;
   const rows=_pcRevRows();
   if(!rows.length){tdReviewClose();return;}
+  // In folder mode the grid IS the folder; the viewer is shared.
+  if(_pcRev.folder&&!(_pcRev.i>=0&&rows[_pcRev.i])){_pcFolderPaint();return;}
   el.innerHTML=(_pcRev.i>=0&&rows[_pcRev.i])?_pcRevViewerHTML(rows):_pcRevGridHTML(rows);
   if(_pcRev.i>=0)_pcRevBindSwipe();
 }
@@ -477,6 +479,177 @@ function _pcRevFootHTML(rows){
     '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'+
   '</div>';
 }
+// ── The property folder (owner 2026-09-22) ──────────────────────────────────
+// "Want photos to land on the property record under an organized folder."
+//
+// The VISIT is the folder. A contractor does not remember a photo, he
+// remembers the day he was there, so the page reads as dated visits newest
+// first, and the newest one is the only one open. Five years of a rental
+// stays one screen instead of a wall.
+//
+// It is the same sheet the shoot ends in, in a different mode, because a
+// second photo surface is how two of them drift apart (§7.3). Tapping any
+// shot drops into the viewer that already exists, with Mark up, Move and
+// Full size on it.
+//
+// Every heading here is a word Tim already matches: the address, the
+// customer, the stage, the job, the date. The folder is labelled with his
+// dictionary rather than needing one of its own.
+const _PC_VISIT_GAP=3*60*60*1000;
+function tdPropertyVisits(rows){
+  const list=(rows||[]).slice().sort((a,b)=>(Date.parse(b.uploadedAt||0)||0)-(Date.parse(a.uploadedAt||0)||0));
+  const out=[];
+  list.forEach(p=>{
+    const t=Date.parse(p.uploadedAt||0)||0;
+    const last=out[out.length-1];
+    // Three hours, not a calendar day: two trips to the same house in one
+    // afternoon are two visits, and a morning's shooting is one.
+    if(last&&Math.abs(last.at-t)<=_PC_VISIT_GAP){last.photos.push(p);last.at=t;}
+    else out.push({at:t,photos:[p]});
+  });
+  return out.map(v=>{
+    const j=v.photos.map(p=>p.job_name).find(Boolean);
+    const b=v.photos.map(p=>p.bid_name).find(Boolean);
+    return{
+      key:'v'+v.photos[0].id,
+      at:Date.parse(v.photos[v.photos.length-1].uploadedAt||0)||0,
+      what:j?j:(b?b+' · walkthrough':''),
+      photos:v.photos
+    };
+  });
+}
+// The one pair worth pinning: the newest Before and the newest After on the
+// same job. Nothing to pin until a job has both, which is the point.
+function tdPropertyPair(rows){
+  const byJob={};
+  (rows||[]).forEach(p=>{
+    const k=p.job_id!=null?('j'+p.job_id):(p.bid_id!=null?('b'+p.bid_id):'');
+    if(!k)return;
+    const g=byJob[k]||(byJob[k]={name:p.job_name||p.bid_name||'',before:null,after:null,at:0});
+    const t=Date.parse(p.uploadedAt||0)||0;
+    if(p.type==='before'&&(!g.before||t>Date.parse(g.before.uploadedAt||0)))g.before=p;
+    if(p.type==='after'&&(!g.after||t>Date.parse(g.after.uploadedAt||0)))g.after=p;
+    if(t>g.at)g.at=t;
+  });
+  const hits=Object.values(byJob).filter(g=>g.before&&g.after).sort((a,b)=>b.at-a.at);
+  if(hits[0])return hits[0];
+  // Fall back to the property itself. The commonest shape in this app is a
+  // Before taken while WRITING the estimate and an After taken on the job it
+  // became, and those two carry different tags, so keying on the job alone
+  // found no pair on the one house that most needs one (caught in a
+  // screenshot before it shipped, 2026-09-22). The folder is already one
+  // property, so the newest of each is the story of that house.
+  let before=null,after=null;
+  (rows||[]).forEach(p=>{
+    const t=Date.parse(p.uploadedAt||0)||0;
+    if(p.type==='before'&&(!before||t>Date.parse(before.uploadedAt||0)))before=p;
+    if(p.type==='after'&&(!after||t>Date.parse(after.uploadedAt||0)))after=p;
+  });
+  if(!before||!after)return null;
+  return{name:after.job_name||after.bid_name||before.job_name||before.bid_name||'',
+    before,after,at:Date.parse(after.uploadedAt||0)||0};
+}
+let _pcFolder=null;
+function tdOpenPropertyFolder(clientId,addr,rows){
+  const c=clients.find(x=>x.id===clientId);
+  const list=rows||((typeof cdPropertyPhotos==='function')?cdPropertyPhotos(c,addr,0):[]);
+  if(!list.length)return false;
+  _pcFolder={clientId,addr:addr||'',stage:'all',open:null,ids:list.map(p=>p.id)};
+  tdReviewShots(_pcFolder.ids);
+  if(_pcRev)_pcRev.folder=true;
+  _pcFolderPaint();
+  return true;
+}
+function _pcFolderRows(){
+  if(!_pcFolder)return [];
+  return _pcFolder.ids.map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+}
+function tdFolderStage(t){
+  if(!_pcFolder)return false;
+  // A different stage is a different question, so the newest of whatever is
+  // left opens again rather than leaving him on a screen of closed rows.
+  _pcFolder.stage=t;_pcFolder.open=null;_pcFolderPaint();return true;
+}
+function tdFolderVisit(key){
+  if(!_pcFolder)return false;
+  // '' is "he closed it", null is "nobody has chosen yet". Without the
+  // distinction, closing a visit re-opened the newest one on the next paint
+  // and the tap looked like it did nothing.
+  _pcFolder.open=(_pcFolder.open===key)?'':key;
+  _pcFolderPaint();return true;
+}
+function _pcFolderCell(p){
+  return '<button type="button" class="pc-rev-cell" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" '+
+    'onclick="tdFolderOpen(\''+p.id+'\')"><span class="pc-rev-tag">'+escHtml(p.type)+'</span></button>';
+}
+// Straight into the viewer that already exists, on the shot that was tapped.
+function tdFolderOpen(photoId){
+  if(!_pcRev)return false;
+  const i=_pcRev.ids.findIndex(id=>String(id)===String(photoId));
+  return i<0?false:tdReviewOpen(i);
+}
+function _pcFolderPaint(){
+  const el=document.getElementById('pc-rev');
+  if(!el||!_pcFolder)return;
+  const all=_pcFolderRows();
+  if(!all.length){tdReviewClose();return;}
+  const c=clients.find(x=>x.id===_pcFolder.clientId);
+  const count=t=>all.filter(p=>p.type===t).length;
+  const shown=_pcFolder.stage==='all'?all:all.filter(p=>p.type===_pcFolder.stage);
+  const visits=tdPropertyVisits(shown);
+  if(_pcFolder.open==null&&visits.length)_pcFolder.open=visits[0].key;
+  const pair=_pcFolder.stage==='all'?tdPropertyPair(all):null;
+  const chip=(v,label,n)=>'<button type="button" class="fb'+(_pcFolder.stage===v?' active':'')+'" onclick="tdFolderStage(\''+v+'\')">'+label+' '+n+'</button>';
+  const when=t=>{try{return new Date(t).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});}catch(_e){return '';}};
+  el.innerHTML=
+    '<div class="pc-rev-top">'+
+      '<button type="button" class="pc-side" onclick="tdReviewClose()">Close</button>'+
+      '<span class="pc-rev-title">Photos</span>'+
+      '<span class="pc-rev-sp"></span>'+
+    '</div>'+
+    '<div class="pc-fold">'+
+      '<div class="pc-fold-hd">'+
+        '<div class="pc-fold-addr">'+escHtml((_pcFolder.addr||'').split(',')[0]||'This property')+'</div>'+
+        '<div class="pc-fold-sub">'+all.length+(all.length===1?' photo':' photos')+' \u00b7 '+
+          visits.length+(visits.length===1?' visit':' visits')+(c?' \u00b7 '+escHtml(c.name||''):'')+'</div>'+
+      '</div>'+
+      '<div class="pc-fold-chips">'+chip('all','All',all.length)+chip('before','Before',count('before'))+
+        chip('progress','Progress',count('progress'))+chip('after','After',count('after'))+'</div>'+
+      (pair?'<div class="pc-fold-ba">'+
+        '<div class="pc-fold-ba-hd"><div style="flex:1;min-width:0">'+
+          '<div class="pc-fold-ba-lbl">Before &amp; After</div>'+
+          '<div class="pc-fold-ba-name">'+escHtml(pair.name||'This job')+'</div></div>'+
+          '<button type="button" class="pc-side" onclick="tdFolderSendPair()">Send</button>'+
+        '</div>'+
+        '<div class="pc-fold-ba-grid">'+_pcFolderCell(pair.before)+_pcFolderCell(pair.after)+'</div>'+
+      '</div>':'')+
+      visits.map(v=>{
+        const open=_pcFolder.open===v.key;
+        return '<div class="pc-fold-visit">'+
+          '<button type="button" class="pc-fold-visit-hd" onclick="tdFolderVisit(\''+v.key+'\')">'+
+            '<span class="pc-fold-visit-t">'+
+              '<span class="pc-fold-visit-day">'+escHtml(when(v.at))+'</span>'+
+              '<span class="pc-fold-visit-what">'+escHtml(v.what||'No job \u00b7 just photos')+'</span>'+
+            '</span>'+
+            '<span class="pc-fold-visit-n">'+v.photos.length+'</span>'+
+            '<span class="pc-fold-caret'+(open?' open':'')+'">\u2304</span>'+
+          '</button>'+
+          (open?'<div class="pc-rev-grid flat">'+v.photos.map(_pcFolderCell).join('')+'</div>':'')+
+        '</div>';
+      }).join('')+
+    '</div>';
+}
+// The pair is what a customer asks for, so Send is the hub they already have.
+function tdFolderSendPair(){
+  if(!_pcFolder)return false;
+  const c=clients.find(x=>x.id===_pcFolder.clientId);
+  if(!c)return false;
+  tdReviewClose();
+  if(typeof sendClientHub==='function')return sendClientHub(c.id),true;
+  if(typeof openClientDetail==='function')openClientDetail(c.id);
+  return true;
+}
+
 // ── Wrong house, move it ────────────────────────────────────────────────────
 // Until now a filed photo was filed forever: tdFilePhoto could move it
 // anywhere, and nothing in the app ever called it again. Jack has one shot
@@ -771,7 +944,7 @@ function tdAttachCommit(){
 }
 function tdReviewClose(){
   const trash=_pcRev?_pcRev.trash.slice():[];
-  _pcRev=null;
+  _pcRev=null;_pcFolder=null;
   document.getElementById('pc-rev')?.remove();
   // Only now, once the contractor has walked away from the sheet, do the
   // deleted shots actually leave storage. Undo is free until this point.
@@ -1082,7 +1255,8 @@ function tdPhotoSearch(q,list){
 function tdOpenPropertyPhotos(key){
   const g=(tdPhotoSearch.lastResults||[]).find(x=>x.key===key);
   if(!g||!g.photos.length)return false;
-  return tdReviewShots(g.photos.map(p=>p.id));
+  const cid=g.photos.map(p=>p.client_id).find(x=>x!=null);
+  return tdOpenPropertyFolder(cid!=null?cid:null,g.addr,g.photos);
 }
 
 // ── The unfiled tray (dashboard) ────────────────────────────────────────────

@@ -5050,11 +5050,7 @@ test.describe('addJobPhoto: progress type carries an optional milestone caption'
       jobs.push({ id: jobId, client_id: clientId, name: 'Snap Photo Job', status: 'active' });
       const stamp = new Date().toISOString();
       photos = photos.filter(p => p.job_id !== jobId);
-      // Was a progress shot until 2026-09-22, when the owner ruled that
-      // pictures in between do not go out to the customer. The subject of
-      // this test is uploadedAt surviving into the nested job photo, which
-      // the timeline needs to sort, so it rides on a type the hub publishes.
-      photos.push({ id: Date.now(), url: 'https://example.com/p.jpg', type: 'after', caption: 'Framing', client_id: clientId, job_id: jobId, job_name: 'Snap Photo Job', uploadedAt: stamp });
+      photos.push({ id: Date.now(), url: 'https://example.com/p.jpg', type: 'progress', caption: 'Framing', client_id: clientId, job_id: jobId, job_name: 'Snap Photo Job', uploadedAt: stamp });
       const snap = _buildClientHubSnapshot(clientId);
       const j = snap.jobs.find(x => x.id === jobId);
       return { skip: false, uploadedAt: j && j.photos[0] && j.photos[0].uploadedAt, caption: j && j.photos[0] && j.photos[0].caption, stamp };

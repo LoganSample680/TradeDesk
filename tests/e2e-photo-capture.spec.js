@@ -879,8 +879,12 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r).not.toContain('fullPath');
     });
 
-    // Owner, 2026-09-22: "pictures in between don't belong out there."
-    test('the hub carries Before and After, and never a Progress shot', async () => {
+    // Owner, 2026-09-22: "pictures in between don't belong out there", then
+    // "progress photos will show when tagged as progress". Both hold, because
+    // the hub keeps them in different places: Before and After PAIR UP as the
+    // story, a Progress shot goes to the timeline underneath, and tagging it
+    // is what put it there.
+    test('Before and After pair up, and a Progress shot is never one of the pair', async () => {
       const r = await page.evaluate(() => {
         clients.length = 0; jobs.length = 0; photos.length = 0;
         clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
@@ -890,17 +894,20 @@ test.describe('Photo capture: the sheet itself', () => {
           addr: '412 Oak St', uploadedAt: new Date().toISOString() });
         mk(1, 'before'); mk(2, 'progress'); mk(3, 'progress'); mk(4, 'after');
         const snap = JSON.stringify(_buildClientHubSnapshot(501));
+        const snapO = _buildClientHubSnapshot(501);
+        const job = snapO.jobs.find(j => j.id === 601);
+        const types = (job.photos || []).map(p => p.type).sort().join(',');
         return {
-          before: (snap.match(/before-1\.jpg/g) || []).length,
-          after: (snap.match(/after-4\.jpg/g) || []).length,
-          progress: (snap.match(/progress-/g) || []).length,
-          word: /"progress"/.test(snap),
+          types,
+          pairs: (job.photos || []).filter(p => p.type === 'before' || p.type === 'after').length,
+          progress: (job.photos || []).filter(p => p.type === 'progress').length,
+          hasUrls: /before-1\.jpg/.test(snap) && /after-4\.jpg/.test(snap),
         };
       });
-      expect(r.before).toBeGreaterThan(0);
-      expect(r.after).toBeGreaterThan(0);
-      expect(r.progress).toBe(0);      // not the url
-      expect(r.word).toBe(false);      // and not the type either
+      expect(r.types).toBe('after,before,progress,progress');
+      expect(r.pairs).toBe(2);        // the story
+      expect(r.progress).toBe(2);     // and the timeline, tagged on purpose
+      expect(r.hasUrls).toBe(true);
     });
 
     test('the crew still sees every progress shot on the property', async () => {
@@ -1209,22 +1216,32 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r).toEqual([0, 0, 0, 0]);
     });
 
-    test('a result opens that property in the album', async () => {
+    // The folder, not a flat wall: the visit is the folder, so two shots on
+    // two different days are two dated groups with the newest one open.
+    test('a result opens that property as a folder of visits', async () => {
       await seedHistory();
       const r = await page.evaluate(() => {
         const g = tdPhotoSearch('412 oak');
         tdPhotoSearch.lastResults = g;
         const opened = tdOpenPropertyPhotos(g[0].key);
-        const cells = document.querySelectorAll('#pc-rev .pc-rev-cell').length;
-        // Already filed, so the album is a history view, not a filing prompt.
-        const foot = document.querySelector('#pc-rev .pc-rev-attach').textContent;
-        const top = document.querySelector('#pc-rev .pc-side').textContent;
+        const out = {
+          opened,
+          addr: document.querySelector('#pc-rev .pc-fold-addr').textContent,
+          sub: document.querySelector('#pc-rev .pc-fold-sub').textContent,
+          visits: document.querySelectorAll('#pc-rev .pc-fold-visit').length,
+          openCells: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+          top: document.querySelector('#pc-rev .pc-side').textContent,
+        };
         tdReviewClose();
-        return { opened, cells, foot, top };
+        return out;
       });
       expect(r.opened).toBe(true);
-      expect(r.cells).toBe(2);
-      expect(r.foot).toBe('Done');
+      expect(r.addr).toBe('412 Oak St');
+      expect(r.sub).toContain('2 photos');
+      expect(r.sub).toContain('2 visits');
+      expect(r.sub).toContain('Dana Whitfield');
+      expect(r.visits).toBe(2);
+      expect(r.openCells).toBe(1);      // only the newest visit is open
       expect(r.top).toBe('Close');
     });
 
@@ -1236,14 +1253,14 @@ test.describe('Photo capture: the sheet itself', () => {
         const html = document.getElementById('search-results').innerHTML;
         const hit = (window._searchResults || []).find(x => x.type === 'photo');
         if (hit) hit.action();
-        const cells = document.querySelectorAll('#pc-rev .pc-rev-cell').length;
+        const visits = document.querySelectorAll('#pc-rev .pc-fold-visit').length;
         tdReviewClose(); closeSearch();
-        return { html, cells };
+        return { html, visits };
       });
       expect(r.html).toContain('Photos');
       expect(r.html).toContain('412 Oak St');
       expect(r.html).toContain('2 photos');
-      expect(r.cells).toBe(2);
+      expect(r.visits).toBe(2);
     });
 
     // §7.1: the page this replaced is gone, not hidden.
@@ -1269,7 +1286,7 @@ test.describe('Photo capture: the sheet itself', () => {
         return {
           hasSection: /Photos/.test(html),
           hasAdd: /tdCaptureForClient\(501\)/.test(html),
-          hasOpen: /tdReviewShots\(/.test(html),
+          hasOpen: /tdOpenPropertyFolder\(/.test(html),
           count: (html.match(/(\d+) photos/) || [])[1],
         };
       });
@@ -1277,6 +1294,161 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r.hasAdd).toBe(true);
       expect(r.hasOpen).toBe(true);
       expect(r.count).toBe('2');     // the two at THIS address, not the Pine Ct one
+    });
+  });
+
+  // ── The property folder (owner 2026-09-22) ────────────────────────────────
+  test.describe('TrueShot: the folder is the visit', () => {
+    const house = () => page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS' });
+      const mk = (id, type, iso, job) => photos.push({ id, type, url: 'https://x/' + id + '.jpg',
+        thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, client_name: 'Dana Whitfield',
+        job_id: job ? 601 : null, job_name: job ? 'Repipe' : '', addr: '412 Oak St, Wichita KS', uploadedAt: iso });
+      // one morning's work, then an afternoon trip back, then March
+      mk(1, 'before', '2026-09-22T14:00:00.000Z', true);
+      mk(2, 'progress', '2026-09-22T14:40:00.000Z', true);
+      mk(3, 'after', '2026-09-22T20:30:00.000Z', true);
+      mk(4, 'before', '2026-03-02T15:00:00.000Z', false);
+      return photos.map(p => p.id);
+    });
+
+    test('a visit is a stretch of work, not a calendar day', async () => {
+      await house();
+      const r = await page.evaluate(() => tdPropertyVisits(photos).map(v => v.photos.length));
+      // The 14:00 and 14:40 shots are one visit; 20:30 is a trip back.
+      expect(r).toEqual([1, 2, 1]);
+    });
+
+    test('the folder names the house, counts the visits, and opens the newest', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const out = {
+          addr: document.querySelector('.pc-fold-addr').textContent,
+          sub: document.querySelector('.pc-fold-sub').textContent,
+          visits: document.querySelectorAll('.pc-fold-visit').length,
+          open: document.querySelectorAll('.pc-rev-cell').length,
+          first: document.querySelector('.pc-fold-visit-day').textContent,
+          what: document.querySelector('.pc-fold-visit-what').textContent,
+        };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.addr).toBe('412 Oak St');
+      expect(r.sub).toContain('4 photos');
+      expect(r.sub).toContain('3 visits');
+      expect(r.visits).toBe(3);
+      expect(r.first).toContain('Sep 22');
+      expect(r.what).toBe('Repipe');
+      // the newest visit's one shot, plus the pinned pair's two
+      expect(r.open).toBe(3);
+    });
+
+    test('Before and After pin to the top once a job has both', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const ba = document.querySelector('.pc-fold-ba');
+        const out = { pinned: !!ba, name: ba && ba.querySelector('.pc-fold-ba-name').textContent,
+          cells: ba ? ba.querySelectorAll('.pc-rev-cell').length : 0,
+          tags: ba ? [...ba.querySelectorAll('.pc-rev-tag')].map(t => t.textContent).join(',') : '' };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.pinned).toBe(true);
+      expect(r.name).toBe('Repipe');
+      expect(r.cells).toBe(2);
+      expect(r.tags).toBe('before,after');
+    });
+
+    // The commonest shape in the app: the Before was taken while writing the
+    // estimate, the After on the job it became. Two different tags, one house.
+    test('a walkthrough Before pairs with the job After', async () => {
+      const r = await page.evaluate(() => {
+        photos.length = 0;
+        photos.push({ id: 11, type: 'before', url: 'u', thumbUrl: '', storagePath: 's11', client_id: 501,
+          bid_id: 701, bid_name: 'Repipe', addr: '412 Oak St', uploadedAt: '2026-08-01T15:00:00.000Z' });
+        photos.push({ id: 12, type: 'after', url: 'u', thumbUrl: '', storagePath: 's12', client_id: 501,
+          job_id: 601, job_name: 'Repipe', addr: '412 Oak St', uploadedAt: '2026-09-22T19:00:00.000Z' });
+        const pair = tdPropertyPair(photos);
+        return { has: !!pair, name: pair && pair.name, b: pair && pair.before.id, a: pair && pair.after.id };
+      });
+      expect(r.has).toBe(true);
+      expect(r.name).toBe('Repipe');
+      expect(r.b).toBe(11);
+      expect(r.a).toBe(12);
+    });
+
+    test('a job with no After yet pins nothing, because there is no pair', async () => {
+      const r = await page.evaluate(() => {
+        photos.length = 0;
+        photos.push({ id: 9, type: 'before', url: 'u', thumbUrl: '', storagePath: 's', client_id: 501,
+          job_id: 601, job_name: 'Repipe', addr: '412 Oak St, Wichita KS', uploadedAt: new Date().toISOString() });
+        return tdPropertyPair(photos);
+      });
+      expect(r).toBe(null);
+    });
+
+    test('a stage chip filters the whole property', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const chips = [...document.querySelectorAll('.pc-fold-chips .fb')].map(b => b.textContent);
+        tdFolderStage('before');
+        const out = { chips, visits: document.querySelectorAll('.pc-fold-visit').length,
+          ba: !!document.querySelector('.pc-fold-ba'),
+          active: document.querySelector('.pc-fold-chips .fb.active').textContent };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.chips).toEqual(['All 4', 'Before 2', 'Progress 1', 'After 1']);
+      expect(r.active).toBe('Before 2');
+      expect(r.visits).toBe(2);       // the two Befores, on two different days
+      expect(r.ba).toBe(false);       // the pinned pair belongs to the whole story
+    });
+
+    test('tapping a shot drops into the viewer that already exists', async () => {
+      const ids = await house();
+      const r = await page.evaluate((ids) => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        tdFolderOpen(ids[3]);         // the March shot, inside a closed visit
+        const out = { img: !!document.getElementById('pc-rev-img'),
+          markUp: [...document.querySelectorAll('#pc-rev .pc-side')].some(b => b.textContent === 'Mark up'),
+          move: [...document.querySelectorAll('#pc-rev .pc-side')].some(b => b.textContent === 'Move') };
+        tdReviewClose();
+        return out;
+      }, ids);
+      expect(r.img).toBe(true);
+      expect(r.markUp).toBe(true);
+      expect(r.move).toBe(true);
+    });
+
+    test('a visit header opens and closes its own shots', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const heads = document.querySelectorAll('.pc-fold-visit-hd');
+        const before = document.querySelectorAll('.pc-fold-visit .pc-rev-cell').length;
+        heads[1].click();             // open the morning's two
+        const opened = document.querySelectorAll('.pc-fold-visit .pc-rev-cell').length;
+        document.querySelectorAll('.pc-fold-visit-hd')[1].click();
+        const closed = document.querySelectorAll('.pc-fold-visit .pc-rev-cell').length;
+        tdReviewClose();
+        return { before, opened, closed };
+      });
+      expect(r.before).toBe(1);       // only the newest
+      expect(r.opened).toBe(2);       // one open at a time, and it is the morning's
+      expect(r.closed).toBe(0);
+    });
+
+    test('an empty property opens nothing rather than an empty sheet', async () => {
+      const r = await page.evaluate(() => {
+        photos.length = 0;
+        return { opened: tdOpenPropertyFolder(501, '412 Oak St'), sheet: document.querySelectorAll('#pc-rev').length };
+      });
+      expect(r.opened).toBe(false);
+      expect(r.sheet).toBe(0);
     });
   });
 
