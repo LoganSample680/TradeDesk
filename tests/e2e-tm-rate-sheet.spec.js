@@ -881,7 +881,8 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     // upfront if they want it to work that way".
     test('scope on its own is named as a complete proposal, not an empty one', async () => {
       const t = await shapeIn([]);
-      expect(t).toContain('Scope only, no price');
+      // Mid-sentence now ("They get scope only, no price."), hence the case.
+      expect(t).toContain('They get scope only, no price');
       expect(t).toContain('complete proposal');
     });
 
@@ -899,7 +900,7 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     // in the chip row; it is just not the advice any more.
     test('a rate with no day count says there is no total, and points at the ceiling', async () => {
       const t = await shapeIn(['rate']);
-      expect(t).toContain('A rate, no total');
+      expect(t).toContain('They get a rate, no total');
       // Sentence-initial now that the line was shortened, hence the capital.
       expect(t).toContain('Nothing has told it how many days');
       expect(t).toContain('give them the ceiling');
@@ -909,7 +910,7 @@ test.describe('the cap is worded the way a customer asks for it', () => {
 
     test('a rate with a day count says there is one', async () => {
       const t = await shapeIn(['rate', 'est']);
-      expect(t).toContain('A rate and a total');
+      expect(t).toContain('They get a rate and a total');
       expect(t).not.toContain('no total');
     });
 
@@ -1347,11 +1348,9 @@ test.describe('the ceiling leads, not the guess', () => {
     // whole signal and got out of the label's way.
     expect(t).toContain('Next');
     expect(t).toContain('The most it can cost');
-    expect(t).toContain('Send it');
     // Folded into step 4 rather than sitting in a card of its own, which is how
     // four steps were added without making the panel taller.
-    expect(t).toContain('A rate, no total');
-    expect(t).not.toContain('Send it now and they get');
+    expect(t).toContain('They get a rate, no total');
   });
 
   // ── SHORT ────────────────────────────────────────────────────────────────
@@ -1403,21 +1402,37 @@ test.describe('the ceiling leads, not the guess', () => {
     }
   });
 
-  // Every step still LISTED, though: collapsing the ones he is not on must not
-  // hide what is coming, or the panel got short by lying about the job.
-  test('all four are still on the page, short or not', async () => {
+  // REPLACED 2026-09-22 (§10.4). This used to require all four steps to be
+  // listed, on the reasoning that collapsing them must not hide what is coming.
+  // Then the owner saw the whole page: "its overwhelming even to me, sure as
+  // shit would be overwleming to a client." He was right, and the reason was
+  // this panel. A finished step showed a tick and its figure, and the rail
+  // further down the same page states every one of those figures again, next to
+  // the button he presses. Two read-backs of the same three numbers.
+  //
+  // So the two stopped competing. THIS says what is missing; the rail says what
+  // it is. The contract now is the opposite of the old one: a step he has
+  // finished says nothing at all here.
+  test('a finished step says nothing, because the rail already says it', async () => {
     const t = await page.evaluate(() => {
       _geiIsTM = true;
       _tmLayers = new Set(['rate']); _tmRatePerMan = 95;
       const e = document.getElementById('tm-i-rate'); if (e) e.value = '95';
       const n = document.getElementById('tm-i-nte'); if (n) n.value = '';
+      _geiScopeChips = ['x'];
       _tmApplyLayers();
       const row = document.getElementById('tm-add-row');
       return (row ? row.textContent : '').replace(/\s+/g, ' ');
     });
-    ['The work', 'Your rate', 'The most it can cost', 'Send it'].forEach(l => {
-      expect(t, l + ' fell off the panel').toContain(l);
-    });
+    // Done: the work and the rate. Neither is mentioned.
+    expect(t, 'a finished step was still taking a line').not.toContain('The work');
+    expect(t, 'the rate is stated twice on one page').not.toContain('Your rate');
+    expect(t, 'the figure belongs to the rail').not.toContain('$95/hr each');
+    // Not done: the ceiling, which is the only thing he is asked for.
+    expect(t).toContain('The most it can cost');
+    expect(t).toContain('Next');
+    // And what he would be sending if he stopped here.
+    expect(t).toContain('They get a rate, no total');
   });
 
   // California will not take a T&M home improvement contract at all, so a

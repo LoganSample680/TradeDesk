@@ -4187,6 +4187,10 @@ function _tmApplyLayers(){
   show('tm-stat-days-tile',_tmLayers.has('est'));
   const grid=document.getElementById('tm-stat-grid');
   if(grid)grid.style.gridTemplateColumns=_tmLayers.has('est')?'repeat(3,1fr)':'1fr';
+  // Without an estimate this grid is one tile saying the day rate, and the rail
+  // further down says the day rate. One of them had to go, and the rail is the
+  // one standing next to the send button.
+  show('tm-stat-grid',_tmLayers.has('est'));
   // The rail carries only what he added.
   const anyMoney=['rate','est','mat','dep','cap'].some(k=>_tmLayers.has(k));
   show('tm-rail-money',anyMoney);
@@ -4209,8 +4213,7 @@ function _tmApplyLayers(){
           '<span style="min-width:0">'+
             '<span style="display:block;font-size:13px;font-weight:700;color:var(--text)">Keep my rate off the proposal</span>'+
             '<span style="display:block;font-size:11.5px;color:var(--text3);line-height:1.45;margin-top:1px">'+
-              'The rate still runs the job and still bills the hours. They just do not read it.'+
-              ' This is remembered for your next one.</span>'+
+              'It still bills the hours. Remembered for next time.</span>'+
           '</span></label>'
       // Named, not abbreviated: a man reading why he cannot turn something off
       // is owed the state's name and the statute behind it, not a two-letter
@@ -4222,7 +4225,10 @@ function _tmApplyLayers(){
   const nteH=document.getElementById('tm-nte-head');
   if(nteH)nteH.textContent=locked.has('cap')
     ?'Guaranteed maximum price'   // the statutes' phrase, where a statute forces it
-    :(_tmRateOnly?'The most it can cost them (the only number they see)':'The most it can cost them (optional)');
+    // One heading, short. The parentheses were explaining the feature to him
+    // every time he opened the page, and the block underneath already says what
+    // happens at the cap.
+    :'The most it can cost them';
   const matH=document.getElementById('tm-mat-head');
   if(matH)matH.textContent='Material categories';
   _tmRenderAddRow(rule,locked);
@@ -4318,6 +4324,12 @@ function _tmScopeDone(){
 //
 // Pure: it reads state and returns the list. Nothing here touches the DOM, so
 // a test can ask what the screen is telling him without rendering it.
+// "A rate, no total" reads as a fragment after "They get". Only the first
+// letter moves, because the rest may carry a figure or a proper noun.
+function _tmLower(t){
+  const v=String(t||'');
+  return v?(v.charAt(0).toLowerCase()+v.slice(1)):v;
+}
 function _tmSteps(){
   const L=_tmLayers,locked=_tmLockedLayers();
   const rateOn=L.has('rate')&&Number(_tmRatePerMan)>0;
@@ -4363,10 +4375,12 @@ function _tmRenderAddRow(rule,locked){
     const fg=lock?'#92400E':on?'var(--text-cream,#fff)':'var(--text2)';
     const bd=lock?'1.5px solid #D97706':on?'1.5px solid var(--ink)':'1.5px solid var(--border2)';
     const mark=lock?'🔒':on?'✓':'＋';
+    // SMALLER, and on one line. Six pills at 13px over two rows read as six
+    // decisions facing him. They are a switchboard, not the job.
     return '<button type="button" onclick="_tmToggleLayer(\''+l.k+'\')"'+
       (lock?' title="'+escHtml(rule.note||'')+'"':'')+
-      ' style="padding:8px 13px;border-radius:var(--r-pill,999px);border:'+bd+';background:'+bg+';color:'+fg+
-      ';font-size:13px;font-weight:700;cursor:'+(lock?'default':'pointer')+';font-family:inherit">'+
+      ' style="padding:5px 10px;border-radius:var(--r-pill,999px);border:'+bd+';background:'+bg+';color:'+fg+
+      ';font-size:11.5px;font-weight:700;cursor:'+(lock?'default':'pointer')+';font-family:inherit;white-space:nowrap">'+
       mark+' '+escHtml(l.label)+'</button>';
   }).join('');
   // A state that will not take a T&M contract at all has to say so where he is
@@ -4388,9 +4402,7 @@ function _tmRenderAddRow(rule,locked){
   // features, he is describing a deal he has already half agreed on a driveway.
   const head='<div style="width:100%;margin-bottom:2px">'+
     '<div class="td-h3" style="margin-bottom:2px">How this one bills</div>'+
-    '<div style="font-size:11.5px;color:var(--text3);line-height:1.45">'+
-      'The scope above is already the proposal.'+
-    '</div></div>';
+    '</div>';
   // The steps. Numbered, in the order the job is done, with exactly one thing
   // marked as the next move so there is never a question of where to look.
   // Blocked states get no steps, because in California none of this is legal
@@ -4402,11 +4414,13 @@ function _tmRenderAddRow(rule,locked){
       // Not a step. What the three above add up to in the customer's hands,
       // under a rule, so the list reads as three things and an outcome.
       if(s.k==='send'){
-        return '<div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border)">'+
-          '<span style="font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text3)">'+
-            escHtml(s.label)+' and they get</span>'+
-          '<div style="font-size:11.5px;color:var(--text2);line-height:1.45;margin-top:2px">'+
-            '<b style="color:var(--text)">'+escHtml(s.value)+'.</b> '+escHtml(s.why)+'</div>'+
+        // No all-caps label over it any more. The block had a heading, a
+        // sub, a label and another label, which is four pieces of chrome
+        // around one sentence and a chip row. The sentence says what it is
+        // on its own.
+        return '<div style="margin-top:2px">'+
+          '<span style="font-size:12px;color:var(--text2);line-height:1.5">'+
+            '<b style="color:var(--text)">They get '+escHtml(_tmLower(s.value))+'.</b> '+escHtml(s.why)+'</span>'+
         '</div>';
       }
       // ── THE ONE THAT TALKS ───────────────────────────────────────────────
@@ -4431,21 +4445,18 @@ function _tmRenderAddRow(rule,locked){
             '<div style="font-size:11.5px;color:var(--text2);line-height:1.45;margin-top:2px">'+escHtml(s.why)+'</div>'+
           '</div>'+act+'</div>';
       }
-      // ── EVERYTHING ELSE, ONE LINE ────────────────────────────────────────
-      // Done or still to come: a mark, what it is, and the figure, right
-      // aligned so the figures stack into a column he can read down.
-      const mark=s.done
-        ? '<span style="flex-shrink:0;width:17px;height:17px;border-radius:var(--r-pill,999px);background:var(--ink);'+
-          'color:var(--text-cream,#fff);font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">✓</span>'
-        : '<span style="flex-shrink:0;width:17px;height:17px;border-radius:var(--r-pill,999px);'+
-          'box-shadow:inset 0 0 0 1.5px var(--border2);color:var(--text3);'+
-          'font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">'+s.n+'</span>';
-      return '<div style="display:flex;align-items:center;gap:9px;padding:5px 2px">'+mark+
-        '<span style="font-size:12.5px;font-weight:700;color:var(--text2);min-width:0">'+escHtml(s.label)+'</span>'+
-        '<span style="flex:1;min-width:8px"></span>'+
-        '<span style="font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums;'+
-          'color:'+(s.done?'var(--text)':'var(--text3)')+'">'+escHtml(s.value)+'</span>'+
-      '</div>';
+      // ── EVERYTHING ELSE: NOTHING ─────────────────────────────────────────
+      // A finished step used to get a tick and its figure here. That was a
+      // second read-back of numbers the rail already states in full, further
+      // down the same page, next to the button he presses. Owner, 2026-09-22:
+      // "its overwhelming even to me, sure as shit would be overwleming to a
+      // client."
+      //
+      // So the two stopped competing and each took a job. THIS says what is
+      // MISSING. The rail says what it IS. A step he has finished is not
+      // missing, so it says nothing at all, and once the job is described this
+      // whole block is one sentence.
+      return '';
     }).join('')+'</div>'+
     '<div style="width:100%;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;'+
       // Not "Or add to it": half of them are on by the time he reads it, and a
