@@ -1,0 +1,75 @@
+name: Load County Assessor Data
+
+# Onboarding a county is running this workflow with that county's config name.
+# It is never automatic on push: a load writes tens of thousands of rows to the
+# ONE shared Supabase project (§3.1), and it pulls from a small county server
+# that owes us nothing, so it happens when somebody means it.
+on:
+  workflow_dispatch:
+    inputs:
+      county:
+        description: 'County config name (file in scripts/counties, without .json)'
+        required: true
+        default: 'ks-shawnee'
+      mode:
+        description: 'print = field map only (no writes) · dry-run = fetch+parse, no writes · load = write parcels · enrich = fill year built for rows missing it'
+        required: true
+        default: 'print'
+        type: choice
+        options: [print, dry-run, load, enrich]
+      enrich_count:
+        description: 'enrich mode only: how many addresses to fill this run'
+        required: false
+        default: '250'
+      pause_ms:
+        description: 'Pause between requests to the county server. Lower only if you know their capacity.'
+        required: false
+        default: '250'
+
+  # Assessments are re-struck once a year, so a yearly refresh is the real
+  # cadence. March 1st, after county rolls are typically certified.
+  schedule:
+    - cron: '0 8 1 3 *'
+
+# Two loads of the same county at once would fight over the same rows. One at a
+# time, and never cancel a run mid-write: a half-loaded county is worse than a
+# stale one, because it looks complete.
+concurrency:
+  group: county-load-${{ github.event.inputs.county || 'scheduled' }}
+  cancel-in-progress: false
+
+jobs:
+  load:
+    name: ${{ github.event.inputs.county || 'ks-shawnee' }} · ${{ github.event.inputs.mode || 'load' }}
+    # GitHub-hosted on purpose. The old Zillow scraper needed a home IP to look
+    # human; county servers block nothing (verified 2026-09-22), so this must not
+    # depend on the Proxmox box being awake.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Load county
+        env:
+          SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          COUNTY: ${{ github.event.inputs.county || 'ks-shawnee' }}
+          MODE:   ${{ github.event.inputs.mode || 'load' }}
+          ENRICH: ${{ github.event.inputs.enrich_count || '250' }}
+          PAUSE:  ${{ github.event.inputs.pause_ms || '250' }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            print)    node scripts/county-load.js "$COUNTY" --print --pause "$PAUSE" ;;
+            dry-run)  node scripts/county-load.js "$COUNTY" --dry-run --pause "$PAUSE" ;;
+            load)     node scripts/county-load.js "$COUNTY" --pause "$PAUSE" ;;
+            enrich)   node scripts/county-load.js "$COUNTY" --enrich "$ENRICH" --pause "$PAUSE" ;;
+            *) echo "unknown mode: $MODE" >&2; exit 1 ;;
+          esac

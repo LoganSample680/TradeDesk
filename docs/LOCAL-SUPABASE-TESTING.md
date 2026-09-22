@@ -9,10 +9,8 @@ pct set 200 --features nesting=1,keyctl=1 && pct reboot 200
 Inside LXC 200, from a clone of this repo:
 ```bash
 bash scripts/setup-local-test-stack.sh     # Supabase stack (db reset + migrations)
-bash scripts/setup-property-proxy.sh        # Zillow proxy on the home IP + cloudflared tunnel
 ```
-Paste the `supabase status` block (printed by the first script) + the `PROPERTY_TUNNEL_URL`
-(printed by the second) back to Claude. Then Claude wires the per-worker harness to those
+Paste the `supabase status` block back to Claude. Then Claude wires the per-worker harness to those
 keys and you set the GitHub secret `SUPABASE_UPSTREAM` to the printed API URL. Details below.
 
 ---
@@ -102,27 +100,32 @@ opt-in and inert until you flip it.
 
 Production stays on Supabase cloud — this is the **test/dev** environment only.
 
-## Property proxy (Zillow) — home-IP lookup
+## Property data — county assessor records (replaced the Zillow proxy, 2026-09-22)
 
-`scripts/setup-property-proxy.sh` runs `scripts/property-proxy.js` on :3001 from jarvis's
-**home residential IP** (Zillow bot-challenges datacenter IPs) and exposes it via a
-cloudflared **quick tunnel**. Set the printed URL as `PROPERTY_TUNNEL_URL` in Cloudflare
-Pages env; `functions/api/property.js` forwards `/api/property` → there.
+**There is no property proxy any more, and nothing here runs on jarvis.** The old
+`scripts/property-proxy.js` scraped Zillow from a home residential IP because Zillow
+bot-challenges datacenter IPs. It is deleted. Zillow now serves a hard 403 to it, and
+the "Kansas caveat" this section used to carry (KS returning null since ~late June
+2026) was the first sign of the block, not a KS quirk.
 
-- Quick-tunnel URLs **change on restart**. For a stable hostname, upgrade to a **named
-  tunnel**:
+Property facts come from the county assessor now, which is where they always
+originated: Zillow buys county records from an aggregator, so the scraper was
+laundering Shawnee County's own data back to us through two middlemen.
+
+- **Load a county:** run the `Load County Assessor Data` workflow
+  (`.github/workflows/county-load.yml`) with the config name, or locally:
   ```bash
-  cloudflared tunnel login
-  cloudflared tunnel create td-property
-  cloudflared tunnel route dns td-property property.<your-domain>
-  # then point the service at:  cloudflared tunnel run td-property  (ingress → :3001)
+  node scripts/county-load.js ks-shawnee --print     # check the field map, writes nothing
+  node scripts/county-load.js ks-shawnee             # load the county
+  node scripts/county-load.js ks-shawnee --enrich 250  # fill year built
   ```
-  and set `PROPERTY_TUNNEL_URL=https://property.<your-domain>` once, permanently.
-- **Kansas caveat:** a home IP is necessary but may not be sufficient — Zillow changed
-  something KS-specific (~late June 2026). MO/NC work through this path; if KS still returns
-  null, the durable fix is a licensed property API (Rentcast/Estated), tracked separately.
-- Manage: `systemctl status td-property-proxy td-property-tunnel`,
-  `journalctl -u td-property-tunnel -f`.
+- **Add a county:** copy `scripts/counties/ks-shawnee.json`, change the URLs and the
+  field names, run `--print` until the columns look right. No code change.
+- **Lookups are a SQL join,** not a network call: `property_lookup` (migration
+  `20261032_county_parcels.sql`) matches every address a contractor has in one round
+  trip. `functions/api/property.js` is only the single-address enrichment path behind
+  the "Look up property" button, and it needs `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`
+  in Cloudflare Pages env. `PROPERTY_TUNNEL_URL` is gone; delete it if it is still set.
 
 ## Hosted-runner mode — no jarvis needed (added 2026-08-21)
 

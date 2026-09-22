@@ -412,7 +412,7 @@ function setSiteNote(client,addr,text){
 }
 // ── Per-property records (address = first-class) ──────────────────────────
 // One client owns many addresses (primary c.addr + c.extraAddresses[]). Property
-// facts (Zillow/Redfin lookup: year built, value, sqft, beds/baths, last sale)
+// facts (county assessor records: year built, assessed value, sqft, beds/baths)
 // and the pre-1978 lead trigger are PER-ADDRESS, keyed on client.properties{}.
 // Legacy clients kept these on the client itself; those are read as the record
 // for the client's PRIMARY address, and primary-address writes stay mirrored, so
@@ -422,7 +422,12 @@ const _addrKey=siteNoteKey; // one address-normalization key for notes + propert
 // who the client (payer) is: on a GC/PM job the owner is a separate party (and the
 // lien/notice must name them). ownedByAccount defaults true so every legacy
 // homeowner record still reads as owning their own address.
-const _PROP_FIELDS=['propertyType','ownerName','ownerPhone','ownedByAccount','yearBuilt','sqft','estimatedValue','bedrooms','bathrooms','stories','lotSize','exteriorMaterial','roofType','garage','isRental','lastSalePrice','lastSaleDate','assessorUrl','propDataSource','propDataExact','propDataFetchedAt','propDataMiss','rrpDisturb'];
+// propDataCounty names the county a record came from ("Shawnee, KS"), shown on
+// the card so the number is attributable to a public record the contractor can
+// go read. It is stored, not derived, because the county that answered is a
+// fact about THIS lookup: reloading a neighbouring county later must not
+// silently re-attribute an answer somebody already acted on.
+const _PROP_FIELDS=['propertyType','ownerName','ownerPhone','ownedByAccount','yearBuilt','sqft','estimatedValue','bedrooms','bathrooms','stories','lotSize','exteriorMaterial','roofType','garage','isRental','lastSalePrice','lastSaleDate','assessorUrl','propDataSource','propDataCounty','propDataExact','propDataFetchedAt','propDataMiss','rrpDisturb'];
 function getProperty(client,addr){
   const out={};if(!client)return out;
   const k=_addrKey(addr||client.addr);
