@@ -57,6 +57,9 @@ async function tdSavePhoto(opts){
   const row={
     id:Date.now()+Math.random(),
     url:'',storagePath:'',thumbUrl:'',thumbPath:'',
+    // A PATH, never a url. See _compressPhoto's header: the full-resolution
+    // copy has no link on the row so it cannot be rendered by accident.
+    fullPath:'',
     type,caption,
     client_id:clientId,client_name:c?c.name||'':'',
     bid_id:bidId,bid_name:b?(b.title||b.name||''):'',
@@ -119,7 +122,9 @@ async function tdSavePhoto(opts){
     const publicUrl=urlData?urlData.publicUrl||'':'';
     if(!publicUrl)throw new Error('no public url');
     const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
+    const fullPath=_cp&&_cp.full?await _uploadPhotoFull(_cp.full,path,_cp.fullMime,_cp.fullExt):'';
     row.url=publicUrl;row.storagePath=path;row.thumbUrl=thumbUrl;row.thumbPath=thumbPath;
+    row.fullPath=fullPath;
     // The base64 copy is dropped once the row has a URL: keeping both doubles
     // the localStorage footprint of every photo for no gain (the job sheet
     // falls back to url when data is absent).
@@ -419,6 +424,7 @@ function _pcRevViewerHTML(rows){
       '<button type="button" class="pc-side" onclick="tdReviewStep(-1)">Prev</button>'+
       '<button type="button" class="pc-side danger" onclick="tdReviewDelete()">Delete</button>'+
       '<button type="button" class="pc-side" onclick="tdAnnotatePhoto(\''+p.id+'\')">Mark up</button>'+
+      (p.fullPath?'<button type="button" class="pc-side" id="pc-rev-full" onclick="tdPhotoFullSize(\''+p.id+'\');this.remove()">Full size</button>':'')+
       '<button type="button" class="pc-side" onclick="tdReviewStep(1)">Next</button>'+
     '</div>';
 }
@@ -661,7 +667,9 @@ function tdReviewClose(){
   // deleted shots actually leave storage. Undo is free until this point.
   if(trash.length&&typeof supaEnabled==='function'&&supaEnabled()&&_supa){
     const paths=trash.map(p=>p.storagePath).filter(Boolean)
-      .concat(trash.map(p=>p.thumbPath).filter(Boolean));
+      .concat(trash.map(p=>p.thumbPath).filter(Boolean))
+      .concat(trash.map(p=>p.fullPath).filter(Boolean))
+      .concat(trash.map(p=>p.originalFullPath).filter(Boolean));
     if(paths.length)_supa.storage.from('gallery').remove(paths).catch(()=>{});
   }
   if(typeof renderDash==='function')try{renderDash();}catch(_e){}
@@ -976,6 +984,36 @@ function _pcShotTime(p){
     return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
   }catch(_e){return '';}
 }
+// ── Full size, on demand only (owner 2026-09-22) ────────────────────────────
+// The whole egress argument lives in this function. Uploads are free; what
+// costs money is bytes going OUT, so the 4K copy is fetched exactly when a
+// person asks for it and never as part of a grid, a hub page or a proposal.
+// Paths are immutable (every one carries a timestamp) and written with a
+// one-year Cache-Control, so the second look at the same photo is served by
+// the browser rather than billed again.
+function tdPhotoHasFull(photoId){
+  const p=photos.find(x=>String(x.id)===String(photoId));
+  return !!(p&&p.fullPath);
+}
+function _pcFullUrl(p){
+  if(!p||!p.fullPath)return '';
+  if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supa))return '';
+  const{data}=_supa.storage.from('gallery').getPublicUrl(p.fullPath);
+  return(data&&data.publicUrl)||'';
+}
+// Swap the element to the full-resolution bytes. Returns the url it used, or
+// '' when there is nothing bigger to show, so a caller can leave its control
+// alone rather than promising a size it cannot deliver.
+function tdPhotoFullSize(photoId,imgEl){
+  const p=photos.find(x=>String(x.id)===String(photoId));
+  if(!p||!p.fullPath)return '';
+  const url=_pcFullUrl(p);
+  if(!url)return '';
+  const el=imgEl||document.getElementById('pc-rev-img');
+  if(el)el.src=url;
+  return url;
+}
+
 // ── Annotation (owner 2026-09-21) ───────────────────────────────────────────
 // "Circle the rot, point at the joist, write 'replace this'." It is the most
 // used feature in CompanyCam and the reason a photo beats a paragraph: the
@@ -1269,6 +1307,13 @@ async function tdSaveAnnotation(){
           // carries whatever the server had, which is not this markup.
           const r2=live();
           stamp(r2);
+          // The marked copy is flattened from the 1600 view, so there is no
+          // 4K version OF THE MARKS. Rather than leave Full size pointing at
+          // the unmarked original (a button that quietly contradicts what is
+          // on screen), the archive copy moves to originalFullPath, where it
+          // stays reachable as evidence, and this row simply has no full size.
+          if(r2.fullPath&&!r2.originalFullPath)r2.originalFullPath=r2.fullPath;
+          r2.fullPath='';
           r2.url=urlData.publicUrl;r2.storagePath=path;r2.thumbUrl=thumbUrl;r2.thumbPath=thumbPath;
           delete r2.data;
           saveAll();

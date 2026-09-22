@@ -2347,25 +2347,77 @@ function sendOMWText(clientId){
 // the full image loads only in the lightbox. Returns null on ANY failure,
 // callers then upload the original file exactly as before, so a photo can
 // never be lost to a decode error (odd formats, HEIC on old engines, etc.).
+// ── The size ladder (owner 2026-09-22) ──────────────────────────────────────
+// Three files, and the rule that keeps unlimited storage affordable is which
+// one gets served, not how small they are:
+//
+//   thumb  360px   grids, the tray, the album strip          ~20 KB
+//   view  1600px   every screen, the client hub, proposals    ~300 KB
+//   full  native   ONLY when somebody taps "Full size"        ~800 KB
+//
+// Until today the full one did not exist: every shot was resized to 1600 at
+// capture and the original was thrown away, so "pull it up in 4K" was not a
+// setting, it was a photo we no longer had.
+//
+// Storage is the cheap part (about 27 cents a month per contractor per year
+// of shooting). EGRESS is the part that could hurt, so the full file is
+// written with no public url on the row at all: there is nothing to put in an
+// <img src>, which makes serving it by accident impossible rather than merely
+// discouraged. See _pcFullUrl / tdPhotoFullSize.
+//
+// WebP for the full copy: roughly 40% under JPEG at the same quality, decodes
+// everywhere we render (Safari 14+, Chrome, Android), and keeps every pixel
+// the camera captured. JPEG if an engine somehow refuses it, checked by what
+// toBlob actually returns rather than by feature-sniffing.
 async function _compressPhoto(fileOrBlob,opts){
   try{
     const maxEdge=(opts&&opts.maxEdge)||1600,thumbEdge=(opts&&opts.thumbEdge)||360,q=(opts&&opts.quality)||0.82;
+    const wantFull=!(opts&&opts.full===false);
     let bmp;
     // from-image applies EXIF orientation so portrait phone shots don't land sideways.
     try{bmp=await createImageBitmap(fileOrBlob,{imageOrientation:'from-image'});}
     catch(_e){bmp=await createImageBitmap(fileOrBlob);}
-    const draw=edge=>{
+    const draw=(edge,mime,quality)=>{
       const scale=Math.min(1,edge/Math.max(bmp.width,bmp.height));
       const w=Math.max(1,Math.round(bmp.width*scale)),h=Math.max(1,Math.round(bmp.height*scale));
       const cv=document.createElement('canvas');cv.width=w;cv.height=h;
       cv.getContext('2d').drawImage(bmp,0,0,w,h);
-      return new Promise(res=>cv.toBlob(res,'image/jpeg',q));
+      return new Promise(res=>cv.toBlob(res,mime||'image/jpeg',quality||q));
     };
     const blob=await draw(maxEdge);
     const thumb=await draw(thumbEdge);
     if(!blob||!thumb||!blob.size||!thumb.size)return null;
-    return{blob,thumb,mime:'image/jpeg',ext:'jpg'};
+    const out={blob,thumb,mime:'image/jpeg',ext:'jpg',w:bmp.width,h:bmp.height};
+    if(wantFull&&Math.max(bmp.width,bmp.height)>maxEdge){
+      // Only worth keeping when there is more picture than the view copy holds.
+      // A 1200px shot IS its own full size, and storing it twice is waste.
+      let full=await draw(Math.max(bmp.width,bmp.height),'image/webp',0.82);
+      let fullMime='image/webp',fullExt='webp';
+      if(!full||!full.size||full.type!=='image/webp'){
+        full=await draw(Math.max(bmp.width,bmp.height),'image/jpeg',0.86);
+        fullMime='image/jpeg';fullExt='jpg';
+      }
+      if(full&&full.size){out.full=full;out.fullMime=fullMime;out.fullExt=fullExt;}
+    }
+    return out;
   }catch(_e){return null;}
+}
+// Upload the full-resolution copy beside the view copy. Same non-fatal shape
+// as the thumbnail: a photo is never lost over its archive copy, and a miss
+// just means that one shot has no Full size.
+async function _uploadPhotoFull(fullBlob,mainPath,mime,ext){
+  try{
+    if(!fullBlob)return '';
+    const fullPath=mainPath.replace(/([^/]+)$/,'f-$1').replace(/\.[a-z0-9]+$/i,'.'+(ext||'webp'));
+    let error;
+    for(let _try=0;_try<2;_try++){
+      ({error}=await _supa.storage.from('gallery').upload(fullPath,fullBlob,
+        {contentType:mime||'image/webp',upsert:_try>0,cacheControl:_PHOTO_CACHE}));
+      if(!error)break;
+      await new Promise(r=>setTimeout(r,800));
+    }
+    return error?'':fullPath;
+  }catch(_e){return '';}
 }
 // Immutable-path uploads (every path carries Date.now()) → cache for a year so
 // browsers and the CDN absorb repeat views instead of Supabase egress.

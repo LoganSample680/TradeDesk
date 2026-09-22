@@ -81,7 +81,10 @@ function deletePhoto(photoId){
     _userDelete(()=>{photos=photos.filter(x=>x.id!==photoId);saveAll();});
     renderGallery();
     if(p.storagePath&&supaEnabled()&&_supa){
-      _supa.storage.from('gallery').remove([p.storagePath]).catch(()=>{});
+      // Every rung of the ladder, or the archive copy outlives the photo and
+      // bills storage forever with nothing pointing at it.
+      const paths=[p.storagePath,p.thumbPath,p.fullPath,p.originalPath,p.originalFullPath].filter(Boolean);
+      _supa.storage.from('gallery').remove(paths).catch(()=>{});
     }
   },{title:'Delete photo',yes:'Delete',danger:true});
 }

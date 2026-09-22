@@ -734,6 +734,139 @@ test.describe('Photo capture: the sheet itself', () => {
     expect(r).toBe('88 Pine Ct');
   });
 
+  // ── The size ladder (owner 2026-09-22) ────────────────────────────────────
+  // Unlimited storage is affordable only if the 4K copy is never SERVED by
+  // accident, so these tests are mostly about what does NOT carry a url.
+  test.describe('TrueShot: the full-resolution copy', () => {
+    test('a big shot is written three times: thumb, view and full', async () => {
+      const r = await page.evaluate(async () => {
+        const cv = document.createElement('canvas');
+        cv.width = 4032; cv.height = 3024;
+        const g = cv.getContext('2d'); g.fillStyle = '#4477aa'; g.fillRect(0, 0, 4032, 3024);
+        const big = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.9));
+        const out = await _compressPhoto(big);
+        return {
+          view: out.blob.size, thumb: out.thumb.size,
+          hasFull: !!out.full, fullMime: out.fullMime || '', fullExt: out.fullExt || '',
+          w: out.w, h: out.h,
+          smaller: out.full ? out.thumb.size < out.blob.size : false,
+        };
+      });
+      expect(r.hasFull).toBe(true);
+      expect(r.w).toBe(4032);                  // every pixel the camera gave us
+      expect(r.fullExt).toMatch(/webp|jpg/);
+      expect(r.smaller).toBe(true);
+      expect(r.thumb).toBeLessThan(r.view);
+    });
+
+    test('a photo already smaller than the view size is not stored twice', async () => {
+      const has = await page.evaluate(async () => {
+        const cv = document.createElement('canvas');
+        cv.width = 900; cv.height = 600; cv.getContext('2d').fillRect(0, 0, 900, 600);
+        const small = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.9));
+        const out = await _compressPhoto(small);
+        return !!out.full;
+      });
+      expect(has).toBe(false);
+    });
+
+    test('the row carries a PATH and no url, so nothing can render it by accident', async () => {
+      const r = await page.evaluate(() => {
+        photos.push({ id: 970, type: 'before', url: 'https://x/view.jpg', thumbUrl: 'https://x/t.jpg', storagePath: 'u/s.jpg', fullPath: 'u/f-s.webp', client_id: 501, uploadedAt: new Date().toISOString() });
+        const p = photos.find(x => x.id === 970);
+        const keys = Object.keys(p).filter(k => /^full/i.test(k));
+        return { keys, src: tdPhotoSrc(p), hasFull: tdPhotoHasFull(970), noFullUrl: !('fullUrl' in p) };
+      });
+      expect(r.keys).toEqual(['fullPath']);
+      expect(r.noFullUrl).toBe(true);
+      expect(r.src).toBe('https://x/t.jpg');   // the grid still gets the thumb
+      expect(r.hasFull).toBe(true);
+    });
+
+    test('Full size is resolved on demand, and only then', async () => {
+      const r = await page.evaluate(() => {
+        // Its own row: beforeEach reseeds, so a row pushed by the test above
+        // is long gone by the time this one runs.
+        photos.push({ id: 970, type: 'before', url: 'https://x/view.jpg', thumbUrl: 'https://x/t.jpg', storagePath: 'u/s.jpg', fullPath: 'u/f-s.webp', client_id: 501, uploadedAt: new Date().toISOString() });
+        let asked = 0;
+        const realFrom = _supa.storage.from.bind(_supa.storage);
+        _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
+          getPublicUrl: (path) => { asked++; return { data: { publicUrl: 'https://cdn/' + path } }; }
+        });
+        tdReviewShots([970]);
+        tdReviewOpen(0);
+        const beforeTap = asked;
+        const shown = document.getElementById('pc-rev-img').src;
+        document.getElementById('pc-rev-full').click();
+        const after = document.getElementById('pc-rev-img').src;
+        const buttonGone = !document.getElementById('pc-rev-full');
+        _supa.storage.from = realFrom;
+        tdReviewClose();
+        return { beforeTap, shown, after, buttonGone };
+      });
+      expect(r.beforeTap).toBe(0);              // opening the viewer costs nothing
+      expect(r.shown).toBe('https://x/t.jpg');
+      expect(r.after).toBe('https://cdn/u/f-s.webp');
+      expect(r.buttonGone).toBe(true);          // it does not offer the same bytes twice
+    });
+
+    test('a photo with no full copy offers no Full size button', async () => {
+      const has = await page.evaluate(() => {
+        photos.push({ id: 971, type: 'before', url: 'https://x/v.jpg', thumbUrl: '', storagePath: 'u/v.jpg', fullPath: '', client_id: 501, uploadedAt: new Date().toISOString() });
+        tdReviewShots([971]); tdReviewOpen(0);
+        const btn = !!document.getElementById('pc-rev-full');
+        const noop = tdPhotoFullSize(971);
+        tdReviewClose();
+        return { btn, noop };
+      });
+      expect(has.btn).toBe(false);
+      expect(has.noop).toBe('');
+    });
+
+    // The client hub is the biggest egress risk in the app: one shared link,
+    // opened by a customer who scrolls it three times.
+    test('the client hub never carries the full-resolution copy', async () => {
+      const r = await page.evaluate(() => {
+        clients.length = 0; jobs.length = 0; photos.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+        jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'done', addr: '412 Oak St' });
+        photos.push({ id: 972, type: 'before', url: 'https://x/v.jpg', thumbUrl: 'https://x/t.jpg', storagePath: 'u/v.jpg', fullPath: 'u/f-v.webp', client_id: 501, job_id: 601, uploadedAt: new Date().toISOString() });
+        const snap = _buildClientHubSnapshot(501);
+        return JSON.stringify(snap);
+      });
+      expect(r).toContain('https://x/t.jpg');
+      expect(r).not.toContain('f-v.webp');
+      expect(r).not.toContain('fullPath');
+    });
+
+    test('both archive paths survive the trip to the cloud', async () => {
+      const r = await page.evaluate(() => {
+        const t = _TD_TABLES.find(x => x.t === 'td_photos');
+        return t.tx([{ id: 1, url: 'u', storagePath: 's', type: 'before', caption: '', fullPath: 'u/f.webp', originalFullPath: 'u/of.webp', uploadedAt: 'now' }])[0];
+      });
+      expect(r.fullPath).toBe('u/f.webp');
+      expect(r.originalFullPath).toBe('u/of.webp');
+    });
+
+    test('deleting a burst takes every rung of the ladder with it', async () => {
+      const removed = await page.evaluate(() => {
+        const gone = [];
+        const realFrom = _supa.storage.from.bind(_supa.storage);
+        _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
+          remove: async (paths) => { gone.push(...paths); return { data: null, error: null }; }
+        });
+        photos.push({ id: 973, type: 'before', url: 'u', thumbUrl: '', storagePath: 'u/v.jpg', thumbPath: 'u/t-v.jpg', fullPath: 'u/f-v.webp', originalFullPath: 'u/of-v.webp', client_id: null, uploadedAt: new Date().toISOString() });
+        tdReviewShots([973]);
+        tdReviewOpen(0);
+        tdReviewDelete();
+        tdReviewClose();
+        _supa.storage.from = realFrom;
+        return gone;
+      });
+      expect(removed).toEqual(expect.arrayContaining(['u/v.jpg', 'u/t-v.jpg', 'u/f-v.webp', 'u/of-v.webp']));
+    });
+  });
+
   // §7.1: the single-photo picker it replaced is gone, not hidden.
   test('the one-photo file picker is gone, replaced by the burst attach', async () => {
     const still = await page.evaluate(() => typeof tdOpenFilePicker);
