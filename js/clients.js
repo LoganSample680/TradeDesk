@@ -3395,10 +3395,25 @@ function _cdPropCardHtml(c,a,idx,total){
       ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none">${p.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`
       :(!p.propDataFetchedAt&&street&&city?`<button onclick="_lookupPropertyData(${c.id},{street:'${escHtml(street)}',city:'${escHtml(city)}',state:'${escHtml(state||'')}',zip:'${escHtml(zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">${svgIcon('🏠')} Look up property</button>`:'');
     const removeBtn=idx>0?`<button onclick="removeClientAddress(${idx-1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D">Remove</button>`:'';
+    // ── A WRONG ADDRESS HAD ONLY ONE EXIT, AND IT WAS DELETE ────────────────
+    // (owner 2026-09-22: "add in edit button to the client record on
+    // properties in case someone puts the wrong address in")
+    //
+    // A typo in a property could only be fixed by removing the card and adding
+    // it back, which loses the property record kept against that address (year
+    // built, value, owner, the pre-1978 lead trigger) because all of that is
+    // keyed BY address. Remove is also the one button here that cannot be
+    // undone, so the only way to fix a small mistake was the most dangerous
+    // control on the card.
+    //
+    // On EVERY card, including the primary: a wrong house number on the main
+    // address is at least as likely and is the one every proposal prints.
+    const editBtn=`<button onclick="openAddAddressModal(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Edit</button>`;
     const footer=`<div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       ${srcLink||'<span></span>'}
       <div style="flex:1"></div>
       <button onclick="_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Map</button>
+      ${editBtn}
       ${removeBtn}
     </div>`;
     body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${pastBlock}${_photoBlock}${footer}</div>`;
@@ -3432,19 +3447,35 @@ function renderCDAddresses(){
     :'<div style="font-size:12px;color:var(--text3);padding:8px 2px">No '+_noun+' yet.</div>';
   el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'"><div class="td-acc-inner">'+rows+_addBtn+'</div></div>';
 }
-function openAddAddressModal(){
+// ONE modal, add and edit (7.3). `editIdx` is an index into clientAddresses():
+// 0 is the client's primary address, anything higher is extraAddresses[idx-1].
+// Omit it to add. A second near-identical modal would be two places for the
+// address field, the autocomplete and the property-type list to drift.
+function openAddAddressModal(editIdx){
+  const _edit=(editIdx!=null&&editIdx!==''&&Number(editIdx)>=0)?Number(editIdx):null;
+  const c=_edit!=null?getClientById(currentClientId):null;
+  const cur=_edit!=null?(clientAddresses(c)[_edit]||null):null;
+  if(_edit!=null&&!cur)return;
+  const curType=(_edit!=null&&typeof getProperty==='function')?(getProperty(c,cur.addr).propertyType||''):'';
+  // The primary has no label of its own: it is the client's address and the
+  // word "Primary" is the section's, not a field anybody typed.
+  const isPrim=(_edit===0);
+  const esc=(v)=>escHtml(String(v==null?'':v));
   const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';
   const lblS='font-size:11px;font-weight:700;display:block;margin-bottom:4px';
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  overlay.innerHTML='<div class="zmodal" style="max-width:380px"><div class="zmodal-title">Add property address</div>'+
-    '<div class="f" style="margin-bottom:10px"><label style="'+lblS+'">Label (e.g. Vacation home, Rental)</label>'+
-    '<input id="_aa-label" placeholder="Vacation home" style="'+inS+'"></div>'+
+  overlay.innerHTML='<div class="zmodal" style="max-width:380px"><div class="zmodal-title">'+
+    (_edit!=null?(isPrim?'Edit primary address':'Edit property address'):'Add property address')+'</div>'+
+    (isPrim?'':'<div class="f" style="margin-bottom:10px"><label style="'+lblS+'">Label (e.g. Vacation home, Rental)</label>'+
+    '<input id="_aa-label" placeholder="Vacation home" value="'+(cur?esc(cur.label):'')+'" style="'+inS+'"></div>')+
     '<div class="f" style="margin-bottom:10px;position:relative"><label style="'+lblS+'">Address <span style="color:#A32D2D">*</span></label>'+
-    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" autocomplete="off" style="'+inS+'"></div>'+
+    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" value="'+(cur?esc(cur.addr):'')+'" autocomplete="off" style="'+inS+'"></div>'+
     '<div class="f" style="margin-bottom:14px"><label style="'+lblS+'">Property type</label>'+
-    '<select id="_aa-ptype" style="'+inS+'"><option value="">- Select -</option><option>Single family home</option><option>Townhouse / condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option><option>Other</option></select></div>'+
+    '<select id="_aa-ptype" style="'+inS+'"><option value="">- Select -</option>'+
+      ['Single family home','Townhouse / condo','Rental property','Commercial','New construction','Other']
+        .map(o=>'<option'+(o===curType?' selected':'')+'>'+o+'</option>').join('')+'</select></div>'+
     '<div style="display:flex;gap:8px">'+
-      '<button onclick="saveAddClientAddress()" class="btn btn-g" style="flex:1">Add</button>'+
+      '<button onclick="saveAddClientAddress('+(_edit!=null?_edit:'')+')" class="btn btn-g" style="flex:1">'+(_edit!=null?'Save':'Add')+'</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
     '</div></div>';
   document.body.appendChild(overlay);
@@ -3452,18 +3483,53 @@ function openAddAddressModal(){
   if(_aaInp&&typeof _addrAutoFull==='function')_addrAutoFull(_aaInp,null);
   setTimeout(()=>{const el=document.getElementById('_aa-label');if(el)el.focus();},80);
 }
-function saveAddClientAddress(){
+function saveAddClientAddress(editIdx){
   const addr=(document.getElementById('_aa-addr')?.value||'').trim();
   if(!addr){zAlert('Enter an address.');return;}
   const label=(document.getElementById('_aa-label')?.value||'').trim()||'Additional property';
   const c=getClientById(currentClientId);if(!c)return;
   if(!c.extraAddresses)c.extraAddresses=[];
-  c.extraAddresses.push({label,addr});
   const ptype=document.getElementById('_aa-ptype')?.value||'';
+  const _edit=(editIdx!=null&&editIdx!==''&&Number(editIdx)>=0)?Number(editIdx):null;
+  let was='';
+  if(_edit!=null){
+    const cur=clientAddresses(c)[_edit];
+    if(!cur)return;
+    was=cur.addr||'';
+    if(_edit===0)c.addr=addr;
+    else{
+      const e=c.extraAddresses[_edit-1];
+      if(!e)return;
+      e.addr=addr;e.label=label;
+      // ── THE FENCE FOLLOWS THE ADDRESS, NEVER THE OLD COORDINATES ────────
+      // A fence is only built for a card whose geoAddr still matches its addr
+      // (geo_fences_for, and _geoDeriveFences on the phone), which is the
+      // guard that stops a customer who moved keeping a fence on the old
+      // house. Leaving stale coords here would be exactly that case, so the
+      // pair is dropped and the next geocode sweep fills it from the new
+      // address. Rows already derived keep the name they were written with:
+      // origin_place and dest_place are text snapshots, so history does not
+      // move under anybody (17).
+      if(was&&was!==addr){delete e.lat;delete e.lon;delete e.geoAddr;}
+    }
+    if(_edit===0&&was&&was!==addr){delete c.lat;delete c.lon;delete c.geoAddr;}
+    // THE PROPERTY RECORD MOVES WITH IT. Year built, value, owner and the
+    // pre-1978 lead trigger are keyed BY address (client.properties, data.js),
+    // so a corrected typo would otherwise orphan every fact anybody looked up.
+    if(was&&was!==addr&&typeof getProperty==='function'&&typeof setPropertyData==='function'){
+      const old=getProperty(c,was)||{};
+      if(Object.keys(old).length)setPropertyData(c,addr,old);
+    }
+  }else{
+    c.extraAddresses.push({label,addr});
+  }
   if(ptype&&typeof setPropertyData==='function')setPropertyData(c,addr,{propertyType:ptype,isRental:/rental/i.test(ptype)||undefined});
   saveAll();
   document.querySelector('.zmodal-overlay')?.remove();
   renderCDAddresses();
+  // The primary address is printed on proposals and drawn on the client
+  // header, so a change to it has to repaint more than this one list.
+  if(_edit===0){try{if(typeof renderClientDetail==='function')renderClientDetail();}catch(_e){}}
 }
 function removeClientAddress(idx){
   const c=getClientById(currentClientId);if(!c||!c.extraAddresses)return;
