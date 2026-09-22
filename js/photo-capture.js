@@ -268,24 +268,45 @@ function tdInheritBidPhotos(bidId,jobId){
 function tdUnfiledPhotos(){
   return photos.filter(p=>p&&p.client_id==null);
 }
-// Best guess at whose photo this is, by the address the app already knows.
-// Never files anything on its own: a wrong guess silently attached to the
-// wrong customer's hub is worse than an unfiled photo.
-function tdGuessClientFor(photo){
+// ── Every property a customer has, with its own pin ─────────────────────────
+// Jack, first real use, 2026-09-22: he stood 8.8 metres from Pepe's 6912 SW
+// 17th St and the app offered him nothing, because the match only ever read a
+// customer's PRIMARY coordinates and 6912 is Pepe's second property. His
+// primary is eight kilometres away. A customer with two houses is not an edge
+// case in this trade, it is a landlord.
+function _pcClientPlaces(c){
+  if(!c)return [];
+  const out=[];
+  if(c.lat!=null&&c.lon!=null)out.push({addr:c.addr||'',lat:c.lat,lon:c.lon,label:'Primary'});
+  (c.extraAddresses||[]).forEach((a,i)=>{
+    if(a&&a.lat!=null&&a.lon!=null)out.push({addr:a.addr||'',lat:a.lat,lon:a.lon,label:a.label||('Property '+(i+2))});
+  });
+  return out;
+}
+// Best guess at WHERE this photo was taken: the nearest saved property on any
+// customer. Never files anything on its own, because a wrong guess silently
+// attached to the wrong customer's hub is worse than an unfiled photo.
+function tdGuessPlaceFor(photo){
   try{
     if(!photo)return null;
     const lat=photo.lat,lon=photo.lon;
     if(lat==null||lon==null)return null;
     let best=null,bestD=Infinity;
     clients.forEach(c=>{
-      if(c.lat==null||c.lon==null)return;
-      const d=_pcMeters(lat,lon,c.lat,c.lon);
-      if(d<bestD){bestD=d;best=c;}
+      _pcClientPlaces(c).forEach(pl=>{
+        const d=_pcMeters(lat,lon,pl.lat,pl.lon);
+        if(d<bestD){bestD=d;best={client:c,addr:pl.addr,label:pl.label,d};}
+      });
     });
     // 150m: close enough to be this property, far enough to survive a phone
     // fix taken from the truck at the curb.
     return (best&&bestD<=150)?best:null;
   }catch(_e){return null;}
+}
+// The customer alone, for callers that only need to know whose it is.
+function tdGuessClientFor(photo){
+  const hit=tdGuessPlaceFor(photo);
+  return hit?hit.client:null;
 }
 function _pcMeters(a1,o1,a2,o2){
   const R=6371000,t=Math.PI/180;
@@ -405,16 +426,62 @@ function _pcRevGridHTML(rows){
       '<button type="button" class="pc-rev-cell" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" onclick="tdReviewOpen('+i+')">'+
         '<span class="pc-rev-tag">'+escHtml(p.type)+'</span></button>').join('')+
     '</div>'+
-    '<div class="pc-rev-foot">'+
-      (_pcRev.trash.length?'<button type="button" class="pc-side" onclick="tdReviewUndo()">Undo delete</button>':'')+
-      // Photos that already belong to somebody are not asking to be filed.
-      // The same album is the shoot's last step AND the property's history,
-      // so the footer answers whichever one is on screen.
-      (rows.some(p=>p.client_id==null)
-        ?'<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'
-        :'<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewClose()">Done</button>')+
-    '</div>';
+    _pcRevFootHTML(rows);
 }
+// ── "Is this the right house?" (Jack, 2026-09-22) ───────────────────────────
+// "He takes the picture and it pops up what the address it was that captured
+// in green, then confirm, if not right, edit the address or go through and
+// search all the addresses for that client."
+//
+// So when the fix lands on a saved property, the sheet SAYS the address and
+// the whole burst files in one tap. It is a confirmation, never an automatic
+// filing: the app states what it believes and a person agrees with it. When
+// the fix matches nothing, there is nothing to confirm and it asks as before.
+function _pcRevGuess(rows){
+  if(!rows||!rows.length)return null;
+  if(!rows.some(p=>p.client_id==null))return null;
+  for(let i=0;i<rows.length;i++){
+    const hit=tdGuessPlaceFor(rows[i]);
+    if(hit&&hit.addr)return hit;
+  }
+  return null;
+}
+function _pcFt(m){return Math.round(m*3.28084);}
+function _pcRevFootHTML(rows){
+  const undo=_pcRev.trash.length?'<button type="button" class="pc-side" onclick="tdReviewUndo()">Undo delete</button>':'';
+  if(!rows.some(p=>p.client_id==null)){
+    return '<div class="pc-rev-foot">'+undo+
+      '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewClose()">Done</button>'+
+    '</div>';
+  }
+  const g=_pcRevGuess(rows);
+  if(g){
+    return '<div class="pc-rev-foot col">'+
+      '<div class="pc-rev-here" id="pc-rev-here">'+
+        '<span class="pc-dot"></span>'+
+        '<div class="pc-rev-here-t">'+
+          '<div class="pc-rev-here-addr">'+escHtml((g.addr||'').split(',')[0])+'</div>'+
+          '<div class="pc-rev-here-sub">'+escHtml(g.client&&g.client.name||'')+' \u00b7 '+_pcFt(g.d)+' ft from the pin</div>'+
+        '</div>'+
+      '</div>'+
+      '<button type="button" class="pc-side go pc-rev-attach ok" id="pc-rev-confirm" onclick="tdReviewConfirmHere()">Yes, file all here</button>'+
+      '<button type="button" class="pc-side" onclick="tdReviewAttach()">Different address</button>'+
+      undo+
+    '</div>';
+  }
+  return '<div class="pc-rev-foot">'+undo+
+    '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'+
+  '</div>';
+}
+// One tap: the whole burst, on that customer AND that property.
+function tdReviewConfirmHere(){
+  if(!_pcRev)return 0;
+  const g=_pcRevGuess(_pcRevRows());
+  if(!g)return 0;
+  _pcAtt={ids:_pcRev.ids.slice(),clientId:g.client.id,addr:g.addr||'',bidId:null,jobId:null};
+  return _pcAttAfterAddr();
+}
+
 function _pcRevViewerHTML(rows){
   const p=rows[_pcRev.i];
   return '<div class="pc-rev-top">'+
@@ -513,11 +580,15 @@ function _pcNearbyMatches(ids){
     out.push({clientId:j.client_id,name:(c&&c.name)||'',addr:j.addr||(c&&c.addr)||'',jobId:j.id,bidId:null,what:j.name||'Job',d});
   });
   clients.forEach(c=>{
-    if(c.lat==null||c.lon==null)return;
-    const d=_pcMeters(fix.lat,fix.lon,c.lat,c.lon);
-    if(d>_PC_NEAR_M)return;
-    if(out.some(m=>m.clientId===c.id))return;
-    out.push({clientId:c.id,name:c.name||'',addr:c.addr||'',jobId:null,bidId:null,what:'',d});
+    // Every property, each with its own pin: the whole point of Jack's 6912.
+    _pcClientPlaces(c).forEach(pl=>{
+      const d=_pcMeters(fix.lat,fix.lon,pl.lat,pl.lon);
+      if(d>_PC_NEAR_M)return;
+      const same=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+      if(out.some(m=>m.clientId===c.id&&same(m.addr,pl.addr)))return;
+      out.push({clientId:c.id,name:c.name||'',addr:pl.addr,jobId:null,bidId:null,
+        what:pl.label==='Primary'?'':pl.label,d});
+    });
   });
   return out.sort((a,b)=>a.d-b.d).slice(0,4);
 }
@@ -571,12 +642,10 @@ function _pcAttPaint(step,q){
     return;
   }
   if(step==='where'){
-    const c=clients.find(x=>x.id===_pcAtt.clientId);
-    const props=(typeof clientAddresses==='function')?clientAddresses(c):[];
-    ov.innerHTML='<div class="zmodal">'+
-      head('Which property?',escHtml((c&&c.name)||'')+' has '+props.length+' addresses.')+
-      '<div class="pc-file-list">'+props.map(a=>'<button type="button" class="pc-file-opt" onclick="tdAttachAddr('+JSON.stringify(a.addr).replace(/"/g,'&quot;')+')">'+
-        escHtml((a.addr||'').split(',')[0])+'<span>'+escHtml(a.label||'')+'</span></button>').join('')+'</div>'+cancel+'</div>';
+    // The app already owns this component, and it can add an address inline,
+    // which is the "edit the address" half of what Jack asked for (§7.3).
+    ov.remove();
+    pickClientAddress(_pcAtt.clientId,addr=>{tdAttachAddr(addr);});
     return;
   }
   // 'work': the proposal or job on that customer, only ever asked when there
@@ -1008,17 +1077,20 @@ function tdUnfiledTrayHTML(){
   if(!un.length)return '';
   const rows=tdUnfiledBursts().slice(0,4).map(b=>{
     const p=b.photos[b.photos.length-1];
-    const guess=tdGuessClientFor(p)||b.photos.map(tdGuessClientFor).find(Boolean);
+    const guess=tdGuessPlaceFor(p)||b.photos.map(tdGuessPlaceFor).find(Boolean);
     const when=_pcShotTime(p);
     const n=b.photos.length;
+    // The PROPERTY, named, because "Pepe?" does not tell a man which of
+    // Pepe's two houses he is looking at.
     const pill=guess
-      ?'<span class="pc-uf-pill ok" onclick="tdReviewFileBurst(\''+p.id+'\','+guess.id+')">'+escHtml(guess.name)+'?</span>'
+      ?'<span class="pc-uf-pill ok" onclick="tdReviewFileBurst(\''+p.id+'\','+guess.client.id+','+JSON.stringify(guess.addr||'').replace(/"/g,'&quot;')+')">'+
+        escHtml((guess.addr||'').split(',')[0]||guess.client.name)+'?</span>'
       :'<span class="pc-uf-pill">Pick a customer</span>';
     return '<div class="pc-uf-row">'+
       '<div class="pc-uf-thumb'+(n>1?' stack':'')+'" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')">'+
         (n>1?'<span class="pc-uf-n">'+n+'</span>':'')+'</div>'+
       '<div class="pc-uf-meta"><div class="pc-uf-when">'+(n>1?n+' shots · ':'Shot ')+escHtml(when)+'</div>'+
-        '<div class="pc-uf-sub">'+(guess?escHtml(guess.addr||''):'No address match')+'</div>'+pill+'</div>'+
+        '<div class="pc-uf-sub">'+(guess?escHtml(guess.client.name||''):'No address match')+'</div>'+pill+'</div>'+
       '<button type="button" class="pc-uf-file" onclick="tdReviewBurst(\''+p.id+'\')">Review</button>'+
     '</div>';
   }).join('');
@@ -1029,12 +1101,16 @@ function tdUnfiledTrayHTML(){
     rows+'</div>';
 }
 // The address guess, accepted for the whole burst in one tap.
-function tdReviewFileBurst(firstId,clientId){
+function tdReviewFileBurst(firstId,clientId,addr){
   const b=tdUnfiledBursts().find(x=>x.photos.some(p=>String(p.id)===String(firstId)));
   if(!b)return 0;
   const c=clients.find(x=>x.id===clientId);
+  const where=addr||(c?c.addr||'':'');
+  // The WHOLE burst, not one photo per tap. Jack's first run left three
+  // orphans behind exactly because the old pill filed a single shot and the
+  // rest stayed unfiled with no sign that they had been left.
   let n=0;
-  b.photos.forEach(p=>{if(tdFilePhoto(p.id,clientId)){if(c&&c.addr)p.addr=c.addr;n++;}});
+  b.photos.forEach(p=>{if(tdFilePhoto(p.id,clientId)){if(where)p.addr=where;n++;}});
   saveAll();
   if(typeof renderDash==='function')try{renderDash();}catch(_e){}
   return n;

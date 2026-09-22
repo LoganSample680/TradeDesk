@@ -248,13 +248,15 @@ test.describe('Photo capture: unfiled tray', () => {
     expect(html).toBe('');
   });
 
-  test('the tray renders a row per unfiled photo with the guess on it', async () => {
+  // The pill names the PROPERTY, not the customer. "Pepe?" does not tell a man
+  // which of Pepe's two houses he is looking at (Jack, 2026-09-22).
+  test('the tray renders a row per unfiled burst with the property on it', async () => {
     const html = await page.evaluate(() => {
       photos.push({ id: 4, type: 'before', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
       return tdUnfiledTrayHTML();
     });
     expect(html).toContain('Unfiled photos');
-    expect(html).toContain('Dana Whitfield?');
+    expect(html).toContain('Dana Whitfield');
   });
 });
 
@@ -674,13 +676,17 @@ test.describe('Photo capture: the sheet itself', () => {
       tdAttachPick(501);
     });
     const r = await page.evaluate(() => {
-      const opts = [...document.querySelectorAll('#pc-att .pc-file-opt')].map(b => b.textContent);
-      document.querySelectorAll('#pc-att .pc-file-opt')[1].click();   // the rental
+      // The app's own address picker, reused rather than reimplemented, so it
+      // also carries "New address for this client" for free (§7.3).
+      const sheet = document.getElementById('_addrpick-sheet');
+      const opts = sheet ? sheet.textContent : '';
+      _addrPickChoose(1);                                   // the rental
       const p = photos.find(x => String(x.id) === '962');
-      return { opts: opts.join('|'), addr: p.addr, client: p.client_id, closed: !document.getElementById('pc-att') };
+      return { opts, addr: p.addr, client: p.client_id, closed: !document.getElementById('pc-att') };
     });
     expect(r.opts).toContain('412 Oak St');
     expect(r.opts).toContain('88 Pine Ct');
+    expect(r.opts).toContain('New address for this client');
     expect(r.addr).toBe('88 Pine Ct, Wichita KS');
     expect(r.client).toBe(501);
     expect(r.closed).toBe(true);
@@ -864,6 +870,148 @@ test.describe('Photo capture: the sheet itself', () => {
         return gone;
       });
       expect(removed).toEqual(expect.arrayContaining(['u/v.jpg', 'u/t-v.jpg', 'u/f-v.webp', 'u/of-v.webp']));
+    });
+  });
+
+  // ── Jack's first real use, 2026-09-22 ─────────────────────────────────────
+  // He stood 8.8 metres from Pepe's 6912 SW 17th St and the app offered him
+  // nothing, so he filed one photo by hand off a list and left three orphans
+  // behind. Every number below is his: the fix his phone recorded, the
+  // property coordinates on Pepe's record, and Pepe's primary eight km away.
+  test.describe("TrueShot: the second house", () => {
+    const pepe = () => page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 901, name: 'Pepe Miranda', addr: '306 SW Elmwood Ave, Topeka, KS 66606',
+        lat: 39.0614613, lon: -95.69654,
+        extraAddresses: [{ label: '6912 SW 17th St', addr: '6912 SW 17th St, Topeka, KS 66615', lat: 39.03554526304709, lon: -95.7833048650199 }] });
+      clients.push({ id: 902, name: 'Laurie Schonfeldt', addr: '6712 SW Finsbury Ave, Topeka, KS 66614', lat: 39.0104968, lon: -95.7790924 });
+      const ids = [];
+      for (let i = 0; i < 4; i++) {
+        const id = 1000 + i; ids.push(id);
+        photos.push({ id, type: 'after', url: '', thumbUrl: '', data: 'x', client_id: null,
+          lat: 39.035573868723795, lon: -95.78321048210228,
+          uploadedAt: new Date(Date.parse('2026-09-22T14:51:12.965Z') + i * 6000).toISOString() });
+      }
+      return ids;
+    });
+
+    test("a customer's SECOND property is matched, not just their primary", async () => {
+      await pepe();
+      const r = await page.evaluate(() => {
+        const g = tdGuessPlaceFor(photos[0]);
+        return { name: g && g.client.name, addr: g && g.addr, m: g && Math.round(g.d * 10) / 10 };
+      });
+      expect(r.name).toBe('Pepe Miranda');
+      expect(r.addr).toBe('6912 SW 17th St, Topeka, KS 66615');
+      expect(r.m).toBeLessThan(15);              // 8.8m on his actual fix
+    });
+
+    test('the wrong customer 2.8km away is never offered', async () => {
+      await pepe();
+      const r = await page.evaluate(() => _pcNearbyMatches([1000]).map(x => x.name + ' | ' + x.addr));
+      expect(r.length).toBe(1);
+      expect(r[0]).toContain('Pepe Miranda');
+      expect(r[0]).toContain('6912');
+      expect(r.join()).not.toContain('Laurie');   // 6712 SW Finsbury is not a candidate
+    });
+
+    test('the sheet says the address in green and files the whole burst on one tap', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        tdReviewShots(ids);
+        const here = document.getElementById('pc-rev-here');
+        const said = here ? here.textContent : '';
+        document.getElementById('pc-rev-confirm').click();
+        const mine = ids.map(id => photos.find(p => String(p.id) === String(id)));
+        return {
+          said,
+          filed: mine.filter(p => p && p.client_id === 901).length,
+          addrs: [...new Set(mine.map(p => p && p.addr))],
+          closed: !document.getElementById('pc-rev'),
+          orphans: tdUnfiledPhotos().length,
+        };
+      }, ids);
+      expect(r.said).toContain('6912 SW 17th St');
+      expect(r.said).toContain('Pepe Miranda');
+      expect(r.said).toMatch(/\d+ ft from the pin/);
+      expect(r.filed).toBe(4);                    // all four, not one
+      expect(r.addrs).toEqual(['6912 SW 17th St, Topeka, KS 66615']);
+      expect(r.closed).toBe(true);
+      expect(r.orphans).toBe(0);                  // no shot left behind
+    });
+
+    test('"Different address" is always there, because a guess is not a fact', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        tdReviewShots(ids);
+        const btn = [...document.querySelectorAll('#pc-rev .pc-side')].find(b => b.textContent === 'Different address');
+        btn.click();
+        const opened = !!document.getElementById('pc-att');
+        const near = [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent).join('');
+        tdAttachCancel(); tdReviewClose();
+        return { opened, near };
+      }, ids);
+      expect(r.opened).toBe(true);
+      expect(r.near).toContain('6912 SW 17th St');
+    });
+
+    test('no saved property nearby means no green claim, just the ask', async () => {
+      await page.evaluate(() => {
+        clients.length = 0; photos.length = 0;
+        clients.push({ id: 902, name: 'Laurie Schonfeldt', addr: '6712 SW Finsbury Ave', lat: 39.0104968, lon: -95.7790924 });
+        photos.push({ id: 1100, type: 'after', url: '', data: 'x', client_id: null, lat: 39.035573868723795, lon: -95.78321048210228, uploadedAt: new Date().toISOString() });
+        tdReviewShots([1100]);
+      });
+      const r = await page.evaluate(() => {
+        const out = { here: !!document.getElementById('pc-rev-here'),
+          foot: document.querySelector('#pc-rev .pc-rev-attach').textContent };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.here).toBe(false);
+      expect(r.foot).toBe('Attach to customer');
+    });
+
+    test('the tray files the whole burst too, on the property it names', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        const host = document.createElement('div');
+        host.innerHTML = tdUnfiledTrayHTML();
+        document.body.appendChild(host);
+        const pill = host.querySelector('.pc-uf-pill.ok');
+        const label = pill.textContent;
+        pill.click();
+        host.remove();
+        const mine = ids.map(id => photos.find(p => String(p.id) === String(id)));
+        return { label, filed: mine.filter(p => p && p.client_id === 901).length, addr: mine[0].addr };
+      }, ids);
+      expect(r.label).toBe('6912 SW 17th St?');   // the house, not the customer
+      expect(r.filed).toBe(4);
+      expect(r.addr).toBe('6912 SW 17th St, Topeka, KS 66615');
+    });
+
+    test('a photo with no fix gets no guess at all', async () => {
+      await page.evaluate(() => {
+        photos.length = 0;
+        photos.push({ id: 1200, type: 'after', url: '', data: 'x', client_id: null, lat: null, lon: null, uploadedAt: new Date().toISOString() });
+      });
+      const r = await page.evaluate(() => ({
+        guess: tdGuessPlaceFor(photos[0]),
+        legacy: tdGuessClientFor(photos[0]),
+        near: _pcNearbyMatches([1200]).length,
+      }));
+      expect(r.guess).toBe(null);
+      expect(r.legacy).toBe(null);
+      expect(r.near).toBe(0);
+    });
+
+    test('an extra address with no pin on it is skipped, never guessed at', async () => {
+      const r = await page.evaluate(() => {
+        clients.length = 0;
+        clients.push({ id: 903, name: 'No Pins', addr: 'somewhere', extraAddresses: [{ label: 'B', addr: 'no coords here' }] });
+        return _pcClientPlaces(clients[0]).length;
+      });
+      expect(r).toBe(0);
     });
   });
 
