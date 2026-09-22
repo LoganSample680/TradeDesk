@@ -604,6 +604,53 @@ test.describe('tim knows the trade', () => {
       ]);
     });
 
+    // ── THE ONE OFF A REAL BID ────────────────────────────────────────────
+    //
+    // Owner, 2026-09-22, first thing he built with it: "tried to use tim to
+    // build and it didnt do what I wanted it to do on the scope, it didnt
+    // break anything down, just added it in one step."
+    //
+    // Read off td_bids, exactly as he typed it, title-casing and typos and all
+    // ("Tid" for rid, "Outting" for putting). Two faults, and the first is the
+    // one that matters: EVERY doubled-consonant gerund failed. "putting"
+    // strips to "putt", not "put", and so do getting, setting, cutting,
+    // running, digging and stripping, which is most of how a man narrates a
+    // day. Neither verb in his sentence was recognised as a verb, so there was
+    // nothing to split on and the whole thing came back as one step.
+    test('the sentence he actually typed, broken where he meant it', async () => {
+      const r = await split('Putting In A Water Softener, Getting Tid Of Some Copper '
+        + 'For Pex A And Outting In A Tankless Water heater');
+      expect(r).toEqual([
+        'Putting In A Water Softener',
+        'Getting Tid Of Some Copper For Pex A',
+        'Outting In A Tankless Water heater',
+      ]);
+    });
+
+    test('a doubled consonant is still the same verb', async () => {
+      const r = await page.evaluate(() => ['putting', 'getting', 'setting', 'cutting',
+        'running', 'digging', 'stripping'].map(w => _timkVerbLike(w)));
+      expect(r, 'this is most of how a man narrates a day').toEqual(
+        [true, true, true, true, true, true, true]);
+    });
+
+    // "and" is two different words. Two verbs sharing one object is ONE step;
+    // two verbs with an object each is two. A dictated sentence often has no
+    // commas at all, so "and" is the only seam there is.
+    test('and joins a compound verb but separates two jobs', async () => {
+      // One object between them: one step.
+      expect(await split('Locate and cut out the failed section of main'))
+        .toEqual(['Locate and cut out the failed section of main']);
+      expect(await split('set the new vanity and top'))
+        .toEqual(['Set the new vanity and top']);
+      // A bare -ing after "and" is usually a noun in this trade.
+      expect(await split('replace the rotted trim and siding'))
+        .toEqual(['Replace the rotted trim and siding']);
+      // An object each: two steps.
+      expect(await split('pulling the old heater and running new gas line'))
+        .toEqual(['Pulling the old heater', 'Running new gas line']);
+    });
+
     test('a one word step is a step', async () => {
       const r = await split('dig the trench, lay the conduit, backfill');
       expect(r).toEqual(['Dig the trench', 'Lay the conduit', 'Backfill']);

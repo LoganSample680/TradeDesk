@@ -4452,11 +4452,21 @@ Object.defineProperty(window,'_tmOpen',{get:()=>_tmOpen,set:v=>{_tmOpen=(v insta
 function _tmFoldToggle(id){
   if(_tmOpen.has(id))_tmOpen.delete(id);else _tmOpen.add(id);
   _tmApplyLayers();
-  // Opening a card below the fold should put him in it, not leave him looking
-  // at the line he just tapped.
+  // OPENING IT PUTS HIM IN IT. Owner, 2026-09-22: "the rates and crew updating
+  // it was a extra tap I had ti hit to edit."
+  //
+  // He was right and the fold caused it. Before, the rate field was on screen
+  // and editing it was one tap. Folded, it was tap the line, then tap the
+  // field. Landing the caret in the first input of the card he just opened
+  // makes it one tap again, with the keyboard already up, so the fold costs
+  // him nothing on the card he touches on every single job.
   if(_tmOpen.has(id)){
     const el=document.getElementById(id);
-    if(el)try{el.scrollIntoView({block:'center'});}catch(_e){}
+    if(el){
+      try{el.scrollIntoView({block:'center'});}catch(_e){}
+      const f=el.querySelector('input:not([type=checkbox]):not([type=radio]),textarea');
+      if(f)try{f.focus();if(typeof f.select==='function')f.select();}catch(_e){}
+    }
   }
 }
 
@@ -7142,17 +7152,41 @@ async function _drainSignatureQueue(){
   }
   if(dirty){try{saveAll();}catch(_e){}}
 }
+// How it bills, in two words, for the in-person summary. The full sentence
+// lives in the terms; this is the line a man reads over the customer's
+// shoulder while the tablet is being handed across.
+function _tmBillTermShort(){
+  const c=(typeof _tmBillingCycle!=='undefined'&&_tmBillingCycle)||'weekly';
+  return c==='milestone'?'By milestone':c==='completion'?'On completion':'Weekly';
+}
+
 function _geiSignInPerson(){
   saveGenericEstimate(true);
   const bid=bids.find(x=>x.id===_geiEditBidId);
   if(!bid){showToast('Save your proposal first','⚠️');return;}
   if(!bid.client_id){showToast('Link this proposal to a client first','⚠️');return;}
   const{total}=calcGeiTotal();
-  if(!total){showToast('Add items to your proposal before signing','⚠️');return;}
+  // A RATE SHEET HAS NO TOTAL, AND THAT IS THE POINT. Owner, 2026-09-22:
+  // "tried to sign in person and got a toast that said add items before
+  // signing". He had scope and a rate on it, which is a complete T&M proposal
+  // and in most states a legal one, and this gate would not let him sign the
+  // exact shape the whole rate-sheet feature exists to produce.
+  //
+  // Same fault the SEND button had in September and the same fix: the question
+  // is whether there is anything to sign, not whether there is a dollar total.
+  // Scope, a rate, or a ceiling each make this a document.
+  const _ipRateOnly=!!(_geiIsTM&&_tmRateOnly);
+  const _ipHasSomething=total>0
+    ||(_geiIsTM&&(Number(_tmRatePerMan)>0||_tmCapVal()>0))
+    ||(typeof _geiScopeChips!=='undefined'&&(_geiScopeChips||[]).length>0);
+  if(!_ipHasSomething){showToast('Put a scope or a rate on it before signing','⚠️');return;}
   const cname=document.getElementById('gei-client')?.value||bid.client_name||'Client';
   const depPct=_geiDepositPct();
-  const depAmt=Math.round(total*depPct/100*100)/100;
-  const bal=Math.round((total-depAmt)*100)/100;
+  // On a rate sheet the deposit is the FLAT mobilization figure, not a percent
+  // of a total that does not exist, exactly as sendGenericProposal does it.
+  const _ipFlatDep=_ipRateOnly?Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0):0;
+  const depAmt=_ipRateOnly?_ipFlatDep:Math.round(total*depPct/100*100)/100;
+  const bal=_ipRateOnly?0:Math.round((total-depAmt)*100)/100;
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const depLabel=_geiIsTM?'Mobilization deposit ('+depPct+'%)':'Deposit ('+depPct+'%)';
   document.getElementById('_gei-ip-ov')?.remove();
@@ -7168,11 +7202,20 @@ function _geiSignInPerson(){
       '<div style="padding:14px 18px 28px">'+
         '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
           '<div style="font-size:13px;font-weight:700;margin-bottom:8px">'+escHtml(cname)+'</div>'+
-          '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Contract total</span><strong style="color:var(--blue)">'+fmt(total)+'</strong></div>'+
+          // The headline says what this contract IS. A rate sheet has no total,
+          // so printing "$0.00" next to the words "Contract total" is the lie
+          // the rate sheet exists to stop, on the one screen where the
+          // customer is looking over his shoulder.
+          (_ipRateOnly
+            ?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Time &amp; materials</span><strong style="color:var(--blue)">'+
+              (_tmCapVal()>0?('Up to '+fmt(_tmCapVal())):'No total')+'</strong></div>'
+            :'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Contract total</span><strong style="color:var(--blue)">'+fmt(total)+'</strong></div>')+
           (depAmt>0
             ?'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">'+depLabel+'</span><strong style="color:var(--green)">'+fmt(depAmt)+'</strong></div>'+
               '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Balance on completion</span><strong>'+fmt(bal)+'</strong></div>'
-            :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>'
+            :(_ipRateOnly
+              ?'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Billed</span><strong>'+escHtml(_tmBillTermShort())+'</strong></div>'
+              :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>')
           )+
         '</div>'+
         // THE DOCUMENT THEY ARE SIGNING (owner 2026-09-06: "I want it done and
