@@ -4046,6 +4046,19 @@ test.describe('clients.js: exhaustive coverage', () => {
     // ever, so an unstamped address re-collected on the next boot costs a
     // cheap 'already' rather than a county request. The drip is also capped
     // per session, so the queue drains without a burst.
+    test('the drip stops at the first address it could not ask about', async () => {
+      // _countyProperty returns null for "no session", "county not loaded" and
+      // "the request failed", and all three are properties of the SESSION, not
+      // of one address: if the first could not ask, the next nine cannot
+      // either. Without the break the loop sleeps four seconds ten times over,
+      // a forty second no-op on every signed-out boot and in every offline
+      // test, holding timers nothing is waiting on.
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'clients.js'), 'utf8');
+      expect(src, '_lookupPropertyData must report whether it got to ask')
+        .toMatch(/if\(!d\)return false;/);
+      expect(src, 'and the drip must stop on that').toMatch(/if\(asked===false\)break;/);
+    });
+
     test('an unasked address is handed to the drip rather than written off', async () => {
       await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 0; });
       const r = await withClients(page, [{ id: 9044, addr: '44 Real St' }], []);

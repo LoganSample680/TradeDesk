@@ -3828,7 +3828,19 @@ async function _syncPropertyData(){
       if(!c)continue;
       const pp=(typeof _parseAddrParts==='function')?_parseAddrParts(w.q):null;
       if(!pp||!pp.street)continue;
-      await _lookupPropertyData(c.id,pp);
+      // STOP ON THE FIRST ASK THAT COULD NOT HAPPEN. _countyProperty returns
+      // null for "no session", "county not loaded" and "the request failed",
+      // and all three are properties of the SESSION rather than of this one
+      // address: if the first could not ask, the next nine cannot either.
+      //
+      // Without this the loop sleeps four seconds ten times over, a forty
+      // second no-op, on every boot of a signed-out or offline session and in
+      // every offline test. Nothing waits on the drip, so that was invisible,
+      // which is exactly what makes it worth removing: a background loop
+      // holding timers for forty seconds is the kind of thing that turns up
+      // later as somebody else's flaky test.
+      const asked=await _lookupPropertyData(c.id,pp);
+      if(asked===false)break;
       // Paced. Nothing is waiting on this and the county should not see a
       // burst from one boot.
       await new Promise(r=>setTimeout(r,window._PROP_DRIP_GAP_MS||0));
@@ -3861,13 +3873,14 @@ async function _lookupPropertyData(clientId,addrParts){
     // the estimate builder's live address card. It returns null for every kind
     // of no-answer, which is deliberately NOT the same as a county miss.
     let d;try{d=await _countyProperty(addr,ctrl.signal);}finally{clearTimeout(t);}
+    // false means "could not ask", which the drip above reads as "stop".
     // A null here covers "not signed in", "county not loaded" and "the request
     // failed" as well as a genuine miss, and stamping on those would retire the
     // address permanently: nothing would ever ask again and the contractor gets
     // a blank card with no way to know why. Only an answer we can read is
     // applied; everything else leaves the address exactly as it was, to be
     // retried the next time it is saved or the button is tapped.
-    if(!d)return;
+    if(!d)return false;
     // {found:false} is the county answering that it has no such address, which
     // _propApplyMatch records as a miss so the card can say so and nothing asks
     // again. A null above is the opposite: we never got to ask.
@@ -3875,5 +3888,6 @@ async function _lookupPropertyData(clientId,addrParts){
       saveAll();
       if(currentClientId===clientId)renderClientDetail();
     }
-  }catch(e){console.warn('Property lookup failed:',e);}
+    return true;
+  }catch(e){console.warn('Property lookup failed:',e);return false;}
 }
