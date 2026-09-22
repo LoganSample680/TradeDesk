@@ -83,8 +83,21 @@ if ! git merge --no-edit -q "$BRANCH"; then
     echo "  Resolve them here, commit, then run this again. Do not force-push." >&2
     exit 1
   fi
+  # Resolve INSIDE the conflict markers only, taking the incoming side of each
+  # hunk. This used to be `git checkout --theirs`, which replaces the WHOLE
+  # file with the branch's copy. stamp_only proves the CONFLICTS are only the
+  # version line, but git has already auto-merged every other change into the
+  # file by then, and --theirs threw those away with it. js/cloud.js is shared
+  # by every session, so any roll where uat had changed cloud.js elsewhere
+  # silently deleted that work. It nearly shipped deleting the Tim session's
+  # sign-out privacy fix (2026-09-22), caught only because the diff was read.
   for f in $STAMPED; do
-    git checkout --theirs -- "$f" 2>/dev/null || true
+    if grep -q '^<<<<<<< ' "$f" 2>/dev/null; then
+      perl -0pi -e 's/^<<<<<<< [^\n]*\n.*?^=======\n(.*?)^>>>>>>> [^\n]*\n/$1/gms' "$f"
+      if grep -q '^<<<<<<< \|^>>>>>>> ' "$f"; then
+        echo "uat-roll: could not resolve the stamp in $f. Stopping." >&2; exit 1
+      fi
+    fi
     git add -- "$f" 2>/dev/null || true
   done
   git commit -q --no-edit || { echo "uat-roll: merge commit failed." >&2; exit 1; }
