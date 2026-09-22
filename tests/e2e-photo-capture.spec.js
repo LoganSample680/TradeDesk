@@ -2521,6 +2521,19 @@ test.describe('TrueShot: the sync keeps what the feature needs', () => {
     expect(out.lat).toBe(null);
   });
 
+  test('the capture size rides the row to the cloud', async () => {
+    const r = await page.evaluate(() => {
+      const row = { id: 1, url: 'https://x/a.jpg', storagePath: 'u/a.jpg', type: 'before',
+        shotPx: '4032x3024', client_id: null, bid_id: null, job_id: null, uploadedAt: 'now' };
+      const tbl = (typeof _TD_TABLES !== 'undefined' ? _TD_TABLES : []).find(t => t.t === 'td_photos');
+      return tbl ? tbl.tx([row])[0] : null;
+    });
+    // The whitelist drops anything it does not name, so a field that is never
+    // listed is a field that silently never leaves the phone.
+    expect(r, 'td_photos is registered for sync').not.toBeNull();
+    expect(r.shotPx, 'the size the camera gave survives the transform').toBe('4032x3024');
+  });
+
   test('a row with no storage behind it is still not synced', async () => {
     const n = await page.evaluate(() => {
       const entry = _TD_TABLES.find(t => t.t === 'td_photos');

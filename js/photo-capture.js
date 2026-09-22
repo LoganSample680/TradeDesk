@@ -60,6 +60,9 @@ async function tdSavePhoto(opts){
     // A PATH, never a url. See _compressPhoto's header: the full-resolution
     // copy has no link on the row so it cannot be rendered by accident.
     fullPath:'',
+    // What the camera actually handed over, WxH. Troubleshooting only, never
+    // rendered: "it looks blurry" is otherwise unanswerable after the fact.
+    shotPx:(typeof _pcShotPx==='string'?_pcShotPx:''),
     type,caption,
     client_id:clientId,client_name:c?c.name||'':'',
     bid_id:bidId,bid_name:b?(b.title||b.name||''):'',
@@ -778,6 +781,7 @@ function tdReviewUndo(){
 // data can answer by itself.
 const _PC_NEAR_M=250;
 let _pcAtt=null;   // {ids, clientId, addr, bidId, jobId}
+let _pcShotPx='';  // WxH of the last frame the camera gave, stamped onto the row
 // Everything the coordinates could plausibly mean, nearest first. A job
 // carries its own address, so a job hit answers the property question too.
 function _pcNearbyMatches(ids){
@@ -1018,7 +1022,25 @@ function _pcSheetHTML(){
 async function _pcStartStream(){
   try{
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('no getUserMedia');
-    _pcStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    // ── ASK THE CAMERA FOR THE CAMERA (owner 2026-09-22: "photos look a bit
+    // blurry") ───────────────────────────────────────────────────────────────
+    // This used to request a rear camera and nothing else, and an unconstrained
+    // getUserMedia hands back the browser's DEFAULT capture size, which is
+    // 640x480 or 720p. So a phone with a 48MP sensor was saving a video still:
+    // Jack's four shots came out 42 to 70 kB each. It also silently killed the
+    // 4K copy, because _compressPhoto only writes one when the source is bigger
+    // than its 1600px display edge, and 720p never is. Every photo in the
+    // account has an empty fullPath for exactly this reason.
+    //
+    // ideal, not exact: a constraint the camera cannot meet fails the whole
+    // getUserMedia call and drops the viewfinder to the file-picker fallback,
+    // which would trade a blurry photo for no live Before-ghost at all.
+    const _hi={facingMode:{ideal:'environment'},width:{ideal:4096},height:{ideal:3072}};
+    try{
+      _pcStream=await navigator.mediaDevices.getUserMedia({video:_hi,audio:false});
+    }catch(_e){
+      _pcStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    }
     const v=document.getElementById('pc-video');
     if(!v){_pcStopStream();return;}
     v.srcObject=_pcStream;
@@ -1108,9 +1130,16 @@ async function tdCaptureShoot(){
   const cv=document.createElement('canvas');
   cv.width=v.videoWidth;cv.height=v.videoHeight;
   cv.getContext('2d').drawImage(v,0,0,cv.width,cv.height);
-  const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));
+  // 0.98 because this blob is an INTERMEDIATE: _compressPhoto re-encodes it
+  // into the display copy and the full copy, and every generation of JPEG
+  // before the last one is quality thrown away for nothing.
+  const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.98));
   if(!blob)return;
   blob.name='shot-'+Date.now()+'.jpg';
+  // What the camera actually gave, kept on the row. The owner cannot see a
+  // resolution and neither can a log, so when a photo looks soft this is the
+  // first question and it should already be answered.
+  _pcShotPx=cv.width+'x'+cv.height;
   _pcFlash();
   await _pcCommit(blob);
 }
