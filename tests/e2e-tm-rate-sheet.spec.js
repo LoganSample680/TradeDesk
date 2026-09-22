@@ -1435,6 +1435,104 @@ test.describe('the ceiling leads, not the guess', () => {
     expect(t).toContain('They get a rate, no total');
   });
 
+  // ── A SECTION HE HAS ANSWERED SAYS ONE LINE ───────────────────────────────
+  //
+  // Owner, 2026-09-22: "is T&M built into a easy to flow wizard?" It is not,
+  // and it should not be. Same-day proposals close at roughly twice the rate of
+  // follow ups, so what is being optimised is seconds from seeing the job to
+  // pressing send, on a driveway. A wizard taxes every job with extra taps to
+  // solve a first-job problem and hides the document at the moment he turns the
+  // phone around to show it.
+  //
+  // What a wizard is good at, never showing more than is needed, comes from
+  // folding instead: a card he has filled says its label and its figure, the
+  // one he has not is open and waiting.
+  test.describe('the page grows as he answers', () => {
+    const state = (id) => page.evaluate((x) => {
+      const card = document.getElementById(x);
+      const bar = card && card.querySelector(':scope > .tm-fold');
+      return {
+        fold: card && card.getAttribute('data-fold'),
+        bar: !!bar,
+        text: bar ? bar.textContent.replace(/\s+/g, ' ').trim() : '',
+      };
+    }, id);
+
+    const fill = (rate, cap) => page.evaluate((c) => {
+      _geiIsTM = true;
+      _tmLayers = new Set(['rate', 'cap']);
+      const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+      sv('gei-addr', '700 Rate Rd, Wichita KS 67202');
+      sv('tm-i-rate', c.rate == null ? '' : String(c.rate));
+      sv('tm-i-nte', c.cap == null ? '' : String(c.cap));
+      const crew = document.getElementById('tm-i-crew-count');
+      if (crew) crew.textContent = '2';
+      _tmOpen = new Set();
+      _tmInputChange();
+      _tmApplyLayers();
+    }, { rate, cap });
+
+    // A fold with nothing behind it is a door to an empty room.
+    test('a section with nothing in it stays open', async () => {
+      await fill(null, null);
+      const r = await state('tm-blk-nte');
+      expect(r.fold).toBe('0');
+    });
+
+    test('a section he has answered folds to its label and its figure', async () => {
+      await fill(95, '12,000');
+      const cap = await state('tm-blk-nte');
+      expect(cap.fold).toBe('1');
+      expect(cap.text).toContain('The most it can cost');
+      expect(cap.text).toContain('$12,000');
+    });
+
+    // The figure is his, down to the crew standing in it.
+    test('the rate line says the rate and who is on site', async () => {
+      await fill(95, '12,000');
+      const r = await state('tm-blk-rate');
+      expect(r.fold).toBe('1');
+      expect(r.text).toContain('$95/hr each');
+      expect(r.text).toContain('2 on site');
+    });
+
+    test('tapping one opens it, and it stays open through a redraw', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => _tmFoldToggle('tm-blk-rate'));
+      expect((await state('tm-blk-rate')).fold).toBe('0');
+      // Anything at all can trigger _tmApplyLayers. It must not shut under his
+      // thumb while he is typing in it.
+      await page.evaluate(() => { _tmInputChange(); _tmApplyLayers(); });
+      expect((await state('tm-blk-rate')).fold).toBe('0');
+      // And the one he did not open is still folded.
+      expect((await state('tm-blk-nte')).fold).toBe('1');
+    });
+
+    test('tapping it again puts it away', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => { _tmFoldToggle('tm-blk-rate'); _tmFoldToggle('tm-blk-rate'); });
+      expect((await state('tm-blk-rate')).fold).toBe('1');
+    });
+
+    // Emptying a field has to reopen it, or the only way back to a box he just
+    // cleared is to remember it is behind a line that now says nothing.
+    test('clearing the figure opens the section back up', async () => {
+      await fill(95, '12,000');
+      expect((await state('tm-blk-nte')).fold).toBe('1');
+      await fill(95, null);
+      expect((await state('tm-blk-nte')).fold).toBe('0');
+    });
+
+    test('the bar is one control per section, not one per redraw', async () => {
+      await fill(95, '12,000');
+      const n = await page.evaluate(() => {
+        for (let i = 0; i < 5; i++) _tmApplyLayers();
+        return document.getElementById('tm-blk-rate').querySelectorAll(':scope > .tm-fold').length;
+      });
+      expect(n, 'a fold bar was appended on every render').toBe(1);
+    });
+  });
+
   // California will not take a T&M home improvement contract at all, so a
   // checklist there would be walking him through something he must not do.
   test('a state that forbids T&M gets the warning and no steps', async () => {

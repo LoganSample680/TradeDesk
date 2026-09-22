@@ -791,6 +791,28 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 #_tim-send[data-empty="1"]{opacity:.32;pointer-events:none}
 #_tim-send:active{transform:scale(.94);opacity:.9}
 
+/* ── A SECTION THAT IS ANSWERED SAYS ONE LINE ────────────────────────────────
+   Owner, 2026-09-22: "its overwhelming even to me", and then, on whether this
+   should be a wizard: a wizard trades taps for hand holding, and the taps are
+   the expensive part. Same day proposals close at about twice the rate of
+   follow ups, so the thing being optimised is seconds from seeing the job to
+   pressing send, standing on a driveway with the homeowner watching. A wizard
+   also hides the document at the exact moment he turns the phone around.
+   So: one screen that starts nearly empty and grows only as he answers. A card
+   he has filled in folds to its label and its figure; the one he has not is
+   open and waiting. Driven by an attribute, because that is what invalidates
+   reliably (see the mic), and no JS touches a style property.
+   display:none on the children rather than height, per 8.5. */
+.tm-fold{display:flex;align-items:center;gap:10px;width:100%;padding:13px 15px;border:0;
+  background:none;font-family:inherit;cursor:pointer;text-align:left}
+.tm-fold-l{font-size:13.5px;font-weight:700;color:var(--text2);min-width:0}
+.tm-fold-v{flex:1;min-width:0;text-align:right;font-size:13.5px;font-weight:800;color:var(--text);
+  font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm-fold-c{flex-shrink:0;color:var(--text3);display:flex}
+.card[data-fold="1"]{padding:0}
+.card[data-fold="1"] > *:not(.tm-fold){display:none}
+.card[data-fold="0"] > .tm-fold{display:none}
+
 /* The listening panel when there is no sheet to sit in: dictating the scope
    happens on the estimate page. Fixed to the bottom so the Done button is
    where the thumb already is, above the tab bar so it is not half covered. */

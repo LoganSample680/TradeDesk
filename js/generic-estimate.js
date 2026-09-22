@@ -4349,6 +4349,80 @@ function _tmDropLayer(k){
 }
 function _tmToggleLayer(k){_tmLayers.has(k)?_tmDropLayer(k):_tmAddLayer(k);}
 
+// ── A SECTION HE HAS ANSWERED SAYS ONE LINE ─────────────────────────────────
+//
+// Owner, 2026-09-22: "its overwhelming even to me, sure as shit would be
+// overwleming to a client", and then "is T&M built into a easy to flow wizard?"
+//
+// Not a wizard. Same-day proposals close at roughly twice the rate of follow
+// ups and a day back at the office costs about 10% of the close, so what is
+// being optimised is seconds from seeing the job to pressing send, on a
+// driveway, with the homeowner watching. A wizard taxes every job with extra
+// taps to solve a first-job problem, and it hides the document at the exact
+// moment he turns the phone around to show it.
+//
+// So one screen that starts nearly empty and grows as he answers. A card he has
+// filled folds to its label and its figure; the one he has not is open. Nothing
+// is hidden that he has not already decided.
+//
+// Which ones he has pushed back open, so a re-render does not shut them again
+// under his thumb.
+let _tmOpen=new Set();
+Object.defineProperty(window,'_tmOpen',{get:()=>_tmOpen,set:v=>{_tmOpen=(v instanceof Set)?v:new Set(v||[]);},configurable:true});
+
+function _tmFoldToggle(id){
+  if(_tmOpen.has(id))_tmOpen.delete(id);else _tmOpen.add(id);
+  _tmApplyLayers();
+  // Opening a card below the fold should put him in it, not leave him looking
+  // at the line he just tapped.
+  if(_tmOpen.has(id)){
+    const el=document.getElementById(id);
+    if(el)try{el.scrollIntoView({block:'center'});}catch(_e){}
+  }
+}
+
+// One card. `value` empty means there is nothing answered yet, so it stays open
+// and is not foldable: a fold with nothing behind it is a door to an empty room.
+function _tmFold(id,label,value){
+  const card=document.getElementById(id);
+  if(!card)return;
+  const has=!!String(value||'').trim();
+  const open=!has||_tmOpen.has(id);
+  let bar=card.querySelector(':scope > .tm-fold');
+  if(!bar){
+    bar=document.createElement('button');
+    bar.type='button';
+    bar.className='tm-fold';
+    bar.addEventListener('click',()=>_tmFoldToggle(id));
+    card.insertBefore(bar,card.firstChild);
+  }
+  bar.innerHTML='<span class="tm-fold-l">'+escHtml(label)+'</span>'+
+    '<span class="tm-fold-v">'+escHtml(value||'')+'</span>'+
+    '<span class="tm-fold-c"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" '+
+      'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'+
+      '<path d="m9 18 6-6-6-6"></path></svg></span>';
+  bar.setAttribute('aria-label',(open?'Hide ':'Edit ')+label);
+  card.setAttribute('data-fold',open?'0':'1');
+}
+
+// What each one says when it is folded. Only ever what he actually put in it.
+function _tmFoldAll(){
+  const money=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+  const rate=Number(_tmRatePerMan)||0;
+  const crew=Math.max(1,Number(_tmCrewCount)||1);
+  _tmFold('tm-blk-rate','Your rate',
+    rate>0?(money(rate)+'/hr each'+(crew>1?(' \u00b7 '+crew+' on site'):'')):'');
+  const cap=_tmCapVal();
+  _tmFold('tm-blk-nte','The most it can cost',cap>0?money(cap):'');
+  // The same rows _tmRenderMatList draws, counted the same way: everything in
+  // _geiLines that is not the labor line.
+  const mats=(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))
+    ?_geiLines.filter(l=>l&&!l._tmLabor).length:0;
+  _tmFold('tm-blk-mat','Materials',mats?(mats+' categor'+(mats>1?'ies':'y')):'');
+  const ex=(typeof _geiExclusions!=='undefined'&&Array.isArray(_geiExclusions))?_geiExclusions.length:0;
+  _tmFold('tm-blk-excl','Not included',ex?(ex+' item'+(ex>1?'s':'')):'');
+}
+
 // Everything the layers show, hide and say, in one place, so a flip and a
 // resume paint the same page.
 function _tmApplyLayers(){
@@ -4410,6 +4484,8 @@ function _tmApplyLayers(){
     :'The most it can cost them';
   const matH=document.getElementById('tm-mat-head');
   if(matH)matH.textContent='Material categories';
+  // Last, so every figure it reads is the one this pass just settled.
+  _tmFoldAll();
   _tmRenderAddRow(rule,locked);
 }
 
