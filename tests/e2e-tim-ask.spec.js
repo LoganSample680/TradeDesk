@@ -1284,11 +1284,27 @@ test.describe('tim answering off your own books', () => {
   // hand-built snapshot, which is correct for what it covers and is why a filter
   // matching zero rows looked exactly like a customer who had paid.
   test.describe('the nudge engine reads the same books', () => {
+    // The three below state the books they need IN THE SAME EVALUATE that
+    // reads them, rather than trusting the describe's beforeEach to still be
+    // true by the time they run. getBidBalance is a live filter over `payments`
+    // with no cache, so an empty array reads exactly like a customer who paid:
+    // this failed in CI at owed 4000 (the bid's full amount, no payment found)
+    // while passing alone and in a full local run. Several paths reassign
+    // `payments` wholesale, so the fixture surviving the gap is a race, and a
+    // test about whether timJobSnapshot reads the books should not also be a
+    // test of whether anything cleared them first.
+    // Rebuilt, not topped up, so a stray push from an earlier test cannot
+    // double a balance either.
+    const BOOKS = `
+      payments.length = 0;
+      payments.push({ bid_id: 8801, amount: 2000, date: '2026-07-20', client_name: 'Dana Whitfield' });
+      payments.push({ bid_id: 8803, amount: 900, date: '2026-05-25', client_name: 'Marta Ochoa' });`;
+
     test('a real Closed Won balance reaches the snapshot', async () => {
-      const r = await page.evaluate(() => {
+      const r = await page.evaluate(`(() => {${BOOKS}
         currentClientId = 7101;
         return timJobSnapshot();
-      });
+      })()`);
       expect(r.owed).toBe(2000);
       expect(r.clientName).toBe('Dana Whitfield');
       expect(r.clientFirst).toBe('Dana');
@@ -1296,19 +1312,19 @@ test.describe('tim answering off your own books', () => {
     });
 
     test('and the rule fires on it, which it could not do before', async () => {
-      const r = await page.evaluate(() => {
+      const r = await page.evaluate(`(() => {${BOOKS}
         currentClientId = 7101;
         S.timLearned = {}; timResetDismissals();
         return timNudges(timJobSnapshot()).map(n => n.id);
-      });
+      })()`);
       expect(r).toContain('still-owes');
     });
 
     test('a customer who is paid up raises nothing', async () => {
-      const r = await page.evaluate(() => {
-        currentClientId = 7103;
+      const r = await page.evaluate(`(() => {${BOOKS}
+        currentClientId = 7103;   // 8803, 900 billed and 900 paid
         return timJobSnapshot().owed;
-      });
+      })()`);
       expect(r).toBe(0);
     });
   });
