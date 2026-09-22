@@ -204,3 +204,103 @@ test.describe('the scope you say out loud', () => {
     assertNoErrors(page, 'scope compose');
   });
 });
+
+
+// ── THE PROPERTY NOTE, READ RATHER THAN QUOTED ───────────────────────────────
+//
+// Owner, 2026-09-22: "how do we beautify the property note for dog access and
+// things like that?"
+//
+// The sentence is written once, in a driveway, and read for years afterwards by
+// whoever pulls up at that gate. The reading itself is held in
+// e2e-tim-knowledge.spec.js, where it is pure. These hold the screens: that the
+// chips replace the clamped paragraph where they exist, that his own words come
+// back untouched the moment he taps in, and that a note Tim could not read
+// still shows the thing he actually wrote.
+test.describe('the property note on screen', () => {
+  let page;
+
+  const note = (text) => page.evaluate((t) => {
+    const c = clients.filter(x => x.id === 55502)[0];
+    setSiteNote(c, '9 Gate Rd, Wichita KS 67202', t);
+    _geiSiteNoteOpen = false;
+    _geiRenderSiteNoteField('tm');
+    const wrap = document.getElementById('tm-sitenote-wrap');
+    return (wrap ? wrap.textContent : '').replace(/\s+/g, ' ').trim();
+  }, text);
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 402, height: 874 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      clients.length = 0; bids.length = 0;
+      clients.push({ id: 55502, name: 'Gate Client', addr: '9 Gate Rd, Wichita KS 67202' });
+      openTMEstimate(clients[0]);
+    });
+    await page.waitForTimeout(600);
+    await page.evaluate(() => { _tmShowPage(); document.getElementById('_tim-ov')?.remove(); });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the facts replace the paragraph on the row', async () => {
+    const t = await note('Code 4417 on the side gate. Dog is friendly but barks. '
+      + 'Park on the street, the driveway cracks.');
+    expect(t).toContain('Park on the street');
+    expect(t).toContain('Dog, friendly');
+    expect(t).toContain('Gate 4417');
+    // The paragraph is not ALSO sitting there. Two readings of the same
+    // sentence on one row is the density this app spent the day shedding.
+    expect(t, 'the chips and the paragraph were both on the row')
+      .not.toContain('the driveway cracks');
+    // Still says whose property and that it is not for the customer.
+    expect(t).toContain('crew only');
+  });
+
+  // Half a reading is worse than none. If Tim cannot see the facts, the man's
+  // own words are the best thing on offer and he still gets them.
+  test('a note it cannot read still shows what he wrote', async () => {
+    const t = await note('Ring twice and wait, he is slow on the stairs');
+    expect(t).toContain('Ring twice and wait');
+  });
+
+  // His words, untouched, the moment he taps in. Nothing here rewrites a
+  // sentence, it only reads one.
+  test('tapping in gives him back exactly what he typed', async () => {
+    const said = 'Code 4417 on the side gate. Dog is friendly. Park on the street.';
+    await note(said);
+    const v = await page.evaluate(() => {
+      _geiToggleSiteNote('tm');
+      return (document.getElementById('gei-sitenote') || {}).value;
+    });
+    expect(v).toBe(said);
+    await page.evaluate(() => { _geiSiteNoteOpen = false; _geiRenderSiteNoteField('tm'); });
+  });
+
+  test('an empty note is still an invitation, not a blank row', async () => {
+    const t = await note('');
+    expect(t).toContain('Gate code, dog, where to park');
+    expect(t).toContain('Never on the proposal');
+  });
+
+  // The screen that matters more: this is the one read at the gate, so it gets
+  // the chips for the glance AND the sentence for what the chips cannot carry.
+  test('the crew gets both the facts and the sentence', async () => {
+    const r = await page.evaluate(() => {
+      const c = clients.filter(x => x.id === 55502)[0];
+      setSiteNote(c, c.addr, 'Code 4417 on the side gate. Dog is friendly but barks. '
+        + 'Park on the street, the driveway cracks.');
+      const sa = document.getElementById('s-addr');
+      if (sa) sa.value = c.addr;
+      _schedSiteNote(55502);
+      const el = document.getElementById('s-sitenote');
+      return (el ? el.textContent : '').replace(/\s+/g, ' ').trim();
+    });
+    expect(r).toContain('Gate 4417');
+    expect(r).toContain('Dog, friendly');
+    expect(r, 'the crew lost the detail the chips cannot carry')
+      .toContain('the driveway cracks');
+  });
+});

@@ -680,6 +680,99 @@ test.describe('tim knows the trade', () => {
     });
   });
 
+  // ── WHAT STOPS A CREW AT THE KERB ─────────────────────────────────────────
+  //
+  // Owner, 2026-09-22: "how do we beautify the property note for dog access and
+  // things like that?"
+  //
+  // It is read by somebody standing at a gate with a toolbox in one hand, and a
+  // paragraph clamped to two lines is not readable in that posture. So the
+  // sentence is READ, never rewritten: his words stay exactly as typed and the
+  // chips are a reading of them.
+  //
+  // A wrong chip is worse than no chip, because this is the one a crew ACTS on,
+  // so most of these are about refusing to guess.
+  test.describe('the property note, read', () => {
+    const facts = (t) => page.evaluate((x) =>
+      timSiteFacts(x).map(f => f.k + ':' + f.label), t);
+
+    test('the three things the field itself asks for', async () => {
+      const r = await facts('Code 4417 on the side gate. Dog is friendly but barks. '
+        + 'Park on the street, the driveway cracks.');
+      expect(r).toEqual(['park:Park on the street', 'dog:Dog, friendly', 'code:Gate 4417']);
+    });
+
+    // THE ONE THAT MATTERS MOST. A crew that reads "Dog" on a property with no
+    // dog wastes a trip to the truck for nothing; worse, it teaches them the
+    // chips lie, and then they stop reading the one that says "Dog, careful".
+    test('"no dog" is a man answering the question, not a dog', async () => {
+      expect(await facts('park in the alley, no dog')).toEqual(['park:Park in the alley']);
+      expect(await facts('there is no dog now')).toEqual([]);
+    });
+
+    test('careful outranks friendly when both words are in there', async () => {
+      const r = await facts('friendly enough but the dog bites if you reach over');
+      expect(r).toEqual(['dog:Dog, careful']);
+    });
+
+    // Which code it is, because a bare 4417 makes a man try the front door
+    // first and stand there.
+    test('the code says what to punch it into', async () => {
+      expect(await facts('lockbox 1199 by the front door')).toEqual(['code:Lockbox 1199']);
+      expect(await facts('keypad 5567')).toEqual(['code:Keypad 5567']);
+      expect(await facts('alarm 9911')).toEqual(['code:Alarm 9911']);
+      // Said the other way round, which is how most people say it.
+      expect(await facts('4417 on the side gate')).toEqual(['code:Gate 4417']);
+      // A bare "code" with a specific word elsewhere takes the specific one.
+      expect(await facts('the code is 8823, it is the gate')).toEqual(['code:Gate 8823']);
+    });
+
+    test('being told where NOT to park outranks being told where to', async () => {
+      expect(await facts('do not park in the driveway')).toEqual(['park:Not the driveway']);
+      expect(await facts("don't park on the lawn")).toEqual(['park:Not the lawn']);
+      expect(await facts('no parking out front')).toEqual(['park:No parking']);
+    });
+
+    // You park ON a street and IN an alley. Getting this wrong reads as a
+    // machine wrote it, which is the thing being fixed.
+    test('it speaks English about where the truck goes', async () => {
+      expect(await facts('park in the alley')).toEqual(['park:Park in the alley']);
+      expect(await facts('park on the street')).toEqual(['park:Park on the street']);
+    });
+
+    test('a key hidden somewhere is worth a chip', async () => {
+      expect(await facts('key under the mat')).toEqual(['key:Key under the mat']);
+    });
+
+    test('a note with nothing in it to find says nothing', async () => {
+      expect(await facts('Nothing special, just knock twice')).toEqual([]);
+      expect(await facts('')).toEqual([]);
+    });
+
+    test('junk in does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          return { ok: true, n: timSiteFacts(null).length + timSiteFacts(undefined).length
+            + timSiteFacts(42).length + timSiteFacts({}).length };
+        } catch (e) { return { ok: false, e: e.message }; }
+      });
+      expect(r).toEqual({ ok: true, n: 0 });
+    });
+
+    // Never a rewrite. Every label is either his own word or a fixed phrase
+    // built from it, and the sentence itself is untouched by all of this.
+    test('every fact carries an icon and a short label', async () => {
+      const r = await page.evaluate(() => timSiteFacts(
+        'gate code 8823, shepherd out back, do not park in the driveway, key under the mat'));
+      expect(r.length).toBe(4);
+      r.forEach(f => {
+        expect(f.icon, 'a chip with no icon').toBeTruthy();
+        expect(f.label.length, 'a label too long to read at a gate').toBeLessThan(30);
+        expect(f.k).toBeTruthy();
+      });
+    });
+  });
+
   test('no console errors, tim-knowledge.js', async () => {
     assertNoErrors(page, 'tim-knowledge.js');
   });

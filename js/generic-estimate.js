@@ -1393,6 +1393,31 @@ function _geiToggleSiteNote(prefix){
   _geiRenderSiteNoteField(prefix||(_geiIsTM?'tm':_geiIsFreeForm?'byo':'gen'));
   if(_geiSiteNoteOpen)setTimeout(()=>document.getElementById('gei-sitenote')?.focus(),60);
 }
+// THE NOTE, READ RATHER THAN QUOTED. A paragraph clamped to two lines is not
+// readable by somebody standing at a gate with a toolbox in one hand, and that
+// is the only posture this field is ever read in. timSiteFacts pulls out the
+// three things that stop a crew at the kerb; his sentence is untouched and one
+// tap away in the editor.
+//
+// Returns '' when nothing was recognised, and the caller falls back to the
+// clamped sentence. Half a reading is worse than none: if Tim cannot see the
+// facts, the man's own words are still the best thing to show.
+function _geiSiteChips(val,opts){
+  if(typeof timSiteFacts!=='function')return '';
+  let facts=[];
+  try{facts=timSiteFacts(val)||[];}catch(_e){return '';}
+  if(!facts.length)return '';
+  const o=opts||{};
+  return '<span style="display:flex;flex-wrap:wrap;gap:6px'+(o.gapTop?';margin-top:2px':'')+'">'+
+    facts.map(f=>
+      '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:var(--r-pill,999px);'+
+        'background:'+(f.k==='dog'?'var(--amber-lt,#FEF3C7)':'var(--bg2)')+';'+
+        'box-shadow:inset 0 0 0 1px '+(f.k==='dog'?'#F0C674':'var(--border)')+';'+
+        'font-size:12px;font-weight:700;color:'+(f.k==='dog'?'#92400E':'var(--text)')+';white-space:nowrap">'+
+        (typeof svgIcon==='function'?svgIcon(f.icon,{size:12}):'')+escHtml(f.label)+'</span>').join('')+
+  '</span>';
+}
+
 function _geiRenderSiteNoteField(prefix){
   ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
   const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
@@ -1412,7 +1437,8 @@ function _geiRenderSiteNoteField(prefix){
       'style="display:flex;align-items:center;gap:11px;width:100%;padding:13px 16px;border:0;background:none;cursor:pointer;font-family:inherit;text-align:left">'+
       '<span style="flex:1;min-width:0">'+
         (has
-          ? '<span style="font-size:14px;font-weight:500;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+escHtml(val)+'</span>'
+          ? (_geiSiteChips(val)
+            || '<span style="font-size:14px;font-weight:500;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+escHtml(val)+'</span>')
           // Open, the row names the thing; the invitation would only repeat the
           // placeholder sitting two lines under it.
           : '<span style="display:block;font-size:14px;font-weight:500;color:var(--text)">'+
@@ -1435,6 +1461,20 @@ function _geiRenderSiteNoteField(prefix){
           'style="width:100%;box-sizing:border-box;padding:10px 12px;border:0;border-radius:var(--r);'+
           'box-shadow:0 0 0 1px var(--border2);font-size:13.5px;font-family:inherit;background:var(--bg2);'+
           'color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
+        // Said, not typed. This is a note a man writes standing in the
+        // driveway looking at the gate he is describing, which is the worst
+        // possible place to type and the best possible place to talk. Same
+        // door as the scope box: _timTalkToggle takes the field id.
+        ((typeof _voiceCapable==='function'&&_voiceCapable())
+          ? '<button type="button" onclick="_timTalkToggle(\'gei-sitenote\')" '+
+            'style="margin-top:9px;display:inline-flex;align-items:center;gap:7px;padding:8px 13px;'+
+            'border-radius:var(--r-pill,999px);border:0;background:var(--ink);color:var(--text-cream,#fff);'+
+            'font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">'+
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+              'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
+              '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>'+
+              '<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Say it</button>'
+          : '')+
         '<div style="font-size:11.5px;line-height:1.5;color:var(--text-3);margin-top:8px">'+
           (addrShort
             ? 'Saved to <strong>'+escHtml(addrShort)+'</strong>, and it loads itself on every future job there.'

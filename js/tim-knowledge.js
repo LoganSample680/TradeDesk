@@ -347,6 +347,104 @@ function timScopeBuild(text,opts){
   };
 }
 
+// ── WHAT STOPS A CREW AT THE KERB ────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "how do we beautify the property note for dog access and
+// things like that?"
+//
+// The note is one sentence a man types once per property, and it is read by
+// somebody standing at a gate with a toolbox in one hand. A paragraph clamped
+// to two lines is not readable in that posture. The facts in it are: what the
+// code is, whether something is going to come round the corner at you, and
+// where to leave the truck. Those three are literally what the field's own
+// placeholder asks for.
+//
+// So this READS the sentence and never rewrites it. The chips are a reading;
+// his words stay exactly as typed, one tap away in the editor and in full on
+// the crew's screen. A wrong chip is worse than no chip, so every pattern here
+// is narrow and anything ambiguous returns nothing.
+//
+// Pure and offline, like the rest of this file.
+
+const _TIMK_CODEWORD=/\b(gate|lock ?box|lockbox|key ?pad|keypad|call ?box|alarm|door|combo|combination|code)\b/;
+// Friendly is worth saying because it changes whether a man waits at the gate.
+const _TIMK_DOG_OK=/\b(friendly|harmless|sweet|nice|old|lazy|wont bite|will not bite|does not bite|doesnt bite|good with)\b/;
+const _TIMK_DOG_BAD=/\b(bites?|mean|aggressive|nasty|guard dog|do not pet|dont pet|careful|watch out|chain|chained)\b/;
+
+function _timkTitle(w){
+  const v=String(w||'').trim();
+  return v?(v.charAt(0).toUpperCase()+v.slice(1)):v;
+}
+
+// The code, and WHICH code it is. "Gate 4417" tells him where to punch it in;
+// a bare 4417 makes him try the front door first.
+function _timkCode(n){
+  // "code 4417 on the side gate", "gate code is 4417", "lockbox 1234"
+  let m=n.match(/\b(gate|lock ?box|lockbox|key ?pad|keypad|call ?box|alarm|door|combo|combination|code)\b[^0-9]{0,16}?(\d{3,8})\b/);
+  let word=m&&m[1],digits=m&&m[2];
+  if(!m){
+    // "4417 on the side gate", said the other way round.
+    m=n.match(/\b(\d{3,8})\b[^0-9]{0,16}?\b(gate|lock ?box|lockbox|key ?pad|keypad|call ?box|alarm|door)\b/);
+    if(m){digits=m[1];word=m[2];}
+  }
+  if(!digits)return null;
+  // A bare "code" with a more specific word elsewhere in the sentence: prefer
+  // the specific one, because that is the thing he walks up to.
+  if(/^(code|combo|combination)$/.test(word)){
+    const sp=n.match(/\b(gate|lock ?box|lockbox|key ?pad|keypad|call ?box|alarm|door)\b/);
+    if(sp)word=sp[1];
+  }
+  const label=_timkTitle(String(word).replace(/\s+/g,'').replace('lockbox','Lockbox').replace('keypad','Keypad').replace('callbox','Call box'));
+  return {k:'code',icon:'\ud83d\udd12',label:label+' '+digits};
+}
+
+function _timkDog(n){
+  // "no dog" is a man answering the question, not a dog. A chip that warns
+  // about an animal he explicitly said is not there is the exact failure this
+  // whole function has to avoid, because it is the one a crew acts on.
+  if(/\b(no|without|never any|there is no|theres no)\s+dogs?\b/.test(n))return null;
+  if(!/\b(dogs?|pit ?bulls?|shepherds?|rottweilers?|dobermans?|puppy|puppies|k9)\b/.test(n))return null;
+  // Careful outranks friendly: if both words are in there, the one that keeps
+  // a man's hand out of the fence is the one to show.
+  if(_TIMK_DOG_BAD.test(n))return {k:'dog',icon:'\u26a0',label:'Dog, careful'};
+  if(_TIMK_DOG_OK.test(n))return {k:'dog',icon:'\u26a0',label:'Dog, friendly'};
+  return {k:'dog',icon:'\u26a0',label:'Dog'};
+}
+
+function _timkPark(n){
+  // Told NOT to first, because that is the one that gets a truck towed or a
+  // driveway cracked, and it is usually said alongside where he SHOULD park.
+  let m=n.match(/\b(?:do ?n[o']?t|dont|never|no|avoid)\s+park\w*\s+(?:in|on)\s+(?:the\s+)?(driveway|street|road|lawn|grass|alley|yard)\b/);
+  if(m)return {k:'park',icon:'\ud83d\ude97',label:'Not the '+m[1]};
+  if(/\bno parking\b/.test(n))return {k:'park',icon:'\ud83d\ude97',label:'No parking'};
+  m=n.match(/\bpark\w*\s+(?:on|in|at|out)\s+(?:the\s+|in\s+)?(street|road|driveway|alley|back|front|lot|kerb|curb)\b/);
+  // You park ON a street and IN an alley. Getting this wrong reads as a machine
+  // wrote it, which is the whole thing being fixed here.
+  if(m)return {k:'park',icon:'\ud83d\ude97',label:'Park '+(/^(street|road|kerb|curb)$/.test(m[1])?'on the ':'in the ')+m[1]};
+  return null;
+}
+
+function _timkKey(n){
+  const m=n.match(/\bkeys?\b[^.]{0,10}?\b(under|in|behind|above|beside|inside)\s+(?:the\s+)?([a-z]{3,14}(?:\s+[a-z]{3,10})?)/);
+  if(!m)return null;
+  return {k:'key',icon:'\ud83d\udd11',label:'Key '+m[1]+' the '+m[2]};
+}
+
+// The sentence, read. Order is the order a man meets them walking up: where to
+// leave the truck, what is behind the gate, how to get in.
+function timSiteFacts(text){
+  const raw=String(text||'');
+  if(!raw.trim())return [];
+  const n=_timkNorm(raw);
+  const out=[];
+  [_timkPark,_timkDog,_timkCode,_timkKey].forEach(fn=>{
+    let f=null;
+    try{f=fn(n);}catch(_e){f=null;}
+    if(f&&!out.some(x=>x.k===f.k))out.push(f);
+  });
+  return out;
+}
+
 // ── What a job drags in with it ──────────────────────────────────────────────
 //
 // The rules are deliberately few and deliberately hard. Each one has to pass

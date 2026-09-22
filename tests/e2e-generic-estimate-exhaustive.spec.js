@@ -2334,10 +2334,18 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiSiteNoteInput('Code 4417 on the side gate. Dog barks.');
         _geiRenderSiteNoteField('tm');
         const wrap = document.getElementById('tm-sitenote-wrap');
-        const line = wrap.querySelector('button span span');
+        const filled = wrap.textContent;
+        // A note with nothing in it Tim can recognise: the paragraph is still
+        // the best thing to show, and it is still clamped so a long one cannot
+        // push the scope of work off the screen.
+        _geiSiteNoteInput('Ring twice and wait, he is slow on the stairs');
+        _geiRenderSiteNoteField('tm');
+        const w2 = document.getElementById('tm-sitenote-wrap');
+        const line = w2.querySelector('button span span');
         return {
           empty,
-          filled: wrap.textContent,
+          filled,
+          unread: w2.textContent,
           clamped: line ? getComputedStyle(line).webkitLineClamp : null,
           fieldHidden: !document.getElementById('gei-sitenote'),
         };
@@ -2345,9 +2353,17 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       // Empty: an invitation, and the one thing worth saying about privacy.
       expect(r.empty).toContain('Gate code, dog, where to park');
       expect(r.empty).toContain('Never on the proposal');
-      // Filled: his words, and the field still behind a tap.
-      expect(r.filled).toContain('Code 4417 on the side gate');
+      // ASSERTION CHANGED 2026-09-22 (§10.4). It used to require the raw
+      // sentence on the row. Owner: "how do we beautify the property note for
+      // dog access and things like that?" This row is read by somebody at a
+      // gate with a toolbox in one hand, so the facts in the sentence are what
+      // it carries now. The test's own point stands and is what is asserted:
+      // the row carries the NOTE, never a label about the note.
+      expect(r.filled).toContain('Gate 4417');
+      expect(r.filled).toContain('Dog');
       expect(r.filled).not.toContain('Gate code, dog, where to park');
+      // And where Tim recognised nothing, his words, clamped, exactly as before.
+      expect(r.unread).toContain('Ring twice and wait');
       expect(r.clamped).toBe('2');
       expect(r.fieldHidden).toBe(true);
     });
