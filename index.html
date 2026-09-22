@@ -2228,6 +2228,10 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-rev-track{position:absolute;top:0;left:0;height:100%;width:300%;display:flex;transform:translate3d(-33.3333%,0,0);touch-action:pan-y;will-change:transform;cursor:grab}
 .pc-rev-track:active{cursor:grabbing}
 .pc-rev-track.snap{transition:transform .3s cubic-bezier(.22,1,.36,1)}
+/* The sheet itself animates when it is being put away, so the spring-back and
+   the dismissal both have motion rather than snapping. */
+.pc-rev.snap{transition:transform .28s cubic-bezier(.22,1,.36,1),opacity .28s ease}
+.pc-rev-stage{touch-action:pan-y}
 .pc-rev-pane{flex:0 0 33.3333%;width:33.3333%;height:100%;display:flex;align-items:center;justify-content:center;padding:0 8px;box-sizing:border-box}
 .pc-rev-img{max-width:100%;max-height:100%;border-radius:var(--r-md);-webkit-user-select:none;user-select:none;-webkit-user-drag:none;pointer-events:none}
 .pc-rev-foot{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px calc(20px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}

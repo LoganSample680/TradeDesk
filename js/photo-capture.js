@@ -63,6 +63,8 @@ async function tdSavePhoto(opts){
     // What the camera actually handed over, WxH. Troubleshooting only, never
     // rendered: "it looks blurry" is otherwise unanswerable after the fact.
     shotPx:(typeof _pcShotPx==='string'?_pcShotPx:''),
+    // Metres of uncertainty on the fix above, straight from the GPS.
+    accM:null,
     type,caption,
     client_id:clientId,client_name:c?c.name||'':'',
     bid_id:bidId,bid_name:b?(b.title||b.name||''):'',
@@ -91,7 +93,7 @@ async function tdSavePhoto(opts){
   // Failure returns the original file untouched: a stamp is never worth
   // losing a photo over.
   if(opts.stamp!==false&&_pcStampOn()){
-    const stamped=await tdStampImage(file,_pcStampLines({lat:opts.lat,lon:opts.lon,clientId,jobId,bidId}));
+    const stamped=await tdStampImage(file,_pcStampLines({lat:opts.lat,lon:opts.lon,accM:row.accM,clientId,jobId,bidId}));
     if(stamped)file=stamped;
   }
 
@@ -118,14 +120,21 @@ async function tdSavePhoto(opts){
     // Path carries the tag it was shot against so storage is browsable by eye.
     const scope=jobId!=null?('job-'+jobId):bidId!=null?('bid-'+bidId):clientId!=null?('client-'+clientId):'unfiled';
     const path=_supaUser.id+'/'+scope+'/'+type+'-'+Date.now()+'.'+ext;
-    const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:file,
+    // The coordinates go INTO the file, not just onto the row, so a photo that
+    // leaves this app by any route still carries where it was taken. Wrapped so
+    // a metadata failure can never cost somebody their photo.
+    const _body=await _pcWithGps(_cp?_cp.blob:file,row.lat,row.lon,row.uploadedAt,row.accM);
+    const{error}=await _supa.storage.from('gallery').upload(path,_body,
       {contentType:_cp?_cp.mime:(file.type||'image/jpeg'),upsert:false,cacheControl:_PHOTO_CACHE});
     if(error)throw error;
     const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
     const publicUrl=urlData?urlData.publicUrl||'':'';
     if(!publicUrl)throw new Error('no public url');
     const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
-    const fullPath=_cp&&_cp.full?await _uploadPhotoFull(_cp.full,path,_cp.fullMime,_cp.fullExt):'';
+    // The full-resolution copy is the one an adjuster actually gets sent, so it
+    // is the one that most needs the coordinates in it.
+    const _fullBody=_cp&&_cp.full?await _pcWithGps(_cp.full,row.lat,row.lon,row.uploadedAt,row.accM):null;
+    const fullPath=_fullBody?await _uploadPhotoFull(_fullBody,path,_cp.fullMime,_cp.fullExt):'';
     row.url=publicUrl;row.storagePath=path;row.thumbUrl=thumbUrl;row.thumbPath=thumbPath;
     row.fullPath=fullPath;
     // The base64 copy is dropped once the row has a URL: keeping both doubles
@@ -197,15 +206,30 @@ function _pcStampLines(ctx){
     // customer's address, then raw coordinates. Coordinates are the fallback
     // rather than the default because "1412 Oak Ridge Dr" settles an argument
     // and "37.6889, -97.3361" starts one.
-    let where='';
+    let where='',whereIsAddress=false;
     const j=ctx.jobId!=null?jobs.find(x=>x.id===ctx.jobId):null;
-    if(j&&j.addr)where=j.addr;
+    if(j&&j.addr){where=j.addr;whereIsAddress=true;}
     if(!where&&ctx.clientId!=null){
       const c=clients.find(x=>x.id===ctx.clientId);
-      if(c&&c.addr)where=c.addr;
+      if(c&&c.addr){where=c.addr;whereIsAddress=true;}
     }
     if(!where&&ctx.lat!=null&&ctx.lon!=null)where=Number(ctx.lat).toFixed(5)+', '+Number(ctx.lon).toFixed(5);
     if(where)out.push(where);
+    // The coordinates as SECONDARY proof, under the address rather than
+    // instead of it. CompanyCam prints raw lat/long and nothing else, which
+    // their own users cannot place ("the address doesn't always pull up, it
+    // will say it is 3 miles away", Capterra). An address settles an argument;
+    // the numbers under it are for whoever wants to check.
+    //
+    // The accuracy goes with them, deliberately. A stamp that admits the fix
+    // was ±40m cannot quietly name the wrong house, which is the single most
+    // reported failure of theirs.
+    // Only under an ADDRESS. When the coordinates already ARE the where line
+    // there is nothing to put beneath them.
+    if(whereIsAddress&&ctx.lat!=null&&ctx.lon!=null){
+      const acc=(typeof ctx.accM==='number'&&isFinite(ctx.accM))?'  \u00b1'+Math.max(1,Math.round(ctx.accM))+'m':'';
+      out.push(Number(ctx.lat).toFixed(6)+', '+Number(ctx.lon).toFixed(6)+acc);
+    }
   }catch(_e){}
   return out;
 }
@@ -224,22 +248,43 @@ async function tdStampImage(fileOrBlob,lines){
     g.drawImage(bmp,0,0,w,h);
     // Scaled off the image, not fixed px: the same stamp has to be legible on
     // a 4032px phone photo and on a 640px one.
-    const fs=Math.max(13,Math.round(Math.min(w,h)*0.032));
-    const pad=Math.round(fs*0.7), lh=Math.round(fs*1.32);
-    g.font='700 '+fs+'px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif';
-    g.textBaseline='top';
-    const widest=lines.reduce((m,t)=>Math.max(m,g.measureText(t).width),0);
-    const boxH=lines.length*lh+pad*1.2, boxW=Math.min(w-pad*2,widest+pad*2);
-    const x=pad, y=h-boxH-pad;
-    // A slab, not a drop shadow: a shadow disappears over a bright wall,
-    // which is most of a jobsite in daylight.
-    g.fillStyle='rgba(10,13,17,.62)';
-    const r=Math.round(fs*0.4);
-    g.beginPath();
-    if(g.roundRect)g.roundRect(x,y,boxW,boxH,r);else g.rect(x,y,boxW,boxH);
-    g.fill();
-    g.fillStyle='#fff';
-    lines.forEach((t,i)=>g.fillText(t,x+pad,y+pad*0.6+i*lh,boxW-pad*2));
+    // ── A SCRIM, NOT A SLAB (owner 2026-09-22: "gotta look better than
+    // company cam") ──────────────────────────────────────────────────────────
+    // The slab was legible but it was a grey box sitting on the photo, with a
+    // hard edge that cut through whatever was behind it. A gradient that fades
+    // up into the image is readable on a white garage door and in a
+    // crawlspace, and it does not look bolted on.
+    //
+    // The lines are also no longer equals. The address is the thing an adjuster
+    // reads, so it is set largest and last in the stack; the business and the
+    // moment sit above it; the coordinates go quiet underneath.
+    const U=Math.min(w,h)/100;
+    const addrI=lines.length>2?2:lines.length-1;   // where() lands third when present
+    const fA=Math.max(15,Math.round(U*5.0));
+    const fB=Math.max(11,Math.round(U*3.1));
+    const fC=Math.max(10,Math.round(U*2.6));
+    const sizeOf=(i)=>i===addrI?fA:(i>addrI?fC:fB);
+    const lineH=(i)=>Math.round(sizeOf(i)*(i===addrI?1.18:1.5));
+    const padX=Math.round(U*4.2), padB=Math.round(U*4.0);
+    let block=0;lines.forEach((t,i)=>{block+=lineH(i);});
+    const scrim=Math.min(h,block+padB*2.2);
+    const grad=g.createLinearGradient(0,h-scrim*1.9,0,h);
+    grad.addColorStop(0,'rgba(8,10,14,0)');
+    grad.addColorStop(0.45,'rgba(8,10,14,0.46)');
+    grad.addColorStop(1,'rgba(8,10,14,0.95)');
+    g.fillStyle=grad;g.fillRect(0,Math.max(0,h-scrim*1.9),w,Math.min(h,scrim*1.9));
+    g.textBaseline='alphabetic';
+    let yy=h-padB;
+    for(let i=lines.length-1;i>=0;i--){
+      const fs2=sizeOf(i);
+      const weight=i===addrI?'800':(i>addrI?'500':'600');
+      g.font=weight+' '+fs2+'px ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif';
+      g.fillStyle=i===addrI?'#fff':(i>addrI?'rgba(255,255,255,0.74)':'rgba(255,255,255,0.9)');
+      if(i===addrI){g.shadowColor='rgba(0,0,0,0.55)';g.shadowBlur=U*1.6;g.shadowOffsetY=U*0.2;}
+      g.fillText(lines[i],padX,yy,w-padX*2);
+      g.shadowColor='transparent';g.shadowBlur=0;g.shadowOffsetY=0;
+      yy-=lineH(i);
+    }
     const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.92));
     if(!blob||!blob.size)return null;
     blob.name=(fileOrBlob.name||'shot.jpg').replace(/\.[a-z0-9]+$/i,'')+'.jpg';
@@ -719,6 +764,137 @@ function _pcRevViewerHTML(rows){
       '<button type="button" class="pc-side" onclick="tdReviewStep(1)">Next</button>'+
     '</div>';
 }
+// ── GPS INTO THE FILE ITSELF ────────────────────────────────────────────────
+// A canvas re-encode strips EXIF, always, and a getUserMedia frame never had
+// any, so every photo this app has ever written left with a 76 byte stub
+// holding nothing but its pixel dimensions. The coordinates were on the row in
+// our database and nowhere in the JPEG, so a photo emailed to an adjuster
+// arrived with no evidence attached to it.
+//
+// This writes a real APP1: GPS latitude, longitude, the fix's accuracy, and
+// the moment it was taken, in the form every EXIF reader on earth expects.
+// Hand-rolled rather than a library, because the whole of what we need is one
+// IFD and pulling in a dependency to write 200 bytes is not a trade.
+function _pcExifBytes(lat,lon,when,accM){
+  if(!(typeof lat==='number'&&typeof lon==='number'&&isFinite(lat)&&isFinite(lon)))return null;
+  const d=new Date(when||Date.now());
+  if(isNaN(d.getTime()))return null;
+  const p2=(n)=>String(n).padStart(2,'0');
+  // EXIF DateTimeOriginal is LOCAL time with no zone, and GPSTimeStamp/
+  // GPSDateStamp are UTC. Writing local into the GPS fields is the classic
+  // wrong-by-hours bug, so the two are taken from different getters on purpose.
+  const local=d.getFullYear()+':'+p2(d.getMonth()+1)+':'+p2(d.getDate())+' '+
+              p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());
+  const utcDate=d.getUTCFullYear()+':'+p2(d.getUTCMonth()+1)+':'+p2(d.getUTCDate());
+
+  const rat=(v,den)=>[Math.round(v*den),den];
+  // Degrees, minutes, seconds: seconds keep four decimal places, which is
+  // about a centimetre and far finer than any phone fix.
+  const dms=(v)=>{
+    const a=Math.abs(v),deg=Math.floor(a),mf=(a-deg)*60,min=Math.floor(mf),sec=(mf-min)*60;
+    return [[deg,1],[min,1],rat(sec,10000)];
+  };
+  const entries=[];   // {tag,type,count,bytes|inline}
+  const asc=(s)=>{const b=[];for(let i=0;i<s.length;i++)b.push(s.charCodeAt(i)&0xff);b.push(0);return b;};
+  const ratBytes=(pairs)=>{const b=[];pairs.forEach(([n,dd])=>{b.push(n>>>24&255,n>>>16&255,n>>>8&255,n&255,dd>>>24&255,dd>>>16&255,dd>>>8&255,dd&255);});return b;};
+
+  const gps=[];
+  gps.push({tag:0x0000,type:1,count:4,bytes:[2,3,0,0]});                    // GPSVersionID
+  gps.push({tag:0x0001,type:2,count:2,bytes:asc(lat>=0?'N':'S')});
+  gps.push({tag:0x0002,type:5,count:3,bytes:ratBytes(dms(lat))});
+  gps.push({tag:0x0003,type:2,count:2,bytes:asc(lon>=0?'E':'W')});
+  gps.push({tag:0x0004,type:5,count:3,bytes:ratBytes(dms(lon))});
+  gps.push({tag:0x0007,type:5,count:3,bytes:ratBytes([[d.getUTCHours(),1],[d.getUTCMinutes(),1],rat(d.getUTCSeconds(),1)])});
+  if(typeof accM==='number'&&isFinite(accM)&&accM>0)
+    gps.push({tag:0x001F,type:5,count:1,bytes:ratBytes([rat(accM,100)])});  // GPSHPositioningError
+  gps.push({tag:0x001D,type:2,count:11,bytes:asc(utcDate)});
+
+  const exifSub=[{tag:0x9003,type:2,count:20,bytes:asc(local)}];            // DateTimeOriginal
+  const ifd0=[{tag:0x0132,type:2,count:20,bytes:asc(local)}];               // DateTime
+
+  // Lay the three IFDs out one after another, each followed by its own data.
+  const sizeOf=(list)=>2+list.length*12+4;
+  const dataOf=(list)=>list.reduce((n,e)=>n+(e.bytes.length>4?e.bytes.length+(e.bytes.length&1):0),0);
+  const TIFF=8;
+  const ifd0At=TIFF;
+  const ifd0End=ifd0At+sizeOf(ifd0)+2*12;            // +2 for the pointers added below
+  const exifAt=ifd0End+dataOf(ifd0);
+  const gpsAt=exifAt+sizeOf(exifSub)+dataOf(exifSub);
+  const gpsEnd=gpsAt+sizeOf(gps)+dataOf(gps);
+
+  const out=[];
+  const u16=(v)=>out.push(v>>>8&255,v&255);
+  const u32=(v)=>out.push(v>>>24&255,v>>>16&255,v>>>8&255,v&255);
+  out.push(0x4D,0x4D); u16(0x002A); u32(TIFF);       // MM, 42, IFD0 offset
+
+  const writeIfd=(list,extra,dataStart)=>{
+    const all=list.concat(extra||[]);
+    all.sort((a,b)=>a.tag-b.tag);
+    u16(all.length);
+    let dp=dataStart;
+    const tail=[];
+    all.forEach(e=>{
+      u16(e.tag); u16(e.type); u32(e.count);
+      if(e.ptr!=null){u32(e.ptr);return;}
+      if(e.bytes.length<=4){
+        const b=e.bytes.slice(); while(b.length<4)b.push(0);
+        out.push(b[0],b[1],b[2],b[3]);
+      }else{
+        u32(dp);
+        const b=e.bytes.slice(); if(b.length&1)b.push(0);
+        tail.push(b); dp+=b.length;
+      }
+    });
+    u32(0);
+    tail.forEach(b=>b.forEach(x=>out.push(x)));
+  };
+  writeIfd(ifd0,[{tag:0x8769,type:4,count:1,ptr:exifAt,bytes:[]},
+                 {tag:0x8825,type:4,count:1,ptr:gpsAt,bytes:[]}],ifd0End);
+  writeIfd(exifSub,[],exifAt+sizeOf(exifSub));
+  writeIfd(gps,[],gpsAt+sizeOf(gps));
+  void gpsEnd;
+  return new Uint8Array(out);
+}
+
+// Put that APP1 into the JPEG, replacing the stub the canvas encoder wrote.
+// Two EXIF segments in one file is undefined behaviour and readers disagree
+// about which wins, so the old one goes rather than the new one being appended.
+async function _pcWithGps(blob,lat,lon,when,accM){
+  try{
+    const ex=_pcExifBytes(lat,lon,when,accM);
+    if(!ex||!blob)return blob;
+    const buf=new Uint8Array(await blob.arrayBuffer());
+    if(buf[0]!==0xFF||buf[1]!==0xD8)return blob;          // not a JPEG, leave it alone
+    let i=2;
+    while(i<buf.length-1&&buf[i]===0xFF){
+      const m=buf[i+1];
+      if(m===0xDA||m===0xD9)break;                        // image data starts here
+      const len=(buf[i+2]<<8)|buf[i+3];
+      if(m===0xE1){                                        // the stub: drop it
+        const cut=new Uint8Array(buf.length-(2+len));
+        cut.set(buf.subarray(0,i),0);cut.set(buf.subarray(i+2+len),i);
+        return _pcSpliceApp1(cut,ex,blob.type);
+      }
+      if(m<0xE0||m>0xEF)break;                             // past the app segments
+      i+=2+len;
+    }
+    return _pcSpliceApp1(buf,ex,blob.type);
+  }catch(_e){return blob;}                                 // never lose a photo over metadata
+}
+function _pcSpliceApp1(buf,ex,type){
+  const seg=6+ex.length+2;                                 // "Exif\0\0" + payload + the length field
+  const out=new Uint8Array(buf.length+2+seg);
+  let o=0;
+  out[o++]=0xFF;out[o++]=0xD8;
+  out[o++]=0xFF;out[o++]=0xE1;
+  out[o++]=(seg>>8)&255;out[o++]=seg&255;
+  out[o++]=0x45;out[o++]=0x78;out[o++]=0x69;out[o++]=0x66;out[o++]=0;out[o++]=0;
+  out.set(ex,o);o+=ex.length;
+  out.set(buf.subarray(2),o);
+  return new Blob([out],{type:type||'image/jpeg'});
+}
+
+
 function _pcEscUrl(u){return String(u||'').replace(/'/g,'%27').replace(/"/g,'&quot;');}
 // ── The swipe (owner 2026-09-22: "cant scroll through like you can ios
 // images") ──────────────────────────────────────────────────────────────────
@@ -764,56 +940,95 @@ function _pcRevStageHTML(rows){
 // speed bar you set (caught by its own test, 2026-09-22). So speed can only
 // commit a drag that already travelled a real distance.
 const _PC_SWIPE_FRACTION=0.28, _PC_SWIPE_VELOCITY=0.45, _PC_SWIPE_MIN=44;
+// Down is a shorter commitment than sideways: putting a photo away is one
+// motion, where stepping through a set is repeated, so it wants less travel.
+const _PC_DISMISS_FRACTION=0.16;
 function _pcRevBindSwipe(){
+  // Bound on the STAGE, not the track, because a single photo has no track and
+  // still has to be dismissable. Horizontal drives the carousel when there is
+  // one; down always dismisses.
+  const stage=document.getElementById('pc-rev-stage');
+  const sheet=document.getElementById('pc-rev');
+  if(!stage||!sheet)return;
   const track=document.getElementById('pc-rev-track');
-  if(!track)return;
-  const W=()=>(track.parentElement?track.parentElement.clientWidth:0)||1;
-  let x0=0,y0=0,t0=0,dx=0,active=false,decided=false;
-  const at=(px)=>{track.style.transform='translate3d(calc(-33.3333% + '+px+'px),0,0)';};
-  const settle=(to,then)=>{
-    track.classList.add('snap');
-    track.style.transform='translate3d(calc(-33.3333% + '+to+'px),0,0)';
+  const W=()=>stage.clientWidth||1;
+  const H=()=>stage.clientHeight||1;
+  let x0=0,y0=0,t0=0,dx=0,dy=0,active=false,axis='';
+  const atX=(px)=>{if(track)track.style.transform='translate3d(calc(-33.3333% + '+px+'px),0,0)';};
+  // Down is a dismissal in progress, so the whole sheet answers: it falls with
+  // the thumb, shrinks a little, and lets the app behind it show through. A
+  // photo that only slides looks stuck; one that recedes looks like it is being
+  // put away.
+  const atY=(py)=>{
+    const d=Math.max(0,py);
+    sheet.style.transform='translate3d(0,'+d+'px,0) scale('+(1-Math.min(d/1400,0.14))+')';
+    sheet.style.opacity=String(1-Math.min(d/620,0.62));
+  };
+  const clearY=()=>{sheet.style.transform='';sheet.style.opacity='';};
+  const settle=(el,css,then)=>{
+    el.classList.add('snap');
+    if(css!=null)el.style.transform=css;
     let done=false;
-    const fin=()=>{if(done)return;done=true;track.removeEventListener('transitionend',fin);then();};
-    track.addEventListener('transitionend',fin);
+    const fin=()=>{if(done)return;done=true;el.removeEventListener('transitionend',fin);then();};
+    el.addEventListener('transitionend',fin);
     // A transform that does not change fires no transitionend, and a dropped
-    // frame can swallow one, so the index must never depend on the event alone.
-    setTimeout(fin,320);
+    // frame can swallow one, so nothing may depend on the event alone.
+    setTimeout(fin,340);
   };
   const down=(e)=>{
     if(e.button!=null&&e.button!==0)return;
-    active=true;decided=false;dx=0;
+    active=true;axis='';dx=0;dy=0;
     x0=e.clientX;y0=e.clientY;t0=Date.now();
-    track.classList.remove('snap');
-    try{track.setPointerCapture&&track.setPointerCapture(e.pointerId);}catch(_e){}
+    if(track)track.classList.remove('snap');
+    sheet.classList.remove('snap');
+    try{stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);}catch(_e){}
   };
   const move=(e)=>{
     if(!active)return;
     const ex=e.clientX-x0,ey=e.clientY-y0;
-    // The first movement decides whose gesture this is. Vertical belongs to the
-    // page, and stealing it would trap a thumb that meant to scroll.
-    if(!decided){
+    // The first few pixels decide which gesture this is, and it does not change
+    // its mind afterwards. Without the lock a drifting thumb drives both at
+    // once and the photo shears sideways while it falls.
+    if(!axis){
       if(Math.abs(ex)<6&&Math.abs(ey)<6)return;
-      decided=true;
-      if(Math.abs(ey)>Math.abs(ex)){active=false;return;}
+      axis=Math.abs(ey)>Math.abs(ex)?'y':'x';
+      // Up is not a gesture here. Only down puts the photo away, so an upward
+      // drag is released rather than half-animated.
+      if(axis==='y'&&ey<0){active=false;return;}
+      if(axis==='x'&&!track){active=false;return;}
     }
-    dx=ex;at(dx);
+    if(axis==='x'){dx=ex;atX(dx);}
+    else{dy=ey;atY(dy);}
     if(e.cancelable)e.preventDefault();
   };
   const up=()=>{
     if(!active){active=false;return;}
     active=false;
-    const w=W(),dt=Math.max(1,Date.now()-t0),v=Math.abs(dx)/dt;
+    const dt=Math.max(1,Date.now()-t0);
+    if(axis==='y'){
+      const v=dy/dt;
+      // Same rule as the carousel: a flick still has to BE a movement, or a
+      // fast twitch closes the photo a contractor was reading.
+      const go=dy>H()*_PC_DISMISS_FRACTION||(dy>_PC_SWIPE_MIN&&v>_PC_SWIPE_VELOCITY);
+      if(!go){settle(sheet,'translate3d(0,0,0) scale(1)',()=>{sheet.classList.remove('snap');clearY();});return;}
+      sheet.classList.add('snap');
+      sheet.style.transform='translate3d(0,'+H()+'px,0) scale(0.88)';
+      sheet.style.opacity='0';
+      settle(sheet,null,()=>{clearY();sheet.classList.remove('snap');tdReviewClose();});
+      return;
+    }
+    if(axis!=='x'||!track||!dx){if(track){track.classList.remove('snap');track.style.transform='';}return;}
+    const w=W(),v=Math.abs(dx)/dt;
     const go=Math.abs(dx)>w*_PC_SWIPE_FRACTION
           ||(Math.abs(dx)>_PC_SWIPE_MIN&&v>_PC_SWIPE_VELOCITY);
-    if(!go||!dx){settle(0,()=>{track.classList.remove('snap');track.style.transform='';});return;}
+    if(!go){settle(track,'translate3d(-33.3333%,0,0)',()=>{track.classList.remove('snap');track.style.transform='';});return;}
     const d=dx<0?1:-1;
-    settle(d<0?w:-w,()=>{tdReviewStep(d);});
+    settle(track,'translate3d(calc(-33.3333% + '+(d<0?w:-w)+'px),0,0)',()=>{tdReviewStep(d);});
   };
-  track.addEventListener('pointerdown',down);
-  track.addEventListener('pointermove',move,{passive:false});
-  track.addEventListener('pointerup',up);
-  track.addEventListener('pointercancel',up);
+  stage.addEventListener('pointerdown',down);
+  stage.addEventListener('pointermove',move,{passive:false});
+  stage.addEventListener('pointerup',up);
+  stage.addEventListener('pointercancel',up);
 }
 // A keyboard is a real way to look through photos on a laptop, and it costs
 // two lines.
@@ -1274,11 +1489,18 @@ function _pcCurrentFix(){
 function _pcStampGeo(row){
   try{
     if(typeof _lastGeoFix==='object'&&_lastGeoFix&&_lastGeoFix.lat!=null){
-      row.lat=_lastGeoFix.lat;row.lon=_lastGeoFix.lon;return;
+      row.lat=_lastGeoFix.lat;row.lon=_lastGeoFix.lon;
+      if(_lastGeoFix.acc!=null)row.accM=_lastGeoFix.acc;
+      return;
     }
     if(!navigator.geolocation)return;
     navigator.geolocation.getCurrentPosition(pos=>{
-      row.lat=pos.coords.latitude;row.lon=pos.coords.longitude;saveAll();
+      row.lat=pos.coords.latitude;row.lon=pos.coords.longitude;
+      // How good the fix WAS, kept because the EXIF has a field for exactly
+      // this and a coordinate with no stated accuracy overclaims. It is also
+      // the honest answer when a stamp names a house 40m away.
+      if(typeof pos.coords.accuracy==='number')row.accM=Math.round(pos.coords.accuracy);
+      saveAll();
     },()=>{},{timeout:4000,maximumAge:120000});
   }catch(_e){}
 }

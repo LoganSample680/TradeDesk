@@ -551,23 +551,71 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r.parked, 'and the track is back on centre').toBe('');
     });
 
-    test('a vertical drag belongs to the page, not to the carousel', async () => {
+    // A drag on the stage, on whichever axis. The horizontal helper above
+    // targets the track; dismissal has to work with no track at all, so this
+    // one drives the stage the way a real thumb does.
+    const dragStage = (page, from, to, steps) => page.evaluate(async ([from, to, steps]) => {
+      const stage = document.getElementById('pc-rev-stage');
+      const ev = (type, x, y) => stage.dispatchEvent(new PointerEvent(type,
+        { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0, isPrimary: true }));
+      ev('pointerdown', from[0], from[1]);
+      const seen = [];
+      for (let i = 1; i <= steps; i++) {
+        ev('pointermove', from[0] + (to[0] - from[0]) * (i / steps), from[1] + (to[1] - from[1]) * (i / steps));
+        seen.push(document.getElementById('pc-rev')?.style.transform || '');
+      }
+      ev('pointerup', to[0], to[1]);
+      await new Promise(r => setTimeout(r, 420));
+      return { seen };
+    }, [from, to, steps]);
+
+    // WHAT VERTICAL MEANS CHANGED. It used to be handed back to the page,
+    // because nothing owned it and stealing it would trap a thumb that meant to
+    // scroll. The viewer does not scroll, so down is free, and putting a photo
+    // away with it is the gesture people already have (owner 2026-09-22).
+    test('pulling down puts the photo away', async () => {
       await shootUnfiled(3);
       await page.evaluate(() => tdReviewOpen(1));
-      const r = await page.evaluate(async () => {
-        const track = document.getElementById('pc-rev-track');
-        const ev = (type, x, y) => track.dispatchEvent(new PointerEvent(type,
-          { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0, isPrimary: true }));
-        ev('pointerdown', 200, 300);
-        ev('pointermove', 206, 380);          // mostly down
-        ev('pointermove', 210, 460);
-        const moved = track.style.transform;
-        ev('pointerup', 210, 460);
-        await new Promise(r => setTimeout(r, 380));
-        return { moved, title: document.querySelector('.pc-rev-title').textContent };
-      });
-      expect(r.moved, 'the track never moved').toBe('');
+      const r = await dragStage(page, [200, 200], [210, 600], 5);
+      // The sheet followed the thumb rather than waiting for the release.
+      expect(r.seen.some(t => /translate3d\(0px?,\s*\d/.test(t) || /translate3d\(0,/.test(t)),
+        'the sheet falls with the thumb').toBe(true);
+      const gone = await page.evaluate(() => !document.getElementById('pc-rev'));
+      expect(gone, 'and the viewer is closed at the end of it').toBe(true);
+    });
+
+    test('a small pull springs back and keeps the photo open', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(1));
+      await dragStage(page, [200, 300], [204, 330], 3);
+      const r = await page.evaluate(() => ({
+        open: !!document.getElementById('pc-rev'),
+        parked: document.getElementById('pc-rev')?.style.transform || '',
+        title: document.querySelector('.pc-rev-title')?.textContent,
+      }));
+      expect(r.open, 'a 30px pull is not a dismissal').toBe(true);
+      expect(r.parked, 'and the sheet is back where it was').toBe('');
       expect(r.title).toBe('2 of 3');
+    });
+
+    test('pulling UP is not a gesture at all', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(1));
+      await dragStage(page, [200, 600], [206, 200], 5);
+      const r = await page.evaluate(() => ({
+        open: !!document.getElementById('pc-rev'),
+        parked: document.getElementById('pc-rev')?.style.transform || '',
+      }));
+      expect(r.open, 'up never closes anything').toBe(true);
+      expect(r.parked, 'and nothing was half-animated on the way').toBe('');
+    });
+
+    test('a single photo can still be put away, having no track to drag', async () => {
+      await shootUnfiled(1);
+      await page.evaluate(() => tdReviewOpen(0));
+      await dragStage(page, [200, 200], [205, 620], 5);
+      expect(await page.evaluate(() => !document.getElementById('pc-rev')),
+        'dismissal is bound to the stage, which one photo still has').toBe(true);
     });
 
     test('one photo is not a carousel', async () => {
@@ -743,7 +791,13 @@ test.describe('Photo capture: the sheet itself', () => {
   // "If it's taken onsite gps coordinates search the record and attach where
   // exactly on the client record?" So the card opens on what the coordinates
   // prove, and only asks what the data cannot answer by itself.
+  // Page-owned, like house() and pepe(). Fifth time tonight that a fixture
+  // seeding in one page.evaluate and a test reading in the next has produced a
+  // red shard: the app's periodic cloud pull replaces these arrays wholesale,
+  // and anything landing in the gap empties them. Tests that read the screen
+  // call __attachSeed() inside their own evaluate.
   const attachSeed = () => page.evaluate(() => {
+    window.__attachSeed = () => {
     clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
     clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS', lat: 37.6889, lon: -97.3361 });
     clients.push({ id: 502, name: 'Far Away Co', addr: '900 Mile Rd', lat: 38.9, lon: -98.9 });
@@ -752,11 +806,14 @@ test.describe('Photo capture: the sheet itself', () => {
     photos.push({ id: 951, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, lat: 37.68892, lon: -97.33612, uploadedAt: new Date().toISOString() });
     tdReviewShots([950, 951]);
     tdReviewAttach();
+    };
+    return window.__attachSeed();
   });
 
   test('the coordinates put the right record at the top, with the distance', async () => {
     await attachSeed();
     const r = await page.evaluate(() => {
+      __attachSeed();
       const near = [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent);
       // The matches themselves, not just how many: a count that disagrees
       // with the screen cannot say which row it did not expect.
@@ -794,6 +851,7 @@ test.describe('Photo capture: the sheet itself', () => {
   test('tapping the on-site match files the whole burst on that job, no more questions', async () => {
     await attachSeed();
     const r = await page.evaluate(() => {
+      __attachSeed();
       document.querySelector('#pc-att .pc-file-opt.near').click();
       const mine = [950, 951].map(id => photos.find(p => String(p.id) === String(id)));
       return {
@@ -809,7 +867,7 @@ test.describe('Photo capture: the sheet itself', () => {
 
   test('the attach card opens ON TOP of the album, not behind it', async () => {
     await attachSeed();
-    const r = await page.evaluate(() => ({
+    const r = await page.evaluate(() => (__attachSeed(), {
       card: +getComputedStyle(document.getElementById('pc-att')).zIndex,
       sheet: +getComputedStyle(document.getElementById('pc-rev')).zIndex,
     }));
