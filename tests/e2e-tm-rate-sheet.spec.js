@@ -1496,6 +1496,47 @@ test.describe('the ceiling leads, not the guess', () => {
       expect(r.text).toContain('2 on site');
     });
 
+    // THE ONE THE FOLD BROKE. The hide-rate toggle lives inside this card, so
+    // folding it hid the most consequential fact about the number on the line
+    // above. And the preference is sticky (S.tmHideRate follows him to the
+    // tablet), so a man who turned it on months ago and forgot would fold this
+    // card on every job and never be told again.
+    test('the folded rate line says when the customer will not see it', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => _tmSetHideRate(true));
+      const on = await state('tm-blk-rate');
+      expect(on.fold, 'it had to still be folded for this to mean anything').toBe('1');
+      expect(on.text).toContain('$95/hr each');
+      expect(on.text, 'the fold hid whether the rate is even on the proposal')
+        .toContain('off the proposal');
+      await page.evaluate(() => _tmSetHideRate(false));
+      const off = await state('tm-blk-rate');
+      // Printing the rate is what a T&M contract normally does. Only the
+      // exception is marked; a badge on every proposal is the noise this page
+      // spent the day shedding.
+      expect(off.text).not.toContain('off the proposal');
+      expect(off.text).toContain('$95/hr each');
+    });
+
+    // Where a statute makes the rate a required term the flag is forced off, so
+    // the line must never claim a proposal is missing a term it is carrying.
+    test('a state that requires the rate never shows that line', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => {
+        _tmSetHideRate(true);
+        const a = document.getElementById('gei-addr');
+        if (a) a.value = '12 Main St, Philadelphia PA 19103';
+        _tmInputChange(); _tmApplyLayers();
+      });
+      const r = await state('tm-blk-rate');
+      expect(r.text).not.toContain('off the proposal');
+      await page.evaluate(() => {
+        const a = document.getElementById('gei-addr');
+        if (a) a.value = '700 Rate Rd, Wichita KS 67202';
+        _tmSetHideRate(false); _tmApplyLayers();
+      });
+    });
+
     test('tapping one opens it, and it stays open through a redraw', async () => {
       await fill(95, '12,000');
       await page.evaluate(() => _tmFoldToggle('tm-blk-rate'));

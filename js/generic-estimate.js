@@ -4410,8 +4410,21 @@ function _tmFoldAll(){
   const money=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const rate=Number(_tmRatePerMan)||0;
   const crew=Math.max(1,Number(_tmCrewCount)||1);
+  // WHETHER THEY READ IT BELONGS ON THE FOLDED LINE. The toggle lives inside
+  // this card, so folding it hid the most consequential fact about the number
+  // on the line above: "$95/hr each" says nothing about whether the customer
+  // ever sees $95, and if anything implies they do.
+  //
+  // It is worse than a blank, because the preference is STICKY (S.tmHideRate,
+  // so it follows him to the tablet). A man who turned it on months ago and
+  // forgot would fold this card on every job and never be told again.
+  //
+  // Only the exceptional state is marked. Printing the rate is what a T&M
+  // contract normally does, and a badge on every proposal saying so is the
+  // noise this page has spent all day shedding.
+  const hidden=_tmHideRate&&_tmCanHideRate();
   _tmFold('tm-blk-rate','Your rate',
-    rate>0?(money(rate)+'/hr each'+(crew>1?(' \u00b7 '+crew+' on site'):'')):'');
+    rate>0?(money(rate)+'/hr each'+(hidden?' \u00b7 off the proposal':(crew>1?(' \u00b7 '+crew+' on site'):''))):'');
   const cap=_tmCapVal();
   _tmFold('tm-blk-nte','The most it can cost',cap>0?money(cap):'');
   // The same rows _tmRenderMatList draws, counted the same way: everything in

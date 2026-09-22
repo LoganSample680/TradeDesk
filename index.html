@@ -806,8 +806,13 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 .tm-fold{display:flex;align-items:center;gap:10px;width:100%;padding:13px 15px;border:0;
   background:none;font-family:inherit;cursor:pointer;text-align:left}
 .tm-fold-l{font-size:13.5px;font-weight:700;color:var(--text2);min-width:0}
+/* WRAPS, never ellipsis. With nowrap the hidden-rate line truncated to "not
+   on the pro..." and the one word that mattered was the one that got cut.
+   These values are figures and short counts, so wrapping costs a second line
+   only in the rare case that needs it, and an ellipsis on a contract term is
+   worse than a tall row. */
 .tm-fold-v{flex:1;min-width:0;text-align:right;font-size:13.5px;font-weight:800;color:var(--text);
-  font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  font-variant-numeric:tabular-nums;line-height:1.35}
 .tm-fold-c{flex-shrink:0;color:var(--text3);display:flex}
 .card[data-fold="1"]{padding:0}
 .card[data-fold="1"] > *:not(.tm-fold){display:none}
