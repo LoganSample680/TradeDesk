@@ -205,6 +205,8 @@ const _TIMK_VERBS=new Set([
   // The plain ones a man writes on a list
   'do','redo','fix','build','make','cut','put','take','bring','leave','call','order','pick',
   'deliver','start','change','swap','add','drop','open','close','trim','apply','adjust','verify',
+  // "getting rid of the copper" is how it gets said, and 'get' was missing.
+  'get','rid','hook','drain','swap','finish','hang','route','feed','mount','strap','secure',
 ]);
 
 // What a man says before he gets to the work, which is not the work. "Okay so
@@ -215,6 +217,10 @@ const _TIMK_SUBJECT=/^(?:(?:i|we|they|you)(?:\s*(?:'|’)?(?:re|m|ll|ve|d))?|im|
 // The words that always start a new step when they join two clauses.
 const _TIMK_JOIN=/\s+(?:and\s+then|then|after\s+that|afterwards?|next(?:\s+up)?|followed\s+by|before\s+that)\s+/i;
 
+// Words that ride along with a verb and say nothing about whether a new action
+// started: conjunctions, particles and bare pronouns.
+const _TIMK_RIDER=/^(?:and|or|then|plus|also|up|down|out|off|in|on|back|over|through|again|it|them|everything)$/;
+
 function _timkVerbLike(w0){
   const w=String(w0||'').toLowerCase().replace(/[^a-z]/g,'');
   if(!w)return false;
@@ -222,11 +228,26 @@ function _timkVerbLike(w0){
   // "replacing", "hauling", "stripping", "rolled", "tested": the same verbs the
   // way a man narrates a day. Checked against the bare stem so the table does
   // not need every ending.
-  const stem=(n)=>_TIMK_VERBS.has(w.slice(0,-n))||_TIMK_VERBS.has(w.slice(0,-n)+'e');
-  if(/ing$/.test(w)&&stem(3))return true;
-  if(/ed$/.test(w)&&(stem(2)||stem(1)))return true;
-  if(/s$/.test(w)&&stem(1))return true;
+  // THE DOUBLED CONSONANT. "putting" strips to "putt", not "put", and the same
+  // goes for getting, setting, cutting, running, digging and stripping, which
+  // is most of how a man narrates a day's work. Every one of them failed.
+  // Found 2026-09-22 on a real bid: "Putting In A Water Softener, Getting Tid
+  // Of Some Copper For Pex A And Outting In A Tankless Water heater" came back
+  // as ONE step because neither verb in it was recognised as a verb.
+  const bare=(t)=>_TIMK_VERBS.has(t)||_TIMK_VERBS.has(t+'e')||
+    (/([bcdfglmnprstvz])\1$/.test(t)&&_TIMK_VERBS.has(t.slice(0,-1)));
+  if(/ing$/.test(w)&&bare(w.slice(0,-3)))return true;
+  if(/ed$/.test(w)&&(bare(w.slice(0,-2))||bare(w.slice(0,-1))))return true;
+  if(/s$/.test(w)&&bare(w.slice(0,-1)))return true;
   return false;
+}
+
+// Is anything being acted ON in here? A verb with an object starts a step; a
+// bare verb is half of a compound one ("locate AND cut out the section").
+function _timkHasObject(frag){
+  const words=String(frag||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const rest=words.slice(1).filter(w=>!_TIMK_RIDER.test(w.replace(/[^a-z]/g,'')));
+  return rest.some(w=>!_timkVerbLike(w));
 }
 
 // Does this fragment START A NEW STEP, or is it saying how the last one is
@@ -243,10 +264,30 @@ function _timkNewAction(frag){
   // Particles ride with their verb and say nothing about whether a new action
   // started: "tested and pressured UP" is still just manner. Counting "up" as
   // an object split it off as its own step.
-  const rest=words.slice(1).filter(w=>!/^(?:and|or|then|plus|also|up|down|out|off|in|on|back|over|through|again|it|them|everything)$/
-    .test(w.replace(/[^a-z]/g,'')));
+  const rest=words.slice(1).filter(w=>!_TIMK_RIDER.test(w.replace(/[^a-z]/g,'')));
   if(!rest.length)return true;
   return rest.some(w=>!_timkVerbLike(w));
+}
+
+// ── "AND", WHICH IS TWO DIFFERENT WORDS ──────────────────────────────────────
+//
+// "Locate AND cut out the failed section" is ONE step: two verbs sharing one
+// object. "Getting rid of the copper AND putting in a tankless" is two steps:
+// each verb has its own object. The difference is whether the LEFT side names
+// something of its own, so that is what is tested, on both sides.
+//
+// Strict on the right: a bare gerund after "and" is usually a noun in this
+// trade ("replace the trim and siding"), so it only starts a step when it has
+// an object of its own too.
+function _timkAndSplits(left,right){
+  if(!_timkHasObject(left))return false;
+  const words=String(right||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if(!words.length)return false;
+  const w=words[0].replace(/[^a-z]/g,'');
+  // A verb, or the -ing form of anything, which is the register dictation
+  // produces: "putting in", "getting rid of", "running new".
+  if(!_timkVerbLike(w)&&!(/ing$/.test(w)&&w.length>=5))return false;
+  return _timkHasObject(right);
 }
 
 function _timkTidy(t){
@@ -292,7 +333,18 @@ function timScopeFrom(text){
     // Sentence enders, then the joining words, both of which always split.
     line.split(/(?<=[.;!?])\s+|\s*;\s*/).forEach(sent=>{
       if(!sent||!sent.trim())return;
-      sent.split(_TIMK_JOIN).forEach(part=>{
+      sent.split(_TIMK_JOIN).forEach(part0=>{
+        if(!part0||!part0.trim())return;
+        // Bare "and", before the commas, because a dictated sentence often has
+        // no commas in it at all and "and" is the only seam there is.
+        const ands=String(part0).split(/\s+and\s+/i);
+        const chunks=[];
+        ands.forEach((a,i)=>{
+          if(i===0){chunks.push(a);return;}
+          if(_timkAndSplits(chunks[chunks.length-1],a))chunks.push(a);
+          else chunks[chunks.length-1]=chunks[chunks.length-1]+' and '+a;
+        });
+        chunks.forEach(part=>{
         if(!part||!part.trim())return;
         // And only now the commas, and only where a new action starts.
         const bits=part.split(/,\s*/);
@@ -304,6 +356,7 @@ function timScopeFrom(text){
           else buf=buf+', '+bit;
         });
         push(buf);
+        });
       });
     });
   });

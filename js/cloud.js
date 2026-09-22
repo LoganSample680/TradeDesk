@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.22.26.11';
+const APP_VERSION='09.22.26.15';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1529,8 +1529,23 @@ const _TD_TABLES=[
   {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
   {t:'td_scans',       get:()=>scans,       set:v=>{scans.length=0;v.forEach(r=>scans.push(r));},           tx:null},
   {t:'td_equipment',   get:()=>equipment,   set:v=>{equipment.length=0;v.forEach(r=>equipment.push(r));},   tx:null},
+  // thumbUrl/thumbPath were NOT in this list until 2026-09-21, so every photo
+  // lost its thumbnail the moment the row round-tripped through the cloud: a
+  // second device (and the hub snapshot built on it) fell back to the full
+  // 1600px image in every 60px grid, which is exactly the egress the thumbnail
+  // was added to stop. bid_id/bid_name carry the estimate a photo was shot on
+  // (js/photo-capture.js), and a photo whose tag does not survive the sync is
+  // a photo that leaves the Before/After pair on one phone.
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
-    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
+    // originalUrl/originalPath/annotated are here for the SAME reason
+    // thumbUrl was missing and had to be added: a field the feature depends
+    // on that the sync drops is a field that exists only on the phone that
+    // wrote it. Caught by the live flow run, 2026-09-21: marking a photo up
+    // set originalUrl locally, the sync stripped it, the next delta load
+    // replaced the row, and the pointer to the UNTOUCHED original was gone.
+    // "The original is never destroyed" is the rule mark-up is built on, and
+    // an original nobody can find again is a destroyed original.
+    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,fullPath,originalFullPath,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,addr,addrM,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',fullPath:fullPath||'',originalFullPath:originalFullPath||'',annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,addr:addr||'',addrM:addrM!=null?addrM:null,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
 ];
 // Root cause (found 2026-07-10): this used to be a hand-listed object literal
 // that fell out of sync with _TD_TABLES above, td_maintenance was missing.
@@ -8142,6 +8157,8 @@ function quickScheduleJob(bidId,startKey,clientId){
     time:'',hours:null,notes:bid.notes||'',status:'upcoming',
     loggedAt:new Date().toISOString()
   });
+  // The estimate's photos follow the bid into the job (js/photo-capture.js).
+  try{if(typeof tdInheritBidPhotos==='function')tdInheritBidPhotos(bidId,jobs[jobs.length-1].id);}catch(_e){}
   saveAll();renderDash();renderJobsPage&&renderJobsPage();
   window._currentScheduleAlert=null;
   document.getElementById('sched-suggest-overlay')?.remove();
@@ -8848,7 +8865,6 @@ async function supaLoadFromCloud({silent=false}={}){
     if(typeof _fetchScopeRates==='function')_fetchScopeRates();
     if(typeof renderAllMileage==='function')renderAllMileage();
     if(typeof renderFleet==='function')renderFleet();
-    if(typeof renderGallery==='function')renderGallery();
     if(typeof renderLicensing==='function')renderLicensing();
     if(typeof renderCalendar==='function')renderCalendar();
     if(typeof renderDashActiveLiens==='function')renderDashActiveLiens();
@@ -9406,7 +9422,6 @@ function _renderAllPages(){
   if(typeof renderExpenses==='function')renderExpenses();
   if(typeof renderAllMileage==='function')renderAllMileage();
   if(typeof renderFleet==='function')renderFleet();
-  if(typeof renderGallery==='function')renderGallery();
   if(typeof renderLicensing==='function')renderLicensing();
   if(typeof renderCalendar==='function')renderCalendar();
   if(typeof renderDashActiveLiens==='function')renderDashActiveLiens();
