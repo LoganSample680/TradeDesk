@@ -461,7 +461,11 @@ function _pcRevFootHTML(rows){
         '<span class="pc-dot"></span>'+
         '<div class="pc-rev-here-t">'+
           '<div class="pc-rev-here-addr">'+escHtml((g.addr||'').split(',')[0])+'</div>'+
-          '<div class="pc-rev-here-sub">'+escHtml(g.client&&g.client.name||'')+' \u00b7 '+_pcFt(g.d)+' ft from the pin</div>'+
+          // The distance is not copy. A contractor does not care that it was
+          // 29 feet, he cares whether it is the right house (owner
+          // 2026-09-22). It is kept on the row instead, where it answers
+          // "why did it pick that one" the next time somebody asks.
+          '<div class="pc-rev-here-sub">'+escHtml(g.client&&g.client.name||'')+'</div>'+
         '</div>'+
       '</div>'+
       '<button type="button" class="pc-side go pc-rev-attach ok" id="pc-rev-confirm" onclick="tdReviewConfirmHere()">Yes, file all here</button>'+
@@ -473,12 +477,30 @@ function _pcRevFootHTML(rows){
     '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'+
   '</div>';
 }
+// ── Wrong house, move it ────────────────────────────────────────────────────
+// Until now a filed photo was filed forever: tdFilePhoto could move it
+// anywhere, and nothing in the app ever called it again. Jack has one shot
+// sitting on Pepe with no property on it, and no way to put it right.
+//
+// It is the same attach card, scoped to ONE photo, which also means a burst
+// can be split across two addresses a shot at a time.
+function tdMovePhoto(photoId){
+  const p=photos.find(x=>String(x.id)===String(photoId));
+  if(!p)return false;
+  _pcAtt={ids:[p.id],clientId:null,addr:'',bidId:null,jobId:null};
+  _pcAttPaint('who');
+  return true;
+}
+
 // One tap: the whole burst, on that customer AND that property.
 function tdReviewConfirmHere(){
   if(!_pcRev)return 0;
   const g=_pcRevGuess(_pcRevRows());
   if(!g)return 0;
-  _pcAtt={ids:_pcRev.ids.slice(),clientId:g.client.id,addr:g.addr||'',bidId:null,jobId:null};
+  _pcAtt={ids:_pcRev.ids.slice(),clientId:g.client.id,addr:g.addr||'',bidId:null,jobId:null,
+    // How far the fix was from the pin we matched, kept for the next time a
+    // photo lands on the wrong house and somebody has to work out why.
+    m:Math.round(g.d)};
   return _pcAttAfterAddr();
 }
 
@@ -496,6 +518,7 @@ function _pcRevViewerHTML(rows){
       '<button type="button" class="pc-side" onclick="tdReviewStep(-1)">Prev</button>'+
       '<button type="button" class="pc-side danger" onclick="tdReviewDelete()">Delete</button>'+
       '<button type="button" class="pc-side" onclick="tdAnnotatePhoto(\''+p.id+'\')">Mark up</button>'+
+      '<button type="button" class="pc-side" onclick="tdMovePhoto(\''+p.id+'\')">Move</button>'+
       (p.fullPath?'<button type="button" class="pc-side" id="pc-rev-full" onclick="tdPhotoFullSize(\''+p.id+'\');this.remove()">Full size</button>':'')+
       '<button type="button" class="pc-side" onclick="tdReviewStep(1)">Next</button>'+
     '</div>';
@@ -628,7 +651,7 @@ function _pcAttPaint(step,q){
     ov.innerHTML='<div class="zmodal">'+
       head('Whose '+(n===1?'photo':n+' photos')+'?','It lands on their record, and in the hub you send them.')+
       (near.length?'<div class="pc-att-near"><div class="pc-att-lbl">Shot here</div>'+
-        near.map(m=>'<button type="button" class="pc-file-opt near" onclick="tdAttachPick('+m.clientId+','+(m.jobId!=null?m.jobId:'null')+')">'+
+        near.map(m=>'<button type="button" class="pc-file-opt near" onclick="tdAttachPick('+m.clientId+','+(m.jobId!=null?m.jobId:'null')+','+JSON.stringify(m.addr||'').replace(/"/g,'&quot;')+')">'+
           escHtml(m.name||'Unnamed')+'<span>'+escHtml(m.addr||'')+(m.what?' · '+escHtml(m.what):'')+' · '+_pcFeet(m.d)+' ft away</span></button>').join('')+
         '</div>':'')+
       '<input class="pc-att-q" id="pc-att-q" placeholder="Search customers" autocomplete="off" oninput="_pcAttPaint(\'who\',this.value)" value="'+escHtml(q||'')+'">'+
@@ -673,14 +696,20 @@ function _pcAttWork(){
     .forEach(j=>out.push({kind:'job',id:j.id,label:j.name||'Job',sub:'Job'+(j.status?' · '+j.status:'')}));
   return out;
 }
-function tdAttachPick(clientId,jobId){
+function tdAttachPick(clientId,jobId,addr){
   if(!_pcAtt)return false;
   _pcAtt.clientId=clientId;
   const c=clients.find(x=>x.id===clientId);
   if(jobId!=null){
     const j=jobs.find(x=>x.id===jobId);
-    _pcAtt.jobId=jobId;_pcAtt.addr=(j&&j.addr)||(c&&c.addr)||'';
+    _pcAtt.jobId=jobId;_pcAtt.addr=(j&&j.addr)||addr||(c&&c.addr)||'';
     return tdAttachCommit();
+  }
+  // A "Shot here" row already names the property the fix landed on, so
+  // asking which house next would be asking a question we just answered.
+  if(addr){
+    _pcAtt.addr=addr;
+    return _pcAttAfterAddr();
   }
   const props=(typeof clientAddresses==='function')?clientAddresses(c):[];
   if(props.length>1)return _pcAttPaint('where'),true;
@@ -720,6 +749,7 @@ function tdAttachCommit(){
     // know WHICH one this was, and a job or proposal is not always there to
     // say it.
     if(p&&addr)p.addr=addr;
+    if(p&&_pcAtt.m!=null)p.addrM=_pcAtt.m;
     n++;
   });
   saveAll();
@@ -1110,7 +1140,11 @@ function tdReviewFileBurst(firstId,clientId,addr){
   // orphans behind exactly because the old pill filed a single shot and the
   // rest stayed unfiled with no sign that they had been left.
   let n=0;
-  b.photos.forEach(p=>{if(tdFilePhoto(p.id,clientId)){if(where)p.addr=where;n++;}});
+  const hit=tdGuessPlaceFor(b.photos[b.photos.length-1]);
+  b.photos.forEach(p=>{if(tdFilePhoto(p.id,clientId)){
+    if(where)p.addr=where;
+    if(hit&&hit.addr===where)p.addrM=Math.round(hit.d);
+    n++;}});
   saveAll();
   if(typeof renderDash==='function')try{renderDash();}catch(_e){}
   return n;

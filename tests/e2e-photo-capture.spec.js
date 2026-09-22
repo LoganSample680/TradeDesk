@@ -933,7 +933,6 @@ test.describe('Photo capture: the sheet itself', () => {
       }, ids);
       expect(r.said).toContain('6912 SW 17th St');
       expect(r.said).toContain('Pepe Miranda');
-      expect(r.said).toMatch(/\d+ ft from the pin/);
       expect(r.filed).toBe(4);                    // all four, not one
       expect(r.addrs).toEqual(['6912 SW 17th St, Topeka, KS 66615']);
       expect(r.closed).toBe(true);
@@ -988,6 +987,74 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r.label).toBe('6912 SW 17th St?');   // the house, not the customer
       expect(r.filed).toBe(4);
       expect(r.addr).toBe('6912 SW 17th St, Topeka, KS 66615');
+    });
+
+    test('the green line names the house and the customer, and no distance', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        tdReviewShots(ids);
+        const said = document.getElementById('pc-rev-here').textContent;
+        tdReviewClose();
+        return said;
+      }, ids);
+      expect(r).toContain('6912 SW 17th St');
+      expect(r).toContain('Pepe Miranda');
+      expect(r).not.toMatch(/ft|feet|metre|meter/i);   // owner: not copy
+    });
+
+    test('the distance is kept ON THE ROW, for the next time it picks wrong', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        tdReviewShots(ids);
+        document.getElementById('pc-rev-confirm').click();
+        const p = photos.find(x => String(x.id) === String(ids[0]));
+        const t = _TD_TABLES.find(x => x.t === 'td_photos');
+        const synced = t.tx([{ id: 1, url: 'u', storagePath: 's', type: 'after', caption: '', addrM: 9, uploadedAt: 'now' }])[0];
+        return { onRow: p.addrM, synced: synced.addrM };
+      }, ids);
+      expect(r.onRow).toBeLessThan(15);     // 8.8m on Jack's real fix
+      expect(r.synced).toBe(9);             // and it survives the trip
+    });
+
+    // Jack's fourth photo: already on Pepe, no property, nothing could fix it.
+    test('a filed photo can be moved, and the move is per photo', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        // as his account actually stands: one filed with no property
+        const p = photos.find(x => String(x.id) === String(ids[0]));
+        p.client_id = 901; p.client_name = 'Pepe Miranda';
+        tdReviewShots([p.id]);
+        tdReviewOpen(0);
+        const hasMove = [...document.querySelectorAll('#pc-rev .pc-side')].some(b => b.textContent === 'Move');
+        tdMovePhoto(p.id);
+        const near = [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent).join('');
+        document.querySelector('#pc-att .pc-file-opt.near').click();
+        const after = photos.find(x => String(x.id) === String(ids[0]));
+        const others = ids.slice(1).map(id => photos.find(x => String(x.id) === String(id)));
+        tdReviewClose();
+        return { hasMove, near, addr: after.addr, untouched: others.every(x => x.addr == null) };
+      }, ids);
+      expect(r.hasMove).toBe(true);
+      expect(r.near).toContain('6912 SW 17th St');
+      expect(r.addr).toBe('6912 SW 17th St, Topeka, KS 66615');
+      expect(r.untouched).toBe(true);      // one photo moved, not the burst
+    });
+
+    // The same photo, before it is moved: it must not show under the primary
+    // card eight kilometres from where he was standing.
+    test('a photo with no property shows under the house its fix names', async () => {
+      await pepe();
+      const r = await page.evaluate(() => {
+        const p = photos[0];
+        p.client_id = 901; p.client_name = 'Pepe Miranda'; delete p.addr;
+        photos.length = 1;
+        // The card's OWN function, not a copy of its rule.
+        const c = clients.find(x => x.id === 901);
+        return { onSixNine: cdPropertyPhotos(c, '6912 SW 17th St, Topeka, KS 66615', 1).length,
+                 onPrimary: cdPropertyPhotos(c, '306 SW Elmwood Ave, Topeka, KS 66606', 0).length };
+      });
+      expect(r.onSixNine).toBe(1);
+      expect(r.onPrimary).toBe(0);
     });
 
     test('a photo with no fix gets no guess at all', async () => {

@@ -3167,6 +3167,28 @@ function _cdQuoteAgain(bidId){
 // One property card = one address: Zillow facts + pre-1978 lead trigger + the
 // crew site note + every proposal/job at THIS address with dates, dollars, and
 // running billed/paid totals. Same card for the primary and every extra address.
+// Which of a customer's photos belong to THIS property. One definition, so
+// the card and its test cannot drift (§18): a test that re-implements the
+// rule proves only that it can copy the rule.
+function cdPropertyPhotos(c,addr,idx){
+  if(!c||typeof tdPhotosFor!=='function')return [];
+  const pa=String(addr||'').trim().toLowerCase();
+  return tdPhotosFor({clientId:c.id,wholeClient:true}).filter(x=>{
+    const xa=String(x.addr||'').trim().toLowerCase();
+    if(xa)return xa===pa;
+    // No address on the row, which is every photo taken before the property
+    // was recorded on it. If it carries a fix, the house it was SHOT at
+    // decides, not whichever card happens to be first: one of Jack's landed
+    // on Pepe with no property and would otherwise show under the primary,
+    // eight kilometres from where he stood.
+    if(typeof tdGuessPlaceFor==='function'&&x.lat!=null&&x.lon!=null){
+      const g=tdGuessPlaceFor(x);
+      if(g)return String(g.addr||'').trim().toLowerCase()===pa;
+    }
+    return idx===0;
+  });
+}
+
 function _cdPropCardHtml(c,a,idx,total){
   const p=getProperty(c,a.addr);
   const note=getSiteNote(c,a.addr);
@@ -3373,15 +3395,7 @@ function _cdPropCardHtml(c,a,idx,total){
     // (owner 2026-09-22). The property is the folder a contractor thinks in,
     // so the album lives on the property card rather than on a Gallery page
     // nobody opens twice. Reuses the same album the shoot ends with (§7.3).
-    const _propPhotos=(typeof tdPhotosFor==='function')
-      ? tdPhotosFor({clientId:c.id,wholeClient:true}).filter(x=>{
-          const xa=String(x.addr||'').trim().toLowerCase();
-          const pa=String(a.addr||'').trim().toLowerCase();
-          // A photo with no address belongs to the primary card, so older
-          // shots taken before addresses were recorded are still reachable.
-          return xa?xa===pa:(idx===0);
-        })
-      : [];
+    const _propPhotos=cdPropertyPhotos(c,a.addr,idx);
     const _photoBlock=`<div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="flex:1;min-width:0">
         <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Photos</div>
