@@ -599,15 +599,37 @@ test.describe('Photo capture: the sheet itself', () => {
     await attachSeed();
     const r = await page.evaluate(() => {
       const near = [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent);
-      return { count: near.length, first: near[0] || '', matches: _pcNearbyMatches([950]).length };
+      // The matches themselves, not just how many: a count that disagrees
+      // with the screen cannot say which row it did not expect.
+      const m = _pcNearbyMatches([950]);
+      return { count: near.length, first: near[0] || '', matches: m.length,
+        rows: m.map(x => x.name + '|' + x.addr + '|' + (x.jobId || '-')).join(' + ') };
     });
     expect(r.count).toBe(1);
     expect(r.first).toContain('Dana Whitfield');
     expect(r.first).toContain('412 Oak St');
     expect(r.first).toContain('Repipe');
     expect(r.first).toMatch(/\d+ ft away/);
-    expect(r.matches).toBe(1);          // the far customer is not a match
+    expect(r.matches, 'one house, one row: ' + r.rows).toBe(1);
     await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  // The dedupe has to hold when the two records spell the address
+  // differently, which is the normal case: a job typed by hand next to an
+  // address that came from a lookup.
+  test('a job and its own address are one row, however the two were typed', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita, KS 67206', lat: 37.6889, lon: -97.3361 });
+      jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'active', addr: '412 Oak St', lat: 37.68891, lon: -97.33611 });
+      photos.push({ id: 952, type: 'before', url: '', data: 'x', client_id: null, lat: 37.68892, lon: -97.33612, uploadedAt: new Date().toISOString() });
+    });
+    const r = await page.evaluate(() => {
+      const m = _pcNearbyMatches([952]);
+      return { n: m.length, jobId: m[0] && m[0].jobId, rows: m.map(x => x.addr).join(' + ') };
+    });
+    expect(r.n, 'one house, one row: ' + r.rows).toBe(1);
+    expect(r.jobId).toBe(601);          // and the job wins, because it says what the work is
   });
 
   test('tapping the on-site match files the whole burst on that job, no more questions', async () => {

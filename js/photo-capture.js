@@ -600,17 +600,23 @@ function _pcNearbyMatches(ids){
     const d=_pcMeters(fix.lat,fix.lon,j.lat,j.lon);
     if(d>_PC_NEAR_M)return;
     const c=clients.find(x=>x.id===j.client_id);
-    out.push({clientId:j.client_id,name:(c&&c.name)||'',addr:j.addr||(c&&c.addr)||'',jobId:j.id,bidId:null,what:j.name||'Job',d});
+    out.push({clientId:j.client_id,name:(c&&c.name)||'',addr:j.addr||(c&&c.addr)||'',jobId:j.id,bidId:null,what:j.name||'Job',lat:j.lat,lon:j.lon,d});
   });
   clients.forEach(c=>{
     // Every property, each with its own pin: the whole point of Jack's 6912.
     _pcClientPlaces(c).forEach(pl=>{
       const d=_pcMeters(fix.lat,fix.lon,pl.lat,pl.lon);
       if(d>_PC_NEAR_M)return;
+      // One row per HOUSE. A job at a customer's address and the address
+      // itself are the same place, and they must collapse whether or not the
+      // two strings were typed the same way ("412 Oak St, Wichita KS" vs
+      // "412 Oak St"). Matching on the pin as well as the text is what makes
+      // that reliable: two saved points within 40m are one building.
       const same=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
-      if(out.some(m=>m.clientId===c.id&&same(m.addr,pl.addr)))return;
+      if(out.some(m=>m.clientId===c.id&&(same(m.addr,pl.addr)||
+        (m.lat!=null&&_pcMeters(m.lat,m.lon,pl.lat,pl.lon)<=40))))return;
       out.push({clientId:c.id,name:c.name||'',addr:pl.addr,jobId:null,bidId:null,
-        what:pl.label==='Primary'?'':pl.label,d});
+        what:pl.label==='Primary'?'':pl.label,lat:pl.lat,lon:pl.lon,d});
     });
   });
   return out.sort((a,b)=>a.d-b.d).slice(0,4);
