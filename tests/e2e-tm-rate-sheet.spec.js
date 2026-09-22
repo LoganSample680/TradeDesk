@@ -932,7 +932,7 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     test('materials with no rate says the labor is missing, and offers the rate', async () => {
       const t = await shapeIn(['mat']);
       expect(t).toContain('no labor rate');
-      expect(t).toContain('What an hour costs');
+      expect(t).toContain('Your rate');
     });
 
     // Tapping Estimate turns Rate on with it (_tmAddLayer follows `needs`),
@@ -1282,7 +1282,8 @@ test.describe('the ceiling leads, not the guess', () => {
     _tmRatePerMan = s.rate || 0; sv('tm-i-rate', s.rate ? String(s.rate) : '');
     sv('tm-i-nte', s.cap ? String(s.cap) : '');
     _tmLayers = new Set(s.layers);
-    return _tmSteps().map(x => ({ n: x.n, k: x.k, done: !!x.done, rec: !!x.rec, act: x.act || null }));
+    return _tmSteps().map(x => ({ n: x.n, k: x.k, done: !!x.done, rec: !!x.rec,
+      act: x.act || null, value: x.value, why: x.why }));
   }, setup);
 
   test('there are four of them, in the order the job is actually done', async () => {
@@ -1341,13 +1342,82 @@ test.describe('the ceiling leads, not the guess', () => {
       const row = document.getElementById('tm-add-row');
       return (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
     });
-    expect(t).toContain('Do this next');
+    // "Next", not "Do this next": the step that is next is now the only one
+    // with a card, a sentence and a button, so the tag stopped carrying the
+    // whole signal and got out of the label's way.
+    expect(t).toContain('Next');
     expect(t).toContain('The most it can cost');
     expect(t).toContain('Send it');
     // Folded into step 4 rather than sitting in a card of its own, which is how
     // four steps were added without making the panel taller.
     expect(t).toContain('A rate, no total');
     expect(t).not.toContain('Send it now and they get');
+  });
+
+  // ── SHORT ────────────────────────────────────────────────────────────────
+  //
+  // Owner, 2026-09-22: "it has to be short and fucking beautiful."
+  //
+  // The panel was four cards of prose, ~500px, and the longest paragraph on it
+  // was the step he could not act on. A step already DONE has nothing to argue:
+  // it gets a tick and its figure on one line. Only the step he has not done
+  // gets a card, a sentence and a button. These hold that split, because it is
+  // the only thing keeping the panel short, and the first hint anybody adds
+  // back to a finished row will quietly undo it.
+  test('a finished step states its figure and stops talking', async () => {
+    const s = await stepsIn({ layers: ['rate'], scope: true, rate: 95 });
+    const rate = s.filter(x => x.k === 'rate')[0];
+    expect(rate.done).toBe(true);
+    expect(rate.value).toBe('$95/hr each');
+  });
+
+  test('the ceiling shows the figure once it has one, and says so when it does not', async () => {
+    const off = await stepsIn({ layers: ['rate'], scope: true, rate: 95 });
+    expect(off.filter(x => x.k === 'cap')[0].value).toBe('None');
+    const on = await stepsIn({ layers: ['rate', 'cap'], scope: true, rate: 95, cap: 12000 });
+    expect(on.filter(x => x.k === 'cap')[0].value).toBe('$12,000');
+  });
+
+  // The measurable half of "short": only one step's sentence is on the page.
+  test('only one step is explaining itself at a time', async () => {
+    for (const setup of [
+      { layers: ['rate'] },
+      { layers: ['rate'], scope: true },
+      { layers: ['rate'], scope: true, rate: 95 },
+    ]) {
+      const t = await page.evaluate((cfg) => {
+        _geiIsTM = true;
+        const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+        sv('gei-addr', '700 Rate Rd, Wichita KS 67202');
+        _geiScopeChips = cfg.scope ? ['x'] : [];
+        _geiJobScope = ''; _geiScopeNoScope = false; _geiLines = [];
+        _tmRatePerMan = cfg.rate || 0; sv('tm-i-rate', cfg.rate ? String(cfg.rate) : '');
+        sv('tm-i-nte', '');
+        _tmLayers = new Set(cfg.layers);
+        _tmApplyLayers();
+        const row = document.getElementById('tm-add-row');
+        const txt = (row ? row.textContent : '');
+        return _tmSteps().filter(x => x.k !== 'send' && txt.indexOf(x.why) >= 0).length;
+      }, setup);
+      expect(t, 'more than one step had its sentence on screen for ' + JSON.stringify(setup)).toBe(1);
+    }
+  });
+
+  // Every step still LISTED, though: collapsing the ones he is not on must not
+  // hide what is coming, or the panel got short by lying about the job.
+  test('all four are still on the page, short or not', async () => {
+    const t = await page.evaluate(() => {
+      _geiIsTM = true;
+      _tmLayers = new Set(['rate']); _tmRatePerMan = 95;
+      const e = document.getElementById('tm-i-rate'); if (e) e.value = '95';
+      const n = document.getElementById('tm-i-nte'); if (n) n.value = '';
+      _tmApplyLayers();
+      const row = document.getElementById('tm-add-row');
+      return (row ? row.textContent : '').replace(/\s+/g, ' ');
+    });
+    ['The work', 'Your rate', 'The most it can cost', 'Send it'].forEach(l => {
+      expect(t, l + ' fell off the panel').toContain(l);
+    });
   });
 
   // California will not take a T&M home improvement contract at all, so a
@@ -1365,7 +1435,7 @@ test.describe('the ceiling leads, not the guess', () => {
       return out;
     });
     expect(t).toContain('does not allow');
-    expect(t, 'it walked him through a contract his state will not take').not.toContain('Do this next');
+    expect(t, 'it walked him through a contract his state will not take').not.toContain('Send it and they get');
   });
 
   // ── THE DOCUMENT ──────────────────────────────────────────────────────────

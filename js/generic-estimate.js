@@ -4300,15 +4300,21 @@ function _tmScopeDone(){
   return false;
 }
 
-// ── WHAT TO DO NEXT, NUMBERED ───────────────────────────────────────────────
+// ── WHAT TO DO NEXT ─────────────────────────────────────────────────────────
 //
 // Owner, 2026-09-22: "need clear action item steps that look clean and
-// understand what's going on."
+// understand what's going on", then "it has to be short and fucking beautiful."
 //
-// Six chips answered "what can I add" and never "what do I do". This answers
-// the second question in the order the job is actually done, and it is four
-// lines because a fifth would be a form. Everything that is genuinely optional
-// stays in the chip row underneath, where optional belongs.
+// Those two pull against each other only if every step talks. A step he has
+// already done does not need persuading; it needs a tick and its figure, on one
+// line, like a receipt. Only the step he has NOT done has anything to argue,
+// and it is the only one that gets a card, a sentence and a button. Everything
+// after it stays collapsed so he can still see what is coming.
+//
+// So each step carries two things: `value`, the one short fact a finished line
+// shows, and `why`, the sentence that only ever appears on the step that is
+// actually next. That split is what makes the panel a third of its old height
+// without losing a word he needs at the moment he needs it.
 //
 // Pure: it reads state and returns the list. Nothing here touches the DOM, so
 // a test can ask what the screen is telling him without rendering it.
@@ -4318,31 +4324,29 @@ function _tmSteps(){
   const capOn=L.has('cap')&&_tmCapVal()>0;
   const capLocked=locked.has('cap');
   const sh=_tmShape();
-  const out=[];
-  out.push({k:'scope',n:1,label:'What the work is',done:_tmScopeDone(),
-    hint:_tmScopeDone()?'Written above.':'Say what you will do, up at the top. That part is the proposal.'});
-  out.push({k:'rate',n:2,label:'What an hour costs',done:rateOn,act:rateOn?null:'rate',
-    hint:rateOn
-      ?('$'+Number(_tmRatePerMan).toLocaleString()+' per worker, per hour. Tim bills the clocked hours at this.')
-      :'The one term a time and materials contract actually has. Tim needs it to invoice the hours.'});
-  // The reason this row got reordered. Whether it is the NEXT thing is decided
-  // below, not here: a ceiling is not the next move while there is still no
-  // rate on the job.
-  // "them" dropped: with the DO THIS NEXT tag beside it the longer label wrapped
-  // the tag onto a line of its own, which looked like a mistake.
-  out.push({k:'cap',n:3,label:'The most it can cost',done:capOn,act:capOn?null:'cap',
-    req:capLocked,
-    hint:capOn
-      ?('Capped at $'+_tmCapVal().toLocaleString()+'. They cannot be billed past it without approving more in writing.')
-      :(capLocked
-        ?'Your state requires a ceiling on this contract.'
-        :'This is the question they are really asking, and it is what closes a T and M job. You are not pricing the work, you are promising a limit.')});
-  out.push({k:'send',n:4,label:'Send it',done:false,
-    hint:sh.head+'. '+sh.body});
-  // EXACTLY ONE NEXT MOVE. Two steps both saying "do this next", each with its
-  // own filled button, is the six-chips problem again in a taller box. The
-  // first thing he has not done that he can do from here is the one marked.
-  const next=out.filter(s=>!s.done&&s.act)[0];
+  const out=[
+    {k:'scope',n:1,label:'The work',done:_tmScopeDone(),
+      value:_tmScopeDone()?'Written above':'Nothing yet',
+      why:'Say what you will do, up at the top. That part is the proposal.'},
+    {k:'rate',n:2,label:'Your rate',done:rateOn,act:rateOn?null:'rate',
+      value:rateOn?('$'+Number(_tmRatePerMan).toLocaleString()+'/hr each'):'Not set',
+      why:'The one term a time and materials contract actually has, and what Tim invoices the clocked hours at.'},
+    // The reason this row got reordered. Whether it is the NEXT thing is
+    // decided below, not here: a ceiling is not the next move while there is
+    // still no rate on the job.
+    {k:'cap',n:3,label:'The most it can cost',done:capOn,act:capOn?null:'cap',req:capLocked,
+      value:capOn?('$'+_tmCapVal().toLocaleString()):(capLocked?'Required here':'None'),
+      why:capLocked
+        ?'Your state requires a ceiling on this contract, so it stays on.'
+        :'What they are really asking, and what closes a T and M job. You are not pricing the work, you are promising a limit.'},
+    // Not a step he can tick. It is the read-back of what the other three add
+    // up to, which is why it sits under a rule rather than in the list.
+    {k:'send',n:4,label:'Send it',done:false,value:sh.head,why:sh.body},
+  ];
+  // EXACTLY ONE EXPANDED STEP. The first thing he has not done, whether or not
+  // there is a button for it: an unwritten scope has no Add, but it is still
+  // the thing standing between him and a proposal, so it still does the talking.
+  const next=out.filter(s=>!s.done&&s.k!=='send')[0];
   if(next)next.rec=true;
   return out;
 }
@@ -4385,51 +4389,71 @@ function _tmRenderAddRow(rule,locked){
   const head='<div style="width:100%;margin-bottom:2px">'+
     '<div class="td-h3" style="margin-bottom:2px">How this one bills</div>'+
     '<div style="font-size:11.5px;color:var(--text3);line-height:1.45">'+
-      'Four steps. The scope above is already the proposal.'+
+      'The scope above is already the proposal.'+
     '</div></div>';
   // The steps. Numbered, in the order the job is done, with exactly one thing
   // marked as the next move so there is never a question of where to look.
   // Blocked states get no steps, because in California none of this is legal
   // and a checklist would be telling him to do something he must not do.
   const steps=(rule.rule==='block')?'':
-    '<div style="width:100%;margin:2px 0 4px;border-radius:var(--r-md);background:var(--bg2);'+
-      'box-shadow:inset 0 0 0 1px var(--border);overflow:hidden">'+
-    _tmSteps().map((s,i)=>{
-      const isSend=s.k==='send';
-      // Done is an ink tick, the recommended one is a blue number, everything
-      // else is a quiet number. Three states, three weights, no legend needed.
-      const badge=s.done
-        ? '<span style="flex-shrink:0;width:20px;height:20px;border-radius:var(--r-pill,999px);background:var(--ink);'+
-          'color:var(--text-cream,#fff);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">✓</span>'
-        : '<span style="flex-shrink:0;width:20px;height:20px;border-radius:var(--r-pill,999px);background:'+
-          (s.rec?'var(--blue)':'transparent')+';color:'+(s.rec?'#fff':'var(--text3)')+
-          ';box-shadow:'+(s.rec?'none':'inset 0 0 0 1.5px var(--border2)')+
-          ';font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">'+s.n+'</span>';
-      const tag=s.rec
-        ? '<span style="margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue)">Do this next</span>'
-        : (s.req?'<span style="margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#92400E">Required here</span>':'');
-      // One tap that both switches the layer on AND puts him in the field. A
-      // chip that only makes a box appear somewhere below is half an answer.
-      // Only the next move is filled. A second filled button on the same panel
-      // is a second primary, and then neither of them is one.
-      const act=s.act
-        ? '<button type="button" onclick="_tmStepAct(\''+s.act+'\')" style="flex-shrink:0;align-self:center;'+
-          'padding:6px 12px;border-radius:var(--r-pill,999px);font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;'+
-          (s.rec
-            ? 'border:0;background:var(--blue);color:#fff'
-            : 'border:1.5px solid var(--border2);background:transparent;color:var(--text2)')+
-          '">Add</button>'
-        : '';
-      return '<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 12px'+
-        (i?';border-top:1px solid var(--border)':'')+'">'+badge+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:12.5px;font-weight:800;color:'+(isSend?'var(--text)':'var(--text)')+'">'+
-            escHtml(s.label)+tag+'</div>'+
-          '<div style="font-size:11.5px;color:var(--text2);line-height:1.45;margin-top:1px">'+escHtml(s.hint)+'</div>'+
-        '</div>'+act+'</div>';
+    '<div style="width:100%;margin:2px 0 6px">'+
+    _tmSteps().map(s=>{
+      // ── THE READ-BACK ────────────────────────────────────────────────────
+      // Not a step. What the three above add up to in the customer's hands,
+      // under a rule, so the list reads as three things and an outcome.
+      if(s.k==='send'){
+        return '<div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border)">'+
+          '<span style="font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text3)">'+
+            escHtml(s.label)+' and they get</span>'+
+          '<div style="font-size:11.5px;color:var(--text2);line-height:1.45;margin-top:2px">'+
+            '<b style="color:var(--text)">'+escHtml(s.value)+'.</b> '+escHtml(s.why)+'</div>'+
+        '</div>';
+      }
+      // ── THE ONE THAT TALKS ───────────────────────────────────────────────
+      // A white card off the grey page, which is the whole signal. No coloured
+      // ring as well: one thing saying "here" is louder than three.
+      if(s.rec){
+        const act=s.act
+          ? '<button type="button" onclick="_tmStepAct(\''+s.act+'\')" style="flex-shrink:0;align-self:center;'+
+            'padding:7px 14px;border-radius:var(--r-pill,999px);border:0;background:var(--blue);color:#fff;'+
+            'font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">Add</button>'
+          : '';
+        const tag=s.req
+          ? '<span style="margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#92400E">Required here</span>'
+          : '<span style="margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue)">Next</span>';
+        return '<div style="display:flex;gap:10px;align-items:flex-start;margin:5px 0;padding:11px 12px;'+
+          'border-radius:var(--r-md);background:var(--card,#fff);'+
+          'box-shadow:0 0 0 1px var(--border),0 1px 3px rgba(0,0,0,.07)">'+
+          '<span style="flex-shrink:0;width:20px;height:20px;border-radius:var(--r-pill,999px);background:var(--blue);'+
+            'color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">'+s.n+'</span>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:13px;font-weight:800;color:var(--text)">'+escHtml(s.label)+tag+'</div>'+
+            '<div style="font-size:11.5px;color:var(--text2);line-height:1.45;margin-top:2px">'+escHtml(s.why)+'</div>'+
+          '</div>'+act+'</div>';
+      }
+      // ── EVERYTHING ELSE, ONE LINE ────────────────────────────────────────
+      // Done or still to come: a mark, what it is, and the figure, right
+      // aligned so the figures stack into a column he can read down.
+      const mark=s.done
+        ? '<span style="flex-shrink:0;width:17px;height:17px;border-radius:var(--r-pill,999px);background:var(--ink);'+
+          'color:var(--text-cream,#fff);font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">✓</span>'
+        : '<span style="flex-shrink:0;width:17px;height:17px;border-radius:var(--r-pill,999px);'+
+          'box-shadow:inset 0 0 0 1.5px var(--border2);color:var(--text3);'+
+          'font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">'+s.n+'</span>';
+      return '<div style="display:flex;align-items:center;gap:9px;padding:5px 2px">'+mark+
+        '<span style="font-size:12.5px;font-weight:700;color:var(--text2);min-width:0">'+escHtml(s.label)+'</span>'+
+        '<span style="flex:1;min-width:8px"></span>'+
+        '<span style="font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums;'+
+          'color:'+(s.done?'var(--text)':'var(--text3)')+'">'+escHtml(s.value)+'</span>'+
+      '</div>';
     }).join('')+'</div>'+
     '<div style="width:100%;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;'+
-      'color:var(--text3);margin:4px 0 -2px">Or add to it</div>';
+      // Not "Or add to it": half of them are on by the time he reads it, and a
+      // switchboard that calls itself an add list is lying about the ticked
+      // ones. It is the full set of pieces, on or off, and it stays complete
+      // rather than hiding the ones the steps above also cover, because a
+      // switch that vanishes when you flip it is worse than a repeated word.
+      'color:var(--text3);margin:4px 0 -2px">What is on this one</div>';
   // Estimate is the one chip with a dependency and the only place the page can
   // lie by omission: tapping it turns Rate on too (_tmAddLayer follows `needs`),
   // which is right, and silently doing it would leave him wondering what he
