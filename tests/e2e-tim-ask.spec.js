@@ -961,6 +961,118 @@ test.describe('tim answering off your own books', () => {
       expect(r[2]).toBe('Nothing clocked');
     });
 
+
+    // ── Hours times rate is an invoice ────────────────────────────────────
+    //
+    // Owner, 2026-09-22: "we want rate because then Tim can feed a quick
+    // invoice." That is the whole chain, and it is why the rate stopped being
+    // one of six equal chips on the T&M screen and became the default: a T&M
+    // job with no rate on its bid gives Tim hours and nothing to bill them at,
+    // and that is discovered on the Friday somebody wants paying.
+    //
+    // Each of these lays its own books down. The describe's beforeEach resets
+    // clients, bids, jobs and timeEntries, so a test that leaned on the one
+    // before it passed alone and failed in the file, which is exactly what the
+    // first draft of this block did.
+    const RATED = () => {
+      const today = todayKey(), lastSat = addDays(today, -(parseD(today).getDay() + 1));
+      const d = n => addDays(lastSat, -n);
+      clients.length = 0; clients.push(
+        { id: 501, name: 'Rick Delaney', addr: '412 Maple St' },
+        { id: 502, name: 'Sandra Ruiz', addr: '2100 Oak Ave' });
+      bids.length = 0; bids.push(
+        // T&M at $95 the man-hour.
+        { id: 611, client_id: 501, addr: '412 Maple St', isTM: true, tmRatePerMan: 95 },
+        // Fixed price. A number was agreed; there is no hourly rate to apply.
+        { id: 612, client_id: 502, addr: '2100 Oak Ave', amount: 4000 });
+      jobs.length = 0; jobs.push(
+        { id: 701, bid_id: 611, client_id: 501 },
+        { id: 702, bid_id: 612, client_id: 502 });
+      timeEntries.length = 0; timeEntries.push(
+        { id: 1, date: d(4), minutes: 480, job_id: 701, logged_by_name: 'John Reyes' },
+        { id: 2, date: d(3), minutes: 300, job_id: 701, logged_by_name: 'Andre Ruiz' },
+        { id: 3, date: d(2), minutes: 420, job_id: 702, logged_by_name: 'John Reyes' });
+    };
+
+    test('a T&M job turns its hours into money at the bid rate', async () => {
+      const r = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        const sh = timWorkSheet(_timWhen('last week'));
+        const site = sh.sites.filter(x => x.client === 'Rick Delaney')[0];
+        return { rate: site.rate, amount: site.amount, min: site.min,
+          billable: sh.billable, title: timAsk('what do I invoice for last week').title };
+      }, RATED.toString());
+      // 780 minutes is 13 hours, at $95 the man-hour.
+      expect(r.min).toBe(780);
+      expect(r.rate).toBe(95);
+      expect(r.amount).toBe(1235);
+      expect(r.billable).toBe(1235);
+      // And the money is the headline, because "what do I invoice" is a
+      // question with a dollar answer. The hours are the working.
+      expect(r.title).toBe('$1,235');
+    });
+
+    // The restriction that keeps the figure honest. A fixed-price customer
+    // agreed a number; multiplying his job's clock by an hourly rate invents a
+    // second one nobody signed.
+    test('a fixed-price job is reported in hours and kept out of the money', async () => {
+      const r = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        const sh = timWorkSheet(_timWhen('last week'));
+        const a = timAsk('what do I invoice for last week');
+        return { billable: sh.billable, unrated: sh.unratedMin, sub: a.sub,
+          fixed: sh.sites.filter(x => x.client === 'Sandra Ruiz')[0] };
+      }, RATED.toString());
+      expect(r.fixed.rate, 'a fixed-price job must carry no hourly rate').toBe(0);
+      expect(r.fixed.amount).toBe(0);
+      expect(r.billable, 'the fixed-price hours got billed by the hour').toBe(1235);
+      expect(r.unrated).toBe(420);
+      // SAID OUT LOUD. A headline that quietly leaves out seven hours of the
+      // week is the one way this costs real money.
+      expect(r.sub).toContain('7 hrs has no rate behind it');
+    });
+
+    test('and the working is on the line, so the figure can be checked', async () => {
+      const r = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        return timAsk('what do I invoice for last week').rows.map(x => x.right + ' ~ ' + x.note);
+      }, RATED.toString());
+      expect(r[0]).toContain('$1,235');
+      expect(r[0]).toContain('13 hrs at $95/hr');
+    });
+
+    test('the text he pastes carries the rate and the money too', async () => {
+      const t = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        _timShowAsk(timAsk('what do I invoice for last week'));
+        const out = _timCopySheet(null);
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      }, RATED.toString());
+      expect(t).toContain('$95/hr');
+      expect(t).toContain('$1,235');
+      expect(t).toContain('TOTAL');
+      // The hours with nothing behind them are flagged in the paste as well,
+      // not only on screen: the paste is what reaches the customer.
+      expect(t).toContain('has no rate behind it');
+    });
+
+    // An unpaid break is tracked, never paid, and so never billed. It would be
+    // the worst of the three to get wrong, because it reaches a customer.
+    test('a named lunch break is never billed to anybody', async () => {
+      const r = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        const today = todayKey(), lastSat = addDays(today, -(parseD(today).getDay() + 1));
+        timeEntries.push({ id: 9, date: addDays(lastSat, -4), minutes: 60,
+          job_id: 701, logged_by_name: 'John Reyes', unpaid: true });
+        const sh = timWorkSheet(_timWhen('last week'));
+        return { billable: sh.billable,
+          min: sh.sites.filter(x => x.client === 'Rick Delaney')[0].min };
+      }, RATED.toString());
+      expect(r.min, 'the break got into the billable minutes').toBe(780);
+      expect(r.billable, 'the break got billed').toBe(1235);
+    });
+
     test('junk in the entries changes nothing and throws nothing', async () => {
       const r = await page.evaluate(() => {
         timeEntries.push(null, { date: null, minutes: 'x' }, { date: '2026-13-40', minutes: -5 },

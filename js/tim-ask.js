@@ -555,9 +555,38 @@ function _timHrs(min){
 // An open clock (still running) contributes no minutes, exactly as the Time
 // Log treats it, but IS reported, because a man reconciling a week wants to
 // know somebody is still on the clock before he invoices it.
+// ── WHAT AN HOUR ON THIS JOB IS WORTH ────────────────────────────────────────
+//
+// Owner, 2026-09-22: "we want rate because then Tim can feed a quick invoice."
+// That is the whole chain: a T&M bid carries a rate, the crew clocks hours
+// against the job, and hours times rate is an invoice. This is the multiplier.
+//
+// T&M ONLY, and that restriction is the honest part. A fixed-price job's hours
+// are not billed by the hour: the customer agreed a number, and multiplying the
+// clock by a rate would invent a second one that nobody signed. So a fixed-price
+// job comes back 0 and its hours are reported with no money against them, which
+// is the truth rather than a guess dressed as a total.
+function _timJobRate(jobId){
+  try{
+    if(jobId==null)return 0;
+    const js=_timRows('jobs'),bs=_timRows('bids');
+    const j=js.filter(x=>x&&String(x.id)===String(jobId))[0];
+    if(!j||!j.bid_id)return 0;
+    const b=bs.filter(x=>x&&x.id===j.bid_id)[0];
+    if(!b||!b.isTM)return 0;
+    // Per man-hour, which is what the T&M screen collects and what a time entry
+    // measures: one person's minutes. Crew size is already in the entries.
+    return Math.max(0,Number(b.tmRatePerMan)||0);
+  }catch(_e){return 0;}
+}
+
 function timWorkSheet(win){
   const w=win||_timWhenOr7('');
-  const out={win:w,total:0,open:0,entries:0,people:[],sites:[],days:0};
+  const out={win:w,total:0,open:0,entries:0,people:[],sites:[],days:0,
+    // What the paid hours come to where there is a rate to come to it at, and
+    // the hours that have no rate behind them. Both, always, because a total
+    // that quietly leaves out half the week is the one way this costs money.
+    billable:0,unratedMin:0};
   if(!w)return out;
   const rows=_timRows('timeEntries').filter(e=>{
     if(!e||!e.date)return false;
@@ -608,7 +637,8 @@ function timWorkSheet(win){
       // worksheet: paid hours that cannot be billed to anybody is the single
       // most useful thing on a Friday, and a total that quietly leaves them
       // out is the invoice looking better than the week was.
-      general:e.job_id==null,min:0,people:{},days:{}});
+      general:e.job_id==null,min:0,people:{},days:{},
+      rate:_timJobRate(e.job_id)});
     if(unpaid){p.unpaid+=mins;}
     else if(mins>0){
       p.min+=mins;p.days[String(e.date)]=1;if(info.addr)p.sites[key]=1;
@@ -618,6 +648,13 @@ function timWorkSheet(win){
   });
 
   out.days=Object.keys(days).length;
+  // Money last, off the minutes that survived the unpaid and open filters, so
+  // a named lunch break can never be billed to anybody.
+  Object.keys(bySite).forEach(k=>{
+    const s=bySite[k];
+    if(s.rate>0)out.billable+=Math.round((s.min/60)*s.rate);
+    else out.unratedMin+=s.min;
+  });
   out.people=Object.keys(byPerson).map(k=>{
     const p=byPerson[k];
     return {name:p.name,uid:p.uid,min:p.min,unpaid:p.unpaid,open:p.open,
@@ -631,6 +668,7 @@ function timWorkSheet(win){
   out.sites=Object.keys(bySite).map(k=>{
     const s=bySite[k];
     return {client:s.client,addr:s.addr,job:s.job,min:s.min,general:!!s.general,
+      rate:s.rate,amount:s.rate>0?Math.round((s.min/60)*s.rate):0,
       days:Object.keys(s.days).length,
       who:Object.keys(s.people).sort((a,b)=>s.people[b]-s.people[a])};
   }).filter(s=>s.min>0).sort((a,b)=>b.min-a.min);
@@ -987,24 +1025,39 @@ function _timAnswerSheet(said){
   const rows=[];
   sheet.sites.forEach(s=>{
     rows.push({
+      // MONEY ON THE RIGHT where there is money, hours where there is not. The
+      // right-hand column is what a man reads down when he is billing, and
+      // hours are the working rather than the answer once a rate exists.
       lead:s.client+(s.job?(' · '+s.job):''),
-      right:_timHrs(s.min),
-      // The address on its own line under the name, because that is the line
-      // that gets copied onto the invoice and it should be readable as one.
+      right:s.amount>0?_timAskMoney(s.amount):_timHrs(s.min),
       note:[s.addr||(s.general?'not tied to a job, nothing to bill it to':'no address on file'),
+        // The working, so the figure can be checked against the clock.
+        s.amount>0?(_timHrs(s.min)+' at '+_timAskMoney(s.rate)+'/hr'):_timHrs(s.min),
         s.who.join(', '),
         s.days+' day'+(s.days===1?'':'s')].filter(Boolean).join('  ·  '),
     });
   });
+  // The headline is the money the moment there is any, because "what do I
+  // invoice" is a question with a dollar answer. Hours stay in the subtitle as
+  // the working. With no rate anywhere it is the hours, same as before.
+  const lead=sheet.billable>0?_timAskMoney(sheet.billable):_timHrs(sheet.total);
   return {
     id:'sheet',
-    title:_timHrs(sheet.total),
+    title:lead,
     // "Lines", not "addresses": one of these can be time clocked against no
     // job, which has no address by definition, and calling it one would be the
     // worksheet rounding itself up.
     sub:w.label+', '+_timSpanLabel(w)+'. '+
+      (sheet.billable>0?(_timHrs(sheet.total)+' across '):'')+
       sheet.sites.length+' line'+(sheet.sites.length===1?'':'s')+' to bill, '+
       sheet.people.length+' '+(sheet.people.length===1?'person':'people')+'.'+
+      // THE HOURS WITH NO RATE BEHIND THEM, said out loud every time there are
+      // any. A headline figure that silently leaves out half the week is the
+      // one way this costs real money, and the reason is always fixable: the
+      // job is fixed-price, or its bid has no rate on it yet.
+      (sheet.unratedMin>0
+        ?(' '+_timHrs(sheet.unratedMin)+' has no rate behind it, so it is not in that figure.')
+        :'')+
       (loose?(' '+_timHrs(loose)+' is not on a job, so there is nobody to bill it to.'):'')+
       (sheet.open?(' '+sheet.open+' clock still running.'):''),
     rows,
@@ -1032,7 +1085,9 @@ function _timSheetText(sheet){
     L.push(s.client+(s.job?(' - '+s.job):''));
     if(s.addr)L.push('  '+s.addr);
     else if(s.general)L.push('  not tied to a job');
-    L.push('  '+_timHrs(s.min)+'\t'+s.who.join(', ')+'\t'+s.days+' day'+(s.days===1?'':'s'));
+    L.push('  '+_timHrs(s.min)+'\t'+
+      (s.amount>0?(_timAskMoney(s.rate)+'/hr\t'+_timAskMoney(s.amount)):'no rate\t-')+'\t'+
+      s.who.join(', ')+'\t'+s.days+' day'+(s.days===1?'':'s'));
   });
   L.push('');
   L.push('BY PERSON');
@@ -1040,7 +1095,11 @@ function _timSheetText(sheet){
     L.push(p.name+'\t'+_timHrs(p.min)+(p.ot?'\tover 40 in a week':''));
   });
   L.push('');
-  L.push('TOTAL\t'+_timHrs(sheet.total));
+  L.push('TOTAL\t'+_timHrs(sheet.total)+
+    (sheet.billable>0?('\t'+_timAskMoney(sheet.billable)):''));
+  if(sheet.unratedMin>0){
+    L.push(_timHrs(sheet.unratedMin)+' has no rate behind it and is not in that total.');
+  }
   if(sheet.open)L.push(sheet.open+' clock still running, counted as nothing.');
   L.push('Clocked time only. GPS-tracked site time is in the Time Log.');
   return L.join('\n');

@@ -2310,6 +2310,157 @@ test.describe('tim', () => {
     });
   });
 
+
+  // ── Take them off, and they stay off ──────────────────────────────────────
+  //
+  // Owner, 2026-09-21, on the T&M screen: "Tim's insights with take them off
+  // don't even remove it."
+  //
+  // Four separate faults were stacked under that one sentence, and any one of
+  // them alone was enough to produce it:
+  //   1. s.dismissed was the LAST line of timJobSnapshot's big try, after a
+  //      dozen reads of the estimate screen. Anything above it throwing left
+  //      it as [] and silently un-dismissed everything.
+  //   2. _timJobKey is '_' until the first autosave hands the bid an id and
+  //      'bid:N' after, so a nudge waved off while building a NEW proposal
+  //      came back the moment it saved. Same proposal, same man, new key.
+  //   3. The book nudges are not about the job at all, so dismissing them
+  //      against one meant they reappeared on the next screen.
+  //   4. None of it was persisted, so a reload brought all of it back, and a
+  //      reload is what happens when he closes the app on a driveway.
+  test.describe('a nudge waved off stays waved off', () => {
+    const BOOKS = () => {
+      const today = todayKey(), ago = n => addDays(today, -n);
+      clients.length = 0; clients.push({ id: 7101, name: 'Rick Delaney' });
+      bids.length = 0; bids.push({ id: 8801, client_id: 7101, status: 'Closed Won',
+        amount: 4000, date: ago(90), completion_date: ago(68) });
+      payments.length = 0; payments.push({ bid_id: 8801, amount: 2000 });
+      timResetDismissals();
+      window._geiBidId = null;
+      // The REAL rules, not whichever stub the last describe left behind.
+      // Half this file replaces timNudges to control what he finds, and a
+      // describe that forgets to put it back makes these tests assert against
+      // a fixed list that no dismissal could ever change. It passed alone and
+      // failed in the file, which is the signature of exactly that.
+      if (window.__realNudges) timNudges = window.__realNudges;
+    };
+    const ids = () => page.evaluate(() => (timNudges(timJobSnapshot()) || []).map(n => n.id));
+    test.beforeEach(async () => { await page.evaluate(BOOKS); await page.evaluate(() => goPg('pg-dash')); });
+    test.afterAll(async () => {
+      await page.evaluate(() => { window._geiBidId = null; timResetDismissals(); });
+    });
+
+    test('and the bid getting an id does not bring it back', async () => {
+      expect(await ids()).toContain('books-late');
+      await page.evaluate(() => _timDropNudge('books-late'));
+      expect(await ids(), 'it came back on the spot').not.toContain('books-late');
+      // The autosave hands the proposal an id. Same proposal, new job key.
+      await page.evaluate(() => { window._geiBidId = 8801; });
+      expect(await ids(), 'the first autosave brought it back').not.toContain('books-late');
+      await page.evaluate(() => { window._geiBidId = null; });
+      expect(await ids(), 'leaving the proposal brought it back').not.toContain('books-late');
+    });
+
+    // The one that makes "I know" honest rather than permanent. A man who
+    // knows Rick owes him $2,000 has not asked never to be told that Rick now
+    // owes him $4,400.
+    test('but the money moving brings it back, because that is news', async () => {
+      await page.evaluate(() => _timDropNudge('books-late'));
+      expect(await ids()).not.toContain('books-late');
+      const back = await page.evaluate(() => {
+        // He did more work on the same job and it is still not paid for.
+        bids[0].amount = 6400;
+        return (timNudges(timJobSnapshot()) || []).map(n => n.id);
+      });
+      expect(back, 'the figure changed and he said nothing').toContain('books-late');
+    });
+
+    // A JOB nudge is a fact about one proposal, so it is right that it comes
+    // back on the next one. That distinction is the whole reason there are two
+    // buckets, and losing it would make "not on this job" mean "never again".
+    test('a job nudge is off for THIS job and back on the next', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        window._geiBidId = 111;
+        timDismiss(_timJobKey(), 'under-book');
+        const onThis = timDismissedOn(_timJobKey());
+        window._geiBidId = 222;
+        const onNext = timDismissedOn(_timJobKey());
+        window._geiBidId = null;
+        return { onThis, onNext };
+      });
+      expect(r.onThis).toContain('under-book');
+      expect(r.onNext, 'it followed him to a different proposal').not.toContain('under-book');
+    });
+
+    // Fault 1, pinned on its own: s.dismissed must survive the estimate screen
+    // throwing, because that is what it used to be downstream of.
+    test('and it survives the estimate screen falling over', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        timDismiss('_', 'books-late', '2000');
+        const real = window._tmStateRule;
+        window._tmStateRule = () => { throw new Error('estimate screen is not here'); };
+        try {
+          const s = timJobSnapshot();
+          return { dismissed: s.dismissed, ids: (timNudges(s) || []).map(n => n.id) };
+        } finally { window._tmStateRule = real; }
+      });
+      expect(Array.isArray(r.dismissed), 's.dismissed was never assigned').toBe(true);
+      expect(r.ids, 'a throw upstream un-dismissed it').not.toContain('books-late');
+    });
+
+    // Fault 4. A reload is not a request to be told everything again.
+    test('and a reload does not resurrect it', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        _timDropNudge('books-late');
+        const stored = localStorage.getItem('td_tim_off');
+        // Wipe what is in memory, exactly as a fresh load would have it, and
+        // let the file's own loader read it back.
+        _timDismissed = {}; _timDismissedBooks = {};
+        const before = (timNudges(timJobSnapshot()) || []).map(n => n.id);
+        const r2 = JSON.parse(stored || '{}');
+        _timDismissed = r2.job || {}; _timDismissedBooks = r2.books || {};
+        const after = (timNudges(timJobSnapshot()) || []).map(n => n.id);
+        return { stored: !!stored, before, after };
+      });
+      expect(r.stored, 'nothing was written to disk at all').toBe(true);
+      expect(r.before, 'the fixture did not actually clear memory').toContain('books-late');
+      expect(r.after, 'it did not come back off disk').not.toContain('books-late');
+    });
+
+    // The foot-gun that made the first attempt at this fix worse than the bug:
+    // a caller that does not hand over the figure must not silently no-op.
+    test('dismissing without naming the figure still dismisses', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        timDismiss(_timJobKey(), 'books-late');   // no third argument
+        return (timNudges(timJobSnapshot()) || []).map(n => n.id);
+      });
+      expect(r, 'the two-argument call silently did nothing').not.toContain('books-late');
+    });
+
+    // "I know" twice is a man who knows about his late money, not a man saying
+    // the whole idea was bad. timLearn drops a KIND of nudge for good after two
+    // noes, and that must not fire for the books.
+    test('knowing about your own money does not teach him to stop looking', async () => {
+      const r = await page.evaluate(() => {
+        timResetDismissals();
+        const seen = [];
+        const real = window.timLearn;
+        window.timLearn = (kind, id, ok) => { seen.push([kind, id, ok]); };
+        try {
+          timDismiss('_', 'books-late', '2000');
+          timDismiss('_', 'under-book');
+          return seen;
+        } finally { window.timLearn = real; }
+      });
+      expect(r.map(x => x[1]), 'a book nudge taught him to drop it').not.toContain('books-late');
+      expect(r.map(x => x[1]), 'a job nudge should still teach').toContain('under-book');
+    });
+  });
+
   test('no console errors, tim.js', async () => {
     assertNoErrors(page, 'tim.js');
   });

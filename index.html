@@ -2693,6 +2693,11 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
             </div>
           </div>
+          <!-- Whether the customer reads the rate. Separate from whether the
+               job HAS one, because the rate is also what bills the clocked
+               hours later (timWorkSheet, js/tim-ask.js). Rendered by
+               _tmApplyLayers, because in some states it is not his to decide. -->
+          <div id="tm-hide-rate-wrap"></div>
           <div id="tm-stat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
             <div class="stat-tile">
               <div class="stat-l">Day rate</div>

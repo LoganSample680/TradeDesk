@@ -207,6 +207,17 @@ const _TIM_NUDGE_WEIGHT={dollar:3,percent:2,law:1};
 //   2  earned and late.
 //   1  earned and collectible.
 //   0  not earned yet.
+// A nudge about the open job and a nudge about the books are waved off in two
+// different ways, and treating them the same is most of why "take them off" did
+// not take them off.
+//   job   'not on THIS proposal'. Dismissed against the job, back on the next
+//         one, which is right: a missing scaffold is a fact about one job.
+//   books 'I know'. There is only one set of books, so dismissing against a job
+//         means it reappears the moment he opens another, or navigates, or the
+//         bid gets an id. Dismissed globally instead, and it comes back when
+//         the FIGURE changes, because "I know Rick owes me $2,000" is not a
+//         promise to never want telling that he now owes $4,400.
+const _TIM_NUDGE_SCOPE={'books-late':'books','books-fresh':'books','bid-cold':'books'};
 const _TIM_NUDGE_RANK={
   'access-missing':3,'under-book':3,'still-owes':3,'runs-over':3,
   'books-late':2,'books-fresh':1,'bid-cold':0,
@@ -216,7 +227,10 @@ function timNudges(snap){
   const off=new Set(Array.isArray(s.dismissed)?s.dismissed:[]);
   const out=[];
   TIM_NUDGE_RULES.forEach(r=>{
-    if(off.has(r.id))return;
+    if(_TIM_NUDGE_SCOPE[r.id]==='books'){
+      // Waved off, and still worth what it was worth when it was waved off.
+      if(_timBookOff(r.id)===_timBookSig(s,r.id))return;
+    }else if(off.has(r.id))return;
     if(typeof timDropped==='function'&&timDropped('nudge',r.id))return;
     let hit=false;
     try{hit=!!r.when(s);}catch(_e){hit=false;}
@@ -248,17 +262,72 @@ function timTopNudge(snap){const n=timNudges(snap);return n.length?n[0]:null;}
 // Two levels, and they are different promises. Per job: he looked, it does not
 // apply here, do not ask again on this proposal. Forever: he has now told Tim
 // twice on two jobs that this kind of find is not worth a pill, so it stops.
-let _timDismissed={};
-function timDismiss(jobKey,id){
+// ── AND THEY HAVE TO SURVIVE THE THING THAT DISMISSED THEM ──────────────────
+// Owner, 2026-09-21, on the T&M screen: "Tim's insights with take them off
+// don't even remove it."
+// They were in memory only, so a reload brought every one of them back, and a
+// reload is what happens when he closes the app on a driveway.
+const _TIM_OFF_KEY='td_tim_off';
+let _timDismissed={},_timDismissedBooks={};
+(function(){
+  try{
+    const r=JSON.parse(localStorage.getItem(_TIM_OFF_KEY));
+    if(r&&typeof r==='object'){
+      _timDismissed=(r.job&&typeof r.job==='object')?r.job:{};
+      _timDismissedBooks=(r.books&&typeof r.books==='object')?r.books:{};
+    }
+  }catch(_e){}
+})();
+function _timOffWrite(){
+  try{localStorage.setItem(_TIM_OFF_KEY,
+    JSON.stringify({job:_timDismissed,books:_timDismissedBooks}));}catch(_e){}
+}
+// What a book finding is worth right now. The same string is stored when it is
+// waved off, so the rule stays quiet until the money moves and then speaks
+// again on its own.
+function _timBookSig(s,id){
+  try{return String((s&&s._amounts&&s._amounts[id])||0);}catch(_e){return '0';}
+}
+function _timBookOff(id){
+  return Object.prototype.hasOwnProperty.call(_timDismissedBooks,id)?_timDismissedBooks[id]:null;
+}
+function timDismiss(jobKey,id,sig){
+  if(_TIM_NUDGE_SCOPE[id]==='books'){
+    // The caller MAY hand over the figure, and should, because reading it off
+    // the same snapshot the nudge was built from cannot disagree with it. But a
+    // caller that does not is not allowed to silently fail: an empty signature
+    // matches nothing, so the rule would come back on the very next render and
+    // "take them off" would once again not take it off. Work it out here when
+    // it is not given.
+    if(sig==null){
+      try{sig=_timBookSig(timJobSnapshot(),id);}catch(_e){sig='0';}
+    }
+    _timDismissedBooks[id]=String(sig);
+    _timOffWrite();
+    // NOT taught to timLearn. Two waves of "I know" about late money is a man
+    // who knows about his late money, not a man saying the whole idea was bad,
+    // and dropping the rule forever on that is the app mistaking agreement for
+    // rejection.
+    return [id];
+  }
   const k=String(jobKey||'_');
   const seen=_timDismissed[k]||(_timDismissed[k]=[]);
   if(seen.indexOf(id)<0)seen.push(id);
+  _timOffWrite();
   if(typeof timLearn==='function')timLearn('nudge',id,false);
   return seen;
 }
 function timAccepted(id){if(typeof timLearn==='function')timLearn('nudge',id,true);}
-function timDismissedOn(jobKey){return (_timDismissed[String(jobKey||'_')]||[]).slice();}
-function timResetDismissals(){_timDismissed={};}
+// The union with '_' is the other half of the owner's report. _timJobKey is
+// 'bid:'+_geiBidId once a proposal has been autosaved and '_' before it has, so
+// a nudge waved off while building a NEW T&M came straight back the moment the
+// first autosave handed the bid an id. Same proposal, same man, new key.
+function timDismissedOn(jobKey){
+  const k=String(jobKey||'_');
+  const a=_timDismissed[k]||[],b=(k==='_')?[]:(_timDismissed['_']||[]);
+  return [...new Set([...a,...b])];
+}
+function timResetDismissals(){_timDismissed={};_timDismissedBooks={};_timOffWrite();}
 
 // ── Reading the screen ───────────────────────────────────────────────────────
 //
@@ -286,6 +355,12 @@ function timJobSnapshot(){
   // the estimate screen, and a throw down there used to take the whole snapshot
   // with it. The books are the half that works on every screen, so they must
   // not be able to be killed by the half that only works on one.
+  // FIRST, and outside every try below it. This used to be the LAST line of the
+  // big try, after a dozen DOM reads, so anything in there throwing left
+  // s.dismissed as [] and silently un-dismissed every nudge on the screen. It
+  // reads two globals and cannot throw on its own; it had no business being
+  // downstream of the estimate builder.
+  try{s.dismissed=timDismissedOn(_timJobKey());}catch(_e){s.dismissed=[];}
   try{s.books=_timBooks();}catch(_e){s.books=null;}
   if(s.books){
     s._amounts['books-late']=s.books.late.amount;
@@ -325,7 +400,6 @@ function timJobSnapshot(){
     s._amounts['still-owes']=owed.amount;
 
     s.overrun=_timOverrun();
-    s.dismissed=timDismissedOn(_timJobKey());
   }catch(_e){}
   return s;
 }

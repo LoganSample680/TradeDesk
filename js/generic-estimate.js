@@ -352,9 +352,23 @@ let _estCrewRates={};
 Object.defineProperty(window,'_estCrewRates',{get:()=>_estCrewRates,set:v=>{_estCrewRates=(v&&typeof v==='object')?v:{};},configurable:true});
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+// ── THE RATE IS ON THE JOB. WHETHER THE CUSTOMER SEES IT IS A SEPARATE THING ─
+//
+// Owner, 2026-09-22: "how do we give contractors the opportunity to hide the
+// rate in the proposal but it be something they have to toggle, if they usually
+// hide their rate does it persist?"
+//
+// One flag was doing two jobs. Turning Rate off took the rate off the BID,
+// which is also what Tim multiplies the clocked hours by to bill the job
+// (timWorkSheet, js/tim-ask.js), so a man who simply did not want his hourly
+// rate printed was throwing away his own invoicing to get that.
+// They are separate now: the rate is on the job either way, and this says
+// whether it is printed.
+let _tmHideRate=false;
 Object.defineProperty(window,'_geiIsTM',{get:()=>_geiIsTM,set:v=>{_geiIsTM=v;},configurable:true});
 Object.defineProperty(window,'_tmCrewCount',{get:()=>_tmCrewCount,set:v=>{_tmCrewCount=v;},configurable:true});
 Object.defineProperty(window,'_tmRatePerMan',{get:()=>_tmRatePerMan,set:v=>{_tmRatePerMan=v;},configurable:true});
+Object.defineProperty(window,'_tmHideRate',{get:()=>_tmHideRate,set:v=>{_tmHideRate=!!v;},configurable:true});
 Object.defineProperty(window,'_tmEstHours',{get:()=>_tmEstHours,set:v=>{_tmEstHours=v;},configurable:true});
 Object.defineProperty(window,'_tmBillingCycle',{get:()=>_tmBillingCycle,set:v=>{_tmBillingCycle=v;},configurable:true});
 let _tmCapAction='Stop & get re-approval';
@@ -671,11 +685,27 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
-  // A NEW T&M PROPOSAL STARTS AT NOTHING. Scope and Send, and whatever the job
-  // address's own statute forces on (_tmApplyLayers adds those). His last
-  // proposal's shape is not carried over: the fast path is the empty one, and
-  // a man who wants a rate on every job is one tap from it.
-  _tmLayers=new Set();_tmRateOnly=false;
+  // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
+  //
+  // It started at NOTHING until 2026-09-22, and the reasoning then was sound:
+  // scope and Send is a complete proposal, the statute adds what it must, and
+  // a man who wants a rate is one tap from it.
+  //
+  // What changed is not the argument, it is what the rate is FOR. Owner:
+  // "we want rate because then Tim can feed a quick invoice." The rate is no
+  // longer only a number the customer reads; it is the multiplier that turns
+  // the hours his crew clocks against this job into an invoice, through
+  // timWorkSheet (js/tim-ask.js). A T&M job with no rate on its bid gives Tim
+  // hours and nothing to bill them at, and that is discovered on the Friday
+  // somebody wants paid, which is the worst possible moment to find it.
+  //
+  // So it is ON, pre-filled with his own labor rate (_facts.laborRate below),
+  // and one tap from OFF for the job that really is agreed some other way.
+  // Nothing is required here that was not required before: the statute is
+  // still the only thing that can lock a layer.
+  _tmLayers=new Set(['rate']);_tmRateOnly=true;
+  // His standing answer, not a fresh question on every job.
+  _tmHideRate=_tmHideRateDefault();
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -724,6 +754,10 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||_facts.laborRate;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
+        // A proposal comes back the way it was SENT. Falling through to the
+        // standing preference here would silently reprint a rate on a job he
+        // had already hidden it on, or hide one a customer has already seen.
+        _tmHideRate=(b.tmHideRate!==undefined)?!!b.tmHideRate:_tmHideRateDefault();
         // The BID's own answer wins over the account default: a rate sheet he
         // saved stays a rate sheet, and a totalled T&M he saved before he ever
         // turned the default on does not silently lose its total on resume.
@@ -782,7 +816,8 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       // isTM precedence, legacy dual-flag rows (see _byoAutosave note) must
       // resume as T&M, never as an empty BYO.
-      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;}
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;
+        _tmHideRate=(_b.tmHideRate!==undefined)?!!_b.tmHideRate:_tmHideRateDefault();}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       if(Array.isArray(_b.exclusions))_geiExclusions=[..._b.exclusions];
@@ -935,8 +970,18 @@ function _tmRecalc(){
   if(fml)fml.textContent=(_tmRatePerMan&&_tmEstHours)?_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' × $'+_tmRatePerMan+'/hr × '+_tmEstHours+'hrs':'Enter rate & hours above';
   // Upsert labor line
   const idx=_geiLines.findIndex(l=>l._tmLabor);
-  const desc='Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
-  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
+  // The OTHER place the rate reaches him. Shown, the line is hours at a rate;
+  // hidden, it is one lump with the same total and no per-hour figure anywhere
+  // on it, because a line that says "120 hr @ $760" hands back by division
+  // exactly what the clause above just stopped printing.
+  const _hideR=_tmHideRate&&_tmCanHideRate();
+  const desc=_hideR
+    ? ('Labor'+(_tmCrewCount>1?(', '+_tmCrewCount+' workers'):''))
+    : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr');
+  const _laborTotal=Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours);
+  const line=_hideR
+    ? {desc,qty:1,unit:'lot',rate:_laborTotal,_tmLabor:true,total:_laborTotal}
+    : {desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:_laborTotal};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
   renderGeiLines();calcGeiTotal();
@@ -2182,6 +2227,10 @@ function _byoAutosave(){
     b.isFreeForm=false;
     b.tmRateOnly=!!_tmRateOnly;
     b.tmLayers=[..._tmLayers];
+    // On the BID as well as on S: the preference is what he usually does, this
+    // is what THIS proposal did, and a resumed one has to come back the way it
+    // was sent rather than the way he has since changed his mind.
+    b.tmHideRate=!!_tmHideRate;
     if(_tmRateOnly){
       // Same reason as saveGenericEstimate: the flat figure is the deposit, and
       // the percent the shared block just wrote off a phantom total is wrong.
@@ -3765,10 +3814,20 @@ function _tmInputChange(){
   // The client sees what it costs per hour, and with two rates on the job he
   // sees both, because "2 workers @ $85/hr" is not true when one bills 95 and
   // the other 75 and the total is the same.
-  const desc=crewRates
-    ? ('Labor: '+_crewRateWords()+' · $'+perHour.toLocaleString()+'/hr on site')
-    : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr');
-  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(perHour),_tmLabor:true,total:Math.round(labor)};
+  // ...unless he has kept the rate off this proposal. The LINE carries the
+  // rate as surely as the terms clause does: "320 hr @ $190" hands it straight
+  // back by division, and the per-person wording hands back more than the
+  // clause ever printed. Hidden, it is one lump for the same money with no
+  // arithmetic on it that recovers an hourly figure.
+  const _hideRate=_tmHideRate&&_tmCanHideRate();
+  const desc=_hideRate
+    ? ('Labor'+(_tmCrewCount>1?(', '+_tmCrewCount+' workers'):''))
+    : (crewRates
+      ? ('Labor: '+_crewRateWords()+' · $'+perHour.toLocaleString()+'/hr on site')
+      : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr'));
+  const line=_hideRate
+    ? {desc,qty:1,unit:'lot',rate:Math.round(labor),_tmLabor:true,total:Math.round(labor)}
+    : {desc,qty:_tmEstHours,unit:'hr',rate:Math.round(perHour),_tmLabor:true,total:Math.round(labor)};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
   // Stat tiles
@@ -4031,6 +4090,52 @@ function _tmStateRule(){
   const r=(typeof statePriceRule==='function')?statePriceRule(st):{rule:'none'};
   return Object.assign({state:st},r);
 }
+// ── WHERE HIDING IT IS NOT HIS TO DECIDE ────────────────────────────────────
+//
+// The rate is a REQUIRED TERM in some states, not a courtesy. Pennsylvania's
+// HICPA defines a time-and-materials contract as payment "based on the actual
+// cost of labor at a specified hourly rate", so a PA proposal with the rate
+// hidden is not a T&M contract at all.
+//
+// Rather than write a second legal table and have to be right about nine more
+// states, this reuses the boundary the file already draws: wherever a statute
+// LOCKS the rate layer on, the rate also has to be printed. That is
+// conservative, and conservative is the correct direction to be wrong in on a
+// contract term. Everywhere else it is his call.
+function _tmCanHideRate(){return !_tmLockedLayers().has('rate');}
+// STATE_NAMES already exists in js/legal.js (§18: one definition, many mouths).
+// The code is the fallback, for the case where the address parsed to something
+// that map has never heard of.
+function _tmStateName(st){
+  const k=String(st||'').toUpperCase();
+  try{if(typeof STATE_NAMES!=='undefined'&&STATE_NAMES[k])return STATE_NAMES[k];}catch(_e){}
+  return st||'';
+}
+// What he did last time, because a man who hides his rate hides it on every
+// job and should not have to say so on every job. On S, so it follows him to
+// the tablet in the truck rather than living on one phone.
+function _tmHideRateDefault(){
+  try{return (typeof S!=='undefined'&&S)?!!S.tmHideRate:false;}catch(_e){return false;}
+}
+function _tmSetHideRate(v){
+  if(!_tmCanHideRate()){_tmHideRate=false;}
+  else _tmHideRate=!!v;
+  // PERSISTED the way every other account preference is, not just assigned.
+  // An assignment alone lives until the tab closes, which is not "remembered"
+  // and is certainly not "follows him to the tablet in the truck".
+  try{
+    if(typeof S!=='undefined'&&S){
+      S.tmHideRate=_tmHideRate;
+      if(typeof _settingsChanged==='function')_settingsChanged();
+    }
+  }catch(_e){}
+  // The labor LINE carries the rate too, so it has to be rebuilt, not just
+  // re-rendered: hidden, it becomes one lump with no per-hour figure on it.
+  if(typeof _tmInputChange==='function')_tmInputChange();
+  if(typeof _tmApplyLayers==='function')_tmApplyLayers();
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+
 // A layer a statute put there cannot be tapped off.
 function _tmLockedLayers(){
   const r=_tmStateRule();
@@ -4078,6 +4183,29 @@ function _tmApplyLayers(){
   show('tm-deposit-flat-wrap',_tmLayers.has('dep')&&!_tmLayers.has('est'));
   show('tm-cad-head',_tmLayers.has('rate'));
   show('tm-cad-row',_tmLayers.has('rate'));
+  // The toggle lives IN the rate block, next to the number it is about, rather
+  // than in a settings screen he would have to know exists.
+  const hr=document.getElementById('tm-hide-rate-wrap');
+  if(hr){
+    const can=_tmCanHideRate();
+    if(!can)_tmHideRate=false;
+    hr.innerHTML=can
+      ? '<label style="display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer">'+
+          '<input type="checkbox" id="tm-hide-rate" '+(_tmHideRate?'checked':'')+
+          ' onchange="_tmSetHideRate(this.checked)" style="width:18px;height:18px;flex-shrink:0">'+
+          '<span style="min-width:0">'+
+            '<span style="display:block;font-size:13px;font-weight:700;color:var(--text)">Keep my rate off the proposal</span>'+
+            '<span style="display:block;font-size:11.5px;color:var(--text3);line-height:1.45;margin-top:1px">'+
+              'The rate still runs the job and still bills the hours. They just do not read it.'+
+              ' This is remembered for your next one.</span>'+
+          '</span></label>'
+      // Named, not abbreviated: a man reading why he cannot turn something off
+      // is owed the state's name and the statute behind it, not a two-letter
+      // code he has to decode to know which law is talking to him.
+      : '<div style="margin-top:12px;font-size:11.5px;color:#92400E;line-height:1.45">'+
+          escHtml(_tmStateName(rule.state))+' requires the hourly rate on a time and materials contract, so it stays on this proposal. '+
+          escHtml(rule.statute||'')+'</div>';
+  }
   const nteH=document.getElementById('tm-nte-head');
   if(nteH)nteH.textContent=locked.has('cap')
     ?'Guaranteed maximum price'   // the statutes' phrase, where a statute forces it
@@ -4085,6 +4213,51 @@ function _tmApplyLayers(){
   const matH=document.getElementById('tm-mat-head');
   if(matH)matH.textContent='Material categories';
   _tmRenderAddRow(rule,locked);
+}
+
+// ── WHAT THIS PROPOSAL IS, RIGHT NOW, IN ONE SENTENCE ───────────────────────
+//
+// Owner, 2026-09-22, on this screen: "I'm honestly lost on what I even need to
+// do ... the flow just seems broken, doesn't seem natural."
+//
+// The page was a row of six ＋ chips with nothing above them. It knew things it
+// never said: that the scope alone is already a complete proposal, that a rate
+// with no day count prints no total, that Estimate needs Rate. A man looking at
+// six equal buttons has no way to know which of those are true, so he cannot
+// tell whether he is finished.
+//
+// So the row says what he has. Not what he could add, which is what the chips
+// already show, but what he would be SENDING if he stopped now. That is the
+// question somebody standing on a driveway is actually asking.
+function _tmShape(){
+  const L=_tmLayers;
+  if(!L.has('rate')&&!L.has('mat')&&!L.has('cap')){
+    // The state of it after picking Time & Materials and writing the scope, and
+    // the one nobody believes is finished. It usually is. It is no longer where
+    // a new one STARTS, though, because the rate has a second job now.
+    return {head:'Scope only, no price',
+      body:'This sends what you will do, and what it costs per hour is agreed separately. It is a complete proposal and in most states a legal one. '+
+        'Without a rate on it, Tim cannot turn the hours your crew clocks here into an invoice.'};
+  }
+  if(L.has('rate')&&!L.has('est')){
+    return {head:'A rate, no total',
+      body:'They see your hourly rate and crew size. There is no total on it, because nothing has told it how many days.'+
+        (L.has('cap')?' The cap is the only number they see.':' Add Estimate to put a number on it.')+
+        ' The rate is also what Tim bills the clocked hours at when this job is done.'};
+  }
+  if(L.has('rate')&&L.has('est')){
+    return {head:'A rate and a total',
+      body:'They see the rate, the days, and what that comes to'+
+        (L.has('mat')?', plus materials':'')+
+        (L.has('dep')?', with a deposit due up front':'')+
+        (L.has('cap')?', and it cannot go past the cap':'')+'.'};
+  }
+  if(L.has('mat')&&!L.has('rate')){
+    return {head:'Materials, no labor rate',
+      body:'They see what the materials cost and nothing about your time. Add Rate unless the labor is agreed some other way.'};
+  }
+  return {head:'A cap, nothing else',
+    body:'They see the most it can cost and no working behind it.'};
 }
 
 // The row of chips. An added layer reads as added and can be tapped back off,
@@ -4119,7 +4292,31 @@ function _tmRenderAddRow(rule,locked){
     :rule.rule==='warn'
     ?'<div style="width:100%;font-size:11px;color:#92400E;margin-top:2px">'+escHtml(rule.note)+'</div>'
     :'';
-  row.innerHTML=chips+forced+blocked;
+  // The heading, so the row is a question with an answer rather than six
+  // buttons. "How this one bills" and not "Options": a man is not choosing
+  // features, he is describing a deal he has already half agreed on a driveway.
+  const head='<div style="width:100%;margin-bottom:2px">'+
+    '<div class="td-h3" style="margin-bottom:2px">How this one bills</div>'+
+    '<div style="font-size:11.5px;color:var(--text3);line-height:1.45">'+
+      'The scope above is the proposal. Add only what this job actually charges on.'+
+    '</div></div>';
+  // Estimate is the one chip with a dependency and the only place the page can
+  // lie by omission: tapping it turns Rate on too (_tmAddLayer follows `needs`),
+  // which is right, and silently doing it would leave him wondering what he
+  // just pressed.
+  const dep=(!_tmLayers.has('rate')&&!locked.has('rate'))
+    ? '<div style="width:100%;font-size:11px;color:var(--text3);margin-top:2px">'+
+      'Estimate turns on Rate with it: a day count has nothing to multiply on its own.</div>'
+    : '';
+  const sh=_tmShape();
+  const shape=(rule.rule==='block')?'':
+    '<div style="width:100%;margin-top:9px;padding:10px 12px;border-radius:var(--r-md);'+
+      'background:var(--bg2);box-shadow:inset 0 0 0 1px var(--border)">'+
+      '<div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:2px">'+
+        'Send it now and they get: '+escHtml(sh.head)+'</div>'+
+      '<div style="font-size:11.5px;color:var(--text2);line-height:1.5">'+escHtml(sh.body)+'</div>'+
+    '</div>';
+  row.innerHTML=head+chips+dep+forced+blocked+shape;
 }
 // WHAT A BID SAVED BEFORE LAYERS ACTUALLY CARRIES. Read from its own values,
 // never guessed: a resumed proposal must come back showing exactly the blocks
@@ -5421,7 +5618,11 @@ function _geiBuildTermsHtml(){
   // is what the trade says happens without it: the contractors who got burned
   // on T&M were not burned by showing a rate, they were burned by never fixing
   // one in writing and then arguing about it afterwards.
-  const _tmRateClause=(_geiIsTM&&Number(_tmRatePerMan)>0)?[['Rate',
+  // Hidden means hidden: the clause that states the rate is the main place the
+  // customer reads it, so it comes out entirely rather than being softened.
+  // _tmCanHideRate is consulted and not just the flag, so a proposal carried
+  // across a state line cannot arrive with a required term missing.
+  const _tmRateClause=(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()))?[['Rate',
     `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate. Materials are billed at actual cost.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
@@ -5882,7 +6083,11 @@ async function sendGenericProposal(previewOnly,opts){
     amount:(_geiIsTM&&_tmRateOnly)?0:total,
     deposit:(_geiIsTM&&_tmRateOnly)?_rsFlatDep:_tmDepAmt,
     rateOnly:!!(_geiIsTM&&_tmRateOnly),
-    hourlyRate:_geiIsTM?_tmRatePerMan:0,
+    // THIS JSON LANDS IN THE CUSTOMER'S BROWSER. Nothing in sign.html reads
+    // hourlyRate today, but a number he deliberately kept off the document has
+    // no business riding along in the payload behind it where a devtools tab
+    // reads it back. Hidden is hidden in the file as well as on the page.
+    hourlyRate:(_geiIsTM&&!(_tmHideRate&&_tmCanHideRate()))?_tmRatePerMan:0,
     crewCount:_geiIsTM?_tmCrewCount:0,
     nteCap:_geiIsTM?_tmNteCap:0,
     billingCycle:_geiIsTM?(_tmBillingCycle||'weekly'):'',

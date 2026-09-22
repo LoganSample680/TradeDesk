@@ -3050,6 +3050,15 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         bids = bids.filter(x => x.client_id !== 88904);
         openGenericEstimate(c, null, 'general');
         _geiIsTM = true; _geiIsFreeForm = false;
+        // SETUP CHANGED 2026-09-22, not the assertion below it. This test is
+        // about the T&C accordion; hasEstimatedTotal is only its proof that a
+        // document rendered at all. It used to get a total for free, because a
+        // fresh T&M builder opened with NO layers on. As of the rate-default-on
+        // change it opens rate-only (owner: "we want rate because then Tim can
+        // feed a quick invoice"), and a rate with no day count behind it prints
+        // no total by design. So the estimate layer is turned on explicitly,
+        // which is what a man who wants a total now does on the screen.
+        _tmLayers = new Set(['rate', 'est']); _tmRateOnly = false;
         _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
         await sendGenericProposal(true);

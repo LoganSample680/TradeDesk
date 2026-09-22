@@ -1048,7 +1048,15 @@ function _timTakeNudge(id){
   timDockRefresh();
 }
 function _timDropNudge(id){
-  if(typeof timDismiss==='function')timDismiss(typeof _timJobKey==='function'?_timJobKey():'_',id);
+  // The figure rides along so a book finding can come back when the money
+  // moves. Read off the same snapshot the nudge was built from rather than
+  // recomputed, or the two could disagree and it would never come back at all.
+  let sig=null;
+  try{
+    const snap=(typeof timJobSnapshot==='function')?timJobSnapshot():null;
+    if(snap&&snap._amounts)sig=String(snap._amounts[id]||0);
+  }catch(_e){}
+  if(typeof timDismiss==='function')timDismiss(typeof _timJobKey==='function'?_timJobKey():'_',id,sig);
   _timClose();
   timDockRefresh();
 }
