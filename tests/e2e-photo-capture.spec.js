@@ -248,13 +248,15 @@ test.describe('Photo capture: unfiled tray', () => {
     expect(html).toBe('');
   });
 
-  test('the tray renders a row per unfiled photo with the guess on it', async () => {
+  // The pill names the PROPERTY, not the customer. "Pepe?" does not tell a man
+  // which of Pepe's two houses he is looking at (Jack, 2026-09-22).
+  test('the tray renders a row per unfiled burst with the property on it', async () => {
     const html = await page.evaluate(() => {
       photos.push({ id: 4, type: 'before', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
       return tdUnfiledTrayHTML();
     });
     expect(html).toContain('Unfiled photos');
-    expect(html).toContain('Dana Whitfield?');
+    expect(html).toContain('Dana Whitfield');
   });
 });
 
@@ -394,6 +396,1079 @@ test.describe('Photo capture: the sheet itself', () => {
       return !(b.top > a.bottom || b.bottom < a.top || b.left > a.right || b.right < a.left);
     });
     expect(hit).toBe(false);
+  });
+
+  // The pill was cut in half by the Dynamic Island on the owner's phone the
+  // first time this ran on a real device. The sheet is full-bleed over the
+  // camera, so nothing else reserves that space for it.
+  test('the subject pill clears the status bar and the Dynamic Island', async () => {
+    await page.evaluate(() => tdCaptureForBid(901, 'before'));
+    const top = await page.evaluate(() =>
+      getComputedStyle(document.querySelector('#pc-sheet .pc-attach')).top);
+    // env() is 0 in a desktop browser, so the assertion is on the rule
+    // surviving, not on a device number: 14px plus an inset that is only
+    // non-zero where an island exists.
+    const css = await page.evaluate(() =>
+      [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch (e) { return []; } })
+        .filter(r => r.selectorText === '.pc-attach').map(r => r.style.top).join(''));
+    expect(css).toContain('safe-area-inset-top');
+    expect(parseFloat(top)).toBeGreaterThanOrEqual(14);
+  });
+
+  // Six shots with nobody attached went into the tray and the dashboard was
+  // never repainted, so from the outside they vanished (owner, first UAT run).
+  // The answer is not a better tray: the decision belongs at the end of the
+  // shoot, while the contractor is still standing there.
+  // Every shot this fixture takes has to still BE there when the sheet opens.
+  // A save writes through saveAll, and a cloud load that lands mid-loop
+  // REPLACES the photos array wholesale (js/cloud.js), so a row can be saved
+  // and then quietly dropped before tdReviewShots looks for it. That is what
+  // made WebKit fail twice on two different tests: the album came up holding
+  // fewer shots than were taken, and the assertion blamed the code under
+  // test. The helper now returns what it saved AND what survived, and every
+  // caller asserts they match, so the next time it happens it says so.
+  const shootUnfiled = async (n) => {
+    const r = await page.evaluate(async (count) => {
+      tdCaptureUnfiled();
+      const ids = [];
+      for (let i = 0; i < count; i++) {
+        const row = await tdSavePhoto({ type: 'before', file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
+        if (row) { ids.push(row.id); _pcSessionIds.push(row.id); _pcShots++; }
+      }
+      tdCloseCapture();
+      return { ids, survived: ids.filter(id => photos.some(p => String(p.id) === String(id))).length };
+    }, n);
+    expect(r.ids.length, 'every shot has to save').toBe(n);
+    expect(r.survived, 'and still be in photos when the sheet opens').toBe(n);
+    return r.ids;
+  };
+
+  test('finishing a shoot with no customer opens the burst, all of it', async () => {
+    const ids = await shootUnfiled(6);
+    const r = await page.evaluate(() => ({
+      open: !!document.getElementById('pc-rev'),
+      cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+      title: document.querySelector('#pc-rev .pc-rev-title').textContent,
+    }));
+    expect(r.open).toBe(true);
+    expect(r.cells).toBe(6);
+    expect(r.title).toBe('6 shots');
+    expect(ids.length).toBe(6);
+    await page.evaluate(() => tdReviewClose());
+  });
+
+  test('a shoot that already has a customer closes without asking again', async () => {
+    const r = await page.evaluate(async () => {
+      tdCaptureForBid(901, 'before');
+      await tdSavePhoto({ type: 'before', bidId: 901, file: new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
+      _pcShots++;
+      tdCloseCapture();
+      return !!document.getElementById('pc-rev');
+    });
+    expect(r).toBe(false);
+  });
+
+  test('a shot opens full size, steps both ways, and wraps', async () => {
+    await shootUnfiled(3);
+    const r = await page.evaluate(() => {
+      const seen = [];
+      tdReviewOpen(0);
+      seen.push(document.querySelector('.pc-rev-title').textContent);
+      tdReviewStep(1); seen.push(document.querySelector('.pc-rev-title').textContent);
+      tdReviewStep(-1); tdReviewStep(-1); seen.push(document.querySelector('.pc-rev-title').textContent);
+      const img = !!document.getElementById('pc-rev-img');
+      tdReviewGrid();
+      const backToGrid = document.querySelectorAll('#pc-rev .pc-rev-cell').length;
+      return { seen: seen.join(','), img, backToGrid };
+    });
+    expect(r.seen).toBe('1 of 3,2 of 3,3 of 3');   // it wraps rather than sticking
+    expect(r.img).toBe(true);
+    expect(r.backToGrid).toBe(3);
+    await page.evaluate(() => tdReviewClose());
+  });
+
+  test('a bad shot is binned on one tap and comes back on Undo', async () => {
+    const ids = await shootUnfiled(3);
+    const r = await page.evaluate((ids) => {
+      tdReviewOpen(1);
+      tdReviewDelete();
+      const afterDel = {
+        cells: (tdReviewGrid(), document.querySelectorAll('#pc-rev .pc-rev-cell').length),
+        inPhotos: photos.some(p => String(p.id) === String(ids[1])),
+      };
+      tdReviewUndo();
+      return {
+        afterDel,
+        cellsBack: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+        backInPhotos: photos.some(p => String(p.id) === String(ids[1])),
+      };
+    }, ids);
+    expect(r.afterDel.cells).toBe(2);
+    expect(r.afterDel.inPhotos).toBe(false);
+    expect(r.cellsBack).toBe(3);
+    expect(r.backInPhotos).toBe(true);
+    await page.evaluate(() => tdReviewClose());
+  });
+
+  // Nothing leaves storage while Undo is still on screen.
+  //
+  // The rows are pushed directly rather than shot through the camera: the
+  // subject here is the DEFERRAL, not the capture path, and on WebKit a
+  // canvas-encoded fixture left the sheet with one photo instead of two, so
+  // deleting it emptied the album, closed the sheet, and the removal that
+  // followed looked like the bug this test exists to catch (CI, 2026-09-22).
+  test('deleting only reaches storage once the sheet is closed', async () => {
+    const r = await page.evaluate(() => {
+      photos.length = 0;
+      photos.push({ id: 980, type: 'before', url: 'u', thumbUrl: '', storagePath: 'u/unfiled/one.jpg', client_id: null, uploadedAt: new Date().toISOString() });
+      photos.push({ id: 981, type: 'before', url: 'u', thumbUrl: '', storagePath: 'u/unfiled/two.jpg', client_id: null, uploadedAt: new Date().toISOString() });
+      const removed = [];
+      const realFrom = _supa.storage.from.bind(_supa.storage);
+      _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
+        remove: async (paths) => { removed.push(...paths); return { data: null, error: null }; }
+      });
+      tdReviewShots([980, 981]);
+      const started = _pcRevRows().length;
+      tdReviewOpen(0);
+      tdReviewDelete();
+      const out = { started, left: _pcRevRows().length, duringSheet: removed.length, open: !!document.getElementById('pc-rev') };
+      tdReviewClose();
+      _supa.storage.from = realFrom;
+      out.afterClose = removed.join(',');
+      return out;
+    });
+    expect(r.started, 'the fixture has to put TWO shots in the album').toBe(2);
+    expect(r.left, 'and one has to survive the delete, or the sheet closes itself').toBe(1);
+    expect(r.open).toBe(true);
+    expect(r.duringSheet).toBe(0);
+    expect(r.afterClose).toContain('u/unfiled/one.jpg');
+  });
+
+  test('one customer, one tap, the whole burst lands on them', async () => {
+    const ids = await shootUnfiled(4);
+    const r = await page.evaluate((ids) => {
+      tdReviewAttach();
+      for (let step = 0; step < 3 && document.getElementById('pc-att'); step++) {
+        const opt = document.querySelector('#pc-att .pc-file-opt');
+        if (!opt) break;
+        opt.click();
+      }
+      const mine = ids.map(id => photos.find(p => String(p.id) === String(id))).filter(Boolean);
+      return {
+        filed: mine.filter(p => p.client_id != null).length,
+        sheetGone: !document.getElementById('pc-rev'),
+        pickerGone: !document.querySelector('.zmodal-overlay'),
+      };
+    }, ids);
+    expect(r.filed).toBe(4);
+    expect(r.sheetGone).toBe(true);
+    expect(r.pickerGone).toBe(true);
+  });
+
+  test('"Not now" keeps them, it never throws them away', async () => {
+    const ids = await shootUnfiled(2);
+    const r = await page.evaluate((ids) => {
+      document.querySelector('#pc-rev .pc-rev-top .pc-side').click();
+      return {
+        gone: !document.getElementById('pc-rev'),
+        kept: ids.filter(id => photos.some(p => String(p.id) === String(id))).length,
+        unfiled: tdUnfiledPhotos().length,
+      };
+    }, ids);
+    expect(r.gone).toBe(true);
+    expect(r.kept).toBe(2);
+    expect(r.unfiled).toBeGreaterThanOrEqual(2);
+  });
+
+  // The tray is the safety net for a burst you walked away from, and it shows
+  // the burst as one thing, the way the review sheet does.
+  test('the tray groups a burst into one row and reopens it', async () => {
+    const r = await page.evaluate(() => {
+      const t0 = Date.parse('2026-09-21T17:00:00.000Z');
+      photos.length = 0;
+      for (let i = 0; i < 5; i++) photos.push({ id: 700 + i, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, uploadedAt: new Date(t0 + i * 20000).toISOString() });
+      // an hour later is a different walkthrough, not the same burst
+      photos.push({ id: 799, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, uploadedAt: new Date(t0 + 3600000).toISOString() });
+      const host = document.createElement('div');
+      host.innerHTML = tdUnfiledTrayHTML();
+      document.body.appendChild(host);
+      const rows = host.querySelectorAll('.pc-uf-row').length;
+      const counts = [...host.querySelectorAll('.pc-uf-n')].map(n => n.textContent).join(',');
+      [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'Review').click();
+      const cells = document.querySelectorAll('#pc-rev .pc-rev-cell').length;
+      host.remove(); tdReviewClose();
+      return { bursts: tdUnfiledBursts().length, rows, counts, cells };
+    });
+    expect(r.bursts).toBe(2);
+    expect(r.rows).toBe(2);
+    expect(r.counts).toBe('5');          // the single shot carries no count badge
+    expect(r.cells).toBe(1);             // newest burst first: the lone later shot
+  });
+
+  // ── Where exactly on the record (owner, 2026-09-21) ───────────────────────
+  // "If it's taken onsite gps coordinates search the record and attach where
+  // exactly on the client record?" So the card opens on what the coordinates
+  // prove, and only asks what the data cannot answer by itself.
+  const attachSeed = () => page.evaluate(() => {
+    clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+    clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS', lat: 37.6889, lon: -97.3361 });
+    clients.push({ id: 502, name: 'Far Away Co', addr: '900 Mile Rd', lat: 38.9, lon: -98.9 });
+    jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'active', addr: '412 Oak St, Wichita KS', lat: 37.6889, lon: -97.3361 });
+    photos.push({ id: 950, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, lat: 37.68892, lon: -97.33612, uploadedAt: new Date().toISOString() });
+    photos.push({ id: 951, type: 'before', url: '', thumbUrl: '', data: 'x', client_id: null, lat: 37.68892, lon: -97.33612, uploadedAt: new Date().toISOString() });
+    tdReviewShots([950, 951]);
+    tdReviewAttach();
+  });
+
+  test('the coordinates put the right record at the top, with the distance', async () => {
+    await attachSeed();
+    const r = await page.evaluate(() => {
+      const near = [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent);
+      // The matches themselves, not just how many: a count that disagrees
+      // with the screen cannot say which row it did not expect.
+      const m = _pcNearbyMatches([950]);
+      return { count: near.length, first: near[0] || '', matches: m.length,
+        rows: m.map(x => x.name + '|' + x.addr + '|' + (x.jobId || '-')).join(' + ') };
+    });
+    expect(r.count).toBe(1);
+    expect(r.first).toContain('Dana Whitfield');
+    expect(r.first).toContain('412 Oak St');
+    expect(r.first).toContain('Repipe');
+    expect(r.first).toMatch(/\d+ ft away/);
+    expect(r.matches, 'one house, one row: ' + r.rows).toBe(1);
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  // The dedupe has to hold when the two records spell the address
+  // differently, which is the normal case: a job typed by hand next to an
+  // address that came from a lookup.
+  test('a job and its own address are one row, however the two were typed', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita, KS 67206', lat: 37.6889, lon: -97.3361 });
+      jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'active', addr: '412 Oak St', lat: 37.68891, lon: -97.33611 });
+      photos.push({ id: 952, type: 'before', url: '', data: 'x', client_id: null, lat: 37.68892, lon: -97.33612, uploadedAt: new Date().toISOString() });
+    });
+    const r = await page.evaluate(() => {
+      const m = _pcNearbyMatches([952]);
+      return { n: m.length, jobId: m[0] && m[0].jobId, rows: m.map(x => x.addr).join(' + ') };
+    });
+    expect(r.n, 'one house, one row: ' + r.rows).toBe(1);
+    expect(r.jobId).toBe(601);          // and the job wins, because it says what the work is
+  });
+
+  test('tapping the on-site match files the whole burst on that job, no more questions', async () => {
+    await attachSeed();
+    const r = await page.evaluate(() => {
+      document.querySelector('#pc-att .pc-file-opt.near').click();
+      const mine = [950, 951].map(id => photos.find(p => String(p.id) === String(id)));
+      return {
+        asked: !!document.getElementById('pc-att'),
+        filed: mine.filter(p => p && p.client_id === 501 && p.job_id === 601).length,
+        addr: mine[0] && mine[0].addr,
+      };
+    });
+    expect(r.asked).toBe(false);
+    expect(r.filed).toBe(2);
+    expect(r.addr).toBe('412 Oak St, Wichita KS');
+  });
+
+  test('the attach card opens ON TOP of the album, not behind it', async () => {
+    await attachSeed();
+    const r = await page.evaluate(() => ({
+      card: +getComputedStyle(document.getElementById('pc-att')).zIndex,
+      sheet: +getComputedStyle(document.getElementById('pc-rev')).zIndex,
+    }));
+    expect(r.card).toBeGreaterThan(r.sheet);
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  test('no fix on the photo means no guess, just the customer list', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St', lat: 37.6889, lon: -97.3361 });
+      photos.push({ id: 960, type: 'before', url: '', data: 'x', client_id: null, lat: null, lon: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([960]); tdReviewAttach();
+    });
+    const r = await page.evaluate(() => ({
+      near: document.querySelectorAll('#pc-att .pc-file-opt.near').length,
+      list: document.querySelectorAll('#pc-att .pc-file-opt').length,
+    }));
+    expect(r.near).toBe(0);
+    expect(r.list).toBe(1);
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  test('searching narrows the customer list', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+      clients.push({ id: 502, name: 'Marco Reyes', addr: '9 Vine Ave' });
+      photos.push({ id: 961, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([961]); tdReviewAttach();
+      _pcAttPaint('who', 'reyes');
+    });
+    const r = await page.evaluate(() => [...document.querySelectorAll('#pc-att .pc-file-opt')].map(b => b.textContent).join('|'));
+    expect(r).toContain('Marco Reyes');
+    expect(r).not.toContain('Dana');
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  test('two properties asks which one, and the answer sticks to the photo', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS', extraAddresses: [{ label: 'Rental', addr: '88 Pine Ct, Wichita KS' }] });
+      photos.push({ id: 962, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([962]); tdReviewAttach();
+      tdAttachPick(501);
+    });
+    const r = await page.evaluate(() => {
+      // The app's own address picker, reused rather than reimplemented, so it
+      // also carries "New address for this client" for free (§7.3).
+      const sheet = document.getElementById('_addrpick-sheet');
+      const opts = sheet ? sheet.textContent : '';
+      _addrPickChoose(1);                                   // the rental
+      const p = photos.find(x => String(x.id) === '962');
+      return { opts, addr: p.addr, client: p.client_id, closed: !document.getElementById('pc-att') };
+    });
+    expect(r.opts).toContain('412 Oak St');
+    expect(r.opts).toContain('88 Pine Ct');
+    expect(r.opts).toContain('New address for this client');
+    expect(r.addr).toBe('88 Pine Ct, Wichita KS');
+    expect(r.client).toBe(501);
+    expect(r.closed).toBe(true);
+  });
+
+  test('one property and one open proposal is never a question', async () => {
+    const r = await page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+      bids.push({ id: 701, client_id: 501, title: 'Exterior repaint', status: 'draft', addr: '412 Oak St' });
+      photos.push({ id: 963, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([963]); tdReviewAttach();
+      tdAttachPick(501);
+      const p = photos.find(x => String(x.id) === '963');
+      return { asked: !!document.getElementById('pc-att'), bid: p.bid_id, name: p.bid_name };
+    });
+    expect(r.asked).toBe(false);
+    expect(r.bid).toBe(701);
+    expect(r.name).toBe('Exterior repaint');
+  });
+
+  test('a proposal AND a job at the same address is a real choice, including neither', async () => {
+    await page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+      bids.push({ id: 701, client_id: 501, title: 'Exterior repaint', status: 'draft', addr: '412 Oak St' });
+      jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'active', addr: '412 Oak St' });
+      photos.push({ id: 964, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+      tdReviewShots([964]); tdReviewAttach();
+      tdAttachPick(501);
+    });
+    const r = await page.evaluate(() => {
+      const opts = [...document.querySelectorAll('#pc-att .pc-file-opt')].map(b => b.textContent.trim());
+      tdAttachWork('job', 601);
+      const p = photos.find(x => String(x.id) === '964');
+      return { opts, job: p.job_id, bid: p.bid_id, addr: p.addr };
+    });
+    expect(r.opts.length).toBe(3);                      // proposal, job, just the customer
+    expect(r.opts[2]).toContain('Just the customer');
+    expect(r.job).toBe(601);
+    expect(r.bid == null).toBe(true);   // the proposal was not chosen, so nothing claims it
+    expect(r.addr).toBe('412 Oak St');
+  });
+
+  test('the property survives the trip to the cloud', async () => {
+    const r = await page.evaluate(() => {
+      const t = _TD_TABLES.find(x => x.t === 'td_photos');
+      const out = t.tx([{ id: 1, url: 'u', storagePath: 's', type: 'before', caption: '', client_id: 501, addr: '88 Pine Ct', uploadedAt: 'now' }]);
+      return out[0].addr;
+    });
+    expect(r).toBe('88 Pine Ct');
+  });
+
+  // ── The size ladder (owner 2026-09-22) ────────────────────────────────────
+  // Unlimited storage is affordable only if the 4K copy is never SERVED by
+  // accident, so these tests are mostly about what does NOT carry a url.
+  test.describe('TrueShot: the full-resolution copy', () => {
+    test('a big shot is written three times: thumb, view and full', async () => {
+      const r = await page.evaluate(async () => {
+        const cv = document.createElement('canvas');
+        cv.width = 4032; cv.height = 3024;
+        const g = cv.getContext('2d'); g.fillStyle = '#4477aa'; g.fillRect(0, 0, 4032, 3024);
+        const big = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.9));
+        const out = await _compressPhoto(big);
+        return {
+          view: out.blob.size, thumb: out.thumb.size,
+          hasFull: !!out.full, fullMime: out.fullMime || '', fullExt: out.fullExt || '',
+          w: out.w, h: out.h,
+          smaller: out.full ? out.thumb.size < out.blob.size : false,
+        };
+      });
+      expect(r.hasFull).toBe(true);
+      expect(r.w).toBe(4032);                  // every pixel the camera gave us
+      expect(r.fullExt).toMatch(/webp|jpg/);
+      expect(r.smaller).toBe(true);
+      expect(r.thumb).toBeLessThan(r.view);
+    });
+
+    test('a photo already smaller than the view size is not stored twice', async () => {
+      const has = await page.evaluate(async () => {
+        const cv = document.createElement('canvas');
+        cv.width = 900; cv.height = 600; cv.getContext('2d').fillRect(0, 0, 900, 600);
+        const small = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.9));
+        const out = await _compressPhoto(small);
+        return !!out.full;
+      });
+      expect(has).toBe(false);
+    });
+
+    test('the row carries a PATH and no url, so nothing can render it by accident', async () => {
+      const r = await page.evaluate(() => {
+        photos.push({ id: 970, type: 'before', url: 'https://x/view.jpg', thumbUrl: 'https://x/t.jpg', storagePath: 'u/s.jpg', fullPath: 'u/f-s.webp', client_id: 501, uploadedAt: new Date().toISOString() });
+        const p = photos.find(x => x.id === 970);
+        const keys = Object.keys(p).filter(k => /^full/i.test(k));
+        return { keys, src: tdPhotoSrc(p), hasFull: tdPhotoHasFull(970), noFullUrl: !('fullUrl' in p) };
+      });
+      expect(r.keys).toEqual(['fullPath']);
+      expect(r.noFullUrl).toBe(true);
+      expect(r.src).toBe('https://x/t.jpg');   // the grid still gets the thumb
+      expect(r.hasFull).toBe(true);
+    });
+
+    test('Full size is resolved on demand, and only then', async () => {
+      const r = await page.evaluate(() => {
+        // Its own row: beforeEach reseeds, so a row pushed by the test above
+        // is long gone by the time this one runs.
+        photos.push({ id: 970, type: 'before', url: 'https://x/view.jpg', thumbUrl: 'https://x/t.jpg', storagePath: 'u/s.jpg', fullPath: 'u/f-s.webp', client_id: 501, uploadedAt: new Date().toISOString() });
+        let asked = 0;
+        const realFrom = _supa.storage.from.bind(_supa.storage);
+        _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
+          getPublicUrl: (path) => { asked++; return { data: { publicUrl: 'https://cdn/' + path } }; }
+        });
+        tdReviewShots([970]);
+        tdReviewOpen(0);
+        const beforeTap = asked;
+        const shown = document.getElementById('pc-rev-img').src;
+        document.getElementById('pc-rev-full').click();
+        const after = document.getElementById('pc-rev-img').src;
+        const buttonGone = !document.getElementById('pc-rev-full');
+        _supa.storage.from = realFrom;
+        tdReviewClose();
+        return { beforeTap, shown, after, buttonGone };
+      });
+      expect(r.beforeTap).toBe(0);              // opening the viewer costs nothing
+      expect(r.shown).toBe('https://x/t.jpg');
+      expect(r.after).toBe('https://cdn/u/f-s.webp');
+      expect(r.buttonGone).toBe(true);          // it does not offer the same bytes twice
+    });
+
+    test('a photo with no full copy offers no Full size button', async () => {
+      const has = await page.evaluate(() => {
+        photos.push({ id: 971, type: 'before', url: 'https://x/v.jpg', thumbUrl: '', storagePath: 'u/v.jpg', fullPath: '', client_id: 501, uploadedAt: new Date().toISOString() });
+        tdReviewShots([971]); tdReviewOpen(0);
+        const btn = !!document.getElementById('pc-rev-full');
+        const noop = tdPhotoFullSize(971);
+        tdReviewClose();
+        return { btn, noop };
+      });
+      expect(has.btn).toBe(false);
+      expect(has.noop).toBe('');
+    });
+
+    // The client hub is the biggest egress risk in the app: one shared link,
+    // opened by a customer who scrolls it three times.
+    test('the client hub never carries the full-resolution copy', async () => {
+      const r = await page.evaluate(() => {
+        clients.length = 0; jobs.length = 0; photos.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+        jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'done', addr: '412 Oak St' });
+        photos.push({ id: 972, type: 'before', url: 'https://x/v.jpg', thumbUrl: 'https://x/t.jpg', storagePath: 'u/v.jpg', fullPath: 'u/f-v.webp', client_id: 501, job_id: 601, uploadedAt: new Date().toISOString() });
+        const snap = _buildClientHubSnapshot(501);
+        return JSON.stringify(snap);
+      });
+      expect(r).toContain('https://x/t.jpg');
+      expect(r).not.toContain('f-v.webp');
+      expect(r).not.toContain('fullPath');
+    });
+
+    // Owner, 2026-09-22: "pictures in between don't belong out there", then
+    // "progress photos will show when tagged as progress". Both hold, because
+    // the hub keeps them in different places: Before and After PAIR UP as the
+    // story, a Progress shot goes to the timeline underneath, and tagging it
+    // is what put it there.
+    test('Before and After pair up, and a Progress shot is never one of the pair', async () => {
+      const r = await page.evaluate(() => {
+        clients.length = 0; jobs.length = 0; photos.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+        jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'done', addr: '412 Oak St' });
+        const mk = (id, type) => photos.push({ id, type, url: 'https://x/' + type + '-' + id + '.jpg',
+          thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, job_id: 601,
+          addr: '412 Oak St', uploadedAt: new Date().toISOString() });
+        mk(1, 'before'); mk(2, 'progress'); mk(3, 'progress'); mk(4, 'after');
+        const snap = JSON.stringify(_buildClientHubSnapshot(501));
+        const snapO = _buildClientHubSnapshot(501);
+        const job = snapO.jobs.find(j => j.id === 601);
+        const types = (job.photos || []).map(p => p.type).sort().join(',');
+        return {
+          types,
+          pairs: (job.photos || []).filter(p => p.type === 'before' || p.type === 'after').length,
+          progress: (job.photos || []).filter(p => p.type === 'progress').length,
+          hasUrls: /before-1\.jpg/.test(snap) && /after-4\.jpg/.test(snap),
+        };
+      });
+      expect(r.types).toBe('after,before,progress,progress');
+      expect(r.pairs).toBe(2);        // the story
+      expect(r.progress).toBe(2);     // and the timeline, tagged on purpose
+      expect(r.hasUrls).toBe(true);
+    });
+
+    test('the crew still sees every progress shot on the property', async () => {
+      const r = await page.evaluate(() => {
+        // Its own seed: beforeEach reseeds, so the previous test's rows are gone.
+        clients.length = 0; jobs.length = 0; photos.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+        const mk = (id, type) => photos.push({ id, type, url: 'u', thumbUrl: '', storagePath: 's' + id,
+          client_id: 501, addr: '412 Oak St', uploadedAt: new Date().toISOString() });
+        mk(1, 'before'); mk(2, 'progress'); mk(3, 'progress'); mk(4, 'after');
+        const c = clients.find(x => x.id === 501);
+        return cdPropertyPhotos(c, '412 Oak St', 0).map(p => p.type).sort().join(',');
+      });
+      expect(r).toBe('after,before,progress,progress');
+    });
+
+    test('both archive paths survive the trip to the cloud', async () => {
+      const r = await page.evaluate(() => {
+        const t = _TD_TABLES.find(x => x.t === 'td_photos');
+        return t.tx([{ id: 1, url: 'u', storagePath: 's', type: 'before', caption: '', fullPath: 'u/f.webp', originalFullPath: 'u/of.webp', uploadedAt: 'now' }])[0];
+      });
+      expect(r.fullPath).toBe('u/f.webp');
+      expect(r.originalFullPath).toBe('u/of.webp');
+    });
+
+    test('deleting a burst takes every rung of the ladder with it', async () => {
+      const removed = await page.evaluate(() => {
+        const gone = [];
+        const realFrom = _supa.storage.from.bind(_supa.storage);
+        _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
+          remove: async (paths) => { gone.push(...paths); return { data: null, error: null }; }
+        });
+        photos.push({ id: 973, type: 'before', url: 'u', thumbUrl: '', storagePath: 'u/v.jpg', thumbPath: 'u/t-v.jpg', fullPath: 'u/f-v.webp', originalFullPath: 'u/of-v.webp', client_id: null, uploadedAt: new Date().toISOString() });
+        tdReviewShots([973]);
+        tdReviewOpen(0);
+        tdReviewDelete();
+        tdReviewClose();
+        _supa.storage.from = realFrom;
+        return gone;
+      });
+      expect(removed).toEqual(expect.arrayContaining(['u/v.jpg', 'u/t-v.jpg', 'u/f-v.webp', 'u/of-v.webp']));
+    });
+  });
+
+  // ── Jack's first real use, 2026-09-22 ─────────────────────────────────────
+  // He stood 8.8 metres from Pepe's 6912 SW 17th St and the app offered him
+  // nothing, so he filed one photo by hand off a list and left three orphans
+  // behind. Every number below is his: the fix his phone recorded, the
+  // property coordinates on Pepe's record, and Pepe's primary eight km away.
+  test.describe("TrueShot: the second house", () => {
+    const pepe = () => page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 901, name: 'Pepe Miranda', addr: '306 SW Elmwood Ave, Topeka, KS 66606',
+        lat: 39.0614613, lon: -95.69654,
+        extraAddresses: [{ label: '6912 SW 17th St', addr: '6912 SW 17th St, Topeka, KS 66615', lat: 39.03554526304709, lon: -95.7833048650199 }] });
+      clients.push({ id: 902, name: 'Laurie Schonfeldt', addr: '6712 SW Finsbury Ave, Topeka, KS 66614', lat: 39.0104968, lon: -95.7790924 });
+      const ids = [];
+      for (let i = 0; i < 4; i++) {
+        const id = 1000 + i; ids.push(id);
+        photos.push({ id, type: 'after', url: '', thumbUrl: '', data: 'x', client_id: null,
+          lat: 39.035573868723795, lon: -95.78321048210228,
+          uploadedAt: new Date(Date.parse('2026-09-22T14:51:12.965Z') + i * 6000).toISOString() });
+      }
+      return ids;
+    });
+
+    test("a customer's SECOND property is matched, not just their primary", async () => {
+      await pepe();
+      const r = await page.evaluate(() => {
+        const g = tdGuessPlaceFor(photos[0]);
+        return { name: g && g.client.name, addr: g && g.addr, m: g && Math.round(g.d * 10) / 10 };
+      });
+      expect(r.name).toBe('Pepe Miranda');
+      expect(r.addr).toBe('6912 SW 17th St, Topeka, KS 66615');
+      expect(r.m).toBeLessThan(15);              // 8.8m on his actual fix
+    });
+
+    test('the wrong customer 2.8km away is never offered', async () => {
+      await pepe();
+      const r = await page.evaluate(() => _pcNearbyMatches([1000]).map(x => x.name + ' | ' + x.addr));
+      expect(r.length).toBe(1);
+      expect(r[0]).toContain('Pepe Miranda');
+      expect(r[0]).toContain('6912');
+      expect(r.join()).not.toContain('Laurie');   // 6712 SW Finsbury is not a candidate
+    });
+
+    test('the sheet says the address in green and files the whole burst on one tap', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        tdReviewShots(ids);
+        const here = document.getElementById('pc-rev-here');
+        const said = here ? here.textContent : '';
+        document.getElementById('pc-rev-confirm').click();
+        const mine = ids.map(id => photos.find(p => String(p.id) === String(id)));
+        return {
+          said,
+          filed: mine.filter(p => p && p.client_id === 901).length,
+          addrs: [...new Set(mine.map(p => p && p.addr))],
+          closed: !document.getElementById('pc-rev'),
+          orphans: tdUnfiledPhotos().length,
+        };
+      }, ids);
+      expect(r.said).toContain('6912 SW 17th St');
+      expect(r.said).toContain('Pepe Miranda');
+      expect(r.filed).toBe(4);                    // all four, not one
+      expect(r.addrs).toEqual(['6912 SW 17th St, Topeka, KS 66615']);
+      expect(r.closed).toBe(true);
+      expect(r.orphans).toBe(0);                  // no shot left behind
+    });
+
+    test('"Different address" is always there, because a guess is not a fact', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        tdReviewShots(ids);
+        const btn = [...document.querySelectorAll('#pc-rev .pc-side')].find(b => b.textContent === 'Different address');
+        btn.click();
+        const opened = !!document.getElementById('pc-att');
+        const near = [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent).join('');
+        tdAttachCancel(); tdReviewClose();
+        return { opened, near };
+      }, ids);
+      expect(r.opened).toBe(true);
+      expect(r.near).toContain('6912 SW 17th St');
+    });
+
+    test('no saved property nearby means no green claim, just the ask', async () => {
+      await page.evaluate(() => {
+        clients.length = 0; photos.length = 0;
+        clients.push({ id: 902, name: 'Laurie Schonfeldt', addr: '6712 SW Finsbury Ave', lat: 39.0104968, lon: -95.7790924 });
+        photos.push({ id: 1100, type: 'after', url: '', data: 'x', client_id: null, lat: 39.035573868723795, lon: -95.78321048210228, uploadedAt: new Date().toISOString() });
+        tdReviewShots([1100]);
+      });
+      const r = await page.evaluate(() => {
+        const out = { here: !!document.getElementById('pc-rev-here'),
+          foot: document.querySelector('#pc-rev .pc-rev-attach').textContent };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.here).toBe(false);
+      expect(r.foot).toBe('Attach to customer');
+    });
+
+    test('the tray files the whole burst too, on the property it names', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        const host = document.createElement('div');
+        host.innerHTML = tdUnfiledTrayHTML();
+        document.body.appendChild(host);
+        const pill = host.querySelector('.pc-uf-pill.ok');
+        const label = pill.textContent;
+        pill.click();
+        host.remove();
+        const mine = ids.map(id => photos.find(p => String(p.id) === String(id)));
+        return { label, filed: mine.filter(p => p && p.client_id === 901).length, addr: mine[0].addr };
+      }, ids);
+      expect(r.label).toBe('6912 SW 17th St?');   // the house, not the customer
+      expect(r.filed).toBe(4);
+      expect(r.addr).toBe('6912 SW 17th St, Topeka, KS 66615');
+    });
+
+    test('the green line names the house and the customer, and no distance', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        tdReviewShots(ids);
+        const said = document.getElementById('pc-rev-here').textContent;
+        tdReviewClose();
+        return said;
+      }, ids);
+      expect(r).toContain('6912 SW 17th St');
+      expect(r).toContain('Pepe Miranda');
+      expect(r).not.toMatch(/ft|feet|metre|meter/i);   // owner: not copy
+    });
+
+    test('the distance is kept ON THE ROW, for the next time it picks wrong', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        tdReviewShots(ids);
+        document.getElementById('pc-rev-confirm').click();
+        const p = photos.find(x => String(x.id) === String(ids[0]));
+        const t = _TD_TABLES.find(x => x.t === 'td_photos');
+        const synced = t.tx([{ id: 1, url: 'u', storagePath: 's', type: 'after', caption: '', addrM: 9, uploadedAt: 'now' }])[0];
+        return { onRow: p.addrM, synced: synced.addrM };
+      }, ids);
+      expect(r.onRow).toBeLessThan(15);     // 8.8m on Jack's real fix
+      expect(r.synced).toBe(9);             // and it survives the trip
+    });
+
+    // Jack's fourth photo: already on Pepe, no property, nothing could fix it.
+    test('a filed photo can be moved, and the move is per photo', async () => {
+      const ids = await pepe();
+      const r = await page.evaluate((ids) => {
+        // as his account actually stands: one filed with no property
+        const p = photos.find(x => String(x.id) === String(ids[0]));
+        p.client_id = 901; p.client_name = 'Pepe Miranda';
+        tdReviewShots([p.id]);
+        tdReviewOpen(0);
+        const hasMove = [...document.querySelectorAll('#pc-rev .pc-side')].some(b => b.textContent === 'Move');
+        tdMovePhoto(p.id);
+        const near = [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent).join('');
+        document.querySelector('#pc-att .pc-file-opt.near').click();
+        const after = photos.find(x => String(x.id) === String(ids[0]));
+        const others = ids.slice(1).map(id => photos.find(x => String(x.id) === String(id)));
+        tdReviewClose();
+        return { hasMove, near, addr: after.addr, untouched: others.every(x => x.addr == null) };
+      }, ids);
+      expect(r.hasMove).toBe(true);
+      expect(r.near).toContain('6912 SW 17th St');
+      expect(r.addr).toBe('6912 SW 17th St, Topeka, KS 66615');
+      expect(r.untouched).toBe(true);      // one photo moved, not the burst
+    });
+
+    // The same photo, before it is moved: it must not show under the primary
+    // card eight kilometres from where he was standing.
+    test('a photo with no property shows under the house its fix names', async () => {
+      await pepe();
+      const r = await page.evaluate(() => {
+        const p = photos[0];
+        p.client_id = 901; p.client_name = 'Pepe Miranda'; delete p.addr;
+        photos.length = 1;
+        // The card's OWN function, not a copy of its rule.
+        const c = clients.find(x => x.id === 901);
+        return { onSixNine: cdPropertyPhotos(c, '6912 SW 17th St, Topeka, KS 66615', 1).length,
+                 onPrimary: cdPropertyPhotos(c, '306 SW Elmwood Ave, Topeka, KS 66606', 0).length };
+      });
+      expect(r.onSixNine).toBe(1);
+      expect(r.onPrimary).toBe(0);
+    });
+
+    test('a photo with no fix gets no guess at all', async () => {
+      await page.evaluate(() => {
+        photos.length = 0;
+        photos.push({ id: 1200, type: 'after', url: '', data: 'x', client_id: null, lat: null, lon: null, uploadedAt: new Date().toISOString() });
+      });
+      const r = await page.evaluate(() => ({
+        guess: tdGuessPlaceFor(photos[0]),
+        legacy: tdGuessClientFor(photos[0]),
+        near: _pcNearbyMatches([1200]).length,
+      }));
+      expect(r.guess).toBe(null);
+      expect(r.legacy).toBe(null);
+      expect(r.near).toBe(0);
+    });
+
+    test('an extra address with no pin on it is skipped, never guessed at', async () => {
+      const r = await page.evaluate(() => {
+        clients.length = 0;
+        clients.push({ id: 903, name: 'No Pins', addr: 'somewhere', extraAddresses: [{ label: 'B', addr: 'no coords here' }] });
+        return _pcClientPlaces(clients[0]).length;
+      });
+      expect(r).toBe(0);
+    });
+  });
+
+  // ── Finding photos without a Gallery page (owner 2026-09-22) ──────────────
+  test.describe('TrueShot: the search is the way back in', () => {
+    const seedHistory = () => page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS' });
+      clients.push({ id: 502, name: 'Marco Reyes', addr: '9 Vine Ave, Wichita KS' });
+      const mk = (id, cid, name, addr, iso) => photos.push({ id, type: 'before', url: 'https://x/' + id + '.jpg',
+        thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: cid, client_name: name,
+        addr, uploadedAt: iso });
+      mk(801, 501, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-03-02T15:00:00.000Z');
+      mk(802, 501, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-09-10T15:00:00.000Z');
+      mk(803, 501, 'Dana Whitfield', '88 Pine Ct, Wichita KS', '2026-08-01T15:00:00.000Z');
+      mk(804, 502, 'Marco Reyes', '9 Vine Ave, Wichita KS', '2026-09-19T15:00:00.000Z');
+    });
+
+    test('an address finds that property, and only that property', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => tdPhotoSearch('412 oak').map(g => ({ addr: g.addr, n: g.photos.length })));
+      expect(r.length).toBe(1);
+      expect(r[0].addr).toBe('412 Oak St, Wichita KS');
+      expect(r[0].n).toBe(2);
+    });
+
+    test('a customer name finds every property they own, newest first', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => tdPhotoSearch('whitfield').map(g => g.addr));
+      expect(r).toEqual(['412 Oak St, Wichita KS', '88 Pine Ct, Wichita KS']);
+    });
+
+    test('the shots inside a property come back newest first', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => tdPhotoSearch('412 oak')[0].photos.map(p => p.id));
+      expect(r).toEqual([802, 801]);
+    });
+
+    test('a date finds the day, however it is typed', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => ({
+        iso: tdPhotoSearch('2026-03-02').length,
+        slash: tdPhotoSearch('3/2/2026').length,
+        month: tdPhotoSearch('march 2026').length,
+        nothing: tdPhotoSearch('1999').length,
+      }));
+      expect(r.iso).toBe(1);
+      expect(r.slash).toBe(1);
+      expect(r.month).toBe(1);
+      expect(r.nothing).toBe(0);
+    });
+
+    test('empty and junk return nothing, never everything', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => [tdPhotoSearch(''), tdPhotoSearch(null), tdPhotoSearch('   '), tdPhotoSearch('zzzz')].map(x => x.length));
+      expect(r).toEqual([0, 0, 0, 0]);
+    });
+
+    // The folder, not a flat wall: the visit is the folder, so two shots on
+    // two different days are two dated groups with the newest one open.
+    test('a result opens that property as a folder of visits', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => {
+        const g = tdPhotoSearch('412 oak');
+        tdPhotoSearch.lastResults = g;
+        const opened = tdOpenPropertyPhotos(g[0].key);
+        const out = {
+          opened,
+          addr: document.querySelector('#pc-rev .pc-fold-addr').textContent,
+          sub: document.querySelector('#pc-rev .pc-fold-sub').textContent,
+          visits: document.querySelectorAll('#pc-rev .pc-fold-visit').length,
+          openCells: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+          top: document.querySelector('#pc-rev .pc-side').textContent,
+        };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.opened).toBe(true);
+      expect(r.addr).toBe('412 Oak St');
+      expect(r.sub).toContain('2 photos');
+      expect(r.sub).toContain('2 visits');
+      expect(r.sub).toContain('Dana Whitfield');
+      expect(r.visits).toBe(2);
+      expect(r.openCells).toBe(1);      // only the newest visit is open
+      expect(r.top).toBe('Close');
+    });
+
+    test('the global search shows photos as properties and can open one', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => {
+        openSearch();
+        runSearch('412 oak');
+        const html = document.getElementById('search-results').innerHTML;
+        const hit = (window._searchResults || []).find(x => x.type === 'photo');
+        if (hit) hit.action();
+        const visits = document.querySelectorAll('#pc-rev .pc-fold-visit').length;
+        tdReviewClose(); closeSearch();
+        return { html, visits };
+      });
+      expect(r.html).toContain('Photos');
+      expect(r.html).toContain('412 Oak St');
+      expect(r.html).toContain('2 photos');
+      expect(r.visits).toBe(2);
+    });
+
+    // §7.1: the page this replaced is gone, not hidden.
+    test('the Gallery page and every function it owned are gone', async () => {
+      const r = await page.evaluate(() => ({
+        page: document.querySelectorAll('#pg-gallery').length,
+        nav: document.querySelectorAll('#nb-gallery').length,
+        grid: document.querySelectorAll('#gallery-grid').length,
+        fns: ['renderGallery', 'setGalleryFilter', 'openGalleryUpload', 'openPhotoViewer', 'processGalleryUpload', 'deletePhoto']
+          .filter(n => typeof window[n] === 'function'),
+      }));
+      expect(r.page).toBe(0);
+      expect(r.nav).toBe(0);
+      expect(r.grid).toBe(0);
+      expect(r.fns).toEqual([]);
+    });
+
+    test('the property card carries its own photos and a way to add more', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => {
+        openClientDetail(501);
+        const html = document.getElementById('pg-client-detail').innerHTML;
+        return {
+          hasSection: /Photos/.test(html),
+          hasAdd: /tdCaptureForClient\(501\)/.test(html),
+          hasOpen: /tdOpenPropertyFolder\(/.test(html),
+          count: (html.match(/(\d+) photos/) || [])[1],
+        };
+      });
+      expect(r.hasSection).toBe(true);
+      expect(r.hasAdd).toBe(true);
+      expect(r.hasOpen).toBe(true);
+      expect(r.count).toBe('2');     // the two at THIS address, not the Pine Ct one
+    });
+  });
+
+  // ── The property folder (owner 2026-09-22) ────────────────────────────────
+  test.describe('TrueShot: the folder is the visit', () => {
+    const house = () => page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; bids.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS' });
+      const mk = (id, type, iso, job) => photos.push({ id, type, url: 'https://x/' + id + '.jpg',
+        thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, client_name: 'Dana Whitfield',
+        job_id: job ? 601 : null, job_name: job ? 'Repipe' : '', addr: '412 Oak St, Wichita KS', uploadedAt: iso });
+      // one morning's work, then an afternoon trip back, then March
+      mk(1, 'before', '2026-09-22T14:00:00.000Z', true);
+      mk(2, 'progress', '2026-09-22T14:40:00.000Z', true);
+      mk(3, 'after', '2026-09-22T20:30:00.000Z', true);
+      mk(4, 'before', '2026-03-02T15:00:00.000Z', false);
+      return photos.map(p => p.id);
+    });
+
+    test('a visit is a stretch of work, not a calendar day', async () => {
+      await house();
+      const r = await page.evaluate(() => tdPropertyVisits(photos).map(v => v.photos.length));
+      // The 14:00 and 14:40 shots are one visit; 20:30 is a trip back.
+      expect(r).toEqual([1, 2, 1]);
+    });
+
+    test('the folder names the house, counts the visits, and opens the newest', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const out = {
+          addr: document.querySelector('.pc-fold-addr').textContent,
+          sub: document.querySelector('.pc-fold-sub').textContent,
+          visits: document.querySelectorAll('.pc-fold-visit').length,
+          open: document.querySelectorAll('.pc-rev-cell').length,
+          first: document.querySelector('.pc-fold-visit-day').textContent,
+          what: document.querySelector('.pc-fold-visit-what').textContent,
+        };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.addr).toBe('412 Oak St');
+      expect(r.sub).toContain('4 photos');
+      expect(r.sub).toContain('3 visits');
+      expect(r.visits).toBe(3);
+      expect(r.first).toContain('Sep 22');
+      expect(r.what).toBe('Repipe');
+      // the newest visit's one shot, plus the pinned pair's two
+      expect(r.open).toBe(3);
+    });
+
+    test('Before and After pin to the top once a job has both', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const ba = document.querySelector('.pc-fold-ba');
+        const out = { pinned: !!ba, name: ba && ba.querySelector('.pc-fold-ba-name').textContent,
+          cells: ba ? ba.querySelectorAll('.pc-rev-cell').length : 0,
+          tags: ba ? [...ba.querySelectorAll('.pc-rev-tag')].map(t => t.textContent).join(',') : '' };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.pinned).toBe(true);
+      expect(r.name).toBe('Repipe');
+      expect(r.cells).toBe(2);
+      expect(r.tags).toBe('before,after');
+    });
+
+    // The commonest shape in the app: the Before was taken while writing the
+    // estimate, the After on the job it became. Two different tags, one house.
+    test('a walkthrough Before pairs with the job After', async () => {
+      const r = await page.evaluate(() => {
+        photos.length = 0;
+        photos.push({ id: 11, type: 'before', url: 'u', thumbUrl: '', storagePath: 's11', client_id: 501,
+          bid_id: 701, bid_name: 'Repipe', addr: '412 Oak St', uploadedAt: '2026-08-01T15:00:00.000Z' });
+        photos.push({ id: 12, type: 'after', url: 'u', thumbUrl: '', storagePath: 's12', client_id: 501,
+          job_id: 601, job_name: 'Repipe', addr: '412 Oak St', uploadedAt: '2026-09-22T19:00:00.000Z' });
+        const pair = tdPropertyPair(photos);
+        return { has: !!pair, name: pair && pair.name, b: pair && pair.before.id, a: pair && pair.after.id };
+      });
+      expect(r.has).toBe(true);
+      expect(r.name).toBe('Repipe');
+      expect(r.b).toBe(11);
+      expect(r.a).toBe(12);
+    });
+
+    test('a job with no After yet pins nothing, because there is no pair', async () => {
+      const r = await page.evaluate(() => {
+        photos.length = 0;
+        photos.push({ id: 9, type: 'before', url: 'u', thumbUrl: '', storagePath: 's', client_id: 501,
+          job_id: 601, job_name: 'Repipe', addr: '412 Oak St, Wichita KS', uploadedAt: new Date().toISOString() });
+        return tdPropertyPair(photos);
+      });
+      expect(r).toBe(null);
+    });
+
+    test('a stage chip filters the whole property', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const chips = [...document.querySelectorAll('.pc-fold-chips .fb')].map(b => b.textContent);
+        tdFolderStage('before');
+        const out = { chips, visits: document.querySelectorAll('.pc-fold-visit').length,
+          ba: !!document.querySelector('.pc-fold-ba'),
+          active: document.querySelector('.pc-fold-chips .fb.active').textContent };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.chips).toEqual(['All 4', 'Before 2', 'Progress 1', 'After 1']);
+      expect(r.active).toBe('Before 2');
+      expect(r.visits).toBe(2);       // the two Befores, on two different days
+      expect(r.ba).toBe(false);       // the pinned pair belongs to the whole story
+    });
+
+    test('tapping a shot drops into the viewer that already exists', async () => {
+      const ids = await house();
+      const r = await page.evaluate((ids) => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        tdFolderOpen(ids[3]);         // the March shot, inside a closed visit
+        const out = { img: !!document.getElementById('pc-rev-img'),
+          markUp: [...document.querySelectorAll('#pc-rev .pc-side')].some(b => b.textContent === 'Mark up'),
+          move: [...document.querySelectorAll('#pc-rev .pc-side')].some(b => b.textContent === 'Move') };
+        tdReviewClose();
+        return out;
+      }, ids);
+      expect(r.img).toBe(true);
+      expect(r.markUp).toBe(true);
+      expect(r.move).toBe(true);
+    });
+
+    test('a visit header opens and closes its own shots', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        tdOpenPropertyFolder(501, '412 Oak St, Wichita KS');
+        const heads = document.querySelectorAll('.pc-fold-visit-hd');
+        const before = document.querySelectorAll('.pc-fold-visit .pc-rev-cell').length;
+        heads[1].click();             // open the morning's two
+        const opened = document.querySelectorAll('.pc-fold-visit .pc-rev-cell').length;
+        document.querySelectorAll('.pc-fold-visit-hd')[1].click();
+        const closed = document.querySelectorAll('.pc-fold-visit .pc-rev-cell').length;
+        tdReviewClose();
+        return { before, opened, closed };
+      });
+      expect(r.before).toBe(1);       // only the newest
+      expect(r.opened).toBe(2);       // one open at a time, and it is the morning's
+      expect(r.closed).toBe(0);
+    });
+
+    test('an empty property opens nothing rather than an empty sheet', async () => {
+      const r = await page.evaluate(() => {
+        photos.length = 0;
+        return { opened: tdOpenPropertyFolder(501, '412 Oak St'), sheet: document.querySelectorAll('#pc-rev').length };
+      });
+      expect(r.opened).toBe(false);
+      expect(r.sheet).toBe(0);
+    });
+  });
+
+  // §7.1: the single-photo picker it replaced is gone, not hidden.
+  test('the one-photo file picker is gone, replaced by the burst attach', async () => {
+    const still = await page.evaluate(() => typeof tdOpenFilePicker);
+    expect(still).toBe('undefined');
   });
 
   test('closing removes the sheet and stops the camera', async () => {
@@ -589,9 +1664,17 @@ test.describe('TrueShot: marking a photo up', () => {
   // the same thing a real Supabase public url is to the editor, an image it
   // can decode and read back off a canvas.
   const openEditor = async () => {
-    await shoot(page, { type: 'before', bidId: 901 });
+    // ONE evaluate, deliberately: this used to shoot in one round trip and
+    // then reach for photos[photos.length-1] in the next. A cloud load landing
+    // between the two replaces the photos array wholesale, so the row was gone
+    // and p was undefined (webkit shard 3, 59293e5). Shooting and seeding in
+    // the same evaluate leaves no gap for a load to land in.
     return page.evaluate(async (b64) => {
-      const p = photos[photos.length - 1];
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const p = await tdSavePhoto({ type: 'before', bidId: 901, file: new File([arr], 'shot.png', { type: 'image/png' }) });
+      if (!p) return { ok: false, ready: false, id: null, saved: false };
       // A REAL-SIZED image: the 1x1 test png made every drag less than one
       // image pixel long, which is how the scaled tap-vs-drag floor below
       // came to be tested at all.
@@ -605,8 +1688,14 @@ test.describe('TrueShot: marking a photo up', () => {
       const ok = tdAnnotatePhoto(id);
       // the <img> decode is async; the canvas is sized in its onload
       for (let i = 0; i < 40 && !(_pcAnno && _pcAnno.img); i++) await new Promise(r => setTimeout(r, 25));
-      return { ok, ready: !!(_pcAnno && _pcAnno.img), id };
-    }, PNG_B64);
+      return { ok, ready: !!(_pcAnno && _pcAnno.img), id, saved: true };
+    }, PNG_B64).then((r) => {
+      // Said out loud, because every caller below assumes the editor opened on
+      // a real row. A silent null here used to surface as an unrelated
+      // assertion four lines later.
+      expect(r.saved, 'the editor needs a photo that actually saved').toBe(true);
+      return r;
+    });
   };
 
   test('opens on a real photo and sizes the canvas to the image', async () => {
@@ -942,9 +2031,17 @@ test.describe('TrueShot: every control, and no dead ones', () => {
       // unfiled tray + its file picker
       photos.push({ id: 883, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
       scan(tdUnfiledTrayHTML(), 'tray');
-      tdOpenFilePicker(883);
-      scan(document.querySelector('.zmodal-overlay').innerHTML, 'filepicker');
+      // the burst review sheet and its attach picker
+      tdReviewShots([883]);
+      scan(document.getElementById('pc-rev').innerHTML, 'review-grid');
+      tdReviewOpen(0);
+      scan(document.getElementById('pc-rev').innerHTML, 'review-viewer');
+      tdReviewAttach();
+      scan(document.getElementById('pc-att').innerHTML, 'attach-who');
+      tdAttachPick(501);
+      if (document.getElementById('pc-att')) scan(document.getElementById('pc-att').innerHTML, 'attach-next');
       document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      tdReviewClose();
       // the estimate header chip
       scan(document.getElementById('gei-photo-chip').outerHTML, 'chip');
       // the dashboard quick action
@@ -1047,20 +2144,25 @@ test.describe('TrueShot: every control, and no dead ones', () => {
       [...document.querySelectorAll('.zmodal-overlay button')].find(b => /Shoot the After/.test(b.textContent)).click();
       if (!document.getElementById('pc-sheet') || _pcCtx.type !== 'after') dead.push('Shoot the After set');
       tdCloseCapture();
-      // The tray's File button opens the picker; the picker's option files it.
+      // The tray's Review button opens the burst sheet; Attach files the lot.
       photos.push({ id: 888, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });
       const host = document.createElement('div');
       host.innerHTML = tdUnfiledTrayHTML();
       document.body.appendChild(host);
-      const fileBtn = [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'File');
-      fileBtn && fileBtn.click();
-      const picker = document.querySelector('.zmodal-overlay');
-      if (!picker) dead.push('File');
+      const revBtn = [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'Review');
+      revBtn && revBtn.click();
+      if (!document.getElementById('pc-rev')) dead.push('Review');
       else {
-        const opt = picker.querySelector('.pc-file-opt');
-        opt && opt.click();
+        tdReviewAttach();
+        // The card asks only what the data cannot answer, so click the first
+        // option on each step it does show, up to the three it can ask.
+        for (let step = 0; step < 3 && document.getElementById('pc-att'); step++) {
+          const opt = document.querySelector('#pc-att .pc-file-opt');
+          if (!opt) break;
+          opt.click();
+        }
         const p = photos.find(x => String(x.id) === '888');
-        if (!p || p.client_id == null) dead.push('pick a customer');
+        if (!p || p.client_id == null) dead.push('Attach to customer');
       }
       // The guess pill files it in one tap, which is the whole point of it.
       photos.push({ id: 889, type: 'before', url: '', thumbUrl: '', client_id: null, lat: 37.6889, lon: -97.3361, uploadedAt: new Date().toISOString() });

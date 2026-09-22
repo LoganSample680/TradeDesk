@@ -4112,6 +4112,87 @@ async function _mileNameStopRow(p,client){
   try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e){}
   return true;
 }
+// ── CORRECTING AN ADDRESS CORRECTS WHAT IT ALREADY WROTE (owner 2026-09-22)
+// "If you edit the address make the change there to."
+//
+// Jack put Pepe Miranda in at 6912 SW 17th St; the house is 6908. Fixing the
+// client record moved the pin and the property facts and left four days of
+// work still saying 6912, because a row's place text is a SNAPSHOT: the
+// deriver writes origin_place, dest_place and the mileage leg's from/to at
+// derive time and nothing reads the client record again. Only a day still
+// inside the tape's seven would ever have re-derived its way to the new
+// street, and the days that matter are older than that.
+//
+// This is NOT a reconciler and not a second opinion about the day (17). It
+// decides nothing: it takes one label a person just changed and writes the
+// new spelling everywhere the old one is stored, which is the same job
+// _mileNameTimeEnds does when an unsaved stop is finally given a name, in the
+// same shape. The times, the ids, the miles and the coordinates are untouched.
+//
+// Matched on the EXACT old name, never a fuzzy street match: the name the
+// deriver wrote is "Pepe Miranda (6912 SW 17th St)", and a row that says
+// something else (a client renamed since) is describing a different label and
+// is left alone rather than guessed at.
+function _mileRenamePlaceLocal(oldName,newName,oldAddr,newAddr){
+  const rows=(typeof mileage!=='undefined'&&Array.isArray(mileage))?mileage:[];
+  const on=String(oldName||'').trim(),nn=String(newName||'').trim();
+  const oa=String(oldAddr||'').trim(),na=String(newAddr||'').trim();
+  const nameMoved=!!(on&&nn&&on!==nn),addrMoved=!!(oa&&na&&oa!==na);
+  if(!nameMoved&&!addrMoved)return 0;
+  let n=0;
+  rows.forEach(r=>{
+    if(!r)return;
+    let hit=false;
+    // The leg's ends carry the ADDRESS (l.from.addr, geo-derive.js), which is
+    // what the mileage log prints and what an IRS export has to be right about.
+    if(addrMoved){
+      if(String(r.from||'').trim()===oa){r.from=na;hit=true;}
+      if(String(r.to||'').trim()===oa){r.to=na;hit=true;}
+    }
+    // from_name / to_name / segEnds carry the FENCE name, which is what the
+    // rail titles a drive with.
+    if(nameMoved){
+      if(String(r.from_name||'').trim()===on){r.from_name=nn;hit=true;}
+      if(String(r.to_name||'').trim()===on){r.to_name=nn;hit=true;}
+      if(Array.isArray(r.segEnds))r.segEnds.forEach(se=>{
+        if(!se)return;
+        if(String(se.from||'').trim()===on){se.from=nn;hit=true;}
+        if(String(se.to||'').trim()===on){se.to=nn;hit=true;}
+      });
+    }
+    if(hit)n++;
+  });
+  return n;
+}
+// The rail's own rows, which live server-side. Scoped to the account and left
+// to RLS beyond that: the contractor's policy covers every row under his
+// business, which is the login that fixes a customer's address.
+async function _mileRenamePlaceRows(oldName,newName){
+  const on=String(oldName||'').trim(),nn=String(newName||'').trim();
+  if(!on||!nn||on===nn)return false;
+  if(!window._supa||!window._supaUser)return false;
+  const cid=(typeof _geoCid==='function')?_geoCid():_supaUser.id;
+  try{
+    await Promise.all([
+      Promise.resolve(_supa.from('job_time_entries').update({origin_place:nn})
+        .eq('contractor_user_id',cid).eq('origin_place',on)).catch(()=>null),
+      Promise.resolve(_supa.from('job_time_entries').update({dest_place:nn})
+        .eq('contractor_user_id',cid).eq('dest_place',on)).catch(()=>null)
+    ]);
+  }catch(_e){return false;}
+  return true;
+}
+async function _mileRenamePlace(oldName,newName,oldAddr,newAddr){
+  const n=_mileRenamePlaceLocal(oldName,newName,oldAddr,newAddr);
+  if(n){
+    try{saveAll();}catch(_e){}
+    try{if(typeof _flushSaveNow==='function')_flushSaveNow();}catch(_e){}
+    try{if(document.getElementById('mil-table')&&typeof renderAllMileage==='function')renderAllMileage();}catch(_e){}
+  }
+  const ok=await _mileRenamePlaceRows(oldName,newName);
+  if(n||ok){try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e){}}
+  return n;
+}
 function openMileageEdit(id){
   // Ids arrive quoted from the inline handler (_milIdArg); a numeric id still
   // matches, and the row's own id (its real type) is what the edit carries.

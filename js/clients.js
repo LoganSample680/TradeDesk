@@ -3172,6 +3172,28 @@ function _cdQuoteAgain(bidId){
 // One property card = one address: county assessor facts + pre-1978 lead trigger + the
 // crew site note + every proposal/job at THIS address with dates, dollars, and
 // running billed/paid totals. Same card for the primary and every extra address.
+// Which of a customer's photos belong to THIS property. One definition, so
+// the card and its test cannot drift (§18): a test that re-implements the
+// rule proves only that it can copy the rule.
+function cdPropertyPhotos(c,addr,idx){
+  if(!c||typeof tdPhotosFor!=='function')return [];
+  const pa=String(addr||'').trim().toLowerCase();
+  return tdPhotosFor({clientId:c.id,wholeClient:true}).filter(x=>{
+    const xa=String(x.addr||'').trim().toLowerCase();
+    if(xa)return xa===pa;
+    // No address on the row, which is every photo taken before the property
+    // was recorded on it. If it carries a fix, the house it was SHOT at
+    // decides, not whichever card happens to be first: one of Jack's landed
+    // on Pepe with no property and would otherwise show under the primary,
+    // eight kilometres from where he stood.
+    if(typeof tdGuessPlaceFor==='function'&&x.lat!=null&&x.lon!=null){
+      const g=tdGuessPlaceFor(x);
+      if(g)return String(g.addr||'').trim().toLowerCase()===pa;
+    }
+    return idx===0;
+  });
+}
+
 function _cdPropCardHtml(c,a,idx,total){
   const p=getProperty(c,a.addr);
   const note=getSiteNote(c,a.addr);
@@ -3393,6 +3415,19 @@ function _cdPropCardHtml(c,a,idx,total){
       </div>
       ${pastRows}
     </div>`:'';
+    // Every photo shot at THIS address, and the way to add one from a desktop
+    // (owner 2026-09-22). The property is the folder a contractor thinks in,
+    // so the album lives on the property card rather than on a Gallery page
+    // nobody opens twice. Reuses the same album the shoot ends with (§7.3).
+    const _propPhotos=cdPropertyPhotos(c,a.addr,idx);
+    const _photoBlock=`<div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Photos</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text)">${_propPhotos.length?_propPhotos.length+(_propPhotos.length===1?' photo':' photos'):'None yet'}</div>
+      </div>
+      ${_propPhotos.length?`<button onclick="event.stopPropagation();tdOpenPropertyFolder(${c.id},${JSON.stringify(a.addr||'')})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--text)">Open</button>`:''}
+      <button onclick="event.stopPropagation();tdCaptureForClient(${c.id})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
+    </div>`;
     // Footer: data source / lookup + map + remove.
     //
     // Three states, and they are deliberately different sentences. A record we
@@ -3433,7 +3468,7 @@ function _cdPropCardHtml(c,a,idx,total){
       ${editBtn}
       ${removeBtn}
     </div>`;
-    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${pastBlock}${footer}</div>`;
+    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${pastBlock}${_photoBlock}${footer}</div>`;
   }
   return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
 }
@@ -3508,11 +3543,14 @@ function saveAddClientAddress(editIdx){
   if(!c.extraAddresses)c.extraAddresses=[];
   const ptype=document.getElementById('_aa-ptype')?.value||'';
   const _edit=(editIdx!=null&&editIdx!==''&&Number(editIdx)>=0)?Number(editIdx):null;
-  let was='';
+  let was='',wasLabel='';
   if(_edit!=null){
     const cur=clientAddresses(c)[_edit];
     if(!cur)return;
     was=cur.addr||'';
+    // Captured BEFORE the write below: the rename pass needs the label the
+    // fence was named with, and by then the record already holds the new one.
+    wasLabel=String(cur.label||'').trim();
     if(_edit===0)c.addr=addr;
     else{
       const e=c.extraAddresses[_edit-1];
@@ -3524,9 +3562,9 @@ function saveAddClientAddress(editIdx){
       // guard that stops a customer who moved keeping a fence on the old
       // house. Leaving stale coords here would be exactly that case, so the
       // pair is dropped and the next geocode sweep fills it from the new
-      // address. Rows already derived keep the name they were written with:
-      // origin_place and dest_place are text snapshots, so history does not
-      // move under anybody (17).
+      // address. Rows already derived are re-labelled by the rename pass at
+      // the end of this function: their times, ids and miles are untouched,
+      // only the spelling of the place moves.
       if(was&&was!==addr){delete e.lat;delete e.lon;delete e.geoAddr;}
     }
     if(_edit===0&&was&&was!==addr){delete c.lat;delete c.lon;delete c.geoAddr;}
@@ -3542,6 +3580,26 @@ function saveAddClientAddress(editIdx){
   }
   if(ptype&&typeof setPropertyData==='function')setPropertyData(c,addr,{propertyType:ptype,isRental:/rental/i.test(ptype)||undefined});
   saveAll();
+  // ── AND EVERY ROW THAT ALREADY NAMED THE OLD ONE (owner 2026-09-22) ──────
+  // A corrected house number has to reach the mileage log and the day rail,
+  // not just the card. Both store the label as text written at derive time,
+  // so nothing re-reads this record; _mileRenamePlace (js/mileage.js) rewrites
+  // the old spelling wherever it was stored. No prompt: the person is editing
+  // the address precisely because it is wrong, and asking whether they also
+  // meant the trips it is on is a question with only one answer.
+  //
+  // The name is rebuilt exactly as _geoDeriveFences builds it: the primary is
+  // the client name over the street line, an extra property is the client name
+  // over its label. Two places computing one name is how they drift, so if a
+  // third case ever appears, it belongs in _geoFenceName's callers, not here.
+  if(_edit!=null&&was&&was!==addr){
+    const _street=(v)=>(typeof _geoStreetLine==='function')?_geoStreetLine(v):String(v||'').split(',')[0].trim();
+    const _fn=(w)=>(typeof _geoFenceName==='function')?_geoFenceName(c.name||'Client',w)
+      :((c.name||'Client')+(w?' ('+w+')':''));
+    const _wasWhere=(_edit===0)?_street(was):(wasLabel||_street(was));
+    const _nowWhere=(_edit===0)?_street(addr):(label||_street(addr));
+    try{if(typeof _mileRenamePlace==='function')_mileRenamePlace(_fn(_wasWhere),_fn(_nowWhere),was,addr);}catch(_e){}
+  }
   document.querySelector('.zmodal-overlay')?.remove();
   renderCDAddresses();
   // The primary address is printed on proposals and drawn on the client

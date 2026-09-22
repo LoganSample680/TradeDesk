@@ -2651,7 +2651,7 @@ function openSearch(){
     '<div class="search-box">'+
       '<div class="search-input-wrap">'+
         '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>'+
-        '<input id="global-search-input" placeholder="Search clients, proposals, expenses, jobs…" autocomplete="off" oninput="runSearch(this.value)">'+
+        '<input id="global-search-input" placeholder="Search clients, photos, proposals, jobs…" autocomplete="off" oninput="runSearch(this.value)">'+
         '<button onclick="closeSearch()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:20px;padding:0;line-height:1">×</button>'+
       '</div>'+
       '<div class="search-results" id="search-results"><div class="search-empty">Start typing to search...</div></div>'+
@@ -2718,6 +2718,23 @@ function runSearch(q){
     }
   });
 
+  // Photos, grouped by property. The warranty call ("what did that roof look
+  // like in March") is the reason this is in the search everybody already
+  // uses rather than on a page of its own.
+  if(typeof tdPhotoSearch==='function'){
+    const groups=tdPhotoSearch(q);
+    tdPhotoSearch.lastResults=groups;
+    groups.slice(0,10).forEach(g=>{
+      const n=g.photos.length;
+      const last=g.last?fmtDateShort(dateKey(new Date(g.last))):'';
+      results.push({type:'photo',icon:'\uD83D\uDCF7',bg:'var(--bg2)',
+        name:(g.addr||'').split(',')[0]||g.name||'Unfiled photos',
+        meta:n+(n===1?' photo':' photos')+(last?' \u00b7 last '+last:''),
+        sub:g.addr?g.name:'',
+        action:()=>{closeSearch();tdOpenPropertyPhotos(g.key);}});
+    });
+  }
+
   // Amount search across bids and expenses
   if(/^\$?[\d,.]+$/.test(q.replace(/\s/g,''))){
     const amt=parseFloat(q.replace(/[$,]/g,''));
@@ -2729,8 +2746,8 @@ function runSearch(q){
   if(!results.length){el.innerHTML='<div class="search-empty">No results for "'+escHtml(q.slice(0,30))+'"</div>';return;}
 
   // Group by type with section headers
-  const TYPE_ORDER=['client','bid','expense','job','income','mileage'];
-  const TYPE_LABEL={client:'Clients',bid:'Proposals',expense:'Expenses',job:'Jobs',income:'Payments',mileage:'Mileage'};
+  const TYPE_ORDER=['client','bid','photo','expense','job','income','mileage'];
+  const TYPE_LABEL={client:'Clients',bid:'Proposals',photo:'Photos',expense:'Expenses',job:'Jobs',income:'Payments',mileage:'Mileage'};
   const MAX_PER=10;
   const byType={};
   results.forEach(r=>{(byType[r.type]=byType[r.type]||[]).push(r);});

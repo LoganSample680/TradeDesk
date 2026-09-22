@@ -1,18 +1,6 @@
-// ── Gallery ──────────────────────────────────────────────────────────────────
-let _galleryFilter='all';
 // ── RRP compliance ────────────────────────────────────────────────────────────
 let _rrpPaintAnswer=''; // 'yes' | 'no' | '' (unanswered)
 
-function setGalleryFilter(f,btn){
-  _galleryFilter=f;
-  document.querySelectorAll('#pg-gallery .fb').forEach(b=>{b.classList.remove('active');});
-  if(btn)btn.classList.add('active');
-  renderGallery();
-}
-// Egress fix: route public gallery images through the Cloudflare edge cache
-// (/img/<path>, functions/img/[[path]].js) when the app is served from
-// Cloudflare: repeat views across every device hit Cloudflare, not Supabase.
-// Localhost/dev (no Pages Functions) and non-storage URLs pass through as-is.
 function _cdnPhoto(u){
   try{
     if(!u||u.startsWith('data:'))return u;
@@ -27,132 +15,6 @@ function _imgFallback(el){
   const d=el.dataset?el.dataset.dsrc:'';
   if(d&&el.src!==d){el.src=d;return;}
   el.style.display='none';
-}
-function renderGallery(){
-  const el=document.getElementById('gallery-grid');if(!el)return;
-  const sub=document.getElementById('gallery-count-sub');
-  const filtered=photos.filter(p=>_galleryFilter==='all'||p.type===_galleryFilter);
-  if(sub)sub.textContent=filtered.length+' photo'+(filtered.length!==1?'s':'');
-  if(!filtered.length){
-    el.innerHTML='<div class="empty-state"><div class="empty-state-icon">'+svgIcon('📷',{size:44})+'</div><h3>No photos yet</h3><p>Tap "+ Add photos" to upload before/after shots of your jobs. Photos will appear in client proposals and portals.</p></div>';
-    return;
-  }
-  // Group by client
-  const byClient={};
-  filtered.forEach(p=>{
-    const key=p.client_name||'Unlinked';
-    if(!byClient[key])byClient[key]=[];
-    byClient[key].push(p);
-  });
-  let html='';
-  Object.entries(byClient).forEach(([name,ps])=>{
-    html+='<div style="margin-bottom:20px">'+
-      '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding:0 2px">'+escHtml(name)+'</div>'+
-      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px">'+
-      ps.map(p=>'<div onclick="openPhotoViewer(\''+p.id+'\')" style="position:relative;aspect-ratio:1;border-radius:var(--r);overflow:hidden;cursor:pointer;background:var(--bg2);border:1px solid var(--border)">'+
-        '<img src="'+_cdnPhoto(p.thumbUrl||p.url)+'" data-dsrc="'+escHtml(p.thumbUrl||p.url)+'" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="_imgFallback(this)">'+
-        '<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:4px 6px">'+
-          '<span style="font-size:9px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.04em">'+escHtml(p.type)+'</span>'+
-        '</div>'+
-        '<button onclick="event.stopPropagation();deletePhoto(\''+p.id+'\')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">'+svgIcon('✕',{size:12})+'</button>'+
-      '</div>').join('')+
-      '</div></div>';
-  });
-  el.innerHTML=html;
-}
-function openPhotoViewer(photoId){
-  const p=photos.find(x=>x.id===photoId);if(!p)return;
-  const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
-  ov.innerHTML=
-    '<button onclick="this.closest(\'div\').remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;line-height:1">'+svgIcon('✕',{size:18})+'</button>'+
-    '<img src="'+_cdnPhoto(p.url)+'" data-dsrc="'+escHtml(p.url)+'" onerror="_imgFallback(this)" style="max-width:100%;max-height:80vh;border-radius:var(--r);object-fit:contain">'+
-    '<div style="margin-top:12px;text-align:center">'+
-      '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em">'+escHtml(p.type)+'</div>'+
-      (p.caption?'<div style="font-size:13px;color:#fff;margin-top:4px">'+escHtml(p.caption)+'</div>':'')+
-      '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px">'+escHtml(p.client_name||'')+(p.job_name?' · '+escHtml(p.job_name):'')+'</div>'+
-    '</div>';
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-}
-function deletePhoto(photoId){
-  const p=photos.find(x=>x.id===photoId);if(!p)return;
-  zConfirm('Delete this photo?',()=>{
-    _userDelete(()=>{photos=photos.filter(x=>x.id!==photoId);saveAll();});
-    renderGallery();
-    if(p.storagePath&&supaEnabled()&&_supa){
-      _supa.storage.from('gallery').remove([p.storagePath]).catch(()=>{});
-    }
-  },{title:'Delete photo',yes:'Delete',danger:true});
-}
-function openGalleryUpload(jobId,clientId){
-  const job=jobId?jobs.find(j=>j.id===jobId):null;
-  const client=clientId?clients.find(c=>c.id===clientId):(job?clients.find(c=>c.id===job.client_id):null);
-  const ov=document.createElement('div');ov.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  const jobOptions=jobs.filter(j=>j.status==='done'||j.status==='active').slice(0,30)
-    .map(j=>'<option value="'+j.id+'"'+(jobId===j.id?' selected':'')+'>'+escHtml(j.name)+', '+escHtml(clients.find(c=>c.id===j.client_id)?.name||'')+'</option>').join('');
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📷')+' Add photo</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Upload a job photo to your gallery</div>'+
-    '<div class="f" style="margin-bottom:12px"><label>Photo type</label>'+
-      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">'+
-        ['before','after','progress'].map(t=>'<label style="display:flex;align-items:center;justify-content:center;gap:4px;padding:10px;border:2px solid var(--border2);border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:600">'+
-          '<input type="radio" name="photo-type" value="'+t+'" style="display:none" onchange="this.closest(\'label\').closest(\'div\').querySelectorAll(\'label\').forEach(l=>l.style.borderColor=\'var(--border2)\');this.closest(\'label\').style.borderColor=\'var(--blue)\'">'+
-          {before:svgIcon('📸')+' Before',after:svgIcon('✅')+' After',progress:svgIcon('🔨')+' Progress'}[t]+'</label>').join('')+
-      '</div>'+
-    '</div>'+
-    (jobOptions?'<div class="f" style="margin-bottom:12px"><label>Job <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select id="gup-job" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"><option value="">- No job selected -</option>'+jobOptions+'</select></div>':'')+
-    '<div class="f" style="margin-bottom:12px"><label>Caption <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="gup-caption" placeholder="e.g. Living room accent wall" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"></div>'+
-    '<input type="file" id="gup-file" accept="image/*" multiple style="display:none" onchange="processGalleryUpload(this)">'+
-    '<button onclick="document.getElementById(\'gup-file\').click()" style="width:100%;padding:14px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg);color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📂')+' Choose photos</button>'+
-    '<div id="gup-status" style="font-size:12px;color:var(--text3);text-align:center;min-height:16px;margin-bottom:8px"></div>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-}
-async function processGalleryUpload(input){
-  const files=Array.from(input.files);if(!files.length)return;
-  const typeEl=document.querySelector('input[name="photo-type"]:checked');
-  const ptype=typeEl?typeEl.value:'after';
-  const jobSel=document.getElementById('gup-job');
-  const selectedJobId=jobSel?parseInt(jobSel.value)||null:null;
-  const caption=(document.getElementById('gup-caption')?.value||'').trim();
-  const status=document.getElementById('gup-status');
-  const job=selectedJobId?jobs.find(j=>j.id===selectedJobId):null;
-  const c=job?clients.find(cl=>cl.id===job.client_id):null;
-  if(status)status.textContent='Uploading '+files.length+' photo'+(files.length>1?'s':'')+'…';
-  let uploaded=0;
-  for(const file of files){
-    try{
-      let url='',storagePath='',thumbUrl='',thumbPath='';
-      if(supaEnabled()&&_supaUser){
-        // Compress + thumbnail (egress fix, shared helper in jobs.js). null → original.
-        const _cp=typeof _compressPhoto==='function'?await _compressPhoto(file):null;
-        const ext=_cp?_cp.ext:(file.name.split('.').pop()||'jpg');
-        const path='gallery/'+_effectiveUid()+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
-        const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:file,{contentType:_cp?_cp.mime:file.type,upsert:false,cacheControl:typeof _PHOTO_CACHE!=='undefined'?_PHOTO_CACHE:'31536000'});
-        if(!error){
-          const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
-          url=urlData?.publicUrl||'';
-          if(url){
-            storagePath=path;
-            if(_cp&&typeof _uploadPhotoThumb==='function'){({thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp.thumb,path));}
-          }
-        }
-      }
-      if(!url){
-        // Fallback: base64 for offline (large but works)
-        url=await new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
-      }
-      photos.push({id:Date.now()+Math.random(),url,storagePath,thumbUrl,thumbPath,type:ptype,caption,job_id:selectedJobId,job_name:(job?job.name:null)||'',client_id:(c?c.id:null)||null,client_name:(c?c.name:null)||'',uploadedAt:new Date().toISOString()});
-      uploaded++;
-      if(status)status.textContent='Uploaded '+uploaded+'/'+files.length;
-    }catch(e){console.warn('photo upload:',e);}
-  }
-  saveAll();renderGallery();
-  if(status)status.innerHTML=svgIcon('✓')+' '+uploaded+' photo'+(uploaded!==1?'s':'')+' added';
-  showToast(uploaded+' photo'+(uploaded!==1?'s':'')+' added to gallery','📷');
 }
 
 // ── Client Hub ──────────────────────────────────────────────────────────────
@@ -218,6 +80,17 @@ function _buildClientHubSnapshot(clientId){
       proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
+  // ── What the customer sees, and where (owner 2026-09-22) ─────────────────
+  // "Point the before and after at client hub, pictures in between don't
+  // belong out there." Then: "progress photos will show when tagged as
+  // progress."
+  //
+  // Both hold, because the hub already keeps them apart. Before and After are
+  // the story and they pair up at the top of the job. A Progress shot is not
+  // mixed into that pair; it lands in the milestone timeline underneath,
+  // where a contractor put it ON PURPOSE by tagging it. Tagging is the
+  // consent: an untagged working note is never a Progress photo by accident,
+  // because the capture sheet makes you choose.
   const clientPhotos=photos.filter(p=>p.client_id===clientId);
   // ── A photo belongs to the deepest tag it carries (owner 2026-09-21) ──────
   // job, else bid, else the client. This grouping used to be job_id ONLY,

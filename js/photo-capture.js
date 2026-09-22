@@ -57,10 +57,16 @@ async function tdSavePhoto(opts){
   const row={
     id:Date.now()+Math.random(),
     url:'',storagePath:'',thumbUrl:'',thumbPath:'',
+    // A PATH, never a url. See _compressPhoto's header: the full-resolution
+    // copy has no link on the row so it cannot be rendered by accident.
+    fullPath:'',
     type,caption,
     client_id:clientId,client_name:c?c.name||'':'',
     bid_id:bidId,bid_name:b?(b.title||b.name||''):'',
     job_id:jobId,job_name:j?j.name||'':'',
+    // The property this was shot at. A job or a proposal usually says it, but
+    // a customer with three houses and no job open still has to know which.
+    addr:opts.addr||(j?j.addr||'':'')||(b?b.addr||'':'')||(c?c.addr||'':''),
     // The fix the photo was taken at, KEPT, not just used for the stamp.
     // It was passed in for the stamp text and then thrown away, so only
     // photos shot through the capture sheet (which stamps the row
@@ -116,7 +122,9 @@ async function tdSavePhoto(opts){
     const publicUrl=urlData?urlData.publicUrl||'':'';
     if(!publicUrl)throw new Error('no public url');
     const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
+    const fullPath=_cp&&_cp.full?await _uploadPhotoFull(_cp.full,path,_cp.fullMime,_cp.fullExt):'';
     row.url=publicUrl;row.storagePath=path;row.thumbUrl=thumbUrl;row.thumbPath=thumbPath;
+    row.fullPath=fullPath;
     // The base64 copy is dropped once the row has a URL: keeping both doubles
     // the localStorage footprint of every photo for no gain (the job sheet
     // falls back to url when data is absent).
@@ -260,24 +268,45 @@ function tdInheritBidPhotos(bidId,jobId){
 function tdUnfiledPhotos(){
   return photos.filter(p=>p&&p.client_id==null);
 }
-// Best guess at whose photo this is, by the address the app already knows.
-// Never files anything on its own: a wrong guess silently attached to the
-// wrong customer's hub is worse than an unfiled photo.
-function tdGuessClientFor(photo){
+// ── Every property a customer has, with its own pin ─────────────────────────
+// Jack, first real use, 2026-09-22: he stood 8.8 metres from Pepe's 6912 SW
+// 17th St and the app offered him nothing, because the match only ever read a
+// customer's PRIMARY coordinates and 6912 is Pepe's second property. His
+// primary is eight kilometres away. A customer with two houses is not an edge
+// case in this trade, it is a landlord.
+function _pcClientPlaces(c){
+  if(!c)return [];
+  const out=[];
+  if(c.lat!=null&&c.lon!=null)out.push({addr:c.addr||'',lat:c.lat,lon:c.lon,label:'Primary'});
+  (c.extraAddresses||[]).forEach((a,i)=>{
+    if(a&&a.lat!=null&&a.lon!=null)out.push({addr:a.addr||'',lat:a.lat,lon:a.lon,label:a.label||('Property '+(i+2))});
+  });
+  return out;
+}
+// Best guess at WHERE this photo was taken: the nearest saved property on any
+// customer. Never files anything on its own, because a wrong guess silently
+// attached to the wrong customer's hub is worse than an unfiled photo.
+function tdGuessPlaceFor(photo){
   try{
     if(!photo)return null;
     const lat=photo.lat,lon=photo.lon;
     if(lat==null||lon==null)return null;
     let best=null,bestD=Infinity;
     clients.forEach(c=>{
-      if(c.lat==null||c.lon==null)return;
-      const d=_pcMeters(lat,lon,c.lat,c.lon);
-      if(d<bestD){bestD=d;best=c;}
+      _pcClientPlaces(c).forEach(pl=>{
+        const d=_pcMeters(lat,lon,pl.lat,pl.lon);
+        if(d<bestD){bestD=d;best={client:c,addr:pl.addr,label:pl.label,d};}
+      });
     });
     // 150m: close enough to be this property, far enough to survive a phone
     // fix taken from the truck at the curb.
     return (best&&bestD<=150)?best:null;
   }catch(_e){return null;}
+}
+// The customer alone, for callers that only need to know whose it is.
+function tdGuessClientFor(photo){
+  const hit=tdGuessPlaceFor(photo);
+  return hit?hit.client:null;
 }
 function _pcMeters(a1,o1,a2,o2){
   const R=6371000,t=Math.PI/180;
@@ -314,7 +343,7 @@ function tdFilePhoto(photoId,clientId,bidId,jobId){
 // native picker (`<input capture="environment">`), which is exactly what the
 // job sheet used before. Nothing is ever unreachable because a permission was
 // refused; the ghost overlay is simply absent on that path.
-let _pcCtx=null,_pcStream=null,_pcShots=0;
+let _pcCtx=null,_pcStream=null,_pcShots=0,_pcSessionIds=[];
 
 function tdOpenCapture(opts){
   opts=opts||{};
@@ -343,8 +372,591 @@ function tdCloseCapture(){
   const el=document.getElementById('pc-sheet');
   if(el)el.remove();
   const done=_pcCtx&&_pcCtx.onDone,n=_pcShots;
-  _pcCtx=null;_pcShots=0;
+  const unfiled=!!(_pcCtx&&_pcCtx.clientId==null&&_pcCtx.jobId==null&&_pcCtx.bidId==null);
+  const ids=_pcSessionIds.slice();
+  _pcCtx=null;_pcShots=0;_pcSessionIds=[];
   if(done)try{done(n);}catch(_e){}
+  if(!n)return;
+  if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+  // The decision "whose is this" belongs HERE, while the contractor is still
+  // standing in front of the thing they photographed, not on a dashboard card
+  // they have to find later (owner, first UAT run, 2026-09-21). A tagged
+  // shoot already has its answer and closes silently, so the flow that had a
+  // customer never pays a tap for the flow that did not.
+  if(unfiled)tdReviewShots(ids);
+}
+
+// ── Review the burst: swipe, bin the bad ones, attach the rest ──────────────
+// Six shots come back as ONE thing to deal with, not six rows. Deleting is
+// immediate because triaging a burst one confirm-dialog at a time is worse
+// than the problem: the bin is held until the sheet closes, so Undo is real
+// and nothing is removed from storage until the contractor walks away from it.
+let _pcRev=null;
+function tdReviewShots(ids){
+  const list=(ids||[]).map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+  if(!list.length)return false;
+  _pcRev={ids:list.map(p=>p.id),i:-1,trash:[]};
+  document.getElementById('pc-rev')?.remove();
+  const el=document.createElement('div');
+  el.id='pc-rev';el.className='pc-rev';
+  document.body.appendChild(el);
+  _pcRevPaint();
+  return true;
+}
+function _pcRevRows(){
+  if(!_pcRev)return [];
+  return _pcRev.ids.map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+}
+function _pcRevPaint(){
+  const el=document.getElementById('pc-rev');
+  if(!el||!_pcRev)return;
+  const rows=_pcRevRows();
+  if(!rows.length){tdReviewClose();return;}
+  // In folder mode the grid IS the folder; the viewer is shared.
+  if(_pcRev.folder&&!(_pcRev.i>=0&&rows[_pcRev.i])){_pcFolderPaint();return;}
+  el.innerHTML=(_pcRev.i>=0&&rows[_pcRev.i])?_pcRevViewerHTML(rows):_pcRevGridHTML(rows);
+  if(_pcRev.i>=0)_pcRevBindSwipe();
+}
+function _pcRevGridHTML(rows){
+  const n=rows.length;
+  return '<div class="pc-rev-top">'+
+      '<button type="button" class="pc-side" onclick="tdReviewClose()">'+(rows.some(p=>p.client_id==null)?'Not now':'Close')+'</button>'+
+      '<span class="pc-rev-title">'+n+(n===1?' shot':' shots')+'</span>'+
+      '<span class="pc-rev-sp"></span>'+
+    '</div>'+
+    '<div class="pc-rev-grid">'+rows.map((p,i)=>
+      '<button type="button" class="pc-rev-cell" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" onclick="tdReviewOpen('+i+')">'+
+        '<span class="pc-rev-tag">'+escHtml(p.type)+'</span></button>').join('')+
+    '</div>'+
+    _pcRevFootHTML(rows);
+}
+// ── "Is this the right house?" (Jack, 2026-09-22) ───────────────────────────
+// "He takes the picture and it pops up what the address it was that captured
+// in green, then confirm, if not right, edit the address or go through and
+// search all the addresses for that client."
+//
+// So when the fix lands on a saved property, the sheet SAYS the address and
+// the whole burst files in one tap. It is a confirmation, never an automatic
+// filing: the app states what it believes and a person agrees with it. When
+// the fix matches nothing, there is nothing to confirm and it asks as before.
+function _pcRevGuess(rows){
+  if(!rows||!rows.length)return null;
+  if(!rows.some(p=>p.client_id==null))return null;
+  for(let i=0;i<rows.length;i++){
+    const hit=tdGuessPlaceFor(rows[i]);
+    if(hit&&hit.addr)return hit;
+  }
+  return null;
+}
+function _pcFt(m){return Math.round(m*3.28084);}
+function _pcRevFootHTML(rows){
+  const undo=_pcRev.trash.length?'<button type="button" class="pc-side" onclick="tdReviewUndo()">Undo delete</button>':'';
+  if(!rows.some(p=>p.client_id==null)){
+    return '<div class="pc-rev-foot">'+undo+
+      '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewClose()">Done</button>'+
+    '</div>';
+  }
+  const g=_pcRevGuess(rows);
+  if(g){
+    return '<div class="pc-rev-foot col">'+
+      '<div class="pc-rev-here" id="pc-rev-here">'+
+        '<span class="pc-dot"></span>'+
+        '<div class="pc-rev-here-t">'+
+          '<div class="pc-rev-here-addr">'+escHtml((g.addr||'').split(',')[0])+'</div>'+
+          // The distance is not copy. A contractor does not care that it was
+          // 29 feet, he cares whether it is the right house (owner
+          // 2026-09-22). It is kept on the row instead, where it answers
+          // "why did it pick that one" the next time somebody asks.
+          '<div class="pc-rev-here-sub">'+escHtml(g.client&&g.client.name||'')+'</div>'+
+        '</div>'+
+      '</div>'+
+      '<button type="button" class="pc-side go pc-rev-attach ok" id="pc-rev-confirm" onclick="tdReviewConfirmHere()">Yes, file all here</button>'+
+      '<button type="button" class="pc-side" onclick="tdReviewAttach()">Different address</button>'+
+      undo+
+    '</div>';
+  }
+  return '<div class="pc-rev-foot">'+undo+
+    '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'+
+  '</div>';
+}
+// ── The property folder (owner 2026-09-22) ──────────────────────────────────
+// "Want photos to land on the property record under an organized folder."
+//
+// The VISIT is the folder. A contractor does not remember a photo, he
+// remembers the day he was there, so the page reads as dated visits newest
+// first, and the newest one is the only one open. Five years of a rental
+// stays one screen instead of a wall.
+//
+// It is the same sheet the shoot ends in, in a different mode, because a
+// second photo surface is how two of them drift apart (§7.3). Tapping any
+// shot drops into the viewer that already exists, with Mark up, Move and
+// Full size on it.
+//
+// Every heading here is a word Tim already matches: the address, the
+// customer, the stage, the job, the date. The folder is labelled with his
+// dictionary rather than needing one of its own.
+const _PC_VISIT_GAP=3*60*60*1000;
+function tdPropertyVisits(rows){
+  const list=(rows||[]).slice().sort((a,b)=>(Date.parse(b.uploadedAt||0)||0)-(Date.parse(a.uploadedAt||0)||0));
+  const out=[];
+  list.forEach(p=>{
+    const t=Date.parse(p.uploadedAt||0)||0;
+    const last=out[out.length-1];
+    // Three hours, not a calendar day: two trips to the same house in one
+    // afternoon are two visits, and a morning's shooting is one.
+    if(last&&Math.abs(last.at-t)<=_PC_VISIT_GAP){last.photos.push(p);last.at=t;}
+    else out.push({at:t,photos:[p]});
+  });
+  return out.map(v=>{
+    const j=v.photos.map(p=>p.job_name).find(Boolean);
+    const b=v.photos.map(p=>p.bid_name).find(Boolean);
+    return{
+      key:'v'+v.photos[0].id,
+      at:Date.parse(v.photos[v.photos.length-1].uploadedAt||0)||0,
+      what:j?j:(b?b+' · walkthrough':''),
+      photos:v.photos
+    };
+  });
+}
+// The one pair worth pinning: the newest Before and the newest After on the
+// same job. Nothing to pin until a job has both, which is the point.
+function tdPropertyPair(rows){
+  const byJob={};
+  (rows||[]).forEach(p=>{
+    const k=p.job_id!=null?('j'+p.job_id):(p.bid_id!=null?('b'+p.bid_id):'');
+    if(!k)return;
+    const g=byJob[k]||(byJob[k]={name:p.job_name||p.bid_name||'',before:null,after:null,at:0});
+    const t=Date.parse(p.uploadedAt||0)||0;
+    if(p.type==='before'&&(!g.before||t>Date.parse(g.before.uploadedAt||0)))g.before=p;
+    if(p.type==='after'&&(!g.after||t>Date.parse(g.after.uploadedAt||0)))g.after=p;
+    if(t>g.at)g.at=t;
+  });
+  const hits=Object.values(byJob).filter(g=>g.before&&g.after).sort((a,b)=>b.at-a.at);
+  if(hits[0])return hits[0];
+  // Fall back to the property itself. The commonest shape in this app is a
+  // Before taken while WRITING the estimate and an After taken on the job it
+  // became, and those two carry different tags, so keying on the job alone
+  // found no pair on the one house that most needs one (caught in a
+  // screenshot before it shipped, 2026-09-22). The folder is already one
+  // property, so the newest of each is the story of that house.
+  let before=null,after=null;
+  (rows||[]).forEach(p=>{
+    const t=Date.parse(p.uploadedAt||0)||0;
+    if(p.type==='before'&&(!before||t>Date.parse(before.uploadedAt||0)))before=p;
+    if(p.type==='after'&&(!after||t>Date.parse(after.uploadedAt||0)))after=p;
+  });
+  if(!before||!after)return null;
+  return{name:after.job_name||after.bid_name||before.job_name||before.bid_name||'',
+    before,after,at:Date.parse(after.uploadedAt||0)||0};
+}
+let _pcFolder=null;
+function tdOpenPropertyFolder(clientId,addr,rows){
+  const c=clients.find(x=>x.id===clientId);
+  const list=rows||((typeof cdPropertyPhotos==='function')?cdPropertyPhotos(c,addr,0):[]);
+  if(!list.length)return false;
+  _pcFolder={clientId,addr:addr||'',stage:'all',open:null,ids:list.map(p=>p.id)};
+  tdReviewShots(_pcFolder.ids);
+  if(_pcRev)_pcRev.folder=true;
+  _pcFolderPaint();
+  return true;
+}
+function _pcFolderRows(){
+  if(!_pcFolder)return [];
+  return _pcFolder.ids.map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+}
+function tdFolderStage(t){
+  if(!_pcFolder)return false;
+  // A different stage is a different question, so the newest of whatever is
+  // left opens again rather than leaving him on a screen of closed rows.
+  _pcFolder.stage=t;_pcFolder.open=null;_pcFolderPaint();return true;
+}
+function tdFolderVisit(key){
+  if(!_pcFolder)return false;
+  // '' is "he closed it", null is "nobody has chosen yet". Without the
+  // distinction, closing a visit re-opened the newest one on the next paint
+  // and the tap looked like it did nothing.
+  _pcFolder.open=(_pcFolder.open===key)?'':key;
+  _pcFolderPaint();return true;
+}
+function _pcFolderCell(p){
+  return '<button type="button" class="pc-rev-cell" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" '+
+    'onclick="tdFolderOpen(\''+p.id+'\')"><span class="pc-rev-tag">'+escHtml(p.type)+'</span></button>';
+}
+// Straight into the viewer that already exists, on the shot that was tapped.
+function tdFolderOpen(photoId){
+  if(!_pcRev)return false;
+  const i=_pcRev.ids.findIndex(id=>String(id)===String(photoId));
+  return i<0?false:tdReviewOpen(i);
+}
+function _pcFolderPaint(){
+  const el=document.getElementById('pc-rev');
+  if(!el||!_pcFolder)return;
+  const all=_pcFolderRows();
+  if(!all.length){tdReviewClose();return;}
+  const c=clients.find(x=>x.id===_pcFolder.clientId);
+  const count=t=>all.filter(p=>p.type===t).length;
+  const shown=_pcFolder.stage==='all'?all:all.filter(p=>p.type===_pcFolder.stage);
+  const visits=tdPropertyVisits(shown);
+  if(_pcFolder.open==null&&visits.length)_pcFolder.open=visits[0].key;
+  const pair=_pcFolder.stage==='all'?tdPropertyPair(all):null;
+  const chip=(v,label,n)=>'<button type="button" class="fb'+(_pcFolder.stage===v?' active':'')+'" onclick="tdFolderStage(\''+v+'\')">'+label+' '+n+'</button>';
+  const when=t=>{try{return new Date(t).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});}catch(_e){return '';}};
+  el.innerHTML=
+    '<div class="pc-rev-top">'+
+      '<button type="button" class="pc-side" onclick="tdReviewClose()">Close</button>'+
+      '<span class="pc-rev-title">Photos</span>'+
+      '<span class="pc-rev-sp"></span>'+
+    '</div>'+
+    '<div class="pc-fold">'+
+      '<div class="pc-fold-hd">'+
+        '<div class="pc-fold-addr">'+escHtml((_pcFolder.addr||'').split(',')[0]||'This property')+'</div>'+
+        '<div class="pc-fold-sub">'+all.length+(all.length===1?' photo':' photos')+' \u00b7 '+
+          visits.length+(visits.length===1?' visit':' visits')+(c?' \u00b7 '+escHtml(c.name||''):'')+'</div>'+
+      '</div>'+
+      '<div class="pc-fold-chips">'+chip('all','All',all.length)+chip('before','Before',count('before'))+
+        chip('progress','Progress',count('progress'))+chip('after','After',count('after'))+'</div>'+
+      (pair?'<div class="pc-fold-ba">'+
+        '<div class="pc-fold-ba-hd"><div style="flex:1;min-width:0">'+
+          '<div class="pc-fold-ba-lbl">Before &amp; After</div>'+
+          '<div class="pc-fold-ba-name">'+escHtml(pair.name||'This job')+'</div></div>'+
+          '<button type="button" class="pc-side" onclick="tdFolderSendPair()">Send</button>'+
+        '</div>'+
+        '<div class="pc-fold-ba-grid">'+_pcFolderCell(pair.before)+_pcFolderCell(pair.after)+'</div>'+
+      '</div>':'')+
+      visits.map(v=>{
+        const open=_pcFolder.open===v.key;
+        return '<div class="pc-fold-visit">'+
+          '<button type="button" class="pc-fold-visit-hd" onclick="tdFolderVisit(\''+v.key+'\')">'+
+            '<span class="pc-fold-visit-t">'+
+              '<span class="pc-fold-visit-day">'+escHtml(when(v.at))+'</span>'+
+              '<span class="pc-fold-visit-what">'+escHtml(v.what||'No job \u00b7 just photos')+'</span>'+
+            '</span>'+
+            '<span class="pc-fold-visit-n">'+v.photos.length+'</span>'+
+            '<span class="pc-fold-caret'+(open?' open':'')+'">\u2304</span>'+
+          '</button>'+
+          (open?'<div class="pc-rev-grid flat">'+v.photos.map(_pcFolderCell).join('')+'</div>':'')+
+        '</div>';
+      }).join('')+
+    '</div>';
+}
+// The pair is what a customer asks for, so Send is the hub they already have.
+function tdFolderSendPair(){
+  if(!_pcFolder)return false;
+  const c=clients.find(x=>x.id===_pcFolder.clientId);
+  if(!c)return false;
+  tdReviewClose();
+  if(typeof sendClientHub==='function')return sendClientHub(c.id),true;
+  if(typeof openClientDetail==='function')openClientDetail(c.id);
+  return true;
+}
+
+// ── Wrong house, move it ────────────────────────────────────────────────────
+// Until now a filed photo was filed forever: tdFilePhoto could move it
+// anywhere, and nothing in the app ever called it again. Jack has one shot
+// sitting on Pepe with no property on it, and no way to put it right.
+//
+// It is the same attach card, scoped to ONE photo, which also means a burst
+// can be split across two addresses a shot at a time.
+function tdMovePhoto(photoId){
+  const p=photos.find(x=>String(x.id)===String(photoId));
+  if(!p)return false;
+  _pcAtt={ids:[p.id],clientId:null,addr:'',bidId:null,jobId:null};
+  _pcAttPaint('who');
+  return true;
+}
+
+// One tap: the whole burst, on that customer AND that property.
+function tdReviewConfirmHere(){
+  if(!_pcRev)return 0;
+  const g=_pcRevGuess(_pcRevRows());
+  if(!g)return 0;
+  _pcAtt={ids:_pcRev.ids.slice(),clientId:g.client.id,addr:g.addr||'',bidId:null,jobId:null,
+    // How far the fix was from the pin we matched, kept for the next time a
+    // photo lands on the wrong house and somebody has to work out why.
+    m:Math.round(g.d)};
+  return _pcAttAfterAddr();
+}
+
+function _pcRevViewerHTML(rows){
+  const p=rows[_pcRev.i];
+  return '<div class="pc-rev-top">'+
+      '<button type="button" class="pc-side" onclick="tdReviewGrid()">All shots</button>'+
+      '<span class="pc-rev-title">'+(_pcRev.i+1)+' of '+rows.length+'</span>'+
+      '<span class="pc-rev-sp"></span>'+
+    '</div>'+
+    '<div class="pc-rev-stage" id="pc-rev-stage">'+
+      '<img class="pc-rev-img" id="pc-rev-img" src="'+_pcEscUrl(tdPhotoSrc(p))+'" alt="">'+
+    '</div>'+
+    '<div class="pc-rev-foot">'+
+      '<button type="button" class="pc-side" onclick="tdReviewStep(-1)">Prev</button>'+
+      '<button type="button" class="pc-side danger" onclick="tdReviewDelete()">Delete</button>'+
+      '<button type="button" class="pc-side" onclick="tdAnnotatePhoto(\''+p.id+'\')">Mark up</button>'+
+      '<button type="button" class="pc-side" onclick="tdMovePhoto(\''+p.id+'\')">Move</button>'+
+      (p.fullPath?'<button type="button" class="pc-side" id="pc-rev-full" onclick="tdPhotoFullSize(\''+p.id+'\');this.remove()">Full size</button>':'')+
+      '<button type="button" class="pc-side" onclick="tdReviewStep(1)">Next</button>'+
+    '</div>';
+}
+function _pcEscUrl(u){return String(u||'').replace(/'/g,'%27').replace(/"/g,'&quot;');}
+// A thumb is a tap target on a phone, so the viewer is also a swipe: the
+// gesture people already use for a camera roll.
+function _pcRevBindSwipe(){
+  const st=document.getElementById('pc-rev-stage');
+  if(!st)return;
+  let x0=null;
+  st.addEventListener('touchstart',e=>{x0=e.touches&&e.touches[0]?e.touches[0].clientX:null;},{passive:true});
+  st.addEventListener('touchend',e=>{
+    if(x0==null)return;
+    const x1=e.changedTouches&&e.changedTouches[0]?e.changedTouches[0].clientX:x0;
+    const dx=x1-x0;x0=null;
+    if(Math.abs(dx)>40)tdReviewStep(dx<0?1:-1);
+  },{passive:true});
+}
+function tdReviewOpen(i){
+  if(!_pcRev)return false;
+  _pcRev.i=i;_pcRevPaint();return true;
+}
+function tdReviewGrid(){
+  if(!_pcRev)return false;
+  _pcRev.i=-1;_pcRevPaint();return true;
+}
+function tdReviewStep(d){
+  if(!_pcRev)return false;
+  const n=_pcRevRows().length;
+  if(!n)return false;
+  _pcRev.i=(_pcRev.i+d+n)%n;
+  _pcRevPaint();return true;
+}
+function tdReviewDelete(){
+  if(!_pcRev)return false;
+  const rows=_pcRevRows();
+  const p=rows[_pcRev.i];
+  if(!p)return false;
+  _pcRev.trash.push(p);
+  _pcRev.ids=_pcRev.ids.filter(id=>String(id)!==String(p.id));
+  photos=photos.filter(x=>String(x.id)!==String(p.id));
+  saveAll();
+  const left=_pcRevRows().length;
+  if(!left){tdReviewClose();return true;}
+  if(_pcRev.i>=left)_pcRev.i=left-1;
+  _pcRevPaint();
+  return true;
+}
+function tdReviewUndo(){
+  if(!_pcRev||!_pcRev.trash.length)return false;
+  const p=_pcRev.trash.pop();
+  photos.push(p);
+  _pcRev.ids.push(p.id);
+  saveAll();
+  _pcRevPaint();
+  return true;
+}
+// One customer for the whole burst: they were all shot in the same place at
+// the same minute, so asking per photo is five taps to say the same thing.
+// ── Attaching a burst: where it was shot answers most of it ─────────────────
+// Owner, 2026-09-21: "if it's taken onsite gps coordinates search the record
+// and attach where exactly on the client record?" So the card opens on what
+// the coordinates already prove, and the customer list is the fallback rather
+// than the first question. Then: which property (only when there are two),
+// and which proposal or job (only when there is a choice). Never a step the
+// data can answer by itself.
+const _PC_NEAR_M=250;
+let _pcAtt=null;   // {ids, clientId, addr, bidId, jobId}
+// Everything the coordinates could plausibly mean, nearest first. A job
+// carries its own address, so a job hit answers the property question too.
+function _pcNearbyMatches(ids){
+  const rows=(ids||[]).map(id=>photos.find(x=>String(x.id)===String(id))).filter(Boolean);
+  const fix=rows.map(r=>({lat:r.lat,lon:r.lon})).find(f=>f.lat!=null&&f.lon!=null);
+  if(!fix)return [];
+  const out=[];
+  jobs.forEach(j=>{
+    if(j.lat==null||j.lon==null)return;
+    const d=_pcMeters(fix.lat,fix.lon,j.lat,j.lon);
+    if(d>_PC_NEAR_M)return;
+    const c=clients.find(x=>x.id===j.client_id);
+    out.push({clientId:j.client_id,name:(c&&c.name)||'',addr:j.addr||(c&&c.addr)||'',jobId:j.id,bidId:null,what:j.name||'Job',lat:j.lat,lon:j.lon,d});
+  });
+  clients.forEach(c=>{
+    // Every property, each with its own pin: the whole point of Jack's 6912.
+    _pcClientPlaces(c).forEach(pl=>{
+      const d=_pcMeters(fix.lat,fix.lon,pl.lat,pl.lon);
+      if(d>_PC_NEAR_M)return;
+      // One row per HOUSE. A job at a customer's address and the address
+      // itself are the same place, and they must collapse whether or not the
+      // two strings were typed the same way ("412 Oak St, Wichita KS" vs
+      // "412 Oak St"). Matching on the pin as well as the text is what makes
+      // that reliable: two saved points within 40m are one building.
+      const same=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+      if(out.some(m=>m.clientId===c.id&&(same(m.addr,pl.addr)||
+        (m.lat!=null&&_pcMeters(m.lat,m.lon,pl.lat,pl.lon)<=40))))return;
+      out.push({clientId:c.id,name:c.name||'',addr:pl.addr,jobId:null,bidId:null,
+        what:pl.label==='Primary'?'':pl.label,lat:pl.lat,lon:pl.lon,d});
+    });
+  });
+  return out.sort((a,b)=>a.d-b.d).slice(0,4);
+}
+function _pcFeet(m){return Math.round(m*3.28084);}
+function tdReviewAttach(){
+  if(!_pcRev||!_pcRev.ids.length)return false;
+  _pcAtt={ids:_pcRev.ids.slice(),clientId:null,addr:'',bidId:null,jobId:null};
+  _pcAttPaint('who');
+  return true;
+}
+function _pcAttSheet(){
+  let ov=document.getElementById('pc-att');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='pc-att';ov.className='zmodal-overlay';ov.style.alignItems='center';
+    document.body.appendChild(ov);
+  }
+  return ov;
+}
+function tdAttachCancel(){
+  document.getElementById('pc-att')?.remove();
+  _pcAtt=null;
+  return true;
+}
+function _pcAttPaint(step,q){
+  if(!_pcAtt)return;
+  const ov=_pcAttSheet();
+  const n=_pcAtt.ids.length;
+  const head=(t,sub)=>'<div style="font-size:18px;font-weight:900;margin-bottom:4px">'+t+'</div>'+
+    '<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">'+sub+'</div>';
+  const cancel='<button class="btn btn-full" style="margin-top:12px" onclick="tdAttachCancel()">Cancel</button>';
+  if(step==='who'){
+    const near=_pcNearbyMatches(_pcAtt.ids);
+    const term=String(q||'').trim().toLowerCase();
+    const list=clients.filter(c=>!term||String(c.name||'').toLowerCase().includes(term)||String(c.addr||'').toLowerCase().includes(term))
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
+    ov.innerHTML='<div class="zmodal">'+
+      head('Whose '+(n===1?'photo':n+' photos')+'?','It lands on their record, and in the hub you send them.')+
+      (near.length?'<div class="pc-att-near"><div class="pc-att-lbl">Shot here</div>'+
+        near.map(m=>'<button type="button" class="pc-file-opt near" onclick="tdAttachPick('+m.clientId+','+(m.jobId!=null?m.jobId:'null')+','+JSON.stringify(m.addr||'').replace(/"/g,'&quot;')+')">'+
+          escHtml(m.name||'Unnamed')+'<span>'+escHtml(m.addr||'')+(m.what?' · '+escHtml(m.what):'')+' · '+_pcFeet(m.d)+' ft away</span></button>').join('')+
+        '</div>':'')+
+      '<input class="pc-att-q" id="pc-att-q" placeholder="Search customers" autocomplete="off" oninput="_pcAttPaint(\'who\',this.value)" value="'+escHtml(q||'')+'">'+
+      '<div class="pc-file-list">'+
+        (list.length?list.map(c=>'<button type="button" class="pc-file-opt" onclick="tdAttachPick('+c.id+')">'+
+          escHtml(c.name||'Unnamed')+'<span>'+escHtml(c.addr||'')+'</span></button>').join('')
+          :'<div style="font-size:13px;color:var(--text-3)">No customers match.</div>')+
+      '</div>'+cancel+'</div>';
+    const box=document.getElementById('pc-att-q');
+    if(q!=null&&box){box.focus();box.setSelectionRange(box.value.length,box.value.length);}
+    return;
+  }
+  if(step==='where'){
+    // The app already owns this component, and it can add an address inline,
+    // which is the "edit the address" half of what Jack asked for (§7.3).
+    ov.remove();
+    pickClientAddress(_pcAtt.clientId,addr=>{tdAttachAddr(addr);});
+    return;
+  }
+  // 'work': the proposal or job on that customer, only ever asked when there
+  // is more than one thing it could be.
+  const c=clients.find(x=>x.id===_pcAtt.clientId);
+  const work=_pcAttWork();
+  ov.innerHTML='<div class="zmodal">'+
+    head('Attach to what?','On '+escHtml((c&&c.name)||'this customer')+'.')+
+    '<div class="pc-file-list">'+
+      work.map(w=>'<button type="button" class="pc-file-opt" onclick="tdAttachWork(\''+w.kind+'\','+w.id+')">'+
+        escHtml(w.label)+'<span>'+escHtml(w.sub)+'</span></button>').join('')+
+      '<button type="button" class="pc-file-opt" onclick="tdAttachWork(\'none\',0)">Just the customer<span>No proposal or job</span></button>'+
+    '</div>'+cancel+'</div>';
+}
+// The open work on this customer at this address: proposals first, because a
+// photo taken before the job exists is the walkthrough for the estimate.
+function _pcAttWork(){
+  if(!_pcAtt)return [];
+  const cid=_pcAtt.clientId,addr=_pcAtt.addr;
+  const same=(a)=>!addr||!a||String(a).trim().toLowerCase()===String(addr).trim().toLowerCase();
+  const out=[];
+  bids.filter(b=>b.client_id===cid&&b.status!=='lost'&&same(b.addr)).slice(0,8)
+    .forEach(b=>out.push({kind:'bid',id:b.id,label:b.title||b.name||'Proposal',sub:'Proposal'+(b.status?' · '+b.status:'')}));
+  jobs.filter(j=>j.client_id===cid&&j.status!=='cancelled'&&same(j.addr)).slice(0,8)
+    .forEach(j=>out.push({kind:'job',id:j.id,label:j.name||'Job',sub:'Job'+(j.status?' · '+j.status:'')}));
+  return out;
+}
+function tdAttachPick(clientId,jobId,addr){
+  if(!_pcAtt)return false;
+  _pcAtt.clientId=clientId;
+  const c=clients.find(x=>x.id===clientId);
+  if(jobId!=null){
+    const j=jobs.find(x=>x.id===jobId);
+    _pcAtt.jobId=jobId;_pcAtt.addr=(j&&j.addr)||addr||(c&&c.addr)||'';
+    return tdAttachCommit();
+  }
+  // A "Shot here" row already names the property the fix landed on, so
+  // asking which house next would be asking a question we just answered.
+  if(addr){
+    _pcAtt.addr=addr;
+    return _pcAttAfterAddr();
+  }
+  const props=(typeof clientAddresses==='function')?clientAddresses(c):[];
+  if(props.length>1)return _pcAttPaint('where'),true;
+  _pcAtt.addr=props.length?props[0].addr:((c&&c.addr)||'');
+  return _pcAttAfterAddr();
+}
+function tdAttachAddr(addr){
+  if(!_pcAtt)return false;
+  _pcAtt.addr=addr||'';
+  return _pcAttAfterAddr();
+}
+function _pcAttAfterAddr(){
+  const work=_pcAttWork();
+  if(work.length===1){
+    // One open proposal or job at this address is the answer, not a question.
+    if(work[0].kind==='bid')_pcAtt.bidId=work[0].id;else _pcAtt.jobId=work[0].id;
+    return tdAttachCommit();
+  }
+  if(!work.length)return tdAttachCommit();
+  _pcAttPaint('work');
+  return true;
+}
+function tdAttachWork(kind,id){
+  if(!_pcAtt)return false;
+  if(kind==='bid')_pcAtt.bidId=id;
+  else if(kind==='job')_pcAtt.jobId=id;
+  return tdAttachCommit();
+}
+function tdAttachCommit(){
+  if(!_pcAtt)return false;
+  const{ids,clientId,addr,bidId,jobId}=_pcAtt;
+  let n=0;
+  ids.forEach(id=>{
+    if(!tdFilePhoto(id,clientId,bidId,jobId))return;
+    const p=photos.find(x=>String(x.id)===String(id));
+    // The property, kept on the row: a customer with three houses needs to
+    // know WHICH one this was, and a job or proposal is not always there to
+    // say it.
+    if(p&&addr)p.addr=addr;
+    if(p&&_pcAtt.m!=null)p.addrM=_pcAtt.m;
+    n++;
+  });
+  saveAll();
+  const c=clients.find(x=>x.id===clientId);
+  tdAttachCancel();
+  tdReviewClose();
+  if(typeof showToast==='function'){
+    const where=[(c&&c.name)||'the customer',(addr||'').split(',')[0]].filter(Boolean).join(' · ');
+    showToast(n+(n===1?' photo':' photos')+' filed to '+where,'\u2705');
+  }
+  if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+  return n;
+}
+function tdReviewClose(){
+  const trash=_pcRev?_pcRev.trash.slice():[];
+  _pcRev=null;_pcFolder=null;
+  document.getElementById('pc-rev')?.remove();
+  // Only now, once the contractor has walked away from the sheet, do the
+  // deleted shots actually leave storage. Undo is free until this point.
+  if(trash.length&&typeof supaEnabled==='function'&&supaEnabled()&&_supa){
+    const paths=trash.map(p=>p.storagePath).filter(Boolean)
+      .concat(trash.map(p=>p.thumbPath).filter(Boolean))
+      .concat(trash.map(p=>p.fullPath).filter(Boolean))
+      .concat(trash.map(p=>p.originalFullPath).filter(Boolean));
+    if(paths.length)_supa.storage.from('gallery').remove(paths).catch(()=>{});
+  }
+  if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+  return true;
 }
 function _pcSubjectLabel(){
   if(!_pcCtx)return '';
@@ -504,6 +1116,7 @@ async function _pcCommit(file){
   // customer later. Best effort: a denied location never blocks a photo.
   _pcStampGeo(row);
   _pcShots++;
+  _pcSessionIds.push(row.id);
   _pcPaint();
   if(typeof _pcAfterSave==='function')_pcAfterSave(row);
 }
@@ -588,21 +1201,107 @@ function tdPromptAfterShots(jobId){
   return true;
 }
 
+// ── Finding a photo six months later (owner 2026-09-22) ─────────────────────
+// The retrieval moment is never browsing, it is a warranty call: somebody
+// rings about a house and the contractor needs every shot ever taken there,
+// in date order. Warranty and field-service systems key on the PROPERTY for
+// exactly this reason, because the house outlives the customer: owners sell,
+// property managers swap, the address does not move.
+//
+// So a photo search is a search for a PLACE, and its results are properties
+// rather than a wall of thumbnails. The name is how people start the lookup,
+// the address is what the answer is filed under, and both have to work.
+function _pcHaystack(p){
+  const d=p.uploadedAt?new Date(p.uploadedAt):null;
+  // dateKey, not toISOString: a photo shot at 7pm Central is the NEXT day in
+  // UTC, and searching the day you took it has to find it (guarded by
+  // e2e-utils-exhaustive, "no UTC-derived day keys").
+  const dates=d&&!isNaN(d)?[
+    dateKey(d),
+    (d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear(),
+    d.toLocaleDateString('en-US',{month:'long',year:'numeric'}),
+    d.toLocaleDateString('en-US',{month:'short',day:'numeric'})
+  ]:[];
+  return [p.addr,p.client_name,p.job_name,p.bid_name,p.type,p.caption].concat(dates)
+    .filter(Boolean).join(' ').toLowerCase();
+}
+// Properties, newest first, each carrying its matching shots in date order.
+// The list is an argument so a caller that has to stay pure (Tim's parser)
+// can resolve a sentence without reaching for a global.
+function tdPhotoSearch(q,list){
+  const term=String(q||'').toLowerCase().trim();
+  if(!term)return [];
+  const src=list||(typeof photos!=='undefined'?photos:[]);
+  const hits=(src||[]).filter(p=>p&&_pcHaystack(p).includes(term));
+  const by={};
+  hits.forEach(p=>{
+    // One bucket per property. A photo with no address yet falls back to the
+    // customer, and an unfiled one to its own bucket, so nothing is lost.
+    const key=(p.addr||'').trim().toLowerCase()||('client:'+(p.client_id!=null?p.client_id:'unfiled'));
+    const g=by[key]||(by[key]={key,addr:p.addr||'',name:p.client_name||'',photos:[],last:0});
+    if(!g.addr&&p.addr)g.addr=p.addr;
+    if(!g.name&&p.client_name)g.name=p.client_name;
+    g.photos.push(p);
+    const t=Date.parse(p.uploadedAt||0)||0;
+    if(t>g.last)g.last=t;
+  });
+  return Object.values(by)
+    .map(g=>{g.photos.sort((a,b)=>(Date.parse(b.uploadedAt||0)||0)-(Date.parse(a.uploadedAt||0)||0));return g;})
+    .sort((a,b)=>b.last-a.last);
+}
+// Open one of those properties in the album the shoot already ends with, so
+// there is one photo surface in the app rather than a second one for looking
+// back (§7.3).
+function tdOpenPropertyPhotos(key){
+  const g=(tdPhotoSearch.lastResults||[]).find(x=>x.key===key);
+  if(!g||!g.photos.length)return false;
+  const cid=g.photos.map(p=>p.client_id).find(x=>x!=null);
+  return tdOpenPropertyFolder(cid!=null?cid:null,g.addr,g.photos);
+}
+
 // ── The unfiled tray (dashboard) ────────────────────────────────────────────
+// A burst is ONE thing on the dashboard, not six rows. Shots taken in the
+// same stretch are the same walkthrough, so they are grouped by the gap
+// between them and reopened in the same review sheet the shoot ends with.
+// Derived at read time rather than stamped on the row: no new column, and
+// history groups itself the day this ships.
+const _PC_BURST_GAP=15*60*1000;
+function tdUnfiledBursts(){
+  const un=tdUnfiledPhotos().slice().sort((a,b)=>Date.parse(a.uploadedAt||0)-Date.parse(b.uploadedAt||0));
+  const out=[];
+  un.forEach(p=>{
+    const last=out[out.length-1];
+    const t=Date.parse(p.uploadedAt||0)||0;
+    if(last&&Math.abs(t-last.at)<=_PC_BURST_GAP){last.photos.push(p);last.at=t;}
+    else out.push({photos:[p],at:t});
+  });
+  return out.reverse();
+}
+function tdReviewBurst(firstId){
+  const b=tdUnfiledBursts().find(x=>x.photos.some(p=>String(p.id)===String(firstId)));
+  if(!b)return false;
+  return tdReviewShots(b.photos.map(p=>p.id));
+}
 function tdUnfiledTrayHTML(){
   const un=tdUnfiledPhotos();
   if(!un.length)return '';
-  const rows=un.slice(-4).reverse().map(p=>{
-    const guess=tdGuessClientFor(p);
+  const rows=tdUnfiledBursts().slice(0,4).map(b=>{
+    const p=b.photos[b.photos.length-1];
+    const guess=tdGuessPlaceFor(p)||b.photos.map(tdGuessPlaceFor).find(Boolean);
     const when=_pcShotTime(p);
+    const n=b.photos.length;
+    // The PROPERTY, named, because "Pepe?" does not tell a man which of
+    // Pepe's two houses he is looking at.
     const pill=guess
-      ?'<span class="pc-uf-pill ok" onclick="tdFilePhoto(\''+p.id+'\','+guess.id+');renderDash()">'+escHtml(guess.name)+'?</span>'
+      ?'<span class="pc-uf-pill ok" onclick="tdReviewFileBurst(\''+p.id+'\','+guess.client.id+','+JSON.stringify(guess.addr||'').replace(/"/g,'&quot;')+')">'+
+        escHtml((guess.addr||'').split(',')[0]||guess.client.name)+'?</span>'
       :'<span class="pc-uf-pill">Pick a customer</span>';
     return '<div class="pc-uf-row">'+
-      '<div class="pc-uf-thumb" style="background-image:url(\''+(p.thumbUrl||p.url||p.data||'')+'\')"></div>'+
-      '<div class="pc-uf-meta"><div class="pc-uf-when">Shot '+escHtml(when)+'</div>'+
-        '<div class="pc-uf-sub">'+(guess?escHtml(guess.addr||''):'No address match')+'</div>'+pill+'</div>'+
-      '<button type="button" class="pc-uf-file" onclick="tdOpenFilePicker(\''+p.id+'\')">File</button>'+
+      '<div class="pc-uf-thumb'+(n>1?' stack':'')+'" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')">'+
+        (n>1?'<span class="pc-uf-n">'+n+'</span>':'')+'</div>'+
+      '<div class="pc-uf-meta"><div class="pc-uf-when">'+(n>1?n+' shots · ':'Shot ')+escHtml(when)+'</div>'+
+        '<div class="pc-uf-sub">'+(guess?escHtml(guess.client.name||''):'No address match')+'</div>'+pill+'</div>'+
+      '<button type="button" class="pc-uf-file" onclick="tdReviewBurst(\''+p.id+'\')">Review</button>'+
     '</div>';
   }).join('');
   return '<div class="card" id="dash-unfiled-photos">'+
@@ -611,6 +1310,25 @@ function tdUnfiledTrayHTML(){
       '<span class="pc-uf-count">'+un.length+'</span></div>'+
     rows+'</div>';
 }
+// The address guess, accepted for the whole burst in one tap.
+function tdReviewFileBurst(firstId,clientId,addr){
+  const b=tdUnfiledBursts().find(x=>x.photos.some(p=>String(p.id)===String(firstId)));
+  if(!b)return 0;
+  const c=clients.find(x=>x.id===clientId);
+  const where=addr||(c?c.addr||'':'');
+  // The WHOLE burst, not one photo per tap. Jack's first run left three
+  // orphans behind exactly because the old pill filed a single shot and the
+  // rest stayed unfiled with no sign that they had been left.
+  let n=0;
+  const hit=tdGuessPlaceFor(b.photos[b.photos.length-1]);
+  b.photos.forEach(p=>{if(tdFilePhoto(p.id,clientId)){
+    if(where)p.addr=where;
+    if(hit&&hit.addr===where)p.addrM=Math.round(hit.d);
+    n++;}});
+  saveAll();
+  if(typeof renderDash==='function')try{renderDash();}catch(_e){}
+  return n;
+}
 function _pcShotTime(p){
   try{
     const d=new Date(p.uploadedAt);
@@ -618,27 +1336,34 @@ function _pcShotTime(p){
     return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
   }catch(_e){return '';}
 }
-// File one photo: pick the customer, and then the open estimate or job on that
-// customer if there is exactly one, because that is the answer nine times out
-// of ten and asking twice is a tap nobody needs.
-function tdOpenFilePicker(photoId){
+// ── Full size, on demand only (owner 2026-09-22) ────────────────────────────
+// The whole egress argument lives in this function. Uploads are free; what
+// costs money is bytes going OUT, so the 4K copy is fetched exactly when a
+// person asks for it and never as part of a grid, a hub page or a proposal.
+// Paths are immutable (every one carries a timestamp) and written with a
+// one-year Cache-Control, so the second look at the same photo is served by
+// the browser rather than billed again.
+function tdPhotoHasFull(photoId){
   const p=photos.find(x=>String(x.id)===String(photoId));
-  if(!p)return;
-  const opts=clients.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
-  const ov=document.createElement('div');
-  ov.className='zmodal-overlay';
-  ov.style.alignItems='center';
-  ov.innerHTML='<div class="zmodal">'+
-    '<div style="font-size:18px;font-weight:900;margin-bottom:4px">Whose photo is this?</div>'+
-    '<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">It lands in their hub under '+escHtml(p.type)+'.</div>'+
-    '<div class="pc-file-list">'+
-      (opts.length?opts.map(c=>'<button type="button" class="pc-file-opt" onclick="tdFilePhoto(\''+p.id+'\','+c.id+');this.closest(\'.zmodal-overlay\').remove();typeof renderDash===\'function\'&&renderDash()">'+
-        escHtml(c.name||'Unnamed')+'<span>'+escHtml(c.addr||'')+'</span></button>').join('')
-        :'<div style="font-size:13px;color:var(--text-3)">No customers yet.</div>')+
-    '</div>'+
-    '<button class="btn btn-full" style="margin-top:12px" onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>'+
-  '</div>';
-  document.body.appendChild(ov);
+  return !!(p&&p.fullPath);
+}
+function _pcFullUrl(p){
+  if(!p||!p.fullPath)return '';
+  if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supa))return '';
+  const{data}=_supa.storage.from('gallery').getPublicUrl(p.fullPath);
+  return(data&&data.publicUrl)||'';
+}
+// Swap the element to the full-resolution bytes. Returns the url it used, or
+// '' when there is nothing bigger to show, so a caller can leave its control
+// alone rather than promising a size it cannot deliver.
+function tdPhotoFullSize(photoId,imgEl){
+  const p=photos.find(x=>String(x.id)===String(photoId));
+  if(!p||!p.fullPath)return '';
+  const url=_pcFullUrl(p);
+  if(!url)return '';
+  const el=imgEl||document.getElementById('pc-rev-img');
+  if(el)el.src=url;
+  return url;
 }
 
 // ── Annotation (owner 2026-09-21) ───────────────────────────────────────────
@@ -934,6 +1659,13 @@ async function tdSaveAnnotation(){
           // carries whatever the server had, which is not this markup.
           const r2=live();
           stamp(r2);
+          // The marked copy is flattened from the 1600 view, so there is no
+          // 4K version OF THE MARKS. Rather than leave Full size pointing at
+          // the unmarked original (a button that quietly contradicts what is
+          // on screen), the archive copy moves to originalFullPath, where it
+          // stays reachable as evidence, and this row simply has no full size.
+          if(r2.fullPath&&!r2.originalFullPath)r2.originalFullPath=r2.fullPath;
+          r2.fullPath='';
           r2.url=urlData.publicUrl;r2.storagePath=path;r2.thumbUrl=thumbUrl;r2.thumbPath=thumbPath;
           delete r2.data;
           saveAll();

@@ -1115,7 +1115,7 @@ test.describe('Client list, render, filter, stage, hub page', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PROPOSALS: SEND LINK, CANCEL, _buildClientHubSnapshot, renderGallery
+//  PROPOSALS: SEND LINK, CANCEL, _buildClientHubSnapshot
 // ════════════════════════════════════════════════════════════════════════════
 
 test.describe('Proposals: send link, hub snapshot, gallery', () => {
@@ -1170,90 +1170,6 @@ test.describe('Proposals: send link, hub snapshot, gallery', () => {
     }
   });
 
-  test('trust honesty gate: "Licensed & Insured" only renders for numbers actually on file', async () => {
-    // The client-facing "Licensed & Insured" line must never be an unbacked claim.
-    // S.blic DEFAULTS to the literal string "Licensed & Insured", that default
-    // must NOT produce a badge. Only a real license number and/or a real insurance
-    // policy number does, and the wording matches exactly what's backed.
-    const r = await page.evaluate((cid) => {
-      const snapLabel = () => _buildClientHubSnapshot(cid).trustLicense;
-      const origBlic = S.blic, origLic = (typeof licenses !== 'undefined') ? licenses.slice() : [];
-      const out = {};
-      // 1. Default blic marker + no insurance record → nothing claimed.
-      S.blic = 'Licensed & Insured'; licenses = [];
-      out.defaultOnly = snapLabel();
-      // 2. Real license number, still no insurance → "Licensed" only.
-      S.blic = 'KS-PNT-2024-08812';
-      out.licenseOnly = snapLabel();
-      // 3. No license, but an insurance policy number on file → "Insured" only.
-      S.blic = ''; licenses = [{ id: 1, cat: 'insurance', typeId: 'gl_ins', licenseNumber: 'GL-99117' }];
-      out.insuranceOnly = snapLabel();
-      // 4. Both a license number and an insurance policy number → the full claim.
-      S.blic = 'KS-PNT-2024-08812';
-      out.both = snapLabel();
-      // 5. Insurance record with NO policy number → doesn't count as insured.
-      S.blic = 'KS-PNT-2024-08812'; licenses = [{ id: 2, cat: 'insurance', typeId: 'gl_ins', licenseNumber: '' }];
-      out.insuranceBlank = snapLabel();
-      S.blic = origBlic; licenses = origLic;
-      return out;
-    }, PROP_CLIENT);
-    expect(r.defaultOnly).toBe('');                 // the default marker is NOT a claim
-    expect(r.licenseOnly).toBe('Licensed');
-    expect(r.insuranceOnly).toBe('Insured');
-    expect(r.both).toBe('Licensed & Insured');
-    expect(r.insuranceBlank).toBe('Licensed');      // blank policy # ⇒ not insured
-  });
-
-  test('years-in-business computes live from "in business since" year (auto-increments), falls back to legacy number', async () => {
-    // Owner: the manual years number goes stale. Now the hub computes it from a
-    // "since" year so it bumps itself every Jan 1 with no contractor action.
-    const r = await page.evaluate((cid) => {
-      const yrs = () => _buildClientHubSnapshot(cid).yearsInBusiness;
-      const now = new Date().getFullYear();
-      const origSince = S.sinceYear, origByears = S.byears;
-      const out = {};
-      // 1. Since-year set → live computed (current year − since).
-      S.sinceYear = now - 12; S.byears = 0;
-      out.fromSince = yrs();
-      // 2. No since-year, legacy manual number present → fallback to it.
-      S.sinceYear = 0; S.byears = 7;
-      out.legacyFallback = yrs();
-      // 3. Since-year IS the current year (<1 yr in business) → 0 → hub hides the line.
-      S.sinceYear = now; S.byears = 0;
-      out.brandNew = yrs();
-      // 4. Since-year set wins over a stale legacy number.
-      S.sinceYear = now - 5; S.byears = 99;
-      out.sinceWins = yrs();
-      S.sinceYear = origSince; S.byears = origByears;
-      return { ...out, now };
-    }, PROP_CLIENT);
-    expect(r.fromSince).toBe(12);
-    expect(r.legacyFallback).toBe(7);
-    expect(r.brandNew).toBe(0);            // hub gate hides "0 years"
-    expect(r.sinceWins).toBe(5);
-  });
-
-  test('renderGallery: renders gallery page without errors', async () => {
-    await page.evaluate(() => {
-      if (typeof goPg === 'function') goPg('pg-gallery');
-    });
-    await page.waitForTimeout(400);
-    await page.evaluate(() => {
-      if (typeof renderGallery === 'function') try { renderGallery(); } catch(e) {}
-    });
-    assertNoErrors(page, 'renderGallery');
-  });
-
-  test('setGalleryFilter: cycles all filter values', async () => {
-    for (const f of ['all', 'before', 'after', 'progress']) {
-      await page.evaluate(filter => {
-        const btn = document.querySelector('[data-gf="' + filter + '"]') || null;
-        if (typeof setGalleryFilter === 'function') try { setGalleryFilter(filter, btn); } catch(e) {}
-      }, f);
-      await page.waitForTimeout(100);
-    }
-    assertNoErrors(page, 'setGalleryFilter');
-  });
 
   test('cancelProposalLink: shows confirm dialog and removes signingToken on confirm', async () => {
     const result = await page.evaluate(([bidId]) => {

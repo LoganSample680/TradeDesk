@@ -36,7 +36,7 @@ function goPg(id){
   const nb=document.getElementById({
     'pg-leads':'nb-leads','pg-jobs':'nb-jobs','pg-money':'nb-money',
     'pg-schedule':'nb-jobs',
-    'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker','pg-gallery':'nb-gallery',
+    'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker',
     'pg-team':'nb-team','pg-licensing':'nb-licensing','pg-contracts':'nb-contracts',
     'pg-taxes':'nb-taxes','pg-settings':'nb-settings','pg-checklist':'nb-settings',
     'pg-proposals':'nb-proposals',

@@ -3830,7 +3830,7 @@ function _geoReportPermission(state){
   // multiply on every boot. Skip rather than pollute.
   if(devId){
     try{
-      _supa.from('device_status').upsert({
+      const _dev={
         user_id:_supaUser.id,
         device_id:devId,
         device_label:devLabel||null,
@@ -3876,7 +3876,20 @@ function _geoReportPermission(state){
         derived:!(_natPerm&&_natPerm.status),
         app_version:(typeof APP_VERSION!=='undefined')?APP_VERSION:null,
         checked_at:now
-      },{onConflict:'user_id,device_id'}).then(()=>{},()=>{});
+      };
+      // ── A READING WE DO NOT HAVE MUST NOT ERASE THE ONE WE DID ──────────
+      // (owner 2026-09-22, third time asking why Jack has no battery)
+      //
+      // The row is an upsert on (user_id, device_id), and PostgREST only
+      // writes the columns the payload carries, so an absent key keeps what
+      // is already stored. Sending null is a different statement: it says
+      // "this phone has no battery", and it overwrote the 35% Jack's handset
+      // finally reported the night before with nothing, on the very next
+      // permission write. A read that failed is not an answer and must not
+      // be written as one.
+      if(!_geoBatt){delete _dev.battery_level;delete _dev.battery_charging;}
+      if(!_geoTherm)delete _dev.thermal_state;
+      _supa.from('device_status').upsert(_dev,{onConflict:'user_id,device_id'}).then(()=>{},()=>{});
     }catch(_e){}
   }
   if(!_isEmployee)return;
@@ -3904,12 +3917,28 @@ const _GEO_PERM_STALE_MS=6*60*60*1000;
 let _geoPermReportedAt=0;
 function _geoPermForeground(){
   try{if(typeof _geoConfigureFlush==='function')_geoConfigureFlush();}catch(_e){}
-  try{if(typeof _geoRefreshBattery==='function')_geoRefreshBattery();}catch(_e){}
+  // WAITED ON, not fired and forgotten. _geoRefreshBattery asks the plugin a
+  // second time 300ms later when the first read comes back -1 (iOS is not
+  // ready that soon after battery monitoring is switched on), so the answer
+  // now routinely lands AFTER the permission read it used to beat. Racing the
+  // row against it is why the fix for the -1 did not put a number on the
+  // roster. The report below waits for both.
+  let _battDone=null;
+  try{if(typeof _geoRefreshBattery==='function')_battDone=Promise.resolve(_geoRefreshBattery()).catch(()=>null);}catch(_e){}
+  if(!_battDone)_battDone=Promise.resolve(null);
   try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
   try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}
   const now=Date.now();
   if(now-_geoPermReportedAt<_GEO_PERM_STALE_MS)return;
   _geoPermReportedAt=now;
+  _geoPermReportNow(_battDone);
+}
+// Split out of the foreground handler above so the write can be exercised
+// without the six-hour staleness gate deciding whether a test observes
+// anything. It takes the battery read already in flight rather than starting
+// its own: two overlapping stats() calls would each finish by assigning
+// _geoBatt, and the loser could hand back the -1 the winner just fixed.
+async function _geoPermReportNow(battDone){
   // READ NATIVE, THEN REPORT. This used to kick off _geoRefreshPermCache()
   // above, which is ASYNC, and then immediately report _geoPermState(), which
   // reads a cache SYNCHRONOUSLY. On a fresh boot that cache is still empty and
@@ -3920,12 +3949,12 @@ function _geoPermForeground(){
   // that bad row in until tomorrow. Observed on the owner's own handset the
   // hour build 36 landed: motion reported 'granted' from the same plugin while
   // location reported nothing at all.
+  try{if(battDone&&typeof battDone.then==='function')await battDone;}catch(_e){}
   try{
     if(typeof _geoReadPermission!=='function')return;
-    _geoReadPermission().then(st=>{
-      try{if(typeof _geoReportPermission==='function')_geoReportPermission(st);}catch(_e){}
-      try{_geoAutoPrecise();}catch(_e){}
-    }).catch(()=>{});
+    const st=await _geoReadPermission();
+    try{if(typeof _geoReportPermission==='function')_geoReportPermission(st);}catch(_e){}
+    try{_geoAutoPrecise();}catch(_e){}
   }catch(_e){}
 }
 // ── Precise, every session, without waiting to be asked (owner rule

@@ -459,7 +459,7 @@ test.describe('control-level click + dwell telemetry', () => {
 
   test('a glance too short to measure reports nothing', () => {
     const s = loadSandbox();
-    s.page('pg-gallery');
+    s.page('pg-clients');
     s.advance(400);                       // under a second
     s.page('pg-dash');
     s.windowObj._obs.flush();
