@@ -159,7 +159,13 @@ function timIsNothing(text){
 // hands the REST to the search. A bare "photos" opens the box empty, which is
 // the honest answer to a question with no subject in it.
 const TIM_PHOTO_WORDS=['photos','photo','pictures','picture','pics','pic','shots','gallery','images'];
-const _TIM_PHOTO_FILLER=['show','me','my','the','a','of','for','at','from','on','open','find','get','pull','up','all','job','jobs','site','house','place'];
+// The words a man actually says around the question. "where are my photos
+// for pepe" left "where are pepe" as the search term and found nothing, which
+// is the exact sentence the owner tried (2026-09-22). Question words, the
+// auxiliaries that carry them, and the bare s left behind by an apostrophe
+// (_timNorm strips punctuation, so "pepe's" arrives as "pepe s").
+const _TIM_PHOTO_FILLER=['show','me','my','the','a','of','for','at','from','on','open','find','get','pull','up','all','job','jobs','site','house','place',
+  'where','wheres','are','is','was','were','do','did','does','i','we','have','has','had','any','some','got','there','see','look','looking','need','want','to','s','take','took','taken','can','could','please'];
 function timPhotoQuery(text){
   const t=_timNorm(text);
   if(!TIM_PHOTO_WORDS.some(w=>t.includes(' '+w+' ')))return null;
@@ -256,8 +262,8 @@ function timRun(text){
     const places=p.places||[];
     // One place is not a question. Several is, and he asks it himself rather
     // than handing over a list of search results to read.
-    if(places.length===1&&typeof tdReviewShots==='function'){
-      tdReviewShots(places[0].photos.map(x=>x.id));
+    if(places.length===1&&typeof tdOpenPhotoGroup==='function'){
+      tdOpenPhotoGroup(places[0]);
       return p;
     }
     if(places.length>1){_timPickPlace(places);return p;}
@@ -1670,7 +1676,7 @@ function _timOpenPlace(i){
   const g=_timPlaces[i];
   if(!g)return false;
   _timClose();
-  return(typeof tdReviewShots==='function')?tdReviewShots(g.photos.map(x=>x.id)):false;
+  return(typeof tdOpenPhotoGroup==='function')?tdOpenPhotoGroup(g):false;
 }
 
 // How long the three dots run before his reply appears. He is local: the reply
