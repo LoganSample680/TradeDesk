@@ -8865,6 +8865,7 @@ async function supaLoadFromCloud({silent=false}={}){
     if(typeof _fetchScopeRates==='function')_fetchScopeRates();
     if(typeof renderAllMileage==='function')renderAllMileage();
     if(typeof renderFleet==='function')renderFleet();
+    if(typeof renderGallery==='function')renderGallery();
     if(typeof renderLicensing==='function')renderLicensing();
     if(typeof renderCalendar==='function')renderCalendar();
     if(typeof renderDashActiveLiens==='function')renderDashActiveLiens();
@@ -9422,6 +9423,7 @@ function _renderAllPages(){
   if(typeof renderExpenses==='function')renderExpenses();
   if(typeof renderAllMileage==='function')renderAllMileage();
   if(typeof renderFleet==='function')renderFleet();
+  if(typeof renderGallery==='function')renderGallery();
   if(typeof renderLicensing==='function')renderLicensing();
   if(typeof renderCalendar==='function')renderCalendar();
   if(typeof renderDashActiveLiens==='function')renderDashActiveLiens();
