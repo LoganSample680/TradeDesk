@@ -7,6 +7,8 @@
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
 
 test.describe('clients.js: exhaustive coverage', () => {
   let page;
@@ -4277,18 +4279,71 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(p.propDataMiss).toBe(false);
     });
 
-    test('a MISS is recorded as a miss, never as a silent blank', async () => {
-      // This is the one that matters most. yearBuilt arms the EPA RRP pre-1978
-      // lead-paint gate, and the old scraper's failure mode was returning null,
-      // which reads exactly like "built after 1978" and quietly drops a federal
-      // disclosure off a proposal. An address with no county record has to be
-      // marked so the card asks the contractor instead of assuming.
+    // BEHAVIOUR CHANGED 2026-09-22, and the old assertion was right for the
+    // design it was written against. It said: an empty property_lookup result
+    // must be stamped as a county miss, so the card asks the contractor for a
+    // year rather than silently reading as post-1978.
+    //
+    // What that missed is that property_lookup is a JOIN against parcels we
+    // already hold. Empty means "nobody has asked the county about this address
+    // yet", which is a different fact from "the county has no record". Stamping
+    // the second when we only know the first retires the address forever, and
+    // that is exactly what left the first beta user's cards blank: his client
+    // on Elmwood was stamped answered at 14:50 with the parcel sitting in the
+    // table the whole time.
+    //
+    // New contract: a join miss is NOT stamped, it is queued for the drip,
+    // which asks the county for real. Only the Edge Function saying
+    // {found:false} stamps a miss (proved by the _lookupPropertyData tests).
+    // The original concern is still served, just one step later.
+    test('a join miss is NOT stamped, because the county was never asked', async () => {
+      // Drip off, so this asserts the JOIN branch alone. With it on, the drip
+      // runs inside the same await, asks for real, and legitimately stamps the
+      // address this test is checking was left alone.
+      await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 0; });
       const r = await withClients(page, [{ id: 9011, addr: '999 Nowhere Rd' }], []);
       expect(r.threw).toBeNull();
-      const p = r.after.find((c) => c.id === 9011).props['999 nowhere rd'];
-      expect(p.propDataMiss).toBe(true);
-      expect(p.propDataFetchedAt).toBeTruthy();
+      const props = r.after.find((c) => c.id === 9011).props || {};
+      const p = props['999 nowhere rd'] || {};
+      expect(p.propDataMiss, 'an unasked address must not be recorded as a county miss').toBeFalsy();
+      expect(p.propDataSource, 'and must not read as county-answered').not.toBe('county');
       expect(p.yearBuilt).toBeUndefined();
+      await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 10; });
+    });
+
+    // Owner, 2026-09-22: "tag them as commerical properties automatically to".
+    test('a commercial parcel types itself when nobody has typed it', async () => {
+      const r = await withClients(page,
+        [{ id: 9061, addr: '61 Store Rd' }],
+        [{ q: '61 Store Rd', year_built: 1990, property_type: 'Commercial',
+           use_desc: 'Grocery store / supermarket', county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9061).props['61 store rd'];
+      expect(p.propertyType, 'the county class becomes the tag').toBe('Commercial');
+      expect(p.propDataClass).toBe('Commercial');
+      expect(p.propDataUse).toBe('Grocery store / supermarket');
+    });
+
+    test('a hand-set property type is never re-typed by the county', async () => {
+      // propertyType drives isRental, the card icon and how the record reads
+      // everywhere else. Overwriting it would silently reclassify a property
+      // somebody already decided about.
+      const r = await withClients(page,
+        [{ id: 9062, addr: '62 Store Rd', properties: { '62 store rd': { propertyType: 'Rental' } } }],
+        [{ q: '62 Store Rd', property_type: 'Commercial', county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9062).props['62 store rd'];
+      expect(p.propertyType, 'the contractor wins').toBe('Rental');
+      expect(p.propDataClass, 'but the county class is still recorded').toBe('Commercial');
+    });
+
+    test('"Residential" is deliberately NOT auto-tagged', async () => {
+      // Too coarse. House vs duplex vs condo is a distinction the contractor
+      // prices off, and a wrong tag is worse than no tag.
+      const r = await withClients(page,
+        [{ id: 9063, addr: '63 House Rd' }],
+        [{ q: '63 House Rd', property_type: 'Residential', county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9063).props['63 house rd'];
+      expect(p.propertyType).toBeUndefined();
+      expect(p.propDataClass, 'the class is still stored for the icon').toBe('Residential');
     });
 
     test('a hand-entered year built is never overwritten by the county', async () => {
@@ -4335,13 +4390,24 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(p.propDataSource, 'and the record is now county-answered, so it is not asked again').toBe('county');
     });
 
-    test('a county miss marks itself as county-answered, or it loops forever', async () => {
-      // If the miss branch left propDataSource unset, _propAnswered stays false
-      // and the same address is re-asked on every single boot.
+    // Same change as above. The loop this guarded against is now prevented
+    // server-side instead: county_claim_ask retires an address after ONE ask,
+    // ever, so an unstamped address re-collected on the next boot costs a
+    // cheap 'already' rather than a county request. The drip is also capped
+    // per session, so the queue drains without a burst.
+    test('an unasked address is handed to the drip rather than written off', async () => {
+      await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 0; });
       const r = await withClients(page, [{ id: 9044, addr: '44 Real St' }], []);
-      const p = r.after.find((c) => c.id === 9044).props['44 real st'];
-      expect(p.propDataSource).toBe('county');
-      expect(p.propDataMiss).toBe(true);
+      const p = (r.after.find((c) => c.id === 9044).props || {})['44 real st'] || {};
+      expect(p.propDataSource, 'nothing may claim the county answered').not.toBe('county');
+      // The drip itself is asserted on the source, because the sandbox stubs
+      // the RPC and never reaches the Edge Function.
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'clients.js'), 'utf8');
+      expect(src, 'a join miss must be queued').toMatch(/else unanswered\.push\(w\);/);
+      expect(src, 'and chased, capped per session').toMatch(/_dripCap=window\._PROP_DRIP_PER_SESSION/);
+      expect(src, 'the cap actually bounds the loop').toMatch(/i<unanswered\.length&&i<_dripCap/);
+      expect(src, 'paced between asks').toMatch(/window\._PROP_DRIP_GAP_MS/);
+      await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 10; });
     });
 
     test('a transient API failure is not recorded as a miss', async () => {

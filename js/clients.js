@@ -3535,6 +3535,46 @@ function openAddAddressModal(editIdx){
   if(_aaInp&&typeof _addrAutoFull==='function')_addrAutoFull(_aaInp,null);
   setTimeout(()=>{const el=document.getElementById('_aa-label');if(el)el.focus();},80);
 }
+// ── THE one door an address walks through to join a client ─────────────────
+//
+// Owner, 2026-09-22: "jack just updated a address from 6912 to 6908 and we
+// didnt grab the new info for him automatically."
+//
+// He was right and the cause was that only the PRIMARY address ever asked the
+// county. FIVE separate places pushed to extraAddresses (here, _addrPickSaveNew
+// below, js/generic-estimate.js, js/mileage.js) and not one of them fired a
+// lookup, so any address that was not a client's first one stayed permanently
+// blank however many times it was saved.
+//
+// Fixing five call sites by adding a lookup to each is how the sixth one gets
+// written without it. So there is one function, it does both, and the sites
+// call it (§7.3).
+//
+// Returns true when the address was actually added, so a caller can tell an
+// add from a duplicate.
+function addClientAddress(c,label,addr,opts){
+  if(!c)return false;
+  const a=String(addr||'').trim();
+  if(!a)return false;
+  c.extraAddresses=c.extraAddresses||[];
+  // Deduped on the SAME normalization the card and the property store key on,
+  // so "6908 SW 17th St" and "6908 sw 17th st, Topeka" are one address rather
+  // than two rows that each ask the county separately.
+  const k=(typeof siteNoteKey==='function')?siteNoteKey(a):a.toLowerCase();
+  const already=(typeof clientAddresses==='function')
+    ? clientAddresses(c).some(x=>((typeof siteNoteKey==='function')?siteNoteKey(x.addr):String(x.addr||'').toLowerCase())===k)
+    : false;
+  if(!already)c.extraAddresses.push({label:label||'Additional property',addr:a,...(opts&&opts.extra||{})});
+  // Ask the county even for a duplicate: the address may have been added before
+  // the county was wired, or before its county was loaded, in which case this
+  // is the one thing that fills it in. The ask gate makes a repeat free.
+  if(typeof _lookupPropertyData==='function'){
+    const pp=(typeof _parseAddrParts==='function')?_parseAddrParts(a):null;
+    if(pp&&pp.street)_lookupPropertyData(c.id,pp);
+  }
+  return !already;
+}
+
 function saveAddClientAddress(editIdx){
   const addr=(document.getElementById('_aa-addr')?.value||'').trim();
   if(!addr){zAlert('Enter an address.');return;}
@@ -3576,7 +3616,10 @@ function saveAddClientAddress(editIdx){
       if(Object.keys(old).length)setPropertyData(c,addr,old);
     }
   }else{
-    c.extraAddresses.push({label,addr});
+    // One door (addClientAddress above): pushes AND asks the county, so an
+    // extra address is not blank forever. The EDIT branch above is left
+    // exactly as written by the session that built it.
+    addClientAddress(c,label,addr);
   }
   if(ptype&&typeof setPropertyData==='function')setPropertyData(c,addr,{propertyType:ptype,isRental:/rental/i.test(ptype)||undefined});
   saveAll();
@@ -3672,8 +3715,7 @@ function _addrPickSaveNew(){
   const val=(document.getElementById('_addrpick-new')?.value||'').trim();
   if(!val){if(typeof zAlert==='function')zAlert('Enter an address.');return;}
   const c=getClientById(_addrPickClientId);if(!c)return;
-  c.extraAddresses=c.extraAddresses||[];
-  c.extraAddresses.push({label:'Additional property',addr:val});
+  addClientAddress(c,'Additional property',val);
   if(typeof saveAll==='function')saveAll();
   _addrPickFire(val);
 }
@@ -3766,6 +3808,27 @@ function _propApplyMatch(c,keyAddr,d){
   // The CLASS is kept apart from the use text because it is what the card
   // reasons about (which icon, which tint) while the use text is only read.
   if(d.property_type)pd.propDataClass=d.property_type;
+  // ── AUTO-TAG (owner, 2026-09-22: "tag them as commerical properties
+  // automatically to") ──────────────────────────────────────────────────────
+  // propertyType is the contractor's own field: it drives isRental, the card
+  // icon, and how the record reads everywhere else. The county now fills it in
+  // when, AND ONLY WHEN, nobody has set it, so a commercial parcel types
+  // itself and a property somebody already classified by hand is never
+  // silently re-typed out from under them.
+  //
+  // The county's own word is used, not a guess: "Commercial" and "Industrial"
+  // map to Commercial, "Agricultural" to Land, everything else is left alone
+  // rather than forced into a bucket. An unrecognised class writes nothing,
+  // because a wrong tag is worse than no tag on a field the contractor filters
+  // and prices off.
+  if(d.property_type&&!existing.propertyType){
+    const _cls=String(d.property_type).toLowerCase();
+    const _tag=/commercial|industrial/.test(_cls)?'Commercial'
+              :/agricultur|farm/.test(_cls)?'Land'
+              :/residential/.test(_cls)?null    // too coarse: house vs duplex vs condo is the contractor's call
+              :null;
+    if(_tag)pd.propertyType=_tag;
+  }
   pd.propDataSource='county';
   pd.propDataCounty=[d.county_name,d.state].filter(Boolean).join(', ');
   pd.propDataExact=true;
@@ -3793,6 +3856,15 @@ function _propApplyMatch(c,keyAddr,d){
 // null, which reads identically to "built after 1978" and quietly drops a
 // federal disclosure off a proposal. An address with no county record is marked
 // propDataMiss so the card asks the contractor instead of assuming.
+// How many un-asked addresses one sign-in will chase, and how long it waits
+// between them. Small on purpose: see THE DRIP in _syncPropertyData.
+//
+// On window, and read at call time rather than captured, so a test can set the
+// cap to 0 and assert the JOIN branch on its own. Without that the drip runs
+// inside the same await and stamps the very address the test is checking was
+// left alone, which makes a correct implementation look broken.
+window._PROP_DRIP_PER_SESSION=(window._PROP_DRIP_PER_SESSION==null)?10:window._PROP_DRIP_PER_SESSION;
+window._PROP_DRIP_GAP_MS=(window._PROP_DRIP_GAP_MS==null)?4000:window._PROP_DRIP_GAP_MS;
 let _propSyncRunning=false;
 async function _syncPropertyData(){
   // The demo makes no network calls at all (js/demo.js). Its sample client
@@ -3836,6 +3908,7 @@ async function _syncPropertyData(){
     // property_lookup caps at 500 addresses, so chunk rather than silently
     // dropping the tail of a big book.
     let touched=false;
+    const unanswered=[];
     for(let i=0;i<want.length;i+=500){
       const batch=want.slice(i,i+500);
       const {data,error}=await _supa.rpc('property_lookup',{p_addrs:batch.map(w=>w.q)});
@@ -3845,12 +3918,59 @@ async function _syncPropertyData(){
       batch.forEach(w=>{
         const c=clients.find(x=>x&&x.id===w.clientId);
         if(!c)return;
-        if(_propApplyMatch(c,w.keyAddr,byQ[w.q]||null))touched=true;
+        const hit=byQ[w.q]||null;
+        // A MISS HERE IS NOT AN ANSWER, and treating it as one is what left
+        // Jack's cards blank. property_lookup is a JOIN against parcels we
+        // already hold: an empty result means "nobody has asked the county
+        // about this address yet", which is a completely different fact from
+        // "the county has no record of it". Stamping the second when we only
+        // know the first retires the address forever, because _propAnswered
+        // then returns true and nothing ever asks again.
+        //
+        // Only the Edge Function, which actually contacts the county, is
+        // entitled to say {found:false}. So a miss is handed to the drip
+        // below instead of being written down.
+        if(hit){ if(_propApplyMatch(c,w.keyAddr,hit))touched=true; }
+        else unanswered.push(w);
       });
     }
     if(touched){
       saveAll();
       if(typeof renderClientDetail==='function'&&currentClientId)renderClientDetail();
+    }
+
+    // ── THE DRIP ─────────────────────────────────────────────────────────
+    //
+    // Owner, 2026-09-22: "i would want a drip on previous addresses or ones
+    // that lose their sync."
+    //
+    // Everything the join could not answer gets ASKED, a few per sign-in, in
+    // the background. That covers the two cases he named: an address saved
+    // before its county was wired, and an address that changed and left its
+    // old record behind.
+    //
+    // Deliberately small and deliberately not a cron. A handful per session,
+    // spaced, means a contractor's book fills in over a week of normal use
+    // while the county only ever sees traffic caused by somebody actually
+    // working. A nightly sweep with nobody watching is how a range gets
+    // blocked, which is the one outcome this whole design exists to avoid.
+    //
+    // Three things already bound it and none of them live here: county_claim_ask
+    // asks any address once ever, the per-county daily cap is a circuit
+    // breaker, and the Edge Function returns 204 for a county we have not
+    // loaded, so the 845 out-of-county addresses cost one cheap call each and
+    // are never retried.
+    const _dripCap=window._PROP_DRIP_PER_SESSION||0;
+    for(let i=0;i<unanswered.length&&i<_dripCap;i++){
+      const w=unanswered[i];
+      const c=clients.find(x=>x&&x.id===w.clientId);
+      if(!c)continue;
+      const pp=(typeof _parseAddrParts==='function')?_parseAddrParts(w.q):null;
+      if(!pp||!pp.street)continue;
+      await _lookupPropertyData(c.id,pp);
+      // Paced. Nothing is waiting on this and the county should not see a
+      // burst from one boot.
+      await new Promise(r=>setTimeout(r,window._PROP_DRIP_GAP_MS||0));
     }
   }catch(e){console.warn('Property sync failed:',e);}
   finally{_propSyncRunning=false;}

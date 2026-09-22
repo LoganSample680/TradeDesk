@@ -719,6 +719,121 @@ test.describe('county parcel records', () => {
     });
   });
 
+  // ── THE GROUND, THE WATER, AND WHO IS BEHIND ON TAX ──────────────────────
+  //
+  // Owner, 2026-09-22: "flood zone and soils could help landscapers on drainage
+  // and sprinkler installs and tax sale could benefit all people."
+  //
+  // Three more layers on the SAME county GIS server. Each was probed live
+  // before a column was written: flood 949 polygons, soils 10,538, tax sale
+  // 553 keyed on the quickRef we already store.
+  test.describe('ground and risk layers', () => {
+    const fn = () => readSrc(FN);
+    const MIG37 = 'supabase/migrations/20261037_county_ground_and_risk.sql';
+
+    test('all three are wired, and tax sale needs no geometry', () => {
+      const s = fn();
+      expect(s).toMatch(/name:\s*"flood",\s*need:\s*"point"/);
+      expect(s).toMatch(/name:\s*"soil",\s*need:\s*"point"/);
+      // The tax-sale list carries QUICKREFID, so asking it by point would be
+      // both slower and less exact than the attribute query it supports.
+      expect(s).toMatch(/name:\s*"taxsale",\s*need:\s*"quickRef"/);
+    });
+
+    test('they run AFTER the parcel, because they need what it produced', () => {
+      // Flood and soils answer "what is AT this point" and the only point we
+      // have for an address is the parcel's own centroid. They cannot join the
+      // first Promise.all; putting them there would query 0,0 forever.
+      const s = fn();
+      const firstPass = s.indexOf('Promise.all([ask(enricher.building), ask(enricher.parcel)])');
+      const secondPass = s.indexOf('SECOND PASS');
+      expect(firstPass, 'the two primary sources still run together').toBeGreaterThan(0);
+      expect(secondPass, 'the extras run after them').toBeGreaterThan(firstPass);
+    });
+
+    test('the parcel query returns geometry, or the extras can never run', () => {
+      expect(fn()).toMatch(/returnGeometry:\s*"true"/);
+    });
+
+    test('the point is queried in the layer\'s own spatial reference', () => {
+      // The county serves Kansas State Plane North in FEET (wkid 3419), not
+      // lat/lon. A point sent as degrees lands in the Gulf of Guinea and every
+      // lookup silently returns nothing, which reads exactly like "this county
+      // publishes no soil data".
+      expect(fn()).toMatch(/wkid:\s*3419/);
+    });
+
+    test('a failing extra costs that field and never the lookup', () => {
+      // year built arms the federal lead gate. It must not depend on a soils
+      // server being up.
+      const s = fn();
+      const block = s.slice(s.indexOf('SECOND PASS'), s.indexOf('delete got._pt_x'));
+      expect(block, 'each extra is individually caught').toMatch(/catch \{ return null; \}/);
+      expect(block, 'and a null result is simply skipped').toMatch(/if \(!r\) return;/);
+    });
+
+    test('outside every flood polygon is an ANSWER, not a blank', () => {
+      // Zero features means the parcel is not in a mapped zone. Recorded as
+      // "none" so the card can say so, rather than looking unanswered forever.
+      const s = fn();
+      expect(s).toMatch(/flood_zone:\s*"none",\s*flood_sfha:\s*false/);
+    });
+
+    test('flood_sfha survives both null strips, because false is an answer', () => {
+      // `|| null` here would turn every not-in-a-flood-zone parcel back into
+      // "we never checked". Both filters are loose equality against null,
+      // which false does not satisfy.
+      const s = fn();
+      expect(s, 'no ?? or || on the boolean').toMatch(/flood_sfha:\s*out\.flood_sfha,/);
+      expect(s, 'the strip must stay loose-equality').toMatch(/patch\[k\] == null/);
+    });
+
+    test('absent from the tax-sale list writes nothing at all', () => {
+      // "Not on the published list" is not "taxes are current", and writing a
+      // false there would be us making a claim the county did not.
+      const s = fn();
+      const blk = s.slice(s.indexOf('name: "taxsale"'), s.indexOf('name: "taxsale"') + 900);
+      expect(blk).toMatch(/if \(!f\.length\) return null;/);
+    });
+
+    test('the Esri no-data sentinel never becomes a base flood elevation', () => {
+      // STATIC_BFE comes back as -9999 on every Shawnee parcel probed,
+      // including the one genuinely in Zone A. Stored raw it renders as
+      // "Base flood elev: -9999", which is worse than blank because it looks
+      // like a real measurement. Same guard shape as yearOrNull.
+      const s = fn();
+      expect(s, 'the sentinel must be rejected by range, not by equality')
+        .toMatch(/STATIC_BFE\)[\s\S]{0,120}v < -1000/);
+    });
+
+    test('the centroid never reaches the table', () => {
+      // _pt_x/_pt_y are scaffolding for the queries, not facts about the
+      // property. Left in, they land as unknown columns and fail the write.
+      expect(fn()).toMatch(/delete got\._pt_x;\s*delete got\._pt_y;/);
+    });
+
+    test('zoning is deliberately absent, and the reason is written down', () => {
+      // 304 features county-wide and nothing for a parcel inside Topeka,
+      // because the city zones its own land. A field blank for most addresses
+      // reads as broken, not as absent.
+      const s = fn();
+      expect(s, 'no zoning source').not.toMatch(/ZoningWM/);
+      expect(s, 'and the omission is explained where the next reader will look')
+        .toMatch(/[Zz]oning[\s\S]{0,200}(304|city zones its own)/);
+    });
+
+    test('every new column is in the registry AND the lookup', () => {
+      const m = readSrc(MIG37);
+      for (const f of ['soil_desc', 'flood_zone', 'flood_sfha', 'flood_bfe', 'tax_sale_year', 'tax_sale_case']) {
+        expect(m, `${f} needs a column`).toMatch(new RegExp(`add column if not exists ${f}`));
+        expect(m, `${f} must be in the lookup select`).toMatch(new RegExp(`p\\.${f}`));
+      }
+      for (const k of ['soil_desc', 'flood_zone', 'flood_sfha', 'tax_sale_year']) {
+        expect(m, `${k} needs a registry row`).toMatch(new RegExp(`\\('${k}',`));
+      }
+    });
+  });
+
   test.describe('county configs', () => {
     const dir = repo('scripts/counties');
     const names = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
