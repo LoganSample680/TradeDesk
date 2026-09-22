@@ -879,6 +879,44 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r).not.toContain('fullPath');
     });
 
+    // Owner, 2026-09-22: "pictures in between don't belong out there."
+    test('the hub carries Before and After, and never a Progress shot', async () => {
+      const r = await page.evaluate(() => {
+        clients.length = 0; jobs.length = 0; photos.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+        jobs.push({ id: 601, client_id: 501, name: 'Repipe', status: 'done', addr: '412 Oak St' });
+        const mk = (id, type) => photos.push({ id, type, url: 'https://x/' + type + '-' + id + '.jpg',
+          thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, job_id: 601,
+          addr: '412 Oak St', uploadedAt: new Date().toISOString() });
+        mk(1, 'before'); mk(2, 'progress'); mk(3, 'progress'); mk(4, 'after');
+        const snap = JSON.stringify(_buildClientHubSnapshot(501));
+        return {
+          before: (snap.match(/before-1\.jpg/g) || []).length,
+          after: (snap.match(/after-4\.jpg/g) || []).length,
+          progress: (snap.match(/progress-/g) || []).length,
+          word: /"progress"/.test(snap),
+        };
+      });
+      expect(r.before).toBeGreaterThan(0);
+      expect(r.after).toBeGreaterThan(0);
+      expect(r.progress).toBe(0);      // not the url
+      expect(r.word).toBe(false);      // and not the type either
+    });
+
+    test('the crew still sees every progress shot on the property', async () => {
+      const r = await page.evaluate(() => {
+        // Its own seed: beforeEach reseeds, so the previous test's rows are gone.
+        clients.length = 0; jobs.length = 0; photos.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St' });
+        const mk = (id, type) => photos.push({ id, type, url: 'u', thumbUrl: '', storagePath: 's' + id,
+          client_id: 501, addr: '412 Oak St', uploadedAt: new Date().toISOString() });
+        mk(1, 'before'); mk(2, 'progress'); mk(3, 'progress'); mk(4, 'after');
+        const c = clients.find(x => x.id === 501);
+        return cdPropertyPhotos(c, '412 Oak St', 0).map(p => p.type).sort().join(',');
+      });
+      expect(r).toBe('after,before,progress,progress');
+    });
+
     test('both archive paths survive the trip to the cloud', async () => {
       const r = await page.evaluate(() => {
         const t = _TD_TABLES.find(x => x.t === 'td_photos');
