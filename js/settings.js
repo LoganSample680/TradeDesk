@@ -2707,7 +2707,7 @@ function runSearch(q){
     tdPhotoSearch.lastResults=groups;
     groups.slice(0,10).forEach(g=>{
       const n=g.photos.length;
-      const last=g.last?fmtDateShort(new Date(g.last).toISOString().slice(0,10)):'';
+      const last=g.last?fmtDateShort(dateKey(new Date(g.last))):'';
       results.push({type:'photo',icon:'\uD83D\uDCF7',bg:'var(--bg2)',
         name:(g.addr||'').split(',')[0]||g.name||'Unfiled photos',
         meta:n+(n===1?' photo':' photos')+(last?' \u00b7 last '+last:''),

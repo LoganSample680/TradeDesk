@@ -935,8 +935,11 @@ function tdPromptAfterShots(jobId){
 // the address is what the answer is filed under, and both have to work.
 function _pcHaystack(p){
   const d=p.uploadedAt?new Date(p.uploadedAt):null;
+  // dateKey, not toISOString: a photo shot at 7pm Central is the NEXT day in
+  // UTC, and searching the day you took it has to find it (guarded by
+  // e2e-utils-exhaustive, "no UTC-derived day keys").
   const dates=d&&!isNaN(d)?[
-    d.toISOString().slice(0,10),
+    dateKey(d),
     (d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear(),
     d.toLocaleDateString('en-US',{month:'long',year:'numeric'}),
     d.toLocaleDateString('en-US',{month:'short',day:'numeric'})
