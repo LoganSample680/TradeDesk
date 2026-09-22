@@ -2056,7 +2056,19 @@ function _tlRowMenu(btn){
         acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
           'Keeps it off your hours and your miles. Just this one, not the place.',true);
       }
-      if(/^unsaved/.test(raw)&&d.rowKey){
+      // THE SAME GUARD THE CHIP HAS (owner 2026-09-22, on Jack's 11:58 to
+      // 1:17 on the 21st: "cant save, why?").
+      //
+      // The chip on the row stopped being drawn without a coordinate behind
+      // it on 2026-09-20, for exactly this complaint. This copy of the same
+      // action never got the check, so the row quietly offered a Save the
+      // chip had already withdrawn, and pressing it called
+      // _mileSaveStopAddress, which returns false and does nothing. Jack's
+      // row is keyed d-j-987ebc83-mubhcq0a and no leg or via stop on that day
+      // carries that id, so there is no pin to open a lead on. One resolver,
+      // asked in both places, or the second place is a dead button again.
+      if(/^unsaved/.test(raw)&&d.rowKey&&
+         (typeof _mileStopCoord!=='function'||_mileStopCoord(d.rowKey,d.rowDate||''))){
         acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
           'Save this address','Then it names itself here and everywhere after');
       }

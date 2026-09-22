@@ -5922,13 +5922,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const mk = (src, raw) => {
           const b = document.createElement('button');
           Object.assign(b.dataset, { rowId: 'x1', rowSrc: src, rowRaw: raw || '',
-            rowKey: 'k', rowDate: '2026-09-12', rowLabel: 'A place' });
+            rowKey: 'd-k', rowDate: '2026-09-12', rowLabel: 'A place' });
           document.body.appendChild(b);
           try { _tlRowMenu(b); const o = document.getElementById('_tl-row-menu');
             const html = o ? o.innerHTML : ''; o?.remove(); return html; }
           finally { b.remove(); }
         };
-        return { manual: mk('manual'), auto: mk('auto', 'shop'), unsaved: mk('auto', 'unsaved') };
+        // A leg whose destination IS this stop, so the Save offer has a
+        // coordinate behind it. Without one the offer is withheld, which is
+        // the case the test below this one covers.
+        const savedMile = mileage;
+        mileage = [{ id: 'k', legKey: 'k', date: '2026-09-12', gps: true, miles: 3,
+          from: 'A', to: '', toCoord: { lat: 39.03, lng: -95.75 } }];
+        try {
+          return { manual: mk('manual'), auto: mk('auto', 'shop'), unsaved: mk('auto', 'unsaved') };
+        } finally { mileage = savedMile; }
       });
       // A manual clock is the person's own record. Delete is real.
       expect(r.manual).toContain('Delete');
@@ -5944,6 +5952,50 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // An unsaved stop can also be named, which answers it forever.
       expect(r.unsaved).toContain('Save this address');
       expect(r.auto, 'a named fence has nothing to save').not.toContain('Save this address');
+    });
+
+    // ── A SECOND COPY OF THE SAME BUTTON, WITHOUT THE CHECK ────────────────
+    // (owner 2026-09-22, on Jack's 11:58 to 1:17 on the 21st: "cant save,
+    // why?")
+    //
+    // The chip on the row has asked _mileStopCoord since 2026-09-20 and hides
+    // itself when the answer is nothing. The menu offered the same action with
+    // no check at all, so the row withdrew the offer and the menu kept making
+    // it, and pressing it called a function that returns false and does
+    // nothing. Jack's row is keyed to a journey no leg on that day carries, so
+    // there was never a pin to open a lead on.
+    test('the menu withholds Save when no coordinate is behind the stop', async () => {
+      const r = await page.evaluate(() => {
+        const mk = () => {
+          const b = document.createElement('button');
+          Object.assign(b.dataset, { rowId: 'x9', rowSrc: 'auto', rowRaw: 'unsaved',
+            rowKey: 'd-j-nobody-has-this', rowDate: '2026-09-12', rowLabel: 'A place' });
+          document.body.appendChild(b);
+          try { _tlRowMenu(b); const o = document.getElementById('_tl-row-menu');
+            const html = o ? o.innerHTML : ''; o?.remove(); return html; }
+          finally { b.remove(); }
+        };
+        const savedMile = mileage;
+        // A day with legs on it, none of them this stop's.
+        mileage = [{ id: 'other', legKey: 'other', date: '2026-09-12', gps: true, miles: 3,
+          from: 'A', to: 'B', toCoord: { lat: 39.03, lng: -95.75 } }];
+        try { return { html: mk(), fired: null }; } finally { mileage = savedMile; }
+      });
+      expect(r.html, 'the row is still answerable').toContain('Not work');
+      expect(r.html, 'an offer nothing can honour').not.toContain('Save this address');
+    });
+
+    test('and pressing it, if it were there, still does nothing rather than throw', async () => {
+      const ok = await page.evaluate(async () => {
+        const savedMile = mileage;
+        try {
+          mileage = [];
+          await _tlRowMenuDo('save', 'd-j-nobody-has-this', '2026-09-12');
+          await _tlRowMenuDo('save', '', '');
+          return true;
+        } catch (_e) { return false; } finally { mileage = savedMile; }
+      });
+      expect(ok).toBe(true);
     });
 
     test('Not work goes through the one door that already survives a rebuild', async () => {
