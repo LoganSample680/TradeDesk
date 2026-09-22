@@ -1417,9 +1417,14 @@ test.describe('tim', () => {
             dim: Number(cs.opacity) < 0.9 };
         };
         const empty = read();
-        box.value = 'who owes me money';
+        // Through the app's own setter (it fires input) rather than a bare
+        // write. CHANGED 2026-09-22 with the mechanism: this used to lean on
+        // :placeholder-shown reacting to the value alone, which WebKit does not
+        // do, so the bare write was driving a path the app does not have. The
+        // app never sets this box without firing input any more.
+        _timSetSaid(box, 'who owes me money');
         const typed = read();
-        box.value = '';
+        _timSetSaid(box, '');
         const cleared = read();
         stop.remove();
         document.getElementById('_tim-ov')?.remove();
@@ -1428,8 +1433,8 @@ test.describe('tim', () => {
       // Present the whole time. Dim and untappable with nothing in the box.
       expect(r.empty).toEqual({ shown: true, taps: false, dim: true });
       expect(r.typed).toEqual({ shown: true, taps: true, dim: false });
-      // And back again, because :placeholder-shown tracks the VALUE with no
-      // event to miss: no keyup handler, so a paste, a dictation result, an
+      // And back again, because the row's data-empty tracks the VALUE through
+      // one listener that every write goes through: a paste, a dictation result, an
       // autofill or an undo cannot strand it in the wrong state.
       expect(r.cleared).toEqual({ shown: true, taps: false, dim: true });
     });
@@ -2502,6 +2507,33 @@ test.describe('tim: the mic is the way in', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
+  // The mechanism itself. :placeholder-shown looked right and did not survive
+  // WebKit, so this asserts the thing that replaced it rather than the paint
+  // alone: one attribute on the row, tracking the box through typed AND
+  // programmatic writes, which is what an iPhone actually does all day.
+  test('the row states whether the box is empty, through either kind of write', async () => {
+    await openWithMic();
+    const r = await page.evaluate(() => {
+      const row = () => document.getElementById('_tim-row').getAttribute('data-empty');
+      const say = document.getElementById('_tim-say');
+      const out = { start: row() };
+      _timSetSaid(say, 'who owes me money');
+      out.afterSet = row();
+      _timSetSaid(say, '');
+      out.afterClear = row();
+      // Typed, the native way: the listener is the same one.
+      say.value = 'x';
+      say.dispatchEvent(new Event('input', { bubbles: true }));
+      out.afterType = row();
+      // Whitespace is not something to send.
+      _timSetSaid(say, '   ');
+      out.afterSpaces = row();
+      _timSetSaid(say, '');
+      return out;
+    });
+    expect(r).toEqual({ start: '1', afterSet: '0', afterClear: '1', afterType: '0', afterSpaces: '1' });
+  });
+
   test('the mic carries no inline fill, so the stylesheet can own both states', async () => {
     const r = await page.evaluate(() => {
       window._voiceCapable = () => true;
@@ -2527,7 +2559,11 @@ test.describe('tim: the mic is the way in', () => {
   const micState = async (value) => {
     await page.evaluate((v) => {
       const say = document.getElementById('_tim-say');
-      if (say) say.value = v;
+      // Through the app's own setter, which fires an input event. WebKit does
+      // not re-evaluate :placeholder-shown on a bare script write, so a test
+      // that set .value directly was driving a path the app does not have and
+      // asserting a repaint no iPhone would ever do.
+      if (say) _timSetSaid(say, v);
     }, value);
     await page.waitForTimeout(280);
     return page.evaluate(() => {
@@ -2556,6 +2592,32 @@ test.describe('tim: the mic is the way in', () => {
     expect(r.micLum, 'the mic stayed filled while the arrow lit up, two primaries').toBeGreaterThan(110);
     expect(r.sendOpacity).toBe(1);
     expect(r.sendTaps).not.toBe('none');
+  });
+
+  // ── THE ONE THAT ACTUALLY BIT ─────────────────────────────────────────────
+  //
+  // Sending clears the box from script. On WebKit, which is iOS, which is the
+  // only platform the mic exists on, that left :placeholder-shown stale: the
+  // arrow stayed lit and tappable over an empty box (the dead control the
+  // design exists to prevent) and the mic stayed pale instead of returning to
+  // the key. Every send, every time.
+  test('after a send the row is back to an empty box, not a lit arrow over nothing', async () => {
+    await openWithMic();
+    await micState('who owes me money');
+    const r = await page.evaluate(() => {
+      _timGo();
+      document.getElementById('_tim-ov')?.remove();
+      return null;
+    }).then(() => page.evaluate(() => {
+      window._voiceCapable = () => true;
+      openTim();
+      const say = document.getElementById('_tim-say');
+      return say ? say.value : 'GONE';
+    }));
+    expect(r, 'the box kept what was sent').toBe('');
+    const st = await micState('');
+    expect(st.micLum, 'the mic did not come back to the key after sending').toBeLessThan(110);
+    expect(st.sendTaps, 'the arrow still took taps over an empty box').toBe('none');
   });
 
   // "Say your own" next to a text box is ambiguous: say it how? Where there is

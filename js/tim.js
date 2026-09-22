@@ -498,10 +498,23 @@ function _timAskFrom(said){
   _timChip(said);
 }
 
+// ── SETTING THE BOX IS NOT THE SAME AS TYPING IN IT ──────────────────────────
+//
+// The mic and the send arrow swap on the row's data-empty, which _timPreview
+// sets from the input listener. Typing fires that listener by itself; a script
+// write does not, so every script write goes through here and says so, exactly
+// as _voiceStop already does after dictation. Nothing downstream has to know
+// whether a sentence was typed, dictated, pasted or tapped from a chip.
+function _timSetSaid(el,v){
+  if(!el)return;
+  el.value=String(v==null?'':v);
+  try{el.dispatchEvent(new Event('input',{bubbles:true}));}catch(_e){}
+}
+
 function _timChip(said){
   const el=document.getElementById('_tim-say');
   if(!el)return;
-  el.value=String(said||'');
+  _timSetSaid(el,String(said||''));
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
   _timGo();
 }
@@ -763,8 +776,8 @@ function _timAskHtml(){
     ? '<button type="button" id="_tim-mic" onclick="_timTalkToggle()" aria-label="Talk to Tim" '+
       // NO background or box-shadow in here ON PURPOSE, the same trick the send
       // arrow plays with display: an inline style beats the stylesheet, and the
-      // stylesheet is what swaps this between primary and secondary off
-      // :placeholder-shown.
+      // stylesheet is what swaps this between primary and secondary off the
+      // row's data-empty.
       //
       // It used to be permanently secondary, reasoning that an ink block next
       // to a filled blue arrow is two primaries on one row. That was right
@@ -787,14 +800,14 @@ function _timAskHtml(){
   // dead control; see the stylesheet, which owns both states.
   const send='<button type="button" id="_tim-send" onclick="_timGo()" aria-label="Send" '+
     // No display in here on purpose: an inline style beats the stylesheet, and
-    // the stylesheet is what does the swap off :placeholder-shown.
+    // the stylesheet is what does the swap off the row's data-empty.
     'style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:var(--r-pill);'+
     'background:var(--blue);cursor:pointer;padding:0">'+
       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" '+
       'stroke-linecap="round" stroke-linejoin="round">'+
       '<path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>'+
     '</button>';
-  return '<div style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
+  return '<div id="_tim-row" data-empty="1" style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
     '<input id="_tim-say" type="text" autocomplete="off" placeholder="'+
       (_timOnEstimate() ? 'Tell Tim what changed' : 'Build a T and M for Dana')+'" '+
       'style="flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 13px;border:0;border-radius:var(--r-md);background:var(--bg2);box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text)">'+
@@ -1450,9 +1463,32 @@ function _timChangeOne(){
 // ── The typed path ───────────────────────────────────────────────────────────
 // Unchanged from the box this sheet replaced: a sentence that names a screen or
 // a customer still just goes there.
+// ── WHICH OF THE TWO IS THE PRIMARY ──────────────────────────────────────────
+//
+// This was :placeholder-shown, which is the elegant answer and the wrong one on
+// the platform that matters. WebKit does not re-evaluate that pseudo-class when
+// the value is written from script, and every interesting write here is from
+// script: the send clears the box, dictation fills it, a chip fills it. On an
+// iPhone, which is the only place the mic exists at all, the arrow stayed lit
+// and tappable over an empty box after every single send.
+//
+// An ATTRIBUTE change invalidates reliably everywhere, so the row carries the
+// answer and the stylesheet reads it. One source of truth rather than two that
+// can disagree, set from the input listener, which now fires on typing and on
+// every programmatic write alike (_timSetSaid).
+function _timRowEmpty(){
+  const el=document.getElementById('_tim-say');
+  const row=document.getElementById('_tim-row');
+  if(!row)return;
+  row.setAttribute('data-empty',(el&&String(el.value||'').trim())?'0':'1');
+}
+
 function _timPreview(){
   const el=document.getElementById('_tim-say');
   const out=document.getElementById('_tim-read');
+  // Before any early return: the row's state is not conditional on a preview
+  // target existing.
+  _timRowEmpty();
   if(!el||!out)return;
   const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
@@ -1550,7 +1586,7 @@ function _timThreadRefresh(opts){
     // gone cannot be scrolled past by a screen reader either.
     document.getElementById('_tim-hello')?.remove();
     const el=document.getElementById('_tim-say');
-    if(el)el.value='';
+    if(el)_timSetSaid(el,'');
     if(typeof _timPreview==='function')_timPreview();
 
     // Somebody who asked the OS to stop moving things gets the answer straight

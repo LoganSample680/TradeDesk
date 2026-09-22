@@ -770,16 +770,25 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
    empty box is a dead control, and that is still true, so the arrow DIMS and
    stops taking taps until there is something to send. Present, so the thumb
    knows where it will be; inert, so it never fires on nothing.
-   Still :placeholder-shown and not a class the JS toggles, so it tracks what is
-   really in the box with no event to miss: no keyup handler, so a paste, a
-   dictation result, an autofill or an undo cannot strand it in the wrong
-   state. Rule 8.5 comes free with that, since no JS touches a style property.
+   This was :placeholder-shown, chosen so it would track what is really in the
+   box with no event to miss. Elegant, and wrong on the platform that matters:
+   WebKit does not re-evaluate that pseudo-class when the value is written from
+   script, and every interesting write here IS from script (the send clears the
+   box, dictation fills it, a chip fills it). On an iPhone, the only place the
+   mic exists at all, the arrow stayed lit and tappable over an empty box after
+   every send. Caught by [webkit] "the moment there is text, the arrow takes
+   over": the mic's fill stayed ink after the value changed.
+   So the row carries data-empty and the stylesheet reads it. An attribute
+   change invalidates reliably everywhere, it is one source of truth rather
+   than two that can disagree, and 8.5 still holds: an attribute is not a style
+   property, and _timSetSaid makes every programmatic write fire input, so the
+   dictation result, the paste, the autofill and the undo all still land.
    Two filled buttons side by side on a 390px row is a row with no answer in
    it, so exactly one of these is ever filled, and WHICH one depends on whether
    there is anything in the box. */
 #_tim-send{display:flex;align-items:center;justify-content:center;
   transition:opacity .15s,transform .15s}
-#_tim-say:placeholder-shown~#_tim-send{opacity:.32;pointer-events:none}
+#_tim-row[data-empty="1"] #_tim-send{opacity:.32;pointer-events:none}
 #_tim-send:active{transform:scale(.94);opacity:.9}
 
 /* ── Talking is the easy way in ─────────────────────────────────────────────
@@ -790,14 +799,13 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
    quietest control on it. Empty, the mic is the filled ink key. The moment
    there is text the arrow takes over and the mic drops back to an outline, so
    there is never more than one filled button and never a dead one.
-   Driven off :placeholder-shown like the arrow, for the same reason: it tracks
-   what is really in the box, so dictation, paste, autofill and undo cannot
-   strand it in the wrong state, and no JS touches a style property (8.5). */
+   Driven off the row's data-empty like the arrow, and off the same single
+   answer, so the two can never disagree about which one is the primary. */
 #_tim-mic{background:var(--bg2);box-shadow:0 0 0 1px var(--border);
   transition:background .15s,box-shadow .15s,transform .15s}
 #_tim-mic svg{stroke:var(--text2);transition:stroke .15s}
-#_tim-say:placeholder-shown~#_tim-mic{background:var(--ink);box-shadow:none}
-#_tim-say:placeholder-shown~#_tim-mic svg{stroke:var(--text-cream,#fff)}
+#_tim-row[data-empty="1"] #_tim-mic{background:var(--ink);box-shadow:none}
+#_tim-row[data-empty="1"] #_tim-mic svg{stroke:var(--text-cream,#fff)}
 #_tim-mic:active{transform:scale(.94)}
 
 /* ── The send ───────────────────────────────────────────────────────────────
