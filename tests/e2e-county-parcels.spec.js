@@ -171,6 +171,76 @@ test.describe('county parcel records', () => {
   // 'already'; a different spelling of the same address gets no second bite; a
   // cap of 5 across 10 addresses yields exactly five 'go'). The offline shard
   // has no database, so what is frozen here is the contract around it.
+  // ── THE COMMA WAS LOAD-BEARING AND NOBODY KNEW ───────────────────────────
+  //
+  // Owner, 2026-09-22: "jack was saying his property record for pepe on
+  // elmwood did not pull the county details."
+  //
+  // td_addr_key takes everything before the first comma as the street line.
+  // _propAddrString joined street/city/state/zip with SPACES, so for any client
+  // stored with separate street and city fields, which is how the lead form
+  // saves them, the whole string became the street and matched nothing:
+  //
+  //   '306 SW Elmwood Ave, Topeka, KS 66606' -> 306 SW ELMWOOD AVE          hit
+  //   '306 SW Elmwood Ave Topeka KS 66606'   -> 306 SW ELMWOOD AVE TOPEKA KS 66606
+  //
+  // 675 of the owner's addresses and all six of the first beta user's were in
+  // the second shape. It is the worst-presenting failure this feature has,
+  // because _syncPropertyData reads an empty result as a county miss and stamps
+  // the address answered, after which nothing ever asks again.
+  test.describe('a composed address still keys to the street', () => {
+    test('_propAddrString separates the parts with commas', () => {
+      const s = readSrc('js/clients.js');
+      const fn = s.slice(s.indexOf('function _propAddrString'));
+      const body = fn.slice(0, fn.indexOf('\n}'));
+      // The bug was joining ALL FOUR parts with spaces. The state+zip tail is
+      // still space-joined on purpose, so the assertion has to name the shape
+      // that was wrong rather than every space-join in the function.
+      expect(body, 'street/city/state/zip joined with spaces is the bug this replaced')
+        .not.toMatch(/\[\s*\w*\.?street[\s\S]{0,60}zip\s*\]\.filter\(Boolean\)\.join\(' '\)/);
+      expect(body, 'the street must be comma-separated from the city').toMatch(/join\(', '\)/);
+    });
+
+    test('the state and zip stay together at the end', () => {
+      // property_lookup pulls its tiebreaker zip off the END of the string, so
+      // a trailing ", 66604" is fine but the zip must not be orphaned onto its
+      // own segment ahead of anything else.
+      const s = readSrc('js/clients.js');
+      const fn = s.slice(s.indexOf('function _propAddrString'));
+      expect(fn.slice(0, 600)).toMatch(/\[state,\s*zip\]\.filter\(Boolean\)\.join\(' '\)/);
+    });
+
+    test('the normalization no longer depends on one caller being polite', () => {
+      // td_addr_key is the SINGLE definition of how an address is keyed and the
+      // generated addr_key column is computed from it. A caller that sends a
+      // comma-less string, from a CSV import or a geocoder or a paste, has to
+      // key the same as one that sends commas.
+      const m = readSrc('supabase/migrations/20261036_addr_key_without_commas.sql');
+      expect(m).toMatch(/if position\(',' in raw\) > 0 then/);
+      expect(m, 'a trailing state is the anchor for the comma-less case').toMatch(/\|KS\|/);
+      expect(m, 'and an optional zip after it').toMatch(/\\s\+\\d\{5\}\(-\\d\{4\}\)\?/);
+    });
+
+    test('it only strips when a real state abbreviation is there', () => {
+      // A street that merely ends in two letters must be untouched, or the
+      // function would start eating street names.
+      const m = readSrc('supabase/migrations/20261036_addr_key_without_commas.sql');
+      expect(m, 'the strip is conditional on having actually matched')
+        .toMatch(/if s <> upper\(btrim\(raw\)\) then/);
+    });
+
+    test('the false misses are cleared, and only the false ones', () => {
+      // _propAnswered returns true for a stamped miss, so an address broken by
+      // the formatting bug would stay blank forever even after the key is
+      // fixed. But a GENUINE miss must stay retired: re-opening those is the
+      // re-ask loop the gate exists to prevent.
+      const m = readSrc('supabase/migrations/20261036_addr_key_without_commas.sql');
+      expect(m).toMatch(/update td_clients/);
+      expect(m, 'only where a parcel demonstrably exists').toMatch(/exists \([\s\S]{0,200}td_county_parcels/);
+      expect(m, 'and only where nothing was actually filled in').toMatch(/yearBuilt','\'\) = ''/);
+    });
+  });
+
   test.describe('county ask gate', () => {
     const GATE = 'supabase/migrations/20261033_county_ask_gate.sql';
     const gate = () => readSrc(GATE);

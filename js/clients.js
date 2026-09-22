@@ -3547,10 +3547,31 @@ function _addrPickSaveNew(){
 // Turn whatever shape an address is stored in into the one string the lookup
 // takes. The zip matters: property_lookup uses it to break ties when two loaded
 // counties both hold the same street name.
+// COMMAS, not spaces, and the comma is load-bearing. td_addr_key takes
+// everything before the first comma as the street line, so a space-joined
+// string made the whole thing the street: "306 SW Elmwood Ave Topeka KS 66606"
+// keyed as 306 SW ELMWOOD AVE TOPEKA KS 66606 and matched nothing, ever.
+//
+// That hit every client saved through the lead form, because the form stores
+// street and city separately and this is the branch that composes them: 675 of
+// the owner's addresses and all six of the first beta user's. It presented as
+// "the county has no record of this house" (owner, 2026-09-22: "his property
+// record for pepe on elmwood did not pull the county details"), which is the
+// single most misleading way this feature can fail, because the address then
+// retires itself: _syncPropertyData reads an empty result as a county miss and
+// stamps propDataSource='county', after which _propAnswered is true and
+// nothing asks again.
+//
+// The zip stays last and unseparated from the state, because property_lookup
+// pulls the tiebreaker zip off the END of the string.
 function _propAddrString(c,addrParts){
-  if(addrParts)return [addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
+  const join=(st,city,state,zip)=>{
+    const tail=[state,zip].filter(Boolean).join(' ');
+    return [st,city,tail].filter(Boolean).join(', ');
+  };
+  if(addrParts)return join(addrParts.street,addrParts.city,addrParts.state,addrParts.zip);
   if(!c)return '';
-  if(c.street&&c.city)return [c.street,c.city,c.state||'',c.zip||''].filter(Boolean).join(' ');
+  if(c.street&&c.city)return join(c.street,c.city,c.state||'',c.zip||'');
   return c.addr||'';
 }
 
