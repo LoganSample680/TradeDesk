@@ -2246,6 +2246,38 @@ test.describe('TrueShot: the photos come back', () => {
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => { await page.evaluate(seed()); });
 
+  // Not "is it in the DOM": elementFromPoint, because the whole bug was that
+  // the rows WERE in the DOM the entire time. They sat at z-index 9999 under
+  // an opaque full-screen album at 10050, so a thumb pressing an address hit
+  // the album behind it and nothing happened. A presence assertion passes
+  // happily through that and tells you the feature works.
+  test('a customer with several properties can actually be tapped, not just rendered', async () => {
+    const r = await page.evaluate(() => {
+      clients.length = 0; photos.length = 0; bids.length = 0; jobs.length = 0;
+      clients.push({ id: 77, name: 'Logan Sample', addr: '5900 SW Huntoon, Topeka KS',
+        extraAddresses: [{ addr: '6800 SW Tenth Ave, Topeka KS', label: 'Rental' },
+                         { addr: '1 Other St, Topeka KS', label: 'Shop' }] });
+      photos.push({ id: 9001, type: 'before', url: 'https://x/a.jpg', uploadedAt: '2026-09-22T12:00:00Z' });
+      tdReviewBurst('9001');
+      [...document.querySelectorAll('#pc-rev button')].find(b => /Attach/.test(b.textContent)).click();
+      [...document.querySelectorAll('#pc-att .pc-file-opt')].find(b => /Logan Sample/.test(b.textContent)).click();
+      const rows = [...document.querySelectorAll('#_addrpick-sheet div[onclick^="_addrPickChoose"]')];
+      const reachable = rows.filter((row) => {
+        const b = row.getBoundingClientRect();
+        const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return !!(hit && row.contains(hit));
+      }).length;
+      // and the tap has to land the photo on the property it names
+      rows[1].click();
+      const p = photos.find(x => String(x.id) === '9001');
+      return { rows: rows.length, reachable, addr: p && p.addr, client: p && p.client_id };
+    });
+    expect(r.rows, 'all three properties are offered').toBe(3);
+    expect(r.reachable, 'and every one of them is under the thumb, not under the album').toBe(3);
+    expect(r.addr).toBe('6800 SW Tenth Ave, Topeka KS');
+    expect(r.client).toBe(77);
+  });
+
   test('a property\'s past work shows the walkthrough shots, not just the job ones', async () => {
     const r = await page.evaluate(() => {
       jobs.push({ id: 860, bid_id: 901, client_id: 501, name: 'Exterior repaint', status: 'done' });
