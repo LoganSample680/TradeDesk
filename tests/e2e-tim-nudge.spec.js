@@ -19,7 +19,11 @@ const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = requir
 // A job with something wrong in every category, so the ranking has something to
 // rank. Individual rules are switched off below by emptying their inputs.
 const LOUD = {
-  state: 'Kansas', stateRule: 'none', tm: true, moneyLayers: 2,
+  // tmEst: he has put an estimated TOTAL on a time and materials job, which as
+  // of 2026-09-22 is the one thing a no-price state has an opinion worth
+  // repeating about. The rule used to fire on any money layer at all, which
+  // since the rate defaults on meant every T&M in the state.
+  state: 'Kansas', stateRule: 'none', tm: true, moneyLayers: 2, tmEst: true,
   high: true, hasAccess: false, accessCost: 285, accessDays: 3,
   accessWhere: 'west elevation', accessWhen: 'the Kellerman house in May', accessHours: 6,
   under: { at: 3, desc: 'Body and trim, two coats', rate: 0.62, bookRate: 0.78, n: 9, gap: 640 },
@@ -68,7 +72,11 @@ test.describe('when tim speaks', () => {
       expect(said).toContainEqual(['Line 3 is under your own price', '$640']);
       expect(said).toContainEqual(['Dana still owes on the last one', '$1,240']);
       expect(said).toContainEqual(['These take longer than the estimate', '31%']);
-      expect(said).toContainEqual(['Kansas will not make you print a price', 'saves 4 taps']);
+      // The figure used to be "saves 4 taps", which next to the line rendered
+      // as "saves 4 taps Kansas will not make you print a price": two strings
+      // that do not compose into a sentence. The figure is the state now, so
+      // the bubble reads as one.
+      expect(said).toContainEqual(['Kansas does not ask for one on a time and materials job', 'No total required']);
     });
 
     // ── He is not allowed to be a dick about it ──────────────────────────────
@@ -269,6 +277,71 @@ test.describe('when tim speaks', () => {
       const r = await nudge(Object.assign({}, LOUD, { state: 'Kansas' }));
       expect(r.map(n => n.line).join(' ')).toContain('Kansas');
       expect(r.map(n => n.line).join(' ')).not.toMatch(/\bKS\b/);
+    });
+  });
+
+  // ── THE BUTTON THAT NEVER DID ANYTHING ────────────────────────────────────
+  //
+  // Owner, 2026-09-21, on this exact nudge: "Tim's insights with take them off
+  // don't even remove it and the flow just seems broken". It was right: there
+  // was no branch for state-frees in _timTakeNudge, so the blue button closed
+  // the sheet and nothing moved.
+  //
+  // It had also gone from wrong-button to wrong-advice. Since the rate defaults
+  // on so Tim can invoice the clocked hours, "take the money blocks off" fired
+  // on every T&M in a no-price state and argued against the steps an inch
+  // above it. It now fires on the one case that is genuinely news, and the
+  // button does the thing it says.
+  test.describe('the state-frees nudge', () => {
+    test('it stays quiet on a rate-only job, which is the shape it used to nag', async () => {
+      const r = await nudge(Object.assign({}, LOUD, { tmEst: false, moneyLayers: 1 }));
+      expect(r.map(n => n.id)).not.toContain('state-frees');
+    });
+
+    test('it speaks when a total is on a T&M job the state does not want one on', async () => {
+      const r = await nudge(Object.assign({}, LOUD, { tmEst: true }));
+      expect(r.map(n => n.id)).toContain('state-frees');
+    });
+
+    // A state with a price rule of its own is not the silence this is about.
+    test('it stays quiet where the state does have an opinion', async () => {
+      const r = await nudge(Object.assign({}, LOUD, { tmEst: true, stateRule: 'cap' }));
+      expect(r.map(n => n.id)).not.toContain('state-frees');
+    });
+
+    test('the bubble reads as one sentence, not two glued together', async () => {
+      const n = (await nudge(Object.assign({}, LOUD, { tmEst: true })))
+        .filter(x => x.id === 'state-frees')[0];
+      expect(n).toBeTruthy();
+      // <b>figure</b><i>line</i>, so the two are read end to end.
+      expect(n.figure + ' ' + n.line)
+        .toBe('No total required Kansas does not ask for one on a time and materials job');
+      // And the state is named once, not twice.
+      expect((n.figure + ' ' + n.line).match(/Kansas/g).length).toBe(1);
+      expect(n.figure, 'the figure went back to being a tap count').not.toMatch(/tap/i);
+    });
+
+    test('the button says what it does, and doing it takes the total off', async () => {
+      const r = await page.evaluate(() => {
+        // _timTakeNudge rebuilds the snapshot off the LIVE page and returns
+        // early if the nudge is not really there, so the page has to be in the
+        // state that produces it: a T&M with a total, at an address in a state
+        // with no price rule of its own.
+        _geiIsTM = true;
+        _tmLayers = new Set(['rate', 'est']);
+        const a = document.getElementById('gei-addr');
+        if (a) a.value = '1200 Elm St, Wichita KS 67203';
+        const fired = timNudges(timJobSnapshot()).map(n => n.id);
+        const before = [..._tmLayers];
+        _timTakeNudge('state-frees');
+        return { fired, before, after: [..._tmLayers] };
+      });
+      expect(r.fired, 'the fixture never produced the nudge, so this proves nothing')
+        .toContain('state-frees');
+      expect(r.before).toContain('est');
+      expect(r.after, 'the button closed the sheet and left the total on').not.toContain('est');
+      // And it did not take the rate with it: that is what Tim invoices on.
+      expect(r.after).toContain('rate');
     });
   });
 

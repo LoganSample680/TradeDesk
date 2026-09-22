@@ -4249,31 +4249,38 @@ function _tmShape(){
     // the one nobody believes is finished. It usually is. It is no longer where
     // a new one STARTS, though, because the rate has a second job now.
     return {head:'Scope only, no price',
-      body:'This sends what you will do, and what it costs per hour is agreed separately. It is a complete proposal and in most states a legal one. '+
-        'Without a rate on it, Tim cannot turn the hours your crew clocks here into an invoice.'};
+      // The one shape that gets two sentences, because it is the one nobody
+      // believes is finished and the reassurance is the point.
+      body:'A complete proposal, and in most states a legal one. Without a rate, Tim cannot turn the clocked hours into an invoice.'};
   }
   if(L.has('rate')&&!L.has('est')){
     return {head:'A rate, no total',
-      body:'They see your hourly rate and crew size. There is no total on it, because nothing has told it how many days.'+
-        // NOT "add Estimate" any more. If they want a number, the honest one
-        // on a T&M job is the ceiling, not a guess at the hours dressed up as
-        // a total. Estimate is still there for whoever wants it.
-        (L.has('cap')?' The cap is the only number they see.':' If they want a number, give them the ceiling.')+
-        ' The rate is also what Tim bills the clocked hours at when this job is done.'};
+      // SHORT. This is step 4's hint, and step 4 is the one line he cannot act
+      // on, so it must not be the longest thing on the panel. What the rate is
+      // for and what the cap does are already said by steps 2 and 3, one inch
+      // above it; repeating them there is how a checklist turns back into a
+      // paragraph.
+      //
+      // NOT "add Estimate" any more. If they want a number, the honest one on
+      // a T&M job is the ceiling, not a guess at the hours dressed up as a
+      // total. Estimate is still there for whoever wants it.
+      body:L.has('cap')
+        ? 'Nothing has told it how many days, so the cap is the only number on it.'
+        : 'Nothing has told it how many days. If they want a number, give them the ceiling.'};
   }
   if(L.has('rate')&&L.has('est')){
     return {head:'A rate and a total',
-      body:'They see the rate, the days, and what that comes to'+
+      body:'The rate, the days, and what that comes to'+
         (L.has('mat')?', plus materials':'')+
         (L.has('dep')?', with a deposit due up front':'')+
         (L.has('cap')?', and it cannot go past the cap':'')+'.'};
   }
   if(L.has('mat')&&!L.has('rate')){
     return {head:'Materials, no labor rate',
-      body:'They see what the materials cost and nothing about your time. Add Rate unless the labor is agreed some other way.'};
+      body:'What the materials cost, and nothing about your time.'};
   }
   return {head:'A cap, nothing else',
-    body:'They see the most it can cost and no working behind it.'};
+    body:'The most it can cost, and no working behind it.'};
 }
 
 // What is actually in the cap field right now, as opposed to whether the layer
@@ -4321,7 +4328,9 @@ function _tmSteps(){
   // The reason this row got reordered. Whether it is the NEXT thing is decided
   // below, not here: a ceiling is not the next move while there is still no
   // rate on the job.
-  out.push({k:'cap',n:3,label:'The most it can cost them',done:capOn,act:capOn?null:'cap',
+  // "them" dropped: with the DO THIS NEXT tag beside it the longer label wrapped
+  // the tag onto a line of its own, which looked like a mistake.
+  out.push({k:'cap',n:3,label:'The most it can cost',done:capOn,act:capOn?null:'cap',
     req:capLocked,
     hint:capOn
       ?('Capped at $'+_tmCapVal().toLocaleString()+'. They cannot be billed past it without approving more in writing.')

@@ -900,7 +900,8 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     test('a rate with no day count says there is no total, and points at the ceiling', async () => {
       const t = await shapeIn(['rate']);
       expect(t).toContain('A rate, no total');
-      expect(t).toContain('nothing has told it how many days');
+      // Sentence-initial now that the line was shortened, hence the capital.
+      expect(t).toContain('Nothing has told it how many days');
       expect(t).toContain('give them the ceiling');
       expect(t, 'the old advice was to add an estimate, which is the thing T&M exists not to do')
         .not.toContain('Add Estimate to put a number on it');
@@ -922,10 +923,16 @@ test.describe('the cap is worded the way a customer asks for it', () => {
       expect(t).toContain('cannot go past the cap');
     });
 
-    test('materials with no rate says the labor is missing', async () => {
+    // ASSERTION CHANGED 2026-09-22 (§10.4). It used to require the prose
+    // "Add Rate unless the labor is agreed some other way". That sentence was
+    // deleted when the shape line became step 4's hint and had to stop being
+    // the longest thing on the panel. The advice did not go anywhere: it is
+    // step 2, sitting above it with its own Add button, which is a better way
+    // to say "add the rate" than a sentence telling him to go find a chip.
+    test('materials with no rate says the labor is missing, and offers the rate', async () => {
       const t = await shapeIn(['mat']);
       expect(t).toContain('no labor rate');
-      expect(t).toContain('Add Rate');
+      expect(t).toContain('What an hour costs');
     });
 
     // Tapping Estimate turns Rate on with it (_tmAddLayer follows `needs`),
@@ -1335,7 +1342,7 @@ test.describe('the ceiling leads, not the guess', () => {
       return (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
     });
     expect(t).toContain('Do this next');
-    expect(t).toContain('The most it can cost them');
+    expect(t).toContain('The most it can cost');
     expect(t).toContain('Send it');
     // Folded into step 4 rather than sitting in a card of its own, which is how
     // four steps were added without making the panel taller.

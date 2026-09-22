@@ -1059,6 +1059,10 @@ function _timTakeNudge(id){
   else if((id==='books-late'||id==='books-fresh')&&typeof goPg==='function')goPg('pg-money');
   else if(id==='bid-cold'&&typeof goPg==='function')goPg('pg-leads');
   else if(id==='state-blocks'&&typeof _geiToStylePicker==='function')_geiToStylePicker();
+  // The button that never did anything. "Take the total off" now takes the
+  // total off: the est layer is what puts one on, and _tmDropLayer is the same
+  // door the chip uses, so this cannot drift out of step with tapping it.
+  else if(id==='state-frees'&&typeof _tmDropLayer==='function')_tmDropLayer('est');
   else if(id==='runs-over'&&typeof _timRaiseHours==='function')_timRaiseHours(n);
   timDockRefresh();
 }

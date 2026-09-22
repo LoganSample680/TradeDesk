@@ -154,14 +154,28 @@ const TIM_NUDGE_RULES=[
   {
     id:'state-frees',
     kind:'law',
-    when:s=>s.stateRule==='none'&&s.state&&s.tm&&s.moneyLayers>0,
-    line:s=>s.state+' will not make you print a price',
-    figure:s=>'saves '+s.moneyLayers*2+' taps',
-    title:()=>'Nothing to fill in',
-    what:s=>s.state+' does not require a price on a time and materials contract.',
-    why:()=>'Get the scope signed and bill the hours as they happen. The money blocks on this page are yours to add, not the state\'s.',
-    cta:'Take them off',
-    alt:'Keep them',
+    // NARROWED AND REPOINTED 2026-09-22. It used to fire on any T&M in a
+    // no-price state with any money layer on, and tell him to strip them. Since
+    // the rate defaults on (Tim needs it to invoice the hours) that meant it
+    // fired on essentially every T&M, arguing against the steps one inch above
+    // it, behind a button with no branch in _timTakeNudge: owner, "Tim's
+    // insights with take them off don't even remove it".
+    //
+    // Now it fires on the one case where the state's silence is actually news:
+    // he has put a TOTAL on a time and materials job that his state does not
+    // ask for a total on. Owner, 2026-09-22: "why put a price on time and
+    // materials???" That is the question, and this is Tim asking it at the
+    // moment it matters, with a button that does the thing it says.
+    when:s=>s.stateRule==='none'&&s.state&&s.tm&&s.tmEst,
+    // The bubble is <b>figure</b><i>line</i>, read end to end, so the two must
+    // compose into one sentence and must not both name the state.
+    line:s=>s.state+' does not ask for one on a time and materials job',
+    figure:()=>'No total required',
+    title:()=>'You have put a total on it',
+    what:s=>'This is a time and materials job with an estimated total on it, and '+s.state+' does not require one.',
+    why:()=>'An estimate is a guess at the hours. A ceiling is a promise about the bill, and it is the one they actually ask for. Your rate stays either way, so Tim can still invoice the hours.',
+    cta:'Take the total off',
+    alt:'Keep it',
   },
   {
     id:'state-blocks',
@@ -376,6 +390,9 @@ function timJobSnapshot(){
     s.tm=(typeof _geiIsTM!=='undefined')&&!!_geiIsTM;
     s.moneyLayers=(typeof _tmLayers!=='undefined'&&_tmLayers&&_tmLayers.size)
       ?['rate','est','mat','dep','cap'].filter(k=>_tmLayers.has(k)).length:0;
+    // Specifically whether he has put a TOTAL on it, which is the only one of
+    // the money layers a no-price state has an opinion worth repeating about.
+    s.tmEst=(typeof _tmLayers!=='undefined'&&_tmLayers)?_tmLayers.has('est'):false;
 
     // Does the work reach past a ladder, and is anything standing under it.
     const scope=(typeof _geiScopeChips!=='undefined'&&Array.isArray(_geiScopeChips))?_geiScopeChips.join(' '):'';
