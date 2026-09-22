@@ -498,23 +498,35 @@ test.describe('Photo capture: the sheet itself', () => {
   });
 
   // Nothing leaves storage while Undo is still on screen.
+  //
+  // The rows are pushed directly rather than shot through the camera: the
+  // subject here is the DEFERRAL, not the capture path, and on WebKit a
+  // canvas-encoded fixture left the sheet with one photo instead of two, so
+  // deleting it emptied the album, closed the sheet, and the removal that
+  // followed looked like the bug this test exists to catch (CI, 2026-09-22).
   test('deleting only reaches storage once the sheet is closed', async () => {
-    await shootUnfiled(2);
     const r = await page.evaluate(() => {
+      photos.length = 0;
+      photos.push({ id: 980, type: 'before', url: 'u', thumbUrl: '', storagePath: 'u/unfiled/one.jpg', client_id: null, uploadedAt: new Date().toISOString() });
+      photos.push({ id: 981, type: 'before', url: 'u', thumbUrl: '', storagePath: 'u/unfiled/two.jpg', client_id: null, uploadedAt: new Date().toISOString() });
       const removed = [];
       const realFrom = _supa.storage.from.bind(_supa.storage);
       _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
         remove: async (paths) => { removed.push(...paths); return { data: null, error: null }; }
       });
+      tdReviewShots([980, 981]);
+      const started = _pcRevRows().length;
       tdReviewOpen(0);
-      const p = photos.find(x => String(x.id) === String(_pcRev.ids[0]));
-      p.storagePath = 'u/unfiled/one.jpg';
       tdReviewDelete();
-      const duringSheet = removed.length;
+      const out = { started, left: _pcRevRows().length, duringSheet: removed.length, open: !!document.getElementById('pc-rev') };
       tdReviewClose();
       _supa.storage.from = realFrom;
-      return { duringSheet, afterClose: removed.join(',') };
+      out.afterClose = removed.join(',');
+      return out;
     });
+    expect(r.started, 'the fixture has to put TWO shots in the album').toBe(2);
+    expect(r.left, 'and one has to survive the delete, or the sheet closes itself').toBe(1);
+    expect(r.open).toBe(true);
     expect(r.duringSheet).toBe(0);
     expect(r.afterClose).toContain('u/unfiled/one.jpg');
   });
