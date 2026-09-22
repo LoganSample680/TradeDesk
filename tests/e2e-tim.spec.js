@@ -46,7 +46,6 @@ test.describe('tim', () => {
       ['show me my taxes', 'pg-taxes'],
       ['pull up my crew', 'pg-team'],
       ['open the dispatch board', 'pg-dispatch'],
-      ['show me the job photos', 'pg-gallery'],
       ['open my licenses', 'pg-licensing'],
       ['pull up contracts', 'pg-contracts'],
       ['take me to the client hub', 'pg-client-hub'],

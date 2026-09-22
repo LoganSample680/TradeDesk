@@ -3369,6 +3369,27 @@ function _cdPropCardHtml(c,a,idx,total){
       </div>
       ${pastRows}
     </div>`:'';
+    // Every photo shot at THIS address, and the way to add one from a desktop
+    // (owner 2026-09-22). The property is the folder a contractor thinks in,
+    // so the album lives on the property card rather than on a Gallery page
+    // nobody opens twice. Reuses the same album the shoot ends with (§7.3).
+    const _propPhotos=(typeof tdPhotosFor==='function')
+      ? tdPhotosFor({clientId:c.id,wholeClient:true}).filter(x=>{
+          const xa=String(x.addr||'').trim().toLowerCase();
+          const pa=String(a.addr||'').trim().toLowerCase();
+          // A photo with no address belongs to the primary card, so older
+          // shots taken before addresses were recorded are still reachable.
+          return xa?xa===pa:(idx===0);
+        })
+      : [];
+    const _photoBlock=`<div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Photos</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text)">${_propPhotos.length?_propPhotos.length+(_propPhotos.length===1?' photo':' photos'):'None yet'}</div>
+      </div>
+      ${_propPhotos.length?`<button onclick="event.stopPropagation();tdReviewShots(${JSON.stringify(_propPhotos.map(x=>x.id))})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--text)">Open</button>`:''}
+      <button onclick="event.stopPropagation();tdCaptureForClient(${c.id})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
+    </div>`;
     // Footer: data source / lookup + map + remove.
     const srcLink=p.assessorUrl
       ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none">${p.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`
@@ -3380,7 +3401,7 @@ function _cdPropCardHtml(c,a,idx,total){
       <button onclick="_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Map</button>
       ${removeBtn}
     </div>`;
-    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${pastBlock}${footer}</div>`;
+    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${pastBlock}${_photoBlock}${footer}</div>`;
   }
   return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
 }

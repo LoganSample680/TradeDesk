@@ -663,7 +663,7 @@ test.describe('Navigation completeness, all 18 pages via goPg()', () => {
     'pg-dash', 'pg-clients', 'pg-est-generic', 'pg-cal',
     'pg-schedule', 'pg-licensing', 'pg-team', 'pg-tracker', 'pg-taxes',
     'pg-settings', 'pg-checklist', 'pg-leads', 'pg-jobs', 'pg-money',
-    'pg-gallery', 'pg-proposals',
+    'pg-proposals',
   ];
 
   for (const pgId of ALL_PAGES) {

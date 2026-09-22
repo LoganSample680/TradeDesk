@@ -34,7 +34,6 @@ const TIM_PLACES=[
   {pg:'pg-team',        name:'Fleet & Team',say:['team','crew','my crew','fleet','trucks','vehicles','employees']},
   {pg:'pg-timelog',     name:'Timesheet',   say:['timesheet','time sheet','time log','timelog','hours','my hours','the clock']},
   {pg:'pg-dispatch',    name:'Dispatch',    say:['dispatch','the board','dispatch board']},
-  {pg:'pg-gallery',     name:'Photos',      say:['photos','gallery','pictures','job photos']},
   {pg:'pg-licensing',   name:'Licensing',   say:['licensing','my license','licenses','permits']},
   {pg:'pg-contracts',   name:'Contracts',   say:['contracts','agreements']},
   {pg:'pg-client-hub',  name:'Client hub',  say:['client hub','the hub']},

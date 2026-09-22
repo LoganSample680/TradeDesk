@@ -867,6 +867,132 @@ test.describe('Photo capture: the sheet itself', () => {
     });
   });
 
+  // ── Finding photos without a Gallery page (owner 2026-09-22) ──────────────
+  test.describe('TrueShot: the search is the way back in', () => {
+    const seedHistory = () => page.evaluate(() => {
+      clients.length = 0; jobs.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita KS' });
+      clients.push({ id: 502, name: 'Marco Reyes', addr: '9 Vine Ave, Wichita KS' });
+      const mk = (id, cid, name, addr, iso) => photos.push({ id, type: 'before', url: 'https://x/' + id + '.jpg',
+        thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: cid, client_name: name,
+        addr, uploadedAt: iso });
+      mk(801, 501, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-03-02T15:00:00.000Z');
+      mk(802, 501, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-09-10T15:00:00.000Z');
+      mk(803, 501, 'Dana Whitfield', '88 Pine Ct, Wichita KS', '2026-08-01T15:00:00.000Z');
+      mk(804, 502, 'Marco Reyes', '9 Vine Ave, Wichita KS', '2026-09-19T15:00:00.000Z');
+    });
+
+    test('an address finds that property, and only that property', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => tdPhotoSearch('412 oak').map(g => ({ addr: g.addr, n: g.photos.length })));
+      expect(r.length).toBe(1);
+      expect(r[0].addr).toBe('412 Oak St, Wichita KS');
+      expect(r[0].n).toBe(2);
+    });
+
+    test('a customer name finds every property they own, newest first', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => tdPhotoSearch('whitfield').map(g => g.addr));
+      expect(r).toEqual(['412 Oak St, Wichita KS', '88 Pine Ct, Wichita KS']);
+    });
+
+    test('the shots inside a property come back newest first', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => tdPhotoSearch('412 oak')[0].photos.map(p => p.id));
+      expect(r).toEqual([802, 801]);
+    });
+
+    test('a date finds the day, however it is typed', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => ({
+        iso: tdPhotoSearch('2026-03-02').length,
+        slash: tdPhotoSearch('3/2/2026').length,
+        month: tdPhotoSearch('march 2026').length,
+        nothing: tdPhotoSearch('1999').length,
+      }));
+      expect(r.iso).toBe(1);
+      expect(r.slash).toBe(1);
+      expect(r.month).toBe(1);
+      expect(r.nothing).toBe(0);
+    });
+
+    test('empty and junk return nothing, never everything', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => [tdPhotoSearch(''), tdPhotoSearch(null), tdPhotoSearch('   '), tdPhotoSearch('zzzz')].map(x => x.length));
+      expect(r).toEqual([0, 0, 0, 0]);
+    });
+
+    test('a result opens that property in the album', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => {
+        const g = tdPhotoSearch('412 oak');
+        tdPhotoSearch.lastResults = g;
+        const opened = tdOpenPropertyPhotos(g[0].key);
+        const cells = document.querySelectorAll('#pc-rev .pc-rev-cell').length;
+        // Already filed, so the album is a history view, not a filing prompt.
+        const foot = document.querySelector('#pc-rev .pc-rev-attach').textContent;
+        const top = document.querySelector('#pc-rev .pc-side').textContent;
+        tdReviewClose();
+        return { opened, cells, foot, top };
+      });
+      expect(r.opened).toBe(true);
+      expect(r.cells).toBe(2);
+      expect(r.foot).toBe('Done');
+      expect(r.top).toBe('Close');
+    });
+
+    test('the global search shows photos as properties and can open one', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => {
+        openSearch();
+        runSearch('412 oak');
+        const html = document.getElementById('search-results').innerHTML;
+        const hit = (window._searchResults || []).find(x => x.type === 'photo');
+        if (hit) hit.action();
+        const cells = document.querySelectorAll('#pc-rev .pc-rev-cell').length;
+        tdReviewClose(); closeSearch();
+        return { html, cells };
+      });
+      expect(r.html).toContain('Photos');
+      expect(r.html).toContain('412 Oak St');
+      expect(r.html).toContain('2 photos');
+      expect(r.cells).toBe(2);
+    });
+
+    // §7.1: the page this replaced is gone, not hidden.
+    test('the Gallery page and every function it owned are gone', async () => {
+      const r = await page.evaluate(() => ({
+        page: document.querySelectorAll('#pg-gallery').length,
+        nav: document.querySelectorAll('#nb-gallery').length,
+        grid: document.querySelectorAll('#gallery-grid').length,
+        fns: ['renderGallery', 'setGalleryFilter', 'openGalleryUpload', 'openPhotoViewer', 'processGalleryUpload', 'deletePhoto']
+          .filter(n => typeof window[n] === 'function'),
+      }));
+      expect(r.page).toBe(0);
+      expect(r.nav).toBe(0);
+      expect(r.grid).toBe(0);
+      expect(r.fns).toEqual([]);
+    });
+
+    test('the property card carries its own photos and a way to add more', async () => {
+      await seedHistory();
+      const r = await page.evaluate(() => {
+        openClientDetail(501);
+        const html = document.getElementById('pg-client-detail').innerHTML;
+        return {
+          hasSection: /Photos/.test(html),
+          hasAdd: /tdCaptureForClient\(501\)/.test(html),
+          hasOpen: /tdReviewShots\(/.test(html),
+          count: (html.match(/(\d+) photos/) || [])[1],
+        };
+      });
+      expect(r.hasSection).toBe(true);
+      expect(r.hasAdd).toBe(true);
+      expect(r.hasOpen).toBe(true);
+      expect(r.count).toBe('2');     // the two at THIS address, not the Pine Ct one
+    });
+  });
+
   // §7.1: the single-photo picker it replaced is gone, not hidden.
   test('the one-photo file picker is gone, replaced by the burst attach', async () => {
     const still = await page.evaluate(() => typeof tdOpenFilePicker);

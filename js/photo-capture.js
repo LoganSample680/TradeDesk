@@ -397,7 +397,7 @@ function _pcRevPaint(){
 function _pcRevGridHTML(rows){
   const n=rows.length;
   return '<div class="pc-rev-top">'+
-      '<button type="button" class="pc-side" onclick="tdReviewClose()">Not now</button>'+
+      '<button type="button" class="pc-side" onclick="tdReviewClose()">'+(rows.some(p=>p.client_id==null)?'Not now':'Close')+'</button>'+
       '<span class="pc-rev-title">'+n+(n===1?' shot':' shots')+'</span>'+
       '<span class="pc-rev-sp"></span>'+
     '</div>'+
@@ -407,7 +407,12 @@ function _pcRevGridHTML(rows){
     '</div>'+
     '<div class="pc-rev-foot">'+
       (_pcRev.trash.length?'<button type="button" class="pc-side" onclick="tdReviewUndo()">Undo delete</button>':'')+
-      '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'+
+      // Photos that already belong to somebody are not asking to be filed.
+      // The same album is the shoot's last step AND the property's history,
+      // so the footer answers whichever one is on screen.
+      (rows.some(p=>p.client_id==null)
+        ?'<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'
+        :'<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewClose()">Done</button>')+
     '</div>';
 }
 function _pcRevViewerHTML(rows){
@@ -916,6 +921,57 @@ function tdPromptAfterShots(jobId){
   '</div>';
   document.body.appendChild(ov);
   return true;
+}
+
+// ── Finding a photo six months later (owner 2026-09-22) ─────────────────────
+// The retrieval moment is never browsing, it is a warranty call: somebody
+// rings about a house and the contractor needs every shot ever taken there,
+// in date order. Warranty and field-service systems key on the PROPERTY for
+// exactly this reason, because the house outlives the customer: owners sell,
+// property managers swap, the address does not move.
+//
+// So a photo search is a search for a PLACE, and its results are properties
+// rather than a wall of thumbnails. The name is how people start the lookup,
+// the address is what the answer is filed under, and both have to work.
+function _pcHaystack(p){
+  const d=p.uploadedAt?new Date(p.uploadedAt):null;
+  const dates=d&&!isNaN(d)?[
+    d.toISOString().slice(0,10),
+    (d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear(),
+    d.toLocaleDateString('en-US',{month:'long',year:'numeric'}),
+    d.toLocaleDateString('en-US',{month:'short',day:'numeric'})
+  ]:[];
+  return [p.addr,p.client_name,p.job_name,p.bid_name,p.type,p.caption].concat(dates)
+    .filter(Boolean).join(' ').toLowerCase();
+}
+// Properties, newest first, each carrying its matching shots in date order.
+function tdPhotoSearch(q){
+  const term=String(q||'').toLowerCase().trim();
+  if(!term)return [];
+  const hits=(photos||[]).filter(p=>p&&_pcHaystack(p).includes(term));
+  const by={};
+  hits.forEach(p=>{
+    // One bucket per property. A photo with no address yet falls back to the
+    // customer, and an unfiled one to its own bucket, so nothing is lost.
+    const key=(p.addr||'').trim().toLowerCase()||('client:'+(p.client_id!=null?p.client_id:'unfiled'));
+    const g=by[key]||(by[key]={key,addr:p.addr||'',name:p.client_name||'',photos:[],last:0});
+    if(!g.addr&&p.addr)g.addr=p.addr;
+    if(!g.name&&p.client_name)g.name=p.client_name;
+    g.photos.push(p);
+    const t=Date.parse(p.uploadedAt||0)||0;
+    if(t>g.last)g.last=t;
+  });
+  return Object.values(by)
+    .map(g=>{g.photos.sort((a,b)=>(Date.parse(b.uploadedAt||0)||0)-(Date.parse(a.uploadedAt||0)||0));return g;})
+    .sort((a,b)=>b.last-a.last);
+}
+// Open one of those properties in the album the shoot already ends with, so
+// there is one photo surface in the app rather than a second one for looking
+// back (§7.3).
+function tdOpenPropertyPhotos(key){
+  const g=(tdPhotoSearch.lastResults||[]).find(x=>x.key===key);
+  if(!g||!g.photos.length)return false;
+  return tdReviewShots(g.photos.map(p=>p.id));
 }
 
 // ── The unfiled tray (dashboard) ────────────────────────────────────────────
