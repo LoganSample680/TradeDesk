@@ -1077,7 +1077,9 @@ function _geiRenderScopeCard(prefix){
     '<div class="card-hd">'+
       // "in order" is a promise the list now keeps, so the heading says it.
       '<div class="card-hd-title">Scope of work, in order</div>'+
-      (mode==='full'?'<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>':'')+
+      // Points at the box, not the picker. The list is still reachable from
+      // inside the box, which is where somebody who wants it will look.
+      (mode==='full'?'<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_geiScopeSayMore(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>':'')+
     '</div>'+
     (mode==='legacy'?'<div style="padding:11px 16px 2px;font-size:11.5px;color:var(--text-3);line-height:1.5">Your line items and their descriptions are the scope on this proposal now. These older entries still print, remove any you do not want.</div>':'')+
     '<div id="'+prefix+'-scope-wrap"></div>';
@@ -1610,6 +1612,177 @@ function _updateScopeSheetBtn(label){
   const ck=btn.querySelector('._sc-ck');
   if(ck){ck.style.background=on?'var(--blue)':'transparent';ck.style.borderColor=on?'var(--blue)':'var(--border2)';ck.innerHTML=on?svgIcon('✓',{size:9,color:'#fff'}):'';}
 }
+// ── SAY THE JOB, GET THE SCOPE ───────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "I really want to retire the scope picker on every bid,
+// instead I want you to type up what youre doing or speak it to tim and he
+// builds the scope in order broken down by steps in order. Tim cant forget a
+// step."
+//
+// The picker asked a man to find his own job in somebody else's list, on every
+// bid, forever. He has already said the job out loud twice before he opens the
+// app: once on the driveway and once to whoever is going to do it. So the box
+// takes that sentence. js/tim-knowledge.js does the work (timScopeBuild), which
+// is pure, offline and tested on its own; this only has to ask and then show.
+//
+// The list is still there behind "pick from a list", because retiring a thing
+// people rely on is a one way door and this has been live for one afternoon.
+
+// What he last said, and what Tim reckoned he left out. On the module rather
+// than the DOM so a re-render cannot lose it mid-decision.
+let _geiScopeSaid='';
+let _geiScopeMissed=[];
+Object.defineProperty(window,'_geiScopeMissed',{get:()=>_geiScopeMissed,set:v=>{_geiScopeMissed=v||[];},configurable:true});
+
+function _geiScopeComposerHtml(containerId){
+  const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
+    ? '<button type="button" onclick="_geiScopeTalk()" style="flex-shrink:0;display:inline-flex;align-items:center;gap:7px;'+
+      'padding:10px 14px;border-radius:var(--r-pill,999px);border:0;background:var(--ink);color:var(--text-cream,#fff);'+
+      'font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
+        '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
+        '<path d="M12 19v3"></path></svg>Say it</button>'
+    : '';
+  return '<div style="padding:12px 16px 14px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">Tell me what you are doing</div>'+
+    '<div style="font-size:11.5px;color:var(--text3);line-height:1.45;margin-bottom:9px">'+
+      'The way you would say it to your crew. I will break it into steps and tell you what you left out.</div>'+
+    '<textarea id="gei-scope-say" rows="3" placeholder="Tear out the old vanity, run new supply lines, '+
+      'set the new one and top, then caulk it and test everything" '+
+      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:0;border-radius:var(--r-md);background:var(--bg2);'+
+      'box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text);line-height:1.5;resize:vertical"></textarea>'+
+    '<div style="display:flex;gap:8px;align-items:center;margin-top:9px">'+
+      mic+
+      '<button type="button" onclick="_geiScopeBuild(\''+containerId+'\')" style="flex:1;min-width:0;padding:10px 14px;'+
+        'border-radius:var(--r-pill,999px);border:0;background:var(--blue);color:#fff;font-size:13px;font-weight:800;'+
+        'cursor:pointer;font-family:inherit">Build the steps</button>'+
+    '</div>'+
+    '<button type="button" onclick="_openScopeSheet(\''+containerId+'\')" style="margin-top:9px;border:0;background:none;'+
+      'padding:2px 0;font-size:12px;color:var(--text3);cursor:pointer;font-family:inherit;text-decoration:underline">'+
+      'Or pick from a list</button>'+
+  '</div>';
+}
+
+// Tap to start, tap to stop. The owner was explicit that he would never hold a
+// button on a job site, and a scope is thirty seconds of talking, not three.
+function _geiScopeTalk(){
+  if(typeof _timTalkToggle!=='function')return;
+  _timTalkToggle('gei-scope-say');
+}
+
+function _geiScopeBuild(containerId){
+  const el=document.getElementById('gei-scope-say');
+  const said=el?String(el.value||''):'';
+  if(!said.trim()){
+    if(typeof showToast==='function')showToast('Say what the job is first','🔧',2200);
+    return;
+  }
+  if(typeof timScopeBuild!=='function')return;
+  const rejected=(typeof timDropped==='function')?[]:[];
+  const built=timScopeBuild(said,{rejected});
+  if(!built.steps.length){
+    if(typeof showToast==='function')showToast('I could not find a step in that','🔧',2600);
+    return;
+  }
+  _geiScopeSaid=said;
+  // ADDED TO what is there, never replacing it: he may build twice, once from
+  // the driveway and once after he has walked the crawlspace.
+  built.steps.forEach(st=>{
+    if(!_geiScopeChips.some(c=>String(c).toLowerCase()===st.text.toLowerCase()))_geiScopeChips.push(st.text);
+  });
+  // The whole point of the feature, held until he says yes to each one.
+  // ONLY THE ONES THAT ARE STEPS. TIM_IMPLIED also carries supply-only rules
+  // (prep-consumables is primer, masking and sandpaper) and those belong on the
+  // supply list, not numbered on a contract a homeowner signs. A rule with a
+  // `step` is a thing you do; a rule without one is a thing you buy.
+  _geiScopeMissed=(built.implied||[]).filter(im=>im&&im.step)
+    .filter(im=>!_geiScopeChips.some(c=>String(c).toLowerCase()===String(im.step).toLowerCase()));
+  _geiScopeNoScope=false;
+  // CARD FIRST, ROWS SECOND. _geiRenderScopeCard rebuilds the wrap the rows
+  // live in, so painting them before it throws them away, which is how the
+  // first build landed four steps in _geiScopeChips and an empty card.
+  if(typeof _geiRenderScopeCard==='function')_geiRenderScopeCard(_geiIsTM?'tm':'byo');
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+  if(typeof _byoAutosave==='function')_byoAutosave();
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+}
+
+// What he did not say. Each one carries the reason in his own words, and
+// nothing moves until he taps it: rule 3 of js/tim-knowledge.js is that nothing
+// Tim guessed becomes a fact until the contractor accepts it.
+function _geiScopeMissedHtml(){
+  if(!_geiScopeMissed.length)return '';
+  const rows=_geiScopeMissed.map(im=>
+    '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(im.say||'')+'</div>'+
+        '<div style="font-size:11.5px;color:var(--text3);line-height:1.45;margin-top:1px">'+escHtml(im.because||'')+'</div>'+
+      '</div>'+
+      '<button type="button" onclick="_geiScopeTakeMissed('+escHtml(JSON.stringify(String(im.id||'')))+')" '+
+        'style="flex-shrink:0;align-self:center;padding:6px 12px;border-radius:var(--r-pill,999px);border:0;'+
+        'background:var(--ink);color:var(--text-cream,#fff);font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Add</button>'+
+      '<button type="button" onclick="_geiScopeDropMissed('+escHtml(JSON.stringify(String(im.id||'')))+')" '+
+        'aria-label="No" style="flex-shrink:0;align-self:center;border:0;background:none;color:var(--text3);'+
+        'font-size:17px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1;font-family:inherit">×</button>'+
+    '</div>').join('');
+  return '<div style="border-top:1px solid var(--border);background:var(--bg2)">'+
+    '<div style="display:flex;align-items:center;gap:8px;padding:11px 16px 2px">'+
+      (typeof timMark==='function'?timMark(15):'')+
+      '<span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+
+        'You did not say'+'</span></div>'+
+    rows+'</div>';
+}
+
+// The composer again, under a list that already exists. Rendered in place
+// rather than as a sheet, because a man adding one more step should not lose
+// sight of the nine he already has.
+function _geiScopeSayMore(containerId){
+  const wrap=document.getElementById(containerId);
+  if(!wrap)return;
+  if(document.getElementById('gei-scope-say')){
+    document.getElementById('gei-scope-say').focus();
+    return;
+  }
+  wrap.insertAdjacentHTML('beforeend',_geiScopeComposerHtml(containerId));
+  document.getElementById('gei-scope-say')?.focus();
+}
+
+// Where a step goes when Tim adds it. Not the end of the list, which is the
+// one place a scaffold step is useless.
+function _geiScopePlace(text,stage,last){
+  const t=String(text||'').trim();
+  if(!t)return;
+  if(_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))return;
+  if(last||stage==='restore'||stage==='clean'){_geiScopeChips.push(t);return;}
+  if(stage==='access'||stage==='protect'){_geiScopeChips.unshift(t);return;}
+  _geiScopeChips.push(t);
+}
+
+function _geiScopeTakeMissed(id){
+  const im=_geiScopeMissed.filter(x=>String(x.id)===String(id))[0];
+  if(!im)return;
+  // `say` is the correction, `step` is the line. "Scaffold goes up before
+  // anything is stripped" is Tim talking to the contractor; a homeowner reading
+  // the contract gets "Set scaffold".
+  _geiScopePlace(im.step||im.say,im.stage,false);
+  // AND THE ONE THAT COMES WITH IT. Scaffold goes up and scaffold comes down,
+  // gutters come off and gutters go back on, and the second of each pair is the
+  // step everybody forgets, which is the whole reason this feature exists.
+  if(im.pairs&&im.pairs.step)_geiScopePlace(im.pairs.step,im.pairs.stage,!!im.pairs.last);
+  // Accepted makes it a fact he keeps. Rule 3, and the same n:1 the price book
+  // already uses.
+  if(typeof timLearn==='function')try{timLearn('implied',im.id,true);}catch(_e){}
+  _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+
+function _geiScopeDropMissed(id){
+  if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
+  _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+}
+
 function _renderScopeChips(containerId){
   const wrap=document.getElementById(containerId);if(!wrap)return;
   wrap.style.display='block';
@@ -1622,10 +1795,7 @@ function _renderScopeChips(containerId){
         '<span onclick="_toggleScopeNone()" style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);color:var(--blue);border:1.5px solid var(--blue);font-size:12px;font-weight:700;cursor:pointer">&#8709; None<span style="font-size:11px;font-weight:900;opacity:.6;margin-left:2px">&#xd7;</span></span>'+
       '</div>';
     }else{
-      wrap.innerHTML='<div style="padding:10px 16px">'+
-        '<button type="button" onclick="_openScopeSheet(\''+containerId+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;background:var(--bg2);border:1.5px dashed var(--border2);font-size:13px;font-weight:600;color:var(--text3);cursor:pointer;font-family:inherit">'+
-        '<span style="font-size:16px;line-height:1">+</span> Add scope of work</button>'+
-      '</div>';
+      wrap.innerHTML=_geiScopeComposerHtml(containerId);
     }
     return;
   }
@@ -1660,6 +1830,15 @@ function _renderScopeChips(containerId){
       '<span style="font-size:13.5px;font-weight:600;color:var(--blue)">Put these in work order</span>'+
     '</button>';
   }
+  // What he left out, under the list it belongs to, and only ever an offer.
+  html+=_geiScopeMissedHtml();
+  // Saying more once there is already a list. Same box, same door, so a second
+  // pass after he has walked the crawlspace adds to the scope rather than
+  // making him start again.
+  html+='<div style="border-top:1px solid var(--border);padding:9px 16px">'+
+    '<button type="button" onclick="_geiScopeSayMore(\''+containerId+'\')" style="border:0;background:none;padding:2px 0;'+
+      'font-size:12.5px;font-weight:700;color:var(--blue);cursor:pointer;font-family:inherit">+ Say or type more</button>'+
+  '</div>';
   wrap.innerHTML=html;
 }
 

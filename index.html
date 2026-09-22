@@ -791,6 +791,12 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 #_tim-send[data-empty="1"]{opacity:.32;pointer-events:none}
 #_tim-send:active{transform:scale(.94);opacity:.9}
 
+/* The listening panel when there is no sheet to sit in: dictating the scope
+   happens on the estimate page. Fixed to the bottom so the Done button is
+   where the thumb already is, above the tab bar so it is not half covered. */
+#_tim-listen-host{position:fixed;left:0;right:0;bottom:0;z-index:70}
+#_tim-listen-host #_tim-listen{margin:0}
+
 /* ── Talking is the easy way in ─────────────────────────────────────────────
    Owner, 2026-09-22: "I really want people to use Tim to speak it since speak
    is easier then typing."

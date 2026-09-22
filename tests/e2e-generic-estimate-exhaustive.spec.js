@@ -2034,7 +2034,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         return { hasWrap, addBtnOnclick };
       });
       expect(r.hasWrap).toBe(true);
-      expect(r.addBtnOnclick).toBe("_openScopeSheet('rt2-scope-wrap')");
+      // CHANGED 2026-09-22 (§10.4). The card's +Add scope points at the box he
+      // talks into, not the picker, which is the whole of the owner's ask. The
+      // container id it is wired to, which is what this test is actually
+      // guarding, is unchanged.
+      expect(r.addBtnOnclick).toBe("_geiScopeSayMore('rt2-scope-wrap')");
     });
 
     test('_geiRenderProfitGauge, golden path builds gauge ids and wires the given oninput', async () => {
@@ -3398,9 +3402,19 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _renderScopeChips('test-scope-wrap');
         const html = wrap.innerHTML;
         wrap.remove();
-        return { hasAddBtn: html.includes('Add scope of work') };
+        return { composer: html.includes('Tell me what you are doing'),
+          build: html.includes('Build the steps'),
+          picker: html.includes('Or pick from a list') };
       });
-      expect(r.hasAddBtn).toBe(true);
+      // CHANGED 2026-09-22 (§10.4). The empty scope used to be a dashed
+      // "+ Add scope of work" button that opened a picker. Owner: "I really
+      // want to retire the scope picker on every bid, instead I want you to
+      // type up what youre doing or speak it to tim and he builds the scope in
+      // order broken down by steps in order." So the empty state is the box he
+      // talks into. The picker is still reachable from inside it.
+      expect(r.composer).toBe(true);
+      expect(r.build).toBe(true);
+      expect(r.picker, 'the list must stay reachable, it has been live one afternoon').toBe(true);
     });
 
     test('scope chips selected, renders chip items', async () => {

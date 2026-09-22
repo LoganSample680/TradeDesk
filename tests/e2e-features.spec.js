@@ -3943,8 +3943,10 @@ test.describe('Scope-of-work chips', () => {
       if (!wrap) return null;
       return {
         text: wrap.textContent,
-        // One remove control (×) per selected item, no other buttons in the list.
-        removeCount: wrap.querySelectorAll('button').length,
+        // One remove control (×) per selected item. COUNTED ON THE ROWS as of
+        // 2026-09-22 (§10.4) rather than on the whole wrap: the card now ends
+        // with "+ Say or type more", which is a button and is not a remove.
+        removeCount: wrap.querySelectorAll('button[aria-label^="Remove"]').length,
         // Old design wrapped each chip in a rounded pill; line items must not.
         isPills: wrap.innerHTML.includes('border-radius:20px'),
       };
@@ -4621,13 +4623,17 @@ test.describe('Scope of work, collapsed + sheet picker', () => {
       const html = div.innerHTML;
       document.body.removeChild(div);
       return {
-        hasAddBtn: html.includes('Add scope of work'),
+        // CHANGED 2026-09-22 (§10.4): the empty scope is the box he talks into
+        // now, not a dashed button onto a picker. What this test is really
+        // holding is unchanged, that the empty state is COLLAPSED rather than a
+        // grid of tiles, and that is asserted below exactly as before.
+        hasComposer: html.includes('Tell me what you are doing'),
         noTileGrid: !html.includes('grid-template-columns'),
         noTileButtons: !html.includes('minmax(150px'),
       };
     });
     if (r === null) return;
-    expect(r.hasAddBtn).toBe(true);
+    expect(r.hasComposer).toBe(true);
     expect(r.noTileGrid).toBe(true);
     expect(r.noTileButtons).toBe(true);
   });

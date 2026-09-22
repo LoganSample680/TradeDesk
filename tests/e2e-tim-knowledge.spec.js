@@ -536,6 +536,150 @@ test.describe('tim knows the trade', () => {
     });
   });
 
+  // ── SAY THE JOB, GET THE SCOPE ─────────────────────────────────────────────
+  //
+  // Owner, 2026-09-22: "I really want to retire the scope picker on every bid,
+  // instead I want you to type up what youre doing or speak it to tim and he
+  // builds the scope in order broken down by steps in order. Tim cant forget a
+  // step."
+  //
+  // A picker asks a man to find his job in somebody else's list. He has already
+  // said the job out loud twice before he opens the app. So these hold the
+  // split: his sentence in, his steps out, in HIS words. A step that comes back
+  // reworded is the feature lying to him about his own scope.
+  test.describe('a sentence becomes steps', () => {
+    const split = (t) => page.evaluate((x) => timScopeFrom(x), t);
+
+    test('the way a man actually dictates one, filler and all', async () => {
+      const r = await split("okay so we're gonna tear out the old vanity, run new "
+        + 'supply lines, set the new vanity and top, then caulk it and test everything');
+      expect(r).toEqual([
+        'Tear out the old vanity',
+        'Run new supply lines',
+        'Set the new vanity and top',
+        'Caulk it and test everything',
+      ]);
+    });
+
+    // The throat clearing is not the work. "Okay so we're going to" has no
+    // business in a numbered line a homeowner reads.
+    test('the run-up to the sentence does not become step one', async () => {
+      const r = await split('So first we are going to pull a permit. Then I will dig the trench.');
+      expect(r).toEqual(['Pull a permit', 'Dig the trench']);
+    });
+
+    test('a typed list is already steps, whatever he marked them with', async () => {
+      const r = await split('- tear off the old shingles\n- dry in with synthetic\n'
+        + '2. new architectural shingles\n\u2022 ridge vent');
+      expect(r).toEqual([
+        'Tear off the old shingles',
+        'Dry in with synthetic',
+        'New architectural shingles',
+        'Ridge vent',
+      ]);
+    });
+
+    // THE ONE THAT IS ACTUALLY HARD. Both of these open with a verb after the
+    // comma, and only one of them is a new step. The difference is whether
+    // anything is being acted on: a step names its object, a manner phrase is
+    // verbs and particles all the way down.
+    test('a comma that starts a new action splits, and one that says how does not', async () => {
+      expect(await split('tear out the vanity, run the supply lines'))
+        .toEqual(['Tear out the vanity', 'Run the supply lines']);
+      expect(await split('paint the kitchen two coats, cut and rolled'))
+        .toEqual(['Paint the kitchen two coats, cut and rolled']);
+      expect(await split('replace with new copper, tested and pressured up'))
+        .toEqual(['Replace with new copper, tested and pressured up']);
+    });
+
+    // Regression: the verb list was harvested out of TIM_STAGES, which carries
+    // "rotted" as a thing a man says. With "rotted" counted as a verb this read
+    // as verbs all the way down and glued itself to the step before it.
+    test('a step whose object is a material still splits off', async () => {
+      const r = await split('strip the failed paint, replace rotted trim, prime and two coats');
+      expect(r).toEqual([
+        'Strip the failed paint',
+        'Replace rotted trim',
+        'Prime and two coats',
+      ]);
+    });
+
+    test('a one word step is a step', async () => {
+      const r = await split('dig the trench, lay the conduit, backfill');
+      expect(r).toEqual(['Dig the trench', 'Lay the conduit', 'Backfill']);
+    });
+
+    test('nothing in, nothing out, and no throw on junk', async () => {
+      expect(await split('')).toEqual([]);
+      expect(await split('   \n  ')).toEqual([]);
+      // 42 is not a step. A fragment with nothing to read in it is noise from a
+      // stray keypress or a dictation stumble, not a line a homeowner is meant
+      // to see numbered on a contract.
+      expect(await page.evaluate(() => [
+        timScopeFrom(null).length, timScopeFrom(undefined).length, timScopeFrom(42).length,
+      ])).toEqual([0, 0, 0]);
+    });
+
+    test('the same step said twice is one step', async () => {
+      const r = await split('haul off the debris. Haul off the debris.');
+      expect(r.length).toBe(1);
+    });
+  });
+
+  test.describe('and Tim cannot forget a step', () => {
+    test('his own words come back in his own order, with the stage on each', async () => {
+      const r = await page.evaluate(() => timScopeBuild(
+        "tear out the old vanity, run new supply lines, set the new vanity and top, "
+        + 'then caulk it and test everything'));
+      expect(r.steps.map(s => s.text)).toEqual([
+        'Tear out the old vanity',
+        'Run new supply lines',
+        'Set the new vanity and top',
+        'Caulk it and test everything',
+      ]);
+      // Staged, so the card can say what each one is, without being moved.
+      expect(r.steps[0].stageName).toBe('Tear out');
+      expect(r.steps[2].stageName).toBe('Install');
+    });
+
+    // The sort is an OFFER. Tim put the caulk before the vanity went in, because
+    // caulk reads as prep on a paint job and as the last thing on a vanity. He
+    // was wrong and the contractor was right, which is this file's own rule.
+    test('it does not quietly reorder him, it says whether sorting would move anything', async () => {
+      const r = await page.evaluate(() => timScopeBuild(
+        'tear out the old vanity, set the new vanity and top, caulk it'));
+      expect(r.steps.map(s => s.text)[1]).toBe('Set the new vanity and top');
+      expect(typeof r.outOfOrder).toBe('boolean');
+    });
+
+    // The whole point of the feature. He said second floor and never said
+    // scaffold, and the proposal would not have stood up.
+    test('the steps he did not say come back with the reason, in his words', async () => {
+      const r = await page.evaluate(() => timScopeBuild(
+        'strip the failed paint on the second floor south elevation, replace rotted trim, prime and two coats'));
+      const says = r.implied.map(i => i.say).join(' | ');
+      expect(says).toContain('Scaffold');
+      // Never a rationale, always a thing he said or a thing on the job.
+      r.implied.forEach(i => {
+        expect(i.because, 'a forgotten step arrived with no reason on it').toBeTruthy();
+        expect(i.source, 'trade knowledge must never masquerade as code').toBe('trade');
+      });
+    });
+
+    test('a job that drags nothing in says nothing', async () => {
+      const r = await page.evaluate(() => timScopeBuild('swap the kitchen faucet'));
+      expect(Array.isArray(r.implied)).toBe(true);
+    });
+
+    test('junk in does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, n: timScopeBuild(null).steps.length + timScopeBuild(undefined).steps.length }; }
+        catch (e) { return { ok: false, e: e.message }; }
+      });
+      expect(r).toEqual({ ok: true, n: 0 });
+    });
+  });
+
   test('no console errors, tim-knowledge.js', async () => {
     assertNoErrors(page, 'tim-knowledge.js');
   });

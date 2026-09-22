@@ -155,6 +155,198 @@ function timOrderScope(steps){
   }));
 }
 
+// ── SAY THE JOB, GET THE SCOPE ───────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "I really want to retire the scope picker on every bid,
+// instead I want you to type up what youre doing or speak it to tim and he
+// builds the scope in order broken down by steps in order. Tim cant forget a
+// step."
+//
+// A picker asks a man to find his job in somebody else's list. He already knows
+// the job; he has said it out loud twice before he opens the app. So this takes
+// the sentence he would say to his crew and cuts it into the steps that are
+// actually in it. Ordering is timOrderScope's job and the steps he forgot are
+// timImplied's; this one only has to split, and split HIS words, not summarise
+// them. Nothing here rewrites a phrase: a step comes out reading the way he
+// said it or the feature has lied to him about his own scope.
+//
+// Pure and offline, like everything else in this file.
+
+// Splitting on a comma is the dangerous one: "two coats, cut and rolled" is one
+// step and "tear out the vanity, run the supply lines" is two. The difference
+// is whether what follows the comma STARTS a new action, so a fragment only
+// becomes its own step when it opens with a verb. The verbs come from the stage
+// table, which is already a list of the things a contractor says he is doing,
+// plus the handful of bare ones that carry no stage on their own.
+// CURATED, not harvested. The first version built this from TIM_STAGES, which
+// is a list of things a contractor SAYS, not a list of verbs: it carries
+// "rotted", "drop cloth", "permit", "dumpster out". With "rotted" counted as a
+// verb, "replace rotted trim" looked like verbs all the way down and got glued
+// onto the step before it. So the verbs are written out, because a verb list is
+// a short, checkable thing and a stage table is not.
+const _TIMK_VERBS=new Set([
+  // Tear out and take away
+  'tear','strip','scrape','grind','demo','remove','pull','rip','haul','dispose','dump','gut',
+  // Protect, stage, isolate
+  'mask','cover','protect','move','disconnect','drain','shut','kill','lock','stage','mobilize',
+  'scaffold','set','stand','erect',
+  // Rough and structure
+  'run','stub','dig','trench','excavate','frame','sister','brace','anchor','shim','hang','mount',
+  'lay','install','tie','terminate','connect','wire','pipe','plumb','vent','flash','insulate',
+  'waterproof','weld','solder','glue','pour','backfill','compact','grade','level','square',
+  // Repair
+  'repair','patch','fill','replace','resheath','rebuild','rehang','reinstall','reset','remount',
+  // Prep and finish
+  'prep','wash','pressurewash','powerwash','sand','caulk','prime','tape','etch','skim','feather',
+  'clean','paint','spray','roll','brush','stain','seal','grout','polish','buff','coat','finish',
+  // Prove it works, and leave
+  'test','check','inspect','purge','bleed','pressure','torque','calibrate','label','tag',
+  'photograph','sweep','vacuum','strike','walk',
+  // The plain ones a man writes on a list
+  'do','redo','fix','build','make','cut','put','take','bring','leave','call','order','pick',
+  'deliver','start','change','swap','add','drop','open','close','trim','apply','adjust','verify',
+]);
+
+// What a man says before he gets to the work, which is not the work. "Okay so
+// we're going to" is throat clearing and does not belong in a numbered step a
+// homeowner reads.
+const _TIMK_FILLER=/^(?:ok(?:ay)?|so|well|um+|uh+|right|alright|and|but|first(?:ly)?|then|next|after\s+that|afterwards?|finally|lastly|also|plus|basically|obviously)\b[\s,]*/i;
+const _TIMK_SUBJECT=/^(?:(?:i|we|they|you)(?:\s*(?:'|’)?(?:re|m|ll|ve|d))?|im|ive|were|weve|well)\s+(?:are\s+|is\s+|am\s+)?(?:gonna|going\s+to|gotta|got\s+to|have\s+to|need\s+to|want\s+to|will|shall|just|then|also)?\s*/i;
+// The words that always start a new step when they join two clauses.
+const _TIMK_JOIN=/\s+(?:and\s+then|then|after\s+that|afterwards?|next(?:\s+up)?|followed\s+by|before\s+that)\s+/i;
+
+function _timkVerbLike(w0){
+  const w=String(w0||'').toLowerCase().replace(/[^a-z]/g,'');
+  if(!w)return false;
+  if(_TIMK_VERBS.has(w))return true;
+  // "replacing", "hauling", "stripping", "rolled", "tested": the same verbs the
+  // way a man narrates a day. Checked against the bare stem so the table does
+  // not need every ending.
+  const stem=(n)=>_TIMK_VERBS.has(w.slice(0,-n))||_TIMK_VERBS.has(w.slice(0,-n)+'e');
+  if(/ing$/.test(w)&&stem(3))return true;
+  if(/ed$/.test(w)&&(stem(2)||stem(1)))return true;
+  if(/s$/.test(w)&&stem(1))return true;
+  return false;
+}
+
+// Does this fragment START A NEW STEP, or is it saying how the last one is
+// done? "tear out the vanity, run the supply lines" is two steps. "paint the
+// kitchen two coats, cut and rolled" is one, and cut-and-rolled is the manner.
+//
+// Both open with a verb, so the verb alone cannot tell them apart. What can is
+// whether anything is being acted ON: a new step names its object, and a manner
+// phrase is verbs and conjunctions all the way down. A bare one-word step
+// ("backfill") is still a step, because a man writing a list writes those.
+function _timkNewAction(frag){
+  const words=String(frag||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if(!words.length||!_timkVerbLike(words[0]))return false;
+  // Particles ride with their verb and say nothing about whether a new action
+  // started: "tested and pressured UP" is still just manner. Counting "up" as
+  // an object split it off as its own step.
+  const rest=words.slice(1).filter(w=>!/^(?:and|or|then|plus|also|up|down|out|off|in|on|back|over|through|again|it|them|everything)$/
+    .test(w.replace(/[^a-z]/g,'')));
+  if(!rest.length)return true;
+  return rest.some(w=>!_timkVerbLike(w));
+}
+
+function _timkTidy(t){
+  let v=String(t||'').replace(/\s+/g,' ').trim();
+  // Bullet and number markers, however he typed them.
+  v=v.replace(/^[\-\*\u2022\u00b7\u2013\u2014]+\s*/,'').replace(/^\(?\d{1,2}[.):]\s*/,'');
+  // Filler and subject can stack: "okay so we're going to tear out".
+  for(let i=0;i<3;i++){
+    const before=v;
+    v=v.replace(_TIMK_FILLER,'').replace(_TIMK_SUBJECT,'');
+    if(v===before)break;
+  }
+  v=v.replace(/\s+/g,' ').trim().replace(/[\s,;:.]+$/,'');
+  if(!v)return '';
+  // His words, his capitals, except the first letter, which a numbered list
+  // wants upper whether he was shouting or dictating.
+  return v.charAt(0).toUpperCase()+v.slice(1);
+}
+
+// The whole of it: prose in, steps out, in the order he said them. Ordering
+// into WORK order is timOrderScope, deliberately separate, because a man who
+// dictated his day out of order should see his own list first and then be
+// offered the sort.
+function timScopeFrom(text){
+  const raw=String(text||'');
+  if(!raw.trim())return [];
+  const out=[];
+  const seen=new Set();
+  const push=(frag)=>{
+    const v=_timkTidy(frag);
+    if(!v)return;
+    // A step that is only a number or a stray word is noise, not scope.
+    if(v.replace(/[^a-z]/gi,'').length<3)return;
+    const key=v.toLowerCase();
+    if(seen.has(key))return;
+    seen.add(key);
+    if(out.length<40)out.push(v);
+  };
+  // Hard breaks first: a line he typed on its own is a step he meant on its
+  // own, whatever punctuation is in it.
+  raw.split(/[\r\n]+/).forEach(line=>{
+    if(!line.trim())return;
+    // Sentence enders, then the joining words, both of which always split.
+    line.split(/(?<=[.;!?])\s+|\s*;\s*/).forEach(sent=>{
+      if(!sent||!sent.trim())return;
+      sent.split(_TIMK_JOIN).forEach(part=>{
+        if(!part||!part.trim())return;
+        // And only now the commas, and only where a new action starts.
+        const bits=part.split(/,\s*/);
+        let buf='';
+        bits.forEach((bit,i)=>{
+          if(i===0){buf=bit;return;}
+          const next=bit.replace(/^and\s+/i,'');
+          if(_timkNewAction(next)){push(buf);buf=next;}
+          else buf=buf+', '+bit;
+        });
+        push(buf);
+      });
+    });
+  });
+  return out;
+}
+
+// What the screen actually asks for: his steps, in work order, and the ones he
+// did not say. One call so the two can never be built from different text.
+// HIS ORDER, NOT TIM'S. The steps come back the way he said them, with the
+// stage on each and a flag saying whether sorting would move anything.
+//
+// The first version sorted. On "tear out the old vanity, run new supply lines,
+// set the new vanity and top, then caulk it and test everything" it put the
+// caulk BEFORE the vanity went in, because 'caulk' reads as prep on a paint job
+// and as the last thing on a vanity. Tim was wrong and the contractor was
+// right, which is this file's own rule: a scope step invented by a contractor
+// outranks a guess about where it belongs.
+//
+// A man dictating his day says it in the order he will work it. So the sort
+// stays an offer (_geiPutScopeInOrder, one tap, already on the card) rather
+// than something that happens to his words while he watches.
+function timScopeBuild(text,opts){
+  const said=String(text||'');
+  const steps=timScopeFrom(said);
+  const staged=timOrderScope(steps);
+  const byText={};
+  staged.forEach(r=>{if(byText[r.text]===undefined)byText[r.text]=r;});
+  const mine=steps.map((t,i)=>{
+    const r=byText[t]||{};
+    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i};
+  });
+  let implied=[];
+  try{implied=timImplied(said,steps,opts)||[];}catch(_e){implied=[];}
+  return {
+    said,
+    steps:mine,
+    implied,
+    // Would the sort actually change anything? If not, the card does not offer
+    // it, which is the rule _geiScopeOutOfOrder already follows.
+    outOfOrder:staged.some((r,i)=>r.text!==steps[i]),
+  };
+}
+
 // ── What a job drags in with it ──────────────────────────────────────────────
 //
 // The rules are deliberately few and deliberately hard. Each one has to pass

@@ -1220,12 +1220,28 @@ function _timTalkToggle(target){
   _timTalkBegin();
 }
 
+// WHERE THE LISTENING PANEL LIVES. Inside Tim's sheet when the sheet is open,
+// which is every case this started with. But dictating the scope happens on the
+// estimate page with no sheet anywhere, and the panel carries the waveform, the
+// clock and the only Done button there is: without a host it went nowhere and
+// the mic could be started and never stopped.
+function _timTalkHost(){
+  const sheet=document.getElementById('_tim-sheet');
+  if(sheet)return sheet;
+  let f=document.getElementById('_tim-listen-host');
+  if(!f){
+    f=document.createElement('div');
+    f.id='_tim-listen-host';
+    document.body.appendChild(f);
+  }
+  return f;
+}
+
 function _timTalkBegin(){
   const el=document.getElementById(_timTalkTarget);
   if(!el)return;
   _timTalking=true;_timHeard='';_timTalkStart=Date.now();
-  const sheet=document.getElementById('_tim-sheet');
-  if(sheet)sheet.insertAdjacentHTML('beforeend',_timTalkPanel());
+  _timTalkHost().insertAdjacentHTML('beforeend',_timTalkPanel());
   const tick=()=>{
     if(!_timTalking)return;
     const t=(Date.now()-_timTalkStart)/1000;
@@ -1249,6 +1265,7 @@ function _timTalkStop(silent){
   _timTalking=false;
   if(_timWaveTimer){clearInterval(_timWaveTimer);_timWaveTimer=null;}
   document.getElementById('_tim-listen')?.remove();
+  document.getElementById('_tim-listen-host')?.remove();
   const finish=(text)=>{
     const said=String(text||_timHeard||'').trim();
     const el=document.getElementById(_timTalkTarget);
