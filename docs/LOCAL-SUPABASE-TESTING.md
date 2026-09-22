@@ -134,12 +134,16 @@ person actually working. There is no bulk load, no backfill drip, and nothing to
 
 | Piece | Runs on | When |
 |---|---|---|
-| **The lookup** (`functions/api/property.js`) | **Cloudflare Pages Function**, because that is where the app is deployed | Every time an address is saved |
+| **The lookup** (`supabase/functions/county-property/`) | **Supabase Edge Function**, like the other twenty | Every time an address is saved |
 | **The match** (`property_lookup`) | **Supabase**, one SQL join | Every sign-in, for addresses already answered |
 | **`county-load.js`** | **GitHub Actions**, manual dispatch only | Rarely, and optional: a bulk pre-load or a bounded manual backfill of an existing client book |
 
-Cloudflare is not a choice here, it is just where the app already lives. GitHub Actions
-only runs the optional batch tooling, never the live path.
+**Cloudflare is not involved in this feature at all.** The lookup was a Cloudflare Pages
+Function at first, purely because the dead Zillow tunnel proxy lived at that file path and
+the rewrite stayed put. That was a §7.3 violation and it shipped with no caller check.
+As an Edge Function the service key is injected by Supabase rather than copied into a
+second vendor's config, and the caller is verified with the same `auth.getUser()` line
+every sibling function uses. GitHub Actions only runs the optional batch tooling.
 
 ### Setting up a county
 
@@ -147,7 +151,7 @@ Two things, both small:
 
 1. **Seed its zips** into `td_county_zips` so an address can be routed to it. Run the
    `Load County Assessor Data` workflow, or `node scripts/county-load.js <county> --zips`.
-2. **Add its entry to `ENRICHERS`** in `functions/api/property.js` (the two source URLs
+2. **Add its entry to `ENRICHERS`** in `supabase/functions/county-property/index.ts` (the two source URLs
    and their field maps) and a matching `scripts/counties/<county>.json`.
 
 That is the whole county onboarding. No parcel data needs loading first; the first saved
@@ -173,8 +177,13 @@ paced backfill of addresses already on file. Neither is part of the normal path.
   lookup and any batch tooling, as a circuit breaker against a loop.
 - **A transport failure is not an answer.** Both sources must actually respond before an
   address is retired, or a blip would leave a house with a value and no year built forever.
-- `functions/api/property.js` needs `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` in Cloudflare
-  Pages env. `PROPERTY_TUNNEL_URL` is gone; delete it if it is still set.
+- **Nothing to set in Cloudflare.** `PROPERTY_TUNNEL_URL` is gone; delete it if it is
+  still set. The Edge Function reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
+  `SUPABASE_ANON_KEY` from the Supabase runtime, and ships with the migrations in one
+  `deploy-functions.yml` dispatch.
+- **The lookup refuses an unauthenticated caller.** The Cloudflare route it replaced did
+  not, which meant anyone on the internet could make us fire a request at a county server
+  through our own domain: exactly what gets a range blocked.
 
 ## Hosted-runner mode — no jarvis needed (added 2026-08-21)
 

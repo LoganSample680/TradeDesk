@@ -31,6 +31,7 @@ const path = require('path');
 const repo = (p) => path.join(__dirname, '..', p);
 const readSrc = (p) => fs.readFileSync(repo(p), 'utf8');
 const MIGRATION = 'supabase/migrations/20261032_county_parcels.sql';
+const FN = 'supabase/functions/county-property/index.ts';
 
 test.describe('county parcel records', () => {
 
@@ -47,7 +48,7 @@ test.describe('county parcel records', () => {
     });
 
     test('the api route no longer reaches for the home tunnel', () => {
-      const src = readSrc('functions/api/property.js');
+      const src = readSrc(FN);
       // PROPERTY_TUNNEL_URL pointed at a cloudflared quick tunnel to the owner's
       // house. If this comes back, production property lookups depend on his
       // power and his ISP again.
@@ -58,7 +59,7 @@ test.describe('county parcel records', () => {
     });
 
     test('no source file still calls zillow for property data', () => {
-      for (const f of ['js/clients.js', 'js/data.js', 'functions/api/property.js']) {
+      for (const f of ['js/clients.js', 'js/data.js', FN]) {
         const src = readSrc(f);
         expect(src, `${f} must not request anything from zillow`).not.toMatch(/https?:\/\/[^\s'"]*zillow/i);
       }
@@ -228,7 +229,7 @@ test.describe('county parcel records', () => {
     test('both paths to a county go through the gate', () => {
       // The API route and the loader must BOTH claim, or the one that does not
       // bypasses the cap and the one-ask rule for everybody.
-      expect(readSrc('functions/api/property.js'), 'the api route must claim before contacting a county')
+      expect(readSrc(FN), 'the api route must claim before contacting a county')
         .toMatch(/county_claim_ask/);
       const loader = readSrc('scripts/county-load.js');
       expect(loader, 'the loader must claim before contacting a county').toMatch(/county_claim_ask/);
@@ -239,7 +240,7 @@ test.describe('county parcel records', () => {
     });
 
     test('both paths record the outcome, or nothing is ever retired', () => {
-      expect(readSrc('functions/api/property.js')).toMatch(/county_record_ask/);
+      expect(readSrc(FN)).toMatch(/county_record_ask/);
       expect(readSrc('scripts/county-load.js')).toMatch(/county_record_ask/);
     });
 
@@ -252,7 +253,7 @@ test.describe('county parcel records', () => {
       // claim closes only when BOTH answered. A transient failure on one side
       // would otherwise leave a house with a value and no year built, forever,
       // with nothing left to retry it.
-      const src = readSrc('functions/api/property.js');
+      const src = readSrc(FN);
       // undefined is the transport-failure signal, deliberately distinct from
       // null, which means "answered, and has no such address".
       expect(src, 'a failed fetch must be distinguishable from a genuine miss')
@@ -313,7 +314,7 @@ test.describe('county parcel records', () => {
       // land, improvement, owner) live in two different county systems. Both
       // are asked on the same lookup so a saved address is complete in one
       // pass, which is what removes any need for a bulk pre-load.
-      const src = readSrc('functions/api/property.js');
+      const src = readSrc(FN);
       expect(src).toMatch(/building:\s*\{/);
       expect(src).toMatch(/parcel:\s*\{/);
       expect(src, 'both are asked together, not one after the other')
@@ -328,12 +329,102 @@ test.describe('county parcel records', () => {
     test('the assessed figures are written back, or nobody ever sees them', () => {
       // These came from the bulk load before. With no bulk load, a value not
       // cached here is a value that is fetched and then thrown away.
-      const src = readSrc('functions/api/property.js');
+      const src = readSrc(FN);
       const fn = src.slice(src.indexOf('async function cacheBack('));
       const patch = fn.slice(0, fn.indexOf('};'));
       for (const f of ['assessed_value', 'land_value', 'improvement_value', 'owner_name', 'acres']) {
         expect(patch, `cacheBack must persist ${f}`).toMatch(new RegExp(`${f}:`));
       }
+    });
+  });
+
+  // ── It is an Edge Function, and it checks who is asking ──────────────────
+  //
+  // This was a Cloudflare Pages Function first, purely because the dead Zillow
+  // tunnel proxy happened to live at that file path and the rewrite stayed put.
+  // That was a §7.3 violation (twenty Edge Functions already do this shape of
+  // work) and it shipped with NO caller check at all: anyone on the internet
+  // could hit it and make us fire a request at a county server through our own
+  // domain, which is exactly what gets a range blocked.
+  test.describe('the county lookup is an authenticated Edge Function', () => {
+    const fn = () => readSrc(FN);
+
+    test('the Cloudflare route is deleted, not left alongside', () => {
+      // Two doors to the same county is two places to forget the auth check.
+      expect(fs.existsSync(repo('functions/api/property.js')),
+        'the Cloudflare property route must be gone').toBe(false);
+    });
+
+    test('it refuses a caller with no session', () => {
+      const s = fn();
+      expect(s, 'a missing Authorization header must be a 401')
+        .toMatch(/if \(!auth\) return json\(\{ error: "unauthorized" \}, 401\)/);
+      // And the token must actually be verified, not merely present.
+      expect(s).toMatch(/asUser\.auth\.getUser\(\)/);
+      expect(s).toMatch(/if \(meErr \|\| !me\?\.user\) return json\(\{ error: "unauthorized" \}, 401\)/);
+    });
+
+    test('the service key is never touched before the caller is verified', () => {
+      // The whole point of the check. If the privileged client is built first,
+      // an unauthenticated request has already been handed the keys.
+      const s = fn();
+      const verifiedAt = s.indexOf('auth.getUser()');
+      const serviceAt = s.indexOf('createClient(SUPABASE_URL, SERVICE_KEY)');
+      expect(verifiedAt, 'the caller check must exist').toBeGreaterThan(-1);
+      expect(serviceAt, 'the service client must exist').toBeGreaterThan(-1);
+      expect(verifiedAt, 'verify the caller BEFORE building the service client')
+        .toBeLessThan(serviceAt);
+    });
+
+    test('the key comes from the Supabase runtime, not a second vendor config', () => {
+      // One fewer copy of the most privileged credential, and nothing for the
+      // owner to paste into Cloudflare.
+      expect(fn()).toMatch(/Deno\.env\.get\("SUPABASE_SERVICE_ROLE_KEY"\)/);
+    });
+  });
+
+  // ── One door to the county ───────────────────────────────────────────────
+  test.describe('both property surfaces share one fetch', () => {
+    test('_countyProperty is the only thing that calls the function', () => {
+      // There are two surfaces: the estimate builder's live address card
+      // (js/data.js) and the client record's saved-address lookup
+      // (js/clients.js). Two copies of "how do we ask the county" drift, and
+      // the drift shows up as a card that silently stops filling in (§7.3).
+      const data = readSrc('js/data.js');
+      const clients = readSrc('js/clients.js');
+      expect(data, 'the shared door lives in data.js, which loads first')
+        .toMatch(/async function _countyProperty\(addr,signal\)/);
+      expect((data + clients).match(/functions\/v1\/county-property/g) || [],
+        'exactly one place may build that request').toHaveLength(1);
+      expect(clients, 'the client card must go through the shared door')
+        .toMatch(/_countyProperty\(addr,ctrl\.signal\)/);
+      expect(data, 'the estimate card must go through it too')
+        .toMatch(/_countyProperty\(addr,_ctrl\.signal\)/);
+    });
+
+    test('the live estimate card reads the county field names, not the scraper\'s', () => {
+      // It read d.yearBuilt / d.estValue, which was the dead Zillow proxy's
+      // camelCase shape. Against the county's snake_case every field would have
+      // come back undefined and the card would have rendered dashes with no
+      // lead-paint warning: silently wrong about the one number that carries a
+      // federal disclosure.
+      const data = readSrc('js/data.js');
+      const card = data.slice(data.indexOf('async function _lookupProperty('), data.indexOf('// ── Crowdsourced'));
+      expect(card).toMatch(/d\.year_built/);
+      expect(card, 'no camelCase leftovers from the scraper').not.toMatch(/d\.yearBuilt|d\.estValue|d\.lastSalePrice/);
+      // And it still fires the pre-1978 gate off that year.
+      expect(card).toMatch(/leadPaint\s*=\s*_yr\s*&&\s*_yr\s*<\s*1978/);
+    });
+
+    test('a county miss is distinguishable from a failed request', () => {
+      // Collapsing them looks harmless and is not: the client card stamps a
+      // miss so the address is never re-asked, and doing that on a blip retires
+      // a good address permanently.
+      const data = readSrc('js/data.js');
+      expect(data, '_countyProperty must pass {found:false} through, not null it')
+        .toMatch(/return d;\s*\/\/ may be \{found:false\}/);
+      expect(readSrc('js/clients.js'), 'only an explicit found:false records a miss')
+        .toMatch(/_propApplyMatch\(c,keyAddr,d\.found===false\?null:d\)/);
     });
   });
 
@@ -507,7 +598,7 @@ test.describe('county parcel records', () => {
       ]) {
         expect(fs.existsSync(repo(f)), `${f} must be deleted`).toBe(false);
       }
-      for (const f of ['js/clients.js', 'js/cloud.js', 'js/mileage.js', 'functions/api/property.js']) {
+      for (const f of ['js/clients.js', 'js/cloud.js', 'js/mileage.js', FN]) {
         expect(readSrc(f), `${f} must not reference a drip`).not.toMatch(/county-drip/);
       }
     });

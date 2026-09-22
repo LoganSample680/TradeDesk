@@ -546,7 +546,57 @@ function getClientBids(cid){return bids.filter(b=>b.client_id===cid&&b.status!==
 function getClientJobs(cid){return jobs.filter(j=>j.client_id===cid);}
 function getClientIncome(cid){return income.filter(i=>i.client_id===cid);}
 
-// ── Property lookup (Redfin via Cloudflare Tunnel proxy) ─────────────────────
+// ── THE ONE DOOR TO THE COUNTY ──────────────────────────────────────────────
+//
+// Both property surfaces go through here: the estimate builder's live address
+// card (_lookupProperty, below) and the client record's saved-address lookup
+// (_lookupPropertyData, js/clients.js). It lives in data.js because that loads
+// first, and it is ONE function because two copies of "how do we ask the
+// county" drift, and the drift shows up as a property card that silently stops
+// filling in (§7.3).
+//
+// THREE outcomes, and the difference between the last two is load-bearing:
+//
+//   null              we could not ask. Not signed in, no county loaded for
+//                     this zip, or the request failed. Nothing is known.
+//   {found:false}     the county WAS asked and has no record of this address.
+//                     That is a real answer.
+//   {...record}       the county's record.
+//
+// Collapsing the middle case into null looks harmless and is not: the client
+// card stamps a county miss so the address is never re-asked and the card can
+// say "No county record" instead of offering a lookup forever. Do that on a
+// failed request and the address is retired on a blip; fail to do it on a real
+// miss and every boot asks the county about a house it does not have.
+async function _countyProperty(addr,signal){
+  if(window.__TD_DEMO)return null; // the demo makes no network calls (js/demo.js)
+  if(!addr)return null;
+  if(typeof _supa==='undefined'||!_supa)return null;
+  if(typeof SUPA_URL==='undefined'||!SUPA_URL)return null;
+  try{
+    // The Edge Function refuses an unauthenticated caller, so a signed-out
+    // session has nothing to send and nothing to ask.
+    const _sess=await _supa.auth.getSession();
+    const _tok=_sess?.data?.session?.access_token;
+    if(!_tok)return null;
+    const res=await fetch(SUPA_URL+'/functions/v1/county-property',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tok},
+      body:JSON.stringify({addr}),
+      signal,
+    });
+    // 204 means no county is loaded for this address at all, which is a
+    // different thing from the county having no record of it.
+    if(res.status===204||!res.ok)return null;
+    const d=await res.json();
+    if(!d||d.error)return null;
+    return d;   // may be {found:false}: that is an answer, not a failure
+  }catch(e){return null;}
+}
+
+// ── Property lookup: the estimate builder's live address card ───────────────
+// Fires as the job address is typed (index.html #gei-addr). Separate surface
+// from the client record's card, same door to the county.
 const _propLookupTimers={};
 async function _lookupProperty(addr,cardId){
   if(window.__TD_DEMO)return; // the demo makes no network calls (js/demo.js)
@@ -563,12 +613,18 @@ async function _lookupProperty(addr,cardId){
     try{
       const _ctrl=new AbortController();
       const _t=setTimeout(()=>_ctrl.abort(),12000);
-      let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
-      if(res.status===204||!res.ok){card.style.display='none';return;}
-      const d=await res.json();
-      if(d.error){card.style.display='none';return;}
-      const fmt=n=>n?'$'+Number(n).toLocaleString():'-';
-      const leadPaint=d.yearBuilt&&d.yearBuilt<1978;
+      let d;try{d=await _countyProperty(addr,_ctrl.signal);}finally{clearTimeout(_t);}
+      // The live card has no record to stamp, so a miss and a failure look the
+      // same to it: show nothing.
+      if(!d||d.found===false){card.style.display='none';return;}
+      const fmt=n=>(n||n===0)?'$'+Number(n).toLocaleString():'-';
+      // The county answers in snake_case. This read camelCase, which was the
+      // dead Zillow proxy's shape, so every field would have come back
+      // undefined and the card would have rendered dashes with no lead-paint
+      // warning: silently wrong about the one number that carries a federal
+      // disclosure.
+      const _yr=d.year_built,_val=d.assessed_value,_sq=d.sqft,_sale=d.last_sale_price;
+      const leadPaint=_yr&&_yr<1978;
       card.innerHTML=
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
           '<span style="font-weight:600;color:var(--text)">Property Info</span>'+
@@ -576,10 +632,10 @@ async function _lookupProperty(addr,cardId){
         '</div>'+
         (leadPaint?'<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:6px 10px;margin-bottom:8px;color:#991b1b;font-size:11px;font-weight:600;line-height:1.4">Lead paint protocol required, EPA RRP Rule applies to renovation work</div>':'')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">'+
-          '<div><div style="color:var(--text3);font-size:11px">Est. value</div><div style="font-weight:600">'+fmt(d.estValue)+'</div></div>'+
-          '<div><div style="color:var(--text3);font-size:11px">Sq ft</div><div style="font-weight:600">'+(d.sqft?Number(d.sqft).toLocaleString()+'  sqft':'-')+'</div></div>'+
-          '<div><div style="color:var(--text3);font-size:11px">Year built</div><div style="font-weight:600">'+(Number(d.yearBuilt)||'-')+'</div></div>'+
-          '<div><div style="color:var(--text3);font-size:11px">Last sale</div><div style="font-weight:600">'+fmt(d.lastSalePrice)+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Assessed</div><div style="font-weight:600">'+fmt(_val)+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Sq ft</div><div style="font-weight:600">'+(_sq?Number(_sq).toLocaleString()+'  sqft':'-')+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Year built</div><div style="font-weight:600">'+(Number(_yr)||'-')+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Last sale</div><div style="font-weight:600">'+fmt(_sale)+'</div></div>'+
         '</div>';
     }catch(e){card.style.display='none';}
   },1200);

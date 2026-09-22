@@ -3679,12 +3679,17 @@ async function _syncPropertyData(){
   finally{_propSyncRunning=false;}
 }
 
-// One address, on demand: the "Look up property" button on the property card.
-// Goes through /api/property, which checks the county records first and only
-// then asks the county's own public search for what the bulk load does not
-// carry (year built, in Shawnee's case). That enrichment is written back to
-// td_county_parcels, so the next contractor to touch this address gets it for
-// free from the join above.
+// One address, on demand. THE demand-driven trigger: fired when a contractor
+// SAVES an address, from the lead form (saveClient) or the day rail
+// (_mileWhoPick, js/mileage.js), and from the "Look up property" button.
+//
+// The county-property Edge Function checks what we already hold first and only
+// then asks the county's own public search, writing the answer back to
+// td_county_parcels so the next contractor to touch this address gets it from
+// the join for free. It is an Edge Function and not a Cloudflare route because
+// twenty siblings already are (§7.3): the service key is injected rather than
+// copied into a second vendor's config, and the caller is verified with the
+// same one line they all use.
 async function _lookupPropertyData(clientId,addrParts){
   if(window.__TD_DEMO)return;
   try{
@@ -3694,19 +3699,21 @@ async function _lookupPropertyData(clientId,addrParts){
     if(!addr)return;
     const ctrl=new AbortController();
     const t=setTimeout(()=>ctrl.abort(),15000);
-    let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:ctrl.signal});}finally{clearTimeout(t);}
-    // 204 means no county is configured for this address at all, which is a
-    // different thing from the county having no record: leave it unstamped so
-    // it resolves itself the day that county is loaded.
-    if(res.status===204)return;
-    // A transient failure is NOT a miss. Stamping propDataFetchedAt on a 502
-    // would retire this address permanently: nothing ever asks again, and the
-    // contractor would be left with a blank card and no way to know why. Only
-    // the server explicitly saying it found nothing counts as an answer.
-    if(!res.ok)return;
-    const d=await res.json();
-    if(d&&d.error)return;
-    if(_propApplyMatch(c,keyAddr,(d&&d.found===false)?null:d)){
+    // _countyProperty (js/data.js) is the one door to the county, shared with
+    // the estimate builder's live address card. It returns null for every kind
+    // of no-answer, which is deliberately NOT the same as a county miss.
+    let d;try{d=await _countyProperty(addr,ctrl.signal);}finally{clearTimeout(t);}
+    // A null here covers "not signed in", "county not loaded" and "the request
+    // failed" as well as a genuine miss, and stamping on those would retire the
+    // address permanently: nothing would ever ask again and the contractor gets
+    // a blank card with no way to know why. Only an answer we can read is
+    // applied; everything else leaves the address exactly as it was, to be
+    // retried the next time it is saved or the button is tapped.
+    if(!d)return;
+    // {found:false} is the county answering that it has no such address, which
+    // _propApplyMatch records as a miss so the card can say so and nothing asks
+    // again. A null above is the opposite: we never got to ask.
+    if(_propApplyMatch(c,keyAddr,d.found===false?null:d)){
       saveAll();
       if(currentClientId===clientId)renderClientDetail();
     }
