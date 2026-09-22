@@ -171,6 +171,76 @@ test.describe('county parcel records', () => {
   // 'already'; a different spelling of the same address gets no second bite; a
   // cap of 5 across 10 addresses yields exactly five 'go'). The offline shard
   // has no database, so what is frozen here is the contract around it.
+  // ── THE COMMA WAS LOAD-BEARING AND NOBODY KNEW ───────────────────────────
+  //
+  // Owner, 2026-09-22: "jack was saying his property record for pepe on
+  // elmwood did not pull the county details."
+  //
+  // td_addr_key takes everything before the first comma as the street line.
+  // _propAddrString joined street/city/state/zip with SPACES, so for any client
+  // stored with separate street and city fields, which is how the lead form
+  // saves them, the whole string became the street and matched nothing:
+  //
+  //   '306 SW Elmwood Ave, Topeka, KS 66606' -> 306 SW ELMWOOD AVE          hit
+  //   '306 SW Elmwood Ave Topeka KS 66606'   -> 306 SW ELMWOOD AVE TOPEKA KS 66606
+  //
+  // 675 of the owner's addresses and all six of the first beta user's were in
+  // the second shape. It is the worst-presenting failure this feature has,
+  // because _syncPropertyData reads an empty result as a county miss and stamps
+  // the address answered, after which nothing ever asks again.
+  test.describe('a composed address still keys to the street', () => {
+    test('_propAddrString separates the parts with commas', () => {
+      const s = readSrc('js/clients.js');
+      const fn = s.slice(s.indexOf('function _propAddrString'));
+      const body = fn.slice(0, fn.indexOf('\n}'));
+      // The bug was joining ALL FOUR parts with spaces. The state+zip tail is
+      // still space-joined on purpose, so the assertion has to name the shape
+      // that was wrong rather than every space-join in the function.
+      expect(body, 'street/city/state/zip joined with spaces is the bug this replaced')
+        .not.toMatch(/\[\s*\w*\.?street[\s\S]{0,60}zip\s*\]\.filter\(Boolean\)\.join\(' '\)/);
+      expect(body, 'the street must be comma-separated from the city').toMatch(/join\(', '\)/);
+    });
+
+    test('the state and zip stay together at the end', () => {
+      // property_lookup pulls its tiebreaker zip off the END of the string, so
+      // a trailing ", 66604" is fine but the zip must not be orphaned onto its
+      // own segment ahead of anything else.
+      const s = readSrc('js/clients.js');
+      const fn = s.slice(s.indexOf('function _propAddrString'));
+      expect(fn.slice(0, 600)).toMatch(/\[state,\s*zip\]\.filter\(Boolean\)\.join\(' '\)/);
+    });
+
+    test('the normalization no longer depends on one caller being polite', () => {
+      // td_addr_key is the SINGLE definition of how an address is keyed and the
+      // generated addr_key column is computed from it. A caller that sends a
+      // comma-less string, from a CSV import or a geocoder or a paste, has to
+      // key the same as one that sends commas.
+      const m = readSrc('supabase/migrations/20261036_addr_key_without_commas.sql');
+      expect(m).toMatch(/if position\(',' in raw\) > 0 then/);
+      expect(m, 'a trailing state is the anchor for the comma-less case').toMatch(/\|KS\|/);
+      expect(m, 'and an optional zip after it').toMatch(/\\s\+\\d\{5\}\(-\\d\{4\}\)\?/);
+    });
+
+    test('it only strips when a real state abbreviation is there', () => {
+      // A street that merely ends in two letters must be untouched, or the
+      // function would start eating street names.
+      const m = readSrc('supabase/migrations/20261036_addr_key_without_commas.sql');
+      expect(m, 'the strip is conditional on having actually matched')
+        .toMatch(/if s <> upper\(btrim\(raw\)\) then/);
+    });
+
+    test('the false misses are cleared, and only the false ones', () => {
+      // _propAnswered returns true for a stamped miss, so an address broken by
+      // the formatting bug would stay blank forever even after the key is
+      // fixed. But a GENUINE miss must stay retired: re-opening those is the
+      // re-ask loop the gate exists to prevent.
+      const m = readSrc('supabase/migrations/20261036_addr_key_without_commas.sql');
+      expect(m).toMatch(/update td_clients/);
+      expect(m, 'only where a parcel demonstrably exists').toMatch(/exists \([\s\S]{0,200}td_county_parcels/);
+      expect(m, 'and only where nothing was actually filled in').toMatch(/yearBuilt','\'\) = ''/);
+    });
+  });
+
   test.describe('county ask gate', () => {
     const GATE = 'supabase/migrations/20261033_county_ask_gate.sql';
     const gate = () => readSrc(GATE);
@@ -432,6 +502,223 @@ test.describe('county parcel records', () => {
   // Onboarding a county is meant to be a config file and nothing else. That only
   // stays true while the configs are actually complete, and the failure mode of
   // an incomplete one is a column of nulls rather than an error.
+  // ── A COMMERCIAL PARCEL IS NOT A PARCEL WITH NOTHING ON IT ───────────────
+  //
+  // Owner, 2026-09-22: "commercial addresses arent coming over." They were,
+  // with an owner and an assessed value and nothing else, because Shawnee
+  // publishes building facts under resBldg* for a house and comBldg* for a
+  // store and we only ever read the residential half. Seven parcels on his own
+  // book sat at null year built; three of them are pre-1978, which means the
+  // EPA RRP lead gate was disarmed on every one of those bids.
+  test.describe('commercial buildings', () => {
+    const fn = () => readSrc(FN);
+
+    test('year built falls back to the commercial field', () => {
+      const s = fn();
+      expect(s, 'a commercial parcel has comBldgYearBuiltFrom, not resBldgYearBuiltFrom')
+        .toMatch(/year_built:\s*yearOrNull\(r\.resBldgYearBuiltFrom\)\s*\?\?\s*yearOrNull\(r\.comBldgYearBuiltFrom\)/);
+    });
+
+    test('square footage falls back to the commercial field', () => {
+      expect(fn()).toMatch(/sqft:\s*intOrNull\(r\.resBldgTotalArea\)\s*\?\?\s*intOrNull\(r\.comBldgTotalArea\)/);
+    });
+
+    test('?? and not ||, so a genuine zero is not read as missing', () => {
+      // yearOrNull already rejects a placeholder year, so the only thing || would
+      // add here is swallowing a real 0 sqft. ?? falls through on null alone.
+      const s = fn();
+      expect(s, 'resBldg values must fall through on null, never on falsy')
+        .not.toMatch(/resBldg(YearBuiltFrom|TotalArea)\)\s*\|\|/);
+    });
+
+    test('the county classification is captured and persisted', () => {
+      const s = fn();
+      expect(s, 'the appraiser already says what the building is').toMatch(/use_desc:\s*r\.functionCodeDescription/);
+      expect(s, 'and what class it is').toMatch(/property_type:\s*r\.propertyType/);
+      // Parsed but never written is the same as never parsed.
+      expect(s, 'cacheBack must persist property_type').toMatch(/property_type:\s*out\.property_type/);
+      expect(s, 'cacheBack must persist use_desc').toMatch(/use_desc:\s*out\.use_desc/);
+    });
+
+    test('the lookup hands both new columns back', () => {
+      // A column property_lookup does not name is a column the app can never
+      // read, however well the loader fills it.
+      const m = readSrc('supabase/migrations/20261034_county_commercial_and_deep_link.sql');
+      expect(m).toMatch(/property_type\s+text/);
+      expect(m).toMatch(/use_desc\s+text/);
+      expect(m, 'the select list has to carry them too').toMatch(/p\.owner_name,\s*p\.property_type,\s*p\.use_desc/);
+    });
+
+    test('the county keeps its own word for the use, apart from the contractor\'s', () => {
+      // propertyType is set by hand and drives isRental and the card icon.
+      // Overwriting it with "Commercial" would silently re-type a property
+      // somebody already classified themselves.
+      const c = readSrc('js/clients.js');
+      expect(c).toMatch(/pd\.propDataUse\s*=/);
+      expect(c, 'the county must never write the contractor-owned field')
+        .not.toMatch(/pd\.propertyType\s*=\s*d\.(property_type|use_desc)/);
+      expect(readSrc('js/data.js'), 'and it has to survive a save').toMatch(/'propDataUse'/);
+    });
+  });
+
+  // ── THE RECORD LINK HAS TO LAND ON THE RECORD ────────────────────────────
+  // Owner, same message: "linking to the records doesnt take you right to the
+  // address, takes us to the search page." It did, because source_url was the
+  // county root, identical on every row.
+  test.describe('the county record link', () => {
+    test('it is built per parcel, not taken from the county config', () => {
+      const s = readSrc(FN);
+      expect(s, 'sourceUrl must be a function of the street').toMatch(/sourceUrl:\s*\(street:\s*string\)\s*=>/);
+      expect(s, 'and the response must use it').toMatch(/source_url:\s*enricher\.sourceUrl\(street\)/);
+      expect(s, 'a bare county root on every row is the bug this replaced')
+        .not.toMatch(/sourceUrl:\s*"https:\/\/ares\.sncoapps\.us\/"/);
+    });
+
+    test('it carries the address the contractor is looking at', () => {
+      const s = readSrc(FN);
+      expect(s).toMatch(/searchCriteria:\s*street/);
+    });
+
+    test('rows loaded before the fix are backfilled, and only those', () => {
+      const m = readSrc('supabase/migrations/20261034_county_commercial_and_deep_link.sql');
+      expect(m).toMatch(/update td_county_parcels/);
+      // A county whose deep link IS per-parcel must never be flattened by this.
+      expect(m, 'only rows still carrying the old root may be rewritten')
+        .toMatch(/source_url is null or source_url = 'https:\/\/ares\.sncoapps\.us\/'/);
+    });
+
+    test('the commercial parcels are released for one more ask, houses are not', () => {
+      // They were retired as 'empty' because the answer had no year, which was
+      // true of the answer and false of the county. A house the county has no
+      // record of is still a house the county has no record of.
+      const m = readSrc('supabase/migrations/20261034_county_commercial_and_deep_link.sql');
+      expect(m).toMatch(/delete from td_county_asks/);
+      expect(m, 'only rows the county actually answered about').toMatch(/assessed_value is not null/);
+      expect(m).toMatch(/year_built is null/);
+    });
+  });
+
+  // ── WE ONLY GET TO ASK ONCE, SO KEEP THE WHOLE ANSWER ────────────────────
+  //
+  // Owner, 2026-09-22: "I want all facts we can pull that would increase the
+  // potential for selling" and "if it can feed my guy tim, I want it."
+  //
+  // county_claim_ask is what makes this a correctness rule rather than a
+  // preference: an address is contacted ONCE, EVER, so a field the parse drops
+  // is a field that cannot be recovered without re-asking the whole county,
+  // which is the exact behaviour the gate exists to prevent. We were reading
+  // nine fields out of a fifty-six field response.
+  test.describe('the whole county answer is captured', () => {
+    const fn = () => readSrc(FN);
+    const MIG35 = 'supabase/migrations/20261035_county_capture_everything.sql';
+
+    test('the raw response is kept verbatim, per source', () => {
+      const s = fn();
+      expect(s, 'the appraiser row').toMatch(/_raw_building:\s*r,/);
+      expect(s, 'the parcel row').toMatch(/_raw_parcel:\s*a,/);
+      expect(s, 'and both are folded into one jsonb column').toMatch(/building:\s*out\._raw_building/);
+      expect(readSrc(MIG35), 'which has to exist').toMatch(/add column if not exists raw\s+jsonb/);
+    });
+
+    test('the raw blobs never reach the browser', () => {
+      // Tens of kilobytes of county bookkeeping the card never reads, on every
+      // saved address, on a phone.
+      expect(fn()).toMatch(/delete out\._raw_building;\s*delete out\._raw_parcel;/);
+    });
+
+    test('the raw keys can never land as columns', () => {
+      // They are stripped from the patch before the upsert; an _raw_ key
+      // reaching the table would fail the write for every address.
+      const s = fn();
+      expect(s).toMatch(/if \(raw\) patch\.raw = raw;/);
+      expect(s, 'the patch must be built from named fields, never spread from out')
+        .not.toMatch(/const patch: Record<string, unknown> = \{\s*\.\.\.out/);
+    });
+
+    test('every sell-relevant field the county publishes is parsed', () => {
+      const s = fn();
+      for (const f of ['year_built_to', 'parcel_number', 'deed_book_page', 'building_count',
+                       'living_units', 'frontage_ft', 'depth_ft', 'basement_desc',
+                       'subdivision', 'neighborhood', 'school_district', 'land_sqft']) {
+        expect(s, `${f} must be parsed`).toMatch(new RegExp(`${f}:`));
+        expect(s, `${f} must be persisted`).toMatch(new RegExp(`${f}: out\\.${f}`));
+      }
+    });
+
+    test('the GIS query asks for every field, not a hand-kept list', () => {
+      // It was a list of seven while the parse read PID, DBOOKPAGE, NBHD, USD
+      // and the polygon area, none of which were in it. Every one came back
+      // undefined and was stored as null, and the drift was invisible because
+      // a missing attribute reads exactly like a county that does not publish
+      // it. A field list kept in sync with a parse by hand is a field list that
+      // drifts.
+      const s = fn();
+      expect(s, 'the parcel layer must be queried with outFields "*"').toMatch(/outFields:\s*"\*"/);
+      expect(s, 'a hand-kept list is the bug this replaced').not.toMatch(/outFields:\s*"QUICKREFID,/);
+    });
+
+    test('building_count sums every structure type, not just houses', () => {
+      // A detached garage or a second building is scope nobody quoted.
+      const s = fn();
+      expect(s).toMatch(/resBldgCount[\s\S]{0,80}comBldgCount[\s\S]{0,80}mhCount/);
+    });
+
+    test('the lookup hands every new column back', () => {
+      // Third time this has had to be written: a column property_lookup does
+      // not name is a column the app can never read.
+      const m = readSrc(MIG35);
+      for (const f of ['year_built_to', 'parcel_number', 'deed_book_page', 'building_count',
+                       'living_units', 'frontage_ft', 'depth_ft', 'basement_desc',
+                       'subdivision', 'neighborhood', 'school_district', 'land_sqft']) {
+        expect(m, `${f} must be in the returns-table`).toMatch(new RegExp(`${f}\\s+(int|text|numeric)`));
+        expect(m, `${f} must be in the select list`).toMatch(new RegExp(`p\\.${f}`));
+      }
+    });
+  });
+
+  // ── §18: ONE DEFINITION PER FACT, AND ONLY ONE ───────────────────────────
+  // ops_account_brief shipped with its metrics written out twice and adding one
+  // meant editing both in agreement forever. The same trap opens here the
+  // moment two readers want these fields, and there are already two: the
+  // property card and Tim.
+  test.describe('the county field registry', () => {
+    const MIG35 = 'supabase/migrations/20261035_county_capture_everything.sql';
+
+    test('it names every fact once, with a label and a format', () => {
+      const m = readSrc(MIG35);
+      expect(m).toMatch(/create or replace function public\.county_field_defs\(\)/);
+      expect(m, 'label, format, and whether Tim should say it unprompted')
+        .toMatch(/key\s+text,[\s\S]{0,120}label\s+text,[\s\S]{0,120}fmt\s+text,[\s\S]{0,120}sell\s+boolean/);
+    });
+
+    test('it is readable by any signed-in contractor, not just ops', () => {
+      // These describe PUBLIC records and every contractor's own property card
+      // reads them. Gating it on ops admin would make the card unrenderable.
+      expect(readSrc(MIG35)).toMatch(/grant execute on function public\.county_field_defs\(\) to authenticated/);
+    });
+
+    test('every registry key is a real column or a real parse field', () => {
+      // A row for a field nothing produces is a label nobody can ever fill.
+      const m = readSrc(MIG35);
+      const keys = [...m.matchAll(/^\s*\('([a-z_]+)',\s*'[^']*',\s*'[a-z]+',/gm)].map((x) => x[1]);
+      expect(keys.length, 'the registry must not be empty').toBeGreaterThan(15);
+      const known = readSrc(FN) + m + readSrc('supabase/migrations/20261032_county_parcels.sql')
+        + readSrc('supabase/migrations/20261034_county_commercial_and_deep_link.sql');
+      for (const k of keys) expect(known, `${k} is named in the registry but produced nowhere`).toContain(k);
+    });
+
+    test('no JS file hardcodes a county field label or format', () => {
+      // The whole point of the registry. The moment a reader hardcodes "frontage
+      // is feet", it is two places again and they drift.
+      const m = readSrc(MIG35);
+      const labels = [...m.matchAll(/^\s*\('[a-z_]+',\s*'([^']{3,})',\s*'[a-z]+',/gm)].map((x) => x[1]);
+      const js = ['js/tim.js', 'js/ops-view.js'].filter((f) => fs.existsSync(repo(f))).map(readSrc).join('\n');
+      for (const L of labels) {
+        expect(js, `"${L}" must come from county_field_defs(), not a literal`).not.toContain(`'${L}'`);
+      }
+    });
+  });
+
   test.describe('county configs', () => {
     const dir = repo('scripts/counties');
     const names = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));

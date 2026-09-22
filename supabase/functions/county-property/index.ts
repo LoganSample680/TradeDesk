@@ -75,12 +75,19 @@ type Src = { url: (street: string) => string; parse: (body: any) => Record<strin
 // Per-county lookup, keyed by the same county_fips the parcel rows carry, so
 // adding a county is an entry rather than a branch.
 const ENRICHERS: Record<string, {
-  name: string; state: string; sourceUrl: string; building?: Src; parcel?: Src;
+  name: string; state: string; sourceUrl: (street: string) => string; building?: Src; parcel?: Src;
 }> = {
   "20177": {
     name: "Shawnee",
     state: "KS",
-    sourceUrl: "https://ares.sncoapps.us/",
+    // Per PARCEL, not per county, because a link every row shares is a link
+    // that lands nobody anywhere (owner, 2026-09-22: "takes us to the search
+    // page"). ARES has no per-parcel route at all, results are drawn client
+    // side and every /Property/… and /Detail/… path 404s, so the closest this
+    // county can get is its search with the address already filled in.
+    sourceUrl: (street: string) =>
+      "https://ares.sncoapps.us/BasicSearch/Index?" +
+      new URLSearchParams({ searchCriteria: street, countyCode: "089", searchBy: "address", listMode: "card" }),
 
     // The building. Tyler/Epona "ARES" public search: the page renders client
     // side from this JSON endpoint, so we ask it directly rather than parsing
@@ -100,10 +107,40 @@ const ENRICHERS: Record<string, {
         const full = String(r.propertyAddress || "");
         const fullBaths = numOrNull(r.resBldgTotalFullBathrooms);
         const halfBaths = numOrNull(r.resBldgTotalHalfBathrooms);
+        // The appraiser splits building facts by property type and publishes
+        // only the half that applies: resBldg* for a house, comBldg* for a
+        // store. Reading only the residential half is why every commercial
+        // parcel answered with an owner, a value and nothing else, and why the
+        // owner said commercial "wasn't coming over" (2026-09-22).
+        //
+        // It is not cosmetic. A pre-1978 COMMERCIAL building is covered by the
+        // EPA RRP rule exactly as a house is, because a child-occupied facility
+        // (a daycare, a preschool) is usually somebody's commercial building.
+        // A null year silently disarmed that warning on every commercial bid.
         return {
           parcel_id: r.quickRef || null,
-          year_built: yearOrNull(r.resBldgYearBuiltFrom),
-          sqft: intOrNull(r.resBldgTotalArea),
+          year_built: yearOrNull(r.resBldgYearBuiltFrom) ?? yearOrNull(r.comBldgYearBuiltFrom),
+          // Built-from 2001, built-to 2017 means the building was added to,
+          // twice. Proven appetite to spend on that address.
+          year_built_to: yearOrNull(r.resBldgYearBuiltTo) ?? yearOrNull(r.comBldgYearBuiltTo),
+          sqft: intOrNull(r.resBldgTotalArea) ?? intOrNull(r.comBldgTotalArea),
+          // What the parcel IS, in the county's own words. On a commercial card
+          // with no beds and no baths, this is most of what there is to say.
+          property_type: r.propertyType || null,
+          use_desc: r.functionCodeDescription || null,
+          parcel_number: r.parcelNumber || null,
+          // Scope that is otherwise only found by walking the lot.
+          building_count: (intOrNull(r.resBldgCount) || 0) + (intOrNull(r.comBldgCount) || 0) + (intOrNull(r.mhCount) || 0) || null,
+          living_units: intOrNull(r.numLivingUnits),
+          // Linear feet, for a fence or a gutter run, without a site visit.
+          frontage_ft: numOrNull(r.frontageFt),
+          depth_ft: numOrNull(r.depthFt),
+          basement_desc: r.primaryResBldgBasementCodeDescription || null,
+          subdivision: r.subdivisionCodeDescription || null,
+          // Everything the county sent, verbatim. We contact an address ONCE,
+          // ever (county_claim_ask), so a field not kept here is a field we
+          // cannot go back for without re-asking the whole county.
+          _raw_building: r,
           beds: numOrNull(r.resBldgTotalBedrooms),
           // A county reporting 1 full + 1 half is 1.5 baths. Rounding either
           // way makes us wrong about somebody's house.
@@ -127,7 +164,14 @@ const ENRICHERS: Record<string, {
         return "https://gis.sncoapps.us/arcgis2/rest/services/Appraiser/AppraisalDataPro/MapServer/4/query?" +
           new URLSearchParams({
             where: `PADDRESS = '${safe}'`,
-            outFields: "QUICKREFID,PADDRESS,ONAME,TOTVAL,BLDGVAL,LDVAL,ACRES",
+            // "*" and not a named list. The named list was seven fields, and
+            // the parse below reads PID, DBOOKPAGE, NBHD, USD and the polygon
+            // area, none of which were in it: every one of them came back
+            // undefined and was silently stored as null. A field list that has
+            // to be kept in sync with a parse by hand is a field list that
+            // drifts, and the drift is invisible because a missing attribute
+            // reads exactly like a county that does not publish it.
+            outFields: "*",
             returnGeometry: "false",
             f: "json",
           });
@@ -146,6 +190,16 @@ const ENRICHERS: Record<string, {
           improvement_value: intOrNull(a.BLDGVAL),
           land_value: intOrNull(a.LDVAL),
           acres: numOrNull(a.ACRES),
+          parcel_number: a.PID ? String(a.PID).trim() : null,
+          // The recorded instrument. Shawnee publishes no sale price and no
+          // sale date, so the year prefix here ('2022R20196') is the closest
+          // this county gets to "when did they buy it".
+          deed_book_page: a.DBOOKPAGE ? String(a.DBOOKPAGE).trim() : null,
+          neighborhood: a.NBHD ? String(a.NBHD).trim() : null,
+          school_district: a.USD ? String(a.USD).trim() : null,
+          // True lot area off the parcel polygon, not a rounded acreage.
+          land_sqft: numOrNull(a["Shape.STArea()"]),
+          _raw_parcel: a,
         };
       },
     },
@@ -263,7 +317,7 @@ serve(async (req) => {
       county_fips: fips,
       county_name: hit?.county_name ?? enricher.name,
       state: hit?.state ?? enricher.state,
-      source_url: hit?.source_url ?? enricher.sourceUrl,
+      source_url: enricher.sourceUrl(street),
     };
 
     // Close the claim ONLY when both sides actually answered. If one of them
@@ -282,6 +336,9 @@ serve(async (req) => {
     //    touch this address gets it from the join with no county traffic.
     await cacheBack(svc, out, hit).catch(() => {});
 
+    // The raw blobs are for the shared parcel row, not for the browser: they
+    // are tens of kilobytes of county bookkeeping the card never reads.
+    delete out._raw_building; delete out._raw_parcel;
     return json(out);
   } catch (e) {
     console.error("[county-property]", e instanceof Error ? e.message : String(e));
@@ -293,8 +350,27 @@ serve(async (req) => {
 // especially: with the demand-driven path there IS no bulk load, so a value not
 // written here is a value nobody ever sees again.
 async function cacheBack(svc: ReturnType<typeof createClient>, out: Record<string, any>, hit: any) {
+  // The two _raw_* keys are the whole county response per source. They are
+  // folded into one jsonb column rather than written as fields, and they are
+  // stripped from the patch below so they can never land as columns.
+  const raw = (out._raw_building || out._raw_parcel)
+    ? { building: out._raw_building ?? null, parcel: out._raw_parcel ?? null, at: new Date().toISOString() }
+    : null;
+
   const patch: Record<string, unknown> = {
     year_built: out.year_built ?? null,
+    year_built_to: out.year_built_to ?? null,
+    parcel_number: out.parcel_number ?? null,
+    deed_book_page: out.deed_book_page ?? null,
+    building_count: out.building_count ?? null,
+    living_units: out.living_units ?? null,
+    frontage_ft: out.frontage_ft ?? null,
+    depth_ft: out.depth_ft ?? null,
+    basement_desc: out.basement_desc ?? null,
+    subdivision: out.subdivision ?? null,
+    neighborhood: out.neighborhood ?? null,
+    school_district: out.school_district ?? null,
+    land_sqft: out.land_sqft ?? null,
     sqft: out.sqft ?? null,
     beds: out.beds ?? null,
     baths: out.baths ?? null,
@@ -303,15 +379,24 @@ async function cacheBack(svc: ReturnType<typeof createClient>, out: Record<strin
     land_value: out.land_value ?? null,
     improvement_value: out.improvement_value ?? null,
     owner_name: out.owner_name ?? null,
+    // Without these two the column exists and stays empty forever: the parse
+    // reads them, the response carries them, and the write drops them.
+    property_type: out.property_type ?? null,
+    use_desc: out.use_desc ?? null,
     city: out.city ?? null,
     zip: out.zip ?? null,
   };
   for (const k of Object.keys(patch)) if (patch[k] == null) delete patch[k];
+  if (raw) patch.raw = raw;
   if (!Object.keys(patch).length) return;
 
   // The parcel already exists (a bulk load put it there): patch it in place.
   if (hit?.parcel_id) {
-    await svc.from("td_county_parcels").update(patch)
+    // source_url rides along so a row loaded before the link was per-parcel
+    // (or under an older URL shape) is corrected rather than left stale. The
+    // upsert branch below already sets it at creation; without it here, only
+    // brand-new rows would ever carry a working link.
+    await svc.from("td_county_parcels").update({ ...patch, ...(out.source_url ? { source_url: out.source_url } : {}) })
       .eq("county_fips", out.county_fips).eq("parcel_id", hit.parcel_id);
     return;
   }

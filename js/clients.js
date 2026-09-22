@@ -3201,17 +3201,20 @@ function _cdPropCardHtml(c,a,idx,total){
   const valueLabel=p.propDataSource==='county'?'Assessed':'Est. value';
   // A rental reads off the label the owner gave it or the property's own flag.
   const isRental=/rental|tenant|investment/i.test(a.label||'')||!!p.isRental;
+  // A grocery store with a house icon on it reads as a bug. The county already
+  // says which this is, so the card follows the county rather than guessing.
+  const isCommercial=/commercial|industrial/i.test(String(p.propDataClass||''));
   // Chips: only what matters at a glance. RENTAL is carried by the icon + label
   // pill, so only the compliance-critical PRE-1978 flag needs a chip here.
-  const chipRow=pre78?`<div style="margin-top:7px"><span style="font-size:9px;font-weight:800;letter-spacing:.03em;color:#A32D2D;background:rgba(163,45,45,.1);padding:2px 7px;border-radius:20px">PRE-1978 · LEAD</span></div>`:'';
+  const chipRow=pre78?`<div style="margin-top:7px"><span style="font-size:11px;font-weight:800;letter-spacing:.03em;color:#A32D2D;background:rgba(163,45,45,.1);padding:3px 9px;border-radius:20px">PRE-1978 · LEAD</span></div>`:'';
 
   // ── Header (always shown) ────────────────────────────────────────────────
   // Property-type icon in a tinted tile (house = owner site, building = rental),
   // a colored label pill, street, then a calm meta line. Enrichable: when we have
   // no property data yet the meta line invites a lookup instead of reading empty.
-  const accent=isRental?{fg:'#B45900',bg:'rgba(233,123,0,.10)',bd:'rgba(233,123,0,.22)'}:{fg:'#2563eb',bg:'rgba(37,99,235,.08)',bd:'rgba(37,99,235,.18)'};
-  const iconTile=`<div style="width:40px;height:40px;border-radius:11px;background:${accent.bg};border:1px solid ${accent.bd};display:flex;align-items:center;justify-content:center;flex-shrink:0">${svgIcon(isRental?'🏢':'🏠',{size:20})}</div>`;
-  const labelPill=`<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px;background:${accent.bg};color:${accent.fg}">${escHtml(a.label||'Primary')}</span>`;
+  const accent=(isRental||isCommercial)?{fg:'#B45900',bg:'rgba(233,123,0,.10)',bd:'rgba(233,123,0,.22)'}:{fg:'#2563eb',bg:'rgba(37,99,235,.08)',bd:'rgba(37,99,235,.18)'};
+  const iconTile=`<div style="width:40px;height:40px;border-radius:11px;background:${accent.bg};border:1px solid ${accent.bd};display:flex;align-items:center;justify-content:center;flex-shrink:0">${svgIcon((isRental||isCommercial)?'🏢':'🏠',{size:20})}</div>`;
+  const labelPill=`<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:3px 9px;border-radius:20px;background:${accent.bg};color:${accent.fg}">${escHtml(a.label||'Primary')}</span>`;
   // "Tap to look up" is right for a Zillow-era stamp too: that stamp recorded a
   // scraper failure, not an answer, so the address is still worth asking about.
   const noData=!_propAnswered(p)&&!p.yearBuilt&&!p.estimatedValue;
@@ -3223,21 +3226,30 @@ function _cdPropCardHtml(c,a,idx,total){
   // the facts line instead.
   const openBal=money?Math.max(0,(hist.billed||0)-(hist.paid||0)):0;
   const _facts=[];
+  // The county's classification leads, because on a commercial parcel it is the
+  // only thing that says what the building IS, and on a house it confirms it.
+  if(p.propDataUse)_facts.push(escHtml(String(p.propDataUse)));
   if(p.sqft)_facts.push(`${Number(p.sqft).toLocaleString()} sqft`);
   if(p.bedrooms||p.bathrooms)_facts.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
-  if(p.lotSize)_facts.push(`${escHtml(String(p.lotSize))} lot`);
+  // "0.27" on its own is not a lot size, it is a number. Acres is the unit the
+  // county publishes and the unit a contractor thinks in.
+  if(p.lotSize)_facts.push(`${Number(p.lotSize).toFixed(2).replace(/\.?0+$/,'')} ac lot`);
+  // Who the county says owns it. On a commercial bid this is the single most
+  // useful field on the card (ALDI INC, ADVISORS EXCEL LLC) and it was being
+  // fetched, stored, and then never shown to anybody.
+  if(p.ownerName)_facts.push(`Owner: ${escHtml(String(p.ownerName))}`);
   if(p.lastSalePrice||p.lastSaleDate)_facts.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${money&&p.lastSalePrice?' for '+_cdCompactMoney(p.lastSalePrice):''}`.trim());
   // Est. value normally sits in the header stat, but money owed at this address
   // takes that slot. Without this, the value silently vanishes from the card the
   // moment a proposal is outstanding, which is exactly when it's worth knowing.
   if(value&&openBal>0.01)_facts.push(`${value} ${valueLabel.toLowerCase()}`);
-  const factsLine=_facts.length?`<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.45">${_facts.join('  ·  ')}</div>`:'';
+  const factsLine=_facts.length?`<div style="font-size:13px;color:var(--text2);margin-top:8px;line-height:1.5">${_facts.join('  ·  ')}</div>`:'';
   // Collapsed row identifier: single shows the full meta, multi shows just the city.
   const metaShown=single?meta2:(noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for details</span>`:escHtml(cityLine||''));
   // One decision-relevant stat on the row: open balance if owed here, else est. value.
   const statBlock=openBal>0.01
-    ?`<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:#ff6b6b;white-space:nowrap">${fmt(openBal)}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Owed</div></div>`
-    :(value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">${escHtml(valueLabel)}</div></div>`:'');
+    ?`<div style="text-align:right;flex-shrink:0"><div style="font-size:16px;font-weight:800;color:#ff6b6b;white-space:nowrap">${fmt(openBal)}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Owed</div></div>`
+    :(value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:17px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">${escHtml(valueLabel)}</div></div>`:'');
   // Down-caret chevron matching the Overview section dropdown, so the property
   // rows read as the same control (owner: "accordion should look like the
   // overview accordion"). Rotates to point up when the row is expanded.
@@ -3247,8 +3259,8 @@ function _cdPropCardHtml(c,a,idx,total){
     ${iconTile}
     <div style="flex:1;min-width:0">
       ${labelPill}
-      <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:4px;line-height:1.25;word-break:break-word">${escHtml(street)}</div>
-      <div style="font-size:12px;color:var(--text3);margin-top:2px">${metaShown}</div>
+      <div style="font-size:16px;font-weight:700;color:var(--text);margin-top:4px;line-height:1.25;word-break:break-word">${escHtml(street)}</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:3px">${metaShown}</div>
       ${single?factsLine:''}
       ${chipRow}
     </div>
@@ -3259,7 +3271,7 @@ function _cdPropCardHtml(c,a,idx,total){
   // ── Expanded body ────────────────────────────────────────────────────────
   let body='';
   if(isOpen){
-    const leadRow=pre78?`<div style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;background:rgba(163,45,45,.06);border-radius:12px;margin-bottom:12px;color:#A32D2D;font-size:12px;line-height:1.4"><span style="flex-shrink:0">${svgIcon('⚠️')}</span><span><strong>Pre-1978 home.</strong> Federal lead-paint (EPA RRP) disclosure required before disturbing paint.</span></div>`:'';
+    const leadRow=pre78?`<div style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;background:rgba(163,45,45,.06);border-radius:12px;margin-bottom:12px;color:#A32D2D;font-size:13px;line-height:1.45"><span style="flex-shrink:0">${svgIcon('⚠️')}</span><span><strong>Pre-1978 home.</strong> Federal lead-paint (EPA RRP) disclosure required before disturbing paint.</span></div>`:'';
     // Site-access note lives here, PER PROPERTY (owner: "site access notes really
     // need to roll under a property"). Editable inline; crew sees it on this
     // address's job. Keyed by this property's address via _cdSavePropNote(idx).
@@ -3395,7 +3407,7 @@ function _cdPropCardHtml(c,a,idx,total){
     // nothing about the county, so those still offer the lookup.
     const countyMiss=p.propDataMiss&&_propAnswered(p);
     const srcLink=p.assessorUrl
-      ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none">${p.propDataCounty?escHtml(p.propDataCounty)+' record →':'County record →'}</a>`
+      ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:13px;color:var(--blue);text-decoration:none;font-weight:600">${p.propDataCounty?escHtml(p.propDataCounty)+' record →':'County record →'}</a>`
       :(countyMiss
         ?`<span style="font-size:12px;color:var(--text2)">No county record. ${p.yearBuilt?'':'Add the year built to check lead-paint rules.'}</span>`
         :(!_propAnswered(p)?lookupBtn:''));
@@ -3546,10 +3558,31 @@ function _addrPickSaveNew(){
 // Turn whatever shape an address is stored in into the one string the lookup
 // takes. The zip matters: property_lookup uses it to break ties when two loaded
 // counties both hold the same street name.
+// COMMAS, not spaces, and the comma is load-bearing. td_addr_key takes
+// everything before the first comma as the street line, so a space-joined
+// string made the whole thing the street: "306 SW Elmwood Ave Topeka KS 66606"
+// keyed as 306 SW ELMWOOD AVE TOPEKA KS 66606 and matched nothing, ever.
+//
+// That hit every client saved through the lead form, because the form stores
+// street and city separately and this is the branch that composes them: 675 of
+// the owner's addresses and all six of the first beta user's. It presented as
+// "the county has no record of this house" (owner, 2026-09-22: "his property
+// record for pepe on elmwood did not pull the county details"), which is the
+// single most misleading way this feature can fail, because the address then
+// retires itself: _syncPropertyData reads an empty result as a county miss and
+// stamps propDataSource='county', after which _propAnswered is true and
+// nothing asks again.
+//
+// The zip stays last and unseparated from the state, because property_lookup
+// pulls the tiebreaker zip off the END of the string.
 function _propAddrString(c,addrParts){
-  if(addrParts)return [addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
+  const join=(st,city,state,zip)=>{
+    const tail=[state,zip].filter(Boolean).join(' ');
+    return [st,city,tail].filter(Boolean).join(', ');
+  };
+  if(addrParts)return join(addrParts.street,addrParts.city,addrParts.state,addrParts.zip);
   if(!c)return '';
-  if(c.street&&c.city)return [c.street,c.city,c.state||'',c.zip||''].filter(Boolean).join(' ');
+  if(c.street&&c.city)return join(c.street,c.city,c.state||'',c.zip||'');
   return c.addr||'';
 }
 
@@ -3600,6 +3633,15 @@ function _propApplyMatch(c,keyAddr,d){
   if(d.last_sale_price)pd.lastSalePrice=d.last_sale_price;
   if(d.last_sale_date)pd.lastSaleDate=d.last_sale_date;
   if(d.source_url)pd.assessorUrl=d.source_url;
+  // The county's own words for what this parcel is. On a commercial card, where
+  // there are no beds and no baths to show, this is most of what there is to
+  // say, and it is the difference between a card that reads informative and one
+  // that reads broken (owner, 2026-09-22).
+  const _use=d.use_desc||d.property_type;
+  if(_use)pd.propDataUse=_use;
+  // The CLASS is kept apart from the use text because it is what the card
+  // reasons about (which icon, which tint) while the use text is only read.
+  if(d.property_type)pd.propDataClass=d.property_type;
   pd.propDataSource='county';
   pd.propDataCounty=[d.county_name,d.state].filter(Boolean).join(', ');
   pd.propDataExact=true;

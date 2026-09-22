@@ -50,3 +50,4 @@ local-visual-shots/
 # they got committed once already by a git add -A.
 __pycache__/
 *.pyc
+prop-card-*.png
