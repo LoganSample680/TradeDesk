@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "Shawnee County, Kansas. The reference county: every other county config copies",
+    "this shape and changes only the urls and the field names.",
+    "",
+    "TWO SOURCES, because this county splits the record in two and most counties do.",
+    "The GIS layer is built for bulk (77,006 parcels, 5,000 a page, 16 requests for",
+    "the whole county) and carries owner + assessed values but NO year built. Year",
+    "built lives in the appraiser's Orion system, reachable through the public search",
+    "at ares.sncoapps.us, which answers one address at a time.",
+    "",
+    "So: bulk loads the county, enrich fills year built per address on first touch and",
+    "keeps it forever. Enriching all 77,006 up front would be ~77,000 requests at a",
+    "small county for data almost none of which anyone will ever ask for."
+  ],
+
+  "county_fips": "20177",
+  "state": "KS",
+  "county_name": "Shawnee",
+  "source": "Shawnee County Appraiser",
+  "source_url": "https://ares.sncoapps.us/",
+
+  "bulk": {
+    "kind": "arcgis",
+    "url": "https://gis.sncoapps.us/arcgis2/rest/services/Appraiser/AppraisalDataPro/MapServer/4/query",
+    "page_size": 2000,
+    "fields": {
+      "parcel_id":         "QUICKREFID",
+      "street":            "PADDRESS",
+      "owner_name":        "ONAME",
+      "acres":             "ACRES",
+      "assessed_value":    "TOTVAL",
+      "improvement_value": "BLDGVAL",
+      "land_value":        "LDVAL"
+    }
+  },
+
+  "enrich": {
+    "kind": "ares",
+    "url": "https://ares.sncoapps.us/BasicSearch/ResultsJson",
+    "_comment": "countyCode is the Kansas county NUMBER (089), not the FIPS code (20177). They are different and both are real; do not merge them.",
+    "county_code": "089",
+    "fields": {
+      "year_built":  "resBldgYearBuiltFrom",
+      "sqft":        "resBldgTotalArea",
+      "beds":        "resBldgTotalBedrooms",
+      "baths_full":  "resBldgTotalFullBathrooms",
+      "baths_half":  "resBldgTotalHalfBathrooms",
+      "address":     "propertyAddress",
+      "owner_name":  "ownerName",
+      "parcel_id":   "quickRef"
+    }
+  },
+
+  "publishes": {
+    "year_built": true,
+    "sqft": true,
+    "beds": true
+  },
+
+  "_zip_comment": "Shawnee County zip codes. Only used to break ties when two counties hold the same street name, so an incomplete list degrades to 'unranked match', never to 'no match'.",
+  "zips": [
+    "66401", "66409", "66413", "66429", "66539", "66542", "66552",
+    "66601", "66603", "66604", "66605", "66606", "66607", "66608",
+    "66609", "66610", "66611", "66612", "66614", "66615", "66616",
+    "66617", "66618", "66619", "66620", "66621", "66622", "66624",
+    "66625", "66626", "66629", "66636", "66647", "66652", "66653",
+    "66667", "66675", "66683", "66692", "66699"
+  ]
+}

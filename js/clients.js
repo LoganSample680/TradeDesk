@@ -1358,8 +1358,12 @@ function saveClient(){
   else _clientCommitNew(c);
   saveAll();
   const _prevAddr=_existingClient?.addr||'';
-  const _noPropData=!_existingClient?.propDataFetchedAt;
-  if(street&&city&&(addr!==_prevAddr||_noPropData))_lookupPropertyData(c.id,{street,city,state,zip});
+  // _propAnswered, not propDataFetchedAt. The dead Zillow scraper stamped that
+  // on its own failures, so gating on it means an existing client whose lookup
+  // failed in June is never asked about again. This is also THE demand-driven
+  // trigger: an address saved on a lead record is looked up right here, once,
+  // which is why no bulk county pre-load is needed.
+  if(street&&city&&(addr!==_prevAddr||!_propAnswered(_existingClient)))_lookupPropertyData(c.id,{street,city,state,zip});
   // Warm the nearby-job/geofence cache the moment the address is entered, not
   // on the next passive checkNearbyJob heartbeat (§ eager geocode, js/jobs.js).
   if(addr&&addr!==_prevAddr&&typeof _eagerGeocodeClient==='function'){
@@ -1710,8 +1714,9 @@ function setCDTab(tab,btn){
 }
 function renderClientDetail(){
   const c=getClientById(currentClientId);if(!c)return;
-  // Lazy-load property data for this client if not yet fetched
-  if((c.addr||c.street)&&!c.propDataFetchedAt&&typeof _lookupPropertyData==='function'){
+  // Lazy-load property data for this client if no COUNTY has answered about it
+  // yet (_propAnswered: a Zillow-era propDataFetchedAt stamp is not an answer).
+  if((c.addr||c.street)&&!_propAnswered(c)&&typeof _lookupPropertyData==='function'){
     const _lp=c.street&&c.city?{street:c.street,city:c.city,state:c.state||'',zip:c.zip||''}
       :(typeof _parseAddrParts==='function'?_parseAddrParts(c.addr||''):{street:c.addr||'',city:'',state:'',zip:''});
     if(_lp.street)setTimeout(()=>_lookupPropertyData(c.id,_lp),500);
@@ -3164,7 +3169,7 @@ function _cdQuoteAgain(bidId){
   showToast('New proposal drafted from '+(src.type||src.name||'the old job')+'. Review and send.','📋');
   viewBidFromTimeline(copy.id);
 }
-// One property card = one address: Zillow facts + pre-1978 lead trigger + the
+// One property card = one address: county assessor facts + pre-1978 lead trigger + the
 // crew site note + every proposal/job at THIS address with dates, dollars, and
 // running billed/paid totals. Same card for the primary and every extra address.
 function _cdPropCardHtml(c,a,idx,total){
@@ -3189,6 +3194,11 @@ function _cdPropCardHtml(c,a,idx,total){
   const workCount=hist.proposals.length+hist.jobs.length;
   const money=(typeof _canSeeFinancials!=='function')||_canSeeFinancials(); // hide $ from crew without financials
   const value=(money&&p.estimatedValue)?_cdCompactMoney(p.estimatedValue):'';
+  // A county figure is an ASSESSED value, which is a tax number and is usually
+  // well below what the house would sell for. Calling it "Est. value" invites a
+  // contractor to size a job off it, so the label follows the source: legacy
+  // Zillow rows stay "Est. value" because that is what a Zestimate was.
+  const valueLabel=p.propDataSource==='county'?'Assessed':'Est. value';
   // A rental reads off the label the owner gave it or the property's own flag.
   const isRental=/rental|tenant|investment/i.test(a.label||'')||!!p.isRental;
   // Chips: only what matters at a glance. RENTAL is carried by the icon + label
@@ -3202,7 +3212,9 @@ function _cdPropCardHtml(c,a,idx,total){
   const accent=isRental?{fg:'#B45900',bg:'rgba(233,123,0,.10)',bd:'rgba(233,123,0,.22)'}:{fg:'#2563eb',bg:'rgba(37,99,235,.08)',bd:'rgba(37,99,235,.18)'};
   const iconTile=`<div style="width:40px;height:40px;border-radius:11px;background:${accent.bg};border:1px solid ${accent.bd};display:flex;align-items:center;justify-content:center;flex-shrink:0">${svgIcon(isRental?'🏢':'🏠',{size:20})}</div>`;
   const labelPill=`<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px;background:${accent.bg};color:${accent.fg}">${escHtml(a.label||'Primary')}</span>`;
-  const noData=!p.propDataFetchedAt&&!p.yearBuilt&&!p.estimatedValue;
+  // "Tap to look up" is right for a Zillow-era stamp too: that stamp recorded a
+  // scraper failure, not an answer, so the address is still worth asking about.
+  const noData=!_propAnswered(p)&&!p.yearBuilt&&!p.estimatedValue;
   const meta2=noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap to look up property details</span>`:`${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}`;
   // All the property facts inline on the card, so the owner sees them without
   // having to expand every address (owner ask: "see all property data").
@@ -3218,14 +3230,14 @@ function _cdPropCardHtml(c,a,idx,total){
   // Est. value normally sits in the header stat, but money owed at this address
   // takes that slot. Without this, the value silently vanishes from the card the
   // moment a proposal is outstanding, which is exactly when it's worth knowing.
-  if(value&&openBal>0.01)_facts.push(`${value} est. value`);
+  if(value&&openBal>0.01)_facts.push(`${value} ${valueLabel.toLowerCase()}`);
   const factsLine=_facts.length?`<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.45">${_facts.join('  ·  ')}</div>`:'';
   // Collapsed row identifier: single shows the full meta, multi shows just the city.
   const metaShown=single?meta2:(noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for details</span>`:escHtml(cityLine||''));
   // One decision-relevant stat on the row: open balance if owed here, else est. value.
   const statBlock=openBal>0.01
     ?`<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:#ff6b6b;white-space:nowrap">${fmt(openBal)}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Owed</div></div>`
-    :(value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'');
+    :(value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">${escHtml(valueLabel)}</div></div>`:'');
   // Down-caret chevron matching the Overview section dropdown, so the property
   // rows read as the same control (owner: "accordion should look like the
   // overview accordion"). Rotates to point up when the row is expanded.
@@ -3370,9 +3382,23 @@ function _cdPropCardHtml(c,a,idx,total){
       ${pastRows}
     </div>`:'';
     // Footer: data source / lookup + map + remove.
+    //
+    // Three states, and they are deliberately different sentences. A record we
+    // have links to the county it came from, because "the county says 1940" is
+    // worth more to a contractor arguing with a homeowner than an unattributed
+    // number. A miss says so out loud and offers the year field, since the
+    // pre-1978 lead gate cannot be left to silence (§ _propApplyMatch). An
+    // address never looked up offers the lookup.
+    const lookupBtn=street&&city?`<button onclick="_lookupPropertyData(${c.id},{street:'${escHtml(street)}',city:'${escHtml(city)}',state:'${escHtml(state||'')}',zip:'${escHtml(zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">${svgIcon('🏠')} Look up property</button>`:'';
+    // "No county record" is only honest once a county has actually answered.
+    // A Zillow-era propDataMiss means the dead scraper failed, which says
+    // nothing about the county, so those still offer the lookup.
+    const countyMiss=p.propDataMiss&&_propAnswered(p);
     const srcLink=p.assessorUrl
-      ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none">${p.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`
-      :(!p.propDataFetchedAt&&street&&city?`<button onclick="_lookupPropertyData(${c.id},{street:'${escHtml(street)}',city:'${escHtml(city)}',state:'${escHtml(state||'')}',zip:'${escHtml(zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">${svgIcon('🏠')} Look up property</button>`:'');
+      ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none">${p.propDataCounty?escHtml(p.propDataCounty)+' record →':'County record →'}</a>`
+      :(countyMiss
+        ?`<span style="font-size:12px;color:var(--text2)">No county record. ${p.yearBuilt?'':'Add the year built to check lead-paint rules.'}</span>`
+        :(!_propAnswered(p)?lookupBtn:''));
     const removeBtn=idx>0?`<button onclick="removeClientAddress(${idx-1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D">Remove</button>`:'';
     const footer=`<div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       ${srcLink||'<span></span>'}
@@ -3517,75 +3543,190 @@ function _addrPickSaveNew(){
 }
 
 // ── Property data auto-lookup ───────────────────────────────────────────────
-async function _lookupPropertyData(clientId,addrParts){
+// Turn whatever shape an address is stored in into the one string the lookup
+// takes. The zip matters: property_lookup uses it to break ties when two loaded
+// counties both hold the same street name.
+function _propAddrString(c,addrParts){
+  if(addrParts)return [addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
+  if(!c)return '';
+  if(c.street&&c.city)return [c.street,c.city,c.state||'',c.zip||''].filter(Boolean).join(' ');
+  return c.addr||'';
+}
+
+// Write one matched county record onto one address of one client. Shared by the
+// batch pass and the single-address button so there is one definition of what a
+// match means for the record (§7.3), rather than two that drift.
+// Has a COUNTY answered about this address yet? This, and never
+// propDataFetchedAt, is what "we already looked" means now.
+//
+// The distinction is the whole backfill. The dead Zillow scraper stamped
+// propDataFetchedAt on every FAILURE, deliberately, to stop itself re-querying a
+// miss on every boot. It has been failing since late June, so an existing
+// account's clients are mostly stamped as looked-up with nothing to show for it.
+// Gating on that stamp would skip exactly the records the county data exists to
+// fix. Gating on propDataSource==='county' re-asks every Zillow-era record once,
+// for free, because the county lookup is a SQL join and not a network call.
+function _propAnswered(p){return p&&p.propDataSource==='county';}
+
+function _propApplyMatch(c,keyAddr,d){
+  if(!c||!keyAddr)return false;
+  const existing=(typeof getProperty==='function')?getProperty(c,keyAddr):{};
+  if(!d){
+    // No county record for this address. Mark it answered-by-county so the next
+    // boot does not ask again, and mark the miss so the card tells the
+    // contractor the truth and lets them fill in the year themselves.
+    if(!_propAnswered(existing)){
+      setPropertyData(c,keyAddr,{
+        propDataSource:'county',
+        propDataFetchedAt:new Date().toISOString(),
+        propDataMiss:true,
+      });
+      return true;
+    }
+    return false;
+  }
+  const pd={};
+  // Never override a year the contractor entered by hand. They stood at the
+  // house; the assessor's file is a year old at best.
+  if(d.year_built&&!existing.yearBuilt)pd.yearBuilt=d.year_built;
+  if(d.sqft)pd.sqft=d.sqft;
+  if(d.beds)pd.bedrooms=d.beds;
+  if(d.baths)pd.bathrooms=d.baths;
+  if(d.acres)pd.lotSize=d.acres;
+  // The county's ASSESSED value, which is not a Zestimate and is not a market
+  // price. It is labelled as assessed on the card for exactly that reason.
+  if(d.assessed_value)pd.estimatedValue=d.assessed_value;
+  if(d.owner_name&&!existing.ownerName)pd.ownerName=d.owner_name;
+  if(d.last_sale_price)pd.lastSalePrice=d.last_sale_price;
+  if(d.last_sale_date)pd.lastSaleDate=d.last_sale_date;
+  if(d.source_url)pd.assessorUrl=d.source_url;
+  pd.propDataSource='county';
+  pd.propDataCounty=[d.county_name,d.state].filter(Boolean).join(', ');
+  pd.propDataExact=true;
+  pd.propDataMiss=false;
+  pd.propDataFetchedAt=new Date().toISOString();
+  setPropertyData(c,keyAddr,pd);
+  return true;
+}
+
+// ── Property data: one query against the county records we already hold ──────
+//
+// This replaced a background queue that fired one Zillow scrape every 6.5
+// seconds for as long as the browser stayed open. Two things were wrong with
+// that and both were fatal. Zillow blocks the scraper outright now (403), and
+// even when it worked a 500 client import could not finish before somebody
+// closed the tab, then silently resumed from nothing on the next login.
+//
+// The records are county assessor data, already loaded into td_county_parcels
+// (scripts/county-load.js). So this is a join, not a fetch: every address a
+// contractor has, answered in one round trip, in milliseconds, with nothing to
+// rate limit and nothing to block.
+//
+// A MISS IS AN ANSWER HERE, and that matters more than it sounds. yearBuilt
+// arms the EPA RRP pre-1978 lead gate. The scraper's failure mode was returning
+// null, which reads identically to "built after 1978" and quietly drops a
+// federal disclosure off a proposal. An address with no county record is marked
+// propDataMiss so the card asks the contractor instead of assuming.
+let _propSyncRunning=false;
+async function _syncPropertyData(){
   // The demo makes no network calls at all (js/demo.js). Its sample client
   // ships with its property data already filled in.
   if(window.__TD_DEMO)return;
+  if(_propSyncRunning)return;            // §11.2: one pass at a time
+  if(typeof _supa==='undefined'||!_supa)return;
+  if(typeof clients==='undefined'||!Array.isArray(clients))return;
+  _propSyncRunning=true;
   try{
-    const addr=[addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
-    const _ctrl=new AbortController();
-    const _t=setTimeout(()=>_ctrl.abort(),12000);
-    let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
-    if(!res.ok||res.status===204)return;
-    const d=await res.json();
-    const c=clients.find(x=>x.id===clientId);if(!c)return;
-    // Key property data by the STREET line so it lands on the right address
-    // (primary or an extra), never overwriting a sibling property's data.
-    const _keyAddr=addrParts.street||addr;
-    const _existing=(typeof getProperty==='function')?getProperty(c,_keyAddr):{};
-    if(d.error||d.found===false){
-      // Backend has no record for this address. Stamp propDataFetchedAt so the
-      // background queue (filters on !propDataFetchedAt) doesn't re-query it on
-      // every boot, that repeated lookup was the recurring /api/property miss.
-      if(!_existing.propDataFetchedAt){setPropertyData(c,_keyAddr,{propDataFetchedAt:new Date().toISOString(),propDataMiss:true});saveAll();}
-      return;
+    // Every address on every client, primary and extras, that has not been
+    // looked up yet. `c&&` guards a hole in the array left by a realtime delete
+    // landing mid-sweep: that threw here once and silently killed the whole
+    // background pass for the rest of the session (webkit shard, 2026-08-26).
+    const want=[];
+    clients.forEach(c=>{
+      if(!c)return;
+      const addrs=(typeof clientAddresses==='function')
+        ?clientAddresses(c)
+        :[{addr:c.addr,key:c.addr}];
+      addrs.forEach(a=>{
+        if(!a||!a.addr)return;
+        const p=(typeof getProperty==='function')?getProperty(c,a.addr):{};
+        // Not propDataFetchedAt. See _propAnswered: the dead scraper stamped
+        // that on every failure, so an existing account's whole book reads as
+        // "already looked up" while carrying no data at all. This asks the
+        // county once about each of those, which is what backfills them.
+        if(_propAnswered(p))return;
+        // For the PRIMARY address prefer the composed string, because a client
+        // with separate street/city/state/zip fields carries a zip there that
+        // c.addr may not, and the zip is what stops two counties' identical
+        // street names from answering for each other. An extra address is only
+        // ever stored as one string, so it is sent as it is.
+        const isPrimary=a.addr===c.addr;
+        const q=(isPrimary&&_propAddrString(c,null))||a.addr;
+        want.push({clientId:c.id,keyAddr:a.addr,q});
+      });
+    });
+    if(!want.length)return;
+
+    // property_lookup caps at 500 addresses, so chunk rather than silently
+    // dropping the tail of a big book.
+    let touched=false;
+    for(let i=0;i<want.length;i+=500){
+      const batch=want.slice(i,i+500);
+      const {data,error}=await _supa.rpc('property_lookup',{p_addrs:batch.map(w=>w.q)});
+      if(error){console.warn('Property lookup failed:',error.message);return;}
+      const byQ={};
+      (data||[]).forEach(r=>{byQ[r.q]=r;});
+      batch.forEach(w=>{
+        const c=clients.find(x=>x&&x.id===w.clientId);
+        if(!c)return;
+        if(_propApplyMatch(c,w.keyAddr,byQ[w.q]||null))touched=true;
+      });
     }
-    const _pd={};
-    if(d.yearBuilt&&!_existing.yearBuilt)_pd.yearBuilt=d.yearBuilt; // never override a manually-entered year
-    if(d.sqft)_pd.sqft=d.sqft;
-    if(d.estValue)_pd.estimatedValue=d.estValue;
-    if(d.beds)_pd.bedrooms=d.beds;
-    if(d.baths)_pd.bathrooms=d.baths;
-    if(d.lastSalePrice)_pd.lastSalePrice=d.lastSalePrice;
-    if(d.lastSaleDate)_pd.lastSaleDate=d.lastSaleDate;
-    if(d.propertyUrl)_pd.assessorUrl=d.propertyUrl;
-    _pd.propDataSource='zillow';_pd.propDataExact=true;_pd.propDataFetchedAt=new Date().toISOString();
-    setPropertyData(c,_keyAddr,_pd);
-    saveAll();
-    if(currentClientId===clientId)renderClientDetail();
+    if(touched){
+      saveAll();
+      if(typeof renderClientDetail==='function'&&currentClientId)renderClientDetail();
+    }
+  }catch(e){console.warn('Property sync failed:',e);}
+  finally{_propSyncRunning=false;}
+}
+
+// One address, on demand. THE demand-driven trigger: fired when a contractor
+// SAVES an address, from the lead form (saveClient) or the day rail
+// (_mileWhoPick, js/mileage.js), and from the "Look up property" button.
+//
+// The county-property Edge Function checks what we already hold first and only
+// then asks the county's own public search, writing the answer back to
+// td_county_parcels so the next contractor to touch this address gets it from
+// the join for free. It is an Edge Function and not a Cloudflare route because
+// twenty siblings already are (§7.3): the service key is injected rather than
+// copied into a second vendor's config, and the caller is verified with the
+// same one line they all use.
+async function _lookupPropertyData(clientId,addrParts){
+  if(window.__TD_DEMO)return;
+  try{
+    const c=clients.find(x=>x&&x.id===clientId);if(!c)return;
+    const addr=_propAddrString(c,addrParts);
+    const keyAddr=(addrParts&&addrParts.street)||addr;
+    if(!addr)return;
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),15000);
+    // _countyProperty (js/data.js) is the one door to the county, shared with
+    // the estimate builder's live address card. It returns null for every kind
+    // of no-answer, which is deliberately NOT the same as a county miss.
+    let d;try{d=await _countyProperty(addr,ctrl.signal);}finally{clearTimeout(t);}
+    // A null here covers "not signed in", "county not loaded" and "the request
+    // failed" as well as a genuine miss, and stamping on those would retire the
+    // address permanently: nothing would ever ask again and the contractor gets
+    // a blank card with no way to know why. Only an answer we can read is
+    // applied; everything else leaves the address exactly as it was, to be
+    // retried the next time it is saved or the button is tapped.
+    if(!d)return;
+    // {found:false} is the county answering that it has no such address, which
+    // _propApplyMatch records as a miss so the card can say so and nothing asks
+    // again. A null above is the opposite: we never got to ask.
+    if(_propApplyMatch(c,keyAddr,d.found===false?null:d)){
+      saveAll();
+      if(currentClientId===clientId)renderClientDetail();
+    }
   }catch(e){console.warn('Property lookup failed:',e);}
-}
-
-// ── Background property data queue ────────────────────────────────────────────
-// Processes all clients with addresses but no Zillow data, one every 6.5s.
-// Fires automatically after login, handles onboarding imports and existing accounts.
-let _propQueue=[];
-let _propQueueTimer=null;
-
-function _startPropQueue(){
-  if(_propQueueTimer)return;
-  // `c&&` is not decoration. A null or undefined entry in `clients` (a realtime
-  // delete landing mid-sweep, a restore that leaves a hole) threw here and took
-  // the whole background property queue down with it, silently, for the rest of
-  // the session: nothing retries _startPropQueue. _tickPropQueue eight lines
-  // down already guards exactly this way, so the gap was an inconsistency
-  // rather than a decision. Surfaced by a webkit shard as
-  // "undefined is not an object (evaluating 'c.addr')", 2026-08-26.
-  _propQueue=clients.filter(c=>c&&(c.addr||c.street)&&!c.propDataFetchedAt).map(c=>c.id);
-  if(!_propQueue.length)return;
-  _propQueueTimer=setTimeout(_tickPropQueue,3000);
-}
-
-function _tickPropQueue(){
-  _propQueueTimer=null;
-  const id=_propQueue.shift();
-  if(id===undefined)return;
-  const c=clients.find(x=>x.id===id);
-  if(c&&(c.addr||c.street)&&!c.propDataFetchedAt){
-    const parts=c.street&&c.city
-      ?{street:c.street,city:c.city,state:c.state||'',zip:c.zip||''}
-      :(typeof _parseAddrParts==='function'?_parseAddrParts(c.addr||''):{street:c.addr||'',city:'',state:'',zip:''});
-    if(parts.street)_lookupPropertyData(id,parts);
-  }
-  if(_propQueue.length)_propQueueTimer=setTimeout(_tickPropQueue,6500);
 }

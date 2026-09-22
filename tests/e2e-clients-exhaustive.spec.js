@@ -3821,68 +3821,258 @@ test.describe('clients.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // _startPropQueue / _tickPropQueue: the background property-data queue
+  // _syncPropertyData: property facts, from the county records we already hold
   //
-  // It had no coverage at all, which is how a missing null guard sat in it
-  // until a webkit shard threw "undefined is not an object (evaluating
-  // 'c.addr')" (2026-08-26). The failure mode is the quiet kind: the queue dies
-  // on the throw and nothing ever restarts it, so property data stops arriving
-  // for the rest of the session and nobody sees a reason why.
+  // This replaced _startPropQueue / _tickPropQueue, which trickled one Zillow
+  // scrape every 6.5s for as long as the browser stayed open. Zillow hard-blocks
+  // that now (403), and even working it could not finish a big import before
+  // somebody closed the tab. The county assessor data is loaded into
+  // td_county_parcels ahead of time, so this is one RPC for every address at
+  // once (§7 the old path is deleted, not hidden; §7.1 proves it below).
+  //
+  // The original null-guard tests are kept in spirit and in substance: a hole in
+  // `clients` (a realtime delete landing mid-sweep, a restore leaving a gap)
+  // threw out of the old queue and silently killed it for the rest of the
+  // session. The same hole must not kill this pass either.
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_startPropQueue', () => {
-    const withClients = (page, list) => page.evaluate((rows) => {
+  test.describe('_syncPropertyData', () => {
+    // Drive the real function against a stubbed RPC, so what is under test is
+    // the gathering + applying, not Supabase.
+    const withClients = (page, list, rpcRows) => page.evaluate(async ({ rows, reply }) => {
       const saved = clients.slice();
-      const savedTimer = _propQueueTimer;
-      if (_propQueueTimer) { clearTimeout(_propQueueTimer); _propQueueTimer = null; }
+      const savedSupa = window._supa;
+      const savedSave = window.saveAll;
+      let asked = null;
+      window._supa = { rpc: async (_fn, args) => { asked = args.p_addrs; return { data: reply, error: null }; } };
+      window.saveAll = () => {};
       clients.length = 0; rows.forEach((r) => clients.push(r));
       let threw = null;
-      try { _startPropQueue(); } catch (e) { threw = String((e && e.message) || e); }
-      const queued = _propQueue.slice();
-      if (_propQueueTimer) { clearTimeout(_propQueueTimer); }
-      _propQueueTimer = savedTimer;
+      try { await _syncPropertyData(); } catch (e) { threw = String((e && e.message) || e); }
+      const after = clients.filter(Boolean).map((c) => ({ id: c.id, props: c.properties || null }));
       clients.length = 0; saved.forEach((c) => clients.push(c));
-      return { threw, queued };
-    }, list);
+      window._supa = savedSupa; window.saveAll = savedSave;
+      return { threw, asked, after };
+    }, { rows: list, reply: rpcRows || [] });
 
-    test('a null entry in clients does not take the queue down', async () => {
-      // The exact shape that threw: a hole in the array, which a realtime
-      // delete landing mid-sweep or a restore leaving a gap can both produce.
+    test('a null entry in clients does not take the sync down', async () => {
+      // The exact shape that threw out of the old queue.
       const r = await withClients(page, [
         { id: 9001, addr: '1 Real St' },
         null,
         { id: 9002, addr: '2 Real St' },
       ]);
-      expect(r.threw, 'a null client must never throw out of _startPropQueue').toBeNull();
-      // And the real clients on either side of the hole still got queued: the
-      // guard has to skip the bad entry, not abandon the list at it.
-      expect(r.queued).toEqual([9001, 9002]);
+      expect(r.threw, 'a null client must never throw out of _syncPropertyData').toBeNull();
+      // Both real clients on either side of the hole still got asked about: the
+      // guard skips the bad entry, it does not abandon the list at it.
+      expect(r.asked).toEqual(['1 Real St', '2 Real St']);
     });
 
     test('undefined entries and an all-junk list are both survivable', async () => {
-      const mixed = await withClients(page, [undefined, { id: 9003, street: '3 Real St' }, null]);
+      const mixed = await withClients(page, [undefined, { id: 9003, addr: '3 Real St' }, null]);
       expect(mixed.threw).toBeNull();
-      expect(mixed.queued).toEqual([9003]);
+      expect(mixed.asked).toEqual(['3 Real St']);
 
+      // An all-junk list has nothing to ask about, so it must not call the RPC
+      // at all rather than sending an empty array.
       const junk = await withClients(page, [null, undefined, null]);
       expect(junk.threw).toBeNull();
-      expect(junk.queued).toEqual([]);
+      expect(junk.asked).toBeNull();
     });
 
-    test('a client with no address is skipped, and one already fetched is not re-queued', async () => {
+    test('a client with no address is skipped, and one already looked up is not asked again', async () => {
+      // "Already looked up" is propDataSource==='county', NOT propDataFetchedAt.
+      // This fixture carried a bare propDataFetchedAt when that stamp was the
+      // gate; it is now correctly re-asked, because the dead Zillow scraper set
+      // exactly that stamp on its failures (see the backfill test below). The
+      // assertion changed because the behaviour deliberately changed.
       const r = await withClients(page, [
-        { id: 9004 },                                             // no address at all
-        { id: 9005, addr: '5 Real St', propDataFetchedAt: 1 },    // already done
-        { id: 9006, addr: '6 Real St' },                          // the only work
+        { id: 9004 },                                                                                        // no address at all
+        { id: 9005, addr: '5 Real St', properties: { '5 real st': { propDataSource: 'county', propDataFetchedAt: 1 } } }, // genuinely done
+        { id: 9006, addr: '6 Real St' },                                                                     // the only work
       ]);
       expect(r.threw).toBeNull();
-      expect(r.queued).toEqual([9006]);
+      expect(r.asked).toEqual(['6 Real St']);
     });
 
-    test('an empty roster queues nothing and arms no timer', async () => {
+    test('an empty roster asks nothing', async () => {
       const r = await withClients(page, []);
       expect(r.threw).toBeNull();
-      expect(r.queued).toEqual([]);
+      expect(r.asked).toBeNull();
     });
+
+    test('a match writes the county facts onto the right address', async () => {
+      const r = await withClients(page, [{ id: 9010, addr: '2015 SW Randolph Ave' }], [{
+        q: '2015 SW Randolph Ave', year_built: 1940, sqft: 1012, beds: 3, baths: 1,
+        assessed_value: 161140, county_name: 'Shawnee', state: 'KS',
+        source_url: 'https://ares.sncoapps.us/',
+      }]);
+      expect(r.threw).toBeNull();
+      const p = r.after.find((c) => c.id === 9010).props['2015 sw randolph ave'];
+      expect(p.yearBuilt).toBe(1940);
+      expect(p.sqft).toBe(1012);
+      // Assessed value, not a Zestimate. The card labels it as such.
+      expect(p.estimatedValue).toBe(161140);
+      expect(p.propDataSource).toBe('county');
+      expect(p.propDataCounty).toBe('Shawnee, KS');
+      expect(p.propDataMiss).toBe(false);
+    });
+
+    test('a MISS is recorded as a miss, never as a silent blank', async () => {
+      // This is the one that matters most. yearBuilt arms the EPA RRP pre-1978
+      // lead-paint gate, and the old scraper's failure mode was returning null,
+      // which reads exactly like "built after 1978" and quietly drops a federal
+      // disclosure off a proposal. An address with no county record has to be
+      // marked so the card asks the contractor instead of assuming.
+      const r = await withClients(page, [{ id: 9011, addr: '999 Nowhere Rd' }], []);
+      expect(r.threw).toBeNull();
+      const p = r.after.find((c) => c.id === 9011).props['999 nowhere rd'];
+      expect(p.propDataMiss).toBe(true);
+      expect(p.propDataFetchedAt).toBeTruthy();
+      expect(p.yearBuilt).toBeUndefined();
+    });
+
+    test('a hand-entered year built is never overwritten by the county', async () => {
+      // The contractor stood at the house. The assessor's file is a year old at
+      // best, and on a remodel it can be plainly wrong.
+      const r = await withClients(page,
+        [{ id: 9012, addr: '7 Real St', properties: { '7 real st': { yearBuilt: 1955 } } }],
+        [{ q: '7 Real St', year_built: 1899, sqft: 900, county_name: 'Shawnee', state: 'KS' }]);
+      expect(r.threw).toBeNull();
+      const p = r.after.find((c) => c.id === 9012).props['7 real st'];
+      expect(p.yearBuilt, 'the hand-entered year must win').toBe(1955);
+      expect(p.sqft, 'but everything else still lands').toBe(900);
+    });
+
+    test('EXISTING clients stamped by the dead Zillow scraper are re-asked', async () => {
+      // The backfill, and the reason _propAnswered exists at all. The old
+      // scraper stamped propDataFetchedAt on every FAILURE, deliberately, to
+      // stop itself re-querying a miss on each boot. It had been failing since
+      // late June, so a real account's whole client book reads as "already
+      // looked up" while carrying no data whatsoever. Gating on that stamp would
+      // skip precisely the records the county data exists to fix.
+      const r = await withClients(page, [
+        // Stamped a miss by the dead scraper: no source, no data.
+        { id: 9040, addr: '40 Real St', properties: { '40 real st': { propDataFetchedAt: '2026-06-28T00:00:00Z', propDataMiss: true } } },
+        // Stamped a success by the dead scraper, so it has a year already.
+        { id: 9041, addr: '41 Real St', properties: { '41 real st': { propDataFetchedAt: '2026-05-01T00:00:00Z', propDataSource: 'zillow', yearBuilt: 1962 } } },
+        // Already answered by a county: this one is genuinely done.
+        { id: 9042, addr: '42 Real St', properties: { '42 real st': { propDataFetchedAt: '2026-09-22T00:00:00Z', propDataSource: 'county', propDataMiss: true } } },
+      ]);
+      expect(r.threw).toBeNull();
+      expect(r.asked, 'both Zillow-era records are re-asked; the county-answered one is not')
+        .toEqual(['40 Real St', '41 Real St']);
+    });
+
+    test('backfilling never overwrites a year the old scraper already found', async () => {
+      // A Zillow-sourced year is still a year, and the contractor may have acted
+      // on it. The county fills the gaps around it instead of churning it.
+      const r = await withClients(page,
+        [{ id: 9043, addr: '43 Real St', properties: { '43 real st': { propDataFetchedAt: '2026-05-01T00:00:00Z', propDataSource: 'zillow', yearBuilt: 1962 } } }],
+        [{ q: '43 Real St', year_built: 1958, sqft: 1400, assessed_value: 120000, county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9043).props['43 real st'];
+      expect(p.yearBuilt, 'the year already on file wins').toBe(1962);
+      expect(p.sqft, 'the county still fills what was missing').toBe(1400);
+      expect(p.propDataSource, 'and the record is now county-answered, so it is not asked again').toBe('county');
+    });
+
+    test('a county miss marks itself as county-answered, or it loops forever', async () => {
+      // If the miss branch left propDataSource unset, _propAnswered stays false
+      // and the same address is re-asked on every single boot.
+      const r = await withClients(page, [{ id: 9044, addr: '44 Real St' }], []);
+      const p = r.after.find((c) => c.id === 9044).props['44 real st'];
+      expect(p.propDataSource).toBe('county');
+      expect(p.propDataMiss).toBe(true);
+    });
+
+    test('a transient API failure is not recorded as a miss', async () => {
+      // If a 502 stamped propDataFetchedAt, this address would be retired
+      // permanently: the batch sync filters on that stamp, so nothing would ever
+      // ask again and the contractor gets a blank card with no way to know why.
+      // Only the server explicitly saying it found nothing is an answer.
+      // window.fetch is stubbed rather than page.route'd on purpose: a real 502
+      // response makes Chromium log "Failed to load resource", which is a
+      // console error, which trips this file's own assertNoErrors gate (§5.3).
+      // Stubbing exercises the same branch with no browser-level noise.
+      const r = await page.evaluate(async () => {
+        const saved = clients.slice();
+        const savedSave = window.saveAll;
+        const savedFetch = window.fetch;
+        window.saveAll = () => {};
+        window.fetch = async () => new Response(JSON.stringify({ error: 'proxy error' }), {
+          status: 502, headers: { 'Content-Type': 'application/json' },
+        });
+        clients.length = 0;
+        clients.push({ id: 9030, addr: '30 Real St', street: '30 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+        await _lookupPropertyData(9030, { street: '30 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+        const c = clients.find((x) => x.id === 9030);
+        const out = c.properties ? c.properties['30 real st'] : null;
+        clients.length = 0; saved.forEach((x) => clients.push(x));
+        window.saveAll = savedSave; window.fetch = savedFetch;
+        return { props: out || null };
+      });
+      expect(r.props, 'a failed lookup must leave the address untouched, not stamped').toBeNull();
+    });
+
+    test('an explicit found:false IS recorded, so the card can ask the contractor', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = clients.slice();
+        const savedSave = window.saveAll;
+        const savedFetch = window.fetch;
+        window.saveAll = () => {};
+        window.fetch = async () => new Response(JSON.stringify({ found: false }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+        clients.length = 0;
+        clients.push({ id: 9031, addr: '31 Real St', street: '31 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+        await _lookupPropertyData(9031, { street: '31 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+        const c = clients.find((x) => x.id === 9031);
+        const out = c.properties ? c.properties['31 real st'] : null;
+        clients.length = 0; saved.forEach((x) => clients.push(x));
+        window.saveAll = savedSave; window.fetch = savedFetch;
+        return { props: out || null };
+      });
+      expect(r.props).toBeTruthy();
+      expect(r.props.propDataMiss).toBe(true);
+      // And it is marked county-answered, so nothing asks about it again.
+      expect(r.props.propDataSource).toBe('county');
+    });
+
+    test('concurrent calls do not double-apply (§11.2 guard)', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = clients.slice();
+        const savedSupa = window._supa, savedSave = window.saveAll;
+        let calls = 0;
+        window._supa = { rpc: async () => { calls++; await new Promise((r2) => setTimeout(r2, 40)); return { data: [], error: null }; } };
+        window.saveAll = () => {};
+        clients.length = 0; clients.push({ id: 9020, addr: '20 Real St' });
+        await Promise.all([_syncPropertyData(), _syncPropertyData(), _syncPropertyData()]);
+        clients.length = 0; saved.forEach((c) => clients.push(c));
+        window._supa = savedSupa; window.saveAll = savedSave;
+        return { calls };
+      });
+      expect(r.calls, 'the guard must let exactly one pass through').toBe(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // §7.1: the Zillow scraper path is DELETED, not hidden
+  //
+  // CLAUDE.md §7 requires dead code to be removed and §7.1 requires CI to prove
+  // the old entry point is gone rather than merely unused. If any of these come
+  // back, something resurrected the scraper that Zillow now answers with 403.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test('the old Zillow property queue is gone from the app entirely', async () => {
+    const gone = await page.evaluate(() => ({
+      startPropQueue: typeof window._startPropQueue,
+      tickPropQueue:  typeof window._tickPropQueue,
+      propQueue:      typeof window._propQueue,
+      // and the replacement is actually present
+      syncPropertyData: typeof window._syncPropertyData,
+    }));
+    expect(gone.startPropQueue).toBe('undefined');
+    expect(gone.tickPropQueue).toBe('undefined');
+    expect(gone.propQueue).toBe('undefined');
+    expect(gone.syncPropertyData).toBe('function');
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
