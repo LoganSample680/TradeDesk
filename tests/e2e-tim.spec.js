@@ -373,6 +373,43 @@ test.describe('tim', () => {
     });
   });
 
+  // ── Photos (owner 2026-09-22) ─────────────────────────────────────────────
+  // The Gallery page is gone; photos are found by place through the search.
+  // So a photo sentence is a lookup, and the words that are not about photos
+  // are the search term.
+  test('a photo sentence becomes a search, and the address is the term', async () => {
+    const r = await page.evaluate(() => [
+      'show me the photos at 412 Oak',
+      'pull up pictures for Whitfield',
+      'job photos 412 Oak',
+      'photos',
+    ].map(s => { const p = timParse(s, { clients: [] }); return { kind: p.kind, q: p.q, say: timSay(p) }; }));
+    expect(r[0]).toEqual({ kind: 'photos', q: '412 oak', say: 'Find photos for 412 oak' });
+    expect(r[1].q).toBe('whitfield');
+    expect(r[2].kind).toBe('photos');          // "job photos" is not the Jobs page
+    expect(r[2].q).toBe('412 oak');
+    expect(r[3]).toEqual({ kind: 'photos', q: '', say: 'Search photos' });
+  });
+
+  test('running it opens the search box with the term already in it', async () => {
+    const r = await page.evaluate(() => {
+      timRun('show me the photos at 412 Oak');
+      const box = document.getElementById('global-search-input');
+      const out = { open: !!document.getElementById('global-search-overlay'), val: box ? box.value : null };
+      if (typeof closeSearch === 'function') closeSearch();
+      return out;
+    });
+    expect(r.open).toBe(true);
+    expect(r.val).toBe('412 oak');
+  });
+
+  test('a sentence with no photo word is untouched by any of this', async () => {
+    const r = await page.evaluate(() => ['open my jobs', 'the books', 'dispatch']
+      .map(s => timParse(s, { clients: [] }).kind));
+    expect(r).toEqual(['nav', 'nav', 'nav']);
+  });
+
+
   test('no console errors, tim.js', async () => {
     assertNoErrors(page, 'tim.js');
   });

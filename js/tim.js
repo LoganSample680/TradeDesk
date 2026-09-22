@@ -106,6 +106,23 @@ function timWantsBuild(text){
       || /\b(t and m|time and materials|estimate|proposal|bid|quote)\b/.test(t);
 }
 
+// ── Photos are a place, not a page (owner 2026-09-22) ───────────────────────
+// The Gallery page is gone, and photos are found through the search everybody
+// already uses, keyed on the property. So "photos at 412 Oak" is not a
+// navigation, it is a lookup: Tim strips the photo words and the filler and
+// hands the REST to the search. A bare "photos" opens the box empty, which is
+// the honest answer to a question with no subject in it.
+const TIM_PHOTO_WORDS=['photos','photo','pictures','picture','pics','pic','shots','gallery','images'];
+const _TIM_PHOTO_FILLER=['show','me','my','the','a','of','for','at','from','on','open','find','get','pull','up','all','job','jobs','site','house','place'];
+function timPhotoQuery(text){
+  const t=_timNorm(text);
+  if(!TIM_PHOTO_WORDS.some(w=>t.includes(' '+w+' ')))return null;
+  const rest=t.trim().split(' ')
+    .filter(w=>w&&!TIM_PHOTO_WORDS.includes(w)&&!_TIM_PHOTO_FILLER.includes(w))
+    .join(' ').trim();
+  return{q:rest};
+}
+
 // The whole sentence, resolved. Pure: hand it the lists, get back a plan.
 // Order matters. Building beats looking, because a contractor who says
 // "estimate" while describing work wants the builder, not the list of ones he
@@ -124,6 +141,9 @@ function timParse(text,opts){
   if(subject&&timWantsBuild(said)&&!(est&&est.client))
     return {text:said,kind:'newclient',subject};
 
+  const pho=timPhotoQuery(said);
+  if(pho)return {text:said,kind:'photos',q:pho.q};
+
   const where=timWhere(said);
   const year=timWhen(said,o.now);
   if(where)return {text:said,kind:'nav',pg:where.pg,name:where.name,year};
@@ -138,6 +158,7 @@ function timParse(text,opts){
 function timSay(p){
   if(!p||p.kind==='none')return '';
   if(p.kind==='nav')return 'Open '+p.name+(p.year?' for '+p.year:'');
+  if(p.kind==='photos')return p.q?'Find photos for '+p.q:'Search photos';
   if(p.kind==='newclient')return 'Start '+p.subject+' as a new customer';
   if(p.kind==='estimate'){
     const pl=p.plan||{};
@@ -167,6 +188,13 @@ function timRun(text){
       el.value=p.subject;
       try{el.dispatchEvent(new Event('input',{bubbles:true}));}catch(_e){}
     }
+    return p;
+  }
+
+  if(p.kind==='photos'&&typeof openSearch==='function'){
+    openSearch();
+    const box=document.getElementById('global-search-input');
+    if(box&&p.q){box.value=p.q;if(typeof runSearch==='function')runSearch(p.q);}
     return p;
   }
 
