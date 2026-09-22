@@ -42,13 +42,57 @@ const DRY_RUN    = ARGS.includes('--dry-run');
 const PRINT      = ARGS.includes('--print');
 const LIMIT      = intArg('--limit', 0);
 const ENRICH     = intArg('--enrich', 0);
-// Deliberate floor. 250ms is four requests a second at a county GIS server that
-// exists to serve a few dozen title clerks.
+// Deliberate floor for the BULK layer (a county's ArcGIS endpoint, 16 paged
+// requests for the whole county). 250ms is fine there: that API is built to be
+// read in bulk and nobody mistakes 16 requests for an attack.
 const PAUSE_MS   = intArg('--pause', 250);
 // The circuit breaker, shared with the live API route through td_county_asks so
 // both paths draw on ONE budget. Not a throttle for normal use (an address is
 // asked once ever); this is what caps the damage when something loops.
-const DAILY_CAP  = intArg('--daily-cap', parseInt(process.env.COUNTY_DAILY_CAP || '500', 10));
+const DAILY_CAP  = intArg('--daily-cap', parseInt(process.env.COUNTY_DAILY_CAP || '1000', 10));
+
+// ── HUMAN PACING, for the per-address enrichment ────────────────────────────
+//
+// Owner, 2026-09-22: "I want every single one to load itself in, not all at once
+// but a slow human style lookup so we don't get our shit blocked."
+//
+// He is right and the fixed --pause was wrong for this layer. 77,006 addresses
+// at a flat 250ms is 5.3 hours of perfectly metronomic requests, four a second,
+// and A METRONOME IS THE GIVEAWAY. What gets a range blocked is not the total,
+// it is the rate and the regularity: no person has ever produced a request
+// exactly every 250ms for five hours, and any log review spots that instantly.
+//
+// So the drip does what a title clerk's afternoon looks like. Most lookups a few
+// tens of seconds apart, an occasional few-minute gap where they went and did
+// something else, nothing at all overnight, and never two requests on the same
+// interval twice in a row. At ~52s average across a 14-hour day that is roughly
+// a thousand addresses a day, so a whole county lands in about eleven weeks
+// without a single hour that looks unusual from the other side.
+const HUMAN      = ARGS.includes('--human');
+// A run stops after this long whatever is left, so the drip is made of many
+// short visits rather than one endless session. Another giveaway removed: a
+// client that is connected every minute of every day is not a person.
+const MAX_MIN    = intArg('--max-minutes', 0);
+// Local hours the drip is willing to work. Nobody looks up parcels at 4am, and
+// traffic that only ever arrives in office hours reads as office traffic.
+const HOUR_START = intArg('--start-hour', 7);
+const HOUR_END   = intArg('--end-hour', 21);
+
+// One gap. 90% of the time a normal few-tens-of-seconds pause; 10% of the time
+// the clerk got up. Every value is drawn fresh, so no two gaps match and the
+// sequence has no period to detect.
+function humanGapMs() {
+  return Math.random() < 0.10
+    ? Math.round(90000 + Math.random() * 210000)   // 1.5 to 5 minutes
+    : Math.round(12000 + Math.random() * 48000);   // 12 to 60 seconds
+}
+
+function withinWorkingHours(d = new Date()) {
+  const h = d.getHours();
+  return HOUR_START <= HOUR_END
+    ? (h >= HOUR_START && h < HOUR_END)
+    : (h >= HOUR_START || h < HOUR_END);   // a window that wraps midnight
+}
 
 function intArg(flag, dflt) {
   const i = ARGS.indexOf(flag);
@@ -354,11 +398,17 @@ async function writeStatus(count) {
 // ── Enrichment pass ─────────────────────────────────────────────────────────
 // Fills what the bulk layer does not publish, one address at a time, for rows
 // that do not have it yet. Bounded by --enrich N and resumable by construction:
-// it selects only rows still missing year_built, so re-running continues rather
-// than restarting.
+// the queue excludes every address already asked about, so re-running continues
+// rather than restarting, and a run killed halfway loses nothing.
 async function enrichPass(n) {
   const enrich = CFG.enrich;
   if (!enrich || !ENRICHERS[enrich.kind]) { console.log('  (no enricher configured, skipping)'); return 0; }
+
+  const startedAt = Date.now();
+  if (HUMAN && !withinWorkingHours()) {
+    console.log(`  outside working hours (${HOUR_START}:00-${HOUR_END}:00 local), nothing to do this visit`);
+    return 0;
+  }
 
   // county_enrich_queue, NOT a bare "year_built is null" select. That was the
   // third re-ask hole (20261033): an address the county cannot answer stays null
@@ -425,7 +475,18 @@ async function enrichPass(n) {
       if (missed <= 3) console.warn(`\n  enrich failed for "${row.street}": ${e.message}`);
     }
     process.stdout.write(`\r  enriched ${filled}, no data ${missed}${skipped ? `, already asked ${skipped}` : ''} of ${rows.length}…`);
-    await sleep(PAUSE_MS);
+
+    // End the visit rather than the work. The queue is resumable, so a short
+    // session that stops mid-list is exactly what the next one picks up.
+    if (MAX_MIN && (Date.now() - startedAt) > MAX_MIN * 60000) {
+      process.stdout.write(`\n  ${MAX_MIN} minute visit is up, stopping here. The queue resumes where this left off.\n`);
+      break;
+    }
+    if (HUMAN && !withinWorkingHours()) {
+      process.stdout.write(`\n  reached ${HOUR_END}:00 local, stopping for the day.\n`);
+      break;
+    }
+    await sleep(HUMAN ? humanGapMs() : PAUSE_MS);
   }
   process.stdout.write('\n');
   return filled;

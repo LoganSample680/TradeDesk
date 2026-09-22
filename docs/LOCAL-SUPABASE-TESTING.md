@@ -121,6 +121,25 @@ laundering Shawnee County's own data back to us through two middlemen.
   ```
 - **Add a county:** copy `scripts/counties/ks-shawnee.json`, change the URLs and the
   field names, run `--print` until the columns look right. No code change.
+- **Fill the whole county in the background (the drip).** The bulk layer lands every
+  parcel in ~16 requests, but year built comes one address at a time, and 77,006 of
+  those on a fixed timer is 5.3 hours of metronomic traffic: the exact shape that gets
+  a range blocked. `scripts/setup-county-drip.sh` installs a systemd timer on jarvis
+  that visits every 30 minutes (randomized), works only 07:00-21:00 local, caps each
+  visit at 25 minutes, and leaves gaps of 12 to 60 seconds with an occasional few
+  minute break. That is ~1,000 addresses a day, so Shawnee County lands in about
+  eleven weeks with no hour that looks unusual from their side.
+  ```bash
+  sudo bash scripts/setup-county-drip.sh ks-shawnee   # then fill in /etc/tradedesk/county-drip.env
+  journalctl -u county-drip.service -f                # watch it
+  systemctl list-timers county-drip.timer             # next visit
+  ```
+  **It runs on jarvis but nothing waits on jarvis.** This is a pre-warm, not the live
+  path: turn the box off and every lookup still works, it just asks the county on
+  first touch instead of already knowing. That is the whole difference between this
+  and the Zillow proxy that used to live there. It is NOT a GitHub Action because the
+  pace means ~14 hours of wall clock a day, which would burn ~25,000 Actions minutes a
+  month on a hosted runner and would starve the flow tests on the self-hosted one.
 - **A county is asked about any one address exactly once, ever.** `county_claim_ask`
   (migration `20261033_county_ask_gate.sql`) records the ask itself, before the request
   goes out, so an address the county cannot answer (a vacant lot, an address it has no

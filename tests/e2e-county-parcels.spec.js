@@ -347,6 +347,93 @@ test.describe('county parcel records', () => {
       expect(fn[0]).toMatch(/n < 1700/);
     });
 
+    // ── Human pacing ───────────────────────────────────────────────────────
+    // Owner, 2026-09-22: "I want every single one to load itself in, not all at
+    // once but a slow human style lookup so we don't get our shit blocked."
+    //
+    // What gets a range blocked is the RATE and the REGULARITY, not the total.
+    // 77,006 addresses at the old flat 250ms is 5.3 hours of perfectly
+    // metronomic requests, four a second, and no person has ever done that.
+    // These assertions are the difference between a drip that reads as a title
+    // clerk's afternoon and one that reads as a scraper.
+    test('the per-address gap is randomized, never a fixed interval', () => {
+      const fn = src().match(/function humanGapMs\(\)[\s\S]*?\n}/);
+      expect(fn, 'humanGapMs must exist').toBeTruthy();
+      // Drawn fresh every time. A constant, or a counter, would give the
+      // sequence a period, and a period is what a log review finds.
+      expect(fn[0]).toMatch(/Math\.random\(\)/);
+    });
+
+    test('the gap distribution is human-shaped, measured not asserted', () => {
+      // eslint-disable-next-line no-eval
+      const humanGapMs = eval(`(${src().match(/function humanGapMs\(\)[\s\S]*?\n}/)[0]})`);
+      const g = Array.from({ length: 20000 }, () => humanGapMs() / 1000);
+      const mean = g.reduce((a, b) => a + b, 0) / g.length;
+
+      // Never faster than a person could plausibly click.
+      expect(Math.min(...g), 'no gap may be under ten seconds').toBeGreaterThanOrEqual(10);
+      // And not so slow the county never finishes.
+      expect(mean, 'mean gap should sit in the tens of seconds').toBeGreaterThan(30);
+      expect(mean, 'mean gap should sit in the tens of seconds').toBeLessThan(120);
+      // The long tail is the "got up and did something else" break. Without it
+      // the sequence is uniform, which is its own kind of tell.
+      const longBreaks = g.filter((s) => s > 90).length / g.length;
+      expect(longBreaks, 'roughly one gap in ten is a real break').toBeGreaterThan(0.03);
+      expect(longBreaks, 'but breaks must not dominate').toBeLessThan(0.25);
+      // Spread, not a metronome with noise: the middle half of the draws must
+      // actually span a range.
+      const sorted = g.slice().sort((a, b) => a - b);
+      const iqr = sorted[Math.floor(g.length * 0.75)] - sorted[Math.floor(g.length * 0.25)];
+      expect(iqr, 'the interquartile spread must be seconds wide, not milliseconds').toBeGreaterThan(10);
+    });
+
+    test('the drip refuses to work overnight', () => {
+      // Traffic that only ever arrives in office hours reads as office traffic.
+      // A request at 4am from the same client every night does not.
+      const fn = src().match(/function withinWorkingHours[\s\S]*?\n}/);
+      expect(fn, 'withinWorkingHours must exist').toBeTruthy();
+      // eslint-disable-next-line no-eval
+      const within = eval(`(() => { const HOUR_START = 7, HOUR_END = 21; return ${fn[0].replace(/^function /, 'function ')} })()`);
+      const at = (h) => { const d = new Date(); d.setHours(h, 0, 0, 0); return within(d); };
+      expect(at(3), '3am must be idle').toBe(false);
+      expect(at(6), '6am must be idle').toBe(false);
+      expect(at(12), 'midday must work').toBe(true);
+      expect(at(20), '8pm must work').toBe(true);
+      expect(at(23), '11pm must be idle').toBe(false);
+    });
+
+    test('a visit is time-boxed, so the drip is many short sessions', () => {
+      // A client that is connected every minute of every day is not a person,
+      // however well paced its requests are.
+      expect(src()).toMatch(/MAX_MIN && \(Date\.now\(\) - startedAt\) > MAX_MIN \* 60000/);
+      const unit = readSrc('scripts/county-drip.service');
+      expect(unit, 'the installed unit must actually pass the flags').toMatch(/--human/);
+      expect(unit).toMatch(/--max-minutes\s+\d+/);
+    });
+
+    test('the timer does not fire on the exact same second forever', () => {
+      // Arrivals at :00:00 and :30:00 for eleven weeks is a scheduler, and a
+      // scheduler is not a person.
+      const timer = readSrc('scripts/county-drip.timer');
+      expect(timer).toMatch(/RandomizedDelaySec=\d+/);
+      const jitter = parseInt(timer.match(/RandomizedDelaySec=(\d+)/)[1], 10);
+      expect(jitter, 'the jitter must be minutes, not seconds').toBeGreaterThanOrEqual(60);
+      // Persistent=true would fire every missed tick at once after a reboot,
+      // which is a burst, which is the one shape being avoided throughout.
+      expect(timer).toMatch(/Persistent=false/);
+    });
+
+    test('the drip is a pre-warm, never something the app waits on', () => {
+      // The Zillow proxy that used to live on this box was in the LIVE path, so
+      // the feature died whenever the house lost power. This must not be that.
+      const unit = readSrc('scripts/county-drip.service');
+      expect(unit).toMatch(/pre-warm|PRE-WARM/i);
+      // Nothing in the app may reference the drip host, the units, or the timer.
+      for (const f of ['js/clients.js', 'js/cloud.js', 'functions/api/property.js']) {
+        expect(readSrc(f), `${f} must not depend on the drip`).not.toMatch(/county-drip/);
+      }
+    });
+
     test('--print and --dry-run never need a credential', () => {
       // Checking a new county's field map has to be runnable before any secret
       // exists, or the first step of onboarding a county is blocked on the last.

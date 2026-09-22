@@ -1,0 +1,40 @@
+[Unit]
+# One short visit to a county's public appraiser search, at human pace.
+#
+# This is a PRE-WARM, never a dependency. It fills td_county_parcels ahead of
+# time so a contractor's lookup is an instant SQL join instead of a live
+# request. If this box is off, the drip simply pauses: every lookup still works,
+# it just asks the county live on first touch. Nothing in the app waits on this
+# machine, which is the whole difference between this and the Zillow proxy that
+# used to live here and took the feature down with the house.
+Description=TradeDesk county assessor drip (one paced visit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/tradedesk
+EnvironmentFile=/etc/tradedesk/county-drip.env
+
+# --human      randomized gaps, an occasional few-minute break, no night work
+# --max-minutes 25 ends the visit on time; the queue resumes at the next one,
+#              so the drip is many short sessions rather than one endless
+#              connection, which is the other thing that does not look human
+# --enrich 60  the most this visit will attempt; the clock usually stops it first
+ExecStart=/usr/bin/node scripts/county-load.js ${COUNTY} --enrich 60 --human --max-minutes 25
+
+# A county being slow or down is not a failure worth alerting on. The next timer
+# tick tries again, and the gate means nothing is lost or double-asked.
+SuccessExitStatus=0 1
+TimeoutStartSec=30min
+
+# It reads a config file and talks to two hosts. It has no business doing
+# anything else on this box.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/tradedesk
+
+[Install]
+WantedBy=multi-user.target

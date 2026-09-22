@@ -1,0 +1,22 @@
+[Unit]
+Description=TradeDesk county assessor drip (every 30 minutes, paced)
+Documentation=file:///opt/tradedesk/docs/LOCAL-SUPABASE-TESTING.md
+
+[Timer]
+# Every half hour, all day. The SCRIPT decides whether to actually work: it
+# refuses outside 07:00-21:00 local, so overnight ticks cost a process start and
+# nothing else. Keeping the hours in the script rather than the timer means one
+# place defines "when is it reasonable to be asking a county things", and it is
+# the same place that defines the gaps.
+OnCalendar=*:0/30
+# Randomize the start so visits do not all begin exactly on the hour and the
+# half hour. Traffic that arrives at :00:00 and :30:00 forever is a scheduler,
+# and a scheduler is not a person.
+RandomizedDelaySec=420
+AccuracySec=1min
+# A box that was asleep should not fire every missed tick at once on wake.
+Persistent=false
+Unit=county-drip.service
+
+[Install]
+WantedBy=timers.target

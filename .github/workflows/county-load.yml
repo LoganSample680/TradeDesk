@@ -12,15 +12,15 @@ on:
         required: true
         default: 'ks-shawnee'
       mode:
-        description: 'print = field map only (no writes) · dry-run = fetch+parse, no writes · load = write parcels · enrich = fill year built for rows missing it'
+        description: 'print = field map only (no writes) · dry-run = fetch+parse, no writes · load = write parcels · enrich = fill year built for a bounded batch'
         required: true
         default: 'print'
         type: choice
         options: [print, dry-run, load, enrich]
       enrich_count:
-        description: 'enrich mode only: how many addresses to fill this run'
+        description: 'enrich mode only: how many addresses this run. Keep it small; the sustained backfill is the drip on jarvis (scripts/setup-county-drip.sh), not this.'
         required: false
-        default: '250'
+        default: '100'
       pause_ms:
         description: 'Pause between requests to the county server. Lower only if you know their capacity.'
         required: false
@@ -70,6 +70,9 @@ jobs:
             print)    node scripts/county-load.js "$COUNTY" --print --pause "$PAUSE" ;;
             dry-run)  node scripts/county-load.js "$COUNTY" --dry-run --pause "$PAUSE" ;;
             load)     node scripts/county-load.js "$COUNTY" --pause "$PAUSE" ;;
-            enrich)   node scripts/county-load.js "$COUNTY" --enrich "$ENRICH" --pause "$PAUSE" ;;
+            # --human even here. A hosted runner is the wrong place for the long
+            # backfill (that is the drip on jarvis), but a manual batch has no
+            # business hammering a county faster than the drip would either.
+            enrich)   node scripts/county-load.js "$COUNTY" --enrich "$ENRICH" --human --max-minutes 45 ;;
             *) echo "unknown mode: $MODE" >&2; exit 1 ;;
           esac
