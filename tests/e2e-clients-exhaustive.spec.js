@@ -3880,10 +3880,15 @@ test.describe('clients.js: exhaustive coverage', () => {
     });
 
     test('a client with no address is skipped, and one already looked up is not asked again', async () => {
+      // "Already looked up" is propDataSource==='county', NOT propDataFetchedAt.
+      // This fixture carried a bare propDataFetchedAt when that stamp was the
+      // gate; it is now correctly re-asked, because the dead Zillow scraper set
+      // exactly that stamp on its failures (see the backfill test below). The
+      // assertion changed because the behaviour deliberately changed.
       const r = await withClients(page, [
-        { id: 9004 },                                                                        // no address at all
-        { id: 9005, addr: '5 Real St', properties: { '5 real st': { propDataFetchedAt: 1 } } }, // already done
-        { id: 9006, addr: '6 Real St' },                                                     // the only work
+        { id: 9004 },                                                                                        // no address at all
+        { id: 9005, addr: '5 Real St', properties: { '5 real st': { propDataSource: 'county', propDataFetchedAt: 1 } } }, // genuinely done
+        { id: 9006, addr: '6 Real St' },                                                                     // the only work
       ]);
       expect(r.threw).toBeNull();
       expect(r.asked).toEqual(['6 Real St']);
@@ -3938,51 +3943,98 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(p.sqft, 'but everything else still lands').toBe(900);
     });
 
+    test('EXISTING clients stamped by the dead Zillow scraper are re-asked', async () => {
+      // The backfill, and the reason _propAnswered exists at all. The old
+      // scraper stamped propDataFetchedAt on every FAILURE, deliberately, to
+      // stop itself re-querying a miss on each boot. It had been failing since
+      // late June, so a real account's whole client book reads as "already
+      // looked up" while carrying no data whatsoever. Gating on that stamp would
+      // skip precisely the records the county data exists to fix.
+      const r = await withClients(page, [
+        // Stamped a miss by the dead scraper: no source, no data.
+        { id: 9040, addr: '40 Real St', properties: { '40 real st': { propDataFetchedAt: '2026-06-28T00:00:00Z', propDataMiss: true } } },
+        // Stamped a success by the dead scraper, so it has a year already.
+        { id: 9041, addr: '41 Real St', properties: { '41 real st': { propDataFetchedAt: '2026-05-01T00:00:00Z', propDataSource: 'zillow', yearBuilt: 1962 } } },
+        // Already answered by a county: this one is genuinely done.
+        { id: 9042, addr: '42 Real St', properties: { '42 real st': { propDataFetchedAt: '2026-09-22T00:00:00Z', propDataSource: 'county', propDataMiss: true } } },
+      ]);
+      expect(r.threw).toBeNull();
+      expect(r.asked, 'both Zillow-era records are re-asked; the county-answered one is not')
+        .toEqual(['40 Real St', '41 Real St']);
+    });
+
+    test('backfilling never overwrites a year the old scraper already found', async () => {
+      // A Zillow-sourced year is still a year, and the contractor may have acted
+      // on it. The county fills the gaps around it instead of churning it.
+      const r = await withClients(page,
+        [{ id: 9043, addr: '43 Real St', properties: { '43 real st': { propDataFetchedAt: '2026-05-01T00:00:00Z', propDataSource: 'zillow', yearBuilt: 1962 } } }],
+        [{ q: '43 Real St', year_built: 1958, sqft: 1400, assessed_value: 120000, county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9043).props['43 real st'];
+      expect(p.yearBuilt, 'the year already on file wins').toBe(1962);
+      expect(p.sqft, 'the county still fills what was missing').toBe(1400);
+      expect(p.propDataSource, 'and the record is now county-answered, so it is not asked again').toBe('county');
+    });
+
+    test('a county miss marks itself as county-answered, or it loops forever', async () => {
+      // If the miss branch left propDataSource unset, _propAnswered stays false
+      // and the same address is re-asked on every single boot.
+      const r = await withClients(page, [{ id: 9044, addr: '44 Real St' }], []);
+      const p = r.after.find((c) => c.id === 9044).props['44 real st'];
+      expect(p.propDataSource).toBe('county');
+      expect(p.propDataMiss).toBe(true);
+    });
+
     test('a transient API failure is not recorded as a miss', async () => {
       // If a 502 stamped propDataFetchedAt, this address would be retired
       // permanently: the batch sync filters on that stamp, so nothing would ever
       // ask again and the contractor gets a blank card with no way to know why.
       // Only the server explicitly saying it found nothing is an answer.
-      await page.route('**/api/property**', (route) => route.fulfill({
-        status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'proxy error' }),
-      }));
+      // window.fetch is stubbed rather than page.route'd on purpose: a real 502
+      // response makes Chromium log "Failed to load resource", which is a
+      // console error, which trips this file's own assertNoErrors gate (§5.3).
+      // Stubbing exercises the same branch with no browser-level noise.
       const r = await page.evaluate(async () => {
         const saved = clients.slice();
         const savedSave = window.saveAll;
+        const savedFetch = window.fetch;
         window.saveAll = () => {};
+        window.fetch = async () => new Response(JSON.stringify({ error: 'proxy error' }), {
+          status: 502, headers: { 'Content-Type': 'application/json' },
+        });
         clients.length = 0;
         clients.push({ id: 9030, addr: '30 Real St', street: '30 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
         await _lookupPropertyData(9030, { street: '30 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
         const c = clients.find((x) => x.id === 9030);
         const out = c.properties ? c.properties['30 real st'] : null;
         clients.length = 0; saved.forEach((x) => clients.push(x));
-        window.saveAll = savedSave;
+        window.saveAll = savedSave; window.fetch = savedFetch;
         return { props: out || null };
       });
-      await page.unroute('**/api/property**');
       expect(r.props, 'a failed lookup must leave the address untouched, not stamped').toBeNull();
     });
 
     test('an explicit found:false IS recorded, so the card can ask the contractor', async () => {
-      await page.route('**/api/property**', (route) => route.fulfill({
-        status: 200, contentType: 'application/json', body: JSON.stringify({ found: false }),
-      }));
       const r = await page.evaluate(async () => {
         const saved = clients.slice();
         const savedSave = window.saveAll;
+        const savedFetch = window.fetch;
         window.saveAll = () => {};
+        window.fetch = async () => new Response(JSON.stringify({ found: false }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
         clients.length = 0;
         clients.push({ id: 9031, addr: '31 Real St', street: '31 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
         await _lookupPropertyData(9031, { street: '31 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
         const c = clients.find((x) => x.id === 9031);
         const out = c.properties ? c.properties['31 real st'] : null;
         clients.length = 0; saved.forEach((x) => clients.push(x));
-        window.saveAll = savedSave;
+        window.saveAll = savedSave; window.fetch = savedFetch;
         return { props: out || null };
       });
-      await page.unroute('**/api/property**');
       expect(r.props).toBeTruthy();
       expect(r.props.propDataMiss).toBe(true);
+      // And it is marked county-answered, so nothing asks about it again.
+      expect(r.props.propDataSource).toBe('county');
     });
 
     test('concurrent calls do not double-apply (§11.2 guard)', async () => {
