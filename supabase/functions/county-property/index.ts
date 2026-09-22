@@ -260,7 +260,13 @@ const ENRICHERS: Record<string, {
             flood_zone: a.FLD_ZONE ? String(a.FLD_ZONE).trim() : null,
             flood_sfha: String(a.SFHA_TF || "").toUpperCase() === "T",
             flood_floodway: a.FLOODWAY ? String(a.FLOODWAY).trim() : null,
-            flood_bfe: numOrNull(a.STATIC_BFE),
+            // -9999 is Esri's no-data sentinel and it comes back on every
+            // parcel here, including the one genuinely in Zone A. Stored raw
+            // it renders as "Base flood elev: -9999", which is worse than
+            // blank because it looks like a real number. Same guard shape as
+            // yearOrNull above: a value outside anything physically sane is
+            // an absence, not a measurement.
+            flood_bfe: (() => { const v = numOrNull(a.STATIC_BFE); return (v == null || v < -1000 || v > 30000) ? null : v; })(),
           };
         },
       },

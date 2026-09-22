@@ -796,6 +796,16 @@ test.describe('county parcel records', () => {
       expect(blk).toMatch(/if \(!f\.length\) return null;/);
     });
 
+    test('the Esri no-data sentinel never becomes a base flood elevation', () => {
+      // STATIC_BFE comes back as -9999 on every Shawnee parcel probed,
+      // including the one genuinely in Zone A. Stored raw it renders as
+      // "Base flood elev: -9999", which is worse than blank because it looks
+      // like a real measurement. Same guard shape as yearOrNull.
+      const s = fn();
+      expect(s, 'the sentinel must be rejected by range, not by equality')
+        .toMatch(/STATIC_BFE\)[\s\S]{0,120}v < -1000/);
+    });
+
     test('the centroid never reaches the table', () => {
       // _pt_x/_pt_y are scaffolding for the queries, not facts about the
       // property. Left in, they land as unknown columns and fail the write.
