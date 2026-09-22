@@ -1149,6 +1149,54 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r.onPrimary).toBe(0);
     });
 
+    // The Open button on the property card, CLICKED, not read. Its address was
+    // interpolated with JSON.stringify straight into a double-quoted onclick,
+    // so the attribute ended at the address's own quote and the handler body
+    // was cut off mid-call. The browser wraps an inline handler in
+    // function onclick(event){...}, so it hit that wrapper's brace next and
+    // threw SyntaxError: Unexpected token '}' (owner, ops portal on Jack's
+    // account, 2026-09-22). It only ever appeared once a property HAD photos,
+    // because that is the only time the button renders.
+    //
+    // Reading the attribute string would not have caught this. The string
+    // looks fine; it is the HTML parser that truncates it. So the test puts
+    // the markup in the DOM and presses the button.
+    test('the Open button on a property survives being put in real HTML', async () => {
+      await pepe();
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 901);
+        // The button only exists once the property HAS photos, so file one.
+        photos[0].client_id = 901; photos[0].addr = '6912 SW 17th St, Topeka, KS 66615';
+        // The card's own markup generator, then a REAL parse of it. The string
+        // it returns always looked correct; the damage happened when the HTML
+        // parser read it, so the string is never what gets asserted.
+        // EXPANDED, or there is no body and therefore no button: a property
+        // card is an accordion whenever the customer has more than one, and
+        // the photo row lives in the body (the same collapse footgun as 10.6).
+        window['_cdpropOpen_901_1'] = true;
+        const host = document.createElement('div');
+        host.innerHTML = _cdPropCardHtml(c, clientAddresses(c)[1], 1, 2);
+        document.body.appendChild(host);
+        const btn = [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'Open');
+        if (!btn) { host.remove(); return { found: false }; }
+        const compiled = typeof btn.onclick === 'function';
+        let threw = null, opened = false;
+        try { btn.click(); opened = !!document.getElementById('pc-rev'); }
+        catch (e) { threw = String(e); }
+        const sawAddr = _pcRev && _pcRev.folderAddr;
+        document.getElementById('pc-rev')?.remove();
+        host.remove();
+        delete window['_cdpropOpen_901_1'];
+        return { found: true, compiled, threw, opened, sawAddr };
+      });
+      expect(r.found, 'the Open button renders once the property has photos').toBe(true);
+      // The bug: the browser could not compile the handler it was handed, so
+      // btn.onclick was null and the click did nothing but log a SyntaxError.
+      expect(r.compiled, 'the browser could parse the handler at all').toBe(true);
+      expect(r.threw).toBe(null);
+      expect(r.opened, 'and pressing it opens the folder').toBe(true);
+    });
+
     test('a photo with no fix gets no guess at all', async () => {
       await page.evaluate(() => {
         photos.length = 0;
