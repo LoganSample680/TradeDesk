@@ -1678,7 +1678,7 @@ test.describe('Photo capture: the sheet itself', () => {
         const html = document.getElementById('pg-client-detail').innerHTML;
         return {
           hasSection: /Photos/.test(html),
-          hasAdd: /tdCaptureForClient\(501\)/.test(html),
+          hasAdd: /tdAddPhotos\(501,/.test(html),
           hasOpen: /tdOpenPropertyFolder\(/.test(html),
           count: (html.match(/(\d+) photos/) || [])[1],
         };
@@ -2094,6 +2094,12 @@ test.describe('TrueShot: marking a photo up', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Park the cloud load for the whole block. openEditor closes the gap
+    // inside its own evaluate, but every test then reaches for the row in a
+    // SECOND evaluate, and a reload landing between the two empties photos
+    // (webkit shard 3, 2e7c546: "undefined is not an object" on p.url).
+    // Same park as the sheet block above; nothing here tests cloud loading.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => {
@@ -4017,5 +4023,221 @@ test.describe('TrueShot: a customer or a house the book does not have yet', () =
     expect(r.name).toBe(true);
     await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
     await assertNoErrors(page, 'TrueShot new customer');
+  });
+});
+
+// Owner 2026-09-23, a field request: bring in photos already on the iPhone
+// and file them to a customer's address. Two doors (the property card and
+// the camera), one path. Each photo keeps its own date and, when iOS left it
+// in, its own location; never the phone's position now, never a stamp.
+test.describe('TrueShot: importing from the iPhone library', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => { };
+      // A real JPEG, then (optionally) the app's own EXIF writer on top, so the
+      // reader is proven against the same bytes a camera would hand it.
+      window.__jpeg = async (lat, lon, when) => {
+        const cv = document.createElement('canvas'); cv.width = 40; cv.height = 30;
+        const g = cv.getContext('2d'); g.fillStyle = '#6b7a60'; g.fillRect(0, 0, 40, 30);
+        let blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.8));
+        if (lat != null) blob = await _pcWithGps(blob, lat, lon, when, 5);
+        return new File([blob], 'IMG_' + Math.round(Math.random() * 1e6) + '.jpg', { type: 'image/jpeg', lastModified: Date.parse('2026-09-20T15:00:00Z') });
+      };
+      window.__seedImp = () => {
+        try { tdAttachCancel(); tdReviewClose(); tdCloseCapture(); } catch (e) {}
+        document.querySelectorAll('.zmodal-overlay').forEach(x => x.remove());
+        clients.length = 0; photos.length = 0; jobs.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita, KS 67202', lat: 37.6889, lon: -97.3361,
+          extraAddresses: [{ label: 'Rental', addr: '6908 SW 17th St, Topeka, KS 66615', lat: 39.0356, lon: -95.7833 }] });
+        clients.push({ id: 502, name: 'Jack Reyes', addr: '220 Elm Ave, Topeka, KS', extraAddresses: [] });
+        window._countyProperty = async () => null;
+        window._reverseGeocode = async () => ({ addr: '' });
+        return true;
+      };
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the reader gets back exactly what a camera wrote: where and when', async () => {
+    const r = await page.evaluate(async () => {
+      const f = await window.__jpeg(39.0356, -95.7833, '2026-09-18T19:42:10.000Z');
+      return await _pcReadExif(f);
+    });
+    expect(r.lat).toBeCloseTo(39.0356, 4);
+    expect(r.lon).toBeCloseTo(-95.7833, 4);
+    expect(r.when).toBe('2026-09-18T19:42:10.000Z');
+  });
+
+  test('a photo with no EXIF, or junk, reads as null and never throws', async () => {
+    const r = await page.evaluate(async () => {
+      const plain = await window.__jpeg(null, null, null);
+      const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4])], 'a.png');
+      const cut = new File([new Uint8Array([0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x40, 0x45, 0x78, 0x69, 0x66, 0, 0, 0x49, 0x49])], 'cut.jpg');
+      const out = [];
+      for (const f of [plain, png, cut, new File([], 'empty.jpg'), null, undefined, 'nope', {}]) out.push(await _pcReadExif(f));
+      return out;
+    });
+    expect(r).toEqual([null, null, null, null, null, null, null, null]);
+  });
+
+  // Owner 2026-09-23: one button, not two. "Add photos" asks camera or
+  // library; the library files straight to that house.
+  test('the property card has ONE Add photos button, and it offers the camera or the library', async () => {
+    await page.evaluate(() => {
+      window.__seedImp(); currentClientId = 501; window['_cdpropOpen_501_1'] = true;
+      renderClientDetail(); goPg('pg-client-detail'); renderCDAddresses();
+    });
+    const r = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('#cd-addresses-list button')].map(b => b.textContent.trim());
+      return { add: btns.filter(t => t === 'Add photos').length, imp: btns.filter(t => t === 'Import').length,
+        bleed: document.documentElement.scrollWidth > innerWidth + 1 };
+    });
+    expect(r.imp, 'no separate Import button on the card').toBe(0);
+    expect(r.add).toBeGreaterThanOrEqual(1);
+    expect(r.bleed).toBe(false);
+    await page.evaluate(() => [...document.querySelectorAll('#cd-addresses-list button')].filter(b => b.textContent.trim() === 'Add photos').pop().click());
+    await expect(page.locator('#pc-add .pc-att-t')).toHaveText('Add photos');
+    const opts = await page.locator('#pc-add .pc-file-opt b').allTextContents();
+    expect(opts).toEqual(['Take photo', 'Choose from library']);
+    await expect(page.locator('#pc-add')).toContainText('Files straight to 6908 SW 17th St');
+    const inside = await page.evaluate(() => [...document.querySelectorAll('#pc-add .pc-file-opt')].every(b => b.getBoundingClientRect().right <= innerWidth));
+    expect(inside).toBe(true);
+    await page.evaluate(() => document.getElementById('pc-add').click());
+    await expect(page.locator('#pc-add')).toHaveCount(0);
+  });
+
+  test('Take photo opens the camera on THAT house, so shots land on the rental, not the primary', async () => {
+    await page.evaluate(() => { window.__seedImp(); tdAddPhotos(501, '6908 SW 17th St, Topeka, KS 66615'); });
+    await page.locator('#pc-add .pc-file-opt', { hasText: 'Take photo' }).click();
+    await expect(page.locator('#pc-sheet')).toBeVisible();
+    const r = await page.evaluate(async () => {
+      const row = await tdSavePhoto({ file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), type: 'before', stamp: false,
+        clientId: _pcCtx.clientId, addr: _pcCtx.addr || undefined });
+      const ctx = { c: _pcCtx.clientId, addr: _pcCtx.addr };
+      tdCloseCapture(); try { tdReviewClose(); } catch (e) {}
+      return { ctx, addr: row.addr };
+    });
+    expect(r.ctx).toEqual({ c: 501, addr: '6908 SW 17th St, Topeka, KS 66615' });
+    expect(r.addr).toBe('6908 SW 17th St, Topeka, KS 66615');
+    // and the old entry with no house still means the primary
+    const plain = await page.evaluate(() => { tdCaptureForClient(501); const a = _pcCtx.addr; tdCloseCapture(); return a; });
+    expect(plain).toBe('');
+  });
+
+  test('Choose from library opens the iPhone picker and files every photo to THAT house', async () => {
+    await page.evaluate(() => { window.__seedImp(); currentClientId = 501; window['_cdpropOpen_501_1'] = true; renderClientDetail(); goPg('pg-client-detail'); renderCDAddresses(); });
+    const files = await page.evaluate(async () => {
+      const toB64 = async f => btoa(String.fromCharCode(...new Uint8Array(await f.arrayBuffer())));
+      return [await toB64(await window.__jpeg(39.0356, -95.7833, '2026-09-18T19:42:10.000Z')),
+              await toB64(await window.__jpeg(null, null, null))];
+    });
+    // The rental's card (index 1) is the one open.
+    await page.evaluate(() => [...document.querySelectorAll('#cd-addresses-list button')].filter(b => b.textContent.trim() === 'Add photos').pop().click());
+    const chooserP = page.waitForEvent('filechooser');
+    await page.locator('#pc-add .pc-file-opt', { hasText: 'Choose from library' }).click();
+    const chooser = await chooserP;
+    expect(chooser.isMultiple()).toBe(true);
+    await chooser.setFiles(files.map((b, i) => ({ name: 'IMG_' + i + '.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(b, 'base64') })));
+    await expect.poll(() => page.evaluate(() => photos.length)).toBe(2);
+    const r = await page.evaluate(() => photos.map(p => ({ c: p.client_id, addr: p.addr, imp: !!p.imported, st: !!p.stamped, at: p.uploadedAt, lat: p.lat })));
+    expect(r.every(p => p.c === 501 && p.addr === '6908 SW 17th St, Topeka, KS 66615' && p.imp && !p.st)).toBe(true);
+    expect(r.map(p => p.at)).toContain('2026-09-18T19:42:10.000Z');
+    expect(r.find(p => p.at === '2026-09-18T19:42:10.000Z').lat).toBeCloseTo(39.0356, 4);
+    // no EXIF: the file's own date, never "now", and no invented location
+    const other = r.find(p => p.at !== '2026-09-18T19:42:10.000Z');
+    expect(other.lat).toBe(null);
+    await expect(page.locator('#pc-rev')).toBeVisible();
+    await expect(page.locator('#pc-sheet')).toHaveCount(0);
+  });
+
+  test('Add photos on a customer that no longer exists does nothing', async () => {
+    const r = await page.evaluate(() => { window.__seedImp(); return [tdAddPhotos(99999, 'x'), tdAddPhotos(null), !!document.getElementById('pc-add')]; });
+    expect(r).toEqual([false, false, false]);
+  });
+
+  test('the camera has Import, and imported photos join the shoot with its stage', async () => {
+    await page.evaluate(() => { window.__seedImp(); tdCaptureUnfiled(); tdCaptureSetType('after'); });
+    await expect(page.locator('#pc-import-btn')).toBeVisible();
+    const r = await page.evaluate(async () => {
+      const before = _pcSessionIds.length;
+      const f = await window.__jpeg(39.0356, -95.7833, '2026-09-18T19:42:10.000Z');
+      const ids = await _pcImportFiles([f], null);
+      return { added: _pcSessionIds.length - before, inShoot: _pcSessionIds.includes(ids[0]),
+        type: photos.find(p => p.id === ids[0]).type, imp: photos.find(p => p.id === ids[0]).imported,
+        top: (() => { const t = document.querySelector('#pc-sheet .pc-cam-top').getBoundingClientRect(); const b = document.getElementById('pc-import-btn').getBoundingClientRect(); return b.right <= innerWidth && b.top >= t.top; })() };
+    });
+    expect(r.added).toBe(1);
+    expect(r.inShoot).toBe(true);
+    expect(r.type).toBe('after');
+    expect(r.imp).toBe(true);
+    expect(r.top).toBe(true);
+    await page.evaluate(() => { try { tdCloseCapture(); tdReviewClose(); tdAttachCancel(); } catch (e) {} });
+  });
+
+  test('an imported photo with its location lands on the house it was taken at', async () => {
+    await page.evaluate(() => window.__seedImp());
+    const r = await page.evaluate(async () => {
+      const ids = await _pcImportFiles([await window.__jpeg(39.0356, -95.7833, '2026-09-18T19:42:10.000Z')], null);
+      tdReviewShots(ids); tdReviewAttach();
+      return [...document.querySelectorAll('#pc-att .pc-file-opt.near')].map(b => b.textContent);
+    });
+    expect(r.length).toBe(1);
+    expect(r[0]).toContain('Dana Whitfield');
+    expect(r[0]).toContain('6908 SW 17th St');
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+  });
+
+  test('with no location, the job on the schedule that day is offered, and one tap files it there', async () => {
+    const r = await page.evaluate(async () => {
+      window.__seedImp();
+      jobs.push({ id: 801, client_id: 502, name: 'Kitchen repaint', addr: '220 Elm Ave, Topeka, KS', start: '2026-09-18', days: 1, status: 'upcoming' });
+      const f = await window.__jpeg(null, null, null);
+      const g = new File([f], 'IMG_x.jpg', { type: 'image/jpeg', lastModified: Date.parse('2026-09-18T17:00:00Z') });
+      const ids = await _pcImportFiles([g], null);
+      tdReviewShots(ids); tdReviewAttach();
+      const out = { labels: [...document.querySelectorAll('#pc-att .pc-att-lbl')].map(l => l.textContent),
+        day: [...document.querySelectorAll('#pc-att .pc-att-day .pc-file-opt')].map(b => b.textContent) };
+      document.querySelector('#pc-att .pc-att-day .pc-file-opt').click();
+      const p = photos.find(x => x.id === ids[0]);
+      out.filed = { c: p.client_id, j: p.job_id };
+      return out;
+    });
+    expect(r.labels[0]).toBe('On the schedule Fri, Sep 18');
+    expect(r.day.length).toBe(1);
+    expect(r.day[0]).toContain('Jack Reyes');
+    expect(r.day[0]).toContain('Kitchen repaint');
+    expect(r.filed).toEqual({ c: 502, j: 801 });
+  });
+
+  test('a photo taken with the camera today is never offered by schedule day, and nothing is invented', async () => {
+    const r = await page.evaluate(async () => {
+      window.__seedImp();
+      jobs.push({ id: 802, client_id: 502, name: 'Today job', addr: '220 Elm Ave', start: todayKey(), days: 1, status: 'upcoming' });
+      photos.push({ id: 990, type: 'before', url: '', data: 'x', client_id: null, lat: null, lon: null, uploadedAt: new Date().toISOString() });
+      return { camera: _pcDayMatches([990]).length, empty: _pcDayMatches([]).length, junk: _pcDayMatches(null).length };
+    });
+    expect(r).toEqual({ camera: 0, empty: 0, junk: 0 });
+  });
+
+  test('the details sheet says Imported, and the sync keeps the flag', async () => {
+    const r = await page.evaluate(async () => {
+      window.__seedImp();
+      const ids = await _pcImportFiles([await window.__jpeg(39.0356, -95.7833, '2026-09-18T19:42:10.000Z')], { clientId: 501, addr: '412 Oak St, Wichita, KS 67202' });
+      tdPhotoInfo(ids[0]);
+      const chips = document.body.innerText.includes('Imported');
+      tdPhotoInfoClose(); tdReviewClose();
+      const t = _TD_TABLES.find(x => x.t === 'td_photos');
+      const synced = t.tx([{ ...photos.find(p => p.id === ids[0]), url: 'https://x/a.jpg' }])[0];
+      return { chips, synced: synced.imported };
+    });
+    expect(r.chips).toBe(true);
+    expect(r.synced).toBe(true);
+    await assertNoErrors(page, 'TrueShot import');
   });
 });

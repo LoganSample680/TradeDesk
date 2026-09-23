@@ -83,7 +83,10 @@ async function tdSavePhoto(opts){
     // Who took it, for the details sheet. The same name the time log files a
     // crew member's entries under (js/jobs.js), so the two never disagree.
     by:_pcWhoShot(),
-    uploadedAt:new Date().toISOString()
+    // An imported photo keeps the moment it was TAKEN, from its own file,
+    // so it sorts and reads as the day it happened, not the day it came in.
+    uploadedAt:(opts.when&&!isNaN(new Date(opts.when)))?new Date(opts.when).toISOString():new Date().toISOString(),
+    ...(opts.imported?{imported:true}:{})
   };
 
   // ── The stamp is burned in BEFORE anything else sees the bytes ──────────
@@ -411,6 +414,9 @@ function tdOpenCapture(opts){
     clientId:opts.clientId!=null?opts.clientId:null,
     bidId:opts.bidId!=null?opts.bidId:null,
     jobId:opts.jobId!=null?opts.jobId:null,
+    // The house, when the camera was opened from one property's card: a
+    // customer with a rental has two, and the card knows which it was.
+    addr:String(opts.addr||''),
     type:opts.type||'before',
     caption:String(opts.caption||'').trim().slice(0,60),
     ghost:true,
@@ -1032,6 +1038,7 @@ function tdPhotoInfo(photoId){
     mp?mp+' MP':'',
     p.accM!=null?'±'+_pcFt(p.accM)+' ft':'',
     p.exifGps?'GPS in file':'',
+    p.imported?'Imported':'',
     p.stamped?'Stamped':'',
     p.annotated?'Marked up':''
   ].filter(Boolean);
@@ -1634,6 +1641,27 @@ function _pcAttGuess(){
 // The pins answer it when the houses were ever located. When they were not,
 // the street Apple named for the photos answers it: a street that is none of
 // theirs is a new property, not a reason to guess the one on record.
+// Jobs on the schedule the day imported photos were taken, for photos with no
+// location to match on. Only imported ones: a photo shot through the camera
+// today already has a fix, or it has nothing worth guessing from.
+function _pcDayMatches(ids){
+  const rows=(ids||[]).map(id=>photos.find(x=>String(x.id)===String(id))).filter(Boolean);
+  if(!rows.length||!rows.every(r=>r.imported)||rows.some(r=>r.lat!=null&&r.lon!=null))return [];
+  if(typeof getJobsOnDay!=='function'||typeof dateKey!=='function')return [];
+  const keys=[...new Set(rows.map(r=>{const d=new Date(r.uploadedAt);return isNaN(d)?'':dateKey(d);}).filter(Boolean))];
+  if(keys.length!==1)return [];
+  const seen=new Set(),out=[];
+  getJobsOnDay(keys[0]).forEach(({job,isBuf})=>{
+    if(isBuf||!job||job.client_id==null||seen.has(job.id))return;
+    seen.add(job.id);
+    const c=clients.find(x=>x.id===job.client_id);
+    out.push({clientId:job.client_id,jobId:job.id,name:(c&&c.name)||job.client_name||'',addr:job.addr||(c&&c.addr)||'',what:job.name||'Job'});
+  });
+  const d=new Date(rows[0].uploadedAt);
+  const top=out.slice(0,4);
+  top.label='On the schedule '+d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  return top;
+}
 function _pcAttAway(c){
   if(!_pcAtt||!c)return false;
   const rows=(_pcAtt.ids||[]).map(id=>photos.find(x=>String(x.id)===String(id))).filter(Boolean);
@@ -1752,6 +1780,7 @@ function _pcAttPaint(step,q){
     const near=_pcNearbyMatches(_pcAtt.ids);
     const nearIds=new Set(near.map(m=>m.clientId));
     const owners=_pcOwnerMatches().filter(m=>!nearIds.has(m.c.id));
+    const dayJobs=near.length?[]:_pcDayMatches(_pcAtt.ids);
     const term=String(q||'').trim().toLowerCase();
     const list=clients.filter(c=>!term||String(c.name||'').toLowerCase().includes(term)||String(c.addr||'').toLowerCase().includes(term))
       .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
@@ -1768,6 +1797,12 @@ function _pcAttPaint(step,q){
       // The county says who owns the house he is standing at. When that owner
       // is someone already in the book (by name, or because the same owner is
       // on another of their properties: a landlord's LLC), say so first.
+      // Imported photos iOS stripped the location from still carry the day
+      // they were taken, and the schedule says whose job that was.
+      (dayJobs.length&&!term?'<div class="pc-att-lbl">'+escHtml(dayJobs.label)+'</div><div class="pc-att-group pc-att-day">'+
+        dayJobs.map(m=>row('tdAttachPick('+m.clientId+','+m.jobId+')',escHtml(_pcInitials(m.name)),escHtml(m.name||'Unnamed'),
+          escHtml(m.what)+(m.addr?' \u00b7 '+escHtml(String(m.addr).split(',')[0]):''),'','day')).join('')+
+        '</div>':'')+
       (owners.length&&!term?'<div class="pc-att-lbl">Owns this house</div><div class="pc-att-group pc-att-owner">'+
         owners.map(m=>row('tdAttachPick('+m.c.id+')',escHtml(_pcInitials(m.c.name)),escHtml(m.c.name||'Unnamed'),
           escHtml(m.why),'','owner')).join('')+
@@ -1964,7 +1999,10 @@ function _pcSheetHTML(){
   '<div class="pc-cam-top">'+
     '<button type="button" class="pc-stamp-toggle pc-glass" id="pc-stamp-toggle" onclick="tdTogglePhotoStamp()">'+
       '<span class="dot"></span><span id="pc-stamp-label">Stamp on</span></button>'+
-    '<button type="button" class="pc-ghost-btn pc-glass" id="pc-ghost-btn" onclick="tdCaptureToggleGhost()">Ghost on</button>'+
+    '<div class="pc-cam-top-r">'+
+      '<button type="button" class="pc-ghost-btn pc-glass" id="pc-ghost-btn" onclick="tdCaptureToggleGhost()">Ghost on</button>'+
+      '<button type="button" class="pc-import-btn pc-glass" id="pc-import-btn" onclick="tdImportPhotos()">'+_pcIcon('photos')+'<span>Import</span></button>'+
+    '</div>'+
   '</div>'+
   '<div class="pc-vf" id="pc-vf">'+
     '<video id="pc-video" playsinline autoplay muted></video>'+
@@ -2005,6 +2043,8 @@ const _PC_ICONS={
   x:'<path d="M7 7l10 10M17 7L7 17"/>',
   search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
+  camera:'<path d="M4.5 8.5a2 2 0 012-2h1.8l1.4-2h4.6l1.4 2h1.8a2 2 0 012 2v9a2 2 0 01-2 2h-11a2 2 0 01-2-2z"/><circle cx="12" cy="13" r="3.3"/>',
+  photos:'<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 15.5l-5-4.5-7.5 7.5"/>',
   globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',
   chev:'<path d="M9 5l7 7-7 7"/>'
 };
@@ -2201,7 +2241,7 @@ async function _pcCommit(file){
   const fix=_pcCurrentFix();
   const row=await tdSavePhoto({
     file,type:_pcCtx.type,caption:_pcCtx.caption,
-    clientId:_pcCtx.clientId,bidId:_pcCtx.bidId,jobId:_pcCtx.jobId,
+    clientId:_pcCtx.clientId,bidId:_pcCtx.bidId,jobId:_pcCtx.jobId,addr:_pcCtx.addr||undefined,
     lat:fix.lat,lon:fix.lon,accM:fix.acc
   });
   if(!row)return;
@@ -2264,8 +2304,174 @@ function tdCaptureForJob(jobId,type,caption){
   const j=jobs.find(x=>x.id===jobId);
   tdOpenCapture({jobId,clientId:j?j.client_id:null,bidId:j?j.bid_id:null,type:type||'progress',caption});
 }
-function tdCaptureForClient(clientId,type){
-  tdOpenCapture({clientId,type:type||'before'});
+function tdCaptureForClient(clientId,type,addr){
+  tdOpenCapture({clientId,type:type||'before',addr});
+}
+// "Add photos" on a property card (owner 2026-09-23): one button, the two
+// ways a photo gets there. Standing at the house, the camera; back at the
+// truck or the office, the library, which files straight to this house with
+// no camera and no shoot to finish. TrueShot's own dark sheet, because both
+// answers open TrueShot screens.
+function tdAddPhotos(clientId,addr){
+  document.getElementById('pc-add')?.remove();
+  const c=clients.find(x=>x.id===clientId);
+  if(!c)return false;
+  const at=String(addr||c.addr||'').split(',')[0];
+  const ov=document.createElement('div');
+  ov.id='pc-add';ov.className='zmodal-overlay pc-att-ov';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  const a=JSON.stringify(String(addr||'')).replace(/"/g,'&quot;');
+  const opt=(fn,icon,name,sub)=>'<button type="button" class="pc-file-opt" onclick="document.getElementById(\'pc-add\')?.remove();'+fn+'">'+
+    '<span class="pc-av add">'+_pcIcon(icon)+'</span><span class="pc-opt-m"><b>'+name+'</b><span>'+sub+'</span></span>'+
+    _pcIcon('chev','pc-chev')+'</button>';
+  ov.innerHTML='<div class="zmodal pc-att-sheet">'+
+    '<div class="pc-grab"></div><div class="pc-att-hd"><span class="pc-att-t">Add photos</span>'+
+    '<button type="button" class="pc-att-x" aria-label="Cancel" onclick="document.getElementById(\'pc-add\')?.remove()">'+_pcIcon('x')+'</button></div>'+
+    '<div class="pc-att-group">'+
+      opt('tdCaptureForClient('+clientId+',\'before\','+a+')','camera','Take photo','Open the camera'+(at?' at '+escHtml(at):''))+
+      opt('tdImportPhotos('+clientId+','+a+')','photos','Choose from library','Files straight to '+(at?escHtml(at):'this customer'))+
+    '</div></div>';
+  document.body.appendChild(ov);
+  return true;
+}
+// ── Import from the iPhone library (owner 2026-09-23, from the field) ─────
+// Photos already on the phone, taken before the app was open or by someone
+// else and AirDropped over. A plain <input type=file multiple> with no
+// capture attribute: on iOS that is the system photo picker, so there is no
+// native code and no iOS build (3.2).
+//
+// Two doors, one path:
+//  - from a property card, the customer and the house are known, so the
+//    photos land there and the album opens on them;
+//  - from the camera, they join the shoot like any other shot and go through
+//    the same Done, confirm and picker as everything else.
+//
+// Each photo keeps what its own file says: when it was taken, and where if
+// iOS left the location in. Never the phone's position now, and never a
+// stamp: burning today's date into a photo from last Tuesday would be a
+// false record, which is the one thing a stamp exists to prevent.
+function tdImportPhotos(clientId,addr){
+  let inp=document.getElementById('pc-import-file');
+  if(!inp){
+    inp=document.createElement('input');
+    inp.type='file';inp.id='pc-import-file';inp.accept='image/*';inp.multiple=true;
+    inp.style.display='none';
+    document.body.appendChild(inp);
+  }
+  const ctx=(clientId!=null)?{clientId,addr:addr||''}:null;
+  inp.onchange=()=>{
+    const files=[...(inp.files||[])];
+    inp.value='';
+    if(files.length)_pcImportFiles(files,ctx);
+  };
+  inp.click();
+  return true;
+}
+async function _pcImportFiles(files,ctx){
+  const fromCam=!ctx&&!!_pcCtx;
+  const base=fromCam?_pcCtx:(ctx||{});
+  const type=(fromCam&&_pcCtx.type)||'before';
+  const ids=[];
+  for(const file of (files||[])){
+    if(!file)continue;
+    let ex=null;
+    try{ex=await _pcReadExif(file);}catch(_e){ex=null;}
+    const when=(ex&&ex.when)||(file.lastModified?new Date(file.lastModified).toISOString():null);
+    const row=await tdSavePhoto({file,type,stamp:false,imported:true,when,
+      clientId:base.clientId!=null?base.clientId:null,
+      bidId:base.bidId!=null?base.bidId:null,jobId:base.jobId!=null?base.jobId:null,
+      addr:base.addr||undefined,
+      lat:ex&&ex.lat!=null?ex.lat:null,lon:ex&&ex.lon!=null?ex.lon:null});
+    if(!row)continue;
+    ids.push(row.id);
+    if(fromCam){_pcSessionIds.push(row.id);_pcShots++;}
+  }
+  if(!ids.length)return ids;
+  if(fromCam){try{_pcPaint();}catch(_e){}return ids;}
+  if(typeof showToast==='function')
+    showToast(ids.length+(ids.length===1?' photo':' photos')+' imported','\u2705');
+  if(typeof renderCDAddresses==='function')try{renderCDAddresses();}catch(_e){}
+  // Filed to a house: open that house's album so he sees where they went.
+  // Unfiled: the same review and picker a shoot ends with.
+  if(ctx&&ctx.clientId!=null&&typeof tdOpenPropertyFolder==='function')tdOpenPropertyFolder(ctx.clientId,ctx.addr);
+  else if(typeof tdReviewShots==='function')tdReviewShots(ids);
+  return ids;
+}
+// When and where a JPEG says it was taken, from its own EXIF. Reads the
+// first 256KB only (the metadata lives at the front). Returns null for
+// anything it cannot read, including HEIC, which iOS normally converts to
+// JPEG for a web picker anyway. Never throws.
+async function _pcReadExif(file){
+  try{
+    if(!file||typeof file.slice!=='function')return null;
+    const buf=await file.slice(0,262144).arrayBuffer();
+    return _pcParseExif(new DataView(buf));
+  }catch(_e){return null;}
+}
+function _pcParseExif(dv){
+  try{
+    if(!dv||dv.byteLength<4||dv.getUint16(0)!==0xFFD8)return null;
+    let o=2;
+    while(o+4<=dv.byteLength){
+      if(dv.getUint8(o)!==0xFF)return null;
+      const mk=dv.getUint8(o+1),len=dv.getUint16(o+2);
+      if(mk===0xE1&&o+10<=dv.byteLength&&dv.getUint32(o+4)===0x45786966)return _pcParseTiff(dv,o+10);
+      if(mk===0xDA)return null;   // image data: no EXIF before it
+      o+=2+len;
+    }
+    return null;
+  }catch(_e){return null;}
+}
+function _pcParseTiff(dv,t){
+  const le=dv.getUint16(t)===0x4949;
+  const u16=a=>dv.getUint16(a,le),u32=a=>dv.getUint32(a,le);
+  if(u16(t+2)!==42)return null;
+  const ifd=at=>{
+    const out={};const n=u16(at);
+    for(let i=0;i<n;i++){
+      const e=at+2+i*12;if(e+12>dv.byteLength)break;
+      out[u16(e)]={type:u16(e+2),count:u32(e+4),val:e+8};
+    }
+    return out;
+  };
+  const str=en=>{
+    if(!en||en.type!==2)return '';
+    const at=en.count>4?t+u32(en.val):en.val;let s2='';
+    for(let i=0;i<en.count-1&&at+i<dv.byteLength;i++)s2+=String.fromCharCode(dv.getUint8(at+i));
+    return s2;
+  };
+  const rat=(at)=>{const d=u32(at+4);return d?u32(at)/d:0;};
+  const dms=en=>{
+    if(!en||en.type!==5||en.count<3)return null;
+    const at=t+u32(en.val);
+    return rat(at)+rat(at+8)/60+rat(at+16)/3600;
+  };
+  const i0=ifd(t+u32(t+4));
+  let when=null,lat=null,lon=null;
+  if(i0[0x8769]){
+    const ex=ifd(t+u32(i0[0x8769].val));
+    const dt=str(ex[0x9003])||str(i0[0x0132]);
+    const m=/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(dt);
+    if(m){
+      const off=str(ex[0x9011]);
+      const iso=m[1]+'-'+m[2]+'-'+m[3]+'T'+m[4]+':'+m[5]+':'+m[6]+(/^[+-]\d{2}:\d{2}$/.test(off)?off:'');
+      // No offset in the file means the camera's local time, which is this
+      // phone's local time for anything shot on it.
+      const d=new Date(iso);
+      if(!isNaN(d))when=d.toISOString();
+    }
+  }
+  if(i0[0x8825]){
+    const g=ifd(t+u32(i0[0x8825].val));
+    const la=dms(g[2]),lo=dms(g[4]);
+    const lr=str(g[1]),lor=str(g[3]);
+    if(la!=null&&lo!=null&&(la||lo)){
+      lat=lr==='S'?-la:la;lon=lor==='W'?-lo:lo;
+      if(Math.abs(lat)>90||Math.abs(lon)>180){lat=null;lon=null;}
+    }
+  }
+  if(!when&&lat==null)return null;
+  return {when,lat,lon};
 }
 // The dashboard quick action: no customer, no estimate, no job. Shoot now,
 // file later.

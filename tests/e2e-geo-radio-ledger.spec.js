@@ -77,11 +77,9 @@ test.describe('the radio ledger', () => {
       expect((c.stopHeartbeat || [])[0] && c.stopHeartbeat[0].reason).toBe('parked at home');
     });
 
-    test('the wake-on-move stream says it was armed by a park', async () => {
-      const c = await askedWith(`
-        const keep = _geoWakeArmOk; _geoWakeArmOk = () => '';
-        try { _geoWakeOnMoveArm(_geoTdPlugin()); } finally { _geoWakeArmOk = keep; }`);
-      expect((c.setWakeOnMove || [])[0]).toEqual(expect.objectContaining({ on: true, reason: 'park armed' }));
+    test('the retired wake stream is only ever asked for off, and says why', async () => {
+      const c = await askedWith(`_geoWakeStreamOff('park armed, stream retired');`);
+      expect((c.setWakeOnMove || [])[0]).toEqual({ on: false, reason: 'park armed, stream retired' });
     });
 
     test('a boot with no park to restore disarms the stream and says why', async () => {

@@ -3510,7 +3510,7 @@ function _cdPropCardHtml(c,a,idx,total){
         <div style="font-size:13px;font-weight:700;color:var(--text)">${_propPhotos.length?_propPhotos.length+(_propPhotos.length===1?' photo':' photos'):'None yet'}</div>
       </div>
       ${_propPhotos.length?`<button onclick="event.stopPropagation();tdOpenPropertyFolder(${c.id},${escHtml(JSON.stringify(a.addr||''))})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--text)">Open</button>`:''}
-      <button onclick="event.stopPropagation();tdCaptureForClient(${c.id})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
+      <button onclick="event.stopPropagation();tdAddPhotos(${c.id},${escHtml(JSON.stringify(a.addr||''))})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
     </div>`;
     // Footer: data source / lookup + map + remove.
     //
