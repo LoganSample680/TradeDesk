@@ -1821,8 +1821,8 @@ const _PC_ICONS={
   shield:'<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
   x:'<path d="M7 7l10 10M17 7L7 17"/>',
   search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
-  chev:'<path d="M9 5l7 7-7 7"/>',
-  globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>'
+  globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',
+  chev:'<path d="M9 5l7 7-7 7"/>'
 };
 function _pcIcon(name,cls){
   return '<svg class="pc-ic'+(cls?' '+cls:'')+'" viewBox="0 0 24 24" aria-hidden="true">'+(_PC_ICONS[name]||'')+'</svg>';
