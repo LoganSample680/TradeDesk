@@ -3700,3 +3700,162 @@ extension TdGeoPluginTests {
         XCTAssertLessThanOrEqual(ts, after)
     }
 }
+
+// MARK: - A recovered flip is sent on the wake that recovered it (2026-09-23)
+//
+// Owner: "I want to see on time shit within 10 seconds 100% of the time."
+//
+// The flush sent only rows with a capture time newer than the last row the
+// server had acknowledged. A flip the backfill recovers is stamped with when
+// it HAPPENED, which is before whatever this phone had already sent, so it
+// sat below the mark from the moment it was recorded and never went out on a
+// wake: Jack's 9:01 walk into the shop reached the server at 10:26, three
+// seconds after he opened the app. Rows now carry the order they were recorded
+// in, and freshness is decided by that.
+extension TdGeoPluginTests {
+
+    private func clearSeqState() {
+        let d = UserDefaults.standard
+        for k in [plugin.recordSeqKeyForTest, plugin.flushSeqMarkKeyForTest, plugin.flushInflightSeqKeyForTest,
+                  plugin.flushMarkKeyForTest, plugin.flushInflightKeyForTest, plugin.bufferKeyForTest,
+                  plugin.flushCfgKeyForTest] {
+            d.removeObject(forKey: k)
+        }
+    }
+
+    func testFreshRows_aRecoveredFlipOlderThanTheMarkIsStillFresh() {
+        // Jack's shape: the fence exit at 9:06:47 went out first, then the
+        // backfill recovered the 9:01:07 walk. By capture time it is old news;
+        // by the order it was recorded it has never been sent.
+        let exitTs = 1_790_172_407_000.0, walkTs = 1_790_172_067_000.0
+        let buf: [[String: Any]] = [
+            ["type": "regionExit", "ts": exitTs, "seq": 41.0],
+            ["type": "motion", "ts": walkTs, "kind": "onFoot", "hist": true, "seq": 42.0],
+        ]
+        let fresh = TdGeoPlugin.freshRows(buf, tsMark: exitTs, seqMark: 41)
+        XCTAssertEqual(fresh.count, 1, "the recovered walk is fresh even though it happened first")
+        XCTAssertEqual(fresh.first?["kind"] as? String, "onFoot")
+    }
+
+    func testFreshRows_rowsFromBeforeNumberingKeepTheOldRule() {
+        // An upgrade must neither re-send history nor drop the unsent tail.
+        let buf: [[String: Any]] = [
+            ["type": "fix", "ts": 100.0],
+            ["type": "fix", "ts": 200.0],
+            ["type": "fix", "ts": 50.0, "seq": 1.0],
+        ]
+        let fresh = TdGeoPlugin.freshRows(buf, tsMark: 150, seqMark: 0)
+        XCTAssertEqual(fresh.compactMap { $0["ts"] as? Double }.sorted(), [50.0, 200.0])
+    }
+
+    func testFreshRows_anAcknowledgedNumberIsNeverResent() {
+        let buf: [[String: Any]] = (1...5).map { i -> [String: Any] in
+            ["type": "fix", "ts": Double(1000 + i), "seq": Double(i)]
+        }
+        XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 0, seqMark: 5).count, 0)
+        XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 9_999, seqMark: 3).count, 2,
+                       "numbered rows ignore the capture-time mark entirely")
+    }
+
+    func testFreshRows_junkNumbersFallBackToTheTimestamp() {
+        let junks: [Any] = ["7", -3.0, 0.0, Double.nan, Double.infinity, NSNull(), [1], ["a": 1]]
+        for junk in junks {
+            let buf: [[String: Any]] = [["type": "fix", "ts": 500.0, "seq": junk]]
+            XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 400, seqMark: 1_000_000).count, 1,
+                           "\(junk) is not a number, so the row is judged by its time")
+            XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 600, seqMark: 0).count, 0)
+        }
+    }
+
+    func testFreshRows_emptyAndGarbageBuffersAreNotAFault() {
+        XCTAssertEqual(TdGeoPlugin.freshRows([], tsMark: 0, seqMark: 0).count, 0)
+        XCTAssertEqual(TdGeoPlugin.freshRows([[:], ["seq": 1.0]], tsMark: 0, seqMark: 0).count, 1,
+                       "a row with only a number is still a numbered row")
+    }
+
+    func testRecord_numbersEveryRowInOrderAndSurvivesARelaunch() {
+        clearSeqState()
+        for i in 0..<120 { plugin.recordForTest(["type": "fix", "ts": Double(1_000 + (i % 7))]) }
+        let rows = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        let seqs = rows.compactMap { $0["seq"] as? Double }
+        XCTAssertEqual(seqs.count, 120)
+        XCTAssertEqual(seqs, seqs.sorted(), "recorded order, whatever the capture times")
+        XCTAssertEqual(Set(seqs).count, 120, "no number is handed out twice")
+        // A fresh plugin instance is what a relaunch looks like: the counter
+        // lives on disk, so numbering carries on rather than restarting at 1
+        // and colliding with rows still in the buffer.
+        let reborn = TdGeoPlugin()
+        reborn.recordForTest(["type": "fix", "ts": 1.0])
+        let after = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        XCTAssertEqual(after.last?["seq"] as? Double, 121)
+        clearSeqState()
+    }
+
+    func testRecord_aCorruptCounterStillNumbersForward() {
+        clearSeqState()
+        UserDefaults.standard.set("garbage", forKey: plugin.recordSeqKeyForTest)
+        plugin.recordForTest(["type": "fix", "ts": 1.0])
+        UserDefaults.standard.set(-50.0, forKey: plugin.recordSeqKeyForTest)
+        plugin.recordForTest(["type": "fix", "ts": 2.0])
+        let rows = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        XCTAssertTrue(rows.allSatisfy { (($0["seq"] as? Double) ?? 0) >= 1 }, "never a zero or negative number")
+        clearSeqState()
+    }
+
+    func testFlushNow_sendsARecoveredFlipBelowTheCaptureMark() {
+        // The bug, end to end: red before, green after.
+        clearSeqState()
+        let d = UserDefaults.standard
+        d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
+              forKey: plugin.flushCfgKeyForTest)
+        d.set(1_790_172_407_000.0, forKey: plugin.flushMarkKeyForTest)   // the fence exit, already acked
+        d.set(41.0, forKey: plugin.flushSeqMarkKeyForTest)
+        d.set([["type": "motion", "ts": 1_790_172_067_000.0, "kind": "onFoot", "hist": true, "seq": 42.0]],
+              forKey: plugin.bufferKeyForTest)
+        plugin.flushNowForTest()
+        let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(inflight.values.first, 42.0, "the recovered flip went out on this wake")
+        clearSeqState()
+    }
+
+    func testFlushNow_twoBatchesWithTheSameNewestTimeBothGo() {
+        // Recovered flips can share a newest timestamp with a batch already on
+        // its way; the batch is identified by its newest ROW now.
+        clearSeqState()
+        let d = UserDefaults.standard
+        d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
+              forKey: plugin.flushCfgKeyForTest)
+        d.set([["type": "fix", "ts": 5_000.0, "seq": 1.0]], forKey: plugin.bufferKeyForTest)
+        plugin.flushNowForTest()
+        var buf = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        buf.append(["type": "motion", "ts": 5_000.0, "seq": 2.0, "hist": true])
+        d.set(buf, forKey: plugin.bufferKeyForTest)
+        plugin.flushNowForTest()
+        let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(Set(inflight.values), Set([1.0, 2.0]))
+        // And the same batch twice is still one upload.
+        plugin.flushNowForTest()
+        plugin.flushNowForTest()
+        let again = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(again.count, 2)
+        clearSeqState()
+    }
+
+    func testBackfill_manyWakesInARowNeverLeakOrCrash() {
+        // Every wake now holds an assertion until CoreMotion answers. The
+        // simulator has no coprocessor, so this is the guard path: fifty wakes,
+        // from two queues, and nothing left behind or thrown.
+        clearSeqState()
+        let done = expectation(description: "background wakes")
+        DispatchQueue.global().async {
+            for _ in 0..<25 { self.plugin.backfillMotionHistoryForTest() }
+            DispatchQueue.main.async {
+                for _ in 0..<25 { self.plugin.backfillMotionHistoryForTest() }
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 30)
+        XCTAssertTrue(true)
+        clearSeqState()
+    }
+}

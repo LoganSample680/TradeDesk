@@ -56,6 +56,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Park the cloud load. Every fixture here lives in the page's own arrays,
+    // and a background reload (the reconnect probe, a foreground pull) swaps
+    // them for the mock's empty tables. When one landed inside "the drill
+    // opens on the current month" it rendered "No time logged" and left the
+    // month null (midnight clock job, 2026-09-23). Nothing in this file tests
+    // cloud loading; same park as e2e-photo-capture and e2e-geo-permission.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
     // Name the business zone: every midnight below is a business midnight now
     // that the day-key helpers follow the business address rather than a
     // hardcoded Central (owner 2026-08-30). Left unset it comes from the
