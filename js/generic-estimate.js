@@ -7288,6 +7288,70 @@ function _geiBuildTermsHtml(){
   return _clausesHtml+_customTermsBlock;
 }
 
+// ── THE PROPOSAL HAS TO CLOSE (owner, 2026-09-23) ─────────────────────────
+//
+// "on any proposal that goes to the client, psychologically it has to make
+// sense and close them on looks and how things are worded ... people see a
+// price go too high, and can say I'll do it myself for 100 bucks but it's the
+// most frustrating shit ever." Two readers decide whether it gets signed:
+// the cheapskate, who wants to see every dollar buys something and that the
+// number cannot creep, and the do-it-yourselfer, who wants to see everything
+// he would have to do, rent, haul and warranty himself. Both are answered by
+// the same thing: what the price includes, said plainly, from the steps he
+// already wrote. Never from a claim he did not make: no permit line without a
+// permit step, no licence line without a licence in Settings.
+const _PROP_STAGE_NAMES={access:'Before we start',protect:'Protecting your home',demo:'Out with the old',
+  rough:'The new work',repair:'Repairs',prep:'Getting it ready',install:'The new work',
+  finish:'Finishing and testing',restore:'Putting it back',clean:'Clean-up and walk-through'};
+// Groups steps (already in work order) into runs under a customer's heading.
+// A step Tim cannot place rides with the one before it. Returns null when
+// grouping would add nothing: a short list, or one heading over all of it.
+function _propStageGroups(texts){
+  if(!Array.isArray(texts)||texts.length<4||typeof timStageOf!=='function')return null;
+  const groups=[];let cur=null;
+  texts.forEach((t,i)=>{
+    const k=timStageOf(t);
+    const nm=k&&_PROP_STAGE_NAMES[k]?_PROP_STAGE_NAMES[k]:(cur?cur.name:_PROP_STAGE_NAMES.access);
+    if(!cur||cur.name!==nm){cur={name:nm,idx:[]};groups.push(cur);}
+    cur.idx.push(i);
+  });
+  // One step between two runs under the same heading ("Scrape" between the
+  // wash and the caulk) joins them: the customer reads one "Getting it ready",
+  // not the same heading twice.
+  for(let i=1;i<groups.length-1;i++){
+    if(groups[i].idx.length===1&&groups[i-1].name===groups[i+1].name){
+      groups[i-1].idx.push(...groups[i].idx,...groups[i+1].idx);
+      groups.splice(i,2);i--;
+    }
+  }
+  return groups.length>1?groups:null;
+}
+// What the price buys, read off the steps. Each entry needs its evidence.
+function _propIncluded(texts){
+  const all=' '+(texts||[]).join(' . ').toLowerCase()+' ';
+  const out=['All labor and materials'];
+  if(/\bpermits?\b/.test(all))out.push('Permit and inspection');
+  if(/\b(protect|cover|mask|tarp|plastic|drop cloths?|move the furniture)/.test(all))out.push('Your home protected while we work');
+  if(/\b(test|tested|testing|start (it )?up|startup|pull a vacuum)/.test(all))out.push('Tested before we leave');
+  if(/\b(walk ?-?through|walk it|final walk)/.test(all))out.push('Walked through with you at the end');
+  const haul=/\b(haul|dispos|dumpster|debris|magnet|sweep|clean ?-?up|broom clean)/.test(all);
+  if(haul)out.push('Haul-away and clean-up');
+  const wp=String((typeof S!=='undefined'&&S&&S.warrantyPeriod)||'').trim();
+  const wm=wp.match(/^(\d+)\s*(day|week|month|year)s?$/i);
+  if(wp)out.push((wm?wm[1]+'-'+wm[2].toLowerCase():wp)+' warranty on the work');
+  if(typeof S!=='undefined'&&S&&String(S.blic||'').trim())out.push('Licensed contractor, #'+String(S.blic).trim().replace(/^#/,''));
+  return {items:out,haul};
+}
+function _propIncludedHtml(texts,accent,title){
+  const inc=_propIncluded(texts);
+  if(inc.items.length<3)return '';
+  const li=inc.items.map(x=>`<div style="display:flex;gap:7px;align-items:baseline;font-size:11.5px;color:#2d3748;line-height:1.5"><span style="color:${accent};font-weight:900">&#10003;</span><span>${escHtml(x)}</span></div>`).join('');
+  // The line for the man who thinks he can do it himself. It lists what he
+  // skips, never what could go wrong: a proposal that frightens reads as a
+  // contractor padding the job.
+  const diy=`No tools to buy or rent, ${inc.haul?'no trips to the dump, ':''}no weekends given up.`;
+  return `<div class="prop-included" style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${accent};margin-bottom:8px">${title||'Included in your price'}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:4px 14px">${li}</div><div class="prop-diy" style="font-size:11px;color:#718096;margin-top:9px">${diy}</div></div>`;
+}
 async function sendGenericProposal(previewOnly,opts){
   saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
   _saveToLineHistory();
@@ -7532,12 +7596,18 @@ async function sendGenericProposal(previewOnly,opts){
   const _chipsToPrint=_geiScopeChips.filter(l=>!_itemLabelKeys.has(_pbKey(l)));
   if(_chipsToPrint.length&&!_geiScopeNoScope){
     const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
-    const _listItems=_chipsToPrint.map(l=>{
+    const _chipLi=l=>{
       const chip=_allChipDefs.find(c=>c.label===l);
       const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096">, ${escHtml(chip.clientDesc)}</span>`:'';
       return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
-    }).join('');
-    _scopeBlocks.push(`<ol style="margin:0 0 10px;padding-left:18px">${_listItems}</ol>`);
+    };
+    // In work order, under the customer's words for each stage, so a long job
+    // reads as a plan they can follow instead of a wall of steps. Numbering
+    // runs on across the headings: step 7 is still step 7.
+    const _grp=_propStageGroups(_chipsToPrint);
+    _scopeBlocks.push(_grp
+      ?_grp.map(g=>`<div class="prop-stage" style="margin-bottom:6px"><div style="font-size:10.5px;font-weight:800;color:#2d3748;margin-bottom:1px">${escHtml(g.name)}</div><ol start="${g.idx[0]+1}" style="margin:0 0 4px;padding-left:18px">${g.idx.map(i=>_chipLi(_chipsToPrint[i])).join('')}</ol></div>`).join('')
+      :`<ol style="margin:0 0 10px;padding-left:18px">${_chipsToPrint.map(_chipLi).join('')}</ol>`);
   }
   const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
@@ -7546,16 +7616,29 @@ async function sendGenericProposal(previewOnly,opts){
       const its=_byoWorkItems2.filter(it=>it.section===sec);
       // Items without notes get a quiet section-appropriate descriptor, a bare
       // one-word line ("1. Room") next to fully-described scope items reads as an
-      // unfinished document to the client.
+      // unfinished document to the client. Only for a bare one-word name ("Room"). A line that already says what
+      // is being done reads as padding with it: "Set the new tankless, Labor
+      // and materials per agreed scope" on every row is what a careful buyer
+      // circles and asks about.
       const _fallbackDesc=/material/i.test(sec)?'Included in project total':'Labor and materials per agreed scope';
+      const _needsFill=it=>!String(it.notes||'').trim()&&!/\s/.test(String(it.label||'').trim());
       // The count is part of the scope, not a pricing detail: "12 doors" and
       // "1 door" are different jobs and the client should read which one they
       // agreed to. The RATE stays off the proposal, same one-price rule the
       // document already follows.
-      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>{
+      const _li=it=>{
         const _q=(Number(it.qty)>1)?` <span style="font-size:10.5px;color:#718096">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
-        return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}${_q}<span style="font-size:10.5px;color:#718096">, ${escHtml(it.notes||_fallbackDesc)}</span></li>`;
-      }).join('')+'</ol>';
+        return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:10.5px;color:#718096">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}</li>`;
+      };
+      // One section is the usual Build Your Own: everything Tim built lands in
+      // it, and one heading over the lot says nothing. The customer's stage
+      // headings say more, same as the time and materials steps.
+      // Steps Tim added land at the end of the list on the screen; on the
+      // customer's copy they go where the work happens.
+      const _ord=(_scopeSecs2.length===1&&typeof timOrderScope==='function')?timOrderScope(its.map(it=>({text:it.label,src:it}))).map(r=>r.src.src):its;
+      const _grp=_scopeSecs2.length===1?_propStageGroups(_ord.map(it=>it.label)):null;
+      if(_grp)return _grp.map(g=>`<div class="prop-stage" style="margin-bottom:6px"><div style="font-size:10.5px;font-weight:800;color:#2d3748;margin-bottom:1px">${escHtml(g.name)}</div><ol start="${g.idx[0]+1}" style="margin:0 0 4px;padding-left:18px">${g.idx.map(i=>_li(_ord[i])).join('')}</ol></div>`).join('');
+      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(_li).join('')+'</ol>';
       // Sub-section headers match the document's one header style (accent, same
       // scale as "Scope of work"): the old hardcoded gray read as a different
       // font family entirely and made the section look mismatched.
@@ -7674,9 +7757,15 @@ async function sendGenericProposal(previewOnly,opts){
     }
   }
 
-  const _scopeSection=_scopeBlocks.length
+  // What the price buys, straight under what the work is (_propIncludedHtml).
+  // Time and materials and Build Your Own only: the other estimate types have
+  // their own trade-written clientDesc lines doing this job.
+  const _incTexts=_geiIsFreeForm?_byoWorkItems2.map(it=>it.label+' '+(it.notes||'')):_chipsToPrint.slice();
+  const _includedSection=((_geiIsTM||_geiIsFreeForm)&&!_geiScopeNoScope&&_incTexts.length)
+    ?_propIncludedHtml(_incTexts,_pAccent,_geiIsTM?'Included':'Included in your price'):'';
+  const _scopeSection=(_scopeBlocks.length
     ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
-    :'';
+    :'')+_includedSection;
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   // EPA RRP is a PER-PROPERTY fact: read year built + rrpDisturb for the exact
   // address this estimate is for (bid addr, else client primary), not the client
@@ -7714,11 +7803,18 @@ async function sendGenericProposal(previewOnly,opts){
   // an estimate" was tried and dropped the same day, because it tells the
   // customer to expect it to come down. Owner: "yes go with your price".
   const _byoEst=!_geiIsTM&&_geiIsFreeForm;
+  // Every dollar has a due date (owner, 2026-09-23, the cheapskate test). On
+  // a fixed price the deposit row alone leaves the rest of the money floating:
+  // the question a careful buyer asks next is when the rest is due, and the
+  // answer is only once the work is done. In words, not a third figure: the
+  // client's copy carries two dollar amounts, the price and the deposit
+  // (owner's standing rule, e2e-layout-integrity-regression).
+  const _balRow=(_byoEst&&_tmDepAmt>0&&_tmDepAmt<(Number(total)||0))?`<tr class="prop-balance" style="background:#f8fafc"><td colspan="2" style="padding:7px 18px;font-size:11px;font-weight:600;color:#475569">The rest is due when the work is done. Nothing else is due before then.</td></tr>`:'';
   const _bigLabel=_tmCapLeads?'MOST YOU&apos;LL PAY':(_geiIsTM?'ESTIMATED TOTAL':(_byoEst?'YOUR PRICE':'TOTAL'));
   const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Unless hidden damage turns up. Anything more needs a change order you sign.</div>':(_byoEst?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`;
+    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Unless hidden damage turns up. Anything more needs a change order you sign.</div>':(_byoEst?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`+_balRow;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
