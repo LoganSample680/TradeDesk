@@ -1467,6 +1467,21 @@ body.dark #gei-tm-page .ios-btn-fill{background:#2C74C9}
 #gei-tm-page .ios-tag{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ios-tint);margin-left:4px}
 #gei-tm-page .ios-row.law .ios-tag,#gei-tm-page .ios-tag.req{color:var(--ios-law)}
 #gei-tm-page .ios-tag.opt{color:var(--ios-2)}
+/* ── THUMBS (2026-09-23) ─────────────────────────────────────────────────
+   Earl: 58, thick thumbs, reading glasses in the truck. Every control on this
+   page is at least 44 by 44, which is Apple's own floor, measured by
+   tests/e2e-tm-angry-contractor.spec.js. Segments and pills keep their look;
+   they just stop being 27px tall targets inside a 50px row. */
+#gei-tm-page .ios-navbtn{min-height:44px;min-width:44px}
+#gei-tm-page .ios-sub button{min-height:44px;margin:-12px 0;padding-top:0;padding-bottom:0}
+#gei-tm-page .ios-stephead button.s{min-height:44px;min-width:44px}
+#gei-tm-page .ios-pill{min-height:44px;min-width:44px}
+#gei-tm-page .ios-textbtn{min-height:44px;min-width:44px}
+#gei-tm-page .ios-step button{height:44px}
+#gei-tm-page .ios-seg button{min-height:44px;min-width:44px;padding:6px 12px}
+#gei-tm-page .ios-links button{min-height:44px}
+#gei-tm-page .ios-h button{min-height:44px;min-width:44px}
+.toast .tm-undo{min-height:44px;min-width:60px;border:0;background:none;color:var(--blue);font:inherit;font-weight:700;cursor:pointer}
 #gei-tm-page .ios-lbl b{font-weight:600}
 #gei-tm-page .ios-foot b{color:var(--text);font-weight:600}
 /* Swipe to delete, and Edit for anyone who does not swipe. The row slides over
@@ -1530,6 +1545,9 @@ body.dark #gei-tm-page .ios-stephead[data-state="done"] .s{color:var(--green)}
   /* The bar carries Send and Sign; the page's foot keeps the three links. */
   #tm-actions-wrap .ios-btn{display:none}
   #gei-tm-page{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  /* Anything the page scrolls to (a focused field, a button brought into
+     view) stops above the bar instead of sliding under it. */
+  html:has(#pg-est-generic.active #gei-tm-page:not([style*="none"])){scroll-padding-bottom:calc(96px + env(safe-area-inset-bottom,0px));scroll-padding-top:56px}
   /* FULL SCREEN WHILE HE WORKS. The app's black bar sat over the page's own
      Back and Save, and the tab bar and Tim's orb floated over the form. An
      editor on an iPhone has one bar at the top and its own at the bottom.
@@ -1543,11 +1561,17 @@ body.dark #gei-tm-page .ios-stephead[data-state="done"] .s{color:var(--green)}
      is the page's grey edge to edge, or a lighter strip shows down the side. */
   body:has(#pg-est-generic.active #gei-tm-page:not([style*="none"])) #pg-est-generic{padding-top:0;animation:none}
   body:has(#pg-est-generic.active #gei-tm-page:not([style*="none"])){background:var(--bg2)}
+  /* A toast sat on top of Send (Earl, 2026-09-23). On this page it rises
+     above the bar, and its close is a thumb-sized target. */
+  body:has(#pg-est-generic.active #gei-tm-page:not([style*="none"])) .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))!important;left:16px;right:16px;max-width:none}
+  body:has(#pg-est-generic.active #gei-tm-page:not([style*="none"])) .toast-close{min-width:44px;min-height:44px;margin:-10px -12px -10px 0}
   /* The nav bar stays put while the page scrolls under it. The wrap is
      display:contents so the bar's sticky range is the whole page. */
   #gei-tm-page #tm-topbar-wrap{display:contents}
+  /* 94%, not 82%: the large title scrolls up under this bar, and at 82% the
+     customer's name read through it on top of "Time & Materials". */
   #gei-tm-page .ios-nav{position:sticky;top:0;z-index:20;margin:0 -16px;padding:env(safe-area-inset-top,0px) 8px 0;
-    background:color-mix(in srgb,var(--bg2) 82%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+    background:color-mix(in srgb,var(--bg2) 94%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
   #gei-tm-page .ios-large{padding:2px 4px 6px}
   /* One line under the name: what it is and where. It ends in … rather than
      breaking "412 Bell / St" across two lines. */

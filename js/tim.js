@@ -1326,6 +1326,15 @@ function _timTalkStop(silent){
     // Dictating a site note fills the field and stops. It is an answer to a
     // question Tim asked, not a new instruction, so reading it back as a job
     // would throw away the question he is halfway through answering.
+    // Except the scope box. "Talk to Tim" there means he takes it from here:
+    // the steps are built the moment the man stops talking, in order, with
+    // what he left out (owner, 2026-09-23). Tapping Build after talking was a
+    // second thing to do that the button's own name had already promised.
+    if(_timTalkTarget==='gei-scope-say'){
+      if(typeof _geiScopeBuild==='function')
+        _geiScopeBuild((typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm-scope-wrap':'byo-scope-wrap');
+      return;
+    }
     if(_timTalkTarget!=='_tim-say')return;
     _timShowRead(said);
   };

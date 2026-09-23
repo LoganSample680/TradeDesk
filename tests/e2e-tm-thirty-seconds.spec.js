@@ -147,21 +147,27 @@ test.describe('a T&M in under thirty seconds', () => {
     expect(out.label, 'the button counts them so he knows what he is agreeing to')
       .toBe('Add all ' + out.missedBefore);
     expect(out.missedAfter, 'and the list is empty after the one tap').toBe(0);
+    // Plus one: the permit comes with its pair, the final inspection, the way
+    // scaffold up comes with scaffold down (2026-09-23, §10.4).
     expect(out.chips.length, 'every one of them landed on the scope')
-      .toBe(3 + out.missedBefore);
+      .toBe(3 + out.missedBefore + 1);
     // Placed by stage, not appended. A shutoff step at the bottom of the list is
     // the one place it is no use to anybody.
     // THE WHOLE ORDER, not the two ends. Checking only the first and last line
     // is how "Pressure test" landed third, above "Pull the old water heater",
     // and this test still passed (2026-09-23): his own steps had no stage Tim
     // knew, counted as last, and the finish step was slotted ahead of them.
+    // The permit first and its inspection after the test (2026-09-23, §10.4:
+    // Tim now knows a water heater is a permit job in most towns).
     expect(out.chips).toEqual([
+      'Pull the permit',
       'Shut the water off and drain it down',
       'Protect the floors along the path in and out',
       'Pull the old water heater',
       'Run new pex to the manifold',
       'Set a tankless',
       'Pressure test and check every joint for leaks',
+      'Schedule the final inspection',
       'Haul off debris and leave the site broom clean',
     ]);
   });

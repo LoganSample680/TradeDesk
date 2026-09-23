@@ -1684,6 +1684,8 @@ function _geiHidePage(pageId){
 
 // ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
 function _tmShowPage(){
+  // A fresh page is not a tap on the bar (_tmDockReady).
+  _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
   const b=_geiShowSharedChrome('tm');
   // Step 1 is skipped on the way in now, so nothing else repaints its facts
   // line; keep the hidden copy true so Change opens on the right answer.
@@ -1868,12 +1870,50 @@ Object.defineProperty(window,'_geiScopeMissed',{get:()=>_geiScopeMissed,set:v=>{
 // adds to. No ✕ on every line: a step is removed the way iOS removes a row,
 // by swiping it left, or with Edit for anyone who does not swipe.
 let _tmScopeEditing=false,_tmSayMoreOpen=false;
+// UNDO. A thumb that deletes the wrong step gets it back from the toast, in
+// the same place (2026-09-23: Earl swiped the wrong row).
+function _tmUndoToast(msg,fn){
+  if(typeof showToast!=='function')return;
+  showToast(msg,'↩',5000);
+  const t=[...document.querySelectorAll('.toast')].pop();
+  if(!t)return;
+  const b=document.createElement('button');
+  b.type='button';b.className='tm-undo';b.textContent='Undo';
+  b.onclick=()=>{try{fn();}finally{t.remove();}};
+  const x=t.querySelector('.toast-close');
+  t.insertBefore(b,x||null);
+}
+function _tmDelStep(label){
+  const i=_geiScopeChips.indexOf(label);if(i<0)return;
+  _toggleScopeChip(label);
+  _tmUndoToast('Step removed',()=>{
+    if(_geiScopeChips.indexOf(label)>=0)return;
+    _geiScopeChips.splice(Math.min(i,_geiScopeChips.length),0,label);
+    ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+    if(typeof _tmRenderSteps==='function')_tmRenderSteps();
+    if(typeof _byoAutosave==='function')_byoAutosave();
+  });
+}
 function _tmScopeEdit(){_tmScopeEditing=!_tmScopeEditing;_renderScopeChips('tm-scope-wrap');if(typeof _tmRenderSteps==='function')_tmRenderSteps();}
+// The example in the box is the contractor's own trade (2026-09-23). A roofer
+// reading a plumber's sentence learns the box is not for him.
+const _TM_SAY_EXAMPLE={
+  painting:'Wash the house, scrape and caulk the trim, prime the bare wood and paint two coats',
+  plumbing:'Pull the old water heater, run new pex to the manifold and set a tankless',
+  electrical:'Swap the panel for a 200 amp, run a new circuit to the garage and add two outlets',
+  hvac:'Pull the old furnace and AC, set a new heat pump and air handler and run a new line set',
+  roofing:'Tear off the old shingles, replace any rotted decking and put on new architectural shingles',
+  landscaping:'Rip out the old beds, regrade the side yard, lay sod and plant six shrubs',
+};
+function _tmSayExample(){
+  const t=(typeof _geiTrade!=='undefined'&&_geiTrade)||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  return _TM_SAY_EXAMPLE[t]||'Tear out the old vanity, run new supply lines, set the new one and top, then caulk it and test everything';
+}
 function _tmVoiceBtn(){
   return (typeof _voiceCapable==='function'&&_voiceCapable())
     ?'<button type="button" class="ios-btn ios-btn-tint" onclick="_geiScopeTalk()">'+
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
-      '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Say it</button>'
+      '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Talk to Tim</button>'
     :'';
 }
 function _tmSayBox(ph){
@@ -1889,23 +1929,28 @@ function _tmScopeIosHtml(){
   // something a pro UX designer would ship?"). Build the steps is the bar's
   // job while there are none, so the box stands alone here with one line
   // under it and the two other ways in as words.
+  // TYPE IT OR TALK TO TIM (2026-09-23). Two equal ways in, and the line
+  // under them says what Tim does with it, because that is the part nobody
+  // expects: it comes back in order, with what was left out.
   if(!steps.length){
-    const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
-      ?'<button type="button" onclick="_geiScopeTalk()">Say it</button>':'';
+    const voice=(typeof _voiceCapable==='function'&&_voiceCapable());
     return '<div class="ios-sec">'+
-      '<div class="ios-group">'+_tmSayBox('Tear out the old vanity, run new supply lines, set the new one and top, then caulk it and test everything')+'</div>'+
-      '<div class="ios-foot">Say it the way you would tell your crew.</div>'+
-      '<div class="ios-links left">'+mic+'<button type="button" onclick="_openScopeSheet(\''+cid+'\')">Pick from a list</button></div>'+
+      '<div class="ios-group">'+_tmSayBox(_tmSayExample())+'</div>'+
+      (voice?'<div style="margin-top:12px">'+_tmVoiceBtn()+'</div>':'')+
+      '<div class="ios-foot">'+(voice
+        ?'Type it or talk it, the way you would tell your crew. Tim puts it in order and finds what you left out.'
+        :'Type it, or tap the mic on your keyboard and talk. Tim puts it in order and finds what you left out.')+'</div>'+
+      '<div class="ios-links left"><button type="button" onclick="_openScopeSheet(\''+cid+'\')">Pick from a list</button></div>'+
     '</div>';
   }
   const ed=_tmScopeEditing;
   const rows=steps.map((l,i)=>
     '<div class="ios-swipe" data-kind="step">'+
       '<div class="ios-row">'+
-        (ed?'<button type="button" class="ios-minus" aria-label="Remove '+escHtml(l)+'" onclick="_toggleScopeChip('+escHtml(JSON.stringify(l))+')">−</button>':'')+
+        (ed?'<button type="button" class="ios-minus" aria-label="Remove '+escHtml(l)+'" onclick="_tmDelStep('+escHtml(JSON.stringify(l))+')">−</button>':'')+
         '<span class="ios-num">'+(i+1)+'</span><span class="ios-lbl">'+escHtml(l)+'</span>'+
       '</div>'+
-      '<button type="button" class="ios-del" tabindex="-1" onclick="_toggleScopeChip('+escHtml(JSON.stringify(l))+')">Delete</button>'+
+      '<button type="button" class="ios-del" tabindex="-1" onclick="_tmDelStep('+escHtml(JSON.stringify(l))+')">Delete</button>'+
     '</div>').join('');
   const reorder=(steps.length>1&&typeof _geiScopeOutOfOrder==='function'&&_geiScopeOutOfOrder())
     ?'<button type="button" class="ios-row ios-link" onclick="_geiPutScopeInOrder()">Put these in work order</button>':'';
@@ -1958,14 +2003,13 @@ function _geiScopeComposerHtml(containerId){
       'font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
         '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
-        '<path d="M12 19v3"></path></svg>Say it</button>'
+        '<path d="M12 19v3"></path></svg>Talk to Tim</button>'
     : '';
   return '<div style="padding:12px 16px 14px">'+
     '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">Tell me what you are doing</div>'+
     '<div style="font-size:11.5px;color:var(--text3);line-height:1.45;margin-bottom:9px">'+
       'The way you would say it to your crew. I will break it into steps and tell you what you left out.</div>'+
-    '<textarea id="gei-scope-say" rows="3" placeholder="Tear out the old vanity, run new supply lines, '+
-      'set the new one and top, then caulk it and test everything" '+
+    '<textarea id="gei-scope-say" rows="3" placeholder="'+escHtml(_tmSayExample())+'" '+
       'style="width:100%;box-sizing:border-box;padding:11px 12px;border:0;border-radius:var(--r-md);background:var(--bg2);'+
       'box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text);line-height:1.5;resize:vertical"></textarea>'+
     '<div style="display:flex;gap:8px;align-items:center;margin-top:9px">'+
@@ -4862,6 +4906,8 @@ function _tmLegal(){
   if(D.needCap)
     out.problems.push({k:'cap',say:dname+' limits a deposit to '+D.law.pct+'% of the contract price, and this one has no price yet.',
       fix:'Put in the most it can cost.',law:D.law.statute||''});
+  else if(D.over&&(D.overCap&&!(D.applies&&D.max<D.cap)))
+    out.problems.push({k:'dep',say:'The money up front is more than the most this job can cost.',fix:'Lower the deposit.'});
   else if(D.over)
     out.problems.push({k:'dep',say:dname+' allows a deposit of up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.',
       fix:'Lower the deposit.',law:D.law.statute||''});
@@ -4913,7 +4959,12 @@ function _tmDepositState(){
       if(law.pct!=null&&amt>0)needCap=true;
     }
   }
-  return {on,amt,cap,state:st,law,applies,max,needCap,
+  // Anywhere, law or no law: money up front is never more than the most the
+  // whole job can cost. Earl typed 5000 against a 3000 ceiling in Kansas and
+  // it went through (2026-09-23).
+  const overCap=cap>0&&amt>cap+0.005;
+  if(cap>0)max=Math.min(max,cap);
+  return {on,amt,cap,state:st,law,applies,max,needCap,overCap,
     over:isFinite(max)&&amt>max+0.005,
     pctOfCap:cap>0&&amt>0?Math.round(amt/cap*100):null};
 }
@@ -5376,6 +5427,10 @@ function _tmRenderAddRow(rule,locked){
       ?' <span class="ios-tag req">Required here</span><small>'+escHtml(next.why)+'</small>'
       :'');
   });
+  // A rate no tradesman charges is a slipped thumb, not a price. Said on the
+  // row, never blocking: a specialist may mean it (2026-09-23).
+  {const r=Number(_tmRatePerMan)||0,el=document.getElementById('tm-lbl-rate');
+   if(el&&r>500)el.insertAdjacentHTML('beforeend','<small style="color:var(--ios-law)">$'+r.toLocaleString('en-US')+' an hour. Check it.</small>');}
   // The Billing group's footnote: what the customer will get, in plain words,
   // and what happens at the most it can cost when there is one.
   const foot=document.getElementById('tm-nte-sub');
@@ -5498,19 +5553,38 @@ function _tmDockNext(st,rule,all){
 function _tmDockBuild(){
   const el=document.getElementById('gei-scope-say');
   if(el&&String(el.value||'').trim()){_geiScopeBuild('tm-scope-wrap');return;}
+  // Nothing in the box: say so, and put him in it. A button that does
+  // nothing visible gets tapped five more times and then thrown.
   if(el){try{el.scrollIntoView({block:'center'});}catch(_e){}try{el.focus();}catch(_e){}}
+  if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
+}
+// A BUTTON THAT CHANGES UNDER HIS THUMB WAITS A MOMENT. Earl tapped Build the
+// steps twice because the first one "didn't take". The first tap built them,
+// his rate was already in, the same button became Send it, and the second tap
+// sent the proposal to his customer (2026-09-23). When the bar's button comes
+// to mean something new, taps are ignored for 700ms: long enough to swallow a
+// double tap, short enough that nobody waiting on it notices.
+// Only a change the bar's own tap caused arms it: opening the page, or typing
+// the rate in, is not a thumb resting on the button.
+let _tmDockLabel='',_tmDockSince=0,_tmDockTapAt=0;
+function _tmDockReady(){
+  if(Date.now()-_tmDockSince<700)return false;
+  _tmDockTapAt=Date.now();
+  return true;
 }
 function _tmRenderDock(st,rule,all){
   const d=document.getElementById('tm-dock');if(!d)return;
   st=st||_tmStepsState(all);rule=rule||_tmStateRule();
   const nx=_tmDockNext(st,rule,all);
+  const label=nx?nx.label:'send';
+  if(label!==_tmDockLabel){if(_tmDockLabel&&Date.now()-_tmDockTapAt<1500)_tmDockSince=Date.now();_tmDockLabel=label;}
   d.setAttribute('data-state',nx?'todo':'now');
   const tim=(typeof openTim==='function')
     ?'<button type="button" class="tm-dock-tim" onclick="openTim()" aria-label="Ask Tim">'+(typeof timMark==='function'?timMark(30):'Tim')+'</button>':'';
   d.innerHTML=tim+(nx
-    ?'<button type="button" class="ios-btn ios-btn-fill" id="tm-dock-go" onclick="'+nx.fn+'">'+escHtml(nx.label)+'</button>'
-    :'<button type="button" class="ios-btn ios-btn-tint" id="tm-dock-sign" onclick="_geiSignInPerson()">Sign here</button>'+
-     '<button type="button" class="ios-btn ios-btn-fill" id="tm-dock-go" onclick="sendGenericProposal()">Send it</button>');
+    ?'<button type="button" class="ios-btn ios-btn-fill" id="tm-dock-go" onclick="if(_tmDockReady()){'+nx.fn+'}">'+escHtml(nx.label)+'</button>'
+    :'<button type="button" class="ios-btn ios-btn-tint" id="tm-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
+     '<button type="button" class="ios-btn ios-btn-fill" id="tm-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
 }
 // For Tim: "step 2" is one place on the page. Scrolls there and says whether
 // that step is done, so a nudge or a spoken answer can point at it.
@@ -5599,6 +5673,7 @@ function _tmRenderBillTerms(){
     const lim=D.applies&&D.law.pct!=null?(sname+' allows up to '+(Math.round(D.law.pct)===33?'a third':D.law.pct+'%')+' of the price'):'';
     let t='',law=false;
     if(D.needCap){t=sname+' limits it to a share of the price. Put in the most it can cost first.';law=true;}
+    else if(D.over&&D.overCap&&!(D.applies&&D.max<D.cap)){t='More than the most it can cost.';law=true;}
     else if(D.over){t=sname+' allows up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.';law=true;}
     else if(D.pctOfCap!=null)t=D.pctOfCap+'% of the most it can cost'+(lim?'. '+lim+'.':'.');
     else if(D.amt>0)t='For materials and getting started.';

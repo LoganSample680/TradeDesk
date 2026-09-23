@@ -290,7 +290,11 @@ test.describe('tim knows the trade', () => {
       expect(ids, 'the water comes off before anything opens').toContain('access-water-off');
       expect(ids, 'and it gets tested before he leaves').toContain('finish-test');
       expect(ids, 'and the old one goes somewhere').toContain('clean-haul');
-      expect(r[0].id, 'the shutoff is the first thing he reads, not the last').toBe('access-water-off');
+      // The first thing done ON SITE (2026-09-23, §10.4): the permit is paper,
+      // and it now comes ahead of everything, which is where it belongs.
+      const onSite = r.filter(x => x.id !== 'access-permit');
+      expect(onSite[0].id, 'the shutoff is the first thing he reads, not the last').toBe('access-water-off');
+      expect(ids[0], 'and only the paperwork comes ahead of it').toBe('access-permit');
     });
 
     // The reason there are three shutoff rules and not one. Half of all water

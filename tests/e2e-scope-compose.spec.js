@@ -68,7 +68,9 @@ test.describe('the scope you say out loud', () => {
     // the bottom of the screen, which reads Build the steps until there are
     // some. Owner: "does it look like something a pro UX designer would
     // ship? I don't think so." The box still offers itself first.
-    expect(t).toContain('Say it the way you would tell your crew');
+    // And since "Type it or Talk to Tim" (2026-09-23), the line under it says
+    // what Tim does with it, which is the part nobody expects.
+    expect(t).toContain('Tim puts it in order and finds what you left out');
     const bar = await page.evaluate(() => (document.getElementById('tm-dock') || {}).textContent || '');
     expect(bar).toContain('Build the steps');
     // The list is still reachable. Retiring a thing people rely on is a one
@@ -84,7 +86,11 @@ test.describe('the scope you say out loud', () => {
     expect(r.there).toBe(true);
     expect(r.tag).toBe('TEXTAREA');
     // A placeholder that shows the SHAPE of an answer, not "enter scope".
-    expect(r.ph).toContain('Tear out');
+    // In his own trade since 2026-09-23 (§10.4): a roofer reading a plumber's
+    // sentence learns the box is not for him. What stays true in every trade
+    // is that it is a real job said the way a man says it, with a comma.
+    expect(r.ph).toBe(await page.evaluate(() => _tmSayExample()));
+    expect(r.ph).toContain(',');
     expect(r.ph.length).toBeGreaterThan(40);
   });
 
