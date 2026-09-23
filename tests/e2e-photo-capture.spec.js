@@ -574,7 +574,8 @@ test.describe('Photo capture: the sheet itself', () => {
       const seen = [];
       for (let i = 1; i <= steps; i++) {
         ev('pointermove', from[0] + (to[0] - from[0]) * (i / steps), from[1] + (to[1] - from[1]) * (i / steps));
-        seen.push(document.getElementById('pc-rev')?.style.transform || '');
+        // The PHOTO is what moves now, not the sheet (owner 2026-09-23).
+        seen.push(document.getElementById('pc-rev-img')?.style.transform || '');
       }
       ev('pointerup', to[0], to[1]);
       await new Promise(r => setTimeout(r, 420));
@@ -590,10 +591,48 @@ test.describe('Photo capture: the sheet itself', () => {
       await page.evaluate(() => tdReviewOpen(1));
       const r = await dragStage(page, [200, 200], [210, 600], 5);
       // The sheet followed the thumb rather than waiting for the release.
-      expect(r.seen.some(t => /translate3d\(0px?,\s*\d/.test(t) || /translate3d\(0,/.test(t)),
-        'the sheet falls with the thumb').toBe(true);
+      expect(r.seen.some(t => /translate3d\(-?\d+px,\s*[1-9]\d*px/.test(t) && /scale\(0\./.test(t)),
+        'the photo falls with the thumb and shrinks as it goes').toBe(true);
       const gone = await page.evaluate(() => !document.getElementById('pc-rev'));
       expect(gone, 'and the viewer is closed at the end of it').toBe(true);
+    });
+
+    // The real-phone half the synthetic events cannot see: with touch-action
+    // pan-y on the photo, iOS claims a vertical drag as a scroll and cancels
+    // the pointer a few pixels in, so the swipe down never followed the thumb
+    // (owner 2026-09-23). Every direction belongs to the viewer.
+    test('the viewer tells the browser it owns every drag direction', async () => {
+      await shootUnfiled(3);
+      const r = await page.evaluate(() => {
+        tdReviewOpen(1);
+        return { stage: getComputedStyle(document.getElementById('pc-rev-stage')).touchAction,
+          track: getComputedStyle(document.getElementById('pc-rev-track')).touchAction };
+      });
+      expect(r.stage).toBe('none');
+      expect(r.track).toBe('none');
+    });
+
+    test('while it is pulled down the controls step aside and the black thins out', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(1));
+      const r = await page.evaluate(() => {
+        const stage = document.getElementById('pc-rev-stage');
+        const ev = (type, x, y) => stage.dispatchEvent(new PointerEvent(type,
+          { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0, isPrimary: true }));
+        ev('pointerdown', 200, 300); ev('pointermove', 202, 320); ev('pointermove', 210, 420);
+        const sheet = document.getElementById('pc-rev');
+        // The class is the state; the opacity it drives fades over .18s, so
+        // the rule is read rather than a mid-fade computed value.
+        const out = { dragging: sheet.classList.contains('pc-dragging'), bg: sheet.style.backgroundColor,
+          barOpacity: [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch (e) { return []; } })
+            .filter(x => (x.selectorText || '').includes('.pc-rev.pc-dragging .pc-v-bar')).map(x => x.style.opacity).join('') };
+        ev('pointermove', 202, 302); ev('pointerup', 202, 302);
+        return out;
+      });
+      expect(r.dragging).toBe(true);
+      expect(r.bg).toMatch(/rgba\(0, 0, 0, 0\.\d+\)/);
+      expect(r.barOpacity).toBe('0');
+      await page.waitForTimeout(400);
     });
 
     test('a small pull springs back and keeps the photo open', async () => {
@@ -602,11 +641,15 @@ test.describe('Photo capture: the sheet itself', () => {
       await dragStage(page, [200, 300], [204, 330], 3);
       const r = await page.evaluate(() => ({
         open: !!document.getElementById('pc-rev'),
-        parked: document.getElementById('pc-rev')?.style.transform || '',
+        parked: document.getElementById('pc-rev-img')?.style.transform || '',
+        bg: document.getElementById('pc-rev')?.style.backgroundColor || '',
+        dragging: document.getElementById('pc-rev')?.classList.contains('pc-dragging'),
         title: document.querySelector('.pc-rev-title')?.textContent,
       }));
       expect(r.open, 'a 30px pull is not a dismissal').toBe(true);
-      expect(r.parked, 'and the sheet is back where it was').toBe('');
+      expect(r.parked, 'and the photo is back where it was').toBe('');
+      expect(r.bg, 'the black is back').toBe('');
+      expect(r.dragging, 'and so are the controls').toBe(false);
       expect(r.title).toBe('2 of 3');
     });
 
@@ -1090,6 +1133,49 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r.shown).toBe('https://x/t.jpg');
       expect(r.after).toBe('https://cdn/u/f-s.webp');
       expect(r.buttonGone).toBe(true);          // it does not offer the same bytes twice
+    });
+
+    // Owner 2026-09-23: "it's not showing the full quality, it should". The
+    // thumb is only the first paint. The photo you are on sharpens to the
+    // display copy at once, and to the full copy once you have stayed on it;
+    // a photo flicked past never pulls its full copy.
+    test('the photo you stay on sharpens to display, then full; one you flick past never pulls full', async () => {
+      // One synchronous evaluate, with the dwell timer captured and fired by
+      // hand: a real wait gives the mocked cloud pull a window to replace
+      // photos wholesale, which is the seed-then-read flake class, not this.
+      const r = await page.evaluate(() => {
+        const t0 = new Date().toISOString();
+        photos.push({ id: 972, type: 'before', url: 'https://x/v2.jpg', thumbUrl: 'https://x/t2.jpg', storagePath: 'u/s2.jpg', fullPath: 'u/f-2.webp', client_id: 501, uploadedAt: t0 });
+        photos.push({ id: 973, type: 'before', url: 'https://x/v3.jpg', thumbUrl: 'https://x/t3.jpg', storagePath: 'u/s3.jpg', fullPath: 'u/f-3.webp', client_id: 501, uploadedAt: t0 });
+        const asked = [];
+        const realFrom = _supa.storage.from.bind(_supa.storage);
+        _supa.storage.from = (b) => Object.assign({}, realFrom(b), {
+          getPublicUrl: (path) => { asked.push(path); return { data: { publicUrl: 'https://cdn/' + path } }; } });
+        // The swap waits on a decode in the app; here it is immediate.
+        const realSwap = _pcSwapSrc, realST = window.setTimeout, realCT = window.clearTimeout;
+        _pcSwapSrc = (img, url) => { if (img && url) img.src = url; };
+        const pending = new Map(); let seq = 1;
+        window.setTimeout = (f, ms, ...a) => { if (ms === _PC_FULL_DWELL) { const k = 'd' + (seq++); pending.set(k, f); return k; } return realST(f, ms, ...a); };
+        window.clearTimeout = (k) => { if (pending.has(k)) pending.delete(k); else realCT(k); };
+        try {
+          tdReviewShots([972, 973]);
+          tdReviewOpen(0);
+          const first = document.getElementById('pc-rev-img').src;
+          tdReviewStep(1); tdReviewStep(-1);           // a flick past 973 and back
+          const flicked = asked.slice(), armed = pending.size;
+          pending.forEach(f => f()); pending.clear();   // he stays on 972
+          const settled = document.getElementById('pc-rev-img').src;
+          const menuFull = !!document.getElementById('pc-rev-full');
+          tdReviewClose();
+          return { first, flicked, armed, settled, asked: asked.slice(), menuFull };
+        } finally { _supa.storage.from = realFrom; _pcSwapSrc = realSwap; window.setTimeout = realST; window.clearTimeout = realCT; }
+      });
+      expect(r.first, 'the display copy, not the thumb').toBe('https://x/v2.jpg');
+      expect(r.flicked, 'nothing full was pulled while flicking').toEqual([]);
+      expect(r.armed, 'only one full load is ever waiting, for the photo on screen').toBe(1);
+      expect(r.settled).toBe('https://cdn/u/f-2.webp');
+      expect(r.asked, 'only the photo stayed on').toEqual(['u/f-2.webp']);
+      expect(r.menuFull, 'and Full size is no longer offered once it is showing').toBe(false);
     });
 
     test('a photo with no full copy offers no Full size button', async () => {
