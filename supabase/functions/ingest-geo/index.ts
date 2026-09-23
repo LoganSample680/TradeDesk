@@ -113,6 +113,26 @@ type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: str
   // The radio ledger (20260915_geo_radio_ledger): a session change and why.
   session?: string; on?: boolean; accuracy?: string; reason?: string; trigger?: string; source?: string };
 type RadioDetail = { on: boolean; accuracy: string | null; reason: string; trigger: string; source: string };
+// ── HOW A FLIP REACHED US, KEPT (owner 2026-09-23) ─────────────────────────
+// "I want to see on time shit within 10 seconds 100% of the time."
+//
+// A motion row's lateness has two halves that need different fixes: the phone
+// not KNOWING yet (CoreMotion had not handed it over) and the phone knowing and
+// not SENDING. The plugin has always said which: `deliveredAtMs` is when the
+// live stream handed the flip over, and `hist` marks one the backfill
+// recovered. Both were dropped here, so every late flip looked the same. Kept
+// now, bounded, and nothing reads them but the measurement.
+function motionDetail(e: any): Record<string, unknown> | null {
+  const out: Record<string, unknown> = {};
+  if (e.hist === true) out.hist = true;
+  if (typeof e.deliveredAtMs === "number" && isFinite(e.deliveredAtMs) && e.deliveredAtMs > 0) {
+    out.deliveredAtMs = Math.round(e.deliveredAtMs);
+  }
+  if (typeof e.prevKind === "string" && e.prevKind) out.prevKind = e.prevKind.slice(0, 16);
+  if (typeof e.seq === "number" && isFinite(e.seq) && e.seq > 0) out.seq = Math.round(e.seq);
+  return Object.keys(out).length ? out : null;
+}
+
 // One radio row's detail, bounded. A session name doubles as the row's
 // region_id so the dedupe index (employee, type, ts, region_id) tells two
 // sessions changing in the same millisecond apart, and so a reader can
@@ -214,6 +234,8 @@ Deno.serve(async (req) => {
         // same stale coordinate wearing a type the deriver trusts.
         detail: e.type === "radio"
           ? radioDetail(e)
+          : e.type === "motion"
+          ? motionDetail(e)
           : (typeof e.staleMs === "number" || e.blind === true
             ? {
               ...(typeof e.staleMs === "number" ? { staleMs: Math.round(e.staleMs) } : {}),
