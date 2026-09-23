@@ -1551,11 +1551,28 @@ function _tmShowPage(){
   // not have. Restored before _tmApplyLayers so the row is populated the
   // instant it is shown.
   if(b&&Number(b.tmDepositAmt)>0)setV('tm-i-dep-flat',b.tmDepositAmt);
-  // THE BID'S OWN LAYERS WIN. A proposal he built as scope-only stays
-  // scope-only on resume; one with a rate and a cap comes back with both. A bid
-  // written before layers existed is read from what it actually carries, so
-  // nothing saved earlier opens looking empty.
-  _tmLayers = new Set(Array.isArray(b&&b.tmLayers) ? b.tmLayers : _tmLayersFrom(b));
+  // THE BID'S OWN LAYERS WIN, AND ONLY A BID HAS ANY. A proposal he built as
+  // scope-only stays scope-only on resume; one with a rate and a cap comes back
+  // with both. A bid written before layers existed is read from what it
+  // actually carries, so nothing saved earlier opens looking empty.
+  //
+  // An EMPTY DERIVATION IS NOT AN ANSWER. Opening a fresh T&M autosaves a draft
+  // bid immediately, and that draft carries no tmLayers and no figures to read
+  // any back out of, so _tmLayersFrom(b) returned [] and wiped the rate layer
+  // _geiOpenModeEstimate had switched on four hundred lines earlier. The result
+  // was a screen arguing with itself: his own rate sitting in the box and
+  // folded away as "$95/hr each" while the rail called it Not set and pointed
+  // its next-move marker straight at it. Found by counting taps, 2026-09-22.
+  //
+  // So the two cases are told apart rather than run together. b.tmLayers is
+  // authoritative WHENEVER IT EXISTS, including when it is empty, because an
+  // empty saved list is the deliberate scope-only proposal and must come back
+  // that way. Without one, the derivation only wins when it finds something;
+  // finding nothing means nothing has been recorded yet, and the default the
+  // open path just set is the better answer than silence.
+  const _savedLayers=Array.isArray(b&&b.tmLayers)?b.tmLayers:null;
+  const _restored=_savedLayers||_tmLayersFrom(b);
+  if(_savedLayers||_restored.length)_tmLayers=new Set(_restored);
   _tmApplyLayers();
   // Restore who's on the job, drives the true-cost gauge via the shared crew picker.
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
@@ -1766,11 +1783,17 @@ function _geiScopeMissedHtml(){
         'aria-label="No" style="flex-shrink:0;align-self:center;border:0;background:none;color:var(--text3);'+
         'font-size:17px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1;font-family:inherit">×</button>'+
     '</div>').join('');
+  const all=_geiScopeMissed.length>1
+    ? '<button type="button" onclick="_geiScopeTakeAllMissed()" style="margin-left:auto;flex-shrink:0;'+
+      'padding:5px 11px;border-radius:var(--r-pill,999px);border:0;background:var(--ink);'+
+      'color:var(--text-cream,#fff);font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">'+
+      'Add all '+_geiScopeMissed.length+'</button>'
+    : '';
   return '<div style="border-top:1px solid var(--border);background:var(--bg2)">'+
     '<div style="display:flex;align-items:center;gap:8px;padding:11px 16px 2px">'+
       (typeof timMark==='function'?timMark(15):'')+
       '<span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+
-        'You did not say'+'</span></div>'+
+        'You did not say'+'</span>'+all+'</div>'+
     rows+'</div>';
 }
 
@@ -1795,6 +1818,23 @@ function _geiScopePlace(text,stage,last){
   if(!t)return;
   if(_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))return;
   if(last||stage==='restore'||stage==='clean'){_geiScopeChips.push(t);return;}
+  // UNSHIFT IS ONLY RIGHT ONE AT A TIME. Access and protect both went to the
+  // front, so adding two of them put the second above the first: "cover the
+  // floor" ended up ahead of "shut the water off", which is the one order those
+  // two must never be in. It never showed while steps were taken one at a time
+  // and a job rarely had two; Add all made it every water heater. Fixed by
+  // asking the same spine the scope is sorted on WHERE this step goes, rather
+  // than by which end of the list to throw it at.
+  if(stage&&typeof timStageOf==='function'&&typeof TIM_STAGES!=='undefined'){
+    const ix=s=>{const i=TIM_STAGES.findIndex(x=>x.k===s);return i===-1?TIM_STAGES.length:i;};
+    const mine=ix(stage);
+    let at=_geiScopeChips.length;
+    for(let i=0;i<_geiScopeChips.length;i++){
+      if(ix(timStageOf(_geiScopeChips[i]))>mine){at=i;break;}
+    }
+    _geiScopeChips.splice(at,0,t);
+    return;
+  }
   if(stage==='access'||stage==='protect'){_geiScopeChips.unshift(t);return;}
   _geiScopeChips.push(t);
 }
@@ -1816,6 +1856,16 @@ function _geiScopeTakeMissed(id){
   _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
   ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
   if(typeof _byoAutosave==='function')_byoAutosave();
+}
+
+// ONE TAP FOR THE WHOLE LIST. Tim knows the sequence of a water heater swap
+// better than the list of four Adds implies, and a man who agrees with all four
+// should not have to say so four times. It is the same _geiScopeTakeMissed per
+// item, so each one is still placed by its own stage and still learned as a
+// yes; the only thing saved is his thumb. Offered from two up, because "Add all
+// one" is not a sentence.
+function _geiScopeTakeAllMissed(){
+  _geiScopeMissed.slice().forEach(im=>_geiScopeTakeMissed(im.id));
 }
 
 function _geiScopeDropMissed(id){
@@ -4653,10 +4703,17 @@ function _tmCapVal(){
 }
 // Has he said what the work is? Any of the ways this app lets him say it, plus
 // the deliberate "no scope" answer, which is an answer.
+// _geiJobScope is NOT one of those ways and must never be read here. It is the
+// tax classification, 'repair' or 'improvement', and it is initialised to
+// 'repair' on every estimate this app has ever opened. Reading it meant step
+// one reported "Written above" on a brand new T&M with nothing written, the
+// rail moved its next-move marker down to the rate, and the one screen whose
+// whole job is to say what is still missing was telling him the customer-facing
+// half of the document was already done. Found by counting the taps in a
+// 30-second build, 2026-09-22.
 function _tmScopeDone(){
   try{
     if(typeof _geiScopeNoScope!=='undefined'&&_geiScopeNoScope)return true;
-    if(typeof _geiJobScope!=='undefined'&&String(_geiJobScope||'').trim())return true;
     if(typeof _geiScopeChips!=='undefined'&&(_geiScopeChips||[]).length)return true;
     if(typeof _geiLines!=='undefined'&&(_geiLines||[]).some(l=>l&&!l._tmLabor))return true;
   }catch(_e){}

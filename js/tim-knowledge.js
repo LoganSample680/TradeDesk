@@ -560,10 +560,105 @@ const TIM_IMPLIED=[
     step:'Haul off debris and leave the site broom clean',
     say:'Haul off, last',
     because:'Every job you have sent ends this way.',
-    when:(t,steps)=>_timAnyStep(steps,['tear out','tear off','strip','demo','replace'])
+    // THE VERB LIST WAS A PAINTER'S. It knew tear out, tear off, strip and demo,
+    // which is how a man describes taking siding off a wall and not how he
+    // describes getting a water heater out of a basement. "Pull the old water
+    // heater" is a tear-out with two hundred pounds to get rid of at the end of
+    // it, and Tim said nothing, because not one of those five words is in that
+    // sentence. Found on the owner's own bid, 2026-09-22.
+    when:(t,steps)=>_timAnyStep(steps,['tear out','tear off','strip','demo','replace',
+        'pull the','pull out','take out','rip out','cut out','swap','change out',
+        'changeout','remove','get rid of','haul the old'])
       &&!_timAnyStep(steps,['haul','clean','sweep','dumpster']),
   },
+  // ── Turn it off before you open it ─────────────────────────────────────────
+  //
+  // Three rules and not one, because the step has to name the right shutoff.
+  // "Isolate the system" is what a spec writer would put on a contract and it
+  // is not a sentence anybody has said on a job site. A rule that fires on the
+  // wrong system is worse than no rule at all, which is the standing rule in
+  // this file, so each of these wants its own system named out loud and stays
+  // quiet otherwise. An electric water heater is never told to shut the gas
+  // off, because nothing in the sentence said gas.
+  {
+    id:'access-water-off',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'access',
+    step:'Shut the water off and drain it down',
+    say:'Water off first',
+    because:'You are opening a live water line. That happens first or it happens through the ceiling.',
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return _TIMK_WET.test(n)&&!_TIMK_WATER_OFF.test(n);
+    },
+  },
+  {
+    id:'access-power-off',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'access',
+    step:'Kill the power at the panel and check it dead',
+    say:'Power off first',
+    because:'You never said you killed it. Nothing else on this list happens until you have.',
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return _TIMK_HOT.test(n)&&!_TIMK_POWER_OFF.test(n);
+    },
+  },
+  {
+    id:'access-gas-off',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'access',
+    step:'Shut the gas off at the valve',
+    say:'Gas off first',
+    because:'You said gas. That valve gets closed before anything comes apart.',
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return _TIMK_GAS.test(n)&&!_TIMK_GAS_OFF.test(n);
+    },
+  },
+  {
+    id:'protect-path',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'protect',
+    step:'Cover the floor and the path you are carrying through',
+    say:'Cover the path in and out',
+    because:'Something heavy goes through a finished house twice. The floor is the callback.',
+    supply:{id:'floor-protect',section:'prep',label:'Floor protection and runners',unit:'ea',qty:1},
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return _TIMK_CARRIED.test(n)&&!_TIMK_COVERED.test(n);
+    },
+  },
+  {
+    id:'finish-test',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'finish',
+    step:'Pressure it up and check every joint',
+    say:'Test it before you leave',
+    because:'You find the weep, or the customer does at two in the morning.',
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return (_TIMK_WET.test(n)||_TIMK_GAS.test(n))&&!_TIMK_TESTED.test(n);
+    },
+  },
 ];
+
+// What the rules above listen for. Kept beside them rather than inline so the
+// phrasing cannot drift between the pattern that fires a nudge and the pattern
+// that keeps it quiet because he already said it.
+//
+// Every one is narrow on purpose. A water heater is deliberately NOT on the gas
+// list: half of them are electric, and the sentence has to say gas before Tim
+// will say anything about gas.
+const _TIMK_WET=/\b(water heater|tankless|water softener|softener|pex|copper|supply lines?|water lines?|water main|shut ?off valve|angle stop|faucet|toilet|tub|shower valve|sink|p-?trap|manifold|hose ?bib|water service|re-?pipe|boiler|water tank)\b/;
+const _TIMK_WATER_OFF=/\b(shut ?off|shut the water|water off|turn the water|isolate|drain(ed)? (it|the|down)|drain down)\b/;
+const _TIMK_HOT=/\b(panel|sub ?panel|breakers?|circuits?|romex|wiring|rewire|receptacles?|outlets?|switch leg|service (change|upgrade)|disconnect|conduit|whip)\b/;
+const _TIMK_POWER_OFF=/\b(kill the power|killed the power|power off|shut the power|breakers? off|lock ?out|tag ?out|de-?energi[sz])\b/;
+const _TIMK_GAS=/\b(gas|propane|lp|csst|black iron)\b/;
+const _TIMK_GAS_OFF=/\b(gas off|shut the gas|close the valve|close the gas|isolate the gas|lock ?out)\b/;
+const _TIMK_CARRIED=/\b(water heater|tankless|softener|furnace|boiler|tub|vanity|cabinets?|appliance|washer|dryer|range|refrigerator|water tank|condenser|air handler)\b/;
+const _TIMK_COVERED=/\b(cover|covered|drop ?cloth|protect|masked?|masking|floor protection|ram ?board|runners?)\b/;
+const _TIMK_TESTED=/\b(test|tested|testing|pressure|pressured|leak ?check|leak ?test|check for leaks|purge|bleed|bled)\b/;
 
 function _timSaysHigh(t){
   const n=_timkNorm(t);
@@ -639,7 +734,15 @@ function timImplied(said,steps,opts){
       claims:r.claims||null,
     });
   });
-  return out;
+  // IN WORK ORDER, like everything else he hands back. The list used to come
+  // out in whatever order the rules happen to sit in this file, which put
+  // "haul the debris off" above "shut the water off" on a water heater swap:
+  // the last thing he does, read first. Same spine the scope itself is sorted
+  // on, so the forgotten steps read in the order he would do them. A rule with
+  // no stage (the consumables one) sorts to the end rather than to the front,
+  // because it is a supply list and not a step in the sequence.
+  const ix=r=>{const i=_TIM_STAGE_IX[r.stage];return (i===undefined)?TIM_STAGES.length:i;};
+  return out.map((r,i)=>({r,i})).sort((a,b)=>ix(a.r)-ix(b.r)||a.i-b.i).map(x=>x.r);
 }
 
 // ── Numbers, the way they get said ───────────────────────────────────────────

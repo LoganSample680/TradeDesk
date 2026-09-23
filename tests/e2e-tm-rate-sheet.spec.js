@@ -125,19 +125,61 @@ test.describe('T&M rate sheet: no total, no day count', () => {
     expect(r.gone).toEqual([]);
   });
 
-  test('a fresh T&M proposal starts with no layers at all', async () => {
-    // Deliberate: the fast path is the empty one. His last proposal's shape is
-    // NOT carried over, because carrying it over is how the page grew to 35
-    // controls in the first place.
+  // SUBJECT INVERTED 2026-09-22, because the code it was describing had already
+  // changed underneath it and this test never noticed.
+  //
+  // It used to assert a fresh T&M starts with NO layers, which was right until
+  // the rate was made the one thing a new T&M opens with (generic-estimate.js,
+  // "A NEW T&M PROPOSAL STARTS WITH THE RATE ON": the rate is what Tim bills
+  // clocked hours at, and a T&M bid with no rate on it is discovered on the
+  // Friday somebody wants paid). That change shipped and did nothing, because
+  // _tmShowPage restored the layer set from the draft bid the open had just
+  // autosaved, and a draft has none, so the rate layer was wiped microseconds
+  // after being set. This test passed all the while, asserting the behaviour
+  // the product had deliberately left behind, which is exactly why nobody
+  // caught it. The owner caught it instead: "the rates and crew updating it was
+  // a extra tap I had to hit to edit."
+  //
+  // So it now guards the behaviour that is actually intended, and it is the
+  // test that would have failed the day the wipe was introduced.
+  test('a fresh T&M proposal starts with the rate on, and nothing else', async () => {
+    const r = await page.evaluate(() => {
+      // His LAST proposal was a fully loaded one. None of that shape may carry
+      // over, which is the half of the original assertion that still holds:
+      // carrying it over is how this page grew to 35 controls.
+      _tmLayers = new Set(['rate', 'est', 'mat', 'dep', 'cap', 'excl']);
+      openGenericEstimate(getClientById(77701), null, 'plumbing', { mode: 'tm', forceNew: true });
+      return new Promise(res => setTimeout(() => {
+        _geiIsTM = true; _tmShowPage();
+        res({
+          layers: [..._tmLayers].sort(),
+          rateOnly: _tmRateOnly,
+          rate: Number(_tmRatePerMan),
+          box: (document.getElementById('tm-i-rate') || {}).value,
+        });
+      }, 400));
+    });
+    expect(r.layers, 'the rate, and not one thing he had on the last job').toEqual(['rate']);
+    expect(r.rateOnly, 'a rate with no day count behind it is a rate sheet').toBe(true);
+    // Pre-filled from Settings, so the common case costs him no taps at all.
+    expect(r.rate, 'his own labor rate is already on it').toBeGreaterThan(0);
+    expect(r.box, 'and it is in the box, not just in a variable').toBeTruthy();
+  });
+
+  // The other half of the promise the code makes: on is the default, not a
+  // decision. A job really agreed some other way is one tap from off.
+  test('and the rate is one tap from off', async () => {
     const r = await page.evaluate(() => {
       openGenericEstimate(getClientById(77701), null, 'plumbing', { mode: 'tm', forceNew: true });
       return new Promise(res => setTimeout(() => {
         _geiIsTM = true; _tmShowPage();
-        res({ layers: [..._tmLayers], rateOnly: _tmRateOnly });
+        const on = [..._tmLayers];
+        _tmDropLayer('rate');
+        res({ on, off: [..._tmLayers] });
       }, 400));
     });
-    expect(r.layers).toEqual([]);
-    expect(r.rateOnly).toBe(false);
+    expect(r.on).toEqual(['rate']);
+    expect(r.off, 'dropping it leaves a scope-only proposal, which is still a proposal').toEqual([]);
   });
 
   // ── The send gate: days no longer blocks ───────────────────────────────────
@@ -930,8 +972,19 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     // the longest thing on the panel. The advice did not go anywhere: it is
     // step 2, sitting above it with its own Add button, which is a better way
     // to say "add the rate" than a sentence telling him to go find a chip.
+    // PRECONDITION ADDED 2026-09-22 (§10.4), assertions unchanged. The rail
+    // expands exactly one step, the first one he has not done, and it offers
+    // the rate only when the rate is genuinely the next thing missing. This
+    // fixture had no scope on it at all, so the honest next step is the work,
+    // not the rate. It used to reach the rate anyway because _tmScopeDone read
+    // _geiJobScope, the repair-vs-improvement TAX field, which is 'repair' on
+    // every estimate ever opened, so step one always reported itself finished.
+    // With that fixed, this test says what it always meant: he has written the
+    // work, he has materials on it, and the labor rate is what is missing.
     test('materials with no rate says the labor is missing, and offers the rate', async () => {
+      await page.evaluate(() => { _geiScopeChips = ['Set the new vanity and top']; });
       const t = await shapeIn(['mat']);
+      await page.evaluate(() => { _geiScopeChips = []; });
       expect(t).toContain('no labor rate');
       expect(t).toContain('Your rate');
     });

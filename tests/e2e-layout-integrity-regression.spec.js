@@ -528,21 +528,39 @@ test.describe('layout integrity, mobile', () => {
     expect(r.kitchenNotDoubled, 'fallback must not replace or double real notes').toBe(true);
   });
 
-  test('proposal shows only TOTAL + deposit, no per-material or NTE-cap price (T&M)', async () => {
+  // RENAMED 2026-09-22 to say what it now proves. It was "shows only TOTAL +
+  // deposit", from when the estimated total was the loud number and the ceiling
+  // was one clause of eleven in the terms. The ceiling leads a T&M that has one
+  // now, and this fixture finally puts one on the document (see below), so the
+  // old name described neither the screen nor the test.
+  test('proposal leads with the ceiling and the deposit, with no per-material price and no standalone cap row (T&M)', async () => {
     const r = await page.evaluate(async () => {
       const c = { id: 79108, name: 'Total Only TM Client', addr: '1 Total Only TM Rd' };
       clients = clients.filter(x => x.id !== 79108).concat([c]);
       bids = bids.filter(x => x.client_id !== 79108);
       openGenericEstimate(c, null, null, { mode: 'tm' });
       goGeiStep(2);
+      // PRECONDITION STATED, 2026-09-22. A T&M with no day count on it is a rate
+      // sheet, and a rate sheet has no total for this test to look at. The days
+      // field only feeds _tmEstHours while the estimated-total layer is on.
+      // This used to be true by accident, because _tmShowPage wiped the layer
+      // set on every fresh T&M.
+      _tmAddLayer('est');
       // Drive the real DOM inputs, _tmInputChange reads live values from these, not
       // from the module variables directly, so setting the variables alone is silently
       // overwritten on the next recalc.
+      //
+      // THE CEILING IS SET BEFORE THE RECALC, NOT AFTER IT, 2026-09-22. It used
+      // to be written to tm-i-nte on the line after _tmInputChange(), and that
+      // recalc is the only thing that mirrors it into tm-nte-cap, which is the
+      // id the proposal builder actually reads. So this fixture never put a
+      // ceiling on the document at all, and the "no standalone NTE-cap row"
+      // assertion below had been passing on a proposal that had no cap in it.
       document.getElementById('tm-i-rate').value = '75';
       document.getElementById('tm-i-days').value = '2';
+      document.getElementById('tm-i-nte').value = '2000';
       _tmInputChange();
       _geiLines.push({ desc: 'Fixtures', qty: 1, rate: 500, total: 500 });
-      document.getElementById('tm-i-nte').value = '2000';
       let err = null;
       try { await sendGenericProposal(true); } catch (e) { err = e.message; }
       const ov = document.getElementById('_prop-preview-ov');
@@ -553,7 +571,14 @@ test.describe('layout integrity, mobile', () => {
         hasMaterialName: html.includes('Fixtures'),
         hasPerItemPrice: /\$500\.00/.test(html),
         hasNteRow: html.includes('Not-to-exceed cap'),
-        hasTotal: html.includes('ESTIMATED TOTAL'),
+        // This fixture puts a $2,000 ceiling on the job, and since 2026-09-22 a
+        // T&M that HAS a ceiling leads with it: the big accent row reads THE
+        // MOST THIS CAN COST YOU, and the estimate steps down to a quiet grey
+        // row above it. So the money footer is checked by what it now says.
+        // The subject of this test is unchanged, and it is the two assertions
+        // above: no per-item price and no standalone cap pricing row.
+        hasBigCap: html.includes('THE MOST THIS CAN COST YOU'),
+        hasQuietEstimate: html.includes('not a fixed price'),
         hasDeposit: html.includes('Deposit'),
       };
       ov?.remove();
@@ -564,7 +589,8 @@ test.describe('layout integrity, mobile', () => {
     expect(r.hasMaterialName, 'material category name must still show').toBe(true);
     expect(r.hasPerItemPrice, 'no per-material dollar amount may render').toBe(false);
     expect(r.hasNteRow, 'the standalone NTE-cap pricing row must be gone (still disclosed in Terms & Conditions)').toBe(false);
-    expect(r.hasTotal).toBe(true);
+    expect(r.hasBigCap, 'the ceiling is the loud number on a T&M that has one').toBe(true);
+    expect(r.hasQuietEstimate, 'and the estimate is still on the document, quieter').toBe(true);
     expect(r.hasDeposit).toBe(true);
   });
 

@@ -192,11 +192,17 @@ test.describe('the scope you say out loud', () => {
     expect(r.shown).not.toContain('You never said scaffold up first');
   });
 
+  // SUBJECT CHANGED 2026-09-22, and the rule it guards is unchanged: a job that
+  // drags nothing in must show no offer block. The old subject was a kitchen
+  // faucet, which stopped being one of those the day Tim learned to say "shut
+  // the water off first" on a live water line, and that nudge is correct on a
+  // faucet swap. So the subject moved to a job that genuinely drags nothing in
+  // rather than the assertion being weakened to accommodate a right answer.
   test('a job that drags nothing in shows no offer block at all', async () => {
-    await say('swap the kitchen faucet');
+    await say('hang the new mailbox');
     const shown = await page.evaluate(() =>
       document.getElementById('tm-scope-wrap').textContent);
-    expect(shown).toContain('Swap the kitchen faucet');
+    expect(shown).toContain('Hang the new mailbox');
     expect(shown).not.toContain('You did not say');
   });
 

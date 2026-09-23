@@ -2251,6 +2251,18 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiIsTM = true;
         _geiIsFreeForm = false;
         goGeiStep(2); // renders gei-tm-page + tm-deposit-wrap via _tmShowPage
+        // PRECONDITION STATED, 2026-09-22, and it was always required. A T&M
+        // with no day count on it is a RATE SHEET, and a rate sheet's deposit
+        // is a flat figure because there is no total to take a percentage of
+        // (generic-estimate.js: tmDepositPct is 0 whenever _tmRateOnly). This
+        // test is about the percentage path, so it has to put the estimated
+        // total on the job, which is what a contractor does by entering days.
+        //
+        // It used to pass without saying so because _tmShowPage wiped the layer
+        // set on every fresh T&M, leaving _tmRateOnly false by accident. Four
+        // other tests in this file leaned on the same accident; each now states
+        // the same precondition rather than the assertions being relaxed.
+        _tmAddLayer('est');
         document.getElementById('tm-deposit-pct').value = '40';
         _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
@@ -2678,6 +2690,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         // Build a T&M estimate the way a user would
         openGenericEstimate(c, null, null, { mode: 'tm' });
         goGeiStep(2);
+        // Same precondition as the deposit-% test above: an hour count only
+        // exists on a T&M that carries an estimated total, so the layer that
+        // holds one has to be on before the autosave stamps the draft.
+        _tmAddLayer('est');
         _tmRatePerMan = 75; _tmEstHours = 24; _tmCrewCount = 3; _tmBillingCycle = 'milestone';
         _geiLines = [{ desc: 'Paint & primer', qty: 1, rate: 800, total: 800, notes: 'SW Duration' }];
         const nteEl = document.getElementById('tm-i-nte'); if (nteEl) nteEl.value = '12,000';
@@ -2804,6 +2820,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         goGeiStep(2);
         // Drive the DOM the way a user does, _tmInputChange derives hours from
         // the days input, so setting the module variable alone gets overwritten.
+        // Same precondition as the deposit-% test above: the days field only
+        // feeds _tmEstHours when the estimated-total layer is on, and without
+        // it a rate sheet has no hours for the crew to cost out.
+        _tmAddLayer('est');
         const rateEl = document.getElementById('tm-i-rate'); if (rateEl) rateEl.value = '60';
         const daysEl = document.getElementById('tm-i-days'); if (daysEl) daysEl.value = '2'; // 16h
         _estCrew = ['joe@crew.com']; // Joe is on the job, his real wage is a cost
@@ -2975,6 +2995,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       openGenericEstimate(c, null, 'general');
       if (isTM) {
         _geiIsTM = true; _geiIsFreeForm = false;
+        // Same precondition as the deposit-% test above: the deposit row this
+        // test looks for is a percentage of a total, and a rate sheet has no
+        // total to take one of.
+        _tmAddLayer('est');
         _tmRatePerMan = 50; _tmEstHours = 16; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
       } else {
