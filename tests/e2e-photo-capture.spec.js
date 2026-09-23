@@ -313,6 +313,12 @@ test.describe('Photo capture: the sheet itself', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Root cause of the shootUnfiled "survived" misses (WebKit, shard 3,
+    // 2026-09-23): a reconnect probe runs supaLoadFromCloud against the mock,
+    // which REPLACES the photos array and drops shots saved a moment before.
+    // Nothing in this block tests cloud loading, and it runs ~1,600 lines of
+    // tests on one page, so the load is parked here once for all of them.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => {
