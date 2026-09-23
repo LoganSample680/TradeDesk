@@ -24,6 +24,11 @@
 /sign.html
   X-Robots-Tag: noindex, nofollow
 
+/look-around
+  X-Robots-Tag: noindex, nofollow
+/look-around.html
+  X-Robots-Tag: noindex, nofollow
+
 /client
   X-Robots-Tag: noindex, nofollow
 /client.html

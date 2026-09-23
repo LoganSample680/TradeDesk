@@ -472,6 +472,12 @@ let _mapkitReady=false;
 // (localhost, 127.0.0.1, the flow-test bridge) mapkit.init throws an origin-mismatch
 // console.error: which fails assertNoErrors. Only init on tradedeskpro.app / *.pages.dev.
 const _mapkitAuthorizedOrigin=/(?:^|\.)tradedeskpro\.app$/.test(location.hostname)||/\.pages\.dev$/.test(location.hostname);
+// The token, for look-around.html's frame: Look Around needs MapKit's modular
+// bundle, which cannot share a window with the full one this page loads, so
+// it runs in a frame and asks for the token here rather than keeping a second
+// copy of it. Empty on an origin the token is not locked to, which is also
+// the frame's signal to load nothing.
+function _tdMapkitToken(){return _mapkitAuthorizedOrigin?_MAPKIT_TOKEN:'';}
 function _initMapKit(){
   if(typeof mapkit==='undefined')return;
   if(!_mapkitAuthorizedOrigin)return; // unauthorized origin, skip init so MapKit never throws

@@ -313,6 +313,12 @@ test.describe('Photo capture: the sheet itself', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Root cause of the shootUnfiled "survived" misses (WebKit, shard 3,
+    // 2026-09-23): a reconnect probe runs supaLoadFromCloud against the mock,
+    // which REPLACES the photos array and drops shots saved a moment before.
+    // Nothing in this block tests cloud loading, and it runs ~1,600 lines of
+    // tests on one page, so the load is parked here once for all of them.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => {
@@ -3526,5 +3532,138 @@ test.describe('TrueShot: the redesign', () => {
     });
     expect(missing).toEqual([]);
     assertNoErrors(page, 'TrueShot redesign');
+  });
+});
+
+// ── Look Around: the house from the street (owner 2026-09-23) ───────────────
+// "Can we pull Apple's street photo?" onto the property card and the album
+// cover. The imagery itself only exists on the live domains (the MapKit token
+// is locked to them), so these pin everything around it: when a slot is
+// offered, that it stays invisible until the frame says Apple has imagery,
+// that "none" removes it for good, and that the full view opens and closes.
+test.describe('TrueShot: Look Around', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  const seedLa = () => page.evaluate(() => {
+    window.__la = (tok) => {
+      try { tdStreetClose(); tdReviewClose(); } catch (e) {}
+      Object.keys(_pcSvState).forEach(k => delete _pcSvState[k]);
+      window.__realTok = window.__realTok || _tdMapkitToken;
+      _tdMapkitToken = tok ? () => tok : window.__realTok;
+      clients.length = 0; photos.length = 0;
+      clients.push({ id: 501, name: 'Pepe Miranda', addr: '6908 SW 17th St, Topeka, KS', lat: 39.03561, lon: -95.78330,
+        extraAddresses: [{ addr: '6912 SW 17th St, Topeka, KS', lat: 39.0358, lon: -95.7838, label: 'Rental' }, { addr: '1 No Pin Rd', label: 'Lot' }] });
+      return true;
+    };
+    return window.__la();
+  });
+
+  test('each property finds its own pin, and a property with none gets no street view', async () => {
+    await seedLa();
+    const r = await page.evaluate(() => {
+      const c = clients[0];
+      return { primary: tdStreetPlace(c, '6908 SW 17th St, Topeka, KS'), rental: tdStreetPlace(c, '6912 SW 17th St, Topeka, KS'),
+        noPin: tdStreetPlace(c, '1 No Pin Rd'), nobody: tdStreetPlace(null, 'x') };
+    });
+    expect(r.primary).toMatchObject({ lat: 39.03561, lon: -95.7833 });
+    expect(r.rental).toMatchObject({ lat: 39.0358, lon: -95.7838 });
+    expect(r.noPin).toBe(null);
+    expect(r.nobody).toBe(null);
+  });
+
+  test('where MapKit would refuse the origin, nothing is loaded at all', async () => {
+    await seedLa();
+    const html = await page.evaluate(() => tdStreetSlotHTML(clients[0], '6908 SW 17th St, Topeka, KS', 'sv-card'));
+    expect(html).toBe('');
+  });
+
+  test('a slot starts invisible, opens on "ready", and "none" removes it for good', async () => {
+    await seedLa();
+    const r = await page.evaluate(async () => {
+      window.__la('tok');
+      const host = document.createElement('div'); document.body.appendChild(host);
+      host.innerHTML = tdStreetSlotHTML(clients[0], '6908 SW 17th St, Topeka, KS', 'sv-card') + tdStreetSlotHTML(clients[0], '6912 SW 17th St, Topeka, KS', 'sv-card');
+      const [a, b] = host.querySelectorAll('.td-sv');
+      const frame = a.querySelector('iframe').getAttribute('src');
+      const hiddenAtFirst = getComputedStyle(a).opacity === '0' && a.getBoundingClientRect().height === 0;
+      // The frames are live, so the test speaks for them before they answer.
+      _pcSvMessage({ origin: location.origin, data: { type: 'td-sv', id: a.id, state: 'ready' } });
+      _pcSvMessage({ origin: location.origin, data: { type: 'td-sv', id: b.id, state: 'none' } });
+      _pcSvMessage({ origin: 'https://evil.example', data: { type: 'td-sv', id: a.id, state: 'none' } });
+      const out = { frame, hiddenAtFirst, aOn: a.classList.contains('on'), aStill: a.isConnected, bGone: !b.isConnected,
+        again: tdStreetSlotHTML(clients[0], '6912 SW 17th St, Topeka, KS', 'sv-card'),
+        readyAgain: /td-sv sv-card on/.test(tdStreetSlotHTML(clients[0], '6908 SW 17th St, Topeka, KS', 'sv-card')) };
+      host.remove(); window.__la();
+      return out;
+    });
+    expect(r.frame).toMatch(/^look-around\.html\?id=td-sv-\d+&lat=39\.03561&lon=-95\.7833$/);
+    expect(r.hiddenAtFirst).toBe(true);
+    expect(r.aOn).toBe(true);
+    expect(r.aStill, 'a message from another origin is ignored').toBe(true);
+    expect(r.bGone).toBe(true);
+    expect(r.again, 'a house Apple has no imagery for is not asked about twice').toBe('');
+    expect(r.readyAgain, 'and one it has opens straight away next time').toBe(true);
+  });
+
+  test('tapping opens the full, walkable view; Close puts it away; junk opens nothing', async () => {
+    await seedLa();
+    const r = await page.evaluate(() => {
+      const ok = tdStreetOpen(39.03561, -95.7833, '6908 SW 17th St');
+      const el = document.getElementById('td-sv-full');
+      const out = { ok, src: el.querySelector('iframe').getAttribute('src'), cap: el.textContent };
+      el.querySelector('.td-sv-x').click();
+      out.closed = !document.getElementById('td-sv-full');
+      out.junk = tdStreetOpen('x', null, '');
+      out.stray = !!document.getElementById('td-sv-full');
+      return out;
+    });
+    expect(r.ok).toBe(true);
+    expect(r.src).toContain('mode=full');
+    expect(r.src).toContain('lat=39.03561');
+    expect(r.cap).toContain('6908 SW 17th St');
+    expect(r.closed).toBe(true);
+    expect(r.junk).toBe(false);
+    expect(r.stray).toBe(false);
+  });
+
+  test('the property card carries it at the top when open, and the album cover carries it too', async () => {
+    await seedLa();
+    const r = await page.evaluate(() => {
+      window.__la('tok');
+      const c = clients[0];
+      const openCard = _cdPropCardHtml(c, { label: 'Primary', addr: c.addr }, 0, 1);
+      const closedCard = _cdPropCardHtml(c, { label: 'Rental', addr: c.extraAddresses[0].addr }, 1, 3);
+      photos.push({ id: 7301, type: 'before', url: '', data: 'x', client_id: 501, addr: c.addr, uploadedAt: new Date().toISOString() });
+      tdOpenPropertyFolder(501, c.addr, photos.slice());
+      const hero = document.querySelector('.pc-fold-hero .td-sv.hero');
+      const out = { openFirst: openCard.indexOf('td-sv sv-card') > -1 && openCard.indexOf('td-sv sv-card') < openCard.indexOf('Primary'),
+        closed: closedCard.indexOf('td-sv') > -1, hero: !!hero };
+      tdReviewClose(); window.__la();
+      return out;
+    });
+    expect(r.openFirst, 'an open card leads with the street view').toBe(true);
+    expect(r.closed, 'a collapsed card stays one calm row').toBe(false);
+    expect(r.hero).toBe(true);
+  });
+
+  test('the frame itself says "none" and loads nothing when it has no token', async () => {
+    await seedLa();
+    const msg = await page.evaluate(() => new Promise(res => {
+      const f = document.createElement('iframe');
+      const t = setTimeout(() => res('timeout'), 5000);
+      const on = (e) => { if (e.data && e.data.id === 'probe') { clearTimeout(t); window.removeEventListener('message', on); f.remove(); res(e.data.state); } };
+      window.addEventListener('message', on);
+      f.src = 'look-around.html?id=probe&lat=39.03561&lon=-95.7833';
+      document.body.appendChild(f);
+    }));
+    expect(msg).toBe('none');
+    assertNoErrors(page, 'Look Around');
   });
 });

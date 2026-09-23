@@ -710,6 +710,7 @@ function _pcFolderPaint(){
     '</div>'+
     '<div class="pc-fold">'+
       '<div class="pc-fold-hero"'+(cover?' style="background-image:url(\''+_pcEscUrl(cover)+'\')"':'')+'>'+
+        tdStreetSlotHTML(c,_pcFolder.addr,'hero')+
         '<div class="pc-fold-hd">'+
           '<div class="pc-fold-addr">'+escHtml((_pcFolder.addr||'').split(',')[0]||'This property')+'</div>'+
           '<div class="pc-fold-sub">'+all.length+(all.length===1?' photo':' photos')+' \u00b7 '+
@@ -884,6 +885,69 @@ function _pcRevSharpen(){
     // Nothing left to offer behind the menu once it is on screen.
     document.getElementById('pc-rev-full')?.remove();
   },_PC_FULL_DWELL);
+}
+// ── Look Around: the house from the street (owner 2026-09-23) ───────────────
+// "Can we pull Apple's street photo?" onto the property card and the album
+// cover. Apple's imagery comes through MapKit in its own frame
+// (look-around.html says why), and it is never copied or stored: Apple's
+// terms allow showing it live, not keeping it, and a live view is also what
+// lets a contractor turn and walk the street before the first visit.
+//
+// A slot starts hidden and only appears once the frame says Apple has
+// imagery for that spot; where it has none the slot removes itself and
+// whatever was there before (the newest job photo) simply stays.
+let _pcSvSeq=0;
+const _pcSvState={};   // "lat,lon" -> 'ready' | 'none', so a re-render never re-asks
+function _pcSvKey(lat,lon){return Number(lat).toFixed(5)+','+Number(lon).toFixed(5);}
+function tdStreetPlace(c,addr){
+  if(!c)return null;
+  const k=String(addr||c.addr||'').trim().toLowerCase();
+  const places=_pcClientPlaces(c);
+  const hit=places.find(p=>String(p.addr||'').trim().toLowerCase()===k)||(!addr?places[0]:null);
+  return hit&&isFinite(hit.lat)&&isFinite(hit.lon)?{lat:+hit.lat,lon:+hit.lon,addr:hit.addr||addr||''}:null;
+}
+function tdStreetSlotHTML(c,addr,cls){
+  const pl=tdStreetPlace(c,addr);
+  if(!pl)return '';
+  if(typeof _tdMapkitToken!=='function'||!_tdMapkitToken())return '';
+  const key=_pcSvKey(pl.lat,pl.lon);
+  if(_pcSvState[key]==='none')return '';
+  const id='td-sv-'+(++_pcSvSeq);
+  const q='id='+id+'&lat='+pl.lat+'&lon='+pl.lon;
+  const arg=pl.lat+','+pl.lon+','+JSON.stringify(String(pl.addr||'').split(',')[0]).replace(/"/g,'&quot;');
+  return '<div class="td-sv'+(cls?' '+cls:'')+(_pcSvState[key]==='ready'?' on':'')+'" id="'+id+'" data-key="'+key+'">'+
+    '<iframe src="look-around.html?'+q+'" title="Look Around" tabindex="-1" aria-hidden="true"></iframe>'+
+    '<button type="button" class="td-sv-tap" aria-label="Look Around" onclick="event.stopPropagation();tdStreetOpen('+arg+')"></button>'+
+    '<span class="td-sv-badge pc-glass">'+_pcIcon('globe')+'Look Around</span>'+
+  '</div>';
+}
+function _pcSvMessage(e){
+  if(!e||e.origin!==location.origin)return;
+  const d=e.data;
+  if(!d||d.type!=='td-sv'||!d.id)return;
+  const el=document.getElementById(d.id);
+  if(!el)return;
+  const key=el.getAttribute('data-key')||'';
+  if(d.state==='ready'){_pcSvState[key]='ready';el.classList.add('on');}
+  else{_pcSvState[key]='none';el.remove();}
+}
+if(typeof window!=='undefined')window.addEventListener('message',_pcSvMessage);
+// Full screen, walkable. Its own frame in LookAround mode, over whatever is
+// open, with the same glass close the viewer uses.
+function tdStreetOpen(lat,lon,addr){
+  if(!isFinite(lat)||!isFinite(lon))return false;
+  tdStreetClose();
+  const el=document.createElement('div');
+  el.id='td-sv-full';el.className='td-sv-full';
+  el.innerHTML='<iframe src="look-around.html?mode=full&id=td-sv-full-f&lat='+lat+'&lon='+lon+'" title="Look Around" allow="fullscreen"></iframe>'+
+    '<button type="button" class="pc-side pc-round pc-glass td-sv-x" onclick="tdStreetClose()">'+_pcIcon('x')+'<span class="pc-sr">Close</span></button>'+
+    (addr?'<div class="td-sv-cap pc-glass">'+escHtml(String(addr))+' · Look Around</div>':'');
+  document.body.appendChild(el);
+  return true;
+}
+function tdStreetClose(){
+  document.getElementById('td-sv-full')?.remove();
+  return true;
 }
 function tdViewerMenu(open){
   const m=document.getElementById('pc-menu');
@@ -1757,6 +1821,7 @@ const _PC_ICONS={
   shield:'<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
   x:'<path d="M7 7l10 10M17 7L7 17"/>',
   search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',
   chev:'<path d="M9 5l7 7-7 7"/>'
 };
 function _pcIcon(name,cls){

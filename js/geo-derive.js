@@ -446,6 +446,69 @@ function _gdArrivalTrim(journeys, spans) {
   });
 }
 
+// ── RULE 24: A STOP THE TAPE SLEPT THROUGH IS STILL A STOP ───────────────
+// Owner 2026-09-23, on Jack's morning: "he went to the shop and got parts,
+// hell life 360 didnt even pick it up."
+//
+// His 23 September, off his own phone:
+//
+//   08:53:51  automotive          leaves Treyton Schafer's
+//   08:59:35  regionEnter shop    he pulls into the yard
+//   09:00:08  fix, inside the shop fence
+//   09:06:47  regionExit shop     he pulls out with the parts
+//   09:10:15  regionEnter Treyton back at the job
+//   09:11:52  walking             the tape's first word since 08:53
+//
+// CoreMotion never left automotive at the shop: he stayed in the truck, or
+// walked in and out without the coprocessor noticing. A journey only ends on
+// a foot flip or ten minutes of stillness, so the tape read one drive that
+// left Treyton's and came back to it. Rule 7 drops a same-fence loop with no
+// stop in it entirely, which is right for moving the truck across a job site
+// and wrong here: no drive rows, no shop time, no miles, a 16-minute hole on
+// the rail.
+//
+// Rule 21 already trusts a closed crossing pair to END a drive, and leaves
+// one that opens and closes INSIDE a drive alone as driving past. This is its
+// twin for the middle of a drive, and three things separate a stop from a
+// pass, all of which his morning has and a drive-by does not:
+//   - the pair is CLOSED (an unpaired enter is rule 21's, never a span);
+//   - it lasted parkedStillMs, the file's existing "the truck was parked"
+//     threshold. Driving through a 600 ft circle takes well under a minute;
+//   - a fresh fix between the two edges sits inside THIS file's circle, not
+//     merely inside the OS region, which is wider (see _gdSettledAway: iOS
+//     can call you inside from 768 ft out).
+// The split point is the crossings themselves, the same evidence rule 21
+// uses for WHEN. The second half is a new journey minted at the exit, exactly
+// the way _gdParkedSplit mints the drive after a parked truck.
+function _gdCrossingSplit(journeys, spans, fixes, fences, opts, personId) {
+  if (!Array.isArray(journeys) || !Array.isArray(spans) || !spans.length) return journeys;
+  const minMs = (Number(opts && opts.parkedStillMs) > 0) ? Number(opts.parkedStillMs) : GEO_DERIVE_DEFAULTS.parkedStillMs;
+  const r = (opts && Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const maxAcc = (opts && Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
+  const fx = (Array.isArray(fixes) ? fixes : []).filter(f => f && typeof f.ts === 'number' &&
+    f.lat != null && f.lng != null && (f.acc == null || Number(f.acc) <= maxAcc));
+  const stops = spans
+    .filter(s => s && s.f && typeof s.from === 'number' && typeof s.to === 'number' &&
+      isFinite(s.to) && s.to - s.from >= minMs &&
+      fx.some(f => f.ts >= s.from && f.ts <= s.to && _gdSameFence(geoFenceAt(f, fences, r), s.f)))
+    .sort((a, b) => a.from - b.from);
+  if (!stops.length) return journeys;
+  const out = [];
+  for (const j of journeys) {
+    if (!j || typeof j.startTs !== 'number') { out.push(j); continue; }
+    let head = j;
+    for (const s of stops) {
+      const end = (typeof head.endTs === 'number') ? head.endTs : Infinity;
+      // Wholly inside what is left of this drive, both edges.
+      if (!(s.from > head.startTs && s.to < end)) continue;
+      out.push({ startTs: head.startTs, id: head.id, endTs: s.from, endFence: s.f });
+      head = Object.assign({}, head, { startTs: s.to, id: _gdJourneyId(personId, s.to, null) });
+    }
+    out.push(head);
+  }
+  return out;
+}
+
 function _gdSameFence(a, b) {
   if (!a || !b) return false;
   return String(a.id) === String(b.id);
@@ -973,8 +1036,11 @@ function geoDeriveDay(input) {
   // Rule 21 reads the closed pairs AND the unpaired arrivals; rule 15 reads
   // only the closed pairs, which is the distinction _gdOpenArrivals exists to
   // draw. Never the other way round.
+  // Rule 24 runs first: it cuts a drive at a stop the tape slept through, and
+  // rule 21 then trims whichever piece really ends at a crossing.
   const journeys = _gdShuffleDrop(_gdArrivalTrim(
-    _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
+    _gdCrossingSplit(_gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
+      regionSpans, fixes, fences, opts, inp.personId),
     regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes))),
     fixes, fences, opts);
   const dwells = [], legs = [];

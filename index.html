@@ -2241,7 +2241,7 @@ body.dark .cal-cell.other{background:var(--cream)}
    bar sits over it, so .pc-rev-top.ghost drops its background. */
 .pc-fold-hero{position:relative;padding:calc(84px + env(safe-area-inset-top,0px)) 16px 16px;background:#20262e center/cover no-repeat;display:flex;align-items:flex-end;min-height:250px}
 .pc-fold-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(14,17,22,.42) 0%,rgba(14,17,22,.06) 34%,rgba(14,17,22,.94) 100%)}
-.pc-fold-hd{position:relative;z-index:1;width:100%}
+.pc-fold-hd{position:relative;z-index:2;width:100%}
 .pc-fold-addr{font:700 30px var(--pc-font);line-height:1.1;letter-spacing:-.025em;text-shadow:0 1px 14px rgba(0,0,0,.5)}
 .pc-fold-sub{font:500 14px var(--pc-font);color:rgba(255,255,255,.82);margin-top:4px;text-shadow:0 1px 10px rgba(0,0,0,.5)}
 .pc-fold-chips{display:flex;gap:6px;overflow-x:auto;padding:13px 16px 2px}
@@ -2387,6 +2387,26 @@ body.dark .cal-cell.other{background:var(--cream)}
    be above THAT. Without this the card opens behind the album and the
    button looks dead (caught in a local screenshot, 2026-09-21). */
 #pc-att{z-index:10060}
+/* ── Look Around (look-around.html) ───────────────────────────────────────
+   A slot is invisible and takes no room until its frame reports that Apple
+   has imagery there; then it opens to its height. The frame loads while the
+   slot is closed, so no loading="lazy" (a lazy frame with no size never
+   loads at all). */
+.td-sv{position:relative;overflow:hidden;max-height:0;opacity:0;transition:max-height .18s cubic-bezier(.22,1,.36,1),opacity .18s ease}
+.td-sv iframe{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none;background:#1c1c1e}
+.td-sv-tap{position:absolute;inset:0;z-index:2;border:0;background:transparent;padding:0;cursor:pointer}
+.td-sv-badge{position:absolute;right:10px;bottom:10px;z-index:3;display:inline-flex;align-items:center;gap:6px;padding:6px 11px 6px 9px;border-radius:999px;font:600 12px var(--pc-font);color:#fff;pointer-events:none}
+.td-sv-badge .pc-ic{width:15px;height:15px;stroke-width:2}
+.td-sv.sv-card{height:176px}
+.td-sv.sv-card.on{max-height:176px;opacity:1}
+.td-sv.hero{position:absolute;inset:0;z-index:1}
+.td-sv.hero.on{max-height:none;opacity:1}
+.td-sv.hero::after{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(14,17,22,.42) 0%,rgba(14,17,22,.06) 34%,rgba(14,17,22,.94) 100%)}
+.td-sv.hero .td-sv-badge{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}
+.td-sv-full{position:fixed;inset:0;z-index:10058;background:#000;animation:fadein .18s ease}
+.td-sv-full iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.td-sv-x{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:16px;z-index:2;color:#fff}
+.td-sv-cap{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom,0px));z-index:2;padding:9px 16px;border-radius:999px;font:500 13px var(--pc-font);white-space:nowrap;max-width:calc(100% - 32px);overflow:hidden;text-overflow:ellipsis}
 /* The TrueShot picker: a dark sheet, iOS inset-grouped rows. Scoped to
    .pc-att-sheet because Tim's overlay reuses .pc-file-opt in the light theme. */
 .pc-att-ov{align-items:flex-end!important;justify-content:center;padding:0!important;background:rgba(0,0,0,.45)}
