@@ -4,6 +4,8 @@
 // so it can never add load, noise, or console-wrapping during any test run,
 // and the app must tolerate its absence everywhere it's referenced.
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
 
 test.describe('Telemetry layer', () => {
   let page;
@@ -204,8 +206,12 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
   // resize handler triggers another resize within the same frame), not an
   // application bug. There is no app-code fix, every ResizeObserver user sees
   // it. Filtered at the shared _logError sink (same one both the console.error
-  // wrapper and window's 'error'/'unhandledrejection' listeners call), so this
-  // single test proves the filter for every capture path at once.
+  // wrapper and window's 'error'/'unhandledrejection' listeners call).
+  //
+  // This block used to claim that made "this single test prove the filter for
+  // every capture path at once". It did not, and error_log 223 is what that
+  // cost: the sink is shared, but the MESSAGE is not the same on every path,
+  // and the filter was anchored at ^. See the regression tests below.
   test('regression #64/65: ResizeObserver loop noise is NOT reported to error_log', () => {
     const { consoleObj, invocations } = loadSandbox();
     consoleObj.error('ResizeObserver loop completed with undelivered notifications.');
@@ -216,6 +222,51 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
     const { consoleObj, invocations } = loadSandbox();
     consoleObj.error('ResizeObserver loop limit exceeded');
     expect(invocations.length).toBe(0);
+  });
+
+  // ── Hotfix 223: the same noise, wearing a prefix ─────────────────────────
+  //
+  // js/e2e.js installs its OWN window 'error' listener that prefixes the text
+  // with "[TradeDesk JS Error] [file:line] " and logs it with console.error.
+  // That lands here as kind 'console' with the ResizeObserver sentence no
+  // longer at the START of the string, so the anchored /^ResizeObserver/ never
+  // matched and the noise re-paged the hot lane despite a filter written to
+  // stop exactly it.
+  //
+  // The literal message from error_log 223: prefix, doubled sentence and all.
+  test('regression #223: the noise is filtered even when another handler prefixed it', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('[TradeDesk JS Error] [?_v=1790089984700:0] ResizeObserver loop completed with undelivered notifications. ResizeObserver loop completed with undelivered notifications.');
+    expect(invocations.length, 'a prefixed benign notification must not reach error_log').toBe(0);
+  });
+
+  test('regression #223: the prefixed "limit exceeded" wording is filtered too', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('[TradeDesk JS Error] [index.html:0] ResizeObserver loop limit exceeded');
+    expect(invocations.length).toBe(0);
+  });
+
+  test('regression #223: the filter is no longer anchored to the start', () => {
+    // The DECLARATION, not the file: the comment above it quotes the old
+    // anchored pattern to explain the bug, and a whole-file scan would read
+    // that explanation as the bug itself.
+    const obs = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
+    const decl = (obs.match(/var _BENIGN_BROWSER_NOISE\s*=\s*[^;]+;/) || [''])[0];
+    expect(decl, 'the benign-noise pattern must be declared').toBeTruthy();
+    expect(decl, 'an anchored pattern is the bug this replaced').not.toContain('/^ResizeObserver');
+    expect(decl, 'and it must still be the ResizeObserver wording only').toContain('ResizeObserver loop');
+  });
+
+  test('regression #223: the predicate is shared, not copied', () => {
+    // §7.3. js/e2e.js skips the red toast AND the console.error using THIS
+    // definition, so the noise is never generated rather than generated and
+    // then filtered. A second copy of the pattern there would drift, and the
+    // next wording change would fix one and miss the other.
+    const obs = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
+    const e2e = fs.readFileSync(path.join(__dirname, '..', 'js', 'e2e.js'), 'utf8');
+    expect(obs, 'the predicate must be exported').toMatch(/window\._tdIsBenignBrowserNoise\s*=/);
+    expect(e2e, 'and used by the global handler').toMatch(/_tdIsBenignBrowserNoise\(e\.message\)/);
+    expect(e2e, 'e2e.js must not carry its own copy of the pattern').not.toMatch(/ResizeObserver loop \(completed/);
   });
 
   test('the ResizeObserver filter is narrow: unrelated messages mentioning it still report', () => {
