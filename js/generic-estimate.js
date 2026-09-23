@@ -7306,12 +7306,17 @@ const _PROP_STAGE_NAMES={access:'Before we start',protect:'Protecting your home'
 // Groups steps (already in work order) into runs under a customer's heading.
 // A step Tim cannot place rides with the one before it. Returns null when
 // grouping would add nothing: a short list, or one heading over all of it.
+const _PROP_TEST_RX=/\b(test|tested|testing|start (it )?up|startup|pull a vacuum)/;
 function _propStageGroups(texts){
   if(!Array.isArray(texts)||texts.length<4||typeof timStageOf!=='function')return null;
   const groups=[];let cur=null;
   texts.forEach((t,i)=>{
     const k=timStageOf(t);
-    const nm=k&&_PROP_STAGE_NAMES[k]?_PROP_STAGE_NAMES[k]:(cur?cur.name:_PROP_STAGE_NAMES.access);
+    let nm=k&&_PROP_STAGE_NAMES[k]?_PROP_STAGE_NAMES[k]:(cur?cur.name:_PROP_STAGE_NAMES.access);
+    // "Testing" over "Paint two coats" read as a pasted form (read-through,
+    // 2026-09-23: "You watch it dry, do you?"). It says testing only when a
+    // step in the job is one.
+    if(k==='finish'&&!texts.some(x=>_PROP_TEST_RX.test(String(x).toLowerCase())))nm='Finishing';
     if(!cur||cur.name!==nm){cur={name:nm,idx:[]};groups.push(cur);}
     cur.idx.push(i);
   });
@@ -7327,30 +7332,53 @@ function _propStageGroups(texts){
   return groups.length>1?groups:null;
 }
 // What the price buys, read off the steps. Each entry needs its evidence.
-function _propIncluded(texts){
+function _propIncluded(texts,tm){
   const all=' '+(texts||[]).join(' . ').toLowerCase()+' ';
-  const out=['All labor and materials'];
+  // On time and materials the labor and materials are billed as used, so
+  // "included" would contradict the price box (read-through, 2026-09-23).
+  const out=tm?[]:['All labor and materials'];
   if(/\bpermits?\b/.test(all))out.push('Permit and inspection');
-  if(/\b(protect|cover|mask|tarp|plastic|drop cloths?|move the furniture)/.test(all))out.push('Your home protected while we work');
-  if(/\b(test|tested|testing|start (it )?up|startup|pull a vacuum)/.test(all))out.push('Tested before we leave');
-  if(/\b(walk ?-?through|walk it|final walk)/.test(all))out.push('Walked through with you at the end');
+  // Protection, testing, the walk-through and the haul-away are steps in the
+  // scope right above; listed again here they read as padding (read-through,
+  // 2026-09-23). What stays is what the steps cannot say: who pays for the
+  // permit, the warranty, the licence.
   const haul=/\b(haul|dispos|dumpster|debris|magnet|sweep|clean ?-?up|broom clean)/.test(all);
-  if(haul)out.push('Haul-away and clean-up');
   const wp=String((typeof S!=='undefined'&&S&&S.warrantyPeriod)||'').trim();
   const wm=wp.match(/^(\d+)\s*(day|week|month|year)s?$/i);
   if(wp)out.push((wm?wm[1]+'-'+wm[2].toLowerCase():wp)+' warranty on the work');
+  // Every warranty clause in the terms already passes these through; said
+  // here because "and the heater itself?" was the next question.
+  if(wp)out.push('Manufacturer warranties pass to you');
   if(typeof S!=='undefined'&&S&&String(S.blic||'').trim())out.push('Licensed contractor, #'+String(S.blic).trim().replace(/^#/,''));
   return {items:out,haul};
 }
-function _propIncludedHtml(texts,accent,title){
-  const inc=_propIncluded(texts);
+// The project, named from his own steps (read-through, 2026-09-23: "Plumbing
+// service. Well, that tells me nothing."). Only from what he said: the thing
+// coming out, or which side of the house a paint job is on. Nothing found,
+// null, and the trade name stays.
+function _propProjectTitle(texts,trade){
+  const t=(texts||[]).map(x=>String(x||'').trim()).filter(Boolean);
+  for(const x of t){
+    const m=x.match(/^(?:pull|remove|tear out|tear off|rip out|take out|swap out|replace)\s+(?:the\s+)?old\s+([a-z0-9][a-z0-9 \-]{1,40}?)(?:\s+(?:and|with|from|in|on)\b.*)?$/i);
+    if(m){
+      let w=m[1].trim().toLowerCase();
+      if(/[^s]s$/.test(w))w=w.slice(0,-1);
+      return w.charAt(0).toUpperCase()+w.slice(1)+' replacement';
+    }
+  }
+  const all=t.join(' ').toLowerCase();
+  // The steps decide, not the trade: a general contractor paints too.
+  if(trade==='painting'||/\bpaint(ing)?\b/.test(all)){
+    if(/\b(house|siding|exterior|outside|soffits?|fascia|deck|fence|pressure wash)\b/.test(all))return 'Exterior painting';
+    if(/\b(walls?|ceilings?|rooms?|kitchen|bedroom|bathroom|interior|cabinets?)\b/.test(all))return 'Interior painting';
+  }
+  return null;
+}
+function _propIncludedHtml(texts,accent,title,tm){
+  const inc=_propIncluded(texts,tm);
   if(inc.items.length<3)return '';
   const li=inc.items.map(x=>`<div style="display:flex;gap:7px;align-items:baseline;font-size:11.5px;color:#2d3748;line-height:1.5"><span style="color:${accent};font-weight:900">&#10003;</span><span>${escHtml(x)}</span></div>`).join('');
-  // The line for the man who thinks he can do it himself. It lists what he
-  // skips, never what could go wrong: a proposal that frightens reads as a
-  // contractor padding the job.
-  const diy=`No tools to buy or rent, ${inc.haul?'no trips to the dump, ':''}no weekends given up.`;
-  return `<div class="prop-included" style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${accent};margin-bottom:8px">${title||'Included in your price'}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:4px 14px">${li}</div><div class="prop-diy" style="font-size:11px;color:#718096;margin-top:9px">${diy}</div></div>`;
+  return `<div class="prop-included" style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${accent};margin-bottom:8px">${title||'Included in your price'}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:4px 14px">${li}</div></div>`;
 }
 async function sendGenericProposal(previewOnly,opts){
   saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
@@ -7503,13 +7531,22 @@ async function sendGenericProposal(previewOnly,opts){
   // the max price it could be, contingent on unknowns"). The ceiling holds
   // unless hidden damage turns up, and even then only by a change order they
   // sign: said here in their words, and in the contract terms in full.
-  const _tmCapFine='<div style="font-size:10px;font-weight:500;opacity:.8;letter-spacing:0;margin-top:2px">Unless hidden damage turns up. Anything more needs a change order you sign.</div>';
+  const _tmCapFine='<div style="font-size:10px;font-weight:500;opacity:.8;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it, and only for hidden damage found once work starts.</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
   const _rsFlatDep=_tmDeposit();
-  const _rateFooterRows=
-    `<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
+  // THE CEILING LEADS WHEN THERE IS ONE (read-through as two sceptical
+  // customers, 2026-09-23). "TIME & MATERIALS" in the big bar read as "the
+  // meter runs" before they ever reached the cap at the bottom, and the cap
+  // was the only thing on the page that answered them. Same figure, same
+  // condition; it just comes first. With no cap nothing changes.
+  const _rsCapLeads=_tmNteCap>0;
+  const _rateFooterRows=_rsCapLeads
+    ?`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em"><span style="white-space:nowrap;text-transform:uppercase">Most you&apos;ll pay</span>${_tmCapFine}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_rsMoney(_tmNteCap)}</td></tr>`+
+      _rsRow('Time and materials: the time actually worked and the materials actually used',_rsCadence,'#f8fafc','#334155')+
+      (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Up Front, Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
+    :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
     _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
@@ -7762,7 +7799,7 @@ async function sendGenericProposal(previewOnly,opts){
   // their own trade-written clientDesc lines doing this job.
   const _incTexts=_geiIsFreeForm?_byoWorkItems2.map(it=>it.label+' '+(it.notes||'')):_chipsToPrint.slice();
   const _includedSection=((_geiIsTM||_geiIsFreeForm)&&!_geiScopeNoScope&&_incTexts.length)
-    ?_propIncludedHtml(_incTexts,_pAccent,_geiIsTM?'Included':'Included in your price'):'';
+    ?_propIncludedHtml(_incTexts,_pAccent,_geiIsTM?'Included':'Included in your price',_geiIsTM):'';
   const _scopeSection=(_scopeBlocks.length
     ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
     :'')+_includedSection;
@@ -7814,7 +7851,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Unless hidden damage turns up. Anything more needs a change order you sign.</div>':(_byoEst?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`+_balRow;
+    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it, and only for hidden damage found once work starts.</div>':(_byoEst?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`+_balRow;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
@@ -7851,7 +7888,7 @@ async function sendGenericProposal(previewOnly,opts){
     // A "Description" header over an empty tbody is a heading for nothing, and a
     // rate sheet with no material categories is exactly that case.
     :`<table style="width:100%;border-collapse:collapse;font-size:12px">${lineRows?`<thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">${_geiIsTM?(_tmRateOnly?'Materials':'What the estimate is made of'):'Description'}</th></tr></thead>`:''}<tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||escHtml(((_geiIsTM||_geiIsFreeForm)&&_propProjectTitle(_geiIsFreeForm?_byoWorkItems2.map(it=>it.label):_chipsToPrint,_geiTrade))||tradeName+' service')}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows

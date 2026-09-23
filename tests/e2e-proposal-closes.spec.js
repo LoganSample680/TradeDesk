@@ -92,9 +92,12 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     const { html } = await byoDoc(JOB);
     const t = await text(html);
     expect(t).toContain('Included in your price');
-    ['All labor and materials', 'Permit and inspection', 'Your home protected while we work',
-      'Tested before we leave', 'Haul-away and clean-up', '1-year warranty on the work',
+    ['All labor and materials', 'Permit and inspection', '1-year warranty on the work',
       'Licensed contractor, #KS-PL-4471'].forEach(x => expect(t, x).toContain(x));
+    // Dropped 2026-09-23 (§10.4): protection, testing and the haul-away are
+    // steps in the scope right above, and a married Hetty and Barry read them
+    // listed twice as padding. The list says only what the steps cannot.
+    ['Your home protected', 'Tested before we leave', 'Haul-away'].forEach(x => expect(t, x).not.toContain(x));
     const iScope = t.indexOf('Scope of work'), iInc = t.indexOf('Included in your price'), iPrice = t.indexOf('YOUR PRICE');
     expect(iScope).toBeGreaterThan(-1);
     expect(iInc).toBeGreaterThan(iScope);
@@ -161,9 +164,26 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     expect(t).toMatch(/Pressure test/i);
   });
 
-  test('Barry is told what he gets out of: tools, the dump, his weekends', async () => {
+  // Dropped 2026-09-23 (§10.4) after the same two readers read it in
+  // character: "No tools to buy or rent, no trips to the dump, no weekends
+  // given up" drew "Young man, I like my weekends in the garage" from him and
+  // "Don't tell me what my time is worth" from her. It talked down to both.
+  test('nobody is told what their weekends are worth', async () => {
     const t = await text((await byoDoc(JOB)).html);
-    expect(t).toContain('No tools to buy or rent, no trips to the dump, no weekends given up.');
+    expect(t).not.toMatch(/weekends|No tools to buy/);
+  });
+
+  test('the project says what the job is, from his own steps', async () => {
+    expect(await text((await byoDoc(JOB)).html)).toContain('Water heater replacement');
+    const paint = await tmDoc('pressure wash the house, scrape and caulk the trim, prime the bare wood and paint two coats');
+    expect(await text(paint.html)).toContain('Exterior painting');
+    // Nothing coming out, not a paint job: the trade name stays.
+    expect(await text((await byoDoc('replace the kitchen faucet and the supply lines', { take: false })).html)).toContain('Plumbing service');
+  });
+
+  test('the heater itself: manufacturer warranties pass to her, as the terms say', async () => {
+    const t = await text((await byoDoc(JOB)).html);
+    expect(t).toContain('Manufacturer warranties pass to you');
   });
 
   test('nothing on the page is written to frighten him', async () => {
@@ -180,11 +200,10 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     expect(t).not.toMatch(/warranty on the work/);
   });
 
-  test('no permit step, no permit line; no haul-away step, no dump in the promise', async () => {
+  test('no permit step, no permit line; no haul-away step, no haul-away line', async () => {
     const t = await text((await byoDoc('replace the kitchen faucet and the supply lines', { take: false })).html);
     expect(t).not.toContain('Permit and inspection');
     expect(t).not.toContain('Haul-away');
-    expect(t).not.toContain('trips to the dump');
     // A short job is a short list: no stage headings over two lines.
     expect(t).not.toContain('Before we start');
   });
@@ -193,19 +212,48 @@ test.describe('the proposal closes: Hetty and Barry', () => {
 
   // A paint job: the prep stage is said around a scrape, and it still reads as
   // one heading; painters do not "test", they walk it with the customer.
-  test('a paint job reads as one prep stage, and claims a walk-through, not a test', async () => {
+  test('a paint job reads as one prep stage, and never says testing', async () => {
     const t = await text((await tmDoc('pressure wash the house, scrape and caulk the trim, prime the bare wood and paint two coats')).html);
     expect(t.split('Getting it ready').length - 1).toBe(1);
-    expect(t).toContain('Walked through with you at the end');
     expect(t).not.toContain('Tested before we leave');
+    // "Testing paint? You watch it dry, do you?"
+    expect(t).not.toContain('Finishing and testing');
+    expect(t).toContain('Finishing');
+  });
+
+  // "TIME & MATERIALS" in the big bar read as "the meter runs" to both of
+  // them before they reached the cap at the bottom. With a cap, the cap leads.
+  test('time and materials with a ceiling: the ceiling is the big number, first', async () => {
+    const r = await page.evaluate(async () => {
+      bids.length = 0; clients.length = 0;
+      clients.push({ id: 97001, name: 'Hetty Green', addr: '412 Bell St, Topeka, KS 66603' });
+      currentClientId = 97001; _activeTrade = 'painting';
+      openTMEstimate(getClientById(97001));
+      document.getElementById('gei-scope-say').value = 'pressure wash the house and paint two coats';
+      _geiScopeBuild('tm-scope-wrap');
+      const on = document.getElementById('tm-nte-on'); if (on) { on.checked = true; on.dispatchEvent(new Event('change')); }
+      const c = document.getElementById('tm-nte-cap'); if (c) { c.value = '6800'; c.dispatchEvent(new Event('input')); }
+      let d = ''; const real = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = h => { d = h; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = real; }
+      const el = document.createElement('div'); el.innerHTML = d;
+      return [...el.querySelectorAll('tfoot tr')].map(tr => tr.textContent.trim());
+    });
+    expect(r[0]).toMatch(/^Most you'll pay/);
+    expect(r[0]).toContain('$6,800');
+    expect(r.join(' ')).not.toContain('TIME & MATERIALS');
+    expect(r[1]).toContain('Billed weekly');
   });
 
   test('time and materials: stages and what is included, above the number', async () => {
     const { html, steps } = await tmDoc(JOB);
     expect(steps.length).toBeGreaterThan(4);
     const t = await text(html);
-    ['Before we start', 'The new work', 'Included', 'All labor and materials', 'Permit and inspection']
+    ['Before we start', 'The new work', 'Included', 'Permit and inspection', 'Finishing and testing']
       .forEach(x => expect(t, x).toContain(x));
+    // Billed as used, so never "included": the read-through caught the page
+    // contradicting its own price box.
+    expect(t).not.toContain('All labor and materials');
     expect(t).not.toContain('Included in your price');
     expect(t).not.toMatch(/\bNaN\b|\bundefined\b|\[object/);
   });

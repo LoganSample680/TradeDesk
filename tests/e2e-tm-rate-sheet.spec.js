@@ -1826,6 +1826,8 @@ test.describe('the ceiling leads, not the guess', () => {
   test('the big ceiling says what lifts it', async () => {
     const h = await doc(12000);
     // Contingent on unknowns (owner, 2026-09-23, §10.4).
-    expect(h).toContain('Unless hidden damage turns up');
+    // Reworded 2026-09-23 (§10.4): "Unless ..." read as an open exception to
+    // the ceiling; the same promise now says who can raise it and why.
+    expect(h).toContain('Only a change order you sign can raise it, and only for hidden damage found once work starts.');
   });
 });

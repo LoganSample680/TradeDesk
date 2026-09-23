@@ -185,7 +185,11 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
       return { doc, terms: _geiBuildTermsHtml() };
     });
     expect(r.doc).toContain('Most you&apos;ll pay');
-    expect(r.doc).toContain('Unless hidden damage turns up. Anything more needs a change order you sign.');
+    // Reworded 2026-09-23 (§10.4) after a read-through as two sceptical
+    // customers: "Unless hidden damage turns up" read as an open exception
+    // ("Who decides what counts? The man paid by the hour."). Same promise,
+    // the owner's: only a signed change order, only for hidden damage.
+    expect(r.doc).toContain('Only a change order you sign can raise it, and only for hidden damage found once work starts.');
     expect(r.terms).toContain('not to exceed $4,500');
     expect(r.terms).toContain('exceeded only by a written change order signed by Buyer, for hidden damage');
   });
