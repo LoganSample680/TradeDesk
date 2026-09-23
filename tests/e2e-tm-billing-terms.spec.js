@@ -275,5 +275,43 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
     expect(r.text).not.toContain('Refund owed');
   });
 
+  // THE RATE SWITCH. Owner, 2026-09-23: "keep my rate off my proposal, what
+  // indicates off or on the final proposal? ... even I don't know what side
+  // keeps it on or off." The rate is never printed on the proposal page
+  // (owner, 2026-09-17); this switch decides whether it is a term in the
+  // contract they sign. It reads as what it does now: blue means it is in the
+  // contract, and the line under it says where the customer reads it.
+  test('the rate switch says where the customer reads the rate', async () => {
+    await open({ addr: '412 Bell St, Topeka, KS 66603', cap: 4500 });
+    const r = await page.evaluate(async () => {
+      const grab = async () => {
+        let doc = ''; const o = window._showProposalPreviewOverlay;
+        window._showProposalPreviewOverlay = h => { doc = h; };
+        try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = o; }
+        return doc;
+      };
+      const read = async () => ({
+        label: document.querySelector('#tm-hide-rate-wrap .ios-lbl').firstChild.textContent,
+        sw: document.getElementById('tm-show-rate').checked,
+        sub: document.getElementById('tm-show-rate-sub').textContent,
+        doc: await grab(), terms: _geiBuildTermsHtml(),
+      });
+      _tmSetHideRate(false); const on = await read();
+      _tmSetHideRate(true); const off = await read();
+      _tmSetHideRate(false);
+      document.querySelectorAll('#_prop-preview-ov').forEach(e => e.remove());
+      return { on, off };
+    });
+    expect(r.on.label).toBe('Rate in the contract');
+    expect(r.on.sw).toBe(true);
+    expect(r.on.sub).toContain('They sign to $85 an hour');
+    expect(r.on.terms).toContain('$85 per hour');
+    expect(r.on.doc, 'never on the proposal page').not.toContain('$85');
+    expect(r.off.sw).toBe(false);
+    expect(r.off.sub).toBe('Nowhere they see. You still bill the hours at $85.');
+    expect(r.off.terms).not.toContain('$85');
+    expect(r.off.doc).not.toContain('$85');
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'T&M billing terms'); });
 });

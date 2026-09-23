@@ -4838,6 +4838,9 @@ function _tmStateName(st){
 // What he did last time, because a man who hides his rate hides it on every
 // job and should not have to say so on every job. On S, so it follows him to
 // the tablet in the truck rather than living on one phone.
+// One test for "does the customer read the rate", used by the Rate clause in
+// the terms and the Rate row on the document.
+function _tmShowRateOnDoc(){return !!(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()));}
 function _tmHideRateDefault(){
   try{return (typeof S!=='undefined'&&S)?!!S.tmHideRate:false;}catch(_e){return false;}
 }
@@ -5161,19 +5164,26 @@ function _tmApplyLayers(){
     const can=_tmCanHideRate();
     if(!can)_tmHideRate=false;
     hr.innerHTML=can
-      // An iOS switch row (2026-09-23), the same checkbox underneath.
+      // SAID THE WAY THE SWITCH MOVES (2026-09-23). "Keep my rate OFF the
+      // proposal" put a switch that was ON beside a rate that was OFF, and the
+      // owner: "even I don't know what side keeps it on or off." Now blue
+      // means the rate is in the contract, the way every iPhone switch means
+      // yes, and the line under it says in words where the customer reads it.
       ? '<label class="ios-row" style="cursor:pointer">'+
-          '<span class="ios-lbl">Keep my rate off the proposal</span>'+
-          '<input type="checkbox" class="ios-switch" id="tm-hide-rate" '+(_tmHideRate?'checked':'')+
-          ' onchange="_tmSetHideRate(this.checked)"></label>'
+          '<span class="ios-lbl">Rate in the contract<small id="tm-show-rate-sub"></small></span>'+
+          '<input type="checkbox" class="ios-switch" id="tm-show-rate" '+(_tmHideRate?'':'checked')+
+          ' onchange="_tmSetHideRate(!this.checked)"></label>'
       // Named, not abbreviated: a man reading why he cannot turn something off
       // is owed the state's name and the statute behind it, not a two-letter
       // code he has to decode to know which law is talking to him.
       // Named in full, with the statute: a man told he cannot turn something
       // off is owed which law is saying so.
-      : '<div class="ios-row"><span class="ios-lbl">Rate shown on the proposal<small>'+
+      : '<div class="ios-row"><span class="ios-lbl">Rate in the contract<small>'+
           escHtml(_tmStateName(rule.state))+' requires it on a time and materials contract. '+escHtml(rule.statute||'')+'</small></span>'+
           '<input type="checkbox" class="ios-switch" checked disabled aria-label="Rate shown, required"></div>';
+    // The line under the switch is written by _tmRenderBillTerms, which ran
+    // before this row was redrawn; fill it again now it exists.
+    _tmRenderBillTerms();
   }
   // ONE NAME FOR IT, EVERYWHERE: "The most it can cost". The rail said
   // "ceiling", the chip said "Not to exceed", this card said "Guaranteed
@@ -5679,6 +5689,19 @@ function _tmRenderBillTerms(){
     else if(D.amt>0)t='For materials and getting started.';
     else t=lim?lim+'.':'For materials and getting started.';
     note.textContent=t;note.style.color=law?'var(--ios-law)':'';
+  }
+  // What the rate switch means, in words, with his figure in it.
+  const rs=document.getElementById('tm-show-rate-sub');
+  if(rs){
+    const r=Number(_tmRatePerMan)||0,f='$'+r.toLocaleString('en-US');
+    const shown=!(_tmHideRate&&_tmCanHideRate());
+    // WHERE it shows, said plainly: the rate is never printed on the proposal
+    // page itself (owner, 2026-09-17: "hourly rate never gets exposed to the
+    // proposal itself"). This switch decides whether it is a term in the
+    // contract they sign.
+    rs.textContent=shown
+      ?(r>0?'They sign to '+f+' an hour, per worker. It is in the contract terms, not on the proposal page.':'They sign to your hourly rate, in the contract terms.')
+      :(r>0?'Nowhere they see. You still bill the hours at '+f+'.':'Nowhere they see. You still bill the hours at your rate.');
   }
   // Bills: on every contract that bills time.
   const cw=document.getElementById('tm-cad-main');
@@ -7025,7 +7048,7 @@ function _geiBuildTermsHtml(){
   // customer reads it, so it comes out entirely rather than being softened.
   // _tmCanHideRate is consulted and not just the flag, so a proposal carried
   // across a state line cannot arrive with a required term missing.
-  const _tmRateClause=(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()))?[['Rate',
+  const _tmRateClause=_tmShowRateOnDoc()?[['Rate',
     `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
@@ -7209,6 +7232,7 @@ async function sendGenericProposal(previewOnly,opts){
   // deposit. Set neither and it carries no money at all, which is the point.
   // Crew size and a day rate are both routes back to the rate, so neither
   // ships either.
+  const _tmCapFine='<div style="font-size:10px;font-weight:500;opacity:.8;letter-spacing:0;margin-top:2px">More only with your written OK</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
@@ -7221,7 +7245,10 @@ async function sendGenericProposal(previewOnly,opts){
     // Across the customer-side research the question they actually ask is
     // "what's the most this could be?", so that is what the line says. The
     // phrase the statutes use lives in the terms, where it has to.
-    (_tmNteCap>0?_rsRow('The most this can cost you, unless you approve more in writing',_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
+    // SHORT, AND THE CONDITION SMALL (owner, 2026-09-23: "the way it's worded
+    // sucks"). The whole sentence was the label, five lines deep beside one
+    // figure. Three words say it; the condition sits under them.
+    (_tmNteCap>0?_rsRow('<span style="white-space:nowrap">Most you&apos;ll pay</span>'+_tmCapFine,_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
     (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Up Front, Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
   // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own
@@ -7475,11 +7502,11 @@ async function sendGenericProposal(previewOnly,opts){
   const _estQuietRow=_tmCapLeads
     ?`<tr style="background:#f8fafc"><td style="padding:9px 18px;font-size:11px;font-weight:600;color:#64748b">Estimated at today&apos;s scope (not a fixed price)</td><td style="padding:9px 18px;text-align:right;font-size:12px;font-weight:700;color:#334155;white-space:nowrap">${totalFmt}</td></tr>`
     :'';
-  const _bigLabel=_tmCapLeads?'THE MOST THIS CAN COST YOU':(_geiIsTM?'ESTIMATED TOTAL':'TOTAL');
+  const _bigLabel=_tmCapLeads?'MOST YOU&apos;LL PAY':(_geiIsTM?'ESTIMATED TOTAL':'TOTAL');
   const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Unless you approve more in writing</div>':''}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`;
+    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">More only with your written OK</div>':''}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't

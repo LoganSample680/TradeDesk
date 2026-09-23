@@ -906,7 +906,8 @@ test.describe('the cap is worded the way a customer asks for it', () => {
       _tmLayers = new Set(prev.layers); _tmApplyLayers();
       return h;
     });
-    expect(html).toContain('The most this can cost you');
+    // (2026-09-23, §10.4: owner said the old wording sucked; three words and the condition small.)
+    expect(html).toContain('Most you&apos;ll pay');
     expect(html).not.toContain('Not to exceed');
   });
 
@@ -1224,7 +1225,7 @@ test.describe('keeping the rate off the proposal', () => {
       const wrap = document.getElementById('tm-hide-rate-wrap');
       return {
         can: _tmCanHideRate(),
-        box: !!document.getElementById('tm-hide-rate'),
+        box: !!document.getElementById('tm-show-rate'),
         txt: (wrap ? wrap.textContent : '').replace(/\s+/g, ' ').trim(),
       };
     });
@@ -1717,12 +1718,16 @@ test.describe('the ceiling leads, not the guess', () => {
     // rate is a switch on the row directly under it, so it is always in view.
     test('whether the customer reads the rate is a switch right under it', async () => {
       await fill(95, '12,000');
+      // SAID THE WAY IT MOVES since 2026-09-23 (§10.4): "Show my rate to the
+      // customer", so the switch is ON when they see it and OFF when they do
+      // not. It was "Keep my rate off", and the owner could not tell which
+      // side kept it off.
       await page.evaluate(() => _tmSetHideRate(true));
-      const on = await page.evaluate(() => { _tmApplyLayers(); const x = document.getElementById('tm-hide-rate'); return x && x.checked; });
-      expect(on).toBe(true);
+      const hidden = await page.evaluate(() => { _tmApplyLayers(); const x = document.getElementById('tm-show-rate'); return x && x.checked; });
+      expect(hidden).toBe(false);
       await page.evaluate(() => { _tmSetHideRate(false); _tmApplyLayers(); });
-      const off = await page.evaluate(() => document.getElementById('tm-hide-rate').checked);
-      expect(off).toBe(false);
+      const shown = await page.evaluate(() => document.getElementById('tm-show-rate').checked);
+      expect(shown).toBe(true);
     });
 
     test('a state that requires the rate shows it locked on, never a switch he can use', async () => {
@@ -1731,7 +1736,7 @@ test.describe('the ceiling leads, not the guess', () => {
         const a = document.getElementById('gei-addr'); if (a) a.value = '12 Main St, Philadelphia PA 19103';
         _tmApplyLayers();
         const w = document.getElementById('tm-hide-rate-wrap');
-        const out = { usable: !!document.getElementById('tm-hide-rate'), locked: !!w.querySelector('input[disabled]'),
+        const out = { usable: !!document.getElementById('tm-show-rate'), locked: !!w.querySelector('input[disabled]'),
           txt: w.textContent.replace(/\s+/g, ' ') };
         if (a) a.value = '700 Rate Rd, Wichita KS 67202'; _tmApplyLayers();
         return out;
@@ -1799,7 +1804,7 @@ test.describe('the ceiling leads, not the guess', () => {
   test('with no ceiling, the estimated total is still the big number', async () => {
     const h = await doc(0);
     expect(h).toContain('ESTIMATED TOTAL');
-    expect(h).not.toContain('THE MOST THIS CAN COST YOU');
+    expect(h).not.toContain('MOST YOU&apos;LL PAY');
   });
 
   // The fix. The cap used to appear NOWHERE in the money footer when there was
@@ -1807,7 +1812,8 @@ test.describe('the ceiling leads, not the guess', () => {
   // guess at the hours sat in the accent bar in 21px.
   test('with a ceiling, the ceiling is the big number and the guess steps down', async () => {
     const h = await doc(12000);
-    expect(h).toContain('THE MOST THIS CAN COST YOU');
+    // (2026-09-23, §10.4: owner said the old wording sucked; three words and the condition small.)
+    expect(h).toContain('MOST YOU&apos;LL PAY');
     expect(h).toContain('$12,000');
     // Nothing is hidden: the estimate is still on the page, just not shouting.
     expect(h).toContain('not a fixed price');
@@ -1819,6 +1825,6 @@ test.describe('the ceiling leads, not the guess', () => {
   // are exactly how a T&M job legitimately passes its cap.
   test('the big ceiling says what lifts it', async () => {
     const h = await doc(12000);
-    expect(h).toContain('Unless you approve more in writing');
+    expect(h).toContain('More only with your written OK');
   });
 });

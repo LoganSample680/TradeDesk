@@ -580,7 +580,7 @@ test.describe('layout integrity, mobile', () => {
         // row above it. So the money footer is checked by what it now says.
         // The subject of this test is unchanged, and it is the two assertions
         // above: no per-item price and no standalone cap pricing row.
-        hasBigCap: html.includes('THE MOST THIS CAN COST YOU'),
+        hasBigCap: /MOST YOU(&apos;|')LL PAY/.test(html), // (2026-09-23, §10.4: owner said the old wording sucked; three words and the condition small.)
         hasQuietEstimate: html.includes('not a fixed price'),
         hasDeposit: html.includes('Up Front, Before Work Begins'),
       };
