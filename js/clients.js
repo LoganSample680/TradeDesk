@@ -497,8 +497,18 @@ function _newcGateCreate(){
   const err=document.getElementById('_newc-gate-err');
   if(!name){if(err){err.textContent='A name, so the paperwork has somewhere to live.';err.style.display='block';}document.getElementById('_newc-gate-name')?.focus();return;}
   if(!addr){if(err){err.textContent='An address, so we know what property this is.';err.style.display='block';}document.getElementById('_newc-gate-addr')?.focus();return;}
-  const p=_parseAddrParts(addr);
-  const c=_clientCommitNew({id:Date.now(),name,phone:'',email:'',
+  const c=_clientQuickCreate(name,addr);
+  document.getElementById('_newc-gate-overlay')?.remove();
+  currentClientId=c.id;
+  _rrpGateThenEstimate(c);
+}
+// A customer from a name and (maybe) an address, with nothing else asked.
+// Shared by the proposal gate above and TrueShot's picker, so a customer made
+// in a driveway is the same record however it was started (7.3).
+function _clientQuickCreate(name,addr){
+  addr=String(addr||'').trim();
+  const p=addr?_parseAddrParts(addr):{street:'',city:'',state:'',zip:''};
+  const c=_clientCommitNew({id:Date.now(),name:String(name||'').trim(),phone:'',email:'',
     addr,street:p.street||'',city:p.city||'',state:p.state||'',zip:p.zip||'',
     ptype:'Single family home',partyType:'',source:'',ref:'',notes:'',
     created:todayKey(),createdAt:new Date().toISOString(),
@@ -510,13 +520,11 @@ function _newcGateCreate(){
   saveAll();
   // The blanks fill themselves in from here: year built (which decides the
   // pre-1978 lead-paint gate), property data, and the geofence warm-up all
-  // key off the address he just typed.
+  // key off the address.
   if(p.street&&p.city&&typeof _lookupPropertyData==='function')
     _lookupPropertyData(c.id,{street:p.street,city:p.city,state:p.state||'',zip:p.zip||''});
-  if(typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
-  document.getElementById('_newc-gate-overlay')?.remove();
-  currentClientId=c.id;
-  _rrpGateThenEstimate(c);
+  if(addr&&typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
+  return c;
 }
 function _gateAddressThenEstimate(c,pickedAddr){
   if(!c)return;
@@ -3757,9 +3765,13 @@ function removeClientAddress(idx){
 // inline and auto-picks it. Callers only open it when clientAddresses(c).length
 // > 1; a single-address client skips it entirely (zero extra taps). Speed is the
 // goal: search/choose the client, then one tap on the right property.
-let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null;
-function pickClientAddress(clientId,onPick){
+let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null,_addrPickSuggest='';
+// opts.suggest: an address the caller already believes is right (TrueShot
+// knows where the photos were taken). It names the add row and fills the
+// new-address field, so adding the house he is standing at is two taps.
+function pickClientAddress(clientId,onPick,opts){
   const c=getClientById(clientId);if(!c)return;
+  _addrPickSuggest=String((opts&&opts.suggest)||'').trim();
   _addrPickList=(typeof clientAddresses==='function')?clientAddresses(c):[{label:'Primary',addr:c.addr}];
   _addrPickCb=onPick;_addrPickClientId=clientId;
   document.getElementById('_addrpick-ov')?.remove();
@@ -3778,7 +3790,7 @@ function pickClientAddress(clientId,onPick){
   sheet.innerHTML=
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:11px 12px 4px">Which property?</div>'+
     rows+
-    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--blue)" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New address for this client</div>';
+    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--blue)" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>'+(_addrPickSuggest?'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Add '+escHtml(_addrPickSuggest.split(',')[0])+'</span>':'New address for this client')+'</div>';
   ov.appendChild(sheet);document.body.appendChild(ov);
 }
 function _addrPickFire(addr){
@@ -3800,6 +3812,7 @@ function _addrPickAddNew(){
       '</div>'+
     '</div>';
   const inp=document.getElementById('_addrpick-new');
+  if(inp&&_addrPickSuggest)inp.value=_addrPickSuggest;
   if(inp&&typeof _addrAutoFull==='function')_addrAutoFull(inp,null);
   setTimeout(()=>inp&&inp.focus(),60);
 }
