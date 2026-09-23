@@ -7107,7 +7107,10 @@ test.describe('UI cleanup, redundant elements removed', () => {
       // statically in the HTML.
       if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('byo', 'Build Your Own proposal', '_editByoTitle');
     });
-    const backBtns = await page.locator('#gei-byo-page .tbar .link-back').count();
+    // The iOS nav bar since 2026-09-23 (§10.4), same as T&M below: Back on
+    // the left of the one bar, where the .tbar's back link used to be. Still
+    // exactly one.
+    const backBtns = await page.locator('#gei-byo-page [aria-label="Back"]').count();
     expect(backBtns).toBe(1);
   });
 

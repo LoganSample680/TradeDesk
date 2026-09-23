@@ -1825,6 +1825,7 @@ test.describe('the ceiling leads, not the guess', () => {
   // are exactly how a T&M job legitimately passes its cap.
   test('the big ceiling says what lifts it', async () => {
     const h = await doc(12000);
-    expect(h).toContain('More only with your written OK');
+    // Contingent on unknowns (owner, 2026-09-23, §10.4).
+    expect(h).toContain('Unless hidden damage turns up');
   });
 });

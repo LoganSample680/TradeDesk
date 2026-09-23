@@ -1330,6 +1330,7 @@ function _timTalkStop(silent){
     // the steps are built the moment the man stops talking, in order, with
     // what he left out (owner, 2026-09-23). Tapping Build after talking was a
     // second thing to do that the button's own name had already promised.
+    if(_timTalkTarget==='byo-say'){if(typeof _byoSayBuild==='function')_byoSayBuild();return;}
     if(_timTalkTarget==='gei-scope-say'){
       if(typeof _geiScopeBuild==='function')
         _geiScopeBuild((typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm-scope-wrap':'byo-scope-wrap');

@@ -2147,7 +2147,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
     // Was "Option B". The button made a SECOND option and said so; a group can
     // now hold A through Z (_optionNextLabel), so naming one letter was wrong
     // the moment a third option existed. It adds an option now, and says that.
-    test('_byoShowPage renders "Send proposal" with Add option in a 3-column action grid', async () => {
+    // CHANGED 2026-09-23 (§10.4): Build Your Own is the iOS editor now. Send
+    // is on the bar at the bottom ("Send it"); the page keeps Add an option
+    // with the other quiet links. Still never promises an option letter.
+    test('_byoShowPage renders Send it and Add an option', async () => {
       const r = await page.evaluate(() => {
         try { _byoShowPage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2155,8 +2158,8 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       const r2 = await page.evaluate(() => {
         const html = document.getElementById('byo-actions-wrap')?.innerHTML || '';
-        return { hasSend: html.includes('Send proposal') && !html.includes('Send T&amp;M'),
-                 hasAddOption: html.includes('Add option'),
+        return { hasSend: html.includes('Send it') && !html.includes('Send T&amp;M'),
+                 hasAddOption: html.includes('Add an option'),
                  namesOneLetter: /Option [A-Z]\b/.test(html) };
       });
       expect(r2.hasSend).toBe(true);
@@ -2482,11 +2485,14 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const tm = precedes(document.getElementById('tm-scopecard-wrap'), document.getElementById('tm-sitenote-wrap'))
           && precedes(document.getElementById('tm-sitenote-wrap'), document.getElementById('tm-step-2'));
         openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
-        const byo = precedes(document.getElementById('byo-sitenote-wrap'), document.getElementById('byo-scopecard-wrap'));
+        // BYO the same since it became the same editor (2026-09-23, §10.4):
+        // after the work, before the price.
+        const byo = precedes(document.getElementById('byo-sections'), document.getElementById('byo-sitenote-wrap'))
+          && precedes(document.getElementById('byo-sitenote-wrap'), document.getElementById('byo-step-2'));
         return { tm, byo };
       });
       expect(r.tm, 'T&M note sits in step 1, after the job and before the price').toBe(true);
-      expect(r.byo, 'BYO note precedes scope card').toBe(true);
+      expect(r.byo, 'BYO note sits after the work and before the price').toBe(true);
     });
 
     test('per-property: two addresses on one client keep separate notes; each auto-loads by address', async () => {
@@ -2703,17 +2709,15 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const railMat = document.getElementById('tm-rail-mat')?.textContent || '';
         return {
           markupInputExists: !!document.getElementById('tm-i-markup'),
-          markupNow: typeof _tmMatMarkup !== 'undefined' ? _tmMatMarkup : null,
+          markupVarExists: typeof _tmMatMarkup !== 'undefined',
           matListShowsRaw: matListText.includes('$500'),
           railShowsRaw: railMat.includes('500'),
         };
       });
       expect(r.markupInputExists, 'the "Materials markup %" input must be gone').toBe(false);
-      // CHANGED 2026-09-23 (§10.4). Markup came back, but not hidden: it is the
-      // contract's Materials term, "at cost" (0) unless he picks Plus markup,
-      // and printed on the terms whenever it applies. What this test guards is
-      // unchanged: nothing marks up a price he did not see and did not choose.
-      expect(r.markupNow, 'a new T&M bills materials at cost').toBe(0);
+      // Briefly a contract term on 2026-09-23 and taken back out the same day
+      // (owner: "why would we include that?"). The original rule stands.
+      expect(r.markupVarExists, '_tmMatMarkup must no longer exist').toBe(false);
       expect(r.matListShowsRaw, 'material row must show the raw $500 cost, no hidden markup applied').toBe(true);
       expect(r.railShowsRaw, 'rail materials total must show the raw cost, no hidden markup applied').toBe(true);
     });
@@ -3095,10 +3099,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       // inserting a clause renumbers everything after it rather than leaving a
       // gap. sign.html's legacy patcher keys on clause shapes in proposalHtml,
       // which has not embedded terms since 2026-07-13, so the shift is safe.
-      // 13 -> 14, 2026-09-23 (§10.4): T&M gained a Materials clause (at cost,
-      // or cost plus N%, receipts attached), its own so it stays when the rate
-      // is kept off the proposal.
-      expect(tm.clauses.length).toBe(14);
+      expect(tm.clauses.length).toBe(13);
       expect(byo.clauses.length).toBe(10);
       tm.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
       byo.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
@@ -3108,7 +3109,6 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(tm.clauses[1].title).toBe('Rate');
       expect(tm.clauses[2].title).toBe('Cancellation &amp; Deposits');
       expect(tm.clauses[3].title).toBe('Billing');
-      expect(tm.clauses[4].title).toBe('Materials');
       expect(byo.clauses[0].title).toBe('Cancellation &amp; Deposits');
 
       // Shared tail: same titles in the same order in both modes...

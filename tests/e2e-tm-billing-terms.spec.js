@@ -14,8 +14,10 @@
  *    limits a deposit to a share of the price is held to that share of the
  *    ceiling. With no ceiling in such a state, there is nothing to measure,
  *    so a deposit needs the ceiling first. Send and Sign refuse otherwise.
- *  - Materials is one term: at cost, or cost plus a percent, printed on the
- *    contract whether or not the rate is.
+ *  - How materials are priced is not the customer's business: no term, no
+ *    row, no receipts promised (owner, same day).
+ *  - The ceiling holds unless hidden damage turns up, and then only by a
+ *    change order they sign.
  *  - Estimate and material categories are not offered on a new T&M.
  *    Pennsylvania's estimate is on the page because the statute asks for it.
  */
@@ -153,52 +155,39 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
     expect(html).not.toMatch(/Deposit \(\d+%\)/);
   });
 
-  // ── MATERIALS ─────────────────────────────────────────────────────────────
-
-  test('materials default to at cost, and the contract says so', async () => {
-    await open({ addr: '412 Bell St, Topeka, KS 66603' });
-    const r = await page.evaluate(() => ({
-      seg: document.querySelector('#tm-mat-seg button.on').textContent,
-      terms: _geiBuildTermsHtml(),
-    }));
-    expect(r.seg).toBe('At cost');
-    expect(r.terms).toContain('actual cost, with no markup');
-    expect(r.terms).toContain('receipt is attached to each bill');
-  });
-
-  test('Plus markup takes a percent, prints it, and is remembered for the next job', async () => {
-    await open({ addr: '412 Bell St, Topeka, KS 66603' });
-    const r = await page.evaluate(() => {
-      _tmMatMode(1);
-      const i = document.getElementById('tm-i-matpct'); i.value = '18'; _tmMatPctInput(i);
-      return { m: _tmMatMarkup, terms: _geiBuildTermsHtml(), remembered: S.tmMatMarkup };
+  // ── MATERIALS: NOT THE CUSTOMER'S BUSINESS ────────────────────────────────
+  // REPLACED 2026-09-23 (§10.4). A Materials term (at cost / plus markup) was
+  // built and taken back out the same day. Owner: "materials at cost or plus
+  // markup, why would we include that?" and "receipts would never go on a
+  // bill, so they need to know the max price it could be, contingent on
+  // unknowns." So how materials are priced is not a term, not a row, and not
+  // on the proposal; and the contract no longer promises receipts.
+  test('no materials term on the page, the proposal or the contract', async () => {
+    await open({ addr: '412 Bell St, Topeka, KS 66603', cap: 4500 });
+    const r = await page.evaluate(async () => {
+      let doc = ''; const o = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = h => { doc = h; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = o; }
+      return { row: !!document.getElementById('tm-mat-row'), doc, terms: _geiBuildTermsHtml(), markupVar: typeof window._tmMatMarkup };
     });
-    expect(r.m).toBe(18);
-    expect(r.terms).toContain('cost plus 18%');
-    expect(r.remembered).toBe(18);
+    expect(r.row).toBe(false);
+    expect(r.doc).not.toContain('Materials charged');
+    expect(r.terms).not.toMatch(/markup|receipt/i);
+    expect(r.markupVar).toBe('undefined');
   });
 
-  // The rate can be kept off the proposal; how materials are charged cannot.
-  test('the materials term stays on the contract when the rate is kept off it', async () => {
-    await open({ addr: '412 Bell St, Topeka, KS 66603' });
-    const terms = await page.evaluate(() => { _tmSetHideRate(true); const t = _geiBuildTermsHtml(); _tmSetHideRate(false); return t; });
-    expect(terms).not.toContain('per hour');
-    expect(terms).toContain('Materials are billed');
-  });
-
-  // The total cannot say something the contract does not: markup applies to
-  // materials only, at the contract's percent.
-  test('the markup lands on materials, not on the labor', async () => {
-    await open({ addr: '412 Bell St, Topeka, KS 66603' });
-    const r = await page.evaluate(() => {
-      const prev = _geiLines;
-      _geiLines = [{ desc: 'Labor', qty: 1, rate: 1000, _tmLabor: true }, { desc: 'Copper', qty: 1, rate: 200 }];
-      _tmMatMarkup = 10;
-      const t = calcGeiTotal();
-      _geiLines = prev; _tmMatMarkup = 0;
-      return t.markup;
+  test('the ceiling is the most they pay, unless hidden damage needs a change order they sign', async () => {
+    await open({ addr: '412 Bell St, Topeka, KS 66603', cap: 4500 });
+    const r = await page.evaluate(async () => {
+      let doc = ''; const o = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = h => { doc = h; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = o; }
+      return { doc, terms: _geiBuildTermsHtml() };
     });
-    expect(r).toBe(20);
+    expect(r.doc).toContain('Most you&apos;ll pay');
+    expect(r.doc).toContain('Unless hidden damage turns up. Anything more needs a change order you sign.');
+    expect(r.terms).toContain('not to exceed $4,500');
+    expect(r.terms).toContain('exceeded only by a written change order signed by Buyer, for hidden damage');
   });
 
   // ── WHAT IS OFFERED ───────────────────────────────────────────────────────

@@ -40,7 +40,7 @@ test.describe('Earl, 58, hates technology', () => {
     clients.push({ id: 95001, name: o.name || 'Earl Pruitt', addr: o.addr || '412 Bell St, Topeka, KS 66603' });
     currentClientId = 95001;
     _activeTrade = o.trade || 'plumbing';
-    if (typeof S !== 'undefined') { S.tmMatMarkup = 0; S.tmHideRate = false; }
+    if (typeof S !== 'undefined') { S.tmHideRate = false; }
     openTMEstimate(getClientById(95001));
     window.scrollTo(0, 0);
   }, o || {});
@@ -191,15 +191,6 @@ test.describe('Earl, 58, hates technology', () => {
     expect(r).toMatch(/check|sure|high/i);
   });
 
-  test('markup typed as "15%" is 15, and 500 is not accepted as-is', async () => {
-    await fresh();
-    await page.locator('#tm-mat-seg button', { hasText: 'Plus markup' }).tap();
-    await typeIn('tm-i-matpct', '15%');
-    expect(await page.evaluate(() => _tmMatMarkup)).toBe(15);
-    await typeIn('tm-i-matpct', '500');
-    expect(await page.evaluate(() => _tmMatMarkup)).toBeLessThanOrEqual(100);
-  });
-
   test('money up front bigger than the most it can cost is stopped, in any state', async () => {
     await fresh();
     await say('set a tankless'); await page.evaluate(() => _geiScopeBuild('tm-scope-wrap'));
@@ -308,7 +299,7 @@ test.describe('Earl, 58, hates technology', () => {
     try {
       await fresh({ name: 'Bartholomew Montgomery-Richardson III' });
       await say('pull the old water heater, run new pex to the manifold, set a tankless');
-      await page.evaluate(() => { _geiScopeBuild('tm-scope-wrap'); _tmDepMode(1); _tmMatMode(1); });
+      await page.evaluate(() => { _geiScopeBuild('tm-scope-wrap'); _tmDepMode(1); });
       const r = await page.evaluate(() => {
         const cw = document.documentElement.clientWidth;
         return [...document.querySelectorAll('#gei-tm-page *, #tm-dock *')].filter(e => {
@@ -359,12 +350,11 @@ test.describe('Earl, 58, hates technology', () => {
         _geiScopeBuild('tm-scope-wrap'); const a = n;
         const e = document.getElementById('tm-i-rate'); e.value = '85'; _tmInputChange(); const b = n;
         _tmDepMode(1); const c = n;
-        _tmMatMode(1); const d = n;
         _tmDelStep('Set a tankless'); const f = n;
-        return [a > 0, b > a, c > b, d > c, f > d];
+        return [a > 0, b > a, c > b, f > c];
       } finally { window.saveAll = real; }
     });
-    expect(r, '[build, rate, up front, materials, delete]').toEqual([true, true, true, true, true]);
+    expect(r, '[build, rate, up front, delete]').toEqual([true, true, true, true]);
   });
 
   test('he deletes every step: he is back at the box, and the button says Build', async () => {
@@ -420,17 +410,6 @@ test.describe('Earl, 58, hates technology', () => {
       expect(d >= 0 && Number.isFinite(d), t + ' -> ' + d).toBe(true);
       expect(junk(await visibleText()), t).toBe(false);
     }
-  });
-
-  test('markup box cleared and left: it goes back to At cost, not a blank markup', async () => {
-    await fresh();
-    await page.locator('#tm-mat-seg button', { hasText: 'Plus markup' }).tap();
-    await page.locator('#tm-i-matpct').fill('');
-    await page.locator('#tm-i-matpct').dispatchEvent('input');
-    await page.locator('#tm-i-matpct').blur();
-    const r = await page.evaluate(() => ({ m: _tmMatMarkup, on: document.querySelector('#tm-mat-seg button.on').textContent, terms: _geiBuildTermsHtml() }));
-    expect(r.terms).not.toMatch(/plus 0%|plus NaN|plus undefined/);
-    if (r.m === 0) expect(r.on).toBe('At cost');
   });
 
   test('Sign here with the deposit over the limit stops him, the same as Send', async () => {

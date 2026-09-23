@@ -394,11 +394,6 @@ let _tmCapAction='Stop & get re-approval';
 // Send.
 let _tmRateOnly=false;
 Object.defineProperty(window,'_tmRateOnly',{get:()=>_tmRateOnly,set:v=>{_tmRateOnly=!!v;},configurable:true});
-// HOW MATERIALS ARE BILLED, as a percent over his cost. 0 is "at cost".
-// Owner, 2026-09-23: a T&M proposal does not list materials, it says how they
-// are billed. One term, printed on the contract, applied to every receipt.
-let _tmMatMarkup=0;
-Object.defineProperty(window,'_tmMatMarkup',{get:()=>_tmMatMarkup,set:v=>{_tmMatMarkup=Math.max(0,Number(v)||0);},configurable:true});
 let _geiIsFreeForm=false;
 Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
@@ -759,7 +754,6 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _tmLayers=new Set(['rate','cap']);_tmRateOnly=true;
   // His standing answer, not a fresh question on every job.
   _tmHideRate=_tmHideRateDefault();
-  _tmMatMarkup=_tmMatMarkupDefault();
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -1108,7 +1102,7 @@ function _geiRenderTopBar(prefix,defaultTitle,editFnName){
   // an 852px phone before the first field. iOS puts Back on the left and the
   // one action on the right, and names the screen once, large. Back IS cancel,
   // so there is no separate Cancel; tapping the title renames it.
-  if(prefix==='tm'){
+  if(prefix==='tm'||prefix==='byo'){
     wrap.className='';
     wrap.innerHTML=
       '<div class="ios-nav">'+
@@ -1117,14 +1111,18 @@ function _geiRenderTopBar(prefix,defaultTitle,editFnName){
         // What kind of proposal this is, in the middle of the bar where iOS
         // names the screen, so the line under the customer's name has room
         // for the address (it was cut to "41…").
-        '<span class="ios-navtitle">Time &amp; Materials</span>'+
+        '<span class="ios-navtitle">'+(prefix==='tm'?'Time &amp; Materials':'Build Your Own')+'</span>'+
         '<button type="button" class="ios-navbtn bold" onclick="saveGenericEstimate(true)">Save</button>'+
       '</div>'+
       '<div class="ios-large">'+
         // A div, not a <button>: the rename input is typed INTO this element,
         // and an input inside a button is not reliably editable everywhere.
         '<div class="ios-title" role="button" tabindex="0" onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename">'+
-          '<span id="'+prefix+'-tbar-title">'+defaultTitle+'</span></div>'+
+          '<span id="'+prefix+'-tbar-title">'+defaultTitle+'</span>'+
+          // NAMING IT IS VISIBLE (owner, 2026-09-23: "still want the ability
+          // to name the proposal if wanted on both"). The title was always
+          // tappable; nothing said so. A pencil does.
+          '<span class="ios-rename" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span></div>'+
         '<div class="ios-sub" id="'+prefix+'-page-sub">-</div>'+
       '</div>';
     return;
@@ -1231,6 +1229,7 @@ function _geiRenderActionButtons(prefix,opts){
       '<div class="ios-links">'+
         link(o.previewOnclick||'_geiPreviewClient()','See what they get')+
         link('_geiPresent()','Show them on this phone')+
+        (o.extraLinks||[]).map(x=>link(x.onclick,x.label)).join('')+
         link('_openComparisonPicker()','Compare')+
       '</div>';
     return;
@@ -1356,7 +1355,7 @@ const _GEI_MODES={
     titleSuffix:'Build Your Own',
     gaugeOninput:"this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()",
     depositOninput:'_byoUpdateRail();_byoAutosave();_geiRememberDeposit()',
-    actionOpts:{extraButtons:[{label:svgIcon('📋',{size:11})+' Add option',onclick:'_byoDuplicateBid()'}]},
+    actionOpts:{sendLabel:'Send it',compact:true,extraLinks:[{label:'Add an option',onclick:'_byoDuplicateBid()'}]},
   },
 };
 // Shared page chrome for both single-page estimate layouts: hide the legacy
@@ -1395,15 +1394,15 @@ function _geiRenderAddrSub(prefix){
   const c=getClientById(_geiClientId);
   if(!c){sub.textContent='New proposal';return;}
   const street=(_geiSiteAddr()||'').split(',')[0];
-  if(prefix!=='tm'){sub.textContent=(c.name||'')+(street?' · '+street:'');return;}
+  if(prefix!=='tm'&&prefix!=='byo'){sub.textContent=(c.name||'')+(street?' · '+street:'');return;}
   // AN iOS TITLE NAMES THE THING ON THE SCREEN (2026-09-23). With no name of
   // his own on it, this read "Proposal", which is every screen in this part of
   // the app. The customer is what he will recognise it by; a name he types
   // (tap the title) replaces it, and it is display only, so the auto name
   // that files the proposal and heads the document is untouched.
-  const tt=document.getElementById('tm-tbar-title');
+  const tt=document.getElementById(prefix+'-tbar-title');
   const own=(typeof _geiDescUserSet!=='undefined'&&_geiDescUserSet)?(document.getElementById('gei-desc')?.value||'').trim():'';
-  if(tt&&!tt.querySelector('input'))tt.textContent=own||c.name||'Time & Materials';
+  if(tt&&!tt.querySelector('input'))tt.textContent=own||c.name||(prefix==='tm'?'Time & Materials':'Build Your Own');
   if(!own){
     // The words in a span of their own, so on a phone they end in … and
     // Change stays on the line instead of being the part that is cut off.
@@ -1630,7 +1629,7 @@ function _geiRenderSiteNoteField(prefix){
 
   // T&M draws it as an iOS group with its label outside (2026-09-23); the other
   // builders keep their card.
-  wrap.innerHTML=(prefix==='tm')
+  wrap.innerHTML=(prefix==='tm'||prefix==='byo')
     ?'<div class="ios-sec"><div class="ios-group ios-note">'+row+open+'</div></div>'
     :'<div class="card card-pad-0" style="margin-bottom:12px">'+row+open+'</div>';
 }
@@ -1720,8 +1719,6 @@ function _tmShowPage(){
   // as the flat amount, so what he sent is what he sees.
   {const _d=b?(Number(b.tmDepositAmt)>0?Number(b.tmDepositAmt):Number(b.deposit)>0?Number(b.deposit):0):0;
    setV('tm-i-dep-flat',_d>0?_d:'');}
-  // How materials are billed: the bid's own term, else his usual.
-  _tmMatMarkup=(b&&b.tmMatMarkup!=null)?Math.max(0,Number(b.tmMatMarkup)||0):_tmMatMarkupDefault();
   // THE BID'S OWN LAYERS WIN, AND ONLY A BID HAS ANY. A proposal he built as
   // scope-only stays scope-only on resume; one with a rate and a cap comes back
   // with both. A bid written before layers existed is read from what it
@@ -1807,6 +1804,8 @@ function _byoShowPage(){
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
+  _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
+  _byoSayOpen=false;_byoMissed=[];
   _byoRenderSections();
   _byoUpdateRail(); // also renders the auto crew-labor cost line
   _renderScopeChips('byo-scope-wrap');
@@ -2399,7 +2398,20 @@ function _editEstTitle(titleId,btnId){
   let _done=false;
   const commit=()=>{
     if(_done)return;_done=true;
-    const val=inp.value.trim()||prev;
+    const typed=inp.value.trim();
+    // Cleared on purpose in the editors: back to the automatic name, and the
+    // customer heads the screen again.
+    if(!typed&&/^(tm|byo)-/.test(titleId)){
+      if(typeof _geiDescUserSet!=='undefined')_geiDescUserSet=false;
+      const descEl=document.getElementById('gei-desc');if(descEl)descEl.value='';
+      if(typeof _geiSyncAutoName==='function')_geiSyncAutoName();
+      titleEl.textContent=prev;
+      if(typeof _geiRenderAddrSub==='function')_geiRenderAddrSub(titleId.slice(0,titleId.indexOf('-')));
+      if(btn)btn.style.opacity='';
+      if(typeof _byoAutosave==='function')_byoAutosave();
+      return;
+    }
+    const val=typed||prev;
     titleEl.textContent=val;
     if(btn)btn.style.opacity='';
     const descEl=document.getElementById('gei-desc');if(descEl)descEl.value=val;
@@ -2794,6 +2806,98 @@ function _attachCardHTML(){
   '</div>';
 }
 
+// ── BUILD YOUR OWN, THE LIST (2026-09-23) ──────────────────────────────────
+//
+// Owner: "what about the BYO design, the true custom estimate ... go for it."
+// Each line was a checkbox, a price, Copy, Edit and an X, which left the title
+// one word wide ("Remove / old / water / heater"). Now a line is an iPhone row:
+// the check, the title with its description under it, the price on the right.
+// Tap the row to edit it, swipe it left to delete (with Undo). Sections only
+// show when he uses more than one; a new job is one plain list. And the first
+// way in is the same as T&M: say it or type it, and Tim breaks it into priced
+// lines from his own book.
+let _byoSayOpen=false,_byoMissed=[];
+function _byoSayHtml(){
+  const voice=(typeof _voiceCapable==='function'&&_voiceCapable());
+  const more=_byoItems.length>0;
+  return '<div class="ios-sec">'+
+    '<div class="ios-group"><textarea id="byo-say" class="ios-say" rows="3" placeholder="'+escHtml(more?'What else? Say it the way you would tell your crew.':_tmSayExample())+'"></textarea></div>'+
+    (voice?'<div style="margin-top:12px"><button type="button" class="ios-btn ios-btn-tint" onclick="_byoTalk()">'+
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Talk to Tim</button></div>':'')+
+    '<div class="ios-foot">'+(voice
+      ?'Type it or talk it. Tim makes the lines, prices them from your book, and finds what you left out.'
+      :'Type it, or tap the mic on your keyboard and talk. Tim makes the lines, prices them from your book, and finds what you left out.')+'</div>'+
+    '<div class="ios-links left">'+
+      '<button type="button" onclick="_byoAddItem(_byoWorkSection())">Add a line yourself</button>'+
+      (more?'<button type="button" onclick="_byoSayOpen=false;_byoRenderSections()">Cancel</button>':'')+
+    '</div>'+
+  '</div>';
+}
+function _byoTalk(){if(typeof _timTalkToggle==='function')_timTalkToggle('byo-say');}
+// The price for a line Tim wrote: HIS OWN BOOK, or none. A going rate from the
+// trade catalog was tried and put $33 on "run new gas line to the heater"
+// (2026-09-23): a guessed number on a contract is worse than a blank one that
+// asks. Unpriced, the row says Add price and the bar walks him through them.
+function _byoPriceFor(text){
+  const trade=_geiTrade||getActiveTrade();
+  const own=(typeof _pbFind==='function')?_pbFind(text,trade):null;
+  if(own&&Number(own.rate)>0)return {rate:Number(own.rate),unit:own.unit||'ea',notes:own.notes||'',from:'book'};
+  return {rate:0,unit:'ea',notes:'',from:null};
+}
+function _byoAddLine(text,sec){
+  const p=_byoPriceFor(text);
+  const nid=(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
+  _byoItems.push(_byoNormItem({id:nid,section:sec||_byoWorkSection(),label:text,qty:1,unit:p.unit,rate:p.rate,price:p.rate,notes:p.notes,on:true,_from:p.from}));
+}
+function _byoSayBuild(){
+  const el=document.getElementById('byo-say');
+  const said=el?String(el.value||'').trim():'';
+  if(!said){
+    if(el){try{el.focus();}catch(_e){}}
+    if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
+    return;
+  }
+  if(typeof timScopeBuild!=='function')return;
+  const built=timScopeBuild(said,{rejected:[]});
+  if(!built.steps.length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}
+  const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
+  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text);have.add(st.text.toLowerCase());}});
+  _byoMissed=(built.implied||[]).filter(im=>im&&im.step&&!have.has(String(im.step).toLowerCase()));
+  _byoSayOpen=false;
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+}
+function _byoTakeMissed(id){
+  const im=_byoMissed.find(x=>String(x.id)===String(id));if(!im)return;
+  _byoAddLine(im.step);
+  if(im.pairs&&im.pairs.step)_byoAddLine(im.pairs.step);
+  if(typeof timLearn==='function')try{timLearn('implied',im.id,true);}catch(_e){}
+  _byoMissed=_byoMissed.filter(x=>x!==im);
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+}
+function _byoTakeAllMissed(){_byoMissed.slice().forEach(im=>_byoTakeMissed(im.id));}
+function _byoDropMissed(id){
+  const im=_byoMissed.find(x=>String(x.id)===String(id));if(!im)return;
+  if(typeof timLearn==='function')try{timLearn('implied',im.id,false);}catch(_e){}
+  _byoMissed=_byoMissed.filter(x=>x!==im);
+  _byoRenderSections();
+}
+function _byoMissedHtml(){
+  if(!_byoMissed.length)return '';
+  const n=_byoMissed.length;
+  return '<div class="ios-sec"><div class="ios-group ios-tim">'+
+    '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+'<span class="who">You did not say</span>'+
+      (n>1?'<button type="button" class="ios-pill" onclick="_byoTakeAllMissed()">Add all '+n+'</button>':'')+'</div>'+
+    _byoMissed.map(im=>{
+      const id=escHtml(JSON.stringify(String(im.id||'')));
+      return '<div class="ios-swipe" data-kind="missed"><div class="ios-row">'+
+        '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
+        '<button type="button" class="ios-pill'+(n>1?' ghost':'')+'" onclick="_byoTakeMissed('+id+')">Add</button></div>'+
+        '<button type="button" class="ios-del" tabindex="-1" onclick="_byoDropMissed('+id+')">Not needed</button></div>';
+    }).join('')+
+  '</div></div>';
+}
+function _byoMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 function _byoRenderSections(){
   _injectRrpItems();
   _byoNormAll();
@@ -2802,46 +2906,180 @@ function _byoRenderSections(){
   const extraFromItems=_byoItems.map(x=>x.section).filter(s=>!_defSecs.includes(s));
   const allExtra=[..._byoCustomSections,...extraFromItems.filter(s=>!_byoCustomSections.includes(s))];
   const sections=[..._defSecs,...new Set(allExtra)];
-  const secHtml=sections.map(sec=>{
+  // Only the sections with something in them, plus any he made himself. With
+  // one in use, no heading at all: a list does not need a title.
+  const used=sections.filter(sec=>_byoItems.some(it=>it.section===sec)||_byoCustomSections.includes(sec));
+  const titled=used.length>1||_byoCustomSections.length>0;
+  const lines=!_byoItems.length?'':used.map(sec=>{
     const rows=_byoItems.filter(it=>it.section===sec);
     const isCustom=!_defSecs.includes(sec);
-    const rowHtml=rows.length?rows.map(it=>{
+    const rowHtml=rows.map(it=>{
       const idx=_byoItems.indexOf(it);
-      return _geiItemRowHtml({
-        checked:it.on,rowOnclick:'_byoToggle('+idx+')',
-        label:it.label,notes:(it.notes&&!it._rrp)?it.notes:'',price:it.price,qtyLabel:_byoQtyLabel(it),
-        editFn:'_byoEditItem('+idx+')',delFn:'_byoDelItem('+idx+')',dupFn:it._rrp?'':'_byoDupItem('+idx+')'
-      });
-    }).join(''):
-    '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet, tap + Add item</div>';
-    return '<div class="card card-pad-0" style="margin-bottom:12px">'+
-      '<div class="card-hd"><div class="card-hd-title">'+escHtml(sec)+'</div>'+
-      '<div style="display:flex;gap:6px">'+
-        (isCustom?'<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">'+svgIcon('✕',{size:12})+'</button>':'')+
-        '<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">+ Add item</button>'+
-      '</div></div>'+
-      '<div>'+rowHtml+'</div>'+
-    '</div>';
+      const priced=Number(it.price)>0;
+      const note=(it.notes&&!it._rrp)?it.notes:'';
+      return '<div class="ios-swipe" data-kind="line"><div class="ios-row byo-line'+(it.on?'':' off')+'" onclick="_byoEditItem('+idx+')">'+
+          '<button type="button" class="ios-check'+(it.on?' on':'')+'" aria-label="'+(it.on?'On the proposal':'Off the proposal')+'" '+
+            (it.required?'disabled ':'')+'onclick="event.stopPropagation();_byoToggle('+idx+')">'+(it.on?_TM_TICK:'')+'</button>'+
+          // A small grid: check, title and price on one line, the description
+          // full width under them (an earlier owner report: notes squeezed
+          // into a narrow middle column left grey space under the price).
+          '<span class="byo-title">'+escHtml(it.label)+'</span>'+
+          (priced?'<span class="ios-fact">'+_byoMoney(it.price)+'</span>':'<span class="ios-fact ask">Add price</span>')+
+          (note?'<small class="byo-note">'+escHtml(note)+'</small>':'')+
+        '</div>'+
+        (it.required?'':'<button type="button" class="ios-del" tabindex="-1" onclick="_byoDelLine('+idx+')">Delete</button>')+
+      '</div>';
+    }).join('');
+    return '<div class="ios-sec">'+
+      (titled?'<div class="ios-h"><span>'+escHtml(sec)+'</span>'+
+        (isCustom?'<button type="button" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)">Remove</button>':'')+'</div>':'')+
+      '<div class="ios-group">'+(rowHtml||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing here yet.</small></span></div>')+
+        '<button type="button" class="ios-row ios-link" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">Add a line</button>'+
+        (sec===used[used.length-1]&&!_byoSayOpen?'<button type="button" class="ios-row ios-link" onclick="_byoSayOpen=true;_byoRenderSections()">Say or type more</button>':'')+
+      '</div></div>';
   }).join('');
-  const addSecBtn='<div style="margin-bottom:12px">'+
-    '<button class="btn btn-ghost btn-full" onclick="_byoAddSection()" style="border:1.5px dashed var(--border2)">+ Add section</button>'+
-  '</div>';
-  const tcCard='<div class="card card-pad-0" style="margin-bottom:12px">'+
-    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Terms &amp; Conditions</div></div>'+
-    '<div style="padding:12px 14px">'+
-      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Custom terms print on the proposal below the standard payment terms.</div>'+
-      '<textarea id="byo-custom-terms" rows="5" placeholder="e.g. All paint supplied by client. Contractor not responsible for pre-existing damage to surfaces..." '+
-        'oninput="_byoCustomTerms=this.value;_byoAutosave()" '+
-        'style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box;line-height:1.5">'+escHtml(_byoCustomTerms||'')+'</textarea>'+
-    '</div>'+
-  '</div>';
-  // The package card sits ABOVE the sections and only on an empty estimate: it
-  // is the fastest way in, and once there is a line on the bid it has done its
-  // job and gets out of the way.
-  // The attach card goes directly under the work and ABOVE "+ Add section":
-  // it is about the lines that are already on the estimate, and putting a
-  // rarely-used structural control between them buried it three cards down.
-  wrap.innerHTML=_pkgCardHTML()+secHtml+_attachCardHTML()+addSecBtn+tcCard;
+  const say=(!_byoItems.length||_byoSayOpen)?_byoSayHtml():'';
+  const group=_byoItems.length?'<div class="ios-links left" style="margin:-14px 0 18px"><button type="button" onclick="_byoAddSection()">Group into sections</button></div>':'';
+  // Terms: a row under The price (_byoRenderPrice) opens this. It stays in the
+  // page so autosave and the proposal keep reading it by its id.
+  const terms='<div id="byo-terms-wrap" style="display:none"><div class="ios-sec"><div class="ios-h"><span>Your own terms</span></div>'+
+    '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
+      'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
+    '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  _tmWireSwipe(wrap);
+  _byoRenderSteps();
+}
+function _byoDelLine(idx){
+  const it=_byoItems[idx];if(!it||it.required)return;
+  const copy=Object.assign({},it);
+  _byoDelItem(idx);
+  _tmUndoToast('Line removed',()=>{
+    _byoItems.splice(Math.min(idx,_byoItems.length),0,copy);
+    _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  });
+}
+// ── THE STEPS, THE PRICE, THE BAR ──────────────────────────────────────────
+function _byoState(){
+  const on=_byoItems.filter(it=>it.on);
+  const unpriced=on.filter(it=>!(Number(it.price)>0)&&!it._rrp);
+  const {total}=(typeof calcGeiTotal==='function')?calcGeiTotal():{total:0};
+  return {n:_byoItems.length,on,unpriced,total};
+}
+function _byoDepositState(total){
+  const pct=_geiDepositPct();
+  const amt=Math.round(total*pct/100);
+  const addr=(document.getElementById('gei-addr')||{}).value||'';
+  const st=((typeof stateFromAddr==='function'?stateFromAddr(addr):null)||(typeof S!=='undefined'&&S.state)||'KS').toUpperCase();
+  const law=(typeof STATE_DEPOSIT_CAP!=='undefined'&&STATE_DEPOSIT_CAP[st])||{rule:'none'};
+  const applies=!_geiIsCommercial&&law.rule&&law.rule!=='none';
+  const max=applies&&typeof _maxDeposit==='function'?_maxDeposit(st,total):Infinity;
+  return {pct,amt,st,law,applies,max,over:isFinite(max)&&amt>max+0.5};
+}
+function _byoRenderSteps(){
+  const st=_byoState();
+  const head=(id,n,title,state,status)=>{
+    const el=document.getElementById(id);if(!el)return;
+    el.setAttribute('data-state',state);
+    el.innerHTML='<span class="n">'+(state==='done'?_TM_TICK:n)+'</span><span class="t">'+escHtml(title)+'</span>'+(status?'<span class="s">'+escHtml(status)+'</span>':'');
+  };
+  const one=st.n>0, two=one&&!st.unpriced.length&&st.total>0;
+  head('byo-step-1',1,'The work',one?'done':'now',one?(st.n+' line'+(st.n>1?'s':'')):'');
+  head('byo-step-2',2,'The price',two?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
+  _byoRenderPrice(st);
+  _byoRenderDock(st);
+}
+function _byoRenderPrice(st){
+  const g=document.getElementById('byo-price-group');if(!g)return;
+  st=st||_byoState();
+  const sec=document.getElementById('byo-price-sec');
+  if(sec)sec.style.display=st.n?'':'none';
+  if(!st.n){g.innerHTML='';return;}
+  const tax=(()=>{const r=document.getElementById('byo-rail-tax-row');return r&&r.style.display!=='none'?[(document.getElementById('byo-rail-tax-lbl')||{}).textContent,(document.getElementById('byo-rail-tax-amt')||{}).textContent]:null;})();
+  const costEl=document.getElementById('byo-expected-cost');
+  const cost=parseFloat(costEl&&costEl.value)||0;
+  const sub=st.on.reduce((a,it)=>a+(Number(it.price)||0),0);
+  const profit=sub>0&&cost>0?Math.round((sub-cost)/sub*100):null;
+  const pcol=profit==null?'':profit<0?'#DC2626':profit<_MARGIN_BANDS.low?'#EF4444':profit<_MARGIN_BANDS.target?'#B45309':profit<_MARGIN_BANDS.high?(document.body.classList.contains('dark')?'var(--green)':'var(--c-green,#117841)'):'#B45309';
+  const D=_byoDepositState(st.total);
+  const sname=_tmStateName(D.st)||D.st;
+  const depNote=D.over?('<small style="color:var(--ios-law)">'+escHtml(sname)+' allows up to '+_byoMoney(Math.floor(D.max))+' here.</small>')
+    :(D.amt>0?'<small>'+_byoMoney(D.amt)+' before work starts</small>':'<small>Nothing up front</small>');
+  const exclN=(_geiExclusions||[]).length;
+  const exclOpen=(document.getElementById('byo-excl-wrap')||{}).style&&document.getElementById('byo-excl-wrap').style.display!=='none'&&document.getElementById('byo-excl-wrap').dataset.open==='1';
+  const termsOpen=(document.getElementById('byo-terms-wrap')||{}).style&&document.getElementById('byo-terms-wrap').style.display!=='none';
+  const focusedCost=document.activeElement&&document.activeElement.id==='byo-cost-in';
+  const focusedDep=document.activeElement&&document.activeElement.id==='byo-dep-in';
+  if(focusedCost||focusedDep){
+    // Mid-typing: update the words around the box, never the box itself.
+    const pr=document.getElementById('byo-profit-val');
+    if(pr){pr.textContent=profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost));pr.style.color=pcol;}
+    const tv=document.getElementById('byo-total-val');if(tv)tv.textContent=_byoMoney(st.total);
+    const dn=document.getElementById('byo-dep-note');if(dn)dn.outerHTML=depNote.replace('<small','<small id="byo-dep-note"');
+    return;
+  }
+  g.innerHTML=
+    '<div class="ios-row byo-total"><span class="ios-lbl">Their price<small>Fixed. Only added or changed work, on a change order they sign, moves it.</small></span><span class="ios-fact" id="byo-total-val">'+_byoMoney(st.total)+'</span></div>'+
+    (tax?'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">'+escHtml(tax[0]||'')+'</small></span><span class="ios-fact" style="font-weight:400">'+escHtml(tax[1]||'')+'</span></div>':'')+
+    // PROFIT IS HIS, NEVER THEIRS (owner: "still want them to show profit
+    // percentage"). One number he types, what the job costs him, and the
+    // margin next to it. No materials list to fill out.
+    '<label class="ios-row"><span class="ios-lbl">Your cost<small>Materials and labor, all in. Only you see this.</small></span>'+
+      '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-cost-in" placeholder="0" value="'+(cost>0?Math.round(cost).toLocaleString('en-US'):'')+'" oninput="_fmtMoneyInput(this);_byoCostInput(this)"></span></label>'+
+    '<div class="ios-row"><span class="ios-lbl">Your profit</span><span class="ios-fact" id="byo-profit-val" style="color:'+pcol+'">'+(profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost)))+'</span></div>'+
+    '<label class="ios-row"><span class="ios-lbl">Deposit'+depNote.replace('<small','<small id="byo-dep-note"')+'</span>'+
+      '<span class="ios-val"><input type="text" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
+    '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-excl-wrap\')"><span class="ios-lbl">Not included<small>'+(exclN?exclN+' on the proposal':'Name what this job does not cover')+'</small></span><span class="ios-chev" style="transform:rotate('+(exclOpen?'90':'0')+'deg)">›</span></button>'+
+    '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-terms-wrap\')"><span class="ios-lbl">Your own terms<small>'+((_byoCustomTerms||'').trim()?'Added':'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(termsOpen?'90':'0')+'deg)">›</span></button>';
+  const foot=document.getElementById('byo-price-foot');
+  if(foot)foot.textContent='The customer sees the total and the deposit. Line prices, your cost and your profit stay on this screen.';
+}
+function _byoToggleFold(id){
+  const el=document.getElementById(id);if(!el)return;
+  const open=el.style.display==='none'||el.dataset.open!=='1';
+  el.style.display=open?'':'none';el.dataset.open=open?'1':'0';
+  _byoRenderPrice();
+  if(open){try{el.scrollIntoView({block:'nearest',behavior:'smooth'});}catch(_e){}}
+}
+function _byoCostInput(el){
+  const c=document.getElementById('byo-expected-cost');if(!c)return;
+  const v=(typeof _moneyVal==='function')?_moneyVal('byo-cost-in'):parseFloat(String(el.value).replace(/,/g,''))||0;
+  c.value=v>0?String(v):'';
+  if(v>0)c.dataset.userSet='true';else delete c.dataset.userSet;
+  _byoUpdateRail();_byoAutosave();
+}
+function _byoDepInput(el){
+  const v=String(el.value||'').replace(/[^0-9.]/g,'');
+  const pct=document.getElementById('byo-deposit-pct');if(!pct)return;
+  pct.value=v===''?'0':String(Math.max(0,Math.min(100,parseFloat(v)||0)));
+  pct.dispatchEvent(new Event('input',{bubbles:true}));
+}
+function _byoDockNext(st){
+  if(!st.n)return {label:'Build the lines',fn:'_byoDockBuild()'};
+  if(st.unpriced.length){const i=_byoItems.indexOf(st.unpriced[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
+  const D=_byoDepositState(st.total);
+  if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
+  return null;
+}
+function _byoDockBuild(){
+  const el=document.getElementById('byo-say');
+  if(el&&String(el.value||'').trim()){_byoSayBuild();return;}
+  if(el){try{el.scrollIntoView({block:'center'});}catch(_e){}try{el.focus();}catch(_e){}}
+  if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
+}
+function _byoRenderDock(st){
+  const d=document.getElementById('byo-dock');if(!d)return;
+  st=st||_byoState();
+  const nx=_byoDockNext(st);
+  const label=nx?nx.label:'send';
+  if(label!==_tmDockLabel){if(_tmDockLabel&&Date.now()-_tmDockTapAt<1500)_tmDockSince=Date.now();_tmDockLabel=label;}
+  d.setAttribute('data-state',nx?'todo':'now');
+  const tim=(typeof openTim==='function')
+    ?'<button type="button" class="tm-dock-tim" onclick="openTim()" aria-label="Ask Tim">'+(typeof timMark==='function'?timMark(30):'Tim')+'</button>':'';
+  d.innerHTML=tim+(nx
+    ?'<button type="button" class="ios-btn ios-btn-fill" id="byo-dock-go" onclick="if(_tmDockReady()){'+nx.fn+'}">'+escHtml(nx.label)+'</button>'
+    :'<button type="button" class="ios-btn ios-btn-tint" id="byo-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
+     '<button type="button" class="ios-btn ios-btn-fill" id="byo-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
 }
 function _byoToggle(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
@@ -2906,7 +3144,6 @@ function _byoAutosave(){
     b.tmDepositPct=0;
     b.tmDepositAmt=_tmDeposit();
     b.deposit=b.tmDepositAmt;
-    b.tmMatMarkup=_tmMatMarkup;
     b.tmCrewCount=_tmCrewCount;
     b.tmRatePerMan=_tmRatePerMan;
     b.tmEstHours=_tmEstHours;
@@ -3680,6 +3917,7 @@ function _byoUpdateRail(){
   // Margin is calculated on pre-tax revenue (sub): sales tax is pass-through to the
   // government and not the contractor's earnings, so including it inflates the margin.
   _updateMarginGauge('byo',sub);
+  if(typeof _byoRenderSteps==='function'&&document.getElementById('byo-step-1'))_byoRenderSteps();
 }
 // Comma-formats a BYO price field as the contractor types, native type="number"
 // inputs reject commas outright in every browser, so this field is plain text
@@ -4972,18 +5210,6 @@ function _tmDepositState(){
     pctOfCap:cap>0&&amt>0?Math.round(amt/cap*100):null};
 }
 function _tmDeposit(){return _geiIsTM?_tmDepositState().amt:0;}
-// Materials: his last answer is the next job's starting one, the way the hide
-// rate switch remembers (S.tmMatMarkup).
-function _tmMatMarkupDefault(){return Math.max(0,Number(typeof S!=='undefined'&&S.tmMatMarkup)||0);}
-function _tmSetMatMarkup(v){
-  _tmMatMarkup=Math.max(0,Math.min(100,Math.round(Number(v)||0)));
-  try{if(typeof S!=='undefined'&&S){S.tmMatMarkup=_tmMatMarkup;if(typeof _settingsChanged==='function')_settingsChanged();}}catch(_e){}
-  if(typeof _tmInputChange==='function')_tmInputChange();
-  if(typeof _byoAutosave==='function')_byoAutosave();
-}
-function _tmMatWords(){
-  return _tmMatMarkup>0?('Your cost plus '+_tmMatMarkup+'%'):'At your cost';
-}
 // California. The scope he just said is the part worth keeping, so it goes
 // across as the lines of a Build Your Own proposal and all he adds is prices.
 function _tmToFixedPrice(){
@@ -5198,7 +5424,7 @@ function _tmApplyLayers(){
   if(nteS)nteS.textContent=!_tmLayers.has('cap')?''
     :rule.capOverEst
     ?_tmStateName(rule.state)+' sets the most it can cost: your estimate plus ten percent. It fills in on its own.'
-    :'Past the most it can cost, you stop and get their OK in writing.';
+    :'Past the most it can cost, hidden damage is a change order they sign.';
   const matH=document.getElementById('tm-mat-head');
   if(matH)matH.textContent='Material categories';
   // Last, so every figure it reads is the one this pass just settled.
@@ -5447,7 +5673,7 @@ function _tmRenderAddRow(rule,locked){
   if(foot){
     const capNote=!_tmLayers.has('cap')?''
       :rule.capOverEst?' '+sname+' sets the most it can cost: your estimate plus ten percent. It fills in on its own.'
-      :(_tmCapVal()>0?' Past that, you stop and get their OK in writing.':'');
+      :(_tmCapVal()>0?' Hidden damage past that is a change order they sign.':'');
     // What the customer will get, in one sentence, under the fields that
     // decide it. (A list of "What they get" repeated the job and the rate a
     // thumb's width above it, and came out, 2026-09-23.)
@@ -5644,20 +5870,6 @@ function _tmRenderMore(rule,locked){
 // ── MATERIALS, UP FRONT, BILLS: the three terms under the rate ──────────────
 // Static inputs (so typing never loses focus to a repaint); this sets which
 // segment is on, which rows show, and the line under the deposit.
-let _tmMatPlus=false;
-function _tmMatMode(on){
-  _tmMatPlus=!!on;
-  if(!on)_tmSetMatMarkup(0);
-  else if(!(_tmMatMarkup>0))_tmSetMatMarkup(Number(typeof S!=='undefined'&&S.tmMatMarkupLast)||15);
-  _tmRenderBillTerms();
-  if(on){const i=document.getElementById('tm-i-matpct');if(i){try{i.focus();i.select();}catch(_e){}}}
-}
-function _tmMatPctInput(el){
-  const v=String(el.value||'').replace(/[^0-9.]/g,'');
-  if(v==='')return;                 // mid-edit: keep the row open
-  _tmSetMatMarkup(v);
-  try{if(_tmMatMarkup>0&&typeof S!=='undefined'&&S)S.tmMatMarkupLast=_tmMatMarkup;}catch(_e){}
-}
 function _tmDepMode(on){
   if(on){_tmStepAct('dep');}
   else{if(typeof _tmDropLayer==='function')_tmDropLayer('dep');const i=document.getElementById('tm-i-dep-flat');if(i)i.value='';_tmInputChange();}
@@ -5667,11 +5879,6 @@ function _tmRenderBillTerms(){
   if(!_geiIsTM)return;
   const segOn=(id,v)=>{const w=document.getElementById(id);if(w)w.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')===String(v)));};
   const show=(id,on)=>{const e=document.getElementById(id);if(e)e.style.display=on?'':'none';};
-  const plus=_tmMatPlus||_tmMatMarkup>0;
-  segOn('tm-mat-seg',plus?1:0);
-  show('tm-mat-pct-row',plus);
-  const mi=document.getElementById('tm-i-matpct');
-  if(mi&&document.activeElement!==mi)mi.value=_tmMatMarkup>0?String(_tmMatMarkup):'';
   const depOn=_tmLayers.has('dep');
   segOn('tm-dep-seg',depOn?1:0);
   show('tm-dep-amt-row',depOn);
@@ -6185,6 +6392,9 @@ function _geiSyncAutoName(){
 function _geiRefreshAutoTitle(prefix){
   if(_geiDescUserSet)return;
   _geiSyncAutoName();
+  // The iOS editors title the screen with the customer (_geiRenderAddrSub);
+  // the auto name still files the proposal, it just does not head the page.
+  if(prefix==='tm'||prefix==='byo')return;
   const el=document.getElementById(prefix+'-tbar-title');
   if(el&&!el.querySelector('input')){
     const n=document.getElementById('gei-desc')?.value||'';
@@ -6757,12 +6967,10 @@ function _panelPrint(){
 function calcGeiTotal(){
   const sub=_geiLines.reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0);
   const pct=parseFloat(document.getElementById('gei-tax-pct')?.value)||0;
-  // T&M: the contract's materials term, on materials only, never a hidden
-  // percent over the labor too. The proposal says "at your cost" or "plus N%",
-  // and the total cannot say anything else (2026-09-23).
-  const markup=_geiIsTM
-    ?_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0)*(Number(_tmMatMarkup)||0)/100
-    :sub*pct/100;
+  // T&M carries no markup here: how materials are priced is his business,
+  // not a term on the contract, and receipts never go on a bill (owner,
+  // 2026-09-23).
+  const markup=_geiIsTM?0:sub*pct/100;
 
   // Sales tax, separate from markup, based on state rules and job scope
   let salesTax=0,salesTaxTreatment=null;
@@ -6883,7 +7091,6 @@ function saveGenericEstimate(draft){
     tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
     tmDepositPct:0,
     tmDepositAmt:_tmFlatDep,
-    tmMatMarkup:_tmMatMarkup,
     tmNteEnabled:(_tmNteFromNew>0)||_tmNteOnChecked,
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
@@ -7051,16 +7258,12 @@ function _geiBuildTermsHtml(){
   const _tmRateClause=_tmShowRateOnDoc()?[['Rate',
     `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
-    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
+    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}. This amount may be exceeded only by a written change order signed by Buyer, for hidden damage or conditions that could not be seen before work began`:' (T&amp;M)'}`],
     ..._tmRateClause,
     ['Cancellation &amp; Deposits',_cancelClause],
-    ['Billing',`${_tmBillTerm} with time sheets and material receipts attached.`],
-    // After Billing, so the clauses sign.html's legacy patcher knows keep
-    // their places. Its own clause (2026-09-23), so it stays when the rate is kept off the
-    // proposal: how materials are charged is a term the customer is owed.
-    ['Materials',(Number(_tmMatMarkup)>0
-      ?`Materials are billed at Contractor&apos;s cost plus ${Number(_tmMatMarkup)}%.`
-      :'Materials are billed at Contractor&apos;s actual cost, with no markup.')+' A receipt is attached to each bill for every material charged.'],
+    // Time sheets, not receipts: receipts never go on a bill (owner,
+    // 2026-09-23), so the contract does not promise them.
+    ['Billing',`${_tmBillTerm} with time sheets attached.`],
   ]:[
     ['Cancellation &amp; Deposits',_cancelClause],
   ];
@@ -7232,7 +7435,11 @@ async function sendGenericProposal(previewOnly,opts){
   // deposit. Set neither and it carries no money at all, which is the point.
   // Crew size and a day rate are both routes back to the rate, so neither
   // ships either.
-  const _tmCapFine='<div style="font-size:10px;font-weight:500;opacity:.8;letter-spacing:0;margin-top:2px">More only with your written OK</div>';
+  // CONTINGENT ON WHAT NOBODY CAN SEE (owner, 2026-09-23: "they need to know
+  // the max price it could be, contingent on unknowns"). The ceiling holds
+  // unless hidden damage turns up, and even then only by a change order they
+  // sign: said here in their words, and in the contract terms in full.
+  const _tmCapFine='<div style="font-size:10px;font-weight:500;opacity:.8;letter-spacing:0;margin-top:2px">Unless hidden damage turns up. Anything more needs a change order you sign.</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
@@ -7240,7 +7447,6 @@ async function sendGenericProposal(previewOnly,opts){
   const _rateFooterRows=
     `<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
     _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
-    _rsRow('Materials charged',Number(_tmMatMarkup)>0?('Our cost plus '+Number(_tmMatMarkup)+'%, receipts included'):'At our cost, receipts included','#f8fafc','#334155')+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
     // "what's the most this could be?", so that is what the line says. The
@@ -7502,11 +7708,17 @@ async function sendGenericProposal(previewOnly,opts){
   const _estQuietRow=_tmCapLeads
     ?`<tr style="background:#f8fafc"><td style="padding:9px 18px;font-size:11px;font-weight:600;color:#64748b">Estimated at today&apos;s scope (not a fixed price)</td><td style="padding:9px 18px;text-align:right;font-size:12px;font-weight:700;color:#334155;white-space:nowrap">${totalFmt}</td></tr>`
     :'';
-  const _bigLabel=_tmCapLeads?'MOST YOU&apos;LL PAY':(_geiIsTM?'ESTIMATED TOTAL':'TOTAL');
+  // BUILD YOUR OWN SAYS WHAT IT IS (owner, 2026-09-23). A quoted price is a
+  // fixed price: it does not drop if the job goes quick, and it does not rise
+  // because it took more hands; only added or changed work moves it. "This is
+  // an estimate" was tried and dropped the same day, because it tells the
+  // customer to expect it to come down. Owner: "yes go with your price".
+  const _byoEst=!_geiIsTM&&_geiIsFreeForm;
+  const _bigLabel=_tmCapLeads?'MOST YOU&apos;LL PAY':(_geiIsTM?'ESTIMATED TOTAL':(_byoEst?'YOUR PRICE':'TOTAL'));
   const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">More only with your written OK</div>':''}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`;
+    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Unless hidden damage turns up. Anything more needs a change order you sign.</div>':(_byoEst?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't

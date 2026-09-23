@@ -162,7 +162,10 @@ test.describe('layout integrity, mobile', () => {
       _byoItems = [{ id: 1, section: 'Interior', label: 'Test', notes: garbage, price: 100, on: true }];
       _byoRenderSections(); // re-render rows with the note now that the page shell exists
       const overflow = document.documentElement.scrollWidth - window.innerWidth;
-      const metaEl = [...document.querySelectorAll('.byo-meta')].find(el => el.textContent.includes(garbage.slice(0, 20)));
+      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
+      // price on one line, the description full width under them
+      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
+      const metaEl = [...document.querySelectorAll('.byo-line .byo-note')].find(el => el.textContent.includes(garbage.slice(0, 20)));
       return {
         overflow,
         metaFound: !!metaEl,
@@ -220,8 +223,11 @@ test.describe('layout integrity, mobile', () => {
       // it ever gets, and every action button present.
       _byoItems = [{ id: 1, section: 'Materials', label: 'test', notes: 'n', price: 1232134, on: true }];
       _byoRenderSections();
-      const label = document.querySelector('.byo-row .byo-label');
-      const hd = document.querySelector('.byo-row .byo-row-hd');
+      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
+      // price on one line, the description full width under them
+      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
+      const label = document.querySelector('.byo-line .byo-title');
+      const hd = document.querySelector('.byo-line');
       if (!label || !hd) return { missing: true };
       const lh = parseFloat(getComputedStyle(label).lineHeight) || 18;
       return {
@@ -246,22 +252,24 @@ test.describe('layout integrity, mobile', () => {
       const longNote = Array(20).fill('Long wrapped note line here').join(' ');
       _byoItems = [{ id: 1, section: 'Materials', label: 'test', notes: longNote, price: 1232134, on: true }];
       _byoRenderSections();
-      const row = document.querySelector('.byo-row');
+      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
+      // price on one line, the description full width under them
+      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
+      const row = document.querySelector('.byo-line');
       if (!row) return { missing: true };
-      const hd = row.querySelector('.byo-row-hd');
-      const check = row.querySelector('.byo-check');
-      const label = row.querySelector('.byo-label');
-      const price = row.querySelector('.byo-price');
-      const lTop = label.getBoundingClientRect().top;
+      const check = row.querySelector('.ios-check');
+      const label = row.querySelector('.byo-title');
+      const price = row.querySelector('.ios-fact');
+      const lr = label.getBoundingClientRect(), cr = check.getBoundingClientRect();
+      const lh = parseFloat(getComputedStyle(label).lineHeight) || 22;
       return {
         missing: false,
-        alignItems: hd ? getComputedStyle(hd).alignItems : null,
-        checkNearLabel: Math.abs(check.getBoundingClientRect().top - lTop) < 5,
-        priceNearLabel: Math.abs(price.getBoundingClientRect().top - lTop) < 5,
+        // The check's centre on the title's first line, not the row's middle.
+        checkNearLabel: Math.abs((cr.top + cr.height / 2) - (lr.top + lh / 2)) < 5,
+        priceNearLabel: Math.abs(price.getBoundingClientRect().top - lr.top) < 5,
       };
     });
     expect(r.missing, 'the BYO item row must exist for this test to mean anything').toBe(false);
-    expect(r.alignItems).toBe('center');
     expect(r.checkNearLabel, 'checkbox must stay aligned with the item title, not centered against a tall note').toBe(true);
     expect(r.priceNearLabel, 'price must stay aligned with the item title, not centered against a tall note').toBe(true);
   });
@@ -282,10 +290,13 @@ test.describe('layout integrity, mobile', () => {
       const longNote = Array(20).fill('Long wrapped note line here').join(' ');
       _byoItems = [{ id: 1, section: 'Materials', label: 'Bedroom', notes: longNote, price: 234234, on: true }];
       _byoRenderSections();
-      const row = document.querySelector('.byo-row');
+      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
+      // price on one line, the description full width under them
+      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
+      const row = document.querySelector('.byo-line');
       if (!row) return { missing: true };
-      const hd = row.querySelector('.byo-row-hd');
-      const meta = row.querySelector('.byo-meta');
+      const hd = row.querySelector('.byo-title');
+      const meta = row.querySelector('.byo-note');
       if (!hd || !meta) return { missing: true };
       const rowRect = row.getBoundingClientRect();
       const hdRect = hd.getBoundingClientRect();
@@ -471,7 +482,10 @@ test.describe('layout integrity, mobile', () => {
         hasQtyHeader: html.includes('>Qty<'),
         hasAmountHeader: html.includes('>Amount<'),
         hasTaxRow: html.includes('Tax / markup') || html.includes('Sales tax') || html.includes('Materials tax'),
-        hasTotal: html.includes('TOTAL'),
+        // "YOUR PRICE" on Build Your Own since 2026-09-23 (§10.4, owner: "yes
+        // go with your price"): a fixed price, moved only by a change order.
+        // Still one figure.
+        hasTotal: html.includes('YOUR PRICE') && html.includes('Anything added or changed is a change order you sign'),
         hasDeposit: html.includes('Deposit'),
       };
       ov?.remove();
