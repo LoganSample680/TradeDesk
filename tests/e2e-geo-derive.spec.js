@@ -1352,6 +1352,162 @@ test.describe('geo-derive: the day deriver', () => {
   // The IRS commuting rule, which is why it is global: home to your regular
   // workplace is never claimable, everything from arrival onward is. Him not
   // owning the yard he reports to is incidental.
+  // ── RULE 24: A STOP THE TAPE SLEPT THROUGH IS STILL A STOP ─────────────
+  //
+  // Owner 2026-09-23: "he went to the shop and got parts, hell life 360 didnt
+  // even pick it up."
+  //
+  // His real 23 September, second for second:
+  //
+  //   08:53:51  automotive           leaves Treyton Schafer's
+  //   08:59:35  regionEnter shop     into the yard
+  //   09:00:08  fix inside the shop fence
+  //   09:06:47  regionExit shop      out with the parts
+  //   09:10:15  regionEnter Treyton  back at the job
+  //   09:11:52  walking              the tape's first word since 08:53
+  //
+  // CoreMotion never left automotive, so the tape read one drive out of
+  // Treyton's and back into it, rule 7 dropped it as a same-fence loop, and
+  // the rail showed 16 minutes of nothing.
+  test.describe('rule 24: a closed crossing in the middle of a drive is a stop', () => {
+    const TREY = { id: 'client-trey', kind: 'client', name: 'Treyton Schafer', clientId: 1789580040218, lat: 39.0254091, lng: -95.7088139 };
+    const YARD = { id: 'shop', kind: 'shop', name: 'Plumbing Solutions By JS shop', lat: 39.0456577, lng: -95.7151106 };
+    const F24 = [TREY, YARD];
+    // Where the readings actually fell. The yard fix is ~495 ft from the
+    // pin, inside the 600 ft circle; the road fixes are strung out between.
+    const ROAD1 = { lat: 39.03085, lng: -95.71094 }, INYARD = { lat: 39.04431, lng: -95.71479 };
+    const ROAD2 = { lat: 39.03981, lng: -95.71548 }, ATTREY = { lat: 39.02549, lng: -95.70874 };
+    const tape24 = [mo(T(8, 13, 41), 'walking'), mo(T(8, 51, 18), 'still'),
+      mo(T(8, 53, 51), 'automotive'), mo(T(9, 11, 52), 'walking')];
+    const fixes24 = [fix(T(8, 40), TREY), fix(T(8, 53, 53), TREY), fix(T(8, 55, 22), ROAD1),
+      fix(T(9, 0, 8), INYARD), fix(T(9, 6, 56), ROAD2), fix(T(9, 11, 57), ATTREY), fix(T(9, 30), TREY)];
+    const regions24 = [
+      { ts: T(8, 54, 38), id: 'client-trey', enter: false },
+      { ts: T(8, 59, 35), id: 'shop', enter: true },
+      { ts: T(9, 6, 47), id: 'shop', enter: false },
+      { ts: T(9, 10, 15), id: 'client-trey', enter: true },
+    ];
+    const run24 = (over) => run(page, base(Object.assign({
+      tape: tape24, fixes: fixes24, fences: F24, regions: regions24, nowMs: T(10, 0),
+    }, over)));
+    const toShop = r => r.legs.find(l => l.to && l.to.name === YARD.name);
+    const fromShop = r => r.legs.find(l => l.from && l.from.name === YARD.name);
+
+    test('his morning: Treyton to the shop, the shop, and back, not a hole', async () => {
+      const r = await run24();
+      const a = toShop(r), b = fromShop(r);
+      expect(a, 'the drive to the yard exists').toBeTruthy();
+      expect(b, 'and the drive back').toBeTruthy();
+      expect(a.from.name).toBe(TREY.name);
+      expect(hm(a.startTs)).toBe(hm(T(8, 53, 51)));
+      expect(hm(a.endTs), 'ends where the OS saw him pull in').toBe(hm(T(8, 59, 35)));
+      expect(hm(b.startTs), 'leaves when the OS saw him pull out').toBe(hm(T(9, 6, 47)));
+      expect(b.to.name).toBe(TREY.name);
+      expect(hm(b.endTs), 'rule 21 still ends it at the crossing back in').toBe(hm(T(9, 10, 15)));
+    });
+
+    test('the seven minutes at the shop are a shop dwell', async () => {
+      const r = await run24();
+      const d = r.dwells.find(x => x.kind === 'shop' && x.startTs >= T(8, 50));
+      expect(d, 'he was at the yard').toBeTruthy();
+      expect(hm(d.startTs)).toBe(hm(T(8, 59, 35)));
+      expect(hm(d.endTs)).toBe(hm(T(9, 6, 47)));
+    });
+
+    test('both halves are real legs with miles, neither is a round trip', async () => {
+      const r = await run24();
+      for (const l of [toShop(r), fromShop(r)]) {
+        expect(l.miles).toBeGreaterThan(0);
+        expect(l.roundTrip).toBeFalsy();
+      }
+    });
+
+    test('the two halves carry different journey ids, and the same input gives the same ids', async () => {
+      const r1 = await run24(), r2 = await run24();
+      expect(toShop(r1).id).not.toBe(fromShop(r1).id);
+      expect(toShop(r1).id).toBe(toShop(r2).id);
+      expect(fromShop(r1).id).toBe(fromShop(r2).id);
+    });
+
+    test('driving PAST the yard is untouched: a pair under four minutes splits nothing', async () => {
+      const r = await run24({ regions: [
+        { ts: T(8, 54, 38), id: 'client-trey', enter: false },
+        { ts: T(8, 59, 35), id: 'shop', enter: true },
+        { ts: T(9, 0, 40), id: 'shop', enter: false },
+        { ts: T(9, 10, 15), id: 'client-trey', enter: true },
+      ] });
+      expect(toShop(r), 'a minute inside the circle is a drive-by').toBeFalsy();
+      expect(r.dwells.some(x => x.kind === 'shop' && x.startTs >= T(8, 50))).toBe(false);
+    });
+
+    test('the OS region alone is not enough: no fix inside the circle, no stop', async () => {
+      // iOS watches a wider circle than this file does (see _gdSettledAway).
+      // Seven minutes "inside" with every fix out on the road is a slow road.
+      const r = await run24({ fixes: fixes24.filter(f => f.ts !== T(9, 0, 8)) });
+      expect(toShop(r)).toBeFalsy();
+    });
+
+    test('an enter with no exit never splits a drive (that is rule 21\'s)', async () => {
+      const r = await run24({ regions: [
+        { ts: T(8, 54, 38), id: 'client-trey', enter: false },
+        { ts: T(8, 59, 35), id: 'shop', enter: true },
+      ] });
+      expect(fromShop(r), 'nothing says he ever left the yard by a crossing').toBeFalsy();
+    });
+
+    test('two stops the tape slept through in one drive are two stops', async () => {
+      const HD = { id: 'place-hd', kind: 'supply', name: 'The Home Depot', lat: 39.0451217, lng: -95.7584224 };
+      const r = await run24({
+        fences: [TREY, YARD, HD],
+        tape: [mo(T(8, 13, 41), 'walking'), mo(T(8, 53, 51), 'automotive'), mo(T(9, 40), 'walking')],
+        fixes: fixes24.concat([fix(T(9, 20), HD), fix(T(9, 41), TREY)]),
+        regions: regions24.slice(0, 3).concat([
+          { ts: T(9, 15), id: 'place-hd', enter: true },
+          { ts: T(9, 25), id: 'place-hd', enter: false },
+          { ts: T(9, 38), id: 'client-trey', enter: true },
+        ]),
+      });
+      expect(r.dwells.some(x => x.kind === 'shop' && hm(x.startTs) === hm(T(8, 59, 35)))).toBe(true);
+      expect(r.dwells.some(x => x.name === HD.name && hm(x.startTs) === hm(T(9, 15)))).toBe(true);
+    });
+
+    test('a stop inside a drive that is still going leaves the rest of it open', async () => {
+      const r = await run24({
+        tape: [mo(T(8, 13, 41), 'walking'), mo(T(8, 53, 51), 'automotive')],
+        // Nothing after "now": a fix from the future is not a fixture, it is
+        // a different day.
+        fixes: fixes24.filter(f => f.ts <= T(9, 8)),
+        regions: regions24.slice(0, 3), nowMs: T(9, 8),
+      });
+      expect(toShop(r), 'the drive to the yard is closed and written').toBeTruthy();
+      expect(r.journeys.some(j => j.open && j.startTs === T(9, 6, 47)), 'still driving since the exit').toBe(true);
+    });
+
+    test('no crossings at all is exactly the old behaviour', async () => {
+      const r = await run24({ regions: [] });
+      expect(toShop(r)).toBeFalsy();
+      expect(fromShop(r)).toBeFalsy();
+    });
+
+    test('junk crossings never throw and never invent a stop', async () => {
+      for (const junk of [null, undefined, [], [null], [{ ts: 'x', id: 'shop', enter: true }],
+                          [{ ts: T(8, 59), id: 'nobody', enter: true }, { ts: T(9, 8), id: 'nobody', enter: false }]]) {
+        const r = await run24({ regions: junk });
+        expect(toShop(r), JSON.stringify(junk)).toBeFalsy();
+      }
+    });
+
+    test('crossings delivered out of order are still the stop they describe', async () => {
+      // The ingest does not promise order and the span list sorts by time,
+      // so an exit that arrived before its enter is the same visit.
+      const r = await run24({ regions: [
+        { ts: T(9, 6, 47), id: 'shop', enter: false },
+        { ts: T(8, 59, 35), id: 'shop', enter: true },
+      ] });
+      expect(hm(toShop(r).endTs)).toBe(hm(T(8, 59, 35)));
+    });
+  });
+
   // ── RULE 21: THE CROSSING KNOWS WHEN HE ARRIVED ─────────────────────────
   //
   // Owner 2026-09-15: "I shouldn't be babysitting his day and telling you what
