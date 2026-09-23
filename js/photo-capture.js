@@ -1629,13 +1629,21 @@ function _pcAttGuess(){
   }).catch(()=>{att._guessing=false;att.guess='';
     const a=document.getElementById('pc-new-addr');if(a)a.placeholder='Street, city';});
 }
+// Were these photos taken somewhere this customer has no house on file?
+// The pins answer it when the houses were ever located. When they were not,
+// the street Apple named for the photos answers it: a street that is none of
+// theirs is a new property, not a reason to guess the one on record.
 function _pcAttAway(c){
-  const places=_pcClientPlaces(c);
-  if(!places.length||!_pcAtt)return false;
+  if(!_pcAtt||!c)return false;
   const rows=(_pcAtt.ids||[]).map(id=>photos.find(x=>String(x.id)===String(id))).filter(Boolean);
   const fix=rows.map(r=>({lat:r.lat,lon:r.lon})).find(f=>f.lat!=null&&f.lon!=null);
   if(!fix)return false;
-  return !places.some(pl=>_pcMeters(fix.lat,fix.lon,pl.lat,pl.lon)<=_PC_NEAR_M);
+  const places=_pcClientPlaces(c);
+  if(places.length)return !places.some(pl=>_pcMeters(fix.lat,fix.lon,pl.lat,pl.lon)<=_PC_NEAR_M);
+  if(!_pcAtt.guess||typeof siteNoteKey!=='function')return false;
+  const here=siteNoteKey(_pcAtt.guess);
+  const theirs=(typeof clientAddresses==='function')?clientAddresses(c):[{addr:c.addr}];
+  return !theirs.some(a=>a&&a.addr&&siteNoteKey(a.addr)===here);
 }
 function tdAttachNew(){
   if(!_pcAtt)return false;

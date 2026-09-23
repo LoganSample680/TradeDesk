@@ -3805,6 +3805,76 @@ test.describe('TrueShot: a customer or a house the book does not have yet', () =
     expect(r.filed).toEqual(['6908 SW 17th St, Topeka, KS 66615', '6908 SW 17th St, Topeka, KS 66615']);
   });
 
+  // Owner 2026-09-23: "I go in and select is it a rental, secondary home etc."
+  test('adding the house asks what it is, and Rental makes it a rental property', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.evaluate(() => { tdAttachPick(501); _addrPickAddNew(); });
+    const kinds = await page.locator('#_addrpick-kinds button').allTextContents();
+    expect(kinds).toEqual(['Rental', 'Second home', 'Vacation home', 'Commercial', 'Family', 'Other']);
+    await page.locator('#_addrpick-kinds button[data-k="Rental"]').click();
+    await expect(page.locator('#_addrpick-kinds button[data-k="Rental"]')).toHaveAttribute('aria-pressed', 'true');
+    await page.evaluate(() => _addrPickSaveNew());
+    const r = await page.evaluate(() => {
+      const c = clients.find(x => x.id === 501);
+      const a = clientAddresses(c).find(x => /6908/.test(x.addr));
+      const pd = getProperty(c, a.addr);
+      return { label: a.label, ptype: pd.propertyType, rental: !!pd.isRental };
+    });
+    expect(r.label).toBe('Rental');
+    expect(r.ptype).toBe('Rental property');
+    expect(r.rental).toBe(true);
+  });
+
+  test('Second home is a label only, and tapping a chip twice takes it back', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.evaluate(() => { tdAttachPick(501); _addrPickAddNew(); });
+    await page.locator('#_addrpick-kinds button[data-k="Commercial"]').click();
+    await page.locator('#_addrpick-kinds button[data-k="Commercial"]').click();
+    await expect(page.locator('#_addrpick-kinds button[aria-pressed="true"]')).toHaveCount(0);
+    await page.locator('#_addrpick-kinds button[data-k="Second home"]').click();
+    await page.evaluate(() => _addrPickSaveNew());
+    const r = await page.evaluate(() => {
+      const c = clients.find(x => x.id === 501);
+      const a = clientAddresses(c).find(x => /6908/.test(x.addr));
+      return { label: a.label, ptype: getProperty(c, a.addr).propertyType || '' };
+    });
+    expect(r.label).toBe('Second home');
+    expect(r.ptype).toBe('');
+  });
+
+  test('skipping the question still adds the house, as an additional property', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.evaluate(() => { tdAttachPick(501); _addrPickAddNew(); _addrPickSaveNew(); });
+    const label = await page.evaluate(() => clientAddresses(clients.find(x => x.id === 501)).find(x => /6908/.test(x.addr)).label);
+    expect(label).toBe('Additional property');
+  });
+
+  test('a customer whose houses were never pinned is still asked when the street is not theirs', async () => {
+    await page.evaluate(() => {
+      window.__seedNew(39.0356, -95.7833);
+      const c = clients.find(x => x.id === 501); delete c.lat; delete c.lon;
+    });
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    const asked = await page.evaluate(() => { tdAttachPick(501); return !!document.getElementById('_addrpick-ov'); });
+    expect(asked).toBe(true);
+    await page.evaluate(() => document.getElementById('_addrpick-ov')?.remove());
+  });
+
+  test('...and is not asked when the street Apple names IS theirs', async () => {
+    await page.evaluate(() => {
+      window.__seedNew(39.0356, -95.7833);
+      const c = clients.find(x => x.id === 501); delete c.lat; delete c.lon;
+      c.addr = '6908 SW 17th St, Topeka, KS 66615';
+    });
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    const r = await page.evaluate(() => { tdAttachPick(501); return { asked: !!document.getElementById('_addrpick-ov'), filed: photos.filter(p => p.client_id === 501).length }; });
+    expect(r.asked).toBe(false);
+    expect(r.filed).toBe(2);
+  });
+
   test('shot AT the house on file, one tap still files it there with no question', async () => {
     await page.evaluate(() => window.__seedNew(37.6889, -97.3361));
     const r = await page.evaluate(() => {

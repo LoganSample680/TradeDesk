@@ -3765,7 +3765,7 @@ function removeClientAddress(idx){
 // inline and auto-picks it. Callers only open it when clientAddresses(c).length
 // > 1; a single-address client skips it entirely (zero extra taps). Speed is the
 // goal: search/choose the client, then one tap on the right property.
-let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null,_addrPickSuggest='';
+let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null,_addrPickSuggest='',_addrPickKind='';
 // opts.suggest: an address the caller already believes is right (TrueShot
 // knows where the photos were taken). It names the add row and fills the
 // new-address field, so adding the house he is standing at is two taps.
@@ -3799,13 +3799,42 @@ function _addrPickFire(addr){
   if(cb)cb(addr);
 }
 function _addrPickChoose(i){const a=_addrPickList[i];if(a)_addrPickFire(a.addr);}
+// What the new property IS, in one tap (owner 2026-09-23: "I go in and
+// select is it a rental, secondary home etc."). The chip becomes the label
+// the card and the mileage log already show, and the two that change how the
+// app treats a house (rental, commercial) also set the property type, the
+// same field "Add property address" writes (saveAddClientAddress).
+const _ADDR_KINDS=[
+  {k:'Rental',ptype:'Rental property'},
+  {k:'Second home'},
+  {k:'Vacation home'},
+  {k:'Commercial',ptype:'Commercial'},
+  {k:'Family'},
+  {k:'Other'},
+];
+function _addrPickSetKind(k){
+  _addrPickKind=(_addrPickKind===k)?'':k;
+  document.querySelectorAll('#_addrpick-kinds button').forEach(b=>{
+    const on=b.dataset.k===_addrPickKind;
+    b.setAttribute('aria-pressed',on?'true':'false');
+    b.style.background=on?'var(--blue)':'var(--bg2)';
+    b.style.color=on?'#fff':'var(--text)';
+    b.style.borderColor=on?'var(--blue)':'var(--border2)';
+  });
+}
 function _addrPickAddNew(){
   const sheet=document.getElementById('_addrpick-sheet');if(!sheet)return;
   const cid=_addrPickClientId;
+  _addrPickKind='';
   sheet.innerHTML=
     '<div style="font-size:15px;font-weight:800;padding:10px 12px 8px">New address</div>'+
     '<div style="padding:0 12px 12px">'+
       '<input id="_addrpick-new" placeholder="123 Main St, City ST" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:14px 0 8px">What is it?</div>'+
+      '<div id="_addrpick-kinds" style="display:flex;flex-wrap:wrap;gap:6px">'+
+        _ADDR_KINDS.map(o=>'<button type="button" data-k="'+escHtml(o.k)+'" aria-pressed="false" onclick="_addrPickSetKind(this.dataset.k)" '+
+          'style="padding:8px 13px;border-radius:999px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer">'+escHtml(o.k)+'</button>').join('')+
+      '</div>'+
       '<div style="display:flex;gap:8px;margin-top:12px">'+
         '<button onclick="_addrPickSaveNew()" class="btn btn-g" style="flex:2">Add &amp; use</button>'+
         '<button onclick="pickClientAddress('+cid+',_addrPickCb)" class="btn" style="flex:1">Back</button>'+
@@ -3820,7 +3849,11 @@ function _addrPickSaveNew(){
   const val=(document.getElementById('_addrpick-new')?.value||'').trim();
   if(!val){if(typeof zAlert==='function')zAlert('Enter an address.');return;}
   const c=getClientById(_addrPickClientId);if(!c)return;
-  addClientAddress(c,'Additional property',val);
+  const kind=_ADDR_KINDS.find(o=>o.k===_addrPickKind);
+  addClientAddress(c,(kind&&kind.k!=='Other')?kind.k:'Additional property',val);
+  if(kind&&kind.ptype&&typeof setPropertyData==='function')
+    setPropertyData(c,val,{propertyType:kind.ptype,isRental:/rental/i.test(kind.ptype)||undefined});
+  _addrPickKind='';
   if(typeof saveAll==='function')saveAll();
   _addrPickFire(val);
 }
