@@ -16,11 +16,11 @@ create temp table _fx_expect(id text, kind text, name text, lat double precision
                              personal boolean, on_books boolean,
                              commute boolean) on commit drop;
 insert into _fx_expect values
-    ('client-c1','client','Scheduled Client',39.1::double precision,-95.8::double precision,true,false,true,false),
-    ('client-c2','client','Unscheduled Client',39.11::double precision,-95.81::double precision,false,false,true,false),
-    ('client-c6','client','Mom',39.14::double precision,-95.84::double precision,false,true,false,false),
-    ('client-c7','client','Dad, mid-job',39.14::double precision,-95.84::double precision,false,true,true,false),
-    ('job-9001','job','Scheduled Client',39.2::double precision,-95.9::double precision,null::boolean,null::boolean,null::boolean,false),
+    ('client-c1','client','Scheduled Client (10 A St)',39.1::double precision,-95.8::double precision,true,false,true,false),
+    ('client-c2','client','Unscheduled Client (11 B St)',39.11::double precision,-95.81::double precision,false,false,true,false),
+    ('client-c6','client','Mom (14 F St)',39.14::double precision,-95.84::double precision,false,true,false,false),
+    ('client-c7','client','Dad, mid-job (14 F St)',39.14::double precision,-95.84::double precision,false,true,true,false),
+    ('job-9001','job','Scheduled Client (20 Job Rd)',39.2::double precision,-95.9::double precision,null::boolean,null::boolean,null::boolean,false),
     ('place-p1','supply','Home Depot',39.06::double precision,-95.71::double precision,null::boolean,null::boolean,null::boolean,false),
     ('place-p2','home_office','House',39.07::double precision,-95.72::double precision,null::boolean,null::boolean,null::boolean,false),
     ('place-p4','other','Dad shop',39.08::double precision,-95.73::double precision,null::boolean,null::boolean,null::boolean,true),

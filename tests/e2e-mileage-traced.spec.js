@@ -457,6 +457,83 @@ test.describe('traced trips', () => {
       expect(r.text).toContain('Check it before you pick');
     });
 
+    // ── AND IT DOES NOT MOVE WHEN THE LOOKUP LANDS (owner 2026-09-20) ────
+    // On a clip of himself tapping Save this address: "see how the screen
+    // jumps up a bit? Needs to be perfectly smooth."
+    //
+    // Two causes, one line of code. The second paint went through
+    // ov.innerHTML, which REPLACES the .zmodal node, so its td-modal-in
+    // entrance (.24s scale, index.html) ran a second time on a box that had
+    // already settled; and the two text lines changed length between the
+    // paints, so margin:auto (.zmodal-overlay>*) re-centred a taller box and
+    // it rose. Measured here rather than eyeballed: same element, same
+    // rectangle, before the lookup and after it.
+    test('the kind prompt never moves when the lookup lands', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        const keep = window._mileWhatIsHere;
+        let release;
+        try {
+          // Held open on purpose, so "before" is genuinely the pre-lookup
+          // paint and not a race with a fixture that resolves immediately.
+          window._mileWhatIsHere = () => new Promise(res => { release = res; });
+          await _mileSaveAddress('j-traced', 'to');
+          const ov = document.getElementById('_mile-kind-ov');
+          const before = ov.querySelector('.zmodal');
+          const skel = ov.querySelectorAll('.td-skel').length;
+          // offsetHeight/offsetTop, not getBoundingClientRect: the rect
+          // includes td-modal-in's scale(.97), so measuring through it reads
+          // the entrance animation rather than the box (webkit, shard 3,
+          // 2026-09-20: 11px of scale on a box that never changed). These two
+          // are layout values, which is exactly what "it moved" means here.
+          // The entrance is waited out anyway rather than slept past, so the
+          // numbers are of a settled box either way.
+          await Promise.all(before.getAnimations().map(x => x.finished.catch(() => {})));
+          const b = { h: before.offsetHeight, top: before.offsetTop };
+          release({ parts: { addr: '3210 S Kansas Ave, Topeka, KS 66611' },
+                    name: 'Neenans Co', guess: '', supply: false });
+          await new Promise(r => setTimeout(r, 80));
+          const after = ov.querySelector('.zmodal');
+          const a = { h: after.offsetHeight, top: after.offsetTop };
+          return { skel, same: before === after, boxes: ov.querySelectorAll('.zmodal').length,
+                   dTop: b.top - a.top, dH: b.h - a.h,
+                   stillSkel: ov.querySelectorAll('.td-skel').length,
+                   named: after.textContent.includes('Neenans Co') };
+        } finally { window._mileWhatIsHere = keep;
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.skel, 'the name line shimmers while the lookup is out (8.4)').toBe(1);
+      expect(r.named, 'and the lookup really did land').toBe(true);
+      expect(r.stillSkel, 'the shimmer is gone once it has an answer').toBe(0);
+      expect(r.same, 'the same box, not a replacement that animates itself in again').toBe(true);
+      expect(r.boxes, 'and only ever one of it').toBe(1);
+      expect(r.dH, 'its height never changed').toBe(0);
+      expect(r.dTop, 'so it never moved').toBe(0);
+    });
+
+    // A lookup that never answers must not leave a shimmer spinning where a
+    // name was promised.
+    test('a lookup that fails clears the shimmer and asks evenly', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        const keep = window._mileWhatIsHere;
+        try {
+          window._mileWhatIsHere = () => Promise.reject(new Error('no signal'));
+          await _mileSaveAddress('j-traced', 'to');
+          for (let i = 0; i < 40 && document.querySelectorAll('#_mile-kind-ov .td-skel').length; i++) {
+            await new Promise(r => setTimeout(r, 25));
+          }
+          const ov = document.getElementById('_mile-kind-ov');
+          return { skel: ov.querySelectorAll('.td-skel').length, text: ov.textContent,
+                   btns: [...ov.querySelectorAll('button')].map(b => b.textContent) };
+        } finally { window._mileWhatIsHere = keep;
+                    document.getElementById('_mile-kind-ov')?.remove(); }
+      });
+      expect(r.skel, 'nothing is still pretending to load').toBe(0);
+      expect(r.btns[0], 'and with nothing known, neither answer leads').toBe('Lead or client');
+      expect(r.text).toContain('A supply house is a place');
+    });
+
     test('a name that says what it is is read as a supply house', async () => {
       const r = await page.evaluate(() => [
         _mileGuessKind('Ferguson Plumbing Supply'), _mileGuessKind('Westlake Ace Hardware'),
@@ -596,6 +673,62 @@ test.describe('traced trips', () => {
         for (const key of ['j-chain', 'j-chain:0', 'nope:s0', '', null, ':s0']) {
           expect((await save(key)).ok, String(key)).toBe(false);
         }
+      });
+
+      // ── THE COMMONEST STOP OF ALL, AND THE ONE IT COULD NOT PLACE ──────
+      //
+      // A drive that simply ENDED somewhere nobody saved. Its dwell row is
+      // keyed 'd-' + the leg id (the identity rule, js/geo-derive.js), it is
+      // on no viaStops because nothing was collapsed through it, and it
+      // carries no ':sN'. So it matched neither arm and the rail's chip did
+      // nothing at all when pressed, silently.
+      //
+      // Geometry is the owner's real 2026-09-19 (error_log 202-204, 207-209,
+      // three dead taps in one minute): leg j-...mu8n60wd, shop to an unsaved
+      // address, and the rail row keyed d-j-...mu8n60wd.
+      test('a stop that is the leg\'s own destination resolves off toCoord', async () => {
+        await seed();
+        await page.evaluate(() => {
+          mileage.push({ id: 'j-30a2b589-mu8n60wd', legKey: 'j-30a2b589-mu8n60wd', gps: true,
+            date: todayKey(), from_name: 'TradeDesk shop', to_name: '', miles: 3.9, mins: 3,
+            addressUnknown: true, unsavedTo: true, calc_method: 'derived-traced',
+            fromCoord: { lat: 39.0307066, lng: -95.7112082 },
+            toCoord: { lat: 39.0451214, lng: -95.7584343 } });
+        });
+        const r = await save('d-j-30a2b589-mu8n60wd');
+        expect(r.ok, 'the button that was dead in his hand').toBe(true);
+        expect(r.pending).toEqual(expect.objectContaining(
+          { legKey: 'j-30a2b589-mu8n60wd', which: 'to', lat: 39.0451214, lng: -95.7584343 }));
+      });
+
+      // Both ends unsaved writes no mileage leg at all (rules 18 and 20), so
+      // there is genuinely nothing holding a coordinate for that stop. It
+      // must not throw, and the rail must not offer a chip for it.
+      test('a stop with no leg behind it resolves to nothing, and says so', async () => {
+        await seed();
+        const r = await page.evaluate(() => ({
+          coord: _mileStopCoord('d-j-30a2b589-mu8jn7va', todayKey()),
+          saved: null,
+        }));
+        expect(r.coord).toBe(null);
+        expect((await save('d-j-30a2b589-mu8jn7va')).ok).toBe(false);
+      });
+
+      // One resolver, so the chip and the handler can never disagree about
+      // whether a stop can be placed.
+      test('the resolver answers all three shapes and nothing else', async () => {
+        await seed(); await seedVia();
+        const r = await page.evaluate(() => {
+          mileage.push({ id: 'j-dest', legKey: 'j-dest', gps: true, date: todayKey(),
+            from_name: 'Shop', to_name: '', addressUnknown: true, unsavedTo: true,
+            fromCoord: { lat: 39.04, lng: -95.71 }, toCoord: { lat: 39.09, lng: -95.61 } });
+          const at = k => { const c = _mileStopCoord(k, todayKey()); return c ? [c.lat, c.lng] : null; };
+          return { via: at('j-chain:s0'), dest: at('d-j-dest'), junk: at('d-nope'), none: at('x') };
+        });
+        expect(r.via).toEqual([39.06146, -95.69681]);
+        expect(r.dest).toEqual([39.09, -95.61]);
+        expect(r.junk).toBe(null);
+        expect(r.none).toBe(null);
       });
 
       // ── THE KEY, NOT THE POSITION (owner 2026-09-14) ──────────────────
@@ -892,6 +1025,77 @@ test.describe('traced trips', () => {
         expect(r.addressed).toContain('j-traced');
       });
 
+      // ── ONE PLACE, EVERY END OF IT (owner 2026-09-20) ──────────────────
+      // "If I save an unsaved address the day rail and mileage SHALL populate
+      // and update in real time."
+      //
+      // Naming a stop used to name the leg that ARRIVED and nothing else. The
+      // live flow test caught it on a day that ran shop -> stop -> elsewhere:
+      // the row above the stop took the name and the row below it still read
+      // "Unsaved address ->", with its miles still uncountable because
+      // addressUnknown never came off.
+      test('naming a stop names BOTH the drive in and the drive out', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          const STOP = { lat: 39.0412, lng: -95.7333 };
+          // In: shop -> the stop. Out: the stop -> somewhere else entirely.
+          mileage.push({ id: 'j-in', legKey: 'j-in', gps: true, date: d,
+            from_name: 'Shop', from: '1200 SW Oakley Ave', to: '', to_name: '',
+            miles: 4.1, mins: 12, purpose: 'Business', calc_method: 'derived-traced',
+            addressUnknown: true, unsavedTo: true, toCoord: STOP,
+            fromCoord: { lat: 39.0456, lng: -95.7151 },
+            startedIso: '2026-09-08T14:00:00.000Z', endedIso: '2026-09-08T14:12:00.000Z' });
+          mileage.push({ id: 'j-out', legKey: 'j-out', gps: true, date: d,
+            from: '', from_name: '', to_name: 'Menards', to: '5900 SW Huntoon St',
+            miles: 3.3, mins: 10, purpose: 'Business', calc_method: 'derived-traced',
+            addressUnknown: true, unsavedFrom: true, fromCoord: STOP,
+            toCoord: { lat: 39.0352, lng: -95.7714 },
+            startedIso: '2026-09-08T15:00:00.000Z', endedIso: '2026-09-08T15:10:00.000Z' });
+          _mileAddressPending = { legKey: 'j-in', day: d, which: 'to',
+                                  lat: STOP.lat, lng: STOP.lng, stopKey: 'd-j-in' };
+          await _mileAddressSaved({ id: 12, name: 'Aldi GUYS', addr: '2950 SW McClure Rd' });
+          const a = mileage.find(m => m.id === 'j-in'), b = mileage.find(m => m.id === 'j-out');
+          return { inTo: a.to, inUnknown: !!a.addressUnknown,
+                   outFrom: b.from, outName: b.from_name,
+                   outUnsavedFrom: !!b.unsavedFrom, outUnknown: !!b.addressUnknown,
+                   addressed: addressedTrips(mileage).map(m => m.id) };
+        }, day);
+        expect(r.inTo, 'the drive in takes the name, as it always did').toBe('2950 SW McClure Rd');
+        expect(r.outFrom, 'and so does the drive out').toBe('2950 SW McClure Rd');
+        expect(r.outName).toBe('Aldi GUYS');
+        expect([r.outUnsavedFrom, r.outUnknown], 'nothing on it is nameless now').toEqual([false, false]);
+        expect([r.inUnknown]).toEqual([false]);
+        expect(r.addressed, 'both legs count, in the same breath')
+          .toEqual(expect.arrayContaining(['j-in', 'j-out']));
+      });
+
+      test('a place somewhere else on the same day is left alone', async () => {
+        const day = await seed();
+        await stale();
+        const r = await page.evaluate(async (d) => {
+          mileage.push({ id: 'j-a', legKey: 'j-a', gps: true, date: d,
+            from_name: 'Shop', from: '1200 SW Oakley Ave', to: '', to_name: '',
+            miles: 4.1, mins: 12, purpose: 'Business', addressUnknown: true,
+            unsavedTo: true, toCoord: { lat: 39.0412, lng: -95.7333 },
+            startedIso: '2026-09-08T14:00:00.000Z', endedIso: '2026-09-08T14:12:00.000Z' });
+          // Two miles away: a different stop, still nameless, and none of this
+          // customer's business.
+          mileage.push({ id: 'j-b', legKey: 'j-b', gps: true, date: d,
+            from_name: 'Shop', from: '1200 SW Oakley Ave', to: '', to_name: '',
+            miles: 2.2, mins: 8, purpose: 'Business', addressUnknown: true,
+            unsavedTo: true, toCoord: { lat: 39.0712, lng: -95.7633 },
+            startedIso: '2026-09-08T16:00:00.000Z', endedIso: '2026-09-08T16:08:00.000Z' });
+          _mileAddressPending = { legKey: 'j-a', day: d, which: 'to',
+                                  lat: 39.0412, lng: -95.7333, stopKey: 'd-j-a' };
+          await _mileAddressSaved({ id: 13, name: 'Aldi GUYS', addr: '2950 SW McClure Rd' });
+          const b = mileage.find(m => m.id === 'j-b');
+          return { to: b.to, unsaved: !!b.unsavedTo, unknown: !!b.addressUnknown };
+        }, day);
+        expect(r.to, 'a different pin is a different place').toBe('');
+        expect([r.unsaved, r.unknown], 'and is still waiting to be named').toEqual([true, true]);
+      });
+
       test('a round trip names its STOP, never the two ends that were always the same fence', async () => {
         const day = await seed();
         await stale();
@@ -920,7 +1124,7 @@ test.describe('traced trips', () => {
       test('the rail row for that stop is named too, and only that one', async () => {
         const day = await seed();
         await stale();
-        const r = await page.evaluate(async (d) => {
+        let r = await page.evaluate(async (d) => {
           const sent = [];
           window._supa = { from: (t) => ({ update: (u) => { const f = { _t: t, _u: u, _w: {} };
             f.eq = (k, v) => { f._w[k] = v; return f; };
@@ -931,10 +1135,23 @@ test.describe('traced trips', () => {
           await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });
           return sent;
         }, day);
-        expect(r.length, 'one write, to the time row').toBe(1);
-        expect(r[0].table).toBe('job_time_entries');
-        expect(r[0].where.client_key, 'the row that was pressed, written back under its own key')
-          .toBe('j-traced:s2');
+        // OLD, and right at the time: ONE write, to the stop row that was
+        // pressed. NEW (owner 2026-09-20, "if I save an unsaved address the
+        // day rail and mileage SHALL populate and update in real time"): the
+        // rail draws a DRIVE from both its ends, so a stop named without its
+        // drive left "Shop -> Unsaved address" sitting directly above a row
+        // that had just been named. Every end standing at that pin is written,
+        // which here is the stop itself and the leg that arrived at it.
+        const stop = r.find(x => x.where.client_key === 'j-traced:s2');
+        const leg = r.find(x => x.where.client_key === 'j-traced');
+        expect(r.length, 'the stop, and the drive that reached it').toBe(2);
+        expect(r.every(x => x.table === 'job_time_entries')).toBe(true);
+        expect(!!leg, 'the drive row no longer says Unsaved address at that end').toBe(true);
+        expect(leg.update.dest_place).toBe('Ace Hardware');
+        expect(leg.update.source, 'a drive is still a drive; only its end was missing')
+          .toBe(undefined);
+        expect(!!stop, 'the row that was pressed, written back under its own key').toBe(true);
+        r = [stop];
         expect(r[0].where.employee_user_id).toBe('emp-1');
         expect(r[0].update.dest_place, 'the client\'s name, the way a resolved dwell carries it')
           .toBe('Ace Hardware');
@@ -984,6 +1201,56 @@ test.describe('traced trips', () => {
         }, day);
         expect(r.to, 'the deriver had it, so the deriver keeps it').toBe('1 Derived Way');
         expect(r.fixed, 'and it is not marked as a hand fix, because it is not one').toBe(false);
+      });
+
+      // ── AND THE RAIL IS STILL TOLD (owner 2026-09-21) ──────────────────
+      // "I just saved this top address as Logan Sample and guess what, it
+      // didn't update."
+      //
+      // The test above is right that a day the deriver rebuilt keeps the
+      // deriver's answer in the MILEAGE book. It was also read as meaning
+      // nothing else happens, and that is what hid this: on his phone the
+      // derive succeeds, names the leg, and the timesheet row keeps source
+      // 'unsaved' and a null dest_place forever, because only the
+      // could-not-rebuild branch ever spoke to the rail.
+      //
+      // A CI runner has no CoreMotion tape, so the derive always bails there
+      // and the flow test always took the other branch. This one stubs the
+      // branch his phone actually takes.
+      test('a day that DID rebuild still tells the rail what the stop is', async () => {
+        const day = await seed();
+        const r = await page.evaluate(async (d) => {
+          const sent = [];
+          window._supa = { from: (t) => ({ update: (u) => { const f = { _t: t, _u: u, _w: {} };
+            f.eq = (k, v) => { f._w[k] = v; return f; };
+            f.then = (res) => { sent.push({ table: f._t, update: f._u, where: f._w }); return res({ error: null }); };
+            return f; } }) };
+          window._supaUser = { id: 'emp-1' };
+          // The derive resolves the end, exactly as it does inside the tape's
+          // window, and leaves nothing for the hand fix to do.
+          window._geoDeriveDayNow = async () => {
+            const row = mileage.find(m => m.id === 'j-traced');
+            row.to = '1 Derived Way'; row.to_name = 'Derived'; row.unsavedTo = false;
+            row.toCoord = { lat: 39.035, lng: -95.7 };
+            delete row.addressUnknown;
+            return {};
+          };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to',
+                                  lat: 39.035, lng: -95.7, stopKey: 'd-j-traced' };
+          await _mileAddressSaved({ id: 14, name: 'Logan Sample', addr: '6800 SW Tenth Ave' });
+          const row = mileage.find(m => m.id === 'j-traced');
+          return { to: row.to, fixed: !!row.fixedAt, sent };
+        }, day);
+        expect(r.to, 'the deriver had it, so the deriver still keeps it').toBe('1 Derived Way');
+        expect(r.fixed, 'and this is still not a hand fix').toBe(false);
+        const stop = r.sent.find(x => x.where.client_key === 'd-j-traced');
+        const leg = r.sent.find(x => x.where.client_key === 'j-traced');
+        expect(!!stop, 'the rail row for the stop is named').toBe(true);
+        expect(stop.update.dest_place).toBe('Logan Sample');
+        expect(stop.update.source, 'so it leaves the unpaid bucket').toBe('client');
+        expect(stop.update.fixed_at, 'never stamped, so a rebuild can still correct it').toBe(undefined);
+        expect(!!leg, 'and so is the drive that reached it').toBe(true);
+        expect(leg.update.dest_place).toBe('Logan Sample');
       });
 
       test('junk cannot name anything', async () => {
@@ -1122,6 +1389,27 @@ test.describe('traced trips', () => {
       // The pin he is filing says what it is, above the list.
       expect(r.all).toContain(ADDR);
       expect(r.all, 'and the other door is right there').toContain('Add a new customer');
+    });
+
+    // ── The real button, actually tapped ────────────────────────────────
+    //
+    // Owner report 2026-09-20, from the app itself: a red toast, "[:1]
+    // SyntaxError: Unexpected token '}'", the picker stuck open. Every test
+    // above this one calls _mileWhoPick() directly, which never asks the
+    // browser to parse the onclick ATTRIBUTE the render actually wrote, so
+    // none of them could have caught it. The bug: JSON.stringify(id) writes
+    // literal " characters into an attribute that is itself double-quoted,
+    // which truncates it, and WebKit only discovers the resulting syntax
+    // error the first time the button is pressed. A click is the only way
+    // to prove this stays fixed.
+    test('the rendered button survives an actual tap, not just the function call', async () => {
+      await arm({ clients: [{ id: 701, name: 'Neenan Builders', addr: '' }] });
+      await page.locator('#_mile-who-hits button').first().click();
+      await page.waitForTimeout(50);
+      const r = await shot();
+      expect(r.addr, 'the tap actually filed the address').toBe(ADDR);
+      const pageErrors = (page._consoleErrors || []).filter(e => /SyntaxError|Unexpected token/.test(e));
+      expect(pageErrors, pageErrors.join('\n')).toEqual([]);
     });
 
     test('a customer with no address yet gets this one as their primary', async () => {

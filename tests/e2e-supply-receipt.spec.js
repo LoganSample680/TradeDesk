@@ -136,6 +136,38 @@ test.describe('Receipt-gated supply runs', () => {
       expect(out.calls).toEqual([['geo_answer_supply_run', { p_key: key, p_mode: 'personal' }]]);
     });
 
+    // ── AND A FAILED ANSWER SAYS SO (owner 2026-09-20) ──────────────────
+    //
+    // "Home Depot runs aren't staying personal." His 19 September, hours
+    // after he answered it: the time rows dismissed, the mileage row still
+    // holding pendingReceipt with no personal flag. One trip, two books, two
+    // stories, and the card reads the book that still said unanswered, so it
+    // asked him again.
+    //
+    // The RPC owns both books now (migration 20261028), which means a failed
+    // call leaves NOTHING written on the server while this device shows the
+    // card gone. That used to be swallowed by a bare .catch(()=>{}). It has
+    // to speak: a person who is not told is a person who finds out on the
+    // dashboard hours later and concludes the app does not remember.
+    test('an answer the server refused tells him, instead of vanishing', async () => {
+      const key = await seedHeld();
+      const out = await page.evaluate(async (k) => {
+        const toasts = [];
+        const origSupa = window._supa, origToast = window.showToast;
+        window.showToast = (m) => toasts.push(String(m));
+        window._supa = Object.assign({}, origSupa || {}, {
+          rpc: () => Promise.resolve({ data: null, error: { message: 'offline' } }),
+        });
+        try {
+          resolveSupplyRun(k, 'personal');
+          await new Promise(r => setTimeout(r, 60));
+          return { toasts };
+        } finally { window._supa = origSupa; window.showToast = origToast; }
+      }, key);
+      expect(out.toasts.some(t => /did not save/i.test(t)),
+        'he is told, not left to find out later: ' + JSON.stringify(out.toasts)).toBe(true);
+    });
+
     // ── AND THE WAY BACK FROM A MIS-TAP (owner 2026-09-16) ─────────────────
     // "For Jack he meant to hit no receipt." He has done it twice, and until
     // today no control anywhere could undo it: the card is gone once answered

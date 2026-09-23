@@ -219,10 +219,20 @@ test.describe('Live Activities: what reaches the lock screen', () => {
 
   test('clocking out ends the card', async () => {
     const r = await page.evaluate(async () => {
+      // Nobody standing anywhere, said out loud. The rail card's state is
+      // module memory shared by every case on this page, and clock-out
+      // repaints it on purpose (the clock card was holding the island slot the
+      // ON SITE face yields to), so a dwell left over from an earlier case
+      // would come back up here instead of the end this asserts.
+      _liveActRail(null, null);
+      window.__td.calls.length = 0;
       _liveActClockOut();
       await new Promise(r => setTimeout(r, 60));
       return window.__td.calls.map(c => ({ name: c.name, ch: c.args.channel }));
     });
+    // Still exactly one call, and the rail is deliberately not a second one:
+    // the priming call above already spent this launch's one idempotent end on
+    // that channel, so the repaint clock-out does has nothing left to say.
     expect(r).toEqual([{ name: 'end', ch: 'clock' }]);
   });
 
@@ -365,16 +375,16 @@ test.describe('Live Activities: what reaches the lock screen', () => {
         sinceTs, atHome: false, fence: { addr: '2950 SW McClure Rd' } });
       const morning = Date.parse('2026-09-11T13:02:00.000Z');
       const afternoon = Date.parse('2026-09-11T18:25:00.000Z');
-      _liveActOnSite(doe(morning)); await new Promise((r) => setTimeout(r, 60));
+      _liveActRail(doe(morning)); await new Promise((r) => setTimeout(r, 60));
       const first = window.__td.calls.slice();
       window.__td.calls.length = 0;
       // Left, came back. Same client, same address, different arrival.
-      _liveActOnSite(doe(afternoon)); await new Promise((r) => setTimeout(r, 60));
+      _liveActRail(doe(afternoon)); await new Promise((r) => setTimeout(r, 60));
       const second = window.__td.calls.slice();
       window.__td.calls.length = 0;
       // And asserting the SAME arrival again still costs nothing, which is the
       // whole reason the tick is left out of the signature.
-      _liveActOnSite(doe(afternoon)); await new Promise((r) => setTimeout(r, 60));
+      _liveActRail(doe(afternoon)); await new Promise((r) => setTimeout(r, 60));
       const third = window.__td.calls.slice();
       return {
         firstStarted: first.filter((c) => c.name === 'start').length,
@@ -433,15 +443,15 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       const atDoe = { id: 'd-doe', name: 'John Doe', kind: 'client', sinceTs: since, atHome: false, fence: {} };
       const atHouse = { id: 'd-home', name: 'TradeDesk shop', kind: 'shop', sinceTs: Date.now() - 5 * 60000, atHome: true, fence: {} };
       // A real visit puts a card up.
-      _liveActOnSite(atDoe); await new Promise(r => setTimeout(r, 60));
+      _liveActRail(atDoe); await new Promise(r => setTimeout(r, 60));
       const atWork = window.__td.calls.filter(c => c.name === 'start').length;
       // Driving home and arriving: the card comes down, nothing replaces it.
-      const homeAccepted = _liveActOnSite(atHouse);
+      const homeAccepted = _liveActRail(atHouse);
       await new Promise(r => setTimeout(r, 60));
       const ended = window.__td.calls.filter(c => c.name === 'end').length;
       const startsAfter = window.__td.calls.filter(c => c.name === 'start').length;
       // And asking again at home never puts one back.
-      _liveActOnSite(atHouse); await new Promise(r => setTimeout(r, 60));
+      _liveActRail(atHouse); await new Promise(r => setTimeout(r, 60));
       return { atWork, homeAccepted, ended, startsAfter,
                startsFinal: window.__td.calls.filter(c => c.name === 'start').length };
     });
@@ -469,7 +479,7 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       await _liveActEndAll(); window.__td.calls.length = 0;
       const atDoe = { id: 'd-doe', name: 'John Doe', kind: 'client',
         sinceTs: Date.now() - 45 * 60000, atHome: false, fence: {} };
-      _liveActOnSite(atDoe); await new Promise(r => setTimeout(r, 60));
+      _liveActRail(atDoe); await new Promise(r => setTimeout(r, 60));
       const up = window.__td.calls.filter(c => c.name === 'start').length;
 
       // The app dies and comes back. The card does not.
@@ -479,7 +489,7 @@ test.describe('Live Activities: what reaches the lock screen', () => {
 
       // He is home now, so the first publish after the relaunch must take it
       // down even though this launch never put anything up.
-      _liveActOnSite({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
+      _liveActRail({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
         sinceTs: Date.now() - 5 * 60000, atHome: true, fence: {} });
       await new Promise(r => setTimeout(r, 60));
       const ended = window.__td.calls.filter(c => c.name === 'end').length;
@@ -487,7 +497,7 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       // And it costs exactly one call, not one per publish: the next four
       // change nothing.
       for (let i = 0; i < 4; i++) {
-        _liveActOnSite({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
+        _liveActRail({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
           sinceTs: Date.now() - 5 * 60000, atHome: true, fence: {} });
         await new Promise(r => setTimeout(r, 20));
       }
@@ -540,7 +550,7 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       try {
         const since = Date.now() - 30 * 60000;
         const dwell = { id: 'd-fg', name: 'John Doe', kind: 'client', sinceTs: since, fence: { addr: '2950 SW McClure Rd' } };
-        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 60));
+        _liveActRail(dwell); await new Promise(r => setTimeout(r, 60));
         const afterRefusal = window.__td.calls.filter(c => c.name === 'start').length;
         // The phone comes back on screen. The held payload is replayed.
         //
@@ -555,7 +565,7 @@ test.describe('Live Activities: what reaches the lock screen', () => {
         const afterForeground = window.__td.calls.filter(c => c.name === 'start').length;
         // And the card that is now up is remembered, so an unchanged assert
         // does not spend another ActivityKit call.
-        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 60));
+        _liveActRail(dwell); await new Promise(r => setTimeout(r, 60));
         const afterRepeat = window.__td.calls.filter(c => c.name === 'start').length;
         return { afterRefusal, afterForeground, afterRepeat };
       } finally { P.start = realStart; await _liveActEndAll(); }
@@ -583,17 +593,17 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       try {
         const since = Math.floor(Date.now() / 1000) - 600;
         const dwell = { id: 'd-r', name: 'John Doe', kind: 'client', sinceTs: since * 1000, fence: {} };
-        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        _liveActRail(dwell); await new Promise(r => setTimeout(r, 40));
         const afterRefusal = window.__td.calls.filter(c => c.name === 'start').length;
         // Same dwell again: because the refusal was not cached, this must
         // reach the plugin a second time instead of being deduped away.
-        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        _liveActRail(dwell); await new Promise(r => setTimeout(r, 40));
         const afterRetry = window.__td.calls.filter(c => c.name === 'start').length;
         // Now the phone allows it: the card goes up and THAT is remembered.
         refuse = false;
-        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        _liveActRail(dwell); await new Promise(r => setTimeout(r, 40));
         const afterSuccess = window.__td.calls.filter(c => c.name === 'start').length;
-        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        _liveActRail(dwell); await new Promise(r => setTimeout(r, 40));
         const afterDedup = window.__td.calls.filter(c => c.name === 'start').length;
         return { afterRefusal, afterRetry, afterSuccess, afterDedup };
       } finally { P.start = realStart; await _liveActEndAll(); }
@@ -614,30 +624,30 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       await _liveActEndAll(); window.__td.calls.length = 0;
       const since = Date.now() - 12 * 60000;
       const dwell = { id: 'd-j-x', name: 'John Doe', kind: 'client', sinceTs: since, sinceIso: new Date(since).toISOString(), journeyId: 'x', fence: { addr: '2950 SW McClure Rd' } };
-      const ok = _liveActOnSite(dwell);
+      const ok = _liveActRail(dwell);
       await new Promise(r => setTimeout(r, 50));
-      const again = _liveActOnSite(dwell);                 // same dwell: nothing spent
+      const again = _liveActRail(dwell);                 // same dwell: nothing spent
       await new Promise(r => setTimeout(r, 50));
       const calls = window.__td.calls.map(c => [c.name, c.args.channel, c.args.kind, c.args.title, c.args.detail, c.args.timer, c.args.startedAt, c.args.tint]);
-      _liveActOnSite(null);                                 // left: the card ends
+      _liveActRail(null);                                 // left: the card ends
       await new Promise(r => setTimeout(r, 50));
       return { ok, again, calls, since, ended: window.__td.calls.slice(-1)[0] };
     });
     expect(r.ok).toBe(true);
     expect(r.again).toBe(true);
-    expect(r.calls).toEqual([['start', 'onsite', 'ON SITE', 'John Doe', '2950 SW McClure Rd', true, Math.floor(r.since / 1000), '#F2A93B']]);
+    expect(r.calls).toEqual([['start', 'rail', 'ON SITE', 'John Doe', '2950 SW McClure Rd', true, Math.floor(r.since / 1000), '#F2A93B']]);
     expect(r.ended.name).toBe('end');
-    expect(r.ended.args.channel).toBe('onsite');
+    expect(r.ended.args.channel).toBe('rail');
   });
 
   test('the shop is named as the shop, and a fence with no address shows the arrival time', async () => {
     const r = await page.evaluate(async () => {
       await _liveActEndAll(); window.__td.calls.length = 0;
       const since = Date.now() - 5 * 60000;
-      _liveActOnSite({ id: 'd-1', name: 'TradeDesk shop', kind: 'shop', sinceTs: since, fence: {} });
+      _liveActRail({ id: 'd-1', name: 'TradeDesk shop', kind: 'shop', sinceTs: since, fence: {} });
       await new Promise(r => setTimeout(r, 50));
       const c = window.__td.calls[0];
-      _liveActOnSite(null); await new Promise(r => setTimeout(r, 30));
+      _liveActRail(null); await new Promise(r => setTimeout(r, 30));
       return [c.args.kind, c.args.title, /^Arrived \d/.test(c.args.detail)];
     });
     expect(r).toEqual(['AT THE SHOP', 'TradeDesk shop', true]);
@@ -649,22 +659,22 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       const since = Date.now() - 3 * 60000;
       const dwell = { id: 'd-2', name: 'John Doe', kind: 'client', sinceTs: since, fence: { addr: '2950 SW McClure Rd' } };
       window._geoOpenDwell = dwell;
-      _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 50));
+      _liveActRail(dwell); await new Promise(r => setTimeout(r, 50));
       _liveActClockIn({ jobId: null, clientName: 'John Doe', scopeLabel: 'Trim', startTime: Date.now() });
       await new Promise(r => setTimeout(r, 80));
       const duringClock = window.__td.calls.map(c => c.name + ':' + c.args.channel);
-      const yielded = _liveActOnSite(dwell);                // clock card live: no on-site card
+      const yielded = _liveActRail(dwell);                // clock card live: no on-site card
       await new Promise(r => setTimeout(r, 30));
       window.__td.calls.length = 0;
       await _liveActClockOut();
       await new Promise(r => setTimeout(r, 80));
       const afterOut = window.__td.calls.map(c => c.name + ':' + c.args.channel);
-      window._geoOpenDwell = null; _liveActOnSite(null); await new Promise(r => setTimeout(r, 30));
+      window._geoOpenDwell = null; _liveActRail(null); await new Promise(r => setTimeout(r, 30));
       return { duringClock, yielded, afterOut };
     });
-    expect(r.duringClock).toEqual(['start:onsite', 'end:onsite', 'start:clock']);
+    expect(r.duringClock).toEqual(['start:rail', 'end:rail', 'start:clock']);
     expect(r.yielded).toBe(false);
-    expect(r.afterOut).toEqual(['end:clock', 'start:onsite']);
+    expect(r.afterOut).toEqual(['end:clock', 'start:rail']);
   });
 
   test('the drive card goes up the moment the drive window opens, tally or not', async () => {
@@ -682,8 +692,8 @@ test.describe('Live Activities: what reaches the lock screen', () => {
         return { up, down: window.__td.calls.map(c => c.name + ':' + c.args.channel) };
       } finally { window._geoDriving = keep; _geoDriveWinAt = keepWin; }
     });
-    expect(r.up).toEqual([['start', 'drive', 'DRIVING', 'From TradeDesk shop', 'logging']]);
-    expect(r.down).toEqual(['end:drive']);
+    expect(r.up).toEqual([['start', 'rail', 'DRIVING', 'From TradeDesk shop', 'logging']]);
+    expect(r.down).toEqual(['end:rail']);
   });
 
   test('an unchanged drive ping never spends an ActivityKit update', async () => {
@@ -725,7 +735,12 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r.title).toBe('On the road');   // the banner's own words
     expect(r.detail).toBe('From Home office');
     expect(r.value).toBe('7.7 mi');
-    expect(r.timer).toBe(false);
+    // CHANGED 2026-09-21, deliberately. The old drive card had no timer: it
+    // showed the mileage tally instead, because that was the only thing the
+    // phone-driven card had to say. The rail card mirrors the day rail, and
+    // every row on the rail carries how long it has been running, so the drive
+    // face times from the flip and the miles ride alongside in `value`.
+    expect(r.timer).toBe(true);
   });
 
   test('a tally built from too few fixes withholds the number instead of guessing', async () => {
@@ -759,7 +774,7 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       await new Promise(r => setTimeout(r, 50));
       return { ended, afterwards: window.__td.calls.length };
     });
-    expect(r.ended).toEqual([{ n: 'end', ch: 'drive' }]);
+    expect(r.ended).toEqual([{ n: 'end', ch: 'rail' }]);
     expect(r.afterwards).toBe(0);
   });
 
@@ -773,10 +788,16 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       await new Promise(r => setTimeout(r, 80));
       return [...new Set(window.__td.calls.map(c => c.args.channel))].sort();
     });
-    expect(r).toEqual(['clock', 'drive']);
+    // The two that matter. Not an exact set: _railEndLegacy retires the two
+    // channels the rail card replaced once per launch, from the foreground
+    // pass, and it lands in whichever test happens to be running when the page
+    // first becomes visible. That is the retirement doing its job, not a
+    // collision.
+    expect(r).toContain('clock');
+    expect(r).toContain('rail');
   });
 
-  test('the clock card asks for a push token, the drive card stays phone-driven', async () => {
+  test('both cards ask for a push token now, including the drive face', async () => {
     const r = await page.evaluate(async () => {
       window.__td.calls.length = 0;
       _liveActClockIn({ jobId: 3, jobName: 'P', clientName: 'PushCo', scopeLabel: '', startTime: Date.now() });
@@ -788,10 +809,16 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       window.__td.calls.forEach(c => { byCh[c.args.channel] = c.args.push; });
       return byCh;
     });
-    // The server can end a clock (force clock-out); nothing server-side knows
-    // more about a drive than the phone in the truck, so no token is spent.
+    // CHANGED 2026-09-21. This used to assert the drive card was deliberately
+    // phone-only, on the grounds that nothing server-side knows more about a
+    // drive than the phone in the truck. True of the mileage NUMBER and wrong
+    // about the card: the words are exactly what the server knows and the
+    // sleeping phone does not, and the price of the old rule was a lock screen
+    // that said nothing for the whole of every drive the app slept through.
+    // The rail card takes its words from the server and its miles from the
+    // phone, so it needs the token.
     expect(r.clock).toBe(true);
-    expect(r.drive).toBe(false);
+    expect(r.rail).toBe(true);
   });
 
   test('an activity token is stored keyed user+channel so rotations overwrite', async () => {

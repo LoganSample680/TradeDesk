@@ -409,8 +409,14 @@ test.describe('geo-derive wiring', () => {
         const off = _geoDeriveFences('2026-09-05').filter(f => f.kind === 'client').map(f => [f.name, !!f.scheduled]);
         return { on, off };
       });
-      expect(r.on).toEqual([['Mom', true], ['Cust', false]]);
-      expect(r.off).toEqual([['Mom', false], ['Cust', false]]);
+      // ── THE NAME CARRIES THE STREET NOW (Jack via the owner, 2026-09-21) ─
+      // "He asked if all onsites could mint the address in parenthesis."
+      // 20261030 and its browser half name every fence that identifies itself
+      // by a PERSON as `Name (street line)`. This test is about `scheduled`
+      // and nothing else, so the flags either side are untouched; only the
+      // label changed, and it changed on purpose (10.4).
+      expect(r.on).toEqual([['Mom (1 Family Ln)', true], ['Cust (2 Work St)', false]]);
+      expect(r.off).toEqual([['Mom (1 Family Ln)', false], ['Cust (2 Work St)', false]]);
     });
 
     // ── EVERY PROPERTY HE HAS, NOT JUST THE FIRST (owner 2026-09-19) ─────
@@ -433,7 +439,9 @@ test.describe('geo-derive wiring', () => {
           .map(f => [f.id, f.name, f.addr, f.lat, f.clientId]);
       });
       expect(r).toEqual([
-        ['client-601', 'Landlord', '1 First St', 39.01, 601],
+        // The primary used to be a bare 'Landlord', indistinguishable on the
+        // rail from the two labelled cards below it. It says which house now.
+        ['client-601', 'Landlord (1 First St)', '1 First St', 39.01, 601],
         ['client-601-p0', 'Landlord (Duplex)', '2 Second St', 39.02, 601],
         ['client-601-p1', 'Landlord (Rental)', '3 Third St', 39.03, 601],
       ]);
@@ -498,7 +506,7 @@ test.describe('geo-derive wiring', () => {
         } finally { if (saved) localStorage.setItem('zp3_nearby_geo', saved); }
       });
       expect(r.n, 'the fence exists with no device cache at all').toBe(1);
-      expect(r.name).toBe('Laurie');
+      expect(r.name).toBe('Laurie (9 Elm St)');
       expect(r.lat).toBeCloseTo(39.011, 5);
       expect(r.lng).toBeCloseTo(-95.78, 5);
     });
@@ -1206,7 +1214,11 @@ test.describe('geo-derive wiring', () => {
       expect(r.rpcItems, 'and certainly no geo_replace_day').toBe(0);
       const it = { args: { p_time: r.rows.job_time_entries, p_shop: r.rows.shop_time_entries, p_miles: r.rows.td_mileage } };
       expect(it.args.p_time.map(x => x.source)).toEqual(['client', 'drive', 'drive']);
-      expect(it.args.p_time[0].dest_place).toBe('John Doe');
+      // The street rides along on the name (20261030 and its browser half), and
+      // this is the row text a rail will print, so it is the right place to
+      // see it. The assertion is about WHICH place the dwell landed on, and it
+      // still is (10.4).
+      expect(it.args.p_time[0].dest_place).toBe('John Doe (2950 SW McClure Rd)');
       // ── AMENDED 2026-09-18, and the old assertion was right at the time ──
       // It read toEqual([]) because an open dwell was never written: a row
       // needed both of its ends, so this day, which leaves him standing at the
@@ -2097,8 +2109,11 @@ test.describe('geo-derive wiring', () => {
         return { open: !!(res && res.open), od: od && { name: od.name, kind: od.kind, since: od.sinceTs, cid: od.fence && od.fence.clientId }, t1, still: still && still.name, after: window._geoOpenDwell };
       }, [SHOP, DOE]);
       expect(r.open).toBe(true);
-      expect(r.od).toEqual({ name: 'John Doe', kind: 'client', since: r.t1, cid: 1788214075432 });
-      expect(r.still).toBe('John Doe');
+      // The open dwell is what the on-site card and the Dynamic Island read,
+      // so a man standing at a customer now sees which of their addresses he
+      // is standing at. Same fence, same cid, longer label.
+      expect(r.od).toEqual({ name: 'John Doe (2950 SW McClure Rd)', kind: 'client', since: r.t1, cid: 1788214075432 });
+      expect(r.still).toBe('John Doe (2950 SW McClure Rd)');
       expect(r.after).toBeNull();
     });
 
@@ -2107,11 +2122,11 @@ test.describe('geo-derive wiring', () => {
     // CHANGED, so the one attempt at the arrival instant was all there was:
     // a bridge that wasn't ready yet left the island empty for the whole
     // dwell with nothing to retry it. Every publish must re-assert it.
-    test('an unchanged open dwell still re-asserts the on-site Live Activity', async () => {
+    test('an unchanged open dwell still re-asserts the rail Live Activity', async () => {
       const r = await page.evaluate(async () => {
-        const keep = window._liveActOnSite;
+        const keep = window._liveActRail;
         const seen = [];
-        window._liveActOnSite = (d) => { seen.push(d ? String(d.name || '') : null); return true; };
+        window._liveActRail = (d) => { seen.push(d ? String(d.name || '') : null); return true; };
         try {
           const since = Date.now() - 20 * 60000;
           const mk = () => ({ open: { id: 'd-same', name: 'John Doe', kind: 'client', sinceTs: since, journeyId: 'j1',
@@ -2123,7 +2138,7 @@ test.describe('geo-derive wiring', () => {
           _geoOpenDwellPublish(today, mk());          // identical dwell: must assert again
           _geoOpenDwellPublish(today, mk());
           return { first, total: seen.length, names: seen };
-        } finally { window._liveActOnSite = keep; }
+        } finally { window._liveActRail = keep; }
       });
       expect(r.first).toBe(1);
       expect(r.total).toBe(3);

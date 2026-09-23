@@ -2269,7 +2269,7 @@ test.describe('Settings extra functions', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BATCH X: Proposals extra, _commitProposalSent, buildDescription, calTaskModal,
-//          renderGallery, adjRate, markFUWon, markFUAbandoned, _onEstPropTypeChange
+//          adjRate, markFUWon, markFUAbandoned, _onEstPropTypeChange
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Proposals extra functions', () => {

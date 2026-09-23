@@ -126,6 +126,30 @@ export function daysToDerive(evs, nowMs) {
 // age is fresh, which is every row written before that build, so no history
 // re-grades on this line alone.
 const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out", "visit"];
+
+// ── THE DERIVER READS EVIDENCE, NEVER THE DIAGNOSTIC LEDGER ────────────────
+// (owner 2026-09-21, on Jack's phone)
+//
+// geo_events carries two different things. Evidence: motion flips, fence
+// crossings, lifecycle events, positions. And a LEDGER: `radio` (a row at
+// every line that touches the GPS receiver), `heartbeat`, `sampling`, the
+// `wake-*` rows. The ledger exists so a person can be shown why their battery
+// went, and the deriver has never read a single one of them: the loop below
+// has no branch for any of those types and freshFix refuses them.
+//
+// It still PAID for them, because the read was unfiltered and this function
+// re-reads the whole day on every flush. Jack's engine went into a park
+// arm/exit loop and wrote 21,491 radio rows in one day; his day reached about
+// 25,000 events, and his timesheet stopped gaining rows at 11:25am and never
+// moved again, through a 1:58pm drive whose motion flips reached the server
+// in one second.
+//
+// So the read is narrowed to the types this function can actually use. Built
+// from the two lists that already decide that, never a third hand-written
+// one: a type added to either is read from that moment, and a diagnostic
+// nobody has invented yet costs nothing by default. That is the part that
+// makes this a fix rather than a patch.
+const READ_TYPES = [...new Set([...TRIGGER_TYPES, ...FRESH_FIX_TYPES])];
 function freshFix(e) {
   if (!FRESH_FIX_TYPES.includes(e.type) && e.type !== "push-ping") return false;
   const d = e.detail;
@@ -312,7 +336,8 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   const [evRows, pingRows, fenceRes, clockRes, cfgRes] = await Promise.all([
     pageAll((f, t) => svc.from("geo_events")
       .select("ts,type,kind,lat,lon,region_id,detail")
-      .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
+      .eq("employee_user_id", uid).in("type", READ_TYPES)
+      .gte("ts", fromIso).lt("ts", toIso)
       .order("ts", { ascending: true }).range(f, t)),
     pageAll((f, t) => svc.from("location_pings")
       .select("ts,lat,lon,accuracy")
@@ -523,14 +548,45 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
         fence: res.open.fence ? { addr: String(res.open.fence.addr || "") } : null }
     : null;
 
+  // ── AND THE DRIVE RIDES OUT BESIDE IT (owner 2026-09-21) ───────────────
+  // One card now, and it mirrors the day rail, so the lock screen needs both
+  // halves of the rail's live row: the dwell he is standing in AND the chain
+  // he is still driving. Only the phone could ever see the drive before this,
+  // and the phone is asleep for most of every drive, which is exactly when
+  // the card matters. Narrowed to what railCardFor reads, nothing more.
+  //
+  // NOT called `pending`: the success return already carries `pending` as a
+  // boolean, and the ops portal reads it to say which guard stopped a sweep.
+  const drivingCard = res.pending
+    ? { startTs: Number(res.pending.startTs) || 0,
+        origin: res.pending.origin ? { name: String(res.pending.origin.name || "") } : null }
+    : null;
+
   const resolvedAny = !!(res.legs.length || res.dwells.length || res.pending || res.open);
-  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard, fixesSeen, fixesDropped };
+  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard, driving: drivingCard, fixesSeen, fixesDropped };
 
   const rows = geoDeriveRows(res, { contractorId: cid, employeeId: uid, shared: false, clocks });
   const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length;
-  // Nothing to add, and this call may never retire: a write would be a no-op
-  // with a round trip attached.
-  if (nothing) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard, fixesSeen, fixesDropped };
+  // ── AN EMPTY DAY IS AN ANSWER, WHEN THIS CALL MAY SWEEP (owner 2026-09-21) ─
+  // This used to return unconditionally, and the comment on it said why:
+  // "nothing to add, and this call may never retire, so a write would be a
+  // no-op with a round trip attached." That was true while ingest was the only
+  // caller. It stopped being true when a rebuild got the sweep, and nobody
+  // moved the line.
+  //
+  // Rule 19 then made it bite. Jack's Sunday derives to NOTHING on purpose (a
+  // weekend vouches for nothing on its own), so the rows sitting on it from
+  // before the rule are exactly what a rebuild exists to remove, and this line
+  // returned "nothing to add" before the writer was ever called. He pressed
+  // Rebuild and got the two stale rows back, unchanged. The day that most
+  // needs clearing was the one day that could never clear itself.
+  //
+  // So: an empty derive still goes to geo_replace_day when this call is
+  // allowed to retire, carrying empty arrays, and the sweep does the work. A
+  // call that may NOT retire still returns here, because for that one a write
+  // really is a no-op with a round trip attached. What a person wrote,
+  // corrected or answered is protected inside the RPC, not by this line.
+  if (nothing && !sweep) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard, driving: drivingCard, fixesSeen, fixesDropped, sweep, sweepAsked: wantSweep, tapeCovers };
 
   // Before the write, not after: geo_replace_day is the only writer and a
   // second pass to correct a number it just stored would be the reconciler
@@ -544,10 +600,10 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     p_time: withOpen(rows, "job_time_entries"), p_shop: withOpen(rows, "shop_time_entries"), p_miles: rows.td_mileage,
     p_sweep: sweep, p_sweep_until: sweepUntil,
   });
-  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard, fixesSeen, fixesDropped };
+  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard, driving: drivingCard, fixesSeen, fixesDropped };
 
   return {
-    day, wrote: true, open: openCard,
+    day, wrote: true, open: openCard, driving: drivingCard,
     dwells: res.dwells.length, legs: res.legs.length,
     time: rows.job_time_entries.length, shop: rows.shop_time_entries.length,
     miles: rows.td_mileage.length, held: rows.held.length, routed,
