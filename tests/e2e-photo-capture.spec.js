@@ -1678,7 +1678,7 @@ test.describe('Photo capture: the sheet itself', () => {
         const html = document.getElementById('pg-client-detail').innerHTML;
         return {
           hasSection: /Photos/.test(html),
-          hasAdd: /tdCaptureForClient\(501\)/.test(html),
+          hasAdd: /tdAddPhotos\(501,/.test(html),
           hasOpen: /tdOpenPropertyFolder\(/.test(html),
           count: (html.match(/(\d+) photos/) || [])[1],
         };
@@ -4086,35 +4086,61 @@ test.describe('TrueShot: importing from the iPhone library', () => {
     expect(r).toEqual([null, null, null, null, null, null, null, null]);
   });
 
-  test('the property card has Import beside Add photos, and it holds together at 390px', async () => {
+  // Owner 2026-09-23: one button, not two. "Add photos" asks camera or
+  // library; the library files straight to that house.
+  test('the property card has ONE Add photos button, and it offers the camera or the library', async () => {
     await page.evaluate(() => {
       window.__seedImp(); currentClientId = 501; window['_cdpropOpen_501_1'] = true;
       renderClientDetail(); goPg('pg-client-detail'); renderCDAddresses();
     });
     const r = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('#cd-addresses-list button')].filter(b => /^(Import|Add photos)$/.test(b.textContent.trim()));
-      const boxes = btns.map(b => b.getBoundingClientRect());
-      const overlap = boxes.some((a, i) => boxes.some((b, j) => i !== j && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom));
-      return { labels: btns.map(b => b.textContent.trim()), bleed: document.documentElement.scrollWidth > innerWidth + 1,
-        inside: boxes.every(b => b.right <= innerWidth), overlap };
+      const btns = [...document.querySelectorAll('#cd-addresses-list button')].map(b => b.textContent.trim());
+      return { add: btns.filter(t => t === 'Add photos').length, imp: btns.filter(t => t === 'Import').length,
+        bleed: document.documentElement.scrollWidth > innerWidth + 1 };
     });
-    expect(r.labels).toContain('Import');
-    expect(r.labels).toContain('Add photos');
+    expect(r.imp, 'no separate Import button on the card').toBe(0);
+    expect(r.add).toBeGreaterThanOrEqual(1);
     expect(r.bleed).toBe(false);
-    expect(r.inside).toBe(true);
-    expect(r.overlap).toBe(false);
+    await page.evaluate(() => [...document.querySelectorAll('#cd-addresses-list button')].filter(b => b.textContent.trim() === 'Add photos').pop().click());
+    await expect(page.locator('#pc-add .pc-att-t')).toHaveText('Add photos');
+    const opts = await page.locator('#pc-add .pc-file-opt b').allTextContents();
+    expect(opts).toEqual(['Take photo', 'Choose from library']);
+    await expect(page.locator('#pc-add')).toContainText('Files straight to 6908 SW 17th St');
+    const inside = await page.evaluate(() => [...document.querySelectorAll('#pc-add .pc-file-opt')].every(b => b.getBoundingClientRect().right <= innerWidth));
+    expect(inside).toBe(true);
+    await page.evaluate(() => document.getElementById('pc-add').click());
+    await expect(page.locator('#pc-add')).toHaveCount(0);
   });
 
-  test('Import on a property opens the iPhone picker and files every photo to THAT house', async () => {
+  test('Take photo opens the camera on THAT house, so shots land on the rental, not the primary', async () => {
+    await page.evaluate(() => { window.__seedImp(); tdAddPhotos(501, '6908 SW 17th St, Topeka, KS 66615'); });
+    await page.locator('#pc-add .pc-file-opt', { hasText: 'Take photo' }).click();
+    await expect(page.locator('#pc-sheet')).toBeVisible();
+    const r = await page.evaluate(async () => {
+      const row = await tdSavePhoto({ file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), type: 'before', stamp: false,
+        clientId: _pcCtx.clientId, addr: _pcCtx.addr || undefined });
+      const ctx = { c: _pcCtx.clientId, addr: _pcCtx.addr };
+      tdCloseCapture(); try { tdReviewClose(); } catch (e) {}
+      return { ctx, addr: row.addr };
+    });
+    expect(r.ctx).toEqual({ c: 501, addr: '6908 SW 17th St, Topeka, KS 66615' });
+    expect(r.addr).toBe('6908 SW 17th St, Topeka, KS 66615');
+    // and the old entry with no house still means the primary
+    const plain = await page.evaluate(() => { tdCaptureForClient(501); const a = _pcCtx.addr; tdCloseCapture(); return a; });
+    expect(plain).toBe('');
+  });
+
+  test('Choose from library opens the iPhone picker and files every photo to THAT house', async () => {
     await page.evaluate(() => { window.__seedImp(); currentClientId = 501; window['_cdpropOpen_501_1'] = true; renderClientDetail(); goPg('pg-client-detail'); renderCDAddresses(); });
     const files = await page.evaluate(async () => {
       const toB64 = async f => btoa(String.fromCharCode(...new Uint8Array(await f.arrayBuffer())));
       return [await toB64(await window.__jpeg(39.0356, -95.7833, '2026-09-18T19:42:10.000Z')),
               await toB64(await window.__jpeg(null, null, null))];
     });
-    const chooserP = page.waitForEvent('filechooser');
     // The rental's card (index 1) is the one open.
-    await page.evaluate(() => [...document.querySelectorAll('#cd-addresses-list button')].filter(b => b.textContent.trim() === 'Import').pop().click());
+    await page.evaluate(() => [...document.querySelectorAll('#cd-addresses-list button')].filter(b => b.textContent.trim() === 'Add photos').pop().click());
+    const chooserP = page.waitForEvent('filechooser');
+    await page.locator('#pc-add .pc-file-opt', { hasText: 'Choose from library' }).click();
     const chooser = await chooserP;
     expect(chooser.isMultiple()).toBe(true);
     await chooser.setFiles(files.map((b, i) => ({ name: 'IMG_' + i + '.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(b, 'base64') })));
@@ -4127,6 +4153,12 @@ test.describe('TrueShot: importing from the iPhone library', () => {
     const other = r.find(p => p.at !== '2026-09-18T19:42:10.000Z');
     expect(other.lat).toBe(null);
     await expect(page.locator('#pc-rev')).toBeVisible();
+    await expect(page.locator('#pc-sheet')).toHaveCount(0);
+  });
+
+  test('Add photos on a customer that no longer exists does nothing', async () => {
+    const r = await page.evaluate(() => { window.__seedImp(); return [tdAddPhotos(99999, 'x'), tdAddPhotos(null), !!document.getElementById('pc-add')]; });
+    expect(r).toEqual([false, false, false]);
   });
 
   test('the camera has Import, and imported photos join the shoot with its stage', async () => {

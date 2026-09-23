@@ -414,6 +414,9 @@ function tdOpenCapture(opts){
     clientId:opts.clientId!=null?opts.clientId:null,
     bidId:opts.bidId!=null?opts.bidId:null,
     jobId:opts.jobId!=null?opts.jobId:null,
+    // The house, when the camera was opened from one property's card: a
+    // customer with a rental has two, and the card knows which it was.
+    addr:String(opts.addr||''),
     type:opts.type||'before',
     caption:String(opts.caption||'').trim().slice(0,60),
     ghost:true,
@@ -2040,6 +2043,7 @@ const _PC_ICONS={
   x:'<path d="M7 7l10 10M17 7L7 17"/>',
   search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
+  camera:'<path d="M4.5 8.5a2 2 0 012-2h1.8l1.4-2h4.6l1.4 2h1.8a2 2 0 012 2v9a2 2 0 01-2 2h-11a2 2 0 01-2-2z"/><circle cx="12" cy="13" r="3.3"/>',
   photos:'<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 15.5l-5-4.5-7.5 7.5"/>',
   globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',
   chev:'<path d="M9 5l7 7-7 7"/>'
@@ -2237,7 +2241,7 @@ async function _pcCommit(file){
   const fix=_pcCurrentFix();
   const row=await tdSavePhoto({
     file,type:_pcCtx.type,caption:_pcCtx.caption,
-    clientId:_pcCtx.clientId,bidId:_pcCtx.bidId,jobId:_pcCtx.jobId,
+    clientId:_pcCtx.clientId,bidId:_pcCtx.bidId,jobId:_pcCtx.jobId,addr:_pcCtx.addr||undefined,
     lat:fix.lat,lon:fix.lon,accM:fix.acc
   });
   if(!row)return;
@@ -2300,8 +2304,35 @@ function tdCaptureForJob(jobId,type,caption){
   const j=jobs.find(x=>x.id===jobId);
   tdOpenCapture({jobId,clientId:j?j.client_id:null,bidId:j?j.bid_id:null,type:type||'progress',caption});
 }
-function tdCaptureForClient(clientId,type){
-  tdOpenCapture({clientId,type:type||'before'});
+function tdCaptureForClient(clientId,type,addr){
+  tdOpenCapture({clientId,type:type||'before',addr});
+}
+// "Add photos" on a property card (owner 2026-09-23): one button, the two
+// ways a photo gets there. Standing at the house, the camera; back at the
+// truck or the office, the library, which files straight to this house with
+// no camera and no shoot to finish. TrueShot's own dark sheet, because both
+// answers open TrueShot screens.
+function tdAddPhotos(clientId,addr){
+  document.getElementById('pc-add')?.remove();
+  const c=clients.find(x=>x.id===clientId);
+  if(!c)return false;
+  const at=String(addr||c.addr||'').split(',')[0];
+  const ov=document.createElement('div');
+  ov.id='pc-add';ov.className='zmodal-overlay pc-att-ov';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  const a=JSON.stringify(String(addr||'')).replace(/"/g,'&quot;');
+  const opt=(fn,icon,name,sub)=>'<button type="button" class="pc-file-opt" onclick="document.getElementById(\'pc-add\')?.remove();'+fn+'">'+
+    '<span class="pc-av add">'+_pcIcon(icon)+'</span><span class="pc-opt-m"><b>'+name+'</b><span>'+sub+'</span></span>'+
+    _pcIcon('chev','pc-chev')+'</button>';
+  ov.innerHTML='<div class="zmodal pc-att-sheet">'+
+    '<div class="pc-grab"></div><div class="pc-att-hd"><span class="pc-att-t">Add photos</span>'+
+    '<button type="button" class="pc-att-x" aria-label="Cancel" onclick="document.getElementById(\'pc-add\')?.remove()">'+_pcIcon('x')+'</button></div>'+
+    '<div class="pc-att-group">'+
+      opt('tdCaptureForClient('+clientId+',\'before\','+a+')','camera','Take photo','Open the camera'+(at?' at '+escHtml(at):''))+
+      opt('tdImportPhotos('+clientId+','+a+')','photos','Choose from library','Files straight to '+(at?escHtml(at):'this customer'))+
+    '</div></div>';
+  document.body.appendChild(ov);
+  return true;
 }
 // ── Import from the iPhone library (owner 2026-09-23, from the field) ─────
 // Photos already on the phone, taken before the app was open or by someone
