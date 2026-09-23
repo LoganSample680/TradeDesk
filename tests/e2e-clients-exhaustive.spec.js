@@ -3477,6 +3477,36 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.finalCount).toBe(2);      // dedupe + empty never grow the list
     });
 
+    // Owner 2026-09-23: "there's no way to minimize the accordion". A lone
+    // property opened expanded with no chevron and a dead header, so it could
+    // never be folded. It still STARTS open; the header now folds it.
+    test('a single property card starts open and its header folds and unfolds it', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970141;
+        const c = { id: cid, name: 'Fold Co', addr: '9 Fold Ln, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        delete window['_cdpropOpen_' + cid + '_0'];
+        renderCDAddresses();
+        const list = () => document.getElementById('cd-addresses-list');
+        const hdr = () => list().querySelector('[onclick*="_cdpropOpen_' + cid + '_0"]');
+        const hasNote = () => !!document.getElementById('cd-propnote-0');
+        const startOpen = hasNote();
+        const hasChevron = /M6 9l6 6 6-6/.test(list().innerHTML);
+        const hdrExists = !!hdr();
+        hdr() && hdr().click();
+        const afterFold = hasNote();
+        hdr() && hdr().click();
+        const afterUnfold = hasNote();
+        return { startOpen, hasChevron, hdrExists, afterFold, afterUnfold };
+      });
+      expect(r.startOpen, 'one property still opens expanded').toBe(true);
+      expect(r.hasChevron, 'the lone card shows the fold chevron').toBe(true);
+      expect(r.hdrExists, 'the header is tappable').toBe(true);
+      expect(r.afterFold, 'tapping the header folds it').toBe(false);
+      expect(r.afterUnfold, 'tapping again opens it back up').toBe(true);
+    });
+
     test('PRIVACY: an employee without financials sees the property but no dollar figures', async () => {
       const r = await page.evaluate(() => {
         const cid = 970107;

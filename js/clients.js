@@ -3297,11 +3297,12 @@ function _cdPropCardHtml(c,a,idx,total){
   const p=getProperty(c,a.addr);
   const note=getSiteNote(c,a.addr);
   const hist=getPropertyHistory(c,a.addr);
-  // Research-backed: 1 property renders fully expanded (an accordion for one item
-  // is pure friction); 2+ collapse to accordion rows you tap to open.
+  // Research-backed: 1 property STARTS fully expanded (making someone open the
+  // only item is pure friction); 2+ start collapsed. Either way the header
+  // folds it (owner 2026-09-23: "there's no way to minimize the accordion").
   const single=(total===1);
   const openKey='_cdpropOpen_'+c.id+'_'+idx;
-  const isOpen=single||!!window[openKey];
+  const isOpen=single?window[openKey]!==false:!!window[openKey];
   const pre78=!!(p.yearBuilt&&p.yearBuilt<1978);
   const ep=(typeof _parseAddrParts==='function')?_parseAddrParts(a.addr||''):{street:a.addr||'',city:'',state:'',zip:''};
   const street=((idx===0&&c.street)?c.street:ep.street)||a.addr||'No address';
@@ -3352,9 +3353,9 @@ function _cdPropCardHtml(c,a,idx,total){
   // Down-caret chevron matching the Overview section dropdown, so the property
   // rows read as the same control (owner: "accordion should look like the
   // overview accordion"). Rotates to point up when the row is expanded.
-  const chevron=single?'':`<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate(${isOpen?180:0}deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
-  const _hdrClick=single?'':`onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()"`;
-  const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;${single?'':'cursor:pointer'}">
+  const chevron=`<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate(${isOpen?180:0}deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
+  const _hdrClick=`onclick="window['${openKey}']=${isOpen?'false':'true'};renderCDAddresses()"`;
+  const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;cursor:pointer">
     ${iconTile}
     <div style="flex:1;min-width:0">
       ${labelPill}
