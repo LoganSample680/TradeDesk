@@ -606,9 +606,18 @@ test.describe('Wake region set for the dead app', () => {
   // New web code used to reach a phone only when somebody opened the app, so
   // a backgrounded phone sat on old JS and then reloaded in the owner's hand.
   const bgUpd = (opts) => page.evaluate(async (o) => {
-    const saved = { fetch: window.fetch, reload: window._autoSaveAndReload, hidden: Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') };
+    const saved = { fetch: window.fetch, reload: window._autoSaveAndReload, hidden: Object.getOwnPropertyDescriptor(Document.prototype, 'hidden'),
+      poll: window._checkVersionOnResume };
     let reloads = 0, fetches = 0;
     try {
+      // THE OTHER TWO REASONS A RELOAD FIRES ARE NOT THIS TEST'S (webkit shard
+      // 3, b7dbc59: reloads 2). The stub counts every caller, and cloud.js has
+      // two more: the 15 s poller, and a reload a cold load deferred earlier in
+      // the worker (_deferredReload), which re-fires when that load settles and
+      // can land inside this window. Both are closed for the window, so the
+      // count is the wake's, the same way the probe count already is.
+      window._checkVersionOnResume = async () => {};
+      _deferredReload = false;
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => o.hidden });
       // COUNT THE WAKE'S PROBE, NOT THE FILENAME. Four paths fetch
       // version.json and only one of them is under test here; `bg=1` is the
@@ -636,7 +645,7 @@ test.describe('Wake region set for the dead app', () => {
       await new Promise(r => setTimeout(r, 60));
       return { reloads, fetches, running: APP_VERSION };
     } finally {
-      window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload;
+      window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload; window._checkVersionOnResume = saved.poll;
       delete document.hidden;
       if (saved.hidden) Object.defineProperty(Document.prototype, 'hidden', saved.hidden);
       _geoBgUpdAt = 0;
