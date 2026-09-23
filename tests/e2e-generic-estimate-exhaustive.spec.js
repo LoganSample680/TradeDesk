@@ -3068,7 +3068,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       const re = /<div>(\d+)\. <strong>(.*?):<\/strong> ([\s\S]*?)<\/div>/g;
       let m;
       while ((m = re.exec(captured)) !== null) clauses.push({ n: +m[1], title: m[2], body: m[3] });
-      return { err, clauses, hasDepRow: doc.includes('Before Work Begins') };
+      // Case-insensitive since 2026-09-23 (§10.4): the BYO row went sentence
+      // case ("Deposit before work begins (25%)") in the proposal redesign.
+      return { err, clauses, hasDepRow: /before work begins/i.test(doc) };
     }, { isTM, clientId });
 
     test('T&M and BYO T&C come from the same clause list, shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {

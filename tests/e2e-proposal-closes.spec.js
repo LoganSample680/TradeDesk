@@ -121,7 +121,9 @@ test.describe('the proposal closes: Hetty and Barry', () => {
       return [...d.querySelectorAll('tfoot tr')].map(tr => tr.textContent.trim());
     }, html);
     const iPrice = rows.findIndex(x => /YOUR PRICE/.test(x));
-    const iDep = rows.findIndex(x => /Deposit Due Before Work Begins/i.test(x));
+    // Sentence case since 2026-09-23 (§10.4), the one Title Case line on the
+    // page read as a template (design review).
+    const iDep = rows.findIndex(x => /^Deposit before work begins \(25%\)/.test(x));
     const iBal = rows.findIndex(x => x === 'The rest is due when the work is done. Nothing else is due before then.');
     expect([iPrice, iDep, iBal], JSON.stringify(rows)).toEqual([0, 1, 2]);
     expect(rows.join(' ').match(/\$[\d,]+\.\d{2}/g).length, 'still only two figures').toBe(2);

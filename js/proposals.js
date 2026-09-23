@@ -1613,7 +1613,7 @@ function _showCOSignDocument(b,c,coData,clientId){
   const deltaColor=type==='add'?'var(--blue)':'#A32D2D';
 
   const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;box-sizing:border-box';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-sizing:border-box';
   const doc=document.createElement('div');
   doc.style.cssText='background:#fff;border-radius:12px;width:100%;max-width:540px;margin:auto;overflow:hidden;font-family:inherit;color:#111';
   doc.innerHTML=

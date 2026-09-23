@@ -4450,15 +4450,24 @@ function _showProposalPreviewOverlay(proposalHtml){
   ov.id='_prop-preview-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9500;background:#0007;display:flex;flex-direction:column';
   const hdr=document.createElement('div');
-  hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
-  hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview, how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
+  // CLEAR OF THE DYNAMIC ISLAND (Jack, 2026-09-23: the preview "was in the
+  // dynamic island space and can't be exited"). The app is viewport-fit=cover,
+  // so a bar at top:0 with 12px of padding put Close under the island, where
+  // iOS takes the tap. Same env() inset every other full-screen bar uses.
+  hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top,0px));display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0';
+  hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview, how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;min-height:44px;flex-shrink:0">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
   const body=document.createElement('div');
   // flex:0 1 auto (not flex:1): the card hugs its own content height instead
   // of stretching to fill the screen. Short proposals no longer leave a slab
   // of flat gray dead space below the card; long ones still scroll normally.
-  body.style.cssText='flex:0 1 auto;overflow-y:auto;max-height:calc(100vh - 56px);padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
+  body.style.cssText='flex:0 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 68px - env(safe-area-inset-top,0px));padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
   body.innerHTML=proposalHtml;
   ov.appendChild(hdr);ov.appendChild(body);
+  // A tap on the dim below a short proposal closes it, the way every sheet
+  // does; Escape on a keyboard. Two more ways out than the one button.
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  const _esc=e=>{if(e.key==='Escape'){ov.remove();document.removeEventListener('keydown',_esc);}};
+  document.addEventListener('keydown',_esc);
   document.body.appendChild(ov);
 }
 // ─── Presentation mode ───────────────────────────────────────────────────────
@@ -4525,11 +4534,12 @@ function _presentShell(inner){
 }
 function _presentHdr(sub){
   const biz=(typeof S!=='undefined'&&S.bname)||(typeof getBusinessName==='function'?getBusinessName():'')||'';
-  return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
+  // Clear of the Dynamic Island, same as the preview bar: the exit is up here.
+  return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;padding-top:calc(14px + env(safe-area-inset-top,0px));border-bottom:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
     '<div style="min-width:0"><div style="font-size:15px;font-weight:800;color:#F5EFE2;letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(biz)+'</div>'+
       (sub?'<div style="font-size:11.5px;color:rgba(245,239,226,.62);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</div>':'')+
     '</div>'+
-    '<button id="present-exit" onclick="_presentClose()" aria-label="Exit presentation" style="flex-shrink:0;background:rgba(245,239,226,.10);border:none;color:rgba(245,239,226,.75);width:34px;height:34px;border-radius:9px;font-size:18px;line-height:1;cursor:pointer;font-family:inherit;touch-action:manipulation">×</button>'+
+    '<button id="present-exit" onclick="_presentClose()" aria-label="Exit presentation" style="flex-shrink:0;background:rgba(245,239,226,.10);border:none;color:rgba(245,239,226,.75);width:44px;height:44px;border-radius:9px;font-size:18px;line-height:1;cursor:pointer;font-family:inherit;touch-action:manipulation">×</button>'+
   '</div>';
 }
 function _presentName(b){
@@ -7452,8 +7462,8 @@ function _propProjectTitle(texts,trade){
 function _propIncludedHtml(texts,accent,title,tm){
   const inc=_propIncluded(texts,tm);
   if(inc.items.length<3)return '';
-  const li=inc.items.map(x=>`<div style="display:flex;gap:7px;align-items:baseline;font-size:11.5px;color:#2d3748;line-height:1.5"><span style="color:${accent};font-weight:900">&#10003;</span><span>${escHtml(x)}</span></div>`).join('');
-  return `<div class="prop-included" style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${accent};margin-bottom:8px">${title||'Included in your price'}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:4px 14px">${li}</div></div>`;
+  const li=inc.items.map(x=>`<div style="display:flex;gap:7px;align-items:baseline;font-size:13.5px;color:#1e293b;line-height:1.45"><span style="color:${accent};font-weight:400">&#10003;</span><span>${escHtml(x)}</span></div>`).join('');
+  return `<div class="prop-included" style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${accent};margin-bottom:10px">${title||'Included in your price'}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 24px">${li}</div></div>`;
 }
 async function sendGenericProposal(previewOnly,opts){
   saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
@@ -7584,7 +7594,7 @@ async function sendGenericProposal(previewOnly,opts){
   }
   // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
-  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?'Up Front, Before Work Begins':`${_tmDepPct}% Deposit Due Before Work Begins`}</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
+  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?'Up Front, Before Work Begins':`Deposit before work begins (${_tmDepPct}%)`}</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
   // ── THE TIME AND MATERIALS FOOTER ────────────────────────────────────────
   //
   // Owner 2026-09-17: "if you place a materials section on a invoice or on a
@@ -7608,7 +7618,7 @@ async function sendGenericProposal(previewOnly,opts){
   // sign: said here in their words, and in the contract terms in full.
   // Widened the same day (owner): work the customer adds or changes, and a
   // rush that takes more crew, raise it too, by the same signed change order.
-  const _tmCapFine='<div style="font-size:10px;font-weight:500;opacity:.8;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.</div>';
+  const _tmCapFine='<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
@@ -7620,10 +7630,10 @@ async function sendGenericProposal(previewOnly,opts){
   // condition; it just comes first. With no cap nothing changes.
   const _rsCapLeads=_tmNteCap>0;
   const _rateFooterRows=_rsCapLeads
-    ?`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em"><span style="white-space:nowrap;text-transform:uppercase">Most you&apos;ll pay</span>${_tmCapFine}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_rsMoney(_tmNteCap)}</td></tr>`+
+    ?`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em"><span style="white-space:nowrap;text-transform:uppercase">Most you&apos;ll pay</span>${_tmCapFine}</td><td style="padding:14px 18px;text-align:right;font-weight:800;font-size:28px;letter-spacing:-.5px;font-variant-numeric:tabular-nums;white-space:nowrap">${_rsMoney(_tmNteCap)}</td></tr>`+
       _rsRow('Time and materials: the time actually worked and the materials actually used',_rsCadence,'#f8fafc','#334155')+
       (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Up Front, Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
-    :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
+    :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
     _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
@@ -7712,16 +7722,16 @@ async function sendGenericProposal(previewOnly,opts){
     const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
     const _chipLi=l=>{
       const chip=_allChipDefs.find(c=>c.label===l);
-      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096">, ${escHtml(chip.clientDesc)}</span>`:'';
-      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
+      const desc=chip&&chip.clientDesc?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(chip.clientDesc)}</span>`:'';
+      return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
     };
     // In work order, under the customer's words for each stage, so a long job
     // reads as a plan they can follow instead of a wall of steps. Numbering
     // runs on across the headings: step 7 is still step 7.
     const _grp=_propStageGroups(_chipsToPrint);
     _scopeBlocks.push(_grp
-      ?_grp.map(g=>`<div class="prop-stage" style="margin-bottom:6px"><div style="font-size:10.5px;font-weight:800;color:#2d3748;margin-bottom:1px">${escHtml(g.name)}</div><ol start="${g.idx[0]+1}" style="margin:0 0 4px;padding-left:18px">${g.idx.map(i=>_chipLi(_chipsToPrint[i])).join('')}</ol></div>`).join('')
-      :`<ol style="margin:0 0 10px;padding-left:18px">${_chipsToPrint.map(_chipLi).join('')}</ol>`);
+      ?_grp.map(g=>`<div class="prop-stage" style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 4px">${escHtml(g.name)}</div><ol start="${g.idx[0]+1}" style="margin:0 0 4px;padding-left:26px">${g.idx.map(i=>_chipLi(_chipsToPrint[i])).join('')}</ol></div>`).join('')
+      :`<ol style="margin:0 0 10px;padding-left:26px">${_chipsToPrint.map(_chipLi).join('')}</ol>`);
   }
   const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
@@ -7741,8 +7751,8 @@ async function sendGenericProposal(previewOnly,opts){
       // agreed to. The RATE stays off the proposal, same one-price rule the
       // document already follows.
       const _li=it=>{
-        const _q=(Number(it.qty)>1)?` <span style="font-size:10.5px;color:#718096">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
-        return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:10.5px;color:#718096">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}</li>`;
+        const _q=(Number(it.qty)>1)?` <span style="font-size:12.5px;color:#64748b">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
+        return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(it.label)}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}</li>`;
       };
       // One section is the usual Build Your Own: everything Tim built lands in
       // it, and one heading over the lot says nothing. The customer's stage
@@ -7751,8 +7761,8 @@ async function sendGenericProposal(previewOnly,opts){
       // customer's copy they go where the work happens.
       const _ord=(_scopeSecs2.length===1&&typeof timOrderScope==='function')?timOrderScope(its.map(it=>({text:it.label,src:it}))).map(r=>r.src.src):its;
       const _grp=_scopeSecs2.length===1?_propStageGroups(_ord.map(it=>it.label)):null;
-      if(_grp)return _grp.map(g=>`<div class="prop-stage" style="margin-bottom:6px"><div style="font-size:10.5px;font-weight:800;color:#2d3748;margin-bottom:1px">${escHtml(g.name)}</div><ol start="${g.idx[0]+1}" style="margin:0 0 4px;padding-left:18px">${g.idx.map(i=>_li(_ord[i])).join('')}</ol></div>`).join('');
-      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(_li).join('')+'</ol>';
+      if(_grp)return _grp.map(g=>`<div class="prop-stage" style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 4px">${escHtml(g.name)}</div><ol start="${g.idx[0]+1}" style="margin:0 0 4px;padding-left:26px">${g.idx.map(i=>_li(_ord[i])).join('')}</ol></div>`).join('');
+      const rows='<ol style="margin:4px 0 0;padding-left:26px">'+its.map(_li).join('')+'</ol>';
       // Sub-section headers match the document's one header style (accent, same
       // scale as "Scope of work"): the old hardcoded gray read as a different
       // font family entirely and made the section look mismatched.
@@ -7772,9 +7782,9 @@ async function sendGenericProposal(previewOnly,opts){
     const _lineScope=(_geiLines||[]).filter(l=>l&&!l._tmLabor&&!l._rrp&&String(l.desc||'').trim()
       &&!_chipsToPrint.some(c=>_pbKey(c)===_pbKey(l.desc)));
     if(_lineScope.length){
-      const _rows='<ol style="margin:0 0 10px;padding-left:18px">'+_lineScope.map(l=>{
+      const _rows='<ol style="margin:0 0 10px;padding-left:26px">'+_lineScope.map(l=>{
         const d=String(l.notes||'').trim();
-        return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l.desc)}${d?`<span style="font-size:10.5px;color:#718096">, ${escHtml(d)}</span>`:''}</li>`;
+        return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(l.desc)}${d?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(d)}</span>`:''}</li>`;
       }).join('')+'</ol>';
       _scopeBlocks.push(_rows);
     }
@@ -7830,7 +7840,7 @@ async function sendGenericProposal(previewOnly,opts){
   // instead of in the terms accordion where nobody looks until there is an
   // argument.
   const _exclSection=_geiExclusions.length
-    ?`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
+    ?`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:8px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
     :'';
 
   // ── What the other options add ──────────────────────────────────────────
@@ -7858,7 +7868,7 @@ async function sendGenericProposal(previewOnly,opts){
         const _amt=Number(x.amount)||0;
         const _seen=new Set();
         const _li=_extra.filter(l=>{const k=_pbKey(l.label);if(_seen.has(k))return false;_seen.add(k);return true;})
-          .slice(0,6).map(l=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l.label)}</li>`).join('');
+          .slice(0,6).map(l=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(l.label)}</li>`).join('');
         // The option NAME is the way into it. Telling a client what they are
         // missing and leaving them to text about it is how a proposal turns
         // into an evening of back and forth: the answer has to be a tap that
@@ -7878,7 +7888,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _includedSection=((_geiIsTM||_geiIsFreeForm)&&!_geiScopeNoScope&&_incTexts.length)
     ?_propIncludedHtml(_incTexts,_pAccent,_geiIsTM?'Included':'Included in your price',_geiIsTM):'';
   const _scopeSection=(_scopeBlocks.length
-    ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
+    ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${_pAccent};margin-bottom:12px">Scope of work</div>${_scopeBlocks.join('')}</div>`
     :'')+_includedSection;
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   // EPA RRP is a PER-PROPERTY fact: read year built + rrpDisturb for the exact
@@ -7923,12 +7933,12 @@ async function sendGenericProposal(previewOnly,opts){
   // answer is only once the work is done. In words, not a third figure: the
   // client's copy carries two dollar amounts, the price and the deposit
   // (owner's standing rule, e2e-layout-integrity-regression).
-  const _balRow=(_byoEst&&_tmDepAmt>0&&_tmDepAmt<(Number(total)||0))?`<tr class="prop-balance" style="background:#f8fafc"><td colspan="2" style="padding:7px 18px;font-size:11px;font-weight:600;color:#475569">The rest is due when the work is done. Nothing else is due before then.</td></tr>`:'';
+  const _balRow=(_byoEst&&_tmDepAmt>0&&_tmDepAmt<(Number(total)||0))?`<tr class="prop-balance" style="background:#f8fafc"><td colspan="2" style="padding:9px 18px;font-size:12.5px;font-weight:400;color:#334155">The rest is due when the work is done. Nothing else is due before then.</td></tr>`:'';
   const _bigLabel=_tmCapLeads?'MOST YOU&apos;LL PAY':(_geiIsTM?'ESTIMATED TOTAL':(_byoEst?'YOUR PRICE':'TOTAL'));
   const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.</div>':(_byoEst?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`+_balRow;
+    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.</div>':(_byoEst?'<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:800;font-size:28px;letter-spacing:-.5px;font-variant-numeric:tabular-nums;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`+_balRow;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
@@ -7965,7 +7975,7 @@ async function sendGenericProposal(previewOnly,opts){
     // A "Description" header over an empty tbody is a heading for nothing, and a
     // rate sheet with no material categories is exactly that case.
     :`<table style="width:100%;border-collapse:collapse;font-size:12px">${lineRows?`<thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">${_geiIsTM?(_tmRateOnly?'Materials':'What the estimate is made of'):'Description'}</th></tr></thead>`:''}<tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||escHtml(((_geiIsTM||_geiIsFreeForm)&&_propProjectTitle(_geiIsFreeForm?_byoWorkItems2.map(it=>it.label):_chipsToPrint,_geiTrade))||tradeName+' service')}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
+  const proposalHtml=`<div style="background:#fff;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px">No. ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-top:8px">Address</div><div style="font-size:13.5px;color:#334155;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-top:8px">Phone</div><div style="font-size:13.5px;color:#334155;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px">Project</div><div style="font-size:15px;font-weight:700;color:${_pAccent}">${jobDesc||escHtml(((_geiIsTM||_geiIsFreeForm)&&_propProjectTitle(_geiIsFreeForm?_byoWorkItems2.map(it=>it.label):_chipsToPrint,_geiTrade))||tradeName+' service')}</div>${duration?`<div style="font-size:12.5px;color:#475569;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:12.5px;color:#475569;margin-top:4px">Valid until: ${_geiExpD}</div></div></div>${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows

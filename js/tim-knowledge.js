@@ -69,10 +69,16 @@ const TIM_STAGES=[
   // list was a painter's, so a water heater coming out of a basement was a step
   // with no stage, and a step with no stage cannot be put in order.
   {k:'demo',   n:'Tear out',            say:['tear out','tear off','demo','demolition','strip','stripping','scrape','grind','cut out','rip out','haul the old','remove the old','dispose of the old','pull the old','pull out the old','take out the old','take out','swap out','change out','get rid of','disconnect the old']},
-  {k:'rough',  n:'Rough in',            say:['rough in','rough-in','run wire','pull wire','run romex','run pipe','run conduit','set the panel','stub','dig','trench','frame','excavate','underground','run new','run pex','run copper','run gas','run the line','run a new']},
+  {k:'rough',  n:'Rough in',            say:['rough in','rough-in','run wire','pull wire','run romex','run pipe','run conduit','set the panel','stub','dig','trench','frame','excavate','underground','run new','run pex','run copper','run gas','run the line','run a new',
+    // Tim's own gas line step (install-gas-size) reads as rough-in, not as
+    // whatever came before it: it printed under "Protecting your home".
+    'check the gas line','upsize the gas','gas line']},
   {k:'repair', n:'Repair',              say:['confirm the leak','framing is dry','replace rotted','rotted','repair','patch','fill','sister','re-sheath','resheath','replace siding','replace trim','replace boards','board for board','wood repair','drywall repair']},
   {k:'prep',   n:'Prep',                say:['prep','pressure wash','power wash','wash','sand','sanding','caulk','prime','primer','tape','etch','skim','feather','clean the surface']},
-  {k:'install',n:'Install',             say:['dry in','underlayment','drip edge','install','hang','set the','mount','lay','tie in','terminate','trim out','make up','connect','shingle','roof it','set fixtures','set a','set new','set up the new','put in','putting in','put in a','swap in']},
+  {k:'install',n:'Install',             say:['dry in','underlayment','drip edge','install','hang','set the','mount','lay','tie in','terminate','trim out','make up','connect','shingle','roof it','set fixtures','set a','set new','set up the new','put in','putting in','put in a','swap in',
+    // The unit's hook-ups go in with the unit, after it is set, not with the
+    // rough-in ("run new venting" was matching "run new").
+    'new venting','venting for','condensate drain']},
   {k:'finish', n:'Finish',              say:['start up the','pressure test','pull a vacuum','test every','label the panel','finish coat','two coats','top coat','topcoat','paint','spray','roll','stain','seal','grout','polish','touch up','touch-up']},
   {k:'restore',n:'Put back',            say:['rehang','re-hang','put back','reinstall','re-install','reset the gutters','rehang gutters','replace fixtures','remount','strike the scaffold','strike scaffold','take the scaffold down']},
   {k:'clean',  n:'Clean up',            say:['final inspection','walk it with','haul off','haul away','clean up','cleanup','broom clean','sweep','magnet','dumpster out','final walk','walk through','walkthrough','leave the site']},
