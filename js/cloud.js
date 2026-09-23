@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.22.26.30';
+const APP_VERSION='09.23.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8859,20 +8859,10 @@ async function supaLoadFromCloud({silent=false}={}){
     _dashAwaitingCloud=false;
     renderDash();
     renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
-    if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
     // One query against the county assessor records we already hold, for every
     // address at once. This used to be _startPropQueue, which trickled one
     // Zillow scrape every 6.5s and could not finish a big import before the tab
     // closed. See _syncPropertyData (js/clients.js).
-    //
-    // RESTORED 2026-09-23. A UAT roll resolved a version-stamp conflict in this
-    // file with `git checkout --theirs`, which swaps in the whole file and so
-    // deleted this call along with the stamp. _syncPropertyData stayed defined
-    // with nothing calling it, and the county backfill for existing customers
-    // silently stopped. The call sits BESIDE _startPropQueue rather than
-    // replacing it because the county work has not reached this branch yet:
-    // each is guarded, so whichever is defined where this runs is the one that
-    // fires, and removing the old one is the county session's call to make.
     if(typeof _syncPropertyData==='function')setTimeout(_syncPropertyData,5000);
     if(typeof renderIncome==='function')renderIncome();
     if(typeof renderExpenses==='function')renderExpenses();
