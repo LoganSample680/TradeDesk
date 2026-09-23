@@ -556,10 +556,70 @@ const TIM_IMPLIED=[
     source:'trade',
     stage:'access',
     step:'Pull the permit',
-    say:'Permit and inspection',
-    because:'Most towns want one for this. If yours does not, swipe it away.',
+    // HIS CALL, NOT TIM'S (owner, 2026-09-23: "not every job requires a
+    // permit or inspection though"). Towns differ and so do jobs, and the
+    // proposal prints "Permit and inspection" as included the moment this step
+    // is in. So it is asked, never swept in by Add all, and once he has turned
+    // it down twice for a kind of job Tim stops asking for that kind.
+    say:'Permit for this one?',
+    because:'Many towns want one for this work and some do not. Add it if yours does.',
+    optIn:true,
+    learnKey:(t,steps)=>{const m=_timkAll(t,steps).match(_TIMK_PERMIT);return m?m[1].replace(/\s+/g,' '):null;},
     pairs:{stage:'clean',step:'Schedule the final inspection',last:true},
-    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_PERMIT.test(n)&&!/\bpermit/.test(n);},
+    when:(t,steps)=>{
+      const n=_timkAll(t,steps);const m=n.match(_TIMK_PERMIT);
+      return !!m&&!/\bpermit/.test(n)&&!(typeof timDropped==='function'&&timDropped('implied-key','access-permit:'+m[1].replace(/\s+/g,' ')));
+    },
+  },
+  // ── THE UNIT, AND WHAT IT HOOKS UP TO (owner, 2026-09-23) ────────────────
+  //
+  // "Tim should be smart enough to add in the model and venting requirements."
+  // Read as a sceptical couple, "Set a tankless" next to "anything added is a
+  // change order" read as the change order already waiting: no unit named, no
+  // gas line, no vent. These are what a tankless or high-efficiency swap
+  // actually hooks up to, said so the price covers them or he knows it does
+  // not.
+  {
+    id:'install-gas-size',
+    source:'trade',
+    stage:'rough',
+    step:'Check the gas line against the new unit\'s full load and upsize it where it falls short',
+    say:'The gas line, sized for the new unit',
+    because:'A gas tankless burns several times what a tank does. The old line is often too small, and it shows up as cold water halfway through a shower.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_TANKLESS.test(n)&&!_TIMK_ELECTRIC_TL.test(n)&&!_TIMK_GASLINE.test(n);},
+  },
+  {
+    id:'install-vent',
+    source:'trade',
+    stage:'install',
+    step:'Run new venting for the new unit, to the maker\'s instructions',
+    say:'Venting for the new unit',
+    because:'A tankless or high-efficiency unit seldom vents like the old one did. In the price, or it is the first change order.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_VENT_KIND.test(n)&&!_TIMK_ELECTRIC_TL.test(n)&&!_TIMK_VENTED.test(n);},
+  },
+  {
+    id:'install-condensate',
+    source:'trade',
+    stage:'install',
+    step:'Run the condensate drain for the new unit',
+    say:'Condensate drain',
+    because:'High-efficiency units make water. It needs somewhere to go besides the floor.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_CONDENSING.test(n)&&!_TIMK_ELECTRIC_TL.test(n)&&!_TIMK_CONDENSATE.test(n);},
+  },
+  // Not a step: a question. The unit is named inside his own install line
+  // ("Set a tankless, Navien NPE-240A") once he types it, so the customer
+  // reads what they are buying and what the warranty is on.
+  {
+    id:'detail-model',
+    source:'trade',
+    stage:'install',
+    ask:{label:'Make and model',placeholder:'e.g. Navien NPE-240A'},
+    say:'Name the unit',
+    because:'They are buying a unit. The make and model on the paper is what they get, and what the warranty is on.',
+    when:(t,steps)=>{
+      const raw=String(t||'')+' '+(steps||[]).map(x=>x&&typeof x==='object'?(x.text||''):String(x||'')).join(' ');
+      return _TIMK_EQUIP.test(_timkAll(t,steps))&&!_timkHasModel(raw);
+    },
   },
   {
     id:'access-scaffold',
@@ -890,6 +950,18 @@ const _TIMK_TESTED=/\b(test|tested|testing|pressure|pressured|leak ?check|leak ?
 function _timkAll(t,steps){return _timkNorm(t)+' '+(steps||[]).map(x=>_timkNorm(x&&typeof x==='object'?(x.text||''):x)).join(' ');}
 // The systems each trade rule listens for. Narrow, like the ones above.
 const _TIMK_PERMIT=/\b(panel|sub ?panel|service (change|upgrade)|(100|150|200|400) ?amp|new circuit|water heater|tankless|furnace|heat pump|air handler|condenser|boiler|mini ?split|gas line|re-?roof|new roof|tear ?off)\b/;
+const _TIMK_TANKLESS=/\b(tankless|on ?demand water heater)\b/;
+const _TIMK_ELECTRIC_TL=/\belectric (tankless|on ?demand)\b/;
+const _TIMK_GASLINE=/\b(gas lines?|gas pipe|gas piping|upsize|black iron|csst)\b/;
+const _TIMK_VENT_KIND=/\b(tankless|high efficiency|condensing|furnace|boiler)\b/;
+const _TIMK_VENTED=/\b(vent|venting|vents|vented|flue|exhaust|chimney|concentric|intake pipe)\b/;
+const _TIMK_CONDENSING=/\b(tankless|high efficiency|condensing|furnace|air handler)\b/;
+const _TIMK_CONDENSATE=/\b(condensate|neutralizer|drain line)\b/;
+const _TIMK_EQUIP=/\b(tankless|water heater|furnace|heat pump|air handler|condenser|boiler|mini ?split|ac unit|air conditioner|panel|sub ?panel|water softener)\b/;
+// A named unit: a maker he would say, or a model number (letters then digits,
+// the way they are printed on the plate). Read from what he typed, case and all.
+const _TIMK_BRANDS=/\b(navien|rinnai|rheem|ruud|noritz|takagi|bosch|a\.? ?o\.? smith|bradford white|carrier|bryant|trane|american standard|lennox|goodman|amana|daikin|mitsubishi|fujitsu|york|payne|heil|tempstar|square d|eaton|siemens|cutler hammer|leviton|kinetico|culligan|fleck|weil mclain|burnham|viessmann)\b/i;
+function _timkHasModel(raw){return _TIMK_BRANDS.test(raw)||/\b[A-Z]{1,6}-?\d{2,}[A-Z0-9-]*\b/.test(raw);}
 const _TIMK_COOLING=/\b(ac|a c|air conditioner|air conditioning|condenser|heat pump|mini ?split|evaporator coil|line ?set)\b/;
 const _TIMK_OUT=/\b(pull|pulling|remove|removing|swap|swapping|change out|changing out|replace|replacing|take out|tear out|old)\b/;
 const _TIMK_HVAC=/\b(furnace|heat pump|air handler|condenser|ac unit|air conditioner|mini ?split|boiler)\b/;
@@ -973,6 +1045,11 @@ function timImplied(said,steps,opts){
       supply:r.supply?Object.assign({},r.supply):null,
       pairs:r.pairs?Object.assign({},r.pairs):null,
       claims:r.claims||null,
+      // A question rather than a step, and steps that are his call. Neither is
+      // swept in by Add all.
+      ask:r.ask?Object.assign({},r.ask):null,
+      optIn:!!(r.optIn||r.ask),
+      learnKey:(()=>{try{return typeof r.learnKey==='function'?r.learnKey(said,steps||[]):null;}catch(_e){return null;}})(),
     });
   });
   // IN WORK ORDER, like everything else he hands back. The list used to come

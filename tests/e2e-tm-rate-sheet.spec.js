@@ -1828,6 +1828,8 @@ test.describe('the ceiling leads, not the guess', () => {
     // Contingent on unknowns (owner, 2026-09-23, §10.4).
     // Reworded 2026-09-23 (§10.4): "Unless ..." read as an open exception to
     // the ceiling; the same promise now says who can raise it and why.
-    expect(h).toContain('Only a change order you sign can raise it, and only for hidden damage found once work starts.');
+    // Widened 2026-09-23 (§10.4, owner): added work and a rush that needs a
+    // bigger crew raise it too, each only by a signed change order.
+    expect(h).toContain('Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.');
   });
 });

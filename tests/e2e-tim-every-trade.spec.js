@@ -105,6 +105,99 @@ test.describe('type it or talk to Tim, in every trade', () => {
     expect(bad).toEqual([]);
   });
 
+  // ── THE UNIT AND WHAT IT HOOKS UP TO (owner, 2026-09-23) ──────────────────
+  //
+  // "tim should be smart enough to add in the model and venting requirements".
+  const all = (said) => page.evaluate((s) => timScopeBuild(s, { rejected: [] }).implied.map(i => i.id), said);
+
+  test('a gas tankless: the gas line, the venting, the condensate, and which unit', async () => {
+    const ids = await all('pull the old water heater and set a tankless');
+    expect(ids).toEqual(expect.arrayContaining(['install-gas-size', 'install-vent', 'install-condensate', 'detail-model']));
+  });
+
+  test('an electric tankless has no gas line and no flue to ask about', async () => {
+    const ids = await all('pull the old water heater and set an electric tankless');
+    ['install-gas-size', 'install-vent', 'install-condensate'].forEach(id => expect(ids, id).not.toContain(id));
+  });
+
+  test('quiet when he said it: the unit named, the vent and gas line in his words', async () => {
+    const ids = await all('pull the old water heater, upsize the gas line, set a Navien NPE-240A tankless, run new venting and the condensate line to the drain');
+    ['install-gas-size', 'install-vent', 'install-condensate', 'detail-model'].forEach(id => expect(ids, id).not.toContain(id));
+    // A model number alone is enough, no maker needed.
+    expect(await all('swap the furnace for a new 96% furnace, model GMVC960803BN')).not.toContain('detail-model');
+  });
+
+  test('a paint job has no unit to name', async () => {
+    expect(await all('paint the kitchen walls and ceiling two coats')).not.toContain('detail-model');
+  });
+
+  // The permit is his call (owner: "not every job requires a permit or
+  // inspection though"). Asked, never swept in, and he is only asked twice.
+  const tmMissed = (said) => page.evaluate((s) => {
+    document.querySelectorAll('.zmodal-overlay,#_style-pick-ov').forEach(e => e.remove());
+    clients.length = 0; bids.length = 0;
+    clients.push({ id: 94002, name: 'Sam Ortiz', addr: '412 Bell St, Topeka, KS 66603' });
+    currentClientId = 94002; _activeTrade = 'plumbing';
+    openTMEstimate(getClientById(94002));
+    document.getElementById('gei-scope-say').value = s;
+    _geiScopeBuild('tm-scope-wrap');
+  }, said);
+
+  test('Add all leaves the permit and the unit for him', async () => {
+    await tmMissed('pull the old water heater and set a tankless');
+    const r = await page.evaluate(() => {
+      const pill = [...document.querySelectorAll('#tm-scope-wrap button')].find(b => /^Add all/.test(b.textContent));
+      const before = _geiScopeMissed.length;
+      _geiScopeTakeAllMissed();
+      return { pill: pill && pill.textContent, before, left: _geiScopeMissed.map(m => m.id).sort(), chips: _geiScopeChips.slice() };
+    });
+    expect(r.left).toEqual(['access-permit', 'detail-model']);
+    expect(r.pill).toBe('Add all ' + (r.before - 2));
+    expect(r.chips.join(' ')).not.toMatch(/permit/i);
+  });
+
+  test('he names the unit and it goes into his own line; blank does nothing', async () => {
+    await tmMissed('pull the old water heater and set a tankless');
+    const r = await page.evaluate(() => {
+      _geiScopeTakeMissed('detail-model');
+      const blank = { chips: _geiScopeChips.slice(), still: _geiScopeMissed.some(m => m.id === 'detail-model') };
+      document.getElementById('tim-ask-detail-model').value = 'Rinnai RE199iN';
+      _geiScopeTakeMissed('detail-model');
+      return { blank, chips: _geiScopeChips.slice(), still: _geiScopeMissed.some(m => m.id === 'detail-model') };
+    });
+    expect(r.blank.still).toBe(true);
+    expect(r.blank.chips).toEqual(['Pull the old water heater', 'Set a tankless']);
+    expect(r.chips).toEqual(['Pull the old water heater', 'Set a tankless, Rinnai RE199iN']);
+    expect(r.still).toBe(false);
+  });
+
+  test('the answer field is big enough for a thumb and does not zoom the page', async () => {
+    await tmMissed('pull the old water heater and set a tankless');
+    const r = await page.evaluate(() => {
+      const f = document.getElementById('tim-ask-detail-model');
+      const b = f.getBoundingClientRect();
+      return { h: b.height, fs: parseFloat(getComputedStyle(f).fontSize) };
+    });
+    expect(r.h).toBeGreaterThanOrEqual(44);
+    expect(r.fs).toBeGreaterThanOrEqual(16);
+  });
+
+  test('turned down twice on water heaters, he stops asking there, and still asks on a panel', async () => {
+    const r = await page.evaluate(() => {
+      const st = (typeof _timStore === 'function') ? _timStore() : null;
+      if (st) Object.keys(st).filter(k => /access-permit/.test(k)).forEach(k => delete st[k]);
+      const offered = s => timScopeBuild(s, { rejected: [] }).implied.some(i => i.id === 'access-permit');
+      const drop = s => { const im = timScopeBuild(s, { rejected: [] }).implied.find(i => i.id === 'access-permit'); _timMissLearn(im, false); };
+      drop('pull the old water heater and set a tankless');
+      const afterOne = offered('swap the water heater');
+      drop('pull the old water heater and set a new one');
+      return { afterOne, afterTwo: offered('swap the water heater'), panel: offered('swap the old panel for a 200 amp') };
+    });
+    expect(r.afterOne).toBe(true);
+    expect(r.afterTwo).toBe(false);
+    expect(r.panel).toBe(true);
+  });
+
   // ── THE BOX ───────────────────────────────────────────────────────────────
 
   const openFor = (trade, voice) => page.evaluate(([t, v]) => {

@@ -176,7 +176,7 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
     expect(r.markupVar).toBe('undefined');
   });
 
-  test('the ceiling is the most they pay, unless hidden damage needs a change order they sign', async () => {
+  test('the ceiling is the most they pay: hidden damage, added work or a rush raise it only by a signed change order', async () => {
     await open({ addr: '412 Bell St, Topeka, KS 66603', cap: 4500 });
     const r = await page.evaluate(async () => {
       let doc = ''; const o = window._showProposalPreviewOverlay;
@@ -186,12 +186,15 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
     });
     expect(r.doc).toContain('Most you&apos;ll pay');
     // Reworded 2026-09-23 (§10.4) after a read-through as two sceptical
-    // customers: "Unless hidden damage turns up" read as an open exception
-    // ("Who decides what counts? The man paid by the hour."). Same promise,
-    // the owner's: only a signed change order, only for hidden damage.
-    expect(r.doc).toContain('Only a change order you sign can raise it, and only for hidden damage found once work starts.');
-    expect(r.terms).toContain('not to exceed $4,500');
-    expect(r.terms).toContain('exceeded only by a written change order signed by Buyer, for hidden damage');
+    // customers: "Unless hidden damage turns up" read as an open exception.
+    // Widened the same day by the owner: "changes added by clients can be
+    // covered or a rush request to get the job done equals more men on it
+    // therefore increased cost". Three reasons, each only by a signed change
+    // order, on the page and in the contract clause alike.
+    expect(r.doc).toContain('Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.');
+    expect(r.terms).toContain('exceeded only by a written change order signed by Buyer, and only for (a) hidden damage');
+    expect(r.terms).toContain('(b) work Buyer adds or changes');
+    expect(r.terms).toContain('takes a larger crew or overtime');
   });
 
   // ── WHAT IS OFFERED ───────────────────────────────────────────────────────

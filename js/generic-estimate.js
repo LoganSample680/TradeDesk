@@ -2056,8 +2056,8 @@ function _geiScopeBuild(containerId){
   // (prep-consumables is primer, masking and sandpaper) and those belong on the
   // supply list, not numbered on a contract a homeowner signs. A rule with a
   // `step` is a thing you do; a rule without one is a thing you buy.
-  _geiScopeMissed=(built.implied||[]).filter(im=>im&&im.step)
-    .filter(im=>!_geiScopeChips.some(c=>String(c).toLowerCase()===String(im.step).toLowerCase()));
+  _geiScopeMissed=(built.implied||[]).filter(im=>im&&(im.step||im.ask))
+    .filter(im=>!im.step||!_geiScopeChips.some(c=>String(c).toLowerCase()===String(im.step).toLowerCase()));
   _geiScopeNoScope=false;
   // CARD FIRST, ROWS SECOND. _geiRenderScopeCard rebuilds the wrap the rows
   // live in, so painting them before it throws them away, which is how the
@@ -2077,7 +2077,7 @@ function _geiScopeMissedHtml(){
     // TIM'S OWN CARD (2026-09-23). The same white rows under a grey label made
     // what Tim thinks was forgotten look like part of the job. Tinted, his mark
     // on it, and a filled Add, so "in the job" and "Tim's idea" never blur.
-    const n=_geiScopeMissed.length;
+    const n=_timMissTakeable(_geiScopeMissed).length;
     const ed=_tmScopeEditing;
     return '<div class="ios-sec">'+
       '<div class="ios-group ios-tim">'+
@@ -2087,13 +2087,14 @@ function _geiScopeMissedHtml(){
         '</div>'+
         _geiScopeMissed.map(im=>{
           const id=escHtml(JSON.stringify(String(im.id||'')));
+          if(im.ask)return _timMissAskRow(im,'_geiScopeTakeMissed','_geiScopeDropMissed');
           return '<div class="ios-swipe" data-kind="missed">'+
             '<div class="ios-row">'+
               (ed?'<button type="button" class="ios-minus" aria-label="Not needed" onclick="_geiScopeDropMissed('+id+')">−</button>':'')+
               // The reason is a tap on the words away. Four paragraphs in a
               // row was a manual; the step names alone read like a list.
               '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
-              '<button type="button" class="ios-pill'+(n>1?' ghost':'')+'" onclick="_geiScopeTakeMissed('+id+')">Add</button>'+
+              '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_geiScopeTakeMissed('+id+')">Add</button>'+
             '</div>'+
             '<button type="button" class="ios-del" tabindex="-1" onclick="_geiScopeDropMissed('+id+')">Not needed</button>'+
           '</div>';
@@ -2101,7 +2102,7 @@ function _geiScopeMissedHtml(){
       '</div>'+
     '</div>';
   }
-  const rows=_geiScopeMissed.map(im=>
+  const rows=_geiScopeMissed.filter(im=>!im.ask).map(im=>
     '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(im.say||'')+'</div>'+
@@ -2114,11 +2115,12 @@ function _geiScopeMissedHtml(){
         'aria-label="No" style="flex-shrink:0;align-self:center;border:0;background:none;color:var(--text3);'+
         'font-size:17px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1;font-family:inherit">×</button>'+
     '</div>').join('');
-  const all=_geiScopeMissed.length>1
+  const _nAll=_timMissTakeable(_geiScopeMissed).length;
+  const all=_nAll>1
     ? '<button type="button" onclick="_geiScopeTakeAllMissed()" style="margin-left:auto;flex-shrink:0;'+
       'padding:5px 11px;border-radius:var(--r-pill,999px);border:0;background:var(--ink);'+
       'color:var(--text-cream,#fff);font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">'+
-      'Add all '+_geiScopeMissed.length+'</button>'
+      'Add all '+_nAll+'</button>'
     : '';
   return '<div style="border-top:1px solid var(--border);background:var(--bg2)">'+
     '<div style="display:flex;align-items:center;gap:8px;padding:11px 16px 2px">'+
@@ -2182,9 +2184,65 @@ function _geiScopePlace(text,stage,last){
   _geiScopeChips.push(t);
 }
 
+// ── TIM'S QUESTIONS AND HIS CALLS ───────────────────────────────────────────
+// A missed item with `ask` is a question (the unit's make and model): the
+// answer goes into his own install line, never a line of its own. One with
+// `optIn` (the permit) is his call, so Add all leaves it for him to tap.
+function _timMissAskVal(id){
+  const el=document.getElementById('tim-ask-'+String(id));
+  return el?String(el.value||'').trim():'';
+}
+function _timMissAskNeed(id){
+  const el=document.getElementById('tim-ask-'+String(id));
+  if(el){try{el.focus();}catch(_e){}}
+  if(typeof showToast==='function')showToast('Type the make and model first');
+}
+// The line the unit goes into: his install step that names the equipment,
+// else any step that does. Returns the index, or -1.
+function _timMissAskTarget(texts){
+  const eq=/\b(tankless|water heater|furnace|heat pump|air handler|condenser|boiler|mini ?split|ac unit|air conditioner|panel|sub ?panel|water softener)\b/i;
+  const st=t=>(typeof timStageOf==='function'?timStageOf(t):null);
+  let i=texts.findIndex(t=>eq.test(t)&&st(t)==='install');
+  if(i<0)i=texts.findIndex(t=>eq.test(t)&&st(t)!=='demo'&&!/\bold\b/i.test(t));
+  return i;
+}
+function _timMissLearn(im,yes){
+  if(typeof timLearn!=='function')return;
+  try{timLearn('implied',im.id,yes);if(im.learnKey)timLearn('implied-key',im.id+':'+im.learnKey,yes);}catch(_e){}
+}
+// The question row: what Tim wants to know, why, and the field for the answer
+// with its own Add. Enter adds too, the way the keyboard's Done key should.
+function _timMissAskRow(im,take,drop){
+  const id=escHtml(JSON.stringify(String(im.id||'')));
+  const fid='tim-ask-'+escHtml(String(im.id||''));
+  return '<div class="ios-swipe ios-ask" data-kind="ask">'+
+    '<div class="ios-row"><span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span></div>'+
+    '<div class="ios-row ios-ask-row">'+
+      '<input id="'+fid+'" class="ios-ask-in" type="text" autocomplete="off" autocapitalize="words" enterkeyhint="done" '+
+        'aria-label="'+escHtml((im.ask&&im.ask.label)||'Answer')+'" placeholder="'+escHtml((im.ask&&im.ask.placeholder)||'')+'" '+
+        'onkeydown="if(event.key===\'Enter\'){event.preventDefault();'+take+'('+id+');}">'+
+      '<button type="button" class="ios-pill" onclick="'+take+'('+id+')">Add</button>'+
+    '</div>'+
+    '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
+  '</div>';
+}
+function _timMissTakeable(list){return (list||[]).filter(im=>!im.optIn&&!im.ask);}
+
 function _geiScopeTakeMissed(id){
   const im=_geiScopeMissed.filter(x=>String(x.id)===String(id))[0];
   if(!im)return;
+  if(im.ask){
+    const val=_timMissAskVal(id);
+    if(!val){_timMissAskNeed(id);return;}
+    const i=_timMissAskTarget(_geiScopeChips.map(String));
+    if(i>=0)_geiScopeChips[i]=String(_geiScopeChips[i]).replace(/[,\s]+$/,'')+', '+val;
+    else _geiScopePlace('Set the '+val,im.stage||'install',false);
+    _timMissLearn(im,true);
+    _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
+    ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+    if(typeof _byoAutosave==='function')_byoAutosave();
+    return;
+  }
   // `say` is the correction, `step` is the line. "Scaffold goes up before
   // anything is stripped" is Tim talking to the contractor; a homeowner reading
   // the contract gets "Set scaffold".
@@ -2195,7 +2253,7 @@ function _geiScopeTakeMissed(id){
   if(im.pairs&&im.pairs.step)_geiScopePlace(im.pairs.step,im.pairs.stage,!!im.pairs.last);
   // Accepted makes it a fact he keeps. Rule 3, and the same n:1 the price book
   // already uses.
-  if(typeof timLearn==='function')try{timLearn('implied',im.id,true);}catch(_e){}
+  _timMissLearn(im,true);
   _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
   ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
   if(typeof _byoAutosave==='function')_byoAutosave();
@@ -2208,11 +2266,12 @@ function _geiScopeTakeMissed(id){
 // yes; the only thing saved is his thumb. Offered from two up, because "Add all
 // one" is not a sentence.
 function _geiScopeTakeAllMissed(){
-  _geiScopeMissed.slice().forEach(im=>_geiScopeTakeMissed(im.id));
+  _timMissTakeable(_geiScopeMissed).forEach(im=>_geiScopeTakeMissed(im.id));
 }
 
 function _geiScopeDropMissed(id){
-  if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
+  const _im=_geiScopeMissed.find(x=>String(x.id)===String(id));
+  if(_im)_timMissLearn(_im,false);else if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
   _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
   ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
 }
@@ -2862,37 +2921,50 @@ function _byoSayBuild(){
   if(!built.steps.length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}
   const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
   built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text);have.add(st.text.toLowerCase());}});
-  _byoMissed=(built.implied||[]).filter(im=>im&&im.step&&!have.has(String(im.step).toLowerCase()));
+  _byoMissed=(built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
   _byoSayOpen=false;
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
 }
 function _byoTakeMissed(id){
   const im=_byoMissed.find(x=>String(x.id)===String(id));if(!im)return;
+  if(im.ask){
+    const val=_timMissAskVal(id);
+    if(!val){_timMissAskNeed(id);return;}
+    const on=_byoItems.filter(it=>it&&!it._rrp);
+    const i=_timMissAskTarget(on.map(it=>String(it.label||'')));
+    if(i>=0)on[i].label=String(on[i].label).replace(/[,\s]+$/,'')+', '+val;
+    else _byoAddLine('Set the '+val);
+    _timMissLearn(im,true);
+    _byoMissed=_byoMissed.filter(x=>x!==im);
+    _byoRenderSections();_byoUpdateRail();_byoAutosave();
+    return;
+  }
   _byoAddLine(im.step);
   if(im.pairs&&im.pairs.step)_byoAddLine(im.pairs.step);
-  if(typeof timLearn==='function')try{timLearn('implied',im.id,true);}catch(_e){}
+  _timMissLearn(im,true);
   _byoMissed=_byoMissed.filter(x=>x!==im);
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
 }
-function _byoTakeAllMissed(){_byoMissed.slice().forEach(im=>_byoTakeMissed(im.id));}
+function _byoTakeAllMissed(){_timMissTakeable(_byoMissed).forEach(im=>_byoTakeMissed(im.id));}
 function _byoDropMissed(id){
   const im=_byoMissed.find(x=>String(x.id)===String(id));if(!im)return;
-  if(typeof timLearn==='function')try{timLearn('implied',im.id,false);}catch(_e){}
+  _timMissLearn(im,false);
   _byoMissed=_byoMissed.filter(x=>x!==im);
   _byoRenderSections();
 }
 function _byoMissedHtml(){
   if(!_byoMissed.length)return '';
-  const n=_byoMissed.length;
+  const n=_timMissTakeable(_byoMissed).length;
   return '<div class="ios-sec"><div class="ios-group ios-tim">'+
     '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+'<span class="who">You did not say</span>'+
       (n>1?'<button type="button" class="ios-pill" onclick="_byoTakeAllMissed()">Add all '+n+'</button>':'')+'</div>'+
     _byoMissed.map(im=>{
       const id=escHtml(JSON.stringify(String(im.id||'')));
+      if(im.ask)return _timMissAskRow(im,'_byoTakeMissed','_byoDropMissed');
       return '<div class="ios-swipe" data-kind="missed"><div class="ios-row">'+
         '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
-        '<button type="button" class="ios-pill'+(n>1?' ghost':'')+'" onclick="_byoTakeMissed('+id+')">Add</button></div>'+
+        '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_byoTakeMissed('+id+')">Add</button></div>'+
         '<button type="button" class="ios-del" tabindex="-1" onclick="_byoDropMissed('+id+')">Not needed</button></div>';
     }).join('')+
   '</div></div>';
@@ -5424,7 +5496,10 @@ function _tmApplyLayers(){
   if(nteS)nteS.textContent=!_tmLayers.has('cap')?''
     :rule.capOverEst
     ?_tmStateName(rule.state)+' sets the most it can cost: your estimate plus ten percent. It fills in on its own.'
-    :'Past the most it can cost, hidden damage is a change order they sign.';
+    // Owner, 2026-09-23: "changes added by clients can be covered or a rush
+    // request to get the job done equals more men on it therefore increased
+    // cost for T&M". Three reasons, each only by a change order they sign.
+    :'Past the most it can cost: hidden damage, work they add, or a rush that needs more crew. Each is a change order they sign.';
   const matH=document.getElementById('tm-mat-head');
   if(matH)matH.textContent='Material categories';
   // Last, so every figure it reads is the one this pass just settled.
@@ -7258,7 +7333,7 @@ function _geiBuildTermsHtml(){
   const _tmRateClause=_tmShowRateOnDoc()?[['Rate',
     `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
-    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}. This amount may be exceeded only by a written change order signed by Buyer, for hidden damage or conditions that could not be seen before work began`:' (T&amp;M)'}`],
+    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}. This amount may be exceeded only by a written change order signed by Buyer, and only for (a) hidden damage or conditions that could not be seen before work began, (b) work Buyer adds or changes, or (c) Buyer&apos;s request to finish sooner than scheduled, where that takes a larger crew or overtime`:' (T&amp;M)'}`],
     ..._tmRateClause,
     ['Cancellation &amp; Deposits',_cancelClause],
     // Time sheets, not receipts: receipts never go on a bill (owner,
@@ -7531,7 +7606,9 @@ async function sendGenericProposal(previewOnly,opts){
   // the max price it could be, contingent on unknowns"). The ceiling holds
   // unless hidden damage turns up, and even then only by a change order they
   // sign: said here in their words, and in the contract terms in full.
-  const _tmCapFine='<div style="font-size:10px;font-weight:500;opacity:.8;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it, and only for hidden damage found once work starts.</div>';
+  // Widened the same day (owner): work the customer adds or changes, and a
+  // rush that takes more crew, raise it too, by the same signed change order.
+  const _tmCapFine='<div style="font-size:10px;font-weight:500;opacity:.8;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
@@ -7851,7 +7928,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it, and only for hidden damage found once work starts.</div>':(_byoEst?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`+_balRow;
+    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.</div>':(_byoEst?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`+_balRow;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't

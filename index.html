@@ -1613,6 +1613,10 @@ body.dark :is(#gei-tm-page,#gei-byo-page) .ios-group{box-shadow:none}
    was the same white rows under a grey label, one list running into the next.
    Now it is Tim's own tinted card, with his mark, and a filled Add on each. */
 :is(#gei-tm-page,#gei-byo-page) .ios-tim{background:var(--blue-lt)!important;box-shadow:none!important}
+/* Tim's question: the answer field sits on its own row under the question, full width, 16px so iOS does not zoom. */
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-row{gap:10px;padding-top:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-in{flex:1;min-width:0;min-height:44px;box-sizing:border-box;padding:0 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;font-size:16px}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-in:focus{outline:none;border-color:var(--ios-tint)}
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-row{background:var(--blue-lt)}
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-row::after{background:var(--ios-tint);opacity:.22}
 :is(#gei-tm-page,#gei-byo-page) .ios-tim-h{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}

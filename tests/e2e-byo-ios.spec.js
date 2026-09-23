@@ -133,9 +133,11 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     const missed = await page.evaluate(() => _byoMissed.length);
     expect(missed).toBeGreaterThan(1);
     await page.evaluate(() => _byoTakeAllMissed());
-    const r = await page.evaluate(() => ({ n: _byoItems.length, left: _byoMissed.length, labels: _byoItems.map(x => x.label) }));
-    expect(r.left).toBe(0);
-    expect(r.n).toBeGreaterThan(before + missed - 1);
+    const r = await page.evaluate(() => ({ n: _byoItems.length, left: _byoMissed.map(m => m.id).sort(), labels: _byoItems.map(x => x.label) }));
+    // 2026-09-23 (§10.4, owner): the permit is his call ("not every job
+    // requires a permit") and the unit is his to name, so Add all leaves both.
+    expect(r.left).toEqual(['access-permit', 'detail-model']);
+    expect(r.n).toBe(before + missed - 2);
     expect(new Set(r.labels).size).toBe(r.labels.length);
   });
 

@@ -60,7 +60,14 @@ test.describe('the proposal closes: Hetty and Barry', () => {
       _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
       document.getElementById('byo-say').value = said;
       _byoSayBuild();
-      if (take) _byoTakeAllMissed();
+      // Add all, then his two calls: the permit is his (not every job needs
+      // one) and the unit is his to name.
+      if (take) {
+        _byoTakeAllMissed();
+        if (_byoMissed.some(m => m.id === 'access-permit')) _byoTakeMissed('access-permit');
+        const f = document.getElementById('tim-ask-detail-model');
+        if (f) { f.value = 'Navien NPE-240A'; _byoTakeMissed('detail-model'); }
+      }
       _byoItems.forEach(it => { if (!(it.price > 0)) { it.price = 500; it.rate = 500; } });
       _byoRenderSections(); _byoUpdateRail();
       let d = ''; const real = window._showProposalPreviewOverlay;
@@ -77,6 +84,7 @@ test.describe('the proposal closes: Hetty and Barry', () => {
       document.getElementById('gei-scope-say').value = said;
       _geiScopeBuild('tm-scope-wrap');
       _geiScopeTakeAllMissed();
+      if (_geiScopeMissed.some(m => m.id === 'access-permit')) _geiScopeTakeMissed('access-permit');
       let d = ''; const real = window._showProposalPreviewOverlay;
       window._showProposalPreviewOverlay = h => { d = h; };
       try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = real; }
@@ -155,6 +163,16 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     let next = 1;
     nums.forEach(([start, n]) => { expect(start).toBe(next); next += n; });
     expect(next - 1).toBe(lines.length);
+  });
+
+  // Owner 2026-09-23: "tim should be smart enough to add in the model and
+  // venting requirements". What the couple read as the change order waiting.
+  test('the unit is named, and what it hooks up to is in the price', async () => {
+    const t = await text((await byoDoc(JOB)).html);
+    expect(t).toContain('Set a tankless, Navien NPE-240A');
+    expect(t).toMatch(/gas line against the new unit/);
+    expect(t).toMatch(/venting for the new unit/);
+    expect(t).toMatch(/condensate drain/);
   });
 
   test('Barry sees the steps he would have skipped, written for him', async () => {
