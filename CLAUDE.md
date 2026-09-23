@@ -1978,6 +1978,24 @@ supposed to be. That design is gone. The rule now:
   `tests/e2e-geo-derive-gone.spec.js` fails CI if any of the deleted names
   come back.
 
+### 17.1 On Time Is Measured Every Workday (owner rule 2026-09-23)
+
+Owner: *"I want to see on time shit within 10 seconds 100% of the time."* The
+goal is every motion flip on the server within 10 seconds of happening, for
+every user, during working hours. It is measured, not guessed.
+
+- **One definition:** `scripts/ops/on-time-report.sql`. Read-only, one row per
+  person per Central day, 6am to 6pm, last seven days. Change the definition
+  there and nowhere else, and say so in the report when you do.
+- **A routine runs it at 7pm Central, Monday to Saturday**, into the session
+  that owns geo work. The report to the owner is short: each person's % within
+  10s today against the week, the biggest cause of the misses, and ONE proposed
+  fix. Nothing gets built until the owner says go; this is a loop run together.
+- **Find the cause in the data before proposing a fix.** `late_on_open` means
+  the phone held the flip until someone opened the app; `recovered` means the
+  native backfill found it. A fix must name which bucket it moves.
+- A day that gets worse is reported the same way as a day that gets better.
+
 ---
 
 ## 18. Metrics Are Data: One Definition, Many Mouths (owner rule 2026-09-17)
