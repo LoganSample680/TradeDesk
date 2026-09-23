@@ -358,9 +358,12 @@ test.describe('Photo capture: the sheet itself', () => {
   // defect this guards is the same one: a missing token rendering nothing.
   test('the ghost hint has a real background, and the chosen stage reads as chosen', async () => {
     await page.evaluate(() => { photos.push({ id: 77, type: 'before', url: '', thumbUrl: '', client_id: 501, bid_id: 901, job_id: null, uploadedAt: new Date().toISOString() }); tdCaptureForBid(901, 'after'); });
-    const r = await page.evaluate(() => {
+    const r = await page.evaluate(async () => {
       const hint = document.getElementById('pc-hint');
       tdCaptureSetType('before');
+      // The word fades to yellow over .15s, and WebKit reports the colour
+      // mid-fade (CI, 2026-09-23), so read it once the fade has landed.
+      await new Promise(res => setTimeout(res, 260));
       const segOn = document.querySelector('#pc-sheet .pc-seg-btn.on');
       const segOff = document.querySelector('#pc-sheet .pc-seg-btn:not(.on)');
       return { hintBg: getComputedStyle(hint).backgroundColor, on: getComputedStyle(segOn).color, off: getComputedStyle(segOff).color, onText: segOn.textContent };
