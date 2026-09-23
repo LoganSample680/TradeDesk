@@ -3749,14 +3749,17 @@ extension TdGeoPluginTests {
     }
 
     func testFreshRows_anAcknowledgedNumberIsNeverResent() {
-        let buf: [[String: Any]] = (1...5).map { ["type": "fix", "ts": Double(1000 + $0), "seq": Double($0)] }
+        let buf: [[String: Any]] = (1...5).map { i -> [String: Any] in
+            ["type": "fix", "ts": Double(1000 + i), "seq": Double(i)]
+        }
         XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 0, seqMark: 5).count, 0)
         XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 9_999, seqMark: 3).count, 2,
                        "numbered rows ignore the capture-time mark entirely")
     }
 
     func testFreshRows_junkNumbersFallBackToTheTimestamp() {
-        for junk: Any in ["7", -3.0, 0.0, Double.nan, Double.infinity, NSNull(), [1], ["a": 1]] {
+        let junks: [Any] = ["7", -3.0, 0.0, Double.nan, Double.infinity, NSNull(), [1], ["a": 1]]
+        for junk in junks {
             let buf: [[String: Any]] = [["type": "fix", "ts": 500.0, "seq": junk]]
             XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 400, seqMark: 1_000_000).count, 1,
                            "\(junk) is not a number, so the row is judged by its time")

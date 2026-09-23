@@ -1690,7 +1690,6 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     var recordSeqKeyForTest: String { recordSeqKey }
     var flushSeqMarkKeyForTest: String { flushSeqMarkKey }
     var flushInflightSeqKeyForTest: String { flushInflightSeqKey }
-    func recordForTest(_ ev: [String: Any]) { record(ev) }
     var flushSessionForTest: URLSession { flushSession }
     var liveSessionForTest: URLSession { liveSession }
     func inflightKeyForTest(_ s: URLSession, _ t: URLSessionTask) -> String { inflightKey(s, t) }
