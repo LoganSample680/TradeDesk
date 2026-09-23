@@ -2771,3 +2771,114 @@ test.describe('TrueShot: module state is lexical, not on window', () => {
     expect(r.onWindow).toBe('undefined');
   });
 });
+
+// ── GPS in the FILE, proven on the bytes that are uploaded ──────────────────
+// Every piece of this passed its own test the first time and the whole still
+// shipped broken: the EXIF writer was right, the splice was right, and the
+// photos in storage had no GPS in them, because _pcCommit uploaded BEFORE it
+// asked for a position (owner, 2026-09-23: "where's the gps meta data in the
+// photo?"). So this does not test a piece. It drives the capture commit with a
+// warm fix, catches the exact blob handed to storage, and reads the GPS back
+// out of it.
+test.describe('TrueShot: the uploaded file carries its GPS', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const readUploaded = () => page.evaluate(async () => {
+    const saved = { en: supaEnabled, user: _supaUser, supa: _supa };
+    const bodies = [];
+    try {
+      // Force the online path and catch every body the app uploads.
+      supaEnabled = () => true;
+      _supaUser = { id: 'u-gps' };
+      _supa = { storage: { from: () => ({
+        upload: async (path, body) => { bodies.push({ path, body }); return { error: null }; },
+        getPublicUrl: (path) => ({ data: { publicUrl: 'https://x/' + path } }),
+        remove: async () => ({ error: null }),
+      }) } };
+      photos.length = 0;
+      // A real 1200x1600 frame, so the display copy is a genuine JPEG encode.
+      const c = document.createElement('canvas'); c.width = 1200; c.height = 1600;
+      const g = c.getContext('2d'); g.fillStyle = '#7a8a99'; g.fillRect(0, 0, 1200, 1600);
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+      // The camera's warm fix, as the viewfinder's watch would have left it.
+      _pcFix = { lat: 39.03078738591014, lon: -95.7202, acc: 10, t: Date.now() };
+      _pcCtx = { type: 'before', caption: '', clientId: null, bidId: null, jobId: null };
+      await _pcCommit(blob);
+    } finally {
+      supaEnabled = saved.en; _supaUser = saved.user; _supa = saved.supa;
+      _pcFix = null; _pcCtx = null;
+    }
+    // Read GPS back out of each uploaded JPEG, independently of the writer.
+    const gpsOf = async (b) => {
+      const d = new Uint8Array(await b.arrayBuffer());
+      if (d[0] !== 0xFF || d[1] !== 0xD8) return { jpeg: false };
+      let i = 2, app1 = null;
+      while (i < d.length - 1 && d[i] === 0xFF) {
+        const m = d[i + 1]; if (m === 0xDA) break;
+        const len = (d[i + 2] << 8) | d[i + 3];
+        if (m === 0xE1 && String.fromCharCode(...d.slice(i + 4, i + 8)) === 'Exif') app1 = d.slice(i + 10, i + 2 + len);
+        i += 2 + len;
+      }
+      if (!app1) return { jpeg: true, exif: false };
+      const be = app1[0] === 0x4D, u16 = (o) => be ? (app1[o] << 8) | app1[o + 1] : app1[o] | (app1[o + 1] << 8);
+      const u32 = (o) => be ? ((app1[o] << 24) | (app1[o + 1] << 16) | (app1[o + 2] << 8) | app1[o + 3]) >>> 0
+                            : (app1[o] | (app1[o + 1] << 8) | (app1[o + 2] << 16) | (app1[o + 3] << 24)) >>> 0;
+      const ifd = (o) => { const n = u16(o), t = {}; for (let k = 0; k < n; k++) { const e = o + 2 + k * 12; t[u16(e)] = e; } return t; };
+      const i0 = ifd(u32(4));
+      if (!i0[0x8825]) return { jpeg: true, exif: true, gps: false };
+      const g = ifd(u32(i0[0x8825] + 8));
+      const dms = (tag) => { const o = u32(g[tag] + 8); let v = 0; [1, 60, 3600].forEach((div, k) => { v += u32(o + k * 8) / u32(o + k * 8 + 4) / div; }); return v; };
+      const ref = (tag) => String.fromCharCode(app1[g[tag] + 8]);
+      return { jpeg: true, exif: true, gps: true,
+        lat: dms(2) * (ref(1) === 'S' ? -1 : 1), lon: dms(4) * (ref(3) === 'W' ? -1 : 1) };
+    };
+    const out = [];
+    for (const x of bodies) out.push({ path: x.path, ...(await gpsOf(x.body)) });
+    const row = photos[photos.length - 1];
+    return { out, rowLat: row && row.lat, rowAcc: row && row.accM };
+  });
+
+  test('the photo stored in the cloud has GPS in the file, not just on the row', async () => {
+    const r = await readUploaded();
+    const main = r.out.find(x => !/\/t-/.test(x.path) && !/\/f-/.test(x.path));
+    expect(main, 'the display copy was uploaded').toBeTruthy();
+    expect(main.exif, 'it has an EXIF block').toBe(true);
+    expect(main.gps, 'and that block has GPS in it').toBe(true);
+    expect(Math.abs(main.lat - 39.03078738591014)).toBeLessThan(1e-6);
+    expect(Math.abs(main.lon - -95.7202)).toBeLessThan(1e-6);
+    // and the row agrees with the file, accuracy included
+    expect(r.rowLat).toBeCloseTo(39.03078738591014, 6);
+    expect(r.rowAcc).toBe(10);
+  });
+
+  test('the fix a shot takes is the camera\'s own warm one, with its accuracy', async () => {
+    const r = await page.evaluate(() => {
+      _pcFix = { lat: 39.1, lon: -95.1, acc: 7, t: Date.now() };
+      const fresh = _pcCurrentFix();
+      _pcFix = { lat: 39.1, lon: -95.1, acc: 7, t: Date.now() - 10 * 60000 };
+      const stale = _pcCurrentFix();
+      _pcFix = null;
+      return { fresh, staleLat: stale.lat };
+    });
+    expect(r.fresh).toEqual({ lat: 39.1, lon: -95.1, acc: 7 });
+    // ten minutes old is a different place for somebody in a truck
+    expect(r.staleLat).not.toBe(39.1);
+  });
+
+  test('the shutter fires at the capture, before the slow encode', async () => {
+    const order = await page.evaluate(() => {
+      const src = String(tdCaptureShoot || '');
+      return { flashAt: src.indexOf('_pcFlash()'), encodeAt: src.indexOf('toBlob') };
+    });
+    expect(order.flashAt, 'the flash is in the shutter path').toBeGreaterThan(-1);
+    expect(order.flashAt, 'and it comes before the JPEG encode').toBeLessThan(order.encodeAt);
+  });
+});

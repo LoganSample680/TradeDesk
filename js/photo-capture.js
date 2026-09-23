@@ -64,7 +64,7 @@ async function tdSavePhoto(opts){
     // rendered: "it looks blurry" is otherwise unanswerable after the fact.
     shotPx:(typeof _pcShotPx==='string'?_pcShotPx:''),
     // Metres of uncertainty on the fix above, straight from the GPS.
-    accM:null,
+    accM:opts.accM!=null?opts.accM:null,
     type,caption,
     client_id:clientId,client_name:c?c.name||'':'',
     bid_id:bidId,bid_name:b?(b.title||b.name||''):'',
@@ -1332,6 +1332,7 @@ function _pcSheetHTML(){
   '<input type="file" id="pc-fallback-file" accept="image/*" capture="environment" style="display:none" onchange="tdCaptureFromPicker(this)">';
 }
 async function _pcStartStream(){
+  _pcGpsStart();
   try{
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('no getUserMedia');
     // ── ASK THE CAMERA FOR THE CAMERA (owner 2026-09-22: "photos look a bit
@@ -1371,6 +1372,33 @@ async function _pcStartStream(){
 function _pcStopStream(){
   try{ if(_pcStream)_pcStream.getTracks().forEach(t=>t.stop()); }catch(_e){}
   _pcStream=null;
+  _pcGpsStop();
+}
+// ── WARM THE FIX WHILE THE CAMERA IS OPEN (2026-09-23) ──────────────────────
+// The GPS used to be requested AFTER the shot had already uploaded: _pcCommit
+// saved the photo, then _pcStampGeo asked for a position. Unless the phone
+// happened to hold a warm fix at the instant of the tap, the file went up with
+// no coordinates, the position landed on the database row a second later, and
+// the burned-in stamp had no address line either. Verified on the owner's own
+// photos: 3024x4032, coordinates on the row, a 68 byte stub in the file.
+//
+// So the fix is watched from the moment the viewfinder opens, which is also
+// how long a camera takes to be ready, and every shot takes whatever is
+// freshest. It still never WAITS on GPS: a photo must not be slower to take
+// because the phone is arguing with a satellite.
+let _pcFix=null,_pcGpsWatch=null;
+function _pcGpsStart(){
+  try{
+    if(_pcGpsWatch!=null||!navigator.geolocation)return;
+    _pcGpsWatch=navigator.geolocation.watchPosition(pos=>{
+      _pcFix={lat:pos.coords.latitude,lon:pos.coords.longitude,
+        acc:typeof pos.coords.accuracy==='number'?Math.round(pos.coords.accuracy):null,t:Date.now()};
+    },()=>{},{enableHighAccuracy:true,maximumAge:15000,timeout:20000});
+  }catch(_e){}
+}
+function _pcGpsStop(){
+  try{ if(_pcGpsWatch!=null&&navigator.geolocation)navigator.geolocation.clearWatch(_pcGpsWatch); }catch(_e){}
+  _pcGpsWatch=null;
 }
 function tdCaptureSetType(t){
   if(!_pcCtx)return;
@@ -1442,6 +1470,13 @@ async function tdCaptureShoot(){
   const cv=document.createElement('canvas');
   cv.width=v.videoWidth;cv.height=v.videoHeight;
   cv.getContext('2d').drawImage(v,0,0,cv.width,cv.height);
+  // THE SHUTTER IS HERE. drawImage is the instant the frame is captured, so
+  // that is when the flash fires. It used to fire after the JPEG encode below,
+  // which on a full 12MP frame is most of a second on a phone, so every shot
+  // felt like the button had been ignored (owner 2026-09-23: "why does it take
+  // a second for the photo shutter to hit"). The encode still happens, it just
+  // happens after the person already knows the picture was taken.
+  _pcFlash();
   // 0.98 because this blob is an INTERMEDIATE: _compressPhoto re-encodes it
   // into the display copy and the full copy, and every generation of JPEG
   // before the last one is quality thrown away for nothing.
@@ -1452,7 +1487,6 @@ async function tdCaptureShoot(){
   // resolution and neither can a log, so when a photo looks soft this is the
   // first question and it should already be answered.
   _pcShotPx=cv.width+'x'+cv.height;
-  _pcFlash();
   await _pcCommit(blob);
 }
 function tdCaptureFromPicker(input){
@@ -1467,7 +1501,7 @@ async function _pcCommit(file){
   const row=await tdSavePhoto({
     file,type:_pcCtx.type,caption:_pcCtx.caption,
     clientId:_pcCtx.clientId,bidId:_pcCtx.bidId,jobId:_pcCtx.jobId,
-    lat:fix.lat,lon:fix.lon
+    lat:fix.lat,lon:fix.lon,accM:fix.acc
   });
   if(!row)return;
   // Where it was shot, kept on the row so the unfiled tray can guess the
@@ -1482,9 +1516,14 @@ async function _pcCommit(file){
 // slower to take because the phone is arguing with GPS.
 function _pcCurrentFix(){
   try{
-    if(typeof _lastGeoFix==='object'&&_lastGeoFix&&_lastGeoFix.lat!=null)return{lat:_lastGeoFix.lat,lon:_lastGeoFix.lon};
+    // The camera's own watch is the freshest thing there is, so it wins; a
+    // fix older than two minutes is a different place for a man in a truck.
+    if(_pcFix&&_pcFix.lat!=null&&Date.now()-_pcFix.t<120000)
+      return{lat:_pcFix.lat,lon:_pcFix.lon,acc:_pcFix.acc};
+    if(typeof _lastGeoFix==='object'&&_lastGeoFix&&_lastGeoFix.lat!=null)
+      return{lat:_lastGeoFix.lat,lon:_lastGeoFix.lon,acc:_lastGeoFix.acc!=null?_lastGeoFix.acc:null};
   }catch(_e){}
-  return{lat:null,lon:null};
+  return{lat:null,lon:null,acc:null};
 }
 function _pcStampGeo(row){
   try{
