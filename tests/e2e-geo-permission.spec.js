@@ -3021,3 +3021,312 @@ test.describe('Crew location permission', () => {
     assertNoErrors(page, 'crew location permission');
   });
 });
+
+
+// ── THE BATTERY THAT NEVER CAME OVER (owner 2026-09-21) ────────────────────
+//
+// "I just dont understand why his isnt coming over."
+//
+// Jack's device_status row was healthy in every other column, current
+// checked_at, right app version, and battery_level null every single time. The
+// owner's three device rows carried one number between them.
+//
+// TdGeoPlugin.stats() switches UIDevice.isBatteryMonitoringEnabled on and
+// reads batteryLevel on the next line of the same main-queue block. iOS does
+// not have the value ready that soon and answers -1, which is the plugin's own
+// "could not read". A phone somebody keeps using makes a second call and gets
+// a number; a phone that is opened and pocketed makes exactly one per launch
+// and never does.
+test.describe('the battery read asks twice before giving up', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { try { await page.context().close(); } catch (_e) { } });
+
+  // Answers each call from a queue, so a test says exactly what iOS did.
+  const read = (answers) => page.evaluate(async (answers) => {
+    const saved = window._geoTdPlugin;
+    let calls = 0;
+    try {
+      window._geoTdPlugin = () => ({
+        stats: async () => { const a = answers[Math.min(calls, answers.length - 1)]; calls++; return a; },
+      });
+      await _geoRefreshBattery();
+      const b = _geoBattPeek();
+      return { calls, batt: b ? { level: b.level, charging: b.charging } : null, therm: _geoThermPeek() };
+    } finally { window._geoTdPlugin = saved; }
+  }, answers);
+
+  test("Jack's shape: -1 first, a real number a moment later", async () => {
+    const r = await read([
+      { batteryLevel: -1, charging: false, thermalState: 'nominal' },
+      { batteryLevel: 0.45, charging: false, thermalState: 'nominal' },
+    ]);
+    expect(r.calls, 'asked again, exactly once').toBe(2);
+    expect(r.batt).toEqual({ level: 0.45, charging: false });
+  });
+
+  test('a good first read is never asked twice', async () => {
+    const r = await read([{ batteryLevel: 0.82, charging: true, thermalState: 'fair' }]);
+    expect(r.calls).toBe(1);
+    expect(r.batt).toEqual({ level: 0.82, charging: true });
+  });
+
+  test('a shell that genuinely cannot read one still reports nothing', async () => {
+    // Not reported and flat are different answers, and a -1 must never become
+    // a zero percent battery on the roster.
+    const r = await read([{ batteryLevel: -1, charging: false, thermalState: 'nominal' }]);
+    expect(r.calls, 'asked once more, then it stops: never a loop').toBe(2);
+    expect(r.batt).toBe(null);
+  });
+
+  test('a zero percent phone is a real answer and is kept', async () => {
+    const r = await read([{ batteryLevel: 0, charging: false, thermalState: 'nominal' }]);
+    expect(r.calls).toBe(1);
+    expect(r.batt).toEqual({ level: 0, charging: false });
+  });
+
+  test('thermal rides the read that answered, and survives a first -1', async () => {
+    // A phone can be hot with an unreadable battery, and the retry must not
+    // lose the word the second call gave.
+    const r = await read([
+      { batteryLevel: -1, charging: false, thermalState: 'nominal' },
+      { batteryLevel: 0.31, charging: false, thermalState: 'serious' },
+    ]);
+    expect(r.therm).toBe('serious');
+    expect(r.batt.level).toBe(0.31);
+  });
+
+  test('a throwing second call leaves the first answer alone', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window._geoTdPlugin;
+      let calls = 0;
+      try {
+        window._geoTdPlugin = () => ({
+          stats: async () => {
+            calls++;
+            if (calls === 1) return { batteryLevel: -1, charging: false, thermalState: 'fair' };
+            throw new Error('plugin went away');
+          },
+        });
+        await _geoRefreshBattery();
+        return { calls, batt: _geoBattPeek(), therm: _geoThermPeek() };
+      } finally { window._geoTdPlugin = saved; }
+    });
+    expect(r.calls).toBe(2);
+    expect(r.batt, 'no number, and no throw either').toBe(null);
+    expect(r.therm, 'the first call still said how hot it was').toBe('fair');
+  });
+
+  test('no plugin at all is not a fault, and asks nothing', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window._geoTdPlugin;
+      try {
+        window._geoTdPlugin = () => null;
+        await _geoRefreshBattery();
+        return { batt: _geoBattPeek(), therm: _geoThermPeek() };
+      } finally { window._geoTdPlugin = saved; }
+    });
+    expect(r.batt).toBe(null);
+    expect(r.therm).toBe(null);
+  });
+
+  test('junk answers never throw and never invent a level', async () => {
+    for (const a of [null, undefined, {}, { batteryLevel: 'nope' }, { batteryLevel: NaN }, 'nope', 7]) {
+      const r = await read([a, a]);
+      expect(r.batt, JSON.stringify(a)).toBe(null);
+    }
+  });
+
+  test('no console errors', () => { assertNoErrors(page, 'battery read'); });
+});
+
+// ── AND THE FIX FOR THAT ONE DID NOT REACH THE ROW (owner 2026-09-22) ───────
+//
+// "Also tell me how jacks battery is today."
+//
+// It was null again. The retry above works, and the number it produces was
+// still not getting written, for two reasons in the same path:
+//
+//   1. THE ROW SENT null WHEN IT HAD NOTHING. device_status is an upsert on
+//      (user_id, device_id) and PostgREST writes only the columns the payload
+//      carries, so an absent key keeps what is stored. A null is a statement:
+//      "this phone has no battery". It overwrote the 35% Jack's handset
+//      finally reported with nothing, on the very next permission write.
+//   2. THE ROW DID NOT WAIT. The refresh was fired and forgotten and the row
+//      was written from whatever the cache held. Adding the 300ms retry made
+//      the answer land LATER, so the fix for the -1 made this race worse.
+test.describe('a battery we could not read never erases the one we could', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { try { await page.context().close(); } catch (_e) { } });
+
+  // Answer the plugin from a queue, then report, and hand back the row that
+  // would have gone to Supabase.
+  const write = (answers) => page.evaluate(async (answers) => {
+    const saved = { supa: window._supa, user: window._supaUser, emp: window._isEmployee,
+                    td: window._geoTdPlugin };
+    const rec = [];
+    try {
+      let calls = 0;
+      window._geoTdPlugin = answers
+        ? () => ({ stats: async () => { const a = answers[Math.min(calls, answers.length - 1)]; calls++; return a; } })
+        : () => null;
+      await _geoRefreshBattery();
+      window._supaUser = { id: 'batt-row-1' };
+      window._isEmployee = false;
+      window._supa = { from: (tbl) => ({
+        upsert: (row) => { rec.push({ tbl, row }); return { then: (r) => Promise.resolve({}).then(r) }; },
+        update: () => ({ eq: () => ({ then: (r) => Promise.resolve({}).then(r) }) }),
+      }) };
+      _geoReportPermission('granted');
+      await new Promise(r => setTimeout(r, 20));
+    } finally {
+      window._supa = saved.supa; window._supaUser = saved.user;
+      window._isEmployee = saved.emp; window._geoTdPlugin = saved.td;
+    }
+    const hit = rec.find(x => x.tbl === 'device_status');
+    return hit ? { keys: Object.keys(hit.row), row: hit.row } : null;
+  }, answers);
+
+  test('a real reading is written', async () => {
+    const r = await write([{ batteryLevel: 0.45, charging: false, thermalState: 'fair' }]);
+    expect(r, 'the row was written at all').toBeTruthy();
+    expect(r.row.battery_level).toBe(0.45);
+    expect(r.row.battery_charging).toBe(false);
+    expect(r.row.thermal_state).toBe('fair');
+  });
+
+  test("a read that failed is LEFT OUT, not sent as null", async () => {
+    const r = await write([{ batteryLevel: -1, charging: false, thermalState: 'nominal' }]);
+    expect(r.keys, 'sending null here is what wiped Jack\'s 35%').not.toContain('battery_level');
+    expect(r.keys).not.toContain('battery_charging');
+    // The rest of the row is unaffected: the point is a narrower write, not a
+    // skipped one. A phone whose permission changed still reports that.
+    expect(r.row.location_status).toBe('granted');
+    expect(r.keys).toContain('checked_at');
+  });
+
+  test('a thermal state nothing could read is left out on its own', async () => {
+    // Independent of the battery on purpose: a shell can answer one and not
+    // the other, and neither absence may erase the other's stored value.
+    const r = await write([{ batteryLevel: 0.7, charging: false, thermalState: 'who knows' }]);
+    expect(r.keys).not.toContain('thermal_state');
+    expect(r.row.battery_level).toBe(0.7);
+  });
+
+  test('a phone at zero percent is a real answer and is still written', async () => {
+    const r = await write([{ batteryLevel: 0, charging: true, thermalState: 'nominal' }]);
+    expect(r.keys, 'flat and unreadable are different').toContain('battery_level');
+    expect(r.row.battery_level).toBe(0);
+    expect(r.row.battery_charging).toBe(true);
+  });
+
+  test('no plugin at all writes the row without battery columns', async () => {
+    const r = await write(null);
+    expect(r).toBeTruthy();
+    expect(r.keys).not.toContain('battery_level');
+    expect(r.keys).not.toContain('thermal_state');
+  });
+
+  test('the report WAITS for a battery read that lands late', async () => {
+    // This is Jack's case exactly: the retry means the answer arrives after
+    // the permission read, so a report that does not wait writes no number.
+    const r = await page.evaluate(async () => {
+      const saved = { supa: window._supa, user: window._supaUser, emp: window._isEmployee,
+                      td: window._geoTdPlugin, read: window._geoReadPermission,
+                      prec: window._geoAutoPrecise };
+      const rec = [];
+      try {
+        window._geoTdPlugin = () => null;
+        await _geoRefreshBattery();          // start from nothing in hand
+        window._supaUser = { id: 'batt-late-1' };
+        window._isEmployee = false;
+        window._geoReadPermission = async () => 'granted';   // resolves at once
+        window._geoAutoPrecise = () => {};
+        window._supa = { from: (tbl) => ({
+          upsert: (row) => { rec.push({ tbl, row }); return { then: (f) => Promise.resolve({}).then(f) }; },
+          update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }),
+        }) };
+        const battDone = (async () => {
+          await new Promise(r2 => setTimeout(r2, 120));
+          window._geoTdPlugin = () => ({ stats: async () => ({ batteryLevel: 0.62, charging: false, thermalState: 'nominal' }) });
+          await _geoRefreshBattery();
+        })();
+        await _geoPermReportNow(battDone);
+        await new Promise(r2 => setTimeout(r2, 20));
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user;
+        window._isEmployee = saved.emp; window._geoTdPlugin = saved.td;
+        window._geoReadPermission = saved.read; window._geoAutoPrecise = saved.prec;
+      }
+      const hit = rec.find(x => x.tbl === 'device_status');
+      return hit ? hit.row : null;
+    });
+    expect(r, 'the row was written').toBeTruthy();
+    expect(r.battery_level, 'written before the battery landed').toBe(0.62);
+  });
+
+  test('a battery read that never resolves does not hold the row forever', async () => {
+    // Waiting is not the same as depending. A plugin that hangs must cost the
+    // battery column, never the permission row, which is the one that
+    // explains payroll.
+    const r = await page.evaluate(async () => {
+      const saved = { supa: window._supa, user: window._supaUser, emp: window._isEmployee,
+                      read: window._geoReadPermission, prec: window._geoAutoPrecise };
+      const rec = [];
+      try {
+        window._supaUser = { id: 'batt-hang-1' };
+        window._isEmployee = false;
+        window._geoReadPermission = async () => 'granted';
+        window._geoAutoPrecise = () => {};
+        window._supa = { from: (tbl) => ({
+          upsert: (row) => { rec.push({ tbl, row }); return { then: (f) => Promise.resolve({}).then(f) }; },
+          update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }),
+        }) };
+        // Rejects rather than hangs: a hang cannot be asserted inside a test,
+        // and the guard that has to hold is the same one, that the failure of
+        // the battery read cannot take the report down with it.
+        await _geoPermReportNow(Promise.reject(new Error('plugin went away')));
+        await new Promise(r2 => setTimeout(r2, 20));
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user;
+        window._isEmployee = saved.emp;
+        window._geoReadPermission = saved.read; window._geoAutoPrecise = saved.prec;
+      }
+      return (rec.find(x => x.tbl === 'device_status') || {}).row || null;
+    });
+    expect(r, 'the permission row still went').toBeTruthy();
+    expect(r.location_status).toBe('granted');
+  });
+
+  test('junk in place of a battery promise is not a fault', async () => {
+    const ok = await page.evaluate(async () => {
+      const saved = { read: window._geoReadPermission, supa: window._supa, prec: window._geoAutoPrecise };
+      try {
+        window._geoReadPermission = async () => 'granted';
+        window._geoAutoPrecise = () => {};
+        window._supa = null;
+        for (const v of [null, undefined, 0, 'later', {}, { then: 7 }]) await _geoPermReportNow(v);
+        return true;
+      } catch (_e) { return false; } finally {
+        window._geoReadPermission = saved.read; window._supa = saved.supa;
+        window._geoAutoPrecise = saved.prec;
+      }
+    });
+    expect(ok).toBe(true);
+  });
+
+  test('no console errors', () => { assertNoErrors(page, 'battery row'); });
+});

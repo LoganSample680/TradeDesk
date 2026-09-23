@@ -439,6 +439,84 @@ test.describe('The public timesheet page', () => {
     manual: [{ id: 'm1', date: '2026-08-27', start_time: '2026-08-27T14:35:00Z', end_time: '2026-08-27T20:05:00Z', minutes: 330, open: false }],
   });
 
+  // ── THE CLOCK IS THE BRACKET HERE TOO (owner 2026-09-21) ───────────────
+  //
+  // "On the link Jack sent his dad it looks like manual time double counted,
+  // why? It didn't on Jack's record."
+  //
+  // His week of 13-19 September, measured on both screens: the app said
+  // 42h 27m with 1m of Manual time, the link said 80h 10m with 37h 37m. The
+  // automatic buckets agreed almost to the minute, so the whole 37-hour gap
+  // was one clock counted twice.
+  //
+  // _tlBlendManual buckets by `personUid||acting uid` and returns early from
+  // a bucket with no clock in it. The derived rows are stamped _TSP_UID
+  // because the RPC sends no employee_user_id; the clocks were pushed raw,
+  // carrying the real logged_by_uid the server DOES send. Two buckets, no
+  // blend.
+  //
+  // WHY EVERY FIXTURE ABOVE MISSED IT, which is the more useful half: not one
+  // of them puts a clock and a derived row on the SAME DAY. DATA clocks
+  // 08-28 and derives 08-25 and 08-27; FULL clocks 08-27 14:35 and puts the
+  // shop row before it, touching but never overlapping. A blend with nothing
+  // to absorb cannot tell you whether it ran. These two days overlap on
+  // purpose.
+  const BLEND = Object.assign({}, DATA, {
+    time: [
+      // Inside the clock below: 8:00 to 8:20 and 8:20 to 12:20 Central.
+      { id: 'b1', job_id: null, arrived_at: '2026-08-26T13:00:00Z', departed_at: '2026-08-26T13:20:00Z', minutes: 20, source: 'drive', client_key: 'b-1', origin_place: 'TradeDesk yard', dest_place: 'John Doe' },
+      { id: 'b2', job_id: 'j1', arrived_at: '2026-08-26T13:20:00Z', departed_at: '2026-08-26T17:20:00Z', minutes: 240, source: 'geofence', client_key: 'b-2', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
+    ],
+    shop: [],
+    // 8:00 to 4:00 Central, 480 minutes, holding all 260 above. The uid is the
+    // REAL one the server sends for a crew member, which is the whole point:
+    // a fixture that stamps _TSP_UID itself would agree with the code instead
+    // of testing it, exactly like the shop fixture that invented
+    // employee_user_id and hid the missing shop time for a week.
+    manual: [{ id: 'mb', date: '2026-08-26', start_time: '2026-08-26T13:00:00Z', end_time: '2026-08-26T21:00:00Z', minutes: 480, logged_by_uid: 'jack-real-uuid', logged_by_name: 'Jack Sample', open: false }],
+  });
+
+  test.describe('a clock over a derived day is not counted twice', () => {
+    test('the boss sees the same day the crew member does', async ({ page }) => {
+      await openPage(page, BLEND);
+      const r = await page.evaluate(() => ({
+        legend: [...document.querySelectorAll('#tsp-body .tl-rail-legend .tl-rail-leg')]
+                  .map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+        total: document.querySelector('#tsp-body .tl-monav-tot').textContent.trim(),
+      }));
+      const leg = r.legend.join(' | ');
+      // 480 clocked minutes holding 260 derived ones is EIGHT HOURS, not
+      // twelve hours twenty. Twelve twenty is the bug, and it is the shape
+      // the owner was looking at.
+      expect(r.total, 'the clock is the bracket, not an extra shift: ' + leg).toBe('8h');
+      // And the day is still broken down, not flattened into one block: the
+      // drive keeps its own colour and the site time keeps its own.
+      expect(leg).toMatch(/Driving\s*20m/);
+      expect(leg).toMatch(/On site\s*4h/);
+      // The 220 minutes the clock covers and nothing tracked stay GREY. They
+      // become a row reading "Clocked in, nothing tracked" (_tlBlendManual),
+      // which _tlRailKind has always called Manual time because it has no
+      // address and never had one. The week aggregator had no arm for it and
+      // was billing it as on-site job labour, so the rail drew it grey and
+      // the bar above drew the same minutes blue: fixed alongside this.
+      expect(leg).toMatch(/Manual time\s*3h\s*40m/);
+    });
+
+    test("an owner's own sheet blends too, though the server sends no uid", async ({ page }) => {
+      // The same bug wearing the other hat. An owner's clocks come back with
+      // logged_by_uid null, which falls through to the acting uid, and this
+      // page has no session at all so that is the string 'owner'. Two buckets
+      // again, and nothing on the page to hint at it.
+      const OWN = Object.assign({}, BLEND, {
+        manual: [Object.assign({}, BLEND.manual[0], { logged_by_uid: null, logged_by_name: null })],
+      });
+      await openPage(page, OWN);
+      const total = await page.evaluate(() =>
+        document.querySelector('#tsp-body .tl-monav-tot').textContent.trim());
+      expect(total).toBe('8h');
+    });
+  });
+
   test.describe('a full day, every breakdown', () => {
     test('the week names every bucket the day spent time in', async ({ page }) => {
       await openPage(page, FULL);

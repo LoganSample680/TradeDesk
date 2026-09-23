@@ -3272,6 +3272,43 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.retimed).toBe(true);
       expect(r.empty, 'null and empty are the same nothing').toBe(true);
     });
+
+    // ── AND A ROW THAT ONLY CHANGED ITS NAME (owner 2026-09-20) ───────────
+    // "went to go save things on the day rail and the onsite didn't
+    // immediately flip to the name I assigned, I want that."
+    //
+    // The print was a count and a total of minutes. Naming an address changes
+    // neither, so the revalidate fetched the renamed row, printed it, found
+    // the same string and returned without painting. The rail kept saying
+    // "Unsaved address" until something else repainted the page.
+    test('the fingerprint notices a row that only changed its name', async () => {
+      const r = await page.evaluate(() => {
+        const row = (o) => Object.assign({ id: 'a1', minutes: 42, source: 'auto',
+          rawSource: 'unsaved', clientName: 'Unsaved address', addr: '', jobName: '',
+          detail: '', clientKey: 'd-j-1', unpaid: false, dismissed: false,
+          startTime: '2026-09-20T15:00:00.000Z', endTime: '2026-09-20T15:42:00.000Z' }, o || {});
+        const base = [row()];
+        return {
+          named: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ clientName: 'Aldi GUYS' })]),
+          placed: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ rawSource: 'client' })]),
+          addressed: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ addr: '2950 SW McClure Rd' })]),
+          answered: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ dismissed: true })]),
+          // The open dwell's endTime is Date.now() at the moment it was built,
+          // so a print carrying it would differ on EVERY fetch and every
+          // revalidate would repaint, closing whatever the viewer just opened.
+          ticking: _tlRowsFingerprint(base) === _tlRowsFingerprint([row({ endTime: '2026-09-20T15:59:00.000Z' })]),
+          // Two fetches that came back in a different order are the same day.
+          reordered: _tlRowsFingerprint([row(), row({ id: 'a2' })])
+                  === _tlRowsFingerprint([row({ id: 'a2' }), row()]),
+        };
+      });
+      expect(r.named, 'this is the one he reported').toBe(true);
+      expect(r.placed, 'and an unsaved stop becoming a client').toBe(true);
+      expect(r.addressed).toBe(true);
+      expect(r.answered).toBe(true);
+      expect(r.ticking, 'a live row ticking is not a change worth a repaint').toBe(true);
+      expect(r.reordered, 'order is not news').toBe(true);
+    });
   });
 
   // ── The day rail (owner-approved design 2026-08-29) ─────────────────────
@@ -5233,6 +5270,68 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.calls).toBe(1);
     });
 
+    // One deliberate tap is not a realtime burst (owner 2026-09-20). The 2.5s
+    // coalesce is right for a flush of a dozen rows and wrong for the person
+    // who just pressed Save and is waiting to see the name.
+    test('a tap that asks for it now does not wait out the burst timer', async () => {
+      const r = await page.evaluate(async () => {
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.add('active');
+        let calls = 0;
+        const origRe = window._tlRevalidateRows;
+        window._tlRevalidateRows = async () => { calls++; return false; };
+        _tlLiveRefresh(true);
+        // No await at all: "immediately" has to mean in this same task, not
+        // on some shorter timer.
+        const immediate = calls;
+        await new Promise(r2 => setTimeout(r2, 3200));
+        window._tlRevalidateRows = origRe;
+        if (!wasActive) pg?.classList.remove('active');
+        return { immediate, after: calls };
+      });
+      expect(r.immediate, 'the tap repaints in the same breath').toBe(1);
+      expect(r.after, 'and does not also fire a debounced second one').toBe(1);
+    });
+
+    // It has to compare against what the screen was PAINTED from. _tlLastRows
+    // is that set already filtered to one scope and one year, so printing an
+    // unfiltered fetch against it compares two different questions.
+    test('the live path compares against the painted rows, not the filtered ones', async () => {
+      const r = await page.evaluate(() => {
+        const src = String(_tlLiveRefresh).replace(/\s/g, '');
+        return { cache: /_tlRevalidateRows\(_tlRowsCache/.test(src),
+                 notFiltered: !/_tlRevalidateRows\(_tlLastRows/.test(src) };
+      });
+      expect(r.cache).toBe(true);
+      expect(r.notFiltered).toBe(true);
+    });
+
+    // A repaint that answers a question about a screen that no longer exists
+    // must not be drawn over the one that does. The live path used to skip
+    // this check, and got away with it only because its fingerprint was too
+    // coarse to ever say "repaint" (CI shard 6, 2026-09-20).
+    test('a live repaint stands down when a newer render has already painted', async () => {
+      const r = await page.evaluate(async () => {
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.add('active');
+        const origRe = window._tlRevalidateRows;
+        let sawGen;
+        window._tlRevalidateRows = async (rows, gen) => { sawGen = gen; return false; };
+        try {
+          _tlLiveRefresh(true);
+          return { gen: sawGen, isNumber: typeof sawGen === 'number',
+                   src: /_tlRevalidateRows\(_tlRowsCache,gen,true\)/.test(String(_tlLiveRefresh).replace(/\s/g, '')) };
+        } finally {
+          window._tlRevalidateRows = origRe;
+          if (!wasActive) pg?.classList.remove('active');
+        }
+      });
+      expect(r.isNumber, 'it names the paint it is answering about').toBe(true);
+      expect(r.src, 'and it is the captured one, not undefined').toBe(true);
+    });
+
     test('the live path bypasses the drill throttle, because the screen is actually wrong', async () => {
       const r = await page.evaluate(async () => {
         // The min-gap exists to stop a held-down drill arrow firing three
@@ -5526,7 +5625,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('a held stop still offers Save this address, which is how it stops being held', async () => {
       // Saving the address re-derives the day into two real legs, which is
       // the whole correction path for an under-counted trip.
-      expect(await render(STOP)).toMatch(/_mileSaveStopAddress/);
+      //
+      // The leg is seeded now (2026-09-20): the chip asks _mileStopCoord
+      // whether the stop can actually be placed before it is offered, so a
+      // stop with no leg behind it gets no chip. That gate is the fix for
+      // the dead button, and it means this test has to supply the leg its
+      // claim depends on.
+      const withLeg = await page.evaluate((x) => {
+        const keep = window.mileage;
+        window.mileage = [{ legKey: 'leg-1', id: 'leg-1', gps: true, date: '2026-09-11',
+          addressUnknown: true, unsavedVia: true,
+          fromCoord: { lat: 39.04, lng: -95.71 }, toCoord: { lat: 39.05, lng: -95.72 },
+          viaCoord: { lat: 39.061, lng: -95.697 } }];
+        try { return String(_tlRailRow(x)); } finally { window.mileage = keep; }
+      }, STOP);
+      expect(withLeg).toMatch(/_mileSaveStopAddress/);
     });
 
     test('the hours record never counts one', async () => {
@@ -5809,13 +5922,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const mk = (src, raw) => {
           const b = document.createElement('button');
           Object.assign(b.dataset, { rowId: 'x1', rowSrc: src, rowRaw: raw || '',
-            rowKey: 'k', rowDate: '2026-09-12', rowLabel: 'A place' });
+            rowKey: 'd-k', rowDate: '2026-09-12', rowLabel: 'A place' });
           document.body.appendChild(b);
           try { _tlRowMenu(b); const o = document.getElementById('_tl-row-menu');
             const html = o ? o.innerHTML : ''; o?.remove(); return html; }
           finally { b.remove(); }
         };
-        return { manual: mk('manual'), auto: mk('auto', 'shop'), unsaved: mk('auto', 'unsaved') };
+        // A leg whose destination IS this stop, so the Save offer has a
+        // coordinate behind it. Without one the offer is withheld, which is
+        // the case the test below this one covers.
+        const savedMile = mileage;
+        mileage = [{ id: 'k', legKey: 'k', date: '2026-09-12', gps: true, miles: 3,
+          from: 'A', to: '', toCoord: { lat: 39.03, lng: -95.75 } }];
+        try {
+          return { manual: mk('manual'), auto: mk('auto', 'shop'), unsaved: mk('auto', 'unsaved') };
+        } finally { mileage = savedMile; }
       });
       // A manual clock is the person's own record. Delete is real.
       expect(r.manual).toContain('Delete');
@@ -5831,6 +5952,50 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // An unsaved stop can also be named, which answers it forever.
       expect(r.unsaved).toContain('Save this address');
       expect(r.auto, 'a named fence has nothing to save').not.toContain('Save this address');
+    });
+
+    // ── A SECOND COPY OF THE SAME BUTTON, WITHOUT THE CHECK ────────────────
+    // (owner 2026-09-22, on Jack's 11:58 to 1:17 on the 21st: "cant save,
+    // why?")
+    //
+    // The chip on the row has asked _mileStopCoord since 2026-09-20 and hides
+    // itself when the answer is nothing. The menu offered the same action with
+    // no check at all, so the row withdrew the offer and the menu kept making
+    // it, and pressing it called a function that returns false and does
+    // nothing. Jack's row is keyed to a journey no leg on that day carries, so
+    // there was never a pin to open a lead on.
+    test('the menu withholds Save when no coordinate is behind the stop', async () => {
+      const r = await page.evaluate(() => {
+        const mk = () => {
+          const b = document.createElement('button');
+          Object.assign(b.dataset, { rowId: 'x9', rowSrc: 'auto', rowRaw: 'unsaved',
+            rowKey: 'd-j-nobody-has-this', rowDate: '2026-09-12', rowLabel: 'A place' });
+          document.body.appendChild(b);
+          try { _tlRowMenu(b); const o = document.getElementById('_tl-row-menu');
+            const html = o ? o.innerHTML : ''; o?.remove(); return html; }
+          finally { b.remove(); }
+        };
+        const savedMile = mileage;
+        // A day with legs on it, none of them this stop's.
+        mileage = [{ id: 'other', legKey: 'other', date: '2026-09-12', gps: true, miles: 3,
+          from: 'A', to: 'B', toCoord: { lat: 39.03, lng: -95.75 } }];
+        try { return { html: mk(), fired: null }; } finally { mileage = savedMile; }
+      });
+      expect(r.html, 'the row is still answerable').toContain('Not work');
+      expect(r.html, 'an offer nothing can honour').not.toContain('Save this address');
+    });
+
+    test('and pressing it, if it were there, still does nothing rather than throw', async () => {
+      const ok = await page.evaluate(async () => {
+        const savedMile = mileage;
+        try {
+          mileage = [];
+          await _tlRowMenuDo('save', 'd-j-nobody-has-this', '2026-09-12');
+          await _tlRowMenuDo('save', '', '');
+          return true;
+        } catch (_e) { return false; } finally { mileage = savedMile; }
+      });
+      expect(ok).toBe(true);
     });
 
     test('Not work goes through the one door that already survives a rebuild', async () => {
@@ -5863,13 +6028,49 @@ test.describe('timelog.js: exhaustive coverage', () => {
     const STOP = { source: 'auto', rawSource: 'unsaved', clientName: 'Unsaved address',
                    clientKey: 'j-abc:s0', date: '2026-09-09', minutes: 95, personUid: null,
                    startTime: '2026-09-09T19:05:42.000Z', endTime: '2026-09-09T20:40:26.000Z' };
-    const render = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, STOP, over));
+    // ── THE LEG HAS TO BE THERE NOW (owner 2026-09-20) ──────────────────
+    //
+    // WAS: the row was rendered against whatever mileage happened to be in
+    // the page, and the chip was drawn for every unsaved stop regardless.
+    // That is precisely the defect: the rail offered a control for stops
+    // _mileSaveStopAddress could not place, and pressing one did nothing at
+    // all ("I'm hitting save this address and it's a dead button",
+    // error_log 202-204 and 207-209). The chip now asks _mileStopCoord
+    // first, so a test that wants the chip has to supply the leg the chip
+    // would act on. That is the honest pairing and it is what the app has.
+    const LEG = { legKey: 'j-abc', id: 'j-abc', gps: true, date: '2026-09-09',
+      addressUnknown: true, unsavedVia: true,
+      fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0123, lng: -95.7465 },
+      viaCoord: { lat: 39.061, lng: -95.697 } };
+    const render = (over, legs) => page.evaluate(([r, L]) => {
+      const keep = window.mileage;
+      window.mileage = L;
+      try { return String(_tlRailRow(r)); } finally { window.mileage = keep; }
+    }, [Object.assign({}, STOP, over), legs === undefined ? [LEG] : legs]);
 
     test('the stop offers Save, wired to the leg and the day it belongs to', async () => {
       const h = await render();
       expect(h).toMatch(/Save this address/);
       expect(h, 'the same chip the question row uses, not a new control').toMatch(/class="tl-rail-chip"/);
       expect(h).toMatch(/_mileSaveStopAddress\('j-abc:s0','2026-09-09'\)/);
+    });
+
+    // The whole point of the gate. A stop nothing can place gets no chip
+    // rather than a chip that does nothing: a drive with both ends unsaved
+    // writes no mileage leg at all (rules 18 and 20), and that is the shape
+    // that was sitting on his rail offering a dead button.
+    test('a stop nothing can place offers no button at all', async () => {
+      const h = await render({}, []);
+      expect(h, 'the stop is still stated').toMatch(/Unsaved address|UNSAVED/i);
+      expect(h, 'it just is not offered a control that cannot work')
+        .not.toMatch(/_mileSaveStopAddress/);
+    });
+
+    // The commonest shape on the rail, and the one that was dead: a drive
+    // that ended somewhere nobody saved, keyed 'd-' + the leg id.
+    test('a destination stop offers Save off the leg it ended', async () => {
+      const h = await render({ clientKey: 'd-j-abc' }, [LEG]);
+      expect(h).toMatch(/_mileSaveStopAddress\('d-j-abc','2026-09-09'\)/);
     });
 
     test('no other kind of row grows a Save button', async () => {

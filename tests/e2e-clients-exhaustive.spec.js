@@ -3074,6 +3074,388 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.propertyType).toBe('New construction');
     });
 
+    // ── A WRONG ADDRESS HAD ONLY ONE EXIT, AND IT WAS DELETE ───────────────
+    // (owner 2026-09-22: "add in edit button to the client record on
+    // properties in case someone puts the wrong address in")
+    //
+    // Fixing a typo meant Remove then Add, which loses the property record kept
+    // against that address (year built, value, owner, the pre-1978 lead
+    // trigger) because all of it is keyed BY address, and it routed every small
+    // mistake through the one control on the card that cannot be undone.
+    test('editing a property corrects it in place, label and all', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970140;
+        const c = { id: cid, name: 'Typo Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '99 Wromg Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal(1);                       // index 1 = the first extra
+        const prefAddr = document.getElementById('_aa-addr').value;
+        const prefLabel = document.getElementById('_aa-label').value;
+        document.getElementById('_aa-addr').value = '99 Wrong Ave, Town, KS 60000';
+        saveAddClientAddress(1);
+        return { prefAddr, prefLabel,
+          n: c.extraAddresses.length,
+          addr: c.extraAddresses[0].addr, label: c.extraAddresses[0].label,
+          primary: c.addr };
+      });
+      expect(r.prefAddr, 'the modal opens on what is already there').toBe('99 Wromg Ave, Town, KS 60000');
+      expect(r.prefLabel).toBe('Rental');
+      expect(r.n, 'corrected in place, never added beside').toBe(1);
+      expect(r.addr).toBe('99 Wrong Ave, Town, KS 60000');
+      expect(r.label, 'the label survives an address-only fix').toBe('Rental');
+      expect(r.primary, 'the primary is untouched').toBe('1 Main St, Town, KS 60000');
+    });
+
+    test('the property record moves with the corrected address', async () => {
+      // Year built, value and the pre-1978 lead trigger are keyed BY address.
+      // A typo fix that orphaned them would silently un-answer the one question
+      // that decides whether a job needs RRP.
+      const r = await page.evaluate(() => {
+        const cid = 970141;
+        const c = { id: cid, name: 'Facts Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '12 Oak Steet, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        setPropertyData(c, '12 Oak Steet, Town, KS 60000', { yearBuilt: 1948, estimatedValue: 210000 });
+        openAddAddressModal(1);
+        document.getElementById('_aa-addr').value = '12 Oak Street, Town, KS 60000';
+        saveAddClientAddress(1);
+        const moved = getProperty(c, '12 Oak Street, Town, KS 60000');
+        return { yearBuilt: moved.yearBuilt, value: moved.estimatedValue };
+      });
+      expect(r.yearBuilt, 'the lead-paint answer followed the fix').toBe(1948);
+      expect(r.value).toBe(210000);
+    });
+
+    // Owner 2026-09-22: Jack changed 6912 to 6908 and the new house never
+    // pulled in. A COUNTY record describes the old parcel; carrying it over
+    // stamped the new address answered, so it was never asked.
+    test('a corrected address sheds the old parcel\'s county facts and asks for its own', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970145;
+        const c = { id: cid, name: 'Jack Co', addr: '1 Main St, Topeka, KS 66604',
+          extraAddresses: [{ label: 'Rental', addr: '6912 SW 17th St, Topeka, KS 66615' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        setPropertyData(c, '6912 SW 17th St, Topeka, KS 66615', { yearBuilt: 2003, sqft: 1280, ownerName: 'SOMEONE ELSE',
+          propDataSource: 'county', propDataSoil: 'Old soil', propertyType: 'Rental property', isRental: true });
+        const asked = [];
+        const orig = window._lookupPropertyData;
+        window._lookupPropertyData = (id, pp) => { asked.push(pp && pp.street); return Promise.resolve(true); };
+        try {
+          openAddAddressModal(1);
+          document.getElementById('_aa-addr').value = '6908 SW 17th St, Topeka, KS 66615';
+          saveAddClientAddress(1);
+        } finally { window._lookupPropertyData = orig; }
+        const p = getProperty(c, '6908 SW 17th St, Topeka, KS 66615');
+        return { asked, year: p.yearBuilt, owner: p.ownerName, src: p.propDataSource, soil: p.propDataSoil, type: p.propertyType, rental: p.isRental };
+      });
+      expect(r.asked.length).toBe(1);
+      expect(r.asked[0]).toMatch(/6908/);
+      expect(r.year).toBeUndefined();
+      expect(r.owner).toBeUndefined();
+      expect(r.src).toBeUndefined();
+      expect(r.soil).toBeUndefined();
+      expect(r.type, 'what the contractor set still follows the address').toBe('Rental property');
+      expect(r.rental).toBe(true);
+    });
+
+    test('a moved address drops its stale coordinates, so no fence stays on the old house', async () => {
+      // geo_fences_for and _geoDeriveFences only build a fence when geoAddr
+      // still equals addr. Leaving the old pair behind is exactly the "customer
+      // moved, fence stayed" case that guard exists for.
+      const r = await page.evaluate(() => {
+        const cid = 970142;
+        const c = { id: cid, name: 'Moved Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '5 Old Rd, Town, KS 60000',
+            lat: 39.01, lon: -95.74, geoAddr: '5 Old Rd, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal(1);
+        document.getElementById('_aa-addr').value = '7 New Rd, Town, KS 60000';
+        saveAddClientAddress(1);
+        const e = c.extraAddresses[0];
+        return { lat: e.lat, lon: e.lon, geoAddr: e.geoAddr, addr: e.addr };
+      });
+      expect(r.addr).toBe('7 New Rd, Town, KS 60000');
+      expect(r.lat, 'the old coordinate is gone').toBe(undefined);
+      expect(r.lon).toBe(undefined);
+      expect(r.geoAddr).toBe(undefined);
+    });
+
+    test('a label-only edit keeps the coordinates, because nothing moved', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970143;
+        const c = { id: cid, name: 'Relabel Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '5 Old Rd, Town, KS 60000',
+            lat: 39.01, lon: -95.74, geoAddr: '5 Old Rd, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal(1);
+        document.getElementById('_aa-label').value = 'Duplex';
+        saveAddClientAddress(1);
+        const e = c.extraAddresses[0];
+        return { label: e.label, lat: e.lat, geoAddr: e.geoAddr };
+      });
+      expect(r.label).toBe('Duplex');
+      expect(r.lat, 'a rename is not a move: re-geocoding it would be waste').toBe(39.01);
+      expect(r.geoAddr).toBe('5 Old Rd, Town, KS 60000');
+    });
+
+    test('index 0 edits the client\'s own address, and asks for no label', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970144;
+        const c = { id: cid, name: 'Primary Co', addr: '1 Mian St, Town, KS 60000',
+          lat: 39.02, lon: -95.75, geoAddr: '1 Mian St, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal(0);
+        // The primary has no label of its own: "Primary" is the section's word.
+        const hasLabel = !!document.getElementById('_aa-label');
+        const pref = document.getElementById('_aa-addr').value;
+        document.getElementById('_aa-addr').value = '1 Main St, Town, KS 60000';
+        saveAddClientAddress(0);
+        return { hasLabel, pref, addr: c.addr, extras: c.extraAddresses.length, lat: c.lat };
+      });
+      expect(r.hasLabel, 'no label field on the primary').toBe(false);
+      expect(r.pref).toBe('1 Mian St, Town, KS 60000');
+      expect(r.addr).toBe('1 Main St, Town, KS 60000');
+      expect(r.extras, 'a primary fix never becomes a new property').toBe(0);
+      expect(r.lat, 'and its fence waits for the new geocode too').toBe(undefined);
+    });
+
+    test('adding still adds: the shared modal did not become edit-only', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970145;
+        const c = { id: cid, name: 'Still Adds Co', addr: '1 Main St, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        for (const arg of [undefined, null, '']) {
+          openAddAddressModal(arg);
+          document.getElementById('_aa-addr').value = 'A' + c.extraAddresses.length + ' New Rd, Town, KS 60000';
+          saveAddClientAddress(arg);
+        }
+        return { n: c.extraAddresses.length, label: c.extraAddresses[0].label };
+      });
+      expect(r.n, 'undefined, null and empty all still mean add').toBe(3);
+      expect(r.label).toBe('Additional property');
+    });
+
+    test('an empty address is refused, and an out-of-range index does nothing', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970146;
+        const c = { id: cid, name: 'Junk Co', addr: '1 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '5 Old Rd, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        let threw = 0;
+        openAddAddressModal(1);
+        document.getElementById('_aa-addr').value = '   ';
+        try { saveAddClientAddress(1); } catch (_e) { threw++; }
+        const afterBlank = c.extraAddresses[0].addr;
+        // An index past the end opens nothing and writes nothing.
+        try { openAddAddressModal(9); } catch (_e) { threw++; }
+        const opened = !!document.getElementById('_aa-addr');
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return { threw, afterBlank, opened, n: c.extraAddresses.length, addr: c.addr };
+      });
+      expect(r.threw).toBe(0);
+      expect(r.afterBlank, 'a blank address never wipes the one on file').toBe('5 Old Rd, Town, KS 60000');
+      expect(r.n).toBe(1);
+      expect(r.addr).toBe('1 Main St, Town, KS 60000');
+    });
+
+    // ── AND THE WORK IT ALREADY NAMED (owner 2026-09-22) ───────────────────
+    // "If you edit the address make the change there to."
+    //
+    // Jack entered Pepe Miranda at 6912 SW 17th St; the house is 6908 (the
+    // county has 6908 as CASASMIRANDA LLC). Correcting the card moved the pin
+    // and the property facts and left four days of work still saying 6912,
+    // because a row's place text is a snapshot written at derive time: the
+    // mileage leg carries the ADDRESS, the rail row carries the FENCE NAME,
+    // and neither reads the client record again. Only a day still inside the
+    // tape's seven would ever have re-derived its way to the new street.
+    //
+    // This is not a reconciler (17). It rewrites one label a person just
+    // changed, everywhere it is stored. Times, ids, miles and coordinates are
+    // untouched, and nothing decides anything about the day.
+    const renameSetup = (o) => page.evaluate(async (o) => {
+      const saved = { mile: (typeof mileage !== 'undefined') ? mileage : null,
+                      supa: window._supa, user: window._supaUser,
+                      flush: window._flushSaveNow };
+      const updates = [];
+      try {
+        window._supaUser = { id: 'own-rename' };
+        window._flushSaveNow = () => { };
+        window._supa = { from: (tbl) => ({
+          update: (patch) => {
+            const u = { tbl, patch, eqs: [] };
+            const q = { eq: (c, v) => { u.eqs.push([c, v]); return q; },
+                        then: (f) => { updates.push(u); return Promise.resolve({}).then(f); } };
+            return q;
+          },
+        }) };
+        mileage = o.mileage.map(m => JSON.parse(JSON.stringify(m)));
+        const c = JSON.parse(JSON.stringify(o.client));
+        clients = clients.filter(x => x.id !== c.id).concat([c]);
+        currentClientId = c.id;
+        openAddAddressModal(o.idx);
+        const addrEl = document.getElementById('_aa-addr');
+        if (addrEl) addrEl.value = o.newAddr;
+        const lblEl = document.getElementById('_aa-label');
+        if (lblEl && o.newLabel != null) lblEl.value = o.newLabel;
+        saveAddClientAddress(o.idx);
+        await new Promise(r => setTimeout(r, 40));
+        document.querySelectorAll('.zmodal-overlay').forEach(x => x.remove());
+        return { rows: mileage.map(m => JSON.parse(JSON.stringify(m))), updates };
+      } finally {
+        if (saved.mile) mileage = saved.mile;
+        window._supa = saved.supa; window._supaUser = saved.user;
+        window._flushSaveNow = saved.flush;
+      }
+    }, o);
+
+    const PEPE_OLD = '6912 SW 17th St, Topeka, KS 66614';
+    const PEPE_NEW = '6908 SW 17th St, Topeka, KS 66614';
+    const pepeLegs = () => ([
+      { id: 'leg-a', legKey: 'leg-a', date: '2026-09-18', gps: true, miles: 7.1,
+        from: '900 Shop Rd, Topeka, KS 66614', from_name: 'Shop',
+        to: PEPE_OLD, to_name: 'Pepe Miranda (6912 SW 17th St)',
+        client_name: 'Pepe Miranda (6912 SW 17th St)' },
+      { id: 'leg-b', legKey: 'leg-b', date: '2026-09-19', gps: true, miles: 7.1,
+        from: PEPE_OLD, from_name: 'Pepe Miranda (6912 SW 17th St)',
+        to: '900 Shop Rd, Topeka, KS 66614', to_name: 'Shop' },
+      { id: 'leg-c', legKey: 'leg-c', date: '2026-09-19', gps: true, miles: 3.3,
+        from: '12 Other Ave, Topeka, KS 66614', from_name: 'Somebody Else (12 Other Ave)',
+        to: '44 Third St, Topeka, KS 66614', to_name: 'Third Party (44 Third St)' },
+    ]);
+
+    test('correcting the primary address rewrites the trips that named it', async () => {
+      const r = await renameSetup({ idx: 0, newAddr: PEPE_NEW,
+        client: { id: 970150, name: 'Pepe Miranda', addr: PEPE_OLD, extraAddresses: [] },
+        mileage: pepeLegs() });
+      const a = r.rows.find(x => x.id === 'leg-a'), b = r.rows.find(x => x.id === 'leg-b');
+      expect(a.to, 'the log prints the address, and an IRS export has to be right').toBe(PEPE_NEW);
+      expect(a.to_name, 'the rail titles the drive with the fence name').toBe('Pepe Miranda (6908 SW 17th St)');
+      expect(b.from).toBe(PEPE_NEW);
+      expect(b.from_name).toBe('Pepe Miranda (6908 SW 17th St)');
+      expect(a.miles, 'the miles are not re-decided').toBe(7.1);
+      expect(a.id).toBe('leg-a');
+      // The THIRD place the leg stores the same label, and the one this pass
+      // missed the first time it ran against Jack's real rows: both ends read
+      // 6908 while the client column still said 6912.
+      expect(a.client_name).toBe('Pepe Miranda (6908 SW 17th St)');
+    });
+
+    test('somebody else\'s trip is left exactly alone', async () => {
+      const r = await renameSetup({ idx: 0, newAddr: PEPE_NEW,
+        client: { id: 970151, name: 'Pepe Miranda', addr: PEPE_OLD, extraAddresses: [] },
+        mileage: pepeLegs() });
+      const c = r.rows.find(x => x.id === 'leg-c');
+      expect(c.from).toBe('12 Other Ave, Topeka, KS 66614');
+      expect(c.from_name).toBe('Somebody Else (12 Other Ave)');
+      expect(c.to_name).toBe('Third Party (44 Third St)');
+    });
+
+    test('the rail rows are asked to change too, both ends, scoped to the account', async () => {
+      const r = await renameSetup({ idx: 0, newAddr: PEPE_NEW,
+        client: { id: 970152, name: 'Pepe Miranda', addr: PEPE_OLD, extraAddresses: [] },
+        mileage: pepeLegs() });
+      const t = r.updates.filter(u => u.tbl === 'job_time_entries');
+      expect(t.length, 'a drive row names where it started AND where it ended').toBe(2);
+      const o = t.find(u => 'origin_place' in u.patch), d = t.find(u => 'dest_place' in u.patch);
+      expect(o.patch.origin_place).toBe('Pepe Miranda (6908 SW 17th St)');
+      expect(d.patch.dest_place).toBe('Pepe Miranda (6908 SW 17th St)');
+      expect(o.eqs.some(e => e[0] === 'origin_place' && e[1] === 'Pepe Miranda (6912 SW 17th St)'),
+        'matched on the exact old name, never a fuzzy street match').toBe(true);
+      expect(o.eqs.some(e => e[0] === 'contractor_user_id'), 'scoped to the account').toBe(true);
+    });
+
+    test('a split drive\'s own segment ends move with it', async () => {
+      const r = await renameSetup({ idx: 0, newAddr: PEPE_NEW,
+        client: { id: 970153, name: 'Pepe Miranda', addr: PEPE_OLD, extraAddresses: [] },
+        mileage: [{ id: 'leg-s', legKey: 'leg-s', date: '2026-09-19', gps: true, miles: 9,
+          from: PEPE_OLD, from_name: 'Pepe Miranda (6912 SW 17th St)',
+          to: '900 Shop Rd, Topeka, KS 66614', to_name: 'Shop',
+          segEnds: [{ from: 'Pepe Miranda (6912 SW 17th St)', to: '' },
+                    { from: '', to: 'Shop' }] }] });
+      expect(r.rows[0].segEnds[0].from).toBe('Pepe Miranda (6908 SW 17th St)');
+      expect(r.rows[0].segEnds[1].to, 'the other end was never this client').toBe('Shop');
+    });
+
+    test('a labelled property: the address moves, the name does not', async () => {
+      // _geoDeriveFences names an extra property with its LABEL when it has
+      // one, so correcting only its street changes what the mileage log prints
+      // and nothing the rail says. Asking the rail to rename anyway would be a
+      // write with no rows behind it.
+      const r = await renameSetup({ idx: 1, newAddr: '99 Rental Ave, Topeka, KS 66614',
+        client: { id: 970154, name: 'Rental Co', addr: '1 Main St, Topeka, KS 66614',
+          extraAddresses: [{ label: 'Duplex', addr: '99 Rentel Ave, Topeka, KS 66614' }] },
+        mileage: [{ id: 'leg-r', legKey: 'leg-r', date: '2026-09-19', gps: true, miles: 4,
+          from: '1 Main St, Topeka, KS 66614', from_name: 'Rental Co (1 Main St)',
+          to: '99 Rentel Ave, Topeka, KS 66614', to_name: 'Rental Co (Duplex)' }] });
+      expect(r.rows[0].to).toBe('99 Rental Ave, Topeka, KS 66614');
+      expect(r.rows[0].to_name, 'the label is the name, and it did not change').toBe('Rental Co (Duplex)');
+      expect(r.updates.filter(u => u.tbl === 'job_time_entries').length,
+        'no name moved, so no rail write').toBe(0);
+    });
+
+    test('renaming the label moves the name the rail shows', async () => {
+      const r = await renameSetup({ idx: 1, newAddr: '99 Rental Ave, Topeka, KS 66614',
+        newLabel: 'Back unit',
+        client: { id: 970155, name: 'Rental Co', addr: '1 Main St, Topeka, KS 66614',
+          extraAddresses: [{ label: 'Duplex', addr: '99 Rentel Ave, Topeka, KS 66614' }] },
+        mileage: [{ id: 'leg-r', legKey: 'leg-r', date: '2026-09-19', gps: true, miles: 4,
+          from: '1 Main St, Topeka, KS 66614', from_name: 'Rental Co (1 Main St)',
+          to: '99 Rentel Ave, Topeka, KS 66614', to_name: 'Rental Co (Duplex)' }] });
+      expect(r.rows[0].to_name).toBe('Rental Co (Back unit)');
+      const t = r.updates.filter(u => u.tbl === 'job_time_entries');
+      expect(t.length).toBe(2);
+      expect(t[0].patch.origin_place || t[0].patch.dest_place).toBe('Rental Co (Back unit)');
+    });
+
+    test('adding a property renames nothing, and neither does saving it unchanged', async () => {
+      const legs = pepeLegs();
+      const added = await renameSetup({ idx: undefined, newAddr: '77 Brand New Rd, Topeka, KS 66614',
+        client: { id: 970156, name: 'Pepe Miranda', addr: PEPE_OLD, extraAddresses: [] },
+        mileage: legs });
+      expect(added.rows.find(x => x.id === 'leg-a').to, 'an add is not a correction').toBe(PEPE_OLD);
+      expect(added.updates.length).toBe(0);
+      const same = await renameSetup({ idx: 0, newAddr: PEPE_OLD,
+        client: { id: 970157, name: 'Pepe Miranda', addr: PEPE_OLD, extraAddresses: [] },
+        mileage: legs });
+      expect(same.rows.find(x => x.id === 'leg-a').to_name).toBe('Pepe Miranda (6912 SW 17th St)');
+      expect(same.updates.length, 'nothing changed, so nothing is written').toBe(0);
+    });
+
+    test('the rename survives no Supabase, no mileage and junk rows', async () => {
+      const ok = await page.evaluate(async () => {
+        const saved = { mile: mileage, supa: window._supa, user: window._supaUser,
+                        flush: window._flushSaveNow };
+        try {
+          window._flushSaveNow = () => { };
+          for (const m of [[], [null], [{}], [{ from_name: 7, segEnds: 'nope' }],
+                           [{ from: '6912 SW 17th St, Topeka, KS 66614', segEnds: [null, {}] }]]) {
+            for (const supa of [null, undefined]) {
+              window._supa = supa; window._supaUser = supa ? { id: 'u' } : null;
+              mileage = m;
+              await _mileRenamePlace('A (6912 SW 17th St)', 'A (6908 SW 17th St)',
+                '6912 SW 17th St, Topeka, KS 66614', '6908 SW 17th St, Topeka, KS 66614');
+            }
+          }
+          // And with nothing to rename at all.
+          await _mileRenamePlace('', '', '', '');
+          await _mileRenamePlace(null, undefined, null, undefined);
+          return true;
+        } catch (_e) { return false; } finally {
+          mileage = saved.mile; window._supa = saved.supa;
+          window._supaUser = saved.user; window._flushSaveNow = saved.flush;
+        }
+      });
+      expect(ok).toBe(true);
+    });
+
     // Regression: an address entered on an estimate must roll into the client's
     // property list (accordion), not just live on the bid. Owner-reported bug.
     test('_geiEnsureClientProperty: a new estimate address rolls into the client properties (dedup-safe)', async () => {
@@ -3169,7 +3551,7 @@ test.describe('clients.js: exhaustive coverage', () => {
 
     test('_propApplyMatch: flood_sfha false is kept (a "no" is an answer), nulls are not written', async () => {
       const r = await page.evaluate(() => {
-        const cid = 970141;
+        const cid = 970144;
         const c = { id: cid, name: 'Dry Co', addr: '2 Dry St, Topeka, KS 66604' };
         clients = clients.filter(x => x.id !== cid).concat([c]);
         _propApplyMatch(c, '2 Dry St', { year_built: 2003, flood_zone: 'none', flood_sfha: false, soil_desc: null, tax_sale_year: null, source: 'county' });

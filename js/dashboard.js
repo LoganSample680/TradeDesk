@@ -1684,6 +1684,12 @@ function renderDash(){
   window._pwaUpdateBadge&&window._pwaUpdateBadge();
   renderContractsDash&&renderContractsDash();
 
+  // Unfiled photos: shot from the Photo quick action with nobody attached yet.
+  // Rendered from the same array the hub reads, so filing one here is the same
+  // write the capture sheet would have made (js/photo-capture.js).
+  const _unfiledHost=document.getElementById('dash-unfiled-host');
+  if(_unfiledHost)_unfiledHost.innerHTML=(typeof tdUnfiledTrayHTML==='function')?tdUnfiledTrayHTML():'';
+
   setTimeout(()=>{_applyDashOrder(_getDashWidgetOrder());if(typeof _initDashDrag==='function')_initDashDrag();_applyKpiOrder();if(typeof _initKpiDrag==='function')_initKpiDrag();},0);
   _dashApplySkeletons();
   }finally{_renderDashRunning=false;}

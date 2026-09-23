@@ -52,10 +52,55 @@ stamp_only() {
   ' "$1"
 }
 
+# Resolve a version stamp INSIDE the conflict markers only, taking the incoming
+# side of each hunk. This used to be `git checkout --theirs`, which replaces the
+# WHOLE file with the branch's copy. stamp_only proves the CONFLICTS are only the
+# version line, but git has already auto-merged every other change into the
+# file by then, and --theirs threw those away with it. js/cloud.js is shared by
+# every session, so any roll where uat had changed cloud.js elsewhere silently
+# deleted that work. It nearly shipped deleting the Tim session's sign-out
+# privacy fix (2026-09-22), caught only because the diff was read.
+#
+# Only ever called on a file stamp_only has cleared. On a file holding a real
+# conflict it would quietly pick a side of the real code, which is the whole
+# thing this script exists to never do.
+resolve_stamp() {
+  f="$1"
+  grep -q '^<<<<<<< ' "$f" 2>/dev/null || { git add -- "$f" 2>/dev/null; return 0; }
+  perl -0pi -e 's/^<<<<<<< [^\n]*\n.*?^=======\n(.*?)^>>>>>>> [^\n]*\n/$1/gms' "$f"
+  if grep -q '^<<<<<<< \|^>>>>>>> ' "$f"; then
+    echo "uat-roll: could not resolve the stamp in $f. Stopping." >&2; return 1
+  fi
+  git add -- "$f" 2>/dev/null || true
+}
+
 START="$(git rev-parse --abbrev-ref HEAD)"
 restore() { git checkout -q "$START" 2>/dev/null || true; }
 
 git fetch -q origin uat "$BRANCH" 2>/dev/null || true
+# ── RESUME, DON'T RESTART (2026-09-23) ─────────────────────────────────────
+# On a real conflict this script says "resolve them here, commit, then run
+# this again". Run again, it used to begin with `checkout -B uat origin/uat`,
+# which threw away the merge that had just been resolved, re-merged, hit the
+# same conflict and stopped again, forever. The only way out was to finish the
+# roll by hand, and a roll finished by hand is how code got deleted from uat.
+#
+# So if local uat already holds a finished merge of this branch on top of the
+# remote, that is the resolved merge the message asked for: keep it and carry
+# on to the checks and the push instead of starting over.
+RESUME=0
+if git rev-parse -q --verify refs/heads/uat >/dev/null \
+   && [ "$(git rev-parse uat)" != "$(git rev-parse origin/uat)" ] \
+   && git merge-base --is-ancestor origin/uat uat \
+   && git merge-base --is-ancestor "$BRANCH" uat \
+   && [ -z "$(git ls-files -u)" ]; then
+  RESUME=1
+fi
+
+if [ "$RESUME" = "1" ]; then
+  git checkout -q uat || { echo "uat-roll: cannot check out uat." >&2; exit 1; }
+  echo "[uat-roll] resuming the merge you resolved on local uat"
+else
 git checkout -q -B uat origin/uat || { echo "uat-roll: cannot check out uat." >&2; exit 1; }
 
 if ! git merge --no-edit -q "$BRANCH"; then
@@ -69,7 +114,7 @@ if ! git merge --no-edit -q "$BRANCH"; then
         # is not resolved on its name alone. Every conflicted hunk in it has to
         # be nothing but the version line; anything else is two sessions editing
         # the same code and belongs to a person.
-        if stamp_only "$f"; then continue; fi
+        if stamp_only "$f"; then resolve_stamp "$f" || exit 1; continue; fi
         ;;
     esac
     REAL="$REAL$f"$'\n'
@@ -80,14 +125,54 @@ if ! git merge --no-edit -q "$BRANCH"; then
     echo "uat-roll: STOPPED. Real conflicts between two sessions:" >&2
     echo "$REAL" | sed 's/^/    /' >&2
     echo "" >&2
-    echo "  Resolve them here, commit, then run this again. Do not force-push." >&2
+    echo "  The version stamps are already resolved; only the files above are left." >&2
+    echo "  Fix those, git add them, git commit, then run this again: it picks up" >&2
+    echo "  your resolved merge and carries on. Do not force-push." >&2
     exit 1
   fi
-  for f in $STAMPED; do
-    git checkout --theirs -- "$f" 2>/dev/null || true
-    git add -- "$f" 2>/dev/null || true
-  done
   git commit -q --no-edit || { echo "uat-roll: merge commit failed." >&2; exit 1; }
+fi
+fi
+
+# ── NOTHING UAT HAD MAY VANISH (owner 2026-09-23: "I bet it has") ──────────
+# It had. An audit of every roll found the --theirs bug above deleting code
+# twice: the Tim session's sign-out privacy fix, and the call that starts the
+# county property sync. Neither produced a conflict or a message. Fixing the
+# resolver closes that one door; this closes the whole class, whatever the
+# next cause turns out to be.
+#
+# The rule is simple and it is exact: a line that uat ADDED since the two
+# branches last met cannot quietly disappear in a merge. The incoming branch
+# never had that line, so it cannot have meant to delete it. If one is gone,
+# something ate it, and the roll stops before the push rather than after.
+#
+# A human resolving a real conflict by rewriting uat's lines will trip this,
+# on purpose: it prints exactly what would be lost. When that loss is the
+# intent, UAT_ROLL_ALLOW_DROP=1 lets it through.
+BASE="$(git merge-base origin/uat "$BRANCH" 2>/dev/null)"
+if [ -n "$BASE" ] && [ "${UAT_ROLL_ALLOW_DROP:-0}" != "1" ]; then
+  LOST=""
+  for f in $(git diff --name-only "$BASE" origin/uat -- '*.js' '*.html' '*.css' '*.sql' '*.ts' 2>/dev/null); do
+    git cat-file -e "HEAD:$f" 2>/dev/null || continue
+    gone="$(perl -e '
+      my ($base,$uat,$now)=@ARGV; my (%b,%n);
+      open(B,"-|","git","show","$base") and do { while(<B>){$b{$_}=1} close B };
+      open(N,"-|","git","show","$now")  and do { while(<N>){$n{$_}=1} close N };
+      open(U,"-|","git","show","$uat") or exit;
+      while(<U>){ next if /^\s*$/; next if /APP_VERSION|CACHE|"version"/;
+        print "      - $_" if !$b{$_} && !$n{$_}; }
+    ' "$BASE:$f" "origin/uat:$f" "HEAD:$f" 2>/dev/null | head -6)"
+    [ -n "$gone" ] && LOST="$LOST    $f"$'\n'"$gone"$'\n'
+  done
+  if [ -n "$LOST" ]; then
+    echo "" >&2
+    echo "uat-roll: STOPPED. This roll would delete code that is live on UAT:" >&2
+    printf '%s' "$LOST" >&2
+    echo "" >&2
+    echo "  Nothing was pushed. If losing these lines is deliberate, re-run with" >&2
+    echo "  UAT_ROLL_ALLOW_DROP=1. Otherwise the merge ate them: resolve by hand." >&2
+    restore; exit 1
+  fi
 fi
 
 # The deploy commit must NOT carry the skip token, or Cloudflare skips the

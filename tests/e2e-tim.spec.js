@@ -46,7 +46,6 @@ test.describe('tim', () => {
       ['show me my taxes', 'pg-taxes'],
       ['pull up my crew', 'pg-team'],
       ['open the dispatch board', 'pg-dispatch'],
-      ['show me the job photos', 'pg-gallery'],
       ['open my licenses', 'pg-licensing'],
       ['pull up contracts', 'pg-contracts'],
       ['take me to the client hub', 'pg-client-hub'],
@@ -373,6 +372,188 @@ test.describe('tim', () => {
       expect(n).toBe(1);
     });
   });
+
+  // ── Photos (owner 2026-09-22) ─────────────────────────────────────────────
+  // The Gallery page is gone; photos are found by place through the search.
+  // So a photo sentence is a lookup, and the words that are not about photos
+  // are the search term.
+  const photoSeed = () => page.evaluate(() => {
+    photos.length = 0;
+    const mk = (id, name, addr, iso) => photos.push({ id, type: 'before', url: 'https://x/' + id + '.jpg',
+      thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, client_name: name, addr, uploadedAt: iso });
+    mk(801, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-09-10T15:00:00.000Z');
+    mk(802, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-09-11T15:00:00.000Z');
+    mk(803, 'Dana Whitfield', '88 Pine Ct, Wichita KS', '2026-08-01T15:00:00.000Z');
+  });
+
+  test('a photo sentence is a lookup, and the words that are left are the term', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ['show me the photos at 412 Oak', 'job photos 412 Oak', 'photos']
+      .map(s => { const p = timParse(s, { clients: [], photos }); return { kind: p.kind, q: p.q, n: (p.places || []).length }; }));
+    expect(r[0]).toEqual({ kind: 'photos', q: '412 oak', n: 1 });
+    expect(r[1].kind).toBe('photos');          // "job photos" is not the Jobs page
+    expect(r[2]).toEqual({ kind: 'photos', q: '', n: 0 });
+  });
+
+  test('one address is not a question: it opens the photos', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      const p = timParse('photos at 412 Oak', { clients: [], photos });
+      const say = timSay(p);
+      timRun('photos at 412 Oak');
+      const out = { say, album: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+        addr: document.querySelector('.pc-fold-addr')?.textContent || null,
+        visits: document.querySelectorAll('#pc-rev .pc-fold-visit').length,
+        asked: !!document.getElementById('_tim-ov') };
+      tdReviewClose();
+      return out;
+    });
+    expect(r.say).toBe('Open 412 Oak St, 2 photos');
+    // WHERE he lands changed, not whether he lands. This used to open the flat
+    // viewer, which lists every shot and never says whose house they are, so
+    // the answer arrived with the address missing from it. It opens the
+    // property folder now, and a folder groups by visit with the newest one
+    // expanded: these two shots are a day apart, so they are two visits and
+    // one of them is showing. The header carries the address the flat viewer
+    // never had.
+    expect(r.addr).toBe('412 Oak St');
+    expect(r.visits).toBe(2);
+    expect(r.album).toBe(1);
+    expect(r.asked).toBe(false);
+  });
+
+  test('two addresses: he asks which, and the answer opens the viewer', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      const say = timSay(timParse('photos for Whitfield', { clients: [], photos }));
+      timRun('photos for Whitfield');
+      const asked = !!document.getElementById('_tim-ov');
+      const opts = [...document.querySelectorAll('#_tim-ov .pc-file-opt')].map(b => b.textContent);
+      document.querySelectorAll('#_tim-ov .pc-file-opt')[1].click();   // 88 Pine Ct
+      const out = { say, asked, opts, gone: !document.getElementById('_tim-ov'),
+        album: document.querySelectorAll('#pc-rev .pc-rev-cell').length };
+      tdReviewClose();
+      return out;
+    });
+    expect(r.say).toBe('Pick which address, 2 match');
+    expect(r.asked).toBe(true);
+    expect(r.opts[0]).toContain('412 Oak St');
+    expect(r.opts[0]).toContain('2 photos');
+    expect(r.opts[1]).toContain('88 Pine Ct');
+    expect(r.gone).toBe(true);
+    expect(r.album).toBe(1);                    // the Pine Ct shot, not all three
+  });
+
+  test('nothing matches, so he opens the search rather than guessing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('photos at 9 Nowhere Ln');
+      const box = document.getElementById('global-search-input');
+      const out = { open: !!document.getElementById('global-search-overlay'), val: box ? box.value : null };
+      if (typeof closeSearch === 'function') closeSearch();
+      return out;
+    });
+    expect(r.open).toBe(true);
+    expect(r.val).toBe('9 nowhere ln');
+  });
+
+  // Through the actual button, not just timRun: Go used to close the overlay
+  // AFTER acting, which tore down the chooser in the same frame.
+  test('the Go button leaves the chooser standing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      openTim();
+      const el = document.getElementById('_tim-say');
+      el.value = 'photos for Whitfield';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      _timGo();
+      const out = {
+        asked: !!document.getElementById('_tim-ov'),
+        opts: document.querySelectorAll('#_tim-ov .pc-file-opt').length,
+        stillTyping: !!document.getElementById('_tim-say'),
+      };
+      _timClose();
+      return out;
+    });
+    expect(r.asked).toBe(true);
+    expect(r.opts).toBe(2);
+    expect(r.stillTyping).toBe(false);   // the chooser replaced the box, not stacked on it
+  });
+
+  test('Go on a sentence he cannot place keeps the box and what was typed', async () => {
+    const r = await page.evaluate(() => {
+      openTim();
+      const el = document.getElementById('_tim-say');
+      el.value = 'qqqq zzzz';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      _timGo();
+      const out = { open: !!document.getElementById('_tim-ov'), val: document.getElementById('_tim-say')?.value };
+      _timClose();
+      return out;
+    });
+    expect(r.open).toBe(true);
+    expect(r.val).toBe('qqqq zzzz');
+  });
+
+  // The sentence the owner actually said. It used to leave "where are
+  // whitfield" as the search term, match nothing, and do nothing, while still
+  // classifying correctly as a photo question, so Tim looked like he had
+  // simply ignored him (2026-09-22).
+  test('a question phrased as a question still finds the photos', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ['where are my photos for whitfield',
+      "show me whitfield's pictures", 'do i have any photos of whitfield', 'whitfield photos']
+      .map(s => { const p = timParse(s, { clients: [], photos }); return { q: p.q, n: (p.places || []).length }; }));
+    r.forEach(x => expect(x.q, 'no question words left in the search term').toBe('whitfield'));
+    r.forEach(x => expect(x.n, 'and it still finds both of their properties').toBe(2));
+  });
+
+  // Word order is how people talk, so every word has to land rather than the
+  // leftover phrase matching as one string.
+  test('the words can arrive in any order', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ({
+      a: tdPhotoSearch('whitfield oak', photos).length,
+      b: tdPhotoSearch('oak whitfield', photos).length,
+      c: tdPhotoSearch('whitfield nowhere', photos).length,
+    }));
+    expect(r.a).toBe(1);
+    expect(r.b, 'the same question, said the other way round').toBe(1);
+    expect(r.c, 'a word that matches nothing still rules the photo out').toBe(0);
+  });
+
+  // He lands somewhere that NAMES the house. The flat viewer shows the shots
+  // and never says whose they are.
+  test('one place opens the property folder, not the bare viewer', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('where are my photos at 412 Oak');
+      const out = { addr: document.querySelector('.pc-fold-addr')?.textContent || null,
+        cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length };
+      if (typeof tdReviewClose === 'function') tdReviewClose();
+      return out;
+    });
+    expect(r.addr, 'the folder header names the property').toBe('412 Oak St');
+    expect(r.cells).toBeGreaterThan(0);
+  });
+
+  test('cancel on the chooser opens nothing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('photos for Whitfield');
+      document.getElementById('_tim-cancel').click();
+      return { gone: !document.getElementById('_tim-ov'), album: document.querySelectorAll('#pc-rev').length };
+    });
+    expect(r.gone).toBe(true);
+    expect(r.album).toBe(0);
+  });
+
+  test('a sentence with no photo word is untouched by any of this', async () => {
+    const r = await page.evaluate(() => ['open my jobs', 'the books', 'dispatch']
+      .map(s => timParse(s, { clients: [] }).kind));
+    expect(r).toEqual(['nav', 'nav', 'nav']);
+  });
+
 
   test('no console errors, tim.js', async () => {
     assertNoErrors(page, 'tim.js');

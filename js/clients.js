@@ -3034,12 +3034,18 @@ function _cdWarrantyChip(completionDate){
   const bg=w.active?'var(--green-lt)':'var(--bg2)';
   return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:20px;margin-top:6px;background:${bg};color:${fg}"><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>${escHtml(w.label)}</span>`;
 }
+// Reads BOTH shapes: the job-local entries (base64, written by the device that
+// took the shot) and the synced photos[] rows (url + thumbnail). It used to
+// read `p.data` alone, so any photo whose base64 had been dropped after upload
+// rendered as a broken image, and a photo that arrived from another device
+// never had one at all. tdPhotoSrc picks the cheapest source that exists.
 function _cdPastThumbs(photos){
   if(!photos.length)return '';
   const shown=photos.slice(0,3);
   const extra=photos.length-shown.length;
+  const _src=p=>(typeof tdPhotoSrc==='function')?tdPhotoSrc(p):(p&&(p.thumbUrl||p.url||p.data))||'';
   return `<div style="display:flex;gap:6px;margin-bottom:10px">`+
-    shown.map(p=>`<img src="${p.data}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border2)">`).join('')+
+    shown.map(p=>`<img src="${_src(p)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border2)">`).join('')+
     (extra>0?`<div style="width:64px;height:64px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--text2)">+${extra}</div>`:'')+
   `</div>`;
 }
@@ -3070,7 +3076,12 @@ function _cdPastBidRow(b,hist,money){
   const name=b.type||b.name||'Job';
   let bodyHtml='';
   if(isOpen){
-    const photos=linked.flatMap(j=>Array.isArray(j.photos)?j.photos:[]);
+    // The walkthrough shots live on the BID (there was no job yet when they
+    // were taken, js/photo-capture.js), so reading only the job's photos hid
+    // them from the one screen a contractor opens to look a property up again.
+    const photos=(typeof tdPhotosFor==='function')
+      ? tdPhotosFor({clientId:b.client_id,bidIds:[b.id],jobIds:linked.map(j=>j.id)})
+      : linked.flatMap(j=>Array.isArray(j.photos)?j.photos:[]);
     const specs=linked.flatMap(j=>Array.isArray(j.specUsed)?j.specUsed:[]);
     const scope=(typeof _bidScopeLines==='function')?_bidScopeLines(b).slice(0,4).join('; '):'';
     const crew=[...new Set(linked.map(j=>{
@@ -3119,7 +3130,7 @@ function _cdPastJobRow(j,money){
   let bodyHtml='';
   if(isOpen){
     bodyHtml=`<div style="border-top:1px dashed var(--border2);margin-top:10px;padding-top:10px" onclick="event.stopPropagation()">
-      ${_cdPastThumbs(Array.isArray(j.photos)?j.photos:[])}
+      ${_cdPastThumbs((typeof tdPhotosFor==='function')?tdPhotosFor({clientId:j.client_id,bidIds:[j.bid_id],jobIds:[j.id]}):(Array.isArray(j.photos)?j.photos:[]))}
       ${_cdPastSpec(Array.isArray(j.specUsed)?j.specUsed:[])}
       ${_cdPastDetail('Notes',j.notes?escHtml(j.notes):'')}
     </div>`;
@@ -3258,6 +3269,28 @@ function _cdCountyFactsHtml(p,money){
   ]);
 
   return `<div class="cdf">${tileRow}${warnBlock}${building}${ground}${owner}</div>`;
+}
+
+// Which of a customer's photos belong to THIS property. One definition, so
+// the card and its test cannot drift (§18): a test that re-implements the
+// rule proves only that it can copy the rule.
+function cdPropertyPhotos(c,addr,idx){
+  if(!c||typeof tdPhotosFor!=='function')return [];
+  const pa=String(addr||'').trim().toLowerCase();
+  return tdPhotosFor({clientId:c.id,wholeClient:true}).filter(x=>{
+    const xa=String(x.addr||'').trim().toLowerCase();
+    if(xa)return xa===pa;
+    // No address on the row, which is every photo taken before the property
+    // was recorded on it. If it carries a fix, the house it was SHOT at
+    // decides, not whichever card happens to be first: one of Jack's landed
+    // on Pepe with no property and would otherwise show under the primary,
+    // eight kilometres from where he stood.
+    if(typeof tdGuessPlaceFor==='function'&&x.lat!=null&&x.lon!=null){
+      const g=tdGuessPlaceFor(x);
+      if(g)return String(g.addr||'').trim().toLowerCase()===pa;
+    }
+    return idx===0;
+  });
 }
 
 function _cdPropCardHtml(c,a,idx,total){
@@ -3457,6 +3490,19 @@ function _cdPropCardHtml(c,a,idx,total){
       </div>
       ${pastRows}
     </div>`:'';
+    // Every photo shot at THIS address, and the way to add one from a desktop
+    // (owner 2026-09-22). The property is the folder a contractor thinks in,
+    // so the album lives on the property card rather than on a Gallery page
+    // nobody opens twice. Reuses the same album the shoot ends with (§7.3).
+    const _propPhotos=cdPropertyPhotos(c,a.addr,idx);
+    const _photoBlock=`<div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Photos</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text)">${_propPhotos.length?_propPhotos.length+(_propPhotos.length===1?' photo':' photos'):'None yet'}</div>
+      </div>
+      ${_propPhotos.length?`<button onclick="event.stopPropagation();tdOpenPropertyFolder(${c.id},${escHtml(JSON.stringify(a.addr||''))})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--text)">Open</button>`:''}
+      <button onclick="event.stopPropagation();tdCaptureForClient(${c.id})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
+    </div>`;
     // Footer: data source / lookup + map + remove.
     //
     // Three states, and they are deliberately different sentences. A record we
@@ -3476,13 +3522,28 @@ function _cdPropCardHtml(c,a,idx,total){
         ?`<span style="font-size:12px;color:var(--text2)">No county record. ${p.yearBuilt?'':'Add the year built to check lead-paint rules.'}</span>`
         :(!_propAnswered(p)?lookupBtn:''));
     const removeBtn=idx>0?`<button onclick="removeClientAddress(${idx-1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D">Remove</button>`:'';
+    // ── A WRONG ADDRESS HAD ONLY ONE EXIT, AND IT WAS DELETE ────────────────
+    // (owner 2026-09-22: "add in edit button to the client record on
+    // properties in case someone puts the wrong address in")
+    //
+    // A typo in a property could only be fixed by removing the card and adding
+    // it back, which loses the property record kept against that address (year
+    // built, value, owner, the pre-1978 lead trigger) because all of that is
+    // keyed BY address. Remove is also the one button here that cannot be
+    // undone, so the only way to fix a small mistake was the most dangerous
+    // control on the card.
+    //
+    // On EVERY card, including the primary: a wrong house number on the main
+    // address is at least as likely and is the one every proposal prints.
+    const editBtn=`<button onclick="openAddAddressModal(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Edit</button>`;
     const footer=`<div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       ${srcLink||'<span></span>'}
       <div style="flex:1"></div>
       <button onclick="_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Map</button>
+      ${editBtn}
       ${removeBtn}
     </div>`;
-    body=`<div style="padding:0 14px 14px">${_cdCountyFactsHtml(p,money)}${noteRow}${workBlock}${pastBlock}${footer}</div>`;
+    body=`<div style="padding:0 14px 14px">${_cdCountyFactsHtml(p,money)}${noteRow}${workBlock}${pastBlock}${_photoBlock}${footer}</div>`;
   }
   return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
 }
@@ -3513,19 +3574,35 @@ function renderCDAddresses(){
     :'<div style="font-size:12px;color:var(--text3);padding:8px 2px">No '+_noun+' yet.</div>';
   el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'"><div class="td-acc-inner">'+rows+_addBtn+'</div></div>';
 }
-function openAddAddressModal(){
+// ONE modal, add and edit (7.3). `editIdx` is an index into clientAddresses():
+// 0 is the client's primary address, anything higher is extraAddresses[idx-1].
+// Omit it to add. A second near-identical modal would be two places for the
+// address field, the autocomplete and the property-type list to drift.
+function openAddAddressModal(editIdx){
+  const _edit=(editIdx!=null&&editIdx!==''&&Number(editIdx)>=0)?Number(editIdx):null;
+  const c=_edit!=null?getClientById(currentClientId):null;
+  const cur=_edit!=null?(clientAddresses(c)[_edit]||null):null;
+  if(_edit!=null&&!cur)return;
+  const curType=(_edit!=null&&typeof getProperty==='function')?(getProperty(c,cur.addr).propertyType||''):'';
+  // The primary has no label of its own: it is the client's address and the
+  // word "Primary" is the section's, not a field anybody typed.
+  const isPrim=(_edit===0);
+  const esc=(v)=>escHtml(String(v==null?'':v));
   const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';
   const lblS='font-size:11px;font-weight:700;display:block;margin-bottom:4px';
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  overlay.innerHTML='<div class="zmodal" style="max-width:380px"><div class="zmodal-title">Add property address</div>'+
-    '<div class="f" style="margin-bottom:10px"><label style="'+lblS+'">Label (e.g. Vacation home, Rental)</label>'+
-    '<input id="_aa-label" placeholder="Vacation home" style="'+inS+'"></div>'+
+  overlay.innerHTML='<div class="zmodal" style="max-width:380px"><div class="zmodal-title">'+
+    (_edit!=null?(isPrim?'Edit primary address':'Edit property address'):'Add property address')+'</div>'+
+    (isPrim?'':'<div class="f" style="margin-bottom:10px"><label style="'+lblS+'">Label (e.g. Vacation home, Rental)</label>'+
+    '<input id="_aa-label" placeholder="Vacation home" value="'+(cur?esc(cur.label):'')+'" style="'+inS+'"></div>')+
     '<div class="f" style="margin-bottom:10px;position:relative"><label style="'+lblS+'">Address <span style="color:#A32D2D">*</span></label>'+
-    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" autocomplete="off" style="'+inS+'"></div>'+
+    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" value="'+(cur?esc(cur.addr):'')+'" autocomplete="off" style="'+inS+'"></div>'+
     '<div class="f" style="margin-bottom:14px"><label style="'+lblS+'">Property type</label>'+
-    '<select id="_aa-ptype" style="'+inS+'"><option value="">- Select -</option><option>Single family home</option><option>Townhouse / condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option><option>Other</option></select></div>'+
+    '<select id="_aa-ptype" style="'+inS+'"><option value="">- Select -</option>'+
+      ['Single family home','Townhouse / condo','Rental property','Commercial','New construction','Other']
+        .map(o=>'<option'+(o===curType?' selected':'')+'>'+o+'</option>').join('')+'</select></div>'+
     '<div style="display:flex;gap:8px">'+
-      '<button onclick="saveAddClientAddress()" class="btn btn-g" style="flex:1">Add</button>'+
+      '<button onclick="saveAddClientAddress('+(_edit!=null?_edit:'')+')" class="btn btn-g" style="flex:1">'+(_edit!=null?'Save':'Add')+'</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
     '</div></div>';
   document.body.appendChild(overlay);
@@ -3573,17 +3650,91 @@ function addClientAddress(c,label,addr,opts){
   return !already;
 }
 
-function saveAddClientAddress(){
+function saveAddClientAddress(editIdx){
   const addr=(document.getElementById('_aa-addr')?.value||'').trim();
   if(!addr){zAlert('Enter an address.');return;}
   const label=(document.getElementById('_aa-label')?.value||'').trim()||'Additional property';
   const c=getClientById(currentClientId);if(!c)return;
-  addClientAddress(c,label,addr);
+  if(!c.extraAddresses)c.extraAddresses=[];
   const ptype=document.getElementById('_aa-ptype')?.value||'';
+  const _edit=(editIdx!=null&&editIdx!==''&&Number(editIdx)>=0)?Number(editIdx):null;
+  let was='',wasLabel='';
+  if(_edit!=null){
+    const cur=clientAddresses(c)[_edit];
+    if(!cur)return;
+    was=cur.addr||'';
+    // Captured BEFORE the write below: the rename pass needs the label the
+    // fence was named with, and by then the record already holds the new one.
+    wasLabel=String(cur.label||'').trim();
+    if(_edit===0)c.addr=addr;
+    else{
+      const e=c.extraAddresses[_edit-1];
+      if(!e)return;
+      e.addr=addr;e.label=label;
+      // ── THE FENCE FOLLOWS THE ADDRESS, NEVER THE OLD COORDINATES ────────
+      // A fence is only built for a card whose geoAddr still matches its addr
+      // (geo_fences_for, and _geoDeriveFences on the phone), which is the
+      // guard that stops a customer who moved keeping a fence on the old
+      // house. Leaving stale coords here would be exactly that case, so the
+      // pair is dropped and the next geocode sweep fills it from the new
+      // address. Rows already derived are re-labelled by the rename pass at
+      // the end of this function: their times, ids and miles are untouched,
+      // only the spelling of the place moves.
+      if(was&&was!==addr){delete e.lat;delete e.lon;delete e.geoAddr;}
+    }
+    if(_edit===0&&was&&was!==addr){delete c.lat;delete c.lon;delete c.geoAddr;}
+    // THE PROPERTY RECORD MOVES WITH IT. Year built, value, owner and the
+    // pre-1978 lead trigger are keyed BY address (client.properties, data.js),
+    // so a corrected typo would otherwise orphan every fact anybody looked up.
+    //
+    // But only what the CONTRACTOR said about it. The county's facts describe
+    // the old parcel, and carrying them over stamps the new address as already
+    // answered, so it is never asked. That is exactly how Jack's 6912 to 6908
+    // correction kept 6912's house on the card (owner 2026-09-22). County
+    // fields are dropped and the new address is asked for its own.
+    if(was&&was!==addr&&typeof getProperty==='function'&&typeof setPropertyData==='function'){
+      const old={...(getProperty(c,was)||{})};
+      const wasCounty=old.propDataSource==='county';
+      if(wasCounty){
+        for(const k of Object.keys(old))if(/^propData/.test(k))delete old[k];
+        for(const k of ['yearBuilt','sqft','bedrooms','bathrooms','lotSize','estimatedValue','ownerName','assessorUrl','lastSalePrice','lastSaleDate'])delete old[k];
+      }
+      if(Object.keys(old).length)setPropertyData(c,addr,old);
+      if(typeof _lookupPropertyData==='function'){
+        const pp=(typeof _parseAddrParts==='function')?_parseAddrParts(addr):null;
+        if(pp&&pp.street)_lookupPropertyData(c.id,pp);
+      }
+    }
+  }else{
+    addClientAddress(c,label,addr);
+  }
   if(ptype&&typeof setPropertyData==='function')setPropertyData(c,addr,{propertyType:ptype,isRental:/rental/i.test(ptype)||undefined});
   saveAll();
+  // ── AND EVERY ROW THAT ALREADY NAMED THE OLD ONE (owner 2026-09-22) ──────
+  // A corrected house number has to reach the mileage log and the day rail,
+  // not just the card. Both store the label as text written at derive time,
+  // so nothing re-reads this record; _mileRenamePlace (js/mileage.js) rewrites
+  // the old spelling wherever it was stored. No prompt: the person is editing
+  // the address precisely because it is wrong, and asking whether they also
+  // meant the trips it is on is a question with only one answer.
+  //
+  // The name is rebuilt exactly as _geoDeriveFences builds it: the primary is
+  // the client name over the street line, an extra property is the client name
+  // over its label. Two places computing one name is how they drift, so if a
+  // third case ever appears, it belongs in _geoFenceName's callers, not here.
+  if(_edit!=null&&was&&was!==addr){
+    const _street=(v)=>(typeof _geoStreetLine==='function')?_geoStreetLine(v):String(v||'').split(',')[0].trim();
+    const _fn=(w)=>(typeof _geoFenceName==='function')?_geoFenceName(c.name||'Client',w)
+      :((c.name||'Client')+(w?' ('+w+')':''));
+    const _wasWhere=(_edit===0)?_street(was):(wasLabel||_street(was));
+    const _nowWhere=(_edit===0)?_street(addr):(label||_street(addr));
+    try{if(typeof _mileRenamePlace==='function')_mileRenamePlace(_fn(_wasWhere),_fn(_nowWhere),was,addr);}catch(_e){}
+  }
   document.querySelector('.zmodal-overlay')?.remove();
   renderCDAddresses();
+  // The primary address is printed on proposals and drawn on the client
+  // header, so a change to it has to repaint more than this one list.
+  if(_edit===0){try{if(typeof renderClientDetail==='function')renderClientDetail();}catch(_e){}}
 }
 function removeClientAddress(idx){
   const c=getClientById(currentClientId);if(!c||!c.extraAddresses)return;

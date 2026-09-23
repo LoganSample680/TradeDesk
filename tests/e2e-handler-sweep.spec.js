@@ -124,7 +124,7 @@ const SETTINGS_KEYS = ['about', 'biz', 'branding', 'cloud', 'data', 'dev',
 
 const PAGES = ['pg-dash', 'pg-leads', 'pg-clients', 'pg-proposals', 'pg-jobs',
   'pg-schedule', 'pg-money', 'pg-taxes', 'pg-tracker', 'pg-licensing',
-  'pg-contracts', 'pg-gallery', 'pg-team', 'pg-dispatch', 'pg-checklist',
+  'pg-contracts', 'pg-team', 'pg-dispatch', 'pg-checklist',
   'pg-cal', 'pg-settings'];
 
 test.describe('handler sweep, settings panels', () => {

@@ -1105,6 +1105,13 @@ async function expSave(){
 
 function quickAction(type){
   if(type==='collect'){openCollectModal();return;}
+  // Photo: deliberately asks nothing first. The whole point of the quick
+  // action is that he can be shooting before he has decided whose job this
+  // is; the unfiled tray on this same screen files it after (js/photo-capture.js).
+  if(type==='photo'){
+    if(typeof tdCaptureUnfiled==='function')tdCaptureUnfiled();
+    return;
+  }
   const tk=todayKey();
   const todayJobs=jobs.filter(j=>{
     const d=parseInt(j.days)||1;
@@ -1836,6 +1843,10 @@ function scheduleJob(){
   jobs.push({id:_newId(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
   // Booked. Estimate VISITS are a different milestone than the job being booked.
   try{if(typeof logLifecycle==='function')logLifecycle(schedType==='estimate'?'estimate_visit_booked':'job_scheduled',{bidId,clientId,jobId:jobs[jobs.length-1]&&jobs[jobs.length-1].id});}catch(_e){}
+  // Photos shot while writing the estimate become this job's Before set, with
+  // nobody filing anything (js/photo-capture.js). Without this the walkthrough
+  // shots stay stranded on the bid and the hub shows a job with no Before.
+  try{if(typeof tdInheritBidPhotos==='function'&&bidId!=null&&jobs.length)tdInheritBidPhotos(bidId,jobs[jobs.length-1].id);}catch(_e){}
   if(schedType==='estimate'&&clientId){
     const pendingBid=bids.find(b=>b.client_id===clientId&&b.status==='Pending'&&!b.followup);
     if(pendingBid)pendingBid.followup=addDays(start,3);

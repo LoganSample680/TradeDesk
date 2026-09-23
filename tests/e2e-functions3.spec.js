@@ -7706,52 +7706,6 @@ test.describe('Paint estimate surface and product functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_lookupPropertyData: calls without throwing', async () => {
-    const result = await page.evaluate(async () => {
-      if (typeof _lookupPropertyData !== 'function') return { skip: true };
-      try { await _lookupPropertyData('c-001', { street: '123 Main St', city: 'Austin', state: 'TX' }); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('no console errors during paint estimate surface/product tests', async () => {
-    assertNoErrors(page, 'paint estimate surface/product');
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BATCH XX: Proposals photo, hub, contract, and form functions
-// ═══════════════════════════════════════════════════════════════════════════════
-test.describe('Proposals photo, hub, contract, and form functions', () => {
-  let page;
-  test.beforeAll(async ({ browser }) => {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
-    page = await ctx.newPage();
-    await mockAllExternal(page);
-    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await waitForAppBoot(page);
-    await page.evaluate(() => { window.location.reload = () => {}; window._activePg = 'pg-dash'; });
-  });
-  test.afterAll(async () => { await page.context().close(); });
-
-  test('openPhotoViewer: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof openPhotoViewer !== 'function') return { skip: true };
-      try { openPhotoViewer('photo-001'); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('deletePhoto: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof deletePhoto !== 'function') return { skip: true };
-      try { deletePhoto('photo-001'); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
 
   test('sendOnboardingLink: calls without throwing', async () => {
     const result = await page.evaluate(() => {
@@ -9306,27 +9260,6 @@ test.describe('Finance GPU and scanner functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_drainPhotoQueue: calls without throwing', async () => {
-    const result = await page.evaluate(async () => {
-      if (typeof _drainPhotoQueue !== 'function') return { skip: true };
-      try { await _drainPhotoQueue(); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('processGalleryUpload: calls without throwing', async () => {
-    const result = await page.evaluate(async () => {
-      if (typeof processGalleryUpload !== 'function') return { skip: true };
-      try {
-        const inp = document.createElement('input');
-        inp.type = 'file';
-        await processGalleryUpload(inp);
-        return { ok: true };
-      } catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
 
   test('no console errors during GPU/scanner tests', async () => {
     assertNoErrors(page, 'GPU/scanner');
