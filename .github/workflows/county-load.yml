@@ -1,0 +1,81 @@
+name: Load County Assessor Data
+
+# Onboarding a county is running this workflow with that county's config name.
+# It is never automatic on push: a load writes tens of thousands of rows to the
+# ONE shared Supabase project (§3.1), and it pulls from a small county server
+# that owes us nothing, so it happens when somebody means it.
+on:
+  workflow_dispatch:
+    inputs:
+      county:
+        description: 'County config name (file in scripts/counties, without .json)'
+        required: true
+        default: 'ks-shawnee'
+      mode:
+        description: 'zips = seed routing (the ONLY step a new county needs) · print = field map only · dry-run = fetch+parse, no writes · load = optional bulk parcel load · enrich = optional paced backfill of addresses already on file'
+        required: true
+        default: 'zips'
+        type: choice
+        options: [zips, print, dry-run, load, enrich]
+      enrich_count:
+        description: 'enrich mode only: how many addresses this run. Keep it small. Normal operation needs no enrich at all: an address is fetched when it is saved.'
+        required: false
+        default: '100'
+      pause_ms:
+        description: 'Pause between requests to the county server. Lower only if you know their capacity.'
+        required: false
+        default: '250'
+
+  # NO SCHEDULE, deliberately. A cron fires with no inputs, so it would fall
+  # through to a full bulk parcel load once a year: exactly the "load all of
+  # Shawnee county" this design was changed to avoid (owner, 2026-09-22). The
+  # live path is demand-driven and keeps itself current as addresses are saved;
+  # if a county's assessments ever need re-pulling in bulk, that is a deliberate
+  # dispatch, not a thing that happens to us at 8am on a Sunday.
+
+# Two loads of the same county at once would fight over the same rows. One at a
+# time, and never cancel a run mid-write: a half-loaded county is worse than a
+# stale one, because it looks complete.
+concurrency:
+  group: county-load-${{ github.event.inputs.county || 'manual' }}
+  cancel-in-progress: false
+
+jobs:
+  load:
+    name: ${{ github.event.inputs.county || 'ks-shawnee' }} · ${{ github.event.inputs.mode || 'load' }}
+    # GitHub-hosted on purpose. The old Zillow scraper needed a home IP to look
+    # human; county servers block nothing (verified 2026-09-22), so this must not
+    # depend on the Proxmox box being awake.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Load county
+        env:
+          SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          COUNTY: ${{ github.event.inputs.county || 'ks-shawnee' }}
+          # 'zips' as the fallback, never 'load': the safe mode is the default.
+          MODE:   ${{ github.event.inputs.mode || 'zips' }}
+          ENRICH: ${{ github.event.inputs.enrich_count || '250' }}
+          PAUSE:  ${{ github.event.inputs.pause_ms || '250' }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            zips)     node scripts/county-load.js "$COUNTY" --zips ;;
+            print)    node scripts/county-load.js "$COUNTY" --print --pause "$PAUSE" ;;
+            dry-run)  node scripts/county-load.js "$COUNTY" --dry-run --pause "$PAUSE" ;;
+            load)     node scripts/county-load.js "$COUNTY" --pause "$PAUSE" ;;
+            # --human and time-boxed. This is a bounded manual backfill, and it
+            # has no business hammering a county faster than a person would.
+            enrich)   node scripts/county-load.js "$COUNTY" --enrich "$ENRICH" --human --max-minutes 45 ;;
+            *) echo "unknown mode: $MODE" >&2; exit 1 ;;
+          esac

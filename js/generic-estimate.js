@@ -4871,8 +4871,10 @@ function _geiEnsureClientProperty(clientId,addr){
   if(!key)return;
   const existing=(typeof clientAddresses==='function')?clientAddresses(c):[{addr:c.addr}];
   if(existing.some(a=>norm(a.addr)===key))return; // already the primary or a saved extra
-  c.extraAddresses=c.extraAddresses||[];
-  c.extraAddresses.push({label:'Additional property',addr});
+  // One door (js/clients.js addClientAddress): pushes AND asks the county, so
+  // an address added from the estimate builder is not blank forever.
+  if(typeof addClientAddress==='function')addClientAddress(c,'Additional property',addr);
+  else{c.extraAddresses=c.extraAddresses||[];c.extraAddresses.push({label:'Additional property',addr});}
 }
 function saveGenericEstimate(draft){
   const v=id=>document.getElementById(id)?.value||'';
