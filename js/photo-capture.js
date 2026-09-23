@@ -477,7 +477,7 @@ function _pcRevPaint(){
   el.innerHTML=(_pcRev.i>=0&&rows[_pcRev.i])?_pcRevViewerHTML(rows):_pcRevGridHTML(rows);
   el.classList.toggle('pc-viewing',_pcRev.i>=0);
   el.classList.toggle('pc-bare',!!_pcRev.bare&&_pcRev.i>=0);
-  if(_pcRev.i>=0)_pcRevBindSwipe();
+  if(_pcRev.i>=0){_pcRevBindSwipe();_pcRevSharpen();}
   // Bound once on the document rather than per repaint, because the viewer
   // rebuilds its own markup on every step and a listener added here would
   // stack up one deep per photo looked at.
@@ -834,6 +834,57 @@ function _pcRevViewerHTML(rows){
       '<button type="button" class="pc-side pc-round pc-big pc-glass danger" onclick="tdReviewDelete()">'+_pcIcon('trash')+'<span class="pc-sr">Delete</span></button>'+
     '</div>';
 }
+// ── Sharp, the way Photos is sharp (owner 2026-09-23: "it's not showing the
+// full quality, it should") ────────────────────────────────────────────────
+// The viewer used to paint tdPhotoSrc, which is the grid's 360px THUMB, and
+// stretch it across a 1170px-wide screen. It stays the first paint, because it
+// is already in cache from the grid and so the photo is on screen instantly,
+// but it is never the last one:
+//   1. at once, the photo you are on (and the two beside it, so a swipe
+//      lands on a sharp picture) moves up to the display copy;
+//   2. once you have STAYED on a photo for a beat, it moves up again to the
+//      full-resolution copy, when one exists.
+// The dwell is the egress rule from 2026-09-22 kept honest: flicking through
+// forty photos pulls forty display copies, not forty 12MP originals. Each swap
+// waits for the new image to decode, so the picture sharpens in place instead
+// of blinking to black.
+const _PC_FULL_DWELL=450;
+let _pcSharpTimer=null;
+function _pcViewSrc(p){
+  return (p&&(p.url||p.data||p.thumbUrl))||'';
+}
+function _pcSwapSrc(img,url){
+  if(!img||!url||img.getAttribute('src')===url)return;
+  const pre=new Image();
+  pre.onload=()=>{if(img.isConnected)img.src=url;};
+  pre.src=url;
+}
+function _pcRevSharpen(){
+  clearTimeout(_pcSharpTimer);
+  if(!_pcRev||_pcRev.i<0)return;
+  const rows=_pcRevRows(),n=rows.length,i=_pcRev.i;
+  const p=rows[i];
+  if(!p)return;
+  const panes=[...document.querySelectorAll('#pc-rev .pc-rev-pane img, #pc-rev-stage > .pc-rev-img')];
+  const cur=document.getElementById('pc-rev-img');
+  if(n>1&&panes.length===3){
+    _pcSwapSrc(panes[0],_pcViewSrc(rows[(i-1+n)%n]));
+    _pcSwapSrc(panes[2],_pcViewSrc(rows[(i+1)%n]));
+  }
+  _pcSwapSrc(cur,_pcViewSrc(p));
+  if(!p.fullPath)return;
+  const id=p.id;
+  _pcSharpTimer=setTimeout(()=>{
+    if(!_pcRev||_pcRev.i<0)return;
+    const now=_pcRevRows()[_pcRev.i];
+    if(!now||String(now.id)!==String(id))return;
+    const url=_pcFullUrl(now);
+    if(!url)return;
+    _pcSwapSrc(document.getElementById('pc-rev-img'),url);
+    // Nothing left to offer behind the menu once it is on screen.
+    document.getElementById('pc-rev-full')?.remove();
+  },_PC_FULL_DWELL);
+}
 function tdViewerMenu(open){
   const m=document.getElementById('pc-menu');
   if(!m)return false;
@@ -1178,16 +1229,20 @@ function _pcRevBindSwipe(){
   const H=()=>stage.clientHeight||1;
   let x0=0,y0=0,t0=0,dx=0,dy=0,active=false,axis='';
   const atX=(px)=>{if(track)track.style.transform='translate3d(calc(-33.3333% + '+px+'px),0,0)';};
-  // Down is a dismissal in progress, so the whole sheet answers: it falls with
-  // the thumb, shrinks a little, and lets the app behind it show through. A
-  // photo that only slides looks stuck; one that recedes looks like it is being
-  // put away.
-  const atY=(py)=>{
-    const d=Math.max(0,py);
-    sheet.style.transform='translate3d(0,'+d+'px,0) scale('+(1-Math.min(d/1400,0.14))+')';
-    sheet.style.opacity=String(1-Math.min(d/620,0.62));
+  // Down is a dismissal in progress, and it moves the way Photos moves it
+  // (owner 2026-09-23: "still not seeing the smooth swipe down"): the PHOTO
+  // rides under the thumb in both directions and shrinks, the black behind it
+  // thins out so the album shows through, and the controls step aside at the
+  // first pixel. The sheet itself stays put; only the picture is picked up.
+  const img=()=>document.getElementById('pc-rev-img');
+  const atY=(py,px)=>{
+    const d=Math.max(0,py),im=img();
+    sheet.classList.add('pc-dragging');
+    if(im)im.style.transform='translate3d('+Math.round(px||0)+'px,'+Math.round(py)+'px,0) scale('+(1-Math.min(d/900,0.32))+')';
+    sheet.style.backgroundColor='rgba(0,0,0,'+(1-Math.min(d/480,0.85))+')';
   };
-  const clearY=()=>{sheet.style.transform='';sheet.style.opacity='';};
+  const clearY=()=>{const im=img();if(im){im.style.transform='';im.classList.remove('snap');}
+    sheet.style.backgroundColor='';sheet.classList.remove('pc-dragging','snap');};
   const settle=(el,css,then)=>{
     el.classList.add('snap');
     if(css!=null)el.style.transform=css;
@@ -1222,7 +1277,7 @@ function _pcRevBindSwipe(){
     }
     if(axis==='x'){dx=ex;atX(dx);}
     else if(axis==='u'){dy=Math.min(0,ey);stage.style.transform='translate3d(0,'+Math.round(dy*0.35)+'px,0)';}
-    else{dy=ey;atY(dy);}
+    else{dy=ey;dx=ex;atY(dy,dx);}
     if(e.cancelable)e.preventDefault();
   };
   const up=()=>{
@@ -1241,11 +1296,19 @@ function _pcRevBindSwipe(){
       // Same rule as the carousel: a flick still has to BE a movement, or a
       // fast twitch closes the photo a contractor was reading.
       const go=dy>H()*_PC_DISMISS_FRACTION||(dy>_PC_SWIPE_MIN&&v>_PC_SWIPE_VELOCITY);
-      if(!go){settle(sheet,'translate3d(0,0,0) scale(1)',()=>{sheet.classList.remove('snap');clearY();});return;}
+      const im=img();
       sheet.classList.add('snap');
-      sheet.style.transform='translate3d(0,'+H()+'px,0) scale(0.88)';
-      sheet.style.opacity='0';
-      settle(sheet,null,()=>{clearY();sheet.classList.remove('snap');tdReviewClose();});
+      if(!go){
+        // Back to where it was: the photo springs home and the black returns.
+        sheet.style.backgroundColor='';
+        if(!im){clearY();return;}
+        settle(im,'translate3d(0,0,0) scale(1)',clearY);
+        return;
+      }
+      sheet.style.backgroundColor='rgba(0,0,0,0)';
+      if(!im){clearY();tdReviewClose();return;}
+      im.style.opacity='0';
+      settle(im,'translate3d('+Math.round(dx)+'px,'+Math.round(H()*0.6)+'px,0) scale(0.6)',()=>{clearY();tdReviewClose();});
       return;
     }
     if(axis!=='x'||!track||!dx){if(track){track.classList.remove('snap');track.style.transform='';}return;}
@@ -1611,6 +1674,7 @@ function tdReviewClose(){
   const trash=_pcRev?_pcRev.trash.slice():[];
   _pcRev=null;_pcFolder=null;
   tdPhotoInfoClose();
+  clearTimeout(_pcSharpTimer);
   // The sheet is gone, so the arrow keys belong to whatever is underneath it
   // again. _pcRevKey guards on _pcRev too, so this is belt and braces.
   document.removeEventListener('keydown',_pcRevKey);

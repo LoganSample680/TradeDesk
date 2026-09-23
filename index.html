@@ -2156,7 +2156,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);border-radius:999px;padding:6px 13px;font:600 12px var(--pc-font);background:rgba(28,28,30,.72);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}
 .pc-hint.gold{background:var(--pc-yellow);color:#241c00}
 .pc-seg{display:flex;justify-content:center;gap:22px;padding:16px 14px 0}
-.pc-seg-btn{border:none;background:none;padding:6px 2px;font:600 13px var(--pc-font);letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.62);touch-action:manipulation;transition:color .15s ease}
+.pc-seg-btn{border:none;background:none;padding:6px 2px;font:600 13px var(--pc-font);letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.62);touch-action:manipulation}
 .pc-seg-btn.on{color:var(--pc-yellow)}
 .pc-shutrow{flex:1;display:flex;align-items:center;justify-content:space-between;padding:0 30px calc(18px + env(safe-area-inset-bottom,0px));max-height:170px}
 .pc-last{width:48px;height:48px;border-radius:9px;border:none;padding:0;background:#1c1c1e center/cover no-repeat;position:relative;touch-action:manipulation}
@@ -2249,7 +2249,6 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-rev-track.snap{transition:transform .3s cubic-bezier(.22,1,.36,1)}
 /* The sheet itself animates when it is being put away, so the spring-back and
    the dismissal both have motion rather than snapping. */
-.pc-rev.snap{transition:transform .28s cubic-bezier(.22,1,.36,1),opacity .28s ease}
 .pc-rev-stage{touch-action:pan-y}
 .pc-rev-pane{flex:0 0 33.3333%;width:33.3333%;height:100%;display:flex;align-items:center;justify-content:center;padding:0 8px;box-sizing:border-box}
 .pc-rev-img{max-width:100%;max-height:100%;border-radius:var(--r-md);-webkit-user-select:none;user-select:none;-webkit-user-drag:none;pointer-events:none}
@@ -2291,6 +2290,16 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-rev.pc-viewing .pc-rev-stage{position:absolute;inset:0;padding:0}
 .pc-rev.pc-viewing .pc-rev-pane{padding:0}
 .pc-rev.pc-viewing .pc-rev-img{border-radius:0;width:100%;height:100%;object-fit:contain}
+/* The viewer owns every direction a thumb can move: sideways steps, down puts
+   the photo away, up opens the details. pan-y (inherited from body) told iOS
+   that vertical drags were a scroll, so WebKit took the gesture and sent
+   pointercancel a few pixels in, which is why the swipe down never followed
+   the finger on a real phone while every synthetic-event test passed. */
+.pc-rev.pc-viewing .pc-rev-stage,.pc-rev.pc-viewing .pc-rev-track{touch-action:none}
+.pc-rev.pc-viewing .pc-rev-img{will-change:transform;transform-origin:50% 50%}
+.pc-rev-img.snap{transition:transform .3s cubic-bezier(.22,1,.36,1),opacity .26s ease}
+.pc-rev.pc-viewing.snap{transition:background-color .28s ease}
+.pc-rev.pc-dragging .pc-v-top,.pc-rev.pc-dragging .pc-v-scrub,.pc-rev.pc-dragging .pc-v-bar,.pc-rev.pc-dragging .pc-undo{opacity:0;pointer-events:none}
 .pc-v-top,.pc-v-scrub,.pc-v-bar,.pc-undo{transition:opacity .18s ease}
 .pc-rev.pc-bare .pc-v-top,.pc-rev.pc-bare .pc-v-scrub,.pc-rev.pc-bare .pc-v-bar,.pc-rev.pc-bare .pc-undo{opacity:0;pointer-events:none}
 .pc-v-top{position:absolute;top:0;left:0;right:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 0}
