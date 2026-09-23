@@ -1595,6 +1595,79 @@ function tdAttachCancel(){
   _pcAtt=null;
   return true;
 }
+// The "New customer" row. With a search typed that matches nobody by name,
+// it offers that name; otherwise it offers the house the photos were taken
+// at, once the reverse lookup has said which house that is.
+function _pcAttNewRow(q){
+  const term=String(q||'').trim();
+  const exact=term&&clients.some(c=>String(c.name||'').trim().toLowerCase()===term.toLowerCase());
+  if(exact)return '';
+  const at=_pcAtt&&_pcAtt.guess?String(_pcAtt.guess).split(',')[0]:'';
+  const sub=at?'At '+escHtml(at):'Name and address';
+  return '<button type="button" class="pc-file-opt pc-att-new" onclick="tdAttachNew()">'+
+    '<span class="pc-av add">'+_pcIcon('plus')+'</span>'+
+    '<span class="pc-opt-m"><b>'+(term?'Add \u201c'+escHtml(term)+'\u201d':'New customer')+'</b><span id="pc-att-new-sub">'+sub+'</span></span>'+
+    _pcIcon('chev','pc-chev')+'</button>';
+}
+// Where the photos were taken, as a street address. Asked once per picker,
+// in the background; the answer only ever fills blanks, never overwrites
+// something he typed.
+function _pcAttGuess(){
+  if(!_pcAtt||_pcAtt.guess!==undefined||_pcAtt._guessing)return;
+  const rows=(_pcAtt.ids||[]).map(id=>photos.find(x=>String(x.id)===String(id))).filter(Boolean);
+  const fix=rows.map(r=>({lat:r.lat,lon:r.lon})).find(f=>f.lat!=null&&f.lon!=null);
+  if(!fix||typeof _reverseGeocode!=='function'){_pcAtt.guess='';return;}
+  const att=_pcAtt;att._guessing=true;
+  Promise.resolve().then(()=>_reverseGeocode(fix.lat,fix.lon)).then(r=>{
+    att._guessing=false;
+    att.guess=(r&&r.addr)||'';
+    if(_pcAtt!==att)return;
+    const sub=document.getElementById('pc-att-new-sub');
+    if(sub&&att.guess)sub.textContent='At '+att.guess.split(',')[0];
+    const a=document.getElementById('pc-new-addr');
+    if(a){if(!a.value.trim())a.value=att.guess;a.placeholder='Street, city';}
+  }).catch(()=>{att._guessing=false;att.guess='';
+    const a=document.getElementById('pc-new-addr');if(a)a.placeholder='Street, city';});
+}
+// Were these photos taken somewhere this customer has no house on file?
+// The pins answer it when the houses were ever located. When they were not,
+// the street Apple named for the photos answers it: a street that is none of
+// theirs is a new property, not a reason to guess the one on record.
+function _pcAttAway(c){
+  if(!_pcAtt||!c)return false;
+  const rows=(_pcAtt.ids||[]).map(id=>photos.find(x=>String(x.id)===String(id))).filter(Boolean);
+  const fix=rows.map(r=>({lat:r.lat,lon:r.lon})).find(f=>f.lat!=null&&f.lon!=null);
+  if(!fix)return false;
+  const places=_pcClientPlaces(c);
+  if(places.length)return !places.some(pl=>_pcMeters(fix.lat,fix.lon,pl.lat,pl.lon)<=_PC_NEAR_M);
+  if(!_pcAtt.guess||typeof siteNoteKey!=='function')return false;
+  const here=siteNoteKey(_pcAtt.guess);
+  const theirs=(typeof clientAddresses==='function')?clientAddresses(c):[{addr:c.addr}];
+  return !theirs.some(a=>a&&a.addr&&siteNoteKey(a.addr)===here);
+}
+function tdAttachNew(){
+  if(!_pcAtt)return false;
+  const q=document.getElementById('pc-att-q');
+  const term=q?q.value.trim():'';
+  // A typed search that matched nobody is the name he was looking for.
+  _pcAttPaint('new',term);
+  return true;
+}
+function tdAttachNewSave(){
+  if(!_pcAtt)return false;
+  const name=(document.getElementById('pc-new-name')?.value||'').trim();
+  const addr=(document.getElementById('pc-new-addr')?.value||'').trim();
+  if(!name){
+    const e=document.getElementById('pc-new-err');if(e)e.hidden=false;
+    document.getElementById('pc-new-name')?.focus();
+    return false;
+  }
+  if(typeof _clientQuickCreate!=='function')return false;
+  const c=_clientQuickCreate(name,addr);
+  _pcAtt.clientId=c.id;_pcAtt.addr=addr;_pcAtt.bidId=null;_pcAtt.jobId=null;
+  // A brand-new customer has no proposal or job to ask about.
+  return tdAttachCommit();
+}
 function _pcInitials(name){
   const w=String(name||'').trim().split(/\s+/).filter(Boolean);
   return ((w[0]||'?').charAt(0)+(w.length>1?w[w.length-1].charAt(0):'')).toUpperCase();
@@ -1626,6 +1699,7 @@ function _pcAttPaint(step,q){
         '</div>':'')+
       '<div class="pc-att-lbl">'+(term?'Results':'All customers')+'</div>'+
       '<div class="pc-att-group pc-file-list">'+
+        _pcAttNewRow(q)+
         (list.length?list.map(c=>{const k=props(c);
           return row('tdAttachPick('+c.id+')',escHtml(_pcInitials(c.name)),escHtml(c.name||'Unnamed'),
             k>1?k+' addresses':escHtml(String(c.addr||'').split(',')[0]),'');}).join('')
@@ -1633,13 +1707,36 @@ function _pcAttPaint(step,q){
       '</div></div>';
     const box=document.getElementById('pc-att-q');
     if(q!=null&&box){box.focus();box.setSelectionRange(box.value.length,box.value.length);}
+    _pcAttGuess();
+    return;
+  }
+  if(step==='new'){
+    // Nobody in the book is standing at this house yet. Name and address,
+    // nothing else: the same two things the proposal gate asks for, and the
+    // same record comes out of it (_clientQuickCreate). The address is filled
+    // in from where the photos were taken, because he is standing there.
+    ov.innerHTML='<div class="zmodal pc-att-sheet">'+
+      head('New customer')+
+      '<div class="pc-att-group pc-att-form">'+
+        '<label class="pc-att-f"><span>Name</span><input id="pc-new-name" autocomplete="off" autocapitalize="words" placeholder="Required" value="'+escHtml(q||'')+'"></label>'+
+        '<label class="pc-att-f"><span>Address</span><input id="pc-new-addr" autocomplete="off" placeholder="'+(_pcAtt.guess===undefined?'Finding where you are':'Street, city')+'" value="'+escHtml(_pcAtt.guess||'')+'"></label>'+
+      '</div>'+
+      '<div class="pc-att-err" id="pc-new-err" hidden>Add a name so the photos have a folder.</div>'+
+      '<button type="button" class="pc-att-go" id="pc-new-go" onclick="tdAttachNewSave()">Create and file '+(n===1?'photo':n+' photos')+'</button>'+
+      '<button type="button" class="pc-att-back" onclick="_pcAttPaint(\'who\')">Back to customers</button>'+
+    '</div>';
+    const addrEl=document.getElementById('pc-new-addr');
+    if(addrEl&&typeof _addrAutoFull==='function')_addrAutoFull(addrEl,null);
+    const nameEl=document.getElementById('pc-new-name');
+    if(nameEl){nameEl.focus();nameEl.setSelectionRange(nameEl.value.length,nameEl.value.length);}
+    _pcAttGuess();
     return;
   }
   if(step==='where'){
     // The app already owns this component, and it can add an address inline,
     // which is the "edit the address" half of what Jack asked for (§7.3).
     ov.remove();
-    pickClientAddress(_pcAtt.clientId,addr=>{tdAttachAddr(addr);});
+    pickClientAddress(_pcAtt.clientId,addr=>{tdAttachAddr(addr);},{suggest:_pcAtt.away?(_pcAtt.guess||''):''});
     return;
   }
   // 'work': the proposal or job on that customer, only ever asked when there
@@ -1683,7 +1780,12 @@ function tdAttachPick(clientId,jobId,addr){
     return _pcAttAfterAddr();
   }
   const props=(typeof clientAddresses==='function')?clientAddresses(c):[];
-  if(props.length>1)return _pcAttPaint('where'),true;
+  // Shot somewhere this customer has no saved house: asking which property,
+  // with "Add <where you are>" on offer, beats quietly filing the photos to
+  // the one address on file (owner 2026-09-23). Only when the pins can prove
+  // it; a customer whose houses were never located keeps the old shortcut.
+  _pcAtt.away=_pcAttAway(c);
+  if(props.length>1||_pcAtt.away)return _pcAttPaint('where'),true;
   _pcAtt.addr=props.length?props[0].addr:((c&&c.addr)||'');
   return _pcAttAfterAddr();
 }
@@ -1821,6 +1923,7 @@ const _PC_ICONS={
   shield:'<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
   x:'<path d="M7 7l10 10M17 7L7 17"/>',
   search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
   globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',
   chev:'<path d="M9 5l7 7-7 7"/>'
 };

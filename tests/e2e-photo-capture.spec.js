@@ -816,7 +816,8 @@ test.describe('Photo capture: the sheet itself', () => {
     const r = await page.evaluate((ids) => {
       tdReviewAttach();
       for (let step = 0; step < 3 && document.getElementById('pc-att'); step++) {
-        const opt = document.querySelector('#pc-att .pc-file-opt');
+        // The customer, not the "New customer" row that heads the list.
+        const opt = document.querySelector('#pc-att .pc-file-opt:not(.pc-att-new)');
         if (!opt) break;
         opt.click();
       }
@@ -969,10 +970,12 @@ test.describe('Photo capture: the sheet itself', () => {
     });
     const r = await page.evaluate(() => ({
       near: document.querySelectorAll('#pc-att .pc-file-opt.near').length,
-      list: document.querySelectorAll('#pc-att .pc-file-opt').length,
+      list: document.querySelectorAll('#pc-att .pc-file-opt:not(.pc-att-new)').length,
+      add: document.querySelectorAll('#pc-att .pc-att-new').length,
     }));
     expect(r.near).toBe(0);
     expect(r.list).toBe(1);
+    expect(r.add, 'the new-customer row is always on offer').toBe(1);
     await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
   });
 
@@ -3438,7 +3441,7 @@ test.describe('TrueShot: the redesign', () => {
         const ov = document.getElementById('pc-att');
         const out = { sheet: !!ov.querySelector('.pc-att-sheet'), labels: [...ov.querySelectorAll('.pc-att-lbl')].map(l => l.textContent),
           near: ov.querySelectorAll('.pc-file-opt.near').length,
-          avatars: [...ov.querySelectorAll('.pc-file-list .pc-av')].map(a => a.textContent),
+          avatars: [...ov.querySelectorAll('.pc-file-list .pc-av:not(.add)')].map(a => a.textContent),
           multi: [...ov.querySelectorAll('.pc-file-list .pc-file-opt')].map(b => b.textContent).find(t => /Pepe/.test(t)) || '' };
         _pcAttPaint('who', 'dana');
         out.searchLabels = [...document.querySelectorAll('#pc-att .pc-att-lbl')].map(l => l.textContent);
@@ -3665,5 +3668,249 @@ test.describe('TrueShot: Look Around', () => {
     }));
     expect(msg).toBe('none');
     assertNoErrors(page, 'Look Around');
+  });
+});
+
+// Owner 2026-09-23: "does it have a way to create a client and add a address
+// if you take a photo and it doesn't return the address in the system?" It
+// did not. The picker now heads its list with New customer, filled in from
+// where the photos were taken, and a customer shot away from every house on
+// file is asked which property, with the one he is standing at on offer.
+test.describe('TrueShot: a customer or a house the book does not have yet', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    // Same reason as the sheet block: a reconnect load replaces photos.
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => { };
+      window.__seedNew = (lat, lon) => {
+        try { tdAttachCancel(); tdReviewClose(); } catch (e) {}
+        document.querySelectorAll('.zmodal-overlay').forEach(x => x.remove());
+        clients.length = 0; photos.length = 0;
+        clients.push({ id: 501, name: 'Dana Whitfield', addr: '412 Oak St, Wichita, KS 67202', lat: 37.6889, lon: -97.3361, extraAddresses: [] });
+        photos.push({ id: 970, type: 'before', url: '', data: 'x', client_id: null, lat, lon, uploadedAt: '2026-09-23T15:00:00.000Z' },
+                    { id: 971, type: 'before', url: '', data: 'x', client_id: null, lat, lon, uploadedAt: '2026-09-23T15:00:05.000Z' });
+        // Where the phone is, as Apple would say it. No network in tests.
+        window._reverseGeocode = async () => ({ street: '6908 SW 17th St', city: 'Topeka', state: 'KS', zip: '66615', addr: '6908 SW 17th St, Topeka, KS 66615' });
+        tdReviewShots([970, 971]); tdReviewAttach();
+        return true;
+      };
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the list is headed by New customer, and it learns the street it is standing on', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await expect(page.locator('#pc-att .pc-att-new')).toHaveCount(1);
+    await expect(page.locator('#pc-att-new-sub')).toHaveText('At 6908 SW 17th St');
+    const first = await page.evaluate(() => document.querySelector('#pc-att .pc-file-list .pc-file-opt').classList.contains('pc-att-new'));
+    expect(first, 'it heads the list, where a thumb finds it').toBe(true);
+  });
+
+  test('tapping it asks for a name, with the address already filled in', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.locator('#pc-att .pc-att-new').click();
+    await expect(page.locator('#pc-att .pc-att-t')).toHaveText('New customer');
+    await expect(page.locator('#pc-new-addr')).toHaveValue('6908 SW 17th St, Topeka, KS 66615');
+    await expect(page.locator('#pc-new-name')).toHaveValue('');
+    await expect(page.locator('#pc-new-go')).toHaveText('Create and file 2 photos');
+  });
+
+  test('no name, no customer: it says what is missing and files nothing', async () => {
+    await page.evaluate(() => { window.__seedNew(39.0356, -95.7833); _pcAttPaint('new', ''); });
+    const r = await page.evaluate(() => {
+      const before = clients.length;
+      const ok = tdAttachNewSave();
+      return { ok, before, after: clients.length, err: !document.getElementById('pc-new-err').hidden,
+        filed: photos.filter(p => p.client_id != null).length };
+    });
+    expect(r.ok).toBe(false);
+    expect(r.after).toBe(r.before);
+    expect(r.err).toBe(true);
+    expect(r.filed).toBe(0);
+  });
+
+  test('Create makes one real customer at that address and files every photo to them', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.locator('#pc-att .pc-att-new').click();
+    await page.locator('#pc-new-name').pressSequentially('Pepe Miranda');
+    await page.locator('#pc-new-go').click();
+    const r = await page.evaluate(() => {
+      const c = clients.find(x => x.name === 'Pepe Miranda');
+      return { n: clients.filter(x => x.name === 'Pepe Miranda').length, addr: c && c.addr, street: c && c.street, city: c && c.city,
+        token: !!(c && c.clientToken !== undefined), extra: Array.isArray(c && c.extraAddresses),
+        filed: photos.filter(p => c && p.client_id === c.id).map(p => p.addr),
+        sheetGone: !document.getElementById('pc-att') && !document.getElementById('pc-rev') };
+    });
+    expect(r.n).toBe(1);
+    expect(r.addr).toBe('6908 SW 17th St, Topeka, KS 66615');
+    expect(r.street).toBe('6908 SW 17th St');
+    expect(r.city).toBe('Topeka');
+    expect(r.extra).toBe(true);
+    expect(r.filed).toEqual(['6908 SW 17th St, Topeka, KS 66615', '6908 SW 17th St, Topeka, KS 66615']);
+    expect(r.sheetGone).toBe(true);
+  });
+
+  test('a search that finds nobody becomes the name', async () => {
+    await page.evaluate(() => { window.__seedNew(39.0356, -95.7833); _pcAttPaint('who', 'Jack Reyes'); });
+    await expect(page.locator('#pc-att .pc-att-new b')).toHaveText('Add \u201cJack Reyes\u201d');
+    await page.evaluate(() => tdAttachNew());
+    await expect(page.locator('#pc-new-name')).toHaveValue('Jack Reyes');
+  });
+
+  test('a search that names a customer exactly does not offer a second one', async () => {
+    await page.evaluate(() => { window.__seedNew(39.0356, -95.7833); _pcAttPaint('who', 'dana whitfield'); });
+    await expect(page.locator('#pc-att .pc-att-new')).toHaveCount(0);
+  });
+
+  test('a lookup that fails leaves the address blank to type, never stuck on "Finding"', async () => {
+    await page.evaluate(() => { window.__seedNew(39.0356, -95.7833); });
+    await page.evaluate(async () => {
+      tdAttachCancel(); tdReviewClose();
+      window._reverseGeocode = async () => { throw new Error('offline'); };
+      tdReviewShots([970, 971]); tdReviewAttach(); tdAttachNew();
+      await new Promise(r => setTimeout(r, 30));
+    });
+    await expect(page.locator('#pc-new-addr')).toHaveValue('');
+    await expect(page.locator('#pc-new-addr')).toHaveAttribute('placeholder', 'Street, city');
+  });
+
+  test('photos with no location still offer New customer, with nothing guessed', async () => {
+    await page.evaluate(() => window.__seedNew(null, null));
+    await expect(page.locator('#pc-att-new-sub')).toHaveText('Name and address');
+    await page.evaluate(() => tdAttachNew());
+    await expect(page.locator('#pc-new-addr')).toHaveValue('');
+  });
+
+  test('an existing customer shot away from every house is asked which property, with this one on offer', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.evaluate(() => tdAttachPick(501));
+    await expect(page.locator('#_addrpick-sheet')).toContainText('412 Oak St');
+    await expect(page.locator('#_addrpick-sheet')).toContainText('Add 6908 SW 17th St');
+    await page.evaluate(() => _addrPickAddNew());
+    await expect(page.locator('#_addrpick-new')).toHaveValue('6908 SW 17th St, Topeka, KS 66615');
+    await page.evaluate(() => _addrPickSaveNew());
+    const r = await page.evaluate(() => ({
+      props: clientAddresses(clients.find(c => c.id === 501)).map(a => a.addr),
+      filed: photos.filter(p => p.client_id === 501).map(p => p.addr),
+    }));
+    expect(r.props).toContain('6908 SW 17th St, Topeka, KS 66615');
+    expect(r.filed).toEqual(['6908 SW 17th St, Topeka, KS 66615', '6908 SW 17th St, Topeka, KS 66615']);
+  });
+
+  // Owner 2026-09-23: "I go in and select is it a rental, secondary home etc."
+  test('adding the house asks what it is, and Rental makes it a rental property', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.evaluate(() => { tdAttachPick(501); _addrPickAddNew(); });
+    const kinds = await page.locator('#_addrpick-kinds button').allTextContents();
+    expect(kinds).toEqual(['Rental', 'Second home', 'Vacation home', 'Commercial', 'Family', 'Other']);
+    await page.locator('#_addrpick-kinds button[data-k="Rental"]').click();
+    await expect(page.locator('#_addrpick-kinds button[data-k="Rental"]')).toHaveAttribute('aria-pressed', 'true');
+    await page.evaluate(() => _addrPickSaveNew());
+    const r = await page.evaluate(() => {
+      const c = clients.find(x => x.id === 501);
+      const a = clientAddresses(c).find(x => /6908/.test(x.addr));
+      const pd = getProperty(c, a.addr);
+      return { label: a.label, ptype: pd.propertyType, rental: !!pd.isRental };
+    });
+    expect(r.label).toBe('Rental');
+    expect(r.ptype).toBe('Rental property');
+    expect(r.rental).toBe(true);
+  });
+
+  test('Second home is a label only, and tapping a chip twice takes it back', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.evaluate(() => { tdAttachPick(501); _addrPickAddNew(); });
+    await page.locator('#_addrpick-kinds button[data-k="Commercial"]').click();
+    await page.locator('#_addrpick-kinds button[data-k="Commercial"]').click();
+    await expect(page.locator('#_addrpick-kinds button[aria-pressed="true"]')).toHaveCount(0);
+    await page.locator('#_addrpick-kinds button[data-k="Second home"]').click();
+    await page.evaluate(() => _addrPickSaveNew());
+    const r = await page.evaluate(() => {
+      const c = clients.find(x => x.id === 501);
+      const a = clientAddresses(c).find(x => /6908/.test(x.addr));
+      return { label: a.label, ptype: getProperty(c, a.addr).propertyType || '' };
+    });
+    expect(r.label).toBe('Second home');
+    expect(r.ptype).toBe('');
+  });
+
+  test('skipping the question still adds the house, as an additional property', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    await page.evaluate(() => { tdAttachPick(501); _addrPickAddNew(); _addrPickSaveNew(); });
+    const label = await page.evaluate(() => clientAddresses(clients.find(x => x.id === 501)).find(x => /6908/.test(x.addr)).label);
+    expect(label).toBe('Additional property');
+  });
+
+  test('a customer whose houses were never pinned is still asked when the street is not theirs', async () => {
+    await page.evaluate(() => {
+      window.__seedNew(39.0356, -95.7833);
+      const c = clients.find(x => x.id === 501); delete c.lat; delete c.lon;
+    });
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    const asked = await page.evaluate(() => { tdAttachPick(501); return !!document.getElementById('_addrpick-ov'); });
+    expect(asked).toBe(true);
+    await page.evaluate(() => document.getElementById('_addrpick-ov')?.remove());
+  });
+
+  test('...and is not asked when the street Apple names IS theirs', async () => {
+    await page.evaluate(() => {
+      window.__seedNew(39.0356, -95.7833);
+      const c = clients.find(x => x.id === 501); delete c.lat; delete c.lon;
+      c.addr = '6908 SW 17th St, Topeka, KS 66615';
+    });
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    const r = await page.evaluate(() => { tdAttachPick(501); return { asked: !!document.getElementById('_addrpick-ov'), filed: photos.filter(p => p.client_id === 501).length }; });
+    expect(r.asked).toBe(false);
+    expect(r.filed).toBe(2);
+  });
+
+  test('shot AT the house on file, one tap still files it there with no question', async () => {
+    await page.evaluate(() => window.__seedNew(37.6889, -97.3361));
+    const r = await page.evaluate(() => {
+      tdAttachPick(501);
+      return { asked: !!document.getElementById('_addrpick-ov'), filed: photos.filter(p => p.client_id === 501).map(p => p.addr) };
+    });
+    expect(r.asked).toBe(false);
+    expect(r.filed).toEqual(['412 Oak St, Wichita, KS 67202', '412 Oak St, Wichita, KS 67202']);
+  });
+
+  test('the proposal gate still makes its customer through the same path', async () => {
+    const r = await page.evaluate(() => {
+      const before = clients.length;
+      const c = _clientQuickCreate('Gate Test', '1 Main St, Topeka, KS 66603');
+      const noAddr = _clientQuickCreate('No Address Yet', '');
+      return { grew: clients.length - before, city: c.city, blank: noAddr.addr, str: noAddr.street,
+        junk: (() => { try { _clientQuickCreate(null, null); return true; } catch (e) { return false; } })() };
+    });
+    expect(r.grew).toBe(2);
+    expect(r.city).toBe('Topeka');
+    expect(r.blank).toBe('');
+    expect(r.str).toBe('');
+    expect(r.junk).toBe(true);
+  });
+
+  test('the new-customer form holds together at 390px', async () => {
+    await page.evaluate(() => { window.__seedNew(39.0356, -95.7833); tdAttachNew(); });
+    const r = await page.evaluate(() => {
+      const box = s => document.querySelector(s).getBoundingClientRect();
+      return { bleed: document.documentElement.scrollWidth > innerWidth + 1,
+        go: box('#pc-new-go').right <= innerWidth, name: box('#pc-new-name').width > 150 };
+    });
+    expect(r.bleed).toBe(false);
+    expect(r.go).toBe(true);
+    expect(r.name).toBe(true);
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); });
+    await assertNoErrors(page, 'TrueShot new customer');
   });
 });
