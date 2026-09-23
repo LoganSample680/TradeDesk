@@ -394,6 +394,11 @@ let _tmCapAction='Stop & get re-approval';
 // Send.
 let _tmRateOnly=false;
 Object.defineProperty(window,'_tmRateOnly',{get:()=>_tmRateOnly,set:v=>{_tmRateOnly=!!v;},configurable:true});
+// HOW MATERIALS ARE BILLED, as a percent over his cost. 0 is "at cost".
+// Owner, 2026-09-23: a T&M proposal does not list materials, it says how they
+// are billed. One term, printed on the contract, applied to every receipt.
+let _tmMatMarkup=0;
+Object.defineProperty(window,'_tmMatMarkup',{get:()=>_tmMatMarkup,set:v=>{_tmMatMarkup=Math.max(0,Number(v)||0);},configurable:true});
 let _geiIsFreeForm=false;
 Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
@@ -754,6 +759,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _tmLayers=new Set(['rate','cap']);_tmRateOnly=true;
   // His standing answer, not a fresh question on every job.
   _tmHideRate=_tmHideRateDefault();
+  _tmMatMarkup=_tmMatMarkupDefault();
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -1707,7 +1713,13 @@ function _tmShowPage(){
   // not have. Restored before _tmApplyLayers so the row is populated the
   // instant it is shown.
   // Same fault, same fix: the last job's mobilization deposit is not this one's.
-  setV('tm-i-dep-flat',(b&&Number(b.tmDepositAmt)>0)?b.tmDepositAmt:'');
+  // A proposal saved before 2026-09-23 may carry its deposit only as
+  // b.deposit (a percent of an estimate, worked out); that figure comes back
+  // as the flat amount, so what he sent is what he sees.
+  {const _d=b?(Number(b.tmDepositAmt)>0?Number(b.tmDepositAmt):Number(b.deposit)>0?Number(b.deposit):0):0;
+   setV('tm-i-dep-flat',_d>0?_d:'');}
+  // How materials are billed: the bid's own term, else his usual.
+  _tmMatMarkup=(b&&b.tmMatMarkup!=null)?Math.max(0,Number(b.tmMatMarkup)||0):_tmMatMarkupDefault();
   // THE BID'S OWN LAYERS WIN, AND ONLY A BID HAS ANY. A proposal he built as
   // scope-only stays scope-only on resume; one with a rate and a cap comes back
   // with both. A bid written before layers existed is read from what it
@@ -2845,13 +2857,12 @@ function _byoAutosave(){
     // is what THIS proposal did, and a resumed one has to come back the way it
     // was sent rather than the way he has since changed his mind.
     b.tmHideRate=!!_tmHideRate;
-    if(_tmRateOnly){
-      // Same reason as saveGenericEstimate: the flat figure is the deposit, and
-      // the percent the shared block just wrote off a phantom total is wrong.
-      b.tmDepositPct=0;
-      b.tmDepositAmt=Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0);
-      b.deposit=b.tmDepositAmt;
-    }
+    // The deposit is the flat figure he named, or nothing (_tmDepositState),
+    // never a percent of an estimate. The shared block above just wrote one.
+    b.tmDepositPct=0;
+    b.tmDepositAmt=_tmDeposit();
+    b.deposit=b.tmDepositAmt;
+    b.tmMatMarkup=_tmMatMarkup;
     b.tmCrewCount=_tmCrewCount;
     b.tmRatePerMan=_tmRatePerMan;
     b.tmEstHours=_tmEstHours;
@@ -4230,6 +4241,7 @@ function _presentUnique(b,list,cur){
 // decides whether "yes" happens now or "let me talk to my wife" happens now.
 function _presentDeposit(b,me,total){
   if(me){
+    if(_geiIsTM)return _tmDeposit();
     const pct=(typeof _geiDepositPct==='function')?_geiDepositPct():0;
     return pct>0?Math.round(total*pct/100*100)/100:0;
   }
@@ -4470,8 +4482,8 @@ function _tmInputChange(){
   setT('tm-rail-rate-crew',String(crewRates?_estCrew.length:_tmCrewCount));
   setT('tm-rail-rate-day','$'+dayRate.toLocaleString());
   setT('tm-rail-rate-mat',matRaw>0?'$'+matRaw.toLocaleString()+' est.':'at cost');
-  const _tmDeposit=Math.round(total*_geiDepositPct())/100;
-  setT('tm-rail-balance','$'+(total-_tmDeposit).toLocaleString());
+  const _tmDepNow=_tmDeposit();
+  setT('tm-rail-balance','$'+Math.max(0,total-_tmDepNow).toLocaleString());
   let nte=_moneyVal('tm-i-nte');
   const nteInp=document.getElementById('tm-i-nte');
   // PENNSYLVANIA SETS THE CEILING, SO HE DOES NOT. js/legal.js: the estimate,
@@ -4542,6 +4554,8 @@ function _tmInputChange(){
   try{_tmTidyRail();}catch(_e){}
   _tmFitInputs();
   _byoAutosave();
+  // The deposit's line reads the ceiling and the deposit, both typed here.
+  if(typeof _tmRenderBillTerms==='function')_tmRenderBillTerms();
 }
 
 // ── You bill, it costs you, you keep ─────────────────────────────────────────
@@ -4842,13 +4856,22 @@ function _tmLegal(){
     out.problems.push({k:'est',say:name+' requires an estimate on a time and materials contract.',fix:'Say how many days.'});
   if(needs.includes('cap')&&!(_tmCapVal()>0))
     out.problems.push({k:'cap',say:name+' requires the most this can cost, in dollars.',fix:'Put in the most it can cost.'});
+  // The deposit, against the state's limit (_tmDepositState).
+  const D=_tmDepositState();
+  const dname=_tmStateName(D.state)||'This state';
+  if(D.needCap)
+    out.problems.push({k:'cap',say:dname+' limits a deposit to '+D.law.pct+'% of the contract price, and this one has no price yet.',
+      fix:'Put in the most it can cost.',law:D.law.statute||''});
+  else if(D.over)
+    out.problems.push({k:'dep',say:dname+' allows a deposit of up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.',
+      fix:'Lower the deposit.',law:D.law.statute||''});
   return out;
 }
 // The stop, shared by Send and Sign in person. One button that does the fix,
 // never a dead-end alert he has to read and then go hunting for the field.
 function _tmLegalStop(L){
   const p=L.problems[0];
-  const cite=L.statute?(' ('+L.statute+')'):'';
+  const cite=(p.law||L.statute)?(' ('+(p.law||L.statute)+')'):'';
   if(p.k==='block'){
     zConfirm(p.say+cite+' '+p.fix,
       ()=>{if(typeof _tmToFixedPrice==='function')_tmToFixedPrice();},
@@ -4856,6 +4879,56 @@ function _tmLegalStop(L){
     return;
   }
   zConfirm(p.say+cite,()=>_tmStepAct(p.k),{title:'One thing first',yes:p.fix.replace(/\.$/,''),danger:false});
+}
+// ── THE T&M DEPOSIT: ONE DEFINITION (§18) ─────────────────────────────────
+//
+// Owner, 2026-09-23: "how can you get a mobilization deposit on something you
+// don't put a price on?" You cannot take a percent of nothing. So a T&M
+// deposit is a flat figure he names ("up front for materials"), or nothing.
+// When there is a ceiling it is measured against it, because the ceiling is
+// the only dollar figure the contract carries, and a state that limits a
+// deposit to a share of the contract price is measured on that.
+//
+// Before this, five paths each worked the deposit out their own way: a percent
+// of an estimate with the Deposit switch off, the state limit applied only on
+// Save and only as a toast, and Sign in person writing a percent over the flat
+// figure. Every path now reads this, and Send and Sign refuse what the law
+// does not allow (_tmLegal), with the fix one tap away.
+function _tmDepositState(){
+  const on=_tmLayers.has('dep');
+  const amt=on?Math.max(0,Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0)):0;
+  const addr=(document.getElementById('gei-addr')||{}).value||'';
+  const st=((typeof stateFromAddr==='function'?stateFromAddr(addr):null)||(typeof S!=='undefined'&&S.state)||'KS').toUpperCase();
+  const cap=(typeof _tmCapVal==='function')?_tmCapVal():0;
+  const law=(typeof STATE_DEPOSIT_CAP!=='undefined'&&STATE_DEPOSIT_CAP[st])||{rule:'none'};
+  // Deposit limits are home-improvement law. A business job is not one.
+  const applies=!_geiIsCommercial&&law.rule&&law.rule!=='none';
+  let max=Infinity, needCap=false;
+  if(applies){
+    if(cap>0)max=(typeof _maxDeposit==='function')?_maxDeposit(st,cap):Infinity;
+    else{
+      max=(typeof _maxDepositNoTotal==='function')?_maxDepositNoTotal(st):Infinity;
+      // A share of a price that is not there cannot be measured, so in a state
+      // that limits by share, a deposit needs the ceiling first.
+      if(law.pct!=null&&amt>0)needCap=true;
+    }
+  }
+  return {on,amt,cap,state:st,law,applies,max,needCap,
+    over:isFinite(max)&&amt>max+0.005,
+    pctOfCap:cap>0&&amt>0?Math.round(amt/cap*100):null};
+}
+function _tmDeposit(){return _geiIsTM?_tmDepositState().amt:0;}
+// Materials: his last answer is the next job's starting one, the way the hide
+// rate switch remembers (S.tmMatMarkup).
+function _tmMatMarkupDefault(){return Math.max(0,Number(typeof S!=='undefined'&&S.tmMatMarkup)||0);}
+function _tmSetMatMarkup(v){
+  _tmMatMarkup=Math.max(0,Math.min(100,Math.round(Number(v)||0)));
+  try{if(typeof S!=='undefined'&&S){S.tmMatMarkup=_tmMatMarkup;if(typeof _settingsChanged==='function')_settingsChanged();}}catch(_e){}
+  if(typeof _tmInputChange==='function')_tmInputChange();
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+function _tmMatWords(){
+  return _tmMatMarkup>0?('Your cost plus '+_tmMatMarkup+'%'):'At your cost';
 }
 // California. The scope he just said is the part worth keeping, so it goes
 // across as the lines of a Build Your Own proposal and all he adds is prices.
@@ -5021,8 +5094,10 @@ function _tmApplyLayers(){
   // already states ("$45/hr each"), in 34px, a screen further down: the same
   // number twice is the kind of thing that made the page read as a form.
   show('tm-rail-rate-wrap',false);
-  show('tm-deposit-wrap',_tmLayers.has('dep')&&_tmLayers.has('est'));
-  show('tm-deposit-flat-wrap',_tmLayers.has('dep')&&!_tmLayers.has('est'));
+  // Never the percent field on T&M (2026-09-23): the deposit is "Up front"
+  // in How it bills, a flat figure or none (_tmDepositState).
+  show('tm-deposit-wrap',false);
+  _tmRenderBillTerms();
   // How often it bills is a real choice and almost nobody changes it from
   // weekly, so it lives under More options with the other rarely-touched ones.
   // Drawn as a segmented control inside More options now (2026-09-23).
@@ -5126,6 +5201,10 @@ function _tmShape(){
   // contract, so the sentence reads the same thing the contract does.
   const cap=(L.has('cap')&&typeof _tmCapVal==='function')?_tmCapVal():0;
   const capWords=cap>0?('never more than $'+cap.toLocaleString('en-US')):'';
+  // The figure, not the switch: an Up front row set to Amount and left empty
+  // asks for nothing (_tmDepositState).
+  const depAmt=(typeof _tmDeposit==='function')?_tmDeposit():0;
+  const depWords=depAmt>0?('$'+depAmt.toLocaleString('en-US')+' up front'):'';
   if(!L.has('rate')&&!L.has('mat')&&!(cap>0)){
     // The one nobody believes is finished. It usually is.
     return {head:'Scope only, no price',
@@ -5136,14 +5215,14 @@ function _tmShape(){
     // were two more names for the thing the page calls the most it can cost.
     return {head:'A rate, no total',
       body:cap>0
-        ? 'Paid by the hour, and '+capWords+'.'
-        : 'Paid by the hour. If they want a number, put in the most it can cost.'};
+        ? 'Paid by the hour, and '+capWords+(depWords?', with '+depWords:'')+'.'
+        : 'Paid by the hour'+(depWords?', with '+depWords:'')+'. If they want a number, put in the most it can cost.'};
   }
   if(L.has('rate')&&L.has('est')){
     return {head:'A rate and a total',
       body:'The rate, the days, and what that comes to'+
         (L.has('mat')?', plus materials':'')+
-        (L.has('dep')?', with a deposit due up front':'')+
+        (depWords?', with '+depWords:'')+
         (cap>0?', and '+capWords:'')+'.'};
   }
   if(L.has('mat')&&!L.has('rate')){
@@ -5409,9 +5488,10 @@ function _tmDockNext(st,rule,all){
   if(!st.two){
     const legal=(typeof _tmLegal==='function')?_tmLegal().problems:[];
     const n=(all||_tmSteps()).find(s=>s.rec&&s.k!=='scope');
-    const k=n?n.k:'rate';
-    const say={rate:'Add your rate',est:'Add the days',cap:'Add the most it can cost'}[k]||'Finish How it bills';
-    return {label:legal.length&&k==='cap'?'Add the most it can cost':say,fn:'_tmStepAct(\''+k+'\')'};
+    // The law first: what it asks for is the next thing, whatever the steps say.
+    const k=legal.length?legal[0].k:(n?n.k:'rate');
+    const say={rate:'Add your rate',est:'Add the days',cap:'Add the most it can cost',dep:'Lower the deposit'}[k]||'Finish How it bills';
+    return {label:say,fn:'_tmStepAct(\''+k+'\')'};
   }
   return null;
 }
@@ -5444,8 +5524,14 @@ function _tmRenderMore(rule,locked){
   const w=document.getElementById('tm-more-row');if(!w)return;
   rule=rule||_tmStateRule();locked=locked||_tmLockedLayers();
   if(rule.rule==='block'){w.innerHTML='';return;}
-  const opts=TM_LAYERS.filter(l=>!locked.has(l.k));
+  // Materials and Estimate are not offered on a new T&M (2026-09-23): the
+  // materials TERM is a row of its own, and an estimate turns T&M back into a
+  // price the customer holds him to. Pennsylvania's estimate is on the page,
+  // required. A draft that already has either keeps its switch to turn it off.
+  // Up front is a row of its own too.
+  const opts=TM_LAYERS.filter(l=>!locked.has(l.k)&&l.k!=='dep'&&((l.k!=='est'&&l.k!=='mat')||_tmLayers.has(l.k)));
   const onNames=opts.filter(l=>_tmLayers.has(l.k)&&l.k!=='rate'&&l.k!=='cap').map(l=>l.label);
+  const offer=opts.filter(l=>l.k!=='rate'&&l.k!=='cap');
   // iOS (2026-09-23): a disclosure row, and when open, a SWITCH per option,
   // which is what a thing that is either on or off looks like on an iPhone.
   // The chips they replace were buttons that looked like tags.
@@ -5456,7 +5542,7 @@ function _tmRenderMore(rule,locked){
         (onNames.length?escHtml(onNames.join(', '))+' on'
           // Named from what is actually in here: in Pennsylvania the estimate is
           // on the page, required, so it is not offered as an option.
-          :escHtml(opts.filter(l=>l.k!=='rate'&&l.k!=='cap').map((l,i)=>i?l.label.toLowerCase():l.label).join(', ')))+
+          :escHtml((offer.length?offer:opts).map((l,i)=>i?l.label.toLowerCase():l.label).join(', ')))+
       '</small></span>'+
       '<span class="ios-chev" style="transform:rotate('+(_tmMoreOpen?'90':'0')+'deg);transition:transform .2s ease">\u203a</span>'+
     '</button>';
@@ -5469,20 +5555,73 @@ function _tmRenderMore(rule,locked){
   const dep=(!_tmLayers.has('rate')&&!locked.has('rate'))
     ?'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Estimate turns on Rate with it: a day count has nothing to multiply on its own.</small></span></div>'
     :'';
-  const cyc=_tmBillingCycle||'weekly';
-  const seg=(k,t)=>'<button type="button" class="'+(cyc===k?'on':'')+'" onclick="_tmCadence(\''+k+'\');_tmRenderMore()">'+t+'</button>';
-  const cad=_tmLayers.has('rate')
-    ?'<div class="ios-row"><span class="ios-lbl">Bills</span><span class="ios-seg">'+
-        seg('weekly','Weekly')+seg('milestone','Milestones')+seg('completion','At the end')+'</span></div>'
-    :'';
-  w.innerHTML=head+rows+dep+cad;
+  w.innerHTML=head+rows+dep;
+}
+// ── MATERIALS, UP FRONT, BILLS: the three terms under the rate ──────────────
+// Static inputs (so typing never loses focus to a repaint); this sets which
+// segment is on, which rows show, and the line under the deposit.
+let _tmMatPlus=false;
+function _tmMatMode(on){
+  _tmMatPlus=!!on;
+  if(!on)_tmSetMatMarkup(0);
+  else if(!(_tmMatMarkup>0))_tmSetMatMarkup(Number(typeof S!=='undefined'&&S.tmMatMarkupLast)||15);
+  _tmRenderBillTerms();
+  if(on){const i=document.getElementById('tm-i-matpct');if(i){try{i.focus();i.select();}catch(_e){}}}
+}
+function _tmMatPctInput(el){
+  const v=String(el.value||'').replace(/[^0-9.]/g,'');
+  if(v==='')return;                 // mid-edit: keep the row open
+  _tmSetMatMarkup(v);
+  try{if(_tmMatMarkup>0&&typeof S!=='undefined'&&S)S.tmMatMarkupLast=_tmMatMarkup;}catch(_e){}
+}
+function _tmDepMode(on){
+  if(on){_tmStepAct('dep');}
+  else{if(typeof _tmDropLayer==='function')_tmDropLayer('dep');const i=document.getElementById('tm-i-dep-flat');if(i)i.value='';_tmInputChange();}
+  _tmRenderBillTerms();
+}
+function _tmRenderBillTerms(){
+  if(!_geiIsTM)return;
+  const segOn=(id,v)=>{const w=document.getElementById(id);if(w)w.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')===String(v)));};
+  const show=(id,on)=>{const e=document.getElementById(id);if(e)e.style.display=on?'':'none';};
+  const plus=_tmMatPlus||_tmMatMarkup>0;
+  segOn('tm-mat-seg',plus?1:0);
+  show('tm-mat-pct-row',plus);
+  const mi=document.getElementById('tm-i-matpct');
+  if(mi&&document.activeElement!==mi)mi.value=_tmMatMarkup>0?String(_tmMatMarkup):'';
+  const depOn=_tmLayers.has('dep');
+  segOn('tm-dep-seg',depOn?1:0);
+  show('tm-dep-amt-row',depOn);
+  // The line under the deposit: what it is against the ceiling, and the law.
+  const note=document.getElementById('tm-dep-note');
+  if(note){
+    const D=_tmDepositState();
+    const sname=_tmStateName(D.state)||D.state;
+    const lim=D.applies&&D.law.pct!=null?(sname+' allows up to '+(Math.round(D.law.pct)===33?'a third':D.law.pct+'%')+' of the price'):'';
+    let t='',law=false;
+    if(D.needCap){t=sname+' limits it to a share of the price. Put in the most it can cost first.';law=true;}
+    else if(D.over){t=sname+' allows up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.';law=true;}
+    else if(D.pctOfCap!=null)t=D.pctOfCap+'% of the most it can cost'+(lim?'. '+lim+'.':'.');
+    else if(D.amt>0)t='For materials and getting started.';
+    else t=lim?lim+'.':'For materials and getting started.';
+    note.textContent=t;note.style.color=law?'var(--ios-law)':'';
+  }
+  // Bills: on every contract that bills time.
+  const cw=document.getElementById('tm-cad-main');
+  if(cw){
+    const cyc=_tmBillingCycle||'weekly';
+    const seg=(k,t)=>'<button type="button" class="'+(cyc===k?'on':'')+'" onclick="_tmCadence(\''+k+'\');_tmRenderBillTerms()">'+t+'</button>';
+    cw.innerHTML=_tmLayers.has('rate')
+      ?'<div class="ios-row"><span class="ios-lbl">Bills</span><span class="ios-seg">'+
+          seg('weekly','Weekly')+seg('milestone','Milestones')+seg('completion','At the end')+'</span></div>'
+      :'';
+  }
 }
 // Turning a step on and landing him in the field it is about. The chip alone
 // only makes a box appear somewhere further down the page, which on a phone is
 // off screen: he taps Add, sees nothing happen, and taps it again.
 function _tmStepAct(k){
   _tmAddLayer(k);
-  const id=(k==='cap')?'tm-i-nte':(k==='rate')?'tm-i-rate':(k==='est')?'tm-i-days':null;
+  const id=(k==='cap')?'tm-i-nte':(k==='rate')?'tm-i-rate':(k==='est')?'tm-i-days':(k==='dep')?'tm-i-dep-flat':null;
   const el=id?document.getElementById(id):null;
   if(!el)return;
   // The card it lives in may be folded to its summary line; open it first or
@@ -6520,7 +6659,12 @@ function _panelPrint(){
 function calcGeiTotal(){
   const sub=_geiLines.reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0);
   const pct=parseFloat(document.getElementById('gei-tax-pct')?.value)||0;
-  const markup=sub*pct/100;
+  // T&M: the contract's materials term, on materials only, never a hidden
+  // percent over the labor too. The proposal says "at your cost" or "plus N%",
+  // and the total cannot say anything else (2026-09-23).
+  const markup=_geiIsTM
+    ?_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0)*(Number(_tmMatMarkup)||0)/100
+    :sub*pct/100;
 
   // Sales tax, separate from markup, based on state rules and job scope
   let salesTax=0,salesTaxTreatment=null;
@@ -6629,7 +6773,8 @@ function saveGenericEstimate(draft){
   // to 0 rather than left at his standard, because 25% of a total that does not
   // exist is exactly the bug that puts $0 on the proposal and a live percent in
   // the record for the invoice to find later.
-  const _tmFlatDep=(_geiIsTM&&_tmRateOnly)?Math.round(_moneyVal('tm-i-dep-flat')):0;
+  // T&M: _tmDepositState, the one definition. Never a percent (2026-09-23).
+  const _tmFlatDep=_geiIsTM?_tmDeposit():0;
   const _tmFields=_geiIsTM?{
     isTM:true,
     tmRateOnly:!!_tmRateOnly,
@@ -6638,15 +6783,19 @@ function saveGenericEstimate(draft){
     tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
     tmBillingCycle:_tmBillingCycle||'weekly',
     tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
-    tmDepositPct:_tmRateOnly?0:_geiDepositPct(),
-    tmDepositAmt:_tmRateOnly?_tmFlatDep:Math.round(total*_geiDepositPct()/100),
+    tmDepositPct:0,
+    tmDepositAmt:_tmFlatDep,
+    tmMatMarkup:_tmMatMarkup,
     tmNteEnabled:(_tmNteFromNew>0)||_tmNteOnChecked,
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   let _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_geiDepositPct()/100);
   // State max-deposit cap (home-improvement compliance). Parse state from client
   // address like proposals.js _buildClientHubSnapshot, fall back to S.state then KS.
-  if(typeof _maxDeposit==='function'){
+  // T&M is measured against its ceiling by _tmLegal and refused at Send and
+  // Sign, with the fix, rather than quietly cut here; a draft may hold a
+  // figure he is still deciding on.
+  if(!_geiIsTM&&typeof _maxDeposit==='function'){
     // stateFromAddr (js/legal.js), the same reader the price rule uses, so the
     // deposit cap and the T&M rule can never be read off two different states.
     const _depState=(typeof stateFromAddr==='function'?stateFromAddr(v('gei-addr')||''):null)||(typeof S!=='undefined'&&S.state)||'KS';
@@ -6802,12 +6951,18 @@ function _geiBuildTermsHtml(){
   // _tmCanHideRate is consulted and not just the flag, so a proposal carried
   // across a state line cannot arrive with a required term missing.
   const _tmRateClause=(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()))?[['Rate',
-    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate. Materials are billed at actual cost.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
+    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
     ..._tmRateClause,
     ['Cancellation &amp; Deposits',_cancelClause],
     ['Billing',`${_tmBillTerm} with time sheets and material receipts attached.`],
+    // After Billing, so the clauses sign.html's legacy patcher knows keep
+    // their places. Its own clause (2026-09-23), so it stays when the rate is kept off the
+    // proposal: how materials are charged is a term the customer is owed.
+    ['Materials',(Number(_tmMatMarkup)>0
+      ?`Materials are billed at Contractor&apos;s cost plus ${Number(_tmMatMarkup)}%.`
+      :'Materials are billed at Contractor&apos;s actual cost, with no markup.')+' A receipt is attached to each bill for every material charged.'],
   ]:[
     ['Cancellation &amp; Deposits',_cancelClause],
   ];
@@ -6935,7 +7090,8 @@ async function sendGenericProposal(previewOnly,opts){
   const _tmDepPct=_geiDepositPct();
   // Deposit is a % of the client-facing TOTAL (incl. tax): the label says "(N%)" next
   // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
-  const _tmDepAmt=Math.round(total*_tmDepPct)/100;
+  // T&M: the flat figure or nothing (_tmDepositState), never a percent.
+  const _tmDepAmt=_geiIsTM?_tmDeposit():Math.round(total*_tmDepPct)/100;
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
   const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   // MUST be declared before the template literals below that use it, TDZ if declared after
@@ -6960,7 +7116,7 @@ async function sendGenericProposal(previewOnly,opts){
   }
   // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
-  const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
+  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?'Up Front, Before Work Begins':`${_tmDepPct}% Deposit Due Before Work Begins`}</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
   // ── THE TIME AND MATERIALS FOOTER ────────────────────────────────────────
   //
   // Owner 2026-09-17: "if you place a materials section on a invoice or on a
@@ -6981,16 +7137,17 @@ async function sendGenericProposal(previewOnly,opts){
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
-  const _rsFlatDep=Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0);
+  const _rsFlatDep=_tmDeposit();
   const _rateFooterRows=
     `<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
     _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
+    _rsRow('Materials charged',Number(_tmMatMarkup)>0?('Our cost plus '+Number(_tmMatMarkup)+'%, receipts included'):'At our cost, receipts included','#f8fafc','#334155')+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
     // "what's the most this could be?", so that is what the line says. The
     // phrase the statutes use lives in the terms, where it has to.
     (_tmNteCap>0?_rsRow('The most this can cost you, unless you approve more in writing',_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
-    (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
+    (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Up Front, Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
   // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own
   // Preview overlay below. No longer embedded in the proposal document body.
@@ -7310,7 +7467,7 @@ async function sendGenericProposal(previewOnly,opts){
     // money at signing is the mobilization deposit, which is a flat figure, not
     // a percent of the zero above.
     amount:(_geiIsTM&&_tmRateOnly)?0:total,
-    deposit:(_geiIsTM&&_tmRateOnly)?_rsFlatDep:_tmDepAmt,
+    deposit:_geiIsTM?_tmDeposit():_tmDepAmt,
     rateOnly:!!(_geiIsTM&&_tmRateOnly),
     // THIS JSON LANDS IN THE CUSTOMER'S BROWSER. Nothing in sign.html reads
     // hourlyRate today, but a number he deliberately kept off the document has
@@ -7869,11 +8026,10 @@ function _geiSignInPerson(){
   const depPct=_geiDepositPct();
   // On a rate sheet the deposit is the FLAT mobilization figure, not a percent
   // of a total that does not exist, exactly as sendGenericProposal does it.
-  const _ipFlatDep=_ipRateOnly?Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0):0;
-  const depAmt=_ipRateOnly?_ipFlatDep:Math.round(total*depPct/100*100)/100;
-  const bal=_ipRateOnly?0:Math.round((total-depAmt)*100)/100;
+  const depAmt=_geiIsTM?_tmDeposit():Math.round(total*depPct/100*100)/100;
+  const bal=_ipRateOnly?0:Math.max(0,Math.round((total-depAmt)*100)/100);
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const depLabel=_geiIsTM?'Mobilization deposit ('+depPct+'%)':'Deposit ('+depPct+'%)';
+  const depLabel=_geiIsTM?'Up front, before work begins':'Deposit ('+depPct+'%)';
   document.getElementById('_gei-ip-ov')?.remove();
   const ov=document.createElement('div');
   ov.id='_gei-ip-ov';
@@ -7947,9 +8103,12 @@ async function _geiConfirmInPerson(){
   if(!bid){showToast('Proposal not found','⚠️');return;}
   const{total}=calcGeiTotal();
   const depPct=_geiDepositPct();
-  const depAmt=Math.round(total*depPct/100*100)/100;
+  // T&M: the flat figure (_tmDepositState), and a rate sheet keeps its zero
+  // amount. This used to write a percent over the mobilization deposit.
+  const depAmt=_geiIsTM?_tmDeposit():Math.round(total*depPct/100*100)/100;
   const ts=new Date().toISOString();
-  bid.amount=total;bid.deposit=depAmt;bid.status='Closed Won';bid.draft=false;
+  bid.amount=(_geiIsTM&&_tmRateOnly)?0:total;bid.deposit=depAmt;
+  if(_geiIsTM){bid.tmDepositAmt=depAmt;bid.tmDepositPct=0;}bid.status='Closed Won';bid.draft=false;
   bid.signedAt=ts;bid.estStatus='signed';
   // Same rule the remote path applies (cloud.js _applySigStatusToBid): the
   // options he did not pick close out instead of sitting in Pending. AFTER

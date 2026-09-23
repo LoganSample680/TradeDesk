@@ -559,6 +559,9 @@ test.describe('layout integrity, mobile', () => {
       document.getElementById('tm-i-rate').value = '75';
       document.getElementById('tm-i-days').value = '2';
       document.getElementById('tm-i-nte').value = '2000';
+      // Up front is a flat figure on T&M since 2026-09-23 (§10.4).
+      _tmAddLayer('dep');
+      document.getElementById('tm-i-dep-flat').value = '400';
       _tmInputChange();
       _geiLines.push({ desc: 'Fixtures', qty: 1, rate: 500, total: 500 });
       let err = null;
@@ -579,7 +582,7 @@ test.describe('layout integrity, mobile', () => {
         // above: no per-item price and no standalone cap pricing row.
         hasBigCap: html.includes('THE MOST THIS CAN COST YOU'),
         hasQuietEstimate: html.includes('not a fixed price'),
-        hasDeposit: html.includes('Deposit'),
+        hasDeposit: html.includes('Up Front, Before Work Begins'),
       };
       ov?.remove();
       return res;

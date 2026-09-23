@@ -142,12 +142,14 @@ test.describe('the T&M screen, as an iPhone app', () => {
     await open('Pull the old water heater');
     const r = await page.evaluate(() => {
       _tmMoreOpen = true; _tmApplyLayers();
-      const sw = document.querySelector('#tm-more-row input.ios-switch[data-layer="mat"]');
-      const before = _tmLayers.has('mat');
+      // "Not included", since Materials is a billing term row now and not a
+      // switch (2026-09-23, §10.4).
+      const sw = document.querySelector('#tm-more-row input.ios-switch[data-layer="excl"]');
+      const before = _tmLayers.has('excl');
       sw.click();
-      const out = { kind: sw.type, before, after: _tmLayers.has('mat'),
-        blk: document.getElementById('tm-blk-mat').style.display !== 'none' };
-      _tmToggleLayer('mat'); _tmMoreOpen = false; _tmApplyLayers();
+      const out = { kind: sw.type, before, after: _tmLayers.has('excl'),
+        blk: document.getElementById('tm-blk-excl').style.display !== 'none' };
+      _tmToggleLayer('excl'); _tmMoreOpen = false; _tmApplyLayers();
       return out;
     });
     expect(r).toEqual({ kind: 'checkbox', before: false, after: true, blk: true });

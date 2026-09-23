@@ -2279,15 +2279,23 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         // other tests in this file leaned on the same accident; each now states
         // the same precondition rather than the assertions being relaxed.
         _tmAddLayer('est');
+        // REVERSED 2026-09-23 (§10.4). A T&M deposit is never a percent now,
+        // with or without an estimate: it is the flat figure he names under
+        // Up front, or nothing (_tmDepositState). Owner: "how can you get a
+        // mobilization deposit on something you don't put a price on?" The
+        // subject of this test, that the save reads the LIVE field and not a
+        // dead id, is unchanged; the live field is tm-i-dep-flat.
         document.getElementById('tm-deposit-pct').value = '40';
+        _tmAddLayer('dep');
+        document.getElementById('tm-i-dep-flat').value = '400';
         _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
         saveGenericEstimate(true);
         const bid = bids.find(x => x.client_id === 88801);
         return { deposit: bid?.deposit, amount: bid?.amount, tmDepositPct: bid?.tmDepositPct };
       });
-      expect(r.tmDepositPct).toBe(40);
-      expect(r.deposit).toBe(Math.round(r.amount * 0.4));
+      expect(r.tmDepositPct, 'never a percent on T&M').toBe(0);
+      expect(r.deposit).toBe(400);
     });
 
     test('regression: reopening a saved T&M bid restores its deposit % into the live field (back-calculated from deposit/amount)', async () => {
@@ -2296,9 +2304,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiEditBidId = bid.id;
         _geiIsTM = true;
         _tmShowPage();
-        return { restoredPct: document.getElementById('tm-deposit-pct')?.value };
+        // The flat figure comes back into the box it was typed in (§10.4,
+        // 2026-09-23: the percent field is not shown on T&M any more).
+        return { restoredFlat: document.getElementById('tm-i-dep-flat')?.value };
       });
-      expect(r.restoredPct).toBe('40');
+      expect(r.restoredFlat).toBe('400');
     });
   });
 
@@ -2693,13 +2703,17 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const railMat = document.getElementById('tm-rail-mat')?.textContent || '';
         return {
           markupInputExists: !!document.getElementById('tm-i-markup'),
-          markupVarExists: typeof _tmMatMarkup !== 'undefined',
+          markupNow: typeof _tmMatMarkup !== 'undefined' ? _tmMatMarkup : null,
           matListShowsRaw: matListText.includes('$500'),
           railShowsRaw: railMat.includes('500'),
         };
       });
       expect(r.markupInputExists, 'the "Materials markup %" input must be gone').toBe(false);
-      expect(r.markupVarExists, '_tmMatMarkup must no longer exist').toBe(false);
+      // CHANGED 2026-09-23 (§10.4). Markup came back, but not hidden: it is the
+      // contract's Materials term, "at cost" (0) unless he picks Plus markup,
+      // and printed on the terms whenever it applies. What this test guards is
+      // unchanged: nothing marks up a price he did not see and did not choose.
+      expect(r.markupNow, 'a new T&M bills materials at cost').toBe(0);
       expect(r.matListShowsRaw, 'material row must show the raw $500 cost, no hidden markup applied').toBe(true);
       expect(r.railShowsRaw, 'rail materials total must show the raw cost, no hidden markup applied').toBe(true);
     });
@@ -3021,6 +3035,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         // test looks for is a percentage of a total, and a rate sheet has no
         // total to take one of.
         _tmAddLayer('est');
+        // A T&M deposit is a flat figure under Up front (2026-09-23, §10.4).
+        _tmAddLayer('dep');
+        document.getElementById('tm-i-dep-flat').value = '300';
         _tmRatePerMan = 50; _tmEstHours = 16; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
       } else {
@@ -3047,7 +3064,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       const re = /<div>(\d+)\. <strong>(.*?):<\/strong> ([\s\S]*?)<\/div>/g;
       let m;
       while ((m = re.exec(captured)) !== null) clauses.push({ n: +m[1], title: m[2], body: m[3] });
-      return { err, clauses, hasDepRow: doc.includes('Due Before Work Begins') };
+      return { err, clauses, hasDepRow: doc.includes('Before Work Begins') };
     }, { isTM, clientId });
 
     test('T&M and BYO T&C come from the same clause list, shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {
@@ -3078,7 +3095,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       // inserting a clause renumbers everything after it rather than leaving a
       // gap. sign.html's legacy patcher keys on clause shapes in proposalHtml,
       // which has not embedded terms since 2026-07-13, so the shift is safe.
-      expect(tm.clauses.length).toBe(13);
+      // 13 -> 14, 2026-09-23 (§10.4): T&M gained a Materials clause (at cost,
+      // or cost plus N%, receipts attached), its own so it stays when the rate
+      // is kept off the proposal.
+      expect(tm.clauses.length).toBe(14);
       expect(byo.clauses.length).toBe(10);
       tm.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
       byo.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
@@ -3088,6 +3108,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(tm.clauses[1].title).toBe('Rate');
       expect(tm.clauses[2].title).toBe('Cancellation &amp; Deposits');
       expect(tm.clauses[3].title).toBe('Billing');
+      expect(tm.clauses[4].title).toBe('Materials');
       expect(byo.clauses[0].title).toBe('Cancellation &amp; Deposits');
 
       // Shared tail: same titles in the same order in both modes...

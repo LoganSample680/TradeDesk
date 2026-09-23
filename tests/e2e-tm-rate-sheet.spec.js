@@ -302,7 +302,9 @@ test.describe('T&M rate sheet: no total, no day count', () => {
       const prevTM = _geiIsTM, prevRO = _tmRateOnly, prevId = _geiEditBidId;
       const prevRate = _tmRatePerMan, prevCrew = _tmCrewCount;
       _geiIsTM = true; _geiEditBidId = 66601;
-      _tmLayers = new Set(['rate']); _tmApplyLayers();
+      // 'dep' on (2026-09-23, §10.4): Up front is now None or Amount, and the
+      // switch decides. Before, a figure in a hidden box was still charged.
+      _tmLayers = new Set(['rate', 'dep']); _tmApplyLayers();
       _tmRatePerMan = 95; _tmCrewCount = 2;
       const flat = document.getElementById('tm-i-dep-flat');
       const prevFlat = flat.value; flat.value = '750';
@@ -320,18 +322,25 @@ test.describe('T&M rate sheet: no total, no day count', () => {
     expect(r.rateOnly).toBe(true);
   });
 
-  test('a totalled T&M still takes its percent', async () => {
+  // REVERSED 2026-09-23 (§10.4). This used to require a percent deposit on a
+  // T&M with an estimate, and it was taken even with Deposit switched off.
+  // Owner: "how can you get a mobilization deposit on something you don't put
+  // a price on?" A T&M deposit is a flat figure he names, or nothing, with or
+  // without an estimate (_tmDepositState).
+  test('a totalled T&M takes no percent, and nothing unless he asks for it', async () => {
     const r = await page.evaluate(() => {
       const prevTM = _geiIsTM, prevRO = _tmRateOnly, prevId = _geiEditBidId;
       _geiIsTM = true; _geiEditBidId = 66602;
       _tmLayers = new Set(['rate', 'est']); _tmApplyLayers();
       saveGenericEstimate(true);
       const b = bids.find(x => x.id === 66602);
-      const out = { pct: b.tmDepositPct, rateOnly: b.tmRateOnly };
+      const out = { pct: b.tmDepositPct, amt: b.tmDepositAmt, dep: b.deposit, rateOnly: b.tmRateOnly };
       _geiIsTM = prevTM; _tmRateOnly = prevRO; _geiEditBidId = prevId;
       return out;
     });
-    expect(r.pct).toBeGreaterThan(0);
+    expect(r.pct).toBe(0);
+    expect(r.amt).toBe(0);
+    expect(r.dep).toBe(0);
     expect(r.rateOnly).toBe(false);
   });
 
@@ -1007,7 +1016,18 @@ test.describe('the cap is worded the way a customer asks for it', () => {
       // A figure in the box: only a figure is a ceiling now (2026-09-23).
       const t = await shapeIn(['rate', 'est', 'mat', 'dep', 'cap'], 12000);
       expect(t).toContain('plus materials');
-      expect(t).toContain('deposit due up front');
+      // The figure, not the switch (2026-09-23, §10.4): Up front set to
+      // Amount with nothing typed asks for nothing, so the sentence says
+      // nothing about it; with a figure it names the figure.
+      expect(t).not.toContain('up front');
+      const withDep = await page.evaluate(() => {
+        const prev = [..._tmLayers], prevTM = _geiIsTM, f = document.getElementById('tm-i-dep-flat'), pf = f.value;
+        _geiIsTM = true; _tmLayers = new Set(['rate', 'dep']); f.value = '500';
+        const body = _tmShape().body;
+        f.value = pf; _tmLayers = new Set(prev); _geiIsTM = prevTM; _tmApplyLayers();
+        return body;
+      });
+      expect(withDep).toContain('$500 up front');
       // Reworded 2026-09-23 (§10.4) into the page's one name for it.
       expect(t).toContain('never more than $12,000');
     });

@@ -3134,6 +3134,21 @@ body.dark .cal-cell.other{background:var(--cream)}
                 </select>
               </div>
             </div>
+            <!-- HOW MATERIALS ARE BILLED (2026-09-23). One term, not a priced
+                 list: a T&M contract says how receipts are charged. -->
+            <div class="ios-row" id="tm-mat-row"><span class="ios-lbl">Materials</span>
+              <span class="ios-seg" id="tm-mat-seg"><button type="button" data-v="0" onclick="_tmMatMode(0)">At cost</button><button type="button" data-v="1" onclick="_tmMatMode(1)">Plus markup</button></span></div>
+            <label class="ios-row" id="tm-mat-pct-row" style="display:none"><span class="ios-lbl">Markup on materials</span>
+              <span class="ios-val"><input type="text" inputmode="decimal" id="tm-i-matpct" placeholder="15" oninput="_tmMatPctInput(this)">%</span></label>
+            <!-- UP FRONT (2026-09-23). None, or a flat figure he names. Never a
+                 percent: a T&M job has no price to take one of. Measured against
+                 the ceiling and the state's limit by _tmDepositState. -->
+            <div class="ios-row" id="tm-dep-row"><span class="ios-lbl">Up front</span>
+              <span class="ios-seg" id="tm-dep-seg"><button type="button" data-v="0" onclick="_tmDepMode(0)">None</button><button type="button" data-v="1" onclick="_tmDepMode(1)">Amount</button></span></div>
+            <label class="ios-row" id="tm-dep-amt-row" style="display:none"><span class="ios-lbl">Due before work starts<small id="tm-dep-note"></small></span>
+              <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-dep-flat" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+            <!-- How often it bills: its own row, it is on every T&M contract. -->
+            <div id="tm-cad-main"></div>
             <!-- More options: a row that opens switch rows. _tmRenderMore. -->
             <div id="tm-more-row"></div>
           </div>
@@ -3149,7 +3164,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="tm-mat-list" id="tm-mat-list"></div>
           <div class="tip" style="margin-top:12px">
             <span data-ico="🧾" data-ico-size="18"></span>
-            <div><b>Markup is baked into displayed prices.</b> Clients see the all-in price only, markup is never shown to them.</div>
+            <div><b>An older proposal's list.</b> Materials are billed by the Materials term above, at cost or with the markup it states, with receipts.</div>
           </div>
         </div>
 
@@ -3205,13 +3220,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <!-- A PERCENT OF NOTHING IS NOTHING. With no estimated total there is
                nothing to take 25% of, so a rate sheet asks for its mobilization
                money as a flat figure he names. Blank means none. -->
-          <div id="tm-deposit-flat-wrap" style="display:none">
-            <div class="summary-row" style="align-items:center">
-              <span style="font-size:14px;font-weight:600">Mobilization deposit</span>
-              <div class="input-prefix" style="width:118px"><span>$</span><input type="text" inputmode="decimal" id="tm-i-dep-flat" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
-            </div>
-            <div class="summary-row" style="color:var(--text-3)"><span>Balance</span><span>billed as you go</span></div>
-          </div>
+          <!-- The flat deposit moved into How it bills as "Up front" (2026-09-23). -->
           <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px" id="tm-cad-head">Billing cadence</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap" id="tm-cad-row">
