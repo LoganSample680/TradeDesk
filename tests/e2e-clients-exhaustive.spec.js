@@ -7,6 +7,8 @@
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
 
 test.describe('clients.js: exhaustive coverage', () => {
   let page;
@@ -3126,6 +3128,39 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.value).toBe(210000);
     });
 
+    // Owner 2026-09-22: Jack changed 6912 to 6908 and the new house never
+    // pulled in. A COUNTY record describes the old parcel; carrying it over
+    // stamped the new address answered, so it was never asked.
+    test('a corrected address sheds the old parcel\'s county facts and asks for its own', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970145;
+        const c = { id: cid, name: 'Jack Co', addr: '1 Main St, Topeka, KS 66604',
+          extraAddresses: [{ label: 'Rental', addr: '6912 SW 17th St, Topeka, KS 66615' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        setPropertyData(c, '6912 SW 17th St, Topeka, KS 66615', { yearBuilt: 2003, sqft: 1280, ownerName: 'SOMEONE ELSE',
+          propDataSource: 'county', propDataSoil: 'Old soil', propertyType: 'Rental property', isRental: true });
+        const asked = [];
+        const orig = window._lookupPropertyData;
+        window._lookupPropertyData = (id, pp) => { asked.push(pp && pp.street); return Promise.resolve(true); };
+        try {
+          openAddAddressModal(1);
+          document.getElementById('_aa-addr').value = '6908 SW 17th St, Topeka, KS 66615';
+          saveAddClientAddress(1);
+        } finally { window._lookupPropertyData = orig; }
+        const p = getProperty(c, '6908 SW 17th St, Topeka, KS 66615');
+        return { asked, year: p.yearBuilt, owner: p.ownerName, src: p.propDataSource, soil: p.propDataSoil, type: p.propertyType, rental: p.isRental };
+      });
+      expect(r.asked.length).toBe(1);
+      expect(r.asked[0]).toMatch(/6908/);
+      expect(r.year).toBeUndefined();
+      expect(r.owner).toBeUndefined();
+      expect(r.src).toBeUndefined();
+      expect(r.soil).toBeUndefined();
+      expect(r.type, 'what the contractor set still follows the address').toBe('Rental property');
+      expect(r.rental).toBe(true);
+    });
+
     test('a moved address drops its stale coordinates, so no fence stays on the old house', async () => {
       // geo_fences_for and _geoDeriveFences only build a fence when geoAddr
       // still equals addr. Leaving the old pair behind is exactly the "customer
@@ -3466,7 +3501,7 @@ test.describe('clients.js: exhaustive coverage', () => {
             mgrHasValue: mgr.includes('$250K'), mgrHasAmount: /\$4,200/.test(mgr), mgrHasPaidTotal: mgr.includes('paid'),
             // Regression guard: this address has an unpaid $4,200 proposal, so the
             // header stat slot shows "Owed". Est. value must still appear (in the
-            // facts line) rather than being silently pushed off the card.
+            // county facts block, "Owner & value") rather than being pushed off.
             mgrHasOwed: mgr.includes('Owed'),
           };
         } finally {
@@ -3483,6 +3518,146 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.mgrHasPaidTotal).toBe(true);
       // Owed and est. value coexist: one does not evict the other.
       expect(r.mgrHasOwed).toBe(true);
+    });
+
+    // Owner 2026-09-22: "the county stuff seems slapped in and what about soil
+    // type and all that good stuff and the year built?" Soil, flood and tax sale
+    // were fetched and stored but never reached the card, because
+    // _propApplyMatch dropped every field the card had no slot for.
+    test('_propApplyMatch: carries soil, flood, tax sale and the lot/deed facts onto the property', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970140;
+        const c = { id: cid, name: 'Ground Co', addr: '1 Ground St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        _propApplyMatch(c, '1 Ground St', {
+          year_built: 1880, year_built_to: 1995, sqft: 2026, soil_desc: 'Chase silt loam, occasionally flooded',
+          flood_zone: 'A', flood_sfha: true, tax_sale_year: 2025, tax_sale_case: '2025-TS-001',
+          frontage_ft: 88, depth_ft: 135, basement_desc: 'Full', deed_book_page: '2019R10360',
+          parcel_number: '0930600001001010', land_value: 33350, improvement_value: 292350, subdivision: 'HIDDEN VALLEY',
+          living_units: 1, building_count: 1, land_sqft: 82743.5, source: 'county',
+        });
+        return getProperty(c, '1 Ground St');
+      });
+      expect(r.propDataSoil).toBe('Chase silt loam, occasionally flooded');
+      expect(r.propDataFloodZone).toBe('A');
+      expect(r.propDataFloodSfha).toBe(true);
+      expect(r.propDataTaxSaleYear).toBe(2025);
+      expect(r.propDataTaxSaleCase).toBe('2025-TS-001');
+      expect(r.propDataYearTo).toBe(1995);
+      expect(r.propDataFrontage).toBe(88);
+      expect(r.propDataDeed).toBe('2019R10360');
+      expect(r.propDataBldgValue).toBe(292350);
+    });
+
+    test('_propApplyMatch: flood_sfha false is kept (a "no" is an answer), nulls are not written', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970144;
+        const c = { id: cid, name: 'Dry Co', addr: '2 Dry St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        _propApplyMatch(c, '2 Dry St', { year_built: 2003, flood_zone: 'none', flood_sfha: false, soil_desc: null, tax_sale_year: null, source: 'county' });
+        const p = getProperty(c, '2 Dry St');
+        return { sfha: p.propDataFloodSfha, zone: p.propDataFloodZone, hasSoil: 'propDataSoil' in p, hasTax: 'propDataTaxSaleYear' in p };
+      });
+      expect(r.sfha).toBe(false);
+      expect(r.zone).toBe('none');
+      expect(r.hasSoil).toBe(false);
+      expect(r.hasTax).toBe(false);
+    });
+
+    test('_cdCountyFactsHtml: null / empty input renders nothing and never throws', async () => {
+      const r = await page.evaluate(() => {
+        const out = {};
+        for (const [k, v] of [['null', null], ['undef', undefined], ['empty', {}]]) {
+          try { out[k] = _cdCountyFactsHtml(v, true); } catch (e) { out[k] = 'THREW ' + e.message; }
+        }
+        return out;
+      });
+      expect(r.null).toBe('');
+      expect(r.undef).toBe('');
+      expect(r.empty).toBe('<div class="cdf"></div>');
+    });
+
+    test('_cdCountyFactsHtml: flood hazard, soil, tax sale and lead all render; flood "no" is stated plainly', async () => {
+      const r = await page.evaluate(() => {
+        const wet = _cdCountyFactsHtml({ yearBuilt: 1880, sqft: 2026, bedrooms: 3, bathrooms: 2.5,
+          propDataSoil: 'Chase silt loam, occasionally flooded', propDataFloodZone: 'A', propDataFloodSfha: true,
+          propDataTaxSaleYear: 2025, propDataTaxSaleCase: '2025-TS-001', propDataDeed: '2019R10360' }, true);
+        const dry = _cdCountyFactsHtml({ yearBuilt: 2003, propDataFloodZone: 'none', propDataFloodSfha: false }, true);
+        return { wet, dry };
+      });
+      expect(r.wet).toContain('Chase silt loam');
+      expect(r.wet).toContain('FEMA flood hazard area');
+      expect(r.wet).toContain('zone A');
+      expect(r.wet).toContain('tax-sale list (2025)');
+      expect(r.wet).toContain('2025-TS-001');
+      expect(r.wet).toContain('EPA RRP');
+      expect(r.wet).toContain('cdf-tile-warn');          // the 1880 tile is flagged
+      expect(r.wet).toMatch(/Last sold<\/span><span class="cdf-v">2019</);
+      expect(r.dry).toContain('Not in a mapped flood zone');
+      expect(r.dry).not.toContain('FEMA flood hazard area');
+      expect(r.dry).not.toContain('EPA RRP');
+    });
+
+    test('_cdCountyFactsHtml: commercial shows acres not bed/bath; crew without money sees no dollars', async () => {
+      const r = await page.evaluate(() => {
+        const p = { yearBuilt: 2001, propDataYearTo: 2017, sqft: 18380, lotSize: 2.7635758, propDataClass: 'Commercial',
+          estimatedValue: 1617300, propDataLandValue: 651670, propDataBldgValue: 965630, propDataSource: 'county', ownerName: 'ALDI INC' };
+        return { mgr: _cdCountyFactsHtml(p, true), crew: _cdCountyFactsHtml(p, false) };
+      });
+      expect(r.mgr).toContain('Acres');
+      expect(r.mgr).not.toContain('Bed / Bath');
+      expect(r.mgr).toContain('added to 2017');
+      expect(r.mgr).toContain('Assessed');
+      expect(/\$\d/.test(r.mgr)).toBe(true);
+      expect(/\$\d/.test(r.crew)).toBe(false);
+      expect(r.crew).toContain('ALDI INC');           // the owner is not a money fact
+    });
+
+    test('_cdCountyFactsHtml: owner-supplied text is escaped', async () => {
+      const html = await page.evaluate(() => _cdCountyFactsHtml({ ownerName: '<img src=x onerror=alert(1)>', propDataSoil: '<b>x</b>' }, true));
+      expect(html).not.toContain('<img');
+      expect(html).not.toContain('<b>x</b>');
+    });
+
+    test('property card: the old run-on facts line is gone and the county block renders when open', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970142;
+        const c = { id: cid, name: 'Card Co', addr: '3 Card St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '3 Card St', { yearBuilt: 1940, sqft: 1012, bedrooms: 3, bathrooms: 1, lotSize: 0.27,
+          ownerName: 'SAMPLE TRUST', propDataSoil: 'Ladysmith silty clay loam', propDataFloodZone: 'none' });
+        currentClientId = cid;
+        renderCDAddresses();
+        const html = document.getElementById('cd-addresses-list').innerHTML;
+        return { html, leadCount: (html.match(/EPA RRP/g) || []).length };
+      });
+      expect(r.html).toContain('class="cdf"');
+      expect(r.html).toContain('Ladysmith silty clay loam');
+      expect(r.html).not.toContain('Owner: SAMPLE');   // the old "Owner: X · 0.27 ac lot" run-on line
+      expect(r.html).not.toContain('ac lot');
+      expect(r.html).not.toContain('PRE-1978 · LEAD');  // chip is for the collapsed row; open shows the banner
+      expect(r.leadCount).toBe(1);
+    });
+
+    test('property card layout: county block stays inside 390px with long soil and owner values', async () => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      const r = await page.evaluate(() => {
+        const cid = 970143;
+        const c = { id: cid, name: 'Wide Co', addr: '4 Wide St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '4 Wide St', { yearBuilt: 1880, sqft: 18380, bedrooms: 3, bathrooms: 2.5, lotSize: 1.9, propDataLotSqft: 82743.5,
+          ownerName: 'SAMPLE, LOGAN & BLAKE REVOCABLE LIVING TRUST OF THE LONG NAME', propDataSoil: 'Sogn-Vinland complex, 3 to 25 percent slopes, very stony and eroded',
+          propDataFloodZone: 'AE', propDataFloodSfha: true, propDataParcel: '0930600001001010' });
+        currentClientId = cid;
+        goPg('pg-client-detail');
+        renderCDAddresses();
+        const els = [...document.querySelectorAll('#cd-addresses-list .cdf, #cd-addresses-list .cdf-row, #cd-addresses-list .cdf-tile')];
+        const over = els.filter(el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.right > innerWidth + 1; }).length;
+        return { n: els.length, over, bleed: document.documentElement.scrollWidth > innerWidth + 1 };
+      });
+      expect(r.n).toBeGreaterThan(3);
+      expect(r.over).toBe(0);
+      expect(r.bleed).toBe(false);
     });
   });
 
@@ -4170,68 +4345,406 @@ test.describe('clients.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // _startPropQueue / _tickPropQueue: the background property-data queue
+  // _syncPropertyData: property facts, from the county records we already hold
   //
-  // It had no coverage at all, which is how a missing null guard sat in it
-  // until a webkit shard threw "undefined is not an object (evaluating
-  // 'c.addr')" (2026-08-26). The failure mode is the quiet kind: the queue dies
-  // on the throw and nothing ever restarts it, so property data stops arriving
-  // for the rest of the session and nobody sees a reason why.
+  // This replaced _startPropQueue / _tickPropQueue, which trickled one Zillow
+  // scrape every 6.5s for as long as the browser stayed open. Zillow hard-blocks
+  // that now (403), and even working it could not finish a big import before
+  // somebody closed the tab. The county assessor data is loaded into
+  // td_county_parcels ahead of time, so this is one RPC for every address at
+  // once (§7 the old path is deleted, not hidden; §7.1 proves it below).
+  //
+  // The original null-guard tests are kept in spirit and in substance: a hole in
+  // `clients` (a realtime delete landing mid-sweep, a restore leaving a gap)
+  // threw out of the old queue and silently killed it for the rest of the
+  // session. The same hole must not kill this pass either.
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_startPropQueue', () => {
-    const withClients = (page, list) => page.evaluate((rows) => {
+  test.describe('_syncPropertyData', () => {
+    // Drive the real function against a stubbed RPC, so what is under test is
+    // the gathering + applying, not Supabase.
+    const withClients = (page, list, rpcRows) => page.evaluate(async ({ rows, reply }) => {
       const saved = clients.slice();
-      const savedTimer = _propQueueTimer;
-      if (_propQueueTimer) { clearTimeout(_propQueueTimer); _propQueueTimer = null; }
+      const savedSupa = window._supa;
+      const savedSave = window.saveAll;
+      let asked = null;
+      // Spread the real mock and override only rpc. A bare { rpc } stub has no
+      // .from, which supaSaveToCloud calls, so a debounced save queued before
+      // this helper ran would throw "_supa.from is not a function" inside the
+      // stub window and surface at the assertNoErrors at the end of this file.
+      // Stubbing saveAll does not help: that save was already scheduled.
+      window._supa = { ...savedSupa, rpc: async (_fn, args) => { asked = args.p_addrs; return { data: reply, error: null }; } };
+      window.saveAll = () => {};
       clients.length = 0; rows.forEach((r) => clients.push(r));
       let threw = null;
-      try { _startPropQueue(); } catch (e) { threw = String((e && e.message) || e); }
-      const queued = _propQueue.slice();
-      if (_propQueueTimer) { clearTimeout(_propQueueTimer); }
-      _propQueueTimer = savedTimer;
-      clients.length = 0; saved.forEach((c) => clients.push(c));
-      return { threw, queued };
-    }, list);
+      let after = [];
+      try {
+        try { await _syncPropertyData(); } catch (e) { threw = String((e && e.message) || e); }
+        after = clients.filter(Boolean).map((c) => ({ id: c.id, props: c.properties || null }));
+      } finally {
+        // Restore in a finally: a throw here must not strand the stub on window
+        // and take every later test in this file with it.
+        clients.length = 0; saved.forEach((c) => clients.push(c));
+        window._supa = savedSupa; window.saveAll = savedSave;
+      }
+      return { threw, asked, after };
+    }, { rows: list, reply: rpcRows || [] });
 
-    test('a null entry in clients does not take the queue down', async () => {
-      // The exact shape that threw: a hole in the array, which a realtime
-      // delete landing mid-sweep or a restore leaving a gap can both produce.
+    test('a null entry in clients does not take the sync down', async () => {
+      // The exact shape that threw out of the old queue.
       const r = await withClients(page, [
         { id: 9001, addr: '1 Real St' },
         null,
         { id: 9002, addr: '2 Real St' },
       ]);
-      expect(r.threw, 'a null client must never throw out of _startPropQueue').toBeNull();
-      // And the real clients on either side of the hole still got queued: the
-      // guard has to skip the bad entry, not abandon the list at it.
-      expect(r.queued).toEqual([9001, 9002]);
+      expect(r.threw, 'a null client must never throw out of _syncPropertyData').toBeNull();
+      // Both real clients on either side of the hole still got asked about: the
+      // guard skips the bad entry, it does not abandon the list at it.
+      expect(r.asked).toEqual(['1 Real St', '2 Real St']);
     });
 
     test('undefined entries and an all-junk list are both survivable', async () => {
-      const mixed = await withClients(page, [undefined, { id: 9003, street: '3 Real St' }, null]);
+      const mixed = await withClients(page, [undefined, { id: 9003, addr: '3 Real St' }, null]);
       expect(mixed.threw).toBeNull();
-      expect(mixed.queued).toEqual([9003]);
+      expect(mixed.asked).toEqual(['3 Real St']);
 
+      // An all-junk list has nothing to ask about, so it must not call the RPC
+      // at all rather than sending an empty array.
       const junk = await withClients(page, [null, undefined, null]);
       expect(junk.threw).toBeNull();
-      expect(junk.queued).toEqual([]);
+      expect(junk.asked).toBeNull();
     });
 
-    test('a client with no address is skipped, and one already fetched is not re-queued', async () => {
+    test('a client with no address is skipped, and one already looked up is not asked again', async () => {
+      // "Already looked up" is propDataSource==='county', NOT propDataFetchedAt.
+      // This fixture carried a bare propDataFetchedAt when that stamp was the
+      // gate; it is now correctly re-asked, because the dead Zillow scraper set
+      // exactly that stamp on its failures (see the backfill test below). The
+      // assertion changed because the behaviour deliberately changed.
       const r = await withClients(page, [
-        { id: 9004 },                                             // no address at all
-        { id: 9005, addr: '5 Real St', propDataFetchedAt: 1 },    // already done
-        { id: 9006, addr: '6 Real St' },                          // the only work
+        { id: 9004 },                                                                                        // no address at all
+        // propDataV added 2026-09-23: a county record in the CURRENT shape is
+        // done; one in an older shape is re-read once (tests below).
+        { id: 9005, addr: '5 Real St', properties: { '5 real st': { propDataSource: 'county', propDataFetchedAt: 1, propDataV: 2 } } }, // genuinely done
+        { id: 9006, addr: '6 Real St' },                                                                     // the only work
       ]);
       expect(r.threw).toBeNull();
-      expect(r.queued).toEqual([9006]);
+      expect(r.asked).toEqual(['6 Real St']);
     });
 
-    test('an empty roster queues nothing and arms no timer', async () => {
+    test('an empty roster asks nothing', async () => {
       const r = await withClients(page, []);
       expect(r.threw).toBeNull();
-      expect(r.queued).toEqual([]);
+      expect(r.asked).toBeNull();
     });
+
+    test('a match writes the county facts onto the right address', async () => {
+      const r = await withClients(page, [{ id: 9010, addr: '2015 SW Randolph Ave' }], [{
+        q: '2015 SW Randolph Ave', year_built: 1940, sqft: 1012, beds: 3, baths: 1,
+        assessed_value: 161140, county_name: 'Shawnee', state: 'KS',
+        source_url: 'https://ares.sncoapps.us/',
+      }]);
+      expect(r.threw).toBeNull();
+      const p = r.after.find((c) => c.id === 9010).props['2015 sw randolph ave'];
+      expect(p.yearBuilt).toBe(1940);
+      expect(p.sqft).toBe(1012);
+      // Assessed value, not a Zestimate. The card labels it as such.
+      expect(p.estimatedValue).toBe(161140);
+      expect(p.propDataSource).toBe('county');
+      expect(p.propDataCounty).toBe('Shawnee, KS');
+      expect(p.propDataMiss).toBe(false);
+    });
+
+    // BEHAVIOUR CHANGED 2026-09-22, and the old assertion was right for the
+    // design it was written against. It said: an empty property_lookup result
+    // must be stamped as a county miss, so the card asks the contractor for a
+    // year rather than silently reading as post-1978.
+    //
+    // What that missed is that property_lookup is a JOIN against parcels we
+    // already hold. Empty means "nobody has asked the county about this address
+    // yet", which is a different fact from "the county has no record". Stamping
+    // the second when we only know the first retires the address forever, and
+    // that is exactly what left the first beta user's cards blank: his client
+    // on Elmwood was stamped answered at 14:50 with the parcel sitting in the
+    // table the whole time.
+    //
+    // New contract: a join miss is NOT stamped, it is queued for the drip,
+    // which asks the county for real. Only the Edge Function saying
+    // {found:false} stamps a miss (proved by the _lookupPropertyData tests).
+    // The original concern is still served, just one step later.
+    test('a join miss is NOT stamped, because the county was never asked', async () => {
+      // Drip off, so this asserts the JOIN branch alone. With it on, the drip
+      // runs inside the same await, asks for real, and legitimately stamps the
+      // address this test is checking was left alone.
+      await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 0; });
+      const r = await withClients(page, [{ id: 9011, addr: '999 Nowhere Rd' }], []);
+      expect(r.threw).toBeNull();
+      const props = r.after.find((c) => c.id === 9011).props || {};
+      const p = props['999 nowhere rd'] || {};
+      expect(p.propDataMiss, 'an unasked address must not be recorded as a county miss').toBeFalsy();
+      expect(p.propDataSource, 'and must not read as county-answered').not.toBe('county');
+      expect(p.yearBuilt).toBeUndefined();
+      await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 10; });
+    });
+
+    // Owner, 2026-09-22: "tag them as commerical properties automatically to".
+    test('a commercial parcel types itself when nobody has typed it', async () => {
+      const r = await withClients(page,
+        [{ id: 9061, addr: '61 Store Rd' }],
+        [{ q: '61 Store Rd', year_built: 1990, property_type: 'Commercial',
+           use_desc: 'Grocery store / supermarket', county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9061).props['61 store rd'];
+      expect(p.propertyType, 'the county class becomes the tag').toBe('Commercial');
+      expect(p.propDataClass).toBe('Commercial');
+      expect(p.propDataUse).toBe('Grocery store / supermarket');
+    });
+
+    test('a hand-set property type is never re-typed by the county', async () => {
+      // propertyType drives isRental, the card icon and how the record reads
+      // everywhere else. Overwriting it would silently reclassify a property
+      // somebody already decided about.
+      const r = await withClients(page,
+        [{ id: 9062, addr: '62 Store Rd', properties: { '62 store rd': { propertyType: 'Rental' } } }],
+        [{ q: '62 Store Rd', property_type: 'Commercial', county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9062).props['62 store rd'];
+      expect(p.propertyType, 'the contractor wins').toBe('Rental');
+      expect(p.propDataClass, 'but the county class is still recorded').toBe('Commercial');
+    });
+
+    test('"Residential" is deliberately NOT auto-tagged', async () => {
+      // Too coarse. House vs duplex vs condo is a distinction the contractor
+      // prices off, and a wrong tag is worse than no tag.
+      const r = await withClients(page,
+        [{ id: 9063, addr: '63 House Rd' }],
+        [{ q: '63 House Rd', property_type: 'Residential', county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9063).props['63 house rd'];
+      expect(p.propertyType).toBeUndefined();
+      expect(p.propDataClass, 'the class is still stored for the icon').toBe('Residential');
+    });
+
+    test('a hand-entered year built is never overwritten by the county', async () => {
+      // The contractor stood at the house. The assessor's file is a year old at
+      // best, and on a remodel it can be plainly wrong.
+      const r = await withClients(page,
+        [{ id: 9012, addr: '7 Real St', properties: { '7 real st': { yearBuilt: 1955 } } }],
+        [{ q: '7 Real St', year_built: 1899, sqft: 900, county_name: 'Shawnee', state: 'KS' }]);
+      expect(r.threw).toBeNull();
+      const p = r.after.find((c) => c.id === 9012).props['7 real st'];
+      expect(p.yearBuilt, 'the hand-entered year must win').toBe(1955);
+      expect(p.sqft, 'but everything else still lands').toBe(900);
+    });
+
+    // Owner 2026-09-23: "how can we get them all to re run a check?" Records
+    // applied before soil and flood existed carry none of it. They re-read our
+    // own table once; the county is never contacted for them.
+    test('a county record in an older shape re-reads once and picks up the new fields', async () => {
+      const r = await withClients(page,
+        [{ id: 9070, addr: '70 Old St', properties: { '70 old st': { propDataSource: 'county', yearBuilt: 1955, ownerName: 'HAND TYPED' } } }],
+        [{ q: '70 Old St', year_built: 1899, owner_name: 'COUNTY SAYS', soil_desc: 'Ladysmith silty clay loam', flood_zone: 'none', flood_sfha: false, county_name: 'Shawnee', state: 'KS' }]);
+      expect(r.threw).toBeNull();
+      expect(r.asked).toEqual(['70 Old St']);
+      const p = r.after.find((c) => c.id === 9070).props['70 old st'];
+      expect(p.propDataSoil).toBe('Ladysmith silty clay loam');
+      expect(p.propDataFloodZone).toBe('none');
+      expect(p.propDataV).toBe(2);
+      expect(p.yearBuilt, 'a refresh never overwrites a hand-entered year').toBe(1955);
+      expect(p.ownerName).toBe('HAND TYPED');
+    });
+
+    test('a refresh that finds nothing in the table changes nothing and asks the county nothing', async () => {
+      const r = await page.evaluate(async () => {
+        window._PROP_DRIP_PER_SESSION = 10;
+        const asked = [];
+        const orig = window._lookupPropertyData;
+        window._lookupPropertyData = (id, pp) => { asked.push(pp && pp.street); return Promise.resolve(true); };
+        const saved = clients.slice(); const savedSupa = window._supa;
+        clients.length = 0;
+        clients.push({ id: 9071, addr: '71 Gone St', properties: { '71 gone st': { propDataSource: 'county', yearBuilt: 1990 } } });
+        window._supa = { ...savedSupa, rpc: async () => ({ data: [], error: null }) };
+        try { await _syncPropertyData(); return { asked, p: clients[0].properties['71 gone st'] }; }
+        finally { window._lookupPropertyData = orig; clients.length = 0; saved.forEach((c) => clients.push(c)); window._supa = savedSupa; }
+      });
+      expect(r.asked, 'the drip must not re-ask an answered address').toEqual([]);
+      expect(r.p.propDataSource).toBe('county');
+      expect(r.p.yearBuilt).toBe(1990);
+    });
+
+    test('a recorded county miss is not refreshed, and a current record is not re-read', async () => {
+      const r = await withClients(page, [
+        { id: 9072, addr: '72 Miss St', properties: { '72 miss st': { propDataSource: 'county', propDataMiss: true } } },
+        { id: 9073, addr: '73 New St', properties: { '73 new st': { propDataSource: 'county', propDataV: 2 } } },
+        { id: 9074, addr: '74 Old St', properties: { '74 old st': { propDataSource: 'county', propDataV: 1 } } },
+      ]);
+      expect(r.threw).toBeNull();
+      expect(r.asked).toEqual(['74 Old St']);
+    });
+
+    test('EXISTING clients stamped by the dead Zillow scraper are re-asked', async () => {
+      // The backfill, and the reason _propAnswered exists at all. The old
+      // scraper stamped propDataFetchedAt on every FAILURE, deliberately, to
+      // stop itself re-querying a miss on each boot. It had been failing since
+      // late June, so a real account's whole client book reads as "already
+      // looked up" while carrying no data whatsoever. Gating on that stamp would
+      // skip precisely the records the county data exists to fix.
+      const r = await withClients(page, [
+        // Stamped a miss by the dead scraper: no source, no data.
+        { id: 9040, addr: '40 Real St', properties: { '40 real st': { propDataFetchedAt: '2026-06-28T00:00:00Z', propDataMiss: true } } },
+        // Stamped a success by the dead scraper, so it has a year already.
+        { id: 9041, addr: '41 Real St', properties: { '41 real st': { propDataFetchedAt: '2026-05-01T00:00:00Z', propDataSource: 'zillow', yearBuilt: 1962 } } },
+        // Already answered by a county: this one is genuinely done.
+        { id: 9042, addr: '42 Real St', properties: { '42 real st': { propDataFetchedAt: '2026-09-22T00:00:00Z', propDataSource: 'county', propDataMiss: true } } },
+      ]);
+      expect(r.threw).toBeNull();
+      expect(r.asked, 'both Zillow-era records are re-asked; the county-answered one is not')
+        .toEqual(['40 Real St', '41 Real St']);
+    });
+
+    test('backfilling never overwrites a year the old scraper already found', async () => {
+      // A Zillow-sourced year is still a year, and the contractor may have acted
+      // on it. The county fills the gaps around it instead of churning it.
+      const r = await withClients(page,
+        [{ id: 9043, addr: '43 Real St', properties: { '43 real st': { propDataFetchedAt: '2026-05-01T00:00:00Z', propDataSource: 'zillow', yearBuilt: 1962 } } }],
+        [{ q: '43 Real St', year_built: 1958, sqft: 1400, assessed_value: 120000, county_name: 'Shawnee', state: 'KS' }]);
+      const p = r.after.find((c) => c.id === 9043).props['43 real st'];
+      expect(p.yearBuilt, 'the year already on file wins').toBe(1962);
+      expect(p.sqft, 'the county still fills what was missing').toBe(1400);
+      expect(p.propDataSource, 'and the record is now county-answered, so it is not asked again').toBe('county');
+    });
+
+    // Same change as above. The loop this guarded against is now prevented
+    // server-side instead: county_claim_ask retires an address after ONE ask,
+    // ever, so an unstamped address re-collected on the next boot costs a
+    // cheap 'already' rather than a county request. The drip is also capped
+    // per session, so the queue drains without a burst.
+    test('the drip stops at the first address it could not ask about', async () => {
+      // _countyProperty returns null for "no session", "county not loaded" and
+      // "the request failed", and all three are properties of the SESSION, not
+      // of one address: if the first could not ask, the next nine cannot
+      // either. Without the break the loop sleeps four seconds ten times over,
+      // a forty second no-op on every signed-out boot and in every offline
+      // test, holding timers nothing is waiting on.
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'clients.js'), 'utf8');
+      expect(src, '_lookupPropertyData must report whether it got to ask')
+        .toMatch(/if\(!d\)return false;/);
+      expect(src, 'and the drip must stop on that').toMatch(/if\(asked===false\)break;/);
+    });
+
+    test('an unasked address is handed to the drip rather than written off', async () => {
+      await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 0; });
+      const r = await withClients(page, [{ id: 9044, addr: '44 Real St' }], []);
+      const p = (r.after.find((c) => c.id === 9044).props || {})['44 real st'] || {};
+      expect(p.propDataSource, 'nothing may claim the county answered').not.toBe('county');
+      // The drip itself is asserted on the source, because the sandbox stubs
+      // the RPC and never reaches the Edge Function.
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'clients.js'), 'utf8');
+      expect(src, 'a join miss must be queued').toMatch(/else if\(!w\.refresh\)unanswered\.push\(w\);/);
+      expect(src, 'and chased, capped per session').toMatch(/_dripCap=window\._PROP_DRIP_PER_SESSION/);
+      expect(src, 'the cap actually bounds the loop').toMatch(/i<unanswered\.length&&i<_dripCap/);
+      expect(src, 'paced between asks').toMatch(/window\._PROP_DRIP_GAP_MS/);
+      await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 10; });
+    });
+
+    test('a transient API failure is not recorded as a miss', async () => {
+      // If a 502 stamped propDataFetchedAt, this address would be retired
+      // permanently: the batch sync filters on that stamp, so nothing would ever
+      // ask again and the contractor gets a blank card with no way to know why.
+      // Only the server explicitly saying it found nothing is an answer.
+      // window.fetch is stubbed rather than page.route'd on purpose: a real 502
+      // response makes Chromium log "Failed to load resource", which is a
+      // console error, which trips this file's own assertNoErrors gate (§5.3).
+      // Stubbing exercises the same branch with no browser-level noise.
+      const r = await page.evaluate(async () => {
+        const saved = clients.slice();
+        const savedSave = window.saveAll;
+        const savedFetch = window.fetch;
+        window.saveAll = () => {};
+        window.fetch = async () => new Response(JSON.stringify({ error: 'proxy error' }), {
+          status: 502, headers: { 'Content-Type': 'application/json' },
+        });
+        clients.length = 0;
+        clients.push({ id: 9030, addr: '30 Real St', street: '30 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+        await _lookupPropertyData(9030, { street: '30 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+        const c = clients.find((x) => x.id === 9030);
+        const out = c.properties ? c.properties['30 real st'] : null;
+        clients.length = 0; saved.forEach((x) => clients.push(x));
+        window.saveAll = savedSave; window.fetch = savedFetch;
+        return { props: out || null };
+      });
+      expect(r.props, 'a failed lookup must leave the address untouched, not stamped').toBeNull();
+    });
+
+    test('an explicit found:false IS recorded, so the card can ask the contractor', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = clients.slice();
+        const savedSave = window.saveAll;
+        const savedFetch = window.fetch;
+        window.saveAll = () => {};
+        window.fetch = async () => new Response(JSON.stringify({ found: false }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+        clients.length = 0;
+        clients.push({ id: 9031, addr: '31 Real St', street: '31 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+        await _lookupPropertyData(9031, { street: '31 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+        const c = clients.find((x) => x.id === 9031);
+        const out = c.properties ? c.properties['31 real st'] : null;
+        clients.length = 0; saved.forEach((x) => clients.push(x));
+        window.saveAll = savedSave; window.fetch = savedFetch;
+        return { props: out || null };
+      });
+      expect(r.props).toBeTruthy();
+      expect(r.props.propDataMiss).toBe(true);
+      // And it is marked county-answered, so nothing asks about it again.
+      expect(r.props.propDataSource).toBe('county');
+    });
+
+    test('concurrent calls do not double-apply (§11.2 guard)', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = clients.slice();
+        const savedSupa = window._supa, savedSave = window.saveAll;
+        let calls = 0;
+        // SPREAD the real mock and override only rpc. A bare { rpc } stub is
+        // missing .from, which supaSaveToCloud calls, so a debounced cloud save
+        // scheduled by an EARLIER test whose timer lands inside this ~40ms
+        // window threw "_supa.from is not a function" and was caught by the
+        // assertNoErrors at the end of this file. Stubbing saveAll (below)
+        // does not prevent that: the save was already queued before this test
+        // installed the stub. WebKit's timer scheduling lands in the window;
+        // Chromium's does not, which is why it only ever went red in CI.
+        window._supa = { ...savedSupa, rpc: async () => { calls++; await new Promise((r2) => setTimeout(r2, 40)); return { data: [], error: null }; } };
+        window.saveAll = () => {};
+        clients.length = 0; clients.push({ id: 9020, addr: '20 Real St' });
+        try {
+          await Promise.all([_syncPropertyData(), _syncPropertyData(), _syncPropertyData()]);
+        } finally {
+          // Restore in a finally so a throw cannot strand the stub on window
+          // and take every later test in this file with it.
+          clients.length = 0; saved.forEach((c) => clients.push(c));
+          window._supa = savedSupa; window.saveAll = savedSave;
+        }
+        return { calls };
+      });
+      expect(r.calls, 'the guard must let exactly one pass through').toBe(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // §7.1: the Zillow scraper path is DELETED, not hidden
+  //
+  // CLAUDE.md §7 requires dead code to be removed and §7.1 requires CI to prove
+  // the old entry point is gone rather than merely unused. If any of these come
+  // back, something resurrected the scraper that Zillow now answers with 403.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test('the old Zillow property queue is gone from the app entirely', async () => {
+    const gone = await page.evaluate(() => ({
+      startPropQueue: typeof window._startPropQueue,
+      tickPropQueue:  typeof window._tickPropQueue,
+      propQueue:      typeof window._propQueue,
+      // and the replacement is actually present
+      syncPropertyData: typeof window._syncPropertyData,
+    }));
+    expect(gone.startPropQueue).toBe('undefined');
+    expect(gone.tickPropQueue).toBe('undefined');
+    expect(gone.propQueue).toBe('undefined');
+    expect(gone.syncPropertyData).toBe('function');
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

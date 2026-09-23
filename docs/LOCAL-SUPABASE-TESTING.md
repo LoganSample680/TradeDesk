@@ -9,10 +9,8 @@ pct set 200 --features nesting=1,keyctl=1 && pct reboot 200
 Inside LXC 200, from a clone of this repo:
 ```bash
 bash scripts/setup-local-test-stack.sh     # Supabase stack (db reset + migrations)
-bash scripts/setup-property-proxy.sh        # Zillow proxy on the home IP + cloudflared tunnel
 ```
-Paste the `supabase status` block (printed by the first script) + the `PROPERTY_TUNNEL_URL`
-(printed by the second) back to Claude. Then Claude wires the per-worker harness to those
+Paste the `supabase status` block back to Claude. Then Claude wires the per-worker harness to those
 keys and you set the GitHub secret `SUPABASE_UPSTREAM` to the printed API URL. Details below.
 
 ---
@@ -102,27 +100,90 @@ opt-in and inert until you flip it.
 
 Production stays on Supabase cloud — this is the **test/dev** environment only.
 
-## Property proxy (Zillow) — home-IP lookup
+## Property data — county assessor records (replaced the Zillow proxy, 2026-09-22)
 
-`scripts/setup-property-proxy.sh` runs `scripts/property-proxy.js` on :3001 from jarvis's
-**home residential IP** (Zillow bot-challenges datacenter IPs) and exposes it via a
-cloudflared **quick tunnel**. Set the printed URL as `PROPERTY_TUNNEL_URL` in Cloudflare
-Pages env; `functions/api/property.js` forwards `/api/property` → there.
+**There is no property proxy any more, and nothing in this feature runs on jarvis.** The
+old `scripts/property-proxy.js` scraped Zillow from a home residential IP because Zillow
+bot-challenges datacenter IPs. It is deleted. Zillow serves it a hard 403 now, and the
+"Kansas caveat" this section used to carry (KS returning null since ~late June 2026) was
+the first sign of that block, not a KS quirk.
 
-- Quick-tunnel URLs **change on restart**. For a stable hostname, upgrade to a **named
-  tunnel**:
-  ```bash
-  cloudflared tunnel login
-  cloudflared tunnel create td-property
-  cloudflared tunnel route dns td-property property.<your-domain>
-  # then point the service at:  cloudflared tunnel run td-property  (ingress → :3001)
-  ```
-  and set `PROPERTY_TUNNEL_URL=https://property.<your-domain>` once, permanently.
-- **Kansas caveat:** a home IP is necessary but may not be sufficient — Zillow changed
-  something KS-specific (~late June 2026). MO/NC work through this path; if KS still returns
-  null, the durable fix is a licensed property API (Rentcast/Estated), tracked separately.
-- Manage: `systemctl status td-property-proxy td-property-tunnel`,
-  `journalctl -u td-property-tunnel -f`.
+Facts come from the county assessor now, which is where they always originated: Zillow
+buys county records from an aggregator, so the scraper was laundering Shawnee County's
+own data back to us through two middlemen.
+
+### It is DEMAND-DRIVEN. Nothing is pre-loaded.
+
+Owner, 2026-09-22: *"We're not loading all of Shawnee county, we're just bringing them in
+when a address is saved through the day rail or lead record."*
+
+A county is asked about an address at the moment a contractor saves that address, and
+never otherwise. Two triggers, both already wired:
+
+| Trigger | Where |
+|---|---|
+| A lead/client record is saved with an address | `saveClient` (`js/clients.js`) |
+| A day-rail stop is filed onto an existing client | `_mileWhoPick` (`js/mileage.js`) |
+
+That costs **two county requests per saved address** (the appraiser's search for the
+building, the GIS parcel layer for the money), cached forever. A contractor saves a
+handful of addresses a day, so the county sees a handful of requests a day, paced by a
+person actually working. There is no bulk load, no backfill drip, and nothing to throttle.
+
+### Where each piece runs, because this is easy to mix up
+
+| Piece | Runs on | When |
+|---|---|---|
+| **The lookup** (`supabase/functions/county-property/`) | **Supabase Edge Function**, like the other twenty | Every time an address is saved |
+| **The match** (`property_lookup`) | **Supabase**, one SQL join | Every sign-in, for addresses already answered |
+| **`county-load.js`** | **GitHub Actions**, manual dispatch only | Rarely, and optional: a bulk pre-load or a bounded manual backfill of an existing client book |
+
+**Cloudflare is not involved in this feature at all.** The lookup was a Cloudflare Pages
+Function at first, purely because the dead Zillow tunnel proxy lived at that file path and
+the rewrite stayed put. That was a §7.3 violation and it shipped with no caller check.
+As an Edge Function the service key is injected by Supabase rather than copied into a
+second vendor's config, and the caller is verified with the same `auth.getUser()` line
+every sibling function uses. GitHub Actions only runs the optional batch tooling.
+
+### Setting up a county
+
+Two things, both small:
+
+1. **Seed its zips** into `td_county_zips` so an address can be routed to it. Run the
+   `Load County Assessor Data` workflow, or `node scripts/county-load.js <county> --zips`.
+2. **Add its entry to `ENRICHERS`** in `supabase/functions/county-property/index.ts` (the two source URLs
+   and their field maps) and a matching `scripts/counties/<county>.json`.
+
+That is the whole county onboarding. No parcel data needs loading first; the first saved
+address in that county fetches its own.
+
+```bash
+node scripts/county-load.js ks-shawnee --print   # check the field map, writes nothing
+node scripts/county-load.js ks-shawnee --zips    # seed the routing table
+```
+
+Optional, not required: `node scripts/county-load.js ks-shawnee` bulk-loads every parcel's
+owner and assessed value in ~16 paged requests, and `--enrich N --human` runs a bounded,
+paced backfill of addresses already on file. Neither is part of the normal path.
+
+### Guardrails
+
+- **Any one address is asked about exactly once, ever.** `county_claim_ask` (migration
+  `20261033_county_ask_gate.sql`) records the ask itself, before the request goes out, so
+  an address the county cannot answer (a vacant lot, an address it has no record of) is
+  retired instead of being re-asked forever by every contractor who touches it. It fails
+  closed: a crashed request leaves the address claimed rather than re-asking.
+- **One daily cap per county** (`COUNTY_DAILY_CAP`, default 1000), shared by the live
+  lookup and any batch tooling, as a circuit breaker against a loop.
+- **A transport failure is not an answer.** Both sources must actually respond before an
+  address is retired, or a blip would leave a house with a value and no year built forever.
+- **Nothing to set in Cloudflare.** `PROPERTY_TUNNEL_URL` is gone; delete it if it is
+  still set. The Edge Function reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
+  `SUPABASE_ANON_KEY` from the Supabase runtime, and ships with the migrations in one
+  `deploy-functions.yml` dispatch.
+- **The lookup refuses an unauthenticated caller.** The Cloudflare route it replaced did
+  not, which meant anyone on the internet could make us fire a request at a county server
+  through our own domain: exactly what gets a range blocked.
 
 ## Hosted-runner mode — no jarvis needed (added 2026-08-21)
 
