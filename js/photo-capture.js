@@ -80,6 +80,9 @@ async function tdSavePhoto(opts){
     // guess, which are the two things the fix exists for.
     lat:opts.lat!=null?opts.lat:null,
     lon:opts.lon!=null?opts.lon:null,
+    // Who took it, for the details sheet. The same name the time log files a
+    // crew member's entries under (js/jobs.js), so the two never disagree.
+    by:_pcWhoShot(),
     uploadedAt:new Date().toISOString()
   };
 
@@ -94,7 +97,7 @@ async function tdSavePhoto(opts){
   // losing a photo over.
   if(opts.stamp!==false&&_pcStampOn()){
     const stamped=await tdStampImage(file,_pcStampLines({lat:opts.lat,lon:opts.lon,accM:row.accM,clientId,jobId,bidId}));
-    if(stamped)file=stamped;
+    if(stamped){file=stamped;row.stamped=true;}
   }
 
   // The local copy lands FIRST and unconditionally. A photo taken in a
@@ -124,6 +127,9 @@ async function tdSavePhoto(opts){
     // leaves this app by any route still carries where it was taken. Wrapped so
     // a metadata failure can never cost somebody their photo.
     const _body=await _pcWithGps(_cp?_cp.blob:file,row.lat,row.lon,row.uploadedAt,row.accM);
+    // Only claimed when the writer actually produced a new file: "GPS in
+    // file" on the details sheet is a statement about these bytes.
+    row.exifGps=_body!==(_cp?_cp.blob:file);
     const{error}=await _supa.storage.from('gallery').upload(path,_body,
       {contentType:_cp?_cp.mime:(file.type||'image/jpeg'),upsert:false,cacheControl:_PHOTO_CACHE});
     if(error)throw error;
@@ -147,6 +153,12 @@ async function tdSavePhoto(opts){
     _pcMarkPending(row,j,file);
   }
   return row;
+}
+function _pcWhoShot(){
+  try{
+    if(typeof _isEmployee!=='undefined'&&_isEmployee)return (typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||'Crew';
+    return (typeof getOwnerName==='function'&&getOwnerName())||(typeof S!=='undefined'&&S.ownerName)||'';
+  }catch(_e){return '';}
 }
 function _pcReadDataUrl(file){
   return new Promise(res=>{
@@ -463,6 +475,8 @@ function _pcRevPaint(){
   // In folder mode the grid IS the folder; the viewer is shared.
   if(_pcRev.folder&&!(_pcRev.i>=0&&rows[_pcRev.i])){_pcFolderPaint();return;}
   el.innerHTML=(_pcRev.i>=0&&rows[_pcRev.i])?_pcRevViewerHTML(rows):_pcRevGridHTML(rows);
+  el.classList.toggle('pc-viewing',_pcRev.i>=0);
+  el.classList.toggle('pc-bare',!!_pcRev.bare&&_pcRev.i>=0);
   if(_pcRev.i>=0)_pcRevBindSwipe();
   // Bound once on the document rather than per repaint, because the viewer
   // rebuilds its own markup on every step and a listener added here would
@@ -471,17 +485,30 @@ function _pcRevPaint(){
   document.addEventListener('keydown',_pcRevKey);
 }
 function _pcRevGridHTML(rows){
-  const n=rows.length;
-  return '<div class="pc-rev-top">'+
-      '<button type="button" class="pc-side" onclick="tdReviewClose()">'+(rows.some(p=>p.client_id==null)?'Not now':'Close')+'</button>'+
-      '<span class="pc-rev-title">'+n+(n===1?' shot':' shots')+'</span>'+
+  const n=rows.length,sel=_pcRev.sel;
+  const unfiled=rows.some(p=>p.client_id==null);
+  const top=sel
+    ?'<button type="button" class="pc-side pc-pill pc-glass" onclick="tdSelAll()">'+(sel.length===n?'None':'All')+'</button>'+
       '<span class="pc-rev-sp"></span>'+
-    '</div>'+
-    '<div class="pc-rev-grid">'+rows.map((p,i)=>
-      '<button type="button" class="pc-rev-cell" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" onclick="tdReviewOpen('+i+')">'+
-        '<span class="pc-rev-tag">'+escHtml(p.type)+'</span></button>').join('')+
-    '</div>'+
-    _pcRevFootHTML(rows);
+      '<button type="button" class="pc-side pc-pill pc-glass" onclick="tdSelectMode(false)">Cancel</button>'
+    :'<button type="button" class="pc-side pc-pill pc-glass" onclick="tdReviewClose()">'+(unfiled?'Not now':'Close')+'</button>'+
+      '<span class="pc-rev-sp"></span>'+
+      '<button type="button" class="pc-side pc-pill pc-glass" onclick="tdSelectMode(true)">Select</button>';
+  return '<div class="pc-rev-top pc-g-top">'+top+'</div>'+
+    '<div class="pc-g-title"><span class="pc-rev-title">'+(sel?_pcSelCount(sel.length):n+(n===1?' photo':' photos'))+'</span></div>'+
+    '<div class="pc-rev-grid">'+rows.map(p=>_pcCellHTML(p,!_pcOneStage(rows))).join('')+'</div>'+
+    (sel?_pcSelBarHTML():_pcRevFootHTML(rows));
+}
+function _pcSelCount(k){return k?k+' selected':'Select photos';}
+// One cell, everywhere a set of photos is shown, so select mode behaves the
+// same in the album and in a fresh burst.
+function _pcCellHTML(p,tag){
+  const sel=_pcRev&&_pcRev.sel;
+  const on=!!(sel&&sel.some(id=>String(id)===String(p.id)));
+  return '<button type="button" class="pc-rev-cell'+(on?' sel':'')+'" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" '+
+    'onclick="tdCellTap(\''+p.id+'\')">'+
+    (tag===false?'':'<span class="pc-rev-tag">'+escHtml(p.type)+'</span>')+
+    (sel?'<i class="pc-ck"></i>':'')+'</button>';
 }
 // ── "Is this the right house?" (Jack, 2026-09-22) ───────────────────────────
 // "He takes the picture and it pops up what the address it was that captured
@@ -503,17 +530,18 @@ function _pcRevGuess(rows){
 }
 function _pcFt(m){return Math.round(m*3.28084);}
 function _pcRevFootHTML(rows){
-  const undo=_pcRev.trash.length?'<button type="button" class="pc-side" onclick="tdReviewUndo()">Undo delete</button>':'';
+  const undo=_pcRev.trash.length?'<button type="button" class="pc-side pc-link" onclick="tdReviewUndo()">Undo delete</button>':'';
+  const n=rows.length;
   if(!rows.some(p=>p.client_id==null)){
-    return '<div class="pc-rev-foot">'+undo+
-      '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewClose()">Done</button>'+
+    return '<div class="pc-rev-foot pc-conf pc-glass">'+
+      '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewClose()">Done</button>'+undo+
     '</div>';
   }
   const g=_pcRevGuess(rows);
   if(g){
-    return '<div class="pc-rev-foot col">'+
+    return '<div class="pc-rev-foot pc-conf pc-glass">'+
       '<div class="pc-rev-here" id="pc-rev-here">'+
-        '<span class="pc-dot"></span>'+
+        '<span class="pc-pinb">'+_pcIcon('pin')+'</span>'+
         '<div class="pc-rev-here-t">'+
           '<div class="pc-rev-here-addr">'+escHtml((g.addr||'').split(',')[0])+'</div>'+
           // The distance is not copy. A contractor does not care that it was
@@ -523,13 +551,13 @@ function _pcRevFootHTML(rows){
           '<div class="pc-rev-here-sub">'+escHtml(g.client&&g.client.name||'')+'</div>'+
         '</div>'+
       '</div>'+
-      '<button type="button" class="pc-side go pc-rev-attach ok" id="pc-rev-confirm" onclick="tdReviewConfirmHere()">Yes, file all here</button>'+
-      '<button type="button" class="pc-side" onclick="tdReviewAttach()">Different address</button>'+
+      '<button type="button" class="pc-side go pc-rev-attach ok" id="pc-rev-confirm" onclick="tdReviewConfirmHere()">File '+(n===1?'this photo':n+' photos')+' here</button>'+
+      '<button type="button" class="pc-side pc-link" onclick="tdReviewAttach()">Different address</button>'+
       undo+
     '</div>';
   }
-  return '<div class="pc-rev-foot">'+undo+
-    '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'+
+  return '<div class="pc-rev-foot pc-conf pc-glass">'+
+    '<button type="button" class="pc-side go pc-rev-attach" onclick="tdReviewAttach()">Attach to customer</button>'+undo+
   '</div>';
 }
 // ── The property folder (owner 2026-09-22) ──────────────────────────────────
@@ -635,8 +663,7 @@ function tdFolderVisit(key){
 // shots all labelled Before, under a chip row already saying Before 6, is the
 // same word printed seven times (owner, looking at his own porch, 2026-09-22).
 function _pcFolderCell(p,tag){
-  return '<button type="button" class="pc-rev-cell" style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(p))+'\')" '+
-    'onclick="tdFolderOpen(\''+p.id+'\')">'+(tag===false?'':'<span class="pc-rev-tag">'+escHtml(p.type)+'</span>')+'</button>';
+  return _pcCellHTML(p,tag);
 }
 // True when these photos are all the same stage, so their labels say nothing.
 function _pcOneStage(list){
@@ -669,10 +696,17 @@ function _pcFolderPaint(){
   // row. And when every shot is the same stage there is nothing to filter at
   // all, so the row goes entirely.
   const stages=[['before','Before'],['progress','Progress'],['after','After']].filter(x=>count(x[0])>0);
+  const sel=_pcRev&&_pcRev.sel;
   el.innerHTML=
     '<div class="pc-rev-top ghost">'+
-      '<button type="button" class="pc-side" onclick="tdReviewClose()">Close</button>'+
-      '<span class="pc-rev-sp"></span>'+
+      (sel
+        ?'<button type="button" class="pc-side pc-pill pc-glass" onclick="tdSelAll()">'+(sel.length===all.length?'None':'All')+'</button>'+
+          '<span class="pc-rev-sp pc-sel-n">'+_pcSelCount(sel.length)+'</span>'+
+          '<button type="button" class="pc-side pc-pill pc-glass" onclick="tdSelectMode(false)">Cancel</button>'
+        :'<button type="button" class="pc-side pc-pill pc-glass" onclick="tdReviewClose()">Close</button>'+
+          '<span class="pc-rev-sp"></span>'+
+          (_pcRev&&_pcRev.trash.length?'<button type="button" class="pc-side pc-pill pc-glass" onclick="tdReviewUndo()">Undo delete</button>':'')+
+          '<button type="button" class="pc-side pc-pill pc-glass" onclick="tdSelectMode(true)">Select</button>')+
     '</div>'+
     '<div class="pc-fold">'+
       '<div class="pc-fold-hero"'+(cover?' style="background-image:url(\''+_pcEscUrl(cover)+'\')"':'')+'>'+
@@ -684,7 +718,7 @@ function _pcFolderPaint(){
       '</div>'+
       (stages.length>1?'<div class="pc-fold-chips">'+chip('all','All',all.length)+
         stages.map(x=>chip(x[0],x[1],count(x[0]))).join('')+'</div>':'')+
-      (pair?'<div class="pc-fold-ba">'+
+      (pair&&!sel?'<div class="pc-fold-ba">'+
         '<div class="pc-fold-ba-hd"><div style="flex:1;min-width:0">'+
           '<div class="pc-fold-ba-lbl">Before &amp; After</div>'+
           '<div class="pc-fold-ba-name">'+escHtml(pair.name||'This job')+'</div></div>'+
@@ -694,7 +728,7 @@ function _pcFolderPaint(){
         '<div class="pc-fold-ba-ft"><span>Before</span><span>After</span></div>'+
       '</div>':'')+
       visits.map(v=>{
-        const open=_pcFolder.open===v.key;
+        const open=!!sel||_pcFolder.open===v.key;
         return '<div class="pc-fold-visit">'+
           '<button type="button" class="pc-fold-visit-hd" onclick="tdFolderVisit(\''+v.key+'\')">'+
             '<span class="pc-fold-visit-t">'+
@@ -707,7 +741,8 @@ function _pcFolderPaint(){
           (open?'<div class="pc-rev-grid flat">'+v.photos.map(x=>_pcFolderCell(x,!_pcOneStage(v.photos))).join('')+'</div>':'')+
         '</div>';
       }).join('')+
-    '</div>';
+    '</div>'+
+    (sel?_pcSelBarHTML():'');
 }
 // The pair is what a customer asks for, so Send is the hub they already have.
 function tdFolderSendPair(){
@@ -747,22 +782,210 @@ function tdReviewConfirmHere(){
   return _pcAttAfterAddr();
 }
 
+// ── The viewer, edge to edge (owner 2026-09-23: "why don't we go to full
+// screen by default") ──────────────────────────────────────────────────────
+// The photo owns the whole screen and every control floats over it on glass,
+// the way Photos does it. One tap on the photo and the controls get out of
+// the way; another brings them back. Four buttons a person already knows
+// from their own camera roll sit at the bottom (Share, Mark up, Info,
+// Delete), and the two jobs that are ours alone, Move and Full size, live
+// behind the ••• at the top so they never crowd the photo.
+function _pcWhen(p,withDay){
+  try{
+    const d=new Date(p.uploadedAt);if(isNaN(d))return '';
+    const t=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    const now=new Date();
+    const same=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
+    const y=new Date(now.getTime()-864e5);
+    const day=same(d,now)?'Today':same(d,y)?'Yesterday':d.toLocaleDateString('en-US',withDay?{weekday:'short',month:'short',day:'numeric'}:{month:'short',day:'numeric'});
+    return day+' '+t;
+  }catch(_e){return '';}
+}
+function _pcStageWord(t){return t?String(t).charAt(0).toUpperCase()+String(t).slice(1):'';}
 function _pcRevViewerHTML(rows){
-  const p=rows[_pcRev.i];
-  return '<div class="pc-rev-top">'+
-      '<button type="button" class="pc-side" onclick="tdReviewGrid()">All shots</button>'+
-      '<span class="pc-rev-title">'+(_pcRev.i+1)+' of '+rows.length+'</span>'+
-      '<span class="pc-rev-sp"></span>'+
+  const p=rows[_pcRev.i],n=rows.length,i=_pcRev.i;
+  const street=String(p.addr||'').split(',')[0]||p.client_name||'Photo';
+  // A window of the neighbours, not the whole set: a hundred thumbnails in a
+  // strip is a scrollbar, and the strip is for knowing where you are.
+  const from=Math.max(0,Math.min(i-4,n-9)),to=Math.min(n,from+9);
+  const scrub=n>1?'<div class="pc-v-scrub">'+rows.slice(from,to).map((x,k)=>
+    '<button type="button" class="pc-v-th'+(from+k===i?' on':'')+'" aria-label="Photo '+(from+k+1)+'" '+
+      'style="background-image:url(\''+_pcEscUrl(tdPhotoSrc(x))+'\')" onclick="tdReviewOpen('+(from+k)+')"></button>').join('')+'</div>':'';
+  return '<div class="pc-v-top">'+
+      '<button type="button" class="pc-side pc-round pc-glass" onclick="tdReviewGrid()">'+_pcIcon('back')+'<span class="pc-sr">All shots</span></button>'+
+      '<div class="pc-v-title pc-glass"><div class="pc-v-a">'+escHtml(street)+'</div>'+
+        '<div class="pc-v-b"><em class="st-'+escHtml(p.type||'')+'">'+escHtml(_pcStageWord(p.type))+'</em> · '+escHtml(_pcWhen(p))+
+          ' · <span class="pc-rev-title">'+(i+1)+' of '+n+'</span></div></div>'+
+      '<button type="button" class="pc-side pc-round pc-glass" onclick="tdViewerMenu()">'+_pcIcon('more')+'<span class="pc-sr">More</span></button>'+
+      '<div class="pc-menu pc-glass" id="pc-menu">'+
+        '<button type="button" class="pc-side" onclick="tdViewerMenu(false);tdMovePhoto(\''+p.id+'\')">Move</button>'+
+        (p.fullPath?'<button type="button" class="pc-side" id="pc-rev-full" onclick="tdViewerMenu(false);tdPhotoFullSize(\''+p.id+'\');this.remove()">Full size</button>':'')+
+      '</div>'+
     '</div>'+
     _pcRevStageHTML(rows)+
-    '<div class="pc-rev-foot">'+
-      '<button type="button" class="pc-side" onclick="tdReviewStep(-1)">Prev</button>'+
-      '<button type="button" class="pc-side danger" onclick="tdReviewDelete()">Delete</button>'+
-      '<button type="button" class="pc-side" onclick="tdAnnotatePhoto(\''+p.id+'\')">Mark up</button>'+
-      '<button type="button" class="pc-side" onclick="tdMovePhoto(\''+p.id+'\')">Move</button>'+
-      (p.fullPath?'<button type="button" class="pc-side" id="pc-rev-full" onclick="tdPhotoFullSize(\''+p.id+'\');this.remove()">Full size</button>':'')+
-      '<button type="button" class="pc-side" onclick="tdReviewStep(1)">Next</button>'+
+    scrub+
+    (_pcRev.trash.length?'<button type="button" class="pc-side pc-undo pc-glass" onclick="tdReviewUndo()">Undo delete</button>':'')+
+    '<div class="pc-rev-foot pc-v-bar">'+
+      '<button type="button" class="pc-side pc-round pc-big pc-glass" onclick="tdPhotoShare([\''+p.id+'\'])">'+_pcIcon('share')+'<span class="pc-sr">Share</span></button>'+
+      '<div class="pc-cap pc-glass">'+
+        '<button type="button" class="pc-side pc-round pc-big" onclick="tdAnnotatePhoto(\''+p.id+'\')">'+_pcIcon('pen')+'<span class="pc-sr">Mark up</span></button>'+
+        '<button type="button" class="pc-side pc-round pc-big" onclick="tdPhotoInfo(\''+p.id+'\')">'+_pcIcon('info')+'<span class="pc-sr">Details</span></button>'+
+      '</div>'+
+      '<button type="button" class="pc-side pc-round pc-big pc-glass danger" onclick="tdReviewDelete()">'+_pcIcon('trash')+'<span class="pc-sr">Delete</span></button>'+
     '</div>';
+}
+function tdViewerMenu(open){
+  const m=document.getElementById('pc-menu');
+  if(!m)return false;
+  m.classList.toggle('open',open===undefined?!m.classList.contains('open'):!!open);
+  return m.classList.contains('open');
+}
+// One tap on the photo hides every control, the next brings them back.
+function tdViewerBare(on){
+  if(!_pcRev)return false;
+  _pcRev.bare=on===undefined?!_pcRev.bare:!!on;
+  const el=document.getElementById('pc-rev');
+  if(el)el.classList.toggle('pc-bare',!!_pcRev.bare&&_pcRev.i>=0);
+  tdViewerMenu(false);
+  return _pcRev.bare;
+}
+
+// ── Share: the system sheet, with the photo itself ──────────────────────────
+// The iPhone's own share sheet (Messages, Mail, AirDrop, Save Image) with the
+// actual file, so the GPS written into it travels too. The full-resolution
+// copy when one exists, because a share is somebody asking for the photo on
+// purpose, which is the one time the full copy's egress is worth paying.
+async function tdPhotoShare(ids){
+  const rows=(ids||[]).map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+  if(!rows.length)return false;
+  try{
+    if(navigator.share&&navigator.canShare){
+      const files=[];
+      for(let k=0;k<rows.length;k++){
+        const p=rows[k];
+        const src=(p.fullPath&&_pcFullUrl(p))||tdPhotoSrc(p);
+        if(!src)continue;
+        const blob=await (await fetch(src)).blob();
+        const ext=/png/.test(blob.type)?'png':'jpg';
+        files.push(new File([blob],(String(p.addr||'photo').split(',')[0].replace(/[^\w]+/g,'-')||'photo')+'-'+(k+1)+'.'+ext,{type:blob.type||'image/jpeg'}));
+      }
+      if(files.length&&navigator.canShare({files})){await navigator.share({files});return true;}
+    }
+  }catch(e){if(e&&e.name==='AbortError')return false;}
+  if(typeof showToast==='function')showToast('Sharing is not available on this device','ℹ️');
+  return false;
+}
+
+// ── Details: swipe up on a photo (owner 2026-09-23: "where's the gps info") ──
+// The proof, readable by a homeowner or an adjuster: when, who, whether it was
+// taken at the house, where on a real Apple map, and what the file carries.
+// Every line is something the row already knows; a line with nothing behind it
+// is left out rather than printed as a dash.
+let _pcInfoMap=null;
+function _pcHouseFor(p){
+  const c=p&&p.client_id!=null?clients.find(x=>x.id===p.client_id):null;
+  if(c&&p.addr){
+    const same=a=>String(a||'').trim().toLowerCase()===String(p.addr||'').trim().toLowerCase();
+    const pl=_pcClientPlaces(c).find(x=>same(x.addr));
+    if(pl)return{lat:pl.lat,lon:pl.lon,addr:pl.addr,client:c};
+  }
+  const g=tdGuessPlaceFor(p);
+  if(g){const pl=_pcClientPlaces(g.client).find(x=>x.addr===g.addr);return{lat:pl?pl.lat:null,lon:pl?pl.lon:null,addr:g.addr,client:g.client};}
+  return c?{lat:c.lat!=null?c.lat:null,lon:c.lon!=null?c.lon:null,addr:p.addr||c.addr||'',client:c}:null;
+}
+function tdPhotoInfo(photoId){
+  const id=photoId!=null?photoId:(_pcRev&&_pcRev.i>=0?_pcRevRows()[_pcRev.i]?.id:null);
+  const p=photos.find(x=>String(x.id)===String(id));
+  if(!p)return false;
+  tdPhotoInfoClose();
+  tdViewerMenu(false);
+  const house=_pcHouseFor(p);
+  const hasFix=p.lat!=null&&p.lon!=null;
+  const dM=p.addrM!=null?p.addrM:(hasFix&&house&&house.lat!=null?_pcMeters(p.lat,p.lon,house.lat,house.lon):null);
+  const onSite=dM!=null&&dM<=150;
+  let day='';try{day=new Date(p.uploadedAt).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});}catch(_e){}
+  let time='';try{time=new Date(p.uploadedAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(_e){}
+  const addr=(house&&house.addr)||p.addr||'';
+  const street=String(addr).split(',')[0];
+  const rest=String(addr).split(',').slice(1).join(',').trim();
+  const who=(house&&house.client&&house.client.name)||p.client_name||'';
+  const li=(k,v,cls)=>'<div class="pc-li"><span class="k">'+k+'</span><span class="v'+(cls?' '+cls:'')+'">'+v+'</span></div>';
+  const px=String(p.shotPx||'').split('x').map(Number);
+  const mp=px.length===2&&px[0]&&px[1]?Math.round(px[0]*px[1]/1e6):0;
+  const chips=[
+    px.length===2&&px[0]?px[0]+' × '+px[1]:'',
+    mp?mp+' MP':'',
+    p.accM!=null?'±'+_pcFt(p.accM)+' ft':'',
+    p.exifGps?'GPS in file':'',
+    p.stamped?'Stamped':'',
+    p.annotated?'Marked up':''
+  ].filter(Boolean);
+  const el=document.createElement('div');
+  el.id='pc-info';el.className='pc-info';
+  el.innerHTML='<div class="pc-info-bd" onclick="tdPhotoInfoClose()"></div>'+
+    '<div class="pc-info-sheet" id="pc-info-sheet">'+
+      '<div class="pc-grab"></div>'+
+      '<div class="pc-info-when">'+escHtml(day)+'</div>'+
+      '<div class="pc-info-sub">'+[escHtml(time),p.by?escHtml(p.by):''].filter(Boolean).join(' · ')+
+        (onSite?' · <span class="pc-onsite">'+_pcIcon('shield')+'On site</span>':'')+'</div>'+
+      (addr||hasFix?'<div class="pc-card">'+
+        (hasFix?'<div class="pc-info-map" id="pc-info-map"></div>':'')+
+        '<div class="pc-info-addr"><div class="a">'+escHtml(street||'No address')+'</div>'+
+          '<div class="b">'+escHtml([rest,who].filter(Boolean).join(' · '))+'</div></div>'+
+      '</div>':'')+
+      '<div class="pc-card">'+
+        li('Stage','<span class="st-'+escHtml(p.type||'')+'">'+escHtml(_pcStageWord(p.type))+'</span>')+
+        (dM!=null?li('Distance from house',_pcFt(dM)+' ft'):'')+
+        (hasFix?li('Coordinates',Number(p.lat).toFixed(5)+', '+Number(p.lon).toFixed(5),'mono'):li('Coordinates','None saved'))+
+      '</div>'+
+      (chips.length?'<div class="pc-card pc-chips">'+chips.map(c=>'<span class="pc-chip-s">'+escHtml(c)+'</span>').join('')+'</div>':'')+
+    '</div>';
+  document.body.appendChild(el);
+  _pcInfoBindDrag();
+  if(hasFix)_pcInfoMapDraw(p,house);
+  return true;
+}
+function tdPhotoInfoClose(){
+  if(_pcInfoMap){try{_pcInfoMap.destroy();}catch(_e){}_pcInfoMap=null;}
+  const el=document.getElementById('pc-info');
+  if(el)el.remove();
+  return true;
+}
+// Pull the sheet back down to put it away, same as it came up.
+function _pcInfoBindDrag(){
+  const sh=document.getElementById('pc-info-sheet');
+  if(!sh)return;
+  let y0=null,dy=0;
+  sh.addEventListener('pointerdown',e=>{if(sh.scrollTop>0)return;y0=e.clientY;dy=0;sh.style.transition='none';});
+  sh.addEventListener('pointermove',e=>{if(y0==null)return;dy=Math.max(0,e.clientY-y0);sh.style.transform=dy?'translate3d(0,'+dy+'px,0)':'';});
+  const end=()=>{if(y0==null)return;y0=null;sh.style.transition='';
+    if(dy>90){tdPhotoInfoClose();return;}
+    sh.style.transform='';};
+  sh.addEventListener('pointerup',end);sh.addEventListener('pointercancel',end);
+}
+// A real Apple map when MapKit is up (it is on tradedeskpro.app and the Pages
+// previews, the same token the mileage and measure maps use). Anywhere else
+// the card simply has no map, never a broken one.
+function _pcInfoMapDraw(p,house){
+  const box=document.getElementById('pc-info-map');
+  if(!box)return;
+  if(typeof mapkit==='undefined'||typeof _mapkitReady==='undefined'||!_mapkitReady){box.remove();return;}
+  try{
+    const spot=new mapkit.Coordinate(p.lat,p.lon);
+    const map=new mapkit.Map(box,{center:spot,colorScheme:mapkit.Map.ColorSchemes.Dark,
+      showsCompass:mapkit.FeatureVisibility.Hidden,showsScale:mapkit.FeatureVisibility.Hidden,
+      showsZoomControl:false,showsMapTypeControl:false,showsUserLocationControl:false,
+      isScrollEnabled:false,isZoomEnabled:false,isRotationEnabled:false});
+    const items=[];
+    if(p.accM!=null){
+      map.addOverlay(new mapkit.CircleOverlay(spot,Math.max(4,p.accM),{style:new mapkit.Style({fillColor:'#0A84FF',fillOpacity:.18,strokeColor:'#0A84FF',strokeOpacity:.45,lineWidth:1})}));
+    }
+    const dot=new mapkit.Annotation(spot,()=>{const d=document.createElement('div');d.className='pc-map-dot';return d;},{anchorOffset:new DOMPoint(0,0)});
+    items.push(dot);
+    if(house&&house.lat!=null&&house.lon!=null)items.push(new mapkit.MarkerAnnotation(new mapkit.Coordinate(house.lat,house.lon),{color:'#FF453A'}));
+    map.showItems(items,{animate:false,padding:new mapkit.Padding(36,36,36,36),minimumSpan:new mapkit.CoordinateSpan(0.0012,0.0012)});
+    _pcInfoMap=map;
+  }catch(_e){box.remove();}
 }
 // ── GPS INTO THE FILE ITSELF ────────────────────────────────────────────────
 // A canvas re-encode strips EXIF, always, and a getUserMedia frame never had
@@ -992,12 +1215,13 @@ function _pcRevBindSwipe(){
     if(!axis){
       if(Math.abs(ex)<6&&Math.abs(ey)<6)return;
       axis=Math.abs(ey)>Math.abs(ex)?'y':'x';
-      // Up is not a gesture here. Only down puts the photo away, so an upward
-      // drag is released rather than half-animated.
-      if(axis==='y'&&ey<0){active=false;return;}
+      // Up is the details, the way Photos does it: the photo lifts with the
+      // thumb and the sheet comes up on release.
+      if(axis==='y'&&ey<0)axis='u';
       if(axis==='x'&&!track){active=false;return;}
     }
     if(axis==='x'){dx=ex;atX(dx);}
+    else if(axis==='u'){dy=Math.min(0,ey);stage.style.transform='translate3d(0,'+Math.round(dy*0.35)+'px,0)';}
     else{dy=ey;atY(dy);}
     if(e.cancelable)e.preventDefault();
   };
@@ -1005,6 +1229,13 @@ function _pcRevBindSwipe(){
     if(!active){active=false;return;}
     active=false;
     const dt=Math.max(1,Date.now()-t0);
+    // A tap, not a drag: the controls step out of the way, or come back.
+    if(!axis){if(dt<400)tdViewerBare();return;}
+    if(axis==='u'){
+      stage.style.transform='';
+      if(dy<-_PC_SWIPE_MIN)tdPhotoInfo();
+      return;
+    }
     if(axis==='y'){
       const v=dy/dt;
       // Same rule as the carousel: a flick still has to BE a movement, or a
@@ -1040,6 +1271,88 @@ function _pcRevKey(e){
   else return;
   e.preventDefault();
 }
+// ── Select many (owner 2026-09-23: "mass delete like iOS") ─────────────────
+// The same four things a person does with one photo, done to many: share,
+// move to another address, retag the stage, delete. Delete goes through the
+// same held bin as a single delete, so Undo works on twelve as it does on one
+// and nothing leaves storage until the sheet is closed.
+function tdSelectMode(on){
+  if(!_pcRev)return false;
+  _pcRev.sel=on?[]:null;_pcRev.i=-1;
+  _pcRevPaint();return true;
+}
+function tdSelToggle(id){
+  if(!_pcRev||!_pcRev.sel)return false;
+  const k=_pcRev.sel.findIndex(x=>String(x)===String(id));
+  if(k>=0)_pcRev.sel.splice(k,1);else _pcRev.sel.push(id);
+  _pcRevPaint();return _pcRev.sel.length;
+}
+function tdSelAll(){
+  if(!_pcRev||!_pcRev.sel)return false;
+  const ids=(_pcRev.folder?_pcFolderRows():_pcRevRows()).map(p=>p.id);
+  _pcRev.sel=_pcRev.sel.length===ids.length?[]:ids.slice();
+  _pcRevPaint();return _pcRev.sel.length;
+}
+function tdCellTap(id){
+  if(!_pcRev)return false;
+  if(_pcRev.sel)return tdSelToggle(id);
+  if(_pcRev.folder)return tdFolderOpen(id);
+  const i=_pcRev.ids.findIndex(x=>String(x)===String(id));
+  return i<0?false:tdReviewOpen(i);
+}
+function _pcSelBarHTML(){
+  const k=_pcRev&&_pcRev.sel?_pcRev.sel.length:0;
+  const b=(fn,ic,label,cls)=>'<button type="button" class="pc-tb'+(cls?' '+cls:'')+'"'+(k?'':' disabled')+' onclick="'+fn+'">'+_pcIcon(ic)+'<span>'+label+'</span></button>';
+  return '<div class="pc-selbar pc-glass">'+
+    b('tdSelShare()','share','Share')+b('tdSelMove()','folder','Move')+b('tdSelStage()','tag','Stage')+b('tdSelDelete()','trash','Delete','danger')+
+    '<div class="pc-menu pc-stage-menu pc-glass" id="pc-stage-menu">'+
+      ['before','progress','after'].map(t=>'<button type="button" class="pc-side" onclick="tdSelStage(\''+t+'\')"><span class="st-'+t+'">●</span> '+_pcStageWord(t)+'</button>').join('')+
+    '</div>'+
+  '</div>';
+}
+function _pcSelRows(){
+  return (_pcRev&&_pcRev.sel?_pcRev.sel:[]).map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+}
+function tdSelShare(){
+  const ids=_pcSelRows().map(p=>p.id);
+  return ids.length?tdPhotoShare(ids):false;
+}
+function tdSelMove(){
+  const ids=_pcSelRows().map(p=>p.id);
+  if(!ids.length)return false;
+  _pcAtt={ids,clientId:null,addr:'',bidId:null,jobId:null};
+  _pcAttPaint('who');
+  return true;
+}
+function tdSelStage(t){
+  const rows=_pcSelRows();
+  if(!rows.length)return false;
+  if(!t){const m=document.getElementById('pc-stage-menu');if(m)m.classList.toggle('open');return true;}
+  if(['before','progress','after'].indexOf(t)<0)return false;
+  const hubs=new Set();
+  rows.forEach(p=>{p.type=t;if(p.client_id!=null)hubs.add(p.client_id);});
+  saveAll();
+  if(typeof _uploadClientHub==='function')hubs.forEach(cid=>_uploadClientHub(cid).catch(()=>{}));
+  _pcRev.sel=null;_pcRevPaint();
+  if(typeof showToast==='function')showToast(rows.length+(rows.length===1?' photo':' photos')+' tagged '+_pcStageWord(t),'✅');
+  return rows.length;
+}
+function tdSelDelete(){
+  if(!_pcRev)return 0;
+  const rows=_pcSelRows();
+  if(!rows.length)return 0;
+  const gone=new Set(rows.map(p=>String(p.id)));
+  rows.forEach(p=>_pcRev.trash.push(p));
+  // One Undo puts back the whole batch it took, not the last photo of it.
+  (_pcRev.batches=_pcRev.batches||[]).push(rows.length);
+  _pcRev.ids=_pcRev.ids.filter(id=>!gone.has(String(id)));
+  photos=photos.filter(x=>!gone.has(String(x.id)));
+  saveAll();
+  _pcRev.sel=null;
+  if(!_pcRev.ids.length){tdReviewClose();return rows.length;}
+  _pcRevPaint();
+  return rows.length;
+}
 function tdReviewOpen(i){
   if(!_pcRev)return false;
   _pcRev.i=i;_pcRevPaint();return true;
@@ -1061,6 +1374,7 @@ function tdReviewDelete(){
   const p=rows[_pcRev.i];
   if(!p)return false;
   _pcRev.trash.push(p);
+  (_pcRev.batches=_pcRev.batches||[]).push(1);
   _pcRev.ids=_pcRev.ids.filter(id=>String(id)!==String(p.id));
   photos=photos.filter(x=>String(x.id)!==String(p.id));
   saveAll();
@@ -1072,9 +1386,12 @@ function tdReviewDelete(){
 }
 function tdReviewUndo(){
   if(!_pcRev||!_pcRev.trash.length)return false;
-  const p=_pcRev.trash.pop();
-  photos.push(p);
-  _pcRev.ids.push(p.id);
+  const k=Math.min(_pcRev.trash.length,(_pcRev.batches&&_pcRev.batches.length)?_pcRev.batches.pop():1);
+  for(let n=0;n<k;n++){
+    const p=_pcRev.trash.pop();
+    photos.push(p);
+    _pcRev.ids.push(p.id);
+  }
   saveAll();
   _pcRevPaint();
   return true;
@@ -1131,11 +1448,17 @@ function tdReviewAttach(){
   _pcAttPaint('who');
   return true;
 }
+// The picker is a sheet from the bottom in the same dark glass as the rest of
+// TrueShot, not the app's light centred card: it opens over a black photo
+// grid, and a white box dropped on top of that read as a different app
+// (owner 2026-09-23, "fresh out of Apple"). It keeps .zmodal-overlay so
+// every close path that already sweeps modals still sweeps this one.
 function _pcAttSheet(){
   let ov=document.getElementById('pc-att');
   if(!ov){
     ov=document.createElement('div');
-    ov.id='pc-att';ov.className='zmodal-overlay';ov.style.alignItems='center';
+    ov.id='pc-att';ov.className='zmodal-overlay pc-att-ov';
+    ov.addEventListener('click',e=>{if(e.target===ov)tdAttachCancel();});
     document.body.appendChild(ov);
   }
   return ov;
@@ -1145,30 +1468,42 @@ function tdAttachCancel(){
   _pcAtt=null;
   return true;
 }
+function _pcInitials(name){
+  const w=String(name||'').trim().split(/\s+/).filter(Boolean);
+  return ((w[0]||'?').charAt(0)+(w.length>1?w[w.length-1].charAt(0):'')).toUpperCase();
+}
 function _pcAttPaint(step,q){
   if(!_pcAtt)return;
   const ov=_pcAttSheet();
   const n=_pcAtt.ids.length;
-  const head=(t,sub)=>'<div style="font-size:18px;font-weight:900;margin-bottom:4px">'+t+'</div>'+
-    '<div style="font-size:13px;color:var(--text-2);margin-bottom:12px">'+sub+'</div>';
-  const cancel='<button class="btn btn-full" style="margin-top:12px" onclick="tdAttachCancel()">Cancel</button>';
+  const head=t=>'<div class="pc-grab"></div><div class="pc-att-hd"><span class="pc-att-t">'+t+'</span>'+
+    '<button type="button" class="pc-att-x" aria-label="Cancel" onclick="tdAttachCancel()">'+_pcIcon('x')+'</button></div>';
+  const row=(fn,av,name,sub,right,cls)=>'<button type="button" class="pc-file-opt'+(cls?' '+cls:'')+'" onclick="'+fn+'">'+
+    '<span class="pc-av'+(cls==='near'?' pin':'')+'">'+av+'</span>'+
+    '<span class="pc-opt-m"><b>'+name+'</b><span>'+sub+'</span></span>'+
+    (right?'<em>'+right+'</em>':'')+_pcIcon('chev','pc-chev')+'</button>';
   if(step==='who'){
     const near=_pcNearbyMatches(_pcAtt.ids);
     const term=String(q||'').trim().toLowerCase();
     const list=clients.filter(c=>!term||String(c.name||'').toLowerCase().includes(term)||String(c.addr||'').toLowerCase().includes(term))
       .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
-    ov.innerHTML='<div class="zmodal">'+
-      head('Whose '+(n===1?'photo':n+' photos')+'?','It lands on their record, and in the hub you send them.')+
-      (near.length?'<div class="pc-att-near"><div class="pc-att-lbl">Shot here</div>'+
-        near.map(m=>'<button type="button" class="pc-file-opt near" onclick="tdAttachPick('+m.clientId+','+(m.jobId!=null?m.jobId:'null')+','+JSON.stringify(m.addr||'').replace(/"/g,'&quot;')+')">'+
-          escHtml(m.name||'Unnamed')+'<span>'+escHtml(m.addr||'')+(m.what?' · '+escHtml(m.what):'')+' · '+_pcFeet(m.d)+' ft away</span></button>').join('')+
+    const props=c=>(typeof clientAddresses==='function')?clientAddresses(c).length:1;
+    ov.innerHTML='<div class="zmodal pc-att-sheet">'+
+      head('Whose '+(n===1?'photo':n+' photos')+'?')+
+      '<label class="pc-att-search">'+_pcIcon('search')+
+        '<input class="pc-att-q" id="pc-att-q" placeholder="Customer or address" autocomplete="off" oninput="_pcAttPaint(\'who\',this.value)" value="'+escHtml(q||'')+'"></label>'+
+      (near.length&&!term?'<div class="pc-att-lbl">Near you</div><div class="pc-att-group pc-att-near">'+
+        near.map(m=>row('tdAttachPick('+m.clientId+','+(m.jobId!=null?m.jobId:'null')+','+JSON.stringify(m.addr||'').replace(/"/g,'&quot;')+')',
+          _pcIcon('pin'),escHtml(m.name||'Unnamed'),escHtml(String(m.addr||'').split(',')[0])+(m.what?' · '+escHtml(m.what):''),
+          _pcFeet(m.d)+' ft away','near')).join('')+
         '</div>':'')+
-      '<input class="pc-att-q" id="pc-att-q" placeholder="Search customers" autocomplete="off" oninput="_pcAttPaint(\'who\',this.value)" value="'+escHtml(q||'')+'">'+
-      '<div class="pc-file-list">'+
-        (list.length?list.map(c=>'<button type="button" class="pc-file-opt" onclick="tdAttachPick('+c.id+')">'+
-          escHtml(c.name||'Unnamed')+'<span>'+escHtml(c.addr||'')+'</span></button>').join('')
-          :'<div style="font-size:13px;color:var(--text-3)">No customers match.</div>')+
-      '</div>'+cancel+'</div>';
+      '<div class="pc-att-lbl">'+(term?'Results':'All customers')+'</div>'+
+      '<div class="pc-att-group pc-file-list">'+
+        (list.length?list.map(c=>{const k=props(c);
+          return row('tdAttachPick('+c.id+')',escHtml(_pcInitials(c.name)),escHtml(c.name||'Unnamed'),
+            k>1?k+' addresses':escHtml(String(c.addr||'').split(',')[0]),'');}).join('')
+          :'<div class="pc-att-none">No customers match.</div>')+
+      '</div></div>';
     const box=document.getElementById('pc-att-q');
     if(q!=null&&box){box.focus();box.setSelectionRange(box.value.length,box.value.length);}
     return;
@@ -1184,13 +1519,13 @@ function _pcAttPaint(step,q){
   // is more than one thing it could be.
   const c=clients.find(x=>x.id===_pcAtt.clientId);
   const work=_pcAttWork();
-  ov.innerHTML='<div class="zmodal">'+
-    head('Attach to what?','On '+escHtml((c&&c.name)||'this customer')+'.')+
-    '<div class="pc-file-list">'+
-      work.map(w=>'<button type="button" class="pc-file-opt" onclick="tdAttachWork(\''+w.kind+'\','+w.id+')">'+
-        escHtml(w.label)+'<span>'+escHtml(w.sub)+'</span></button>').join('')+
-      '<button type="button" class="pc-file-opt" onclick="tdAttachWork(\'none\',0)">Just the customer<span>No proposal or job</span></button>'+
-    '</div>'+cancel+'</div>';
+  ov.innerHTML='<div class="zmodal pc-att-sheet">'+
+    head('Attach to what?')+
+    '<div class="pc-att-lbl">On '+escHtml((c&&c.name)||'this customer')+'</div>'+
+    '<div class="pc-att-group pc-file-list">'+
+      work.map(w=>row('tdAttachWork(\''+w.kind+'\','+w.id+')',_pcIcon(w.kind==='job'?'folder':'tag'),escHtml(w.label),escHtml(w.sub),'')).join('')+
+      row('tdAttachWork(\'none\',0)',escHtml(_pcInitials(c&&c.name)),'Just the customer','No proposal or job','')+
+    '</div></div>';
 }
 // The open work on this customer at this address: proposals first, because a
 // photo taken before the job exists is the walkthrough for the estimate.
@@ -1275,6 +1610,7 @@ function tdAttachCommit(){
 function tdReviewClose(){
   const trash=_pcRev?_pcRev.trash.slice():[];
   _pcRev=null;_pcFolder=null;
+  tdPhotoInfoClose();
   // The sheet is gone, so the arrow keys belong to whatever is underneath it
   // again. _pcRevKey guards on _pcRev too, so this is belt and braces.
   document.removeEventListener('keydown',_pcRevKey);
@@ -1304,32 +1640,63 @@ function _pcSubjectLabel(){
   if(what&&c&&String(what).trim().toLowerCase()===String(c.name||'').trim().toLowerCase())what='';
   return what?who+' · '+what:who;
 }
+// ── The camera, laid out like the iPhone's own (owner 2026-09-23: "want this
+// to look fresh out of Apple") ─────────────────────────────────────────────
+// The frame is 3:4 with black above and below, because the photo IS 3:4
+// (3024x4032) and a full-bleed cover crop showed a picture wider than the one
+// it saved. The stage is three words, the way Photo and Video are, not three
+// filled buttons. Everything that is not the shutter floats on glass.
 function _pcSheetHTML(){
   const t=_pcCtx?_pcCtx.type:'before';
-  const seg=(v,label,cls)=>'<button type="button" class="pc-seg-btn'+(t===v?' on '+cls:'')+'" onclick="tdCaptureSetType(\''+v+'\')">'+label+'</button>';
+  const seg=(v,label)=>'<button type="button" class="pc-seg-btn'+(t===v?' on':'')+'" onclick="tdCaptureSetType(\''+v+'\')">'+label+'</button>';
   return ''+
+  '<div class="pc-cam-top">'+
+    '<button type="button" class="pc-stamp-toggle pc-glass" id="pc-stamp-toggle" onclick="tdTogglePhotoStamp()">'+
+      '<span class="dot"></span><span id="pc-stamp-label">Stamp on</span></button>'+
+    '<button type="button" class="pc-ghost-btn pc-glass" id="pc-ghost-btn" onclick="tdCaptureToggleGhost()">Ghost on</button>'+
+  '</div>'+
   '<div class="pc-vf" id="pc-vf">'+
     '<video id="pc-video" playsinline autoplay muted></video>'+
     '<div class="pc-ghost" id="pc-ghost"></div>'+
     '<div class="pc-ghostframe" id="pc-ghostframe"></div>'+
     '<div class="pc-grid"></div>'+
-    '<div class="pc-attach"><span class="pc-dot"></span>'+
+    '<div class="pc-attach pc-glass"><span class="pc-dot" id="pc-subject-dot"></span>'+
       '<span class="pc-attach-t" id="pc-subject">'+escHtml(_pcSubjectLabel())+'</span>'+
+      '<span class="pc-attach-near" id="pc-near"></span>'+
     '</div>'+
     '<div class="pc-hint" id="pc-hint"></div>'+
-    '<button type="button" class="pc-stamp-toggle" id="pc-stamp-toggle" onclick="tdTogglePhotoStamp()">'+
-      '<span class="dot"></span><span id="pc-stamp-label">Stamp on</span></button>'+
   '</div>'+
   '<div class="pc-seg">'+
-    seg('before','Before','b4')+seg('progress','Progress','pr')+seg('after','After','af')+
+    seg('before','Before')+seg('progress','Progress')+seg('after','After')+
   '</div>'+
-  '<div class="pc-strip" id="pc-strip"></div>'+
   '<div class="pc-shutrow">'+
-    '<button type="button" class="pc-side" id="pc-ghost-btn" onclick="tdCaptureToggleGhost()">Ghost</button>'+
+    '<button type="button" class="pc-last" id="pc-strip" aria-label="Mark up the last shot"></button>'+
     '<button type="button" class="pc-shut" id="pc-shut" aria-label="Take photo" onclick="tdCaptureShoot()"><i></i></button>'+
-    '<button type="button" class="pc-side go" onclick="tdCloseCapture()">Done</button>'+
+    '<button type="button" class="pc-done" aria-label="Done" onclick="tdCloseCapture()">'+
+      _pcIcon('check')+'<span class="pc-sr">Done</span></button>'+
   '</div>'+
   '<input type="file" id="pc-fallback-file" accept="image/*" capture="environment" style="display:none" onchange="tdCaptureFromPicker(this)">';
+}
+// SF Symbols-weight line icons, drawn once here so every TrueShot surface
+// uses the same six glyphs at the same stroke.
+const _PC_ICONS={
+  check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  back:'<path d="M14.5 5.5L8 12l6.5 6.5"/>',
+  more:'<circle cx="6" cy="12" r="1.5" class="f"/><circle cx="12" cy="12" r="1.5" class="f"/><circle cx="18" cy="12" r="1.5" class="f"/>',
+  share:'<path d="M12 15V3.5M8 7l4-4 4 4M6.5 10.5H6a2 2 0 00-2 2V19a2 2 0 002 2h12a2 2 0 002-2v-6.5a2 2 0 00-2-2h-.5"/>',
+  pen:'<path d="M4.5 19.5l3.8-.9L19 7.9a1.9 1.9 0 000-2.7l-.2-.2a1.9 1.9 0 00-2.7 0L5.4 15.7z"/>',
+  info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r=".7" class="f"/>',
+  trash:'<path d="M4.5 6.5h15M9.5 6.5V4.8c0-.7.6-1.3 1.3-1.3h2.4c.7 0 1.3.6 1.3 1.3v1.7M6.5 6.5l.9 12.6c.1 1 .9 1.9 2 1.9h5.2c1.1 0 1.9-.9 2-1.9l.9-12.6"/>',
+  folder:'<path d="M3.5 7.5a2 2 0 012-2h3.8l2 2h7.2a2 2 0 012 2v8a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/>',
+  tag:'<path d="M3.5 12.3V5.5a2 2 0 012-2h6.8l8.2 8.2a2 2 0 010 2.8l-6 6a2 2 0 01-2.8 0z"/><circle cx="8" cy="8" r="1.3"/>',
+  pin:'<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0113 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  shield:'<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  x:'<path d="M7 7l10 10M17 7L7 17"/>',
+  search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  chev:'<path d="M9 5l7 7-7 7"/>'
+};
+function _pcIcon(name,cls){
+  return '<svg class="pc-ic'+(cls?' '+cls:'')+'" viewBox="0 0 24 24" aria-hidden="true">'+(_PC_ICONS[name]||'')+'</svg>';
 }
 async function _pcStartStream(){
   _pcGpsStart();
@@ -1393,6 +1760,7 @@ function _pcGpsStart(){
     _pcGpsWatch=navigator.geolocation.watchPosition(pos=>{
       _pcFix={lat:pos.coords.latitude,lon:pos.coords.longitude,
         acc:typeof pos.coords.accuracy==='number'?Math.round(pos.coords.accuracy):null,t:Date.now()};
+      _pcPaintNear();
     },()=>{},{enableHighAccuracy:true,maximumAge:15000,timeout:20000});
   }catch(_e){}
 }
@@ -1405,7 +1773,7 @@ function tdCaptureSetType(t){
   _pcCtx.type=t;
   document.querySelectorAll('#pc-sheet .pc-seg-btn').forEach((b,i)=>{
     const v=['before','progress','after'][i];
-    b.className='pc-seg-btn'+(v===t?' on '+['b4','pr','af'][i]:'');
+    b.className='pc-seg-btn'+(v===t?' on':'');
   });
   _pcPaint();
 }
@@ -1442,23 +1810,43 @@ function _pcPaint(){
     else if(_pcShots){hint.className='pc-hint';hint.textContent=_pcShots+(_pcShots===1?' shot':' shots')+' · keep going';}
     else {hint.className='pc-hint';hint.textContent=_pcStream?'Tap the shutter':'Tap the shutter to open the camera';}
   }
-  const sub=document.getElementById('pc-subject');
-  if(sub)sub.textContent=_pcSubjectLabel();
+  _pcPaintNear();
   const st=document.getElementById('pc-stamp-toggle'),stl=document.getElementById('pc-stamp-label');
-  if(st&&stl){const on=_pcStampOn();st.className='pc-stamp-toggle'+(on?'':' off');stl.textContent=on?'Stamp on':'Stamp off';}
+  if(st&&stl){const on=_pcStampOn();st.className='pc-stamp-toggle pc-glass'+(on?'':' off');stl.textContent=on?'Stamp on':'Stamp off';}
   _pcPaintStrip();
 }
+// The last shot, the way the Camera app shows it: one thumbnail, with how
+// many this subject has. Tapping it marks that shot up, which is what the old
+// row of four thumbnails did per shot.
 function _pcPaintStrip(){
   const strip=document.getElementById('pc-strip');
   if(!strip||!_pcCtx)return;
   const mine=photos.filter(p=>p&&(
     (_pcCtx.jobId!=null&&p.job_id===_pcCtx.jobId)||
     (_pcCtx.jobId==null&&_pcCtx.bidId!=null&&p.bid_id===_pcCtx.bidId)||
-    (_pcCtx.jobId==null&&_pcCtx.bidId==null&&_pcCtx.clientId!=null&&p.client_id===_pcCtx.clientId)));
-  const shots=mine.slice(-4);
-  const counts=['before','progress','after'].map(t=>({t,n:mine.filter(p=>p.type===t).length})).filter(x=>x.n);
-  strip.innerHTML=shots.map(p=>'<div class="pc-thumb'+(p.annotated?' marked':'')+'" title="Mark it up" onclick="tdAnnotatePhoto(\''+p.id+'\')" style="background-image:url(\''+(p.thumbUrl||p.url||p.data||'')+'\')"></div>').join('')+
-    (counts.length?'<span class="pc-strip-lbl">'+counts.map(x=>x.n+' '+x.t.charAt(0).toUpperCase()+x.t.slice(1)).join(' · ')+'</span>':'');
+    (_pcCtx.jobId==null&&_pcCtx.bidId==null&&_pcCtx.clientId!=null&&p.client_id===_pcCtx.clientId)||
+    _pcSessionIds.some(id=>String(id)===String(p.id))));
+  const last=mine[mine.length-1];
+  strip.className='pc-last'+(last?'':' empty')+(last&&last.annotated?' marked':'');
+  strip.style.backgroundImage=last?'url(\''+_pcEscUrl(last.thumbUrl||last.url||last.data||'')+'\')':'';
+  strip.innerHTML=mine.length?'<span class="pc-last-n">'+mine.length+'</span>':'';
+  strip.onclick=last?()=>tdAnnotatePhoto(last.id):null;
+}
+// Where the phone is standing, live, before a single shot is taken: the
+// nearest saved property to the warm fix, named beside whoever the shoot is
+// for. Green once either one is known, grey while it is still nobody.
+function _pcPaintNear(){
+  const el=document.getElementById('pc-near'),dot=document.getElementById('pc-subject-dot');
+  if(!el||!_pcCtx)return;
+  const hit=_pcFix?tdGuessPlaceFor({lat:_pcFix.lat,lon:_pcFix.lon}):null;
+  const tagged=_pcCtx.clientId!=null||_pcCtx.jobId!=null||_pcCtx.bidId!=null;
+  const street=hit?String(hit.addr||'').split(',')[0]:'';
+  const sub=document.getElementById('pc-subject');
+  // Nobody attached yet but standing at a saved house: the house leads and
+  // its owner follows, so "No customer yet" never sits beside the answer.
+  if(!tagged&&hit&&sub){sub.textContent=street||hit.client.name||'';el.textContent=street?(hit.client.name||''):'';}
+  else{if(sub)sub.textContent=_pcSubjectLabel();el.textContent=street;}
+  if(dot)dot.className='pc-dot'+(hit||tagged?'':' idle');
 }
 // The shutter. With a live stream it grabs a frame and the sheet stays open,
 // which is the burst behaviour. Without one it opens the native picker.
@@ -1727,8 +2115,14 @@ function tdUnfiledTrayHTML(){
   return '<div class="card" id="dash-unfiled-photos">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
       '<div class="td-micro" style="flex:1;margin:0">Unfiled photos</div>'+
-      '<span class="pc-uf-count">'+un.length+'</span></div>'+
+      '<button type="button" class="pc-uf-count" onclick="tdReviewAllUnfiled()">'+un.length+'</button></div>'+
     rows+'</div>';
+}
+// Every unfiled photo in one grid, so a pile of bad shots from a week of
+// jobs can be cleared with Select and one Delete instead of burst by burst.
+function tdReviewAllUnfiled(){
+  const ids=tdUnfiledPhotos().map(p=>p.id);
+  return ids.length?tdReviewShots(ids):false;
 }
 // The address guess, accepted for the whole burst in one tap.
 function tdReviewFileBurst(firstId,clientId,addr){

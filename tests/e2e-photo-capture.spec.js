@@ -352,19 +352,24 @@ test.describe('Photo capture: the sheet itself', () => {
   // test, and neither would ever throw: a missing CSS token renders nothing
   // and a duplicated label just reads wrong. They are pinned here so they
   // cannot come back silently (§13.4).
-  test('the ghost hint and the Before segment have a real background, not a missing token', async () => {
+  // The stage used to be three filled buttons, so "chosen" was a background.
+  // Since the 2026-09-23 redesign it is three words, the way the iPhone's own
+  // Camera shows Photo and Video, so "chosen" is the yellow of the word. The
+  // defect this guards is the same one: a missing token rendering nothing.
+  test('the ghost hint has a real background, and the chosen stage reads as chosen', async () => {
     await page.evaluate(() => { photos.push({ id: 77, type: 'before', url: '', thumbUrl: '', client_id: 501, bid_id: 901, job_id: null, uploadedAt: new Date().toISOString() }); tdCaptureForBid(901, 'after'); });
     const r = await page.evaluate(() => {
       const hint = document.getElementById('pc-hint');
-      const seg = document.querySelector('#pc-sheet .pc-seg-btn');
       tdCaptureSetType('before');
       const segOn = document.querySelector('#pc-sheet .pc-seg-btn.on');
-      const bg = el => el ? getComputedStyle(el).backgroundColor : '';
-      return { hintCls: hint.className, hintBg: bg(hint), segBg: bg(segOn), any: !!seg };
+      const segOff = document.querySelector('#pc-sheet .pc-seg-btn:not(.on)');
+      return { hintBg: getComputedStyle(hint).backgroundColor, on: getComputedStyle(segOn).color, off: getComputedStyle(segOff).color, onText: segOn.textContent };
     });
     const transparent = v => v === '' || v === 'transparent' || v === 'rgba(0, 0, 0, 0)';
     expect(transparent(r.hintBg)).toBe(false);
-    expect(transparent(r.segBg)).toBe(false);
+    expect(r.onText).toBe('Before');
+    expect(r.on, 'the chosen stage is a different colour from the others').not.toBe(r.off);
+    expect(r.on).toBe('rgb(255, 214, 10)');
   });
 
   test('a job named after the customer does not print the name twice', async () => {
@@ -401,18 +406,22 @@ test.describe('Photo capture: the sheet itself', () => {
   // The pill was cut in half by the Dynamic Island on the owner's phone the
   // first time this ran on a real device. The sheet is full-bleed over the
   // camera, so nothing else reserves that space for it.
+  // Since the 2026-09-23 redesign the pill sits INSIDE the 3:4 frame, and the
+  // black bar above the frame is what holds the island's space, the way the
+  // Camera app does it. So the inset rule lives on that bar, and the pill has
+  // to be below it.
   test('the subject pill clears the status bar and the Dynamic Island', async () => {
     await page.evaluate(() => tdCaptureForBid(901, 'before'));
-    const top = await page.evaluate(() =>
-      getComputedStyle(document.querySelector('#pc-sheet .pc-attach')).top);
+    const r = await page.evaluate(() => ({
+      pill: document.querySelector('#pc-sheet .pc-attach').getBoundingClientRect().top,
+      bar: document.querySelector('#pc-sheet .pc-cam-top').getBoundingClientRect().bottom,
+      css: [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch (e) { return []; } })
+        .filter(x => x.selectorText === '.pc-cam-top').map(x => x.style.padding || x.style.paddingTop).join(''),
+    }));
     // env() is 0 in a desktop browser, so the assertion is on the rule
-    // surviving, not on a device number: 14px plus an inset that is only
-    // non-zero where an island exists.
-    const css = await page.evaluate(() =>
-      [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch (e) { return []; } })
-        .filter(r => r.selectorText === '.pc-attach').map(r => r.style.top).join(''));
-    expect(css).toContain('safe-area-inset-top');
-    expect(parseFloat(top)).toBeGreaterThanOrEqual(14);
+    // surviving, not on a device number.
+    expect(r.css).toContain('safe-area-inset-top');
+    expect(r.pill).toBeGreaterThanOrEqual(r.bar);
   });
 
   // Six shots with nobody attached went into the tray and the dashboard was
@@ -452,7 +461,7 @@ test.describe('Photo capture: the sheet itself', () => {
     }));
     expect(r.open).toBe(true);
     expect(r.cells).toBe(6);
-    expect(r.title).toBe('6 shots');
+    expect(r.title).toBe('6 photos');
     expect(ids.length).toBe(6);
     await page.evaluate(() => tdReviewClose());
   });
@@ -598,16 +607,41 @@ test.describe('Photo capture: the sheet itself', () => {
       expect(r.title).toBe('2 of 3');
     });
 
-    test('pulling UP is not a gesture at all', async () => {
+    // Up used to be released untouched. Since 2026-09-23 it is the details,
+    // the way Photos does it ("where's the gps info", owner).
+    test('pulling UP opens the details and never closes anything', async () => {
       await shootUnfiled(3);
       await page.evaluate(() => tdReviewOpen(1));
       await dragStage(page, [200, 600], [206, 200], 5);
       const r = await page.evaluate(() => ({
         open: !!document.getElementById('pc-rev'),
         parked: document.getElementById('pc-rev')?.style.transform || '',
+        info: !!document.getElementById('pc-info'),
+        title: document.querySelector('.pc-rev-title')?.textContent,
       }));
       expect(r.open, 'up never closes anything').toBe(true);
-      expect(r.parked, 'and nothing was half-animated on the way').toBe('');
+      expect(r.parked, 'and the sheet itself never moved').toBe('');
+      expect(r.info, 'the details came up').toBe(true);
+      expect(r.title, 'on the same photo').toBe('2 of 3');
+      await page.evaluate(() => tdPhotoInfoClose());
+    });
+
+    test('a tap on the photo hides every control, and the next brings them back', async () => {
+      await shootUnfiled(3);
+      await page.evaluate(() => tdReviewOpen(1));
+      await dragStage(page, [200, 400], [201, 401], 1);
+      const hidden = await page.evaluate(() => ({
+        bare: document.getElementById('pc-rev').classList.contains('pc-bare'),
+        barOpacity: getComputedStyle(document.querySelector('.pc-v-bar')).opacity,
+      }));
+      // Stepping to the next photo keeps them hidden, as Photos does.
+      await page.evaluate(() => tdReviewStep(1));
+      const stillBare = await page.evaluate(() => document.getElementById('pc-rev').classList.contains('pc-bare'));
+      await dragStage(page, [200, 400], [201, 401], 1);
+      const back = await page.evaluate(() => document.getElementById('pc-rev').classList.contains('pc-bare'));
+      expect(hidden.bare).toBe(true);
+      expect(stillBare).toBe(true);
+      expect(back).toBe(false);
     });
 
     test('a single photo can still be put away, having no track to drag', async () => {
@@ -2880,5 +2914,529 @@ test.describe('TrueShot: the uploaded file carries its GPS', () => {
     });
     expect(order.flashAt, 'the flash is in the shutter path').toBeGreaterThan(-1);
     expect(order.flashAt, 'and it comes before the JPEG encode').toBeLessThan(order.encodeAt);
+  });
+});
+
+// ── The 2026-09-23 redesign: "fresh out of Apple" ──────────────────────────
+// Owner: "let's beef up the true shot design, it's mid tbh, I'm gunning for
+// company cam", then approved the mockups of a full-screen viewer, swipe-up
+// details, select mode, the camera, the confirm card and the picker. These
+// pin what each screen promises, not how it is drawn.
+test.describe('TrueShot: the redesign', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  // Page-owned, so a cloud pull landing mid-test cannot swap the arrays out
+  // from under the assertion (the flake class fixed in #89).
+  const house = () => page.evaluate(() => {
+    window.__house = () => {
+      try { tdCloseCapture(); } catch (e) {}
+      try { tdReviewClose(); } catch (e) {}
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      clients.length = 0; photos.length = 0; jobs.length = 0; bids.length = 0;
+      clients.push({ id: 501, name: 'Pepe Miranda', addr: '6908 SW 17th St, Topeka, KS', lat: 39.03561, lon: -95.78330,
+        extraAddresses: [{ addr: '6912 SW 17th St, Topeka, KS', lat: 39.0358, lon: -95.7838, label: 'Rental' }] });
+      clients.push({ id: 502, name: 'Dana Whitfield', addr: '412 Oak St' });
+      const t0 = Date.parse('2026-09-22T19:51:12Z');
+      ['before', 'progress', 'progress', 'after', 'progress', 'before'].forEach((type, i) => photos.push({
+        id: 7100 + i, type, url: '', thumbUrl: '', data: 'x', client_id: 501, client_name: 'Pepe Miranda',
+        addr: '6908 SW 17th St, Topeka, KS', lat: 39.03557, lon: -95.78321, accM: 8, shotPx: '3024x4032',
+        uploadedAt: new Date(t0 + i * 60000).toISOString() }));
+      return photos.map(p => p.id);
+    };
+    return window.__house();
+  });
+  const openAlbum = async () => { await house(); return page.evaluate(() => {
+    window.__house();
+    tdOpenPropertyFolder(501, '6908 SW 17th St, Topeka, KS', photos.slice());
+    return photos.length;
+  }); };
+
+  test.describe('the viewer', () => {
+    test('the photo fills the screen and the controls float over it', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house(); tdOpenPropertyFolder(501, '6908 SW 17th St, Topeka, KS', photos.slice()); tdFolderOpen(7101);
+        const sheet = document.getElementById('pc-rev').getBoundingClientRect();
+        const stage = document.getElementById('pc-rev-stage').getBoundingClientRect();
+        const bar = document.querySelector('.pc-v-bar').getBoundingClientRect();
+        return { sheetH: sheet.height, stageH: stage.height, stageTop: stage.top, barBottom: bar.bottom,
+          overlap: bar.top < stage.bottom, title: document.querySelector('.pc-v-a').textContent,
+          sub: document.querySelector('.pc-v-b').textContent };
+      });
+      expect(r.stageH, 'the stage is the whole sheet, not what is left under a header').toBe(r.sheetH);
+      expect(r.stageTop).toBe(0);
+      expect(r.overlap, 'the bar sits over the photo rather than taking space from it').toBe(true);
+      expect(r.title).toBe('6908 SW 17th St');
+      expect(r.sub).toContain('Progress');
+      expect(r.sub).toContain('2 of 6');
+    });
+
+    test('Share, Mark up, Details and Delete are on the bar; Move and Full size are behind •••', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house(); photos[0].fullPath = 'u/x/f-1.jpg';
+        tdOpenPropertyFolder(501, '6908 SW 17th St, Topeka, KS', photos.slice()); tdFolderOpen(7100);
+        const bar = [...document.querySelectorAll('.pc-v-bar .pc-side')].map(b => b.textContent);
+        const menu = document.getElementById('pc-menu');
+        const hiddenAtFirst = getComputedStyle(menu).display === 'none';
+        tdViewerMenu();
+        const shown = getComputedStyle(menu).display !== 'none';
+        return { bar, menu: [...menu.querySelectorAll('.pc-side')].map(b => b.textContent), hiddenAtFirst, shown };
+      });
+      expect(r.bar).toEqual(['Share', 'Mark up', 'Details', 'Delete']);
+      expect(r.menu).toEqual(['Move', 'Full size']);
+      expect(r.hiddenAtFirst).toBe(true);
+      expect(r.shown).toBe(true);
+    });
+
+    test('the scrubber jumps straight to a photo', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house(); tdOpenPropertyFolder(501, '6908 SW 17th St, Topeka, KS', photos.slice()); tdFolderOpen(7100);
+        const n = document.querySelectorAll('.pc-v-th').length;
+        document.querySelectorAll('.pc-v-th')[4].click();
+        return { n, title: document.querySelector('.pc-rev-title').textContent, on: document.querySelectorAll('.pc-v-th.on').length };
+      });
+      expect(r.n).toBe(6);
+      expect(r.title).toBe('5 of 6');
+      expect(r.on).toBe(1);
+    });
+
+    test('Share with no system share sheet says so, and never throws', async () => {
+      await house();
+      const r = await page.evaluate(async () => {
+        window.__house();
+        const saved = navigator.share;
+        try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); } catch (e) {}
+        const out = await tdPhotoShare([7100]);
+        try { Object.defineProperty(navigator, 'share', { value: saved, configurable: true }); } catch (e) {}
+        return { out, none: await tdPhotoShare([]), junk: await tdPhotoShare(['nope']) };
+      });
+      expect(r.out).toBe(false);
+      expect(r.none).toBe(false);
+      expect(r.junk).toBe(false);
+    });
+
+    test('Share hands the system sheet real files', async () => {
+      await house();
+      const r = await page.evaluate(async () => {
+        window.__house();
+        const cv = document.createElement('canvas'); cv.width = 4; cv.height = 4;
+        photos[0].data = cv.toDataURL('image/jpeg');
+        let got = null;
+        const s0 = navigator.share, c0 = navigator.canShare;
+        Object.defineProperty(navigator, 'share', { value: async (d) => { got = d; }, configurable: true });
+        Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true });
+        const ok = await tdPhotoShare([7100]);
+        Object.defineProperty(navigator, 'share', { value: s0, configurable: true });
+        Object.defineProperty(navigator, 'canShare', { value: c0, configurable: true });
+        return { ok, n: got && got.files ? got.files.length : 0, name: got && got.files ? got.files[0].name : '', type: got && got.files ? got.files[0].type : '' };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.n).toBe(1);
+      expect(r.name).toMatch(/^6908-SW-17th-St-1\.jpg$/);
+      expect(r.type).toBe('image/jpeg');
+    });
+  });
+
+  test.describe('details', () => {
+    test('a photo at the house says On site, how far, where, and what the file carries', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        Object.assign(photos[1], { by: 'Jack Schonfeldt', exifGps: true, stamped: true });
+        tdOpenPropertyFolder(501, '6908 SW 17th St, Topeka, KS', photos.slice()); tdFolderOpen(7101);
+        tdPhotoInfo();
+        const el = document.getElementById('pc-info');
+        return { text: el.textContent, chips: [...el.querySelectorAll('.pc-chip-s')].map(c => c.textContent),
+          onsite: !!el.querySelector('.pc-onsite') };
+      });
+      expect(r.onsite).toBe(true);
+      expect(r.text).toContain('Jack Schonfeldt');
+      expect(r.text).toContain('6908 SW 17th St');
+      expect(r.text).toContain('Pepe Miranda');
+      expect(r.text).toMatch(/Distance from house\d+ ft/);
+      expect(r.text).toContain('39.03557, -95.78321');
+      expect(r.chips).toEqual(['3024 × 4032', '12 MP', '±26 ft', 'GPS in file', 'Stamped']);
+      await page.evaluate(() => { tdPhotoInfoClose(); tdReviewClose(); });
+    });
+
+    test('it never claims what the row cannot prove', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        photos.push({ id: 7199, type: 'before', url: '', data: 'x', client_id: null, uploadedAt: new Date().toISOString() });
+        tdPhotoInfo(7199);
+        const el = document.getElementById('pc-info');
+        return { text: el.textContent, chips: el.querySelectorAll('.pc-chip-s').length,
+          onsite: !!el.querySelector('.pc-onsite'), map: !!document.getElementById('pc-info-map') };
+      });
+      expect(r.onsite, 'no fix, no On site').toBe(false);
+      expect(r.map, 'no fix, no map').toBe(false);
+      expect(r.chips, 'no pixel size, no GPS, no stamp: nothing to list').toBe(0);
+      expect(r.text).toContain('None saved');
+      expect(r.text).not.toContain('GPS in file');
+      await page.evaluate(() => tdPhotoInfoClose());
+    });
+
+    test('far from every house is not On site', async () => {
+      await house();
+      const onsite = await page.evaluate(() => {
+        window.__house();
+        photos.push({ id: 7198, type: 'before', url: '', data: 'x', client_id: 501, addr: '6908 SW 17th St, Topeka, KS', lat: 39.2, lon: -95.5, uploadedAt: new Date().toISOString() });
+        tdPhotoInfo(7198);
+        const v = !!document.querySelector('#pc-info .pc-onsite');
+        tdPhotoInfoClose();
+        return v;
+      });
+      expect(onsite).toBe(false);
+    });
+
+    test('with no MapKit the card has no map at all, never a broken one', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house(); tdPhotoInfo(7100);
+        const out = { map: !!document.getElementById('pc-info-map'), addr: !!document.querySelector('#pc-info .pc-info-addr') };
+        tdPhotoInfoClose();
+        return out;
+      });
+      expect(r.map).toBe(false);
+      expect(r.addr).toBe(true);
+    });
+
+    test('the backdrop and closing the viewer both put it away; junk ids open nothing', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        tdPhotoInfo(7100);
+        document.querySelector('.pc-info-bd').click();
+        const byBackdrop = !document.getElementById('pc-info');
+        tdOpenPropertyFolder(501, '6908 SW 17th St, Topeka, KS', photos.slice()); tdFolderOpen(7100); tdPhotoInfo();
+        tdReviewClose();
+        const byClose = !document.getElementById('pc-info');
+        return { byBackdrop, byClose, junk: tdPhotoInfo('nope'), none: tdPhotoInfo(), stray: !!document.getElementById('pc-info') };
+      });
+      expect(r.byBackdrop).toBe(true);
+      expect(r.byClose).toBe(true);
+      expect(r.junk).toBe(false);
+      expect(r.none).toBe(false);
+      expect(r.stray).toBe(false);
+    });
+  });
+
+  test.describe('select many', () => {
+    test('Select turns taps into checks, and All selects everything', async () => {
+      await openAlbum();
+      const r = await page.evaluate(() => {
+        tdSelectMode(true);
+        const cells = () => [...document.querySelectorAll('#pc-rev .pc-rev-cell')];
+        cells()[0].click(); cells()[2].click();
+        const two = { sel: document.querySelectorAll('#pc-rev .pc-rev-cell.sel').length, viewer: !!document.getElementById('pc-rev-stage'),
+          label: document.querySelector('.pc-sel-n').textContent };
+        tdSelAll();
+        const all = document.querySelectorAll('#pc-rev .pc-rev-cell.sel').length;
+        tdSelAll();
+        const none = document.querySelectorAll('#pc-rev .pc-rev-cell.sel').length;
+        const disabled = [...document.querySelectorAll('.pc-selbar .pc-tb')].every(b => b.disabled);
+        tdSelectMode(false);
+        const out = { two, all, none, disabled, back: document.querySelectorAll('.pc-ck').length };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.two.sel).toBe(2);
+      expect(r.two.viewer, 'a tap in select mode never opens the viewer').toBe(false);
+      expect(r.two.label).toBe('2 selected');
+      expect(r.all).toBe(6);
+      expect(r.none).toBe(0);
+      expect(r.disabled, 'nothing selected, nothing to do').toBe(true);
+      expect(r.back, 'Cancel takes the checks away').toBe(0);
+    });
+
+    test('Delete takes every selected photo, and one Undo brings all of them back', async () => {
+      await openAlbum();
+      const r = await page.evaluate(() => {
+        tdSelectMode(true);
+        [7100, 7102, 7104].forEach(id => tdSelToggle(id));
+        const n = tdSelDelete();
+        // Visit cells only: the Before & After pair pins two more above them.
+        const after = { left: photos.length, cells: document.querySelectorAll('#pc-rev .pc-fold-visit .pc-rev-cell').length,
+          undo: [...document.querySelectorAll('#pc-rev .pc-side')].some(b => b.textContent === 'Undo delete') };
+        tdReviewUndo();
+        const out = { n, after, back: photos.length, cells: document.querySelectorAll('#pc-rev .pc-fold-visit .pc-rev-cell').length };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.n).toBe(3);
+      expect(r.after.left).toBe(3);
+      expect(r.after.cells).toBe(3);
+      expect(r.after.undo).toBe(true);
+      expect(r.back).toBe(6);
+      expect(r.cells).toBe(6);
+    });
+
+    test('a mass delete reaches storage only once the album is closed', async () => {
+      await openAlbum();
+      const r = await page.evaluate(async () => {
+        const removed = [];
+        const saved = { en: supaEnabled, supa: _supa };
+        photos.forEach((p, i) => { p.storagePath = 'u/p' + i + '.jpg'; p.thumbPath = 'u/t' + i + '.jpg'; });
+        supaEnabled = () => true;
+        _supa = { storage: { from: () => ({ remove: async (paths) => { removed.push(...paths); return { error: null }; } }) } };
+        try {
+          tdSelectMode(true); tdSelAll(); tdSelToggle(7105); tdSelDelete();
+          const whileOpen = removed.length;
+          tdReviewClose();
+          return { whileOpen, after: removed.length, left: photos.length };
+        } finally { supaEnabled = saved.en; _supa = saved.supa; }
+      });
+      expect(r.whileOpen).toBe(0);
+      expect(r.after, 'five photos, a display and a thumb path each').toBe(10);
+      expect(r.left).toBe(1);
+    });
+
+    test('Stage retags the whole selection', async () => {
+      await openAlbum();
+      const r = await page.evaluate(() => {
+        tdSelectMode(true);
+        [7100, 7101].forEach(id => tdSelToggle(id));
+        tdSelStage();
+        const menu = document.getElementById('pc-stage-menu').classList.contains('open');
+        const n = tdSelStage('after');
+        const out = { menu, n, types: photos.filter(p => [7100, 7101].includes(p.id)).map(p => p.type),
+          others: photos.filter(p => ![7100, 7101].includes(p.id)).every(p => p.type !== 'after' || p.id === 7103),
+          selecting: !!document.querySelector('.pc-selbar'), junk: (tdSelectMode(true), tdSelToggle(7102), tdSelStage('garbage')) };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.menu).toBe(true);
+      expect(r.n).toBe(2);
+      expect(r.types).toEqual(['after', 'after']);
+      expect(r.others).toBe(true);
+      expect(r.selecting, 'select mode ends once the job is done').toBe(false);
+      expect(r.junk).toBe(false);
+    });
+
+    test('Move sends the selection, and only the selection, to the picker', async () => {
+      await openAlbum();
+      const r = await page.evaluate(() => {
+        tdSelectMode(true);
+        [7103, 7105].forEach(id => tdSelToggle(id));
+        tdSelMove();
+        const out = { open: !!document.getElementById('pc-att'), title: document.querySelector('.pc-att-t').textContent,
+          ids: _pcAtt ? _pcAtt.ids.slice() : [] };
+        tdAttachCancel(); tdReviewClose();
+        return out;
+      });
+      expect(r.open).toBe(true);
+      expect(r.title).toBe('Whose 2 photos?');
+      expect(r.ids).toEqual([7103, 7105]);
+    });
+
+    test('the burst after a shoot has Select too, and its confirm card steps aside', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        photos.forEach(p => { p.client_id = null; p.client_name = ''; });
+        tdReviewShots(photos.map(p => p.id));
+        const card = !!document.getElementById('pc-rev-here');
+        const btn = [...document.querySelectorAll('#pc-rev .pc-side')].find(b => b.textContent === 'Select');
+        btn.click();
+        const out = { card, cardInSelect: !!document.getElementById('pc-rev-here'), bar: !!document.querySelector('.pc-selbar'),
+          title: document.querySelector('.pc-rev-title').textContent };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.card).toBe(true);
+      expect(r.cardInSelect).toBe(false);
+      expect(r.bar).toBe(true);
+      expect(r.title).toBe('Select photos');
+    });
+
+    test('the tray count opens every unfiled photo in one grid', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        photos.forEach((p, i) => { p.client_id = null; p.uploadedAt = new Date(Date.parse('2026-09-01T12:00:00Z') + i * 864e5).toISOString(); });
+        const host = document.createElement('div'); host.innerHTML = tdUnfiledTrayHTML();
+        const rows = host.querySelectorAll('.pc-uf-row').length;
+        host.querySelector('.pc-uf-count').click();
+        const out = { rows, cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length, none: (photos.length = 0, tdReviewAllUnfiled()) };
+        tdReviewClose();
+        return out;
+      });
+      expect(r.rows, 'bursts a day apart are separate rows').toBeGreaterThan(1);
+      expect(r.cells, 'but the count opens all of them together').toBe(6);
+      expect(r.none).toBe(false);
+    });
+  });
+
+  test.describe('the camera, the confirm card and the picker', () => {
+    test('the camera names the house it is standing at, live, before a shot', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        tdCaptureUnfiled();
+        const before = { subject: document.getElementById('pc-subject').textContent, idle: document.getElementById('pc-subject-dot').classList.contains('idle') };
+        _pcFix = { lat: 39.03557, lon: -95.78321, acc: 8, t: Date.now() };
+        _pcPaintNear();
+        const after = { subject: document.getElementById('pc-subject').textContent, near: document.getElementById('pc-near').textContent,
+          idle: document.getElementById('pc-subject-dot').classList.contains('idle') };
+        _pcFix = null; tdCloseCapture();
+        return { before, after };
+      });
+      expect(r.before.subject).toBe('No customer yet');
+      expect(r.before.idle).toBe(true);
+      expect(r.after.subject).toBe('6908 SW 17th St');
+      expect(r.after.near).toBe('Pepe Miranda');
+      expect(r.after.idle).toBe(false);
+    });
+
+    test('the last-shot thumbnail counts this shoot and opens mark-up', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        tdCaptureForClient(501, 'before');
+        const t = document.getElementById('pc-strip');
+        const out = { n: t.textContent, empty: t.classList.contains('empty'), bg: !!t.style.backgroundImage, click: typeof t.onclick };
+        tdCloseCapture();
+        tdCaptureForClient(502, 'before');
+        out.emptyWhenNone = document.getElementById('pc-strip').classList.contains('empty');
+        tdCloseCapture();
+        return out;
+      });
+      expect(r.n).toBe('6');
+      expect(r.empty).toBe(false);
+      expect(r.bg).toBe(true);
+      expect(r.click).toBe('function');
+      expect(r.emptyWhenNone).toBe(true);
+    });
+
+    test('the confirm card counts the photos it is about to file', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        photos.forEach(p => { p.client_id = null; });
+        tdReviewShots([7100]);
+        const one = document.getElementById('pc-rev-confirm').textContent;
+        tdReviewClose();
+        tdReviewShots(photos.map(p => p.id));
+        const six = document.getElementById('pc-rev-confirm').textContent;
+        tdReviewClose();
+        return { one, six };
+      });
+      expect(r.one).toBe('File this photo here');
+      expect(r.six).toBe('File 6 photos here');
+    });
+
+    test('the picker is a dark sheet with near-you first, and initials for everyone else', async () => {
+      await house();
+      const r = await page.evaluate(() => {
+        window.__house();
+        photos.forEach(p => { p.client_id = null; });
+        tdReviewShots(photos.map(p => p.id)); tdReviewAttach();
+        const ov = document.getElementById('pc-att');
+        const out = { sheet: !!ov.querySelector('.pc-att-sheet'), labels: [...ov.querySelectorAll('.pc-att-lbl')].map(l => l.textContent),
+          near: ov.querySelectorAll('.pc-file-opt.near').length,
+          avatars: [...ov.querySelectorAll('.pc-file-list .pc-av')].map(a => a.textContent),
+          multi: [...ov.querySelectorAll('.pc-file-list .pc-file-opt')].map(b => b.textContent).find(t => /Pepe/.test(t)) || '' };
+        _pcAttPaint('who', 'dana');
+        out.searchLabels = [...document.querySelectorAll('#pc-att .pc-att-lbl')].map(l => l.textContent);
+        document.querySelector('#pc-att').click();
+        out.closedByBackdrop = !document.getElementById('pc-att');
+        tdReviewClose();
+        return out;
+      });
+      expect(r.sheet).toBe(true);
+      expect(r.labels).toEqual(['Near you', 'All customers']);
+      expect(r.near).toBe(2);
+      expect(r.avatars).toEqual(['DW', 'PM']);
+      expect(r.multi).toContain('2 addresses');
+      expect(r.searchLabels, 'a search shows results, not the nearby list').toEqual(['Results']);
+      expect(r.closedByBackdrop).toBe(true);
+    });
+  });
+
+  // §15.3: nothing bleeds off a phone, and no two controls sit on each other.
+  test('no screen bleeds sideways or stacks controls at 390px', async () => {
+    await house();
+    const r = await page.evaluate(() => {
+      const bad = [];
+      const check = (where, sel) => {
+        if (document.documentElement.scrollWidth > innerWidth + 1) bad.push(where + ': page scrolls sideways');
+        const els = [...document.querySelectorAll(sel)].filter(e => { const b = e.getBoundingClientRect(); return b.width && b.height && getComputedStyle(e).visibility !== 'hidden'; });
+        els.forEach(e => { if (e.getBoundingClientRect().right > innerWidth + 1) bad.push(where + ': ' + (e.textContent || e.className).trim().slice(0, 20) + ' off the edge'); });
+        for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+          const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect();
+          if (els[i].contains(els[j]) || els[j].contains(els[i])) continue;
+          if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) bad.push(where + ': ' + (els[i].textContent || els[i].className).trim().slice(0, 16) + ' overlaps ' + (els[j].textContent || els[j].className).trim().slice(0, 16));
+        }
+      };
+      window.__house();
+      tdCaptureUnfiled();
+      check('camera', '#pc-sheet button');
+      tdCloseCapture();
+      tdOpenPropertyFolder(501, '6908 SW 17th St, Topeka, KS', photos.slice()); tdFolderOpen(7101);
+      check('viewer', '#pc-rev .pc-v-top > .pc-side, #pc-rev .pc-v-title, #pc-rev .pc-v-bar .pc-side');
+      tdReviewGrid(); tdSelectMode(true); tdSelToggle(7100);
+      check('select', '#pc-rev .pc-rev-top .pc-side, .pc-selbar .pc-tb');
+      tdReviewClose();
+      photos.forEach(p => { p.client_id = null; });
+      tdReviewShots(photos.map(p => p.id));
+      check('confirm', '#pc-rev .pc-rev-top .pc-side, .pc-conf .pc-side');
+      tdReviewAttach();
+      check('picker', '#pc-att .pc-file-opt, #pc-att .pc-att-x');
+      tdAttachCancel(); tdReviewClose();
+      return bad;
+    });
+    expect(r).toEqual([]);
+  });
+
+  test('who took it, and what went into the file, ride the row to the cloud', async () => {
+    await house();
+    const r = await page.evaluate(async () => {
+      window.__house(); photos.length = 0;
+      S.ownerName = 'Logan Sample';
+      const row = await tdSavePhoto({ type: 'before', file: new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' }), stamp: false });
+      const reg = _TD_TABLES.find(t => t.t === 'td_photos');
+      const out = reg.tx([Object.assign({}, row, { storagePath: 'u/a.jpg', exifGps: true, stamped: true })])[0];
+      const bare = reg.tx([{ id: 1, url: 'x', storagePath: 'u/b.jpg', type: 'before' }])[0];
+      return { by: row.by, stampedRow: !!row.stamped, out: { by: out.by, exifGps: out.exifGps, stamped: out.stamped },
+        bare: { by: bare.by, exifGps: bare.exifGps, stamped: bare.stamped } };
+    });
+    expect(r.by).toBeTruthy();
+    expect(r.stampedRow, 'stamp:false writes no stamp claim').toBe(false);
+    expect(r.out).toEqual({ by: r.by, exifGps: true, stamped: true });
+    expect(r.bare).toEqual({ by: '', exifGps: false, stamped: false });
+  });
+
+  test('every handler the new screens name exists, and nothing logged an error', async () => {
+    await house();
+    const missing = await page.evaluate(() => {
+      const bad = [];
+      const scan = (html, where) => {
+        const re = /on[a-z]+="([^"]*)"/g; let m;
+        while ((m = re.exec(html))) {
+          const fnRe = /(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g; let f;
+          while ((f = fnRe.exec(m[1]))) if (typeof window[f[1]] !== 'function' && !['if', 'return'].includes(f[1])) bad.push(where + ':' + f[1]);
+        }
+      };
+      window.__house(); photos[0].fullPath = 'u/f.jpg';
+      tdOpenPropertyFolder(501, '6908 SW 17th St, Topeka, KS', photos.slice());
+      tdSelectMode(true); scan(document.getElementById('pc-rev').innerHTML, 'select');
+      tdSelectMode(false); tdFolderOpen(7100); scan(document.getElementById('pc-rev').innerHTML, 'viewer');
+      tdPhotoInfo(); scan(document.getElementById('pc-info').innerHTML, 'info'); tdPhotoInfoClose();
+      tdReviewClose();
+      tdCaptureUnfiled(); scan(document.getElementById('pc-sheet').innerHTML, 'camera'); tdCloseCapture();
+      return bad;
+    });
+    expect(missing).toEqual([]);
+    assertNoErrors(page, 'TrueShot redesign');
   });
 });
