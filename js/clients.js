@@ -3545,7 +3545,11 @@ function _cdPropCardHtml(c,a,idx,total){
     </div>`;
     body=`<div style="padding:0 14px 14px">${_cdCountyFactsHtml(p,money)}${noteRow}${workBlock}${pastBlock}${_photoBlock}${footer}</div>`;
   }
-  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
+  // The house from the street across the top of an OPEN card (owner
+  // 2026-09-23), from Apple Look Around. A collapsed card stays one calm row,
+  // and a house Apple has never driven past gets nothing rather than a gap.
+  const svSlot=(isOpen&&typeof tdStreetSlotHTML==='function')?tdStreetSlotHTML(c,a.addr,'sv-card'):'';
+  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${svSlot}${header}${body}</div>`;
 }
 function renderCDAddresses(){
   const el=document.getElementById('cd-addresses-list');if(!el)return;
