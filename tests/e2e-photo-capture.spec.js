@@ -2694,7 +2694,7 @@ test.describe('TrueShot: the photos come back', () => {
   // the album behind it and nothing happened. A presence assertion passes
   // happily through that and tells you the feature works.
   test('a customer with several properties can actually be tapped, not just rendered', async () => {
-    const r = await page.evaluate(() => {
+    const r = await page.evaluate(async () => {
       clients.length = 0; photos.length = 0; bids.length = 0; jobs.length = 0;
       clients.push({ id: 77, name: 'Logan Sample', addr: '5900 SW Huntoon, Topeka KS',
         extraAddresses: [{ addr: '6800 SW Tenth Ave, Topeka KS', label: 'Rental' },
@@ -2703,6 +2703,9 @@ test.describe('TrueShot: the photos come back', () => {
       tdReviewBurst('9001');
       [...document.querySelectorAll('#pc-rev button')].find(b => /Attach/.test(b.textContent)).click();
       [...document.querySelectorAll('#pc-att .pc-file-opt')].find(b => /Logan Sample/.test(b.textContent)).click();
+      // From TrueShot the picker is a bottom sheet that slides up (2026-09-23),
+      // so measure where a thumb finds it once it has arrived, not mid-slide.
+      await Promise.all(document.getElementById('_addrpick-sheet').getAnimations().map(a => a.finished));
       const rows = [...document.querySelectorAll('#_addrpick-sheet div[onclick^="_addrPickChoose"]')];
       const reachable = rows.filter((row) => {
         const b = row.getBoundingClientRect();
@@ -3696,6 +3699,7 @@ test.describe('TrueShot: a customer or a house the book does not have yet', () =
                     { id: 971, type: 'before', url: '', data: 'x', client_id: null, lat, lon, uploadedAt: '2026-09-23T15:00:05.000Z' });
         // Where the phone is, as Apple would say it. No network in tests.
         window._reverseGeocode = async () => ({ street: '6908 SW 17th St', city: 'Topeka', state: 'KS', zip: '66615', addr: '6908 SW 17th St, Topeka, KS 66615' });
+        if (!window.__keepCounty) window._countyProperty = async () => null;
         tdReviewShots([970, 971]); tdReviewAttach();
         return true;
       };
@@ -3898,6 +3902,107 @@ test.describe('TrueShot: a customer or a house the book does not have yet', () =
     expect(r.blank).toBe('');
     expect(r.str).toBe('');
     expect(r.junk).toBe(true);
+  });
+
+  // "Did you mean": typing a name that is already in the book offers them.
+  test('typing a name already in the book offers that customer before making a second one', async () => {
+    await page.evaluate(() => { window.__seedNew(39.0356, -95.7833); tdAttachNew(); });
+    await page.locator('#pc-new-name').pressSequentially('Dana');
+    await expect(page.locator('#pc-new-dupes .pc-att-dupe')).toHaveCount(1);
+    await expect(page.locator('#pc-new-dupes')).toContainText('Dana Whitfield');
+    await page.locator('#pc-new-dupes .pc-att-dupe').click();
+    // Tapping them goes where picking them from the list goes: this street is
+    // not one of Dana's, so it asks which property, with this one on offer.
+    await expect(page.locator('#_addrpick-sheet')).toContainText('Add 6908 SW 17th St');
+    const made = await page.evaluate(() => clients.filter(c => /^dana/i.test(c.name)).length);
+    expect(made).toBe(1);
+    await page.evaluate(() => document.getElementById('_addrpick-ov')?.remove());
+  });
+
+  test('a name nobody has shows no suggestions, and one letter is not a search', async () => {
+    await page.evaluate(() => { window.__seedNew(39.0356, -95.7833); tdAttachNew(); });
+    await page.locator('#pc-new-name').pressSequentially('D');
+    await expect(page.locator('#pc-new-dupes .pc-att-dupe')).toHaveCount(0);
+    await page.locator('#pc-new-name').pressSequentially('zzq');
+    await expect(page.locator('#pc-new-dupes .pc-att-dupe')).toHaveCount(0);
+  });
+
+  // The county owner of record, matched to the book.
+  test('the county owner is matched: same LLC on another property ranks first, then the name', async () => {
+    const r = await page.evaluate(async () => {
+      window.__seedNew(39.0356, -95.7833);
+      clients.push({ id: 601, name: 'Pepe Miranda', addr: '306 SW Elmwood Ave, Topeka, KS 66606', extraAddresses: [] },
+                   { id: 602, name: 'Blake Sample', addr: '2015 SW Randolph Ave, Topeka, KS 66604', extraAddresses: [] },
+                   { id: 603, name: 'Rick Sample', addr: '1 Other St, Topeka, KS', extraAddresses: [] });
+      setPropertyData(clients.find(c => c.id === 601), '306 SW Elmwood Ave, Topeka, KS 66606', { ownerName: 'CASASMIRANDA LLC' });
+      const ask = (o) => { _pcAtt.owner = o; return _pcOwnerMatches().map(m => m.c.name + '|' + m.why); };
+      return {
+        llc: ask('CasasMiranda, LLC'),
+        people: ask('SAMPLE, LOGAN & BLAKE REVOCABLE LIVING TRUST'),
+        nobody: ask('JOHNSON, MARY'),
+        junk: [ask(''), ask(null), ask('LLC INC TRUST')],
+      };
+    });
+    expect(r.llc).toEqual(['Pepe Miranda|Also owns 306 SW Elmwood Ave']);
+    expect(r.people, 'first AND last name, so Rick Sample is not a match').toEqual(['Blake Sample|County owner: SAMPLE, LOGAN & BLAKE REVOCABLE LIVING TRUST']);
+    expect(r.nobody).toEqual([]);
+    expect(r.junk).toEqual([[], [], []]);
+  });
+
+  test('when the county answers, "Owns this house" heads the picker and one tap goes to them', async () => {
+    await page.evaluate(() => {
+      window.__seedNew(39.0356, -95.7833);
+      tdAttachCancel(); tdReviewClose();
+      clients.push({ id: 601, name: 'Pepe Miranda', addr: '306 SW Elmwood Ave, Topeka, KS 66606', extraAddresses: [] });
+      setPropertyData(clients.find(c => c.id === 601), '306 SW Elmwood Ave, Topeka, KS 66606', { ownerName: 'CASASMIRANDA LLC' });
+      window._countyProperty = async () => ({ found: true, owner_name: 'CASASMIRANDA LLC' });
+      tdReviewShots([970, 971]); tdReviewAttach();
+    });
+    await expect(page.locator('#pc-att .pc-att-owner .pc-file-opt')).toHaveCount(1);
+    await expect(page.locator('#pc-att .pc-att-owner')).toContainText('Also owns 306 SW Elmwood Ave');
+    const labels = await page.locator('#pc-att .pc-att-lbl').allTextContents();
+    expect(labels[0]).toBe('Owns this house');
+    await page.locator('#pc-att .pc-att-owner .pc-file-opt').click();
+    await expect(page.locator('#_addrpick-sheet')).toContainText('Add 6908 SW 17th St');
+    await page.evaluate(() => document.getElementById('_addrpick-ov')?.remove());
+  });
+
+  test('a county owner nobody matches is shown on the new-customer form, and nothing breaks without one', async () => {
+    await page.evaluate(() => {
+      window.__seedNew(39.0356, -95.7833);
+      tdAttachCancel(); tdReviewClose();
+      window._countyProperty = async () => ({ found: true, owner_name: 'JOHNSON, MARY' });
+      tdReviewShots([970, 971]); tdReviewAttach(); tdAttachNew();
+    });
+    await expect(page.locator('#pc-new-owner')).toHaveText('County owner: JOHNSON, MARY');
+    await expect(page.locator('#pc-att .pc-att-owner')).toHaveCount(0);
+    await page.evaluate(() => {
+      tdAttachCancel(); tdReviewClose();
+      window._countyProperty = async () => null;
+      tdReviewShots([970, 971]); tdReviewAttach(); tdAttachNew();
+    });
+    await page.waitForTimeout(50);
+    await expect(page.locator('#pc-new-owner')).toBeHidden();
+    await page.evaluate(() => { tdAttachCancel(); tdReviewClose(); window._countyProperty = async () => null; });
+  });
+
+  test('"Which property?" opens as TrueShot\'s dark sheet, and stays light everywhere else', async () => {
+    await page.evaluate(() => window.__seedNew(39.0356, -95.7833));
+    await page.locator('#pc-att-new-sub').filter({ hasText: '6908' }).waitFor();
+    const r = await page.evaluate(() => {
+      tdAttachPick(501);
+      const ov = document.getElementById('_addrpick-ov');
+      const dark = ov.classList.contains('td-dark-sheet');
+      const bg = getComputedStyle(document.getElementById('_addrpick-sheet')).backgroundColor;
+      ov.remove();
+      pickClientAddress(501, () => {});
+      const plain = !document.getElementById('_addrpick-ov').classList.contains('td-dark-sheet');
+      document.getElementById('_addrpick-ov').remove();
+      return { dark, bg, plain };
+    });
+    expect(r.dark).toBe(true);
+    expect(r.bg).toBe('rgb(28, 28, 30)');
+    expect(r.plain).toBe(true);
   });
 
   test('the new-customer form holds together at 390px', async () => {

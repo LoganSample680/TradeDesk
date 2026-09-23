@@ -3776,6 +3776,9 @@ function pickClientAddress(clientId,onPick,opts){
   _addrPickCb=onPick;_addrPickClientId=clientId;
   document.getElementById('_addrpick-ov')?.remove();
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addrpick-ov';
+  // opts.dark: TrueShot's dark bottom sheet. Same component, same rows; the
+  // stylesheet swaps the colour variables its inline styles already read.
+  if(opts&&opts.dark)ov.classList.add('td-dark-sheet');
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const pin='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--blue)" stroke-width="2.2" style="flex-shrink:0"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
   const rows=_addrPickList.map((a,i)=>{

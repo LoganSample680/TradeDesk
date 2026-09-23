@@ -1626,6 +1626,7 @@ function _pcAttGuess(){
     if(sub&&att.guess)sub.textContent='At '+att.guess.split(',')[0];
     const a=document.getElementById('pc-new-addr');
     if(a){if(!a.value.trim())a.value=att.guess;a.placeholder='Street, city';}
+    _pcAttOwner(att);
   }).catch(()=>{att._guessing=false;att.guess='';
     const a=document.getElementById('pc-new-addr');if(a)a.placeholder='Street, city';});
 }
@@ -1644,6 +1645,70 @@ function _pcAttAway(c){
   const here=siteNoteKey(_pcAtt.guess);
   const theirs=(typeof clientAddresses==='function')?clientAddresses(c):[{addr:c.addr}];
   return !theirs.some(a=>a&&a.addr&&siteNoteKey(a.addr)===here);
+}
+// Who the county says owns the house the photos were taken at. Asked once,
+// after the street is known, through the one door to the county
+// (_countyProperty, js/data.js). A null is "could not ask" and changes nothing.
+function _pcAttOwner(att){
+  if(!att||!att.guess||att.owner!==undefined||typeof _countyProperty!=='function')return;
+  att.owner='';
+  Promise.resolve().then(()=>_countyProperty(att.guess)).then(d=>{
+    att.owner=(d&&d.found!==false&&d.owner_name)?String(d.owner_name):'';
+    if(!att.owner||_pcAtt!==att)return;
+    const hint=document.getElementById('pc-new-owner');
+    if(hint){hint.textContent='County owner: '+att.owner;hint.hidden=false;}
+    // Repaint the list only while nobody is typing in it.
+    const q=document.getElementById('pc-att-q');
+    if(att.step==='who'&&(!q||!q.value.trim())&&_pcOwnerMatches().length)_pcAttPaint('who');
+  }).catch(()=>{});
+}
+// Owner names as the county writes them ("SAMPLE, LOGAN & BLAKE REVOCABLE
+// LIVING TRUST") reduced to the words that name people or a business.
+const _PC_OWNER_NOISE=new Set(['llc','inc','co','corp','ltd','lp','llp','trust','trustee','trustees','revocable',
+  'irrevocable','living','family','the','and','of','estate','et','al','ux','etux','jr','sr','ii','iii','properties','property','holdings','rentals']);
+function _pcNameWords(s){
+  return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/)
+    .filter(w=>w.length>1&&!_PC_OWNER_NOISE.has(w));
+}
+// Customers the county owner points at, strongest first:
+//  1. the same owner is already on one of their properties (the landlord's
+//     LLC owns this house too), and
+//  2. the owner's name IS theirs: first and last name both present, or the
+//     whole name of a one-word business ("ALDI INC" and "Aldi").
+// A shared surname alone is not a match; Topeka has a lot of Millers.
+function _pcOwnerMatches(){
+  const owner=_pcAtt&&_pcAtt.owner;
+  if(!owner)return [];
+  const ow=_pcNameWords(owner);if(!ow.length)return [];
+  const oset=new Set(ow),okey=ow.slice().sort().join(' ');
+  const out=[];
+  clients.forEach(c=>{
+    if(!c)return;
+    const props=(typeof clientAddresses==='function')?clientAddresses(c):[{addr:c.addr}];
+    const same=props.find(a=>{
+      const pd=(typeof getProperty==='function'&&a&&a.addr)?getProperty(c,a.addr):null;
+      return pd&&pd.ownerName&&_pcNameWords(pd.ownerName).sort().join(' ')===okey;
+    });
+    if(same){out.push({c,rank:0,why:'Also owns '+String(same.addr||'').split(',')[0]});return;}
+    const cw=_pcNameWords(c.name);
+    if(!cw.length)return;
+    const hit=cw.length===1?oset.has(cw[0]):(oset.has(cw[0])&&oset.has(cw[cw.length-1]));
+    if(hit)out.push({c,rank:1,why:'County owner: '+owner});
+  });
+  return out.sort((a,b)=>a.rank-b.rank).slice(0,3);
+}
+// "Already a customer?" under the name as he types it, so "Dana" finds Dana
+// Whitfield before a second Dana is made. Same predicate as the Clients
+// search and the proposal gate (_newcGateMatches), so it means one thing.
+function _pcNewDupes(){
+  const box=document.getElementById('pc-new-dupes');if(!box)return;
+  const name=(document.getElementById('pc-new-name')?.value||'').trim();
+  const hits=(name.length>=2&&typeof _newcGateMatches==='function')?_newcGateMatches(name).slice(0,3):[];
+  box.innerHTML=hits.length?'<div class="pc-att-lbl">Already a customer?</div><div class="pc-att-group pc-file-list">'+
+    hits.map(c=>'<button type="button" class="pc-file-opt pc-att-dupe" onclick="tdAttachPick('+c.id+')">'+
+      '<span class="pc-av">'+escHtml(_pcInitials(c.name))+'</span>'+
+      '<span class="pc-opt-m"><b>'+escHtml(c.name||'Unnamed')+'</b><span>'+escHtml(String(c.addr||'No address').split(',')[0])+'</span></span>'+
+      _pcIcon('chev','pc-chev')+'</button>').join('')+'</div>':'';
 }
 function tdAttachNew(){
   if(!_pcAtt)return false;
@@ -1682,8 +1747,11 @@ function _pcAttPaint(step,q){
     '<span class="pc-av'+(cls==='near'?' pin':'')+'">'+av+'</span>'+
     '<span class="pc-opt-m"><b>'+name+'</b><span>'+sub+'</span></span>'+
     (right?'<em>'+right+'</em>':'')+_pcIcon('chev','pc-chev')+'</button>';
+  _pcAtt.step=step;
   if(step==='who'){
     const near=_pcNearbyMatches(_pcAtt.ids);
+    const nearIds=new Set(near.map(m=>m.clientId));
+    const owners=_pcOwnerMatches().filter(m=>!nearIds.has(m.c.id));
     const term=String(q||'').trim().toLowerCase();
     const list=clients.filter(c=>!term||String(c.name||'').toLowerCase().includes(term)||String(c.addr||'').toLowerCase().includes(term))
       .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
@@ -1696,6 +1764,13 @@ function _pcAttPaint(step,q){
         near.map(m=>row('tdAttachPick('+m.clientId+','+(m.jobId!=null?m.jobId:'null')+','+JSON.stringify(m.addr||'').replace(/"/g,'&quot;')+')',
           _pcIcon('pin'),escHtml(m.name||'Unnamed'),escHtml(String(m.addr||'').split(',')[0])+(m.what?' · '+escHtml(m.what):''),
           _pcFeet(m.d)+' ft away','near')).join('')+
+        '</div>':'')+
+      // The county says who owns the house he is standing at. When that owner
+      // is someone already in the book (by name, or because the same owner is
+      // on another of their properties: a landlord's LLC), say so first.
+      (owners.length&&!term?'<div class="pc-att-lbl">Owns this house</div><div class="pc-att-group pc-att-owner">'+
+        owners.map(m=>row('tdAttachPick('+m.c.id+')',escHtml(_pcInitials(m.c.name)),escHtml(m.c.name||'Unnamed'),
+          escHtml(m.why),'','owner')).join('')+
         '</div>':'')+
       '<div class="pc-att-lbl">'+(term?'Results':'All customers')+'</div>'+
       '<div class="pc-att-group pc-file-list">'+
@@ -1722,13 +1797,19 @@ function _pcAttPaint(step,q){
         '<label class="pc-att-f"><span>Address</span><input id="pc-new-addr" autocomplete="off" placeholder="'+(_pcAtt.guess===undefined?'Finding where you are':'Street, city')+'" value="'+escHtml(_pcAtt.guess||'')+'"></label>'+
       '</div>'+
       '<div class="pc-att-err" id="pc-new-err" hidden>Add a name so the photos have a folder.</div>'+
+      '<div id="pc-new-owner" class="pc-att-hint"'+(_pcAtt.owner?'':' hidden')+'>'+(_pcAtt.owner?'County owner: '+escHtml(_pcAtt.owner):'')+'</div>'+
+      '<div id="pc-new-dupes"></div>'+
       '<button type="button" class="pc-att-go" id="pc-new-go" onclick="tdAttachNewSave()">Create and file '+(n===1?'photo':n+' photos')+'</button>'+
       '<button type="button" class="pc-att-back" onclick="_pcAttPaint(\'who\')">Back to customers</button>'+
     '</div>';
     const addrEl=document.getElementById('pc-new-addr');
     if(addrEl&&typeof _addrAutoFull==='function')_addrAutoFull(addrEl,null);
     const nameEl=document.getElementById('pc-new-name');
-    if(nameEl){nameEl.focus();nameEl.setSelectionRange(nameEl.value.length,nameEl.value.length);}
+    if(nameEl){
+      nameEl.addEventListener('input',_pcNewDupes);
+      nameEl.focus();nameEl.setSelectionRange(nameEl.value.length,nameEl.value.length);
+    }
+    _pcNewDupes();
     _pcAttGuess();
     return;
   }
@@ -1736,7 +1817,7 @@ function _pcAttPaint(step,q){
     // The app already owns this component, and it can add an address inline,
     // which is the "edit the address" half of what Jack asked for (§7.3).
     ov.remove();
-    pickClientAddress(_pcAtt.clientId,addr=>{tdAttachAddr(addr);},{suggest:_pcAtt.away?(_pcAtt.guess||''):''});
+    pickClientAddress(_pcAtt.clientId,addr=>{tdAttachAddr(addr);},{suggest:_pcAtt.away?(_pcAtt.guess||''):'',dark:true});
     return;
   }
   // 'work': the proposal or job on that customer, only ever asked when there
