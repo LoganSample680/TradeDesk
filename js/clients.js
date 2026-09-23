@@ -3853,6 +3853,14 @@ function _propAddrString(c,addrParts){
 // fix. Gating on propDataSource==='county' re-asks every Zillow-era record once,
 // for free, because the county lookup is a SQL join and not a network call.
 function _propAnswered(p){return p&&p.propDataSource==='county';}
+// What shape of county record the card expects. A record applied under an
+// older shape is re-read from td_county_parcels ONCE, which is a join against
+// our own table and never a request to the county. Raise this when
+// _propApplyMatch starts carrying a field it did not before, and every address
+// already on file picks the field up on its next sign-in (owner 2026-09-23:
+// "how can we get them all to re run a check?"). 2 = soil, flood, tax sale,
+// lot, deed and the value split.
+const _PROP_DATA_V=2;
 
 function _propApplyMatch(c,keyAddr,d){
   if(!c||!keyAddr)return false;
@@ -3941,6 +3949,7 @@ function _propApplyMatch(c,keyAddr,d){
   _cp('propDataBldgValue',d.improvement_value);
   _cp('propDataParcel',d.parcel_number);
   pd.propDataSource='county';
+  pd.propDataV=_PROP_DATA_V;
   pd.propDataCounty=[d.county_name,d.state].filter(Boolean).join(', ');
   pd.propDataExact=true;
   pd.propDataMiss=false;
@@ -4003,7 +4012,12 @@ async function _syncPropertyData(){
         // that on every failure, so an existing account's whole book reads as
         // "already looked up" while carrying no data at all. This asks the
         // county once about each of those, which is what backfills them.
-        if(_propAnswered(p))return;
+        // An answered address is skipped UNLESS its record predates the current
+        // shape (_PROP_DATA_V). Then it rides the same join to pick up the new
+        // fields, and a miss on that join changes nothing: it was answered.
+        // A recorded county miss has nothing to refresh.
+        const refresh=_propAnswered(p)&&!p.propDataMiss&&(Number(p.propDataV)||0)<_PROP_DATA_V;
+        if(_propAnswered(p)&&!refresh)return;
         // For the PRIMARY address prefer the composed string, because a client
         // with separate street/city/state/zip fields carries a zip there that
         // c.addr may not, and the zip is what stops two counties' identical
@@ -4011,7 +4025,7 @@ async function _syncPropertyData(){
         // ever stored as one string, so it is sent as it is.
         const isPrimary=a.addr===c.addr;
         const q=(isPrimary&&_propAddrString(c,null))||a.addr;
-        want.push({clientId:c.id,keyAddr:a.addr,q});
+        want.push({clientId:c.id,keyAddr:a.addr,q,refresh});
       });
     });
     if(!want.length)return;
@@ -4042,7 +4056,7 @@ async function _syncPropertyData(){
         // entitled to say {found:false}. So a miss is handed to the drip
         // below instead of being written down.
         if(hit){ if(_propApplyMatch(c,w.keyAddr,hit))touched=true; }
-        else unanswered.push(w);
+        else if(!w.refresh)unanswered.push(w);
       });
     }
     if(touched){

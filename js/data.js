@@ -441,7 +441,7 @@ const _PROP_FIELDS=['propertyType','ownerName','ownerPhone','ownedByAccount','ye
   'propDataYearTo','propDataUnits','propDataBuildings','propDataBasement',
   'propDataFrontage','propDataDepth','propDataLotSqft','propDataSoil',
   'propDataFloodZone','propDataFloodSfha','propDataTaxSaleYear','propDataTaxSaleCase',
-  'propDataSubdivision','propDataDeed','propDataLandValue','propDataBldgValue','propDataParcel'];
+  'propDataSubdivision','propDataDeed','propDataLandValue','propDataBldgValue','propDataParcel','propDataV'];
 function getProperty(client,addr){
   const out={};if(!client)return out;
   const k=_addrKey(addr||client.addr);
