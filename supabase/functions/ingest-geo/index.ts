@@ -35,7 +35,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Plain ESM, not .ts, so Deno and the Node test harness load the exact same
 // file: tests/e2e-geo-derive-server.spec.js drives this module directly.
 import { centralDayKey, daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
-import { liveCardFor } from "../_shared/live-card.mjs";
+import { railCardFor } from "../_shared/live-card.mjs";
 import { pushLiveCard } from "../_shared/live-push.ts";
 import { makeRoute } from "../_shared/route-cache.ts";
 
@@ -615,7 +615,7 @@ Deno.serve(async (req) => {
       const today = centralDayKey(Date.now());
       const d = derivedDays.find((x) => x.day === today && "open" in x);
       if (d) {
-        const card = liveCardFor(d.open, {});
+        const card = railCardFor({ open: d.open, pending: d.driving }, {});
         const note = await pushLiveCard(svc, uid, card);
         if (note !== "unchanged" && note !== "no live card" && note !== "nothing to end") {
           console.log("[live-push]", { uid, day: today, event: card.event, note });

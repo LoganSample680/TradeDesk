@@ -87,7 +87,7 @@ function stubClient(seed, calls) {
   const rowsFor = (table) => seed[table] || [];
   const make = (table) => {
     const q = {
-      select: () => q, eq: () => q, gte: () => q, lt: () => q, is: () => q,
+      select: () => q, eq: () => q, in: () => q, gte: () => q, lt: () => q, is: () => q,
       order: () => q,
       range: (from, to) => Promise.resolve({ data: rowsFor(table).slice(from, to + 1), error: null }),
       maybeSingle: () => Promise.resolve({ data: rowsFor(table)[0] || null, error: null }),

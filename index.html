@@ -1577,6 +1577,187 @@ body.dark .cal-cell.other{background:var(--cream)}
 .hub-empty-card{padding:36px 24px;text-align:center}
 .hub-empty-card h3{font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--text-2);margin-bottom:6px;letter-spacing:-.3px}
 .hub-empty-card p{font-size:13px;line-height:1.6;color:var(--text-3);max-width:380px;margin:0 auto 14px}
+
+/* ── Jobsite photo capture (js/photo-capture.js) ──────────────────────────
+   The sheet is a full-screen dark surface rather than a .zmodal because a
+   viewfinder has to own the whole screen: a camera in a centered card is a
+   camera nobody frames a shot in. Everything BELOW the viewfinder follows
+   the app's normal control sizing so the thumb lands where it always does. */
+.pc-sheet{position:fixed;inset:0;z-index:99990;background:#0E1116;display:flex;flex-direction:column;color:#fff;font-family:var(--font-ui);animation:fadein .16s ease}
+.pc-vf{flex:1;position:relative;overflow:hidden;background:#1a1f26}
+.pc-vf video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
+.pc-sheet.pc-live .pc-vf video{display:block}
+.pc-grid{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.13) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.13) 1px,transparent 1px);background-size:33.33% 33.33%}
+/* The Before shot, ghosted over the live frame. multiply (not screen) keeps a
+   pale After frame readable under it; screen washed both out to white. */
+.pc-ghost{position:absolute;inset:0;display:none;opacity:.42;background-size:cover;background-position:center;pointer-events:none}
+.pc-ghostframe{position:absolute;inset:12px;display:none;border:2px dashed rgba(242,168,28,.95);border-radius:var(--r-md);pointer-events:none}
+.pc-attach{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:12px;right:12px;background:rgba(10,13,17,.66);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-radius:var(--r-pill);padding:9px 14px;display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700}
+.pc-attach-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.2);flex-shrink:0}
+.pc-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);border-radius:var(--r-pill);padding:6px 14px;font-size:12px;font-weight:800;background:rgba(10,13,17,.74);white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}
+/* Literal, not a token: the gold Tim uses for his badge is defined on another
+   branch, and var() on an undefined token fails SILENTLY to no background at
+   all (seen in a local screenshot, 2026-09-21). A capture sheet is chrome over
+   a camera, so its two accents live here where they cannot go missing. */
+.pc-hint.gold{background:#F2A81C;color:#3a2600}
+.pc-flash{position:absolute;inset:0;background:#fff;animation:pc-flash .2s ease both;pointer-events:none}
+@keyframes pc-flash{from{opacity:.85}to{opacity:0}}
+@media (prefers-reduced-motion:reduce){.pc-flash{animation:none;opacity:0}}
+.pc-seg{display:flex;gap:6px;padding:12px 14px 6px}
+.pc-seg-btn{flex:1;border:none;border-radius:var(--r-pill);padding:10px 0;font-size:13px;font-weight:800;background:rgba(255,255,255,.1);color:rgba(255,255,255,.72);font-family:var(--font-ui);touch-action:manipulation}
+.pc-seg-btn.on{background:#fff;color:#0E1116}
+.pc-seg-btn.on.b4{background:#F2A81C;color:#3a2600}
+.pc-seg-btn.on.af{background:#4ade80;color:#04341c}
+.pc-strip{display:flex;gap:6px;padding:10px 14px;align-items:center;min-height:56px;overflow-x:auto}
+.pc-thumb{width:52px;height:52px;flex:0 0 auto;border-radius:var(--r-md);background:#2a3038 center/cover no-repeat}
+.pc-strip-lbl{font-size:12px;color:rgba(255,255,255,.55);font-weight:700;white-space:nowrap}
+.pc-shutrow{display:flex;align-items:center;justify-content:space-between;padding:8px 22px calc(26px + env(safe-area-inset-bottom,0px))}
+.pc-shut{width:74px;height:74px;border-radius:50%;background:#fff;box-shadow:0 0 0 5px rgba(255,255,255,.26);border:none;padding:0;touch-action:manipulation}
+.pc-shut i{display:block;width:100%;height:100%;border-radius:50%;border:4px solid #0E1116}
+.pc-shut:active{transform:scale(.94)}
+.pc-side{font-size:13px;font-weight:800;color:#fff;background:rgba(255,255,255,.12);border:none;border-radius:var(--r-pill);padding:11px 16px;font-family:var(--font-ui);min-width:92px;touch-action:manipulation}
+.pc-side.go{background:var(--denim)}
+/* The After prompt on job completion */
+.pc-prompt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.pc-prompt-thumb{position:relative;aspect-ratio:1;border-radius:var(--r-md);background:var(--cream) center/cover no-repeat}
+.pc-prompt-tag{position:absolute;left:5px;bottom:5px;background:rgba(159,91,0,.94);color:#fff;border-radius:var(--r-pill);padding:2px 8px;font-size:10px;font-weight:800}
+/* The unfiled tray on the dashboard */
+.pc-uf-count{background:var(--c-amber-soft);color:var(--c-amber);border-radius:var(--r-pill);padding:3px 10px;font-size:12px;font-weight:800}
+.pc-uf-row{display:flex;gap:11px;align-items:center;padding:9px;border:1px solid var(--line);border-radius:var(--r-md);margin-bottom:8px}
+.pc-uf-row:last-child{margin-bottom:0}
+.pc-uf-thumb{width:60px;height:60px;flex:0 0 auto;border-radius:var(--r-md);background:var(--cream) center/cover no-repeat}
+/* A burst reads as a stack of prints: one thing to deal with, with the count
+   on it, rather than six identical rows down the dashboard. */
+.pc-uf-thumb{position:relative}
+.pc-uf-thumb.stack{box-shadow:3px -3px 0 -1px var(--bg-card),3px -3px 0 0 var(--line),6px -6px 0 -1px var(--bg-card),6px -6px 0 0 var(--line)}
+.pc-uf-n{position:absolute;right:3px;bottom:3px;background:rgba(10,13,17,.82);color:#fff;border-radius:var(--r-pill);padding:1px 7px;font-size:11px;font-weight:800}
+/* ── The burst review sheet (shoot → triage → attach, all on site) ───────── */
+.pc-rev{position:fixed;inset:0;z-index:10050;background:#0E1116;color:#fff;display:flex;flex-direction:column;animation:fadein .16s ease}
+.pc-rev-top{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 10px}
+/* Over the hero: the bar floats on the photo instead of sitting on a black
+   band above it, and Close stops being the heaviest thing on the screen. */
+.pc-rev-top.ghost{position:absolute;top:0;left:0;right:0;z-index:2;background:none}
+.pc-rev-top.ghost .pc-side{background:rgba(0,0,0,.42);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-color:rgba(255,255,255,.18)}
+.pc-rev-title{flex:1;text-align:center;font-size:15px;font-weight:900}
+.pc-rev-sp{min-width:92px}
+.pc-rev-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:4px 12px 12px;align-content:start}
+/* ── The property folder: the visit is the folder ───────────────────────── */
+.pc-rev-grid.flat{flex:none;overflow:visible;padding:9px 0 4px;grid-template-columns:1fr 1fr;gap:7px}
+.pc-rev-grid.flat .pc-rev-cell{aspect-ratio:4/5}
+.pc-fold{flex:1;overflow-y:auto;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))}
+/* The album opens ON the property. The newest shot runs full bleed behind the
+   address, under a scrim heavy enough at the base to keep the type legible on
+   a bright photo and light enough at the top to let the image read. The top
+   bar sits over it, so .pc-rev-top.ghost drops its background. */
+.pc-fold-hero{position:relative;padding:calc(84px + env(safe-area-inset-top,0px)) 16px 16px;background:#20262e center/cover no-repeat;display:flex;align-items:flex-end;min-height:250px}
+.pc-fold-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(14,17,22,.42) 0%,rgba(14,17,22,.06) 34%,rgba(14,17,22,.94) 100%)}
+.pc-fold-hd{position:relative;z-index:1;width:100%}
+.pc-fold-addr{font-size:26px;font-weight:900;line-height:1.1;letter-spacing:-.02em;text-shadow:0 1px 14px rgba(0,0,0,.5)}
+.pc-fold-sub{font-size:12.5px;color:rgba(255,255,255,.82);margin-top:4px;text-shadow:0 1px 10px rgba(0,0,0,.5)}
+.pc-fold-chips{display:flex;gap:6px;overflow-x:auto;padding:13px 16px 2px}
+.pc-fold-chips .fb{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.75)}
+.pc-fold-chips .fb.active{background:#fff;color:#0E1116;border-color:#fff}
+.pc-fold-ba{margin:14px 16px 0;border:1px solid var(--c-amber);background:rgba(242,168,28,.14);border-radius:var(--r-md);padding:11px}
+.pc-fold-ba-hd{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.pc-fold-ba-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#F2A81C}
+.pc-fold-ba-name{font-size:13px;font-weight:800;color:#fff}
+.pc-fold-ba-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.pc-fold-ba-grid .pc-rev-cell{aspect-ratio:1}
+.pc-fold-visit{border-top:1px solid rgba(255,255,255,.1);margin:0 16px}
+.pc-fold-ba-ft{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:5px}
+.pc-fold-ba-ft span{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,.55);text-align:center}
+.pc-fold-visit-hd{display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;padding:13px 0 2px;color:inherit;font-family:inherit;text-align:left;touch-action:manipulation}
+.pc-fold-visit-t{flex:1;min-width:0}
+.pc-fold-visit-day{display:block;font-size:14px;font-weight:800;color:#fff}
+.pc-fold-visit-what{display:block;font-size:12px;color:rgba(255,255,255,.55);margin-top:1px}
+.pc-fold-visit-n{font-size:11px;font-weight:800;color:rgba(255,255,255,.55)}
+.pc-fold-caret{font-size:17px;line-height:1;color:rgba(255,255,255,.5);transform:rotate(-90deg);display:inline-block}
+.pc-fold-caret.open{transform:rotate(0)}
+.pc-rev-cell{position:relative;aspect-ratio:1;border:none;padding:0;border-radius:var(--r-md);background:#2a3038 center/cover no-repeat;touch-action:manipulation}
+.pc-rev-tag{position:absolute;left:5px;bottom:5px;background:rgba(10,13,17,.8);color:#fff;border-radius:var(--r-pill);padding:2px 8px;font-size:10px;font-weight:800;text-transform:capitalize}
+.pc-rev-stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px;position:relative}
+/* Three panes wide, parked on the middle one, so the neighbour is already
+   rendered and follows the thumb instead of appearing after the gesture ends.
+   pan-y hands vertical back to the page: only the horizontal is ours. */
+/* ABSOLUTE, not a flex item. As a child of the flex stage it was shrunk to fit
+   like any other item, so width:300% collapsed and each pane rendered at a
+   third of nothing (caught in a local screenshot before this ever deployed). */
+.pc-rev-track{position:absolute;top:0;left:0;height:100%;width:300%;display:flex;transform:translate3d(-33.3333%,0,0);touch-action:pan-y;will-change:transform;cursor:grab}
+.pc-rev-track:active{cursor:grabbing}
+.pc-rev-track.snap{transition:transform .3s cubic-bezier(.22,1,.36,1)}
+/* The sheet itself animates when it is being put away, so the spring-back and
+   the dismissal both have motion rather than snapping. */
+.pc-rev.snap{transition:transform .28s cubic-bezier(.22,1,.36,1),opacity .28s ease}
+.pc-rev-stage{touch-action:pan-y}
+.pc-rev-pane{flex:0 0 33.3333%;width:33.3333%;height:100%;display:flex;align-items:center;justify-content:center;padding:0 8px;box-sizing:border-box}
+.pc-rev-img{max-width:100%;max-height:100%;border-radius:var(--r-md);-webkit-user-select:none;user-select:none;-webkit-user-drag:none;pointer-events:none}
+.pc-rev-foot{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px calc(20px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
+/* The confirmation Jack asked for: the app says the address out loud, in
+   green, and a person agrees with it. Never an automatic filing. */
+.pc-rev-foot.col{flex-direction:column;align-items:stretch}
+.pc-rev-here{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:var(--r-md);background:rgba(74,222,128,.14);border:1px solid rgba(74,222,128,.45)}
+.pc-rev-here-t{flex:1;min-width:0}
+.pc-rev-here-addr{font-size:15px;font-weight:900;color:#b9f6ca}
+.pc-rev-here-sub{font-size:12px;font-weight:700;color:rgba(255,255,255,.62);margin-top:1px}
+.pc-side.go.ok{background:#1f8a4c}
+.pc-rev-attach{flex:1;min-width:180px}
+.pc-side.danger{background:rgba(229,72,77,.22);color:#ff9b9e}
+.pc-uf-meta{flex:1;min-width:0}
+.pc-uf-when{font-size:14px;font-weight:800;color:var(--text)}
+.pc-uf-sub{font-size:12px;color:var(--text-3);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-uf-pill{display:inline-block;background:var(--c-amber-soft);color:var(--c-amber);border-radius:var(--r-pill);padding:3px 9px;font-size:11px;font-weight:800}
+.pc-uf-pill.ok{background:var(--c-green-soft);color:var(--c-green);cursor:pointer}
+.pc-uf-file{background:none;border:none;color:var(--denim);font-weight:800;font-size:13px;font-family:inherit;padding:8px;cursor:pointer;flex-shrink:0}
+.pc-file-list{max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.pc-file-opt{text-align:left;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;font-family:inherit;font-size:14px;font-weight:700;color:var(--text);cursor:pointer;display:flex;flex-direction:column;gap:2px}
+/* The review sheet is above the modal layer, so its own attach card has to
+   be above THAT. Without this the card opens behind the album and the
+   button looks dead (caught in a local screenshot, 2026-09-21). */
+#pc-att{z-index:10060}
+/* And so does the picker the card HANDS OFF to. pickClientAddress is the
+   app's shared component (7.3) and it is a plain .zmodal-overlay at 9999, so
+   asking which of a customer's properties opened it BEHIND the album: the
+   rows were there, invisible and untappable, and a tap landed on pc-rev-grid
+   instead (owner, filing photos to a client with three addresses,
+   2026-09-22). Raising the card alone was half a fix. */
+#_addrpick-ov{z-index:10060}
+.pc-att-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:6px}
+.pc-att-near{margin-bottom:12px;display:flex;flex-direction:column;gap:6px}
+/* What the coordinates already prove, so it reads as an answer rather than
+   one more row in a list of customers. */
+.pc-file-opt.near{border-color:var(--c-amber);background:var(--c-amber-soft)}
+/* The proof line is the point of this row, so it wraps rather than ending in an ellipsis. */
+.pc-file-opt.near span{white-space:normal;overflow:visible;text-overflow:clip}
+.pc-att-q{width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:10px;border:1.5px solid var(--line);border-radius:var(--r-md);font-family:inherit;font-size:14px;background:var(--bg-2);color:var(--text)}
+.pc-file-opt span{font-size:12px;font-weight:500;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Mark-up editor. Same dark full-screen surface as the capture sheet: it is
+   the same job (look at a picture, act on it) and a second visual language
+   for it would read as a different app. */
+.pc-anno{position:fixed;inset:0;z-index:99995;background:#0E1116;display:flex;flex-direction:column;color:#fff;font-family:var(--font-ui);animation:fadein .16s ease}
+.pc-anno-top{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 10px}
+.pc-anno-title{flex:1;text-align:center;font-size:14px;font-weight:800}
+.pc-anno-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:6px 10px;min-height:0}
+.pc-anno-stage canvas{max-width:100%;max-height:100%;object-fit:contain;touch-action:none;border-radius:var(--r-md);background:#1a1f26}
+.pc-anno-tools{display:flex;gap:6px;padding:10px 12px calc(20px + env(safe-area-inset-bottom,0px));overflow-x:auto}
+.pc-tool{flex:1;min-width:64px;border:none;border-radius:var(--r-pill);padding:11px 0;font-size:13px;font-weight:800;background:rgba(255,255,255,.1);color:rgba(255,255,255,.78);font-family:var(--font-ui);touch-action:manipulation}
+.pc-tool.on{background:#fff;color:#0E1116}
+/* A shot in the strip is tappable: that is where marking up starts, while the
+   photo is still the thing in front of you. */
+.pc-thumb{cursor:pointer}
+.pc-thumb.marked:after{content:'✏';position:absolute;right:2px;bottom:1px;font-size:11px}
+.pc-thumb{position:relative}
+/* Bottom-left, not under the attach bar: at top:56px it collided with the
+   subject pill on a 390px screen (caught in a screenshot). Down here it sits
+   beside the hint and over the part of the frame nobody composes into. */
+.pc-stamp-toggle{display:inline-flex;align-items:center;gap:6px;background:rgba(10,13,17,.66);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:none;border-radius:var(--r-pill);color:#fff;font-size:11px;font-weight:800;padding:6px 11px;font-family:var(--font-ui);position:absolute;bottom:56px;left:12px;z-index:3}
+.pc-stamp-toggle.off{color:rgba(255,255,255,.55)}
+.pc-stamp-toggle .dot{width:7px;height:7px;border-radius:50%;background:#4ade80}
+.pc-stamp-toggle.off .dot{background:rgba(255,255,255,.35)}
+/* The photo chip that rides every estimate header */
+.pc-chip{display:inline-flex;align-items:center;gap:6px;background:var(--denim-soft);color:var(--denim-deep);border:1px solid var(--denim-edge);border-radius:var(--r-pill);padding:6px 12px 6px 9px;font-size:13px;font-weight:800;font-family:var(--font-ui);cursor:pointer;margin-left:auto;flex-shrink:0;touch-action:manipulation}
+.pc-chip .pc-chip-n{background:var(--denim);color:#fff;border-radius:var(--r-pill);min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;padding:0 5px}
+.pc-chip.empty{background:var(--cream);color:var(--text-2);border-color:var(--line-2)}
 </style>
 
 </head>
@@ -1798,6 +1979,13 @@ body.dark .cal-cell.other{background:var(--cream)}
           <button class="qa qa-p" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">
             <span class="qa-ico"><span data-ico="👤" data-ico-size="24"></span></span><span>New lead</span>
           </button>
+          <!-- TrueShot (named by the owner 2026-09-21, joining TrueBid /
+               TrueScan / TrueMeasure). It sits in slot 2, where Log miles used to be:
+               the camera is the control he reaches for standing in someone's
+               driveway, so it gets the first spot the thumb lands on. -->
+          <button class="qa" id="qa-photo-btn" style="--qa-tint:linear-gradient(155deg,#117841 0%,#0B5430 100%);--qa-glow:rgba(17,120,65,.35)" onclick="quickAction('photo')">
+            <span class="qa-ico"><span data-ico="📷" data-ico-size="24"></span></span><span>TrueShot</span>
+          </button>
           <button class="qa" id="qa-drive-btn" style="--qa-tint:linear-gradient(155deg,#3D74C6 0%,#24508F 100%);--qa-glow:rgba(45,93,168,.35)" onclick="quickAction('drive')">
             <!-- "Log miles", not "Drive": Drive now means turn-by-turn navigation
                  on the job cards above (js/drive.js), and this button records a
@@ -1819,6 +2007,10 @@ body.dark .cal-cell.other{background:var(--cream)}
           </button>
         </div>
       </div>
+      <!-- Photos shot with no customer on them land here until one tap files
+           them (js/photo-capture.js tdUnfiledTrayHTML). Empty renders nothing
+           at all, so the dashboard never carries a card about zero photos. -->
+      <div id="dash-unfiled-host"></div>
     </div>
     <div class="td-dw" data-dw="calendar">
       <div class="card card-pad-0">
@@ -2154,6 +2346,11 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
         <span id="gei-trade-title">Proposal</span>
         <button onclick="_editScopeTitle()" id="scope-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)"><span data-ico="✏" data-ico-size="16"></span></button>
+        <!-- The camera rides the header on EVERY step of EVERY estimate type
+             (T&M, Build Your Own, fixed scope all share this page), so a
+             contractor walking the work can shoot before a single line item
+             exists. Count updates via _geiPaintPhotoChip. -->
+        <button type="button" class="pc-chip empty" id="gei-photo-chip" title="Job photos" onclick="_geiCapturePhotos()"><span data-ico="📷" data-ico-size="16"></span><span class="pc-chip-n" id="gei-photo-n">0</span></button>
       </div>
     </div>
     <div class="tbar-r">
@@ -4047,25 +4244,6 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="client-hub-list"></div>
 </div>
 
-<div class="pg" id="pg-gallery">
-  <div class="tbar">
-    <div><div class="tbar-title">Gallery</div><div class="tbar-sub" id="gallery-count-sub"></div></div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-sm btn-p" onclick="openGalleryUpload()">+ Add photos</button>
-    </div>
-  </div>
-  <div style="padding:0 0 12px">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 0 10px">
-      <button class="fb active" id="gf-all" onclick="setGalleryFilter('all',this)">All</button>
-      <button class="fb" id="gf-before" onclick="setGalleryFilter('before',this)">Before</button>
-      <button class="fb" id="gf-after" onclick="setGalleryFilter('after',this)">After</button>
-      <button class="fb" id="gf-progress" onclick="setGalleryFilter('progress',this)">Progress</button>
-      <button class="fb" id="gf-before-after" onclick="setGalleryFilter('before-after',this)">Before & After</button>
-    </div>
-    <div id="gallery-grid"></div>
-  </div>
-</div>
-
 <div class="pg" id="pg-proposals">
   <div class="tbar">
     <div class="tbar-l">
@@ -4183,10 +4361,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <span>Fleet</span>
   </button>
 
-  <button class="nb" id="nb-gallery" onclick="goPg('pg-gallery')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
-    <span>Gallery</span>
-  </button>
 
   <button class="nb" id="nb-licensing" onclick="goPg('pg-licensing')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
@@ -4345,6 +4519,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/clients.js"></script>
 <script src="js/bids.js"></script>
 <script src="js/jobs.js"></script>
+<script src="js/photo-capture.js"></script>
 <script src="js/mileage.js"></script>
 <!-- The day deriver: pure, loads before the engine that calls it. -->
 <script src="js/geo-derive.js"></script>

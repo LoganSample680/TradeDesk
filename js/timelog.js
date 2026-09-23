@@ -704,9 +704,23 @@ async function _timeLogRows(sinceISO,opts){
   // departure yet), so the rail draws it from the live report, running to
   // this moment; the 30s refresh moves it, the arrival closes it into a real
   // row on the next derive.
+  // WHO IS LOOKING, AND WHAT COUNTS AS STILL OPEN. Hoisted out of the live
+  // block below because the two stored-row loops need the same answer: an
+  // open row belongs to the rail only when it is SOMEBODY ELSE'S and it
+  // started today (see the loops).
+  const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  const _tlOpenToday=(iso)=>{
+    const t=Date.parse(iso||'');
+    if(!(t>0))return false;
+    const d=(typeof _bizDateStr==='function')?_bizDateStr(new Date(t)):dateKey(new Date(t));
+    const td=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):dateKey(new Date());
+    return d===td;
+  };
+  // Somebody else's open dwell: theirs to draw, never the viewer's (the live
+  // row below already owns that one), and only while it is today's.
+  const _tlOtherOpen=(e)=>!!(e&&!e.departed_at&&me&&e.employee_user_id&&e.employee_user_id!==me&&_tlOpenToday(e.arrived_at));
   try{
     const od=window._geoOpenDwell;
-    const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
     if(od&&od.sinceTs>0&&me){
       const today=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):dateKey(new Date());
       const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(od.sinceTs)):dateKey(new Date(od.sinceTs));
@@ -754,11 +768,22 @@ async function _timeLogRows(sinceISO,opts){
   // re-grade, and the twenty functions that used to do so are gone with the
   // three-writer design that made them necessary.
   (crew.shopEntries||[]).forEach(e=>{
-    if(!e||!e.arrived_at||!e.departed_at||!e.employee_user_id)return;
-    const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
+    if(!e||!e.arrived_at||!e.employee_user_id)return;
+    // ── AN OPEN ROW DRAWS WHEN IT IS SOMEBODY ELSE'S (owner 2026-09-21) ──
+    // window._geoOpenDwell is this DEVICE's dwell, so the live row above only
+    // ever knows where the VIEWER is. Jack sat at the shop 2h44m, clocked in,
+    // and the rail under his badge showed no start time: his open row was
+    // stored correctly (geo_replace_day writes it so the ops portal and Crew
+    // Cost can see him without his phone being open) and then dropped here by
+    // a guard written to stop the viewer's own dwell being drawn twice.
+    // Someone else's open row is the ONLY thing that knows where they are, so
+    // it draws, on the same live shape the viewer's own row uses (§7.3).
+    const _open=!e.departed_at;
+    if(_open&&!_tlOtherOpen(e))return;
+    const arr=Date.parse(e.arrived_at),dep=_open?Date.now():Date.parse(e.departed_at);
     if(!(arr>0&&dep>arr))return;
     const uid=e.employee_user_id;
-    const mins=Number(e.minutes)>0?Math.round(Number(e.minutes)):Math.round((dep-arr)/60000);
+    const mins=(!_open&&Number(e.minutes)>0)?Math.round(Number(e.minutes)):Math.round((dep-arr)/60000);
     if(mins<1)return;
     const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(arr)):dateKey(new Date(arr));
     rows.push({
@@ -768,8 +793,8 @@ async function _timeLogRows(sinceISO,opts){
       clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
       addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
       clientKey:e.client_key||null,unpaid:false,
-      detail:'Shop time',
-      startTime:e.arrived_at,endTime:e.departed_at,
+      detail:_open?'On site now':'Shop time',live:_open||undefined,
+      startTime:e.arrived_at,endTime:e.departed_at||new Date(dep).toISOString(),
       mergedCount:1,
       rawId:e.id!=null?e.id:null,rawSource:'shop'
     });
@@ -791,9 +816,15 @@ async function _timeLogRows(sinceISO,opts){
     // SAME dwell twice, once live and once as a dead 0m row, which is the
     // double-count this rule exists to prevent.
     //
-    // The shop loop above has always skipped a null departure for its own
-    // reasons; this says it out loud for the job side.
-    if(!e.departed_at)return;
+    // The shop loop above carries the same rule and the same exception.
+    //
+    // THE EXCEPTION (owner 2026-09-21): _geoOpenDwell is device-local, so the
+    // live row knows the VIEWER's dwell and nobody else's. A crew member's
+    // open dwell fell through that gap and drew nothing at all. It draws now,
+    // in the same live shape, because there is no second copy of it to
+    // double-count.
+    const _openRow=!e.departed_at;
+    if(_openRow&&!_tlOtherOpen(e))return;
     // ── RULE 13, ANSWERED "PERSONAL" (owner 2026-09-16) ──────────────────
     // "Why is Laurie Schonfeldt sitting as manual time?" Because this line
     // used to `return`, and dropping the row out of `rows` is not the same as
@@ -812,7 +843,7 @@ async function _timeLogRows(sinceISO,opts){
     // The clock keeps its own minutes. Personal says the STOP was not work; it
     // is not a deduction from the hours he punched, and a manual personal gap
     // (_tlIsPersonalGap) has never docked a clock either.
-    if(String(e.source||'')==='dismissed'){
+    if(!_openRow&&String(e.source||'')==='dismissed'){
       const _da=Date.parse(e.arrived_at||''),_dd=Date.parse(e.departed_at||'');
       if(!(_da>0&&_dd>_da))return;              // no span to cover, nothing to do
       rows.push({
@@ -868,13 +899,15 @@ async function _timeLogRows(sinceISO,opts){
     rows.push({
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
       source:'auto',date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
-      minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
+      minutes:_openRow?Math.max(0,Math.round((Date.now()-Date.parse(e.arrived_at))/60000)):(e.minutes||0),
+      live:_openRow||undefined,
+      personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
       clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid||!!_unacctWhy||_held,
       // The reason wins when there is one. "Overnight at your own place" tells
       // the owner why twelve hours are sitting there not counting, which a
       // bare source label never could.
       detail:_unacctWhy||((typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||'')),
-      startTime:e.arrived_at||null,endTime:e.departed_at||null,
+      startTime:e.arrived_at||null,endTime:e.departed_at||(_openRow?new Date().toISOString():null),
       // The server row id and its raw source, so a wrong GPS clock can be
       // corrected in place (owner rule 2026-08-24). rawSource is the raw
       // column, unlike `detail` which is the friendly label.
@@ -1839,7 +1872,14 @@ function _tlRailRow(r){
         '<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+
         escHtml(String(r.rawId))+'\',\'working\')">It was work</button></div>';
     }
-    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)){
+    // ASK BEFORE OFFERING (owner 2026-09-20: "I'm hitting save this address
+    // and it's a dead button"). The chip used to be drawn for every unsaved
+    // stop, and _mileSaveStopAddress could place only some of them, so the
+    // rest were controls that did nothing at all when pressed. One resolver
+    // answers both questions now (_mileStopCoord, js/mileage.js): the chip
+    // appears exactly when there is a coordinate behind it to save.
+    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)&&
+       (typeof _mileStopCoord!=='function'||_mileStopCoord(r.clientKey,r.date))){
       body+='<div class="tl-rail-chips">'+
         '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
         escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
@@ -2016,7 +2056,19 @@ function _tlRowMenu(btn){
         acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
           'Keeps it off your hours and your miles. Just this one, not the place.',true);
       }
-      if(/^unsaved/.test(raw)&&d.rowKey){
+      // THE SAME GUARD THE CHIP HAS (owner 2026-09-22, on Jack's 11:58 to
+      // 1:17 on the 21st: "cant save, why?").
+      //
+      // The chip on the row stopped being drawn without a coordinate behind
+      // it on 2026-09-20, for exactly this complaint. This copy of the same
+      // action never got the check, so the row quietly offered a Save the
+      // chip had already withdrawn, and pressing it called
+      // _mileSaveStopAddress, which returns false and does nothing. Jack's
+      // row is keyed d-j-987ebc83-mubhcq0a and no leg or via stop on that day
+      // carries that id, so there is no pin to open a lead on. One resolver,
+      // asked in both places, or the second place is a dead button again.
+      if(/^unsaved/.test(raw)&&d.rowKey&&
+         (typeof _mileStopCoord!=='function'||_mileStopCoord(d.rowKey,d.rowDate||''))){
         acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
           'Save this address','Then it names itself here and everywhere after');
       }
@@ -3203,17 +3255,47 @@ function _tlTickOpenElapsed(){
 // answer actually moved. A drive that changes nothing costs one query.
 let _tlLiveTimer=null;
 const _TL_LIVE_DEBOUNCE_MS=2500;
-function _tlLiveRefresh(){
+// `now` skips the debounce. The 2.5s wait exists because a realtime flush can
+// land a dozen rows at once and each one calls this; one deliberate tap is the
+// opposite case, and 2.5 seconds after the tap is not what "immediately" means
+// to the person who made it (owner 2026-09-20). Same reasoning, and the same
+// shape, as the `force` flag _tlRevalidateRows already carries for the
+// throttle one layer down.
+//
+// It compares against _tlRowsCache, the rows the screen was actually painted
+// from, NOT _tlLastRows, which is that set already filtered to one scope and
+// one year. Printing an unfiltered fetch against a filtered paint compares two
+// different questions, and the answer was only ever right by luck: an account
+// whose rows are all this year and all one person made the two look equal, and
+// any other account made them differ on every tick and repainted for nothing.
+function _tlLiveRefresh(now){
   try{
     if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
     clearTimeout(_tlLiveTimer);
-    _tlLiveTimer=setTimeout(()=>{
+    const go=()=>{
       // Re-checked on the way out, not just on the way in: the page can be
       // navigated away from during the debounce, and repainting a hidden page
       // is three Supabase queries for nothing.
       if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
-      try{_tlRevalidateRows(_tlLastRows,undefined,true);}catch(_e){}
-    },_TL_LIVE_DEBOUNCE_MS);
+      // ── AND A NEWER PAINT ALWAYS OWNS THE SCREEN ────────────────────────
+      // The generation is captured HERE, at the moment this decides to go,
+      // and _tlRevalidateRows compares it after its own fetch. Anything that
+      // painted in between (the viewer flipped scope, changed year, opened
+      // the page again) means this answer is about a screen that no longer
+      // exists, and it must not be drawn over the one that does.
+      //
+      // The live path used to pass undefined, which skips that check
+      // entirely, and it got away with it only because the fingerprint it
+      // compared was too coarse to ever say "repaint". The moment the print
+      // started noticing real changes, this became the same clobber
+      // _tlRepairAfterPaint's generation guard was added for: a repaint
+      // scheduled by render N landing on top of render N+1 (CI shard 6,
+      // 2026-09-20).
+      const gen=_tlRenderGen;
+      try{_tlRevalidateRows(_tlRowsCache,gen,true);}catch(_e){}
+    };
+    if(now){go();return;}
+    _tlLiveTimer=setTimeout(go,_TL_LIVE_DEBOUNCE_MS);
   }catch(_e){}
 }
 function _tlStopOpenRefresh(){
@@ -3325,6 +3407,24 @@ function _tlEmpWeekAgg(rows,cid){
     // produced Jack's Sept 1 legend: "On site 4h 59m" on a day whose rail holds
     // no on-site row at all, because every fence he crossed was the shop.
     else if(r.source==='manual')e.placeMin+=r.minutes||0;
+    // ── AND SO IS THE STRETCH THE CLOCK HANDED OVER (owner 2026-09-21) ────
+    // Surfaced while fixing the shared timesheet's double count, and it is
+    // the SAME fall-through this block's header describes twice already: a
+    // source with no arm of its own lands in the else and is billed as
+    // on-site job labour.
+    //
+    // _tlBlendManual turns each stretch a clock covers and no fence explains
+    // into a row with source 'site' and rawSource 'clock-span'. _tlRailKind
+    // has always called that 'off', grey Manual time, and says why in its own
+    // words: "this row has no address and never had one". Nothing here knew
+    // the name, so the rail drew those minutes grey while the week bar above
+    // it drew the very same minutes blue.
+    //
+    // One minute cannot be two things, and the note at the top of this
+    // function is explicit that the card and the rail must never be able to
+    // disagree about which. The rail's answer is the documented one, so this
+    // is the side that was wrong.
+    else if(_src==='clock-span')e.placeMin+=r.minutes||0;
     else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(_src))e.driveMin+=r.minutes||0;
     // Loading the truck is carved OUT of the supply/other bucket (owner
     // 2026-08-30, who wants it named on the day's legend). One aggregator
@@ -3641,10 +3741,33 @@ async function _tlShareWeek(){
 // Cheap enough to run on every open, and the only thing that decides whether
 // the repair earned a repaint. Count plus total minutes catches an added row,
 // a removed row, and a retimed one, which is everything the repair can do.
+// ── THE PRINT HAS TO COVER WHAT THE RAIL DRAWS (owner 2026-09-20) ─────────
+// "went to go save things on the day rail and the onsite didn't immediately
+// flip to the name I assigned, I want that."
+//
+// This was a count and a total of minutes, and naming an address changes
+// NEITHER of them. The derive rewrote the row, the server held the new name,
+// the revalidate below fetched it, compared two identical prints and returned
+// without painting. So the rail went on saying "Unsaved address" until
+// something else happened to repaint the page. Not "not immediate": never.
+//
+// The print is the row as the rail reads it now. Sorted, so it says nothing
+// about the order two fetches happened to come back in.
+//
+// endTime and `live` stay OUT on purpose: the open dwell's endTime is
+// Date.now() at the moment it was built, so a print carrying it would differ
+// on every single fetch and every revalidate would repaint. A repaint closes
+// whatever the viewer just opened by hand, which is the entire reason this
+// comparison exists.
 function _tlRowsFingerprint(rows){
-  let n=0,min=0;
-  (rows||[]).forEach(r=>{n++;min+=(r.minutes||0);});
-  return n+':'+min;
+  const out=[];
+  (rows||[]).forEach(r=>{
+    if(!r)return;
+    out.push([r.id,r.minutes||0,r.source||'',r.rawSource||'',r.clientName||'',
+      r.addr||'',r.jobName||'',r.detail||'',r.clientKey||'',
+      r.unpaid?1:0,r.dismissed?1:0,r.startTime||''].join('\u0001'));
+  });
+  return out.sort().join('\u0002');
 }
 let _tlRepairRunning=false;
 // When a repair last ran. Opening the page is a deliberate look at hours and

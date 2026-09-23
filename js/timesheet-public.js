@@ -271,7 +271,36 @@ async function _tspBoot(){
   S.bizTz=String(data.biz_tz||'America/Chicago');
   _tsp.jobs={};
   (data.time||[]).forEach(e=>{if(e&&e.job_id!=null&&(e.job_name||e.client_name))_tsp.jobs[String(e.job_id)]={job_name:e.job_name,client_name:e.client_name,addr:e.addr};});
-  timeEntries.length=0;(data.manual||[]).forEach(m=>{if(m&&typeof m==='object')timeEntries.push(m);});
+  // ── AND THE CLOCKS CARRY THE SAME ONE (owner 2026-09-21) ────────────────
+  // "On the link Jack sent his dad it looks like manual time double counted,
+  // why? It didn't on Jack's record."
+  //
+  // Measured on his week of 13-19 September: the app said 42h 27m with 1m of
+  // Manual time, the link said 80h 10m with 37h 37m. The automatic buckets
+  // agreed almost to the minute. The entire gap was the clock being counted a
+  // second time on top of the drives and site time it already contains.
+  //
+  // _tlBlendManual (js/timelog.js) buckets rows by `personUid||acting uid`
+  // before it does anything, and returns early from a bucket with no clock in
+  // it. The rows above are stamped _TSP_UID because the RPC sends no
+  // employee_user_id; these were pushed RAW, carrying the real logged_by_uid
+  // the server does send. So the drives sat under 'sheet-person', the clocks
+  // sat under Jack's uuid, neither bucket held both, and the blend never ran.
+  // It is the same failure the blend's own header describes from the support
+  // view, reached through this page instead.
+  //
+  // An OWNER'S sheet is the same bug wearing the other hat: their clocks come
+  // back with logged_by_uid null, which falls to the acting uid, and this page
+  // has no session so that is the string 'owner'. Two buckets again.
+  //
+  // One person on the page, so one id on every row of theirs, whatever the
+  // server said about it. Same reason the note above gives for stamping the
+  // derived rows, and the same constant, rather than a second idea of who this
+  // sheet belongs to (7.3).
+  timeEntries.length=0;
+  (data.manual||[]).forEach(m=>{
+    if(m&&typeof m==='object')timeEntries.push(Object.assign({},m,{logged_by_uid:_TSP_UID}));
+  });
   document.title=(_tsp.name?_tsp.name+' · ':'')+'Timesheet '+_tspRange(String(data.week_start).slice(0,10));
   _tspHeader();
   await _tspRender();

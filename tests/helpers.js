@@ -210,7 +210,12 @@ async function mockAllExternal(page, opts = {}) {
     }
 
     // ── Serve app locally, pass through ────────────────────────────────────
-    if (url.startsWith('http://localhost') || url.startsWith('data:')) {
+    // blob: too. WebKit routes object urls through here; Chromium does not,
+    // so a blob the app made for itself was being answered with the empty
+    // 200 at the bottom of this handler and failing to decode, on WebKit
+    // only. Nothing left the machine either way: a blob url IS the page's
+    // own bytes, so passing it through blocks no external traffic.
+    if (url.startsWith('http://localhost') || url.startsWith('data:') || url.startsWith('blob:')) {
       return route.continue();
     }
 

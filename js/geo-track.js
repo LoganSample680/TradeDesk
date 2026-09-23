@@ -3755,11 +3755,38 @@ const _GEO_THERMAL_WORDS=['nominal','fair','serious','critical'];
 let _geoTherm=null;
 function _geoBattPeek(){return _geoBatt;}
 function _geoThermPeek(){return _geoTherm;}
+// ── THE FIRST READ AFTER SWITCHING MONITORING ON IS ALWAYS -1 ──────────────
+// (owner 2026-09-21: "why cant we see his battery?")
+//
+// Jack's device_status row was healthy in every other column, current
+// checked_at, right app version, and battery_level null every single time. The
+// owner's three device rows: one number between them.
+//
+// TdGeoPlugin.stats() sets UIDevice.isBatteryMonitoringEnabled = true and
+// reads batteryLevel on the next line, in the same main-queue block. iOS does
+// not have the value ready that soon; it answers -1, which is the plugin's own
+// "could not read" and becomes null here. The value is there a moment later,
+// which is why a phone somebody keeps using eventually reports one and a phone
+// that is opened and pocketed never does. Jack opens it and pockets it.
+//
+// So a -1 is asked ONCE more, after a tick. Fixing it in Swift would mean an
+// iOS build (3.2) for a one-line delay; this needs neither, and it also covers
+// any other shell that answers slowly on the first call.
+const _GEO_BATT_RETRY_MS=300;
 async function _geoRefreshBattery(){
   try{
     const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
     if(!Td||typeof Td.stats!=='function'){_geoBatt=null;_geoTherm=null;return null;}
-    const st=await Td.stats();
+    let st=await Td.stats();
+    if(!(st&&+st.batteryLevel>=0)){
+      await new Promise(r=>setTimeout(r,_GEO_BATT_RETRY_MS));
+      // Once, never a loop: a shell that genuinely cannot read a battery must
+      // report "not reported" rather than spin asking.
+      try{
+        const st2=await Td.stats();
+        if(st2&&+st2.batteryLevel>=0)st=st2;
+      }catch(_e){}
+    }
     // -1 is the plugin's own "could not read", and must stay distinguishable
     // from a genuinely flat phone.
     const lvl=(st&&+st.batteryLevel>=0)?+st.batteryLevel:null;
@@ -3803,7 +3830,7 @@ function _geoReportPermission(state){
   // multiply on every boot. Skip rather than pollute.
   if(devId){
     try{
-      _supa.from('device_status').upsert({
+      const _dev={
         user_id:_supaUser.id,
         device_id:devId,
         device_label:devLabel||null,
@@ -3849,7 +3876,20 @@ function _geoReportPermission(state){
         derived:!(_natPerm&&_natPerm.status),
         app_version:(typeof APP_VERSION!=='undefined')?APP_VERSION:null,
         checked_at:now
-      },{onConflict:'user_id,device_id'}).then(()=>{},()=>{});
+      };
+      // ── A READING WE DO NOT HAVE MUST NOT ERASE THE ONE WE DID ──────────
+      // (owner 2026-09-22, third time asking why Jack has no battery)
+      //
+      // The row is an upsert on (user_id, device_id), and PostgREST only
+      // writes the columns the payload carries, so an absent key keeps what
+      // is already stored. Sending null is a different statement: it says
+      // "this phone has no battery", and it overwrote the 35% Jack's handset
+      // finally reported the night before with nothing, on the very next
+      // permission write. A read that failed is not an answer and must not
+      // be written as one.
+      if(!_geoBatt){delete _dev.battery_level;delete _dev.battery_charging;}
+      if(!_geoTherm)delete _dev.thermal_state;
+      _supa.from('device_status').upsert(_dev,{onConflict:'user_id,device_id'}).then(()=>{},()=>{});
     }catch(_e){}
   }
   if(!_isEmployee)return;
@@ -3877,12 +3917,28 @@ const _GEO_PERM_STALE_MS=6*60*60*1000;
 let _geoPermReportedAt=0;
 function _geoPermForeground(){
   try{if(typeof _geoConfigureFlush==='function')_geoConfigureFlush();}catch(_e){}
-  try{if(typeof _geoRefreshBattery==='function')_geoRefreshBattery();}catch(_e){}
+  // WAITED ON, not fired and forgotten. _geoRefreshBattery asks the plugin a
+  // second time 300ms later when the first read comes back -1 (iOS is not
+  // ready that soon after battery monitoring is switched on), so the answer
+  // now routinely lands AFTER the permission read it used to beat. Racing the
+  // row against it is why the fix for the -1 did not put a number on the
+  // roster. The report below waits for both.
+  let _battDone=null;
+  try{if(typeof _geoRefreshBattery==='function')_battDone=Promise.resolve(_geoRefreshBattery()).catch(()=>null);}catch(_e){}
+  if(!_battDone)_battDone=Promise.resolve(null);
   try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
   try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}
   const now=Date.now();
   if(now-_geoPermReportedAt<_GEO_PERM_STALE_MS)return;
   _geoPermReportedAt=now;
+  _geoPermReportNow(_battDone);
+}
+// Split out of the foreground handler above so the write can be exercised
+// without the six-hour staleness gate deciding whether a test observes
+// anything. It takes the battery read already in flight rather than starting
+// its own: two overlapping stats() calls would each finish by assigning
+// _geoBatt, and the loser could hand back the -1 the winner just fixed.
+async function _geoPermReportNow(battDone){
   // READ NATIVE, THEN REPORT. This used to kick off _geoRefreshPermCache()
   // above, which is ASYNC, and then immediately report _geoPermState(), which
   // reads a cache SYNCHRONOUSLY. On a fresh boot that cache is still empty and
@@ -3893,12 +3949,12 @@ function _geoPermForeground(){
   // that bad row in until tomorrow. Observed on the owner's own handset the
   // hour build 36 landed: motion reported 'granted' from the same plugin while
   // location reported nothing at all.
+  try{if(battDone&&typeof battDone.then==='function')await battDone;}catch(_e){}
   try{
     if(typeof _geoReadPermission!=='function')return;
-    _geoReadPermission().then(st=>{
-      try{if(typeof _geoReportPermission==='function')_geoReportPermission(st);}catch(_e){}
-      try{_geoAutoPrecise();}catch(_e){}
-    }).catch(()=>{});
+    const st=await _geoReadPermission();
+    try{if(typeof _geoReportPermission==='function')_geoReportPermission(st);}catch(_e){}
+    try{_geoAutoPrecise();}catch(_e){}
   }catch(_e){}
 }
 // ── Precise, every session, without waiting to be asked (owner rule
@@ -4549,6 +4605,13 @@ function _geoPingBurst(){
   }catch(_e){return false;}
 }
 let _geoParkSpot=null;   // where to center the region when the countdown fires
+// ── AND HOW WIDE IT ARMED (owner 2026-09-21, on Jack's phone) ──────────────
+// The park exit used to be judged against _geoLastFenceLoc at the plain fence
+// radius, whatever the park had actually armed around. See the exit test for
+// what that cost; this is the number it needed and did not have. Metres, the
+// same unit _geoEnterParkMode computes it in. 0 means "no park armed by this
+// JS", and the exit test falls back to the old pair.
+let _geoParkRadiusM=0;
 // ── Park mode has to survive a reload, because the plugin's side does ───────
 //
 // THE BUG THIS EXISTS TO KILL (owner's own phone, 2026-09-05, measured on the
@@ -4581,6 +4644,9 @@ function _geoParkPersist(spot){
   try{
     localStorage.setItem(_GEO_PARK_KEY,JSON.stringify({
       spot:(spot&&isFinite(spot.lat)&&isFinite(spot.lng))?{lat:spot.lat,lng:spot.lng,name:spot.name||''}:null,
+      // The radius rides with the spot, or a reload mid-park would judge the
+      // exit at the plain fence radius again, which is the whole bug.
+      radiusM:Number(_geoParkRadiusM)||0,
       at:Date.now(),uid:(_supaUser&&_supaUser.id)||null
     }));
   }catch(_e){}
@@ -4612,6 +4678,7 @@ function _geoParkRestore(){
     if(s){
       _geoParkModeOn=true;
       if(s.spot)_geoParkSpot=s.spot;
+      if(Number(s.radiusM)>0)_geoParkRadiusM=Number(s.radiusM);
       _geoParkNote('park-restored',s.spot&&s.spot.name?s.spot.name:'');
       return true;
     }
@@ -4741,6 +4808,10 @@ function _geoEnterParkMode(spot){
   const radiusM=_at.name==='stop'
     ?Math.max(_geoFenceFt()*0.3048+60,250)
     :_geoFenceFt()*0.3048+60;
+  // The exit test reads these two. Set here, where the park is actually armed,
+  // so "am I still parked" can only ever be asked about the place this park is
+  // about (owner 2026-09-21, see the exit test).
+  _geoParkSpot=_at;_geoParkRadiusM=radiusM;
   _geoParkNote('park-try',_at.name||'stop');
   // The full wake set, not just this kerb: a force-closed app's ONLY way to
   // learn about tomorrow morning's drive is a region it armed tonight.
@@ -4856,6 +4927,7 @@ function _geoExitParkMode(){
   if(!_geoParkModeOn)return;
   _geoParkModeOn=false;
   _geoWakeArmed=false;
+  _geoParkRadiusM=0;
   _geoParkForget();
   // Fresh observation window on wake: if this exit was a real drive the next
   // fixes clear the quiet clock; if it was a walk out of the region, GPS gets
@@ -5640,8 +5712,34 @@ async function _geoTdEvent(ev,replay){
     return;
   }
   if(!replay&&_geoParkModeOn){
+    // ── PARKED WHERE? THE PARK'S OWN ANSWER (owner 2026-09-21, on Jack) ─────
+    //
+    // This asked whether the fix had left _geoLastFenceLoc, by the plain fence
+    // radius. _geoLastFenceLoc is the last fence the phone was INSIDE and it
+    // is never cleared on leaving one, so a park at an address nobody saved
+    // was measured against a customer he had driven away from twenty minutes
+    // earlier. Every fix read as "outside the fence", so the park exited on
+    // the spot, exiting restarts tracking, the stop detector parks again, and
+    // the next fix exits again.
+    //
+    // Measured on his phone: about 2,300 laps in eleven minutes, roughly three
+    // and a half a second, 13,794 radio rows in one hour against a normal one
+    // to three a minute, and 11,928 GPS receiver starts across the day. It
+    // also froze his timesheet, because every derive re-reads the whole day's
+    // events and his day had 25,000 of them.
+    //
+    // The park already knows where it armed and how wide (_geoParkSpot,
+    // _geoParkRadiusM, both set in _geoEnterParkMode). Ask THOSE. An
+    // anonymous stop arms at a 250m floor precisely because somebody on foot
+    // wanders, and judging its exit at 600ft threw that away.
+    //
+    // The old pair stays as the fallback for a park this JS did not arm (a
+    // restore from a build before the radius was persisted), which is the
+    // behaviour every version before today had.
+    const _pc=_geoParkSpot||_geoLastFenceLoc;
+    const _pr=(Number(_geoParkRadiusM)>0)?(Number(_geoParkRadiusM)/0.3048):_geoFenceFt();
     const out=ev.type==='regionExit'||
-      (hasFix&&_geoLastFenceLoc&&_geoDistFt({lat:ev.lat,lng:ev.lng},_geoLastFenceLoc)>_geoFenceFt());
+      (hasFix&&_pc&&_geoDistFt({lat:ev.lat,lng:ev.lng},_pc)>_pr);
     if(out)_geoExitParkMode();
   }
   // ── THE OTHER OPENER: a force-closed app seeing a fence exit ──────────────
@@ -6110,6 +6208,7 @@ function stopGeoTracking(){
   _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;_geoLastMotionKind='';_geoDrivePendingAt=null;
+  _geoParkSpot=null;_geoParkRadiusM=0;
   _geoDrivePendingId=null;_geoLegFlipId=null;
   // A real stop-then-restart (sign-out/in, account switch) must get a REAL
   // restore/drain on the next _geoTrackInit(), unlike the twin-write case this
@@ -7432,6 +7531,30 @@ const _GEO_OPEN_JOB={upcoming:1,active:1,'in progress':1,scheduled:1};
 const _GEO_OPEN_BID={Pending:1,sent:1,Sent:1,opportunity:1,Won:1,'Closed Won':1};
 
 // armed and the fence the deriver resolves are the same set.
+// ── A FENCE NAMED FOR A PERSON SAYS WHICH ADDRESS (Jack, 2026-09-21) ───────
+// "He asked if all onsites could mint the address in parenthesis."
+//
+// The SQL half is geo_street_line + the three name expressions in 20261030,
+// and these two are its mirror. They are a PAIR by contract: CI runs
+// scripts/ci/geo-fences-equivalence.sql against the same
+// tests/fixtures/geo-fences-case.json this file is checked against, so the two
+// lists cannot drift without the Migration lint going red. It went red on the
+// first push of 20261030, which is the gate working.
+//
+// The street line only: everything from the first comma is the town, and the
+// town is the same for every row on the rail. A drive prints BOTH ends, so two
+// postal addresses would not survive a phone (CLAUDE.md 15.1).
+function _geoStreetLine(addr){
+  const s=String(addr||'').split(',')[0].trim();
+  return s||'';
+}
+// Name, then where, and nothing at all when there is no where to say. Keeping
+// the join in one function is what stops the three call sites below drifting
+// into three slightly different parenthesis rules.
+function _geoFenceName(name,where){
+  const n=String(name||'').trim(),w=String(where||'').trim();
+  return w?(n+' ('+w+')'):n;
+}
 function _geoDeriveFences(dayKey){
   const out=[];
   try{
@@ -7490,7 +7613,7 @@ function _geoDeriveFences(dayKey){
       // untouched, so the invoice, the map and navigation are unaffected.
       const anc=(typeof _geoAnchorPoint==='function')?_geoAnchorPoint(c):null;
       if(c.addr&&hit&&hit.addr===c.addr&&hit.lat!=null){
-        out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:anc?anc.lat:Number(hit.lat),lng:anc?anc.lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks,anchored:anc?true:undefined});
+        out.push({id:'client-'+c.id,kind:'client',name:_geoFenceName(c.name||'Client',_geoStreetLine(c.addr)),lat:anc?anc.lat:Number(hit.lat),lng:anc?anc.lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled,personal:!!c.personal,onBooks,anchored:anc?true:undefined});
       }
       // ── AND EVERY OTHER PROPERTY HE HAS (owner 2026-09-19) ─────────────
       // "in lead client record if I add it it needs to carry over to mileage
@@ -7519,7 +7642,7 @@ function _geoDeriveFences(dayKey){
         // editing the address retires the fence until it is geocoded again.
         if(!(a.lat!=null&&a.lon!=null&&a.geoAddr===a.addr))return;
         out.push({id:'client-'+c.id+'-p'+i,kind:'client',
-          name:(c.name||'Client')+(a.label?' ('+a.label+')':''),
+          name:_geoFenceName(c.name||'Client',(a.label&&String(a.label).trim())||_geoStreetLine(a.addr)),
           lat:Number(a.lat),lng:Number(a.lon),addr:a.addr,clientId:c.id,
           scheduled,personal:!!c.personal,onBooks});
       });
@@ -7529,7 +7652,7 @@ function _geoDeriveFences(dayKey){
       const active=(typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true;
       if(!active)return;
       const c=(typeof _geoJobCoords!=='undefined'&&_geoJobCoords[j.id])||((j.lat&&j.lon)?{lat:j.lat,lng:j.lon}:null);
-      if(c)out.push({id:'job-'+j.id,kind:'job',name:(typeof _tlJobClientInfo==='function'?(_tlJobClientInfo(j.id).clientName):null)||j.name||'Job',lat:Number(c.lat),lng:Number(c.lng),addr:j.addr||j.address||'',jobId:j.id});
+      if(c)out.push({id:'job-'+j.id,kind:'job',name:_geoFenceName((typeof _tlJobClientInfo==='function'?(_tlJobClientInfo(j.id).clientName):null)||j.name||'Job',_geoStreetLine(j.addr||j.address)),lat:Number(c.lat),lng:Number(c.lng),addr:j.addr||j.address||'',jobId:j.id});
     });
   }catch(_e){}
   return out;
@@ -8779,7 +8902,16 @@ function _geoOpenDwellPublish(dayKey,res){
     // yet (or a start that failed) left the island empty for the whole
     // dwell with nothing to retry it. _liveActSet dedups on a signature, so
     // re-asserting an unchanged dwell costs nothing.
-    try{if(typeof _liveActOnSite==='function')_liveActOnSite(next);}catch(_e){}
+    // BOTH HALVES OF THE RAIL'S LIVE ROW (owner 2026-09-21). The lock-screen
+    // card mirrors the day rail now, so it needs the drive as well as the
+    // dwell: standing still is only half of what the rail says. Published on
+    // window the same way the dwell is, so _liveActForeground can re-assert
+    // it after a relaunch that found the card already up.
+    window._geoOpenPending=(res&&res.pending&&Number(res.pending.startTs)>0)
+      ?{startTs:Number(res.pending.startTs),
+        origin:res.pending.origin?{name:String(res.pending.origin.name||'')}:null}
+      :null;
+    try{if(typeof _liveActRail==='function')_liveActRail(next,window._geoOpenPending);}catch(_e){}
     if(same){
       if(deNew){try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}}
       return;
