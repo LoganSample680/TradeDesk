@@ -1413,6 +1413,19 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .chooser-amber .chooser-card-cta{color:var(--amber)}
 .chooser-green .chooser-card-cta{color:var(--green)}
 @media(max-width:560px){.chooser-grid{grid-template-columns:1fr}}
+/* ON A PHONE, ALL THREE FIT. Each card was ~320px tall with four bullets and a
+   Start link, so Time & Materials sat below the fold and he had to scroll past
+   two sales pitches to reach the one he came for. A phone card is the icon, the
+   name and one line; the bullets stay on the wider layout where there is room. */
+@media(max-width:560px){
+  .chooser-grid{gap:10px}
+  .chooser-card{display:grid;grid-template-columns:44px minmax(0,1fr);column-gap:14px;row-gap:2px;padding:14px 16px;align-items:center}
+  .chooser-card-eyebrow{grid-column:2;grid-row:1}
+  .chooser-card-icon{grid-column:1;grid-row:1/span 3;margin:0;align-self:center}
+  .chooser-card-title{grid-column:2;font-size:19px}
+  .chooser-card-sub{grid-column:2;margin:0;font-size:12.5px;line-height:1.35}
+  .chooser-card-bullets,.chooser-card-cta{display:none}
+}
 
 /* ── Kanban ── */
 .kanban{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px}
@@ -2964,13 +2977,21 @@ body.dark .cal-cell.other{background:var(--cream)}
 
         <!-- NTE cap -->
         <div class="card" id="tm-blk-nte" style="display:none">
-          <div class="td-h3" id="tm-nte-head" style="margin-bottom:10px">The most it can cost them (optional)</div>
-          <div class="fg fg2">
+          <div class="td-h3" id="tm-nte-head" style="margin-bottom:4px">The most it can cost</div>
+          <div class="td-micro" id="tm-nte-sub" style="margin-bottom:10px;text-transform:none;letter-spacing:0;font-weight:500">Optional. Past this, you stop and get their OK in writing.</div>
+          <div class="fg">
             <div class="f">
-              <label>Cap amount</label>
               <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-nte" placeholder="e.g. 12,000" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
             </div>
-            <div class="f">
+            <!-- HIDDEN, NOT DELETED, 2026-09-23. "What happens at cap" was saved on
+                 the bid and printed NOWHERE: the contract has always said "unless
+                 you approve more in writing" whichever option was picked. One of
+                 the three was "Continue at agreed rate", which told him he could
+                 bill straight past a ceiling that in nine states is the law. A
+                 control that cannot change the contract, and can only mislead the
+                 man filling it in, is off the page. The element stays so a draft
+                 that saved a value keeps it. -->
+            <div class="f" style="display:none">
               <label>What happens at cap</label>
               <select id="tm-i-cap-action" onchange="_tmCapAction=this.value;_byoAutosave()">
                 <option>Stop &amp; get re-approval</option>
@@ -2980,6 +3001,12 @@ body.dark .cal-cell.other{background:var(--cream)}
             </div>
           </div>
         </div>
+
+        <!-- MORE OPTIONS. Everything a T&M can carry that the law does not
+             require and most jobs do not need: an estimate, materials, a
+             deposit, what is not included, how often it bills. Rendered by
+             _tmRenderMore; a state-required item is never in here. -->
+        <div id="tm-more-row" style="margin:-2px 0 14px"></div>
       </div>
 
       <!-- Summary rail -->
@@ -3010,7 +3037,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div class="summary-row"><span>Day rate</span><span id="tm-rail-rate-day">$0</span></div>
             <div class="summary-row"><span>Materials</span><span id="tm-rail-rate-mat">at cost</span></div>
           </div>
-          <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
+          <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>The most it can cost</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
           <!-- Crew labor cost, only rendered when the contractor has employees -->
           <div id="tm-labor-cost-wrap" style="display:none"></div>

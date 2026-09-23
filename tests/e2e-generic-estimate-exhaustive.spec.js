@@ -2027,13 +2027,24 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
     test('_geiRenderScopeCard: golden path wires +Add scope to the right container id', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rt2-scopecard-wrap'; document.body.appendChild(wrap);
+        // PRECONDITION ADDED 2026-09-23 (§10.4). +Add scope only renders once
+        // there is a list to add to; with nothing written, the box it would
+        // open is already on screen under it. So the empty case is checked for
+        // its absence and the wiring is checked with one step on the card.
+        const prev = _geiScopeChips.slice();
+        _geiScopeChips = [];
+        _geiRenderScopeCard('rt2');
+        const emptyHasBtn = !!wrap.querySelector('button');
+        _geiScopeChips = ['Pull the old water heater'];
         _geiRenderScopeCard('rt2');
         const hasWrap = !!document.getElementById('rt2-scope-wrap');
         const addBtnOnclick = wrap.querySelector('button')?.getAttribute('onclick');
+        _geiScopeChips = prev;
         wrap.remove();
-        return { hasWrap, addBtnOnclick };
+        return { hasWrap, addBtnOnclick, emptyHasBtn };
       });
       expect(r.hasWrap).toBe(true);
+      expect(r.emptyHasBtn, 'an empty scope card offers the box, not a second way to it').toBe(false);
       // CHANGED 2026-09-22 (§10.4). The card's +Add scope points at the box he
       // talks into, not the picker, which is the whole of the owner's ask. The
       // container id it is wired to, which is what this test is actually
@@ -2111,7 +2122,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.cols).toBe('repeat(3, 1fr)');
     });
 
-    test('_tmShowPage renders "Send T&M proposal" with a 2-column action grid (no Option B)', async () => {
+    // RELABELLED 2026-09-23 (§10.4). T&M ends in two buttons, "Send it" and
+    // "Sign it here", with Preview, Present and Compare as a line of links under
+    // them (owner: "so easy my 3 year old could build the estimate"). What this
+    // guards is unchanged: a Send, and no Option B.
+    test('_tmShowPage ends in Send it and Sign it here (no Option B)', async () => {
       // The real app page (index.html) already has gei-tm-page + its wrap containers,
       // creating a second element with the same id would just orphan a duplicate in the
       // DOM (getElementById always resolves the first match), so reuse the real ones.
@@ -2122,9 +2137,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       const r2 = await page.evaluate(() => {
         const html = document.getElementById('tm-actions-wrap')?.innerHTML || '';
-        return { hasSend: html.includes('Send T&amp;M proposal') || html.includes('Send T&M proposal'), hasOptionB: html.includes('Option B') };
+        return { hasSend: html.includes('Send it'), hasSign: html.includes('Sign it here'), hasOptionB: html.includes('Option B') };
       });
       expect(r2.hasSend).toBe(true);
+      expect(r2.hasSign).toBe(true);
       expect(r2.hasOptionB).toBe(false);
     });
 
@@ -4310,12 +4326,19 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiIsTM = true; _geiIsFreeForm = false; _tmRateOnly = false;
         _geiScopeNoScope = true; _geiScopeChips = [];
         _tmRatePerMan = 0; _tmEstHours = 0; _geiLines = [];
+        // CHANGED 2026-09-23 (§10.4): the stop is a one-button prompt that
+        // lands him in the rate box (zConfirm), not an alert naming a section
+        // that no longer exists. Still exactly one stop, and it is the rate.
         window.__blocked = [];
         window.zAlert = (m, o) => { window.__blocked.push((o && o.title) || m); };
+        const prevConfirm = window.zConfirm;
+        window.zConfirm = (m, yes, o) => { window.__blocked.push(m); };
         sendGenericProposal();
+        window.zConfirm = prevConfirm;
         return window.__blocked;
       });
-      expect(r).toEqual(['Rate required']);
+      expect(r.length).toBe(1);
+      expect(r[0]).toContain('hourly rate');
     });
   });
 

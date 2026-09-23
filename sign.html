@@ -929,10 +929,12 @@ async function init(){
     // Priority: 2-letter code in address → full state name in address → _prop.state fallback.
     // Multi-word state names are listed first so "WEST VIRGINIA" matches before "VIRGINIA".
     const _propAddrUpper=(_prop.clientAddr||'').toUpperCase();
-    const _propAddrMatch=_propAddrUpper.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+    // stateFromAddr (js/legal.js, loaded above): read from the END of the address,
+    // so "300 Ca Ave, Phoenix, AZ" is Arizona. This picks the right-to-cancel
+    // statute printed on the contract the customer is about to sign.
     const _STNAMES={'WEST VIRGINIA':'WV','NORTH CAROLINA':'NC','NORTH DAKOTA':'ND','SOUTH CAROLINA':'SC','SOUTH DAKOTA':'SD','NEW HAMPSHIRE':'NH','NEW JERSEY':'NJ','NEW MEXICO':'NM','NEW YORK':'NY','RHODE ISLAND':'RI','ALABAMA':'AL','ALASKA':'AK','ARIZONA':'AZ','ARKANSAS':'AR','CALIFORNIA':'CA','COLORADO':'CO','CONNECTICUT':'CT','DELAWARE':'DE','FLORIDA':'FL','GEORGIA':'GA','HAWAII':'HI','IDAHO':'ID','ILLINOIS':'IL','INDIANA':'IN','IOWA':'IA','KANSAS':'KS','KENTUCKY':'KY','LOUISIANA':'LA','MAINE':'ME','MARYLAND':'MD','MASSACHUSETTS':'MA','MICHIGAN':'MI','MINNESOTA':'MN','MISSISSIPPI':'MS','MISSOURI':'MO','MONTANA':'MT','NEBRASKA':'NE','NEVADA':'NV','OHIO':'OH','OKLAHOMA':'OK','OREGON':'OR','PENNSYLVANIA':'PA','TENNESSEE':'TN','TEXAS':'TX','UTAH':'UT','VERMONT':'VT','VIRGINIA':'VA','WASHINGTON':'WA','WISCONSIN':'WI','WYOMING':'WY'};
-    let _propSt=(_propAddrMatch&&_propAddrMatch[1])||null;
-    if(!_propSt){const _nm=Object.entries(_STNAMES).find(([n])=>_propAddrUpper.includes(n));if(_nm)_propSt=_nm[1];}
+    let _propSt=(typeof stateFromAddr==='function')?stateFromAddr(_prop.clientAddr||''):null;
+    if(!_propSt&&typeof stateFromAddr!=='function'){const _nm=Object.entries(_STNAMES).find(([n])=>_propAddrUpper.includes(n));if(_nm)_propSt=_nm[1];}
     if(!_propSt&&_prop.state)_propSt=_prop.state;
     // Patch old cancellation clause in unsigned proposals, adds mutual obligation so contractor
     // can't keep the deposit without performing. alreadySigned proposals return early at pg-done,

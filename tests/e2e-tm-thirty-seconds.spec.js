@@ -151,8 +151,19 @@ test.describe('a T&M in under thirty seconds', () => {
       .toBe(3 + out.missedBefore);
     // Placed by stage, not appended. A shutoff step at the bottom of the list is
     // the one place it is no use to anybody.
-    expect(out.chips[0], 'the shutoff went to the top where it belongs').toMatch(/water off/i);
-    expect(out.chips[out.chips.length - 1], 'and the haul-off went to the bottom').toMatch(/haul off/i);
+    // THE WHOLE ORDER, not the two ends. Checking only the first and last line
+    // is how "Pressure test" landed third, above "Pull the old water heater",
+    // and this test still passed (2026-09-23): his own steps had no stage Tim
+    // knew, counted as last, and the finish step was slotted ahead of them.
+    expect(out.chips).toEqual([
+      'Shut the water off and drain it down',
+      'Protect the floors along the path in and out',
+      'Pull the old water heater',
+      'Run new pex to the manifold',
+      'Set a tankless',
+      'Pressure test and check every joint for leaks',
+      'Haul off debris and leave the site broom clean',
+    ]);
   });
 
   // One missed step gets no bulk button, because "Add all 1" is not a sentence.
@@ -169,5 +180,52 @@ test.describe('a T&M in under thirty seconds', () => {
     });
     expect(out.missed).toBe(1);
     expect(out.hasAll).toBe(false);
+  });
+
+  // ── What the customer is handed ───────────────────────────────────────────
+  //
+  // Owner, 2026-09-23: "still look damn good and create a professional bid".
+  // The page being quick is half of it; the other half is that nothing on the
+  // document reads like a spreadsheet or like a note to the crew.
+  const docFor = (p, id, addr, days) => p.evaluate(async ([cid, a, d]) => {
+    document.querySelectorAll('.zmodal-overlay,#_prop-preview-ov').forEach(e => e.remove());
+    clients.length = 0; bids.length = 0;
+    clients.push({ id: cid, name: 'Ray Whitcomb', addr: a, phone: '785-555-0142' });
+    currentClientId = cid; openTMEstimate(getClientById(cid));
+    _geiIsTM = true; _tmShowPage();
+    document.getElementById('gei-scope-say').value = 'Pull the old water heater and set a tankless';
+    _geiScopeBuild('tm-scope-wrap'); _geiScopeTakeAllMissed();
+    if (d) { _tmStepAct('est'); document.getElementById('tm-i-days').value = String(d); }
+    _tmInputChange();
+    let doc = '';
+    const prev = window._showProposalPreviewOverlay;
+    window._showProposalPreviewOverlay = h => { doc = h; };
+    try { await sendGenericProposal(true); } catch (e) {}
+    window._showProposalPreviewOverlay = prev;
+    document.getElementById('_prop-preview-ov')?.remove();
+    const el = document.createElement('div'); el.innerHTML = doc;
+    return el.textContent.replace(/\s+/g, ' ');
+  }, [id, addr, days || 0]);
+
+  test('an estimate line reads as English, not as its storage format', async () => {
+    const t = await docFor(page, 88806, '12 Main St, Lancaster, PA 17601', 3);
+    expect(t).toContain('Labor, 1 worker at $');
+    expect(t).toContain('an hour');
+    expect(t).toContain('24 hours');
+    expect(t).not.toMatch(/ @ \$/);
+    expect(t).not.toMatch(/×\d/);
+  });
+
+  test('the customer phone is written like a phone number', async () => {
+    const t = await docFor(page, 88807, '412 Bell St, Topeka, KS 66603');
+    expect(t).toContain('(785) 555-0142');
+  });
+
+  // Tim's steps land on the customer's contract, so they are written for the
+  // customer: "you" there means the homeowner, and "the path you are carrying
+  // through" told the homeowner they were carrying a water heater.
+  test('the steps Tim adds are written for the contract, not to the crew', async () => {
+    const steps = await page.evaluate(() => TIM_IMPLIED.filter(r => r.step).map(r => r.step));
+    expect(steps.filter(s => /\byou\b|\byour\b/i.test(s))).toEqual([]);
   });
 });

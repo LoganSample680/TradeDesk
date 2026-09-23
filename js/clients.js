@@ -659,18 +659,40 @@ function _showEstimateStylePicker(c,overrideAddr){
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
+  // `locked` is either true (no LiDAR on this phone, the original case) or an
+  // object saying why this type is not available here and where to go instead.
   const card=(id,tone,icon,eyebrow,title,sub,bullets,locked)=>{
-    const bul=bullets.map(b=>'<li><span>'+svgIcon('✓')+'</span>'+b+'</li>').join('');
-    const act=locked?'_scanWhyNoLidar()':`_pickEstStyle('${id}')`;
-    return `<button class="chooser-card chooser-${tone}" onclick="${act}"${locked?' style="opacity:.55;filter:grayscale(1)"':''}>
-      <div class="chooser-card-eyebrow"${locked?' style="color:var(--text3)"':''}>${locked?'Needs a Pro iPhone':eyebrow}</div>
+    const lk=locked===true?{eyebrow:'Needs a Pro iPhone',sub:'This phone has no LiDAR sensor to measure with',act:'_scanWhyNoLidar()',cta:'Which iPhones? \u2192'}:locked;
+    const bul=bullets.map(b=>'<li><span>'+svgIcon('\u2713')+'</span>'+b+'</li>').join('');
+    const act=lk?lk.act:`_pickEstStyle('${id}')`;
+    return `<button class="chooser-card chooser-${tone}" data-type="${id}"${lk?' data-locked="1"':''} onclick="${act}"${lk?' style="opacity:.55;filter:grayscale(1)"':''}>
+      <div class="chooser-card-eyebrow"${lk?' style="color:var(--text3)"':''}>${lk?lk.eyebrow:eyebrow}</div>
       <div class="chooser-card-icon">${icon}</div>
       <div class="chooser-card-title">${title}</div>
-      <div class="chooser-card-sub">${locked?'This phone has no LiDAR sensor to measure with':sub}</div>
+      <div class="chooser-card-sub">${lk?lk.sub:sub}</div>
       <ul class="chooser-card-bullets">${bul}</ul>
-      <div class="chooser-card-cta">${locked?'Which iPhones? →':'Start →'}</div>
+      <div class="chooser-card-cta">${lk?lk.cta:'Start \u2192'}</div>
     </button>`;
   };
+  // CALIFORNIA, BEFORE HE BUILDS ANYTHING. B&P 7159 will not take a time and
+  // materials home improvement contract. The builder and the Send button both
+  // stop one too (_tmLegal), but the kind thing is to say so here, on the
+  // screen where he chooses, not after he has written the scope. Home jobs
+  // only: a commercial property is outside the statute.
+  const _pickAddr=(overrideAddr||(c&&c.addr)||'');
+  const _pickSt=(typeof stateFromAddr==='function')?stateFromAddr(_pickAddr):null;
+  const _pickRule=(typeof statePriceRule==='function'&&_pickSt)?statePriceRule(_pickSt):{rule:'none'};
+  const _pickHome=String((c&&c.ptype)||'').toLowerCase()!=='commercial';
+  // A customer with several properties picks the address AFTER the type, so the
+  // primary address is not the job's: their Arizona rental must not be refused
+  // because they live in California. There the builder's own check
+  // (_geiOpenModeAt) stops it once the address is chosen.
+  const _pickMulti=!overrideAddr&&typeof clientAddresses==='function'&&c&&clientAddresses(c).length>1;
+  const _tmLock=(_pickHome&&!_pickMulti&&_pickRule.rule==='block')?{
+    eyebrow:'Not allowed in '+((typeof STATE_NAMES!=='undefined'&&STATE_NAMES[_pickSt])||_pickSt),
+    sub:((typeof STATE_NAMES!=='undefined'&&STATE_NAMES[_pickSt])||_pickSt)+' requires a fixed price on home improvement work',
+    act:"_pickEstStyle('freeform')",
+    cta:'Use Build Your Own \u2192'}:null;
   ov.innerHTML=
     '<div style="max-width:760px;margin:0 auto;padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(40px + env(safe-area-inset-bottom,0px))">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
@@ -685,8 +707,8 @@ function _showEstimateStylePicker(c,overrideAddr){
           ['TrueScan measures every room by LiDAR','TrueMeasure traces any property from above','The right tool opens automatically for your trade'])+
         card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
-        card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
-          ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
+        card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Bill the hours when you can\'t lock in a price',
+          ['Your hourly rate, already filled in','Say the job, Tim writes the steps','The most it can cost, when they want one'],_tmLock)+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);

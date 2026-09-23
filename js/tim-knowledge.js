@@ -65,11 +65,14 @@
 const TIM_STAGES=[
   {k:'access', n:'Access and staging', say:['scaffold','staging','stage the','ladder','lift','boom lift','scissor lift','swing stage','set up','mobilize','permit','pull a permit','shut the water off','kill the power','lock out']},
   {k:'protect',n:'Protect and remove',  say:['mask','masking','drop cloth','cover','protect','plastic off','move furniture','remove gutters','pull the gutters','take the gutters','remove shutters','remove fixtures','take down','pull the trim','disconnect']},
-  {k:'demo',   n:'Tear out',            say:['tear out','tear off','demo','demolition','strip','stripping','scrape','grind','cut out','rip out','haul the old','remove the old','dispose of the old']},
-  {k:'rough',  n:'Rough in',            say:['rough in','rough-in','run wire','pull wire','run romex','run pipe','run conduit','set the panel','stub','dig','trench','frame','excavate','underground']},
+  // 'pull the old', 'take out', 'swap out' and the rest added 2026-09-23: this
+  // list was a painter's, so a water heater coming out of a basement was a step
+  // with no stage, and a step with no stage cannot be put in order.
+  {k:'demo',   n:'Tear out',            say:['tear out','tear off','demo','demolition','strip','stripping','scrape','grind','cut out','rip out','haul the old','remove the old','dispose of the old','pull the old','pull out the old','take out the old','take out','swap out','change out','get rid of','disconnect the old']},
+  {k:'rough',  n:'Rough in',            say:['rough in','rough-in','run wire','pull wire','run romex','run pipe','run conduit','set the panel','stub','dig','trench','frame','excavate','underground','run new','run pex','run copper','run gas','run the line','run a new']},
   {k:'repair', n:'Repair',              say:['replace rotted','rotted','repair','patch','fill','sister','re-sheath','resheath','replace siding','replace trim','replace boards','board for board','wood repair','drywall repair']},
   {k:'prep',   n:'Prep',                say:['prep','pressure wash','power wash','wash','sand','sanding','caulk','prime','primer','tape','etch','skim','feather','clean the surface']},
-  {k:'install',n:'Install',             say:['install','hang','set the','mount','lay','tie in','terminate','trim out','make up','connect','shingle','roof it','set fixtures']},
+  {k:'install',n:'Install',             say:['install','hang','set the','mount','lay','tie in','terminate','trim out','make up','connect','shingle','roof it','set fixtures','set a','set new','set up the new','put in','putting in','put in a','swap in']},
   {k:'finish', n:'Finish',              say:['finish coat','two coats','top coat','topcoat','paint','spray','roll','stain','seal','grout','polish','touch up','touch-up']},
   {k:'restore',n:'Put back',            say:['rehang','re-hang','put back','reinstall','re-install','reset the gutters','rehang gutters','replace fixtures','remount','strike the scaffold','strike scaffold','take the scaffold down']},
   {k:'clean',  n:'Clean up',            say:['haul off','haul away','clean up','cleanup','broom clean','sweep','magnet','dumpster out','final walk','walk through','walkthrough','leave the site']},
@@ -573,6 +576,11 @@ const TIM_IMPLIED=[
   },
   // ── Turn it off before you open it ─────────────────────────────────────────
   //
+  // `step` is CONTRACT VOICE, because it is what lands on the customer's scope
+  // of work: "Protect the floors along the path in and out", never "the path
+  // YOU are carrying through". `say` and `because` are Tim talking to the
+  // contractor and never reach the document.
+  //
   // Three rules and not one, because the step has to name the right shutoff.
   // "Isolate the system" is what a spec writer would put on a contract and it
   // is not a sentence anybody has said on a job site. A rule that fires on the
@@ -596,7 +604,7 @@ const TIM_IMPLIED=[
     id:'access-power-off',
     source:'trade',   // sequence and habit, never a code requirement
     stage:'access',
-    step:'Kill the power at the panel and check it dead',
+    step:'Shut the power off at the panel and verify it is dead',
     say:'Power off first',
     because:'You never said you killed it. Nothing else on this list happens until you have.',
     when:(t,steps)=>{
@@ -620,7 +628,7 @@ const TIM_IMPLIED=[
     id:'protect-path',
     source:'trade',   // sequence and habit, never a code requirement
     stage:'protect',
-    step:'Cover the floor and the path you are carrying through',
+    step:'Protect the floors along the path in and out',
     say:'Cover the path in and out',
     because:'Something heavy goes through a finished house twice. The floor is the callback.',
     supply:{id:'floor-protect',section:'prep',label:'Floor protection and runners',unit:'ea',qty:1},
@@ -633,7 +641,7 @@ const TIM_IMPLIED=[
     id:'finish-test',
     source:'trade',   // sequence and habit, never a code requirement
     stage:'finish',
-    step:'Pressure it up and check every joint',
+    step:'Pressure test and check every joint for leaks',
     say:'Test it before you leave',
     because:'You find the weep, or the customer does at two in the morning.',
     when:(t,steps)=>{

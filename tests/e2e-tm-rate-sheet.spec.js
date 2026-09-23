@@ -92,7 +92,10 @@ test.describe('T&M rate sheet: no total, no day count', () => {
       _tmLayers = new Set(prev); _tmApplyLayers();
       return out;
     });
-    expect(r).toEqual({ total: false, rate: true, days: false, labor: false, hours: false,
+    // rate: false since 2026-09-23 (§10.4). The rail's big rate block restated
+    // the rate card's own summary line ("$45/hr each") in 34px a screen lower,
+    // so it is never shown now. The rate block itself (rateBlk) still is.
+    expect(r).toEqual({ total: false, rate: false, days: false, labor: false, hours: false,
       rateBlk: true, derived: true });
   });
 
@@ -159,7 +162,11 @@ test.describe('T&M rate sheet: no total, no day count', () => {
         });
       }, 400));
     });
-    expect(r.layers, 'the rate, and not one thing he had on the last job').toEqual(['rate']);
+    // ['cap','rate'] since 2026-09-23 (§10.4): the box for the most it can cost
+    // is on the page from the start, EMPTY, so it costs no Add tap. An empty
+    // box is no ceiling (everything reads _tmCapVal() > 0); the next test in
+    // this file holds that it never reaches the document.
+    expect(r.layers, 'the rate and an empty ceiling box, and not one thing he had on the last job').toEqual(['cap', 'rate']);
     expect(r.rateOnly, 'a rate with no day count behind it is a rate sheet').toBe(true);
     // Pre-filled from Settings, so the common case costs him no taps at all.
     expect(r.rate, 'his own labor rate is already on it').toBeGreaterThan(0);
@@ -173,13 +180,16 @@ test.describe('T&M rate sheet: no total, no day count', () => {
       openGenericEstimate(getClientById(77701), null, 'plumbing', { mode: 'tm', forceNew: true });
       return new Promise(res => setTimeout(() => {
         _geiIsTM = true; _tmShowPage();
-        const on = [..._tmLayers];
+        const on = [..._tmLayers].sort();
         _tmDropLayer('rate');
-        res({ on, off: [..._tmLayers] });
+        res({ on, off: [..._tmLayers].sort(), capVal: _tmCapVal() });
       }, 400));
     });
-    expect(r.on).toEqual(['rate']);
-    expect(r.off, 'dropping it leaves a scope-only proposal, which is still a proposal').toEqual([]);
+    expect(r.on).toEqual(['cap', 'rate']);
+    // The empty ceiling box stays; with no figure in it, this IS the scope-only
+    // proposal, which is still a proposal.
+    expect(r.off).toEqual(['cap']);
+    expect(r.capVal, 'an empty box is not a ceiling').toBe(0);
   });
 
   // ── The send gate: days no longer blocks ───────────────────────────────────
@@ -188,6 +198,10 @@ test.describe('T&M rate sheet: no total, no day count', () => {
     const r = await page.evaluate(async () => {
       const prevAlert = window.zAlert; const seen = [];
       window.zAlert = (msg, o) => { seen.push((o && o.title) || String(msg)); };
+      // The send stops are one-button prompts since 2026-09-23 (zConfirm), so
+      // they are caught here too, by their message.
+      const prevConfirm = window.zConfirm; window.__prevConfirm = prevConfirm;
+      window.zConfirm = (msg) => { seen.push(String(msg)); };
       const prevTM = _geiIsTM, prevRO = _tmRateOnly, prevRate = _tmRatePerMan, prevHrs = _tmEstHours;
       const prevScope = window._geiScopeNoScope;
       _geiIsTM = true; _tmRateOnly = true; _tmRatePerMan = 95; _tmEstHours = 0;
@@ -199,43 +213,52 @@ test.describe('T&M rate sheet: no total, no day count', () => {
       try { await sendGenericProposal(false); } catch (e) { seen.push('threw:' + e.message); }
       Object.defineProperty(navigator, 'onLine', { get: () => prevOnline, configurable: true });
       _geiIsTM = prevTM; _tmRateOnly = prevRO; _tmRatePerMan = prevRate; _tmEstHours = prevHrs;
-      window._geiScopeNoScope = prevScope; window.zAlert = prevAlert;
+      window._geiScopeNoScope = prevScope; window.zAlert = prevAlert; window.zConfirm = window.__prevConfirm;
       return seen;
     });
-    expect(r.join('|')).not.toContain('Estimated days required');
-    expect(r.join('|')).not.toContain('Rate required');
+    expect(r.join('|')).not.toContain('number of days');
+    expect(r.join('|')).not.toContain('hourly rate');
   });
 
   test('a rate sheet with no rate is still refused, because the rate IS the bid', async () => {
     const r = await page.evaluate(async () => {
       const prevAlert = window.zAlert; const seen = [];
       window.zAlert = (msg, o) => { seen.push((o && o.title) || String(msg)); };
+      // The send stops are one-button prompts since 2026-09-23 (zConfirm), so
+      // they are caught here too, by their message.
+      const prevConfirm = window.zConfirm; window.__prevConfirm = prevConfirm;
+      window.zConfirm = (msg) => { seen.push(String(msg)); };
       const prevTM = _geiIsTM, prevRO = _tmRateOnly, prevRate = _tmRatePerMan;
       const prevScope = window._geiScopeNoScope;
       _geiIsTM = true; _tmRateOnly = true; _tmRatePerMan = 0;
       window._geiScopeNoScope = true;
       try { await sendGenericProposal(false); } catch (e) { seen.push('threw:' + e.message); }
       _geiIsTM = prevTM; _tmRateOnly = prevRO; _tmRatePerMan = prevRate;
-      window._geiScopeNoScope = prevScope; window.zAlert = prevAlert;
+      window._geiScopeNoScope = prevScope; window.zAlert = prevAlert; window.zConfirm = window.__prevConfirm;
       return seen;
     });
-    expect(r).toContain('Rate required');
+    // Worded as the fix now, not the error (§10.4, 2026-09-23).
+    expect(r.join('|')).toContain('hourly rate');
   });
 
   test('a TOTALLED T&M still demands its estimated days', async () => {
     const r = await page.evaluate(async () => {
       const prevAlert = window.zAlert; const seen = [];
       window.zAlert = (msg, o) => { seen.push((o && o.title) || String(msg)); };
+      // The send stops are one-button prompts since 2026-09-23 (zConfirm), so
+      // they are caught here too, by their message.
+      const prevConfirm = window.zConfirm; window.__prevConfirm = prevConfirm;
+      window.zConfirm = (msg) => { seen.push(String(msg)); };
       const prevTM = _geiIsTM, prevRO = _tmRateOnly, prevRate = _tmRatePerMan, prevHrs = _tmEstHours;
       const prevScope = window._geiScopeNoScope;
       _geiIsTM = true; _tmRateOnly = false; _tmRatePerMan = 95; _tmEstHours = 0;
       window._geiScopeNoScope = true;
       try { await sendGenericProposal(false); } catch (e) { seen.push('threw:' + e.message); }
       _geiIsTM = prevTM; _tmRateOnly = prevRO; _tmRatePerMan = prevRate; _tmEstHours = prevHrs;
-      window._geiScopeNoScope = prevScope; window.zAlert = prevAlert;
+      window._geiScopeNoScope = prevScope; window.zAlert = prevAlert; window.zConfirm = window.__prevConfirm;
       return seen;
     });
-    expect(r).toContain('Estimated days required');
+    expect(r.join('|')).toContain('number of days');
   });
 
   // ── What the lists say where a price would go ──────────────────────────────
@@ -505,10 +528,15 @@ test.describe('T&M rate sheet: no total, no day count', () => {
 
   test('an empty document has no Description heading over nothing', async () => {
     const bare = await buildProposal({ rateOnly: true, bidId: 66601, rate: 95, crew: 1 });
+    // HEADING RENAMED 2026-09-23 (§10.4). "Description" was a column name.
+    // On a rate sheet everything under it is materials, so it says so; a T&M
+    // with an estimate says "What the estimate is made of". The rule this
+    // guards is unchanged: no heading over nothing.
     expect(bare).not.toContain('>Description<');
+    expect(bare).not.toContain('>Materials<');
     const withMats = await buildProposal({ rateOnly: true, bidId: 66601, rate: 95, crew: 1,
       mats: ['Copper and fittings'] });
-    expect(withMats).toContain('>Description<');
+    expect(withMats).toContain('>Materials<');
   });
 
   // ── Concurrency and junk, per §11.1 ───────────────────────────────────────
@@ -908,15 +936,24 @@ test.describe('the cap is worded the way a customer asks for it', () => {
   // now". These tests are about that sentence being TRUE in each shape, because
   // a status line that lies is worse than no status line.
   test.describe('the row says what this proposal currently is', () => {
-    const shapeIn = (layers) => page.evaluate((ks) => {
-      const prev = [..._tmLayers];
-      _tmLayers = new Set(ks);
+    // Reads the rail AND More options, opened, since 2026-09-23: the switches
+    // and the Estimate dependency note moved under More options, so the text
+    // this group is about now lives in two rows. `cap` puts a figure in the
+    // ceiling box, because only a figure is a ceiling now (the box is on the
+    // page, empty, from the start).
+    const shapeIn = (layers, cap) => page.evaluate(([ks, capFig]) => {
+      const prev = [..._tmLayers], prevMore = _tmMoreOpen;
+      const box = document.getElementById('tm-i-nte'), prevCap = box ? box.value : '';
+      if (box) box.value = capFig ? String(capFig) : '';
+      _tmLayers = new Set(ks); _tmMoreOpen = true;
       _tmApplyLayers();
-      const row = document.getElementById('tm-add-row');
-      const txt = (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
-      _tmLayers = new Set(prev); _tmApplyLayers();
+      const txt = ['tm-add-row', 'tm-more-row'].map(id => {
+        const e = document.getElementById(id); return e ? e.textContent : '';
+      }).join(' ').replace(/\s+/g, ' ').trim();
+      if (box) box.value = prevCap;
+      _tmLayers = new Set(prev); _tmMoreOpen = prevMore; _tmApplyLayers();
       return txt;
-    }, layers);
+    }, [layers, cap || 0]);
 
     // The state nobody believes is finished, and the one the owner explicitly
     // asked for in September: "just get the scope signed, no deposit no payment
@@ -943,9 +980,9 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     test('a rate with no day count says there is no total, and points at the ceiling', async () => {
       const t = await shapeIn(['rate']);
       expect(t).toContain('They get a rate, no total');
-      // Sentence-initial now that the line was shortened, hence the capital.
-      expect(t).toContain('Nothing has told it how many days');
-      expect(t).toContain('give them the ceiling');
+      // Reworded 2026-09-23 (§10.4): "give them the ceiling" in the page's one
+      // name for it. Same advice, one word for it on the whole screen.
+      expect(t).toContain('put in the most it can cost');
       expect(t, 'the old advice was to add an estimate, which is the thing T&M exists not to do')
         .not.toContain('Add Estimate to put a number on it');
     });
@@ -960,10 +997,12 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     // because a status line that stops tracking is the thing that made the page
     // untrustworthy in the first place.
     test('and it names every layer that is actually on', async () => {
-      const t = await shapeIn(['rate', 'est', 'mat', 'dep', 'cap']);
+      // A figure in the box: only a figure is a ceiling now (2026-09-23).
+      const t = await shapeIn(['rate', 'est', 'mat', 'dep', 'cap'], 12000);
       expect(t).toContain('plus materials');
       expect(t).toContain('deposit due up front');
-      expect(t).toContain('cannot go past the cap');
+      // Reworded 2026-09-23 (§10.4) into the page's one name for it.
+      expect(t).toContain('never more than $12,000');
     });
 
     // ASSERTION CHANGED 2026-09-22 (§10.4). It used to require the prose

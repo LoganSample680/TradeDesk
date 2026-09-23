@@ -335,7 +335,13 @@ function _licStatusBadge(lic){
 const _STATE_ABBRS=['AL','AK','AZ','AR','CA','CO','CT','DC','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 const _STATE_RE=/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
 function _stateNameOf(st){return(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;}
-function detectStateFromAddr(addr){if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;}
+// Delegates to stateFromAddr (js/legal.js), the one reader every statute
+// lookup uses. The first-match regex this used to run read the street before
+// the state ("300 Ca Ave, Phoenix, AZ" was California). See legal.js.
+function detectStateFromAddr(addr){
+  if(typeof stateFromAddr==='function')return stateFromAddr(addr);
+  if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;
+}
 function _initServiceStates(){
   // Auto-populate from existing client + bid addresses on first use
   const found=new Set();

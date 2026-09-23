@@ -288,10 +288,13 @@ test.describe('the description the client reads', () => {
       _geiScopeChips = [];
       _geiRenderScopeCard('tm');
       const card = document.getElementById('tm-scopecard-wrap');
-      return { mode: _geiScopeCardMode('tm'), add: card.innerHTML.includes('+ Add scope'), wrap: !!document.getElementById('tm-scope-wrap') };
+      return { mode: _geiScopeCardMode('tm'), wrap: !!document.getElementById('tm-scope-wrap'), shown: card.style.display !== 'none' };
     });
+    // CHANGED 2026-09-23 (§10.4): the card no longer carries a "+ Add scope"
+    // button while it is empty, because the box it opens is already on screen
+    // under it. What this guards is unchanged: T&M keeps its scope card.
     expect(r.mode).toBe('full');
-    expect(r.add).toBe(true);
+    expect(r.shown).toBe(true);
     expect(r.wrap).toBe(true);
   });
 
