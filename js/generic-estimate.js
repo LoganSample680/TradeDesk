@@ -7451,6 +7451,16 @@ function _propProjectTitle(texts,trade){
       return w.charAt(0).toUpperCase()+w.slice(1)+' replacement';
     }
   }
+  // A repair, said the way a repair is said ("cut out leaky kitchen sink
+  // drain", "fix the broken shutoff"): the thing, and the word repair. Short
+  // things only, so a whole sentence never ends up as the title.
+  for(const x of t){
+    const m=x.match(/^(?:fix|repair|patch|cut out)\s+(?:the\s+|a\s+|an\s+)?(?:leaky|leaking|broken|cracked|clogged|damaged|failed|bad|rotted|old)?\s*([a-z][a-z \-]{2,40}?)\s*$/i);
+    if(m&&m[1].trim().split(/\s+/).length<=4){
+      const w=m[1].trim().toLowerCase();
+      return w.charAt(0).toUpperCase()+w.slice(1)+' repair';
+    }
+  }
   const all=t.join(' ').toLowerCase();
   // The steps decide, not the trade: a general contractor paints too.
   if(trade==='painting'||/\bpaint(ing)?\b/.test(all)){
@@ -7478,6 +7488,18 @@ function _propPriceRow(label,fine,figure,accent){
     (fine?`<div style="white-space:normal;font-size:12.5px;font-weight:400;line-height:1.45;opacity:.88;margin-top:6px;max-width:520px">${fine}</div>`:'')+
   `</td></tr>`;
 }
+// His words, printed the way a document is written. A line typed in Title
+// Case ("Replace With Pvc") reads as a form field; sentence case with the
+// trade's acronyms in capitals reads as a letter. Only the printed copy
+// changes; what he typed is kept as he typed it.
+const _PROP_ACRONYMS=/\b(pvc|cpvc|pex|abs|gfci|afci|hvac|ac|led|osb|mdf|psi|btu|prv|tpr|gpm|cfm|erv|hrv|lvp|lvt|csst|epa|rrp)\b/gi;
+function _propSentence(t){
+  let s=String(t==null?'':t).trim();
+  const words=s.split(/\s+/).filter(w=>/[a-z]/i.test(w));
+  const title=words.length>=2&&words.filter(w=>/^[A-Z][a-z']*$/.test(w.replace(/[^A-Za-z']/g,''))).length>=Math.ceil(words.length*0.8);
+  if(title)s=s.charAt(0)+s.slice(1).toLowerCase();
+  return s.replace(_PROP_ACRONYMS,m=>m.toUpperCase());
+}
 function _propLogoSrc(){
   if(typeof S==='undefined'||!S)return '';
   const cur=(typeof _hubHash==='function'&&S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'';
@@ -7489,14 +7511,26 @@ function _propMasthead(o){
   const lic=String(o.blic||'').trim();
   const licTxt=lic?((/^\s*(lic|license|licence|#)/i.test(lic)?'':'Lic. ')+escHtml(lic)):'';
   const contact=[o.bphone?escHtml(o.bphone):'',licTxt].filter(Boolean).join(' &nbsp;·&nbsp; ');
-  const mark=logo
-    ?`<img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:64px;max-width:240px;width:auto;height:auto;object-fit:contain">`+
-      (name?`<div style="font-size:14px;font-weight:700;color:#0f172a;margin-top:10px">${name}</div>`:'')
-    :`<div style="font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:${o.accent}">${name}</div>`;
+  // A logo on its own solid tile (measured by _logoEnsureMeta) is an icon:
+  // rounded, beside his name. Anything else is a wordmark with the name under
+  // it. Every logo gets the rounding, which a transparent one never shows.
+  const meta=(typeof S!=='undefined'&&S&&S.logoMeta)||null;
+  const tile=!!(logo&&meta&&meta.solid&&!meta.light&&meta.ratio<=1.6);
+  const mark=!logo
+    ?`<div style="font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:${o.accent}">${name}</div>`
+    :tile
+    ?`<div style="display:flex;align-items:center;gap:16px"><img src="${escHtml(logo)}" alt="${name}" style="display:block;height:72px;width:auto;max-width:116px;border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.18)">`+
+      `<div style="min-width:0">${name?`<div style="font-size:20px;font-weight:800;letter-spacing:-.01em;line-height:1.2;color:#0f172a">${name}</div>`:''}`+
+      (contact?`<div style="font-size:12.5px;color:#475569;margin-top:4px;line-height:1.5">${contact}</div>`:'')+`</div></div>`
+    :`<img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:64px;max-width:240px;width:auto;height:auto;object-fit:contain;border-radius:10px">`+
+      (name?`<div style="font-size:14px;font-weight:700;color:#0f172a;margin-top:10px">${name}</div>`:'');
   return `<div style="height:6px;background:${o.accent}"></div>`+
     `<div style="padding:26px 24px 20px">`+
-      `<div class="brand-logo-slot" style="min-width:0">${mark}`+
-        (contact?`<div style="font-size:12.5px;color:#475569;margin-top:${logo?'2':'8'}px;line-height:1.5">${contact}</div>`:'')+
+      // Not .brand-logo-slot: applyBrandLogo rewrites every one of those on
+      // the page with the app bar's 32px logo, and would wipe this letterhead
+      // if it ran with a preview open.
+      `<div class="prop-mark" style="min-width:0">${mark}`+
+        (contact&&!tile?`<div style="font-size:12.5px;color:#475569;margin-top:${logo?'2':'8'}px;line-height:1.5">${contact}</div>`:'')+
         `<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-top:16px;font-size:12.5px;color:#475569">`+
           `<span style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${o.accent}">${o.label}</span>`+
           `<span>No. ${o.num}</span><span>Date: ${o.date}</span>`+
@@ -7784,7 +7818,7 @@ async function sendGenericProposal(previewOnly,opts){
     const _chipLi=l=>{
       const chip=_allChipDefs.find(c=>c.label===l);
       const desc=chip&&chip.clientDesc?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(chip.clientDesc)}</span>`:'';
-      return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
+      return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(_propSentence(l))}${desc}</li>`;
     };
     // In work order, under the customer's words for each stage, so a long job
     // reads as a plan they can follow instead of a wall of steps. Numbering
@@ -7813,7 +7847,7 @@ async function sendGenericProposal(previewOnly,opts){
       // document already follows.
       const _li=it=>{
         const _q=(Number(it.qty)>1)?` <span style="font-size:12.5px;color:#64748b">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
-        return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(it.label)}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}</li>`;
+        return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(_propSentence(it.label))}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}</li>`;
       };
       // One section is the usual Build Your Own: everything Tim built lands in
       // it, and one heading over the lot says nothing. The customer's stage
@@ -7845,7 +7879,7 @@ async function sendGenericProposal(previewOnly,opts){
     if(_lineScope.length){
       const _rows='<ol style="margin:0 0 10px;padding-left:26px">'+_lineScope.map(l=>{
         const d=String(l.notes||'').trim();
-        return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(l.desc)}${d?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(d)}</span>`:''}</li>`;
+        return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(_propSentence(l.desc))}${d?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(d)}</span>`:''}</li>`;
       }).join('')+'</ol>';
       _scopeBlocks.push(_rows);
     }
