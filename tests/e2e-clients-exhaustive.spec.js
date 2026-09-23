@@ -3283,9 +3283,14 @@ test.describe('clients.js: exhaustive coverage', () => {
     const renameSetup = (o) => page.evaluate(async (o) => {
       const saved = { mile: (typeof mileage !== 'undefined') ? mileage : null,
                       supa: window._supa, user: window._supaUser,
-                      flush: window._flushSaveNow };
+                      flush: window._flushSaveNow, load: window.supaLoadFromCloud };
       const updates = [];
       try {
+        // The stub below only knows update(). A reconnect probe firing inside
+        // the 40ms wait would run a full cloud load against it and log
+        // "select is not a function" (CI shard 4, 2026-09-23), so the load is
+        // parked for the length of the stub.
+        window.supaLoadFromCloud = async () => { };
         window._supaUser = { id: 'own-rename' };
         window._flushSaveNow = () => { };
         window._supa = { from: (tbl) => ({
@@ -3312,7 +3317,7 @@ test.describe('clients.js: exhaustive coverage', () => {
       } finally {
         if (saved.mile) mileage = saved.mile;
         window._supa = saved.supa; window._supaUser = saved.user;
-        window._flushSaveNow = saved.flush;
+        window._flushSaveNow = saved.flush; window.supaLoadFromCloud = saved.load;
       }
     }, o);
 
