@@ -2464,12 +2464,18 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         clients = clients.filter(x => x.id !== 88823).concat([c]);
         const precedes = (a, b) => !!(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
         openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
-        const tm = precedes(document.getElementById('tm-sitenote-wrap'), document.getElementById('tm-scopecard-wrap'));
+        // T&M CHANGED 2026-09-23 (§10.4). The T&M page is three numbered steps
+        // now (owner: "it all looks like it runs together"), and step 1 opens
+        // on the box he writes the job in, the one thing he must do. The crew
+        // note is about the job too, so it stays in step 1, last, and still
+        // comes before anything about the price.
+        const tm = precedes(document.getElementById('tm-scopecard-wrap'), document.getElementById('tm-sitenote-wrap'))
+          && precedes(document.getElementById('tm-sitenote-wrap'), document.getElementById('tm-step-2'));
         openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
         const byo = precedes(document.getElementById('byo-sitenote-wrap'), document.getElementById('byo-scopecard-wrap'));
         return { tm, byo };
       });
-      expect(r.tm, 'T&M note precedes scope card').toBe(true);
+      expect(r.tm, 'T&M note sits in step 1, after the job and before the price').toBe(true);
       expect(r.byo, 'BYO note precedes scope card').toBe(true);
     });
 

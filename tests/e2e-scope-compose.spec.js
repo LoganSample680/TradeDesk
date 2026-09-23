@@ -63,11 +63,17 @@ test.describe('the scope you say out loud', () => {
   test('an empty scope offers the box, not the picker', async () => {
     const t = await page.evaluate(() =>
       (document.getElementById('tm-scope-wrap') || {}).textContent.replace(/\s+/g, ' ').trim());
-    expect(t).toContain('Tell me what you are doing');
-    expect(t).toContain('Build the steps');
+    // T&M CHANGED 2026-09-23 (§10.4). The iOS editor names the section once
+    // ("1 The job" above the box), and its one button is the bar pinned to
+    // the bottom of the screen, which reads Build the steps until there are
+    // some. Owner: "does it look like something a pro UX designer would
+    // ship? I don't think so." The box still offers itself first.
+    expect(t).toContain('Say it the way you would tell your crew');
+    const bar = await page.evaluate(() => (document.getElementById('tm-dock') || {}).textContent || '');
+    expect(bar).toContain('Build the steps');
     // The list is still reachable. Retiring a thing people rely on is a one
     // way door, and this has been live for one afternoon.
-    expect(t).toContain('Or pick from a list');
+    expect(t).toContain('Pick from a list');
   });
 
   test('the box is a real field with a worked example in it', async () => {

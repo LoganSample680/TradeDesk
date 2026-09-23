@@ -942,15 +942,22 @@ test.describe('the cap is worded the way a customer asks for it', () => {
     // ceiling box, because only a figure is a ceiling now (the box is on the
     // page, empty, from the start).
     const shapeIn = (layers, cap) => page.evaluate(([ks, capFig]) => {
-      const prev = [..._tmLayers], prevMore = _tmMoreOpen;
+      const prev = [..._tmLayers], prevMore = _tmMoreOpen, prevChips = _geiScopeChips.slice();
+      // A job on it (2026-09-23, §10.4): the page is what he would send, and
+      // with no job there is nothing yet to describe.
+      if (!_geiScopeChips.length) _geiScopeChips = ['Set the new vanity and top'];
       const box = document.getElementById('tm-i-nte'), prevCap = box ? box.value : '';
       if (box) box.value = capFig ? String(capFig) : '';
       _tmLayers = new Set(ks); _tmMoreOpen = true;
       _tmApplyLayers();
-      const txt = ['tm-add-row', 'tm-more-row'].map(id => {
+      // tm-sec-bill since the iOS makeover (2026-09-23): the Next tag and its
+      // reason sit on the field, and the plain-English read-back is Billing's
+      // footnote. It contains tm-more-row.
+      const txt = ['tm-add-row', 'tm-sec-bill'].map(id => {
         const e = document.getElementById(id); return e ? e.textContent : '';
       }).join(' ').replace(/\s+/g, ' ').trim();
       if (box) box.value = prevCap;
+      _geiScopeChips = prevChips;
       _tmLayers = new Set(prev); _tmMoreOpen = prevMore; _tmApplyLayers();
       return txt;
     }, [layers, cap || 0]);
@@ -1025,7 +1032,25 @@ test.describe('the cap is worded the way a customer asks for it', () => {
       const t = await shapeIn(['mat']);
       await page.evaluate(() => { _geiScopeChips = []; });
       expect(t).toContain('no labor rate');
+      // The rate's own label since the iOS makeover (§10.4, 2026-09-23). With
+      // the rate switched off its row is hidden, so the step gets a row of its
+      // own with an Add, and that row must be the one saying Next.
+      // No "Next" since 2026-09-23 (§10.4): materials without a rate is a
+      // proposal he may send, so the bar says Send and the rate is offered
+      // as a row with an Add, not as the next thing he must do.
       expect(t).toContain('Your rate');
+      expect(t).not.toContain('Your rate Next');
+      const add = await page.evaluate(() => {
+        const prev = [..._tmLayers], prevChips = _geiScopeChips.slice();
+        _geiScopeChips = ['Set the new vanity and top'];
+        _tmLayers = new Set(['mat']); _tmApplyLayers();
+        const out = { btns: [...document.querySelectorAll('#tm-add-row button')].map(b => b.textContent.trim()),
+          rateRowShown: document.getElementById('tm-blk-rate').style.display !== 'none' };
+        _geiScopeChips = prevChips; _tmLayers = new Set(prev); _tmApplyLayers();
+        return out;
+      });
+      expect(add.rateRowShown, 'the precondition: the rate row is off the page').toBe(false);
+      expect(add.btns).toContain('Add');
     });
 
     // Tapping Estimate turns Rate on with it (_tmAddLayer follows `needs`),
@@ -1497,14 +1522,22 @@ test.describe('the ceiling leads, not the guess', () => {
       _geiIsTM = true;
       _tmLayers = new Set(['rate']); _tmRatePerMan = 95;
       const e = document.getElementById('tm-i-rate'); if (e) e.value = '95';
+      _geiScopeChips = ['x'];
       _tmApplyLayers();
-      const row = document.getElementById('tm-add-row');
-      return (row ? row.textContent : '').replace(/\s+/g, ' ').trim();
+      // The rail AND the Billing section since the iOS makeover (2026-09-23),
+      // and the bar at the bottom, which names the next thing (tm-dock).
+      return ['tm-add-row', 'tm-sec-bill', 'tm-dock'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ').replace(/\s+/g, ' ').trim();
     });
     // "Next", not "Do this next": the step that is next is now the only one
     // with a card, a sentence and a button, so the tag stopped carrying the
     // whole signal and got out of the label's way.
-    expect(t).toContain('Next');
+    // CHANGED 2026-09-23 (§10.4): no tag on an optional field at all. The bar
+    // at the bottom names the next thing and takes him to it; a "Next" on the
+    // field as well was the same instruction twice (owner: "does it look like
+    // something a pro UX designer would ship?"). With a job and a rate the
+    // bar is Send, and the ceiling is simply there, blank, to fill or not.
+    expect(t).not.toContain('Next');
+    expect(t).toContain('Send it');
     expect(t).toContain('The most it can cost');
     // Folded into step 4 rather than sitting in a card of its own, which is how
     // four steps were added without making the panel taller.
@@ -1552,11 +1585,14 @@ test.describe('the ceiling leads, not the guess', () => {
         sv('tm-i-nte', '');
         _tmLayers = new Set(cfg.layers);
         _tmApplyLayers();
-        const row = document.getElementById('tm-add-row');
-        const txt = (row ? row.textContent : '');
+        const txt = ['tm-add-row', 'tm-sec-bill'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ');
         return _tmSteps().filter(x => x.k !== 'send' && txt.indexOf(x.why) >= 0).length;
       }, setup);
-      expect(t, 'more than one step had its sentence on screen for ' + JSON.stringify(setup)).toBe(1);
+      // AT MOST one since 2026-09-23 (§10.4). When the next thing is the work
+      // itself, nothing carries a Next marker: with nothing written, the box to
+      // write it in is the first thing on the screen, and a marker pointing at
+      // it from further down would be the duplicate this page keeps shedding.
+      expect(t, 'more than one step had its sentence on screen for ' + JSON.stringify(setup)).toBeLessThanOrEqual(1);
     }
   });
 
@@ -1579,18 +1615,19 @@ test.describe('the ceiling leads, not the guess', () => {
       const n = document.getElementById('tm-i-nte'); if (n) n.value = '';
       _geiScopeChips = ['x'];
       _tmApplyLayers();
-      const row = document.getElementById('tm-add-row');
-      return (row ? row.textContent : '').replace(/\s+/g, ' ');
+      const edit = ['tm-add-row', 'tm-sec-bill'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ').replace(/\s+/g, ' ');
+      return { edit, review: edit };
     });
     // Done: the work and the rate. Neither is mentioned.
-    expect(t, 'a finished step was still taking a line').not.toContain('The work');
-    expect(t, 'the rate is stated twice on one page').not.toContain('Your rate');
-    expect(t, 'the figure belongs to the rail').not.toContain('$95/hr each');
-    // Not done: the ceiling, which is the only thing he is asked for.
-    expect(t).toContain('The most it can cost');
-    expect(t).toContain('Next');
-    // And what he would be sending if he stopped here.
-    expect(t).toContain('They get a rate, no total');
+    expect(t.edit, 'a finished step was still taking a line').not.toContain('The work');
+    expect(t.edit, 'the rate is stated twice on one page').not.toContain('Your rate');
+    expect(t.edit, 'the figure belongs to the rail').not.toContain('$95/hr each');
+    // Not done: the ceiling, optional, on the page with no tag (2026-09-23,
+    // §10.4: the bar names the next thing, so the field does not).
+    expect(t.edit).toContain('The most it can cost');
+    expect(t.edit).not.toContain('Next');
+    // And what he would be sending if he stopped here, under the fields.
+    expect(t.review).toContain('They get a rate, no total');
   });
 
   // ── A SECTION HE HAS ANSWERED SAYS ONE LINE ───────────────────────────────
@@ -1605,17 +1642,16 @@ test.describe('the ceiling leads, not the guess', () => {
   // What a wizard is good at, never showing more than is needed, comes from
   // folding instead: a card he has filled says its label and its figure, the
   // one he has not is open and waiting.
-  test.describe('the page grows as he answers', () => {
-    const state = (id) => page.evaluate((x) => {
-      const card = document.getElementById(x);
-      const bar = card && card.querySelector(':scope > .tm-fold');
-      return {
-        fold: card && card.getAttribute('data-fold'),
-        bar: !!bar,
-        text: bar ? bar.textContent.replace(/\s+/g, ' ').trim() : '',
-      };
-    }, id);
-
+  // REPLACED 2026-09-23 (§10.4): "the page grows as he answers" held the fold,
+  // which turned the rate and the ceiling cards into one-line summaries that
+  // opened on a tap. The iOS makeover made each of them ONE ROW with the figure
+  // typed straight into it, so there is nothing left to fold and a summary
+  // line over a one-line field is a tap for nothing. The four things that
+  // group was really guarding are held here against the rows instead: the
+  // figure is always in view, nothing closes under his thumb on a redraw,
+  // whether the customer reads the rate is always on screen, and getting to
+  // the rate costs no extra tap.
+  test.describe('the rate and the ceiling are rows, not folds', () => {
     const fill = (rate, cap) => page.evaluate((c) => {
       _geiIsTM = true;
       _tmLayers = new Set(['rate', 'cap']);
@@ -1625,135 +1661,80 @@ test.describe('the ceiling leads, not the guess', () => {
       sv('tm-i-nte', c.cap == null ? '' : String(c.cap));
       const crew = document.getElementById('tm-i-crew-count');
       if (crew) crew.textContent = '2';
-      _tmOpen = new Set();
       _tmInputChange();
       _tmApplyLayers();
     }, { rate, cap });
+    const rows = () => page.evaluate(() => ['tm-blk-rate', 'tm-blk-nte'].map(id => {
+      const el = document.getElementById(id);
+      return { id, fold: el.getAttribute('data-fold'), bars: el.querySelectorAll('.tm-fold').length };
+    }));
 
-    // A fold with nothing behind it is a door to an empty room.
-    test('a section with nothing in it stays open', async () => {
+    test('answered or not, neither one folds away', async () => {
       await fill(null, null);
-      const r = await state('tm-blk-nte');
-      expect(r.fold).toBe('0');
-    });
-
-    test('a section he has answered folds to its label and its figure', async () => {
+      expect(await rows()).toEqual([{ id: 'tm-blk-rate', fold: null, bars: 0 }, { id: 'tm-blk-nte', fold: null, bars: 0 }]);
       await fill(95, '12,000');
-      const cap = await state('tm-blk-nte');
-      expect(cap.fold).toBe('1');
-      expect(cap.text).toContain('The most it can cost');
-      expect(cap.text).toContain('$12,000');
+      expect(await rows()).toEqual([{ id: 'tm-blk-rate', fold: null, bars: 0 }, { id: 'tm-blk-nte', fold: null, bars: 0 }]);
     });
 
-    // The figure is his, down to the crew standing in it.
-    test('the rate line says the rate and who is on site', async () => {
+    test('the figures are on the rows themselves, crew included', async () => {
       await fill(95, '12,000');
-      const r = await state('tm-blk-rate');
-      expect(r.fold).toBe('1');
-      expect(r.text).toContain('$95/hr each');
-      expect(r.text).toContain('2 on site');
+      const r = await page.evaluate(() => ({
+        rate: document.getElementById('tm-i-rate').value,
+        cap: document.getElementById('tm-i-nte').value,
+        crew: document.getElementById('tm-i-crew-count').textContent,
+        rateVisible: document.getElementById('tm-blk-rate').style.display !== 'none',
+      }));
+      expect(r).toEqual({ rate: '95', cap: '12,000', crew: '2', rateVisible: true });
     });
 
-    // THE ONE THE FOLD BROKE. The hide-rate toggle lives inside this card, so
-    // folding it hid the most consequential fact about the number on the line
-    // above. And the preference is sticky (S.tmHideRate follows him to the
-    // tablet), so a man who turned it on months ago and forgot would fold this
-    // card on every job and never be told again.
-    test('the folded rate line says when the customer will not see it', async () => {
+    test('nothing closes under his thumb on a redraw', async () => {
+      await fill(95, '12,000');
+      await page.evaluate(() => { for (let i = 0; i < 5; i++) { _tmInputChange(); _tmApplyLayers(); } });
+      expect(await rows()).toEqual([{ id: 'tm-blk-rate', fold: null, bars: 0 }, { id: 'tm-blk-nte', fold: null, bars: 0 }]);
+    });
+
+    // THE ONE THE FOLD BROKE, held the new way: whether the customer reads the
+    // rate is a switch on the row directly under it, so it is always in view.
+    test('whether the customer reads the rate is a switch right under it', async () => {
       await fill(95, '12,000');
       await page.evaluate(() => _tmSetHideRate(true));
-      const on = await state('tm-blk-rate');
-      expect(on.fold, 'it had to still be folded for this to mean anything').toBe('1');
-      expect(on.text).toContain('$95/hr each');
-      expect(on.text, 'the fold hid whether the rate is even on the proposal')
-        .toContain('off the proposal');
-      await page.evaluate(() => _tmSetHideRate(false));
-      const off = await state('tm-blk-rate');
-      // Printing the rate is what a T&M contract normally does. Only the
-      // exception is marked; a badge on every proposal is the noise this page
-      // spent the day shedding.
-      expect(off.text).not.toContain('off the proposal');
-      expect(off.text).toContain('$95/hr each');
+      const on = await page.evaluate(() => { _tmApplyLayers(); const x = document.getElementById('tm-hide-rate'); return x && x.checked; });
+      expect(on).toBe(true);
+      await page.evaluate(() => { _tmSetHideRate(false); _tmApplyLayers(); });
+      const off = await page.evaluate(() => document.getElementById('tm-hide-rate').checked);
+      expect(off).toBe(false);
     });
 
-    // Where a statute makes the rate a required term the flag is forced off, so
-    // the line must never claim a proposal is missing a term it is carrying.
-    test('a state that requires the rate never shows that line', async () => {
+    test('a state that requires the rate shows it locked on, never a switch he can use', async () => {
       await fill(95, '12,000');
-      await page.evaluate(() => {
-        _tmSetHideRate(true);
-        const a = document.getElementById('gei-addr');
-        if (a) a.value = '12 Main St, Philadelphia PA 19103';
-        _tmInputChange(); _tmApplyLayers();
+      const r = await page.evaluate(() => {
+        const a = document.getElementById('gei-addr'); if (a) a.value = '12 Main St, Philadelphia PA 19103';
+        _tmApplyLayers();
+        const w = document.getElementById('tm-hide-rate-wrap');
+        const out = { usable: !!document.getElementById('tm-hide-rate'), locked: !!w.querySelector('input[disabled]'),
+          txt: w.textContent.replace(/\s+/g, ' ') };
+        if (a) a.value = '700 Rate Rd, Wichita KS 67202'; _tmApplyLayers();
+        return out;
       });
-      const r = await state('tm-blk-rate');
-      expect(r.text).not.toContain('off the proposal');
-      await page.evaluate(() => {
-        const a = document.getElementById('gei-addr');
-        if (a) a.value = '700 Rate Rd, Wichita KS 67202';
-        _tmSetHideRate(false); _tmApplyLayers();
-      });
-    });
-
-    test('tapping one opens it, and it stays open through a redraw', async () => {
-      await fill(95, '12,000');
-      await page.evaluate(() => _tmFoldToggle('tm-blk-rate'));
-      expect((await state('tm-blk-rate')).fold).toBe('0');
-      // Anything at all can trigger _tmApplyLayers. It must not shut under his
-      // thumb while he is typing in it.
-      await page.evaluate(() => { _tmInputChange(); _tmApplyLayers(); });
-      expect((await state('tm-blk-rate')).fold).toBe('0');
-      // And the one he did not open is still folded.
-      expect((await state('tm-blk-nte')).fold).toBe('1');
+      expect(r.usable).toBe(false);
+      expect(r.locked).toBe(true);
+      expect(r.txt).toContain('Pennsylvania');
     });
 
     // Owner, 2026-09-22: "the rates and crew updating it was a extra tap I had
-    // ti hit to edit." Before the fold, the rate field was on screen and
-    // editing it was one tap. Folded it was two, on the card he touches on
-    // every single job, which is the opposite of a 30 second proposal.
-    test('opening a card puts the caret in it, so the fold costs no taps', async () => {
-      const id = await page.evaluate(() => {
-        // The PAGE has to be on screen. An element inside a display:none
-        // ancestor cannot take focus, and reads as visible from its own
-        // computed style, so a test that skips this passes or fails for
-        // reasons that have nothing to do with the fold.
+    // ti hit to edit." A row is one tap: the whole row is a label for its box.
+    test('the whole row is the target, and Add lands the caret in the box', async () => {
+      const r = await page.evaluate(() => {
         clients = clients.filter(c => c.id !== 77714).concat([{ id: 77714,
-          name: 'Fold Focus', addr: '714 Fold Rd, Wichita KS 67202' }]);
+          name: 'Row Focus', addr: '714 Row Rd, Wichita KS 67202' }]);
         openGenericEstimate(clients.filter(c => c.id === 77714)[0], null, 'plumbing');
         _geiIsTM = true; _tmShowPage();
-        _tmLayers = new Set(['rate', 'cap']);
-        const sv = (i, v) => { const e = document.getElementById(i); if (e) e.value = v; };
-        sv('tm-i-rate', '95'); sv('tm-i-nte', '12,000');
-        _tmOpen = new Set();
-        _tmInputChange(); _tmApplyLayers();
-        _tmFoldToggle('tm-blk-rate');
-        return document.activeElement ? document.activeElement.id : null;
+        const lbl = document.getElementById('tm-i-rate').closest('label');
+        _tmStepAct('cap');
+        return { rowIsLabel: !!lbl, focused: document.activeElement ? document.activeElement.id : null };
       });
-      expect(id, 'he still has to go find the field himself').toBe('tm-i-rate');
-    });
-
-    test('tapping it again puts it away', async () => {
-      await fill(95, '12,000');
-      await page.evaluate(() => { _tmFoldToggle('tm-blk-rate'); _tmFoldToggle('tm-blk-rate'); });
-      expect((await state('tm-blk-rate')).fold).toBe('1');
-    });
-
-    // Emptying a field has to reopen it, or the only way back to a box he just
-    // cleared is to remember it is behind a line that now says nothing.
-    test('clearing the figure opens the section back up', async () => {
-      await fill(95, '12,000');
-      expect((await state('tm-blk-nte')).fold).toBe('1');
-      await fill(95, null);
-      expect((await state('tm-blk-nte')).fold).toBe('0');
-    });
-
-    test('the bar is one control per section, not one per redraw', async () => {
-      await fill(95, '12,000');
-      const n = await page.evaluate(() => {
-        for (let i = 0; i < 5; i++) _tmApplyLayers();
-        return document.getElementById('tm-blk-rate').querySelectorAll(':scope > .tm-fold').length;
-      });
-      expect(n, 'a fold bar was appended on every render').toBe(1);
+      expect(r.rowIsLabel).toBe(true);
+      expect(r.focused).toBe('tm-i-nte');
     });
   });
 

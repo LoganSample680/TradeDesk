@@ -7117,7 +7117,9 @@ test.describe('UI cleanup, redundant elements removed', () => {
       if (el) el.style.display = 'block';
       if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('tm', 'Time &amp; Materials proposal', '_editTMTitle');
     });
-    const backBtns = await page.locator('#gei-tm-page .tbar .link-back').count();
+    // The iOS nav bar since 2026-09-23 (§10.4): Back on the left of the one
+    // bar, where the .tbar's "← Job type" link used to be. Still exactly one.
+    const backBtns = await page.locator('#gei-tm-page [aria-label="Back"]').count();
     expect(backBtns).toBe(1);
   });
 
