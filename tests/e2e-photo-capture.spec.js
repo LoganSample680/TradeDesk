@@ -2094,6 +2094,12 @@ test.describe('TrueShot: marking a photo up', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Park the cloud load for the whole block. openEditor closes the gap
+    // inside its own evaluate, but every test then reaches for the row in a
+    // SECOND evaluate, and a reload landing between the two empties photos
+    // (webkit shard 3, 2e7c546: "undefined is not an object" on p.url).
+    // Same park as the sheet block above; nothing here tests cloud loading.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => {
