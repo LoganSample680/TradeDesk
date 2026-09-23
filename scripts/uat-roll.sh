@@ -103,6 +103,47 @@ if ! git merge --no-edit -q "$BRANCH"; then
   git commit -q --no-edit || { echo "uat-roll: merge commit failed." >&2; exit 1; }
 fi
 
+# ── NOTHING UAT HAD MAY VANISH (owner 2026-09-23: "I bet it has") ──────────
+# It had. An audit of every roll found the --theirs bug above deleting code
+# twice: the Tim session's sign-out privacy fix, and the call that starts the
+# county property sync. Neither produced a conflict or a message. Fixing the
+# resolver closes that one door; this closes the whole class, whatever the
+# next cause turns out to be.
+#
+# The rule is simple and it is exact: a line that uat ADDED since the two
+# branches last met cannot quietly disappear in a merge. The incoming branch
+# never had that line, so it cannot have meant to delete it. If one is gone,
+# something ate it, and the roll stops before the push rather than after.
+#
+# A human resolving a real conflict by rewriting uat's lines will trip this,
+# on purpose: it prints exactly what would be lost. When that loss is the
+# intent, UAT_ROLL_ALLOW_DROP=1 lets it through.
+BASE="$(git merge-base origin/uat "$BRANCH" 2>/dev/null)"
+if [ -n "$BASE" ] && [ "${UAT_ROLL_ALLOW_DROP:-0}" != "1" ]; then
+  LOST=""
+  for f in $(git diff --name-only "$BASE" origin/uat -- '*.js' '*.html' '*.css' '*.sql' '*.ts' 2>/dev/null); do
+    git cat-file -e "HEAD:$f" 2>/dev/null || continue
+    gone="$(perl -e '
+      my ($base,$uat,$now)=@ARGV; my (%b,%n);
+      open(B,"-|","git","show","$base") and do { while(<B>){$b{$_}=1} close B };
+      open(N,"-|","git","show","$now")  and do { while(<N>){$n{$_}=1} close N };
+      open(U,"-|","git","show","$uat") or exit;
+      while(<U>){ next if /^\s*$/; next if /APP_VERSION|CACHE|"version"/;
+        print "      - $_" if !$b{$_} && !$n{$_}; }
+    ' "$BASE:$f" "origin/uat:$f" "HEAD:$f" 2>/dev/null | head -6)"
+    [ -n "$gone" ] && LOST="$LOST    $f"$'\n'"$gone"$'\n'
+  done
+  if [ -n "$LOST" ]; then
+    echo "" >&2
+    echo "uat-roll: STOPPED. This roll would delete code that is live on UAT:" >&2
+    printf '%s' "$LOST" >&2
+    echo "" >&2
+    echo "  Nothing was pushed. If losing these lines is deliberate, re-run with" >&2
+    echo "  UAT_ROLL_ALLOW_DROP=1. Otherwise the merge ate them: resolve by hand." >&2
+    restore; exit 1
+  fi
+fi
+
 # The deploy commit must NOT carry the skip token, or Cloudflare skips the
 # build and uat silently stays on the old code (CLAUDE.md 14.1).
 git commit -q --allow-empty -m "UAT deploy"
