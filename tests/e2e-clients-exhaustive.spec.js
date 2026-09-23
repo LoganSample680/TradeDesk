@@ -4422,7 +4422,9 @@ test.describe('clients.js: exhaustive coverage', () => {
       // assertion changed because the behaviour deliberately changed.
       const r = await withClients(page, [
         { id: 9004 },                                                                                        // no address at all
-        { id: 9005, addr: '5 Real St', properties: { '5 real st': { propDataSource: 'county', propDataFetchedAt: 1 } } }, // genuinely done
+        // propDataV added 2026-09-23: a county record in the CURRENT shape is
+        // done; one in an older shape is re-read once (tests below).
+        { id: 9005, addr: '5 Real St', properties: { '5 real st': { propDataSource: 'county', propDataFetchedAt: 1, propDataV: 2 } } }, // genuinely done
         { id: 9006, addr: '6 Real St' },                                                                     // the only work
       ]);
       expect(r.threw).toBeNull();
@@ -4531,6 +4533,51 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(p.sqft, 'but everything else still lands').toBe(900);
     });
 
+    // Owner 2026-09-23: "how can we get them all to re run a check?" Records
+    // applied before soil and flood existed carry none of it. They re-read our
+    // own table once; the county is never contacted for them.
+    test('a county record in an older shape re-reads once and picks up the new fields', async () => {
+      const r = await withClients(page,
+        [{ id: 9070, addr: '70 Old St', properties: { '70 old st': { propDataSource: 'county', yearBuilt: 1955, ownerName: 'HAND TYPED' } } }],
+        [{ q: '70 Old St', year_built: 1899, owner_name: 'COUNTY SAYS', soil_desc: 'Ladysmith silty clay loam', flood_zone: 'none', flood_sfha: false, county_name: 'Shawnee', state: 'KS' }]);
+      expect(r.threw).toBeNull();
+      expect(r.asked).toEqual(['70 Old St']);
+      const p = r.after.find((c) => c.id === 9070).props['70 old st'];
+      expect(p.propDataSoil).toBe('Ladysmith silty clay loam');
+      expect(p.propDataFloodZone).toBe('none');
+      expect(p.propDataV).toBe(2);
+      expect(p.yearBuilt, 'a refresh never overwrites a hand-entered year').toBe(1955);
+      expect(p.ownerName).toBe('HAND TYPED');
+    });
+
+    test('a refresh that finds nothing in the table changes nothing and asks the county nothing', async () => {
+      const r = await page.evaluate(async () => {
+        window._PROP_DRIP_PER_SESSION = 10;
+        const asked = [];
+        const orig = window._lookupPropertyData;
+        window._lookupPropertyData = (id, pp) => { asked.push(pp && pp.street); return Promise.resolve(true); };
+        const saved = clients.slice(); const savedSupa = window._supa;
+        clients.length = 0;
+        clients.push({ id: 9071, addr: '71 Gone St', properties: { '71 gone st': { propDataSource: 'county', yearBuilt: 1990 } } });
+        window._supa = { ...savedSupa, rpc: async () => ({ data: [], error: null }) };
+        try { await _syncPropertyData(); return { asked, p: clients[0].properties['71 gone st'] }; }
+        finally { window._lookupPropertyData = orig; clients.length = 0; saved.forEach((c) => clients.push(c)); window._supa = savedSupa; }
+      });
+      expect(r.asked, 'the drip must not re-ask an answered address').toEqual([]);
+      expect(r.p.propDataSource).toBe('county');
+      expect(r.p.yearBuilt).toBe(1990);
+    });
+
+    test('a recorded county miss is not refreshed, and a current record is not re-read', async () => {
+      const r = await withClients(page, [
+        { id: 9072, addr: '72 Miss St', properties: { '72 miss st': { propDataSource: 'county', propDataMiss: true } } },
+        { id: 9073, addr: '73 New St', properties: { '73 new st': { propDataSource: 'county', propDataV: 2 } } },
+        { id: 9074, addr: '74 Old St', properties: { '74 old st': { propDataSource: 'county', propDataV: 1 } } },
+      ]);
+      expect(r.threw).toBeNull();
+      expect(r.asked).toEqual(['74 Old St']);
+    });
+
     test('EXISTING clients stamped by the dead Zillow scraper are re-asked', async () => {
       // The backfill, and the reason _propAnswered exists at all. The old
       // scraper stamped propDataFetchedAt on every FAILURE, deliberately, to
@@ -4589,7 +4636,7 @@ test.describe('clients.js: exhaustive coverage', () => {
       // The drip itself is asserted on the source, because the sandbox stubs
       // the RPC and never reaches the Edge Function.
       const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'clients.js'), 'utf8');
-      expect(src, 'a join miss must be queued').toMatch(/else unanswered\.push\(w\);/);
+      expect(src, 'a join miss must be queued').toMatch(/else if\(!w\.refresh\)unanswered\.push\(w\);/);
       expect(src, 'and chased, capped per session').toMatch(/_dripCap=window\._PROP_DRIP_PER_SESSION/);
       expect(src, 'the cap actually bounds the loop').toMatch(/i<unanswered\.length&&i<_dripCap/);
       expect(src, 'paced between asks').toMatch(/window\._PROP_DRIP_GAP_MS/);
