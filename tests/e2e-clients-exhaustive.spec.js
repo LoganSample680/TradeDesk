@@ -3119,7 +3119,7 @@ test.describe('clients.js: exhaustive coverage', () => {
             mgrHasValue: mgr.includes('$250K'), mgrHasAmount: /\$4,200/.test(mgr), mgrHasPaidTotal: mgr.includes('paid'),
             // Regression guard: this address has an unpaid $4,200 proposal, so the
             // header stat slot shows "Owed". Est. value must still appear (in the
-            // facts line) rather than being silently pushed off the card.
+            // county facts block, "Owner & value") rather than being pushed off.
             mgrHasOwed: mgr.includes('Owed'),
           };
         } finally {
@@ -3136,6 +3136,146 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.mgrHasPaidTotal).toBe(true);
       // Owed and est. value coexist: one does not evict the other.
       expect(r.mgrHasOwed).toBe(true);
+    });
+
+    // Owner 2026-09-22: "the county stuff seems slapped in and what about soil
+    // type and all that good stuff and the year built?" Soil, flood and tax sale
+    // were fetched and stored but never reached the card, because
+    // _propApplyMatch dropped every field the card had no slot for.
+    test('_propApplyMatch: carries soil, flood, tax sale and the lot/deed facts onto the property', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970140;
+        const c = { id: cid, name: 'Ground Co', addr: '1 Ground St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        _propApplyMatch(c, '1 Ground St', {
+          year_built: 1880, year_built_to: 1995, sqft: 2026, soil_desc: 'Chase silt loam, occasionally flooded',
+          flood_zone: 'A', flood_sfha: true, tax_sale_year: 2025, tax_sale_case: '2025-TS-001',
+          frontage_ft: 88, depth_ft: 135, basement_desc: 'Full', deed_book_page: '2019R10360',
+          parcel_number: '0930600001001010', land_value: 33350, improvement_value: 292350, subdivision: 'HIDDEN VALLEY',
+          living_units: 1, building_count: 1, land_sqft: 82743.5, source: 'county',
+        });
+        return getProperty(c, '1 Ground St');
+      });
+      expect(r.propDataSoil).toBe('Chase silt loam, occasionally flooded');
+      expect(r.propDataFloodZone).toBe('A');
+      expect(r.propDataFloodSfha).toBe(true);
+      expect(r.propDataTaxSaleYear).toBe(2025);
+      expect(r.propDataTaxSaleCase).toBe('2025-TS-001');
+      expect(r.propDataYearTo).toBe(1995);
+      expect(r.propDataFrontage).toBe(88);
+      expect(r.propDataDeed).toBe('2019R10360');
+      expect(r.propDataBldgValue).toBe(292350);
+    });
+
+    test('_propApplyMatch: flood_sfha false is kept (a "no" is an answer), nulls are not written', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970141;
+        const c = { id: cid, name: 'Dry Co', addr: '2 Dry St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        _propApplyMatch(c, '2 Dry St', { year_built: 2003, flood_zone: 'none', flood_sfha: false, soil_desc: null, tax_sale_year: null, source: 'county' });
+        const p = getProperty(c, '2 Dry St');
+        return { sfha: p.propDataFloodSfha, zone: p.propDataFloodZone, hasSoil: 'propDataSoil' in p, hasTax: 'propDataTaxSaleYear' in p };
+      });
+      expect(r.sfha).toBe(false);
+      expect(r.zone).toBe('none');
+      expect(r.hasSoil).toBe(false);
+      expect(r.hasTax).toBe(false);
+    });
+
+    test('_cdCountyFactsHtml: null / empty input renders nothing and never throws', async () => {
+      const r = await page.evaluate(() => {
+        const out = {};
+        for (const [k, v] of [['null', null], ['undef', undefined], ['empty', {}]]) {
+          try { out[k] = _cdCountyFactsHtml(v, true); } catch (e) { out[k] = 'THREW ' + e.message; }
+        }
+        return out;
+      });
+      expect(r.null).toBe('');
+      expect(r.undef).toBe('');
+      expect(r.empty).toBe('<div class="cdf"></div>');
+    });
+
+    test('_cdCountyFactsHtml: flood hazard, soil, tax sale and lead all render; flood "no" is stated plainly', async () => {
+      const r = await page.evaluate(() => {
+        const wet = _cdCountyFactsHtml({ yearBuilt: 1880, sqft: 2026, bedrooms: 3, bathrooms: 2.5,
+          propDataSoil: 'Chase silt loam, occasionally flooded', propDataFloodZone: 'A', propDataFloodSfha: true,
+          propDataTaxSaleYear: 2025, propDataTaxSaleCase: '2025-TS-001', propDataDeed: '2019R10360' }, true);
+        const dry = _cdCountyFactsHtml({ yearBuilt: 2003, propDataFloodZone: 'none', propDataFloodSfha: false }, true);
+        return { wet, dry };
+      });
+      expect(r.wet).toContain('Chase silt loam');
+      expect(r.wet).toContain('FEMA flood hazard area');
+      expect(r.wet).toContain('zone A');
+      expect(r.wet).toContain('tax-sale list (2025)');
+      expect(r.wet).toContain('2025-TS-001');
+      expect(r.wet).toContain('EPA RRP');
+      expect(r.wet).toContain('cdf-tile-warn');          // the 1880 tile is flagged
+      expect(r.wet).toMatch(/Last sold<\/span><span class="cdf-v">2019</);
+      expect(r.dry).toContain('Not in a mapped flood zone');
+      expect(r.dry).not.toContain('FEMA flood hazard area');
+      expect(r.dry).not.toContain('EPA RRP');
+    });
+
+    test('_cdCountyFactsHtml: commercial shows acres not bed/bath; crew without money sees no dollars', async () => {
+      const r = await page.evaluate(() => {
+        const p = { yearBuilt: 2001, propDataYearTo: 2017, sqft: 18380, lotSize: 2.7635758, propDataClass: 'Commercial',
+          estimatedValue: 1617300, propDataLandValue: 651670, propDataBldgValue: 965630, propDataSource: 'county', ownerName: 'ALDI INC' };
+        return { mgr: _cdCountyFactsHtml(p, true), crew: _cdCountyFactsHtml(p, false) };
+      });
+      expect(r.mgr).toContain('Acres');
+      expect(r.mgr).not.toContain('Bed / Bath');
+      expect(r.mgr).toContain('added to 2017');
+      expect(r.mgr).toContain('Assessed');
+      expect(/\$\d/.test(r.mgr)).toBe(true);
+      expect(/\$\d/.test(r.crew)).toBe(false);
+      expect(r.crew).toContain('ALDI INC');           // the owner is not a money fact
+    });
+
+    test('_cdCountyFactsHtml: owner-supplied text is escaped', async () => {
+      const html = await page.evaluate(() => _cdCountyFactsHtml({ ownerName: '<img src=x onerror=alert(1)>', propDataSoil: '<b>x</b>' }, true));
+      expect(html).not.toContain('<img');
+      expect(html).not.toContain('<b>x</b>');
+    });
+
+    test('property card: the old run-on facts line is gone and the county block renders when open', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970142;
+        const c = { id: cid, name: 'Card Co', addr: '3 Card St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '3 Card St', { yearBuilt: 1940, sqft: 1012, bedrooms: 3, bathrooms: 1, lotSize: 0.27,
+          ownerName: 'SAMPLE TRUST', propDataSoil: 'Ladysmith silty clay loam', propDataFloodZone: 'none' });
+        currentClientId = cid;
+        renderCDAddresses();
+        const html = document.getElementById('cd-addresses-list').innerHTML;
+        return { html, leadCount: (html.match(/EPA RRP/g) || []).length };
+      });
+      expect(r.html).toContain('class="cdf"');
+      expect(r.html).toContain('Ladysmith silty clay loam');
+      expect(r.html).not.toContain('Owner: SAMPLE');   // the old "Owner: X · 0.27 ac lot" run-on line
+      expect(r.html).not.toContain('ac lot');
+      expect(r.html).not.toContain('PRE-1978 · LEAD');  // chip is for the collapsed row; open shows the banner
+      expect(r.leadCount).toBe(1);
+    });
+
+    test('property card layout: county block stays inside 390px with long soil and owner values', async () => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      const r = await page.evaluate(() => {
+        const cid = 970143;
+        const c = { id: cid, name: 'Wide Co', addr: '4 Wide St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '4 Wide St', { yearBuilt: 1880, sqft: 18380, bedrooms: 3, bathrooms: 2.5, lotSize: 1.9, propDataLotSqft: 82743.5,
+          ownerName: 'SAMPLE, LOGAN & BLAKE REVOCABLE LIVING TRUST OF THE LONG NAME', propDataSoil: 'Sogn-Vinland complex, 3 to 25 percent slopes, very stony and eroded',
+          propDataFloodZone: 'AE', propDataFloodSfha: true, propDataParcel: '0930600001001010' });
+        currentClientId = cid;
+        goPg('pg-client-detail');
+        renderCDAddresses();
+        const els = [...document.querySelectorAll('#cd-addresses-list .cdf, #cd-addresses-list .cdf-row, #cd-addresses-list .cdf-tile')];
+        const over = els.filter(el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.right > innerWidth + 1; }).length;
+        return { n: els.length, over, bleed: document.documentElement.scrollWidth > innerWidth + 1 };
+      });
+      expect(r.n).toBeGreaterThan(3);
+      expect(r.over).toBe(0);
+      expect(r.bleed).toBe(false);
     });
   });
 

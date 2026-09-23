@@ -432,7 +432,16 @@ const _addrKey=siteNoteKey; // one address-normalization key for notes + propert
 // which the contractor sets by hand and which drives isRental and the card's
 // icon. Writing the county's word into propertyType would silently re-type a
 // property somebody had already classified themselves.
-const _PROP_FIELDS=['propertyType','ownerName','ownerPhone','ownedByAccount','yearBuilt','sqft','estimatedValue','bedrooms','bathrooms','stories','lotSize','exteriorMaterial','roofType','garage','isRental','lastSalePrice','lastSaleDate','assessorUrl','propDataSource','propDataCounty','propDataUse','propDataClass','propDataExact','propDataFetchedAt','propDataMiss','rrpDisturb'];
+const _PROP_FIELDS=['propertyType','ownerName','ownerPhone','ownedByAccount','yearBuilt','sqft','estimatedValue','bedrooms','bathrooms','stories','lotSize','exteriorMaterial','roofType','garage','isRental','lastSalePrice','lastSaleDate','assessorUrl','propDataSource','propDataCounty','propDataUse','propDataClass','propDataExact','propDataFetchedAt','propDataMiss','rrpDisturb',
+  // Everything else the county answered (2026-09-22). All prefixed propData so a
+  // reader can tell at a glance which facts came from a public record and which
+  // the contractor typed. Without an entry HERE a field is silently dropped by
+  // setPropertyData, which is why soil, flood and tax sale reached the database
+  // and never the card.
+  'propDataYearTo','propDataUnits','propDataBuildings','propDataBasement',
+  'propDataFrontage','propDataDepth','propDataLotSqft','propDataSoil',
+  'propDataFloodZone','propDataFloodSfha','propDataTaxSaleYear','propDataTaxSaleCase',
+  'propDataSubdivision','propDataDeed','propDataLandValue','propDataBldgValue','propDataParcel'];
 function getProperty(client,addr){
   const out={};if(!client)return out;
   const k=_addrKey(addr||client.addr);
