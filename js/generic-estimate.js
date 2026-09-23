@@ -7459,11 +7459,68 @@ function _propProjectTitle(texts,trade){
   }
   return null;
 }
-function _propIncludedHtml(texts,accent,title,tm){
+// ── THE MASTHEAD, WHITE-LABEL (owner, 2026-09-23: "I want a redesign, it has
+// to look great and be white labeled for business logos") ───────────────────
+//
+// His logo on white paper. The old navy slab put every logo on dark, which
+// swallows the dark logos most shops have and forced a light version nobody
+// made; on white nearly any logo reads. No logo, and his name is the mark, in
+// his colour. His colour is the band across the top and the one accent below.
+// The price bar. One cell across the width: the label and the figure share a
+// line that wraps under itself on a phone, and the fine print runs the full
+// width beneath instead of being squeezed into a column beside the number.
+function _propPriceRow(label,fine,figure,accent){
+  return `<tr style="background:${accent};color:#fff"><td colspan="2" style="padding:20px 22px;white-space:nowrap">`+
+    `<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 16px">`+
+      `<span style="font-weight:800;font-size:13px;letter-spacing:.06em;text-transform:uppercase">${label}</span>`+
+      `<span style="font-weight:800;font-size:30px;letter-spacing:-.5px;font-variant-numeric:tabular-nums">${figure}</span>`+
+    `</div>`+
+    (fine?`<div style="white-space:normal;font-size:12.5px;font-weight:400;line-height:1.45;opacity:.88;margin-top:6px;max-width:520px">${fine}</div>`:'')+
+  `</td></tr>`;
+}
+function _propLogoSrc(){
+  if(typeof S==='undefined'||!S)return '';
+  const cur=(typeof _hubHash==='function'&&S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'';
+  return cur||S.logoData||'';
+}
+function _propMasthead(o){
+  const logo=_propLogoSrc();
+  const name=escHtml(o.bname||'');
+  const lic=String(o.blic||'').trim();
+  const licTxt=lic?((/^\s*(lic|license|licence|#)/i.test(lic)?'':'Lic. ')+escHtml(lic)):'';
+  const contact=[o.bphone?escHtml(o.bphone):'',licTxt].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  const mark=logo
+    ?`<img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:64px;max-width:240px;width:auto;height:auto;object-fit:contain">`+
+      (name?`<div style="font-size:14px;font-weight:700;color:#0f172a;margin-top:10px">${name}</div>`:'')
+    :`<div style="font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:${o.accent}">${name}</div>`;
+  return `<div style="height:6px;background:${o.accent}"></div>`+
+    `<div style="padding:26px 24px 20px">`+
+      `<div class="brand-logo-slot" style="min-width:0">${mark}`+
+        (contact?`<div style="font-size:12.5px;color:#475569;margin-top:${logo?'2':'8'}px;line-height:1.5">${contact}</div>`:'')+
+        `<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-top:16px;font-size:12.5px;color:#475569">`+
+          `<span style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${o.accent}">${o.label}</span>`+
+          `<span>No. ${o.num}</span><span>Date: ${o.date}</span>`+
+        `</div>`+
+      `</div>`+
+    `</div>`;
+}
+// Who it is for and what it is, the first thing read under the masthead.
+function _propPreparedFor(o){
+  const lbl=t=>`<div style="font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:6px">${t}</div>`;
+  const sub=t=>`<div style="font-size:13.5px;color:#334155;margin-top:3px;line-height:1.45">${t}</div>`;
+  return `<div style="margin:0 24px;padding:20px 0 24px;border-top:1px solid #e2e8f0;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:18px 28px">`+
+    `<div>${lbl('Prepared for')}<div style="font-size:19px;font-weight:800;letter-spacing:-.01em;color:#0f172a;line-height:1.25">${o.name}</div>`+
+      (o.addr?sub(o.addr):'')+(o.phone?sub(o.phone):'')+`</div>`+
+    `<div>${lbl('Project')}<div style="font-size:17px;font-weight:700;color:${o.accent};line-height:1.3">${o.project}</div>`+
+      (o.duration?`<div style="font-size:13px;color:#475569;margin-top:5px">Est. duration: ${o.duration}</div>`:'')+
+      `<div style="font-size:13px;color:#475569;margin-top:${o.duration?'2':'5'}px">Valid until: ${o.until}</div></div>`+
+  `</div>`;
+}
+function _propIncludedHtml(texts,accent,title,tm,tint){
   const inc=_propIncluded(texts,tm);
   if(inc.items.length<3)return '';
   const li=inc.items.map(x=>`<div style="display:flex;gap:7px;align-items:baseline;font-size:13.5px;color:#1e293b;line-height:1.45"><span style="color:${accent};font-weight:400">&#10003;</span><span>${escHtml(x)}</span></div>`).join('');
-  return `<div class="prop-included" style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${accent};margin-bottom:10px">${title||'Included in your price'}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 24px">${li}</div></div>`;
+  return `<div class="prop-included" style="margin:0 24px 20px;padding:18px 20px;border-radius:12px;background:${tint||'#f8fafc'};border:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${accent};margin-bottom:10px">${title||'Included in your price'}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 24px">${li}</div></div>`;
 }
 async function sendGenericProposal(previewOnly,opts){
   saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
@@ -7580,7 +7637,7 @@ async function sendGenericProposal(previewOnly,opts){
   // boot overlay, so a branded account's proposal actually looks like THEIRS
   // instead of generic navy. Falls back to the original navy when unset, zero
   // visual change for every account that hasn't picked a brand color.
-  let _pAccent='#1a365d',_pAccent2='#2a4a7f';
+  let _pAccent='#1a365d',_pAccent2='#2a4a7f',_pRGB=[26,54,93];
   if(S&&S.brandColor){
     // adaBrand clamp: the accent renders as text on white AND as a bg under
     // white text, a light brand pick would fail WCAG both ways. Belt for
@@ -7590,11 +7647,14 @@ async function sendGenericProposal(previewOnly,opts){
     if(!isNaN(_br)&&!isNaN(_bg)&&!isNaN(_bb)){
       _pAccent='rgb('+_br+','+_bg+','+_bb+')';
       _pAccent2='rgb('+Math.min(255,_br+42)+','+Math.min(255,_bg+42)+','+Math.min(255,_bb+42)+')';
+      _pRGB=[_br,_bg,_bb];
     }
   }
+  // The brand as a wash and a hairline, for the panels that carry it quietly.
+  const _pTint='rgba('+_pRGB.join(',')+',.06)',_pLine='rgba('+_pRGB.join(',')+',.20)';
   // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
-  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?'Up Front, Before Work Begins':`Deposit before work begins (${_tmDepPct}%)`}</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
+  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:#fff;color:#0f172a"><td style="padding:12px 22px;font-size:13px;font-weight:500;color:#334155;border-top:1px solid #e2e8f0">${_geiIsTM?'Up Front, Before Work Begins':`Deposit before work begins (${_tmDepPct}%)`}</td><td style="padding:12px 22px;text-align:right;font-size:14px;font-weight:700;white-space:nowrap;border-top:1px solid #e2e8f0">${depositFmt}</td></tr>`;
   // ── THE TIME AND MATERIALS FOOTER ────────────────────────────────────────
   //
   // Owner 2026-09-17: "if you place a materials section on a invoice or on a
@@ -7618,9 +7678,10 @@ async function sendGenericProposal(previewOnly,opts){
   // sign: said here in their words, and in the contract terms in full.
   // Widened the same day (owner): work the customer adds or changes, and a
   // rush that takes more crew, raise it too, by the same signed change order.
-  const _tmCapFine='<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.</div>';
+  const _tmCapFineTxt='Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.';
+  const _tmCapFine='<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">'+_tmCapFineTxt+'</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
-  const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
+  const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg==='#f8fafc'?'#fff':bg};color:${fg}"><td style="padding:12px 22px;font-size:13px;font-weight:500;border-top:1px solid #e2e8f0">${lbl}</td><td style="padding:12px 22px;text-align:right;font-size:13.5px;font-weight:700;white-space:nowrap;border-top:1px solid #e2e8f0">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
   const _rsFlatDep=_tmDeposit();
   // THE CEILING LEADS WHEN THERE IS ONE (read-through as two sceptical
@@ -7630,10 +7691,10 @@ async function sendGenericProposal(previewOnly,opts){
   // condition; it just comes first. With no cap nothing changes.
   const _rsCapLeads=_tmNteCap>0;
   const _rateFooterRows=_rsCapLeads
-    ?`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em"><span style="white-space:nowrap;text-transform:uppercase">Most you&apos;ll pay</span>${_tmCapFine}</td><td style="padding:14px 18px;text-align:right;font-weight:800;font-size:28px;letter-spacing:-.5px;font-variant-numeric:tabular-nums;white-space:nowrap">${_rsMoney(_tmNteCap)}</td></tr>`+
-      _rsRow('Time and materials: the time actually worked and the materials actually used',_rsCadence,'#f8fafc','#334155')+
-      (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Up Front, Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
-    :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
+    ?`${_propPriceRow('Most you&apos;ll pay',_tmCapFineTxt,_rsMoney(_tmNteCap),_pAccent)}`+
+      _rsRow('Time and materials<div style="font-size:12px;font-weight:400;color:#64748b;margin-top:2px;line-height:1.4">The time actually worked and the materials actually used</div>',_rsCadence,'#f8fafc','#334155')+
+      (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:12px 22px;font-size:13px;font-weight:500;color:#334155;border-top:1px solid #e2e8f0">Up Front, Before Work Begins</td><td style="padding:12px 22px;text-align:right;font-size:14px;font-weight:700;white-space:nowrap;border-top:1px solid #e2e8f0">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
+    :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:20px 22px;font-weight:800;font-size:13px;letter-spacing:.06em">TIME &amp; MATERIALS<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
     _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
@@ -7643,7 +7704,7 @@ async function sendGenericProposal(previewOnly,opts){
     // sucks"). The whole sentence was the label, five lines deep beside one
     // figure. Three words say it; the condition sits under them.
     (_tmNteCap>0?_rsRow('<span style="white-space:nowrap">Most you&apos;ll pay</span>'+_tmCapFine,_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
-    (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Up Front, Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
+    (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:12px 22px;font-size:13px;font-weight:500;color:#334155;border-top:1px solid #e2e8f0">Up Front, Before Work Begins</td><td style="padding:12px 22px;text-align:right;font-size:14px;font-weight:700;white-space:nowrap;border-top:1px solid #e2e8f0">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
   // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own
   // Preview overlay below. No longer embedded in the proposal document body.
@@ -7694,7 +7755,7 @@ async function sendGenericProposal(previewOnly,opts){
     // T&M and other flows: flat list
     lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>_mkLineRow(l,l._rrp||false)).join('');
   }
-  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6;overflow-wrap:anywhere"><strong style="color:${_pAccent}">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
+  const notesHtml=v('gei-notes')?`<div style="margin:0 24px;padding:18px 0 22px;border-top:1px solid #e2e8f0;font-size:13.5px;color:#334155;line-height:1.55;overflow-wrap:anywhere"><strong style="color:${_pAccent}">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
   if(_panelSched){
     const {l1:_pl1,l2:_pl2,imbalance:_pimb}=_panelCalcBalance();
@@ -7831,7 +7892,7 @@ async function sendGenericProposal(previewOnly,opts){
           ? `<a href="${escHtml(_u)}" target="_top" style="${_box};text-decoration:none;color:inherit">${_inner}</a>`
           : `<div style="${_box}">${_inner}</div>`;
       }).join('');
-      _optionsSection=`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;background:#fbfcfe"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Your options</div>${_rows}<div style="font-size:10.5px;color:#718096;margin-top:4px">Tap any option to read it. Sign the one you want, and the others simply close out.</div></div>`;
+      _optionsSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Your options</div>${_rows}<div style="font-size:10.5px;color:#718096;margin-top:4px">Tap any option to read it. Sign the one you want, and the others simply close out.</div></div>`;
     }
   }
 
@@ -7840,7 +7901,7 @@ async function sendGenericProposal(previewOnly,opts){
   // instead of in the terms accordion where nobody looks until there is an
   // argument.
   const _exclSection=_geiExclusions.length
-    ?`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:8px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
+    ?`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:8px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
     :'';
 
   // ── What the other options add ──────────────────────────────────────────
@@ -7877,7 +7938,7 @@ async function sendGenericProposal(previewOnly,opts){
         const _hd=`${escHtml(_nm)}${_amt?` <span style="font-weight:700;color:#718096">(${'$'+_amt.toLocaleString('en-US',{maximumFractionDigits:0})})</span>`:''} also includes`;
         return `<div style="margin-bottom:10px"><div style="font-size:11.5px;font-weight:800;color:${_pAccent};margin-bottom:4px">${_hd}</div><ul style="margin:0 0 6px;padding-left:18px">${_li}</ul>${_u?`<a href="${escHtml(_u)}" target="_top" style="display:inline-block;font-size:11.5px;font-weight:800;color:${_pAccent};text-decoration:none;border:1.5px solid ${_pAccent};border-radius:6px;padding:6px 12px">Switch to ${escHtml(_nm)} &rarr;</a>`:''}</div>`;
       }).filter(Boolean).join('');
-      if(_blocks)_optDiffSection=`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;background:#fbfcfe"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
+      if(_blocks)_optDiffSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
     }
   }
 
@@ -7886,9 +7947,9 @@ async function sendGenericProposal(previewOnly,opts){
   // their own trade-written clientDesc lines doing this job.
   const _incTexts=_geiIsFreeForm?_byoWorkItems2.map(it=>it.label+' '+(it.notes||'')):_chipsToPrint.slice();
   const _includedSection=((_geiIsTM||_geiIsFreeForm)&&!_geiScopeNoScope&&_incTexts.length)
-    ?_propIncludedHtml(_incTexts,_pAccent,_geiIsTM?'Included':'Included in your price',_geiIsTM):'';
+    ?_propIncludedHtml(_incTexts,_pAccent,_geiIsTM?'Included':'Included in your price',_geiIsTM,_pTint):'';
   const _scopeSection=(_scopeBlocks.length
-    ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${_pAccent};margin-bottom:12px">Scope of work</div>${_scopeBlocks.join('')}</div>`
+    ?`<div style="margin:0 24px;padding:22px 0 16px;border-top:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${_pAccent};margin-bottom:14px">Scope of work</div>${_scopeBlocks.join('')}</div>`
     :'')+_includedSection;
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   // EPA RRP is a PER-PROPERTY fact: read year built + rrpDisturb for the exact
@@ -7933,12 +7994,12 @@ async function sendGenericProposal(previewOnly,opts){
   // answer is only once the work is done. In words, not a third figure: the
   // client's copy carries two dollar amounts, the price and the deposit
   // (owner's standing rule, e2e-layout-integrity-regression).
-  const _balRow=(_byoEst&&_tmDepAmt>0&&_tmDepAmt<(Number(total)||0))?`<tr class="prop-balance" style="background:#f8fafc"><td colspan="2" style="padding:9px 18px;font-size:12.5px;font-weight:400;color:#334155">The rest is due when the work is done. Nothing else is due before then.</td></tr>`:'';
+  const _balRow=(_byoEst&&_tmDepAmt>0&&_tmDepAmt<(Number(total)||0))?`<tr class="prop-balance" style="background:#fff"><td colspan="2" style="padding:12px 22px;font-size:13px;font-weight:400;color:#475569;border-top:1px solid #e2e8f0">The rest is due when the work is done. Nothing else is due before then.</td></tr>`:'';
   const _bigLabel=_tmCapLeads?'MOST YOU&apos;LL PAY':(_geiIsTM?'ESTIMATED TOTAL':(_byoEst?'YOUR PRICE':'TOTAL'));
   const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`${_estQuietRow}<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_bigLabel}${_tmCapLeads?'<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.</div>':(_byoEst?'<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">Fixed price for the work listed. Anything added or changed is a change order you sign.</div>':'')}</td><td style="padding:14px 18px;text-align:right;font-weight:800;font-size:28px;letter-spacing:-.5px;font-variant-numeric:tabular-nums;white-space:nowrap">${_bigFigure}</td></tr>${_tmDepRow}`+_balRow;
+    :`${_estQuietRow}${_propPriceRow(_bigLabel,_tmCapLeads?_tmCapFineTxt:(_byoEst?'Fixed price for the work listed. Anything added or changed is a change order you sign.':''),_bigFigure,_pAccent)}${_tmDepRow}`+_balRow;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
@@ -7975,7 +8036,13 @@ async function sendGenericProposal(previewOnly,opts){
     // A "Description" header over an empty tbody is a heading for nothing, and a
     // rate sheet with no material categories is exactly that case.
     :`<table style="width:100%;border-collapse:collapse;font-size:12px">${lineRows?`<thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">${_geiIsTM?(_tmRateOnly?'Materials':'What the estimate is made of'):'Description'}</th></tr></thead>`:''}<tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
-  const proposalHtml=`<div style="background:#fff;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px">No. ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-top:8px">Address</div><div style="font-size:13.5px;color:#334155;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-top:8px">Phone</div><div style="font-size:13.5px;color:#334155;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px">Project</div><div style="font-size:15px;font-weight:700;color:${_pAccent}">${jobDesc||escHtml(((_geiIsTM||_geiIsFreeForm)&&_propProjectTitle(_geiIsFreeForm?_byoWorkItems2.map(it=>it.label):_chipsToPrint,_geiTrade))||tradeName+' service')}</div>${duration?`<div style="font-size:12.5px;color:#475569;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:12.5px;color:#475569;margin-top:4px">Valid until: ${_geiExpD}</div></div></div>${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
+  const _projectTitle=`${jobDesc||escHtml(((_geiIsTM||_geiIsFreeForm)&&_propProjectTitle(_geiIsFreeForm?_byoWorkItems2.map(it=>it.label):_chipsToPrint,_geiTrade))||tradeName+' service')}`;
+  const proposalHtml=`<div style="background:#fff;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 1px 2px rgba(15,23,42,.06),0 12px 32px rgba(15,23,42,.08)">`+
+    _propMasthead({bname:_bnameRaw,bphone:_bphoneRaw,blic:_blicRaw,accent:_pAccent,label:_hdrLabel,num:estNum,date:dateStr})+
+    _propPreparedFor({name:clientName,addr:clientAddr,phone:clientPhone,project:_projectTitle,duration,until:_geiExpD,accent:_pAccent})+
+    `${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}`+
+    `<div style="margin:4px 24px 24px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">${_lineItemsSection}</div>`+
+    `${notesHtml}${_propPanelHtml}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows

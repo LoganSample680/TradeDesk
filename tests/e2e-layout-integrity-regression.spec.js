@@ -672,14 +672,18 @@ test.describe('layout integrity, mobile', () => {
       S.brandColor = prevBrand;
       const res = {
         err,
-        hasBrandGradient: html.includes('linear-gradient(135deg,rgb(22,101,52) 0%,rgb(64,143,94) 100%)'),
+        // The white-label masthead (2026-09-23, §10.4): the brand is the band
+        // across the top of white paper, not a gradient slab behind the logo.
+        hasBrandGradient: html.includes('height:6px;background:rgb(22,101,52)'),
         hasBrandTotalBg: html.includes('background:rgb(22,101,52);color:#fff'),
+        hasBrandLabel: html.includes('color:rgb(22,101,52)">Scope of work') || html.includes('color:rgb(22,101,52)'),
         hasNavyLeftover: html.includes('#1a365d') || html.includes('#2a4a7f'),
       };
       return res;
     });
     expect(r.err).toBe(null);
-    expect(r.hasBrandGradient, 'header gradient must use the brand color, not navy').toBe(true);
+    expect(r.hasBrandGradient, 'the top band must use the brand color, not navy').toBe(true);
+    expect(r.hasBrandLabel, 'the accents on the page carry the brand color too').toBe(true);
     expect(r.hasBrandTotalBg, 'TOTAL row must use the brand color, not navy').toBe(true);
     expect(r.hasNavyLeftover, 'no hardcoded navy hex may leak through once a brand color is set').toBe(false);
   });
@@ -793,6 +797,7 @@ test.describe('layout integrity, mobile', () => {
         // 1-line proposal, if it still stretches to fill the screen, the bug
         // is back.
         bodyHeight: body ? body.getBoundingClientRect().height : null,
+        cardHeight: body && body.firstElementChild ? body.firstElementChild.getBoundingClientRect().height : null,
         viewportHeight: window.innerHeight,
       };
       ov?.remove();
@@ -800,7 +805,14 @@ test.describe('layout integrity, mobile', () => {
     });
     expect(r.err).toBe(null);
     expect(r.hasOverlay).toBe(true);
-    expect(r.bodyHeight, 'a 1-line proposal card must not stretch to fill the full viewport height').toBeLessThan(r.viewportHeight * 0.7);
+    // Measured against the card itself since 2026-09-23 (§10.4). The 70%-of-
+    // the-screen bar stood in for "hugs the card" while the card was short; the
+    // white-label redesign (owner: "I want a redesign, it has to look great")
+    // gave it a real masthead and a Prepared for block, so a one-line proposal
+    // is honestly taller now. What the bug was, and still is: the body growing
+    // past its card. It may be the card plus its own padding, nothing more.
+    expect(r.bodyHeight, 'a 1-line proposal card must not stretch to fill the full viewport height').toBeLessThan(r.viewportHeight);
+    expect(r.bodyHeight - r.cardHeight, 'the body hugs the card: its padding and nothing else').toBeLessThanOrEqual(50);
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
