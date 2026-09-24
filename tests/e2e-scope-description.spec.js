@@ -237,8 +237,9 @@ test.describe('the description the client reads', () => {
       return await sendGenericProposal(true, { silent: true });
     });
     // Only the scope section itself: the price table below it legitimately
-    // lists the labor row, so slicing past </ol> would test nothing.
-    const scope = html.split('Scope of work')[1].split('</ol>')[0];
+    // lists the labor row, so slicing past the list would test nothing. The
+    // steps are a <ul> since the white-label redesign (2026-09-23, §10.4).
+    const scope = html.split('Scope of work')[1].split('</ul>')[0];
     expect(scope).toContain('Drain cleaning');
     expect(scope, 'a labor row is priced time, not scope').not.toContain('Labor: 2 workers');
     expect(scope, 'the RRP disclosure insert is boilerplate, not sold work').not.toContain('Lead-safe');

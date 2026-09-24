@@ -674,7 +674,8 @@ test.describe('layout integrity, mobile', () => {
         err,
         // The white-label masthead (2026-09-23, §10.4): the brand is the band
         // across the top of white paper, not a gradient slab behind the logo.
-        hasBrandGradient: html.includes('height:6px;background:rgb(22,101,52)'),
+        // The cover (2026-09-23, §10.4): the document opens on the brand.
+        hasBrandGradient: html.includes('class="prop-cover" style="background:rgb(22,101,52)'),
         hasBrandTotalBg: html.includes('background:rgb(22,101,52);color:#fff'),
         hasBrandLabel: html.includes('color:rgb(22,101,52)">Scope of work') || html.includes('color:rgb(22,101,52)'),
         hasNavyLeftover: html.includes('#1a365d') || html.includes('#2a4a7f'),

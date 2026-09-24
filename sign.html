@@ -358,7 +358,7 @@ input[type=text]:focus{border-color:var(--denim)}
       <div id="po-declined" style="display:none;color:var(--text3);font-size:13px;text-align:center;padding:4px 0">No problem, full price applies. Scroll down to review and sign.</div>
     </div>
 
-    <button onclick="declineBid()" style="display:block;width:100%;margin-top:8px;padding:13px;border:none;background:none;color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center;border-radius:var(--r)">Not interested, decline this proposal</button>
+    <button onclick="declineBid()" style="display:block;width:100%;margin-top:8px;padding:13px;border:none;background:none;color:var(--text3);font-size:13.5px;font-weight:400;text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-family:inherit;text-align:center;border-radius:var(--r)">Not interested, decline this proposal</button>
   </div>
 
   <!-- Step 2: Color selection (painting only) -->
@@ -393,8 +393,10 @@ input[type=text]:focus{border-color:var(--denim)}
       </div>
 
       <!-- Notice of Cancellation, minimum required disclosure (FTC 16 CFR Part 429 / state equiv.) -->
-      <div id="cancel-notice-section" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-bottom:12px">
-        <div id="cancel-notice-body" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
+      <!-- A right the law gives them, set as a notice they can read, not grey fine
+           print (design review, 2026-09-23). Tinted with the contractor's colour. -->
+      <div id="cancel-notice-section" style="display:none;margin-bottom:14px;padding:14px 16px;border-radius:12px;background:var(--blue-lt);border:1px solid rgba(15,23,42,.08)">
+        <div id="cancel-notice-body" style="font-size:13.5px;color:#334155;line-height:1.55"></div>
       </div>
 
       <!-- The ONE shared consent block (esign.js): same checkbox + terms
@@ -1024,6 +1026,35 @@ async function init(){
       }
     }
     document.getElementById('prop-html').innerHTML=_proposalHtml;
+    // WHITE-LABEL, THE WHOLE PAGE (owner, 2026-09-23: "It needs to be next
+    // level gorgeous in the white label"). The contractor's colour, already
+    // contrast-clamped at save (adaBrand), becomes this page's accent: links,
+    // progress, the Approve button, the terms. And a document that carries its
+    // own letterhead (.prop-mark) IS the hero, so the page's own dark hero card
+    // stands down instead of saying the same three things twice above it.
+    (function(){
+      const _bc=String(_prop.brandColor||'').trim().replace('#','');
+      const _rs=document.documentElement.style;
+      if(/^[0-9a-f]{6}$/i.test(_bc)){
+        const _r=parseInt(_bc.substr(0,2),16),_g=parseInt(_bc.substr(2,2),16),_b=parseInt(_bc.substr(4,2),16);
+        ['--accent','--denim','--blue'].forEach(k=>_rs.setProperty(k,'#'+_bc));
+        _rs.setProperty('--blue-lt','rgba('+_r+','+_g+','+_b+',.10)');
+        const _ab=document.getElementById('approve-btn');if(_ab)_ab.style.background='#'+_bc;
+        // The chrome around the document in the same colour: a deep shade of
+        // it for the top bar, his colour for the progress and the primary
+        // buttons. The warm near-black and green were ours, not his.
+        const _dk='rgb('+[_r,_g,_b].map(x=>Math.round(x*0.42)).join(',')+')';
+        const _tb=document.querySelector('.topbar');if(_tb)_tb.style.background=_dk;
+        const _st=document.createElement('style');_st.id='wl-brand';
+        _st.textContent='.dot.active{background:#'+_bc+'!important}.dot.done{background:#'+_bc+'!important;opacity:.55}'+
+          '.btn{background:#'+_bc+';box-shadow:0 2px 12px rgba('+_r+','+_g+','+_b+',.28)}'+
+          '.btn:disabled{opacity:.35}';
+        document.head.appendChild(_st);
+      }else{_rs.setProperty('--accent','#2D5DA8');}
+      if(document.querySelector('#prop-html .prop-mark')){
+        const _hc=document.querySelector('#pg-sign .hero-card');if(_hc)_hc.style.display='none';
+      }
+    })();
     // Contractor contact footer
     (function(){
       const _ctct=[];

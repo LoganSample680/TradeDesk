@@ -101,7 +101,11 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     const t = await text(html);
     expect(t).toContain('Included in your price');
     ['All labor and materials', 'Permit and inspection', '1-year warranty on the work',
-      'Licensed contractor, #KS-PL-4471'].forEach(x => expect(t, x).toContain(x));
+      // "Lic." since the white-label redesign (2026-09-23, §10.4), the same
+      // way the letterhead says it.
+      ].forEach(x => expect(t, x).toContain(x));
+    // A non-breaking space keeps "Lic." with its number.
+    expect(t).toMatch(/Licensed contractor, Lic\.\sKS-PL-4471/);
     // Dropped 2026-09-23 (§10.4): protection, testing and the haul-away are
     // steps in the scope right above, and a married Hetty and Barry read them
     // listed twice as padding. The list says only what the steps cannot.
@@ -123,7 +127,9 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     const iPrice = rows.findIndex(x => /YOUR PRICE/.test(x));
     // Sentence case since 2026-09-23 (§10.4), the one Title Case line on the
     // page read as a template (design review).
-    const iDep = rows.findIndex(x => /^Deposit before work begins \(25%\)/.test(x));
+    // "Deposit (25%)" with "Due before work begins" under it since the cover
+    // redesign (2026-09-23, §10.4): the long label wrapped on a phone.
+    const iDep = rows.findIndex(x => /^Deposit \(25%\)\s*Due before work begins/.test(x));
     const iBal = rows.findIndex(x => x === 'The rest is due when the work is done. Nothing else is due before then.');
     expect([iPrice, iDep, iBal], JSON.stringify(rows)).toEqual([0, 1, 2]);
     expect(rows.join(' ').match(/\$[\d,]+\.\d{2}/g).length, 'still only two figures').toBe(2);
@@ -157,14 +163,15 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     heads.forEach(h => expect(t, h).toContain(h));
     const ix = heads.map(h => t.indexOf(h));
     expect(ix, 'stages print in work order').toEqual([...ix].sort((a, b) => a - b));
-    // Numbering runs on across the headings, one step per line he priced.
-    const nums = await page.evaluate((h) => {
+    // Since the white-label redesign (2026-09-23, §10.4) the STAGES are
+    // numbered down a timeline and the steps under them are bulleted: the
+    // numbers run 1..n with no gap, and every line he priced is under one.
+    const st = await page.evaluate((h) => {
       const d = document.createElement('div'); d.innerHTML = h;
-      return [...d.querySelectorAll('.prop-stage ol')].map(o => [Number(o.getAttribute('start') || 1), o.children.length]);
+      return [...d.querySelectorAll('.prop-stage')].map(x => ({ n: x.firstElementChild.textContent.trim(), steps: x.querySelectorAll('li').length }));
     }, html);
-    let next = 1;
-    nums.forEach(([start, n]) => { expect(start).toBe(next); next += n; });
-    expect(next - 1).toBe(lines.length);
+    st.forEach((x, i) => expect(x.n).toBe(String(i + 1)));
+    expect(st.reduce((t, x) => t + x.steps, 0)).toBe(lines.length);
   });
 
   // Owner 2026-09-23: "tim should be smart enough to add in the model and

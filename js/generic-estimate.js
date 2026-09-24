@@ -7290,7 +7290,9 @@ function saveGenericEstimate(draft){
 // is deliberately NOT a clause here, it's already its own line in the
 // proposal's deposit/balance summary.
 function _geiBuildTermsHtml(){
-  const bname=S.bname||getBusinessName()||'';
+  // His name, never the 'TradeDesk' fallback in getBusinessName(): these are
+  // his terms; with no name set they say "Contractor".
+  const bname=S.bname||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');
   const _party=bname||'Contractor';
   const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
@@ -7434,7 +7436,7 @@ function _propIncluded(texts,tm){
   // Every warranty clause in the terms already passes these through; said
   // here because "and the heater itself?" was the next question.
   if(wp)out.push('Manufacturer warranties pass to you');
-  if(typeof S!=='undefined'&&S&&String(S.blic||'').trim())out.push('Licensed contractor, #'+String(S.blic).trim().replace(/^#/,''));
+  if(typeof S!=='undefined'&&S&&String(S.blic||'').trim())out.push('Licensed contractor, Lic.\u00a0'+String(S.blic).trim().replace(/^(#|lic\.?|license|licence)\s*/i,''));
   return {items:out,haul};
 }
 // The project, named from his own steps (read-through, 2026-09-23: "Plumbing
@@ -7480,12 +7482,10 @@ function _propProjectTitle(texts,trade){
 // line that wraps under itself on a phone, and the fine print runs the full
 // width beneath instead of being squeezed into a column beside the number.
 function _propPriceRow(label,fine,figure,accent){
-  return `<tr style="background:${accent};color:#fff"><td colspan="2" style="padding:20px 22px;white-space:nowrap">`+
-    `<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 16px">`+
-      `<span style="font-weight:800;font-size:13px;letter-spacing:.06em;text-transform:uppercase">${label}</span>`+
-      `<span style="font-weight:800;font-size:30px;letter-spacing:-.5px;font-variant-numeric:tabular-nums">${figure}</span>`+
-    `</div>`+
-    (fine?`<div style="white-space:normal;font-size:12.5px;font-weight:400;line-height:1.45;opacity:.88;margin-top:6px;max-width:520px">${fine}</div>`:'')+
+  return `<tr style="background:${accent};color:#fff"><td colspan="2" style="padding:26px 24px 24px;white-space:nowrap;background:${accent};color:#fff;background-image:linear-gradient(135deg,${accent} 0%,${_PT.deep||accent} 100%)">`+
+    `<div style="font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85">${label}</div>`+
+    `<div style="font-weight:800;font-size:42px;letter-spacing:-.035em;line-height:1.05;margin-top:8px;font-variant-numeric:tabular-nums">${figure}</div>`+
+    (fine?`<div style="white-space:normal;font-size:13px;font-weight:400;line-height:1.5;opacity:.9;margin-top:12px;max-width:520px">${fine}</div>`:'')+
   `</td></tr>`;
 }
 // His words, printed the way a document is written. A line typed in Title
@@ -7500,61 +7500,124 @@ function _propSentence(t){
   if(title)s=s.charAt(0)+s.slice(1).toLowerCase();
   return s.replace(_PROP_ACRONYMS,m=>m.toUpperCase());
 }
+// ── THE LETTERHEAD SYSTEM (owner, 2026-09-23: "It needs to be next level
+// gorgeous in the white label. Needs to be perfect.") ─────────────────────
+// Every colour on the page comes from his brand: the accent itself, a wash of
+// it for panels, a deeper shade for the price card's gradient. Set once per
+// document by sendGenericProposal; read by every piece below.
+let _PT={a:'#1a365d',rgb:[26,54,93]};
+function _propTheme(accent,rgb){
+  const r=rgb||[26,54,93];
+  const dk=r.map(x=>Math.round(x*0.72));
+  _PT={a:accent,rgb:r,wash:'rgba('+r.join(',')+',.045)',tint:'rgba('+r.join(',')+',.10)',line:'rgba('+r.join(',')+',.18)',deep:'rgb('+dk.join(',')+')'};
+  return _PT;
+}
+// Small line icons in his colour, one per kind of promise.
+function _propIcon(kind,col,size){
+  const P={
+    check:'<path d="M5 12.5l4.2 4.2L19 7"></path>',
+    tools:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.6-.6-.6-2.6z"></path>',
+    doc:'<path d="M7 3h7l5 5v13H7z"></path><path d="M14 3v5h5M10 13h6M10 17h6"></path>',
+    shield:'<path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6z"></path><path d="M9 12l2.2 2.2L15.5 10"></path>',
+    tag:'<path d="M3 12V4h8l10 10-8 8z"></path><circle cx="7.5" cy="8.5" r="1.3"></circle>',
+    badge:'<circle cx="12" cy="9" r="5"></circle><path d="M8.5 13.2L7 21l5-2.6 5 2.6-1.5-7.8"></path>',
+    pin:'<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"></path><circle cx="12" cy="10" r="2.3"></circle>',
+    clock:'<circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path>',
+    phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"></path>',
+  };
+  return `<svg width="${size||16}" height="${size||16}" viewBox="0 0 24 24" fill="none" stroke="${col||_PT.a}" stroke-width="${size>16?1.75:1.9}" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:0 0 auto">${P[kind]||P.check}</svg>`;
+}
+// A step: a dot in his colour and the words.
+function _propLi(inner){
+  return `<li style="display:flex;gap:11px;align-items:flex-start;font-size:14.5px;color:#1e293b;line-height:1.5;padding:4px 0;overflow-wrap:anywhere"><span style="flex:0 0 6px;width:6px;height:6px;border-radius:50%;background:${_PT.a};margin-top:9px;opacity:.85"></span><span style="min-width:0">${inner}</span></li>`;
+}
+function _propUl(lis){return `<ul style="list-style:none;margin:0;padding:0">${lis}</ul>`;}
+// The plan: numbered stages down a rail, the steps under each.
+function _propTimeline(groups){
+  return groups.map((g,i)=>{
+    const last=i===groups.length-1;
+    return `<div class="prop-stage" data-steps="${g.lis.length}" style="display:flex;gap:14px">`+
+      `<div style="flex:0 0 30px;display:flex;flex-direction:column;align-items:center">`+
+        `<div style="width:30px;height:30px;border-radius:50%;background:${_PT.tint};color:${_PT.a};font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums">${i+1}</div>`+
+        (last?'':`<div style="flex:1;width:2px;border-radius:2px;background:${_PT.tint};margin:6px 0 0;min-height:14px"></div>`)+
+      `</div>`+
+      `<div style="flex:1;min-width:0;padding:4px 0 ${last?'2':'20'}px">`+
+        `<div style="font-size:15.5px;font-weight:700;color:#0b1220;letter-spacing:-.005em;line-height:1.35">${escHtml(g.name)}</div>`+
+        `<div style="margin-top:4px">${_propUl(g.lis.join(''))}</div>`+
+      `</div>`+
+    `</div>`;
+  }).join('');
+}
+function _propSection(eyebrow,title,body,extra){
+  return `<div style="margin:0 24px;padding:${extra&&extra.noRule?'18':'26'}px 0 ${extra&&extra.pb||22}px;${extra&&extra.noRule?'':'border-top:1px solid #eceef2'}">`+
+    `<div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${_PT.a}">${eyebrow}</div>`+
+    (title?`<div style="font-size:21px;font-weight:800;letter-spacing:-.02em;color:#0b1220;margin:6px 0 16px;line-height:1.25">${title}</div>`:'<div style="height:12px"></div>')+
+    body+`</div>`;
+}
 function _propLogoSrc(){
   if(typeof S==='undefined'||!S)return '';
   const cur=(typeof _hubHash==='function'&&S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'';
   return cur||S.logoData||'';
 }
-function _propMasthead(o){
+// Dates the way a letter writes them: "Sep 23, 2026". Accepts mm/dd/yyyy or
+// a date key; anything else passes through untouched.
+function _propDate(t){
+  const x=String(t||'').trim();let d=null;
+  let m=x.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(m)d=new Date(+m[3],+m[1]-1,+m[2]);
+  if(!d){m=x.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(m)d=new Date(+m[1],+m[2]-1,+m[3]);}
+  return d&&!isNaN(d)?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):x;
+}
+// THE COVER (design review, 2026-09-23: the "signature moment"). The document
+// opens on his colour, full bleed, the way a bound proposal opens on its
+// cover: his mark, who it is for, the job as the headline. His logo sits on a
+// white plate, so a dark logo, a light one, or a logo on its own black square
+// all read the same on any brand colour.
+function _propCover(o){
   const logo=_propLogoSrc();
   const name=escHtml(o.bname||'');
   const lic=String(o.blic||'').trim();
   const licTxt=lic?((/^\s*(lic|license|licence|#)/i.test(lic)?'':'Lic. ')+escHtml(lic)):'';
   const contact=[o.bphone?escHtml(o.bphone):'',licTxt].filter(Boolean).join(' &nbsp;·&nbsp; ');
-  // A logo on its own solid tile (measured by _logoEnsureMeta) is an icon:
-  // rounded, beside his name. Anything else is a wordmark with the name under
-  // it. Every logo gets the rounding, which a transparent one never shows.
   const meta=(typeof S!=='undefined'&&S&&S.logoMeta)||null;
   const tile=!!(logo&&meta&&meta.solid&&!meta.light&&meta.ratio<=1.6);
+  const nameBlock=`<div style="min-width:0">${name?`<div style="font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1.2;color:#fff">${name}</div>`:''}`+
+    (contact?`<div style="font-size:12.5px;color:rgba(255,255,255,.78);margin-top:3px;line-height:1.45">${contact}</div>`:'')+`</div>`;
+  const ring='box-shadow:0 0 0 1px rgba(255,255,255,.35),0 8px 22px rgba(0,0,0,.22)';
   const mark=!logo
-    ?`<div style="font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:${o.accent}">${name}</div>`
+    ?`<div style="display:flex;align-items:center;gap:12px"><span style="flex:0 0 52px;width:52px;height:52px;border-radius:15px;background:#fff;color:${o.accent};font-size:22px;font-weight:800;display:flex;align-items:center;justify-content:center;${ring}">${escHtml(String(o.bname||'?').trim().charAt(0).toUpperCase())}</span>${nameBlock}</div>`
     :tile
-    ?`<div style="display:flex;align-items:center;gap:16px"><img src="${escHtml(logo)}" alt="${name}" style="display:block;height:72px;width:auto;max-width:116px;border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.18)">`+
-      `<div style="min-width:0">${name?`<div style="font-size:20px;font-weight:800;letter-spacing:-.01em;line-height:1.2;color:#0f172a">${name}</div>`:''}`+
-      (contact?`<div style="font-size:12.5px;color:#475569;margin-top:4px;line-height:1.5">${contact}</div>`:'')+`</div></div>`
-    :`<img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:64px;max-width:240px;width:auto;height:auto;object-fit:contain;border-radius:10px">`+
-      (name?`<div style="font-size:14px;font-weight:700;color:#0f172a;margin-top:10px">${name}</div>`:'');
-  return `<div style="height:6px;background:${o.accent}"></div>`+
-    `<div style="padding:26px 24px 20px">`+
+    ?`<div style="display:flex;align-items:center;gap:12px"><img src="${escHtml(logo)}" alt="${name}" style="display:block;height:56px;width:auto;max-width:96px;border-radius:15px;${ring}">${nameBlock}</div>`
+    :`<div style="display:inline-block;background:#fff;border-radius:15px;padding:10px 14px;${ring}"><img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:44px;max-width:200px;width:auto;height:auto;object-fit:contain"></div>`+
+      `<div style="margin-top:10px">${nameBlock}</div>`;
+  const chip=(icon,txt)=>`<span style="display:inline-flex;align-items:center;gap:7px;font-size:13.5px;color:rgba(255,255,255,.9);line-height:1.4">${_propIcon(icon,'rgba(255,255,255,.75)')}<span>${txt}</span></span>`;
+  return `<div class="prop-cover" style="background:${o.accent};color:#fff;background-image:radial-gradient(120% 90% at 100% 0%,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 55%),linear-gradient(140deg,${o.accent} 0%,${_PT.deep||o.accent} 100%);padding:24px 22px 24px">`+
+    `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px">`+
       // Not .brand-logo-slot: applyBrandLogo rewrites every one of those on
       // the page with the app bar's 32px logo, and would wipe this letterhead
       // if it ran with a preview open.
-      `<div class="prop-mark" style="min-width:0">${mark}`+
-        (contact&&!tile?`<div style="font-size:12.5px;color:#475569;margin-top:${logo?'2':'8'}px;line-height:1.5">${contact}</div>`:'')+
-        `<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-top:16px;font-size:12.5px;color:#475569">`+
-          `<span style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${o.accent}">${o.label}</span>`+
-          `<span>No. ${o.num}</span><span>Date: ${o.date}</span>`+
-        `</div>`+
-      `</div>`+
-    `</div>`;
-}
-// Who it is for and what it is, the first thing read under the masthead.
-function _propPreparedFor(o){
-  const lbl=t=>`<div style="font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:6px">${t}</div>`;
-  const sub=t=>`<div style="font-size:13.5px;color:#334155;margin-top:3px;line-height:1.45">${t}</div>`;
-  return `<div style="margin:0 24px;padding:20px 0 24px;border-top:1px solid #e2e8f0;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:18px 28px">`+
-    `<div>${lbl('Prepared for')}<div style="font-size:19px;font-weight:800;letter-spacing:-.01em;color:#0f172a;line-height:1.25">${o.name}</div>`+
-      (o.addr?sub(o.addr):'')+(o.phone?sub(o.phone):'')+`</div>`+
-    `<div>${lbl('Project')}<div style="font-size:17px;font-weight:700;color:${o.accent};line-height:1.3">${o.project}</div>`+
-      (o.duration?`<div style="font-size:13px;color:#475569;margin-top:5px">Est. duration: ${o.duration}</div>`:'')+
-      `<div style="font-size:13px;color:#475569;margin-top:${o.duration?'2':'5'}px">Valid until: ${o.until}</div></div>`+
+      `<div class="prop-mark" style="min-width:0;flex:1 1 220px">${mark}</div>`+
+      `<span style="flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);padding:5px 10px;border-radius:999px">${o.label}</span>`+
+    `</div>`+
+    `<div style="margin-top:34px;font-size:14px;color:rgba(255,255,255,.82)">Prepared for <strong style="color:#fff;font-weight:700">${o.name}</strong></div>`+
+    `<div style="font-size:32px;font-weight:800;letter-spacing:-.032em;line-height:1.08;margin-top:6px;color:#fff">${o.project}</div>`+
+    `<div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px">`+
+      (o.addr?chip('pin',o.addr):'')+(o.phone?chip('phone',o.phone):'')+
+      (o.duration?chip('clock','Est. duration: '+o.duration):'')+
+      chip('clock','Valid until: '+_propDate(o.until))+
+    `</div>`+
+    `<div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2);font-size:12.5px;color:rgba(255,255,255,.72)">No. ${o.num} &nbsp;·&nbsp; Date: ${_propDate(o.date)}</div>`+
   `</div>`;
 }
 function _propIncludedHtml(texts,accent,title,tm,tint){
   const inc=_propIncluded(texts,tm);
   if(inc.items.length<3)return '';
-  const li=inc.items.map(x=>`<div style="display:flex;gap:7px;align-items:baseline;font-size:13.5px;color:#1e293b;line-height:1.45"><span style="color:${accent};font-weight:400">&#10003;</span><span>${escHtml(x)}</span></div>`).join('');
-  return `<div class="prop-included" style="margin:0 24px 20px;padding:18px 20px;border-radius:12px;background:${tint||'#f8fafc'};border:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${accent};margin-bottom:10px">${title||'Included in your price'}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 24px">${li}</div></div>`;
+  const kind=x=>/permit/i.test(x)?'doc':/manufacturer/i.test(x)?'tag':/warranty/i.test(x)?'shield':/licen/i.test(x)?'badge':/labor/i.test(x)?'tools':'check';
+  const tiles=inc.items.map((x,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 4px;${i?`border-top:1px solid ${_PT.line};`:''}">`+
+    `<span style="flex:0 0 36px;width:36px;height:36px;border-radius:11px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.06);display:flex;align-items:center;justify-content:center">${_propIcon(kind(x),accent,18)}</span>`+
+    `<span style="font-size:14.5px;font-weight:600;color:#0b1220;line-height:1.35">${escHtml(x).replace(/Lic\.\u00a0(\S+)/,'Lic.\u00a0<span style="white-space:nowrap">$1</span>')}</span></div>`).join('');
+  return `<div class="prop-included" style="margin:0 16px 8px;padding:20px 16px 12px;border-radius:18px;background:${tint||'#f8fafc'}">`+
+    `<div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${accent};margin:0 4px 12px">${title||'Included in your price'}</div>`+
+    `<div>${tiles}</div></div>`;
 }
 async function sendGenericProposal(previewOnly,opts){
   saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
@@ -7625,7 +7688,9 @@ async function sendGenericProposal(previewOnly,opts){
   const trade=_geiTrade||getActiveTrade();
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
-  const _bnameRaw=S.bname||getBusinessName()||'';const _bphoneRaw=S.bphone||'';const _blicRaw=S.blic||'';
+  // His name only. getBusinessName() falls back to 'TradeDesk', which must
+  // never print on a white-label document.
+  const _bnameRaw=S.bname||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');const _bphoneRaw=S.bphone||'';const _blicRaw=S.blic||'';
   const clientName=escHtml(v('gei-client'));const clientAddr=escHtml(v('gei-addr'));
   const _clientRec=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   // Printed the way a phone number is written, not as ten bare digits. Only a
@@ -7686,9 +7751,10 @@ async function sendGenericProposal(previewOnly,opts){
   }
   // The brand as a wash and a hairline, for the panels that carry it quietly.
   const _pTint='rgba('+_pRGB.join(',')+',.06)',_pLine='rgba('+_pRGB.join(',')+',.20)';
+  _propTheme(_pAccent,_pRGB);
   // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
-  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:#fff;color:#0f172a"><td style="padding:12px 22px;font-size:13px;font-weight:500;color:#334155;border-top:1px solid #e2e8f0">${_geiIsTM?'Up Front, Before Work Begins':`Deposit before work begins (${_tmDepPct}%)`}</td><td style="padding:12px 22px;text-align:right;font-size:14px;font-weight:700;white-space:nowrap;border-top:1px solid #e2e8f0">${depositFmt}</td></tr>`;
+  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">${_geiIsTM?'Up Front, Before Work Begins':`Deposit (${_tmDepPct}%)<div style="font-size:12.5px;font-weight:400;color:#64748b;margin-top:2px">Due before work begins</div>`}</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${depositFmt}</td></tr>`;
   // ── THE TIME AND MATERIALS FOOTER ────────────────────────────────────────
   //
   // Owner 2026-09-17: "if you place a materials section on a invoice or on a
@@ -7715,7 +7781,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _tmCapFineTxt='Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.';
   const _tmCapFine='<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">'+_tmCapFineTxt+'</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
-  const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg==='#f8fafc'?'#fff':bg};color:${fg}"><td style="padding:12px 22px;font-size:13px;font-weight:500;border-top:1px solid #e2e8f0">${lbl}</td><td style="padding:12px 22px;text-align:right;font-size:13.5px;font-weight:700;white-space:nowrap;border-top:1px solid #e2e8f0">${val}</td></tr>`;
+  const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg==='#f8fafc'?'#fff':bg};color:${fg}"><td style="padding:15px 24px;font-size:14px;font-weight:500;border-top:1px solid #eceef2">${lbl}</td><td style="padding:15px 24px;text-align:right;font-size:14.5px;font-weight:700;white-space:nowrap;border-top:1px solid #eceef2">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
   const _rsFlatDep=_tmDeposit();
   // THE CEILING LEADS WHEN THERE IS ONE (read-through as two sceptical
@@ -7726,10 +7792,15 @@ async function sendGenericProposal(previewOnly,opts){
   const _rsCapLeads=_tmNteCap>0;
   const _rateFooterRows=_rsCapLeads
     ?`${_propPriceRow('Most you&apos;ll pay',_tmCapFineTxt,_rsMoney(_tmNteCap),_pAccent)}`+
-      _rsRow('Time and materials<div style="font-size:12px;font-weight:400;color:#64748b;margin-top:2px;line-height:1.4">The time actually worked and the materials actually used</div>',_rsCadence,'#f8fafc','#334155')+
-      (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:12px 22px;font-size:13px;font-weight:500;color:#334155;border-top:1px solid #e2e8f0">Up Front, Before Work Begins</td><td style="padding:12px 22px;text-align:right;font-size:14px;font-weight:700;white-space:nowrap;border-top:1px solid #e2e8f0">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
-    :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:20px 22px;font-weight:800;font-size:13px;letter-spacing:.06em">TIME &amp; MATERIALS<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
-    _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
+      `<tr style="background:#fff;color:#334155"><td colspan="2" style="padding:15px 24px;font-size:14px;line-height:1.5;border-top:1px solid #eceef2"><strong style="color:#0b1220;font-weight:700">${_rsCadence}</strong> for the time actually worked and the materials actually used.</td></tr>`+
+      (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">Up Front, Before Work Begins</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
+    // A rate with no ceiling has no number to put here, so the card says how
+    // it bills, as its headline, instead of standing empty over a "Billing"
+    // row that repeated it (design review, 2026-09-23).
+    :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:26px 24px 24px;background:${_pAccent};color:#fff;background-image:linear-gradient(135deg,${_pAccent} 0%,${_PT.deep} 100%)">`+
+      `<div style="font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85">TIME &amp; MATERIALS</div>`+
+      `<div style="font-weight:800;font-size:26px;letter-spacing:-.025em;line-height:1.15;margin-top:8px">${_rsCadence}</div>`+
+      `<div style="font-size:13px;font-weight:400;line-height:1.5;opacity:.9;margin-top:8px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
     // "what's the most this could be?", so that is what the line says. The
@@ -7738,7 +7809,7 @@ async function sendGenericProposal(previewOnly,opts){
     // sucks"). The whole sentence was the label, five lines deep beside one
     // figure. Three words say it; the condition sits under them.
     (_tmNteCap>0?_rsRow('<span style="white-space:nowrap">Most you&apos;ll pay</span>'+_tmCapFine,_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
-    (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:12px 22px;font-size:13px;font-weight:500;color:#334155;border-top:1px solid #e2e8f0">Up Front, Before Work Begins</td><td style="padding:12px 22px;text-align:right;font-size:14px;font-weight:700;white-space:nowrap;border-top:1px solid #e2e8f0">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
+    (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">Up Front, Before Work Begins</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
   // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own
   // Preview overlay below. No longer embedded in the proposal document body.
@@ -7818,15 +7889,15 @@ async function sendGenericProposal(previewOnly,opts){
     const _chipLi=l=>{
       const chip=_allChipDefs.find(c=>c.label===l);
       const desc=chip&&chip.clientDesc?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(chip.clientDesc)}</span>`:'';
-      return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(_propSentence(l))}${desc}</li>`;
+      return _propLi(`${escHtml(_propSentence(l))}${desc}`);
     };
     // In work order, under the customer's words for each stage, so a long job
     // reads as a plan they can follow instead of a wall of steps. Numbering
     // runs on across the headings: step 7 is still step 7.
     const _grp=_propStageGroups(_chipsToPrint);
     _scopeBlocks.push(_grp
-      ?_grp.map(g=>`<div class="prop-stage" style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 4px">${escHtml(g.name)}</div><ol start="${g.idx[0]+1}" style="margin:0 0 4px;padding-left:26px">${g.idx.map(i=>_chipLi(_chipsToPrint[i])).join('')}</ol></div>`).join('')
-      :`<ol style="margin:0 0 10px;padding-left:26px">${_chipsToPrint.map(_chipLi).join('')}</ol>`);
+      ?_propTimeline(_grp.map(g=>({name:g.name,lis:g.idx.map(i=>_chipLi(_chipsToPrint[i]))})))
+      :_propUl(_chipsToPrint.map(_chipLi).join('')));
   }
   const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
@@ -7847,7 +7918,7 @@ async function sendGenericProposal(previewOnly,opts){
       // document already follows.
       const _li=it=>{
         const _q=(Number(it.qty)>1)?` <span style="font-size:12.5px;color:#64748b">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
-        return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(_propSentence(it.label))}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}</li>`;
+        return _propLi(`${escHtml(_propSentence(it.label))}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:13px;color:#64748b">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}`);
       };
       // One section is the usual Build Your Own: everything Tim built lands in
       // it, and one heading over the lot says nothing. The customer's stage
@@ -7856,12 +7927,13 @@ async function sendGenericProposal(previewOnly,opts){
       // customer's copy they go where the work happens.
       const _ord=(_scopeSecs2.length===1&&typeof timOrderScope==='function')?timOrderScope(its.map(it=>({text:it.label,src:it}))).map(r=>r.src.src):its;
       const _grp=_scopeSecs2.length===1?_propStageGroups(_ord.map(it=>it.label)):null;
-      if(_grp)return _grp.map(g=>`<div class="prop-stage" style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 4px">${escHtml(g.name)}</div><ol start="${g.idx[0]+1}" style="margin:0 0 4px;padding-left:26px">${g.idx.map(i=>_li(_ord[i])).join('')}</ol></div>`).join('');
-      const rows='<ol style="margin:4px 0 0;padding-left:26px">'+its.map(_li).join('')+'</ol>';
+      if(_grp)return _propTimeline(_grp.map(g=>({name:g.name,lis:g.idx.map(i=>_li(_ord[i]))})));
+      const rows=_propUl(its.map(_li).join(''));
       // Sub-section headers match the document's one header style (accent, same
       // scale as "Scope of work"): the old hardcoded gray read as a different
       // font family entirely and made the section look mismatched.
-      return `<div style="margin-bottom:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
+      if(_scopeSecs2.length===1)return rows;
+      return `<div style="margin-bottom:14px"><div style="font-size:15.5px;font-weight:700;color:#0b1220;margin-bottom:4px">${escHtml(sec)}</div>${rows}</div>`;
     }).join('');
     _scopeBlocks.push(_secBlocks2);
   }
@@ -7877,10 +7949,10 @@ async function sendGenericProposal(previewOnly,opts){
     const _lineScope=(_geiLines||[]).filter(l=>l&&!l._tmLabor&&!l._rrp&&String(l.desc||'').trim()
       &&!_chipsToPrint.some(c=>_pbKey(c)===_pbKey(l.desc)));
     if(_lineScope.length){
-      const _rows='<ol style="margin:0 0 10px;padding-left:26px">'+_lineScope.map(l=>{
+      const _rows=_propUl(_lineScope.map(l=>{
         const d=String(l.notes||'').trim();
-        return `<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(_propSentence(l.desc))}${d?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(d)}</span>`:''}</li>`;
-      }).join('')+'</ol>';
+        return _propLi(`${escHtml(_propSentence(l.desc))}${d?`<span style="font-size:13px;color:#64748b">, ${escHtml(d)}</span>`:''}`);
+      }).join(''));
       _scopeBlocks.push(_rows);
     }
   }
@@ -7926,7 +7998,7 @@ async function sendGenericProposal(previewOnly,opts){
           ? `<a href="${escHtml(_u)}" target="_top" style="${_box};text-decoration:none;color:inherit">${_inner}</a>`
           : `<div style="${_box}">${_inner}</div>`;
       }).join('');
-      _optionsSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Your options</div>${_rows}<div style="font-size:10.5px;color:#718096;margin-top:4px">Tap any option to read it. Sign the one you want, and the others simply close out.</div></div>`;
+      _optionsSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:${_pAccent};margin-bottom:12px">Your options</div>${_rows}<div style="font-size:10.5px;color:#718096;margin-top:4px">Tap any option to read it. Sign the one you want, and the others simply close out.</div></div>`;
     }
   }
 
@@ -7935,7 +8007,7 @@ async function sendGenericProposal(previewOnly,opts){
   // instead of in the terms accordion where nobody looks until there is an
   // argument.
   const _exclSection=_geiExclusions.length
-    ?`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:8px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
+    ?`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #eceef2"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-bottom:10px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
     :'';
 
   // ── What the other options add ──────────────────────────────────────────
@@ -7972,7 +8044,7 @@ async function sendGenericProposal(previewOnly,opts){
         const _hd=`${escHtml(_nm)}${_amt?` <span style="font-weight:700;color:#718096">(${'$'+_amt.toLocaleString('en-US',{maximumFractionDigits:0})})</span>`:''} also includes`;
         return `<div style="margin-bottom:10px"><div style="font-size:11.5px;font-weight:800;color:${_pAccent};margin-bottom:4px">${_hd}</div><ul style="margin:0 0 6px;padding-left:18px">${_li}</ul>${_u?`<a href="${escHtml(_u)}" target="_top" style="display:inline-block;font-size:11.5px;font-weight:800;color:${_pAccent};text-decoration:none;border:1.5px solid ${_pAccent};border-radius:6px;padding:6px 12px">Switch to ${escHtml(_nm)} &rarr;</a>`:''}</div>`;
       }).filter(Boolean).join('');
-      if(_blocks)_optDiffSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
+      if(_blocks)_optDiffSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-bottom:10px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
     }
   }
 
@@ -7982,8 +8054,11 @@ async function sendGenericProposal(previewOnly,opts){
   const _incTexts=_geiIsFreeForm?_byoWorkItems2.map(it=>it.label+' '+(it.notes||'')):_chipsToPrint.slice();
   const _includedSection=((_geiIsTM||_geiIsFreeForm)&&!_geiScopeNoScope&&_incTexts.length)
     ?_propIncludedHtml(_incTexts,_pAccent,_geiIsTM?'Included':'Included in your price',_geiIsTM,_pTint):'';
+  // The plan reads as a plan: a title in his words for what the stages add
+  // up to, only when there are stages to add up.
+  const _scopeHasStages=_scopeBlocks.some(b=>String(b).indexOf('class="prop-stage"')>=0);
   const _scopeSection=(_scopeBlocks.length
-    ?`<div style="margin:0 24px;padding:22px 0 16px;border-top:1px solid #e2e8f0"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${_pAccent};margin-bottom:14px">Scope of work</div>${_scopeBlocks.join('')}</div>`
+    ?_propSection('Scope of work',_scopeHasStages?'How the work goes':'',_scopeBlocks.join(''),{noRule:true})
     :'')+_includedSection;
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   // EPA RRP is a PER-PROPERTY fact: read year built + rrpDisturb for the exact
@@ -8028,7 +8103,7 @@ async function sendGenericProposal(previewOnly,opts){
   // answer is only once the work is done. In words, not a third figure: the
   // client's copy carries two dollar amounts, the price and the deposit
   // (owner's standing rule, e2e-layout-integrity-regression).
-  const _balRow=(_byoEst&&_tmDepAmt>0&&_tmDepAmt<(Number(total)||0))?`<tr class="prop-balance" style="background:#fff"><td colspan="2" style="padding:12px 22px;font-size:13px;font-weight:400;color:#475569;border-top:1px solid #e2e8f0">The rest is due when the work is done. Nothing else is due before then.</td></tr>`:'';
+  const _balRow=(_byoEst&&_tmDepAmt>0&&_tmDepAmt<(Number(total)||0))?`<tr class="prop-balance" style="background:#fff"><td colspan="2" style="padding:14px 24px 16px;font-size:13.5px;font-weight:400;color:#475569;line-height:1.5;border-top:1px solid #eceef2;background:#fafbfc">The rest is due when the work is done. Nothing else is due before then.</td></tr>`:'';
   const _bigLabel=_tmCapLeads?'MOST YOU&apos;LL PAY':(_geiIsTM?'ESTIMATED TOTAL':(_byoEst?'YOUR PRICE':'TOTAL'));
   const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
@@ -8071,12 +8146,20 @@ async function sendGenericProposal(previewOnly,opts){
     // rate sheet with no material categories is exactly that case.
     :`<table style="width:100%;border-collapse:collapse;font-size:12px">${lineRows?`<thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">${_geiIsTM?(_tmRateOnly?'Materials':'What the estimate is made of'):'Description'}</th></tr></thead>`:''}<tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
   const _projectTitle=`${jobDesc||escHtml(((_geiIsTM||_geiIsFreeForm)&&_propProjectTitle(_geiIsFreeForm?_byoWorkItems2.map(it=>it.label):_chipsToPrint,_geiTrade))||tradeName+' service')}`;
-  const proposalHtml=`<div style="background:#fff;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 1px 2px rgba(15,23,42,.06),0 12px 32px rgba(15,23,42,.08)">`+
-    _propMasthead({bname:_bnameRaw,bphone:_bphoneRaw,blic:_blicRaw,accent:_pAccent,label:_hdrLabel,num:estNum,date:dateStr})+
-    _propPreparedFor({name:clientName,addr:clientAddr,phone:clientPhone,project:_projectTitle,duration,until:_geiExpD,accent:_pAccent})+
+  // The sign-off: his mark small, his name, and a thank-you. Courtesy, not a
+  // claim, and the last thing read before the signature.
+  // The sign-off: centred, his name, a thank-you. Courtesy, not a claim, and
+  // the last thing read before the signature.
+  const _propFooter=(()=>{
+    const nm=String(_bnameRaw||'').trim();
+    if(!nm)return '';
+    return `<div style="margin:8px 24px 0;padding:24px 0 28px;border-top:1px solid #eceef2;text-align:center;font-size:15px;color:#475569;line-height:1.5">Thank you for considering <strong style="color:#0b1220;font-weight:700">${escHtml(nm)}</strong>${/[.!?]$/.test(nm)?'':'.'}</div>`;
+  })();
+  const proposalHtml=`<div style="background:#fff;color:#0b1220;font-family:-apple-system,BlinkMacSystemFont,&quot;SF Pro Text&quot;,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:22px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06),0 24px 60px rgba(15,23,42,.06)">`+
+    _propCover({bname:_bnameRaw,bphone:_bphoneRaw,blic:_blicRaw,accent:_pAccent,label:_hdrLabel,num:estNum,date:dateStr,name:clientName,addr:clientAddr,phone:clientPhone,project:_projectTitle,duration,until:_geiExpD})+
     `${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}`+
-    `<div style="margin:4px 24px 24px;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">${_lineItemsSection}</div>`+
-    `${notesHtml}${_propPanelHtml}</div>`;
+    `<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 30px ${_PT.line}">${_lineItemsSection}</div>`+
+    `${notesHtml}${_propPanelHtml}${_propFooter}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows

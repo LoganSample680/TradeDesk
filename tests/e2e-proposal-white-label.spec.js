@@ -42,27 +42,32 @@ test.describe('the proposal, white-labelled', () => {
     const el = document.createElement('div'); el.innerHTML = d; document.body.appendChild(el);
     const slot = el.querySelector('.prop-mark');
     const img = slot && slot.querySelector('img');
-    let bg = 'rgba(0, 0, 0, 0)'; for (let n = slot; n && n !== el; n = n.parentElement) { const b = getComputedStyle(n).backgroundColor; if (b !== 'rgba(0, 0, 0, 0)') { bg = b; break; } }
+    // What the logo sits on: the nearest painted background above the image.
+    let bg = 'rgba(0, 0, 0, 0)'; for (let n = img ? img.parentElement : slot; n && n !== el; n = n.parentElement) { const b = getComputedStyle(n).backgroundColor; if (b !== 'rgba(0, 0, 0, 0)') { bg = b; break; } }
     const r = {
       html: d, text: el.innerText,
       img: img ? { src: img.getAttribute('src'), h: img.getBoundingClientRect().height } : null,
       mastheadBg: bg,
-      nameColor: slot && !img ? getComputedStyle(slot.firstElementChild).color : null,
+      // No logo: his initial on a white tile, in his colour.
+      nameColor: slot && !img ? getComputedStyle(slot.querySelector('span')).color : null,
     };
     el.remove();
     return r;
   }, o || {});
 
+  // Since the cover (2026-09-23, §10.4) the document opens on his colour and
+  // his logo sits on a white plate on it: the same white paper under the logo,
+  // on a page that is now his colour.
   test('his logo sits on white paper, sized like a letterhead', async () => {
     const r = await doc({ logo: LOGO, brand: '#C2410C' });
     expect(r.img).not.toBe(null);
     expect(r.img.src).toBe(LOGO);
-    expect(r.img.h).toBeLessThanOrEqual(64);
+    expect(r.img.h).toBeLessThanOrEqual(56);
     expect(r.mastheadBg).toBe('rgb(255, 255, 255)');
     expect(r.text).toContain('Pruitt Plumbing');
   });
 
-  test('no logo: his name is the mark, in his colour', async () => {
+  test('no logo: his initial is the mark, in his colour', async () => {
     const r = await doc({ brand: '#166534' });
     expect(r.img).toBe(null);
     expect(r.nameColor).toBe('rgb(22, 101, 52)');
@@ -70,7 +75,7 @@ test.describe('the proposal, white-labelled', () => {
 
   test('his colour is the band, the accents and the price bar; no navy leaks', async () => {
     const r = await doc({ brand: '#166534' });
-    expect(r.html).toContain('height:6px;background:rgb(22,101,52)');
+    expect(r.html).toContain('class="prop-cover" style="background:rgb(22,101,52)');
     expect(r.html).toContain('background:rgb(22,101,52);color:#fff');
     expect(r.html).not.toMatch(/#1a365d|#2a4a7f/);
   });
@@ -104,7 +109,7 @@ test.describe('the proposal, white-labelled', () => {
     S.logoData = logo; S.logoMeta = null;
     const meta = await _logoEnsureMeta();
     const d = document.createElement('div');
-    d.innerHTML = _propMasthead({ bname: 'Plumbing Solutions by JS', bphone: '785-409-8931', blic: '', accent: '#2D5DA8', label: 'Proposal', num: '1', date: '09/23/2026' });
+    d.innerHTML = _propCover({ bname: 'Plumbing Solutions by JS', bphone: '785-409-8931', blic: '', accent: '#2D5DA8', label: 'Proposal', num: '1', date: '09/23/2026', name: 'Tracey Gillaspy', addr: '', phone: '', project: 'Kitchen sink drain repair', until: '10/23/2026' });
     document.body.appendChild(d);
     const img = d.querySelector('.prop-mark img');
     const r = { meta, radius: parseFloat(getComputedStyle(img).borderTopLeftRadius), beside: img.parentElement.style.display === 'flex' };
@@ -141,5 +146,83 @@ test.describe('the proposal, white-labelled', () => {
     expect(r[2], 'a whole sentence is never a title').toBe(null);
   });
 
+  // getBusinessName() falls back to 'TradeDesk'. An account with no name set
+  // must get no name on its document and "Contractor" in its terms, never ours.
+  test('no business name set: no TradeDesk on the page or in the terms', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = { bname: S.bname, acct: window._account };
+      S.bname = ''; try { _account = null; } catch (e) {}
+      bids.length = 0; clients.length = 0;
+      clients.push({ id: 97102, name: 'Hetty Green', addr: '412 Bell St, Topeka, KS 66603' });
+      currentClientId = 97102; _activeTrade = 'plumbing';
+      openGenericEstimate(getClientById(97102), null, null, { mode: 'byo' });
+      _geiIsFreeForm = true; _geiIsTM = false;
+      _byoItems = [{ id: 1, section: 'Work', label: 'Set the new water heater', price: 1800, on: true }];
+      _byoUpdateRail();
+      let d = ''; const real = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = h => { d = h; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = real; }
+      const terms = _geiBuildTermsHtml();
+      S.bname = keep.bname; try { _account = keep.acct; } catch (e) {}
+      return { d, terms };
+    });
+    expect(r.d).not.toMatch(/tradedesk/i);
+    expect(r.terms).not.toMatch(/tradedesk/i);
+    expect(r.terms).toContain('Contractor');
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'white label'); });
+});
+
+// ── THE CUSTOMER'S SIDE: sign.html ─────────────────────────────────────────
+const { FAKE_USER_ID } = require('./helpers');
+test.describe('the signing page, white-labelled', () => {
+  const LETTERHEAD = '<div><div class="prop-mark">Pruitt Plumbing</div><div>Scope of work</div></div>';
+  const prop = {
+    id: 777002, status: 'pending', businessName: 'Pruitt Plumbing', businessPhone: '785-555-0142',
+    clientName: 'Hetty Green', clientAddr: '412 Bell St, Topeka, KS 66603', amount: 4200, deposit: 1050,
+    estDays: 1, createdAt: new Date().toISOString(), signingToken: 'tok-wl2', contractorUserId: FAKE_USER_ID,
+    clientId: 97103, proposalHtml: LETTERHEAD, termsHtml: '<div style="font-size:11px;line-height:2"><div>1. <strong>Change Orders:</strong> In writing.</div><div>2. <strong>Warranty:</strong> One year.</div></div>',
+    trade: 'plumbing', surfaces: [], stripeConnectEnabled: false, brandColor: '#C2410C', state: 'KS',
+  };
+  let page, ctx;
+  test.beforeAll(async ({ browser }) => {
+    ctx = await browser.newContext({ viewport: { width: 393, height: 852 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await page.addInitScript(d => { window.__mockProposalData = d; }, prop);
+    await mockAllExternal(page, { proposalData: prop, bidId: 777002 });
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/777002_tok-wl2.json`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2500);
+  });
+  test.afterAll(async () => { await ctx.close(); });
+
+  test('his colour runs the page, and the Approve button is his', async () => {
+    const r = await page.evaluate(() => ({
+      accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+      btn: getComputedStyle(document.getElementById('approve-btn')).backgroundColor,
+    }));
+    expect(r.accent.toLowerCase()).toBe('#c2410c');
+    expect(r.btn).toBe('rgb(194, 65, 12)');
+  });
+
+  test('a document with its own letterhead is the hero: no second hero card above it', async () => {
+    const shown = await page.evaluate(() => getComputedStyle(document.querySelector('#pg-sign .hero-card')).display);
+    expect(shown).toBe('none');
+  });
+
+  test('the terms still open, in his colour, as readable clauses', async () => {
+    const r = await page.evaluate(async () => {
+      approveAndSign();
+      await new Promise(res => setTimeout(res, 500));
+      esignToggleTerms('sig');
+      const body = document.getElementById('sig-terms-body');
+      const btnLbl = body.parentElement.querySelector('button span');
+      const clause = body.querySelector(':scope > div > div');
+      return { open: getComputedStyle(body).display !== 'none', lbl: getComputedStyle(btnLbl).color, size: parseFloat(getComputedStyle(clause).fontSize), n: body.querySelectorAll(':scope > div > div').length };
+    });
+    expect(r.open).toBe(true);
+    expect(r.lbl).toBe('rgb(194, 65, 12)');
+    expect(r.size).toBeGreaterThanOrEqual(13);
+    expect(r.n).toBe(2);
+  });
 });
