@@ -48,8 +48,9 @@ test.describe('the proposal, white-labelled', () => {
       html: d, text: el.innerText,
       img: img ? { src: img.getAttribute('src'), h: img.getBoundingClientRect().height } : null,
       mastheadBg: bg,
-      // No logo: his initial on a white tile, in his colour.
-      nameColor: slot && !img ? getComputedStyle(slot.querySelector('span')).color : null,
+      // No logo: his name is the mark (no letter monogram, same rule as the hub).
+      nameColor: slot && !img ? getComputedStyle(slot.querySelector('div > div')).color : null,
+      hasMonogram: !!(slot && slot.querySelector('span')),
     };
     el.remove();
     return r;
@@ -67,10 +68,15 @@ test.describe('the proposal, white-labelled', () => {
     expect(r.text).toContain('Pruitt Plumbing');
   });
 
-  test('no logo: his initial is the mark, in his colour', async () => {
+  // Changed 2026-09-24 (§10.4): no letter monogram, the owner removed it from
+  // the client hub as filler and the proposal follows. His name, white on his
+  // colour, is the mark.
+  test('no logo: his name is the mark, on his colour, no monogram', async () => {
     const r = await doc({ brand: '#166534' });
     expect(r.img).toBe(null);
-    expect(r.nameColor).toBe('rgb(22, 101, 52)');
+    expect(r.hasMonogram).toBe(false);
+    expect(r.nameColor).toBe('rgb(255, 255, 255)');
+    expect(r.text).toContain('Pruitt Plumbing');
   });
 
   test('his colour is the band, the accents and the price bar; no navy leaks', async () => {

@@ -5167,7 +5167,10 @@ test.describe('client hub, Daily updates card hides when there is nothing to sho
     await mockAllExternal(page);
     await page.goto(`/client.html?c=905&u=${FAKE_USER_ID}&t=feedtok905`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(1500);
-    expect(await page.locator('.hub-feed-hd:has-text("Daily updates")').count()).toBe(0);
+    // "Daily updates" became "Your project" in the hub redesign (2026-09-24,
+    // §10.4): the card is each job, where it stands and a tracker, and it now
+    // sits after the proposals to sign. Still hidden when there is no job.
+    expect(await page.locator('.hub-feed-hd:has-text("Your project")').count()).toBe(0);
     const mainCol = page.locator('.hub-col-main');
     const firstHd = await mainCol.locator('.hub-feed-hd').first().textContent();
     expect(firstHd).toContain('Awaiting your signature');
@@ -5185,7 +5188,7 @@ test.describe('client hub, Daily updates card hides when there is nothing to sho
     await mockAllExternal(page);
     await page.goto(`/client.html?c=906&u=${FAKE_USER_ID}&t=feedtok906`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(1500);
-    const feedCard = page.locator('.hub-feed-hd:has-text("Daily updates")');
+    const feedCard = page.locator('.hub-feed-hd:has-text("Your project")');
     expect(await feedCard.count()).toBe(1);
     expect(await page.locator('.hub-feed-item').count()).toBe(1);
     assertNoErrors(page, 'populated daily updates card renders');

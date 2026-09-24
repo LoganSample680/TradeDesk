@@ -7583,8 +7583,12 @@ function _propCover(o){
   const nameBlock=`<div style="min-width:0">${name?`<div style="font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1.2;color:#fff">${name}</div>`:''}`+
     (contact?`<div style="font-size:12.5px;color:rgba(255,255,255,.78);margin-top:3px;line-height:1.45">${contact}</div>`:'')+`</div>`;
   const ring='box-shadow:0 0 0 1px rgba(255,255,255,.35),0 8px 22px rgba(0,0,0,.22)';
+  // No logo: his name is the mark, set large. No letter monogram: the owner
+  // removed it from the client hub as filler (2026-09), and the proposal
+  // follows the same rule.
   const mark=!logo
-    ?`<div style="display:flex;align-items:center;gap:12px"><span style="flex:0 0 52px;width:52px;height:52px;border-radius:15px;background:#fff;color:${o.accent};font-size:22px;font-weight:800;display:flex;align-items:center;justify-content:center;${ring}">${escHtml(String(o.bname||'?').trim().charAt(0).toUpperCase())}</span>${nameBlock}</div>`
+    ?`<div style="min-width:0">${name?`<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:#fff">${name}</div>`:''}`+
+      (contact?`<div style="font-size:12.5px;color:rgba(255,255,255,.78);margin-top:4px;line-height:1.45">${contact}</div>`:'')+`</div>`
     :tile
     ?`<div style="display:flex;align-items:center;gap:12px"><img src="${escHtml(logo)}" alt="${name}" style="display:block;height:56px;width:auto;max-width:96px;border-radius:15px;${ring}">${nameBlock}</div>`
     :`<div style="display:inline-block;background:#fff;border-radius:15px;padding:10px 14px;${ring}"><img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:44px;max-width:200px;width:auto;height:auto;object-fit:contain"></div>`+
