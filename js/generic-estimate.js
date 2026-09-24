@@ -7309,7 +7309,7 @@ function _geiBuildTermsHtml(){
     :`${_party} shall obtain all permits and inspections required for this scope of work in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
   // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
   // shape: preserved verbatim by the renderer below.
-  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
+  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)})${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey]&&STATE_CANCEL[_stateKey].seniorDays)?`, or within ${STATE_CANCEL[_stateKey].seniorDays} business days if Buyer is 65 or older (${STATE_CANCEL[_stateKey].seniorStatute})`:''}, for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
   // The cadence the contractor actually picked. This used to be a two-way
   // ternary against 'weekly', so the two cadences the rail has always offered
   // BESIDES weekly, milestone and completion, both told the client "Bi-weekly
@@ -8216,6 +8216,9 @@ async function sendGenericProposal(previewOnly,opts){
     state:_stateKey,
     cancelDays:(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3,
     cancelStatute:_cancelCitation(_stateKey),
+    // California only today: five business days for a buyer 65 or older (Civ. Code §1689.6).
+    seniorCancelDays:(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey]&&STATE_CANCEL[_stateKey].seniorDays)||0,
+    seniorCancelStatute:(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey]&&STATE_CANCEL[_stateKey].seniorStatute)||'',
     lienStatute:(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[_stateKey])?STATE_LIEN[_stateKey].statute:'applicable mechanic\'s lien statutes',
     yearBuilt:_geiYearBuilt,
     epaRequired:_geiEpaRequired,

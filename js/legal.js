@@ -10,7 +10,7 @@ const STATE_CANCEL={
   AK:{days:3,statute:'AS §45.63.010'},
   AZ:{days:3,statute:'A.R.S. §44-5002'},
   AR:{days:3,statute:'A.C.A. §4-89-103'},
-  CA:{days:3,statute:'Civ. Code §1689.5'},
+  CA:{days:3,seniorDays:5,statute:'Civ. Code §1689.5',seniorStatute:'Civ. Code §1689.6'},
   CO:{days:3,statute:'C.R.S. §6-1-702'},
   CT:{days:3,statute:'C.G.S. §42-134a'},
   DE:{days:3,statute:'6 Del. C. §4402'},

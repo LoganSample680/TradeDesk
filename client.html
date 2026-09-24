@@ -827,6 +827,7 @@ async function _mergeSignedProposals(hub,u){
       bid.signerName=sp.client_signed_name||bid.signerName||'';
       if(sp.signature_data)bid.signatureData=sp.signature_data;
       if(sp.epa_required)bid.epaRequired=true;
+      if(sp.buyer_senior)bid.buyerSenior=true;
       if(sp.epa_ack_at)bid.epaAckAt=sp.epa_ack_at;
       if(sp.rrp_firm_cert)bid.rrpFirmCert=sp.rrp_firm_cert;
       if(sp.rrp_renovator_name)bid.rrpRenovatorName=sp.rrp_renovator_name;
@@ -2033,6 +2034,17 @@ function _cancelDeadline(signedAt,days){
   while(count<cancelDays){d.setDate(d.getDate()+1);const ymd=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');if(d.getDay()!==0&&!holidays.includes(ymd))count++;}
   d.setHours(23,59,59,999);return d;
 }
+// California (Civ. Code §1689.6): a buyer who said at signing they are 65 or
+// older gets five business days, not three. Every deadline on a bid reads
+// these two, so the hub, the notice and the documents never disagree.
+function _bidCancelDays(bid){
+  if(bid&&bid.buyerSenior&&_hub&&_hub.seniorCancelDays)return _hub.seniorCancelDays;
+  return (_hub&&_hub.cancelDays)||3;
+}
+function _bidCancelStatute(bid){
+  if(bid&&bid.buyerSenior&&_hub&&_hub.seniorCancelDays&&_hub.seniorCancelStatute)return _hub.seniorCancelStatute;
+  return (_hub&&_hub.cancelStatute)||'16 CFR Part 429';
+}
 function _cancelWindowOpen(signedAt,days){
   const dl=_cancelDeadline(signedAt,days);return dl&&new Date()<dl;
 }
@@ -2068,7 +2080,7 @@ function _showCancelForm(bidId){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.addEventListener('click',e=>{if(e.target===ov)_cancelClose();});
   document.body.appendChild(ov);
-  const cancelDays=(_hub&&_hub.cancelDays)||3;
+  const cancelDays=_bidCancelDays(bid);
   const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
   const open=dl&&new Date()<dl;
   if(bid.cancelledAt){_cancelShowConfirmed(bid);return;}
@@ -2129,8 +2141,8 @@ function _cancelShowStep2(){
 }
 function _cancelShowStep3(){
   const bid=_hub&&_hub.bids.find(b=>b.id===_cancelBidId);if(!bid)return;
-  const cancelDays=(_hub&&_hub.cancelDays)||3;
-  const cancelStatute=(_hub&&_hub.cancelStatute)||'16 CFR Part 429';
+  const cancelDays=_bidCancelDays(bid);
+  const cancelStatute=_bidCancelStatute(bid);
   const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
   const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
   const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
@@ -2171,8 +2183,8 @@ function _cancelShowStep3(){
 }
 function _cancelShowConfirmed(bid){
   const dt=bid.cancelledAt?new Date(bid.cancelledAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
-  const cancelDays=(_hub&&_hub.cancelDays)||3;
-  const cancelStatute=(_hub&&_hub.cancelStatute)||'16 CFR Part 429';
+  const cancelDays=_bidCancelDays(bid);
+  const cancelStatute=_bidCancelStatute(bid);
   const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
   const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
   const refundDue=_bidRefundDue(bid);
@@ -2586,7 +2598,7 @@ function renderDocuments(){
     // (_cancelWindowOpen is the authority); the row removes itself entirely once
     // the window closes. Exception: a submitted cancellation stays visible
     // permanently as the legal record.
-    const _cd=_hub&&_hub.cancelDays||3;
+    const _cd=_bidCancelDays(bid);
     const _cancelOpen=_cancelWindowOpen(bid.signedAt||bid.bid_date,_cd);
     if(_cancelOpen||_isCancelled){
       const _cancelDl=_cancelDeadline(bid.signedAt||bid.bid_date,_cd);

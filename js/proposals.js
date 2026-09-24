@@ -72,7 +72,7 @@ function _buildClientHubSnapshot(clientId){
     // same one-price rule the document follows (owner 2026-08-16). Shared with the
     // property card's Past work rows via _bidScopeLines below.
     const _hubScope=_bidScopeLines(b);
-    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',scope:_hubScope,
+    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',buyerSenior:!!b.buyerSenior,scope:_hubScope,
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.
       kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
@@ -168,6 +168,8 @@ function _buildClientHubSnapshot(clientId){
   // stateFromAddr (js/legal.js): the state, not the first state-shaped word.
   const _snapState=(typeof stateFromAddr==='function'?stateFromAddr(c.addr||''):null)||S.state||'KS';
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
+  // Cal. Civ. Code §1689.6: five business days when the buyer is 65 or older.
+  const _snapSeniorDays=(STATE_CANCEL&&STATE_CANCEL[_snapState]&&STATE_CANCEL[_snapState].seniorDays)||0;
   const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
@@ -240,6 +242,8 @@ function _buildClientHubSnapshot(clientId){
     trade:getActiveTrade(),
     state:_snapState,
     cancelDays:_snapCancelDays,
+    seniorCancelDays:_snapSeniorDays,
+    seniorCancelStatute:(STATE_CANCEL&&STATE_CANCEL[_snapState]&&STATE_CANCEL[_snapState].seniorStatute)||'',
     cancelStatute:_snapCancelStatute,
     hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
     bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos,
