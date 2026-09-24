@@ -1409,7 +1409,13 @@ function renderDash(){
       // stutter the owner keeps seeing (spec 2026-08-11: one waterfall, no
       // stutters). The content still renders (hidden); the REVEAL waits out
       // the pour, then a fresh render slides it open once.
-      const _holdReveal=_wasHidden&&!!document.querySelector('#pg-dash.boot-cascade');
+      // Under the boot shimmer (or about to be: skel mode on, this render ends
+      // by applying it) the banner is part of its card's reveal (it fades in
+      // with the data, into space its shimmer already holds), so it
+      // neither waits for the pour nor slides open (owner 2026-09-24: "on the
+      // road and on site banner still loads in weird and choppy").
+      const _underShimmer=!!_nearbyEl.closest('.td-boot-skel-on')||(typeof _dashSkelMode==='function'&&_dashSkelMode());
+      const _holdReveal=!_underShimmer&&_wasHidden&&!!document.querySelector('#pg-dash.boot-cascade');
       if(_holdReveal&&!window._nearbyPourWait){
         window._nearbyPourWait=setInterval(()=>{
           if(document.querySelector('#pg-dash.boot-cascade'))return;
@@ -1420,7 +1426,7 @@ function renderDash(){
       if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;} // a re-appearance mid-fade-out must not get hidden out from under it
       _nearbyEl.style.animation='';
       if(!_holdReveal)_nearbyEl.style.display='block';
-      if(!_holdReveal&&_wasHidden){
+      if(!_holdReveal&&_wasHidden&&!_underShimmer){
         // The geo fix usually lands seconds AFTER the boot waterfall, and this
         // card sits at the top of the dashboard: popping in at full height
         // shoved every card below it down in one frame, which read as the
@@ -1435,7 +1441,8 @@ function renderDash(){
         _nearbyEl.style.maxHeight='560px';
         setTimeout(()=>{_nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';},380);
       }
-      const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
+      const _enter=(_wasHidden&&!_underShimmer)?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'';
+      const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+_enter+'">'+inner+'</div>';
       // ── The address, once ───────────────────────────────────────────────
       // Owner, 2026-09-21, from his phone: "why is John Doe address cutoff?"
       // The card was drawing
@@ -1578,7 +1585,7 @@ function renderDash(){
         const _dStat=(id,val,label)=>'<div style="flex:1;background:rgba(255,255,255,.6);border:1px solid rgba(29,78,216,.14);border-radius:12px;padding:9px 10px">'+
           '<div id="'+id+'" style="font-size:16px;font-weight:800;color:#1B1612;font-variant-numeric:tabular-nums">'+val+'</div>'+
           '<div style="font-size:9.5px;color:#1D4ED8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:1px">'+label+'</div></div>';
-        _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+        _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+_enter+'">'+
           '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
             '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
               '<span style="position:relative;z-index:2;width:40px;height:40px;border-radius:50%;background:linear-gradient(160deg,#3B82F6,#1D4ED8);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(29,78,216,.5)"><span style="display:inline-flex;animation:tdDriveMove 1.1s ease-in-out infinite">'+_svgCar('#fff',20)+'</span></span>'+
@@ -1662,7 +1669,7 @@ function renderDash(){
         if(!_usedSnap){
           delete _nearbyEl.dataset.snap;
           const _btn='<button onclick="_dashManualClockIn()" style="flex-shrink:0;padding:11px 18px;border-radius:12px;background:#1B1612;color:#fff;font-size:13px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>';
-          _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+          _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+_enter+'">'+
             '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 15px">'+
               '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
                 '<span style="width:34px;height:34px;border-radius:50%;background:var(--bg3,#ECEEF2);display:flex;align-items:center;justify-content:center">'+
@@ -1698,7 +1705,14 @@ function renderDash(){
         // newer than it is.
         delete _nearbyEl.dataset.snap;
         window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing"): the optimistic boot restore is over for this page load
-        try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
+        // h: its height, so the next boot's shimmer holds the same space
+        // (_dashNearbySkelH). 0 while hidden under the shimmer; the last
+        // measured height is kept then.
+        try{
+          const _prev=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
+          const _h=_nearbyEl.offsetHeight||(_prev&&_prev.h)||0;
+          localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,h:_h}));
+        }catch(_e){}
       }
     }
   }
@@ -1763,7 +1777,12 @@ function _tdSkelShape(kind,h){
   const tile=()=>'<div style="border:1px solid var(--border);border-radius:var(--r);padding:10px">'+band(9,'55%','margin-bottom:8px')+band(16,'70%')+'</div>';
   switch(kind){
     case 'tbar':return band(18,'52%','margin:6px 0');
-    case 'kpi':return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+[tile(),tile(),tile(),tile(),tile(),tile()].join('')+'</div>';
+    // The KPI widget also carries the geo banner (On site / On the road /
+    // Not clocked in), which always renders. Its shimmer card is sized to the
+    // banner's last height, so nothing below moves when the data lands.
+    case 'kpi':return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+[tile(),tile(),tile(),tile(),tile(),tile()].join('')+'</div>'+
+      '<div style="margin-top:16px;height:'+_dashNearbySkelH()+'px;border:1px solid var(--border);border-radius:20px;display:flex;align-items:center;gap:14px;padding:0 16px">'+
+        band(34,'34px','border-radius:50%;flex:none;margin-left:9px')+'<div style="flex:1">'+band(14,'52%','margin-bottom:8px')+band(10,'66%')+'</div>'+band(40,'86px','border-radius:12px;flex:none')+'</div>';
     case 'feed':return band(13,'42%','margin:2px 0 12px')+
       [0,1,2].map(()=>'<div style="display:flex;align-items:center;gap:10px;margin:10px 0">'+band(30,'30px','border-radius:8px;flex:none')+'<div style="flex:1">'+band(11,'70%','margin-bottom:6px')+band(9,'45%')+'</div></div>').join('');
     case 'quick':return '<div style="display:flex;gap:18px;justify-content:space-around;padding:4px 0">'+
@@ -1777,6 +1796,16 @@ function _tdSkelShape(kind,h){
     case 'goal':return band(13,'44%','margin:2px 0 10px')+band(14,'100%','border-radius:99px')+band(10,'30%','margin-top:8px');
     default:return (typeof _tdSkelRows==='function')?_tdSkelRows(Math.max(2,Math.min(5,Math.round((h||120)/46)))):'';
   }
+}
+// The geo banner's last rendered height (saved with its snapshot), so its
+// shimmer card holds exactly the space the banner will take.
+function _dashNearbySkelH(){
+  try{
+    const sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
+    const h=sn&&Number(sn.h);
+    if(h>=60&&h<=400)return Math.round(h);
+  }catch(_e){}
+  return 86;
 }
 function _dashApplySkeletons(){
   if(!_dashSkelMode())return;
@@ -1805,6 +1834,12 @@ function _dashApplySkeletons(){
     sk.innerHTML=_tdSkelShape(tbar?'tbar':(el.dataset.dw||''),h);
     el.classList.add('td-boot-skel-on');
     el.appendChild(sk);
+    // Hold exactly the space the real card takes, so nothing below moves when
+    // the data lands (the shape is drawn from a template, the height is not).
+    if(!tbar){
+      const drift=el.offsetHeight-h;
+      if(drift){sk.style.boxSizing='border-box';sk.style.overflow='hidden';sk.style.height=Math.max(20,sk.offsetHeight-drift)+'px';}
+    }
     _dashSkelSweep(sk);
   });
 }
@@ -1832,7 +1867,10 @@ function _dashRevealSkeletons(){
   const order=els.map((el,i)=>({el,k:Math.random()})).sort((a,b)=>a.k-b.k);
   const span=Math.min(420,60*els.length);
   order.forEach(({el},i)=>{
-    const at=els.length>1?Math.round(i*span/(els.length-1)):0;
+    // A card whose shimmer a re-render already replaced has nothing to swap:
+    // show it now rather than leave it blank until its turn.
+    const bare=!el.querySelector(':scope>.td-boot-skel');
+    const at=bare?0:(els.length>1?Math.round(i*span/(els.length-1)):0);
     setTimeout(()=>{
       if(!el.classList.contains('td-boot-skel-on'))return;
       el.classList.remove('td-boot-skel-on');

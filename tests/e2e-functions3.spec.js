@@ -1222,7 +1222,7 @@ test.describe('Cloud Supabase and account functions', () => {
         // The swap is card by card across a short beat now (owner-approved
         // 2026-09-24, _dashRevealSkeletons), so give it that beat.
         waited = 0;
-        while (document.querySelector('#pg-dash .td-boot-skel') && waited < 3000) { await new Promise(res => setTimeout(res, 50)); waited += 50; }
+        while (document.querySelector('#pg-dash .td-boot-skel,#pg-dash .td-boot-skel-on') && waited < 3000) { await new Promise(res => setTimeout(res, 50)); waited += 50; }
         const after = {
           skels: document.querySelectorAll('#pg-dash .td-boot-skel').length,
           on: document.querySelectorAll('#pg-dash .td-boot-skel-on').length,
@@ -10348,7 +10348,8 @@ test.describe('Version consistency', () => {
         const shape = (dw) => document.querySelector('#dash-widget-root>.td-dw[data-dw="' + dw + '"]>.td-boot-skel');
         const kpi = shape('kpi'), quick = shape('quick'), cal = shape('calendar');
         return {
-          kpiTiles: kpi ? kpi.querySelectorAll(':scope>div>div').length : 0,
+          // the tile grid only: the geo banner's own shimmer card follows it (2026-09-24)
+          kpiTiles: kpi ? kpi.querySelectorAll(':scope>div:first-child>div').length : 0,
           // style.borderRadius, not the raw attribute: the shimmer sweep sets
           // properties on each bar, which re-serializes the attribute text.
           quickButtons: quick ? [...quick.querySelectorAll('.td-skel')].filter(b => b.style.borderRadius === '14px').length : 0,
