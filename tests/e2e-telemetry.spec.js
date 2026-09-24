@@ -599,7 +599,13 @@ test.describe('control telemetry: client → ingest → rollup contract', () => 
 
   test('every screen the app can show has a name, and none of them is the code name', () => {
     const mig = read(MIG);
-    const named = new Set([...mig.matchAll(/\('(pg-[a-z0-9-]+)',\s*'([^']+)'/g)].map((m) => m[1]));
+    // Names added by a later migration count too: a new screen gets its row in
+    // a new additive file, never by editing one that already ran.
+    const fs = require('fs'), path = require('path');
+    const dir = path.join(__dirname, '..', 'supabase', 'migrations');
+    const all = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+      .filter((sql) => /insert into analytics_screen_names/.test(sql)).join('\n');
+    const named = new Set([...all.matchAll(/\('(pg-[a-z0-9-]+)',\s*'([^']+)'/g)].map((m) => m[1]));
     const html = read('index.html');
     const shown = [...html.matchAll(/<div class="pg"[^>]*id="(pg-[a-z0-9-]+)"/g)].map((m) => m[1]);
     const missing = shown.filter((id) => !named.has(id));
