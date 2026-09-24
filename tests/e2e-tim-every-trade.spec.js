@@ -131,6 +131,41 @@ test.describe('type it or talk to Tim, in every trade', () => {
     expect(await all('paint the kitchen walls and ceiling two coats')).not.toContain('detail-model');
   });
 
+  // ── TO THE MANUFACTURER'S INSTRUCTIONS (owner, 2026-09-24) ──────────────
+  //
+  // "can we tell Tim to do manufacturers instructions?" The unit's warranty
+  // holds only when it goes in the way its manufacturer says, so Tim puts it
+  // on the paper for anything that comes with an installation manual.
+  const step = (id) => page.evaluate((id) => TIM_IMPLIED.find(r => r.id === id).step, id);
+  test('a new water heater or softener: start it up to the manufacturer\'s instructions', async () => {
+    expect(await all('pull the old water heater and set a tankless')).toContain('finish-mfr');
+    expect(await all('install a new water softener in the garage')).toContain('finish-mfr');
+    expect(await all('replace the sump pump')).toContain('finish-mfr');
+    expect(await step('finish-mfr')).toBe("Start up the new unit to the manufacturer's instructions");
+  });
+
+  test('quiet when he said it, when nothing goes in, and on a paint job', async () => {
+    expect(await all('set a new 50 gallon water heater per the manufacturer\'s instructions')).not.toContain('finish-mfr');
+    expect(await all('install the tankless to the install manual')).not.toContain('finish-mfr');
+    expect(await all('haul away the old water heater')).not.toContain('finish-mfr');
+    expect(await all('paint the kitchen walls and ceiling two coats')).not.toContain('finish-mfr');
+  });
+
+  test('heating and cooling say it in their own start-up, with no second line', async () => {
+    const ids = await all('swap the furnace and ac for a new heat pump and air handler');
+    expect(ids).toContain('finish-startup');
+    expect(ids).not.toContain('finish-mfr');
+    expect(await step('finish-startup')).toContain("to the manufacturer's instructions");
+  });
+
+  test('the venting line says manufacturer, not "maker", and does not silence the unit\'s own line', async () => {
+    expect(await step('install-vent')).toBe("Run new venting for the new unit, to the manufacturer's instructions");
+    const ids = await page.evaluate(() => timScopeBuild('pull the old water heater and set a tankless', { rejected: [] }).implied.map(i => i.id));
+    expect(ids).toEqual(expect.arrayContaining(['install-vent', 'finish-mfr']));
+    const still = await page.evaluate(() => TIM_IMPLIED.find(r => r.id === 'finish-mfr').when('set a tankless', [{ text: "Run new venting for the new unit, to the manufacturer's instructions" }]));
+    expect(still).toBe(true);
+  });
+
   // The permit is his call (owner: "not every job requires a permit or
   // inspection though"). Asked, never swept in, and he is only asked twice.
   const tmMissed = (said) => page.evaluate((s) => {

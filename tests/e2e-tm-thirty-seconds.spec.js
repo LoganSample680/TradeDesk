@@ -161,6 +161,10 @@ test.describe('a T&M in under thirty seconds', () => {
     // The gas line, the venting and the condensate (2026-09-23, owner: "tim
     // should be smart enough to add in the model and venting requirements")
     // land with the rough-in and the install they belong to.
+    // Changed 2026-09-24 (§10.4, owner: "can we tell Tim to do manufacturers
+    // instructions?"): the venting says "manufacturer's", not "maker's", and
+    // the new unit is started up to its manufacturer's instructions once the
+    // joints are tested, before the clean-up.
     expect(out.chips).toEqual([
       'Shut the water off and drain it down',
       'Protect the floors along the path in and out',
@@ -168,9 +172,10 @@ test.describe('a T&M in under thirty seconds', () => {
       'Run new pex to the manifold',
       "Check the gas line against the new unit's full load and upsize it where it falls short",
       'Set a tankless',
-      "Run new venting for the new unit, to the maker's instructions",
+      "Run new venting for the new unit, to the manufacturer's instructions",
       'Run the condensate drain for the new unit',
       'Pressure test and check every joint for leaks',
+      "Start up the new unit to the manufacturer's instructions",
       'Haul off debris and leave the site broom clean',
     ]);
   });

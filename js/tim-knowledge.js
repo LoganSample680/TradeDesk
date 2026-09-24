@@ -598,7 +598,7 @@ const TIM_IMPLIED=[
     id:'install-vent',
     source:'trade',
     stage:'install',
-    step:'Run new venting for the new unit, to the maker\'s instructions',
+    step:'Run new venting for the new unit, to the manufacturer\'s instructions',
     say:'Venting for the new unit',
     because:'A tankless or high-efficiency unit seldom vents like the old one did. In the price, or it is the first change order.',
     when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_VENT_KIND.test(n)&&!_TIMK_ELECTRIC_TL.test(n)&&!_TIMK_VENTED.test(n);},
@@ -798,10 +798,32 @@ const TIM_IMPLIED=[
     id:'finish-startup',
     source:'trade',
     stage:'finish',
-    step:'Start up the system and check that it heats and cools',
+    step:'Start up the system to the manufacturer\'s instructions and check that it heats and cools',
     say:'Start it up',
     because:'Nobody signs off on a system nobody has run.',
     when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_HVAC.test(n)&&!/\b(start ?up|start (it|the system|the unit) up|started (it )?up|fire it( up)?|commission|run it|check the charge)\b/.test(n);},
+  },
+  // The unit goes in the way its manufacturer says (owner, 2026-09-24: "can
+  // we tell Tim to do manufacturers instructions?"). The warranty on a water
+  // heater, a softener or a boiler holds only when it does, so it is said on
+  // the paper where the customer reads what they are buying. Heating and
+  // cooling already say it in their own start-up step (finish-startup), and a
+  // panel is tested circuit by circuit (finish-circuits), so neither gets a
+  // second line.
+  {
+    id:'finish-mfr',
+    source:'trade',
+    stage:'finish',
+    step:'Start up the new unit to the manufacturer\'s instructions',
+    say:'To the manufacturer\'s instructions',
+    because:'The warranty on the unit holds only when it goes in the way its manufacturer says. Put that on the paper.',
+    when:(t,steps)=>{
+      const n=_timkAll(t,steps);
+      // Tim's own venting line says "manufacturer's instructions" for the
+      // vent; that is not the unit's start-up, so it does not count as said.
+      const said=_timkAll(t,(steps||[]).filter(x=>!/\bvent/i.test(x&&typeof x==='object'?(x.text||''):String(x||''))));
+      return _TIMK_MFR_UNIT.test(n)&&!_TIMK_HVAC.test(n)&&_TIMK_NEW.test(n)&&!_TIMK_MFR.test(said);
+    },
   },
   {
     id:'finish-circuits',
@@ -970,6 +992,11 @@ const _TIMK_BRANDS=/\b(navien|rinnai|rheem|ruud|noritz|takagi|bosch|a\.? ?o\.? s
 function _timkHasModel(raw){return _TIMK_BRANDS.test(raw)||/\b[A-Z]{1,6}-?\d{2,}[A-Z0-9-]*\b/.test(raw);}
 const _TIMK_COOLING=/\b(ac|a c|air conditioner|air conditioning|condenser|heat pump|mini ?split|evaporator coil|line ?set)\b/;
 const _TIMK_OUT=/\b(pull|pulling|remove|removing|swap|swapping|change out|changing out|replace|replacing|take out|tear out|old)\b/;
+// A unit that comes with a manufacturer's installation manual, one that goes
+// in (not one that only comes out), and whether he already said so.
+const _TIMK_MFR_UNIT=/\b(tankless|water heater|water softener|softener|boiler|well pump|sump pump|ejector pump|grinder pump|water filtration|whole house filter|garbage disposal|dishwasher|generator)\b/;
+const _TIMK_NEW=/\b(new|set|install|installing|put in|swap in|replace|replacing)\b/;
+const _TIMK_MFR=/\b(manufacturer|manufacturers|mfr|mfg|maker|makers|install(ation)? (manual|instructions)|per (the )?(instructions|specs?))\b/;
 const _TIMK_HVAC=/\b(furnace|heat pump|air handler|condenser|ac unit|air conditioner|mini ?split|boiler)\b/;
 const _TIMK_TEAROFF=/\b(tear ?off|tearing off|strip the roof|re-?roof|new roof|shingles? off)\b/;
 const _TIMK_REROOF=/\b(tear ?off|tearing off|re-?roof|new roof|shingle it|new shingles|architectural shingles|reshingle)\b/;
