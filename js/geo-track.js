@@ -782,6 +782,9 @@ function _geoRestoreOpen(){
   // of park survived the reload, so JS's side has to as well or the off-switch
   // is unreachable (see _geoParkRestore).
   _geoParkRestore();
+  // An address save the last page did not live to finish (js/mileage.js
+  // _mileResumeAddressSave). Not awaited: boot must not wait on a re-derive.
+  try{if(typeof _mileResumeAddressSave==='function')_mileResumeAddressSave();}catch(_e){}
   try{
     const s=JSON.parse(localStorage.getItem(_GEO_OPEN_KEY)||'null');
     if(!s||s.uid!==((_supaUser&&_supaUser.id)||null))return;

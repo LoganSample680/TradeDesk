@@ -5760,7 +5760,109 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.on).toContain('>Edit<');
       expect(r.off, 'no flag, no Edit').not.toContain('fixauto');
       // Not work is on both: that never depended on the row being fixable.
-      expect(r.off).toContain('notwork');
+      // WAS toContain('notwork'): the menu's first tap on Not work now only
+      // asks (owner 2026-09-24), so what the menu carries is the ask, and the
+      // answer lives one step in (tested below).
+      expect(r.off).toContain('_tlRowMenuAskNotWork');
+      expect(r.on).toContain('_tlRowMenuAskNotWork');
+    });
+
+    // ── Not work is last, and asks first (owner 2026-09-24) ─────────────────
+    // Jack's 3:36 stop went Personal at 4:20:27 on 23 September out of this
+    // menu, seconds after he saved its address, with the red Not work sitting
+    // above "Save this address".
+    const openMenu = (raw, extra) => page.evaluate(({ raw, extra }) => {
+      document.getElementById('_tl-row-menu')?.remove();
+      const b = document.createElement('button');
+      b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = raw;
+      b.dataset.rowFix = ''; b.dataset.rowLabel = 'A stop';
+      Object.assign(b.dataset, extra || {});
+      document.body.appendChild(b);
+      const keep = window._mileStopCoord;
+      window._mileStopCoord = () => ({ lat: 39, lng: -95 });
+      try { _tlRowMenu(b); } finally { window._mileStopCoord = keep; b.remove(); }
+      const ov = document.getElementById('_tl-row-menu');
+      const labels = ov ? [...ov.querySelectorAll('.tl-menu-act-t')].map(x => x.textContent) : [];
+      return { labels, html: ov ? ov.innerHTML : '' };
+    }, { raw, extra });
+
+    test('on an unsaved stop, Save this address comes before Not work', async () => {
+      const r = await openMenu('unsaved', { rowKey: 'd-j-1', rowDate: '2026-09-23' });
+      const iSave = r.labels.indexOf('Save this address'), iNot = r.labels.indexOf('Not work');
+      expect(iSave).toBeGreaterThan(-1);
+      expect(iNot).toBeGreaterThan(iSave);
+      await page.evaluate(() => document.getElementById('_tl-row-menu')?.remove());
+    });
+
+    test('the first tap on Not work only asks: nothing is answered until Yes', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const real = window._visitHoldAnswer;
+        window._visitHoldAnswer = async (id, m) => { calls.push([id, m]); };
+        try {
+          document.getElementById('_tl-row-menu')?.remove();
+          const b = document.createElement('button');
+          b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved';
+          b.dataset.rowFix = ''; b.dataset.rowLabel = 'A stop';
+          document.body.appendChild(b); _tlRowMenu(b); b.remove();
+          const ov = document.getElementById('_tl-row-menu');
+          const not = [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Not work'));
+          not.click();
+          await new Promise(r => setTimeout(r, 20));
+          const afterFirst = { calls: calls.length, open: !!document.getElementById('_tl-row-menu'),
+            labels: [...ov.querySelectorAll('.tl-menu-act-t')].map(x => x.textContent),
+            ask: (ov.querySelector('.tl-menu-ask') || {}).textContent || '' };
+          [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Yes, not work')).click();
+          await new Promise(r => setTimeout(r, 20));
+          return { afterFirst, calls, open: !!document.getElementById('_tl-row-menu') };
+        } finally { window._visitHoldAnswer = real; document.getElementById('_tl-row-menu')?.remove(); }
+      });
+      expect(r.afterFirst.calls, 'one tap answers nothing').toBe(0);
+      expect(r.afterFirst.open).toBe(true);
+      expect(r.afterFirst.labels).toEqual(['Yes, not work', 'Back']);
+      expect(r.afterFirst.ask).toContain('off your hours');
+      expect(r.calls).toEqual([['x9', 'personal']]);
+      expect(r.open).toBe(false);
+    });
+
+    test('Back puts the menu away and answers nothing', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const real = window._visitHoldAnswer;
+        window._visitHoldAnswer = async (id, m) => { calls.push([id, m]); };
+        try {
+          const b = document.createElement('button');
+          b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved'; b.dataset.rowLabel = 'A stop';
+          document.body.appendChild(b); _tlRowMenu(b); b.remove();
+          _tlRowMenuAskNotWork('x9', 'unsaved');
+          const ov = document.getElementById('_tl-row-menu');
+          [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Back')).click();
+          await new Promise(r => setTimeout(r, 20));
+          return { calls, open: !!document.getElementById('_tl-row-menu') };
+        } finally { window._visitHoldAnswer = real; }
+      });
+      expect(r.calls).toEqual([]);
+      expect(r.open).toBe(false);
+    });
+
+    test('asking with no menu open, or with junk arguments, never throws and never answers', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tl-row-menu')?.remove();
+        const out = [];
+        for (const args of [['x', 'unsaved'], [null, null], [undefined], ["x');alert(1);('", 'y']]) {
+          try { out.push(_tlRowMenuAskNotWork(...args)); } catch (e) { out.push('threw'); }
+        }
+        const b = document.createElement('button');
+        b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved'; b.dataset.rowLabel = 'A stop';
+        document.body.appendChild(b); _tlRowMenu(b); b.remove();
+        const ok = _tlRowMenuAskNotWork('x9', 'unsaved');
+        const html = document.getElementById('_tl-row-menu').innerHTML;
+        document.getElementById('_tl-row-menu').remove();
+        return { out, ok, carries: html.includes("_tlRowMenuDo('notwork','x9','unsaved')") };
+      });
+      expect(r.out).toEqual([false, false, false, false]);
+      expect(r.ok).toBe(true);
+      expect(r.carries, 'Yes answers the same row, through the same door').toBe(true);
     });
 
     // AMENDED 2026-09-14 (10.4). There were two functions when this was
