@@ -2519,17 +2519,19 @@ function renderDocuments(){
     const _bidCOs=bid.changeOrders||[];
     const docCount=1+(bid.proposalKey?1:0)+(_hasEpaDoc?1:0)+_bidCOs.length;
     const _isCancelled=!!bid.cancelledAt;
-    const hdrBg=_isCancelled?'linear-gradient(135deg,#7F1D1D,#991B1B)':(isPaid?'linear-gradient(135deg,#14532D,#1A6B3A)':'linear-gradient(135deg,#1B1612,#24202C)');
-    html+='<div style="border-radius:var(--rl);overflow:hidden;margin-bottom:12px;box-shadow:0 1px 6px rgba(27,22,18,.1),0 0 0 1px rgba(27,22,18,.06)">';
+    // A white card per job with his colour as the accent (hub redesign
+    // 2026-09-24); the status says itself in a chip, not a coloured slab.
+    const _dChip=_isCancelled?'<span class="hub-next-chip" style="background:#FEE2E2;color:#991B1B">Cancelled</span>':(isPaid?'<span class="hub-next-chip">Paid</span>':'<span class="hub-next-chip" style="background:color-mix(in srgb,var(--denim) 12%,#fff);color:var(--denim)">Active</span>');
+    html+='<div class="hub-doc-card" style="border-radius:20px;overflow:hidden;margin-bottom:14px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.05),0 8px 22px rgba(16,24,40,.07)">';
     // Tappable header
-    html+='<div onclick="_toggleDoc('+bid.id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer">';
+    html+='<div onclick="_toggleDoc('+bid.id+')" style="background:#fff;padding:16px 18px;cursor:pointer;border-bottom:1px solid var(--border)">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Proposal')+(_isCancelled?' · Cancelled '+svgIcon('🚫'):(isPaid?' · Paid '+svgIcon('✓'):' · Balance due'))+'</div>';
-    html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
-    html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.signedAt||bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><div class="hub-next-eyebrow">'+(bid.signedAt?'Signed '+esc(_hubShortDate(bid.signedAt)):'Your project')+'</div>'+_dChip+'</div><div style="display:none">'+esc(bid.type||'Proposal')+(_isCancelled?' · Cancelled '+svgIcon('🚫'):(isPaid?' · Paid '+svgIcon('✓'):' · Balance due'))+'</div>';
+    html+='<div style="font-size:18px;font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.25">'+esc(bid.type||'Project')+'</div>';
+    html+='<div style="font-size:12.5px;color:var(--text3);margin-top:3px">'+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
     html+='</div>';
-    html+='<span id="dc-'+bid.id+'" style="font-size:20px;color:rgba(255,255,255,.3);transition:transform .2s;flex-shrink:0;'+(autoOpen?'transform:rotate(90deg)':'')+'">›</span>';
+    html+='<span id="dc-'+bid.id+'" style="font-size:22px;color:var(--text3);transition:transform .2s;flex-shrink:0;'+(autoOpen?'transform:rotate(90deg)':'')+'">›</span>';
     html+='</div>';
     html+='</div>'; // end header
     // Collapsible body
@@ -2594,14 +2596,23 @@ function renderDocuments(){
       const _cancelTag=_isCancelled
         ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
         :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEF3C7;color:#92400E">Active</span>';
-      html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_showCancelForm('+bid.id+')">'+
-        '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">'+svgIcon('⚖',{size:18})+'</div>'+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:13px;font-weight:700;color:var(--text)">'+_cd+'-Day Cancellation Right'+_cancelTag+'</div>'+
-          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+_cancelMeta+'</div>'+
-        '</div>'+
-        '<div style="font-size:18px;color:var(--text3);flex-shrink:0">›</div>'+
-      '</div>';
+      // YOUR RIGHT TO CANCEL, said so it can be used (hub redesign 2026-09-24:
+      // "window open, expires 09/25/2026" gave no time, no refund, no address
+      // and did not look tappable). The three-step form behind the button is
+      // unchanged. Once cancelled, the row stays as the legal record.
+      if(_isCancelled){
+        html+=_docRow(svgIcon('⚖',{size:18}),_cd+'-Day Cancellation Right',_cancelMeta,_cancelTag,'_showCancelForm('+bid.id+')','');
+      }else{
+        const _dlTxt=_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'';
+        const _paidBack=(bid.paid||0)>0.01?'Your '+fmt(bid.paid)+' comes back in full.':'Nothing has been paid, so there is nothing to refund.';
+        const _addr=String(h.contractorAddr||'').trim();
+        html+='<div style="margin:12px 0 14px;padding:16px;border-radius:16px;background:color-mix(in srgb,var(--denim) 5%,#fff);border:1px solid color-mix(in srgb,var(--denim) 20%,#fff)">'+
+          '<div class="hub-next-eyebrow">Your right to cancel</div>'+
+          '<div style="font-size:16px;font-weight:800;color:var(--text);margin-top:6px;line-height:1.3">You can cancel until midnight '+esc(_dlTxt)+'</div>'+
+          '<div style="font-size:13.5px;color:var(--text2);margin-top:6px;line-height:1.5">'+_paidBack+' Cancel here'+(_addr?', or write to '+esc(h.contractorName||'us')+', '+esc(_addr)+'.':'.')+'</div>'+
+          '<button onclick="_showCancelForm('+bid.id+')" style="display:block;width:100%;margin-top:12px;padding:12px;border-radius:12px;border:1.5px solid color-mix(in srgb,var(--denim) 26%,#fff);background:#fff;color:var(--denim);font-size:14.5px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit)">Cancel this job</button>'+
+        '</div>';
+      }
     }
     html+='</div>';
     html+='</div>'; // end body
