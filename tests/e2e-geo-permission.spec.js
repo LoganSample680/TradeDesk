@@ -1442,6 +1442,37 @@ test.describe('Crew location permission', () => {
     expect(r.shown).toBe(true);
   });
 
+  // Jack, 2026-09-24: every boot said "Turn on location" on a phone tracking
+  // fine. _geoNativeAuth is null until the bridge answers, and the banner fell
+  // through to the WebView's own permission, which reads 'prompt' on a healthy
+  // iPhone. No answer from iOS yet means say nothing.
+  test('on native, before iOS answers, the WebView\'s "prompt" raises nothing', async () => {
+    // The WebView says 'prompt', as it does on a healthy iPhone.
+    const stubbed = await page.evaluate(() => {
+      if (!navigator.permissions) return false;
+      navigator.permissions.query = async () => ({ state: 'prompt' });
+      return true;
+    });
+    const nb = await bannerFor(null);
+    await page.evaluate(() => { try { delete navigator.permissions.query; } catch (_e) {} });
+    expect(stubbed).toBe(true);
+    expect(nb.shown, 'no native answer is not "location off"').toBe(false);
+    expect(nb.html).not.toMatch(/Turn on location/i);
+  });
+
+  test('the checklist does not call location off before the first read lands', async () => {
+    const r = await page.evaluate(() => {
+      const saved = _geoPermCache;
+      try {
+        _geoPermCache = null; const unread = _geoPermDone();
+        _geoPermCache = 'prompt'; const prompt = _geoPermDone();
+        return { unread, prompt };
+      } finally { _geoPermCache = saved; }
+    });
+    expect(r.unread, 'unread is unknown, not off').toBe(true);
+    expect(r.prompt, 'a real prompt still asks').toBe(false);
+  });
+
   test('a healthy phone shows nothing at all', async () => {
     const r = await bannerFor({ status: 'always', accuracy: 'full', servicesEnabled: true });
     expect(r.shown, 'a banner on a working phone is noise').toBe(false);
