@@ -274,12 +274,109 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
     await page.waitForFunction(() => !document.querySelector('#pg-dash .td-data-in'), { timeout: 1500 });
   });
 
+  test('a card whose shimmer was already replaced shows at once, not on its turn', async () => {
+    const r = await page.evaluate(() => {
+      window._bootSyncPending = true; window._bootSkelDone = false;
+      _dashApplySkeletons();
+      const all = [...document.querySelectorAll('#pg-dash .td-boot-skel-on')];
+      const bare = all[all.length - 1];
+      bare.querySelectorAll(':scope>.td-boot-skel').forEach(s => s.remove());   // a re-render wiped it
+      window._bootSkelDone = true; window._bootSyncPending = false;
+      _dashRevealSkeletons();
+      return new Promise(res => setTimeout(() => res({ n: all.length, bareShown: !bare.classList.contains('td-boot-skel-on') }), 30));
+    });
+    expect(r.n).toBeGreaterThan(1);
+    expect(r.bareShown).toBe(true);
+    await page.waitForFunction(() => !document.querySelector('#pg-dash .td-boot-skel-on'), { timeout: 1500 });
+  });
+
   test('reveal with nothing shimmering, or called repeatedly, is a no-op', async () => {
     const r = await page.evaluate(() => {
       try { for (let i = 0; i < 5; i++) _dashRevealSkeletons(); _dashSkelSweep(document.createElement('div')); return true; }
       catch (e) { return e.message; }
     });
     expect(r).toBe(true);
+  });
+
+  // Owner 2026-09-24: "on the road and on site banner still loads in weird
+  // and choppy". The banner sits in the KPI widget; it now has its own shimmer
+  // card at its last height, and under the shimmer it never waits for the pour
+  // or slides open, it lands with its card.
+  test('the geo banner has its own shimmer card, sized to its last height', async () => {
+    const r = await page.evaluate(() => {
+      const keep = localStorage.getItem('zp3_nearby_snap');
+      const out = {};
+      localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div>x</div>', ts: Date.now(), uid: null, h: 152 }));
+      out.remembered = _dashNearbySkelH();
+      localStorage.setItem('zp3_nearby_snap', '{junk');
+      out.junk = _dashNearbySkelH();
+      localStorage.setItem('zp3_nearby_snap', JSON.stringify({ h: 99999 }));
+      out.absurd = _dashNearbySkelH();
+      localStorage.removeItem('zp3_nearby_snap');
+      out.none = _dashNearbySkelH();
+      localStorage.setItem('zp3_nearby_snap', JSON.stringify({ h: 152 }));
+      out.inKpi = _tdSkelShape('kpi', 300).includes('height:152px');
+      if (keep == null) localStorage.removeItem('zp3_nearby_snap'); else localStorage.setItem('zp3_nearby_snap', keep);
+      return out;
+    });
+    expect(r).toEqual({ remembered: 152, junk: 86, absurd: 86, none: 86, inKpi: true });
+  });
+
+  test('under the shimmer the banner neither waits for the pour nor slides open', async () => {
+    const r = await page.evaluate(() => {
+      const el = document.getElementById('dash-nearby'), d = document.getElementById('pg-dash');
+      if (window._nearbyPourWait) { clearInterval(window._nearbyPourWait); window._nearbyPourWait = null; }
+      el.style.display = 'none'; el.innerHTML = ''; el.style.maxHeight = ''; el.style.transition = '';
+      window._bootSyncPending = true; window._bootSkelDone = false;
+      _dashApplySkeletons();
+      d.classList.add('boot-cascade');          // the pour is mid-flight
+      renderDash();
+      const out = {
+        underShimmer: !!el.closest('.td-boot-skel-on'),
+        shown: el.style.display, slid: el.style.maxHeight, waiting: !!window._nearbyPourWait,
+        entrance: /tdNearbyIn/.test(el.innerHTML),
+      };
+      d.classList.remove('boot-cascade');
+      window._bootSkelDone = true; window._bootSyncPending = false;
+      _dashRevealSkeletons();
+      return out;
+    });
+    expect(r.underShimmer).toBe(true);
+    expect(r.shown).toBe('block');     // in place, hidden only by the shimmer card
+    expect(r.slid).toBe('');           // no max-height slide shoving the page
+    expect(r.waiting).toBe(false);     // no second reveal after the pour
+    expect(r.entrance).toBe(false);    // it fades in with its card, not on its own
+    await page.waitForFunction(() => !document.querySelector('#pg-dash .td-boot-skel'), { timeout: 1500 });
+  });
+
+  test('nothing on the dashboard moves when the data lands', async () => {
+    const r = await page.evaluate(async () => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      renderDash();
+      const ws = [...document.querySelectorAll('#dash-widget-root>.td-dw')];
+      const real = ws.map(w => w.offsetHeight);
+      window._bootSyncPending = true; window._bootSkelDone = false;
+      _dashApplySkeletons();
+      const skel = ws.map(w => w.offsetHeight);
+      window._bootSkelDone = true; window._bootSyncPending = false;
+      renderDash(); _dashRevealSkeletons();
+      await new Promise(res => setTimeout(res, 900));
+      return { real, skel, after: ws.map(w => w.offsetHeight) };
+    });
+    expect(r.real.some(h => h > 0)).toBe(true);
+    expect(r.skel).toEqual(r.real);   // shimmer holds exactly the real space
+    expect(r.after).toEqual(r.real);  // and the data lands into it
+  });
+
+  test('the banner snapshot remembers its height for the next boot', async () => {
+    const h = await page.evaluate(() => {
+      window._nearbyLiveRendered = false; window._geoFixSeen = true;
+      renderDash();
+      const sn = JSON.parse(localStorage.getItem('zp3_nearby_snap') || 'null');
+      return { h: sn && sn.h, now: document.getElementById('dash-nearby').offsetHeight };
+    });
+    expect(h.now).toBeGreaterThan(0);
+    expect(h.h).toBe(h.now);
   });
 
   test('the waterfall drops DOWN into place', async () => {
