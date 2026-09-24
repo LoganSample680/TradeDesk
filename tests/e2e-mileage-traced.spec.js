@@ -1270,6 +1270,124 @@ test.describe('traced trips', () => {
         expect(r.realTo, 'a trip that was never missing an end is untouched').toBe('2950 SW McClure Rd');
         expect(r.realFixed).toBe(false);
       });
+
+      // ── A save survives the app (owner 2026-09-24) ─────────────────────────
+      // Jack's 4:20 pm save: the customer landed, his login failed at 4:20:32,
+      // the app rebooted at 4:20:42 and the rest of the chain died with the
+      // page, so the row still said "Unsaved address" and he went back into
+      // its menu. The row is named first now, and the chain is written down
+      // until it finishes and replayed on the next boot.
+      const stubSupa = () => page.evaluate(() => {
+        window.__sent = [];
+        window._supa = { from: (t) => ({ update: (u) => { const f = { _t: t, _u: u, _w: {} };
+          f.eq = (k, v) => { f._w[k] = v; return f; };
+          f.then = (res) => { window.__sent.push({ table: f._t, update: f._u, where: f._w }); return res({ error: null }); };
+          return f; } }) };
+        window._supaUser = { id: 'emp-1' };
+        localStorage.removeItem('zp3_mile_save_pending');
+      });
+
+      test('the row is named before the re-derive starts, not after it', async () => {
+        const day = await seed();
+        await stubSupa();
+        const r = await page.evaluate(async (d) => {
+          let namedBeforeDerive = null, pendingDuringDerive = null;
+          window._geoDeriveDayNow = async () => {
+            namedBeforeDerive = window.__sent.some(x => x.where.client_key === 'd-j-traced' && x.update.dest_place === 'Logan Sample');
+            pendingDuringDerive = !!localStorage.getItem('zp3_mile_save_pending');
+            return null;
+          };
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7, stopKey: 'd-j-traced' };
+          await _mileAddressSaved({ id: 14, name: 'Logan Sample', addr: '6800 SW Tenth Ave' });
+          return { namedBeforeDerive, pendingDuringDerive, pendingAfter: localStorage.getItem('zp3_mile_save_pending'),
+                   stopWrites: window.__sent.filter(x => x.where.client_key === 'd-j-traced').length };
+        }, day);
+        expect(r.namedBeforeDerive, 'the name is on the row before the slow part starts').toBe(true);
+        expect(r.pendingDuringDerive, 'and the chain is on disk while it runs').toBe(true);
+        expect(r.pendingAfter, 'and off disk once it finishes').toBeNull();
+        expect(r.stopWrites, 'a derive that refused the day changed nothing, so no second write').toBe(1);
+      });
+
+      test('a derive that rebuilt the day is followed by the name again', async () => {
+        const day = await seed();
+        await stubSupa();
+        const n = await page.evaluate(async (d) => {
+          window._geoDeriveDayNow = async () => ({});
+          _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7, stopKey: 'd-j-traced' };
+          await _mileAddressSaved({ id: 14, name: 'Logan Sample', addr: '6800 SW Tenth Ave' });
+          return window.__sent.filter(x => x.where.client_key === 'd-j-traced').length;
+        }, day);
+        expect(n).toBe(2);
+      });
+
+      test('a reboot mid-save finishes the save on the next boot', async () => {
+        const day = await seed();
+        await stubSupa();
+        const r = await page.evaluate(async (d) => {
+          window._geoDeriveDayNow = async () => null;
+          // What the old page left on disk when it died at the derive.
+          localStorage.setItem('zp3_mile_save_pending', JSON.stringify({ uid: 'emp-1', at: Date.now() - 20000,
+            p: { stopKey: 'd-j-traced', day: d, legKey: 'j-traced', which: 'to', lat: 39.035, lng: -95.7 },
+            client: { id: 14, name: 'Logan Sample', addr: '6800 SW Tenth Ave' } }));
+          _mileAddressPending = null;
+          const ok = await _mileResumeAddressSave();
+          return { ok, named: window.__sent.find(x => x.where.client_key === 'd-j-traced'),
+                   left: localStorage.getItem('zp3_mile_save_pending') };
+        }, day);
+        expect(r.ok).toBe(true);
+        expect(r.named.update.dest_place).toBe('Logan Sample');
+        expect(r.named.update.source).toBe('client');
+        expect(r.left).toBeNull();
+      });
+
+      test("another login's save, an old one, junk, or nothing on disk: dropped, nothing written", async () => {
+        await seed();
+        await stubSupa();
+        const r = await page.evaluate(async () => {
+          window._geoDeriveDayNow = async () => null;
+          const good = (over) => JSON.stringify(Object.assign({ uid: 'emp-1', at: Date.now(),
+            p: { stopKey: 'd-j-traced', day: '2026-09-23', legKey: 'j-traced', which: 'to', lat: 39.035, lng: -95.7 },
+            client: { id: 14, name: 'Logan Sample', addr: '6800 SW Tenth Ave' } }, over));
+          const out = [];
+          for (const v of [good({ uid: 'someone-else' }), good({ at: Date.now() - 7 * 3600000 }),
+                           good({ client: { name: 'No address' } }), good({ p: null }), '{junk{{', null]) {
+            if (v == null) localStorage.removeItem('zp3_mile_save_pending');
+            else localStorage.setItem('zp3_mile_save_pending', v);
+            let ok, threw = false;
+            try { ok = await _mileResumeAddressSave(); } catch (e) { threw = true; }
+            out.push({ ok, threw, left: localStorage.getItem('zp3_mile_save_pending') });
+          }
+          return { out, sent: window.__sent.length };
+        });
+        r.out.forEach(x => { expect(x.threw).toBe(false); expect(x.ok).toBe(false); expect(x.left).toBeNull(); });
+        expect(r.sent).toBe(0);
+      });
+
+      test('signed out: the save waits on disk for the login that made it', async () => {
+        await seed();
+        const r = await page.evaluate(async () => {
+          const keep = window._supaUser;
+          window._supaUser = null;
+          localStorage.setItem('zp3_mile_save_pending', JSON.stringify({ uid: 'emp-1', at: Date.now(),
+            p: { stopKey: 'd-j-traced', day: '2026-09-23' }, client: { name: 'X', addr: 'Y' } }));
+          const ok = await _mileResumeAddressSave();
+          const left = localStorage.getItem('zp3_mile_save_pending');
+          window._supaUser = keep; localStorage.removeItem('zp3_mile_save_pending');
+          return { ok, left };
+        });
+        expect(r.ok).toBe(false);
+        // Dropped rather than kept: nobody is signed in to say whose it is,
+        // and the next sign-in may be somebody else.
+        expect(r.left).toBeNull();
+      });
+
+      test('boot replays it at the same moment park state comes back (source guarantee)', () => {
+        const fs = require('fs'); const path = require('path');
+        const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+        const i = src.indexOf('  _geoParkRestore();\n');
+        expect(i).toBeGreaterThan(-1);
+        expect(src.slice(i, i + 300)).toContain('_mileResumeAddressSave()');
+      });
     });
 
     test('the form\'s save hands off to the mileage side once the address is geocoded', async () => {

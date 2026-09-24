@@ -2047,15 +2047,6 @@ function _tlRowMenu(btn){
       // The raw source rides along as the second argument: it is what tells
       // the dispatcher which of the two tables this row lives in, and the
       // button is the only thing that knows.
-      if(raw==='dismissed'){
-        // The undo, in the menu as well as on the chip, because this is where
-        // a person goes when a row looks wrong.
-        acts+=act('_tlRowMenuDo(\'iswork\',\''+escHtml(String(id))+'\')','It was work',
-          'Puts this stop back on your hours and your miles.');
-      }else{
-        acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
-          'Keeps it off your hours and your miles. Just this one, not the place.',true);
-      }
       // THE SAME GUARD THE CHIP HAS (owner 2026-09-22, on Jack's 11:58 to
       // 1:17 on the 21st: "cant save, why?").
       //
@@ -2072,6 +2063,20 @@ function _tlRowMenu(btn){
         acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
           'Save this address','Then it names itself here and everywhere after');
       }
+      if(raw==='dismissed'){
+        // The undo, in the menu as well as on the chip, because this is where
+        // a person goes when a row looks wrong.
+        acts+=act('_tlRowMenuDo(\'iswork\',\''+escHtml(String(id))+'\')','It was work',
+          'Puts this stop back on your hours and your miles.');
+      }else{
+        // ASKED TWICE, AND LAST (owner 2026-09-24). Jack's 3:36 stop went
+        // Personal at 4:20:27 on 23 September out of this menu, seconds after
+        // he saved its address, with Not work sitting red above "Save this
+        // address". It is the one action here that takes time off somebody's
+        // hours, so it is below the save and its first tap only asks.
+        acts+=act('_tlRowMenuAskNotWork(\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
+          'Keeps it off your hours and your miles. Just this one, not the place.',true);
+      }
     }
     box.innerHTML='<div style="font-size:15px;font-weight:800;margin-bottom:2px">'+escHtml(label)+'</div>'+
       '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+
@@ -2081,6 +2086,25 @@ function _tlRowMenu(btn){
         'onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>';
     ov.appendChild(box);document.body.appendChild(ov);
   }catch(_e){}
+}
+// Not work's second tap. Same menu, same buttons, so the question sits
+// exactly where the finger already is and there is no second overlay to
+// style or to leave behind. Back puts the menu away without answering.
+function _tlRowMenuAskNotWork(id,raw){
+  try{
+    const ov=document.getElementById('_tl-row-menu');
+    const acts=ov&&ov.querySelector('.tl-menu-acts');
+    if(!acts)return false;
+    const b=(fn,label,sub,danger)=>'<button type="button" class="tl-menu-act'+(danger?' is-danger':'')+'" onclick="'+fn+'">'+
+      '<span class="tl-menu-act-t">'+escHtml(label)+'</span>'+
+      (sub?'<span class="tl-menu-act-s">'+escHtml(sub)+'</span>':'')+'</button>';
+    acts.innerHTML=
+      '<div class="tl-menu-ask" style="font-size:13px;font-weight:700;margin:0 0 8px">Take this off your hours and miles?</div>'+
+      b('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(String(raw||''))+'\')',
+        'Yes, not work','It stays on the timeline, greyed out, and counts toward nothing.',true)+
+      b('document.getElementById(\'_tl-row-menu\')?.remove()','Back','Leave it as it is');
+    return true;
+  }catch(_e){return false;}
 }
 // One door per action, and every one of them is a function that already
 // existed and already re-checks permission for itself (7.3).
