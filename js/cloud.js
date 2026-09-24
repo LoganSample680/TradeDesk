@@ -2078,9 +2078,15 @@ function _removeBootOverlay(immediate){
     // Slow loads are unaffected, real loading always governs.
     try{
       const _t0=window._sboT0||0;
-      if(_t0&&!o._minWaited){
+      // EVERY call inside the hold waits for the same lift time. It used to
+      // flag the overlay as "waited" on the first call, so a second boot step
+      // calling in during the hold skipped it and cut the logo short.
+      if(_t0){
         const _left=2150-(Date.now()-_t0);   // the approved beat (owner 2026-09-24): fade in, hold, fade out at ~2.15s
-        if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+        if(_left>60){
+          if(!o._liftTimer)o._liftTimer=setTimeout(()=>{o._liftTimer=null;_removeBootOverlay();},_left);
+          return;
+        }
       }
     }catch(_e){}
     // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;

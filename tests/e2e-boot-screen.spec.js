@@ -201,6 +201,7 @@ test.describe('app boot screen', () => {
       const o = document.createElement('div'); o.id = 'supa-boot-overlay'; document.body.appendChild(o);
       window._sboT0 = Date.now();
       _removeBootOverlay();
+      _removeBootOverlay();   // a second boot step calling in during the hold must not cut it short
       return { fading: o.classList.contains('td-fadeout') };
     });
     expect(r0.fading).toBe(false);
