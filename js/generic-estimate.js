@@ -7343,7 +7343,7 @@ function _geiBuildTermsHtml(){
   // _tmCanHideRate is consulted and not just the flag, so a proposal carried
   // across a state line cannot arrive with a required term missing.
   const _tmRateClause=_tmShowRateOnDoc()?[['Rate',
-    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
+    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}. This amount may be exceeded only by a written change order signed by Buyer, and only for (a) hidden damage or conditions that could not be seen before work began, (b) work Buyer adds or changes, or (c) Buyer&apos;s request to finish sooner than scheduled, where that takes a larger crew or overtime`:' (T&amp;M)'}`],
     ..._tmRateClause,
@@ -7792,7 +7792,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _rsCapLeads=_tmNteCap>0;
   const _rateFooterRows=_rsCapLeads
     ?`${_propPriceRow('Most you&apos;ll pay',_tmCapFineTxt,_rsMoney(_tmNteCap),_pAccent)}`+
-      `<tr style="background:#fff;color:#334155"><td colspan="2" style="padding:15px 24px;font-size:14px;line-height:1.5;border-top:1px solid #eceef2"><strong style="color:#0b1220;font-weight:700">${_rsCadence}</strong> for the time actually worked and the materials actually used.</td></tr>`+
+      `<tr style="background:#fff;color:#334155"><td colspan="2" style="padding:15px 24px;font-size:14px;line-height:1.5;border-top:1px solid #eceef2"><strong style="color:#0b1220;font-weight:700">${_rsCadence}</strong> for the hours worked and the materials used, with the time sheet on every bill.</td></tr>`+
       (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">Up Front, Before Work Begins</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
     // A rate with no ceiling has no number to put here, so the card says how
     // it bills, as its headline, instead of standing empty over a "Billing"
@@ -7800,7 +7800,7 @@ async function sendGenericProposal(previewOnly,opts){
     :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:26px 24px 24px;background:${_pAccent};color:#fff;background-image:linear-gradient(135deg,${_pAccent} 0%,${_PT.deep} 100%)">`+
       `<div style="font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85">TIME &amp; MATERIALS</div>`+
       `<div style="font-weight:800;font-size:26px;letter-spacing:-.025em;line-height:1.15;margin-top:8px">${_rsCadence}</div>`+
-      `<div style="font-size:13px;font-weight:400;line-height:1.5;opacity:.9;margin-top:8px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
+      `<div style="font-size:13px;font-weight:400;line-height:1.5;opacity:.9;margin-top:8px">For the hours worked and the materials used, with the time sheet on every bill.</div></td></tr>`+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
     // "what's the most this could be?", so that is what the line says. The
@@ -7867,7 +7867,10 @@ async function sendGenericProposal(previewOnly,opts){
     const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'-')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
     _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Panel Schedule, ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:${_pAccent};color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
-  const _hdrLabel=_geiIsTM?'Time &amp; Materials':_tradeProposalLabel(trade);
+  // What the document IS, for every type: "Plumbing Proposal". How it bills
+  // (time and materials) is a term, said on the price card and in the
+  // contract, not the name on the cover (owner, 2026-09-24).
+  const _hdrLabel=_tradeProposalLabel(trade);
   // No standalone NTE pricing row, the cap is already disclosed in the Terms &
   // Conditions "Contract type" clause below, so this isn't a lost disclosure, just
   // one less dollar figure sitting in the pricing table.
