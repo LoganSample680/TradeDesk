@@ -603,6 +603,11 @@ function _geoNatProblem(){
   return null;
 }
 function _geoPermDone(){
+  // Not read yet is not "off" (Jack, 2026-09-24): the cache is null until the
+  // first async read lands, and counting that as 'prompt' put "Turn on
+  // location" on every boot of a phone tracking fine. _geoRefreshPermCache
+  // re-renders the checklist once the answer is in.
+  if(_geoPermCache===null)return true;
   const s=_geoPermState();
   if(_geoNatProblem())return false;
   return s==='granted'||s==='unsupported';
@@ -727,6 +732,9 @@ function _geoRefreshPermCache(){
       // rather than once-per-foreground.
       try{_geoNotifyBreak();}catch(_e){}
       _renderDashSetupTodo();
+      // The banner stays quiet on native until iOS answers (js/geo-track.js
+      // _geoPermissionBanner), so the answer is what paints it.
+      try{if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();}catch(_e){}
     }).catch(()=>{});
   }catch(_e){}
 }
