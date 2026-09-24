@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.24.26.7';
+const APP_VERSION='09.24.26.8';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2071,9 +2071,15 @@ function _removeBootOverlay(immediate){
     // Slow loads are unaffected, real loading always governs.
     try{
       const _t0=window._sboT0||0;
-      if(_t0&&!o._minWaited){
+      // EVERY call inside the hold waits for the same lift time. It used to
+      // flag the overlay as "waited" on the first call, so a second boot step
+      // calling in during the hold skipped it and cut the logo short.
+      if(_t0){
         const _left=2150-(Date.now()-_t0);   // the approved beat (owner 2026-09-24): fade in, hold, fade out at ~2.15s
-        if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+        if(_left>60){
+          if(!o._liftTimer)o._liftTimer=setTimeout(()=>{o._liftTimer=null;_removeBootOverlay();},_left);
+          return;
+        }
       }
     }catch(_e){}
     // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
