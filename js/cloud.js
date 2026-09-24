@@ -616,7 +616,10 @@ async function _devLoadUserAccount(key){
     lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]])),
     syncedHash:Object.fromEntries(Object.entries(_syncedHash).map(([k,v])=>[k,[...v]]))
   };
-  // Load target user's records into memory
+  // Load target user's records into memory. photos[] is emptied first: the
+  // td_photos set() keeps this device's pending uploads, and those are the
+  // dev's own, never the target account's (they come back via _devSavedState).
+  photos.length=0;
   for(let i=0;i<_TD_TABLES.length;i++){
     const{t,set}=_TD_TABLES[i];
     const rows=(tableResults[i].data||[]).map(r=>r.data);
@@ -709,7 +712,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.23.26.3';
+const APP_VERSION='09.24.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1536,7 +1539,11 @@ const _TD_TABLES=[
   // was added to stop. bid_id/bid_name carry the estimate a photo was shot on
   // (js/photo-capture.js), and a photo whose tag does not survive the sync is
   // a photo that leaves the Before/After pair on one phone.
-  {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
+  // set() KEEPS a photo still waiting to upload (Jack, 2026-09-24). A pending
+  // row never syncs (tx below needs a url), so the cloud copy of this table
+  // never has it, and replacing the list wholesale erased the only copy.
+  // _drainPhotoQueue (js/jobs.js) finishes it in place once there is signal.
+  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&p.pendingUpload&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
     // originalUrl/originalPath/annotated are here for the SAME reason
     // thumbUrl was missing and had to be added: a field the feature depends
     // on that the sync drops is a field that exists only on the phone that

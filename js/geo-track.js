@@ -3174,6 +3174,17 @@ async function _geoPermissionBanner(){
     el.innerHTML=_geoBannerHtml(np.title,np.sub,np.cta);
     return;
   }
+  // ON NATIVE, NO ANSWER YET MEANS SAY NOTHING (Jack, 2026-09-24: the boot
+  // showed "Turn on location" on a phone tracking fine, and the card fought
+  // the boot shimmer). _geoNativeAuth is null until the bridge answers, and
+  // falling through here read the WebView's own permission, which commonly
+  // says 'prompt' on a healthy iPhone: the exact mistake the natSaid branch
+  // above already refuses. _geoRefreshPermCache repaints this banner the
+  // moment iOS does answer, so a phone that is really off still hears it.
+  try{
+    const _cap=window.Capacitor;
+    if(_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){el.style.display='none';return;}
+  }catch(_e){}
   let state='prompt';
   try{
     if(navigator.permissions&&navigator.permissions.query){
