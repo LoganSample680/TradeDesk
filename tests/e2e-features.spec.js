@@ -5426,30 +5426,25 @@ test.describe('client hub, Daily updates card hides when there is nothing to sho
     assertNoErrors(page, 'mobile contact strip');
   });
 
-  test('boot overlay shows client-facing loading copy', async ({ page }) => {
-    // Regression guard for the boot-overlay label, must read as addressed to the
-    // client ("Loading your client hub…"), not a generic unlabeled "Project Hub" tag.
+  test('boot overlay shows the contractor, not a loading screen', async ({ page }) => {
+    // Behaviour changed on purpose (owner-approved boot redesign 2026-09-24):
+    // the hub boot is the contractor's name or logo fading in and out, like the
+    // app. The old "Loading your client hub…" copy, glow, mark and progress bar
+    // are gone, and "Powered by TradeDesk" never shows on the hub.
     const hub = { clientId: 907, contractorUserId: FAKE_USER_ID, contractorName: 'Boot Co', businessName: 'Boot Co', clientName: 'Boot Client', bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [] };
     await page.addInitScript(h => { window.__mockHubData = h; }, hub);
     await mockAllExternal(page);
     await page.goto(`/client.html?c=907&u=${FAKE_USER_ID}&t=boottok907`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    const bootText = await page.locator('#boot-overlay').textContent();
-    expect(bootText).toContain('Loading your client hub');
-    // Premium treatment (owner ask): the hub boot screen carries the same
-    // glow/mark/track construction as the TradeDesk app boot overlay, not the
-    // old bare name + 2px line.
+    await page.waitForFunction(() => !!document.querySelector('#boot-overlay .bt-name'), { timeout: 8000 });
     const r = await page.evaluate(() => ({
-      glow: !!document.querySelector('#boot-overlay .cbo-glow'),
-      mark: !!document.querySelector('#boot-overlay .cbo-mark svg'),
-      track: !!document.querySelector('#boot-overlay .cbo-track .cbo-sheen'),
-      bar: !!document.querySelector('#boot-overlay #boot-bar.cbo-bar'),
-      tag: (document.querySelector('#boot-overlay .cbo-tag') || {}).textContent || '',
+      name: document.querySelector('#boot-overlay .bt-name').textContent,
+      text: document.getElementById('boot-overlay').textContent,
+      old: document.querySelectorAll('#boot-overlay .cbo-glow,#boot-overlay .cbo-track,#boot-bar').length,
     }));
-    expect(r.glow).toBe(true);
-    expect(r.mark).toBe(true);
-    expect(r.track).toBe(true);
-    expect(r.bar).toBe(true);
-    expect(r.tag).toBe('Client hub');
+    expect(r.name).toBe('Boot Co');
+    expect(r.text).not.toContain('Loading your client hub');
+    expect(r.text).not.toContain('Powered by');
+    expect(r.old).toBe(0);
   });
 });
 

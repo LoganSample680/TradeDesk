@@ -1797,6 +1797,41 @@ function _dashApplySkeletons(){
     sk.innerHTML=_tdSkelShape(tbar?'tbar':(el.dataset.dw||''),h);
     el.classList.add('td-boot-skel-on');
     el.appendChild(sk);
+    _dashSkelSweep(sk);
+  });
+}
+// Anchor each shimmer bar to the page and to one clock, so the whole boot
+// skeleton shimmers as one surface (CSS td-skel-sweep in index.html).
+function _dashSkelSweep(root){
+  try{
+    // Every bar's animation starts on a whole multiple of the 1.3s cycle, so a
+    // bar added later is still in step with the ones already sweeping.
+    const phase=-Math.round(performance.now()%1300);
+    root.querySelectorAll('.td-skel').forEach(b=>{
+      const r=b.getBoundingClientRect();
+      b.style.setProperty('--sx',Math.round(r.left+(r.top+(window.scrollY||0))*0.35)+'px');
+      b.style.animationDelay=phase+'ms';
+    });
+  }catch(_e){}
+}
+// The boot sync landed: each card swaps its shimmer for its real content, in a
+// shuffled order across a short beat, so the page fills the way data arrives
+// rather than all at once (owner-approved 2026-09-24). The content is already
+// rendered underneath; this only chooses the moment each card shows it.
+function _dashRevealSkeletons(){
+  const els=[...document.querySelectorAll('#pg-dash .td-boot-skel-on')];
+  if(!els.length)return;
+  const order=els.map((el,i)=>({el,k:Math.random()})).sort((a,b)=>a.k-b.k);
+  const span=Math.min(420,60*els.length);
+  order.forEach(({el},i)=>{
+    const at=els.length>1?Math.round(i*span/(els.length-1)):0;
+    setTimeout(()=>{
+      if(!el.classList.contains('td-boot-skel-on'))return;
+      el.classList.remove('td-boot-skel-on');
+      el.querySelectorAll(':scope>.td-boot-skel').forEach(s=>s.remove());
+      el.classList.add('td-data-in');
+      setTimeout(()=>el.classList.remove('td-data-in'),360);
+    },at);
   });
 }
 function _dashClearSkeletons(){

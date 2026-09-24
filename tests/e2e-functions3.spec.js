@@ -1219,6 +1219,10 @@ test.describe('Cloud Supabase and account functions', () => {
         _bootSyncSettled();
         let waited = 0;
         while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
+        // The swap is card by card across a short beat now (owner-approved
+        // 2026-09-24, _dashRevealSkeletons), so give it that beat.
+        waited = 0;
+        while (document.querySelector('#pg-dash .td-boot-skel') && waited < 3000) { await new Promise(res => setTimeout(res, 50)); waited += 50; }
         const after = {
           skels: document.querySelectorAll('#pg-dash .td-boot-skel').length,
           on: document.querySelectorAll('#pg-dash .td-boot-skel-on').length,
@@ -1317,12 +1321,12 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.settledAfter, 'must settle once the pending count clears').toBe(true);
   });
 
-  // While skeletons are up the overlay lift must NOT pour the cascade over
-  // shimmer bars, and the settle must not pour INSTANTLY either: the shimmer
-  // gets a visible beat first (owner video 2026-08-11: a fast sync used to
-  // finish the whole choreography beneath the overlay, so the loader lifted
-  // onto a fully formed page with no shimmer and no waterfall).
-  test('boot cascade waits for the settle, and the settle lets the shimmer be seen', async () => {
+  // Behaviour changed on purpose (owner-approved boot redesign 2026-09-24):
+  // the overlay lift now pours the waterfall OVER the shimmer cards (it used to
+  // wait for the data), and the data then lands in place. What still holds from
+  // the 2026-08-11 rule: the settle must not swap INSTANTLY, the shimmer gets a
+  // visible beat first, so the loader never lifts onto a fully formed page.
+  test('boot cascade pours the shimmer, and the settle lets the shimmer be seen', async () => {
     const r = await page.evaluate(async () => {
       try {
         window._bootSyncPending = true; window._bootSkelDone = false;
@@ -1334,21 +1338,22 @@ test.describe('Cloud Supabase and account functions', () => {
         document.body.appendChild(o);
         document.getElementById('pg-dash').classList.add('active');
         _removeBootOverlay();
-        const heldForSync = !document.getElementById('pg-dash').classList.contains('boot-cascade');
+        const shimmerPoured = document.getElementById('pg-dash').classList.contains('boot-cascade')
+          && !!document.querySelector('#pg-dash .td-boot-skel');
         _bootSyncSettled();
-        const pouredInstantly = document.getElementById('pg-dash').classList.contains('boot-cascade');
+        const swappedInstantly = window._bootSkelDone;
         let waited = 0;
         while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
-        const poured = document.getElementById('pg-dash').classList.contains('boot-cascade') || window._bootCascadeRan;
-        return { heldForSync, pouredInstantly, poured };
+        const settled = window._bootSkelDone && window._bootCascadeRan;
+        return { shimmerPoured, swappedInstantly, settled };
       } finally {
         window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
         document.getElementById('supa-boot-overlay')?.remove();
       }
     });
-    expect(r.heldForSync).toBe(true);        // overlay lifted onto shimmer, no premature pour
-    expect(r.pouredInstantly, 'the shimmer gets its visible beat before the pour').toBe(false);
-    expect(r.poured, 'then the settle pours over the real content').toBe(true);
+    expect(r.shimmerPoured, 'the overlay lifts onto the shimmer waterfalling in').toBe(true);
+    expect(r.swappedInstantly, 'the shimmer gets its visible beat before the data lands').toBe(false);
+    expect(r.settled, 'then the data lands, with the one cascade already spent').toBe(true);
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
   });
 
@@ -1438,6 +1443,7 @@ test.describe('Cloud Supabase and account functions', () => {
         window._geoFixSeen = false; window._nearbyLiveRendered = false;
         window._bootSyncPending = true; window._bootSkelDone = false;
         window._bootCascadeRan = true;             // pour already spent: isolate the hold
+        window._bootShimmerT0 = Date.now() - 5000; // shimmer beat already seen: isolate the GEO hold
         window._bootGeoHoldUntil = null;
         _bootSyncSettled();
         const heldForGeo = !window._bootSkelDone;
@@ -10343,7 +10349,9 @@ test.describe('Version consistency', () => {
         const kpi = shape('kpi'), quick = shape('quick'), cal = shape('calendar');
         return {
           kpiTiles: kpi ? kpi.querySelectorAll(':scope>div>div').length : 0,
-          quickButtons: quick ? quick.querySelectorAll('.td-skel[style*="border-radius:14px"]').length : 0,
+          // style.borderRadius, not the raw attribute: the shimmer sweep sets
+          // properties on each bar, which re-serializes the attribute text.
+          quickButtons: quick ? [...quick.querySelectorAll('.td-skel')].filter(b => b.style.borderRadius === '14px').length : 0,
           calCells: cal ? cal.querySelectorAll('div[style*="repeat(7"] .td-skel').length : 0,
           fallbackHasRows: _tdSkelShape('никто', 120).includes('td-skel'),
         };
