@@ -125,7 +125,9 @@ function _proposalBizHeader(bname,bphone,blic){
   const logoHtml='<div class="brand-logo-slot">'+logoInner+'</div>';
   return '<div>'+logoHtml+
     (bphone?'<div style="font-size:12px;margin-top:4px;opacity:.85">P '+escHtml(bphone)+'</div>':'')+
-    (blic?'<div style="font-size:11px;margin-top:2px;opacity:.75">'+escHtml(blic)+'</div>':'')+
+    // A bare "KS-PL-4471" reads as a stray code; said what it is, unless he
+    // already wrote "License ..." or "Lic ..." himself.
+    (blic?'<div style="font-size:11px;margin-top:2px;opacity:.75">'+(/^\s*(lic|license|licence|#)/i.test(blic)?'':'Lic. ')+escHtml(blic)+'</div>':'')+
   '</div>';
 }
 

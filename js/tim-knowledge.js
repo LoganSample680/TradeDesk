@@ -63,16 +63,25 @@
 // The phrases are how a contractor says the work, not how a spec writer does.
 // Longest phrase wins, so "tear out" cannot be eaten by "out".
 const TIM_STAGES=[
-  {k:'access', n:'Access and staging', say:['scaffold','staging','stage the','ladder','lift','boom lift','scissor lift','swing stage','set up','mobilize','permit','pull a permit','shut the water off','kill the power','lock out']},
-  {k:'protect',n:'Protect and remove',  say:['mask','masking','drop cloth','cover','protect','plastic off','move furniture','remove gutters','pull the gutters','take the gutters','remove shutters','remove fixtures','take down','pull the trim','disconnect']},
-  {k:'demo',   n:'Tear out',            say:['tear out','tear off','demo','demolition','strip','stripping','scrape','grind','cut out','rip out','haul the old','remove the old','dispose of the old']},
-  {k:'rough',  n:'Rough in',            say:['rough in','rough-in','run wire','pull wire','run romex','run pipe','run conduit','set the panel','stub','dig','trench','frame','excavate','underground']},
-  {k:'repair', n:'Repair',              say:['replace rotted','rotted','repair','patch','fill','sister','re-sheath','resheath','replace siding','replace trim','replace boards','board for board','wood repair','drywall repair']},
+  {k:'access', n:'Access and staging', say:['deliver the','acclimate','scaffold','staging','stage the','ladder','lift','boom lift','scissor lift','swing stage','set up','mobilize','permit','pull a permit','shut the water off','kill the power','lock out']},
+  {k:'protect',n:'Protect and remove',  say:['recover the refrigerant','move the furniture','tarp','hang plastic','mask off','mask','masking','drop cloth','cover','protect','plastic off','move furniture','remove gutters','pull the gutters','take the gutters','remove shutters','remove fixtures','take down','pull the trim','disconnect']},
+  // 'pull the old', 'take out', 'swap out' and the rest added 2026-09-23: this
+  // list was a painter's, so a water heater coming out of a basement was a step
+  // with no stage, and a step with no stage cannot be put in order.
+  {k:'demo',   n:'Tear out',            say:['tear out','tear off','demo','demolition','strip','stripping','scrape','grind','cut out','rip out','haul the old','remove the old','dispose of the old','pull the old','pull out the old','take out the old','take out','swap out','change out','get rid of','disconnect the old']},
+  {k:'rough',  n:'Rough in',            say:['rough in','rough-in','run wire','pull wire','run romex','run pipe','run conduit','set the panel','stub','dig','trench','frame','excavate','underground','run new','run pex','run copper','run gas','run the line','run a new',
+    // Tim's own gas line step (install-gas-size) reads as rough-in, not as
+    // whatever came before it: it printed under "Protecting your home".
+    'check the gas line','upsize the gas','gas line']},
+  {k:'repair', n:'Repair',              say:['confirm the leak','framing is dry','replace rotted','rotted','repair','patch','fill','sister','re-sheath','resheath','replace siding','replace trim','replace boards','board for board','wood repair','drywall repair']},
   {k:'prep',   n:'Prep',                say:['prep','pressure wash','power wash','wash','sand','sanding','caulk','prime','primer','tape','etch','skim','feather','clean the surface']},
-  {k:'install',n:'Install',             say:['install','hang','set the','mount','lay','tie in','terminate','trim out','make up','connect','shingle','roof it','set fixtures']},
-  {k:'finish', n:'Finish',              say:['finish coat','two coats','top coat','topcoat','paint','spray','roll','stain','seal','grout','polish','touch up','touch-up']},
+  {k:'install',n:'Install',             say:['dry in','underlayment','drip edge','install','hang','set the','mount','lay','tie in','terminate','trim out','make up','connect','shingle','roof it','set fixtures','set a','set new','set up the new','put in','putting in','put in a','swap in',
+    // The unit's hook-ups go in with the unit, after it is set, not with the
+    // rough-in ("run new venting" was matching "run new").
+    'new venting','venting for','condensate drain']},
+  {k:'finish', n:'Finish',              say:['start up the','pressure test','pull a vacuum','test every','label the panel','finish coat','two coats','top coat','topcoat','paint','spray','roll','stain','seal','grout','polish','touch up','touch-up']},
   {k:'restore',n:'Put back',            say:['rehang','re-hang','put back','reinstall','re-install','reset the gutters','rehang gutters','replace fixtures','remount','strike the scaffold','strike scaffold','take the scaffold down']},
-  {k:'clean',  n:'Clean up',            say:['haul off','haul away','clean up','cleanup','broom clean','sweep','magnet','dumpster out','final walk','walk through','walkthrough','leave the site']},
+  {k:'clean',  n:'Clean up',            say:['final inspection','walk it with','haul off','haul away','clean up','cleanup','broom clean','sweep','magnet','dumpster out','final walk','walk through','walkthrough','leave the site']},
 ];
 const _TIM_STAGE_IX={};TIM_STAGES.forEach((s,i)=>{_TIM_STAGE_IX[s.k]=i;});
 
@@ -290,6 +299,40 @@ function _timkAndSplits(left,right){
   return _timkHasObject(right);
 }
 
+// ── NO COMMAS, NO "AND" (2026-09-23) ─────────────────────────────────────
+//
+// Dictation often hands back one breathless run: "pull the old water heater
+// put in a new tankless haul the old one away". Earl said exactly that and got
+// ONE step. The seam is a verb that opens a new clause, and a verb opens one
+// when what follows it is the start of an object ("put IN a", "haul THE"),
+// or when the verb is one that is never a noun on a job ("replace", "haul").
+// And only after a complete step: the left side must already name something,
+// and the word before the verb must not make it a noun ("the finish") or part
+// of the same action ("and cut", "to set").
+const _TIMK_STRONG=new Set(['replace','install','remove','pull','haul','tear','rip','swap','dig','hang','mount',
+  'disconnect','reinstall','rehang','demo','pour','frame','insulate','caulk','prime','sand','scrape','level','lay']);
+const _TIMK_STARTER=/^(the|a|an|new|old|in|out|up|off|down|it|them|all|some|any|his|her|their|my|our|this|that|these|those|every|each|two|three|four|five|six|\d+)$/;
+const _TIMK_NOT_BEFORE=/^(the|a|an|and|or|to|will|gonna|then|of|for|with|new|old|this|that|each|every|so|we|i|you|they|it)$/;
+function _timkVerbSplit(frag){
+  const words=String(frag||'').trim().split(/\s+/).filter(Boolean);
+  if(words.length<5||/[,;]/.test(frag))return [frag];
+  const out=[];let start=0;
+  for(let i=2;i<words.length-1;i++){
+    const w=words[i].toLowerCase().replace(/[^a-z]/g,'');
+    const prev=words[i-1].toLowerCase().replace(/[^a-z]/g,'');
+    const next=words[i+1].toLowerCase().replace(/[^a-z0-9]/g,'');
+    if(!_timkVerbLike(w)||_TIMK_NOT_BEFORE.test(prev))continue;
+    const stem=w.replace(/ing$/,'');
+    const strong=_TIMK_STRONG.has(w)||_TIMK_STRONG.has(stem)||_TIMK_STRONG.has(stem+'e');
+    if(!strong&&!_TIMK_STARTER.test(next))continue;
+    const left=words.slice(start,i).join(' ');
+    if(i-start<2||!_timkHasObject(left))continue;
+    out.push(left);start=i;
+  }
+  out.push(words.slice(start).join(' '));
+  return out;
+}
+
 function _timkTidy(t){
   let v=String(t||'').replace(/\s+/g,' ').trim();
   // Bullet and number markers, however he typed them.
@@ -302,6 +345,10 @@ function _timkTidy(t){
   }
   v=v.replace(/\s+/g,' ').trim().replace(/[\s,;:.]+$/,'');
   if(!v)return '';
+  // Shouted is not how a contract reads. Caps lock or a shouting keyboard
+  // becomes a sentence; a word he capitalised on purpose in normal typing
+  // (a brand, "PEX") is left alone, because only an ALL-caps step is changed.
+  if(!/[a-z]/.test(v)&&/[A-Z].*[A-Z].*[A-Z]/.test(v))v=v.toLowerCase();
   // His words, his capitals, except the first letter, which a numbered list
   // wants upper whether he was shouting or dictating.
   return v.charAt(0).toUpperCase()+v.slice(1);
@@ -316,7 +363,7 @@ function timScopeFrom(text){
   if(!raw.trim())return [];
   const out=[];
   const seen=new Set();
-  const push=(frag)=>{
+  const push=(frag0)=>_timkVerbSplit(frag0).forEach(frag=>{
     const v=_timkTidy(frag);
     if(!v)return;
     // A step that is only a number or a stray word is noise, not scope.
@@ -325,7 +372,7 @@ function timScopeFrom(text){
     if(seen.has(key))return;
     seen.add(key);
     if(out.length<40)out.push(v);
-  };
+  });
   // Hard breaks first: a line he typed on its own is a step he meant on its
   // own, whatever punctuation is in it.
   raw.split(/[\r\n]+/).forEach(line=>{
@@ -509,6 +556,77 @@ function timSiteFacts(text){
 // yes or no. `say` is the correction in his words, and `because` is the reason,
 // which is always a thing he said or a thing on the job, never a rationale.
 const TIM_IMPLIED=[
+  // First of everything: the paper comes before the first tool (2026-09-23).
+  {
+    id:'access-permit',
+    source:'trade',
+    stage:'access',
+    step:'Pull the permit',
+    // HIS CALL, NOT TIM'S (owner, 2026-09-23: "not every job requires a
+    // permit or inspection though"). Towns differ and so do jobs, and the
+    // proposal prints "Permit and inspection" as included the moment this step
+    // is in. So it is asked, never swept in by Add all, and once he has turned
+    // it down twice for a kind of job Tim stops asking for that kind.
+    say:'Permit for this one?',
+    because:'Many towns want one for this work and some do not. Add it if yours does.',
+    optIn:true,
+    learnKey:(t,steps)=>{const m=_timkAll(t,steps).match(_TIMK_PERMIT);return m?m[1].replace(/\s+/g,' '):null;},
+    pairs:{stage:'clean',step:'Schedule the final inspection',last:true},
+    when:(t,steps)=>{
+      const n=_timkAll(t,steps);const m=n.match(_TIMK_PERMIT);
+      return !!m&&!/\bpermit/.test(n)&&!(typeof timDropped==='function'&&timDropped('implied-key','access-permit:'+m[1].replace(/\s+/g,' ')));
+    },
+  },
+  // ── THE UNIT, AND WHAT IT HOOKS UP TO (owner, 2026-09-23) ────────────────
+  //
+  // "Tim should be smart enough to add in the model and venting requirements."
+  // Read as a sceptical couple, "Set a tankless" next to "anything added is a
+  // change order" read as the change order already waiting: no unit named, no
+  // gas line, no vent. These are what a tankless or high-efficiency swap
+  // actually hooks up to, said so the price covers them or he knows it does
+  // not.
+  {
+    id:'install-gas-size',
+    source:'trade',
+    stage:'rough',
+    step:'Check the gas line against the new unit\'s full load and upsize it where it falls short',
+    say:'The gas line, sized for the new unit',
+    because:'A gas tankless burns several times what a tank does. The old line is often too small, and it shows up as cold water halfway through a shower.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_TANKLESS.test(n)&&!_TIMK_ELECTRIC_TL.test(n)&&!_TIMK_GASLINE.test(n);},
+  },
+  {
+    id:'install-vent',
+    source:'trade',
+    stage:'install',
+    step:'Run new venting for the new unit, to the manufacturer\'s instructions',
+    say:'Venting for the new unit',
+    because:'A tankless or high-efficiency unit seldom vents like the old one did. In the price, or it is the first change order.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_VENT_KIND.test(n)&&!_TIMK_ELECTRIC_TL.test(n)&&!_TIMK_VENTED.test(n);},
+  },
+  {
+    id:'install-condensate',
+    source:'trade',
+    stage:'install',
+    step:'Run the condensate drain for the new unit',
+    say:'Condensate drain',
+    because:'High-efficiency units make water. It needs somewhere to go besides the floor.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_CONDENSING.test(n)&&!_TIMK_ELECTRIC_TL.test(n)&&!_TIMK_CONDENSATE.test(n);},
+  },
+  // Not a step: a question. The unit is named inside his own install line
+  // ("Set a tankless, Navien NPE-240A") once he types it, so the customer
+  // reads what they are buying and what the warranty is on.
+  {
+    id:'detail-model',
+    source:'trade',
+    stage:'install',
+    ask:{label:'Make and model',placeholder:'e.g. Navien NPE-240A'},
+    say:'Name the unit',
+    because:'They are buying a unit. The make and model on the paper is what they get, and what the warranty is on.',
+    when:(t,steps)=>{
+      const raw=String(t||'')+' '+(steps||[]).map(x=>x&&typeof x==='object'?(x.text||''):String(x||'')).join(' ');
+      return _TIMK_EQUIP.test(_timkAll(t,steps))&&!_timkHasModel(raw);
+    },
+  },
   {
     id:'access-scaffold',
     source:'trade',   // sequence and habit, never a code requirement
@@ -560,10 +678,333 @@ const TIM_IMPLIED=[
     step:'Haul off debris and leave the site broom clean',
     say:'Haul off, last',
     because:'Every job you have sent ends this way.',
-    when:(t,steps)=>_timAnyStep(steps,['tear out','tear off','strip','demo','replace'])
+    // THE VERB LIST WAS A PAINTER'S. It knew tear out, tear off, strip and demo,
+    // which is how a man describes taking siding off a wall and not how he
+    // describes getting a water heater out of a basement. "Pull the old water
+    // heater" is a tear-out with two hundred pounds to get rid of at the end of
+    // it, and Tim said nothing, because not one of those five words is in that
+    // sentence. Found on the owner's own bid, 2026-09-22.
+    when:(t,steps)=>_timAnyStep(steps,['tear out','tear off','strip','demo','replace',
+        'pull the','pull out','take out','rip out','cut out','swap','change out',
+        'changeout','remove','get rid of','haul the old'])
       &&!_timAnyStep(steps,['haul','clean','sweep','dumpster']),
   },
+  // ── Turn it off before you open it ─────────────────────────────────────────
+  //
+  // `step` is CONTRACT VOICE, because it is what lands on the customer's scope
+  // of work: "Protect the floors along the path in and out", never "the path
+  // YOU are carrying through". `say` and `because` are Tim talking to the
+  // contractor and never reach the document.
+  //
+  // Three rules and not one, because the step has to name the right shutoff.
+  // "Isolate the system" is what a spec writer would put on a contract and it
+  // is not a sentence anybody has said on a job site. A rule that fires on the
+  // wrong system is worse than no rule at all, which is the standing rule in
+  // this file, so each of these wants its own system named out loud and stays
+  // quiet otherwise. An electric water heater is never told to shut the gas
+  // off, because nothing in the sentence said gas.
+  {
+    id:'access-water-off',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'access',
+    step:'Shut the water off and drain it down',
+    say:'Water off first',
+    because:'You are opening a live water line. That happens first or it happens through the ceiling.',
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return _TIMK_WET.test(n)&&!_TIMK_WATER_OFF.test(n);
+    },
+  },
+  {
+    id:'access-power-off',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'access',
+    step:'Shut the power off at the panel and verify it is dead',
+    say:'Power off first',
+    because:'You never said you killed it. Nothing else on this list happens until you have.',
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return _TIMK_HOT.test(n)&&!_TIMK_POWER_OFF.test(n);
+    },
+  },
+  {
+    id:'access-gas-off',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'access',
+    step:'Shut the gas off at the valve',
+    say:'Gas off first',
+    because:'You said gas. That valve gets closed before anything comes apart.',
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return _TIMK_GAS.test(n)&&!_TIMK_GAS_OFF.test(n);
+    },
+  },
+  {
+    id:'protect-path',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'protect',
+    step:'Protect the floors along the path in and out',
+    say:'Cover the path in and out',
+    because:'Something heavy goes through a finished house twice. The floor is the callback.',
+    supply:{id:'floor-protect',section:'prep',label:'Floor protection and runners',unit:'ea',qty:1},
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return _TIMK_CARRIED.test(n)&&!_TIMK_COVERED.test(n);
+    },
+  },
+  {
+    id:'finish-test',
+    source:'trade',   // sequence and habit, never a code requirement
+    stage:'finish',
+    step:'Pressure test and check every joint for leaks',
+    say:'Test it before you leave',
+    because:'You find the weep, or the customer does at two in the morning.',
+    when:(t,steps)=>{
+      const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
+      return (_TIMK_WET.test(n)||_TIMK_GAS.test(n))&&!_TIMK_TESTED.test(n);
+    },
+  },
+  // ── EVERY TRADE, NOT ONE (2026-09-23) ─────────────────────────────────────
+  //
+  // Owner: "type it or Talk to Tim where they speak what all they are doing,
+  // Tim parses it, organizes it and finds gaps so the scope of work is
+  // detailed and nothing is forgotten." Run against one job per trade, Tim
+  // found a plumber's gaps and a haul-off for everybody else, and nothing at
+  // all on a paint job. These are the steps each trade says out loud on a job
+  // walk and leaves off the paper. Same rule as the rest of the file: each
+  // one listens for its own system named, and stays quiet otherwise. Habit and
+  // sequence, never a claim about what an inspector requires.
+  {
+    id:'demo-refrigerant',
+    source:'trade',
+    // Before the tear-out, not in it: the charge comes out while the old unit
+    // is still connected.
+    stage:'protect',
+    step:'Recover the refrigerant from the old system',
+    say:'Recover the refrigerant',
+    because:'The old unit still has its charge. It comes out before a line is cut.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_COOLING.test(n)&&_TIMK_OUT.test(n)&&!/\b(recover|reclaim)/.test(n);},
+  },
+  {
+    id:'finish-vacuum',
+    source:'trade',
+    stage:'finish',
+    step:'Pressure test the line set and pull a vacuum',
+    say:'Pressure test and vacuum',
+    because:'A new line set is not tight until it holds a vacuum.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return /\bline ?sets?\b/.test(n)&&!/\b(vacuum|evacuat)/.test(n);},
+  },
+  {
+    id:'finish-startup',
+    source:'trade',
+    stage:'finish',
+    step:'Start up the system to the manufacturer\'s instructions and check that it heats and cools',
+    say:'Start it up',
+    because:'Nobody signs off on a system nobody has run.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_HVAC.test(n)&&!/\b(start ?up|start (it|the system|the unit) up|started (it )?up|fire it( up)?|commission|run it|check the charge)\b/.test(n);},
+  },
+  // The unit goes in the way its manufacturer says (owner, 2026-09-24: "can
+  // we tell Tim to do manufacturers instructions?"). The warranty on a water
+  // heater, a softener or a boiler holds only when it does, so it is said on
+  // the paper where the customer reads what they are buying. Heating and
+  // cooling already say it in their own start-up step (finish-startup), and a
+  // panel is tested circuit by circuit (finish-circuits), so neither gets a
+  // second line.
+  {
+    id:'finish-mfr',
+    source:'trade',
+    stage:'finish',
+    step:'Start up the new unit to the manufacturer\'s instructions',
+    say:'To the manufacturer\'s instructions',
+    because:'The warranty on the unit holds only when it goes in the way its manufacturer says. Put that on the paper.',
+    when:(t,steps)=>{
+      const n=_timkAll(t,steps);
+      // Tim's own venting line says "manufacturer's instructions" for the
+      // vent; that is not the unit's start-up, so it does not count as said.
+      const said=_timkAll(t,(steps||[]).filter(x=>!/\bvent/i.test(x&&typeof x==='object'?(x.text||''):String(x||''))));
+      return _TIMK_MFR_UNIT.test(n)&&!_TIMK_HVAC.test(n)&&_TIMK_NEW.test(n)&&!_TIMK_MFR.test(said);
+    },
+  },
+  {
+    id:'finish-circuits',
+    source:'trade',
+    stage:'finish',
+    step:'Test every circuit and label the panel',
+    say:'Test and label',
+    because:'The panel schedule is what the next person reads. Leave it right.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_HOT.test(n)&&!/\b(label|labeled|labelled|test|tested|testing)\b/.test(n);},
+  },
+  {
+    id:'protect-landscape',
+    source:'trade',
+    stage:'protect',
+    step:'Tarp the landscaping and protect the siding and windows below',
+    say:'Tarp the yard',
+    because:'A tear-off rains nails and granules on everything under the eaves.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_TEAROFF.test(n)&&!/\b(tarp|tarps|landscap|protect|cover)/.test(n);},
+  },
+  {
+    id:'install-underlayment',
+    source:'trade',
+    stage:'install',
+    step:'Dry in with underlayment, and ice and water shield at the eaves and valleys',
+    say:'Underlayment and ice and water',
+    because:'Whatever goes between the deck and the shingles is the leak you get called back for.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_REROOF.test(n)&&!/\b(underlayment|synthetic|felt|ice and water|ice & water|dry in|dried in)\b/.test(n);},
+  },
+  {
+    id:'install-flashing',
+    source:'trade',
+    stage:'install',
+    step:'Install new drip edge and flash the walls, chimney and pipes',
+    say:'Drip edge and flashing',
+    because:'Say new or reused. Left off, the customer assumes new.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_REROOF.test(n)&&!/\b(drip ?edge|flash|flashing|pipe boots?)\b/.test(n);},
+  },
+  {
+    id:'clean-magnet',
+    source:'trade',
+    stage:'clean',
+    step:'Run a magnet sweep for nails around the house',
+    say:'Magnet sweep',
+    because:'One nail in their tire is the review they leave.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_TEAROFF.test(n)&&!/\bmagnet/.test(n);},
+  },
+  {
+    id:'protect-mask-inside',
+    source:'trade',
+    stage:'protect',
+    step:'Cover the floors and furniture, and mask off what is not being painted',
+    say:'Cover and mask',
+    because:'Paint on the floor is the one thing they notice before the walls.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_PAINTS.test(n)&&_TIMK_INSIDE.test(n)&&!_TIMK_COVERED.test(n);},
+  },
+  {
+    id:'protect-mask-outside',
+    source:'trade',
+    stage:'protect',
+    step:'Cover the plants, walks and windows, and mask off what is not being painted',
+    say:'Cover and mask',
+    because:'Overspray on a car or a window is a bill, not a touch-up.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_PAINTS.test(n)&&_TIMK_OUTSIDE.test(n)&&!_TIMK_INSIDE.test(n)&&!_TIMK_COVERED.test(n);},
+  },
+  {
+    id:'clean-walkthrough',
+    source:'trade',
+    stage:'clean',
+    step:'Clean up, walk it with the customer and touch up anything missed',
+    say:'Walk-through and touch-up',
+    because:'The punch list is cheaper on the last day than on a callback.',
+    // A job with a tear-out already ends in the haul-off; this is for the
+    // ones that do not, which is most paint and finish work.
+    when:(t,steps)=>{const n=_timkAll(t,steps);return (_TIMK_PAINTS.test(n)||_TIMK_FLOORS.test(n))
+      &&!_timAnyStep(steps,['tear','strip','demo','pull the','pull out','take out','rip out','cut out','remove','swap','change out','get rid of'])
+      &&!/\b(clean|walk|touch ?up|punch|haul|sweep)/.test(n);},
+  },
+  {
+    id:'protect-furniture',
+    source:'trade',
+    stage:'protect',
+    step:'Move the furniture out of the rooms, and back in after',
+    say:'Move the furniture',
+    because:'Somebody moves it. Say whether that is the crew.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_FLOORS.test(n)&&!/\bfurniture\b/.test(n);},
+  },
+  {
+    id:'access-acclimate',
+    source:'trade',
+    stage:'access',
+    step:'Deliver the flooring early so it acclimates on site',
+    say:'Let it acclimate',
+    because:'Plank laid the day it arrives moves when the house does.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return /\b(hardwood|engineered|lvp|luxury vinyl|vinyl plank|laminate)\b/.test(n)&&!/\bacclimat/.test(n);},
+  },
+  {
+    id:'restore-floor-trim',
+    source:'trade',
+    stage:'restore',
+    step:'Reinstall the baseboards and set transitions at every doorway',
+    say:'Baseboards and transitions',
+    because:'The floor is not finished until the edges are.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_FLOORS.test(n)&&!/\b(baseboards?|base|shoe|quarter ?round|transitions?|trim)\b/.test(n);},
+  },
+  {
+    id:'protect-dust',
+    source:'trade',
+    stage:'protect',
+    step:'Hang plastic and protect the rooms around the work from dust',
+    say:'Dust control',
+    because:'Sanding mud goes through the whole house unless it is closed off.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_DRYWALL.test(n)&&!/\b(plastic|dust|zip ?wall|protect|cover)/.test(n);},
+  },
+  {
+    id:'repair-dry',
+    source:'trade',
+    stage:'repair',
+    step:'Confirm the leak is fixed and the framing is dry before closing up',
+    say:'Dry before it is closed up',
+    because:'Board hung over a wet stud is mold in six months.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_DRYWALL.test(n)&&/\b(water damage|water damaged|flood|flooded|leak|leaked|leaking|mold|moldy)\b/.test(n)&&!/\b(dry|dried|moisture)\b/.test(n);},
+  },
+  {
+    id:'finish-prime-drywall',
+    source:'trade',
+    stage:'finish',
+    step:'Prime the new drywall',
+    say:'Prime it',
+    because:'New board is not done until it is primed. Swipe it away if paint is somebody else.',
+    when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_DRYWALL.test(n)&&!/\b(prime|primer|primed|paint)/.test(n);},
+  },
 ];
+
+// What the rules above listen for. Kept beside them rather than inline so the
+// phrasing cannot drift between the pattern that fires a nudge and the pattern
+// that keeps it quiet because he already said it.
+//
+// Every one is narrow on purpose. A water heater is deliberately NOT on the gas
+// list: half of them are electric, and the sentence has to say gas before Tim
+// will say anything about gas.
+const _TIMK_WET=/\b(water heater|tankless|water softener|softener|pex|copper|supply lines?|water lines?|water main|shut ?off valve|angle stop|faucet|toilet|tub|shower valve|sink|p-?trap|manifold|hose ?bib|water service|re-?pipe|boiler|water tank)\b/;
+const _TIMK_WATER_OFF=/\b(shut ?off|shut the water|water off|turn the water|isolate|drain(ed)? (it|the|down)|drain down)\b/;
+const _TIMK_HOT=/\b(panel|sub ?panel|breakers?|circuits?|romex|wiring|rewire|receptacles?|outlets?|switch leg|service (change|upgrade)|disconnect|conduit|whip)\b/;
+const _TIMK_POWER_OFF=/\b(kill the power|killed the power|power off|shut the power|breakers? off|lock ?out|tag ?out|de-?energi[sz])\b/;
+const _TIMK_GAS=/\b(gas|propane|lp|csst|black iron)\b/;
+const _TIMK_GAS_OFF=/\b(gas off|shut the gas|close the valve|close the gas|isolate the gas|lock ?out)\b/;
+const _TIMK_CARRIED=/\b(water heater|tankless|softener|furnace|boiler|tub|vanity|cabinets?|appliance|washer|dryer|range|refrigerator|water tank|condenser|air handler)\b/;
+const _TIMK_COVERED=/\b(cover|covered|drop ?cloth|protect|masked?|masking|floor protection|ram ?board|runners?)\b/;
+const _TIMK_TESTED=/\b(test|tested|testing|pressure|pressured|leak ?check|leak ?test|check for leaks|purge|bleed|bled)\b/;
+
+// For the trade rules: what he said and the steps it became, as one string.
+function _timkAll(t,steps){return _timkNorm(t)+' '+(steps||[]).map(x=>_timkNorm(x&&typeof x==='object'?(x.text||''):x)).join(' ');}
+// The systems each trade rule listens for. Narrow, like the ones above.
+const _TIMK_PERMIT=/\b(panel|sub ?panel|service (change|upgrade)|(100|150|200|400) ?amp|new circuit|water heater|tankless|furnace|heat pump|air handler|condenser|boiler|mini ?split|gas line|re-?roof|new roof|tear ?off)\b/;
+const _TIMK_TANKLESS=/\b(tankless|on ?demand water heater)\b/;
+const _TIMK_ELECTRIC_TL=/\belectric (tankless|on ?demand)\b/;
+const _TIMK_GASLINE=/\b(gas lines?|gas pipe|gas piping|upsize|black iron|csst)\b/;
+const _TIMK_VENT_KIND=/\b(tankless|high efficiency|condensing|furnace|boiler)\b/;
+const _TIMK_VENTED=/\b(vent|venting|vents|vented|flue|exhaust|chimney|concentric|intake pipe)\b/;
+const _TIMK_CONDENSING=/\b(tankless|high efficiency|condensing|furnace|air handler)\b/;
+const _TIMK_CONDENSATE=/\b(condensate|neutralizer|drain line)\b/;
+const _TIMK_EQUIP=/\b(tankless|water heater|furnace|heat pump|air handler|condenser|boiler|mini ?split|ac unit|air conditioner|panel|sub ?panel|water softener)\b/;
+// A named unit: a maker he would say, or a model number (letters then digits,
+// the way they are printed on the plate). Read from what he typed, case and all.
+const _TIMK_BRANDS=/\b(navien|rinnai|rheem|ruud|noritz|takagi|bosch|a\.? ?o\.? smith|bradford white|carrier|bryant|trane|american standard|lennox|goodman|amana|daikin|mitsubishi|fujitsu|york|payne|heil|tempstar|square d|eaton|siemens|cutler hammer|leviton|kinetico|culligan|fleck|weil mclain|burnham|viessmann)\b/i;
+function _timkHasModel(raw){return _TIMK_BRANDS.test(raw)||/\b[A-Z]{1,6}-?\d{2,}[A-Z0-9-]*\b/.test(raw);}
+const _TIMK_COOLING=/\b(ac|a c|air conditioner|air conditioning|condenser|heat pump|mini ?split|evaporator coil|line ?set)\b/;
+const _TIMK_OUT=/\b(pull|pulling|remove|removing|swap|swapping|change out|changing out|replace|replacing|take out|tear out|old)\b/;
+// A unit that comes with a manufacturer's installation manual, one that goes
+// in (not one that only comes out), and whether he already said so.
+const _TIMK_MFR_UNIT=/\b(tankless|water heater|water softener|softener|boiler|well pump|sump pump|ejector pump|grinder pump|water filtration|whole house filter|garbage disposal|dishwasher|generator)\b/;
+const _TIMK_NEW=/\b(new|set|install|installing|put in|swap in|replace|replacing)\b/;
+const _TIMK_MFR=/\b(manufacturer|manufacturers|mfr|mfg|maker|makers|install(ation)? (manual|instructions)|per (the )?(instructions|specs?))\b/;
+const _TIMK_HVAC=/\b(furnace|heat pump|air handler|condenser|ac unit|air conditioner|mini ?split|boiler)\b/;
+const _TIMK_TEAROFF=/\b(tear ?off|tearing off|strip the roof|re-?roof|new roof|shingles? off)\b/;
+const _TIMK_REROOF=/\b(tear ?off|tearing off|re-?roof|new roof|shingle it|new shingles|architectural shingles|reshingle)\b/;
+const _TIMK_PAINTS=/\b(paint|painting|repaint|prime|primer|stain|two coats|one coat|topcoat|top coat)\b/;
+const _TIMK_INSIDE=/\b(rooms?|interior|inside|walls?|ceilings?|kitchen|bedrooms?|bathrooms?|bath|hallway|living room|dining room|basement|cabinets|closets?|stairwell)\b/;
+const _TIMK_OUTSIDE=/\b(house|exterior|outside|siding|soffits?|fascia|deck|fence|porch|shutters|garage door)\b/;
+const _TIMK_FLOORS=/\b(carpet|lvp|luxury vinyl|vinyl plank|laminate|hardwood|engineered|tile floor|floor tile|flooring|new floor|floors)\b/;
+const _TIMK_DRYWALL=/\b(drywall|sheetrock|gypsum|hang (new )?board|tape and mud|mud and tape|mud it)\b/;
 
 function _timSaysHigh(t){
   const n=_timkNorm(t);
@@ -637,9 +1078,22 @@ function timImplied(said,steps,opts){
       supply:r.supply?Object.assign({},r.supply):null,
       pairs:r.pairs?Object.assign({},r.pairs):null,
       claims:r.claims||null,
+      // A question rather than a step, and steps that are his call. Neither is
+      // swept in by Add all.
+      ask:r.ask?Object.assign({},r.ask):null,
+      optIn:!!(r.optIn||r.ask),
+      learnKey:(()=>{try{return typeof r.learnKey==='function'?r.learnKey(said,steps||[]):null;}catch(_e){return null;}})(),
     });
   });
-  return out;
+  // IN WORK ORDER, like everything else he hands back. The list used to come
+  // out in whatever order the rules happen to sit in this file, which put
+  // "haul the debris off" above "shut the water off" on a water heater swap:
+  // the last thing he does, read first. Same spine the scope itself is sorted
+  // on, so the forgotten steps read in the order he would do them. A rule with
+  // no stage (the consumables one) sorts to the end rather than to the front,
+  // because it is a supply list and not a step in the sequence.
+  const ix=r=>{const i=_TIM_STAGE_IX[r.stage];return (i===undefined)?TIM_STAGES.length:i;};
+  return out.map((r,i)=>({r,i})).sort((a,b)=>ix(a.r)-ix(b.r)||a.i-b.i).map(x=>x.r);
 }
 
 // ── Numbers, the way they get said ───────────────────────────────────────────

@@ -2027,13 +2027,24 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
     test('_geiRenderScopeCard: golden path wires +Add scope to the right container id', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rt2-scopecard-wrap'; document.body.appendChild(wrap);
+        // PRECONDITION ADDED 2026-09-23 (§10.4). +Add scope only renders once
+        // there is a list to add to; with nothing written, the box it would
+        // open is already on screen under it. So the empty case is checked for
+        // its absence and the wiring is checked with one step on the card.
+        const prev = _geiScopeChips.slice();
+        _geiScopeChips = [];
+        _geiRenderScopeCard('rt2');
+        const emptyHasBtn = !!wrap.querySelector('button');
+        _geiScopeChips = ['Pull the old water heater'];
         _geiRenderScopeCard('rt2');
         const hasWrap = !!document.getElementById('rt2-scope-wrap');
         const addBtnOnclick = wrap.querySelector('button')?.getAttribute('onclick');
+        _geiScopeChips = prev;
         wrap.remove();
-        return { hasWrap, addBtnOnclick };
+        return { hasWrap, addBtnOnclick, emptyHasBtn };
       });
       expect(r.hasWrap).toBe(true);
+      expect(r.emptyHasBtn, 'an empty scope card offers the box, not a second way to it').toBe(false);
       // CHANGED 2026-09-22 (§10.4). The card's +Add scope points at the box he
       // talks into, not the picker, which is the whole of the owner's ask. The
       // container id it is wired to, which is what this test is actually
@@ -2111,7 +2122,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.cols).toBe('repeat(3, 1fr)');
     });
 
-    test('_tmShowPage renders "Send T&M proposal" with a 2-column action grid (no Option B)', async () => {
+    // RELABELLED 2026-09-23 (§10.4). T&M ends in two buttons, "Send it" and
+    // "Sign it here", with Preview, Present and Compare as a line of links under
+    // them (owner: "so easy my 3 year old could build the estimate"). What this
+    // guards is unchanged: a Send, and no Option B.
+    test('_tmShowPage ends in Send it and Sign it here (no Option B)', async () => {
       // The real app page (index.html) already has gei-tm-page + its wrap containers,
       // creating a second element with the same id would just orphan a duplicate in the
       // DOM (getElementById always resolves the first match), so reuse the real ones.
@@ -2122,16 +2137,20 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       const r2 = await page.evaluate(() => {
         const html = document.getElementById('tm-actions-wrap')?.innerHTML || '';
-        return { hasSend: html.includes('Send T&amp;M proposal') || html.includes('Send T&M proposal'), hasOptionB: html.includes('Option B') };
+        return { hasSend: html.includes('Send it'), hasSign: html.includes('Sign it here'), hasOptionB: html.includes('Option B') };
       });
       expect(r2.hasSend).toBe(true);
+      expect(r2.hasSign).toBe(true);
       expect(r2.hasOptionB).toBe(false);
     });
 
     // Was "Option B". The button made a SECOND option and said so; a group can
     // now hold A through Z (_optionNextLabel), so naming one letter was wrong
     // the moment a third option existed. It adds an option now, and says that.
-    test('_byoShowPage renders "Send proposal" with Add option in a 3-column action grid', async () => {
+    // CHANGED 2026-09-23 (§10.4): Build Your Own is the iOS editor now. Send
+    // is on the bar at the bottom ("Send it"); the page keeps Add an option
+    // with the other quiet links. Still never promises an option letter.
+    test('_byoShowPage renders Send it and Add an option', async () => {
       const r = await page.evaluate(() => {
         try { _byoShowPage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2139,8 +2158,8 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       const r2 = await page.evaluate(() => {
         const html = document.getElementById('byo-actions-wrap')?.innerHTML || '';
-        return { hasSend: html.includes('Send proposal') && !html.includes('Send T&amp;M'),
-                 hasAddOption: html.includes('Add option'),
+        return { hasSend: html.includes('Send it') && !html.includes('Send T&amp;M'),
+                 hasAddOption: html.includes('Add an option'),
                  namesOneLetter: /Option [A-Z]\b/.test(html) };
       });
       expect(r2.hasSend).toBe(true);
@@ -2251,15 +2270,35 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiIsTM = true;
         _geiIsFreeForm = false;
         goGeiStep(2); // renders gei-tm-page + tm-deposit-wrap via _tmShowPage
+        // PRECONDITION STATED, 2026-09-22, and it was always required. A T&M
+        // with no day count on it is a RATE SHEET, and a rate sheet's deposit
+        // is a flat figure because there is no total to take a percentage of
+        // (generic-estimate.js: tmDepositPct is 0 whenever _tmRateOnly). This
+        // test is about the percentage path, so it has to put the estimated
+        // total on the job, which is what a contractor does by entering days.
+        //
+        // It used to pass without saying so because _tmShowPage wiped the layer
+        // set on every fresh T&M, leaving _tmRateOnly false by accident. Four
+        // other tests in this file leaned on the same accident; each now states
+        // the same precondition rather than the assertions being relaxed.
+        _tmAddLayer('est');
+        // REVERSED 2026-09-23 (§10.4). A T&M deposit is never a percent now,
+        // with or without an estimate: it is the flat figure he names under
+        // Up front, or nothing (_tmDepositState). Owner: "how can you get a
+        // mobilization deposit on something you don't put a price on?" The
+        // subject of this test, that the save reads the LIVE field and not a
+        // dead id, is unchanged; the live field is tm-i-dep-flat.
         document.getElementById('tm-deposit-pct').value = '40';
+        _tmAddLayer('dep');
+        document.getElementById('tm-i-dep-flat').value = '400';
         _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
         saveGenericEstimate(true);
         const bid = bids.find(x => x.client_id === 88801);
         return { deposit: bid?.deposit, amount: bid?.amount, tmDepositPct: bid?.tmDepositPct };
       });
-      expect(r.tmDepositPct).toBe(40);
-      expect(r.deposit).toBe(Math.round(r.amount * 0.4));
+      expect(r.tmDepositPct, 'never a percent on T&M').toBe(0);
+      expect(r.deposit).toBe(400);
     });
 
     test('regression: reopening a saved T&M bid restores its deposit % into the live field (back-calculated from deposit/amount)', async () => {
@@ -2268,9 +2307,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiEditBidId = bid.id;
         _geiIsTM = true;
         _tmShowPage();
-        return { restoredPct: document.getElementById('tm-deposit-pct')?.value };
+        // The flat figure comes back into the box it was typed in (§10.4,
+        // 2026-09-23: the percent field is not shown on T&M any more).
+        return { restoredFlat: document.getElementById('tm-i-dep-flat')?.value };
       });
-      expect(r.restoredPct).toBe('40');
+      expect(r.restoredFlat).toBe('400');
     });
   });
 
@@ -2436,13 +2477,22 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         clients = clients.filter(x => x.id !== 88823).concat([c]);
         const precedes = (a, b) => !!(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
         openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
-        const tm = precedes(document.getElementById('tm-sitenote-wrap'), document.getElementById('tm-scopecard-wrap'));
+        // T&M CHANGED 2026-09-23 (§10.4). The T&M page is three numbered steps
+        // now (owner: "it all looks like it runs together"), and step 1 opens
+        // on the box he writes the job in, the one thing he must do. The crew
+        // note is about the job too, so it stays in step 1, last, and still
+        // comes before anything about the price.
+        const tm = precedes(document.getElementById('tm-scopecard-wrap'), document.getElementById('tm-sitenote-wrap'))
+          && precedes(document.getElementById('tm-sitenote-wrap'), document.getElementById('tm-step-2'));
         openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
-        const byo = precedes(document.getElementById('byo-sitenote-wrap'), document.getElementById('byo-scopecard-wrap'));
+        // BYO the same since it became the same editor (2026-09-23, §10.4):
+        // after the work, before the price.
+        const byo = precedes(document.getElementById('byo-sections'), document.getElementById('byo-sitenote-wrap'))
+          && precedes(document.getElementById('byo-sitenote-wrap'), document.getElementById('byo-step-2'));
         return { tm, byo };
       });
-      expect(r.tm, 'T&M note precedes scope card').toBe(true);
-      expect(r.byo, 'BYO note precedes scope card').toBe(true);
+      expect(r.tm, 'T&M note sits in step 1, after the job and before the price').toBe(true);
+      expect(r.byo, 'BYO note sits after the work and before the price').toBe(true);
     });
 
     test('per-property: two addresses on one client keep separate notes; each auto-loads by address', async () => {
@@ -2665,6 +2715,8 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         };
       });
       expect(r.markupInputExists, 'the "Materials markup %" input must be gone').toBe(false);
+      // Briefly a contract term on 2026-09-23 and taken back out the same day
+      // (owner: "why would we include that?"). The original rule stands.
       expect(r.markupVarExists, '_tmMatMarkup must no longer exist').toBe(false);
       expect(r.matListShowsRaw, 'material row must show the raw $500 cost, no hidden markup applied').toBe(true);
       expect(r.railShowsRaw, 'rail materials total must show the raw cost, no hidden markup applied').toBe(true);
@@ -2678,6 +2730,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         // Build a T&M estimate the way a user would
         openGenericEstimate(c, null, null, { mode: 'tm' });
         goGeiStep(2);
+        // Same precondition as the deposit-% test above: an hour count only
+        // exists on a T&M that carries an estimated total, so the layer that
+        // holds one has to be on before the autosave stamps the draft.
+        _tmAddLayer('est');
         _tmRatePerMan = 75; _tmEstHours = 24; _tmCrewCount = 3; _tmBillingCycle = 'milestone';
         _geiLines = [{ desc: 'Paint & primer', qty: 1, rate: 800, total: 800, notes: 'SW Duration' }];
         const nteEl = document.getElementById('tm-i-nte'); if (nteEl) nteEl.value = '12,000';
@@ -2804,6 +2860,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         goGeiStep(2);
         // Drive the DOM the way a user does, _tmInputChange derives hours from
         // the days input, so setting the module variable alone gets overwritten.
+        // Same precondition as the deposit-% test above: the days field only
+        // feeds _tmEstHours when the estimated-total layer is on, and without
+        // it a rate sheet has no hours for the crew to cost out.
+        _tmAddLayer('est');
         const rateEl = document.getElementById('tm-i-rate'); if (rateEl) rateEl.value = '60';
         const daysEl = document.getElementById('tm-i-days'); if (daysEl) daysEl.value = '2'; // 16h
         _estCrew = ['joe@crew.com']; // Joe is on the job, his real wage is a cost
@@ -2975,6 +3035,13 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       openGenericEstimate(c, null, 'general');
       if (isTM) {
         _geiIsTM = true; _geiIsFreeForm = false;
+        // Same precondition as the deposit-% test above: the deposit row this
+        // test looks for is a percentage of a total, and a rate sheet has no
+        // total to take one of.
+        _tmAddLayer('est');
+        // A T&M deposit is a flat figure under Up front (2026-09-23, §10.4).
+        _tmAddLayer('dep');
+        document.getElementById('tm-i-dep-flat').value = '300';
         _tmRatePerMan = 50; _tmEstHours = 16; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
       } else {
@@ -3001,7 +3068,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       const re = /<div>(\d+)\. <strong>(.*?):<\/strong> ([\s\S]*?)<\/div>/g;
       let m;
       while ((m = re.exec(captured)) !== null) clauses.push({ n: +m[1], title: m[2], body: m[3] });
-      return { err, clauses, hasDepRow: doc.includes('Due Before Work Begins') };
+      // Case-insensitive since 2026-09-23 (§10.4): the BYO row went sentence
+      // case ("Deposit before work begins (25%)") in the proposal redesign.
+      return { err, clauses, hasDepRow: /before work begins/i.test(doc) };
     }, { isTM, clientId });
 
     test('T&M and BYO T&C come from the same clause list, shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {
@@ -4286,12 +4355,19 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiIsTM = true; _geiIsFreeForm = false; _tmRateOnly = false;
         _geiScopeNoScope = true; _geiScopeChips = [];
         _tmRatePerMan = 0; _tmEstHours = 0; _geiLines = [];
+        // CHANGED 2026-09-23 (§10.4): the stop is a one-button prompt that
+        // lands him in the rate box (zConfirm), not an alert naming a section
+        // that no longer exists. Still exactly one stop, and it is the rate.
         window.__blocked = [];
         window.zAlert = (m, o) => { window.__blocked.push((o && o.title) || m); };
+        const prevConfirm = window.zConfirm;
+        window.zConfirm = (m, yes, o) => { window.__blocked.push(m); };
         sendGenericProposal();
+        window.zConfirm = prevConfirm;
         return window.__blocked;
       });
-      expect(r).toEqual(['Rate required']);
+      expect(r.length).toBe(1);
+      expect(r[0]).toContain('hourly rate');
     });
   });
 

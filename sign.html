@@ -358,7 +358,7 @@ input[type=text]:focus{border-color:var(--denim)}
       <div id="po-declined" style="display:none;color:var(--text3);font-size:13px;text-align:center;padding:4px 0">No problem, full price applies. Scroll down to review and sign.</div>
     </div>
 
-    <button onclick="declineBid()" style="display:block;width:100%;margin-top:8px;padding:13px;border:none;background:none;color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center;border-radius:var(--r)">Not interested, decline this proposal</button>
+    <button onclick="declineBid()" style="display:block;width:100%;margin-top:8px;padding:13px;border:none;background:none;color:var(--text3);font-size:13.5px;font-weight:400;text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-family:inherit;text-align:center;border-radius:var(--r)">Not interested, decline this proposal</button>
   </div>
 
   <!-- Step 2: Color selection (painting only) -->
@@ -393,8 +393,10 @@ input[type=text]:focus{border-color:var(--denim)}
       </div>
 
       <!-- Notice of Cancellation, minimum required disclosure (FTC 16 CFR Part 429 / state equiv.) -->
-      <div id="cancel-notice-section" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-bottom:12px">
-        <div id="cancel-notice-body" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
+      <!-- A right the law gives them, set as a notice they can read, not grey fine
+           print (design review, 2026-09-23). Tinted with the contractor's colour. -->
+      <div id="cancel-notice-section" style="display:none;margin-bottom:14px;padding:14px 16px;border-radius:12px;background:var(--blue-lt);border:1px solid rgba(15,23,42,.08)">
+        <div id="cancel-notice-body" style="font-size:13.5px;color:#334155;line-height:1.55"></div>
       </div>
 
       <!-- The ONE shared consent block (esign.js): same checkbox + terms
@@ -894,7 +896,7 @@ async function init(){
       // A rate sheet with no mobilization deposit still has something to say
       // here, and it is the thing that makes signing feel safe: nothing leaves
       // their pocket today.
-      _sdl.innerHTML='<strong style="color:var(--ink)">Nothing due today.</strong> You are billed '+_cadTxt+' for the time and materials actually used.';
+      _sdl.innerHTML='<strong style="color:var(--ink)">Nothing due today.</strong> You are billed '+_cadTxt+' for the hours worked and the materials used.';
       _sdl.style.display='block';
     }
     // Price-held-until chip, surfaces the REAL 30-day validity window the
@@ -929,10 +931,12 @@ async function init(){
     // Priority: 2-letter code in address → full state name in address → _prop.state fallback.
     // Multi-word state names are listed first so "WEST VIRGINIA" matches before "VIRGINIA".
     const _propAddrUpper=(_prop.clientAddr||'').toUpperCase();
-    const _propAddrMatch=_propAddrUpper.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+    // stateFromAddr (js/legal.js, loaded above): read from the END of the address,
+    // so "300 Ca Ave, Phoenix, AZ" is Arizona. This picks the right-to-cancel
+    // statute printed on the contract the customer is about to sign.
     const _STNAMES={'WEST VIRGINIA':'WV','NORTH CAROLINA':'NC','NORTH DAKOTA':'ND','SOUTH CAROLINA':'SC','SOUTH DAKOTA':'SD','NEW HAMPSHIRE':'NH','NEW JERSEY':'NJ','NEW MEXICO':'NM','NEW YORK':'NY','RHODE ISLAND':'RI','ALABAMA':'AL','ALASKA':'AK','ARIZONA':'AZ','ARKANSAS':'AR','CALIFORNIA':'CA','COLORADO':'CO','CONNECTICUT':'CT','DELAWARE':'DE','FLORIDA':'FL','GEORGIA':'GA','HAWAII':'HI','IDAHO':'ID','ILLINOIS':'IL','INDIANA':'IN','IOWA':'IA','KANSAS':'KS','KENTUCKY':'KY','LOUISIANA':'LA','MAINE':'ME','MARYLAND':'MD','MASSACHUSETTS':'MA','MICHIGAN':'MI','MINNESOTA':'MN','MISSISSIPPI':'MS','MISSOURI':'MO','MONTANA':'MT','NEBRASKA':'NE','NEVADA':'NV','OHIO':'OH','OKLAHOMA':'OK','OREGON':'OR','PENNSYLVANIA':'PA','TENNESSEE':'TN','TEXAS':'TX','UTAH':'UT','VERMONT':'VT','VIRGINIA':'VA','WASHINGTON':'WA','WISCONSIN':'WI','WYOMING':'WY'};
-    let _propSt=(_propAddrMatch&&_propAddrMatch[1])||null;
-    if(!_propSt){const _nm=Object.entries(_STNAMES).find(([n])=>_propAddrUpper.includes(n));if(_nm)_propSt=_nm[1];}
+    let _propSt=(typeof stateFromAddr==='function')?stateFromAddr(_prop.clientAddr||''):null;
+    if(!_propSt&&typeof stateFromAddr!=='function'){const _nm=Object.entries(_STNAMES).find(([n])=>_propAddrUpper.includes(n));if(_nm)_propSt=_nm[1];}
     if(!_propSt&&_prop.state)_propSt=_prop.state;
     // Patch old cancellation clause in unsigned proposals, adds mutual obligation so contractor
     // can't keep the deposit without performing. alreadySigned proposals return early at pg-done,
@@ -1022,6 +1026,35 @@ async function init(){
       }
     }
     document.getElementById('prop-html').innerHTML=_proposalHtml;
+    // WHITE-LABEL, THE WHOLE PAGE (owner, 2026-09-23: "It needs to be next
+    // level gorgeous in the white label"). The contractor's colour, already
+    // contrast-clamped at save (adaBrand), becomes this page's accent: links,
+    // progress, the Approve button, the terms. And a document that carries its
+    // own letterhead (.prop-mark) IS the hero, so the page's own dark hero card
+    // stands down instead of saying the same three things twice above it.
+    (function(){
+      const _bc=String(_prop.brandColor||'').trim().replace('#','');
+      const _rs=document.documentElement.style;
+      if(/^[0-9a-f]{6}$/i.test(_bc)){
+        const _r=parseInt(_bc.substr(0,2),16),_g=parseInt(_bc.substr(2,2),16),_b=parseInt(_bc.substr(4,2),16);
+        ['--accent','--denim','--blue'].forEach(k=>_rs.setProperty(k,'#'+_bc));
+        _rs.setProperty('--blue-lt','rgba('+_r+','+_g+','+_b+',.10)');
+        const _ab=document.getElementById('approve-btn');if(_ab)_ab.style.background='#'+_bc;
+        // The chrome around the document in the same colour: a deep shade of
+        // it for the top bar, his colour for the progress and the primary
+        // buttons. The warm near-black and green were ours, not his.
+        const _dk='rgb('+[_r,_g,_b].map(x=>Math.round(x*0.42)).join(',')+')';
+        const _tb=document.querySelector('.topbar');if(_tb)_tb.style.background=_dk;
+        const _st=document.createElement('style');_st.id='wl-brand';
+        _st.textContent='.dot.active{background:#'+_bc+'!important}.dot.done{background:#'+_bc+'!important;opacity:.55}'+
+          '.btn{background:#'+_bc+';box-shadow:0 2px 12px rgba('+_r+','+_g+','+_b+',.28)}'+
+          '.btn:disabled{opacity:.35}';
+        document.head.appendChild(_st);
+      }else{_rs.setProperty('--accent','#2D5DA8');}
+      if(document.querySelector('#prop-html .prop-mark')){
+        const _hc=document.querySelector('#pg-sign .hero-card');if(_hc)_hc.style.display='none';
+      }
+    })();
     // Contractor contact footer
     (function(){
       const _ctct=[];
@@ -1101,10 +1134,26 @@ async function init(){
         // Use local calendar dates, avoids UTC offset shifting the date for US timezones
         const _liso=d=>{const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2,'0'),dy=String(d.getDate()).padStart(2,'0');return y+'-'+mo+'-'+dy;};
         const _signFedHols=yr=>{const obs=d=>{const w=d.getDay();if(w===0)d.setDate(d.getDate()+1);else if(w===6)d.setDate(d.getDate()-1);return _liso(d);};const nth=(m,n,wd)=>{const d=new Date(yr,m,1);d.setDate(1+((wd-d.getDay()+7)%7)+(n-1)*7);return _liso(d);};const last=(m,wd)=>{const d=new Date(yr,m+1,0);d.setDate(d.getDate()-((d.getDay()-wd+7)%7));return _liso(d);};return[obs(new Date(yr,0,1)),nth(0,3,1),nth(1,3,1),last(4,1),obs(new Date(yr,5,19)),obs(new Date(yr,6,4)),nth(8,1,1),nth(9,2,1),obs(new Date(yr,10,11)),nth(10,4,4),obs(new Date(yr,11,25))];};
-        const _now=new Date();_now.setHours(0,0,0,0);const _dl=new Date(_now);const _hols=[..._signFedHols(_now.getFullYear()),..._signFedHols(_now.getFullYear()+1)];let _bc=0;while(_bc<_cd){_dl.setDate(_dl.getDate()+1);const _ymd=_liso(_dl);if(_dl.getDay()!==0&&!_hols.includes(_ymd))_bc++;}
-        const _deadlineStr=_dl.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-        _cancelNoticeBody.innerHTML=
-          '<strong>Right to cancel:</strong> You may cancel this contract within '+_cd+' business days of signing (deadline: '+_deadlineStr+'). To cancel, send written notice to '+escHtmlN(_bizName)+((_bizPhone)?' at '+escHtmlN(_bizPhone):'')+'. ('+escHtmlN(_cs)+')';
+        // California (Civ. Code §1689.6): a buyer 65 or older gets five business
+        // days, not three. We cannot know age, so the buyer says so here; the
+        // answer is saved with the signature and every deadline follows it.
+        const _seniorDays=_prop.seniorCancelDays||(_cancelRule&&_cancelRule.seniorDays)||0;
+        const _seniorCs=_prop.seniorCancelStatute||(_cancelRule&&_cancelRule.seniorStatute)||'';
+        window._buyerSenior=false;
+        const _renderCancel=()=>{
+          const _days=(window._buyerSenior&&_seniorDays)?_seniorDays:_cd;
+          const _cite=(window._buyerSenior&&_seniorCs)?_seniorCs:_cs;
+          const _now=new Date();_now.setHours(0,0,0,0);const _dl=new Date(_now);const _hols=[..._signFedHols(_now.getFullYear()),..._signFedHols(_now.getFullYear()+1)];let _bc=0;while(_bc<_days){_dl.setDate(_dl.getDate()+1);const _ymd=_liso(_dl);if(_dl.getDay()!==0&&!_hols.includes(_ymd))_bc++;}
+          const _deadlineStr=_dl.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+          const _txt=document.getElementById('cancel-notice-text');
+          if(_txt)_txt.innerHTML='<strong>Right to cancel:</strong> You may cancel this contract within '+_days+' business days of signing (deadline: '+_deadlineStr+'). To cancel, send written notice to '+escHtmlN(_bizName)+((_bizPhone)?' at '+escHtmlN(_bizPhone):'')+'. ('+escHtmlN(_cite)+')';
+        };
+        _cancelNoticeBody.innerHTML='<div id="cancel-notice-text"></div>'+(_seniorDays
+          ?'<label id="senior-row" style="display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(15,23,42,.08);font-size:13.5px;color:#334155;cursor:pointer"><input type="checkbox" id="buyer-senior" style="width:18px;height:18px;accent-color:var(--accent,#1a365d);flex-shrink:0"><span>I am 65 or older <span style="color:#64748b">(you get '+_seniorDays+' business days to cancel)</span></span></label>'
+          :'');
+        const _sBox=document.getElementById('buyer-senior');
+        if(_sBox)_sBox.addEventListener('change',()=>{window._buyerSenior=!!_sBox.checked;_renderCancel();});
+        _renderCancel();
         if(_cancelNotice)_cancelNotice.style.display='block';
       }
     }
@@ -1373,7 +1422,7 @@ async function submitCash(){
   const _subDepFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
   const _subDep=Math.round(_subAmt*_subDepFrac*100)/100;
   try{
-    const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
+    const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[],buyerSenior:!!window._buyerSenior};
     // Storage failure must not block the signature (DB row is the source of truth),
     // but it means the drawn-signature image won't render on the proposal, log it.
     const{error:_storErr}=await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
@@ -1399,8 +1448,16 @@ async function submitCash(){
       // Drawn signature image, stored in the DB so documents can always render it,
       // even when the storage-JSON update was missed at signing time.
       signature_data:_sigData||null,
+      // California 65+ (Civ. Code §1689.6): five business days to cancel.
+      buyer_senior:!!window._buyerSenior,
     };
     let{error:_upsertErr}=await _supa.from('signed_proposals').upsert({..._core,..._optional},{onConflict:'bid_id'});
+    // buyer_senior is the newest column: if the database has not caught up yet,
+    // drop only it first so the signature image and EPA fields still land.
+    if(_upsertErr&&(_upsertErr.code==='PGRST204'||/column/i.test(_upsertErr.message||''))&&/buyer_senior/.test(_upsertErr.message||'')){
+      const{buyer_senior:_bs,..._optNoSenior}=_optional;
+      ({error:_upsertErr}=await _supa.from('signed_proposals').upsert({..._core,..._optNoSenior},{onConflict:'bid_id'}));
+    }
     if(_upsertErr&&(_upsertErr.code==='PGRST204'||/column/i.test(_upsertErr.message||''))){
       console.warn('signed_proposals: optional column rejected, retrying core only -',_upsertErr.message);
       ({error:_upsertErr}=await _supa.from('signed_proposals').upsert(_core,{onConflict:'bid_id'}));

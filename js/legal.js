@@ -10,7 +10,7 @@ const STATE_CANCEL={
   AK:{days:3,statute:'AS §45.63.010'},
   AZ:{days:3,statute:'A.R.S. §44-5002'},
   AR:{days:3,statute:'A.C.A. §4-89-103'},
-  CA:{days:3,statute:'Civ. Code §1689.5'},
+  CA:{days:3,seniorDays:5,statute:'Civ. Code §1689.5',seniorStatute:'Civ. Code §1689.6'},
   CO:{days:3,statute:'C.R.S. §6-1-702'},
   CT:{days:3,statute:'C.G.S. §42-134a'},
   DE:{days:3,statute:'6 Del. C. §4402'},
@@ -71,6 +71,69 @@ const STATE_NAMES={
   SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',
   VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',
 };
+
+// ── Which state a job is in, read off its address ────────────────────────────
+//
+// THE ONE PLACE THIS IS DECIDED. Every statute this file holds (the right to
+// cancel, the deposit cap, whether a T&M contract is even legal) is looked up
+// by the state this returns, so a wrong answer here is a wrong contract.
+//
+// It used to be five copies of one regex (settings, proposals, bids,
+// generic-estimate, sign.html) that took the FIRST two-letter word shaped like
+// a state. The first such word is usually in the street, not the state:
+//
+//   300 Ca Ave, Phoenix, AZ 85001        read as California: T&M BLOCKED in Arizona
+//   1234 Co Rd 12, Canton, OH 44702      read as Colorado (every rural county road)
+//   1 Pa Rd, Ocean City, NJ 08226        read as Pennsylvania: its cap forced on NJ
+//   100 La Salle St, Chicago, IL 60601   read as Louisiana
+//   8 Ma Ln, Austin, TX 78701            read as Massachusetts
+//
+// An address is written street first and state last, so it is read from the
+// end, in order of how sure each reading is:
+//   1. the code right before a ZIP        "... KS 66603"
+//   2. a code standing as the last part    "..., Topeka, KS"
+//   3. a state spelled out, the last one   "..., Topeka, Kansas"
+//   4. the last code-shaped word anywhere  (an address with no commas at all)
+// Nothing found is null, and the caller decides the fallback, as it always has.
+const _STATE_CODES=Object.keys(STATE_NAMES).concat(['DC']);
+const _STATE_CODE_SET=new Set(_STATE_CODES);
+function stateFromAddr(addr){
+  if(!addr)return null;
+  const up=String(addr).toUpperCase();
+  // 1. Before a ZIP. The last one, in case a suite number looks like a ZIP.
+  const zipRe=/\b([A-Z]{2})\.?\s*,?\s+\d{5}(?:-\d{4})?\b/g;
+  let m,hit=null;
+  while((m=zipRe.exec(up))!==null){if(_STATE_CODE_SET.has(m[1]))hit=m[1];}
+  if(hit)return hit;
+  // 2. The last comma-separated part that is, or starts with, a state code.
+  const parts=up.split(',').map(s=>s.trim()).filter(Boolean);
+  for(let i=parts.length-1;i>0;i--){
+    const w=parts[i].split(/\s+/)[0].replace(/\./g,'');
+    if(_STATE_CODE_SET.has(w))return w;
+    if(/^(USA?|UNITED STATES(?: OF AMERICA)?)$/.test(parts[i]))continue; // a trailing country
+    break;
+  }
+  // 3. Spelled out. The one that ENDS last wins, and on a tie the longer name,
+  //    so "West Virginia" is not read as "Virginia" and "Virginia St, Reno,
+  //    Nevada" is Nevada.
+  let best=null,bestEnd=-1,bestLen=0;
+  Object.keys(STATE_NAMES).forEach(code=>{
+    const name=STATE_NAMES[code].toUpperCase();
+    const re=new RegExp('\\b'+name.replace(/ /g,'\\s+')+'\\b','g');
+    let x;
+    while((x=re.exec(up))!==null){
+      const end=x.index+x[0].length;
+      if(end>bestEnd||(end===bestEnd&&name.length>bestLen)){best=code;bestEnd=end;bestLen=name.length;}
+    }
+  });
+  if(best)return best;
+  // 4. No commas and no ZIP: the last code-shaped word, which is where a state
+  //    goes when somebody types an address in one line.
+  const anyRe=/\b([A-Z]{2})\b/g;
+  hit=null;
+  while((m=anyRe.exec(up))!==null){if(_STATE_CODE_SET.has(m[1]))hit=m[1];}
+  return hit;
+}
 
 // ── Mechanic's Lien Rights ─────────────────────────────────────────────────
 // Contractor's right to lien property for unpaid amounts. All 50 states.
@@ -237,9 +300,22 @@ const STATE_PRICE_RULE = {
 };
 // What a job at this address forces onto the proposal. Unknown or absent state
 // means nothing is forced, which is the correct answer for most of the country.
+//
+// `needs` is what a T&M proposal in that state MUST carry before it can be sent
+// or signed, as data, so the screen, the Send button and the in-person signing
+// sheet all read one answer (js/generic-estimate.js _tmLegal). Every 'cap' state
+// needs a ceiling with a number in it; a locked switch with a blank box is not a
+// ceiling. Pennsylvania is the one state that also names the estimate, and the
+// ceiling there is not his to choose: it is the estimate plus ten percent, so
+// the app computes it rather than asking him to get the arithmetic right.
 function statePriceRule(state){
   const r = STATE_PRICE_RULE[state ? String(state).toUpperCase() : ''];
-  return r || {rule:'none', statute:'', note:''};
+  if(!r) return {rule:'none', statute:'', note:'', needs:[]};
+  const st = String(state).toUpperCase();
+  const needs = r.rule==='cap' ? (st==='PA' ? ['rate','est','cap'] : ['rate','cap']) : [];
+  const out = Object.assign({needs}, r);
+  if(st==='PA') out.capOverEst = 0.10;
+  return out;
 }
 
 // THE CAP WHEN THERE IS NO CONTRACT PRICE (T&M rate sheet, _tmRateOnly).

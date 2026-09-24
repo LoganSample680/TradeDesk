@@ -335,7 +335,13 @@ function _licStatusBadge(lic){
 const _STATE_ABBRS=['AL','AK','AZ','AR','CA','CO','CT','DC','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 const _STATE_RE=/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
 function _stateNameOf(st){return(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;}
-function detectStateFromAddr(addr){if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;}
+// Delegates to stateFromAddr (js/legal.js), the one reader every statute
+// lookup uses. The first-match regex this used to run read the street before
+// the state ("300 Ca Ave, Phoenix, AZ" was California). See legal.js.
+function detectStateFromAddr(addr){
+  if(typeof stateFromAddr==='function')return stateFromAddr(addr);
+  if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;
+}
 function _initServiceStates(){
   // Auto-populate from existing client + bid addresses on first use
   const found=new Set();
@@ -1063,7 +1069,40 @@ function _renderLogoPreviewBiz(){
     if(btn)btn.textContent='Upload image';
   }
 }
+// WHAT THE LOGO IS, measured once and kept (proposal letterhead, 2026-09-23:
+// "look at the ugliness on jacks logo"). A logo drawn on its own solid tile,
+// Jack's black square, is laid out on the proposal as a rounded tile beside
+// the name, like an app icon; a transparent or white-backed one as a
+// wordmark. Measured here because the proposal is built synchronously and
+// cannot wait on an image to decode.
+function _logoEnsureMeta(){
+  const src=(typeof S!=='undefined'&&S&&S.logoData)||'';
+  if(!src){if(S&&S.logoMeta)S.logoMeta=null;return Promise.resolve(null);}
+  const h=String(typeof _hubHash==='function'?_hubHash(src):src.length);
+  if(S.logoMeta&&S.logoMeta.hash===h)return Promise.resolve(S.logoMeta);
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const w=img.naturalWidth||img.width||1,hh=img.naturalHeight||img.height||1;
+        const N=48,c=document.createElement('canvas');c.width=N;c.height=N;
+        const x=c.getContext('2d');x.drawImage(img,0,0,N,N);
+        const px=(a,b)=>x.getImageData(a,b,1,1).data;
+        const cs=[px(1,1),px(N-2,1),px(1,N-2),px(N-2,N-2)];
+        const avg=[0,1,2].map(i=>Math.round(cs.reduce((t,p)=>t+p[i],0)/4));
+        const solid=cs.every(p=>p[3]>235)&&cs.every(p=>[0,1,2].every(i=>Math.abs(p[i]-avg[i])<40));
+        const lum=(0.2126*avg[0]+0.7152*avg[1]+0.0722*avg[2])/255;
+        S.logoMeta={hash:h,ratio:Math.round(w/hh*100)/100,solid,light:lum>0.92,bg:'rgb('+avg.join(',')+')'};
+      }catch(_e){S.logoMeta={hash:h,ratio:1,solid:false,light:true,bg:''};}
+      try{if(typeof _settingsChanged==='function')_settingsChanged();}catch(_e){}
+      res(S.logoMeta);
+    };
+    img.onerror=()=>res(null);
+    img.src=src;
+  });
+}
 function applyBrandLogo(){
+  try{_logoEnsureMeta();}catch(_e){}
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
     if(S.logoData){
       el.innerHTML='<img src="'+S.logoData+'" style="height:32px;max-width:140px;object-fit:contain;display:block" alt="'+escHtml(S.bname||'Logo')+'">';

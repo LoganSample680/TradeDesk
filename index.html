@@ -1417,6 +1417,245 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .detail-actions .btn{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);color:var(--text-cream);height:34px;padding:0 14px;font-size:12px;box-shadow:none;white-space:nowrap;flex-shrink:0}
 .detail-actions .btn:hover{background:rgba(255,255,255,.18)}
 .detail-actions .btn-p{background:var(--denim);border-color:transparent}
+/* ═══ TIME & MATERIALS, iOS GROUPED ════════════════════════════════════════
+   Owner, 2026-09-23: "is it premium like a true iOS app?" It was a web form: six
+   button styles, a box inside a box inside a box, a column of ✕ buttons and
+   three rows of chrome before the first field. This is the inset-grouped list
+   iOS itself uses in Settings, Health and Wallet: one tint, flat groups on a
+   grey page, hairline separators inset from the left, section labels OUTSIDE
+   the group, and footnotes under it. Scoped to the T&M page; every colour is an
+   existing token, so the in-app dark mode (body.dark) flips it for free. */
+:is(#gei-tm-page,#gei-byo-page){background:var(--bg2);--ios-tint:var(--blue);--ios-grp:var(--bg-card);--ios-sep:var(--line-2);--ios-2:var(--text3);--ios-law:#8A4E00}
+body.dark :is(#gei-tm-page,#gei-byo-page){--ios-law:#F0B84A}
+:is(#gei-tm-page,#gei-byo-page) .ios-nav{display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:4px 4px 0}
+:is(#gei-tm-page,#gei-byo-page) .ios-navbtn{border:0;background:none;color:var(--ios-tint);font-family:inherit;font-size:17px;font-weight:400;padding:10px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;-webkit-tap-highlight-color:transparent}
+:is(#gei-tm-page,#gei-byo-page) .ios-navbtn.bold{font-weight:600}
+:is(#gei-tm-page,#gei-byo-page) .ios-nav{position:relative}
+:is(#gei-tm-page,#gei-byo-page) .ios-navtitle{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:17px;font-weight:600;color:var(--text);white-space:nowrap;pointer-events:none}
+/* Dark: the ghost Add is words, not a blue disc with blue words on it; and
+   Tim's ink figure turns white on his dark card. */
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-pill.ghost{background:none}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-tim-h img{filter:invert(1)}
+:is(#gei-tm-page,#gei-byo-page) .ios-navbtn svg{width:12px;height:20px}
+:is(#gei-tm-page,#gei-byo-page) .ios-large{padding:0 20px 18px}
+:is(#gei-tm-page,#gei-byo-page) .ios-title{display:flex;align-items:center;gap:6px;font-family:var(--font-display);font-size:30px;font-weight:800;letter-spacing:-.7px;line-height:1.12;color:var(--text);margin:0;border:0;background:none;padding:0;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+/* ── BUILD YOUR OWN LINES (2026-09-23) ── */
+#gei-byo-page .ios-check{position:relative;flex-shrink:0;width:44px;height:44px;margin:-8px 0 -8px -12px;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;padding:0}
+#gei-byo-page .ios-check::before{content:"";position:absolute;width:24px;height:24px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--ios-2)}
+#gei-byo-page .ios-check.on::before{background:var(--ios-tint);border-color:var(--ios-tint)}
+#gei-byo-page .ios-check svg{position:relative;width:14px;height:14px;z-index:1}
+#gei-byo-page .ios-check:disabled{cursor:default}
+#gei-byo-page .byo-line.off .ios-lbl,#gei-byo-page .byo-line.off .ios-fact{opacity:.45}
+#gei-byo-page .ios-row.byo-line{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;align-items:start}
+#gei-byo-page .byo-line .byo-title{font-size:17px;line-height:22px;overflow-wrap:anywhere;min-width:0}
+#gei-byo-page .byo-line .ios-fact{line-height:22px;text-align:right}
+#gei-byo-page .byo-line .ios-check{margin:-11px 0 -11px -12px;align-self:start}
+#gei-byo-page .byo-line .byo-note{grid-column:2/4;font-size:14px;line-height:1.35;color:var(--ios-2);margin-top:2px;overflow-wrap:anywhere;min-width:0}
+#gei-byo-page .byo-line.off .byo-title,#gei-byo-page .byo-line.off .byo-note{opacity:.45}
+#gei-byo-page .ios-fact{flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:500;color:var(--text)}
+#gei-byo-page .ios-fact.ask{color:var(--ios-tint);font-weight:600}
+#gei-byo-page .byo-total .ios-fact{font-size:24px;font-weight:700;letter-spacing:-.4px}
+#gei-byo-page .ios-val input#byo-dep-in{width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-rename{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-8px 0 -8px -6px;color:var(--ios-tint);flex-shrink:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-rename svg{width:20px;height:20px}
+:is(#gei-tm-page,#gei-byo-page) .ios-sub{font-size:15px;color:var(--ios-2);margin-top:5px;line-height:1.4}
+:is(#gei-tm-page,#gei-byo-page) .ios-sub b{color:var(--text);font-weight:600}
+:is(#gei-tm-page,#gei-byo-page) .ios-sub button{border:0;background:none;padding:0 0 0 4px;color:var(--ios-tint);font:inherit;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-sec{margin:0 0 28px}
+/* Section titles at iOS's "increased prominence": the size of a row, bold, in
+   the text colour, as written. The small grey capitals they replace are how
+   iOS labels a settings list, and on a page he has to work down, the owner
+   read straight past them: "titles themselves aren't pronounced" (2026-09-23). */
+:is(#gei-tm-page,#gei-byo-page) .ios-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:19px;font-weight:700;letter-spacing:-.2px;color:var(--text);padding:0 4px 10px}
+:is(#gei-tm-page,#gei-byo-page) .ios-h button{border:0;background:none;padding:0;font-family:inherit;font-size:15px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--ios-tint);cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-group{background:var(--ios-grp);border-radius:12px;overflow:hidden}
+:is(#gei-tm-page,#gei-byo-page) .ios-row{position:relative;display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;min-height:50px;padding:11px 16px;margin:0;border:0;background:var(--ios-grp);font-family:inherit;font-size:17px;line-height:1.3;color:var(--text);text-align:left;-webkit-tap-highlight-color:transparent}
+:is(#gei-tm-page,#gei-byo-page) .ios-row::after{content:"";position:absolute;left:16px;right:0;bottom:0;height:1px;background:var(--ios-sep);transform:scaleY(.5);transform-origin:bottom;pointer-events:none}
+:is(#gei-tm-page,#gei-byo-page) .ios-row.nosep::after,:is(#gei-tm-page,#gei-byo-page) .ios-group>.ios-row:last-child::after,:is(#gei-tm-page,#gei-byo-page) .ios-group>div:last-child>.ios-row:last-child::after,:is(#gei-tm-page,#gei-byo-page) .ios-group>div:last-child>div:last-child>.ios-row:last-child::after{display:none}
+:is(#gei-tm-page,#gei-byo-page) button.ios-row{cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-num{width:18px;flex-shrink:0;font-size:15px;color:var(--ios-2);font-variant-numeric:tabular-nums}
+:is(#gei-tm-page,#gei-byo-page) .ios-lbl{flex:1;min-width:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-lbl small{display:block;font-size:14px;color:var(--ios-2);margin-top:2px;line-height:1.35}
+:is(#gei-tm-page,#gei-byo-page) .ios-val{display:flex;align-items:center;gap:1px;flex-shrink:0;color:var(--ios-2);font-size:17px}
+:is(#gei-tm-page,#gei-byo-page) .ios-val input{min-width:2ch;max-width:140px;border:0!important;background:none!important;box-shadow:none!important;outline:none;text-align:right;font-family:inherit;font-size:17px;color:var(--text);width:108px;padding:0!important;height:auto!important;min-height:0!important;border-radius:0!important}
+:is(#gei-tm-page,#gei-byo-page) .ios-val input::placeholder{color:var(--ios-2);opacity:.6}
+:is(#gei-tm-page,#gei-byo-page) .ios-val input[readonly]{color:var(--ios-2)}
+:is(#gei-tm-page,#gei-byo-page) .ios-chev{flex-shrink:0;color:var(--ios-2);opacity:.55;font-size:22px;line-height:1;margin-right:-4px}
+:is(#gei-tm-page,#gei-byo-page) .ios-link{color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-textbtn{flex-shrink:0;border:0;background:none;padding:6px 2px 6px 10px;font-family:inherit;font-size:17px;font-weight:600;color:var(--ios-tint);cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-foot{font-size:13px;color:var(--ios-2);padding:8px 16px 0;line-height:1.45}
+:is(#gei-tm-page,#gei-byo-page) .ios-foot.law{color:var(--ios-law)}
+:is(#gei-tm-page,#gei-byo-page) .ios-step{display:flex;align-items:center;flex-shrink:0;background:var(--bg2);border-radius:9px;overflow:hidden}
+:is(#gei-tm-page,#gei-byo-page) .ios-step button{width:44px;height:32px;border:0;background:none;color:var(--text);font-size:20px;font-family:inherit;cursor:pointer;line-height:1}
+:is(#gei-tm-page,#gei-byo-page) .ios-step button+span,:is(#gei-tm-page,#gei-byo-page) .ios-step span+button{border-left:1px solid var(--ios-sep)}
+:is(#gei-tm-page,#gei-byo-page) .ios-step span{min-width:34px;text-align:center;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch{appearance:none;-webkit-appearance:none;flex-shrink:0;position:relative;width:51px;height:31px;margin:0;border-radius:31px;background:var(--line-2);cursor:pointer;transition:background-color .2s ease}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch::before{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.16);transition:transform .2s ease}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch:checked{background:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch:checked::before{transform:translateX(20px)}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch:disabled{opacity:.5;cursor:default}
+:is(#gei-tm-page,#gei-byo-page) .ios-seg{display:flex;flex-shrink:0;background:var(--bg2);border-radius:9px;padding:2px}
+:is(#gei-tm-page,#gei-byo-page) .ios-seg button{border:0;background:none;border-radius:7px;padding:6px 10px;font-family:inherit;font-size:13px;font-weight:500;color:var(--text);cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-seg button.on{background:var(--ios-grp);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:52px;border-radius:14px;border:0;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn+.ios-btn{margin-top:10px}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn-fill{background:var(--ios-tint);color:#fff}
+/* White on the light dark-mode blue measures under 3:1; the filled button takes a deeper blue there. */
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-btn-fill{background:#2C74C9}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn-tint{background:var(--blue-lt);color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn:active,:is(#gei-tm-page,#gei-byo-page) button.ios-row:active{opacity:.7}
+:is(#gei-tm-page,#gei-byo-page) .ios-links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;margin-top:14px}
+:is(#gei-tm-page,#gei-byo-page) .ios-links button{border:0;background:none;padding:6px 0;font-family:inherit;font-size:15px;color:var(--ios-tint);cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-say{display:block;width:100%;box-sizing:border-box;min-height:96px;padding:14px 16px;border:0!important;outline:none;background:none!important;box-shadow:none!important;resize:none;font-family:inherit;font-size:17px;line-height:1.4;color:var(--text)}
+:is(#gei-tm-page,#gei-byo-page) .ios-say::placeholder{color:var(--ios-2);opacity:.7}
+:is(#gei-tm-page,#gei-byo-page) .ios-dot{flex-shrink:0;align-self:flex-start;margin-top:8px;width:9px;height:9px;border-radius:50%;background:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-row.law .ios-dot{background:var(--ios-law)}
+:is(#gei-tm-page,#gei-byo-page) .ios-dot.done{background:var(--c-green,#117841);margin-top:0;align-self:center}
+:is(#gei-tm-page,#gei-byo-page) .ios-tag{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ios-tint);margin-left:4px}
+:is(#gei-tm-page,#gei-byo-page) .ios-row.law .ios-tag,:is(#gei-tm-page,#gei-byo-page) .ios-tag.req{color:var(--ios-law)}
+:is(#gei-tm-page,#gei-byo-page) .ios-tag.opt{color:var(--ios-2)}
+/* ── THUMBS (2026-09-23) ─────────────────────────────────────────────────
+   Earl: 58, thick thumbs, reading glasses in the truck. Every control on this
+   page is at least 44 by 44, which is Apple's own floor, measured by
+   tests/e2e-tm-angry-contractor.spec.js. Segments and pills keep their look;
+   they just stop being 27px tall targets inside a 50px row. */
+:is(#gei-tm-page,#gei-byo-page) .ios-navbtn{min-height:44px;min-width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-sub button{min-height:44px;margin:-12px 0;padding-top:0;padding-bottom:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead button.s{min-height:44px;min-width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-pill{min-height:44px;min-width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-textbtn{min-height:44px;min-width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-step button{height:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-seg button{min-height:44px;min-width:44px;padding:6px 12px}
+:is(#gei-tm-page,#gei-byo-page) .ios-links button{min-height:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-h button{min-height:44px;min-width:44px}
+.toast .tm-undo{min-height:44px;min-width:60px;border:0;background:none;color:var(--blue);font:inherit;font-weight:700;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-lbl b{font-weight:600}
+:is(#gei-tm-page,#gei-byo-page) .ios-foot b{color:var(--text);font-weight:600}
+/* Swipe to delete, and Edit for anyone who does not swipe. The row slides over
+   a red Delete; Edit shows a red minus on every row instead. */
+:is(#gei-tm-page,#gei-byo-page) .ios-swipe{position:relative;overflow:hidden}
+:is(#gei-tm-page,#gei-byo-page) .ios-swipe>.ios-row{z-index:1;touch-action:pan-y;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+:is(#gei-tm-page,#gei-byo-page) .ios-swipe.dragging>.ios-row{transition:none}
+:is(#gei-tm-page,#gei-byo-page) .ios-del{position:absolute;top:0;right:0;bottom:0;z-index:0;width:88px;border:0;background:#FF3B30;color:#fff;font-family:inherit;font-size:15px;font-weight:500;line-height:1.2;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-minus{flex-shrink:0;width:22px;height:22px;border-radius:50%;border:0;background:#FF3B30;color:#fff;font-size:17px;font-weight:700;line-height:22px;padding:0;cursor:pointer}
+/* The page itself: the grey ground iOS groups sit on, and room at the bottom
+   so the last button clears the tab bar and Tim. */
+:is(#gei-tm-page,#gei-byo-page) .ios-note>button{min-height:50px}
+:is(#gei-tm-page,#gei-byo-page) .ios-note>button>span>span:first-child{font-size:17px!important;font-weight:400!important}
+:is(#gei-tm-page,#gei-byo-page) .ios-note>button>span>span:last-child{font-size:14px!important;color:var(--ios-2)!important}
+:is(#gei-tm-page,#gei-byo-page) #tm-rail-money{background:var(--ios-grp);border-radius:12px;padding:14px 16px 6px;margin-bottom:24px}
+:is(#gei-tm-page,#gei-byo-page) #tm-rail-money:empty{display:none}
+/* ── TWO STEPS AND A BAR (2026-09-23) ─────────────────────────────────────
+   "Does it look like something a pro UX designer would ship? I don't think
+   so." It did not: four sizes of bold heading, a rule and a card and a tinted
+   card, the app's own bar over the page's bar, and Send 2,400px down. Now:
+   one large title, two step headings in one style (a number that becomes a
+   green check), plain groups under them, and the button pinned to the bottom. */
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead{display:flex;align-items:center;gap:10px;margin:40px 4px 12px}
+:is(#gei-tm-page,#gei-byo-page) #tm-step-1{margin-top:8px}
+:is(#gei-tm-page,#gei-byo-page) #tm-nte-sub:empty{display:none}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead .n{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--ios-2);color:var(--ios-2);font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .n{background:var(--ios-tint);border-color:var(--ios-tint);color:#fff}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .n{background:var(--c-green,#117841);border-color:var(--c-green,#117841);color:#fff}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead .n svg{width:14px;height:14px}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead .t{flex:1;min-width:0;font-size:22px;font-weight:700;letter-spacing:-.3px;line-height:1.15;color:var(--text)}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead button.s{border:0;background:none;padding:6px 0 6px 12px;font-family:inherit;font-size:17px;font-weight:400;color:var(--ios-tint)!important;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead .s{flex-shrink:0;max-width:55%;text-align:right;font-size:15px;color:var(--ios-2);line-height:1.3}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .s{color:var(--c-green,#117841)}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .s{color:var(--ios-tint)}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .s{color:var(--green)}
+:is(#gei-tm-page,#gei-byo-page) .ios-links.left{justify-content:flex-start;padding:0 16px;margin-top:4px}
+/* Tim's finds are a list of step names. The reason opens on a tap. */
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl small{display:none}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-swipe.why .ios-lbl small{display:block}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl{cursor:pointer}
+/* The stepper shows the count; "solo" under it said it again. */
+:is(#gei-tm-page,#gei-byo-page) #tm-i-crew-label{display:none}
+/* THE BAR. Phone only: on a desktop the rail beside the page holds the
+   buttons, as it always has. Frosted, over the page, clear of the home bar. */
+:is(#tm-dock,#byo-dock){display:none}
+@media(max-width:767px){
+  :is(#tm-dock,#byo-dock){position:fixed;left:0;right:0;bottom:0;z-index:1002;display:flex;align-items:center;gap:10px;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));
+    background:color-mix(in srgb,var(--bg2) 82%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
+    border-top:.5px solid var(--line-2)}
+  :is(#tm-dock,#byo-dock) .ios-btn{flex:1;min-width:0;margin:0;height:50px}
+  :is(#tm-dock,#byo-dock) .ios-btn-tint{flex:0 0 auto;width:auto;padding:0 20px}
+  /* Tim as he is on the tab bar: the denim orb, the figure in white. The
+     ink figure on a white disc vanished on the dark bar. */
+  :is(#tm-dock,#byo-dock) .tm-dock-tim{flex:0 0 auto;width:50px;height:50px;border-radius:50%;border:1px solid rgba(255,255,255,.24);padding:0;
+    background:linear-gradient(180deg,rgba(45,93,168,.95),rgba(20,48,98,.92));
+    box-shadow:0 2px 6px rgba(15,23,42,.22);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  :is(#tm-dock,#byo-dock) .tm-dock-tim img{filter:invert(1)}
+  :is(#tm-dock,#byo-dock) .tm-dock-tim:active{transform:scale(.94)}
+  :is(#gei-tm-page,#gei-byo-page) #tm-actions-wrap .ios-links{margin-top:0}
+  /* The bar carries Send and Sign; the page's foot keeps the three links. */
+  #tm-actions-wrap .ios-btn{display:none}
+  #byo-actions-wrap .ios-btn{display:none}
+  /* On a phone the rail's figures are in The price group (_byoRenderPrice);
+     the rail keeps its fields in the page so every id still resolves. */
+  #gei-byo-page .summary-rail .summary-card>*:not(#byo-actions-wrap){display:none!important}
+  #gei-byo-page .summary-rail .summary-card{background:none;box-shadow:none;border:0;padding:0}
+  :is(#gei-tm-page,#gei-byo-page){padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  /* Anything the page scrolls to (a focused field, a button brought into
+     view) stops above the bar instead of sliding under it. */
+  html:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])){scroll-padding-bottom:calc(96px + env(safe-area-inset-bottom,0px));scroll-padding-top:56px}
+  /* FULL SCREEN WHILE HE WORKS. The app's black bar sat over the page's own
+     Back and Save, and the tab bar and Tim's orb floated over the form. An
+     editor on an iPhone has one bar at the top and its own at the bottom.
+     :has() rather than a class a script must remember to take off: the moment
+     the T&M page is not the one showing, the app's bars are back. */
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) :is(#mobile-topbar,#mobile-tabbar,#mtb-tim){display:none!important}
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) #app{padding-top:0;padding-bottom:0}
+  /* No enter animation here: a transform animation, even finished and held,
+     makes the page the box a fixed bar is pinned to, and the bar rode 1,000px
+     down the page instead of sitting on the screen's bottom edge. The ground
+     is the page's grey edge to edge, or a lighter strip shows down the side. */
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) #pg-est-generic{padding-top:0;animation:none}
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])){background:var(--bg2)}
+  /* A toast sat on top of Send (Earl, 2026-09-23). On this page it rises
+     above the bar, and its close is a thumb-sized target. */
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))!important;left:16px;right:16px;max-width:none}
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) .toast-close{min-width:44px;min-height:44px;margin:-10px -12px -10px 0}
+  /* The nav bar stays put while the page scrolls under it. The wrap is
+     display:contents so the bar's sticky range is the whole page. */
+  :is(#gei-tm-page,#gei-byo-page) #tm-topbar-wrap{display:contents}
+  /* 94%, not 82%: the large title scrolls up under this bar, and at 82% the
+     customer's name read through it on top of "Time & Materials". */
+  :is(#gei-tm-page,#gei-byo-page) .ios-nav{position:sticky;top:0;z-index:20;margin:0 -16px;padding:env(safe-area-inset-top,0px) 8px 0;
+    background:color-mix(in srgb,var(--bg2) 94%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+  :is(#gei-tm-page,#gei-byo-page) .ios-large{padding:2px 4px 6px}
+  /* One line under the name: what it is and where. It ends in … rather than
+     breaking "412 Bell / St" across two lines. */
+  :is(#gei-tm-page,#gei-byo-page) .ios-sub{display:flex;align-items:baseline;white-space:nowrap}
+  :is(#gei-tm-page,#gei-byo-page) .ios-sub .txt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  :is(#gei-tm-page,#gei-byo-page) .ios-sub button{flex-shrink:0;padding-left:8px}
+  :is(#tm-dock,#byo-dock) .ios-btn+.ios-btn{margin-top:0}
+}
+/* Groups lift off the page a little in light mode, so a white list on a pale
+   grey page reads as a thing and not as a lighter patch of the same thing. */
+:is(#gei-tm-page,#gei-byo-page) .ios-group{box-shadow:0 1px 2px rgba(20,24,31,.06),0 0 0 .5px rgba(20,24,31,.06)}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-group{box-shadow:none}
+/* ── TIM'S CARD ────────────────────────────────────────────────────────────
+   What Tim thinks was left out must never look like what is IN the job. It
+   was the same white rows under a grey label, one list running into the next.
+   Now it is Tim's own tinted card, with his mark, and a filled Add on each. */
+:is(#gei-tm-page,#gei-byo-page) .ios-tim{background:var(--blue-lt)!important;box-shadow:none!important}
+/* Tim's question: the answer field sits on its own row under the question, full width, 16px so iOS does not zoom. */
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-row{gap:10px;padding-top:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-in{flex:1;min-width:0;min-height:44px;box-sizing:border-box;padding:0 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;font-size:16px}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-in:focus{outline:none;border-color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-row{background:var(--blue-lt)}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-row::after{background:var(--ios-tint);opacity:.22}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim-h{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim-h .who{flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-pill{flex-shrink:0;border:0;border-radius:999px;background:var(--ios-tint);color:#fff;font-family:inherit;font-size:15px;font-weight:600;padding:7px 15px;cursor:pointer}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-pill{background:#2C74C9}
+:is(#gei-tm-page,#gei-byo-page) .ios-pill.ghost{background:none;color:var(--ios-tint);padding:7px 4px}
+:is(#gei-tm-page,#gei-byo-page) .split-est{padding-bottom:120px}
+:is(#gei-tm-page,#gei-byo-page) .summary-card{background:none;box-shadow:none;border:0;padding:0}
+:is(#gei-tm-page,#gei-byo-page) #tm-blk-mat.card,:is(#gei-tm-page,#gei-byo-page) #tm-blk-excl .card{border-radius:12px;box-shadow:none;border:0}
+
 /* ── Estimate type chooser ── */
 .chooser-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .chooser-card{background:var(--bg-card);border-radius:14px;border:1.5px solid var(--border);padding:24px 22px 20px;cursor:pointer;text-align:left;font-family:inherit;color:var(--text);transition:transform .12s,box-shadow .15s,border-color .15s;display:flex;flex-direction:column;gap:6px;position:relative;overflow:hidden}
@@ -1441,6 +1680,19 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .chooser-amber .chooser-card-cta{color:var(--amber)}
 .chooser-green .chooser-card-cta{color:var(--green)}
 @media(max-width:560px){.chooser-grid{grid-template-columns:1fr}}
+/* ON A PHONE, ALL THREE FIT. Each card was ~320px tall with four bullets and a
+   Start link, so Time & Materials sat below the fold and he had to scroll past
+   two sales pitches to reach the one he came for. A phone card is the icon, the
+   name and one line; the bullets stay on the wider layout where there is room. */
+@media(max-width:560px){
+  .chooser-grid{gap:10px}
+  .chooser-card{display:grid;grid-template-columns:44px minmax(0,1fr);column-gap:14px;row-gap:2px;padding:14px 16px;align-items:center}
+  .chooser-card-eyebrow{grid-column:2;grid-row:1}
+  .chooser-card-icon{grid-column:1;grid-row:1/span 3;margin:0;align-self:center}
+  .chooser-card-title{grid-column:2;font-size:19px}
+  .chooser-card-sub{grid-column:2;margin:0;font-size:12.5px;line-height:1.35}
+  .chooser-card-bullets,.chooser-card-cta{display:none}
+}
 
 /* ── Kanban ── */
 .kanban{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px}
@@ -3106,69 +3358,72 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="split-est">
       <div>
-        <!-- Property access notes (crew only, never on the proposal): sits directly under the address -->
-        <!-- Scope of work chips -->
+        <!-- ── THREE STEPS (2026-09-23) ──────────────────────────────────────
+             Owner: "it all looks like it runs together ... easy to read, easy
+             for a person to complete and easy for Tim to handle." So the page
+             is three numbered steps, each with a heading that says where it
+             stands, and Tim can point at a step by its number (data-tim-step).
+             Headings are drawn by _tmRenderSteps. -->
+        <div class="ios-stephead" id="tm-step-1" data-tim-step="1"></div>
+        <!-- The job: what he says, Tim's steps, what Tim noticed. -->
+        <div id="tm-scopecard-wrap"></div>
+        <!-- For the crew, last in step 1: it is about the job, not the price. -->
         <div id="tm-sitenote-wrap"></div>
-        <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
 
-        <!-- ── WHAT THIS PROPOSAL CARRIES ────────────────────────────────────
-             Owner 2026-09-17: "just get the scope signed, no deposit no payment
-             upfront if they want it to work that way ... but those should only
-             be required in the states that require it."
+        <div class="ios-stephead" id="tm-step-2" data-tim-step="2"></div>
+        <!-- A step whose field is switched off, and the state's law. Rendered
+             by _tmRenderAddRow. -->
+        <div id="tm-add-row"></div>
 
-             So the page is the scope and Send. Everything else is a layer he
-             adds, and a state adds for him only where the law says it must.
-             Measured before this change: 2,509px tall on a phone, 35 live
-             controls, and the biggest block on it (612px, a quarter of the
-             page) was the optional exclusions list while scope of work, the
-             only part that is ever required, got 149px. -->
-        <div id="tm-add-row" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
-
-        <!-- Rates & crew -->
-        <div class="card" id="tm-blk-rate" style="display:none">
-          <div class="row-bw" style="margin-bottom:10px">
-            <div class="td-h3">Rates &amp; crew</div>
-          </div>
-          <div class="fg fg2">
-            <div class="f">
-              <label>Hourly rate · $/hr</label>
-              <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
-            </div>
-            <div class="f">
-              <label>Crew size</label>
-              <div style="display:flex;align-items:stretch;border:1.5px solid var(--border2);border-radius:var(--r);overflow:hidden;height:42px;background:var(--bg)">
-                <button onclick="_tmCrewStep(-1)" type="button" style="width:42px;border:none;border-right:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-size:22px;color:var(--text2);font-family:inherit;flex-shrink:0;display:flex;align-items:center;justify-content:center">−</button>
-                <span id="tm-i-crew-count" style="flex:1;text-align:center;font-size:18px;font-weight:800;color:var(--text);display:flex;align-items:center;justify-content:center">1</span>
-                <button onclick="_tmCrewStep(1)" type="button" style="width:42px;border:none;border-left:1px solid var(--border2);background:var(--blue);cursor:pointer;font-size:22px;color:#fff;font-family:inherit;flex-shrink:0;display:flex;align-items:center;justify-content:center">+</button>
+        <!-- ── BILLING ─────────────────────────────────────────────────────────
+             One group, native rows, the figure typed straight into the row it
+             belongs to (2026-09-23). Every id the logic reads is kept. -->
+        <div class="ios-sec" id="tm-sec-bill">
+          <div class="ios-group">
+            <div id="tm-blk-rate" style="display:none">
+              <label class="ios-row"><span class="ios-lbl" id="tm-lbl-rate">Hourly rate</span>
+                <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+              <div class="ios-row"><span class="ios-lbl">People on site<small id="tm-i-crew-label">solo</small></span>
+                <span class="ios-step"><button onclick="_tmCrewStep(-1)" type="button" aria-label="One fewer">−</button><span id="tm-i-crew-count">1</span><button onclick="_tmCrewStep(1)" type="button" aria-label="One more">+</button></span></div>
+              <label class="ios-row" id="tm-days-f"><span class="ios-lbl" id="tm-lbl-days">Days, estimated</span>
+                <span class="ios-val"><input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+              <!-- Whether the customer reads the rate: a switch row, rendered by
+                   _tmApplyLayers because in some states it is not his to decide. -->
+              <div id="tm-hide-rate-wrap"></div>
+              <!-- Kept for the figures _tmInputChange writes; never shown. -->
+              <div id="tm-stat-grid" style="display:none">
+                <span id="tm-stat-day"></span><span id="tm-stat-day-s"></span>
+                <span id="tm-stat-labor-tile"><span id="tm-stat-labor"></span><span id="tm-stat-labor-s"></span></span>
+                <span id="tm-stat-days-tile"><span id="tm-stat-days"></span></span>
               </div>
             </div>
-            <div class="f" id="tm-days-f">
-              <label>Estimated days</label>
-              <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
+            <div id="tm-blk-nte" style="display:none">
+              <label class="ios-row"><span class="ios-lbl" id="tm-nte-head">The most it can cost</span>
+                <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-nte" placeholder="Optional" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+              <!-- HIDDEN, NOT DELETED. "What happens at cap" was saved and printed
+                   nowhere; one of its options told him he could bill past a ceiling
+                   that in nine states is the law. Kept so an old draft keeps its value. -->
+              <div style="display:none">
+                <select id="tm-i-cap-action" onchange="_tmCapAction=this.value;_byoAutosave()">
+                  <option>Stop &amp; get re-approval</option>
+                  <option>Continue at agreed rate</option>
+                  <option>Switch to fixed-price quote</option>
+                </select>
+              </div>
             </div>
+            <!-- UP FRONT (2026-09-23). None, or a flat figure he names. Never a
+                 percent: a T&M job has no price to take one of. Measured against
+                 the ceiling and the state's limit by _tmDepositState. -->
+            <div class="ios-row" id="tm-dep-row"><span class="ios-lbl">Up front</span>
+              <span class="ios-seg" id="tm-dep-seg"><button type="button" data-v="0" onclick="_tmDepMode(0)">None</button><button type="button" data-v="1" onclick="_tmDepMode(1)">Amount</button></span></div>
+            <label class="ios-row" id="tm-dep-amt-row" style="display:none"><span class="ios-lbl">Due before work starts<small id="tm-dep-note"></small></span>
+              <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-dep-flat" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+            <!-- How often it bills: its own row, it is on every T&M contract. -->
+            <div id="tm-cad-main"></div>
+            <!-- More options: a row that opens switch rows. _tmRenderMore. -->
+            <div id="tm-more-row"></div>
           </div>
-          <!-- Whether the customer reads the rate. Separate from whether the
-               job HAS one, because the rate is also what bills the clocked
-               hours later (timWorkSheet, js/tim-ask.js). Rendered by
-               _tmApplyLayers, because in some states it is not his to decide. -->
-          <div id="tm-hide-rate-wrap"></div>
-          <div id="tm-stat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
-            <div class="stat-tile">
-              <div class="stat-l">Day rate</div>
-              <div class="stat-v" id="tm-stat-day">$0</div>
-              <div class="stat-s" id="tm-stat-day-s">enter rate &amp; crew</div>
-            </div>
-            <div class="stat-tile" id="tm-stat-labor-tile">
-              <div class="stat-l">Est. labor total</div>
-              <div class="stat-v" id="tm-stat-labor">$0</div>
-              <div class="stat-s" id="tm-stat-labor-s">-</div>
-            </div>
-            <div class="stat-tile" id="tm-stat-days-tile">
-              <div class="stat-l">Total hours</div>
-              <div class="stat-v" id="tm-stat-days">0</div>
-              <div class="stat-s">at 8hr days</div>
-            </div>
-          </div>
+          <div class="ios-foot" id="tm-nte-sub"></div>
         </div>
 
         <!-- Material categories -->
@@ -3180,31 +3435,14 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="tm-mat-list" id="tm-mat-list"></div>
           <div class="tip" style="margin-top:12px">
             <span data-ico="🧾" data-ico-size="18"></span>
-            <div><b>Markup is baked into displayed prices.</b> Clients see the all-in price only, markup is never shown to them.</div>
+            <div><b>An older proposal's list.</b> Materials are billed by the Materials term above, at cost or with the markup it states, with receipts.</div>
           </div>
         </div>
 
         <!-- Same rule as BYO: exclusions come after the work. -->
         <div id="tm-blk-excl" style="display:none"><div id="tm-excl-wrap"></div></div>
 
-        <!-- NTE cap -->
-        <div class="card" id="tm-blk-nte" style="display:none">
-          <div class="td-h3" id="tm-nte-head" style="margin-bottom:10px">The most it can cost them (optional)</div>
-          <div class="fg fg2">
-            <div class="f">
-              <label>Cap amount</label>
-              <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-nte" placeholder="e.g. 12,000" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
-            </div>
-            <div class="f">
-              <label>What happens at cap</label>
-              <select id="tm-i-cap-action" onchange="_tmCapAction=this.value;_byoAutosave()">
-                <option>Stop &amp; get re-approval</option>
-                <option>Continue at agreed rate</option>
-                <option>Switch to fixed-price quote</option>
-              </select>
-            </div>
-          </div>
-        </div>
+
       </div>
 
       <!-- Summary rail -->
@@ -3235,7 +3473,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div class="summary-row"><span>Day rate</span><span id="tm-rail-rate-day">$0</span></div>
             <div class="summary-row"><span>Materials</span><span id="tm-rail-rate-mat">at cost</span></div>
           </div>
-          <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
+          <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>The most it can cost</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
           <!-- Crew labor cost, only rendered when the contractor has employees -->
           <div id="tm-labor-cost-wrap" style="display:none"></div>
@@ -3253,13 +3491,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <!-- A PERCENT OF NOTHING IS NOTHING. With no estimated total there is
                nothing to take 25% of, so a rate sheet asks for its mobilization
                money as a flat figure he names. Blank means none. -->
-          <div id="tm-deposit-flat-wrap" style="display:none">
-            <div class="summary-row" style="align-items:center">
-              <span style="font-size:14px;font-weight:600">Mobilization deposit</span>
-              <div class="input-prefix" style="width:118px"><span>$</span><input type="text" inputmode="decimal" id="tm-i-dep-flat" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
-            </div>
-            <div class="summary-row" style="color:var(--text-3)"><span>Balance</span><span>billed as you go</span></div>
-          </div>
+          <!-- The flat deposit moved into How it bills as "Up front" (2026-09-23). -->
           <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px" id="tm-cad-head">Billing cadence</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap" id="tm-cad-row">
@@ -3272,27 +3504,39 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
     </div>
+    <!-- Step 3 is this bar: Tim, and the one next thing, then Send. On a
+         phone only; _tmRenderDock. -->
+    <div id="tm-dock" data-tim-step="3"></div>
   </div>
 
   <!-- Build Your Own (line-item) single-page layout (matches EstimateBYO.jsx): shown when _geiIsFreeForm=true -->
   <div id="gei-byo-page" style="display:none">
     <div class="tbar" id="byo-topbar-wrap"></div>
 
+    <!-- BUILD YOUR OWN, the same editor as T&M (2026-09-23). Owner: "what
+         about the BYO design, the true custom estimate" then "go for it".
+         1 The work: say it or type it, Tim breaks it into priced lines.
+         2 The price: the total, your cost and profit (never on the proposal),
+         the deposit. Then the bar: the next thing, then Sign here / Send it. -->
     <div class="split-est">
       <div>
-        <!-- Property access notes (crew only, never on the proposal): sits directly under the address -->
-        <div id="byo-sitenote-wrap"></div>
-        <!-- Scope of work chips -->
-        <div class="card card-pad-0" style="margin-bottom:12px" id="byo-scopecard-wrap"></div>
+        <div class="ios-stephead" id="byo-step-1" data-tim-step="1"></div>
+        <!-- Type it or Talk to Tim, until there are lines (_byoRenderSay). A
+             draft with legacy scope chips still gets its remove-only card. -->
+        <div id="byo-scopecard-wrap"></div>
         <div id="byo-sections"></div>
-        <!-- EXCLUSIONS SIT BELOW THE WORK. Naming what a job does not cover is
-             something he does once there IS a job on the page, and the preset
-             list is tall: above the sections it pushed the actual estimate
-             ~1,200px down a phone screen, which is the opposite of getting a
-             proposal out in five minutes. The site note above keeps its
-             placement, which was chosen deliberately to sit by the address. -->
-        <div id="byo-excl-wrap"></div>
+        <div id="byo-sitenote-wrap"></div>
 
+        <div class="ios-stephead" id="byo-step-2" data-tim-step="2"></div>
+        <!-- The price: rows drawn by _byoRenderPrice; the rail's own fields
+             (deposit, cost, profit) are moved in here so each keeps its id. -->
+        <div class="ios-sec" id="byo-price-sec">
+          <div class="ios-group" id="byo-price-group"></div>
+          <div class="ios-foot" id="byo-price-foot"></div>
+        </div>
+        <!-- EXCLUSIONS SIT BELOW THE WORK. Naming what a job does not cover is
+             something he does once there IS a job on the page. -->
+        <div id="byo-excl-wrap" style="display:none"></div>
       </div>
 
       <div class="summary-rail">
@@ -3310,6 +3554,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
     </div>
+    <div id="byo-dock" data-tim-step="3"></div>
   </div>
 
   <!-- Step 1: Job Info -->

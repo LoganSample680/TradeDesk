@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.24.26.4';
+const APP_VERSION='09.24.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1545,7 +1545,7 @@ const _TD_TABLES=[
     // replaced the row, and the pointer to the UNTOUCHED original was gone.
     // "The original is never destroyed" is the rule mark-up is built on, and
     // an original nobody can find again is a destroyed original.
-    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,fullPath,originalFullPath,shotPx,accM,by,exifGps,stamped,imported,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,addr,addrM,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',fullPath:fullPath||'',originalFullPath:originalFullPath||'',shotPx:shotPx||'',accM:accM!=null?accM:null,by:by||'',exifGps:!!exifGps,stamped:!!stamped,imported:!!imported,annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,addr:addr||'',addrM:addrM!=null?addrM:null,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
+    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,fullPath,originalFullPath,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,addr,addrM,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',fullPath:fullPath||'',originalFullPath:originalFullPath||'',annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,addr:addr||'',addrM:addrM!=null?addrM:null,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
 ];
 // Root cause (found 2026-07-10): this used to be a hand-listed object literal
 // that fell out of sync with _TD_TABLES above, td_maintenance was missing.
@@ -7585,6 +7585,8 @@ function _applySigStatusToBid(bid,s){
     // EPA ack can land after the status flip (or the DB columns were added later).
     if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
     if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
+    // Buyer said 65+ at signing (California): the hub counts five business days.
+    if(s.buyer_senior&&!bid.buyerSenior){bid.buyerSenior=true;changed=true;}
     if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
     if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
     // Audit: the signer's IP + device, stamped server-side by the log-proposal-view
@@ -8859,11 +8861,7 @@ async function supaLoadFromCloud({silent=false}={}){
     _dashAwaitingCloud=false;
     renderDash();
     renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
-    // One query against the county assessor records we already hold, for every
-    // address at once. This used to be _startPropQueue, which trickled one
-    // Zillow scrape every 6.5s and could not finish a big import before the tab
-    // closed. See _syncPropertyData (js/clients.js).
-    if(typeof _syncPropertyData==='function')setTimeout(_syncPropertyData,5000);
+    if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
     if(typeof renderIncome==='function')renderIncome();
     if(typeof renderExpenses==='function')renderExpenses();
     if(typeof _fetchScopeRates==='function')_fetchScopeRates();

@@ -266,9 +266,97 @@ test.describe('tim knows the trade', () => {
       expect(r).toBe(false);
     });
 
+    // SUBJECT CHANGED 2026-09-22, and the rule it guards is unchanged: Tim has
+    // to be capable of saying nothing. The old subject was a kitchen faucet,
+    // which stopped being a quiet job the day he learned to say "shut the water
+    // off first" on a live water line. That nudge is correct on a faucet swap,
+    // so the right move was a genuinely quiet job, not a weaker assertion.
     test('a quiet job gets told nothing at all', async () => {
-      const r = await page.evaluate(() => timImplied('Replace the kitchen faucet', [{ text: 'Install faucet' }]));
+      const r = await page.evaluate(() => timImplied('Hang the new mailbox', [{ text: 'Hang the new mailbox' }]));
       expect(r).toEqual([]);
+    });
+
+    // ── The steps a man forgets, which is the whole promise ──────────────────
+    //
+    // Owner: "Tim cant forget a step." He had four rules and every one of them
+    // was a painter's, so the owner's own first T&M (a water heater swap) came
+    // back with nothing left to add. These are the sequences that are habit in
+    // every trade, and each one stays quiet unless its own system is named.
+    test('a live water line gets the shutoff, first', async () => {
+      const r = await page.evaluate(() => timImplied(
+        'Pull the old water heater, run new pex to the manifold and set a tankless',
+        [{ text: 'Pull the old water heater' }, { text: 'Run new pex to the manifold' }, { text: 'Set a tankless' }]));
+      const ids = r.map(x => x.id);
+      expect(ids, 'the water comes off before anything opens').toContain('access-water-off');
+      expect(ids, 'and it gets tested before he leaves').toContain('finish-test');
+      expect(ids, 'and the old one goes somewhere').toContain('clean-haul');
+      // The first thing done ON SITE (2026-09-23, §10.4): the permit is paper,
+      // and it now comes ahead of everything, which is where it belongs.
+      const onSite = r.filter(x => x.id !== 'access-permit');
+      expect(onSite[0].id, 'the shutoff is the first thing he reads, not the last').toBe('access-water-off');
+      expect(ids[0], 'and only the paperwork comes ahead of it').toBe('access-permit');
+    });
+
+    // The reason there are three shutoff rules and not one. Half of all water
+    // heaters are electric, so a sentence that never said gas never hears about
+    // gas: a nudge on the wrong system is worse than no nudge.
+    test('an electric water heater is never told to shut the gas off', async () => {
+      const ids = await page.evaluate(() => timImplied(
+        'Swap the electric water heater out', [{ text: 'Swap the electric water heater out' }]).map(x => x.id));
+      expect(ids).toContain('access-water-off');
+      expect(ids).not.toContain('access-gas-off');
+    });
+
+    test('a gas furnace hears about the gas valve and not the water', async () => {
+      const ids = await page.evaluate(() => timImplied(
+        'Swap the gas furnace out and run new black iron to it',
+        [{ text: 'Swap the gas furnace out' }, { text: 'Run new black iron to it' }]).map(x => x.id));
+      expect(ids).toContain('access-gas-off');
+      expect(ids).not.toContain('access-water-off');
+    });
+
+    test('a panel change hears about the breaker and nothing wet', async () => {
+      const ids = await page.evaluate(() => timImplied(
+        'Change out the panel and pull new romex to the kitchen',
+        [{ text: 'Change out the panel' }, { text: 'Pull new romex to the kitchen' }]).map(x => x.id));
+      expect(ids).toContain('access-power-off');
+      expect(ids).not.toContain('access-water-off');
+      expect(ids).not.toContain('access-gas-off');
+    });
+
+    // The man who narrates the whole job properly is the one who must hear the
+    // least. If this ever fails, the feature has become noise.
+    test('a man who said all of it gets told none of it', async () => {
+      const r = await page.evaluate(() => timImplied(
+        'Shut the water off, pull the old heater, set the new one, pressure it up and haul the old one off',
+        [{ text: 'Shut the water off' }, { text: 'Pull the old heater' }, { text: 'Set the new one' },
+          { text: 'Pressure it up' }, { text: 'Haul the old one off' }]));
+      expect(r.map(x => x.id)).toEqual([]);
+    });
+
+    // "Pull the old water heater" is a tear-out with two hundred pounds to get
+    // rid of at the end of it. The verb list knew tear out, tear off, strip,
+    // demo and replace, which is how a painter talks, so it said nothing.
+    test('the haul-off knows how a man says it who is not a painter', async () => {
+      const said = await page.evaluate(() => ['pull the old unit', 'take out the old range',
+        'rip out the cabinets', 'swap the disposal', 'change out the condenser', 'cut out the failed section']
+        .map(s => timImplied(s, [{ text: s }]).some(x => x.id === 'clean-haul')));
+      expect(said, 'every one of these ends with something in the truck').toEqual(
+        [true, true, true, true, true, true]);
+    });
+
+    // What he did not say comes back in the order he would do it, same spine
+    // the scope itself is sorted on. It used to come back in whatever order the
+    // rules sit in the file, which put haul-off above the shutoff.
+    test('the forgotten steps read in work order', async () => {
+      const stages = await page.evaluate(() => timImplied(
+        'Pull the old water heater and set a tankless',
+        [{ text: 'Pull the old water heater' }, { text: 'Set a tankless' }]).map(x => x.stage));
+      const order = ['access', 'protect', 'demo', 'rough', 'repair', 'prep', 'install', 'finish', 'restore', 'clean'];
+      const ix = s => (order.indexOf(s) === -1 ? order.length : order.indexOf(s));
+      const sorted = stages.map(ix);
+      expect(sorted, 'out of order: ' + JSON.stringify(stages))
+        .toEqual([...sorted].sort((a, b) => a - b));
     });
   });
 

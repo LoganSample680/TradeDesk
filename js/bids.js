@@ -870,6 +870,13 @@ function daysSince(dateStr){if(!dateStr)return 0;const d=parseD(dateStr);if(isNa
   return Math.round((parseD(todayKey()).getTime()-d.getTime())/86400000);}
 function payStatus(bid){
   const paid=getBidPaid(bid.id),total=bid.amount||0,balance=total-paid;
+  // A T&M rate sheet has no total to be paid in full against (openPayPanel).
+  if(!total&&bid.isTM&&bid.tmRateOnly){
+    const dep=Number(bid.deposit)||0;
+    if(dep>0&&paid<dep-0.01)return{label:'Up front due: '+fmt(dep-paid),cls:'bdg-pending',color:'var(--amber)'};
+    if(dep>0)return{label:'Up front paid',cls:'bdg-deposit',color:'var(--blue)'};
+    return{label:'Billed as worked',cls:'bdg-deposit',color:'var(--blue)'};
+  }
   if(!total)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
   if(paid<=0)return{label:'Unpaid',cls:'bdg-pending',color:'var(--amber)'};
   if(balance<=0.01)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
@@ -888,15 +895,23 @@ function openPayPanel(bidId, autoType){
   // autoType: 'deposit' from estimate builder, 'final' from job completion
   activePayBidId=bidId;
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
-  const balance=getBidBalance(bid);
-  const total=bid.amount||0;
+  // A T&M RATE SHEET HAS NO PRICE, so amount is 0 and the balance is 0, and
+  // the one thing it may ask for at signing, the flat figure up front, had no
+  // way in: the panel called it paid in full and hid Send link. What is owed
+  // on a rate sheet before the first bill is that figure, less what is paid
+  // (2026-09-23). The bills after it come off the clock, not from here.
+  const _rateSheet=!!(bid.isTM&&bid.tmRateOnly);
+  const _rsOwed=_rateSheet?Math.max(0,(Number(bid.deposit)||0)-getBidPaid(bidId)):0;
+  const balance=_rateSheet?_rsOwed:getBidBalance(bid);
+  const total=_rateSheet?(Number(bid.deposit)||0):(bid.amount||0);
   // The deposit THIS CONTRACT calls for, not a hardcoded 25%. A bid that set its own
   // deposit (50% up front, a flat $2,000, a state-capped figure) must offer that number,
   // otherwise the panel silently records the wrong amount.
   const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
   const depositPct=total>0?Math.round(depositDue/total*100):25;
   const rawPaid=getBidPaid(bidId);
-  const overpaidAmt=Math.round((rawPaid-total)*100)/100;
+  // Nothing is "overpaid" on a rate sheet: bills off the clock follow.
+  const overpaidAmt=_rateSheet?0:Math.round((rawPaid-total)*100)/100;
   const _payClient=getClientById(bid.client_id);
   const _hubUrl=_payClient?.clientToken&&_supaUser
     ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_effectiveUid()+'&c='+_payClient.id)
@@ -1819,8 +1834,7 @@ function riskBadge(cid){
 function getCountyForBid(bid){
   const c=getClientById(bid.client_id);
   const addr=(bid.addr||c?.addr||'').toUpperCase();
-  const stateM=addr.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
-  const stateCode=stateM?stateM[1]:(S.state||'KS');
+  const stateCode=(typeof stateFromAddr==='function'?stateFromAddr(addr):null)||S.state||'KS';
   let county=null;
   for(const city of Object.keys(KS_CITY_COUNTY)){if(addr.includes(city)){county=KS_CITY_COUNTY[city];break;}}
   if(!county)county='your county';

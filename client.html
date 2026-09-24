@@ -42,8 +42,9 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 @view-transition{navigation:auto}
 
 /* ── Topbar ── */
-.topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--ink);display:flex;align-items:center;padding:0 14px;gap:10px;z-index:100;border-bottom:1px solid rgba(255,255,255,.06)}
-.topbar-logo-img{height:28px;max-width:100px;object-fit:contain;display:none;border-radius:4px;flex-shrink:0}
+.topbar{position:fixed;top:0;left:0;right:0;height:52px;background:color-mix(in srgb,var(--denim) 50%,#0b1220);display:flex;align-items:center;padding:0 14px;gap:10px;z-index:100;border-bottom:1px solid rgba(255,255,255,.06)}
+/* His logo on a light plate: a dark logo on a dark bar was unreadable. */
+.topbar-logo-img{height:32px;max-width:124px;object-fit:contain;display:none;border-radius:8px;flex-shrink:0;background:#fff;padding:3px 7px;box-sizing:border-box}
 .topbar-name{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-display)}
 .topbar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .topbar-icon-btn{background:rgba(255,255,255,.08);border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-family:inherit}
@@ -51,7 +52,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 
 /* ── Layout ── */
 .body-wrap{padding-top:52px;min-height:100vh}
-.main-content{max-width:700px;margin:0 auto;padding:20px 16px 96px}
+.main-content{max-width:700px;margin:0 auto;padding:20px 16px 118px}
 
 /* ── Left nav (desktop) ── */
 .left-nav{width:220px;background:var(--bg-card);border-right:1px solid var(--border);overflow-y:auto;display:none;flex-direction:column}
@@ -67,12 +68,15 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 /* ── Bottom nav (mobile): same dark-ink tab bar as the TradeDesk app
    (#mobile-tabbar), not the old white strip with a top border. Active tab gets
    a soft pill behind the icon. */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--ink);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
+/* A floating bar in a deep shade of his colour, the active tab a white pill:
+   the page is framed in his brand top and bottom (owner, 2026-09-24). */
+.bottom-nav{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(135deg,color-mix(in srgb,var(--denim) 55%,#0b1220),color-mix(in srgb,var(--denim) 28%,#0b1220));border:1px solid rgba(255,255,255,.08);border-radius:24px;box-shadow:0 14px 34px rgba(11,14,20,.35);display:flex;align-items:stretch;gap:4px;padding:6px;z-index:100}
 .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:700;color:rgba(255,255,255,.5);cursor:pointer;border:none;background:none;padding:8px 4px 10px;font-family:inherit;-webkit-tap-highlight-color:transparent;min-height:56px;transition:color .15s}
-.bn-item.active{color:#fff}
+.bn-item{border-radius:18px}
+.bn-item.active{color:var(--denim);background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .bn-item:active .bn-icon{transform:scale(.9)}
 .bn-icon{font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;width:40px;height:26px;border-radius:9px;background:transparent;transition:background .18s,transform .12s cubic-bezier(.22,1,.36,1)}
-.bn-item.active .bn-icon{background:color-mix(in srgb,var(--denim) 40%,rgba(255,255,255,.14))}
+.bn-item.active .bn-icon{background:transparent}
 
 @media(min-width:640px){
   .bottom-nav{display:none}
@@ -110,20 +114,21 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
    stays coherent. Blobs drift slowly (GPU-composited transform only) and freeze
    under prefers-reduced-motion. Depth = contact + ambient shadow + inset top
    highlight. */
-.hub-hero{position:relative;overflow:hidden;border-radius:22px;padding:24px 22px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;background:linear-gradient(158deg,#171b24 0%,#0b0e14 100%);box-shadow:0 1px 2px rgba(0,0,0,.18),0 10px 26px rgba(11,14,20,.24),inset 0 1px 0 rgba(255,255,255,.07)}
+.hub-hero{position:relative;overflow:hidden;border-radius:22px;padding:24px 22px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;background:linear-gradient(140deg,var(--denim) 0%,color-mix(in srgb,var(--denim) 58%,#000) 100%);box-shadow:0 1px 2px rgba(0,0,0,.14),0 14px 32px color-mix(in srgb,var(--denim) 30%,transparent),inset 0 1px 0 rgba(255,255,255,.12)}
 .hub-hero::before{content:'';position:absolute;inset:-30%;z-index:0;pointer-events:none;filter:blur(34px);background:
-  radial-gradient(42% 50% at 14% 6%,color-mix(in srgb,var(--denim) 82%,transparent) 0%,transparent 62%),
+  radial-gradient(42% 50% at 14% 6%,rgba(255,255,255,.16) 0%,transparent 62%),
   radial-gradient(30% 38% at 95% 4%,rgba(255,255,255,.14) 0%,transparent 55%),
-  radial-gradient(52% 58% at 88% 120%,color-mix(in srgb,var(--denim) 48%,transparent) 0%,transparent 62%);
+  radial-gradient(52% 58% at 88% 120%,color-mix(in srgb,var(--denim) 60%,#000) 0%,transparent 62%);
   animation:hub-aurora 22s ease-in-out infinite alternate}
 @keyframes hub-aurora{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-5%,3%,0) scale(1.12)}}
 .hub-hero::after{content:'';position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.07;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 @media(prefers-reduced-motion:reduce){.hub-hero::before{animation:none}}
 .hub-hero-l{flex:1;min-width:0;position:relative;z-index:1}
 .hub-hero.has-badge .hub-hero-l{padding-right:64px}
-.hub-hero-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.5);margin-bottom:5px}
+.hub-hero-eyebrow{font-size:13px;font-weight:600;color:rgba(255,255,255,.78);margin-bottom:4px}
 .hub-hero-greeting{font-size:38px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.8px;line-height:1;margin-bottom:6px}
-.hub-hero-sub{font-size:13px;color:rgba(255,255,255,.62);font-weight:600;margin-bottom:10px}
+.hub-hero-sub{display:flex;align-items:center;gap:6px;font-size:13.5px;color:rgba(255,255,255,.88);font-weight:600;margin-bottom:12px}
+.hub-hero-sub svg{width:14px;height:14px;flex:0 0 auto}
 /* Phone reads as a tappable chip, not dim text, a real affordance + higher contrast. */
 .hub-hero-phone{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:rgba(255,255,255,.82);text-decoration:none;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);padding:5px 11px;border-radius:999px;margin-bottom:14px;transition:transform .12s cubic-bezier(.22,1,.36,1),background .15s}
 .hub-hero-phone svg{width:12px;height:12px}
@@ -147,11 +152,22 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 }
 
 /* ── Pay CTA banner ── */
-.hub-pay-cta{display:flex;align-items:center;justify-content:space-between;background:radial-gradient(120% 80% at 0% 100%, rgba(45,93,168,.36) 0%, transparent 55%), linear-gradient(155deg, #1B1612 0%, #1F2230 100%);border-radius:14px;padding:16px 18px;margin-bottom:14px;gap:14px}
-.hub-pay-cta-tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.5);margin-bottom:3px}
-.hub-pay-cta-amt{font-size:32px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-1px;line-height:1}
-.hub-pay-cta-sub{font-size:11px;color:rgba(255,255,255,.45);margin-top:4px}
-.hub-pay-cta-r{flex-shrink:0}
+.hub-pay-cta{background:#fff;border-radius:20px;padding:18px;margin-bottom:14px;box-shadow:0 1px 2px rgba(16,24,40,.05),0 10px 28px color-mix(in srgb,var(--denim) 16%,transparent);border:1.5px solid color-mix(in srgb,var(--denim) 22%,#fff)}
+.hub-next-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hub-next-eyebrow{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--denim)}
+.hub-next-chip{font-size:11.5px;font-weight:700;padding:4px 9px;border-radius:999px;background:#ecfdf5;color:#047857;white-space:nowrap}
+.hub-next-title{font-size:20px;font-weight:800;letter-spacing:-.02em;line-height:1.25;color:var(--text);margin-top:8px}
+.hub-next-sub{font-size:13.5px;color:var(--text2);line-height:1.45;margin-top:4px}
+.hub-next-row{display:flex;justify-content:space-between;gap:12px;font-size:14px;margin-top:8px;color:var(--text2)}
+.hub-next-row b{color:var(--text)}
+.hub-next-note{margin-top:10px;padding:11px 13px;border-radius:13px;background:color-mix(in srgb,var(--denim) 6%,#fff);border:1px solid color-mix(in srgb,var(--denim) 18%,#fff);font-size:14px;line-height:1.45;color:var(--text)}
+.hub-next-alt{display:block;width:100%;margin-top:8px;padding:12px;border-radius:12px;border:1.5px solid color-mix(in srgb,var(--denim) 26%,#fff);background:#fff;color:var(--denim);font-size:14.5px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit)}
+.hub-next-secure{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;font-size:12px;font-weight:600;color:var(--text3)}
+.hub-track{display:flex;gap:4px;margin-top:14px}
+.hub-track i{flex:1;height:6px;border-radius:6px;background:#e5e7eb}
+.hub-track i.on{background:var(--denim)}.hub-track i.now{background:var(--denim);opacity:.45}
+.hub-track-lbl{display:flex;margin-top:7px;font-size:11px;font-weight:600;color:var(--text3)}
+.hub-track-lbl span{flex:1}.hub-track-lbl span.on{color:var(--text)}.hub-track-lbl span.now{color:var(--denim)}
 @media(max-width:640px){
   .hub-pay-cta{flex-direction:column;align-items:stretch;gap:12px}
   .hub-pay-cta-r{width:100%}
@@ -608,7 +624,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     <div class="help-title">Help & FAQ</div>
     <div class="help-sec">
       <div class="help-sec-hd"><script>document.write(svgIcon('💳'))</script> How payments work</div>
-      <div class="help-sec-body"><span class="hub-cn-name">Your contractor</span> sends you a secure payment link. You can pay by card, ACH bank transfer, or Apple Pay. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely, <span class="hub-cn-name">your contractor</span> never sees your card details.</div>
+      <div class="help-sec-body"><span class="hub-cn-name">Your contractor</span> sends you a secure payment link. You can pay by card through secure checkout. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely, <span class="hub-cn-name">your contractor</span> never sees your card details.</div>
     </div>
     <div class="help-sec">
       <div class="help-sec-hd"><script>document.write(svgIcon('✍'))</script> How signing works</div>
@@ -623,7 +639,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
       <div class="help-sec-body">
         <strong>Can I change the scope after signing?</strong> Yes: <span class="hub-cn-name">your contractor</span> can send a change order for your approval.<br><br>
         <strong>Is this hub link private?</strong> Yes. The link is unique to you and not publicly indexed.<br><br>
-        <strong>How do I get a copy of my invoice?</strong> Go to the Payments tab and tap any invoice row to open a printable version.
+        <strong>How do I get a copy of my invoice?</strong> Once the work is done or paid, tap View invoice in the Payments tab to open a printable version.
       </div>
     </div>
   </div>
@@ -811,6 +827,7 @@ async function _mergeSignedProposals(hub,u){
       bid.signerName=sp.client_signed_name||bid.signerName||'';
       if(sp.signature_data)bid.signatureData=sp.signature_data;
       if(sp.epa_required)bid.epaRequired=true;
+      if(sp.buyer_senior)bid.buyerSenior=true;
       if(sp.epa_ack_at)bid.epaAckAt=sp.epa_ack_at;
       if(sp.rrp_firm_cert)bid.rrpFirmCert=sp.rrp_firm_cert;
       if(sp.rrp_renovator_name)bid.rrpRenovatorName=sp.rrp_renovator_name;
@@ -1300,6 +1317,98 @@ function switchView(key){
   window.scrollTo(0,0);
 }
 
+/* ── The next step: what is due, and the card that asks for it ── */
+function _hubPin(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"></path><circle cx="12" cy="10" r="2.3"></circle></svg>';}
+function _hubLongDate(s){if(!s)return'';try{const d=String(s).includes('T')?new Date(s):new Date(s+'T12:00:00');return isNaN(d)?'':d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(e){return'';}}
+function _hubShortDate(s){if(!s)return'';try{const d=String(s).includes('T')?new Date(s):new Date(s+'T12:00:00');return isNaN(d)?'':d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return'';}}
+// Is the work on this bid finished? A completion date, or every job done.
+function _hubBidDone(bid,h){
+  if(bid.completion_date)return true;
+  const js=(h.jobs||[]).filter(j=>j.bid_id===bid.id);
+  return js.length>0&&js.every(j=>j.status==='done');
+}
+// deposit: a deposit is still owed to start.  now: the balance is due (work
+// done) or overdue.  later: the balance is due at completion, not yet.
+function _hubPayKind(bid,h){
+  const dep=bid.deposit||0,paid=bid.paid||0,bal=bid.balance||0;
+  const depDue=dep>0.01&&paid<dep-0.01;
+  const fc=(!depDue&&(bid.financeCharge||0)>0.01)?(bid.financeCharge||0):0;
+  if(depDue)return{kind:'deposit',dep,bal,fc:0};
+  if(fc>0.01||(bid.daysOverdue||0)>0||_hubBidDone(bid,h))return{kind:'now',bal,fc};
+  return{kind:'later',bal,fc:0};
+}
+function _hubLastPay(bid,h){
+  const ps=(h.payments||[]).filter(p=>p.bid_id===bid.id&&(p.amount||0)>0).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  return ps[0]||null;
+}
+function _hubPayCard(bid,h,k){
+  const on=!!h.stripeEnabled;
+  const red='background:var(--red);color:#fff';
+  const btn=(id,fn,label,style)=>'<button id="'+id+'" onclick="'+fn+'('+bid.id+')" style="display:block;width:100%;margin-top:14px;padding:15px;border-radius:14px;border:none;'+style+';font-size:15.5px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 6px 16px color-mix(in srgb,var(--red) 22%,transparent)">'+label+'</button>';
+  const lock='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>';
+  const secure=on?'<div class="hub-next-secure">'+lock+' Secure card checkout</div>':'';
+  const lp=_hubLastPay(bid,h);
+  let x='<div class="hub-pay-cta" id="pay-card-'+bid.id+'">';
+  if(k.kind==='deposit'){
+    const rest=Math.max(0,k.bal-k.dep);
+    x+='<div class="hub-next-top"><div class="hub-next-eyebrow">Next step</div>'+(bid.signedAt?'<span class="hub-next-chip">'+svgIcon('✓',{size:11})+' Signed '+esc(_hubShortDate(bid.signedAt))+'</span>':'')+'</div>';
+    x+='<div class="hub-next-title">Get '+esc(bid.type||'your project')+' on the schedule</div>';
+    x+='<div class="hub-next-row"><span>Deposit to start</span><b>'+fmt(k.dep)+'</b></div>';
+    x+='<div class="hub-next-row"><span>Due when the work is done</span><b>'+fmt(rest)+'</b></div>';
+    if(on){
+      // Paying in full is the lead: it starts the job the same way and the
+      // contractor is paid up front. The deposit is right under it.
+      x+=btn('pay-btn-'+bid.id,'payBalance','Pay the full '+fmt(k.bal),red);
+      x+='<button id="pay-dep-btn-'+bid.id+'" class="hub-next-alt" onclick="payDeposit('+bid.id+')">Or pay the '+fmt(k.dep)+' deposit</button>';
+    }
+  }else if(k.kind==='now'){
+    const total=k.bal+k.fc;
+    x+='<div class="hub-next-top"><div class="hub-next-eyebrow">'+(k.fc>0.01||(bid.daysOverdue||0)>0?'Past due':'Balance due')+'</div></div>';
+    x+='<div class="hub-next-title">'+esc(bid.type||'Your project')+'</div>';
+    if(k.fc>0.01){
+      x+='<div class="hub-next-row"><span>Contract balance</span><b>'+fmt(k.bal)+'</b></div>';
+      x+='<div class="hub-next-row"><span>Finance charge ('+(bid.daysOverdue||0)+' days overdue)</span><b style="color:var(--red)">'+fmt(k.fc)+'</b></div>';
+      x+='<div class="hub-next-row" style="border-top:1px solid var(--border);padding-top:8px"><span><b>Total due</b></span><b>'+fmt(total)+'</b></div>';
+    }else{
+      x+='<div class="hub-next-sub">The work is done. The balance of <b>'+fmt(k.bal)+'</b> is due now.</div>';
+    }
+    if(on)x+=btn('pay-btn-'+bid.id,'payBalance','Pay '+fmt(total),red);
+    if(k.fc>0.01)x+='<div class="hub-next-secure" style="margin-top:8px">Finance charges accrue at 1.5%/month on balances 30+ days overdue.</div>';
+  }else{
+    x+='<div class="hub-next-top"><div class="hub-next-eyebrow">Your money</div></div>';
+    x+='<div class="hub-next-row" style="margin-top:10px"><span>Contract price</span><b>'+fmt(bid.amount||0)+'</b></div>';
+    const pct=(bid.amount||0)>0?Math.min(100,Math.round((bid.paid||0)/(bid.amount||1)*100)):0;
+    x+='<div style="height:8px;border-radius:8px;background:#eef0f3;margin:12px 0 8px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:var(--denim);border-radius:8px"></div></div>';
+    if((bid.paid||0)>0.01)x+='<div style="font-size:14px;color:var(--text)">Paid <b>'+fmt(bid.paid)+'</b>'+(lp&&lp.date?' <span style="color:var(--text3)">· '+esc(_hubShortDate(lp.date))+'</span>':'')+'</div>';
+    x+='<div class="hub-next-note"><b>'+fmt(k.bal)+'</b> when the work is done. Nothing is due before then.</div>';
+    if(on)x+=btn('pay-btn-'+bid.id,'payBalance','Pay the '+fmt(k.bal)+' early','background:color-mix(in srgb,var(--red) 7%,#fff);color:var(--red);border:1.5px solid color-mix(in srgb,var(--red) 30%,#fff)!important;box-shadow:none');
+  }
+  x+=secure+'</div>';
+  return x;
+}
+// One job on the Your project card: the name, when, and the tracker.
+function _hubJobItem(j,h){
+  const bid=(h.bids||[]).find(b=>b.id===j.bid_id)||null;
+  // Today in the customer's own time zone, not UTC (a Kansas evening is
+  // already tomorrow in UTC, which would start a job a day early).
+  const _n=new Date(),today=_n.getFullYear()+'-'+String(_n.getMonth()+1).padStart(2,'0')+'-'+String(_n.getDate()).padStart(2,'0');
+  const started=!!(j.start&&String(j.start).slice(0,10)<=today);
+  const status=j.status==='done'?'Done':(started?'In progress':'Scheduled');
+  const when=j.start?(started?'Started '+_hubLongDate(j.start):'Starts '+_hubLongDate(j.start)):'';
+  const days=j.days?(j.days+(j.days===1?' day':' days')):'';
+  let x='<div class="hub-feed-item"><div class="hub-feed-dot"></div><div style="flex:1;min-width:0">';
+  x+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div class="hub-feed-title">'+esc(j.name||j.title||(bid&&bid.type)||'Your project')+'</div><span class="hub-next-chip" style="background:color-mix(in srgb,var(--denim) 12%,#fff);color:var(--denim)">'+status+'</span></div>';
+  x+='<div class="hub-feed-meta">'+[when,days].filter(Boolean).join(' · ')+'</div>';
+  if(bid){
+    const hasDep=(bid.deposit||0)>0.01,depPaid=hasDep&&(bid.paid||0)>=(bid.deposit||0)-0.01;
+    const steps=[['Signed',true]].concat(hasDep?[['Deposit',depPaid]]:[]).concat([['Scheduled',!!j.start],['Working',started],['Done',j.status==='done']]);
+    let last=-1;steps.forEach((s2,i)=>{if(s2[1])last=i;});
+    x+='<div class="hub-track">'+steps.map((s2,i)=>'<i class="'+(i<last?'on':i===last?'now':'')+'"></i>').join('')+'</div>';
+    x+='<div class="hub-track-lbl">'+steps.map((s2,i)=>'<span class="'+(i<last?'on':i===last?'now':'')+'">'+s2[0]+'</span>').join('')+'</div>';
+  }
+  return x+'</div></div>';
+}
+
 /* ── renderOverview ── */
 function renderOverview(){
   if(!_hub)return;
@@ -1328,13 +1437,17 @@ function renderOverview(){
   ];
 
   // Hero: logoUrl (new snapshots) falls back to embedded logoData (legacy).
-  const _heroLogo=h.logoUrl||h.logoData;
-  let html='<div class="hub-hero'+(_heroLogo?' has-badge':'')+'">';
-  if(_heroLogo)html+='<div class="hub-hero-badge"><img src="'+esc(_heroLogo)+'" alt=""></div>';
+  // His logo lives on its plate in the top bar, readable; a second copy
+  // shrunk into a badge here read as a stamp and pushed the greeting to wrap.
+  let html='<div class="hub-hero">';
   html+='<div class="hub-hero-l">';
-  html+='<div class="hub-hero-eyebrow">Your project hub</div>';
-  html+='<div class="hub-hero-greeting">'+esc(firstName)+'</div>';
-  html+='<div class="hub-hero-sub">'+esc(h.contractorName||'')+'</div>';
+  // The cover is who and where; each job gets its own card below (owner,
+  // 2026-09-24: "why would the job show in the top hero card?"). "Hi, Barry &
+  // Hetty" from "Barry & Hetty Bucknell": the surname drops, the names stay.
+  const _hiName=(()=>{const w=firstName.split(/\s+/).filter(Boolean);return w.length>1?w.slice(0,-1).join(' '):firstName;})();
+  html+='<div class="hub-hero-eyebrow">Your home projects</div>';
+  html+='<div class="hub-hero-greeting">'+(_hiName?'Hi, '+esc(_hiName):'Welcome')+'</div>';
+  if(h.clientAddr)html+='<div class="hub-hero-sub">'+_hubPin()+esc(String(h.clientAddr).replace(/,\s*[A-Z]{2}\s*\d{5}(-\d{4})?\s*$/,''))+'</div>';
   if(h.contractorPhone)html+='<a class="hub-hero-phone" target="_top" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'">'+svgIcon('📞',{size:12})+esc(h.contractorPhone)+'</a>';
   else html+='<div style="margin-bottom:14px"></div>';
   // Credibility half of the trust split, light, one line, on arrival (NN/g: bank
@@ -1386,36 +1499,19 @@ function renderOverview(){
     html+='</div>';
   });
 
-  // Pay CTA, one card per payable bid
-  if(payableBids.length){
-    payableBids.forEach(bid=>{
-      const depPaid=(bid.deposit||0)>0.01&&(bid.paid||0)>=(bid.deposit||0)-0.01;
-      const _isBalanceDue=depPaid||(bid.deposit||0)<=0.01;
-      const fc=(_isBalanceDue&&(bid.financeCharge||0)>0.01)?(bid.financeCharge||0):0;
-      const ctaSub=!depPaid&&(bid.deposit||0)>0.01?'Deposit '+fmt(bid.deposit||0)+' due now':'Balance '+fmt(bid.balance||0)+' due';
-      html+='<div class="hub-pay-cta">';
-      html+='<div style="flex:1">';
-      html+='<div class="hub-pay-cta-tag">'+(bid.type||'Project')+'</div>';
-      html+='<div class="hub-pay-cta-amt">'+fmt(bid.amount||0)+'</div>';
-      if(fc>0.01){
-        const totalDue=(bid.balance||0)+fc;
-        html+='<div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,.55);line-height:1.8">';
-        html+='<div style="display:flex;justify-content:space-between;gap:16px"><span>Contract balance:</span><span style="font-weight:700;color:rgba(255,255,255,.75)">'+fmt(bid.balance||0)+'</span></div>';
-        html+='<div style="display:flex;justify-content:space-between;gap:16px"><span>Finance charge ('+(bid.daysOverdue||0)+' days overdue):</span><span style="font-weight:700;color:#FCA5A5">'+fmt(fc)+'</span></div>';
-        html+='<div style="border-top:1px solid rgba(255,255,255,.15);margin:4px 0"></div>';
-        html+='<div style="display:flex;justify-content:space-between;gap:16px;font-weight:800;color:#fff"><span>Total due:</span><span>'+fmt(totalDue)+'</span></div>';
-        html+='</div>';
-      }else{
-        html+='<div class="hub-pay-cta-sub">'+ctaSub+'</div>';
-      }
-      html+='</div>';
-      html+='<div class="hub-pay-cta-r">'+_payBtn(bid,h)+'</div>';
-      html+='</div>';
-      if(fc>0.01){
-        html+='<div style="font-size:11px;color:rgba(255,255,255,.4);text-align:center;margin:-8px 0 14px;line-height:1.5">Finance charges accrue at 1.5%/month on balances 30+ days overdue.</div>';
-      }
-    });
-  }else if(totalPaid>0.01){
+  // ── THE NEXT STEP (owner, 2026-09-24: "close people but also get the
+  // contractor paid early, cause who wouldn't love to be paid in full early?")
+  // What is due NOW leads the page: a deposit to start (paying in full is the
+  // big button, the deposit the second), or a balance that is due or overdue.
+  // A balance that is only due at completion is offered further down, as
+  // "pay early", never as a demand.
+  const _laterPay=[];
+  payableBids.forEach(bid=>{
+    const k=_hubPayKind(bid,h);
+    if(k.kind==='later'){_laterPay.push(bid);return;}
+    html+=_hubPayCard(bid,h,k);
+  });
+  if(!payableBids.length&&totalPaid>0.01){
     html+='<div class="hub-paid-banner"><div style="font-size:28px">'+svgIcon('✅',{size:28})+'</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received: thank you!</div></div></div>';
   }
 
@@ -1424,18 +1520,6 @@ function renderOverview(){
 
   // Main col
   html+='<div class="hub-col-main">';
-
-  // Feed: daily updates, hidden entirely when there's nothing to show, so
-  // "Awaiting your signature" (the highest-priority action) isn't pushed below
-  // an empty placeholder card with nothing in it.
-  if(activeJobs.length){
-    html+='<div class="card">';
-    html+='<div class="hub-feed-hd">Daily updates</div>';
-    activeJobs.forEach(j=>{
-      html+='<div class="hub-feed-item"><div class="hub-feed-dot"></div><div><div class="hub-feed-title">'+esc(j.name)+'</div><div class="hub-feed-meta">'+(j.start?'Starts '+fmtDate(j.start):'')+(j.days?' · '+j.days+(j.days===1?' day':' days'):'In progress')+'</div></div></div>';
-    });
-    html+='</div>';
-  }
 
   // Awaiting signature
   if(pendingBids.length){
@@ -1477,6 +1561,18 @@ function renderOverview(){
     });
   }
 
+  // Your project: each active job, where it stands, and the tracker from
+  // signed to done. After the proposals to sign, so a signature is never
+  // pushed down the page by a job that is simply scheduled.
+  if(activeJobs.length){
+    html+='<div class="card">';
+    html+='<div class="hub-feed-hd">Your project</div>';
+    activeJobs.forEach(j=>{html+=_hubJobItem(j,h);});
+    html+='</div>';
+  }
+  // Paying early: offered, never pushed. "Nothing is due before then" stays.
+  _laterPay.forEach(bid=>{html+=_hubPayCard(bid,h,_hubPayKind(bid,h));});
+
   // Project timeline (won bids)
   if(wonBids.length){
     html+='<div class="card" style="margin-top:4px">';
@@ -1486,8 +1582,10 @@ function renderOverview(){
       const isCancelled=!!b.cancelledAt;
       const isPaid=!isCancelled&&(b.balance||0)<0.01;
       const dotCls=isCancelled?'cancelled':(isPaid?'done':'active');
-      const badgeCls=isCancelled?'hub-badge-cancelled':(isPaid?'hub-badge-paid':'hub-badge-due');
-      const badgeTxt=isCancelled?'Cancelled '+svgIcon('🚫'):(isPaid?'Paid '+svgIcon('✓'):'Balance due');
+      // Says what is owed WHEN: a balance only due at completion is not "due".
+      const _pk=(!isCancelled&&!isPaid)?_hubPayKind(b,h).kind:'';
+      const badgeCls=isCancelled?'hub-badge-cancelled':(isPaid?'hub-badge-paid':(_pk==='later'?'hub-badge-paid':'hub-badge-due'));
+      const badgeTxt=isCancelled?'Cancelled '+svgIcon('🚫'):(isPaid?'Paid '+svgIcon('✓'):(_pk==='deposit'?'Deposit due':_pk==='later'?'Due when done':'Balance due'));
       html+='<div class="hub-timeline-item">';
       html+='<div class="hub-timeline-dot '+dotCls+'"></div>';
       html+='<div class="hub-timeline-body">';
@@ -1834,7 +1932,8 @@ function renderPayments(){
       }else if(!depPaid&&deposit>0.01){
         html+=bigBtn('payDeposit',Math.round(deposit*100),'Pay deposit '+fmt(deposit));
       }else{
-        html+=bigBtn('payBalance',Math.round(balance*100),'Pay balance '+fmt(balance));
+        const _fcP=(bid.financeCharge||0)>0.01?(bid.financeCharge||0):0;
+        html+=bigBtn('payBalance',Math.round((balance+_fcP)*100),'Pay balance '+fmt(balance+_fcP));
       }
       html+='</div>';
     }
@@ -1935,6 +2034,17 @@ function _cancelDeadline(signedAt,days){
   while(count<cancelDays){d.setDate(d.getDate()+1);const ymd=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');if(d.getDay()!==0&&!holidays.includes(ymd))count++;}
   d.setHours(23,59,59,999);return d;
 }
+// California (Civ. Code §1689.6): a buyer who said at signing they are 65 or
+// older gets five business days, not three. Every deadline on a bid reads
+// these two, so the hub, the notice and the documents never disagree.
+function _bidCancelDays(bid){
+  if(bid&&bid.buyerSenior&&_hub&&_hub.seniorCancelDays)return _hub.seniorCancelDays;
+  return (_hub&&_hub.cancelDays)||3;
+}
+function _bidCancelStatute(bid){
+  if(bid&&bid.buyerSenior&&_hub&&_hub.seniorCancelDays&&_hub.seniorCancelStatute)return _hub.seniorCancelStatute;
+  return (_hub&&_hub.cancelStatute)||'16 CFR Part 429';
+}
 function _cancelWindowOpen(signedAt,days){
   const dl=_cancelDeadline(signedAt,days);return dl&&new Date()<dl;
 }
@@ -1970,7 +2080,7 @@ function _showCancelForm(bidId){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.addEventListener('click',e=>{if(e.target===ov)_cancelClose();});
   document.body.appendChild(ov);
-  const cancelDays=(_hub&&_hub.cancelDays)||3;
+  const cancelDays=_bidCancelDays(bid);
   const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
   const open=dl&&new Date()<dl;
   if(bid.cancelledAt){_cancelShowConfirmed(bid);return;}
@@ -2031,8 +2141,8 @@ function _cancelShowStep2(){
 }
 function _cancelShowStep3(){
   const bid=_hub&&_hub.bids.find(b=>b.id===_cancelBidId);if(!bid)return;
-  const cancelDays=(_hub&&_hub.cancelDays)||3;
-  const cancelStatute=(_hub&&_hub.cancelStatute)||'16 CFR Part 429';
+  const cancelDays=_bidCancelDays(bid);
+  const cancelStatute=_bidCancelStatute(bid);
   const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
   const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
   const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
@@ -2073,8 +2183,8 @@ function _cancelShowStep3(){
 }
 function _cancelShowConfirmed(bid){
   const dt=bid.cancelledAt?new Date(bid.cancelledAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
-  const cancelDays=(_hub&&_hub.cancelDays)||3;
-  const cancelStatute=(_hub&&_hub.cancelStatute)||'16 CFR Part 429';
+  const cancelDays=_bidCancelDays(bid);
+  const cancelStatute=_bidCancelStatute(bid);
   const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
   const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
   const refundDue=_bidRefundDue(bid);
@@ -2393,7 +2503,7 @@ async function _submitCancellation(bidId){
   }catch(e){
     console.error('cancellation:',e);
     if(errEl)errEl.textContent='Could not submit, '+(e.message||'please try again or contact '+_cnText('your contractor')+' directly.');
-    if(btn){btn.disabled=false;btn.textContent='Submit Cancellation Notice';}
+    if(btn){btn.disabled=false;btn.textContent='Permanently Cancel Agreement';}
   }
 }
 
@@ -2421,17 +2531,19 @@ function renderDocuments(){
     const _bidCOs=bid.changeOrders||[];
     const docCount=1+(bid.proposalKey?1:0)+(_hasEpaDoc?1:0)+_bidCOs.length;
     const _isCancelled=!!bid.cancelledAt;
-    const hdrBg=_isCancelled?'linear-gradient(135deg,#7F1D1D,#991B1B)':(isPaid?'linear-gradient(135deg,#14532D,#1A6B3A)':'linear-gradient(135deg,#1B1612,#24202C)');
-    html+='<div style="border-radius:var(--rl);overflow:hidden;margin-bottom:12px;box-shadow:0 1px 6px rgba(27,22,18,.1),0 0 0 1px rgba(27,22,18,.06)">';
+    // A white card per job with his colour as the accent (hub redesign
+    // 2026-09-24); the status says itself in a chip, not a coloured slab.
+    const _dChip=_isCancelled?'<span class="hub-next-chip" style="background:#FEE2E2;color:#991B1B">Cancelled</span>':(isPaid?'<span class="hub-next-chip">Paid</span>':'<span class="hub-next-chip" style="background:color-mix(in srgb,var(--denim) 12%,#fff);color:var(--denim)">Active</span>');
+    html+='<div class="hub-doc-card" style="border-radius:20px;overflow:hidden;margin-bottom:14px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.05),0 8px 22px rgba(16,24,40,.07)">';
     // Tappable header
-    html+='<div onclick="_toggleDoc('+bid.id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer">';
+    html+='<div onclick="_toggleDoc('+bid.id+')" style="background:#fff;padding:16px 18px;cursor:pointer;border-bottom:1px solid var(--border)">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Proposal')+(_isCancelled?' · Cancelled '+svgIcon('🚫'):(isPaid?' · Paid '+svgIcon('✓'):' · Balance due'))+'</div>';
-    html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
-    html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.signedAt||bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><div class="hub-next-eyebrow">'+(bid.signedAt?'Signed '+esc(_hubShortDate(bid.signedAt)):'Your project')+'</div>'+_dChip+'</div><div style="display:none">'+esc(bid.type||'Proposal')+(_isCancelled?' · Cancelled '+svgIcon('🚫'):(isPaid?' · Paid '+svgIcon('✓'):' · Balance due'))+'</div>';
+    html+='<div style="font-size:18px;font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.25">'+esc(bid.type||'Project')+'</div>';
+    html+='<div style="font-size:12.5px;color:var(--text3);margin-top:3px">'+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
     html+='</div>';
-    html+='<span id="dc-'+bid.id+'" style="font-size:20px;color:rgba(255,255,255,.3);transition:transform .2s;flex-shrink:0;'+(autoOpen?'transform:rotate(90deg)':'')+'">›</span>';
+    html+='<span id="dc-'+bid.id+'" style="font-size:22px;color:var(--text3);transition:transform .2s;flex-shrink:0;'+(autoOpen?'transform:rotate(90deg)':'')+'">›</span>';
     html+='</div>';
     html+='</div>'; // end header
     // Collapsible body
@@ -2486,7 +2598,7 @@ function renderDocuments(){
     // (_cancelWindowOpen is the authority); the row removes itself entirely once
     // the window closes. Exception: a submitted cancellation stays visible
     // permanently as the legal record.
-    const _cd=_hub&&_hub.cancelDays||3;
+    const _cd=_bidCancelDays(bid);
     const _cancelOpen=_cancelWindowOpen(bid.signedAt||bid.bid_date,_cd);
     if(_cancelOpen||_isCancelled){
       const _cancelDl=_cancelDeadline(bid.signedAt||bid.bid_date,_cd);
@@ -2496,14 +2608,23 @@ function renderDocuments(){
       const _cancelTag=_isCancelled
         ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
         :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEF3C7;color:#92400E">Active</span>';
-      html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_showCancelForm('+bid.id+')">'+
-        '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">'+svgIcon('⚖',{size:18})+'</div>'+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:13px;font-weight:700;color:var(--text)">'+_cd+'-Day Cancellation Right'+_cancelTag+'</div>'+
-          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+_cancelMeta+'</div>'+
-        '</div>'+
-        '<div style="font-size:18px;color:var(--text3);flex-shrink:0">›</div>'+
-      '</div>';
+      // YOUR RIGHT TO CANCEL, said so it can be used (hub redesign 2026-09-24:
+      // "window open, expires 09/25/2026" gave no time, no refund, no address
+      // and did not look tappable). The three-step form behind the button is
+      // unchanged. Once cancelled, the row stays as the legal record.
+      if(_isCancelled){
+        html+=_docRow(svgIcon('⚖',{size:18}),_cd+'-Day Cancellation Right',_cancelMeta,_cancelTag,'_showCancelForm('+bid.id+')','');
+      }else{
+        const _dlTxt=_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'';
+        const _paidBack=(bid.paid||0)>0.01?'Your '+fmt(bid.paid)+' comes back in full.':'Nothing has been paid, so there is nothing to refund.';
+        const _addr=String(h.contractorAddr||'').trim();
+        html+='<div style="margin:12px 0 14px;padding:16px;border-radius:16px;background:color-mix(in srgb,var(--denim) 5%,#fff);border:1px solid color-mix(in srgb,var(--denim) 20%,#fff)">'+
+          '<div class="hub-next-eyebrow">Your right to cancel</div>'+
+          '<div style="font-size:16px;font-weight:800;color:var(--text);margin-top:6px;line-height:1.3">You can cancel until midnight '+esc(_dlTxt)+'</div>'+
+          '<div style="font-size:13.5px;color:var(--text2);margin-top:6px;line-height:1.5">'+_paidBack+' Cancel here'+(_addr?', or write to '+esc(h.contractorName||'us')+', '+esc(_addr)+'.':'.')+'</div>'+
+          '<button onclick="_showCancelForm('+bid.id+')" style="display:block;width:100%;margin-top:12px;padding:12px;border-radius:12px;border:1.5px solid color-mix(in srgb,var(--denim) 26%,#fff);background:#fff;color:var(--denim);font-size:14.5px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit)">Cancel this job</button>'+
+        '</div>';
+      }
     }
     html+='</div>';
     html+='</div>'; // end body
@@ -2645,6 +2766,9 @@ async function _launchCheckout(bidId,amount,label){
   const btnOrig=btn?btn.innerHTML:null;
   if(btn){btn.textContent='Opening…';btn.disabled=true;}
   _stripeCheckoutAmt=amount;
+  // Remember what this checkout is for, so the thank-you on return clears
+  // exactly that amount (a deposit used to zero the whole balance locally).
+  try{sessionStorage.setItem('td_pay_'+bidId,String(amount));}catch(e){}
   _stripeCheckoutBidId=bidId;
   // Open modal with loading state immediately
   document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
@@ -2774,7 +2898,17 @@ function showPaymentSuccess(bidId){
   banner.style.cssText='position:fixed;top:60px;left:0;right:0;z-index:300;background:#16a34a;color:#fff;padding:14px 20px;text-align:center;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)';
   banner.innerHTML=svgIcon('✅',{size:14})+' Payment received, thank you! We\'ll be in touch.';
   document.body.appendChild(banner);setTimeout(()=>banner.remove(),6000);
-  if(bid){bid.paymentStatus='paid';bid.balance=0;renderAll();}
+  if(bid){
+    let cents=0;try{cents=parseInt(sessionStorage.getItem('td_pay_'+bidId)||'0',10)||0;sessionStorage.removeItem('td_pay_'+bidId);}catch(e){}
+    if(cents>0){
+      const amt=cents/100,fc=bid.financeCharge||0;
+      bid.paid=(bid.paid||0)+amt;
+      bid.balance=Math.max(0,(bid.balance||0)+fc-amt);
+      bid.financeCharge=0;
+      if(bid.balance<0.01)bid.paymentStatus='paid';
+    }
+    renderAll();
+  }
 }
 // Signed diagnostic-charge document, what you found (notes), the fee, the
 // dates, and the client's signature, rendered with the SHARED signed-doc block.
@@ -3158,7 +3292,7 @@ function _sendChatMsg(){
   const msg=(input?.value||'').trim();
   if(!msg){alert('To message us directly, text: '+phone);return;}
   // Open SMS with message pre-filled
-  window.open('sms:'+phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg));
+  window.open('sms:'+phone.replace(/\D/g,'')+'?&body='+encodeURIComponent(msg));
   if(input)input.value='';
 }
 async function _attachChatFile(){
@@ -3227,6 +3361,9 @@ async function _recheckSigned(){
     if(!sigs)return;
     let changed=false;
     sigs.forEach(sp=>{
+      // A decline writes a row too; it is a NO, never a signature (same rule
+      // as _mergeSignedProposals).
+      if(sp.payment_status==='declined'||sp.payment_method==='declined')return;
       const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
       if(bid&&bid.status==='Pending'){bid.status='Closed Won';bid.signedAt=sp.signed_at;changed=true;}
     });

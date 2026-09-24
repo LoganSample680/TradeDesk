@@ -186,7 +186,7 @@ function _eggStatsHtml(){
     repeatClients=Object.values(perClient).filter(n=>n>1).length;
     biggest=(typeof bids!=='undefined'?bids:[]).filter(b=>b&&b.status==='Closed Won')
       .reduce((mx,b)=>Math.max(mx,num(b.total)),0);
-    cl.forEach(c=>{const m=String(c&&c.addr||'').match(/,\s*([A-Z]{2})\b/);if(m)states.add(m[1]);});
+    cl.forEach(c=>{const st=(typeof stateFromAddr==='function')?stateFromAddr(c&&c.addr||''):null;if(st)states.add(st);});
     crew=(typeof _teamMembers!=='undefined'&&Array.isArray(_teamMembers))?_teamMembers.length:0;
     photos=(typeof photos!=='undefined'&&Array.isArray(photos))?photos.length:0;
   }catch(_e){}

@@ -237,8 +237,9 @@ test.describe('the description the client reads', () => {
       return await sendGenericProposal(true, { silent: true });
     });
     // Only the scope section itself: the price table below it legitimately
-    // lists the labor row, so slicing past </ol> would test nothing.
-    const scope = html.split('Scope of work')[1].split('</ol>')[0];
+    // lists the labor row, so slicing past the list would test nothing. The
+    // steps are a <ul> since the white-label redesign (2026-09-23, §10.4).
+    const scope = html.split('Scope of work')[1].split('</ul>')[0];
     expect(scope).toContain('Drain cleaning');
     expect(scope, 'a labor row is priced time, not scope').not.toContain('Labor: 2 workers');
     expect(scope, 'the RRP disclosure insert is boilerplate, not sold work').not.toContain('Lead-safe');
@@ -288,10 +289,13 @@ test.describe('the description the client reads', () => {
       _geiScopeChips = [];
       _geiRenderScopeCard('tm');
       const card = document.getElementById('tm-scopecard-wrap');
-      return { mode: _geiScopeCardMode('tm'), add: card.innerHTML.includes('+ Add scope'), wrap: !!document.getElementById('tm-scope-wrap') };
+      return { mode: _geiScopeCardMode('tm'), wrap: !!document.getElementById('tm-scope-wrap'), shown: card.style.display !== 'none' };
     });
+    // CHANGED 2026-09-23 (§10.4): the card no longer carries a "+ Add scope"
+    // button while it is empty, because the box it opens is already on screen
+    // under it. What this guards is unchanged: T&M keeps its scope card.
     expect(r.mode).toBe('full');
-    expect(r.add).toBe(true);
+    expect(r.shown).toBe(true);
     expect(r.wrap).toBe(true);
   });
 

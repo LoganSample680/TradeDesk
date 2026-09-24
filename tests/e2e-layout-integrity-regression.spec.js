@@ -162,7 +162,10 @@ test.describe('layout integrity, mobile', () => {
       _byoItems = [{ id: 1, section: 'Interior', label: 'Test', notes: garbage, price: 100, on: true }];
       _byoRenderSections(); // re-render rows with the note now that the page shell exists
       const overflow = document.documentElement.scrollWidth - window.innerWidth;
-      const metaEl = [...document.querySelectorAll('.byo-meta')].find(el => el.textContent.includes(garbage.slice(0, 20)));
+      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
+      // price on one line, the description full width under them
+      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
+      const metaEl = [...document.querySelectorAll('.byo-line .byo-note')].find(el => el.textContent.includes(garbage.slice(0, 20)));
       return {
         overflow,
         metaFound: !!metaEl,
@@ -220,8 +223,11 @@ test.describe('layout integrity, mobile', () => {
       // it ever gets, and every action button present.
       _byoItems = [{ id: 1, section: 'Materials', label: 'test', notes: 'n', price: 1232134, on: true }];
       _byoRenderSections();
-      const label = document.querySelector('.byo-row .byo-label');
-      const hd = document.querySelector('.byo-row .byo-row-hd');
+      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
+      // price on one line, the description full width under them
+      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
+      const label = document.querySelector('.byo-line .byo-title');
+      const hd = document.querySelector('.byo-line');
       if (!label || !hd) return { missing: true };
       const lh = parseFloat(getComputedStyle(label).lineHeight) || 18;
       return {
@@ -246,22 +252,24 @@ test.describe('layout integrity, mobile', () => {
       const longNote = Array(20).fill('Long wrapped note line here').join(' ');
       _byoItems = [{ id: 1, section: 'Materials', label: 'test', notes: longNote, price: 1232134, on: true }];
       _byoRenderSections();
-      const row = document.querySelector('.byo-row');
+      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
+      // price on one line, the description full width under them
+      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
+      const row = document.querySelector('.byo-line');
       if (!row) return { missing: true };
-      const hd = row.querySelector('.byo-row-hd');
-      const check = row.querySelector('.byo-check');
-      const label = row.querySelector('.byo-label');
-      const price = row.querySelector('.byo-price');
-      const lTop = label.getBoundingClientRect().top;
+      const check = row.querySelector('.ios-check');
+      const label = row.querySelector('.byo-title');
+      const price = row.querySelector('.ios-fact');
+      const lr = label.getBoundingClientRect(), cr = check.getBoundingClientRect();
+      const lh = parseFloat(getComputedStyle(label).lineHeight) || 22;
       return {
         missing: false,
-        alignItems: hd ? getComputedStyle(hd).alignItems : null,
-        checkNearLabel: Math.abs(check.getBoundingClientRect().top - lTop) < 5,
-        priceNearLabel: Math.abs(price.getBoundingClientRect().top - lTop) < 5,
+        // The check's centre on the title's first line, not the row's middle.
+        checkNearLabel: Math.abs((cr.top + cr.height / 2) - (lr.top + lh / 2)) < 5,
+        priceNearLabel: Math.abs(price.getBoundingClientRect().top - lr.top) < 5,
       };
     });
     expect(r.missing, 'the BYO item row must exist for this test to mean anything').toBe(false);
-    expect(r.alignItems).toBe('center');
     expect(r.checkNearLabel, 'checkbox must stay aligned with the item title, not centered against a tall note').toBe(true);
     expect(r.priceNearLabel, 'price must stay aligned with the item title, not centered against a tall note').toBe(true);
   });
@@ -282,10 +290,13 @@ test.describe('layout integrity, mobile', () => {
       const longNote = Array(20).fill('Long wrapped note line here').join(' ');
       _byoItems = [{ id: 1, section: 'Materials', label: 'Bedroom', notes: longNote, price: 234234, on: true }];
       _byoRenderSections();
-      const row = document.querySelector('.byo-row');
+      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
+      // price on one line, the description full width under them
+      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
+      const row = document.querySelector('.byo-line');
       if (!row) return { missing: true };
-      const hd = row.querySelector('.byo-row-hd');
-      const meta = row.querySelector('.byo-meta');
+      const hd = row.querySelector('.byo-title');
+      const meta = row.querySelector('.byo-note');
       if (!hd || !meta) return { missing: true };
       const rowRect = row.getBoundingClientRect();
       const hdRect = hd.getBoundingClientRect();
@@ -471,7 +482,10 @@ test.describe('layout integrity, mobile', () => {
         hasQtyHeader: html.includes('>Qty<'),
         hasAmountHeader: html.includes('>Amount<'),
         hasTaxRow: html.includes('Tax / markup') || html.includes('Sales tax') || html.includes('Materials tax'),
-        hasTotal: html.includes('TOTAL'),
+        // "YOUR PRICE" on Build Your Own since 2026-09-23 (§10.4, owner: "yes
+        // go with your price"): a fixed price, moved only by a change order.
+        // Still one figure.
+        hasTotal: html.includes('YOUR PRICE') && html.includes('Anything added or changed is a change order you sign'),
         hasDeposit: html.includes('Deposit'),
       };
       ov?.remove();
@@ -528,21 +542,42 @@ test.describe('layout integrity, mobile', () => {
     expect(r.kitchenNotDoubled, 'fallback must not replace or double real notes').toBe(true);
   });
 
-  test('proposal shows only TOTAL + deposit, no per-material or NTE-cap price (T&M)', async () => {
+  // RENAMED 2026-09-22 to say what it now proves. It was "shows only TOTAL +
+  // deposit", from when the estimated total was the loud number and the ceiling
+  // was one clause of eleven in the terms. The ceiling leads a T&M that has one
+  // now, and this fixture finally puts one on the document (see below), so the
+  // old name described neither the screen nor the test.
+  test('proposal leads with the ceiling and the deposit, with no per-material price and no standalone cap row (T&M)', async () => {
     const r = await page.evaluate(async () => {
       const c = { id: 79108, name: 'Total Only TM Client', addr: '1 Total Only TM Rd' };
       clients = clients.filter(x => x.id !== 79108).concat([c]);
       bids = bids.filter(x => x.client_id !== 79108);
       openGenericEstimate(c, null, null, { mode: 'tm' });
       goGeiStep(2);
+      // PRECONDITION STATED, 2026-09-22. A T&M with no day count on it is a rate
+      // sheet, and a rate sheet has no total for this test to look at. The days
+      // field only feeds _tmEstHours while the estimated-total layer is on.
+      // This used to be true by accident, because _tmShowPage wiped the layer
+      // set on every fresh T&M.
+      _tmAddLayer('est');
       // Drive the real DOM inputs, _tmInputChange reads live values from these, not
       // from the module variables directly, so setting the variables alone is silently
       // overwritten on the next recalc.
+      //
+      // THE CEILING IS SET BEFORE THE RECALC, NOT AFTER IT, 2026-09-22. It used
+      // to be written to tm-i-nte on the line after _tmInputChange(), and that
+      // recalc is the only thing that mirrors it into tm-nte-cap, which is the
+      // id the proposal builder actually reads. So this fixture never put a
+      // ceiling on the document at all, and the "no standalone NTE-cap row"
+      // assertion below had been passing on a proposal that had no cap in it.
       document.getElementById('tm-i-rate').value = '75';
       document.getElementById('tm-i-days').value = '2';
+      document.getElementById('tm-i-nte').value = '2000';
+      // Up front is a flat figure on T&M since 2026-09-23 (§10.4).
+      _tmAddLayer('dep');
+      document.getElementById('tm-i-dep-flat').value = '400';
       _tmInputChange();
       _geiLines.push({ desc: 'Fixtures', qty: 1, rate: 500, total: 500 });
-      document.getElementById('tm-i-nte').value = '2000';
       let err = null;
       try { await sendGenericProposal(true); } catch (e) { err = e.message; }
       const ov = document.getElementById('_prop-preview-ov');
@@ -553,8 +588,15 @@ test.describe('layout integrity, mobile', () => {
         hasMaterialName: html.includes('Fixtures'),
         hasPerItemPrice: /\$500\.00/.test(html),
         hasNteRow: html.includes('Not-to-exceed cap'),
-        hasTotal: html.includes('ESTIMATED TOTAL'),
-        hasDeposit: html.includes('Deposit'),
+        // This fixture puts a $2,000 ceiling on the job, and since 2026-09-22 a
+        // T&M that HAS a ceiling leads with it: the big accent row reads THE
+        // MOST THIS CAN COST YOU, and the estimate steps down to a quiet grey
+        // row above it. So the money footer is checked by what it now says.
+        // The subject of this test is unchanged, and it is the two assertions
+        // above: no per-item price and no standalone cap pricing row.
+        hasBigCap: /MOST YOU(&apos;|')LL PAY/.test(html), // (2026-09-23, §10.4: owner said the old wording sucked; three words and the condition small.)
+        hasQuietEstimate: html.includes('not a fixed price'),
+        hasDeposit: html.includes('Up Front, Before Work Begins'),
       };
       ov?.remove();
       return res;
@@ -564,7 +606,8 @@ test.describe('layout integrity, mobile', () => {
     expect(r.hasMaterialName, 'material category name must still show').toBe(true);
     expect(r.hasPerItemPrice, 'no per-material dollar amount may render').toBe(false);
     expect(r.hasNteRow, 'the standalone NTE-cap pricing row must be gone (still disclosed in Terms & Conditions)').toBe(false);
-    expect(r.hasTotal).toBe(true);
+    expect(r.hasBigCap, 'the ceiling is the loud number on a T&M that has one').toBe(true);
+    expect(r.hasQuietEstimate, 'and the estimate is still on the document, quieter').toBe(true);
     expect(r.hasDeposit).toBe(true);
   });
 
@@ -629,14 +672,19 @@ test.describe('layout integrity, mobile', () => {
       S.brandColor = prevBrand;
       const res = {
         err,
-        hasBrandGradient: html.includes('linear-gradient(135deg,rgb(22,101,52) 0%,rgb(64,143,94) 100%)'),
+        // The white-label masthead (2026-09-23, §10.4): the brand is the band
+        // across the top of white paper, not a gradient slab behind the logo.
+        // The cover (2026-09-23, §10.4): the document opens on the brand.
+        hasBrandGradient: html.includes('class="prop-cover" style="background:rgb(22,101,52)'),
         hasBrandTotalBg: html.includes('background:rgb(22,101,52);color:#fff'),
+        hasBrandLabel: html.includes('color:rgb(22,101,52)">Scope of work') || html.includes('color:rgb(22,101,52)'),
         hasNavyLeftover: html.includes('#1a365d') || html.includes('#2a4a7f'),
       };
       return res;
     });
     expect(r.err).toBe(null);
-    expect(r.hasBrandGradient, 'header gradient must use the brand color, not navy').toBe(true);
+    expect(r.hasBrandGradient, 'the top band must use the brand color, not navy').toBe(true);
+    expect(r.hasBrandLabel, 'the accents on the page carry the brand color too').toBe(true);
     expect(r.hasBrandTotalBg, 'TOTAL row must use the brand color, not navy').toBe(true);
     expect(r.hasNavyLeftover, 'no hardcoded navy hex may leak through once a brand color is set').toBe(false);
   });
@@ -750,6 +798,7 @@ test.describe('layout integrity, mobile', () => {
         // 1-line proposal, if it still stretches to fill the screen, the bug
         // is back.
         bodyHeight: body ? body.getBoundingClientRect().height : null,
+        cardHeight: body && body.firstElementChild ? body.firstElementChild.getBoundingClientRect().height : null,
         viewportHeight: window.innerHeight,
       };
       ov?.remove();
@@ -757,7 +806,14 @@ test.describe('layout integrity, mobile', () => {
     });
     expect(r.err).toBe(null);
     expect(r.hasOverlay).toBe(true);
-    expect(r.bodyHeight, 'a 1-line proposal card must not stretch to fill the full viewport height').toBeLessThan(r.viewportHeight * 0.7);
+    // Measured against the card itself since 2026-09-23 (§10.4). The 70%-of-
+    // the-screen bar stood in for "hugs the card" while the card was short; the
+    // white-label redesign (owner: "I want a redesign, it has to look great")
+    // gave it a real masthead and a Prepared for block, so a one-line proposal
+    // is honestly taller now. What the bug was, and still is: the body growing
+    // past its card. It may be the card plus its own padding, nothing more.
+    expect(r.bodyHeight, 'a 1-line proposal card must not stretch to fill the full viewport height').toBeLessThan(r.viewportHeight);
+    expect(r.bodyHeight - r.cardHeight, 'the body hugs the card: its padding and nothing else').toBeLessThanOrEqual(50);
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });

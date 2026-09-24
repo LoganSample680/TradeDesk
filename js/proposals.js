@@ -72,7 +72,7 @@ function _buildClientHubSnapshot(clientId){
     // same one-price rule the document follows (owner 2026-08-16). Shared with the
     // property card's Past work rows via _bidScopeLines below.
     const _hubScope=_bidScopeLines(b);
-    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',scope:_hubScope,
+    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',buyerSenior:!!b.buyerSenior,scope:_hubScope,
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.
       kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
@@ -165,9 +165,11 @@ function _buildClientHubSnapshot(clientId){
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
-  const _snapAddrM=(c.addr||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
-  const _snapState=(_snapAddrM?_snapAddrM[1]:null)||S.state||'KS';
+  // stateFromAddr (js/legal.js): the state, not the first state-shaped word.
+  const _snapState=(typeof stateFromAddr==='function'?stateFromAddr(c.addr||''):null)||S.state||'KS';
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
+  // Cal. Civ. Code §1689.6: five business days when the buyer is 65 or older.
+  const _snapSeniorDays=(STATE_CANCEL&&STATE_CANCEL[_snapState]&&STATE_CANCEL[_snapState].seniorDays)||0;
   const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
@@ -240,6 +242,8 @@ function _buildClientHubSnapshot(clientId){
     trade:getActiveTrade(),
     state:_snapState,
     cancelDays:_snapCancelDays,
+    seniorCancelDays:_snapSeniorDays,
+    seniorCancelStatute:(STATE_CANCEL&&STATE_CANCEL[_snapState]&&STATE_CANCEL[_snapState].seniorStatute)||'',
     cancelStatute:_snapCancelStatute,
     hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
     bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos,
@@ -1613,7 +1617,7 @@ function _showCOSignDocument(b,c,coData,clientId){
   const deltaColor=type==='add'?'var(--blue)':'#A32D2D';
 
   const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;box-sizing:border-box';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-sizing:border-box';
   const doc=document.createElement('div');
   doc.style.cssText='background:#fff;border-radius:12px;width:100%;max-width:540px;margin:auto;overflow:hidden;font-family:inherit;color:#111';
   doc.innerHTML=
