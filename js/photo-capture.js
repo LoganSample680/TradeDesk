@@ -271,10 +271,24 @@ function _pcAcct(){try{return (typeof _supaUser!=='undefined'&&_supaUser&&_supaU
 async function _pcOutboxPut(row,file){
   try{
     if(!row||!file)return false;
-    const ok=await _pcObTx('readwrite',st=>st.put({id:String(row.id),blob:file,name:file.name||'photo.jpg',
+    // The bytes go in as an ArrayBuffer, not the File: WebKit's IndexedDB
+    // refuses to store a Blob in some builds, and a refused put is a photo
+    // that silently never reaches the outbox.
+    const buf=await file.arrayBuffer();
+    const ok=await _pcObTx('readwrite',st=>st.put({id:String(row.id),buf,size:buf.byteLength,name:file.name||'photo.jpg',
       mime:file.type||'image/jpeg',acct:_pcAcct(),meta:_pcRowMeta(row),ts:Date.now()}));
     return !!ok;
   }catch(_e){return false;}
+}
+// The photo back out of an outbox entry, as a File the uploader can name.
+function _pcObFile(rec){
+  try{
+    if(!rec)return null;
+    const type=rec.mime||'image/jpeg';
+    const src=rec.buf?[rec.buf]:(rec.blob?[rec.blob]:null);
+    if(!src)return null;
+    try{return new File(src,rec.name||'photo.jpg',{type});}catch(_e){return new Blob(src,{type});}
+  }catch(_e){return null;}
 }
 function _pcOutboxDel(id){try{return _pcObTx('readwrite',st=>st.delete(String(id)));}catch(_e){return Promise.resolve(null);}}
 async function _pcOutboxAll(){
@@ -318,7 +332,9 @@ async function _pcOutboxRestore(){
     if(_pcSaving.has(String(rec.id)))continue;
     if(photos.some(p=>p&&String(p.id)===String(rec.id)))continue;
     const row=Object.assign({url:'',storagePath:'',thumbUrl:'',thumbPath:'',fullPath:''},rec.meta,{id:rec.meta.id!=null?rec.meta.id:rec.id});
-    row.data=await _pcPreviewDataUrl(rec.blob);
+    const f=_pcObFile(rec);
+    if(!f)continue;
+    row.data=await _pcPreviewDataUrl(f);
     row.outboxWait=true;
     photos.push(row);n++;
   }
@@ -344,8 +360,8 @@ function tdPhotoFlush(){
         const row=photos.find(p=>p&&String(p.id)===String(rec.id));
         if(!row)continue;
         if(row.storagePath&&row.url){_pcOutboxDel(rec.id);continue;}
-        let f=rec.blob;
-        try{if(f&&!f.name&&typeof File==='function')f=new File([f],rec.name||'photo.jpg',{type:rec.mime||f.type||'image/jpeg'});}catch(_e){}
+        const f=_pcObFile(rec);
+        if(!f)continue;
         if(await _pcUploadRow(row,f))sent++;
       }
       const left=(await _pcOutboxAll()).filter(r=>r&&(!r.acct||r.acct===_supaUser.id)).length;
