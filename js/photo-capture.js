@@ -140,16 +140,25 @@ async function tdSavePhoto(opts){
   _pcTel('photo_taken',row,opts.imported?'import':'');
 
   if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa)){
-    _pcMarkPending(row,j,file);
+    if(inBox)row.outboxWait=true;else _pcMarkPending(row,j,file);
+    saveAll();
     _pcTel('photo_upload_failed',row,(typeof supaEnabled==='function'&&supaEnabled())?'signed-out':'offline');
     return row;
   }
   if(!(await _pcUploadRow(row,file))){
-    _pcMarkPending(row,j,file);
+    if(inBox)row.outboxWait=true;else _pcMarkPending(row,j,file);
+    saveAll();
     _pcFlushSoon();
   }
   return row;
 }
+// Is this photo still on its way to the server? Two flags on purpose: an
+// outbox photo is outboxWait and NEVER pendingUpload, because pendingUpload
+// is what the older retry in _drainPhotoQueue (js/jobs.js) sends from the
+// row's own base64, and for an outbox photo that is only the small display
+// copy. Found on UAT 2026-09-25: both retries sent the same photo, the second
+// time at display size.
+function tdPhotoWaiting(p){return !!(p&&(p.outboxWait||p.pendingUpload)&&!p.storagePath);}
 // Upload one row's bytes and finish it: the row, the job sheet's copy, the
 // outbox entry. Shared by the first try (tdSavePhoto) and every retry
 // (tdPhotoFlush), so a retried photo lands exactly like a first-time one:
@@ -190,7 +199,7 @@ async function _pcUploadRow(row,file){
     // the localStorage footprint of every photo for no gain (the job sheet
     // falls back to url when data is absent).
     delete row.data;
-    delete row.pendingUpload;delete row._uploadExt;delete row._uploadMime;
+    delete row.pendingUpload;delete row.outboxWait;delete row._uploadExt;delete row._uploadMime;
     _pcFinishTwin(row);
     saveAll();
     _pcOutboxDel(row.id);
@@ -310,7 +319,7 @@ async function _pcOutboxRestore(){
     if(photos.some(p=>p&&String(p.id)===String(rec.id)))continue;
     const row=Object.assign({url:'',storagePath:'',thumbUrl:'',thumbPath:'',fullPath:''},rec.meta,{id:rec.meta.id!=null?rec.meta.id:rec.id});
     row.data=await _pcPreviewDataUrl(rec.blob);
-    row.pendingUpload=true;
+    row.outboxWait=true;
     photos.push(row);n++;
   }
   if(n){saveAll();try{if(typeof renderDash==='function')renderDash();}catch(_e){}}
@@ -401,7 +410,7 @@ let _pcPendingReported=false;
 function _pcReportPending(force){
   try{
     if(_pcPendingReported&&!force)return -1;
-    let n=(Array.isArray(photos)?photos:[]).filter(p=>p&&p.pendingUpload).length;
+    let n=(Array.isArray(photos)?photos:[]).filter(p=>tdPhotoWaiting(p)).length;
     (Array.isArray(jobs)?jobs:[]).forEach(j=>{(j&&Array.isArray(j.photos)?j.photos:[]).forEach(p=>{if(p&&p.pendingUpload&&p.data)n++;});});
     _pcPendingReported=true;
     try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('photo_pending',n>0?'photos waiting '+n:'none',n);}catch(_e){}
@@ -645,7 +654,7 @@ function tdFilePhoto(photoId,clientId,bidId,jobId){
     p.job_id=jobId;p.job_name=j?j.name||'':'';
   }
   saveAll();
-  if(p.pendingUpload)_pcOutboxTouch(p);
+  if(tdPhotoWaiting(p))_pcOutboxTouch(p);
   if(p.client_id!=null&&typeof _uploadClientHub==='function')_uploadClientHub(p.client_id).catch(()=>{});
   return true;
 }
@@ -2295,7 +2304,7 @@ function tdAttachCommit(){
     // say it.
     if(p&&addr)p.addr=addr;
     if(p&&_pcAtt.m!=null)p.addrM=_pcAtt.m;
-    if(p&&p.pendingUpload)_pcOutboxTouch(p);
+    if(p&&tdPhotoWaiting(p))_pcOutboxTouch(p);
     n++;
   });
   saveAll();

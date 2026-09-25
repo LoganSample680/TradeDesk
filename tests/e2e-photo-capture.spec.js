@@ -4270,7 +4270,7 @@ test.describe('TrueShot: the server can see where every photo is', () => {
       clients.push({ id: 501, name: 'Tracey Gillaspy', addr: '4835 NE Kincaid Rd, Topeka, KS 66617' });
       const en = window.supaEnabled; window.supaEnabled = () => false;
       let row; try { row = await tdSavePhoto({ file: window.__file(), type: 'after', clientId: 501, stamp: false }); } finally { window.supaEnabled = en; }
-      return { tel: window.__tel.slice(), id: String(row.id).replace(/[^0-9]/g, '').slice(0, 16), pending: !!row.pendingUpload };
+      return { tel: window.__tel.slice(), id: String(row.id).replace(/[^0-9]/g, '').slice(0, 16), pending: tdPhotoWaiting(row) };
     });
     expect(r.pending).toBe(true);
     expect(r.tel.map(t => t.e)).toEqual(['photo_taken', 'photo_upload_failed']);
@@ -4542,7 +4542,8 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
       const box = await _pcOutboxAll();
       let stored = null; try { stored = JSON.parse(localStorage.getItem('zp3_photos') || '[]'); } catch (e) {}
       return { sizes, box: box.map(b => b.blob.size), rows: photos.length, maxData: Math.max(...photos.map(p => (p.data || '').length)),
-        lsIds: (stored || []).filter(p => p.pendingUpload).length, pending: photos.every(p => p.pendingUpload) };
+        lsIds: (stored || []).filter(p => p.outboxWait).length, pending: photos.every(p => tdPhotoWaiting(p)),
+        older: photos.filter(p => p.pendingUpload).length };
     });
     expect(r.box.length).toBe(5);
     expect(r.box.sort()).toEqual(r.sizes.sort());              // the full bytes, not a copy of the preview
@@ -4550,6 +4551,10 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
     expect(r.pending).toBe(true);
     expect(r.maxData, 'the row keeps a small display copy only').toBeLessThan(600000);
     expect(r.lsIds, 'and all five made it into localStorage').toBe(5);
+    // The older retry in _drainPhotoQueue sends a row's own base64 when it is
+    // pendingUpload; for an outbox photo that is the small display copy, so an
+    // outbox photo must never carry that flag (both sent it, UAT 2026-09-25).
+    expect(r.older).toBe(0);
   });
 
   test('the app is killed and relaunched with no signal: every photo comes back, still filed', async () => {
@@ -4559,7 +4564,7 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
       const ids = photos.map(p => String(p.id)).sort();
       photos.length = 0; localStorage.removeItem('zp3_photos');   // memory and localStorage both gone
       const n = await _pcOutboxRestore();
-      return { n, ids, back: photos.map(p => String(p.id)).sort(), filed: photos.every(p => p.client_id === 501 && p.addr === '4835 NE Kincaid Rd, Topeka, KS 66617' && p.type === 'after' && p.pendingUpload && (p.data || '').startsWith('data:image')) };
+      return { n, ids, back: photos.map(p => String(p.id)).sort(), filed: photos.every(p => p.client_id === 501 && p.addr === '4835 NE Kincaid Rd, Topeka, KS 66617' && p.type === 'after' && p.outboxWait && !p.pendingUpload && (p.data || '').startsWith('data:image')) };
     });
     expect(r.n).toBe(3);
     expect(r.back).toEqual(r.ids);
@@ -4573,7 +4578,7 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
       photos.length = 0;   // and the phone lost them in between, for good measure
       window.__online();
       const sent = await tdPhotoFlush();
-      return { sent, ups: window.__ups.filter(u => !/\/t-/.test(u.path)).map(u => u.path), rows: photos.map(p => ({ url: !!p.url, c: p.client_id, addr: p.addr, pend: !!p.pendingUpload, data: !!p.data })), left: (await _pcOutboxAll()).length };
+      return { sent, ups: window.__ups.filter(u => !/\/t-/.test(u.path)).map(u => u.path), rows: photos.map(p => ({ url: !!p.url, c: p.client_id, addr: p.addr, pend: tdPhotoWaiting(p), data: !!p.data })), left: (await _pcOutboxAll()).length };
     });
     expect(r.sent).toBe(3);
     expect(r.ups.length).toBe(3);
@@ -4604,7 +4609,7 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
       await window.__reset();
       window.__online(true);
       const row = await tdSavePhoto({ file: await window.__big(800, 600), type: 'before', clientId: 501, stamp: false });
-      const after1 = { pend: !!row.pendingUpload, box: (await _pcOutboxAll()).length };
+      const after1 = { pend: tdPhotoWaiting(row), box: (await _pcOutboxAll()).length };
       window.__online(false);
       const sent = await tdPhotoFlush();
       return { after1, sent, url: !!row.url, box: (await _pcOutboxAll()).length };
