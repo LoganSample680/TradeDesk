@@ -249,15 +249,27 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
       const out = {
         n: bars.length,
         allSx: bars.every(b => /px$/.test(b.style.getPropertyValue('--sx'))),
-        // start = now + delay lands on a whole 1.3s cycle for every bar
-        oneClock: new Set(bars.map(b => Math.round((performance.now() + parseFloat(b.style.animationDelay)) / 1300))).size,
+        // One batch, one phase: every bar carries the same delay...
+        delays: new Set(bars.map(b => b.style.animationDelay)).size,
         anim: bars[0] ? getComputedStyle(bars[0]).animationName : '',
       };
       return out;
     });
+    // ...and, once running, every sweep sits at the same point in its cycle
+    // (read off the live animations, not recomputed from the page clock).
+    const spread = await page.evaluate(async () => {
+      await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const t = document.getAnimations()
+        .filter(a => a.animationName === 'td-skel-sweep' && a.effect && a.effect.target && a.effect.target.closest('#pg-dash'))
+        .map(a => ((Number(a.currentTime) % 1300) + 1300) % 1300);
+      if (!t.length) return 9999;
+      const lo = Math.min(...t), hi = Math.max(...t);
+      return Math.min(hi - lo, 1300 - (hi - lo));   // distance on the cycle, so 1299 and 1 are 2ms apart
+    });
     expect(r.n).toBeGreaterThan(0);
     expect(r.allSx).toBe(true);
-    expect(r.oneClock).toBe(1);
+    expect(r.delays).toBe(1);
+    expect(spread).toBeLessThan(40);
     expect(r.anim).toBe('td-skel-sweep');
   });
 

@@ -1816,6 +1816,7 @@ function _dashApplySkeletons(){
   // coverage: whatever they compute on their first paint (Stripe/QR caches included)
   // renders as final, bare content even while the rest of the dashboard is shimmering.
   const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-hold,#dash-geo-perm')];
+  const _sweepPhase=-Math.round(performance.now()%1300);
   targets.forEach(el=>{
     if(el.querySelector(':scope>.td-boot-skel'))return;
     const tbar=el.classList.contains('tbar');
@@ -1832,16 +1833,17 @@ function _dashApplySkeletons(){
       const drift=el.offsetHeight-h;
       if(drift){sk.style.boxSizing='border-box';sk.style.overflow='hidden';sk.style.height=Math.max(20,sk.offsetHeight-drift)+'px';}
     }
-    _dashSkelSweep(sk);
+    _dashSkelSweep(sk,_sweepPhase);
   });
 }
 // Anchor each shimmer bar to the page and to one clock, so the whole boot
 // skeleton shimmers as one surface (CSS td-skel-sweep in index.html).
-function _dashSkelSweep(root){
+function _dashSkelSweep(root,phase){
   try{
     // Every bar's animation starts on a whole multiple of the 1.3s cycle, so a
-    // bar added later is still in step with the ones already sweeping.
-    const phase=-Math.round(performance.now()%1300);
+    // bar added later is still in step with the ones already sweeping. One
+    // phase per batch: bars styled in the same pass start in the same frame.
+    if(typeof phase!=='number')phase=-Math.round(performance.now()%1300);
     root.querySelectorAll('.td-skel').forEach(b=>{
       const r=b.getBoundingClientRect();
       b.style.setProperty('--sx',Math.round(r.left+(r.top+(window.scrollY||0))*0.35)+'px');
