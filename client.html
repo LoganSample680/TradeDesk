@@ -473,6 +473,12 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 #view-overview.hub-cascade>*:nth-child(4){animation-delay:.39s}
 #view-overview.hub-cascade>*:nth-child(n+5){animation-delay:.51s}
 @media (prefers-reduced-motion:reduce){#view-overview.hub-cascade>*{animation:none}}
+/* The load after the logo, same as the app: shimmer cards drop in, then each
+   card's real content comes into focus in a shuffled order (_hubRevealSkeletons).
+   The bars take the shared sweep (.td-sweep, js/brand-look.js). */
+#view-overview .hub-skel-on{position:relative}
+.hub-skel{position:absolute;inset:0;z-index:3;border-radius:inherit;background:var(--bg-card);padding:22px 20px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.hub-skel .td-skel{height:12px;border-radius:6px;flex-shrink:0}
 
 /* ── Change order signing modal ── */
 @keyframes hub-ov-fade{from{opacity:0}to{opacity:1}}
@@ -1172,18 +1178,59 @@ function _dismissBootOverlay(fast){
   const delay=(fast||_testEnv)?(fast?0:220):Math.max(220,MIN_BOOT_MS-elapsed);
   // Exit, same as the app: the logo fades out, then the screen, and the hub
   // home waterfalls in beneath it.
-  _bootDismissTimers.push(setTimeout(()=>{ov.style.opacity='';ov.classList.add('td-fadeout');_playHubCascade();_bootDismissTimers.push(setTimeout(()=>ov.style.display='none',650));},delay));
+  _bootDismissTimers.push(setTimeout(()=>{ov.style.opacity='';ov.classList.add('td-fadeout');_playHubCascade(!fast&&!_testEnv);_bootDismissTimers.push(setTimeout(()=>ov.style.display='none',650));},delay));
+}
+// The same load the app does after its logo (owner 2026-09-25: the hub links
+// "don't share the same exact animation the app does"): the cards waterfall in
+// as shimmer, the band sweeps them, then each fills with its real content in a
+// shuffled order. The hub's data is already here by now, so this only chooses
+// the moment each card shows it, exactly as _dashRevealSkeletons does.
+const HUB_SHIMMER_MS=1300; // the app's minimum visible shimmer, plus the last card's drop
+function _hubApplySkeletons(){
+  const ov=document.getElementById('view-overview');if(!ov)return [];
+  const els=[...ov.querySelectorAll(':scope>.hub-hero,.card')];
+  const widths=[42,78,64,88,56,70];
+  els.forEach(el=>{
+    if(el.querySelector(':scope>.hub-skel'))return;
+    const n=Math.max(2,Math.min(6,Math.round((el.offsetHeight-44)/26)));
+    const sk=document.createElement('div');sk.className='hub-skel';sk.setAttribute('aria-hidden','true');
+    for(let i=0;i<n;i++){
+      const b=document.createElement('div');b.className='td-skel td-sweep';
+      b.style.width=widths[i%widths.length]+'%';if(i===0)b.style.height='16px';
+      sk.appendChild(b);
+    }
+    el.classList.add('hub-skel-on');el.appendChild(sk);
+  });
+  if(typeof tdSkelSweep==='function')tdSkelSweep(ov);
+  return els;
+}
+function _hubRevealSkeletons(){
+  const els=[...document.querySelectorAll('#view-overview .hub-skel-on')];
+  if(!els.length)return;
+  const order=els.map(el=>({el,k:Math.random()})).sort((a,b)=>a.k-b.k);
+  const span=Math.min(420,60*els.length);
+  order.forEach(({el},i)=>{
+    setTimeout(()=>{
+      if(!el.classList.contains('hub-skel-on'))return;
+      el.classList.remove('hub-skel-on');
+      el.querySelectorAll(':scope>.hub-skel').forEach(s=>s.remove());
+      el.classList.add('td-data-in');
+      setTimeout(()=>el.classList.remove('td-data-in'),360);
+    },els.length>1?Math.round(i*span/(els.length-1)):0);
+  });
 }
 // One-shot waterfall for the hub home. Only fires when the Overview tab is the
 // one being revealed (not error/preview), and only once per load so switching
 // back to Overview later doesn't re-cascade.
 let _hubCascaded=false;
-function _playHubCascade(){
+function _playHubCascade(shimmer){
   if(_hubCascaded)return;
   const hub=document.getElementById('pg-hub');
   const ov=document.getElementById('view-overview');
   if(!hub||hub.style.display==='none'||!ov||_activeView!=='overview')return;
   _hubCascaded=true;
+  const still=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(shimmer&&!still&&_hubApplySkeletons().length)setTimeout(_hubRevealSkeletons,HUB_SHIMMER_MS);
   ov.classList.remove('hub-cascade');void ov.offsetWidth; // restart if already applied
   ov.classList.add('hub-cascade');
 }

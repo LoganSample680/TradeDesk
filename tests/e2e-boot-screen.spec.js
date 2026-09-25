@@ -5,7 +5,7 @@
  *
  *   js/brand-look.js   tdLogoLook, tdLogoKey, tdBootFill
  *   js/settings.js     _tdBrandFromLogo, _updateBootPreview
- *   js/dashboard.js    _dashSkelSweep, _dashRevealSkeletons
+ *   js/dashboard.js    _dashRevealSkeletons (tdSkelSweep lives in js/brand-look.js)
  *   js/cloud.js        _removeBootOverlay (the 2.15s beat), _showUpdateOverlay
  *   client.html        the hub boot (no "Powered by", ever)
  */
@@ -420,7 +420,7 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
 
   test('reveal with nothing shimmering, or called repeatedly, is a no-op', async () => {
     const r = await page.evaluate(() => {
-      try { for (let i = 0; i < 5; i++) _dashRevealSkeletons(); _dashSkelSweep(document.createElement('div')); return true; }
+      try { for (let i = 0; i < 5; i++) _dashRevealSkeletons(); tdSkelSweep(document.createElement("div")); tdSkelSweep(null); return true; }
       catch (e) { return e.message; }
     });
     expect(r).toBe(true);
@@ -626,5 +626,92 @@ test.describe('client hub boot', () => {
     const r = await page.evaluate(() => ({ foot: !!document.querySelector('#boot-overlay .bt-foot') }));
     expect(r.foot).toBe(false);
     assertNoErrors(page, 'hub logo colour');
+  });
+
+  // Owner 2026-09-25: the hub links "don't share the same exact animation the
+  // app does". After the logo the hub now plays the app's load: the cards drop
+  // in as shimmer, one band sweeps them, then each fills in a shuffled order.
+  const HUB_FULL = () => hub({ clientName: 'Dana Miller', clientAddr: '3 Timeline Ave',
+    jobs: [{ id: 5001, bid_id: null, name: 'Water heater', start: '2026-09-28', days: 1, status: 'scheduled', photos: [] }] });
+
+  test('after the logo, the hub cards pour in as shimmer, then each fills with its data', async ({ page }) => {
+    await page.addInitScript(h => { window.__mockHubData = h; window._forceBootDwell = true; }, HUB_FULL());
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => document.querySelectorAll('#view-overview .hub-skel').length > 0, { timeout: 8000 });
+    const during = await page.evaluate(() => {
+      const bars = [...document.querySelectorAll('#view-overview .hub-skel .td-skel')];
+      const covered = [...document.querySelectorAll('#view-overview>.hub-hero,#view-overview .card')];
+      return {
+        cards: covered.length,
+        allCovered: covered.every(c => c.classList.contains('hub-skel-on') && c.querySelector(':scope>.hub-skel')),
+        bars: bars.length,
+        swept: bars.every(b => b.classList.contains('td-sweep') && /px$/.test(b.style.getPropertyValue('--sx'))),
+        oneClock: new Set(bars.map(b => b.style.animationDelay)).size,
+        anim: getComputedStyle(bars[0]).animationName,
+        cascade: document.getElementById('view-overview').classList.contains('hub-cascade'),
+      };
+    });
+    expect(during.cards).toBeGreaterThanOrEqual(2);
+    expect(during.allCovered).toBe(true);
+    expect(during.bars).toBeGreaterThanOrEqual(4);
+    expect(during.swept).toBe(true);
+    expect(during.oneClock).toBe(1);
+    expect(during.anim).toBe('td-skel-sweep');
+    expect(during.cascade).toBe(true);   // the shimmer drops down with the waterfall
+    await page.waitForFunction(() => !document.querySelector('#view-overview .hub-skel,#view-overview .hub-skel-on'), { timeout: 5000 });
+    const after = await page.evaluate(() => ({
+      text: document.getElementById('view-overview').textContent,
+      greet: !!document.querySelector('#view-overview .hub-hero-greeting'),
+    }));
+    expect(after.text).toContain('Water heater');
+    expect(after.greet).toBe(true);
+    assertNoErrors(page, 'hub shimmer load');
+  });
+
+  test('the fast paths (errors, the test mock) never shimmer', async ({ page }) => {
+    await page.addInitScript(h => { window.__mockHubData = h; }, HUB_FULL());
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => getComputedStyle(document.getElementById('boot-overlay')).display === 'none', { timeout: 8000 });
+    expect(await page.locator('#view-overview .hub-skel').count()).toBe(0);
+  });
+
+  test('skeleton helpers: no stacking, no overview, nothing to reveal, all safe', async ({ page }) => {
+    await page.addInitScript(h => { window.__mockHubData = h; }, HUB_FULL());
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => !!document.querySelector('#view-overview .card'), { timeout: 8000 });
+    const r = await page.evaluate(async () => {
+      try {
+        _hubRevealSkeletons();                          // nothing shimmering: no-op
+        _hubApplySkeletons(); _hubApplySkeletons();     // twice: one cover per card
+        const per = [...document.querySelectorAll('#view-overview .hub-skel-on')].map(c => c.querySelectorAll(':scope>.hub-skel').length);
+        for (let i = 0; i < 3; i++) _hubRevealSkeletons();
+        await new Promise(r => setTimeout(r, 900));
+        const left = document.querySelectorAll('#view-overview .hub-skel,#view-overview .hub-skel-on').length;
+        const ov = document.getElementById('view-overview'); ov.id = 'x-ov';
+        const none = _hubApplySkeletons().length;
+        ov.id = 'view-overview';
+        return { ok: true, per, left, none };
+      } catch (e) { return { ok: false, err: e.message }; }
+    });
+    expect(r.ok).toBe(true);
+    expect(r.per.length).toBeGreaterThan(0);
+    expect(r.per.every(n => n === 1)).toBe(true);
+    expect(r.left).toBe(0);
+    expect(r.none).toBe(0);
+    assertNoErrors(page, 'hub skeleton helpers');
+  });
+
+  test('reduced motion: the hub goes straight to its data, no shimmer', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    await page.addInitScript(h => { window.__mockHubData = h; window._forceBootDwell = true; }, HUB_FULL());
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => document.getElementById('view-overview').classList.contains('hub-cascade'), { timeout: 8000 });
+    expect(await page.locator('#view-overview .hub-skel').count()).toBe(0);
+    await ctx.close();
   });
 });

@@ -936,11 +936,11 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 /* The boot shimmer is ONE light band sweeping the whole screen on a diagonal
    (owner-approved 2026-09-24), not each bar flickering on its own. The gradient
    is anchored to the page: _dashApplySkeletons sets --sx (the bar's page x plus a
-   share of its y) and a delay that phase-locks every bar to one clock. */
-@keyframes td-skel-sweep{from{background-position:calc(-450px - var(--sx,0px)) 0}to{background-position:calc(450px - var(--sx,0px)) 0}}
+   share of its y) and a delay that phase-locks every bar to one clock. The
+   td-skel-sweep and td-data-in keyframes live in js/brand-look.js (shared with
+   the client hub). */
 #pg-dash .td-boot-skel .td-skel{background:linear-gradient(90deg,var(--border) 0,var(--border) 40%,var(--bg) 50%,var(--border) 60%,var(--border) 100%);background-size:900px 100%;animation:td-skel-sweep 1.3s linear infinite}
 /* Data lands: each card's real content comes into focus where its shimmer was. */
-@keyframes td-data-in{from{opacity:0;filter:blur(3px)}to{opacity:1;filter:none}}
 #pg-dash .td-data-in>*{animation:td-data-in .3s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){#pg-dash .td-boot-skel .td-skel{animation:none}#pg-dash .td-data-in>*{animation:none}}
 /* ── The Dispatch crew map (js/day-map.js) ──────────────────────────────────
