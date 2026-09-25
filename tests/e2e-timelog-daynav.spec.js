@@ -480,7 +480,11 @@ test.describe('the crew payload is cached so a local write paints at once', () =
       let hits = 0, slow = false;
       window._fetchCrewLabor = async () => {
         hits++;
-        if (slow) await new Promise(x => setTimeout(x, 400));
+        // The proof is "faster than the network", so the network is made far
+        // slower than any paint. At 400ms the render itself plus saveAll could
+        // reach the limit on a loaded WebKit runner (407ms, shard 3,
+        // 2026-09-25) without anything having waited on the fetch.
+        if (slow) await new Promise(x => setTimeout(x, 2000));
         return { name: {}, entries: [], shopEntries: [] };
       };
       try {
@@ -491,7 +495,7 @@ test.describe('the crew payload is cached so a local write paints at once', () =
         const t0 = Date.now();
         _tlAddUnaccounted(a, b, 'work');
         // One macrotask. If the paint were still behind _fetchCrewLabor the
-        // 400ms stub could not have resolved and the row would not be there.
+        // 2s stub could not have resolved and the row would not be there.
         await new Promise(x => setTimeout(x, 0));
         const rows = await _timeLogRows(null, { crewCached: true });
         return { added: timeEntries.length - before, ms: Date.now() - t0,
@@ -500,7 +504,7 @@ test.describe('the crew payload is cached so a local write paints at once', () =
     });
     expect(r.added).toBe(1);
     expect(r.landed).toBe(true);
-    expect(r.ms).toBeLessThan(400);
+    expect(r.ms).toBeLessThan(2000);
   });
 
   // The revalidate is fired but never awaited, and an async function runs to

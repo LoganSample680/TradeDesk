@@ -2490,6 +2490,11 @@ function removeJobSpec(jobId,idx,clientId){
 }
 async function _drainPhotoQueue(){
   if(!supaEnabled()||!_supaUser||!_supa)return;
+  // How many are stuck on this phone, before the retry (js/photo-capture.js).
+  if(typeof _pcReportPending==='function')_pcReportPending();
+  // The photo outbox (js/photo-capture.js) holds every TrueShot photo still
+  // waiting, full size, and sends it filed wherever it is filed now.
+  if(typeof tdPhotoFlush==='function')tdPhotoFlush();
   let dirty=false;
   for(const j of jobs){
     if(!j.photos)continue;

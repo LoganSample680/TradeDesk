@@ -1432,9 +1432,12 @@ test.describe('dashboard.js: exhaustive coverage', () => {
             over: paint(mk()),
             // Still inside the workday: home at lunch is still the workday.
             midday: paint(mk({ counts: true })),
-            // Not counting at a CUSTOMER's address is a different fact and
-            // still worth showing: only the house is suppressed.
-            client: paint(mk({ atHome: false, counts: false, kind: 'client', name: 'John Doe' })) };
+            // Not counting away from home used to be shown. The deriver only
+            // says that now for a Time off day (rule 25, owner 2026-09-24:
+            // "still counting his hours even after the vacation fix"), and a
+            // figure ticking at the rental is the same refusal to stop.
+            client: paint(mk({ atHome: false, counts: false, kind: 'client', name: 'John Doe' })),
+            clientCounted: paint(mk({ atHome: false, counts: true, kind: 'client', name: 'John Doe' })) };
         } catch (e) { return { ok: false, err: e.message }; }
         finally { _nearbyJob = origNb; _activeTimer = origTimer; window._geoOpenDwell = origDwell; }
       });
@@ -1442,7 +1445,8 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.over).not.toContain('data-onsite-since');
       expect(r.over).not.toContain('TradeDesk shop');
       expect(r.midday).toContain('data-onsite-since');
-      expect(r.client).toContain('data-onsite-since');
+      expect(r.client).not.toContain('data-onsite-since');
+      expect(r.clientCounted).toContain('data-onsite-since');
     });
 
     test('no job scheduled today, Clock in falls back to the client\'s nearest open job', async () => {

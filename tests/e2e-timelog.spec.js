@@ -6159,7 +6159,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('the stop offers Save, wired to the leg and the day it belongs to', async () => {
       const h = await render();
-      expect(h).toMatch(/Save this address/);
+      // WAS "Save this address". The row now asks business or personal
+      // (owner 2026-09-24) and the save IS the business answer, so the chip
+      // is labelled Business.
+      expect(h).toMatch(/> Business<\/button>/);
       expect(h, 'the same chip the question row uses, not a new control').toMatch(/class="tl-rail-chip"/);
       expect(h).toMatch(/_mileSaveStopAddress\('j-abc:s0','2026-09-09'\)/);
     });
@@ -6209,6 +6212,104 @@ test.describe('timelog.js: exhaustive coverage', () => {
         try { return String(_tlRailRow(r)); } finally { window._tlViewOnly = false; }
       }, STOP);
       expect(h).not.toMatch(/_mileSaveStopAddress/);
+    });
+  });
+
+  // ── WHAT WAS THERE, WITHOUT A TAP (owner 2026-09-24) ──────────────────
+  // "It should just pop the address up and have it greyed so it asks if it
+  // was personal or business ... anything marked as personal says personal
+  // but doesn't show what was there, having the business name in the day
+  // rail would be killer."
+  test.describe('the rail names an unsaved stop by itself', () => {
+    const STOP = { source: 'auto', rawSource: 'unsaved', rawId: 'row-1', clientName: 'Unsaved address',
+                   clientKey: 'd-j-hd', date: '2026-09-09', minutes: 16, personUid: null,
+                   startTime: '2026-09-09T19:05:42.000Z', endTime: '2026-09-09T19:21:26.000Z' };
+    const LEG = { legKey: 'j-hd', id: 'j-hd', gps: true, date: '2026-09-09',
+      toCoord: { lat: 39.0451214, lng: -95.7584343 } };
+    // Apple is stood in for at its one door (_stopNameLookup), and the cache
+    // starts empty on every test.
+    const run = (over, answer, legs) => page.evaluate(async ([r, ans, L]) => {
+      // `mileage` is a script-level let (js/data.js), so it is assigned by
+      // name: window.mileage would be a different variable.
+      const keep = { mile: mileage, look: window._stopNameLookup };
+      const asked = [];
+      mileage = L;
+      const reset = () => { clearTimeout(_stopNameTimer); _stopNameTimer = null;
+        _stopNameQueue.length = 0; _stopNameBusy.clear();
+        localStorage.removeItem('zp3_stop_names'); _stopNames = null; };
+      reset();
+      window._stopNameLookup = (c) => { asked.push(c); return Promise.resolve(ans === 'cannot' ? undefined : ans); };
+      try {
+        const first = String(_tlRailRow(r));
+        await new Promise(res => setTimeout(res, 150));
+        const second = String(_tlRailRow(r));
+        await new Promise(res => setTimeout(res, 150));
+        const third = String(_tlRailRow(r));
+        return { first, second, third, asked: asked.length, stored: localStorage.getItem('zp3_stop_names') };
+      } finally { mileage = keep.mile; window._stopNameLookup = keep.look; reset(); }
+    }, [Object.assign({}, STOP, over || {}), answer, legs === undefined ? [LEG] : legs]);
+
+    test('the business Apple finds shows greyed, with its street, once looked up', async () => {
+      const r = await run({}, { name: 'The Home Depot', addr: '5900 SW Huntoon St, Topeka, KS 66604, United States' });
+      expect(r.first, 'nothing yet on the first paint').not.toContain('The Home Depot');
+      expect(r.second).toContain('The Home Depot');
+      expect(r.second).toMatch(/style="color:var\(--text3\)">The Home Depot/);
+      expect(r.second).toContain('5900 SW Huntoon St, Topeka');
+      expect(r.asked, 'one lookup, not one per paint').toBe(1);
+    });
+
+    test('it asks business or personal, and neither answer is a new control', async () => {
+      const r = await run({}, { name: 'The Home Depot', addr: '' });
+      expect(r.second).toMatch(/> Business<\/button>/);
+      expect(r.second).toMatch(/_mileSaveStopAddress\('d-j-hd','2026-09-09'\)/);
+      expect(r.second).toMatch(/_visitHoldAnswer\('row-1','personal'\)/);
+    });
+
+    test('a spot with only a street shows the street', async () => {
+      const r = await run({}, { name: null, addr: '1100 SW Wanamaker Rd, Topeka, KS' });
+      expect(r.second).toContain('1100 SW Wanamaker Rd');
+    });
+
+    test('a stop answered Personal still says what was there', async () => {
+      const r = await run({ rawSource: 'dismissed', unpaid: true }, { name: 'Lowe\'s', addr: '' });
+      expect(r.second).toContain('Lowe');
+      expect(r.second, 'and it is still a Personal row').toContain('Personal');
+    });
+
+    test('nothing found is remembered, so the rail never asks again all day', async () => {
+      const r = await run({}, null);
+      expect(r.asked).toBe(1);
+      expect(r.third).not.toMatch(/color:var\(--text3\)">/);
+      expect(r.stored).toContain('"name":""');
+    });
+
+    test('MapKit not ready is not a miss: nothing is remembered, it asks again later', async () => {
+      const r = await run({}, 'cannot');
+      expect(r.stored === null || r.stored === '{}').toBe(true);
+      expect(r.asked).toBeGreaterThanOrEqual(2);
+    });
+
+    test('a named row keeps its own name and never looks anything up', async () => {
+      const r = await run({ rawSource: 'client', clientName: 'John Doe' }, { name: 'Nope', addr: '' });
+      expect(r.asked).toBe(0);
+      expect(r.second).not.toContain('Nope');
+    });
+
+    test('a stop with no spot behind it asks nothing and still offers Personal', async () => {
+      const r = await run({}, { name: 'Nope', addr: '' }, []);
+      expect(r.asked).toBe(0);
+      expect(r.second).toMatch(/_visitHoldAnswer\('row-1','personal'\)/);
+      expect(r.second).not.toMatch(/_mileSaveStopAddress/);
+    });
+
+    test('a corrupted cache is ignored, never thrown', async () => {
+      const ok = await page.evaluate(() => {
+        localStorage.setItem('zp3_stop_names', '{BROKEN{{'); _stopNames = null;
+        try { _stopNameFor('d-x', '2026-09-09'); _stopNameFor(null, null); _stopNameFor(); return true; }
+        catch (e) { return String(e.message); }
+        finally { localStorage.removeItem('zp3_stop_names'); _stopNames = null; }
+      });
+      expect(ok).toBe(true);
     });
   });
 

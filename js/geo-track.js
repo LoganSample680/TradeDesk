@@ -8567,6 +8567,8 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.
       clocks:_geoDeriveClocks(b.start,b.end),clockHistory:_geoClockHistory(),workHours:_geoWorkHours(),
+      // Rule 25: the account's Time off blocks, the same ones the server reads.
+      timeOff:(typeof S!=='undefined'&&S&&Array.isArray(S.timeOff))?S.timeOff:[],
     });
     // MISSING EVIDENCE IS NOT AN EMPTY DAY (owner 2026-09-02, 22:33: "my
     // mileage gone for today when I should have four trips"). The tape had
