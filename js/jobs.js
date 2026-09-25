@@ -2490,6 +2490,8 @@ function removeJobSpec(jobId,idx,clientId){
 }
 async function _drainPhotoQueue(){
   if(!supaEnabled()||!_supaUser||!_supa)return;
+  // How many are stuck on this phone, before the retry (js/photo-capture.js).
+  if(typeof _pcReportPending==='function')_pcReportPending();
   let dirty=false;
   for(const j of jobs){
     if(!j.photos)continue;
