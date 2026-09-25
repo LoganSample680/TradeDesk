@@ -10,8 +10,10 @@
  * money: the tankless is already on the estimate, the valves are missing, and
  * nobody notices until the truck is at the house.
  *
- * Source is his own bids, same as the packages. No catalog, so it can never
- * suggest work he does not do.
+ * Source is his own bids, same as the packages. Since 2026-09-25 the trade
+ * library (js/trade-knowledge.js) fills in behind them; this describe block
+ * switches the library off so it keeps testing the learned half on its own,
+ * and the block at the bottom tests the two together.
  *
  * What we verify:
  *  1. The association is real: with the anchor, most of the time, and MORE
@@ -70,7 +72,9 @@ test.describe('attach suggestions', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
-    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; window._byoAutosave = () => {}; });
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; window._byoAutosave = () => {};
+      // The learned half on its own (see the header). Restored in afterAll.
+      window.__tkKeep = window.tkMissedFor; window.tkMissedFor = () => []; });
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -285,4 +289,101 @@ test.describe('attach suggestions', () => {
   test('no console errors', async () => {
     assertNoErrors(page);
   });
+});
+
+// ── The trade library fills in behind his history (owner 2026-09-25) ───────
+// "filling in the gaps contractors miss to generate professional highly
+// closing proposals." A contractor with no bids yet still hears that a water
+// heater wants an expansion tank, on the same card, with the same Add.
+test.describe('attach suggestions: the trade library', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; window._byoAutosave = () => {}; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const open = (labels) => page.evaluate((ls) => {
+    bids = bids.filter(b => b.client_id !== 89501);
+    _geiEditBidId = 89600; _geiClientId = 89501; _geiIsFreeForm = true; _geiIsTM = false; _geiTrade = 'plumbing';
+    _attachSkipped = [];
+    _byoItems = ls.map((l, i) => _byoNormItem({ id: i + 1, section: 'Work', label: l, qty: 1, unit: 'ea', rate: 1200, on: true }));
+    _geiLines = []; _geiScopeChips = [];
+  }, labels);
+
+  test('a water heater with no history behind it still gets the expansion tank and the permit', async () => {
+    await open(['Water heater (40gal gas)']);
+    const r = await page.evaluate(() => _attachSuggestions('plumbing').map(s => ({ label: s.line.label, lib: !!s.lib, why: s.why })));
+    const labels = r.map(x => x.label);
+    expect(labels).toContain('Thermal expansion tank');
+    expect(labels).toContain('Water heater permit & inspection');
+    expect(r.every(x => x.lib && x.why), 'every library row says why').toBe(true);
+    expect(r.length).toBeLessThanOrEqual(6);
+  });
+
+  test('the card says why instead of "on n of your last m"', async () => {
+    await open(['Water heater (40gal gas)']);
+    const html = await page.evaluate(() => _attachCardHTML());
+    expect(html).toContain('Thermal expansion tank');
+    expect(html).toContain('closed system');
+    expect(html).not.toMatch(/of your last/);
+  });
+
+  test('Add puts it on the bid at a starting price, and it leaves the card', async () => {
+    await open(['Water heater (40gal gas)']);
+    const r = await page.evaluate(() => {
+      const s = _attachSuggestions('plumbing').find(x => x.line.label === 'Thermal expansion tank');
+      _attachAdd(s.key);
+      const row = _byoItems.find(x => x.label === 'Thermal expansion tank');
+      return { rate: row && row.rate, still: _attachSuggestions('plumbing').some(x => x.line.label === 'Thermal expansion tank') };
+    });
+    expect(r.rate, 'never a zero line').toBeGreaterThan(0);
+    expect(r.still).toBe(false);
+  });
+
+  test('his own price wins over the library\'s starting price', async () => {
+    await open(['Water heater (40gal gas)']);
+    const rate = await page.evaluate(() => {
+      S.priceBook = S.priceBook || {}; S.priceBook.plumbing = [{ desc: 'Thermal expansion tank', unit: 'ea', rate: 240, n: 3 }];
+      try {
+        const s = _attachSuggestions('plumbing').find(x => x.line.label === 'Thermal expansion tank');
+        _attachAdd(s.key);
+        return _byoItems.find(x => x.label === 'Thermal expansion tank').rate;
+      } finally { S.priceBook.plumbing = []; }
+    });
+    expect(rate).toBe(240);
+  });
+
+  test('something already on the bid under his own words is not offered again', async () => {
+    await open(['Water heater (40gal gas)', 'Expansion tank install']);
+    const labels = await page.evaluate(() => _attachSuggestions('plumbing').map(s => s.line.label));
+    expect(labels).not.toContain('Thermal expansion tank');
+  });
+
+  test('Not this time hides it for this estimate', async () => {
+    await open(['Water heater (40gal gas)']);
+    const labels = await page.evaluate(() => {
+      const s = _attachSuggestions('plumbing').find(x => x.line.label === 'Drip pan with drain line');
+      _attachSkip(s.key);
+      return _attachSuggestions('plumbing').map(x => x.line.label);
+    });
+    expect(labels).not.toContain('Drip pan with drain line');
+  });
+
+  test('a line the library does not know offers nothing and draws no card', async () => {
+    await open(['Custom thing nobody sells']);
+    expect(await page.evaluate(() => _attachCardHTML())).toBe('');
+  });
+
+  test('no horizontal bleed at 390px with the library card up', async () => {
+    await open(['Water heater (40gal gas)']);
+    const bleed = await page.evaluate(() => { _byoShowPage(); _byoRenderSections(); return document.documentElement.scrollWidth - window.innerWidth; });
+    expect(bleed).toBeLessThanOrEqual(1);
+  });
+
+  test('no console errors, trade library', async () => { assertNoErrors(page); });
 });
