@@ -2496,6 +2496,39 @@ async function _drainPhotoQueue(){
   // waiting, full size, and sends it filed wherever it is filed now.
   if(typeof tdPhotoFlush==='function')tdPhotoFlush();
   let dirty=false;
+  // PHOTOS FILED TO AN ADDRESS, NOT A JOB (Jack, 2026-09-24: four photos at
+  // one house, one came through). tdSavePhoto (js/photo-capture.js) keeps a
+  // photo whose upload failed as a pending row in photos[], and this queue
+  // used to walk jobs[].photos only, so a photo with no job was never tried
+  // again. The row is finished IN PLACE (same id), never pushed as a new one.
+  for(const row of photos){
+    if(!row||!row.pendingUpload||!row.data||row.storagePath)continue;
+    try{
+      const mime=row._uploadMime||'image/jpeg';
+      const b64=String(row.data).split(',')[1]||row.data;
+      const bytes=Uint8Array.from(atob(b64),ch=>ch.charCodeAt(0));
+      const rawBlob=new Blob([bytes],{type:mime});
+      const _cp=await _compressPhoto(rawBlob);
+      const ext=_cp?_cp.ext:(row._uploadExt||'jpg');
+      const scope=row.job_id!=null?('job-'+row.job_id):row.bid_id!=null?('bid-'+row.bid_id):row.client_id!=null?('client-'+row.client_id):'unfiled';
+      const path=_supaUser.id+'/'+scope+'/'+(row.type||'photo')+'-'+Date.now()+'.'+ext;
+      const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:rawBlob,{contentType:_cp?_cp.mime:mime,upsert:false,cacheControl:_PHOTO_CACHE});
+      if(error)continue;
+      const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+      const publicUrl=urlData?.publicUrl||'';
+      if(!publicUrl)continue;
+      const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
+      row.url=publicUrl;row.storagePath=path;row.thumbUrl=thumbUrl;row.thumbPath=thumbPath;
+      delete row.data;delete row.pendingUpload;delete row._uploadExt;delete row._uploadMime;
+      // Its twin on the job sheet (same shot, same timestamp) is done too, or
+      // the job loop below would upload it a second time.
+      const j=row.job_id!=null?jobs.find(x=>String(x.id)===String(row.job_id)):null;
+      const twin=j&&Array.isArray(j.photos)?j.photos.find(p=>p&&p.pendingUpload&&p.ts===row.uploadedAt):null;
+      if(twin){delete twin.pendingUpload;delete twin._uploadExt;delete twin._uploadMime;}
+      if(row.client_id!=null&&typeof _uploadClientHub==='function')_uploadClientHub(row.client_id).catch(()=>{});
+      dirty=true;
+    }catch(_e){}
+  }
   for(const j of jobs){
     if(!j.photos)continue;
     for(const p of j.photos){
