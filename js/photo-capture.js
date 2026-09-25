@@ -263,7 +263,7 @@ function _pcObTx(mode,fn){
 }
 // What the row needs to be rebuilt if the phone loses it: where it is filed,
 // what it is, where and when it was taken. Never the bytes (those are the
-// entry's own blob) and never a url (it has none yet).
+// entry's own buf) and never a url (it has none yet).
 const _PC_OB_META=['id','type','caption','client_id','client_name','bid_id','bid_name','job_id','job_name','addr','addrM',
   'lat','lon','accM','by','uploadedAt','stamped','imported','shotPx'];
 function _pcRowMeta(row){const m={};_PC_OB_META.forEach(k=>{if(row&&row[k]!==undefined)m[k]=row[k];});return m;}
@@ -296,14 +296,22 @@ async function _pcOutboxAll(){
 }
 // Filing a photo after it was taken moves it in the outbox too, so a photo
 // the phone has to rebuild from the outbox still lands where it was filed.
-async function _pcOutboxTouch(row){
-  try{
-    if(!row)return false;
-    const cur=await _pcObTx('readonly',st=>st.get(String(row.id)));
-    if(!cur||cur===true)return false;
-    cur.meta=_pcRowMeta(row);
-    return !!(await _pcObTx('readwrite',st=>st.put(cur)));
-  }catch(_e){return false;}
+// Touches run one after another, and a flush waits for them, so a photo
+// filed a moment before signal returns never goes up under its old filing.
+let _pcTouching=Promise.resolve();
+function _pcOutboxTouch(row){
+  if(!row)return Promise.resolve(false);
+  const meta=_pcRowMeta(row),id=String(row.id);
+  const run=_pcTouching.then(async()=>{
+    try{
+      const cur=await _pcObTx('readonly',st=>st.get(id));
+      if(!cur||cur===true)return false;
+      cur.meta=meta;
+      return !!(await _pcObTx('readwrite',st=>st.put(cur)));
+    }catch(_e){return false;}
+  });
+  _pcTouching=run.catch(()=>false);
+  return run;
 }
 // A display copy small enough for localStorage: 1024px, the size the album and
 // the viewer show before the stored full-resolution copy exists.
@@ -323,6 +331,7 @@ async function _pcPreviewDataUrl(file){
 // wiped localStorage) while it is still waiting in the outbox, so it shows in
 // the album and the tray even before there is signal to send it.
 async function _pcOutboxRestore(){
+  await _pcTouching;
   const recs=await _pcOutboxAll();
   let n=0;
   const me=_pcAcct();
