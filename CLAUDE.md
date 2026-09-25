@@ -2056,9 +2056,15 @@ it runs with no signal, costs nothing per command, and nothing said to Tim
 leaves the phone. That last part is a promise made to a real customer, not a
 preference.
 
-- **Tim owns no trade knowledge and must not grow any.** What a repipe drags in
-  with it belongs in the price book, written once at setup and priced by the
-  contractor, never guessed at 7am. Same argument as `js/estimate-speak.js`.
+- **Tim knows the trade, as data, in one place (owner 2026-09-25, reversing
+  the 2026-09-17 line "Tim owns no trade knowledge"): "Tim should know trade
+  knowledge ... filling in the gaps contractors miss."** It lives in
+  `js/trade-knowledge.js`: per job, the professional scope text and the
+  commonly missed items. Tim, the spoken estimate and the estimate builder's
+  "Usually goes with this" card all read that one table; nobody grows a private
+  copy. Still no model and no network. Missed items are OFFERED, never added
+  silently, and PRICES STAY HIS: the library's rate is a starting point and the
+  price book wins the moment he has priced the item.
 - **Every sentence Tim could not place gets logged.** That miss list is the
   vocabulary roadmap, written by real contractors instead of guessed. It is how
   he gets smarter without a model.

@@ -10,11 +10,13 @@
 // price book. That is string matching, so he runs in a basement with no signal,
 // costs nothing per command, and nothing said to him ever leaves the phone.
 //
-// He owns no trade knowledge of his own and must not grow any. What a repipe
-// drags in with it (isolation valves, gas pipe work, a permit) is the price
-// book's job, written once at setup and priced by the contractor, never guessed
-// here at 7am. js/estimate-speak.js makes the same argument for the same reason
-// and Tim is that file's front door, not a replacement for it (7.3).
+// HE KNOWS THE TRADE NOW (owner 2026-09-25, reversing 2026-09-17): "Tim
+// should know trade knowledge." Not in this file: js/trade-knowledge.js holds
+// it as data, what each job includes and what gets left off, and Tim, the
+// spoken estimate and the estimate builder all read that one table. Prices
+// are still the contractor's; the price book wins over the library's
+// starting numbers. js/estimate-speak.js is still where a spoken estimate is
+// parsed, and Tim is its front door, not a replacement for it (7.3).
 //
 // Everything below is pure except timRun and openTim, the two that touch the app.
 
@@ -224,6 +226,109 @@ function _timDayWord(ymd){
   return isNaN(d)?ymd:d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 }
 
+// ── A lead in one breath (owner 2026-09-25: "go on autopilot and navigate
+// pages correctly for entering leads") ──────────────────────────────────────
+// "New lead Mike Jones, 412 Oak St, Topeka, 316-555-1234, water heater's
+// leaking, found us on Google." Tim pulls the name, address, phone, email and
+// where they came from out of the sentence, saves the customer, and if the
+// sentence names a job he knows, opens the proposal with that job already on
+// it (js/trade-knowledge.js decides which job; the price book decides the
+// price). Pure: text in, fields out. timRun does the saving.
+const _TIM_LEAD_SAID=/\b(?:new|another|add(?: a)?|create(?: a)?|got a|enter(?: a)?|put in(?: a)?)\s+(?:lead|customer|client)\b/i;
+const _TIM_STREET=/\b\d{1,6}\s+(?:[a-z0-9.']+\s+){0,4}?(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|ct|court|blvd|boulevard|way|pl|place|cir|circle|ter|terrace|pkwy|parkway|hwy|highway|trl|trail|loop)\b\.?/i;
+const _TIM_SOURCES=[
+  [/referred by|referral|sent (?:him|her|them) (?:over|to us)|word of mouth/i,'Referral'],
+  [/google|searched online|found us online/i,'Google / online'],
+  [/facebook/i,'Facebook'],[/nextdoor/i,'Nextdoor'],[/instagram/i,'Instagram'],[/craigslist/i,'Craigslist'],
+  [/yard sign/i,'Yard sign'],[/door hanger/i,'Door hanger'],[/truck|van wrap/i,'Vehicle / truck wrap'],
+  [/realtor|real estate/i,'Real estate agent'],[/property manager|landlord/i,'Property manager'],
+  [/repeat customer|used us before|past customer/i,'Repeat customer'],
+];
+// Words that end a name: the next clause has started.
+const _TIM_NAME_STOP=/^(?:at|on|in|with|who|wants|needs|need|want|phone|cell|number|email|lives|address|from|off|by|has|his|her|their|is|says|called|calling|for|about|the|a|an|and)$/i;
+function timLead(text){
+  const raw=String(text||'');
+  const m=_TIM_LEAD_SAID.exec(raw);
+  if(!m)return null;
+  let rest=' '+raw.slice(m.index+m[0].length)+' ';
+  const cut=(s)=>{rest=rest.replace(s,' , ');};
+  let phone='';
+  const pm=rest.match(/(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})\b/);
+  if(pm){phone=pm[1]+pm[2]+pm[3];cut(pm[0]);}
+  let email='';
+  const em=rest.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  if(em){email=em[0].toLowerCase();cut(em[0]);}
+  let ref='';
+  const rm=rest.match(/referred by\s+([a-z][a-z'.-]*(?:\s+[a-z][a-z'.-]*)?)/i);
+  if(rm)ref=rm[1].trim();
+  let source='';
+  for(const [re,label] of _TIM_SOURCES){if(re.test(raw)){source=label;break;}}
+  // The address: a house number, a few words, a street word. The city, state
+  // and zip ride along only when they are the next short pieces.
+  let addr='';
+  const am=_TIM_STREET.exec(rest);
+  if(am){
+    let tail=rest.slice(am.index+am[0].length);
+    let full=am[0].trim().replace(/\.$/,'');
+    const city=/^\s*,?\s*([a-z][a-z .']{1,24}?)\s*(?=,|$)/i.exec(tail);
+    if(city&&city[1].trim().split(/\s+/).length<=3&&!/\d/.test(city[1])&&
+       !(typeof tkJobFor==='function'&&tkJobFor(city[1]))&&!/\b(wants|needs|leak|broke|replace|install|repair|found|referred)\b/i.test(city[1])){
+      full+=', '+city[1].trim();tail=tail.slice(city[0].length);
+      const st=/^\s*,?\s*([a-z]{2})(?:\s+(\d{5}))?\s*(?=,|$)/i.exec(tail);
+      if(st){full+=', '+st[1].toUpperCase()+(st[2]?' '+st[2]:'');tail=tail.slice(st[0].length);}
+    }
+    const zip=/^\s*,?\s*(\d{5})\b/.exec(tail);
+    if(zip){full+=' '+zip[1];tail=tail.slice(zip[0].length);}
+    addr=full;
+    rest=rest.slice(0,am.index)+' , '+tail;
+  }
+  // The name: the first words, stopped by a comma, a digit, or a word that
+  // starts the next clause. Lead-ins ("named", "called", "is") are dropped.
+  const head=rest.replace(/^[\s,:;-]*(?:(?:named|called|name is|name's|is|for)\s+)?/i,'');
+  const words=[];
+  for(const w of head.split(/\s+/)){
+    if(!w)continue;
+    if(/[,;.]/.test(w)){const c=w.replace(/[,;.].*$/,'');if(c&&!_TIM_NAME_STOP.test(c)&&/^[a-z][a-z'-]*$/i.test(c))words.push(c);break;}
+    if(/\d/.test(w)||_TIM_NAME_STOP.test(w)||!/^[a-z][a-z'-]*$/i.test(w))break;
+    words.push(w);
+    if(words.length>=4)break;
+  }
+  const name=words.map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  let job=head.slice(head.indexOf(words.join(' '))+words.join(' ').length);
+  job=job.replace(/referred by\s+[a-z][a-z'.-]*(?:\s+[a-z][a-z'.-]*)?/i,' ')
+    .replace(/\b(?:found|heard about|saw) us (?:on|from|through)\s+[a-z]+/i,' ')
+    .replace(/\b(?:from|on|via|through)\s+(?:google|facebook|nextdoor|instagram|craigslist|a yard sign|a door hanger|our truck)\b/i,' ')
+    .replace(/[\s,;:-]+/g,' ').replace(/^\s*(?:(?:at|and|who|he|she|they|wants|want|needs|need|with|to|has|is)\s+)+/i,'').trim();
+  return {name,phone,email,addr,source,ref,job};
+}
+// Which job the lead's words name, as one line: his price book first, then the
+// catalog, with the trade library deciding between look-alikes ("water heater"
+// is the 40 gallon gas unless he says 50 or electric).
+function timLeadJob(job,trade,book,catalog){
+  const said=String(job||'').toLowerCase();
+  if(!said.trim())return null;
+  const fromBook=(typeof spkServices==='function')?spkServices(said,book,[]):[];
+  if(fromBook.length){const b=fromBook[0];return {desc:b.desc,rate:b.rate,notes:b.notes||''};}
+  const tk=(typeof tkJobFor==='function')?tkJobFor(said,trade):null;
+  const cat=Array.isArray(catalog)?catalog:[];
+  let pick=null;
+  if(tk){
+    let best=-1;
+    cat.forEach(j=>{
+      if(!j||tkJobFor(j.name,trade)!==tk)return;
+      const extra=String(j.name).toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/(\d)([a-z])/g,'$1 $2').split(/\s+/).filter(w=>w.length>1&&said.indexOf(w)>=0).length;
+      if(extra>best){best=extra;pick=j;}
+    });
+  }
+  if(!pick){
+    const s=(typeof spkServices==='function')?spkServices(said,[],cat):[];
+    if(s.length)pick=cat.find(j=>j.name===s[0].desc)||null;
+  }
+  if(!pick)return null;
+  return {desc:pick.name,rate:Math.round((pick.labor||0)+(pick.mat||0)),notes:''};
+}
+function _timPhoneWord(d){return d&&d.length===10?'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6):d;}
+
 // The whole sentence, resolved. Pure: hand it the lists, get back a plan.
 // Order matters. Building beats looking, because a contractor who says
 // "estimate" while describing work wants the builder, not the list of ones he
@@ -236,6 +341,12 @@ function timParse(text,opts){
   // Before the estimate parser: "off" and "for three days" are not a job.
   const off=timTimeOff(said,o.now);
   if(off)return off.open?{text:said,kind:'timeoff-open'}:{text:said,kind:'timeoff',start:off.start,end:off.end,label:off.label};
+
+  const lead=timLead(said);
+  if(lead&&lead.name){
+    const pick=timLeadJob(lead.job,o.trade||'general',o.book,o.catalog);
+    return Object.assign({text:said,kind:'lead',pick},lead);
+  }
 
   const est=(typeof spkParse==='function')
     ? spkParse(said,{clients:o.clients,book:o.book,catalog:o.catalog})
@@ -279,6 +390,10 @@ function timSay(p){
     return p.q?'Search photos for '+p.q:'Search photos';
   }
   if(p.kind==='newclient')return 'Start '+p.subject+' as a new customer';
+  if(p.kind==='lead'){
+    const bits=[p.addr?String(p.addr).split(',')[0]:'',p.phone?_timPhoneWord(p.phone):''].filter(Boolean);
+    return 'Add lead '+p.name+(bits.length?' ('+bits.join(', ')+')':'')+(p.pick?', then start a '+p.pick.desc+' proposal':'');
+  }
   if(p.kind==='timeoff')return 'Mark '+_timDayWord(p.start)+(p.end!==p.start?' to '+_timDayWord(p.end):'')+' as '+p.label.toLowerCase();
   if(p.kind==='timeoff-open')return 'Open your time off';
   if(p.kind==='estimate'){
@@ -298,8 +413,10 @@ function timRun(text){
   const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
   const catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[trade]))?TRADE_JOBS[trade]:[];
-  const p=timParse(text,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,
+  const p=timParse(text,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,trade,
     photos:(typeof photos!=='undefined'?photos:[])});
+
+  if(p.kind==='lead'){_timSaveLead(p,trade);return p;}
 
   if(p.kind==='estimate'&&typeof tdSpeakEstimate==='function'){tdSpeakEstimate(text);return p;}
 
@@ -357,6 +474,49 @@ function timRun(text){
   return p;
 }
 
+// Save the lead, then go where the sentence pointed: the proposal when it named
+// a job, the customer's page when it did not. The customer is created through
+// the one door every other path uses (_clientQuickCreate, js/clients.js), so
+// the funnel event, the hub token and the property lookup all happen as they
+// would from the form (7.3).
+function _timSaveLead(p,trade){
+  if(!p||!p.name)return null;
+  const list=(typeof clients!=='undefined'&&Array.isArray(clients))?clients:[];
+  // Somebody he already has is not a new lead: same phone, or same name at
+  // the same street. He gets the one he has, not a duplicate.
+  const digits=v=>String(v||'').replace(/\D/g,'').slice(-10);
+  let c=list.find(x=>x&&p.phone&&digits(x.phone)===p.phone)||
+        list.find(x=>x&&p.addr&&String(x.name||'').toLowerCase()===p.name.toLowerCase()&&
+          String(x.addr||'').toLowerCase().split(',')[0]===String(p.addr).toLowerCase().split(',')[0])||null;
+  const existed=!!c;
+  if(!c){
+    if(typeof _clientQuickCreate!=='function')return null;
+    c=_clientQuickCreate(p.name,p.addr||'');
+    if(p.phone)c.phone=p.phone;
+    if(p.email)c.email=p.email;
+    if(p.source)c.source=p.source;
+    if(p.ref)c.ref=p.ref;
+    if(p.job)c.notes=p.job.charAt(0).toUpperCase()+p.job.slice(1);
+    if(typeof saveAll==='function')saveAll();
+  }
+  if(typeof showToast==='function')showToast(existed?(c.name+' is already a customer'):('Lead saved: '+c.name),existed?'👤':'✅',2600);
+  if(typeof currentClientId!=='undefined')currentClientId=c.id;
+  if(p.pick&&typeof openFreeFormEstimate==='function'){
+    window._scanEstimateSeed={clientId:c.id,lines:[{desc:p.pick.desc,qty:1,unit:'ea',rate:p.pick.rate,total:p.pick.rate,
+      notes:p.pick.notes||(typeof tkScopeFor==='function'?tkScopeFor(p.pick.desc,trade):''),
+      _byoSection:(typeof _byoWorkSection==='function'?_byoWorkSection():'Work')}],
+      say:p.pick.desc+' is on the proposal'};
+    openFreeFormEstimate(c);
+    // Autopilot means landing where the work is. The setup step it opens on
+    // already holds the defaults (residential, repair, normal hours) and his
+    // customer, so it is one tap he never needed to make.
+    if(typeof goGeiStep==='function'){try{goGeiStep(2);}catch(_e){}}
+  }else if(typeof openClientDetail==='function'){
+    openClientDetail(c.id);
+  }
+  return c;
+}
+
 // ── The box ──────────────────────────────────────────────────────────────────
 // Centered modal, the app's one convention for a prompt (7.3). The mic is the
 // same on-device one every note field already uses (js/voice.js): the words are
@@ -373,7 +533,7 @@ function _timPreview(){
   const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
   const catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[trade]))?TRADE_JOBS[trade]:[];
-  const p=timParse(el.value,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,
+  const p=timParse(el.value,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,trade,
     photos:(typeof photos!=='undefined'?photos:[])});
   const line=timSay(p);
   out.textContent=line||(el.value.trim()?'Not sure what that is yet':'');
@@ -393,7 +553,7 @@ function _timGo(){
   const trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
   const book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[trade]))?S.priceBook[trade]:[];
   const catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[trade]))?TRADE_JOBS[trade]:[];
-  const peek=timParse(said,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,
+  const peek=timParse(said,{clients:(typeof clients!=='undefined'?clients:[]),book,catalog,trade,
     photos:(typeof photos!=='undefined'?photos:[])});
   if(!peek||peek.kind==='none'){
     if(typeof showToast==='function')showToast('Say a screen, a year, or a bid','🔧',2600);

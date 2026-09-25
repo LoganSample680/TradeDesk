@@ -100,7 +100,7 @@ function spkServices(text,book,catalog){
   const out=[];
   (Array.isArray(book)?book:[]).forEach(b=>{
     const s=score(b&&b.desc);
-    if(s>=0.5)out.push({desc:b.desc,rate:Number(b.rate)||0,score:s,from:'book'});
+    if(s>=0.5)out.push({desc:b.desc,rate:Number(b.rate)||0,notes:b.notes||'',score:s,from:'book'});
   });
   if(!out.length){
     (Array.isArray(catalog)?catalog:[]).forEach(j=>{
@@ -149,7 +149,11 @@ function tdSpeakEstimate(text){
       // The trade's own work section, never Materials: "replace the water heater"
       // is the job, not a part, and until the send gate stopped caring, landing
       // it in the wrong section was also what got the whole bid refused.
-      lines:plan.services.map(s=>({desc:s.desc,qty:1,unit:'ea',rate:s.rate,total:s.rate,notes:'',
+      // The client-facing description comes from the trade library when the
+      // book has none (js/trade-knowledge.js): a spoken bid reads like a
+      // written one, and his own words replace it the moment he edits.
+      lines:plan.services.map(s=>({desc:s.desc,qty:1,unit:'ea',rate:s.rate,total:s.rate,
+        notes:s.notes||(typeof tkScopeFor==='function'?tkScopeFor(s.desc,trade):''),
         _byoSection:(typeof _byoWorkSection==='function'?_byoWorkSection():'Work')})),
     };
   }
