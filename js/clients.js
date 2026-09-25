@@ -971,6 +971,18 @@ function getClientStage(cid){
     if(paid.length)return{stage:'paid',label:'Paid in full',color:'var(--green)',priority:8};
   }
 
+  // WORK DONE, NO PAPERWORK (owner 2026-09-25: "after should bring them over
+  // as clients, even without jobs"). An After photo is proof the work
+  // happened. Jack shot After photos at four houses with no job, no signed
+  // proposal and no payment behind any of them, so all four sat in Leads,
+  // one of them as "Abandoned" over a draft proposal. Worked out here, when
+  // the list is drawn, rather than written onto the record, so every
+  // customer already photographed moves over the moment this ships and a
+  // deleted photo moves them back. A signed, scheduled, due or paid job still
+  // wins above, because those say more.
+  if(typeof tdClientHasAfterPhoto==='function'&&tdClientHasAfterPhoto(cid))
+    return{stage:'work_done',label:'Work done: no invoice yet',color:'var(--green)',priority:3};
+
   const pendingBids=cbids.filter(b=>b.status==='Pending');
   if(pendingBids.length){
     const sentBids=pendingBids.filter(b=>b.signingToken);
@@ -1006,11 +1018,12 @@ function renderClientList(){
   if(!el)return;
 
   // Clients page only shows contacts who have signed an estimate (or beyond)
-  const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid'];
+  const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid','work_done'];
   const STAGE_BUCKETS={
     won:    c=>['signed','scheduled'].includes(getClientStage(c.id).stage),
     active: c=>getClientStage(c.id).stage==='active',
-    collect:c=>getClientStage(c.id).stage==='balance_due',
+    // Work done with nothing invoiced is money still to collect.
+    collect:c=>['balance_due','work_done'].includes(getClientStage(c.id).stage),
     closed: c=>getClientStage(c.id).stage==='paid',
   };
 
@@ -1077,6 +1090,7 @@ function renderClientList(){
       balance_due: {cls:'sf-overdue',  label:'BALANCE DUE'},
       paid:        {cls:'sf-won',      label:'PAID'},
       signed:      {cls:'sf-deposit',  label:'SIGNED'},
+      work_done:   {cls:'sf-overdue',  label:'WORK DONE'},
       est_ready:   {cls:'sf-deposit',  label:'EST READY'},
     };
     const bdg=bdgMap[s.stage]||{cls:'sf-done',label:s.label.toUpperCase()};

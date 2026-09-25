@@ -104,6 +104,7 @@ function stageAvatar(stage){
     active:'background:var(--green-lt);color:#2D5A14',
     balance_due:'background:#FEE8E8;color:#A32D2D',
     paid:'background:var(--bg2);color:var(--text3)',
+    work_done:'background:var(--green-lt);color:#2D5A14',
   };
   return m[stage]||'background:var(--blue-lt);color:var(--blue-dk)';
 }

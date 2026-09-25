@@ -590,6 +590,27 @@ function tdInheritBidPhotos(bidId,jobId){
 // ── Unfiled: shot with no customer, filed in one tap later ──────────────────
 // This is the CompanyCam behaviour that makes crews actually use a camera:
 // shoot first, decide later. The address guess is the part they do not have.
+// Customers with at least one After photo: the work happened (getClientStage,
+// js/clients.js). Asked once per customer per list draw, so the answer is a
+// Set rebuilt only when the photos change, not a scan per question.
+// Also rebuilt when it is more than a quarter second old: a photo re-filed or
+// re-staged in place changes nothing the key can see, and one list draw is
+// far shorter than that.
+let _pcAfterSet=null,_pcAfterKey='',_pcAfterAt=0;
+function tdClientHasAfterPhoto(cid){
+  try{
+    if(cid==null||!Array.isArray(photos))return false;
+    const last=photos.length?photos[photos.length-1]:null;
+    const key=photos.length+'|'+(last?String(last.id)+String(last.type)+String(last.client_id):'');
+    const now=Date.now();
+    if(!_pcAfterSet||key!==_pcAfterKey||now-_pcAfterAt>250){
+      _pcAfterSet=new Set();
+      photos.forEach(p=>{if(p&&p.type==='after'&&p.client_id!=null)_pcAfterSet.add(String(p.client_id));});
+      _pcAfterKey=key;_pcAfterAt=now;
+    }
+    return _pcAfterSet.has(String(cid));
+  }catch(_e){return false;}
+}
 function tdUnfiledPhotos(){
   return photos.filter(p=>p&&p.client_id==null);
 }
