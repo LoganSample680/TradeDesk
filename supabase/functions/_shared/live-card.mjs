@@ -70,7 +70,11 @@ export function railCardFor(rail, opts) {
   // A dwell is a place he is standing; a pending chain is a drive that has
   // not closed yet. When the deriver hands back both, the dwell is the newer
   // fact and the one worth a card.
-  if (d && Number(d.sinceTs) > 0) {
+  // NOT COUNTED IS NOT A TIMER (owner 2026-09-24, rule 25). On a Time off day
+  // the deriver says the stop earns nothing, and a clock running up from the
+  // arrival reads as hours. It falls through to the drive, like the phone's
+  // twin; home keeps its own answer inside.
+  if (d && Number(d.sinceTs) > 0 && (d.atHome || d.counts !== false)) {
     // HOME IS NOT A CARD (owner 2026-09-03: "I need it to go away or be very
     // small, right now it's wasted space running when I'm home and done
     // working"). The deriver answers this, not this file: a home office and a
