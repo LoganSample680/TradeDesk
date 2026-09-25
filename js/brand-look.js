@@ -53,7 +53,10 @@ function tdLogoLook(img){
     const accent=(top&&top[0]>=N*N*0.02)
       ?'#'+[1,2,3].map(i=>Math.round(top[i]/top[0]).toString(16).padStart(2,'0')).join('')
       :null;
-    return{bg,fg:dark?'rgba(255,255,255,.42)':'rgba(0,0,0,.38)',accent,dark};
+    // The same three facts S.logoMeta records in the app (js/settings.js
+    // _logoEnsureMeta), so tdLogoIsTile reads either one.
+    const solid=ea/en>235,ratio=Math.round(img.naturalWidth/Math.max(1,img.naturalHeight)*100)/100;
+    return{bg,fg:dark?'rgba(255,255,255,.42)':'rgba(0,0,0,.38)',accent,dark,solid,ratio,light:!dark&&lum(bgRgb[0],bgRgb[1],bgRgb[2])>0.92};
   }catch(e){return null;}
 }
 // A boot-sized copy of the logo (longest side 600px). A big logo (Jack's is a
@@ -97,6 +100,11 @@ function tdBootCacheLogo(src,cacheKey,cb){
     img.src=src;
   }catch(e){}
 }
+// A logo that is its own dark square (Jack's emblem on black) is shown as a
+// rounded badge with the business name beside it. Put on a white plate or
+// shrunk into a 32px bar it reads as a cut-off black box with text nobody can
+// read. Takes S.logoMeta or a tdLogoLook result.
+function tdLogoIsTile(m){return !!(m&&m.solid&&!m.light&&m.ratio<=1.6);}
 // A short key for a logo, so a cached look is only reused for the same logo.
 function tdLogoKey(src){
   src=String(src||'');if(!src)return'';
@@ -228,4 +236,4 @@ function tdBootFill(ov,o){
   const foot=o.status?o.status:((o.powered&&(o.logo||name))?'Powered by TradeDesk':'');
   if(foot){const f=el('div','bt-foot',foot);f.style.color=fg;ov.appendChild(f);}
 }
-if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdBootCacheLogo,tdBootFill,tdSkelSweep};
+if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdLogoIsTile,tdBootCacheLogo,tdBootFill,tdSkelSweep};

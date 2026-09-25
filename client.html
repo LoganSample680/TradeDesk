@@ -46,6 +46,9 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .topbar{position:fixed;top:0;left:0;right:0;height:52px;background:color-mix(in srgb,var(--denim) 50%,#0b1220);display:flex;align-items:center;padding:0 14px;gap:10px;z-index:100;border-bottom:1px solid rgba(255,255,255,.06)}
 /* His logo on a light plate: a dark logo on a dark bar was unreadable. */
 .topbar-logo-img{height:32px;max-width:124px;object-fit:contain;display:none;border-radius:8px;flex-shrink:0;background:#fff;padding:3px 7px;box-sizing:border-box}
+/* A logo that is its own dark square: a rounded badge, his name beside it
+   (tdLogoIsTile, js/brand-look.js). On the white plate it read as a cut-off box. */
+.topbar-logo-img.tile{width:34px;height:34px;padding:0;background:none;object-fit:cover;border-radius:9px;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
 .topbar-name{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-display)}
 .topbar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .topbar-icon-btn{background:rgba(255,255,255,.08);border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-family:inherit}
@@ -669,6 +672,10 @@ function _hubBootPaint(logo,name,brand){
   const ov=document.getElementById('boot-overlay');
   if(!ov||typeof tdBootFill!=='function')return;
   if(_bootShown.logo===(logo||'')&&_bootShown.name===(name||''))return;
+  // First visit on this device: the screen sat blank until the fetch told us
+  // who the contractor is. His logo gets the whole beat from the moment it
+  // appears, not what is left of it after a slow connection.
+  if(!_bootShown.logo&&!_bootShown.name)window._bootStart=Date.now();
   _bootShown={logo:logo||'',name:name||''};
   tdBootFill(ov,{logo:logo||'',name:name||'',brand:brand||'',cacheKey:_hubUid?'td_hub_look_'+_hubUid:'',
     // A hub whose contractor never picked a colour takes it from the logo.
@@ -1267,8 +1274,18 @@ function applyBranding(h){
   // logoUrl (new snapshots, hosted once, cached forever) with base64 logoData
   // as the legacy fallback so hubs uploaded before the egress fix keep working.
   const _hLogo=h.logoUrl||h.logoData;
-  if(_hLogo){logoEl.src=_hLogo;logoEl.style.display='block';nameEl.style.display='none';}
-  else{nameEl.textContent=h.contractorName||'Project Hub';logoEl.style.display='none';}
+  nameEl.textContent=h.contractorName||'Project Hub';
+  if(_hLogo){
+    logoEl.classList.remove('tile');
+    if(/^https?:/i.test(_hLogo))logoEl.crossOrigin='anonymous';
+    logoEl.onload=()=>{
+      const tile=typeof tdLogoIsTile==='function'&&typeof tdLogoLook==='function'&&tdLogoIsTile(tdLogoLook(logoEl));
+      logoEl.classList.toggle('tile',tile);
+      nameEl.style.display=tile?'':'none';
+    };
+    logoEl.src=_hLogo;logoEl.style.display='block';nameEl.style.display='none';
+  }
+  else{logoEl.style.display='none';nameEl.style.display='';}
   const nci=document.getElementById('nav-client-info');
   if(nci)nci.innerHTML='<div class="nav-client-name">'+esc(h.clientName||'')+'</div>'+(h.clientAddr?'<div class="nav-client-addr">'+esc(h.clientAddr)+'</div>':'');
   const nf=document.getElementById('nav-footer');

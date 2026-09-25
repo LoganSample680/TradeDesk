@@ -519,6 +519,88 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
   });
 });
 
+// Owner 2026-09-25: the white label "looks cutoff" on the home screen. Jack's
+// logo is its own black square; squeezed into a 32px bar (on a white plate in
+// the hub) it read as a hard black box. A logo like that is a rounded badge
+// with his name beside it; any other logo keeps the old treatment.
+test.describe('a square dark logo is a badge with the name beside it', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+    await page.evaluate(DRAW);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('tdLogoIsTile: a dark square is a tile; white, transparent and wide logos are not', async () => {
+    const r = await page.evaluate(async () => {
+      const wide = document.createElement('canvas'); wide.width = 360; wide.height = 100;
+      const x = wide.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 360, 100); x.fillStyle = '#0a8cf5'; x.fillRect(40, 30, 280, 40);
+      const look = async k => tdLogoLook(await __img(k === 'wide' ? wide.toDataURL('image/png') : __logo(k)));
+      const sq = await look('black-blue');
+      return {
+        sq: tdLogoIsTile(sq), sqFacts: [sq.solid, sq.ratio, sq.light],
+        white: tdLogoIsTile(await look('white-red')),
+        clear: tdLogoIsTile(await look('clear-dark')),
+        wide: tdLogoIsTile(await look('wide')),
+        junk: [tdLogoIsTile(null), tdLogoIsTile(undefined), tdLogoIsTile({}), tdLogoIsTile({ solid: true, light: false, ratio: 'x' })],
+        meta: tdLogoIsTile({ solid: true, light: false, ratio: 1 }),
+      };
+    });
+    expect(r.sq).toBe(true);
+    expect(r.sqFacts).toEqual([true, 1, false]);
+    expect(r.white).toBe(false);
+    expect(r.clear).toBe(false);
+    expect(r.wide).toBe(false);
+    expect(r.junk).toEqual([false, false, false, false]);
+    expect(r.meta).toBe(true);   // the app's S.logoMeta shape reads the same
+  });
+
+  test('app bar: the square logo is a rounded badge and his name reads beside it', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = { logoData: S.logoData, logoMeta: S.logoMeta, bname: S.bname };
+      S.logoData = __logo('black-blue'); S.logoMeta = null; S.bname = 'Plumbing Solutions By JS';
+      await _logoEnsureMeta(); applyBrandLogo();
+      const slot = document.querySelector('.brand-logo-slot.mobile-topbar-name');
+      const img = slot.querySelector('img');
+      const out = { h: img.getBoundingClientRect().height, radius: parseFloat(getComputedStyle(img).borderTopLeftRadius), name: slot.textContent.trim(),
+        right: slot.getBoundingClientRect().right <= innerWidth + 1 };
+      // A transparent logo keeps the plain logo, no name beside it.
+      S.logoData = __logo('clear-dark'); S.logoMeta = null; await _logoEnsureMeta(); applyBrandLogo();
+      out.clearName = slot.textContent.trim(); out.clearImg = !!slot.querySelector('img');
+      Object.assign(S, keep); applyBrandLogo();
+      return out;
+    });
+    expect(r.h).toBe(34);
+    expect(r.radius).toBeGreaterThanOrEqual(8);
+    expect(r.name).toBe('Plumbing Solutions By JS');
+    expect(r.right).toBe(true);
+    expect(r.clearImg).toBe(true);
+    expect(r.clearName).toBe('');
+  });
+
+  test('app bar: the name is escaped, and the badge appears once the logo is measured', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = { logoData: S.logoData, logoMeta: S.logoMeta, bname: S.bname };
+      S.logoData = __logo('black-blue'); S.logoMeta = null; S.bname = '<img src=x onerror=window.__pwn=1>';
+      applyBrandLogo();                                   // not measured yet: plain logo
+      for (let i = 0; i < 40 && !document.querySelector('.brand-logo-slot span span'); i++) await new Promise(r => setTimeout(r, 25));
+      const slot = document.querySelector('.brand-logo-slot.mobile-topbar-name');
+      const out = { badge: !!slot.querySelector('span span'), pwn: !!window.__pwn, imgs: slot.querySelectorAll('img').length };
+      Object.assign(S, keep); applyBrandLogo();
+      return out;
+    });
+    expect(r.badge).toBe(true);
+    expect(r.pwn).toBe(false);
+    expect(r.imgs).toBe(1);
+    assertNoErrors(page, 'logo badge');
+  });
+});
+
 test.describe('brand colour from the logo', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
@@ -713,5 +795,45 @@ test.describe('client hub boot', () => {
     await page.waitForFunction(() => document.getElementById('view-overview').classList.contains('hub-cascade'), { timeout: 8000 });
     expect(await page.locator('#view-overview .hub-skel').count()).toBe(0);
     await ctx.close();
+  });
+
+  test('hub bar: a square dark logo is a badge with the name; a clear one stays on its plate', async ({ browser }) => {
+    for (const kind of ['tile', 'clear']) {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+      const page = await ctx.newPage();
+      await page.addInitScript(({ k, uid }) => {
+        const c = document.createElement('canvas'); c.width = c.height = 120; const x = c.getContext('2d');
+        if (k === 'tile') { x.fillStyle = '#000'; x.fillRect(0, 0, 120, 120); }
+        x.fillStyle = '#0a8cf5'; x.beginPath(); x.arc(60, 60, 34, 0, 7); x.fill();
+        window.__mockHubData = { clientId: 933, contractorUserId: uid, contractorName: 'Plumbing Solutions By JS', clientName: 'Dana', logoData: c.toDataURL('image/png'), bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [] };
+      }, { k: kind, uid: FAKE_USER_ID });
+      await mockAllExternal(page);
+      await page.goto(`/client.html?c=933&u=${FAKE_USER_ID}&t=boot933`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForFunction(() => { const l = document.getElementById('topbar-logo-img'); return l && l.complete && l.naturalWidth > 0; }, { timeout: 8000 });
+      await page.waitForTimeout(100);
+      const r = await page.evaluate(() => {
+        const l = document.getElementById('topbar-logo-img'), n = document.getElementById('topbar-name');
+        return { tile: l.classList.contains('tile'), nameShown: getComputedStyle(n).display !== 'none', name: n.textContent, w: l.getBoundingClientRect().width };
+      });
+      if (kind === 'tile') {
+        expect(r.tile).toBe(true); expect(r.nameShown).toBe(true); expect(r.name).toBe('Plumbing Solutions By JS'); expect(r.w).toBe(34);
+      } else {
+        expect(r.tile).toBe(false); expect(r.nameShown).toBe(false);
+      }
+      assertNoErrors(page, 'hub logo badge ' + kind);
+      await ctx.close();
+    }
+  });
+
+  test('first visit: the logo gets the whole beat from the moment it appears', async ({ page }) => {
+    await page.addInitScript(h => { window.__mockHubData = h; window._forceBootDwell = true; }, hub({ contractorName: 'Fresh Co' }));
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => !!document.querySelector('#boot-overlay .bt-name'), { timeout: 8000 });
+    const r = await page.evaluate(() => ({ painted: Date.now(), start: window._bootStart }));
+    // No cache on this device, so the clock restarted when his name went up,
+    // not when the page began to parse.
+    expect(r.painted - r.start).toBeLessThan(1500);
+    expect(await page.locator('#boot-overlay .bt-word').count()).toBe(0);   // never the TradeDesk mark
   });
 });

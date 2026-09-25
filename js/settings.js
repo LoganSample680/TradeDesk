@@ -1102,9 +1102,16 @@ function _logoEnsureMeta(){
   });
 }
 function applyBrandLogo(){
-  try{_logoEnsureMeta();}catch(_e){}
+  // Measure the logo once; the first time it lands, paint again so a square
+  // emblem gets its badge without waiting for the next render.
+  try{const had=!!S.logoMeta;_logoEnsureMeta().then(m=>{if(m&&!had)applyBrandLogo();});}catch(_e){}
+  const tile=typeof tdLogoIsTile==='function'&&tdLogoIsTile(S.logoMeta);
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
-    if(S.logoData){
+    if(S.logoData&&tile){
+      el.innerHTML='<span style="display:inline-flex;align-items:center;gap:9px;min-width:0;max-width:100%">'+
+        '<img src="'+S.logoData+'" style="height:34px;width:34px;object-fit:cover;border-radius:9px;flex-shrink:0;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.18)" alt="">'+
+        '<span style="font-size:15px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(S.bname||'')+'</span></span>';
+    } else if(S.logoData){
       el.innerHTML='<img src="'+S.logoData+'" style="height:32px;max-width:140px;object-fit:contain;display:block" alt="'+escHtml(S.bname||'Logo')+'">';
     } else {
       el.textContent=S.bname||'TradeDesk';

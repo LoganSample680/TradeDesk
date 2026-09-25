@@ -7592,7 +7592,7 @@ function _propCover(o){
   const licTxt=lic?((/^\s*(lic|license|licence|#)/i.test(lic)?'':'Lic. ')+escHtml(lic)):'';
   const contact=[o.bphone?escHtml(o.bphone):'',licTxt].filter(Boolean).join(' &nbsp;·&nbsp; ');
   const meta=(typeof S!=='undefined'&&S&&S.logoMeta)||null;
-  const tile=!!(logo&&meta&&meta.solid&&!meta.light&&meta.ratio<=1.6);
+  const tile=!!(logo&&typeof tdLogoIsTile==='function'&&tdLogoIsTile(meta));
   const nameBlock=`<div style="min-width:0">${name?`<div style="font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1.2;color:#fff">${name}</div>`:''}`+
     (contact?`<div style="font-size:12.5px;color:rgba(255,255,255,.78);margin-top:3px;line-height:1.45">${contact}</div>`:'')+`</div>`;
   const ring='box-shadow:0 0 0 1px rgba(255,255,255,.35),0 8px 22px rgba(0,0,0,.22)';
