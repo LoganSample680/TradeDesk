@@ -104,16 +104,38 @@ async function tdSavePhoto(opts){
   }
 
   // The local copy lands FIRST and unconditionally. A photo taken in a
-  // crawlspace with no bars is still a photo, and the job sheet has always
-  // rendered from this base64 copy rather than from the network.
-  const dataUrl=await _pcReadDataUrl(file);
-  if(!dataUrl)return null;
+  // crawlspace with no bars is still a photo.
+  //
+  // OFFLINE FIRST, FOR REAL (owner 2026-09-25: "if connection is spotty the
+  // photos should still save, then flush up when service restores and attach
+  // right"). The full bytes used to ride in localStorage as base64 on the row
+  // and on the job sheet's copy. iPhone gives localStorage about 5MB and one
+  // 12MP photo is 3 to 5MB of base64, so the second offline photo overflowed
+  // it, the save threw, and what was left lived only in memory until iOS
+  // closed the app. That is how four shots became one.
+  //
+  // Now the full bytes go to the photo outbox (IndexedDB, hundreds of MB,
+  // survives the app being killed) together with where the photo is filed,
+  // and the row keeps only a small display copy. The outbox, not the row, is
+  // the promise: a photo leaves it only once the server has it.
+  // Mid-save the photo is in the outbox but not yet in photos[]; a flush that
+  // runs in that gap must not "restore" it and make a second row.
+  _pcSaving.add(String(row.id));
+  let inBox=false,dataUrl='';
+  try{
+    inBox=await _pcOutboxPut(row,file);
+    dataUrl=inBox?await _pcPreviewDataUrl(file):await _pcReadDataUrl(file);
+  }catch(_e){}
+  if(!dataUrl){_pcSaving.delete(String(row.id));if(inBox)_pcOutboxDel(row.id);return null;}
   if(j){
     if(!Array.isArray(j.photos))j.photos=[];
-    j.photos.push({type,data:dataUrl,ts:row.uploadedAt,caption});
+    // The job sheet's copy points at the same outbox entry, so the one upload
+    // finishes both and the retry never sends the photo twice.
+    j.photos.push(inBox?{type,data:dataUrl,ts:row.uploadedAt,caption,outboxId:String(row.id)}:{type,data:dataUrl,ts:row.uploadedAt,caption});
   }
   row.data=dataUrl;
   photos.push(row);
+  _pcSaving.delete(String(row.id));
   saveAll();
   _pcTel('photo_taken',row,opts.imported?'import':'');
 
@@ -122,6 +144,22 @@ async function tdSavePhoto(opts){
     _pcTel('photo_upload_failed',row,(typeof supaEnabled==='function'&&supaEnabled())?'signed-out':'offline');
     return row;
   }
+  if(!(await _pcUploadRow(row,file))){
+    _pcMarkPending(row,j,file);
+    _pcFlushSoon();
+  }
+  return row;
+}
+// Upload one row's bytes and finish it: the row, the job sheet's copy, the
+// outbox entry. Shared by the first try (tdSavePhoto) and every retry
+// (tdPhotoFlush), so a retried photo lands exactly like a first-time one:
+// same compression, same GPS in the file, same full-resolution copy, filed
+// wherever the row says it is filed NOW.
+async function _pcUploadRow(row,file){
+  if(!row||!file)return false;
+  if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa))return false;
+  const jobId=row.job_id!=null?row.job_id:null,bidId=row.bid_id!=null?row.bid_id:null,clientId=row.client_id!=null?row.client_id:null;
+  const type=row.type||'before';
   try{
     const _cp=await _compressPhoto(file);
     const ext=_cp?_cp.ext:((file.name||'').split('.').pop()||'jpg').toLowerCase();
@@ -152,15 +190,174 @@ async function tdSavePhoto(opts){
     // the localStorage footprint of every photo for no gain (the job sheet
     // falls back to url when data is absent).
     delete row.data;
+    delete row.pendingUpload;delete row._uploadExt;delete row._uploadMime;
+    _pcFinishTwin(row);
     saveAll();
+    _pcOutboxDel(row.id);
     _pcTel('photo_uploaded',row);
     if(clientId!=null&&typeof _uploadClientHub==='function')_uploadClientHub(clientId).catch(()=>{});
+    return true;
   }catch(_e){
-    _pcMarkPending(row,j,file);
     _pcTel('photo_upload_failed',row,_pcWhyFailed(_e));
+    return false;
   }
-  return row;
 }
+// The job sheet's copy of an outbox photo, finished when the photo is: it
+// points at the stored file from now on and stops carrying a picture.
+function _pcFinishTwin(row){
+  try{
+    const id=String(row.id);
+    (Array.isArray(jobs)?jobs:[]).forEach(j=>{
+      (j&&Array.isArray(j.photos)?j.photos:[]).forEach(t=>{
+        if(!t||t.outboxId!==id)return;
+        t.url=row.url;t.storagePath=row.storagePath;
+        delete t.data;delete t.pendingUpload;delete t.outboxId;
+      });
+    });
+  }catch(_e){}
+}
+
+// ── The photo outbox (IndexedDB) ─────────────────────────────────────────────
+// One entry per photo not yet on the server: the full bytes, which account
+// took it, and where it is filed. Every step fails soft: no IndexedDB (a
+// private window, an old webview) means tdSavePhoto keeps the old in-row copy
+// instead, which is what it did before this existed.
+const _PC_OB_DB='td_photo_outbox',_PC_OB_STORE='items';
+const _pcSaving=new Set();
+let _pcObDb=null;
+function _pcObOpen(){
+  if(_pcObDb)return _pcObDb;
+  _pcObDb=new Promise(res=>{
+    try{
+      if(typeof indexedDB==='undefined'||!indexedDB){res(null);return;}
+      const rq=indexedDB.open(_PC_OB_DB,1);
+      rq.onupgradeneeded=()=>{try{rq.result.createObjectStore(_PC_OB_STORE,{keyPath:'id'});}catch(_e){}};
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>res(null);
+      rq.onblocked=()=>res(null);
+    }catch(_e){res(null);}
+  }).then(db=>{if(!db)_pcObDb=null;return db;});
+  return _pcObDb;
+}
+function _pcObTx(mode,fn){
+  return _pcObOpen().then(db=>new Promise(res=>{
+    if(!db){res(null);return;}
+    try{
+      const tx=db.transaction(_PC_OB_STORE,mode),st=tx.objectStore(_PC_OB_STORE);
+      let out=null;
+      const r=fn(st);
+      if(r)r.onsuccess=()=>{out=r.result;};
+      tx.oncomplete=()=>res(out===null?true:out);
+      tx.onerror=()=>res(null);tx.onabort=()=>res(null);
+    }catch(_e){res(null);}
+  }));
+}
+// What the row needs to be rebuilt if the phone loses it: where it is filed,
+// what it is, where and when it was taken. Never the bytes (those are the
+// entry's own blob) and never a url (it has none yet).
+const _PC_OB_META=['id','type','caption','client_id','client_name','bid_id','bid_name','job_id','job_name','addr','addrM',
+  'lat','lon','accM','by','uploadedAt','stamped','imported','shotPx'];
+function _pcRowMeta(row){const m={};_PC_OB_META.forEach(k=>{if(row&&row[k]!==undefined)m[k]=row[k];});return m;}
+function _pcAcct(){try{return (typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';}catch(_e){return '';}}
+async function _pcOutboxPut(row,file){
+  try{
+    if(!row||!file)return false;
+    const ok=await _pcObTx('readwrite',st=>st.put({id:String(row.id),blob:file,name:file.name||'photo.jpg',
+      mime:file.type||'image/jpeg',acct:_pcAcct(),meta:_pcRowMeta(row),ts:Date.now()}));
+    return !!ok;
+  }catch(_e){return false;}
+}
+function _pcOutboxDel(id){try{return _pcObTx('readwrite',st=>st.delete(String(id)));}catch(_e){return Promise.resolve(null);}}
+async function _pcOutboxAll(){
+  try{const r=await _pcObTx('readonly',st=>st.getAll());return Array.isArray(r)?r:[];}catch(_e){return [];}
+}
+// Filing a photo after it was taken moves it in the outbox too, so a photo
+// the phone has to rebuild from the outbox still lands where it was filed.
+async function _pcOutboxTouch(row){
+  try{
+    if(!row)return false;
+    const cur=await _pcObTx('readonly',st=>st.get(String(row.id)));
+    if(!cur||cur===true)return false;
+    cur.meta=_pcRowMeta(row);
+    return !!(await _pcObTx('readwrite',st=>st.put(cur)));
+  }catch(_e){return false;}
+}
+// A display copy small enough for localStorage: 1024px, the size the album and
+// the viewer show before the stored full-resolution copy exists.
+async function _pcPreviewDataUrl(file){
+  try{
+    let bmp;
+    try{bmp=await createImageBitmap(file,{imageOrientation:'from-image'});}catch(_e){bmp=await createImageBitmap(file);}
+    const sc=Math.min(1,1024/Math.max(bmp.width,bmp.height));
+    const cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(bmp.width*sc));cv.height=Math.max(1,Math.round(bmp.height*sc));
+    cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+    const d=cv.toDataURL('image/jpeg',0.8);
+    return (d&&d.length>32)?d:await _pcReadDataUrl(file);
+  }catch(_e){return await _pcReadDataUrl(file);}
+}
+// Put back any photo the phone lost track of (a relaunch, a cloud reload, a
+// wiped localStorage) while it is still waiting in the outbox, so it shows in
+// the album and the tray even before there is signal to send it.
+async function _pcOutboxRestore(){
+  const recs=await _pcOutboxAll();
+  let n=0;
+  const me=_pcAcct();
+  for(const rec of recs){
+    if(!rec||!rec.meta)continue;
+    if(rec.acct&&me&&rec.acct!==me)continue;
+    if(_pcSaving.has(String(rec.id)))continue;
+    if(photos.some(p=>p&&String(p.id)===String(rec.id)))continue;
+    const row=Object.assign({url:'',storagePath:'',thumbUrl:'',thumbPath:'',fullPath:''},rec.meta,{id:rec.meta.id!=null?rec.meta.id:rec.id});
+    row.data=await _pcPreviewDataUrl(rec.blob);
+    row.pendingUpload=true;
+    photos.push(row);n++;
+  }
+  if(n){saveAll();try{if(typeof renderDash==='function')renderDash();}catch(_e){}}
+  return n;
+}
+// Send everything in the outbox that belongs to this account. Safe to call
+// any number of times from anywhere: one run at a time, and a photo leaves the
+// outbox only when the server has it.
+let _pcFlushing=null,_pcFlushTimer=null;
+function tdPhotoFlush(){
+  if(_pcFlushing)return _pcFlushing;
+  _pcFlushing=(async()=>{
+    let sent=0;
+    try{
+      await _pcOutboxRestore();
+      if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa))return 0;
+      const recs=await _pcOutboxAll();
+      if(recs.length){try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('photo_outbox','photos in outbox '+recs.length,recs.length);}catch(_e){}}
+      for(const rec of recs){
+        if(!rec)continue;
+        if(rec.acct&&rec.acct!==_supaUser.id)continue;
+        const row=photos.find(p=>p&&String(p.id)===String(rec.id));
+        if(!row)continue;
+        if(row.storagePath&&row.url){_pcOutboxDel(rec.id);continue;}
+        let f=rec.blob;
+        try{if(f&&!f.name&&typeof File==='function')f=new File([f],rec.name||'photo.jpg',{type:rec.mime||f.type||'image/jpeg'});}catch(_e){}
+        if(await _pcUploadRow(row,f))sent++;
+      }
+      const left=(await _pcOutboxAll()).filter(r=>r&&(!r.acct||r.acct===_supaUser.id)).length;
+      if(left)_pcFlushSoon();
+      if(sent){try{if(typeof renderDash==='function')renderDash();}catch(_e){}}
+    }catch(_e){}
+    return sent;
+  })().finally(()=>{_pcFlushing=null;});
+  return _pcFlushing;
+}
+// Something is still waiting: try again in a minute, once, not in a loop.
+function _pcFlushSoon(){
+  if(_pcFlushTimer)return;
+  _pcFlushTimer=setTimeout(()=>{_pcFlushTimer=null;tdPhotoFlush();},60000);
+}
+// Signal back, app back in front, app opened: each is a moment to send.
+try{
+  window.addEventListener('online',()=>{tdPhotoFlush();});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')tdPhotoFlush();});
+  window.addEventListener('load',()=>{setTimeout(()=>{tdPhotoFlush();},4000);});
+}catch(_e){}
 // ── Where a photo is, on the server's side (owner 2026-09-25) ──────────────
 // "Why can't we query SQL to see if we have the photo?" Because until the
 // upload succeeds the photo exists only on the phone, and a failure left no
@@ -233,7 +430,9 @@ function _pcMarkPending(row,j,file){
   row.pendingUpload=true;row._uploadExt=ext;row._uploadMime=mime;
   if(j&&Array.isArray(j.photos)&&j.photos.length){
     const last=j.photos[j.photos.length-1];
-    if(last&&!last.pendingUpload){last.pendingUpload=true;last._uploadExt=ext;last._uploadMime=mime;}
+    // An outbox photo's job-sheet copy is finished by the outbox upload; the
+    // job-sheet drain would send its small display copy as a second photo.
+    if(last&&!last.pendingUpload&&!last.outboxId){last.pendingUpload=true;last._uploadExt=ext;last._uploadMime=mime;}
   }
   saveAll();
 }
@@ -446,6 +645,7 @@ function tdFilePhoto(photoId,clientId,bidId,jobId){
     p.job_id=jobId;p.job_name=j?j.name||'':'';
   }
   saveAll();
+  if(p.pendingUpload)_pcOutboxTouch(p);
   if(p.client_id!=null&&typeof _uploadClientHub==='function')_uploadClientHub(p.client_id).catch(()=>{});
   return true;
 }
@@ -2095,6 +2295,7 @@ function tdAttachCommit(){
     // say it.
     if(p&&addr)p.addr=addr;
     if(p&&_pcAtt.m!=null)p.addrM=_pcAtt.m;
+    if(p&&p.pendingUpload)_pcOutboxTouch(p);
     n++;
   });
   saveAll();

@@ -4477,3 +4477,245 @@ test.describe('TrueShot: zooming a photo like Photos does', () => {
     await assertNoErrors(page, 'TrueShot zoom');
   });
 });
+
+// Owner 2026-09-25: "this app is supposed to be offline first, so if
+// connection is spotty the photos should still save, flush up when service
+// restores and attach right." They did not: the full bytes lived in
+// localStorage (about 5MB on iPhone), so the second offline photo overflowed
+// it and the rest existed only in memory. Now every photo waits in an
+// IndexedDB outbox, full size and filed, until the server has it.
+test.describe('TrueShot: offline first, the photo outbox', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => { };
+      window.__saved = { en: window.supaEnabled, supa: window._supa, user: window._supaUser };
+      // A real photo-sized JPEG: noise does not compress, so the bytes are real.
+      window.__big = async (w, h) => {
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const g = cv.getContext('2d'); const im = g.createImageData(w, h);
+        for (let i = 0; i < im.data.length; i += 4) { im.data[i] = Math.random() * 255; im.data[i + 1] = Math.random() * 255; im.data[i + 2] = Math.random() * 255; im.data[i + 3] = 255; }
+        g.putImageData(im, 0, 0);
+        const b = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+        return new File([b], 'IMG.jpg', { type: 'image/jpeg' });
+      };
+      window.__offline = () => { window.supaEnabled = () => false; };
+      // Signal back: a storage that records every upload, or fails on demand.
+      window.__online = (fail) => {
+        window.__ups = [];
+        window.supaEnabled = () => true; window._supaUser = { id: 'acct-me' };
+        // The app's own reconnect handler runs on 'online' too, so the fake
+        // answers the auth calls it makes (no session: it just stands down).
+        window._supa = { auth: { startAutoRefresh() {}, stopAutoRefresh() {}, getSession: async () => ({ data: { session: null } }),
+            getUser: async () => ({ data: { user: null } }) },
+          from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+          storage: { from: () => ({
+          upload: async (path, body) => { if (fail) return { error: { message: 'Load failed' } }; window.__ups.push({ path, size: body && body.size }); return { error: null }; },
+          getPublicUrl: (path) => ({ data: { publicUrl: 'https://x/' + path } }),
+        }) } };
+      };
+      window.__reset = async () => {
+        window.supaEnabled = window.__saved.en; window._supa = window.__saved.supa; window._supaUser = { id: 'acct-me' };
+        for (const r of await _pcOutboxAll()) await _pcOutboxDel(r.id);
+        photos.length = 0; jobs.length = 0; clients.length = 0;
+        clients.push({ id: 501, name: 'Tracey Gillaspy', addr: '4835 NE Kincaid Rd, Topeka, KS 66617', extraAddresses: [] });
+        window._uploadClientHub = async () => { };
+      };
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('five 12MP photos with no signal: all five kept full size, and localStorage never overflows', async () => {
+    test.setTimeout(90000);
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      const sizes = [];
+      for (let i = 0; i < 5; i++) {
+        const f = await window.__big(3024, 4032); sizes.push(f.size);
+        await tdSavePhoto({ file: f, type: 'before', clientId: 501, addr: '4835 NE Kincaid Rd, Topeka, KS 66617', stamp: false });
+      }
+      const box = await _pcOutboxAll();
+      let stored = null; try { stored = JSON.parse(localStorage.getItem('zp3_photos') || '[]'); } catch (e) {}
+      return { sizes, box: box.map(b => b.blob.size), rows: photos.length, maxData: Math.max(...photos.map(p => (p.data || '').length)),
+        lsIds: (stored || []).filter(p => p.pendingUpload).length, pending: photos.every(p => p.pendingUpload) };
+    });
+    expect(r.box.length).toBe(5);
+    expect(r.box.sort()).toEqual(r.sizes.sort());              // the full bytes, not a copy of the preview
+    expect(r.rows).toBe(5);
+    expect(r.pending).toBe(true);
+    expect(r.maxData, 'the row keeps a small display copy only').toBeLessThan(600000);
+    expect(r.lsIds, 'and all five made it into localStorage').toBe(5);
+  });
+
+  test('the app is killed and relaunched with no signal: every photo comes back, still filed', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      for (let i = 0; i < 3; i++) await tdSavePhoto({ file: await window.__big(800, 600), type: 'after', clientId: 501, addr: '4835 NE Kincaid Rd, Topeka, KS 66617', stamp: false });
+      const ids = photos.map(p => String(p.id)).sort();
+      photos.length = 0; localStorage.removeItem('zp3_photos');   // memory and localStorage both gone
+      const n = await _pcOutboxRestore();
+      return { n, ids, back: photos.map(p => String(p.id)).sort(), filed: photos.every(p => p.client_id === 501 && p.addr === '4835 NE Kincaid Rd, Topeka, KS 66617' && p.type === 'after' && p.pendingUpload && (p.data || '').startsWith('data:image')) };
+    });
+    expect(r.n).toBe(3);
+    expect(r.back).toEqual(r.ids);
+    expect(r.filed).toBe(true);
+  });
+
+  test('signal comes back: every photo goes up full size, filed right, and leaves the outbox', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      for (let i = 0; i < 3; i++) await tdSavePhoto({ file: await window.__big(800, 600), type: 'after', clientId: 501, addr: '4835 NE Kincaid Rd, Topeka, KS 66617', stamp: false });
+      photos.length = 0;   // and the phone lost them in between, for good measure
+      window.__online();
+      const sent = await tdPhotoFlush();
+      return { sent, ups: window.__ups.filter(u => !/\/t-/.test(u.path)).map(u => u.path), rows: photos.map(p => ({ url: !!p.url, c: p.client_id, addr: p.addr, pend: !!p.pendingUpload, data: !!p.data })), left: (await _pcOutboxAll()).length };
+    });
+    expect(r.sent).toBe(3);
+    expect(r.ups.length).toBe(3);
+    expect(r.ups.every(p => p.startsWith('acct-me/client-501/after-'))).toBe(true);
+    expect(r.rows.every(p => p.url && p.c === 501 && p.addr === '4835 NE Kincaid Rd, Topeka, KS 66617' && !p.pend && !p.data)).toBe(true);
+    expect(r.left).toBe(0);
+  });
+
+  test('filed to a customer after it was taken offline: it uploads to that customer, even if the phone lost the row', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      const row = await tdSavePhoto({ file: await window.__big(800, 600), type: 'before', stamp: false });
+      tdFilePhoto(row.id, 501);
+      await new Promise(res => setTimeout(res, 50));
+      photos.length = 0;
+      window.__online();
+      await tdPhotoFlush();
+      const p = photos.find(x => String(x.id) === String(row.id));
+      return { path: window.__ups.filter(u => !/\/t-/.test(u.path))[0].path, c: p.client_id, name: p.client_name };
+    });
+    expect(r.path).toMatch(/^acct-me\/client-501\/before-/);
+    expect(r.c).toBe(501);
+    expect(r.name).toBe('Tracey Gillaspy');
+  });
+
+  test('a failed upload stays in the outbox and goes up on the next try', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset();
+      window.__online(true);
+      const row = await tdSavePhoto({ file: await window.__big(800, 600), type: 'before', clientId: 501, stamp: false });
+      const after1 = { pend: !!row.pendingUpload, box: (await _pcOutboxAll()).length };
+      window.__online(false);
+      const sent = await tdPhotoFlush();
+      return { after1, sent, url: !!row.url, box: (await _pcOutboxAll()).length };
+    });
+    expect(r.after1).toEqual({ pend: true, box: 1 });
+    expect(r.sent).toBe(1);
+    expect(r.url).toBe(true);
+    expect(r.box).toBe(0);
+  });
+
+  test('five flushes at once send each photo exactly once', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      for (let i = 0; i < 2; i++) await tdSavePhoto({ file: await window.__big(800, 600), type: 'before', clientId: 501, stamp: false });
+      window.__online();
+      await Promise.all([tdPhotoFlush(), tdPhotoFlush(), tdPhotoFlush(), tdPhotoFlush(), tdPhotoFlush()]);
+      await tdPhotoFlush();
+      return window.__ups.filter(u => !/\/t-/.test(u.path)).length;
+    });
+    expect(r).toBe(2);
+  });
+
+  test("another account's photos on a shared phone are never sent under this one", async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      window._supaUser = { id: 'acct-other' };
+      await tdSavePhoto({ file: await window.__big(800, 600), type: 'before', stamp: false });
+      photos.length = 0;
+      window.__online();   // signed in as acct-me now
+      const sent = await tdPhotoFlush();
+      const box = await _pcOutboxAll();
+      return { sent, ups: window.__ups.length, box: box.length, restored: photos.length };
+    });
+    expect(r.sent).toBe(0);
+    expect(r.ups).toBe(0);
+    expect(r.box, 'it waits for its own account').toBe(1);
+    expect(r.restored, 'and is not shown in this one').toBe(0);
+  });
+
+  test("a job's photo: the job sheet copy is finished by the same upload, never sent twice", async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      jobs.push({ id: 801, client_id: 501, name: 'Water heater', addr: '4835 NE Kincaid Rd', photos: [] });
+      await tdSavePhoto({ file: await window.__big(800, 600), type: 'after', jobId: 801, stamp: false });
+      const twin0 = { ...jobs[0].photos[0] };
+      window.__online();
+      await _drainPhotoQueue();          // the job-sheet drain, then the outbox
+      await tdPhotoFlush();
+      const twin = jobs[0].photos[0];
+      return { outboxId: !!twin0.outboxId, pend0: !!twin0.pendingUpload, ups: window.__ups.filter(u => !/\/t-/.test(u.path)).map(u => u.path),
+        twinUrl: twin.url || '', twinData: !!twin.data, rows: photos.length };
+    });
+    expect(r.outboxId).toBe(true);
+    expect(r.pend0, 'the job-sheet drain must not pick it up').toBe(false);
+    expect(r.ups.length).toBe(1);
+    expect(r.ups[0]).toMatch(/^acct-me\/job-801\/after-/);
+    expect(r.twinUrl).toMatch(/^https:\/\/x\/acct-me\/job-801\//);
+    expect(r.twinData).toBe(false);
+    expect(r.rows).toBe(1);
+  });
+
+  test('the signal coming back is enough: the online event sends what is waiting', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      await tdSavePhoto({ file: await window.__big(800, 600), type: 'before', clientId: 501, stamp: false });
+      window.__online();
+      window.dispatchEvent(new Event('online'));
+      for (let i = 0; i < 40 && (await _pcOutboxAll()).length; i++) await new Promise(res => setTimeout(res, 50));
+      return { left: (await _pcOutboxAll()).length, ups: window.__ups.filter(u => !/\/t-/.test(u.path)).length };
+    });
+    expect(r).toEqual({ left: 0, ups: 1 });
+  });
+
+  test('no IndexedDB on this phone: it saves the old way instead of losing the photo', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      const keep = window._pcOutboxPut; window._pcOutboxPut = async () => false;
+      let row; try { row = await tdSavePhoto({ file: await window.__big(800, 600), type: 'before', clientId: 501, stamp: false }); } finally { window._pcOutboxPut = keep; }
+      return { kept: !!row, pend: !!row.pendingUpload, data: (row.data || '').startsWith('data:image/jpeg'), box: (await _pcOutboxAll()).length };
+    });
+    expect(r).toEqual({ kept: true, pend: true, data: true, box: 0 });
+  });
+
+  // Caught by a flaky run: a flush landing between "in the outbox" and "in
+  // photos[]" restored the photo still being saved, and it showed twice.
+  test('a flush that runs while photos are still saving never doubles one', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      const saves = [];
+      for (let i = 0; i < 4; i++) {
+        saves.push(tdSavePhoto({ file: await window.__big(800, 600), type: 'before', clientId: 501, stamp: false }));
+        tdPhotoFlush(); _pcOutboxRestore();
+      }
+      await Promise.all(saves);
+      await tdPhotoFlush(); await _pcOutboxRestore();
+      const ids = photos.map(p => String(p.id));
+      return { rows: ids.length, unique: new Set(ids).size, box: (await _pcOutboxAll()).length };
+    });
+    expect(r).toEqual({ rows: 4, unique: 4, box: 4 });
+  });
+
+  test('junk in, nothing thrown', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset();
+      const out = [];
+      out.push(await _pcOutboxPut(null, null), await _pcOutboxPut({ id: 1 }, null), await _pcOutboxTouch(null), await _pcOutboxTouch({ id: 'nope' }));
+      out.push(await _pcUploadRow(null, null));
+      return out;
+    });
+    expect(r).toEqual([false, false, false, false, false]);
+    await page.evaluate(async () => { await window.__reset(); window.supaEnabled = window.__saved.en; window._supa = window.__saved.supa; window._supaUser = window.__saved.user; });
+    await assertNoErrors(page, 'TrueShot outbox');
+  });
+});
