@@ -1844,10 +1844,21 @@ function _dashSkelSweep(root,phase){
     // bar added later is still in step with the ones already sweeping. One
     // phase per batch: bars styled in the same pass start in the same frame.
     if(typeof phase!=='number')phase=-Math.round(performance.now()%1300);
+    const tl=document.timeline;
     root.querySelectorAll('.td-skel').forEach(b=>{
       const r=b.getBoundingClientRect();
       b.style.setProperty('--sx',Math.round(r.left+(r.top+(window.scrollY||0))*0.35)+'px');
       b.style.animationDelay=phase+'ms';
+      // The delay alone is not exact: WebKit starts a CSS animation on the
+      // next style pass, not when this line runs, and that lag differs between
+      // the boot pass and later ones. Pinning each sweep's start to a whole
+      // cycle on the document timeline is exact on every engine.
+      try{
+        if(tl&&typeof tl.currentTime==='number'&&typeof b.getAnimations==='function'){
+          const base=Math.floor(tl.currentTime/1300)*1300;
+          b.getAnimations().forEach(a=>{if(a.animationName==='td-skel-sweep')a.startTime=base;});
+        }
+      }catch(_e){}
     });
   }catch(_e){}
 }
