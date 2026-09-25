@@ -598,6 +598,13 @@ function _liveActRailFace(opts){
     // atHome set. A clock-in at home still shows, through the clock channel,
     // because that is the person saying they ARE working.
     if(d.atHome)return null;
+    // NOT COUNTED IS NOT A TIMER (owner 2026-09-24, rule 25: "still counting
+    // his hours even after the vacation fix"). On a Time off day the deriver
+    // says this stop earns nothing, and a lock-screen clock running up from
+    // his arrival reads as hours whatever the chip says. Same answer as home:
+    // no ON SITE card. A drive still shows below, because it is a fact about
+    // the road, not a claim about pay.
+    if(d.counts===false)return _liveActDriveFace(p,mi);
     // A person CLOCKED IN already has the green clock card carrying the site
     // clock, so the ON SITE face yields rather than stacking a second timer
     // for the same spot. The DRIVING face below does NOT yield: "clocked in"
@@ -612,6 +619,9 @@ function _liveActRailFace(opts){
     return {kind:kind==='shop'?'AT THE SHOP':'ON SITE',title:where,detail,value:mi,
       timer:true,startedAt:Math.floor(Number(d.sinceTs)/1000),tint:_LIVE_TINT.onsite};
   }
+  return _liveActDriveFace(p,mi);
+}
+function _liveActDriveFace(p,mi){
   if(p&&Number(p.startTs)>0){
     // The engine tracks an ORIGIN, not a destination, so promising a
     // destination here would be inventing one and the lock screen and the app
@@ -619,7 +629,7 @@ function _liveActRailFace(opts){
     // dashboard's DRIVING banner uses.
     const org=(p.origin&&p.origin.name)?String(p.origin.name):'';
     return {kind:'DRIVING',title:'On the road',detail:org?('From '+org):'Mileage is logging',
-      value:mi,timer:true,startedAt:Math.floor(Number(p.startTs)/1000),tint:_LIVE_TINT.drive};
+      value:mi||'',timer:true,startedAt:Math.floor(Number(p.startTs)/1000),tint:_LIVE_TINT.drive};
   }
   return null;
 }
