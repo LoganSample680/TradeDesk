@@ -1657,6 +1657,86 @@ async function _poiAt(coord){
   }catch(_e){}
   return null;
 }
+// ── WHAT WAS THERE, WITHOUT A TAP (owner 2026-09-24) ────────────────────────
+// "Is there any way for an unsaved address that pulls itself in automatically
+// and attempts to look up the business ... having the business name in the
+// day rail would be killer."
+//
+// The same _poiAt the Save button already asks, asked once per spot when the
+// rail first draws the stop, and remembered. It NAMES the row and nothing
+// else: an unsaved stop still counts toward nothing until it is saved (owner
+// 2026-09-08, "only things with addresses saved should update any totals"),
+// so a guess from Apple can never move a number.
+//
+// Keyed by the spot rounded to about 11 m, not by the row: the same Home Depot
+// is one lookup however many times he goes, and a re-derive that re-keys the
+// row costs nothing. A spot Apple could not name is remembered as such for a
+// day, so the rail never asks the same question on every paint. Per device,
+// in localStorage, because it is a convenience and never a record.
+const _STOP_NAME_KEY='zp3_stop_names',_STOP_NAME_MAX=400,_STOP_NAME_MISS_MS=24*3600000;
+let _stopNames=null,_stopNameTimer=null;
+const _stopNameBusy=new Set(),_stopNameQueue=[];
+function _stopNamesLoad(){
+  if(_stopNames)return _stopNames;
+  try{_stopNames=JSON.parse(localStorage.getItem(_STOP_NAME_KEY)||'{}');}catch(_e){_stopNames=null;}
+  if(!_stopNames||typeof _stopNames!=='object'||Array.isArray(_stopNames))_stopNames={};
+  return _stopNames;
+}
+function _stopNamesSave(){
+  try{
+    const keep=Object.entries(_stopNamesLoad()).filter(e=>e[1]&&typeof e[1]==='object')
+      .sort((a,b)=>(b[1].ts||0)-(a[1].ts||0)).slice(0,_STOP_NAME_MAX);
+    _stopNames=Object.fromEntries(keep);
+    localStorage.setItem(_STOP_NAME_KEY,JSON.stringify(_stopNames));
+  }catch(_e){}
+}
+function _stopNameKey(c){return Number(c.lat).toFixed(4)+','+Number(c.lng).toFixed(4);}
+// The one door to Apple, so a test can stand in for it. undefined means "cannot
+// ask right now" (MapKit not loaded on this origin), which is not a miss and
+// must not be remembered as one.
+function _stopNameLookup(c){
+  if(!_mapkitReady)return undefined;
+  return _poiAt({lat:c.lat,lng:c.lng});
+}
+// Synchronous for the painter: the answer it already has, or null while it
+// asks. {name, addr}; either may be ''.
+function _stopNameFor(clientKey,day){
+  try{
+    const c=_mileStopCoord(clientKey,day);
+    if(!c||!isFinite(c.lat)||!isFinite(c.lng))return null;
+    const k=_stopNameKey(c);
+    const hit=_stopNamesLoad()[k];
+    if(hit&&(hit.name||hit.addr))return {name:String(hit.name||''),addr:String(hit.addr||'')};
+    if(hit&&Date.now()-(Number(hit.ts)||0)<_STOP_NAME_MISS_MS)return null;
+    if(!_stopNameBusy.has(k)){
+      _stopNameBusy.add(k);_stopNameQueue.push({k,c});
+      if(!_stopNameTimer)_stopNameTimer=setTimeout(_stopNameDrain,60);
+    }
+  }catch(_e){}
+  return null;
+}
+async function _stopNameDrain(){
+  _stopNameTimer=null;
+  let found=false;
+  while(_stopNameQueue.length){
+    const {k,c}=_stopNameQueue.shift();
+    let p;
+    try{p=await _stopNameLookup(c);}catch(_e){p=null;}
+    _stopNameBusy.delete(k);
+    if(p===undefined)continue;
+    const name=(p&&p.name)?String(p.name):'',addr=(p&&p.addr)?String(p.addr):'';
+    _stopNamesLoad()[k]={name,addr,ts:Date.now()};
+    if(name||addr)found=true;
+  }
+  _stopNamesSave();
+  // One repaint for the whole batch, from rows already in hand.
+  if(found){
+    try{
+      if(document.getElementById('pg-timelog')?.classList.contains('active')&&typeof renderTimeLog==='function')
+        renderTimeLog({cached:true});
+    }catch(_e){}
+  }
+}
 // Apple's POI categories mapped onto the kinds a contractor cares about.
 //
 // A SUGGESTION ONLY. This prefills the kind dropdown when they save a new place
