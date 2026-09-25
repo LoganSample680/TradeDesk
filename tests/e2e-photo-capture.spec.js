@@ -318,6 +318,7 @@ test.describe('Photo capture: the sheet itself', () => {
     // which REPLACES the photos array and drops shots saved a moment before.
     // Nothing in this block tests cloud loading, and it runs ~1,600 lines of
     // tests on one page, so the load is parked here once for all of them.
+    // (Same change as PR #90; it no-ops once that lands.)
     await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
   });
   test.afterAll(async () => { await page.context().close(); });
