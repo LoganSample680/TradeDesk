@@ -61,6 +61,10 @@ test.describe('the hub content hash ignores the clock', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // A background cloud load can land after boot and replace the arrays,
+    // taking the fixture with it (WebKit, shard 3, 2026-09-25). Same parking
+    // the time log and photo specs use.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
   test.afterAll(async () => { await page.context().close(); });
 

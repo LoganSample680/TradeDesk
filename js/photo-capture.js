@@ -104,24 +104,71 @@ async function tdSavePhoto(opts){
   }
 
   // The local copy lands FIRST and unconditionally. A photo taken in a
-  // crawlspace with no bars is still a photo, and the job sheet has always
-  // rendered from this base64 copy rather than from the network.
-  const dataUrl=await _pcReadDataUrl(file);
-  if(!dataUrl)return null;
+  // crawlspace with no bars is still a photo.
+  //
+  // OFFLINE FIRST, FOR REAL (owner 2026-09-25: "if connection is spotty the
+  // photos should still save, then flush up when service restores and attach
+  // right"). The full bytes used to ride in localStorage as base64 on the row
+  // and on the job sheet's copy. iPhone gives localStorage about 5MB and one
+  // 12MP photo is 3 to 5MB of base64, so the second offline photo overflowed
+  // it, the save threw, and what was left lived only in memory until iOS
+  // closed the app. That is how four shots became one.
+  //
+  // Now the full bytes go to the photo outbox (IndexedDB, hundreds of MB,
+  // survives the app being killed) together with where the photo is filed,
+  // and the row keeps only a small display copy. The outbox, not the row, is
+  // the promise: a photo leaves it only once the server has it.
+  // Mid-save the photo is in the outbox but not yet in photos[]; a flush that
+  // runs in that gap must not "restore" it and make a second row.
+  _pcSaving.add(String(row.id));
+  let inBox=false,dataUrl='';
+  try{
+    inBox=await _pcOutboxPut(row,file);
+    dataUrl=inBox?await _pcPreviewDataUrl(file):await _pcReadDataUrl(file);
+  }catch(_e){}
+  if(!dataUrl){_pcSaving.delete(String(row.id));if(inBox)_pcOutboxDel(row.id);return null;}
   if(j){
     if(!Array.isArray(j.photos))j.photos=[];
-    j.photos.push({type,data:dataUrl,ts:row.uploadedAt,caption});
+    // The job sheet's copy points at the same outbox entry, so the one upload
+    // finishes both and the retry never sends the photo twice.
+    j.photos.push(inBox?{type,data:dataUrl,ts:row.uploadedAt,caption,outboxId:String(row.id)}:{type,data:dataUrl,ts:row.uploadedAt,caption});
   }
   row.data=dataUrl;
   photos.push(row);
+  _pcSaving.delete(String(row.id));
   saveAll();
   _pcTel('photo_taken',row,opts.imported?'import':'');
 
   if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa)){
-    _pcMarkPending(row,j,file);
+    if(inBox)row.outboxWait=true;else _pcMarkPending(row,j,file);
+    saveAll();
     _pcTel('photo_upload_failed',row,(typeof supaEnabled==='function'&&supaEnabled())?'signed-out':'offline');
     return row;
   }
+  if(!(await _pcUploadRow(row,file))){
+    if(inBox)row.outboxWait=true;else _pcMarkPending(row,j,file);
+    saveAll();
+    _pcFlushSoon();
+  }
+  return row;
+}
+// Is this photo still on its way to the server? Two flags on purpose: an
+// outbox photo is outboxWait and NEVER pendingUpload, because pendingUpload
+// is what the older retry in _drainPhotoQueue (js/jobs.js) sends from the
+// row's own base64, and for an outbox photo that is only the small display
+// copy. Found on UAT 2026-09-25: both retries sent the same photo, the second
+// time at display size.
+function tdPhotoWaiting(p){return !!(p&&(p.outboxWait||p.pendingUpload)&&!p.storagePath);}
+// Upload one row's bytes and finish it: the row, the job sheet's copy, the
+// outbox entry. Shared by the first try (tdSavePhoto) and every retry
+// (tdPhotoFlush), so a retried photo lands exactly like a first-time one:
+// same compression, same GPS in the file, same full-resolution copy, filed
+// wherever the row says it is filed NOW.
+async function _pcUploadRow(row,file){
+  if(!row||!file)return false;
+  if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa))return false;
+  const jobId=row.job_id!=null?row.job_id:null,bidId=row.bid_id!=null?row.bid_id:null,clientId=row.client_id!=null?row.client_id:null;
+  const type=row.type||'before';
   try{
     const _cp=await _compressPhoto(file);
     const ext=_cp?_cp.ext:((file.name||'').split('.').pop()||'jpg').toLowerCase();
@@ -152,15 +199,174 @@ async function tdSavePhoto(opts){
     // the localStorage footprint of every photo for no gain (the job sheet
     // falls back to url when data is absent).
     delete row.data;
+    delete row.pendingUpload;delete row.outboxWait;delete row._uploadExt;delete row._uploadMime;
+    _pcFinishTwin(row);
     saveAll();
+    _pcOutboxDel(row.id);
     _pcTel('photo_uploaded',row);
     if(clientId!=null&&typeof _uploadClientHub==='function')_uploadClientHub(clientId).catch(()=>{});
+    return true;
   }catch(_e){
-    _pcMarkPending(row,j,file);
     _pcTel('photo_upload_failed',row,_pcWhyFailed(_e));
+    return false;
   }
-  return row;
 }
+// The job sheet's copy of an outbox photo, finished when the photo is: it
+// points at the stored file from now on and stops carrying a picture.
+function _pcFinishTwin(row){
+  try{
+    const id=String(row.id);
+    (Array.isArray(jobs)?jobs:[]).forEach(j=>{
+      (j&&Array.isArray(j.photos)?j.photos:[]).forEach(t=>{
+        if(!t||t.outboxId!==id)return;
+        t.url=row.url;t.storagePath=row.storagePath;
+        delete t.data;delete t.pendingUpload;delete t.outboxId;
+      });
+    });
+  }catch(_e){}
+}
+
+// ── The photo outbox (IndexedDB) ─────────────────────────────────────────────
+// One entry per photo not yet on the server: the full bytes, which account
+// took it, and where it is filed. Every step fails soft: no IndexedDB (a
+// private window, an old webview) means tdSavePhoto keeps the old in-row copy
+// instead, which is what it did before this existed.
+const _PC_OB_DB='td_photo_outbox',_PC_OB_STORE='items';
+const _pcSaving=new Set();
+let _pcObDb=null;
+function _pcObOpen(){
+  if(_pcObDb)return _pcObDb;
+  _pcObDb=new Promise(res=>{
+    try{
+      if(typeof indexedDB==='undefined'||!indexedDB){res(null);return;}
+      const rq=indexedDB.open(_PC_OB_DB,1);
+      rq.onupgradeneeded=()=>{try{rq.result.createObjectStore(_PC_OB_STORE,{keyPath:'id'});}catch(_e){}};
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>res(null);
+      rq.onblocked=()=>res(null);
+    }catch(_e){res(null);}
+  }).then(db=>{if(!db)_pcObDb=null;return db;});
+  return _pcObDb;
+}
+function _pcObTx(mode,fn){
+  return _pcObOpen().then(db=>new Promise(res=>{
+    if(!db){res(null);return;}
+    try{
+      const tx=db.transaction(_PC_OB_STORE,mode),st=tx.objectStore(_PC_OB_STORE);
+      let out=null;
+      const r=fn(st);
+      if(r)r.onsuccess=()=>{out=r.result;};
+      tx.oncomplete=()=>res(out===null?true:out);
+      tx.onerror=()=>res(null);tx.onabort=()=>res(null);
+    }catch(_e){res(null);}
+  }));
+}
+// What the row needs to be rebuilt if the phone loses it: where it is filed,
+// what it is, where and when it was taken. Never the bytes (those are the
+// entry's own blob) and never a url (it has none yet).
+const _PC_OB_META=['id','type','caption','client_id','client_name','bid_id','bid_name','job_id','job_name','addr','addrM',
+  'lat','lon','accM','by','uploadedAt','stamped','imported','shotPx'];
+function _pcRowMeta(row){const m={};_PC_OB_META.forEach(k=>{if(row&&row[k]!==undefined)m[k]=row[k];});return m;}
+function _pcAcct(){try{return (typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';}catch(_e){return '';}}
+async function _pcOutboxPut(row,file){
+  try{
+    if(!row||!file)return false;
+    const ok=await _pcObTx('readwrite',st=>st.put({id:String(row.id),blob:file,name:file.name||'photo.jpg',
+      mime:file.type||'image/jpeg',acct:_pcAcct(),meta:_pcRowMeta(row),ts:Date.now()}));
+    return !!ok;
+  }catch(_e){return false;}
+}
+function _pcOutboxDel(id){try{return _pcObTx('readwrite',st=>st.delete(String(id)));}catch(_e){return Promise.resolve(null);}}
+async function _pcOutboxAll(){
+  try{const r=await _pcObTx('readonly',st=>st.getAll());return Array.isArray(r)?r:[];}catch(_e){return [];}
+}
+// Filing a photo after it was taken moves it in the outbox too, so a photo
+// the phone has to rebuild from the outbox still lands where it was filed.
+async function _pcOutboxTouch(row){
+  try{
+    if(!row)return false;
+    const cur=await _pcObTx('readonly',st=>st.get(String(row.id)));
+    if(!cur||cur===true)return false;
+    cur.meta=_pcRowMeta(row);
+    return !!(await _pcObTx('readwrite',st=>st.put(cur)));
+  }catch(_e){return false;}
+}
+// A display copy small enough for localStorage: 1024px, the size the album and
+// the viewer show before the stored full-resolution copy exists.
+async function _pcPreviewDataUrl(file){
+  try{
+    let bmp;
+    try{bmp=await createImageBitmap(file,{imageOrientation:'from-image'});}catch(_e){bmp=await createImageBitmap(file);}
+    const sc=Math.min(1,1024/Math.max(bmp.width,bmp.height));
+    const cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(bmp.width*sc));cv.height=Math.max(1,Math.round(bmp.height*sc));
+    cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+    const d=cv.toDataURL('image/jpeg',0.8);
+    return (d&&d.length>32)?d:await _pcReadDataUrl(file);
+  }catch(_e){return await _pcReadDataUrl(file);}
+}
+// Put back any photo the phone lost track of (a relaunch, a cloud reload, a
+// wiped localStorage) while it is still waiting in the outbox, so it shows in
+// the album and the tray even before there is signal to send it.
+async function _pcOutboxRestore(){
+  const recs=await _pcOutboxAll();
+  let n=0;
+  const me=_pcAcct();
+  for(const rec of recs){
+    if(!rec||!rec.meta)continue;
+    if(rec.acct&&me&&rec.acct!==me)continue;
+    if(_pcSaving.has(String(rec.id)))continue;
+    if(photos.some(p=>p&&String(p.id)===String(rec.id)))continue;
+    const row=Object.assign({url:'',storagePath:'',thumbUrl:'',thumbPath:'',fullPath:''},rec.meta,{id:rec.meta.id!=null?rec.meta.id:rec.id});
+    row.data=await _pcPreviewDataUrl(rec.blob);
+    row.outboxWait=true;
+    photos.push(row);n++;
+  }
+  if(n){saveAll();try{if(typeof renderDash==='function')renderDash();}catch(_e){}}
+  return n;
+}
+// Send everything in the outbox that belongs to this account. Safe to call
+// any number of times from anywhere: one run at a time, and a photo leaves the
+// outbox only when the server has it.
+let _pcFlushing=null,_pcFlushTimer=null;
+function tdPhotoFlush(){
+  if(_pcFlushing)return _pcFlushing;
+  _pcFlushing=(async()=>{
+    let sent=0;
+    try{
+      await _pcOutboxRestore();
+      if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa))return 0;
+      const recs=await _pcOutboxAll();
+      if(recs.length){try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('photo_outbox','photos in outbox '+recs.length,recs.length);}catch(_e){}}
+      for(const rec of recs){
+        if(!rec)continue;
+        if(rec.acct&&rec.acct!==_supaUser.id)continue;
+        const row=photos.find(p=>p&&String(p.id)===String(rec.id));
+        if(!row)continue;
+        if(row.storagePath&&row.url){_pcOutboxDel(rec.id);continue;}
+        let f=rec.blob;
+        try{if(f&&!f.name&&typeof File==='function')f=new File([f],rec.name||'photo.jpg',{type:rec.mime||f.type||'image/jpeg'});}catch(_e){}
+        if(await _pcUploadRow(row,f))sent++;
+      }
+      const left=(await _pcOutboxAll()).filter(r=>r&&(!r.acct||r.acct===_supaUser.id)).length;
+      if(left)_pcFlushSoon();
+      if(sent){try{if(typeof renderDash==='function')renderDash();}catch(_e){}}
+    }catch(_e){}
+    return sent;
+  })().finally(()=>{_pcFlushing=null;});
+  return _pcFlushing;
+}
+// Something is still waiting: try again in a minute, once, not in a loop.
+function _pcFlushSoon(){
+  if(_pcFlushTimer)return;
+  _pcFlushTimer=setTimeout(()=>{_pcFlushTimer=null;tdPhotoFlush();},60000);
+}
+// Signal back, app back in front, app opened: each is a moment to send.
+try{
+  window.addEventListener('online',()=>{tdPhotoFlush();});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')tdPhotoFlush();});
+  window.addEventListener('load',()=>{setTimeout(()=>{tdPhotoFlush();},4000);});
+}catch(_e){}
 // ── Where a photo is, on the server's side (owner 2026-09-25) ──────────────
 // "Why can't we query SQL to see if we have the photo?" Because until the
 // upload succeeds the photo exists only on the phone, and a failure left no
@@ -204,7 +410,7 @@ let _pcPendingReported=false;
 function _pcReportPending(force){
   try{
     if(_pcPendingReported&&!force)return -1;
-    let n=(Array.isArray(photos)?photos:[]).filter(p=>p&&p.pendingUpload).length;
+    let n=(Array.isArray(photos)?photos:[]).filter(p=>tdPhotoWaiting(p)).length;
     (Array.isArray(jobs)?jobs:[]).forEach(j=>{(j&&Array.isArray(j.photos)?j.photos:[]).forEach(p=>{if(p&&p.pendingUpload&&p.data)n++;});});
     _pcPendingReported=true;
     try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('photo_pending',n>0?'photos waiting '+n:'none',n);}catch(_e){}
@@ -233,7 +439,9 @@ function _pcMarkPending(row,j,file){
   row.pendingUpload=true;row._uploadExt=ext;row._uploadMime=mime;
   if(j&&Array.isArray(j.photos)&&j.photos.length){
     const last=j.photos[j.photos.length-1];
-    if(last&&!last.pendingUpload){last.pendingUpload=true;last._uploadExt=ext;last._uploadMime=mime;}
+    // An outbox photo's job-sheet copy is finished by the outbox upload; the
+    // job-sheet drain would send its small display copy as a second photo.
+    if(last&&!last.pendingUpload&&!last.outboxId){last.pendingUpload=true;last._uploadExt=ext;last._uploadMime=mime;}
   }
   saveAll();
 }
@@ -446,6 +654,7 @@ function tdFilePhoto(photoId,clientId,bidId,jobId){
     p.job_id=jobId;p.job_name=j?j.name||'':'';
   }
   saveAll();
+  if(tdPhotoWaiting(p))_pcOutboxTouch(p);
   if(p.client_id!=null&&typeof _uploadClientHub==='function')_uploadClientHub(p.client_id).catch(()=>{});
   return true;
 }
@@ -532,6 +741,8 @@ function _pcRevPaint(){
   if(!el||!_pcRev)return;
   const rows=_pcRevRows();
   if(!rows.length){tdReviewClose();return;}
+  // Every repaint draws fresh images at their own size, so nothing is zoomed.
+  el.classList.remove('pc-zoomed');
   // In folder mode the grid IS the folder; the viewer is shared.
   if(_pcRev.folder&&!(_pcRev.i>=0&&rows[_pcRev.i])){_pcFolderPaint();return;}
   el.innerHTML=(_pcRev.i>=0&&rows[_pcRev.i])?_pcRevViewerHTML(rows):_pcRevGridHTML(rows);
@@ -1362,6 +1573,53 @@ function _pcRevBindSwipe(){
   const W=()=>stage.clientWidth||1;
   const H=()=>stage.clientHeight||1;
   let x0=0,y0=0,t0=0,dx=0,dy=0,active=false,axis='';
+  // ── Zoom, the way Photos does it (owner 2026-09-25: "can you zoom in on the
+  // photos like you can on iOS?") ─────────────────────────────────────────────
+  // The stage takes every touch itself (touch-action:none), because that is
+  // what makes the swipe follow the thumb on iPhone, and the price was that
+  // the phone's own pinch never reached the photo. So the viewer does it:
+  // pinch to zoom around the fingers, double-tap to zoom in on a spot and back
+  // out, one finger to move around while zoomed. Zooming asks for the full
+  // resolution copy straight away, because zooming into the 1600px one is
+  // zooming into blur, stamp included. While zoomed, a drag moves the photo;
+  // it never pages or closes it.
+  const pts=new Map();
+  let z={s:1,tx:0,ty:0,el:null},pinch=null,pan=null,lastTap=0,lastTapX=0,lastTapY=0;
+  const _PC_ZOOM_MAX=6,_PC_ZOOM_TAP=2.5;
+  const zBox=()=>{const im=img();const host=im&&im.parentElement;return host?host.getBoundingClientRect():{left:0,top:0,width:W(),height:H()};};
+  const zCenter=()=>{const b=zBox();return{x:b.left+b.width/2,y:b.top+b.height/2};};
+  const zSync=()=>{const im=img();if(z.el!==im)z={s:1,tx:0,ty:0,el:im};};
+  const zClamp=()=>{
+    const b=zBox(),mx=Math.max(0,(z.s-1)*b.width/2),my=Math.max(0,(z.s-1)*b.height/2);
+    z.tx=Math.max(-mx,Math.min(mx,z.tx));z.ty=Math.max(-my,Math.min(my,z.ty));
+  };
+  const zApply=(snap)=>{
+    const im=img();if(!im)return;
+    if(snap){im.classList.add('snap');setTimeout(()=>{if(im.isConnected)im.classList.remove('snap');},340);}
+    im.style.transform=z.s>1.001?'translate3d('+Math.round(z.tx)+'px,'+Math.round(z.ty)+'px,0) scale('+z.s.toFixed(3)+')':'';
+    sheet.classList.toggle('pc-zoomed',z.s>1.001);
+  };
+  const zFull=()=>{
+    try{
+      const row=_pcRevRows()[_pcRev.i];
+      if(row&&row.fullPath){const u=_pcFullUrl(row);if(u)_pcSwapSrc(img(),u);}
+    }catch(_e){}
+  };
+  const zTap=(x,y)=>{
+    const now=Date.now();
+    if(now-lastTap<320&&Math.abs(x-lastTapX)<40&&Math.abs(y-lastTapY)<40){
+      lastTap=0;
+      zSync();
+      if(z.s>1.001){z.s=1;z.tx=0;z.ty=0;}
+      else{const c=zCenter();z.s=_PC_ZOOM_TAP;z.tx=(1-z.s)*(x-c.x);z.ty=(1-z.s)*(y-c.y);zClamp();zFull();}
+      zApply(true);
+      // The first tap of the pair already toggled the controls; put them back.
+      tdViewerBare();
+      return;
+    }
+    lastTap=now;lastTapX=x;lastTapY=y;
+    tdViewerBare();
+  };
   const atX=(px)=>{if(track)track.style.transform='translate3d(calc(-33.3333% + '+px+'px),0,0)';};
   // Down is a dismissal in progress, and it moves the way Photos moves it
   // (owner 2026-09-23: "still not seeing the smooth swipe down"): the PHOTO
@@ -1389,6 +1647,22 @@ function _pcRevBindSwipe(){
   };
   const down=(e)=>{
     if(e.button!=null&&e.button!==0)return;
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    try{stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);}catch(_e){}
+    zSync();
+    if(pts.size===2){
+      // A second finger turns whatever the first one started into a pinch.
+      if(axis==='x'&&track){track.classList.remove('snap');track.style.transform='';}
+      if(axis==='y')clearY();
+      if(axis==='u')stage.style.transform='';
+      active=false;axis='';pan=null;
+      const [a,b]=[...pts.values()];
+      pinch={d0:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),s0:z.s,tx0:z.tx,ty0:z.ty,mx:(a.x+b.x)/2,my:(a.y+b.y)/2};
+      zFull();
+      return;
+    }
+    if(pts.size>2)return;
+    if(z.s>1.001){pan={x0:e.clientX,y0:e.clientY,tx0:z.tx,ty0:z.ty,moved:false,t0:Date.now()};return;}
     active=true;axis='';dx=0;dy=0;
     x0=e.clientX;y0=e.clientY;t0=Date.now();
     if(track)track.classList.remove('snap');
@@ -1396,6 +1670,25 @@ function _pcRevBindSwipe(){
     try{stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);}catch(_e){}
   };
   const move=(e)=>{
+    if(pts.has(e.pointerId))pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pinch&&pts.size>=2){
+      const [a,b]=[...pts.values()];
+      const d=Math.hypot(a.x-b.x,a.y-b.y),mx=(a.x+b.x)/2,my=(a.y+b.y)/2,c=zCenter();
+      const sN=Math.max(1,Math.min(_PC_ZOOM_MAX,pinch.s0*d/pinch.d0));
+      // Keep the spot that was under the fingers under the fingers.
+      const qx=(pinch.mx-c.x-pinch.tx0)/pinch.s0,qy=(pinch.my-c.y-pinch.ty0)/pinch.s0;
+      z.s=sN;z.tx=mx-c.x-sN*qx;z.ty=my-c.y-sN*qy;
+      zApply();
+      if(e.cancelable)e.preventDefault();
+      return;
+    }
+    if(pan){
+      const ex=e.clientX-pan.x0,ey=e.clientY-pan.y0;
+      if(Math.abs(ex)>6||Math.abs(ey)>6)pan.moved=true;
+      z.tx=pan.tx0+ex;z.ty=pan.ty0+ey;zClamp();zApply();
+      if(e.cancelable)e.preventDefault();
+      return;
+    }
     if(!active)return;
     const ex=e.clientX-x0,ey=e.clientY-y0;
     // The first few pixels decide which gesture this is, and it does not change
@@ -1414,12 +1707,30 @@ function _pcRevBindSwipe(){
     else{dy=ey;dx=ex;atY(dy,dx);}
     if(e.cancelable)e.preventDefault();
   };
-  const up=()=>{
+  const up=(e)=>{
+    if(e&&e.pointerId!=null)pts.delete(e.pointerId);
+    if(pinch){
+      if(pts.size<2){
+        pinch=null;
+        if(z.s<1.08){z.s=1;z.tx=0;z.ty=0;}
+        zClamp();zApply(true);
+        // One finger still down after a pinch carries on as a pan.
+        if(pts.size===1&&z.s>1.001){const q=[...pts.values()][0];pan={x0:q.x,y0:q.y,tx0:z.tx,ty0:z.ty,moved:true,t0:Date.now()};}
+      }
+      return;
+    }
+    if(pan){
+      const tap=!pan.moved&&Date.now()-pan.t0<400;
+      pan=null;
+      if(tap&&e)zTap(e.clientX,e.clientY);
+      return;
+    }
     if(!active){active=false;return;}
     active=false;
     const dt=Math.max(1,Date.now()-t0);
-    // A tap, not a drag: the controls step out of the way, or come back.
-    if(!axis){if(dt<400)tdViewerBare();return;}
+    // A tap, not a drag: the controls step out of the way, or come back. Two
+    // quick taps on the same spot zoom there (zTap).
+    if(!axis){if(dt<400){if(e&&e.clientX!=null)zTap(e.clientX,e.clientY);else tdViewerBare();}return;}
     if(axis==='u'){
       stage.style.transform='';
       if(dy<-_PC_SWIPE_MIN)tdPhotoInfo();
@@ -2010,6 +2321,7 @@ function tdAttachCommit(){
     // say it.
     if(p&&addr)p.addr=addr;
     if(p&&_pcAtt.m!=null)p.addrM=_pcAtt.m;
+    if(p&&tdPhotoWaiting(p))_pcOutboxTouch(p);
     n++;
   });
   saveAll();
