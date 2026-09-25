@@ -616,7 +616,10 @@ async function _devLoadUserAccount(key){
     lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]])),
     syncedHash:Object.fromEntries(Object.entries(_syncedHash).map(([k,v])=>[k,[...v]]))
   };
-  // Load target user's records into memory
+  // Load target user's records into memory. photos[] is emptied first: the
+  // td_photos set() keeps this device's pending uploads, and those are the
+  // dev's own, never the target account's (they come back via _devSavedState).
+  photos.length=0;
   for(let i=0;i<_TD_TABLES.length;i++){
     const{t,set}=_TD_TABLES[i];
     const rows=(tableResults[i].data||[]).map(r=>r.data);
@@ -709,7 +712,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.23.26.3';
+const APP_VERSION='09.24.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -935,10 +938,21 @@ function _opClone(r){try{return JSON.parse(JSON.stringify(r));}catch(_e){return 
 // Rebuild the diff baseline from the authoritative rows (mirrors the _syncedHash rebuild).
 // MUST run AFTER all post-load array mutation (dedupe, draft-bid filter) so the baseline
 // equals the settled state, else those filtered rows look like deletes on the next diff.
+// Whose edits the op log is recording. A login the server ended leaves
+// _supaUser null while the SAME account's data stays on screen (_mergeOnSignIn,
+// _loadedDataOwner), and reading that null as "somebody else now" wiped the
+// field clocks, so an edit made in the gap (Jack's Clock out, 2026-09-23) lost
+// to the cloud's older row the moment he signed back in.
+function _opOwner(){
+  const u=_hlcOwner();
+  if(u)return u;
+  try{if(_mergeOnSignIn&&_loadedDataOwner)return _loadedDataOwner;}catch(_e){}
+  return null;
+}
 function _opRebaseline(){
   if(!window._opLogShadow)return;
   try{
-    const owner=_hlcOwner();
+    const owner=_opOwner();
     // Reset field clocks ONLY on a genuine account switch (A→B), NEVER on a fresh boot
     // (_opPrevOwner null), else we'd wipe the clocks _opDbLoad just rehydrated from the
     // durable IndexedDB log, breaking cross-reload field-clock durability (Phase 1 invariant).
@@ -959,7 +973,7 @@ function _opRebaseline(){
 function _opShadowDerive(onlyTbl){
   if(!window._opLogShadow)return;
   try{
-    const owner=_hlcOwner();
+    const owner=_opOwner();
     if(owner!==_opPrevOwner){_opRebaseline();} // account switched → fresh baseline, no bleed
     // An employee's redacted in-memory view (zeroed amounts etc.) is never real data, it
     // must never advance a FIELD CLOCK (the local merge-priority signal _opApplyIncoming
@@ -1536,7 +1550,11 @@ const _TD_TABLES=[
   // was added to stop. bid_id/bid_name carry the estimate a photo was shot on
   // (js/photo-capture.js), and a photo whose tag does not survive the sync is
   // a photo that leaves the Before/After pair on one phone.
-  {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
+  // set() KEEPS a photo still waiting to upload (Jack, 2026-09-24). A pending
+  // row never syncs (tx below needs a url), so the cloud copy of this table
+  // never has it, and replacing the list wholesale erased the only copy.
+  // _drainPhotoQueue (js/jobs.js) finishes it in place once there is signal.
+  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&p.pendingUpload&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
     // originalUrl/originalPath/annotated are here for the SAME reason
     // thumbUrl was missing and had to be added: a field the feature depends
     // on that the sync drops is a field that exists only on the phone that
@@ -2532,6 +2550,12 @@ async function supaInit(){
             const _oBids=[...new Map([...(_op?.bids||[]),...bids].map(b=>[b.id,b])).values()];
             const _oJobs=[...new Map([...(_op?.jobs||[]),...jobs].map(j=>[j.id,j])).values()];
             localStorage.removeItem('zp3_offline_pending');
+            // The field clocks of every edit made while signed out, back from
+            // the durable log BEFORE the cloud rows land: they are what lets
+            // _opApplyIncoming keep a newer local field (a Clock out tapped in
+            // the gap) over the cloud's older copy. A relaunch while signed out
+            // boots from cache and never loads them otherwise.
+            try{if(typeof _opDbLoad==='function')await _opDbLoad();}catch(_e){}
             await supaLoadFromCloud(); // non-silent: sets up timers, renders, navigates
             // Merge offline additions that aren't already in cloud data
             const _cSet=new Set(clients.map(c=>c.id));
@@ -2635,6 +2659,17 @@ async function supaInit(){
           _wipeLocalAccountData();
           _deliberateSignOut=false;
           supaSetStatus('local');
+          supaShowLogin({force:true});
+        } else if(localStorage.getItem('zp3_cloud_cache')&&!_sdkHasStoredSession()){
+          // THE SERVER ENDED THIS LOGIN (Jack, 2026-09-23). The SDK clears its
+          // stored session only when the server rejected the refresh token, so
+          // with the network up this is not a blip: every tap from here on
+          // saves to the phone alone. He tapped Clock out on a dashboard that
+          // looked normal and it never reached the server. Keep the cached
+          // data (it merges back on sign-in) but ask him to sign in now.
+          _loadedFromCacheOnly=true;
+          _mergeOnSignIn=true;
+          supaSetStatus('error');
           supaShowLogin({force:true});
         } else if(localStorage.getItem('zp3_cloud_cache')){
           // Non-deliberate sign-out (token refresh failure or rotation), keep data in memory.
@@ -6510,6 +6545,21 @@ function _clearRememberedLogin(){
   try{localStorage.removeItem('zp3_remembered_login');}catch(_e){}
 }
 let _deliberateSignOut=false;
+// Whether the Supabase SDK still has a session of its own in storage. The SDK
+// removes it only when the server has rejected the refresh token (a network
+// failure keeps it), so present means "retry later" and absent means "this
+// login is over".
+function _sdkHasStoredSession(){
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(!k||k.indexOf('sb-')!==0||!/-auth-token$/.test(k))continue;
+      const v=JSON.parse(localStorage.getItem(k)||'null');
+      if(v&&(v.refresh_token||(v.currentSession&&v.currentSession.refresh_token)))return true;
+    }
+  }catch(_e){}
+  return false;
+}
 function _saveSessionBackup(session){
   if(!session)return;
   try{localStorage.setItem('zp3_session_backup',JSON.stringify({
@@ -7044,6 +7094,17 @@ async function _probeAndSync(){
         _onReconnect();
         return;
       }
+      // THE BACKUP NEVER OUTRANKS THE SDK (Jack, 2026-09-23). getSession()
+      // comes back null for a moment after iOS relaunches the app, while the
+      // SDK's own stored session is still there and still good. This used to
+      // fall straight through to zp3_session_backup, which had drifted two
+      // refreshes behind: at 4:20:34 pm it sent a refresh token retired at
+      // 2:38, Supabase read the reuse as theft and revoked the WHOLE login,
+      // and it died for good when the access token ran out at 4:40. Nothing
+      // he tapped until he signed in again at 7:00 reached the server. While
+      // the SDK still holds a session it is the only voice: wait for the next
+      // tick. The backup is for a session the SDK no longer has at all.
+      if(_sdkHasStoredSession()){_sessionRestoreInProgress=false;return;}
       const _bk=(()=>{try{return JSON.parse(localStorage.getItem('zp3_session_backup')||'null');}catch(_e){return null;}})();
       if(_bk?.access_token&&_bk?.refresh_token){
         _supa.auth.setSession(_bk).then(({data:{session}})=>{
