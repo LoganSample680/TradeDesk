@@ -4825,3 +4825,117 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
     await assertNoErrors(page, 'TrueShot outbox');
   });
 });
+
+// Owner 2026-09-25: "after should bring them over as clients, even without
+// jobs." Jack shot After photos at four houses with no job, no signed
+// proposal and no payment, and all four sat in Leads. Built on his real book.
+test.describe('TrueShot: an After photo makes them a client', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => { };
+      window.__jack = () => {
+        clients.length = 0; photos.length = 0; bids.length = 0; jobs.length = 0;
+        const c = (id, name, addr) => clients.push({ id, name, addr, extraAddresses: [] });
+        c(1, 'Debbie Gillum', '220 NW 43rd St, Topeka, KS 66617');
+        c(2, 'Treyton Schafer', '2437 SW 24th St, Topeka, KS 66611');
+        c(3, 'Pepe Miranda', '6908 SW 17th St, Topeka, KS 66615');
+        c(4, 'Tracey Gillaspy', '4835 NE Kincaid Rd, Topeka, KS 66617');
+        c(5, 'Cindy Wilson', '1904 NW Fillmore St, Topeka, KS 66608');
+        c(6, 'Paid Pat', '1 Paid Rd, Topeka, KS');
+        const ph = (cid, type) => photos.push({ id: Math.random(), type, client_id: cid, url: 'https://x/a.jpg', uploadedAt: '2026-09-23T15:00:00.000Z' });
+        ph(1, 'before'); ph(1, 'progress'); ph(1, 'after'); ph(2, 'after'); ph(3, 'after'); ph(4, 'after'); ph(5, 'before'); ph(6, 'after');
+        // Tracey has a draft proposal, which on its own read as "Abandoned".
+        bids.push({ id: 41, client_id: 4, status: 'Draft', amount: 800, bid_date: '2026-09-20' });
+        // Pat signed and paid: a richer answer than "work done", and it wins.
+        bids.push({ id: 61, client_id: 6, status: 'Closed Won', amount: 500, bid_date: '2026-09-01' });
+        return true;
+      };
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test("Jack's book: the four with After photos are clients, the before-only one is still a lead", async () => {
+    const r = await page.evaluate(() => {
+      window.__jack();
+      const st = id => getClientStage(id).stage;
+      return { debbie: st(1), treyton: st(2), pepe: st(3), tracey: st(4), cindy: st(5), label: getClientStage(2).label };
+    });
+    expect(r).toMatchObject({ debbie: 'work_done', treyton: 'work_done', pepe: 'work_done', tracey: 'work_done' });
+    expect(r.cindy).not.toBe('work_done');
+    expect(r.label).toBe('Work done: no invoice yet');
+  });
+
+  test('they show on the Clients page (All and Collect), and nowhere in Leads', async () => {
+    const r = await page.evaluate(() => {
+      window.__jack();
+      goPg('pg-clients');
+      setCF('all', document.getElementById('cft-all')); renderClientList();
+      const all = document.getElementById('client-list').textContent;
+      setCF('collect', document.getElementById('cft-collect')); renderClientList();
+      const collect = document.getElementById('client-list').textContent;
+      setCF('all', document.getElementById('cft-all'));
+      const LEADS = ['incomplete', 'new', 'est_scheduled', 'est_ready', 'bid_out', 'bid_urgent', 'abandoned'];
+      const leads = clients.filter(c => LEADS.includes(getClientStage(c.id).stage)).map(c => c.name);
+      return { all, collect, leads };
+    });
+    for (const n of ['Debbie Gillum', 'Treyton Schafer', 'Pepe Miranda', 'Tracey Gillaspy']) {
+      expect(r.all).toContain(n);
+      expect(r.collect).toContain(n);
+      expect(r.leads).not.toContain(n);
+    }
+    expect(r.leads).toContain('Cindy Wilson');
+    expect(r.all).toContain('WORK DONE');
+    // Collect really is the Collect tab: Pat, signed and paid, is not in it.
+    expect(r.all).toContain('Paid Pat');
+    expect(r.collect).not.toContain('Paid Pat');
+  });
+
+  test('a signed or paid job still says more than "work done"', async () => {
+    const s = await page.evaluate(() => { window.__jack(); return getClientStage(6).stage; });
+    expect(s).not.toBe('work_done');
+  });
+
+  test('it follows the photos: marked After later, filed later, or deleted', async () => {
+    const r = await page.evaluate(async () => {
+      window.__jack();
+      const before = getClientStage(5).stage;
+      photos.find(p => p.client_id === 5).type = 'after';          // re-staged in place
+      await new Promise(res => setTimeout(res, 300));
+      const staged = getClientStage(5).stage;
+      clients.push({ id: 7, name: 'Later Filed', addr: '7 Late St', extraAddresses: [] });
+      photos.push({ id: 7777, type: 'after', client_id: null, url: 'https://x/l.jpg', uploadedAt: '2026-09-24T15:00:00.000Z' });
+      const unfiled = getClientStage(7).stage;
+      tdFilePhoto(7777, 7);
+      await new Promise(res => setTimeout(res, 300));
+      const filed = getClientStage(7).stage;
+      for (let i = photos.length - 1; i >= 0; i--) if (photos[i].client_id === 2) photos.splice(i, 1);
+      const deleted = getClientStage(2).stage;
+      return { before, staged, unfiled, filed, deleted };
+    });
+    expect(r.before).not.toBe('work_done');
+    expect(r.staged).toBe('work_done');
+    expect(r.unfiled).not.toBe('work_done');
+    expect(r.filed).toBe('work_done');
+    expect(r.deleted).not.toBe('work_done');
+  });
+
+  test('junk in, a plain false out', async () => {
+    const r = await page.evaluate(() => {
+      window.__jack();
+      const keep = photos.slice();
+      const out = [tdClientHasAfterPhoto(null), tdClientHasAfterPhoto(undefined), tdClientHasAfterPhoto(99999), tdClientHasAfterPhoto('1')];
+      photos.push(null, {}, { type: 'after' });
+      out.push(tdClientHasAfterPhoto(1));
+      photos.length = 0; keep.forEach(p => photos.push(p));
+      return out;
+    });
+    expect(r).toEqual([false, false, false, true, true]);
+    await assertNoErrors(page, 'After photo makes a client');
+  });
+});
