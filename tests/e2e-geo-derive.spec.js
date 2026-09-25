@@ -705,6 +705,153 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.some(d => d[0] === 'job')).toBe(true);
       expect(r.every(d => d[1] === false)).toBe(true);
     });
+
+    // ── RULE 25: TIME OFF HOLDS THE DAY (owner 2026-09-24) ────────────────
+    // "does calendar vacation stop mileage and addresses from counting?" It
+    // did not: Jack blocked 24 to 27 September, drove 275 miles, and the
+    // evening at the rental read as three hours on his rail. Owner:
+    // "calendar should block off auto mileage too."
+    test.describe('rule 25: a Time off day is held end to end', () => {
+      const TUE = '2026-09-01';
+      const OFF = [{ start: '2026-08-31', end: '2026-09-03', label: 'Vacation' }];
+      const shape = (inp) => page.evaluate((i) => {
+        const r = geoDeriveDay(i);
+        const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+        return {
+          timeOff: r.timeOff,
+          dwells: r.dwells.map(d => [d.kind, !!d.held]),
+          legs: r.legs.map(l => !!l.held),
+          time: rows.job_time_entries.map(x => x.source),
+          shop: rows.shop_time_entries.length,
+          miles: rows.td_mileage.map(m => ({ pending: !!m.pendingPurpose, purpose: m.purpose })),
+          open: r.open ? { counts: r.open.counts } : null,
+          openRows: rows.open.length,
+        };
+      }, inp);
+
+      test('an ordinary Tuesday at a customer counts, and the same Tuesday on Time off is all held', async () => {
+        // The baseline first, so the comparison means something: the visit
+        // and the drives count on a plain working day.
+        const work = await shape(visit(TUE, 10, 12));
+        expect(work.timeOff).toBe(false);
+        expect(work.time).toContain('client');
+        expect(work.miles.length).toBeGreaterThan(0);
+        expect(work.miles.some(m => !m.pending), 'a working day has counted miles').toBe(true);
+
+        const off = await shape(visit(TUE, 10, 12, { timeOff: OFF }));
+        expect(off.timeOff).toBe(true);
+        expect(off.time).not.toContain('client');
+        expect(off.time).toContain('client-held');
+        expect(off.time.filter(x => /^drive/.test(x)).every(x => x === 'drive-held')).toBe(true);
+        expect(off.legs.every(Boolean)).toBe(true);
+        // The miles stay on the log and count toward nothing until answered.
+        expect(off.miles.length).toBe(work.miles.length);
+        expect(off.miles.every(m => m.pending && m.purpose === '')).toBe(true);
+        await assertNoErrors(page);
+      });
+
+      test('a morning at the yard on a day off writes no yard time', async () => {
+        // Home, the yard 7:50 to 10, John Doe, the yard again, home. The yard
+        // has no held form, and a vacation is not a shift at your own place.
+        const { ds, t } = dayOf(TUE);
+        const YARD = { id: 'place-y25', kind: 'shop', name: 'The yard', lat: 39.0600, lng: -95.6500 };
+        const inp = { day: TUE, dayStart: ds, dayEnd: ds + 86400000, personId: 'p', fences: [YARD, HOME, DOE],
+          tape: [mo(t(7), 'onFoot'), mo(t(7, 30), 'automotive'), mo(t(7, 50), 'onFoot'),
+            mo(t(10), 'automotive'), mo(t(10, 20), 'onFoot'), mo(t(12), 'automotive'), mo(t(12, 20), 'onFoot'),
+            mo(t(15), 'automotive'), mo(t(15, 20), 'onFoot')],
+          fixes: [fix(t(7, 10), HOME), fix(t(7, 50) + 5000, YARD), fix(t(9), YARD), fix(t(9, 55), YARD),
+            fix(t(10, 20) + 5000, DOE), fix(t(11, 55), DOE), fix(t(12, 20) + 5000, YARD), fix(t(14, 55), YARD),
+            fix(t(15, 20) + 5000, HOME), fix(t(16), HOME)],
+          nowMs: ds + 86400000 + 3600000 };
+        const work = await shape(inp);
+        expect(work.shop, 'a working day has yard time').toBeGreaterThan(0);
+        const off = await shape(Object.assign({}, inp, { timeOff: OFF }));
+        expect(off.shop).toBe(0);
+        expect(off.time).toContain('client-held');
+        expect(off.miles.every(m => m.pending)).toBe(true);
+        await assertNoErrors(page);
+      });
+
+      test('a manual clock still counts on a day off: the person said it was work', async () => {
+        const { t } = dayOf(TUE);
+        const clocks = [{ start: t(8), end: t(14) }];
+        const work = await shape(visit(TUE, 10, 12, { clocks }));
+        const off = await shape(visit(TUE, 10, 12, { clocks, timeOff: OFF }));
+        expect(off.timeOff).toBe(true);
+        expect(off.time).toEqual(work.time);
+        expect(off.miles).toEqual(work.miles);
+        expect(off.shop).toBe(work.shop);
+      });
+
+      test('the live stop on a day off is on the map and off the clock', async () => {
+        // Shop, drive to John Doe at 10, still there at 11:30.
+        const { ds, t } = dayOf(TUE);
+        const now = { day: TUE, dayStart: ds, dayEnd: ds + 86400000, personId: 'p', fences: [SHOP, HOME, DOE],
+          tape: [mo(t(9), 'onFoot'), mo(t(10), 'automotive'), mo(t(10, 20), 'onFoot')],
+          fixes: [fix(t(9, 30), SHOP), fix(t(10, 20) + 5000, DOE), fix(t(11), DOE), fix(t(11, 25), DOE)],
+          nowMs: t(11, 30) };
+        const work = await shape(now);
+        expect(work.open && work.open.counts, 'at a customer on a working day it counts').toBe(true);
+        expect(work.openRows).toBe(1);
+        const off = await shape(Object.assign({}, now, { timeOff: OFF }));
+        expect(off.open && off.open.counts).toBe(false);
+        expect(off.openRows, 'no running row is written for it').toBe(0);
+        // A clock running over it puts it back on the clock.
+        const clocked = await shape(Object.assign({}, now, { timeOff: OFF, clocks: [{ start: t(9), end: t(12) }] }));
+        expect(clocked.open && clocked.open.counts).toBe(true);
+      });
+
+      test('only the days inside a block: the day after it ends is a normal day', async () => {
+        const days = await page.evaluate(() => {
+          const b = [{ start: '2026-09-24', end: '2026-09-27' }];
+          const on = d => _gdTimeOffDay({ day: d, timeOff: b });
+          return [on('2026-09-23'), on('2026-09-24'), on('2026-09-26'), on('2026-09-27'), on('2026-09-28'),
+            // A one-day block written with no end is still that one day.
+            _gdTimeOffDay({ day: '2026-09-24', timeOff: [{ start: '2026-09-24' }] })];
+        });
+        expect(days).toEqual([false, true, true, true, false, true]);
+      });
+
+      test('the Time off window says it holds tracking, not just scheduling', async () => {
+        const txt = await page.evaluate(() => {
+          openTimeOffModal();
+          const el = document.getElementById('timeoff-modal-overlay');
+          const t = el ? el.textContent : '';
+          if (el) el.remove();
+          return t;
+        });
+        expect(txt).toContain('Blocks scheduling');
+        expect(txt).toContain('Automatic time and mileage');
+        expect(txt).not.toContain('Block dates from scheduling');
+        // And nothing in it runs off a phone screen (this page is 390 wide):
+        // the End date box used to hang past the right edge.
+        const lay = await page.evaluate(() => {
+          openTimeOffModal();
+          const r = ['to-start', 'to-end', 'to-label'].map(id => document.getElementById(id).getBoundingClientRect());
+          const out = { right: Math.max(...r.map(x => x.right)), w: innerWidth,
+            overlap: r[0].right > r[1].left, scroll: document.documentElement.scrollWidth };
+          document.getElementById('timeoff-modal-overlay').remove();
+          return out;
+        });
+        expect(lay.right).toBeLessThanOrEqual(lay.w);
+        expect(lay.overlap).toBe(false);
+        expect(lay.scroll).toBeLessThanOrEqual(lay.w + 1);
+        await assertNoErrors(page);
+      });
+
+      test('junk Time off never throws and never holds a day', async () => {
+        const r = await page.evaluate(() => [null, undefined, 'x', 7, {}, [null], ['2026-09-01'],
+          [{ start: 'x', end: 'y' }], [{ end: '2026-09-01' }], [{ start: 7, end: 8 }]]
+          .map(v => _gdTimeOffDay({ day: '2026-09-01', timeOff: v })));
+        expect(r.every(v => v === false)).toBe(true);
+        expect(await page.evaluate(() => _gdTimeOffDay({ day: 'nope', timeOff: [{ start: '2026-09-01', end: '2026-09-01' }] }))).toBe(false);
+        expect(await page.evaluate(() => _gdTimeOffDay(null))).toBe(false);
+        const off = await shape(visit(TUE, 10, 12, { timeOff: 'garbage' }));
+        expect(off.timeOff).toBe(false);
+        expect(off.time).toContain('client');
+        await assertNoErrors(page);
+      });
+    });
   });
 
   // ── Rule 18: a loop's two ends are one end, counted twice ────────────────

@@ -473,6 +473,15 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
       days: Array.isArray(w.days) && w.days.length ? w.days.map(Number) : [1, 2, 3, 4, 5, 6],
     };
   } catch { /* defaults stand */ }
+  // Rule 25: the account's Time off blocks (Settings, js/settings.js). Read
+  // from the same settings row as the working hours, so the phone and the
+  // server hold the same days.
+  let timeOff = [];
+  try {
+    const raw = cfgRes?.data?.settings;
+    const s = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (Array.isArray(s?.timeOff)) timeOff = s.timeOff;
+  } catch { /* none */ }
 
   const res = geoDeriveDay({
     day, dayStart: b.start, dayEnd: b.end, personId: uid,
@@ -481,7 +490,7 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // answered by the two ids the caller passed: the contractor deriving
     // their own day has uid === cid, anybody else is crew on their account.
     crew: String(uid) !== String(cid),
-    tape, fixes, appEvents, regions, fences, nowMs, clocks, clockHistory, workHours,
+    tape, fixes, appEvents, regions, fences, nowMs, clocks, clockHistory, workHours, timeOff,
   });
 
   // ── WHEN A REBUILD MAY RETIRE A ROW (owner 2026-09-15) ──────────────────
