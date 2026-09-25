@@ -175,6 +175,101 @@ function timPhotoQuery(text){
   return{q:rest};
 }
 
+// ── Time off, said out loud (owner 2026-09-24: "we're focused on Tim") ─────
+// "Tim, I'm on vacation through Sunday." The same block the Schedule screen's
+// Time off button writes (addTimeOff, js/settings.js), so the calendar stops
+// booking those days and the deriver holds that day's automatic time and
+// mileage (rule 25, js/geo-derive.js). Dates are the ways they get said: today,
+// tomorrow, a weekday, "the 27th", "Sept 27", 9/27, "for 3 days", "next week".
+// Nothing cleverer: a sentence Tim cannot pin to a day is not a day off.
+const _TIM_OFF_SAID=/ (vacation|vacay|time off|day off|days off|off work|pto|holiday|out of town|not working|(i m|im|i am|we re|were|taking|take|be) off|(today|tomorrow|(sun|mon|tues|wednes|thurs|fri|satur)days?) off) /;
+const _TIM_DOW=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+const _TIM_MON=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const _TIM_NUM={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,fourteen:14};
+function _timYmd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function _timPlus(d,n){const x=new Date(d.getFullYear(),d.getMonth(),d.getDate());x.setDate(x.getDate()+n);return x;}
+// The first day named in `s`, on or after `from`. Earliest in the sentence
+// wins, so "friday through monday" reads friday first.
+function _timFirstDay(s,from){const h=_timFirstHit(s,from);return h?h.d:null;}
+function _timFirstHit(s,from){
+  const hits=[];
+  const at=(re,fn)=>{const m=re.exec(s);if(m){const d=fn(m);if(d)hits.push({i:m.index,d});}};
+  at(/ today /,()=>from);
+  at(/ tomorrow /,()=>_timPlus(from,1));
+  _TIM_DOW.forEach((w,i)=>at(new RegExp(' '+w+'s? '),()=>_timPlus(from,(i-from.getDay()+7)%7)));
+  at(/ (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* (\d{1,2})(st|nd|rd|th)? /,m=>{
+    const mo=_TIM_MON.indexOf(m[1]),dd=+m[2];
+    let d=new Date(from.getFullYear(),mo,dd);
+    if(d.getMonth()!==mo)return null;
+    if(d<from)d=new Date(from.getFullYear()+1,mo,dd);
+    return d;
+  });
+  at(/ (\d{1,2})\/(\d{1,2}) /,m=>{
+    const mo=+m[1]-1,dd=+m[2];
+    if(mo<0||mo>11)return null;
+    let d=new Date(from.getFullYear(),mo,dd);
+    if(d.getMonth()!==mo)return null;
+    if(d<from)d=new Date(from.getFullYear()+1,mo,dd);
+    return d;
+  });
+  at(/ (?:the )?(\d{1,2})(st|nd|rd|th) /,m=>{
+    const dd=+m[1];
+    let d=new Date(from.getFullYear(),from.getMonth(),dd);
+    if(d.getDate()!==dd)return null;
+    if(d<from){d=new Date(from.getFullYear(),from.getMonth()+1,dd);if(d.getDate()!==dd)return null;}
+    return d;
+  });
+  if(!hits.length)return null;
+  hits.sort((a,b)=>a.i-b.i);
+  return hits[0];
+}
+function timTimeOff(text,now){
+  const t=' '+String(text||'').toLowerCase().replace(/[^a-z0-9\/\s]/g,' ').replace(/\s+/g,' ').trim()+' ';
+  if(!_TIM_OFF_SAID.test(t))return null;
+  const n=(now instanceof Date&&!isNaN(now))?now:new Date();
+  const today=new Date(n.getFullYear(),n.getMonth(),n.getDate());
+  const label=/ (vacation|vacay) /.test(t)?'Vacation':/ holiday /.test(t)?'Holiday':'Time off';
+  let start=null,end=null;
+  if(/ next week /.test(t)){
+    start=_timPlus(today,((1-today.getDay()+7)%7)||7);
+    end=_timPlus(start,6);
+  }else{
+    // Split at the word that starts the end date, when what follows it is a
+    // day. "to" only counts that way, since "going to be off" is not a range.
+    const cut=/ (through|thru|till|til|until|to|ending) /g;
+    let m,head=t,tail='';
+    while((m=cut.exec(t))){
+      const rest=' '+t.slice(m.index+m[0].length);
+      const h=_timFirstHit(rest,today);
+      // "to" must be followed straight away by the day ("friday to sunday");
+      // anywhere later it is the "to" in "going to be off tomorrow".
+      if(h&&(m[1]!=='to'||h.i===0)){head=t.slice(0,m.index)+' ';tail=rest;break;}
+      cut.lastIndex=m.index+1;
+    }
+    start=_timFirstDay(head,today)||today;
+    if(tail)end=_timFirstDay(tail,start);
+    const f=/ for (\d{1,2}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|fourteen) (day|days|week|weeks) /.exec(t);
+    if(!end&&f){
+      const k=/^\d+$/.test(f[1])?+f[1]:_TIM_NUM[f[1]];
+      const days=/week/.test(f[2])?k*7:k;
+      if(days>0)end=_timPlus(start,days-1);
+    }
+    if(!end){
+      // Nothing that names a day at all: he is asking about the list, not
+      // adding to it ("show my time off", "cancel my vacation").
+      if(!_timFirstDay(t,today)&&/ (show|open|see|list|edit|remove|delete|cancel|change|check) /.test(t))return {open:true};
+      end=start;
+    }
+  }
+  if(end<start)return null;
+  if((end-start)/86400000>62)return null;
+  return {start:_timYmd(start),end:_timYmd(end),label};
+}
+function _timDayWord(ymd){
+  const d=new Date(ymd+'T12:00:00');
+  return isNaN(d)?ymd:d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+}
+
 // The whole sentence, resolved. Pure: hand it the lists, get back a plan.
 // Order matters. Building beats looking, because a contractor who says
 // "estimate" while describing work wants the builder, not the list of ones he
@@ -183,6 +278,10 @@ function timParse(text,opts){
   const o=opts||{};
   const said=String(text||'');
   if(!said.trim())return {text:said,kind:'none'};
+
+  // Before the estimate parser: "off" and "for three days" are not a job.
+  const off=timTimeOff(said,o.now);
+  if(off)return off.open?{text:said,kind:'timeoff-open'}:{text:said,kind:'timeoff',start:off.start,end:off.end,label:off.label};
 
   const est=(typeof spkParse==='function')
     ? spkParse(said,{clients:o.clients,book:o.book,catalog:o.catalog})
@@ -226,6 +325,8 @@ function timSay(p){
     return p.q?'Search photos for '+p.q:'Search photos';
   }
   if(p.kind==='newclient')return 'Start '+p.subject+' as a new customer';
+  if(p.kind==='timeoff')return 'Mark '+_timDayWord(p.start)+(p.end!==p.start?' to '+_timDayWord(p.end):'')+' as '+p.label.toLowerCase();
+  if(p.kind==='timeoff-open')return 'Open your time off';
   if(p.kind==='estimate'){
     const pl=p.plan||{};
     const what=pl.type==='tm'?'a T&M':'a proposal';
@@ -257,6 +358,22 @@ function timRun(text){
     }
     return p;
   }
+
+  if(p.kind==='timeoff'&&typeof addTimeOff==='function'){
+    const have=(typeof S!=='undefined'&&Array.isArray(S.timeOff))?S.timeOff:[];
+    // Already covered is already done: a second identical block would only
+    // be one more row to remove later.
+    if(!have.some(b=>b&&b.start<=p.start&&(b.end||b.start)>=p.end))addTimeOff(p.start,p.end,p.label);
+    if(typeof showToast==='function')showToast(p.label+' saved. Time and mileage wait for your answer those days','🏖',3200);
+    // Today inside it: re-derive now so the live timer stops this minute
+    // rather than at the next motion flip.
+    try{
+      const td=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):_timYmd(new Date());
+      if(td>=p.start&&td<=p.end&&typeof _geoDeriveDayNow==='function')_geoDeriveDayNow(td,null);
+    }catch(_e){}
+    return p;
+  }
+  if(p.kind==='timeoff-open'&&typeof openTimeOffModal==='function'){openTimeOffModal();return p;}
 
   if(p.kind==='photos'){
     const places=p.places||[];

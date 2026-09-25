@@ -4341,3 +4341,106 @@ test.describe('Photo capture: pending uploads survive and retry', () => {
     expect(r.url).toBe('https://x/done.jpg');
   });
 });
+
+
+// Owner 2026-09-25: "why can't we query SQL to see if we have the photo?"
+// Because a photo that never uploaded left no trace on the server. The phone
+// now reports taken / uploaded / failed (with a one-word reason) and, once a
+// launch, how many are still waiting on it, through the telemetry pipe
+// (analytics_events). No names or addresses in it, only the photo's id.
+test.describe('TrueShot: the server can see where every photo is', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => { };
+      window.__tel = [];
+      window._obs = { track: (e, ctx, v) => window.__tel.push({ e, ctx, v }), error: () => {}, flush: () => {} };
+      window.__file = () => new File([new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9])], 'a.jpg', { type: 'image/jpeg' });
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('offline: taken, then failed with "offline", and nothing personal in either', async () => {
+    const r = await page.evaluate(async () => {
+      window.__tel.length = 0; photos.length = 0; clients.length = 0;
+      clients.push({ id: 501, name: 'Tracey Gillaspy', addr: '4835 NE Kincaid Rd, Topeka, KS 66617' });
+      const en = window.supaEnabled; window.supaEnabled = () => false;
+      let row; try { row = await tdSavePhoto({ file: window.__file(), type: 'after', clientId: 501, stamp: false }); } finally { window.supaEnabled = en; }
+      return { tel: window.__tel.slice(), id: String(row.id).replace(/[^0-9]/g, '').slice(0, 16), pending: !!row.pendingUpload };
+    });
+    expect(r.pending).toBe(true);
+    expect(r.tel.map(t => t.e)).toEqual(['photo_taken', 'photo_upload_failed']);
+    expect(r.tel[0].ctx).toBe('photo ' + r.id);
+    expect(r.tel[1].ctx).toBe('photo ' + r.id + ' offline');
+    expect(JSON.stringify(r.tel)).not.toMatch(/Tracey|Gillaspy|Kincaid|4835/);
+  });
+
+  test('a storage failure is reported with its reason, and a success is reported as uploaded', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { en: window.supaEnabled, supa: window._supa, user: window._supaUser, cp: window._compressPhoto, hub: window._uploadClientHub, thumb: window._uploadPhotoThumb, full: window._uploadPhotoFull };
+      const out = {};
+      try {
+        window.supaEnabled = () => true; window._supaUser = { id: 'u1' };
+        window._compressPhoto = async () => null; window._uploadClientHub = async () => {};
+        window._uploadPhotoThumb = async () => ({ thumbUrl: '', thumbPath: '' }); window._uploadPhotoFull = async () => '';
+        const mk = (upload) => ({ storage: { from: () => ({ upload, getPublicUrl: (p) => ({ data: { publicUrl: 'https://x/' + p } }) }) } });
+        window.__tel.length = 0;
+        window._supa = mk(async () => ({ error: { message: 'new row violates row-level security policy', statusCode: '403' } }));
+        await tdSavePhoto({ file: window.__file(), type: 'before', stamp: false });
+        out.fail = window.__tel.map(t => t.e + ':' + t.ctx.split(' ').slice(2).join(' '));
+        window.__tel.length = 0;
+        window._supa = mk(async () => { throw new TypeError('Load failed'); });
+        await tdSavePhoto({ file: window.__file(), type: 'before', stamp: false });
+        out.net = window.__tel.map(t => t.e + ':' + t.ctx.split(' ').slice(2).join(' '));
+        window.__tel.length = 0;
+        window._supa = mk(async () => ({ error: null }));
+        const row = await tdSavePhoto({ file: window.__file(), type: 'before', stamp: false });
+        out.ok = window.__tel.map(t => t.e);
+        out.okUrl = !!row.url;
+      } finally {
+        window.supaEnabled = saved.en; window._supa = saved.supa; window._supaUser = saved.user; window._compressPhoto = saved.cp;
+        window._uploadClientHub = saved.hub; window._uploadPhotoThumb = saved.thumb; window._uploadPhotoFull = saved.full;
+      }
+      return out;
+    });
+    expect(r.fail).toEqual(['photo_taken:', 'photo_upload_failed:auth']);
+    expect(r.net).toEqual(['photo_taken:', 'photo_upload_failed:network']);
+    expect(r.ok).toEqual(['photo_taken', 'photo_uploaded']);
+    expect(r.okUrl).toBe(true);
+  });
+
+  test('once a launch the phone says how many are still waiting, job-sheet copies included', async () => {
+    const r = await page.evaluate(() => {
+      window.__tel.length = 0; photos.length = 0; jobs.length = 0;
+      photos.push({ id: 1, pendingUpload: true, data: 'x' }, { id: 2, pendingUpload: true, data: 'x' }, { id: 3, url: 'https://x/3.jpg' });
+      jobs.push({ id: 9, photos: [{ type: 'after', data: 'x', pendingUpload: true }, { type: 'after', data: 'x' }] });
+      const n = _pcReportPending(true);
+      const again = _pcReportPending();
+      photos.length = 0; jobs.length = 0;
+      const none = _pcReportPending(true);
+      return { n, again, none, tel: window.__tel.slice() };
+    });
+    expect(r.n).toBe(3);
+    expect(r.again, 'only once a launch').toBe(-1);
+    expect(r.none).toBe(0);
+    expect(r.tel).toEqual([{ e: 'photo_pending', ctx: 'photos waiting 3', v: 3 }, { e: 'photo_pending', ctx: 'none', v: 0 }]);
+  });
+
+  test('no telemetry pipe, junk rows and junk errors: nothing throws', async () => {
+    const r = await page.evaluate(() => {
+      const keep = window._obs; window._obs = undefined;
+      let ok = true;
+      try { _pcTel('photo_taken', { id: 1 }); _pcTel('x', null); _pcReportPending(true); } catch (e) { ok = false; }
+      window._obs = keep;
+      return { ok, why: [null, undefined, {}, 'str', { statusCode: 413 }, { message: 'Payload too large' }].map(_pcWhyFailed) };
+    });
+    expect(r.ok).toBe(true);
+    expect(r.why).toEqual(['other', 'other', 'other', 'other', 'too-big', 'too-big']);
+    await assertNoErrors(page, 'TrueShot telemetry');
+  });
+});

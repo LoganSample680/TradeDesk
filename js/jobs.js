@@ -2490,6 +2490,8 @@ function removeJobSpec(jobId,idx,clientId){
 }
 async function _drainPhotoQueue(){
   if(!supaEnabled()||!_supaUser||!_supa)return;
+  // How many are stuck on this phone, before the retry (js/photo-capture.js).
+  if(typeof _pcReportPending==='function')_pcReportPending();
   let dirty=false;
   // PHOTOS FILED TO AN ADDRESS, NOT A JOB (Jack, 2026-09-24: four photos at
   // one house, one came through). tdSavePhoto (js/photo-capture.js) keeps a

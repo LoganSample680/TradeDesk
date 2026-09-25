@@ -115,9 +115,11 @@ async function tdSavePhoto(opts){
   row.data=dataUrl;
   photos.push(row);
   saveAll();
+  _pcTel('photo_taken',row,opts.imported?'import':'');
 
   if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa)){
     _pcMarkPending(row,j,file);
+    _pcTel('photo_upload_failed',row,(typeof supaEnabled==='function'&&supaEnabled())?'signed-out':'offline');
     return row;
   }
   try{
@@ -151,11 +153,63 @@ async function tdSavePhoto(opts){
     // falls back to url when data is absent).
     delete row.data;
     saveAll();
+    _pcTel('photo_uploaded',row);
     if(clientId!=null&&typeof _uploadClientHub==='function')_uploadClientHub(clientId).catch(()=>{});
   }catch(_e){
     _pcMarkPending(row,j,file);
+    _pcTel('photo_upload_failed',row,_pcWhyFailed(_e));
   }
   return row;
+}
+// ── Where a photo is, on the server's side (owner 2026-09-25) ──────────────
+// "Why can't we query SQL to see if we have the photo?" Because until the
+// upload succeeds the photo exists only on the phone, and a failure left no
+// trace anywhere: Jack shot four at one house, one arrived, and nothing on
+// the server could say whether the other three were taken, failed, or are
+// still sitting on his phone.
+//
+// So the phone now reports it, through the telemetry pipe every other event
+// already uses (js/observability.js -> analytics_events, which records whose
+// account it was): taken, uploaded, or failed with a one-word reason. And
+// once per launch, how many are still waiting on that phone, which also
+// counts photos taken before this existed. No customer names or addresses go
+// into that table (its whole design is that it carries none); the photo's own
+// id is enough to line a report up with td_photos.
+//
+// Inert in tests and on localhost, exactly like the rest of _obs.
+function _pcTel(event,row,why){
+  try{
+    if(!window._obs||typeof window._obs.track!=='function')return;
+    const id=row&&row.id!=null?String(row.id).replace(/[^0-9]/g,'').slice(0,16):'';
+    window._obs.track(event,('photo '+id+(why?' '+why:'')).slice(0,60));
+  }catch(_e){}
+}
+// A failure reason short and free of anything personal: the kind of thing
+// that went wrong, never the message text a library handed back.
+function _pcWhyFailed(e){
+  try{
+    const m=String((e&&(e.statusCode||e.status||e.message))||'').toLowerCase();
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return 'offline';
+    if(/fetch|network|load failed|timed? ?out|abort/.test(m))return 'network';
+    if(/jwt|auth|401|403|token|row-level|rls|policy/.test(m))return 'auth';
+    if(/413|too large|payload|size/.test(m))return 'too-big';
+    if(/quota|storage/.test(m))return 'storage';
+    if(/url/.test(m))return 'no-url';
+    return 'other';
+  }catch(_e){return 'other';}
+}
+// Once per launch: how many photos on THIS phone are still waiting to upload,
+// counting the job sheet's own copies too (the two queues the drain retries).
+let _pcPendingReported=false;
+function _pcReportPending(force){
+  try{
+    if(_pcPendingReported&&!force)return -1;
+    let n=(Array.isArray(photos)?photos:[]).filter(p=>p&&p.pendingUpload).length;
+    (Array.isArray(jobs)?jobs:[]).forEach(j=>{(j&&Array.isArray(j.photos)?j.photos:[]).forEach(p=>{if(p&&p.pendingUpload&&p.data)n++;});});
+    _pcPendingReported=true;
+    try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('photo_pending',n>0?'photos waiting '+n:'none',n);}catch(_e){}
+    return n;
+  }catch(_e){return -1;}
 }
 function _pcWhoShot(){
   try{
