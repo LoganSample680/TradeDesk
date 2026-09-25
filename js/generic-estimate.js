@@ -1112,7 +1112,11 @@ function _geiRenderTopBar(prefix,defaultTitle,editFnName){
         // names the screen, so the line under the customer's name has room
         // for the address (it was cut to "41…").
         '<span class="ios-navtitle">'+(prefix==='tm'?'Time &amp; Materials':'Build Your Own')+'</span>'+
-        '<button type="button" class="ios-navbtn bold" onclick="saveGenericEstimate(true)">Save</button>'+
+        // Save is done: it keeps the draft and takes him home (owner,
+        // 2026-09-25: "Save on time and materials doesn't take us back to home
+        // page"). The tab bar is hidden on this page, so Save and Back are the
+        // only ways out; staying put after Save left him stuck.
+        '<button type="button" class="ios-navbtn bold" onclick="_geiSaveAndExit()">Save</button>'+
       '</div>'+
       '<div class="ios-large">'+
         // A div, not a <button>: the rename input is typed INTO this element,
@@ -6047,8 +6051,17 @@ function _tmPreviewClient(){_geiPreviewClient();}
 function _geiBack(){
   // T&M skips step 1 on the way in, so Back does not walk into it on the way
   // out either. Step 1 is reached on purpose, from Change on the sub-line.
-  if(_geiStep>1&&!_geiIsTM){goGeiStep(_geiStep-1);return;}
+  // Build Your Own is the same full-screen page with the same Change, so its
+  // Back does the same (2026-09-25): it went to the old setup step instead.
+  if(_geiStep>1&&!_geiIsTM&&!_geiIsFreeForm){goGeiStep(_geiStep-1);return;}
   _geiToStylePicker();
+}
+// Save the draft and go home. The draft stays in the pipeline to pick up
+// again; nothing he typed is lost on the way out.
+function _geiSaveAndExit(){
+  try{saveGenericEstimate(true);}catch(_e){}
+  document.getElementById('gei-cart-bar')?.remove();
+  goPg('pg-dash');
 }
 function _geiToStylePicker(){
   document.getElementById('gei-cart-bar')?.remove();

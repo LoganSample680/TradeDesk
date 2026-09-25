@@ -662,6 +662,15 @@ function _closeStylePicker(){
   const ov=document.getElementById('_style-pick-ov');
   if(ov){ov.style.opacity='0';ov.style.transform='translateY(14px)';setTimeout(()=>ov.remove(),380);}
 }
+// Cancel on the picker. Opened from a client, it just closes. Opened from
+// Back on an estimate, closing it would drop him onto the estimate he just
+// backed out of, with no tab bar to leave by (owner, 2026-09-25: "no way to
+// get back to home page"). There it saves the draft and goes home.
+function _stylePickCancel(){
+  const onEst=document.querySelector('.pg.active')?.id==='pg-est-generic';
+  _closeStylePicker();
+  if(onEst&&typeof _geiSaveAndExit==='function')_geiSaveAndExit();
+}
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
   const ov=document.createElement('div');
@@ -708,7 +717,7 @@ function _showEstimateStylePicker(c,overrideAddr){
           '<div class="tbar-eyebrow">Pick proposal type</div>'+
           '<div class="tbar-title">How are you billing this job?</div>'+
         '</div>'+
-        '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
+        '<button class="btn btn-ghost" onclick="_stylePickCancel()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
         card('truebid','blue',svgIcon('🛰️',{size:36}),'The flagship','TrueBid','Powered by the TrueSuite, minimal typing, nothing guessed',
