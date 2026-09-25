@@ -616,7 +616,10 @@ async function _devLoadUserAccount(key){
     lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]])),
     syncedHash:Object.fromEntries(Object.entries(_syncedHash).map(([k,v])=>[k,[...v]]))
   };
-  // Load target user's records into memory
+  // Load target user's records into memory. photos[] is emptied first: the
+  // td_photos set() keeps this device's pending uploads, and those are the
+  // dev's own, never the target account's (they come back via _devSavedState).
+  photos.length=0;
   for(let i=0;i<_TD_TABLES.length;i++){
     const{t,set}=_TD_TABLES[i];
     const rows=(tableResults[i].data||[]).map(r=>r.data);
@@ -709,7 +712,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.24.26.7';
+const APP_VERSION='09.24.26.8';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1536,7 +1539,11 @@ const _TD_TABLES=[
   // was added to stop. bid_id/bid_name carry the estimate a photo was shot on
   // (js/photo-capture.js), and a photo whose tag does not survive the sync is
   // a photo that leaves the Before/After pair on one phone.
-  {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
+  // set() KEEPS a photo still waiting to upload (Jack, 2026-09-24). A pending
+  // row never syncs (tx below needs a url), so the cloud copy of this table
+  // never has it, and replacing the list wholesale erased the only copy.
+  // _drainPhotoQueue (js/jobs.js) finishes it in place once there is signal.
+  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&p.pendingUpload&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
     // originalUrl/originalPath/annotated are here for the SAME reason
     // thumbUrl was missing and had to be added: a field the feature depends
     // on that the sync drops is a field that exists only on the phone that
@@ -1545,7 +1552,7 @@ const _TD_TABLES=[
     // replaced the row, and the pointer to the UNTOUCHED original was gone.
     // "The original is never destroyed" is the rule mark-up is built on, and
     // an original nobody can find again is a destroyed original.
-    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,fullPath,originalFullPath,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,addr,addrM,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',fullPath:fullPath||'',originalFullPath:originalFullPath||'',annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,addr:addr||'',addrM:addrM!=null?addrM:null,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
+    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,fullPath,originalFullPath,shotPx,accM,by,exifGps,stamped,imported,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,addr,addrM,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',fullPath:fullPath||'',originalFullPath:originalFullPath||'',shotPx:shotPx||'',accM:accM!=null?accM:null,by:by||'',exifGps:!!exifGps,stamped:!!stamped,imported:!!imported,annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,addr:addr||'',addrM:addrM!=null?addrM:null,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
 ];
 // Root cause (found 2026-07-10): this used to be a hand-listed object literal
 // that fell out of sync with _TD_TABLES above, td_maintenance was missing.
@@ -2014,14 +2021,25 @@ function _bootSyncSettled(){
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
-  try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
+  // Render the real content underneath the shimmer, then let each card swap
+  // over (js/dashboard.js _dashRevealSkeletons).
   try{if(typeof renderDash==='function')renderDash();}catch(_e){}
+  try{if(typeof _dashRevealSkeletons==='function')_dashRevealSkeletons();else if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
   // Pour only if the boot overlay already lifted. A fast sync that settles
   // while the overlay is still up must leave the pour to _removeBootOverlay
   // (skel mode is off now, so the lift arms it), or the once-guard would burn
   // the cascade invisibly behind the overlay.
   const _o=document.getElementById('supa-boot-overlay');
   if(!_o||_o.classList.contains('td-fadeout'))try{_armBootCascade();}catch(_e){}
+  // A logo with no brand colour yet: take it from the logo, read at boot by
+  // tdBootFill and cached as zp3_boot_look. Only once the cloud settings are in,
+  // so a colour picked on another device is never overwritten.
+  try{
+    if(_authSettingsLoaded&&S.logoData&&!S.brandColor&&typeof _tdBrandFromLogo==='function'&&typeof tdLogoKey==='function'){
+      const lk=JSON.parse(localStorage.getItem('zp3_boot_look')||'null');
+      if(lk&&lk.k===tdLogoKey(S.logoData))_tdBrandFromLogo(lk);
+    }
+  }catch(_e){}
   // Anything shared into TradeDesk while it was closed (js/share-inbox.js).
   // Well after the pour so it never competes with the boot render.
   try{if(typeof checkSharedInbox==='function')setTimeout(()=>checkSharedInbox(),6000);}catch(_e){}
@@ -2060,9 +2078,15 @@ function _removeBootOverlay(immediate){
     // Slow loads are unaffected, real loading always governs.
     try{
       const _t0=window._sboT0||0;
-      if(_t0&&!o._minWaited){
-        const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short), the intro gets room to breathe
-        if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+      // EVERY call inside the hold waits for the same lift time. It used to
+      // flag the overlay as "waited" on the first call, so a second boot step
+      // calling in during the hold skipped it and cut the logo short.
+      if(_t0){
+        const _left=2150-(Date.now()-_t0);   // the approved beat (owner 2026-09-24): fade in, hold, fade out at ~2.15s
+        if(_left>60){
+          if(!o._liftTimer)o._liftTimer=setTimeout(()=>{o._liftTimer=null;_removeBootOverlay();},_left);
+          return;
+        }
       }
     }catch(_e){}
     // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
@@ -2072,15 +2096,17 @@ function _removeBootOverlay(immediate){
     // _bootSyncSettled pours the cascade then. Everything else pours now.
     // Applying the skeletons HERE guarantees the reveal is 100% shimmer even
     // if no render has run yet this boot.
+    // Owner-approved 2026-09-24: the page waterfalls in as the overlay lifts
+    // EVEN while the first sync is in flight, as shimmer cards; the data then
+    // lands in place (_bootSyncSettled). One pour either way.
     if(typeof _dashSkelMode==='function'&&_dashSkelMode()){
       try{if(typeof _dashApplySkeletons==='function')_dashApplySkeletons();}catch(_e){}
-    }else{
-      try{_armBootCascade();}catch(_e){}
     }
+    try{_armBootCascade();}catch(_e){}
   }
   o.classList.add('td-fadeout');
+  setTimeout(()=>{try{o.remove();}catch(_e){}},640);
   setTimeout(()=>{
-    o.remove();
     const resumeBid=localStorage.getItem('_sw_resume_bid');
     if(resumeBid){
       localStorage.removeItem('_sw_resume_bid');
@@ -8861,7 +8887,11 @@ async function supaLoadFromCloud({silent=false}={}){
     _dashAwaitingCloud=false;
     renderDash();
     renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
-    if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
+    // One query against the county assessor records we already hold, for every
+    // address at once. This used to be _startPropQueue, which trickled one
+    // Zillow scrape every 6.5s and could not finish a big import before the tab
+    // closed. See _syncPropertyData (js/clients.js).
+    if(typeof _syncPropertyData==='function')setTimeout(_syncPropertyData,5000);
     if(typeof renderIncome==='function')renderIncome();
     if(typeof renderExpenses==='function')renderExpenses();
     if(typeof _fetchScopeRates==='function')_fetchScopeRates();
@@ -9902,39 +9932,15 @@ function showDailyBriefing(){
 // ── Auto-update: SW signals reload; auto-save draft first ────────────────────
 function _showUpdateOverlay(){
   // Reload bridge, painted SYNCHRONOUSLY before the save/reload so a version
-  // update NEVER shows the dashboard flashing between the old and new build. Uses
-  // the SAME markup/classes as the redesigned boot overlay (glow, mark, monogram,
-  // gradient glowing bar) so old-build → reload → new-build reads as ONE
-  // continuous loading screen instead of two separate boots.
+  // update NEVER shows the dashboard flashing between the old and new build.
+  // Built by the same tdBootFill as the boot screen (js/brand-look.js), so
+  // old-build -> reload -> new-build reads as ONE continuous loading screen.
   if(document.getElementById('_update-ov'))return;
-  const logo=S?.logoData||'';
-  const bname=(S?.bname||'').trim();
-  const brand=S?.brandColor||'';
-  const esc=t=>t.replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-  let r=45,g=93,b=168,lr=115,lg=163,lb=238;
-  if(brand){const h=brand.replace('#','');r=parseInt(h.substr(0,2),16)||0;g=parseInt(h.substr(2,2),16)||0;b=parseInt(h.substr(4,2),16)||0;lr=Math.min(255,r+70);lg=Math.min(255,g+70);lb=Math.min(255,b+70);}
-  const bg='radial-gradient(120% 80% at 0% 100%,rgba('+r+','+g+','+b+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-  const barFg='linear-gradient(90deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';
-  const barGlow='0 0 12px rgba('+r+','+g+','+b+',.55)';
-  const markTile=brand?'background:linear-gradient(135deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'));box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+r+','+g+','+b+',.4)':'';
-  const mark=logo?'':(bname
-    ?'<div class="sbo-mark" style="'+markTile+'"><span class="sbo-monogram">'+esc((bname[0]||'').toUpperCase())+'</span></div>'
-    :'<div class="sbo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>');
-  const nameBlock=logo
-    ?'<div class="sbo-logo-frame"><img src="'+logo+'"></div>'+(bname?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>':'')
-    :bname
-      ?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>'
-      :'<div style="display:flex;align-items:baseline"><span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span></div>';
   const ov=document.createElement('div');
   ov.id='_update-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center';
-  ov.innerHTML=
-    '<div class="sbo-glow"'+(brand?' style="background:radial-gradient(closest-side,rgba('+r+','+g+','+b+',.30),transparent 65%)"':'')+'></div>'+
-    '<div class="sbo-center">'+mark+nameBlock+'<div class="sbo-tag">Updating…</div></div>'+
-    '<div class="sbo-foot">'+
-      '<div class="sbo-track"><div class="sbo-bar" style="background:'+barFg+';box-shadow:'+barGlow+';animation-duration:1.6s"></div><div class="sbo-sheen"></div></div>'+
-      '<div class="sbo-hint">Loading the latest version…</div>'+
-    '</div>';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden';
+  if(typeof tdBootFill==='function')tdBootFill(ov,{logo:S?.logoData||'',name:S?.bname||'',brand:S?.brandColor||'',
+    status:'Updating…',cacheKey:'zp3_boot_look'});
   document.body.appendChild(ov);
 }
 let _reloadPending=false;
