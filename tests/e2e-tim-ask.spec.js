@@ -120,6 +120,12 @@ test.describe('tim answering off your own books', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // A reconnect probe runs supaLoadFromCloud against the mock, which
+    // REPLACES the in-memory arrays and drops what SEED just wrote (webkit,
+    // 2026-09-25: "how many miles" came back with no rows, so no button).
+    // Nothing here tests cloud loading, so the load is parked once for the
+    // block, the same guard e2e-photo-capture's sheet block uses.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => { await page.evaluate(SEED); });
