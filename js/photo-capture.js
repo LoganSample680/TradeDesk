@@ -532,6 +532,8 @@ function _pcRevPaint(){
   if(!el||!_pcRev)return;
   const rows=_pcRevRows();
   if(!rows.length){tdReviewClose();return;}
+  // Every repaint draws fresh images at their own size, so nothing is zoomed.
+  el.classList.remove('pc-zoomed');
   // In folder mode the grid IS the folder; the viewer is shared.
   if(_pcRev.folder&&!(_pcRev.i>=0&&rows[_pcRev.i])){_pcFolderPaint();return;}
   el.innerHTML=(_pcRev.i>=0&&rows[_pcRev.i])?_pcRevViewerHTML(rows):_pcRevGridHTML(rows);
@@ -1353,6 +1355,53 @@ function _pcRevBindSwipe(){
   const W=()=>stage.clientWidth||1;
   const H=()=>stage.clientHeight||1;
   let x0=0,y0=0,t0=0,dx=0,dy=0,active=false,axis='';
+  // ── Zoom, the way Photos does it (owner 2026-09-25: "can you zoom in on the
+  // photos like you can on iOS?") ─────────────────────────────────────────────
+  // The stage takes every touch itself (touch-action:none), because that is
+  // what makes the swipe follow the thumb on iPhone, and the price was that
+  // the phone's own pinch never reached the photo. So the viewer does it:
+  // pinch to zoom around the fingers, double-tap to zoom in on a spot and back
+  // out, one finger to move around while zoomed. Zooming asks for the full
+  // resolution copy straight away, because zooming into the 1600px one is
+  // zooming into blur, stamp included. While zoomed, a drag moves the photo;
+  // it never pages or closes it.
+  const pts=new Map();
+  let z={s:1,tx:0,ty:0,el:null},pinch=null,pan=null,lastTap=0,lastTapX=0,lastTapY=0;
+  const _PC_ZOOM_MAX=6,_PC_ZOOM_TAP=2.5;
+  const zBox=()=>{const im=img();const host=im&&im.parentElement;return host?host.getBoundingClientRect():{left:0,top:0,width:W(),height:H()};};
+  const zCenter=()=>{const b=zBox();return{x:b.left+b.width/2,y:b.top+b.height/2};};
+  const zSync=()=>{const im=img();if(z.el!==im)z={s:1,tx:0,ty:0,el:im};};
+  const zClamp=()=>{
+    const b=zBox(),mx=Math.max(0,(z.s-1)*b.width/2),my=Math.max(0,(z.s-1)*b.height/2);
+    z.tx=Math.max(-mx,Math.min(mx,z.tx));z.ty=Math.max(-my,Math.min(my,z.ty));
+  };
+  const zApply=(snap)=>{
+    const im=img();if(!im)return;
+    if(snap){im.classList.add('snap');setTimeout(()=>{if(im.isConnected)im.classList.remove('snap');},340);}
+    im.style.transform=z.s>1.001?'translate3d('+Math.round(z.tx)+'px,'+Math.round(z.ty)+'px,0) scale('+z.s.toFixed(3)+')':'';
+    sheet.classList.toggle('pc-zoomed',z.s>1.001);
+  };
+  const zFull=()=>{
+    try{
+      const row=_pcRevRows()[_pcRev.i];
+      if(row&&row.fullPath){const u=_pcFullUrl(row);if(u)_pcSwapSrc(img(),u);}
+    }catch(_e){}
+  };
+  const zTap=(x,y)=>{
+    const now=Date.now();
+    if(now-lastTap<320&&Math.abs(x-lastTapX)<40&&Math.abs(y-lastTapY)<40){
+      lastTap=0;
+      zSync();
+      if(z.s>1.001){z.s=1;z.tx=0;z.ty=0;}
+      else{const c=zCenter();z.s=_PC_ZOOM_TAP;z.tx=(1-z.s)*(x-c.x);z.ty=(1-z.s)*(y-c.y);zClamp();zFull();}
+      zApply(true);
+      // The first tap of the pair already toggled the controls; put them back.
+      tdViewerBare();
+      return;
+    }
+    lastTap=now;lastTapX=x;lastTapY=y;
+    tdViewerBare();
+  };
   const atX=(px)=>{if(track)track.style.transform='translate3d(calc(-33.3333% + '+px+'px),0,0)';};
   // Down is a dismissal in progress, and it moves the way Photos moves it
   // (owner 2026-09-23: "still not seeing the smooth swipe down"): the PHOTO
@@ -1380,6 +1429,22 @@ function _pcRevBindSwipe(){
   };
   const down=(e)=>{
     if(e.button!=null&&e.button!==0)return;
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    try{stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);}catch(_e){}
+    zSync();
+    if(pts.size===2){
+      // A second finger turns whatever the first one started into a pinch.
+      if(axis==='x'&&track){track.classList.remove('snap');track.style.transform='';}
+      if(axis==='y')clearY();
+      if(axis==='u')stage.style.transform='';
+      active=false;axis='';pan=null;
+      const [a,b]=[...pts.values()];
+      pinch={d0:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),s0:z.s,tx0:z.tx,ty0:z.ty,mx:(a.x+b.x)/2,my:(a.y+b.y)/2};
+      zFull();
+      return;
+    }
+    if(pts.size>2)return;
+    if(z.s>1.001){pan={x0:e.clientX,y0:e.clientY,tx0:z.tx,ty0:z.ty,moved:false,t0:Date.now()};return;}
     active=true;axis='';dx=0;dy=0;
     x0=e.clientX;y0=e.clientY;t0=Date.now();
     if(track)track.classList.remove('snap');
@@ -1387,6 +1452,25 @@ function _pcRevBindSwipe(){
     try{stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);}catch(_e){}
   };
   const move=(e)=>{
+    if(pts.has(e.pointerId))pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pinch&&pts.size>=2){
+      const [a,b]=[...pts.values()];
+      const d=Math.hypot(a.x-b.x,a.y-b.y),mx=(a.x+b.x)/2,my=(a.y+b.y)/2,c=zCenter();
+      const sN=Math.max(1,Math.min(_PC_ZOOM_MAX,pinch.s0*d/pinch.d0));
+      // Keep the spot that was under the fingers under the fingers.
+      const qx=(pinch.mx-c.x-pinch.tx0)/pinch.s0,qy=(pinch.my-c.y-pinch.ty0)/pinch.s0;
+      z.s=sN;z.tx=mx-c.x-sN*qx;z.ty=my-c.y-sN*qy;
+      zApply();
+      if(e.cancelable)e.preventDefault();
+      return;
+    }
+    if(pan){
+      const ex=e.clientX-pan.x0,ey=e.clientY-pan.y0;
+      if(Math.abs(ex)>6||Math.abs(ey)>6)pan.moved=true;
+      z.tx=pan.tx0+ex;z.ty=pan.ty0+ey;zClamp();zApply();
+      if(e.cancelable)e.preventDefault();
+      return;
+    }
     if(!active)return;
     const ex=e.clientX-x0,ey=e.clientY-y0;
     // The first few pixels decide which gesture this is, and it does not change
@@ -1405,12 +1489,30 @@ function _pcRevBindSwipe(){
     else{dy=ey;dx=ex;atY(dy,dx);}
     if(e.cancelable)e.preventDefault();
   };
-  const up=()=>{
+  const up=(e)=>{
+    if(e&&e.pointerId!=null)pts.delete(e.pointerId);
+    if(pinch){
+      if(pts.size<2){
+        pinch=null;
+        if(z.s<1.08){z.s=1;z.tx=0;z.ty=0;}
+        zClamp();zApply(true);
+        // One finger still down after a pinch carries on as a pan.
+        if(pts.size===1&&z.s>1.001){const q=[...pts.values()][0];pan={x0:q.x,y0:q.y,tx0:z.tx,ty0:z.ty,moved:true,t0:Date.now()};}
+      }
+      return;
+    }
+    if(pan){
+      const tap=!pan.moved&&Date.now()-pan.t0<400;
+      pan=null;
+      if(tap&&e)zTap(e.clientX,e.clientY);
+      return;
+    }
     if(!active){active=false;return;}
     active=false;
     const dt=Math.max(1,Date.now()-t0);
-    // A tap, not a drag: the controls step out of the way, or come back.
-    if(!axis){if(dt<400)tdViewerBare();return;}
+    // A tap, not a drag: the controls step out of the way, or come back. Two
+    // quick taps on the same spot zoom there (zTap).
+    if(!axis){if(dt<400){if(e&&e.clientX!=null)zTap(e.clientX,e.clientY);else tdViewerBare();}return;}
     if(axis==='u'){
       stage.style.transform='';
       if(dy<-_PC_SWIPE_MIN)tdPhotoInfo();

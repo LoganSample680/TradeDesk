@@ -4343,3 +4343,137 @@ test.describe('TrueShot: the server can see where every photo is', () => {
     await assertNoErrors(page, 'TrueShot telemetry');
   });
 });
+
+// Owner 2026-09-25: "can you zoom in on the photos like you can on iOS?" The
+// stage owns every touch so the swipes track the thumb, which also swallowed
+// the phone's own pinch. The viewer zooms itself: pinch around the fingers,
+// double-tap in and out, one finger pans while zoomed, and zooming loads the
+// full-resolution copy so the stamp is sharp up close.
+test.describe('TrueShot: zooming a photo like Photos does', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => { };
+      const svg = (c) => 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"><rect width="300" height="400" fill="' + c + '"/></svg>');
+      window.__FULL = svg('#123456');
+      window._pcFullUrl = (p) => (p && p.fullPath) ? window.__FULL : '';
+      window.__open = (i) => {
+        try { tdReviewClose(); } catch (e) {}
+        photos.length = 0;
+        [0, 1, 2].forEach(k => photos.push({ id: 7700 + k, type: 'before', url: svg('#6b7a60'), thumbUrl: svg('#6b7a60'), storagePath: 'u/' + k + '.jpg',
+          fullPath: 'u/f-' + k + '.jpg', client_id: null, uploadedAt: '2026-09-23T15:0' + k + ':00.000Z' }));
+        tdReviewShots([7700, 7701, 7702]); tdReviewOpen(i == null ? 1 : i);
+        return true;
+      };
+      // Real pointers, with their own ids, dispatched where a thumb lands.
+      window.__ev = (type, id, x, y) => document.getElementById('pc-rev-stage').dispatchEvent(new PointerEvent(type,
+        { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: id, button: 0, isPrimary: id === 1 }));
+      window.__z = () => { const im = document.getElementById('pc-rev-img'); const m = /scale\(([\d.]+)\)/.exec(im.style.transform);
+        return { s: m ? +m[1] : 1, t: im.style.transform, zoomed: document.getElementById('pc-rev').classList.contains('pc-zoomed'), src: im.getAttribute('src'), title: document.querySelector('.pc-rev-title').textContent }; };
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('double-tap zooms in on that spot and loads the full-resolution photo; double-tap again comes back', async () => {
+    await page.evaluate(() => window.__open(1));
+    await page.evaluate(() => { const e = window.__ev; e('pointerdown', 1, 150, 300); e('pointerup', 1, 150, 300); e('pointerdown', 1, 152, 302); e('pointerup', 1, 152, 302); });
+    await expect.poll(() => page.evaluate(() => window.__z().src)).toBe(await page.evaluate(() => window.__FULL));
+    const inZ = await page.evaluate(() => window.__z());
+    expect(inZ.s).toBeCloseTo(2.5, 2);
+    expect(inZ.zoomed).toBe(true);
+    const bare = await page.evaluate(() => document.getElementById('pc-rev').classList.contains('pc-bare'));
+    await page.evaluate(() => { const e = window.__ev; e('pointerdown', 1, 200, 400); e('pointerup', 1, 200, 400); e('pointerdown', 1, 200, 400); e('pointerup', 1, 200, 400); });
+    const out = await page.evaluate(() => window.__z());
+    expect(out.s).toBe(1);
+    expect(out.zoomed).toBe(false);
+    // a double tap is a zoom, not two flips of the controls
+    expect(await page.evaluate(() => document.getElementById('pc-rev').classList.contains('pc-bare'))).toBe(bare);
+  });
+
+  test('two fingers pinch to zoom, and stop at the most and the least', async () => {
+    await page.evaluate(() => window.__open(1));
+    const r = await page.evaluate(() => {
+      const e = window.__ev;
+      e('pointerdown', 1, 150, 400); e('pointerdown', 2, 250, 400);
+      e('pointermove', 1, 100, 400); e('pointermove', 2, 300, 400);   // 100px apart -> 200px
+      const mid = window.__z();
+      e('pointermove', 1, 0, 400); e('pointermove', 2, 390, 400); e('pointermove', 1, -900, 400); e('pointermove', 2, 1290, 400);
+      const max = window.__z();
+      e('pointerup', 1, -900, 400); e('pointerup', 2, 1290, 400);
+      const after = window.__z();
+      // Pinch back in past the start: it settles at the photo's own size.
+      e('pointerdown', 1, 100, 400); e('pointerdown', 2, 300, 400);
+      e('pointermove', 1, 190, 400); e('pointermove', 2, 210, 400);
+      e('pointerup', 1, 190, 400); e('pointerup', 2, 210, 400);
+      return { mid, max, after, min: window.__z() };
+    });
+    expect(r.mid.s).toBeCloseTo(2, 1);
+    expect(r.max.s).toBe(6);
+    expect(r.after.zoomed).toBe(true);
+    expect(r.min.s).toBe(1);
+    expect(r.min.zoomed).toBe(false);
+    expect(r.min.title, 'a pinch never pages').toBe('2 of 3');
+  });
+
+  test('zoomed in, one finger moves the photo around and never pages or closes it', async () => {
+    await page.evaluate(() => window.__open(1));
+    const r = await page.evaluate(async () => {
+      const e = window.__ev;
+      e('pointerdown', 1, 195, 400); e('pointerup', 1, 195, 400); e('pointerdown', 1, 195, 400); e('pointerup', 1, 195, 400);
+      const t0 = window.__z().t;
+      e('pointerdown', 1, 200, 400); e('pointermove', 1, 260, 440); e('pointermove', 1, 330, 480);
+      const t1 = window.__z().t;
+      e('pointerup', 1, 330, 480);
+      // a hard drag down and a hard swipe sideways, still zoomed
+      e('pointerdown', 1, 200, 200); for (let y = 220; y <= 800; y += 60) e('pointermove', 1, 200, y); e('pointerup', 1, 200, 800);
+      e('pointerdown', 1, 380, 400); for (let x = 340; x >= -300; x -= 60) e('pointermove', 1, x, 400); e('pointerup', 1, -300, 400);
+      await new Promise(res => setTimeout(res, 420));
+      return { moved: t0 !== t1, open: !!document.getElementById('pc-rev') && !!document.getElementById('pc-rev-img'), z: window.__z() };
+    });
+    expect(r.moved).toBe(true);
+    expect(r.open).toBe(true);
+    expect(r.z.title).toBe('2 of 3');
+    expect(r.z.zoomed).toBe(true);
+    // Never dragged off into black: the pan is held to the photo's edges.
+    const b = await page.evaluate(() => { const im = document.getElementById('pc-rev-img').getBoundingClientRect(); return { l: im.left, r: im.right, w: innerWidth }; });
+    expect(b.l).toBeLessThanOrEqual(1);
+    expect(b.r).toBeGreaterThanOrEqual(b.w - 1);
+  });
+
+  test('not zoomed, the swipes still page and one tap still hides the controls', async () => {
+    await page.evaluate(() => window.__open(1));
+    const r = await page.evaluate(async () => {
+      const e = window.__ev;
+      const bare0 = document.getElementById('pc-rev').classList.contains('pc-bare');
+      e('pointerdown', 1, 200, 400); e('pointerup', 1, 200, 400);
+      const bare1 = document.getElementById('pc-rev').classList.contains('pc-bare');
+      await new Promise(res => setTimeout(res, 400));
+      e('pointerdown', 1, 360, 400); for (let x = 320; x >= 40; x -= 40) e('pointermove', 1, x, 400); e('pointerup', 1, 40, 400);
+      await new Promise(res => setTimeout(res, 420));
+      return { toggled: bare0 !== bare1, title: window.__z().title };
+    });
+    expect(r.toggled).toBe(true);
+    expect(r.title).toBe('3 of 3');
+  });
+
+  test('stepping to the next photo starts it at its own size', async () => {
+    await page.evaluate(() => window.__open(1));
+    const r = await page.evaluate(() => {
+      const e = window.__ev;
+      e('pointerdown', 1, 195, 400); e('pointerup', 1, 195, 400); e('pointerdown', 1, 195, 400); e('pointerup', 1, 195, 400);
+      const zin = window.__z().zoomed;
+      tdReviewStep(1);
+      return { zin, next: window.__z() };
+    });
+    expect(r.zin).toBe(true);
+    expect(r.next.s).toBe(1);
+    expect(r.next.zoomed).toBe(false);
+    await page.evaluate(() => tdReviewClose());
+    await assertNoErrors(page, 'TrueShot zoom');
+  });
+});
