@@ -709,7 +709,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.24.26.13';
+const APP_VERSION='09.25.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2028,9 +2028,13 @@ function _bootSyncSettled(){
   // tdBootFill and cached as zp3_boot_look. Only once the cloud settings are in,
   // so a colour picked on another device is never overwritten.
   try{
-    if(_authSettingsLoaded&&S.logoData&&!S.brandColor&&typeof _tdBrandFromLogo==='function'&&typeof tdLogoKey==='function'){
-      const lk=JSON.parse(localStorage.getItem('zp3_boot_look')||'null');
-      if(lk&&lk.k===tdLogoKey(S.logoData))_tdBrandFromLogo(lk);
+    // Cache the logo's look and boot-sized copy (js/brand-look.js), so the next
+    // boot paints the real logo even when it is too big for the settings cache.
+    // An account with a logo but no brand colour takes it from the logo.
+    if(_authSettingsLoaded&&S.logoData&&typeof tdBootCacheLogo==='function'){
+      tdBootCacheLogo(S.logoData,'zp3_boot_look',lk=>{
+        if(!S.brandColor&&typeof _tdBrandFromLogo==='function')_tdBrandFromLogo(lk);
+      });
     }
   }catch(_e){}
   // Anything shared into TradeDesk while it was closed (js/share-inbox.js).

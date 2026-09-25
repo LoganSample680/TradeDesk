@@ -140,6 +140,99 @@ test.describe('brand-look: the look a logo gives the screen', () => {
     expect(r.miss).toContain('0, 0, 0');
   });
 
+  // Jack's logo is a 1.5 MB PNG, too big for the settings cache (saveAll splits it
+  // out on quota), so the boot screen fell back to his business name while the
+  // hub, which loads the logo by URL, showed it. A boot-sized copy in the look
+  // cache puts the same logo on the first frame of both.
+  test('tdBootFill: a read logo caches a boot-sized copy with its look', async () => {
+    const r = await page.evaluate(async () => {
+      localStorage.removeItem('zz_thumb');
+      const big = document.createElement('canvas'); big.width = 1600; big.height = 800;
+      const x = big.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 1600, 800);
+      x.fillStyle = '#0a8cf5'; x.fillRect(400, 200, 800, 400);
+      const logo = big.toDataURL('image/png');
+      const a = document.createElement('div');
+      tdBootFill(a, { logo, cacheKey: 'zz_thumb' });
+      for (let i = 0; i < 40 && !localStorage.getItem('zz_thumb'); i++) await new Promise(r => setTimeout(r, 50));
+      const c = JSON.parse(localStorage.getItem('zz_thumb') || 'null');
+      const t = c && c.img ? await __img(c.img) : null;
+      localStorage.removeItem('zz_thumb');
+      return { k: c && c.k === tdLogoKey(logo), bg: c && c.bg, w: t && t.naturalWidth, h: t && t.naturalHeight };
+    });
+    expect(r.k).toBe(true);
+    expect(r.bg).toBe('#000000');
+    expect(r.w).toBe(600);    // longest side 600, aspect kept
+    expect(r.h).toBe(300);
+  });
+
+  test('tdBootFill: no logo in hand but a cached copy paints the logo, not the name', async () => {
+    const r = await page.evaluate(async () => {
+      const logo = __logo('white-red');
+      localStorage.setItem('zz_copy', JSON.stringify({ k: tdLogoKey(logo), bg: '#ffffff', fg: 'rgba(0,0,0,.38)', img: logo }));
+      const a = document.createElement('div');
+      tdBootFill(a, { logo: '', name: 'Plumbing Solutions By JS', cacheKey: 'zz_copy' });
+      const img = a.querySelector('img.bt-logo');
+      const b = document.createElement('div');
+      tdBootFill(b, { logo: '', name: 'Acme' });   // no cache key: the name, as before
+      localStorage.removeItem('zz_copy');
+      return { img: !!img, src: img && img.src === logo, bg: a.style.background, name: !!a.querySelector('.bt-name'),
+        plainName: (b.querySelector('.bt-name') || {}).textContent };
+    });
+    expect(r.img).toBe(true);
+    expect(r.src).toBe(true);
+    expect(r.bg).toContain('255, 255, 255');
+    expect(r.name).toBe(false);
+    expect(r.plainName).toBe('Acme');
+  });
+
+  test('tdBootFill: a cache hit paints the small copy, never re-reads the full logo', async () => {
+    const r = await page.evaluate(async () => {
+      const full = __logo('black-blue'), small = __logo('grey');
+      localStorage.setItem('zz_hit', JSON.stringify({ k: tdLogoKey(full), bg: '#000000', fg: 'x', img: small }));
+      const a = document.createElement('div');
+      tdBootFill(a, { logo: full, cacheKey: 'zz_hit' });
+      await new Promise(r => setTimeout(r, 200));
+      const c = JSON.parse(localStorage.getItem('zz_hit'));
+      localStorage.removeItem('zz_hit');
+      return { src: a.querySelector('img.bt-logo').src === small, kept: c.img === small && c.fg === 'x' };
+    });
+    expect(r.src).toBe(true);
+    expect(r.kept).toBe(true);   // cache left alone on a hit
+  });
+
+  test('tdBootCacheLogo: caches once, skips a cached logo, survives junk and a full quota', async () => {
+    const r = await page.evaluate(async () => {
+      const logo = __logo('white-red');
+      localStorage.removeItem('zz_bcl');
+      let calls = 0;
+      tdBootCacheLogo(logo, 'zz_bcl', () => calls++);
+      for (let i = 0; i < 40 && !calls; i++) await new Promise(r => setTimeout(r, 50));
+      const first = JSON.parse(localStorage.getItem('zz_bcl') || 'null');
+      localStorage.setItem('zz_bcl', JSON.stringify({ ...first, bg: '#abcdef' }));
+      tdBootCacheLogo(logo, 'zz_bcl', l => { calls++; window.__bclBg = l.bg; });
+      const second = JSON.parse(localStorage.getItem('zz_bcl')).bg;
+      let threw = false;
+      try { tdBootCacheLogo(null, 'zz_bcl'); tdBootCacheLogo(logo, ''); tdBootCacheLogo('not an image', 'zz_junk'); } catch (e) { threw = true; }
+      // Quota: the copy is dropped, the look still lands.
+      const orig = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) { if (k === 'zz_q' && /"img"/.test(v)) throw new Error('QuotaExceededError'); return orig.call(this, k, v); };
+      localStorage.removeItem('zz_q');
+      tdBootCacheLogo(__logo('black-blue'), 'zz_q');
+      for (let i = 0; i < 40 && !localStorage.getItem('zz_q'); i++) await new Promise(r => setTimeout(r, 50));
+      Storage.prototype.setItem = orig;
+      const q = JSON.parse(localStorage.getItem('zz_q') || 'null');
+      ['zz_bcl', 'zz_q', 'zz_junk'].forEach(k => localStorage.removeItem(k));
+      return { calls, img: !!(first && first.img), second, cbBg: window.__bclBg, threw, qBg: q && q.bg, qImg: q && 'img' in q };
+    });
+    expect(r.img).toBe(true);
+    expect(r.second).toBe('#abcdef');   // already cached: not re-read
+    expect(r.cbBg).toBe('#abcdef');     // callback still gets the cached look
+    expect(r.calls).toBe(2);
+    expect(r.threw).toBe(false);
+    expect(r.qBg).toBe('#000000');
+    expect(r.qImg).toBe(false);
+  });
+
   test('tdBootFill: missing container and repeat calls are safe', async () => {
     const r = await page.evaluate(() => {
       try {
@@ -189,6 +282,28 @@ test.describe('app boot screen', () => {
     }));
     expect(r.name).toBe('Acme Plumbing');
     expect(r.foot).toBe(false);
+  });
+
+  test('a logo the settings cache split out (zp3_logo) still shows on the first frame', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem('zz_seeded')) {
+        const c = document.createElement('canvas'); c.width = c.height = 60;
+        const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 60, 60); x.fillStyle = '#d32a2a'; x.fillRect(15, 15, 30, 30);
+        localStorage.setItem('zp3_S', JSON.stringify({ bname: 'Plumbing Solutions By JS', poweredBy: false }));
+        localStorage.setItem('zp3_logo', c.toDataURL('image/png'));
+        sessionStorage.setItem('zz_seeded', '1');
+      }
+    });
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const r = await page.evaluate(() => ({
+      logo: !!document.querySelector('#supa-boot-overlay img.bt-logo'),
+      name: !!document.querySelector('#supa-boot-overlay .bt-name'),
+    }));
+    expect(r.logo).toBe(true);
+    expect(r.name).toBe(false);
+    await waitForAppBoot(page);
+    assertNoErrors(page, 'split logo boot');
   });
 
   test('the overlay holds for the 2.15s beat, then lifts and is removed', async ({ page }) => {

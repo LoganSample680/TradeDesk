@@ -56,6 +56,47 @@ function tdLogoLook(img){
     return{bg,fg:dark?'rgba(255,255,255,.42)':'rgba(0,0,0,.38)',accent,dark};
   }catch(e){return null;}
 }
+// A boot-sized copy of the logo (longest side 600px). A big logo (Jack's is a
+// 1.5 MB PNG) is too heavy for the phone's settings cache, which then drops it
+// (js/data.js saveAll splits logoData out on quota), and the boot screen fell
+// back to the business name while the client hub, which loads its logo by URL,
+// showed the real one. The copy rides in the look cache, so every boot paints
+// the same logo as the hub on the first frame.
+function tdLogoThumb(img){
+  try{
+    const w=img.naturalWidth,h=img.naturalHeight;if(!w||!h)return null;
+    const k=Math.min(1,600/Math.max(w,h)),c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(w*k));c.height=Math.max(1,Math.round(h*k));
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    return c.toDataURL('image/png');
+  }catch(e){return null;}
+}
+// Store a look (with its boot-sized logo when it fits) under cacheKey.
+function _tdSaveLook(cacheKey,look){
+  if(!cacheKey)return;
+  try{localStorage.setItem(cacheKey,JSON.stringify(look));}
+  catch(e){try{const{img,...rest}=look;localStorage.setItem(cacheKey,JSON.stringify(rest));}catch(_e){}}
+}
+// Read a logo once and cache its look + boot copy, unless the cache already
+// holds this exact logo. Called after settings land, so a logo the boot screen
+// could not read this time is on the first frame next time.
+function tdBootCacheLogo(src,cacheKey,cb){
+  try{
+    if(!src||!cacheKey)return;
+    const key=tdLogoKey(src);let c=null;
+    try{c=JSON.parse(localStorage.getItem(cacheKey)||'null');}catch(e){}
+    if(c&&c.k===key&&c.img){if(typeof cb==='function')cb(c);return;}
+    const img=new Image();
+    if(/^https?:/i.test(src))img.crossOrigin='anonymous';
+    img.onload=function(){
+      const look=tdLogoLook(img);if(!look)return;
+      look.k=key;const t=tdLogoThumb(img);if(t)look.img=t;
+      _tdSaveLook(cacheKey,look);
+      if(typeof cb==='function')cb(look);
+    };
+    img.src=src;
+  }catch(e){}
+}
 // A short key for a logo, so a cached look is only reused for the same logo.
 function tdLogoKey(src){
   src=String(src||'');if(!src)return'';
@@ -110,24 +151,32 @@ function tdBootFill(ov,o){
   stage.appendChild(inner);ov.appendChild(stage);
   let fg='rgba(255,255,255,.42)';
   const name=String(o.name||'').trim();
-  if(o.logo){
+  let cached=null;
+  try{cached=o.cacheKey&&JSON.parse(localStorage.getItem(o.cacheKey)||'null');}catch(e){}
+  // No logo in hand (the settings cache dropped a big one) but the look cache
+  // holds its boot copy: paint that, exactly as the hub would.
+  const fromCache=!o.logo&&!!(cached&&cached.img);
+  if(o.logo||fromCache){
     // Paint the cached look first; a new or changed logo is read once it decodes.
-    const key=tdLogoKey(o.logo);let cached=null;
-    try{cached=o.cacheKey&&JSON.parse(localStorage.getItem(o.cacheKey)||'null');}catch(e){}
-    const hit=cached&&cached.k===key;
+    const key=o.logo?tdLogoKey(o.logo):cached.k;
+    const hit=!!(cached&&cached.k===key);
     ov.style.background=hit?cached.bg:'#000';
     if(hit){fg=cached.fg||fg;ov._tdLook=cached;}
     const img=new Image();img.className='bt-logo';img.alt='';
-    if(/^https?:/i.test(o.logo))img.crossOrigin='anonymous';
+    // The boot copy decodes in a fraction of the time a full-size logo does.
+    const src=(hit&&cached.img)?cached.img:o.logo;
+    if(/^https?:/i.test(src))img.crossOrigin='anonymous';
     img.onload=function(){
+      if(hit&&cached.img){try{if(typeof o.onLook==='function')o.onLook(cached);}catch(e){}return;}
       const look=tdLogoLook(img);if(!look)return;
       look.k=key;ov._tdLook=look;
+      const t=tdLogoThumb(img);if(t)look.img=t;
       if(!hit){ov.style.transition='background-color .2s ease';ov.style.background=look.bg;
         const f=ov.querySelector('.bt-foot');if(f)f.style.color=look.fg;}
-      try{if(o.cacheKey)localStorage.setItem(o.cacheKey,JSON.stringify(look));}catch(e){}
+      _tdSaveLook(o.cacheKey,look);
       try{if(typeof o.onLook==='function')o.onLook(look);}catch(e){}
     };
-    img.src=o.logo;inner.appendChild(img);
+    img.src=src;inner.appendChild(img);
   }else if(name){
     ov.style.background=_TD_BOOT_DARK;
     const tile=el('div','bt-tile',(name[0]||'').toUpperCase());
@@ -146,4 +195,4 @@ function tdBootFill(ov,o){
   const foot=o.status?o.status:((o.powered&&(o.logo||name))?'Powered by TradeDesk':'');
   if(foot){const f=el('div','bt-foot',foot);f.style.color=fg;ov.appendChild(f);}
 }
-if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdBootFill};
+if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdBootCacheLogo,tdBootFill};

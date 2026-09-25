@@ -2518,7 +2518,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     if(s.brandColor){var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute('content',s.brandColor);}
     // Logo on its own background, else the business name, else TradeDesk.
     // "Powered by TradeDesk" follows the Settings switch (S.poweredBy).
-    if(typeof tdBootFill==='function')tdBootFill(ov,{logo:s.logoData||'',name:s.bname||'',brand:s.brandColor||'',
+    if(typeof tdBootFill==='function')tdBootFill(ov,{logo:s.logoData||localStorage.getItem('zp3_logo')||'',name:s.bname||'',brand:s.brandColor||'',
       powered:s.poweredBy!==false,cacheKey:'zp3_boot_look'});
   }catch(e){}
   window._earlyBootDone=true;
