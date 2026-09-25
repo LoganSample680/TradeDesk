@@ -382,7 +382,7 @@ async function _geiLookupClientTaxRate(){
   if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();if(_geiIsFreeForm)_byoUpdateRail();return;}
   if(typeof lookupSalesTaxRate==='function'){
     const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
-    // Only use DB-sourced rates (db_zip or db_state), never show hardcoded base rate
+    // Only use DB-sourced rates (db_zip, db_county or db_state), never show hardcoded base rate
     _geiClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
     calcGeiTotal();
     if(_geiIsFreeForm)_byoUpdateRail();

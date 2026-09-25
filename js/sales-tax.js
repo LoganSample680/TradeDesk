@@ -177,12 +177,15 @@ function _extractZip(addr) {
 }
 
 /**
- * Look up combined sales tax rate for a ZIP code from the Supabase tax_rates table.
- * Tries ZIP-level rate first, falls back to state base rate row, then hardcoded value.
+ * Look up the combined sales tax rate (state + county + city + district) for a
+ * ZIP. One call to td_tax_rate (supabase/migrations/20261041), which owns the
+ * order: the ZIP's own row, then the county the county data puts the ZIP in
+ * (td_county_zips, the rate outside city limits), then the state base. Falls
+ * back to the hardcoded state base on no network.
  *
  * @param {string} zip   - 5-digit ZIP code
  * @param {string} state - 2-letter state abbreviation
- * @returns {Promise<{rate:number, source:string, warning?:string}>}
+ * @returns {Promise<{rate:number, source:string, warning?:string, low?:number, high?:number}>}
  */
 async function lookupSalesTaxRate(zip, state) {
   const st = String(state || 'KS').toUpperCase();
@@ -190,16 +193,29 @@ async function lookupSalesTaxRate(zip, state) {
 
   if (ST_NO_TAX.has(st)) return {rate:0, source:'no_tax'};
 
-  if (typeof _supa !== 'undefined') {
+  if (typeof _supa !== 'undefined' && _supa && typeof _supa.rpc === 'function') {
     try {
-      if (zip && /^\d{5}$/.test(zip)) {
-        const {data} = await _supa.from('tax_rates').select('combined').eq('zip', zip).maybeSingle();
-        if (data?.combined != null) return {rate:parseFloat(data.combined), source:'db_zip'};
-      }
-      // Fall back to state base row (seeded as "STATE-XX")
-      const {data} = await _supa.from('tax_rates').select('combined').eq('zip','STATE-'+st).maybeSingle();
-      if (data?.combined != null) {
-        return {rate:parseFloat(data.combined), source:'db_state',
+      const z = (zip && /^\d{5}$/.test(zip)) ? zip : '';
+      const {data, error} = await _supa.rpc('td_tax_rate', {p_zip: z, p_state: st});
+      const row = !error && (Array.isArray(data) ? data[0] : data);
+      if (row && row.combined != null) {
+        const rate = parseFloat(row.combined);
+        if (row.source === 'db_zip') {
+          const low = row.rate_low != null ? parseFloat(row.rate_low) : null;
+          const high = row.rate_high != null ? parseFloat(row.rate_high) : null;
+          // The ZIP crosses a city or district line: say so rather than let one
+          // number stand in for an address that may pay another.
+          if (low != null && high != null && high - low > 0.0001) {
+            return {rate, source:'db_zip', low, high,
+                    warning:'Rates in ZIP '+z+' run '+low+'% to '+high+'%. '+rate+'% is what most addresses pay. Check city limits for this job.'};
+          }
+          return {rate, source:'db_zip'};
+        }
+        if (row.source === 'db_county') {
+          return {rate, source:'db_county',
+                  warning:'Using the '+(row.county_name || 'county')+' County rate outside city limits. Inside city limits it may be higher.'};
+        }
+        return {rate, source:'db_state',
                 warning:'Local rate not available, using '+stateName+' state base rate. Set your local rate for accuracy.'};
       }
     } catch(e) { /* network error, fall through */ }
