@@ -1368,7 +1368,11 @@ function renderDash(){
     // two together suppress it: not counting at a CLIENT is still worth
     // showing, and being home at noon is still the workday.
     const _odw=window._geoOpenDwell;
-    const _odwHome=!!(_odw&&_odw.atHome&&_odw.counts===false);
+    // AND ON A TIME OFF DAY (owner 2026-09-24, rule 25: "still counting his
+    // hours even after the vacation fix"). The deriver only says false away
+    // from home for a day off, and a figure ticking up at the rental is the
+    // same refusal to stop that the evening at home was.
+    const _odwHome=!!(_odw&&_odw.counts===false);
     const _openDwell=(!_onClock&&!_driving&&_odw&&_odw.sinceTs>0&&!_odwHome)?_odw:null;
     // Styles hoisted OUT of the live branch: the optimistic snapshot card
     // below needs the same keyframes before any live state exists.

@@ -3863,12 +3863,53 @@ async function _mileSaveStopAddress(clientKey,day){
 // same journey id and the traced row is replaced by geo_replace_day.
 // Called by BOTH arms of the chooser: saveClient hands a client, savePlace
 // hands a place. All this needs from either is an address, so it takes either.
+// ── A SAVE IS FINISHED EVEN IF THE APP IS NOT (owner 2026-09-24) ─────────
+// Jack's 23 September, 4:20 pm: the customer record landed at 4:20:17, then
+// his login failed to refresh at 4:20:32 and the app rebooted at 4:20:42,
+// and the rest of this chain died in memory with the old page. The time row
+// was never named, so it still read "Unsaved address" and he went back into
+// its menu, which is where the stop became Personal. The chain is written
+// down before it starts and replayed on the next boot until it completes.
+const _MILE_SAVE_KEY='zp3_mile_save_pending';
+const _MILE_SAVE_MAX_AGE_MS=6*3600000;
+function _mileSavePendingWrite(p,client){
+  try{
+    localStorage.setItem(_MILE_SAVE_KEY,JSON.stringify({
+      uid:(window._supaUser&&_supaUser.id)||null,at:Date.now(),
+      p:{stopKey:p.stopKey||'',day:p.day||'',legKey:p.legKey||'',which:p.which||'to',
+         lat:Number(p.lat),lng:Number(p.lng)},
+      client:{id:client.id!=null?client.id:null,name:String(client.name||''),addr:String(client.addr||'')}
+    }));
+  }catch(_e){}
+}
+function _mileSavePendingClear(){try{localStorage.removeItem(_MILE_SAVE_KEY);}catch(_e){}}
+// Boot. A save another login started is not this login's to finish, and a
+// save from long ago is history, not a pending action: both are dropped.
+async function _mileResumeAddressSave(){
+  let s=null;
+  try{s=JSON.parse(localStorage.getItem(_MILE_SAVE_KEY)||'null');}catch(_e){s=null;}
+  if(!s||!s.p||!s.client){_mileSavePendingClear();return false;}
+  const me=(window._supaUser&&_supaUser.id)||null;
+  if(!me||s.uid!==me||!(Date.now()-Number(s.at)<_MILE_SAVE_MAX_AGE_MS)){_mileSavePendingClear();return false;}
+  if(!s.client.addr){_mileSavePendingClear();return false;}
+  _mileAddressPending=Object.assign({},s.p);
+  return _mileAddressSaved(s.client);
+}
 async function _mileAddressSaved(client){
   const p=_mileAddressPending;
   if(!p||!client||!client.addr)return false;
   _mileAddressPending=null;
+  _mileSavePendingWrite(p,client);
   try{
-    if(typeof _geoDeriveDayNow==='function')await _geoDeriveDayNow(p.day,null);
+    // ── THE ROW IS NAMED FIRST (owner 2026-09-24) ────────────────────────
+    // The name is what the person is waiting to see, and it is one write. The
+    // re-derive behind it can take several seconds against the tape and the
+    // server, and until 2026-09-24 the naming waited for it, which is the
+    // window Jack's reboot fell into. A derive that resolves the stop writes
+    // the same name under the same key, so going first costs nothing.
+    await _mileTellTheRail(p,client);
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e2){}
+    const derived=(typeof _geoDeriveDayNow==='function')?await _geoDeriveDayNow(p.day,null):null;
     // A day the deriver could not rebuild leaves the row exactly as it was,
     // so ask the row itself whether the answer landed rather than trusting
     // the derive to have run. This also covers the day it DID rebuild and
@@ -3898,7 +3939,11 @@ async function _mileAddressSaved(client){
     // is what saving an address means, and it happens on both branches.
     // Nothing here stamps fixed_at, for the reason _mileNameStopRow already
     // gives at length: a rebuild must stay free to correct these rows.
-    await _mileTellTheRail(p,client);
+    //
+    // Already told once, before the derive. Told AGAIN only when the derive
+    // actually rebuilt the day, since that is the only thing that can have
+    // rewritten the row in between; a day it refused changed nothing.
+    if(derived)await _mileTellTheRail(p,client);
     // AND TELL THE SCREEN HE IS LOOKING AT (owner 2026-09-20: "adding people
     // in the day rail didn't update in real time"). The save was landing: the
     // derive ran, the row changed in the database, and the Time Log went on
@@ -3914,6 +3959,7 @@ async function _mileAddressSaved(client){
     // landed on the server.
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e2){}
     try{if(typeof renderMileage==='function')renderMileage();}catch(_e2){}
+    _mileSavePendingClear();
     const n=_mileTripNumberForLeg(p.day,p.legKey);
     if(typeof showToast==='function')showToast(n?('Trip '+n+' is on the books'):'Address saved, day re-derived');
   }catch(_e){}

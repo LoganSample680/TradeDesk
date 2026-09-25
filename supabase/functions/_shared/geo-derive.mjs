@@ -1795,11 +1795,22 @@ function geoDeriveDay(input) {
   // (owner 2026-09-06). It still reports where he is; it now also says whether
   // that is work, and the rail can stop calling it time.
   if (open) open.counts = _gdOpenCounts(open, asked, win, nowMs);
+  // Rule 25: a Time off day is held end to end, and the live stop only counts
+  // under a clock (see _gdTimeOffHold). Last, so it overrides every answer
+  // above without any of them needing to know it exists.
+  const timeOff = _gdTimeOffDay(inp);
+  let outDwells = judged, outLegs = realLegs;
+  if (timeOff) {
+    const t = _gdTimeOffHold(judged, realLegs, inp, open, nowMs);
+    outDwells = t.dwells; outLegs = t.legs;
+    if (open && !t.openCounts) open.counts = false;
+  }
 
   return {
     day: inp.day || '',
-    dwells: judged.filter(d => d.minutes >= 1),
-    legs: realLegs,
+    dwells: outDwells.filter(d => d.minutes >= 1),
+    legs: outLegs,
+    timeOff,
     open,
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
@@ -2459,6 +2470,51 @@ function _gdClockSpans(inp) {
 function _gdUnderClock(spans, a, b) {
   return (spans || []).some(c => Math.min(b, c.b) - Math.max(a, c.a) >= 60000);
 }
+
+// ── RULE 25: TIME OFF HOLDS THE DAY (owner 2026-09-24) ────────────────────
+// "does calendar vacation stop mileage and addresses from counting?" It did
+// not. Time off (Settings, the calendar's block-out) only ever blocked
+// booking, and nothing in this file read it. Jack blocked 24 to 27 September
+// for a trip, drove 275 miles, and the evening at the rental read as three
+// hours of time on his rail. Owner: "calendar should block off auto mileage
+// too."
+//
+// A day inside a Time off block is judged as a question from end to end:
+// every drive is held (out of every money total, pendingPurpose), every visit
+// is held, and a stop at the yard or the home office writes nothing, because
+// neither has a held form and a vacation is not a shift at your own place.
+// The one thing that still counts is the one thing that always outranks the
+// geometry: a manual clock. Somebody who punches in on a day off is telling
+// you, in their own words, that this stretch is work.
+//
+// Held, never dropped, for everything that has an answer to give: the owner's
+// standing rule is that data does not silently go away, and a genuine call-out
+// on a day off is one tap from counting.
+//
+// `inp.timeOff` is the account's own blocks, [{start, end}] as Central dates,
+// exactly as Settings writes them (getTimeOffDays, js/settings.js).
+function _gdTimeOffDay(inp) {
+  const day = String((inp && inp.day) || '');
+  const ok = v => /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (!ok(day)) return false;
+  return (Array.isArray(inp && inp.timeOff) ? inp.timeOff : []).some(b => {
+    if (!b || typeof b !== 'object') return false;
+    const s = String(b.start || ''), e = String(b.end || b.start || '');
+    return ok(s) && ok(e) && s <= day && day <= e;
+  });
+}
+function _gdTimeOffHold(dwells, legs, inp, open, nowMs) {
+  const spans = _gdClockSpans(inp);
+  const under = (a, b) => _gdUnderClock(spans, Number(a), Number(b));
+  const heldLegs = (legs || []).map(l => (!l || l.held === true || under(l.startTs, l.endTs))
+    ? l : Object.assign({}, l, { held: true, timeOff: true }));
+  const heldDwells = (dwells || []).filter(d => d && (under(d.startTs, d.endTs)
+    || (d.kind !== 'shop' && d.kind !== 'office')))
+    .map(d => (d.held === true || under(d.startTs, d.endTs)) ? d : Object.assign({}, d, { held: true, timeOff: true }));
+  const openCounts = !!open && under(Number(open.startTs || open.sinceTs), Number(nowMs));
+  return { dwells: heldDwells, legs: heldLegs, openCounts };
+}
+
 function _gdHeldVisits(dwells, inp, dayStart) {
   const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
     .map(c => c && { a: Number(c.start), b: Number(c.end) })
