@@ -4541,7 +4541,7 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
       }
       const box = await _pcOutboxAll();
       let stored = null; try { stored = JSON.parse(localStorage.getItem('zp3_photos') || '[]'); } catch (e) {}
-      return { sizes, box: box.map(b => b.blob.size), rows: photos.length, maxData: Math.max(...photos.map(p => (p.data || '').length)),
+      return { sizes, box: box.map(b => b.size), rows: photos.length, maxData: Math.max(...photos.map(p => (p.data || '').length)),
         lsIds: (stored || []).filter(p => p.outboxWait).length, pending: photos.every(p => tdPhotoWaiting(p)),
         older: photos.filter(p => p.pendingUpload).length };
     });
@@ -4836,5 +4836,104 @@ test.describe('TrueShot: an After photo makes them a client', () => {
     });
     expect(r).toEqual([false, false, false, true, true]);
     await assertNoErrors(page, 'After photo makes a client');
+  });
+});
+
+// ── A failed upload is retried, not lost (Jack, 2026-09-24) ─────────────────
+// Four photos at one house, one came through. The signal dropped mid-upload,
+// tdSavePhoto parked the rest as pending rows in photos[], and two things
+// finished them off: _drainPhotoQueue only ever walked jobs[].photos, so a
+// photo filed to an address was never tried again, and the next cloud load
+// replaced photos[] wholesale, erasing the only copy.
+test.describe('Photo capture: pending uploads survive and retry', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    // Same park as the sheet block: the reload this block tests is driven
+    // by hand through the td_photos set(), never by a background probe.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  test.beforeEach(async () => { await page.evaluate(seed()); });
+
+  // Runs _drainPhotoQueue against a stubbed storage bucket. `fail` makes
+  // every upload error, the way a dropped connection does.
+  const drain = (fail) => page.evaluate(async (o) => {
+    const saved = { supa: _supa, user: _supaUser, en: window.supaEnabled };
+    const uploads = [];
+    try {
+      window.supaEnabled = () => true;
+      _supaUser = { id: 'u-jack' };
+      const bucket = {
+        upload: async (path) => { uploads.push(path); return o.fail ? { data: null, error: { message: 'Fetch is aborted' } } : { data: { path }, error: null }; },
+        getPublicUrl: (path) => ({ data: { publicUrl: 'https://cdn.test/' + path } }),
+        remove: async () => ({ data: null, error: null }),
+      };
+      _supa = Object.assign({}, _supa || {}, { storage: { from: () => bucket } });
+      await _drainPhotoQueue();
+      // Main photo files only: the thumbnail (t-...) and the client hub
+      // page ride along on the same bucket and are not what is counted here.
+      return { uploads: uploads.filter(u => /\/before-[^/]+$/.test(u)), rows: photos.map(p => ({ id: p.id, pending: !!p.pendingUpload, hasData: !!p.data, path: p.storagePath || '', url: p.url || '' })),
+               jobPending: jobs.flatMap(j => (j.photos || []).filter(p => p.pendingUpload)).length };
+    } finally {
+      _supa = saved.supa; _supaUser = saved.user; window.supaEnabled = saved.en;
+    }
+  }, { fail: !!fail });
+
+  const DATA = 'data:image/png;base64,' + PNG_B64;
+
+  test('a pending photo with no job uploads on the next drain, in place', async () => {
+    await page.evaluate((d) => {
+      for (let i = 0; i < 3; i++) photos.push({ id: 5000 + i, type: 'before', data: d, pendingUpload: true, _uploadMime: 'image/png', _uploadExt: 'png', client_id: 501, job_id: null, addr: '4835 NE Kincaid Rd', uploadedAt: new Date(Date.UTC(2026, 8, 23, 19, 38 + i)).toISOString() });
+    }, DATA);
+    const r = await drain(false);
+    expect(r.uploads.length, 'every stranded photo gets its own upload').toBe(3);
+    expect(r.rows.length, 'finished in place, never pushed as a second row').toBe(3);
+    for (const row of r.rows) {
+      expect(row.pending).toBe(false);
+      expect(row.hasData, 'the base64 copy goes once the url exists').toBe(false);
+      expect(row.path).toContain('u-jack/client-501/before-');
+      expect(row.url).toContain('https://cdn.test/');
+    }
+    await assertNoErrors(page, 'pending photo drain');
+  });
+
+  test('a failed retry leaves the photo pending, with its local copy', async () => {
+    await page.evaluate((d) => { photos.push({ id: 5100, type: 'before', data: d, pendingUpload: true, client_id: null, uploadedAt: new Date().toISOString() }); }, DATA);
+    const r = await drain(true);
+    expect(r.uploads.length).toBe(1);
+    expect(r.rows).toEqual([{ id: 5100, pending: true, hasData: true, path: '', url: '' }]);
+  });
+
+  test('a job photo is uploaded once, not once per list it sits in', async () => {
+    await page.evaluate((d) => {
+      const ts = '2026-09-23T19:38:00.000Z';
+      jobs.push({ id: 801, client_id: 501, name: 'Water heater', photos: [{ type: 'before', data: d, ts, pendingUpload: true }] });
+      photos.push({ id: 5200, type: 'before', data: d, pendingUpload: true, client_id: 501, job_id: 801, uploadedAt: ts });
+    }, DATA);
+    const r = await drain(false);
+    expect(r.uploads.length, 'the job sheet twin must not upload a second copy').toBe(1);
+    expect(r.rows.length, 'and must not push a duplicate row').toBe(1);
+    expect(r.jobPending).toBe(0);
+  });
+
+  test('a cloud reload keeps a photo still waiting to upload', async () => {
+    const r = await page.evaluate((d) => {
+      photos.push({ id: 5300, type: 'before', data: d, pendingUpload: true, client_id: 501, uploadedAt: new Date().toISOString() });
+      photos.push({ id: 5301, type: 'before', url: 'https://x/old.jpg', storagePath: 'u/old.jpg', client_id: 501, uploadedAt: new Date().toISOString() });
+      const t = _TD_TABLES.find(x => x.t === 'td_photos');
+      t.set([{ id: 5400, type: 'after', url: 'https://x/new.jpg', storagePath: 'u/new.jpg', client_id: 501, uploadedAt: new Date().toISOString() }]);
+      const after = photos.map(p => p.id).sort();
+      // A cloud row with the same id wins over the local pending copy.
+      t.set([{ id: 5300, type: 'before', url: 'https://x/done.jpg', storagePath: 'u/done.jpg', client_id: 501 }]);
+      return { after, dup: photos.filter(p => p.id === 5300).length, url: photos[0].url };
+    }, DATA);
+    expect(r.after, 'the pending one survives, the synced one follows the cloud').toEqual([5300, 5400]);
+    expect(r.dup).toBe(1);
+    expect(r.url).toBe('https://x/done.jpg');
   });
 });
