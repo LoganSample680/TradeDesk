@@ -1837,7 +1837,25 @@ function _tlRailRow(r){
     // An empty title draws no element. An unsaved job site has no name to
     // give, and an empty <div> there would leave a blank line hanging off the
     // spine where a name would sit.
-    body=(ttl?'<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>':'')+
+    // ── WHAT WAS THERE (owner 2026-09-24) ────────────────────────────────
+    // "It should just pop the address up and have it greyed so it asks if it
+    // was personal or business ... anything marked as personal says personal
+    // but doesn't show what was there."
+    //
+    // An unsaved stop, and a stop already answered Personal, name the place
+    // Apple says is at that spot (_stopNameFor, js/mileage.js), greyed: it is
+    // what the map says, not something anybody saved, and it counts toward
+    // nothing until it is saved. A row that already has a name keeps it.
+    const _noName=!_bareName||_bareName==='Unsaved address';
+    const _poi=((kind==='site'&&/^unsaved/.test(String(r.rawSource||'')))||kind==='personal')&&_noName&&
+      r.clientKey&&typeof _stopNameFor==='function'?_stopNameFor(r.clientKey,r.date):null;
+    const _poiName=_poi?(_poi.name||String(_poi.addr||'').split(',')[0]):'';
+    const _poiAddr=_poi&&_poi.name&&_poi.addr?String(_poi.addr).split(',').slice(0,2).join(','):'';
+    const _useGuess=!!_poiName&&(!ttl||ttl===m.word||ttl==='Unsaved address');
+    body=(_useGuess
+          ?'<div class="tl-rail-ttl" style="color:var(--text3)">'+escHtml(_poiName)+'</div>'+
+           (_poiAddr?'<div class="tl-rail-sub">'+escHtml(_poiAddr)+'</div>':'')
+          :(ttl?'<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>':''))+
          (sub?'<div class="tl-rail-sub">'+escHtml(sub)+'</div>':'');
     // SAVE IT FROM HERE TOO (owner 2026-09-09). A stop nobody saved is the
     // same fact on two screens: the mileage log has said "Unsaved address"
@@ -1878,12 +1896,19 @@ function _tlRailRow(r){
     // rest were controls that did nothing at all when pressed. One resolver
     // answers both questions now (_mileStopCoord, js/mileage.js): the chip
     // appears exactly when there is a coordinate behind it to save.
-    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)&&
-       (typeof _mileStopCoord!=='function'||_mileStopCoord(r.clientKey,r.date))){
-      body+='<div class="tl-rail-chips">'+
-        '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
-        escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
-        svgIcon('📍',{size:11})+' Save this address</button></div>';
+    // BUSINESS OR PERSONAL (owner 2026-09-24): the row asks the question
+    // itself. Business is the save, because only a saved address counts;
+    // Personal is the same answer the row menu's Not work gives, through the
+    // same door (_visitHoldAnswer), and the Personal row it leaves behind
+    // offers "It was work" to take it back.
+    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)){
+      const canSave=typeof _mileStopCoord!=='function'||!!_mileStopCoord(r.clientKey,r.date);
+      const chips=(canSave?'<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
+          escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
+          svgIcon('📍',{size:11})+' Business</button>':'')+
+        (r.rawId!=null?'<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+
+          escHtml(String(r.rawId))+'\',\'personal\')">Personal</button>':'');
+      if(chips)body+='<div class="tl-rail-chips">'+chips+'</div>';
     }
   }
   // The word rides with the icon in every case, so the colour is never doing
