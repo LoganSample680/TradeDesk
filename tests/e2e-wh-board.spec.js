@@ -564,6 +564,23 @@ test.describe('Water heater flush board', () => {
     expect(r.clear).toBe(true);
   });
 
+  test('add form: the install date has a real tap target, and the whole row opens it', async () => {
+    const r = await page.evaluate(() => {
+      openWhAdd();
+      const d = document.getElementById('_wh-date');
+      const h = d.getBoundingClientRect().height;
+      const row = d.closest('.sf-row');
+      const isLabel = row && row.tagName === 'LABEL';
+      row.querySelector('.sf-lbl').click();
+      const focused = document.activeElement === d;
+      document.getElementById('_wh-add-ov')?.remove();
+      return { h, isLabel, focused };
+    });
+    expect(r.h, 'an empty date on iPhone collapsed to nothing to tap').toBeGreaterThanOrEqual(24);
+    expect(r.isLabel).toBe(true);
+    expect(r.focused, 'tapping the row label lands in the date').toBe(true);
+  });
+
   test('layout: nothing bleeds off a phone screen', async () => {
     await seed();
     await page.evaluate(() => { goPg('pg-dash'); clients.find(c => c.id === 501).name = 'Bartholomew Maximilian Worthington-Smythe III'; _renderWhBoard(); });

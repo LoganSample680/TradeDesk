@@ -565,7 +565,11 @@ function openWhAdd(mode){
     .map(c=>'<option value="'+escHtml(String(c.id))+'">'+escHtml(c.name)+(have.has(String(c.id))?' (on board)':'')+'</option>').join('');
   // The app's own grouped form (.sf-card / .sf-row, the scheduler's shape):
   // label over value, rows in one rounded group, the way iOS Settings reads.
-  const row=(lbl,input)=>'<div class="sf-row"><div class="sf-body"><span class="sf-lbl">'+lbl+'</span>'+input+'</div></div>';
+  // Each row is a <label>, so a tap anywhere on it lands in its field. That
+  // matters most for the date: on iPhone an empty date input styled flat like
+  // the rest of this form collapses to no height at all, and there was
+  // nothing left to tap (owner 2026-09-26: "install date doesn't work").
+  const row=(lbl,input)=>'<label class="sf-row"><div class="sf-body"><span class="sf-lbl">'+lbl+'</span>'+input+'</div></label>';
   m.classList.add('td-wh-form');
   m.innerHTML=
     '<div class="zmodal-title">Add an install</div>'+
