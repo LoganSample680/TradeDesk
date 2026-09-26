@@ -2660,12 +2660,12 @@ test.describe('geo-derive wiring', () => {
 
     test('the push-ping handler routes on the blind flag, and on a missing fix for an older shell', async () => {
       const r = await page.evaluate(async () => {
-        const saved = { blind: _geoPingBlindBurst, normal: _geoPingBurst, note: _geoParkNote, rearm: _geoWakeRearm,
+        const saved = { blind: _geoPingBlindBurst, normal: _geoPingBurst, note: _geoParkNote,
           radio: _geoRadioCheck, upd: _geoBgUpdateCheck, derive: _geoDeriveLiveSoon, confirm: _geoDriveConfirm, fix: _geoFixLogPush };
         const calls = [];
         _geoPingBlindBurst = () => { calls.push('blind'); return true; };
         _geoPingBurst = () => { calls.push('normal'); return true; };
-        _geoParkNote = () => {}; _geoWakeRearm = async () => false; _geoRadioCheck = async () => null; _geoBgUpdateCheck = () => {};
+        _geoParkNote = () => {}; _geoRadioCheck = async () => null; _geoBgUpdateCheck = () => {};
         _geoDeriveLiveSoon = () => {}; _geoDriveConfirm = () => ''; _geoFixLogPush = () => {};
         try {
           // An older shell: no blind field, no coordinate.
@@ -2679,7 +2679,7 @@ test.describe('geo-derive wiring', () => {
           await _geoTdEvent({ type: 'push-ping', ts: Date.now(), blind: true }, true);
           return calls;
         } finally {
-          _geoPingBlindBurst = saved.blind; _geoPingBurst = saved.normal; _geoParkNote = saved.note; _geoWakeRearm = saved.rearm;
+          _geoPingBlindBurst = saved.blind; _geoPingBurst = saved.normal; _geoParkNote = saved.note;
           _geoRadioCheck = saved.radio; _geoBgUpdateCheck = saved.upd; _geoDeriveLiveSoon = saved.derive; _geoDriveConfirm = saved.confirm; _geoFixLogPush = saved.fix;
         }
       });

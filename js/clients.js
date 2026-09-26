@@ -497,8 +497,18 @@ function _newcGateCreate(){
   const err=document.getElementById('_newc-gate-err');
   if(!name){if(err){err.textContent='A name, so the paperwork has somewhere to live.';err.style.display='block';}document.getElementById('_newc-gate-name')?.focus();return;}
   if(!addr){if(err){err.textContent='An address, so we know what property this is.';err.style.display='block';}document.getElementById('_newc-gate-addr')?.focus();return;}
-  const p=_parseAddrParts(addr);
-  const c=_clientCommitNew({id:Date.now(),name,phone:'',email:'',
+  const c=_clientQuickCreate(name,addr);
+  document.getElementById('_newc-gate-overlay')?.remove();
+  currentClientId=c.id;
+  _rrpGateThenEstimate(c);
+}
+// A customer from a name and (maybe) an address, with nothing else asked.
+// Shared by the proposal gate above and TrueShot's picker, so a customer made
+// in a driveway is the same record however it was started (7.3).
+function _clientQuickCreate(name,addr){
+  addr=String(addr||'').trim();
+  const p=addr?_parseAddrParts(addr):{street:'',city:'',state:'',zip:''};
+  const c=_clientCommitNew({id:Date.now(),name:String(name||'').trim(),phone:'',email:'',
     addr,street:p.street||'',city:p.city||'',state:p.state||'',zip:p.zip||'',
     ptype:'Single family home',partyType:'',source:'',ref:'',notes:'',
     created:todayKey(),createdAt:new Date().toISOString(),
@@ -510,13 +520,11 @@ function _newcGateCreate(){
   saveAll();
   // The blanks fill themselves in from here: year built (which decides the
   // pre-1978 lead-paint gate), property data, and the geofence warm-up all
-  // key off the address he just typed.
+  // key off the address.
   if(p.street&&p.city&&typeof _lookupPropertyData==='function')
     _lookupPropertyData(c.id,{street:p.street,city:p.city,state:p.state||'',zip:p.zip||''});
-  if(typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
-  document.getElementById('_newc-gate-overlay')?.remove();
-  currentClientId=c.id;
-  _rrpGateThenEstimate(c);
+  if(addr&&typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
+  return c;
 }
 function _gateAddressThenEstimate(c,pickedAddr){
   if(!c)return;
@@ -963,6 +971,18 @@ function getClientStage(cid){
     if(paid.length)return{stage:'paid',label:'Paid in full',color:'var(--green)',priority:8};
   }
 
+  // WORK DONE, NO PAPERWORK (owner 2026-09-25: "after should bring them over
+  // as clients, even without jobs"). An After photo is proof the work
+  // happened. Jack shot After photos at four houses with no job, no signed
+  // proposal and no payment behind any of them, so all four sat in Leads,
+  // one of them as "Abandoned" over a draft proposal. Worked out here, when
+  // the list is drawn, rather than written onto the record, so every
+  // customer already photographed moves over the moment this ships and a
+  // deleted photo moves them back. A signed, scheduled, due or paid job still
+  // wins above, because those say more.
+  if(typeof tdClientHasAfterPhoto==='function'&&tdClientHasAfterPhoto(cid))
+    return{stage:'work_done',label:'Work done: no invoice yet',color:'var(--green)',priority:3};
+
   const pendingBids=cbids.filter(b=>b.status==='Pending');
   if(pendingBids.length){
     const sentBids=pendingBids.filter(b=>b.signingToken);
@@ -998,11 +1018,12 @@ function renderClientList(){
   if(!el)return;
 
   // Clients page only shows contacts who have signed an estimate (or beyond)
-  const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid'];
+  const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid','work_done'];
   const STAGE_BUCKETS={
     won:    c=>['signed','scheduled'].includes(getClientStage(c.id).stage),
     active: c=>getClientStage(c.id).stage==='active',
-    collect:c=>getClientStage(c.id).stage==='balance_due',
+    // Work done with nothing invoiced is money still to collect.
+    collect:c=>['balance_due','work_done'].includes(getClientStage(c.id).stage),
     closed: c=>getClientStage(c.id).stage==='paid',
   };
 
@@ -1069,6 +1090,7 @@ function renderClientList(){
       balance_due: {cls:'sf-overdue',  label:'BALANCE DUE'},
       paid:        {cls:'sf-won',      label:'PAID'},
       signed:      {cls:'sf-deposit',  label:'SIGNED'},
+      work_done:   {cls:'sf-overdue',  label:'WORK DONE'},
       est_ready:   {cls:'sf-deposit',  label:'EST READY'},
     };
     const bdg=bdgMap[s.stage]||{cls:'sf-done',label:s.label.toUpperCase()};
@@ -3297,11 +3319,12 @@ function _cdPropCardHtml(c,a,idx,total){
   const p=getProperty(c,a.addr);
   const note=getSiteNote(c,a.addr);
   const hist=getPropertyHistory(c,a.addr);
-  // Research-backed: 1 property renders fully expanded (an accordion for one item
-  // is pure friction); 2+ collapse to accordion rows you tap to open.
+  // Research-backed: 1 property STARTS fully expanded (making someone open the
+  // only item is pure friction); 2+ start collapsed. Either way the header
+  // folds it (owner 2026-09-23: "there's no way to minimize the accordion").
   const single=(total===1);
   const openKey='_cdpropOpen_'+c.id+'_'+idx;
-  const isOpen=single||!!window[openKey];
+  const isOpen=single?window[openKey]!==false:!!window[openKey];
   const pre78=!!(p.yearBuilt&&p.yearBuilt<1978);
   const ep=(typeof _parseAddrParts==='function')?_parseAddrParts(a.addr||''):{street:a.addr||'',city:'',state:'',zip:''};
   const street=((idx===0&&c.street)?c.street:ep.street)||a.addr||'No address';
@@ -3352,9 +3375,9 @@ function _cdPropCardHtml(c,a,idx,total){
   // Down-caret chevron matching the Overview section dropdown, so the property
   // rows read as the same control (owner: "accordion should look like the
   // overview accordion"). Rotates to point up when the row is expanded.
-  const chevron=single?'':`<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate(${isOpen?180:0}deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
-  const _hdrClick=single?'':`onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()"`;
-  const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;${single?'':'cursor:pointer'}">
+  const chevron=`<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate(${isOpen?180:0}deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
+  const _hdrClick=`onclick="window['${openKey}']=${isOpen?'false':'true'};renderCDAddresses()"`;
+  const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;cursor:pointer">
     ${iconTile}
     <div style="flex:1;min-width:0">
       ${labelPill}
@@ -3501,7 +3524,7 @@ function _cdPropCardHtml(c,a,idx,total){
         <div style="font-size:13px;font-weight:700;color:var(--text)">${_propPhotos.length?_propPhotos.length+(_propPhotos.length===1?' photo':' photos'):'None yet'}</div>
       </div>
       ${_propPhotos.length?`<button onclick="event.stopPropagation();tdOpenPropertyFolder(${c.id},${escHtml(JSON.stringify(a.addr||''))})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--text)">Open</button>`:''}
-      <button onclick="event.stopPropagation();tdCaptureForClient(${c.id})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
+      <button onclick="event.stopPropagation();tdAddPhotos(${c.id},${escHtml(JSON.stringify(a.addr||''))})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
     </div>`;
     // Footer: data source / lookup + map + remove.
     //
@@ -3545,7 +3568,11 @@ function _cdPropCardHtml(c,a,idx,total){
     </div>`;
     body=`<div style="padding:0 14px 14px">${_cdCountyFactsHtml(p,money)}${noteRow}${workBlock}${pastBlock}${_photoBlock}${footer}</div>`;
   }
-  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
+  // The house from the street across the top of an OPEN card (owner
+  // 2026-09-23), from Apple Look Around. A collapsed card stays one calm row,
+  // and a house Apple has never driven past gets nothing rather than a gap.
+  const svSlot=(isOpen&&typeof tdStreetSlotHTML==='function')?tdStreetSlotHTML(c,a.addr,'sv-card'):'';
+  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${svSlot}${header}${body}</div>`;
 }
 function renderCDAddresses(){
   const el=document.getElementById('cd-addresses-list');if(!el)return;
@@ -3752,13 +3779,20 @@ function removeClientAddress(idx){
 // inline and auto-picks it. Callers only open it when clientAddresses(c).length
 // > 1; a single-address client skips it entirely (zero extra taps). Speed is the
 // goal: search/choose the client, then one tap on the right property.
-let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null;
-function pickClientAddress(clientId,onPick){
+let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null,_addrPickSuggest='',_addrPickKind='';
+// opts.suggest: an address the caller already believes is right (TrueShot
+// knows where the photos were taken). It names the add row and fills the
+// new-address field, so adding the house he is standing at is two taps.
+function pickClientAddress(clientId,onPick,opts){
   const c=getClientById(clientId);if(!c)return;
+  _addrPickSuggest=String((opts&&opts.suggest)||'').trim();
   _addrPickList=(typeof clientAddresses==='function')?clientAddresses(c):[{label:'Primary',addr:c.addr}];
   _addrPickCb=onPick;_addrPickClientId=clientId;
   document.getElementById('_addrpick-ov')?.remove();
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addrpick-ov';
+  // opts.dark: TrueShot's dark bottom sheet. Same component, same rows; the
+  // stylesheet swaps the colour variables its inline styles already read.
+  if(opts&&opts.dark)ov.classList.add('td-dark-sheet');
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const pin='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--blue)" stroke-width="2.2" style="flex-shrink:0"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
   const rows=_addrPickList.map((a,i)=>{
@@ -3773,7 +3807,7 @@ function pickClientAddress(clientId,onPick){
   sheet.innerHTML=
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:11px 12px 4px">Which property?</div>'+
     rows+
-    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--blue)" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New address for this client</div>';
+    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--blue)" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>'+(_addrPickSuggest?'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Add '+escHtml(_addrPickSuggest.split(',')[0])+'</span>':'New address for this client')+'</div>';
   ov.appendChild(sheet);document.body.appendChild(ov);
 }
 function _addrPickFire(addr){
@@ -3782,19 +3816,49 @@ function _addrPickFire(addr){
   if(cb)cb(addr);
 }
 function _addrPickChoose(i){const a=_addrPickList[i];if(a)_addrPickFire(a.addr);}
+// What the new property IS, in one tap (owner 2026-09-23: "I go in and
+// select is it a rental, secondary home etc."). The chip becomes the label
+// the card and the mileage log already show, and the two that change how the
+// app treats a house (rental, commercial) also set the property type, the
+// same field "Add property address" writes (saveAddClientAddress).
+const _ADDR_KINDS=[
+  {k:'Rental',ptype:'Rental property'},
+  {k:'Second home'},
+  {k:'Vacation home'},
+  {k:'Commercial',ptype:'Commercial'},
+  {k:'Family'},
+  {k:'Other'},
+];
+function _addrPickSetKind(k){
+  _addrPickKind=(_addrPickKind===k)?'':k;
+  document.querySelectorAll('#_addrpick-kinds button').forEach(b=>{
+    const on=b.dataset.k===_addrPickKind;
+    b.setAttribute('aria-pressed',on?'true':'false');
+    b.style.background=on?'var(--blue)':'var(--bg2)';
+    b.style.color=on?'#fff':'var(--text)';
+    b.style.borderColor=on?'var(--blue)':'var(--border2)';
+  });
+}
 function _addrPickAddNew(){
   const sheet=document.getElementById('_addrpick-sheet');if(!sheet)return;
   const cid=_addrPickClientId;
+  _addrPickKind='';
   sheet.innerHTML=
     '<div style="font-size:15px;font-weight:800;padding:10px 12px 8px">New address</div>'+
     '<div style="padding:0 12px 12px">'+
       '<input id="_addrpick-new" placeholder="123 Main St, City ST" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:14px 0 8px">What is it?</div>'+
+      '<div id="_addrpick-kinds" style="display:flex;flex-wrap:wrap;gap:6px">'+
+        _ADDR_KINDS.map(o=>'<button type="button" data-k="'+escHtml(o.k)+'" aria-pressed="false" onclick="_addrPickSetKind(this.dataset.k)" '+
+          'style="padding:8px 13px;border-radius:999px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer">'+escHtml(o.k)+'</button>').join('')+
+      '</div>'+
       '<div style="display:flex;gap:8px;margin-top:12px">'+
         '<button onclick="_addrPickSaveNew()" class="btn btn-g" style="flex:2">Add &amp; use</button>'+
         '<button onclick="pickClientAddress('+cid+',_addrPickCb)" class="btn" style="flex:1">Back</button>'+
       '</div>'+
     '</div>';
   const inp=document.getElementById('_addrpick-new');
+  if(inp&&_addrPickSuggest)inp.value=_addrPickSuggest;
   if(inp&&typeof _addrAutoFull==='function')_addrAutoFull(inp,null);
   setTimeout(()=>inp&&inp.focus(),60);
 }
@@ -3802,7 +3866,11 @@ function _addrPickSaveNew(){
   const val=(document.getElementById('_addrpick-new')?.value||'').trim();
   if(!val){if(typeof zAlert==='function')zAlert('Enter an address.');return;}
   const c=getClientById(_addrPickClientId);if(!c)return;
-  addClientAddress(c,'Additional property',val);
+  const kind=_ADDR_KINDS.find(o=>o.k===_addrPickKind);
+  addClientAddress(c,(kind&&kind.k!=='Other')?kind.k:'Additional property',val);
+  if(kind&&kind.ptype&&typeof setPropertyData==='function')
+    setPropertyData(c,val,{propertyType:kind.ptype,isRental:/rental/i.test(kind.ptype)||undefined});
+  _addrPickKind='';
   if(typeof saveAll==='function')saveAll();
   _addrPickFire(val);
 }

@@ -452,6 +452,69 @@ function _gdArrivalTrim(journeys, spans) {
   });
 }
 
+// ── RULE 24: A STOP THE TAPE SLEPT THROUGH IS STILL A STOP ───────────────
+// Owner 2026-09-23, on Jack's morning: "he went to the shop and got parts,
+// hell life 360 didnt even pick it up."
+//
+// His 23 September, off his own phone:
+//
+//   08:53:51  automotive          leaves Treyton Schafer's
+//   08:59:35  regionEnter shop    he pulls into the yard
+//   09:00:08  fix, inside the shop fence
+//   09:06:47  regionExit shop     he pulls out with the parts
+//   09:10:15  regionEnter Treyton back at the job
+//   09:11:52  walking             the tape's first word since 08:53
+//
+// CoreMotion never left automotive at the shop: he stayed in the truck, or
+// walked in and out without the coprocessor noticing. A journey only ends on
+// a foot flip or ten minutes of stillness, so the tape read one drive that
+// left Treyton's and came back to it. Rule 7 drops a same-fence loop with no
+// stop in it entirely, which is right for moving the truck across a job site
+// and wrong here: no drive rows, no shop time, no miles, a 16-minute hole on
+// the rail.
+//
+// Rule 21 already trusts a closed crossing pair to END a drive, and leaves
+// one that opens and closes INSIDE a drive alone as driving past. This is its
+// twin for the middle of a drive, and three things separate a stop from a
+// pass, all of which his morning has and a drive-by does not:
+//   - the pair is CLOSED (an unpaired enter is rule 21's, never a span);
+//   - it lasted parkedStillMs, the file's existing "the truck was parked"
+//     threshold. Driving through a 600 ft circle takes well under a minute;
+//   - a fresh fix between the two edges sits inside THIS file's circle, not
+//     merely inside the OS region, which is wider (see _gdSettledAway: iOS
+//     can call you inside from 768 ft out).
+// The split point is the crossings themselves, the same evidence rule 21
+// uses for WHEN. The second half is a new journey minted at the exit, exactly
+// the way _gdParkedSplit mints the drive after a parked truck.
+function _gdCrossingSplit(journeys, spans, fixes, fences, opts, personId) {
+  if (!Array.isArray(journeys) || !Array.isArray(spans) || !spans.length) return journeys;
+  const minMs = (Number(opts && opts.parkedStillMs) > 0) ? Number(opts.parkedStillMs) : GEO_DERIVE_DEFAULTS.parkedStillMs;
+  const r = (opts && Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const maxAcc = (opts && Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
+  const fx = (Array.isArray(fixes) ? fixes : []).filter(f => f && typeof f.ts === 'number' &&
+    f.lat != null && f.lng != null && (f.acc == null || Number(f.acc) <= maxAcc));
+  const stops = spans
+    .filter(s => s && s.f && typeof s.from === 'number' && typeof s.to === 'number' &&
+      isFinite(s.to) && s.to - s.from >= minMs &&
+      fx.some(f => f.ts >= s.from && f.ts <= s.to && _gdSameFence(geoFenceAt(f, fences, r), s.f)))
+    .sort((a, b) => a.from - b.from);
+  if (!stops.length) return journeys;
+  const out = [];
+  for (const j of journeys) {
+    if (!j || typeof j.startTs !== 'number') { out.push(j); continue; }
+    let head = j;
+    for (const s of stops) {
+      const end = (typeof head.endTs === 'number') ? head.endTs : Infinity;
+      // Wholly inside what is left of this drive, both edges.
+      if (!(s.from > head.startTs && s.to < end)) continue;
+      out.push({ startTs: head.startTs, id: head.id, endTs: s.from, endFence: s.f });
+      head = Object.assign({}, head, { startTs: s.to, id: _gdJourneyId(personId, s.to, null) });
+    }
+    out.push(head);
+  }
+  return out;
+}
+
 function _gdSameFence(a, b) {
   if (!a || !b) return false;
   return String(a.id) === String(b.id);
@@ -979,8 +1042,11 @@ function geoDeriveDay(input) {
   // Rule 21 reads the closed pairs AND the unpaired arrivals; rule 15 reads
   // only the closed pairs, which is the distinction _gdOpenArrivals exists to
   // draw. Never the other way round.
+  // Rule 24 runs first: it cuts a drive at a stop the tape slept through, and
+  // rule 21 then trims whichever piece really ends at a crossing.
   const journeys = _gdShuffleDrop(_gdArrivalTrim(
-    _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
+    _gdCrossingSplit(_gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
+      regionSpans, fixes, fences, opts, inp.personId),
     regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes))),
     fixes, fences, opts);
   const dwells = [], legs = [];
@@ -1729,11 +1795,22 @@ function geoDeriveDay(input) {
   // (owner 2026-09-06). It still reports where he is; it now also says whether
   // that is work, and the rail can stop calling it time.
   if (open) open.counts = _gdOpenCounts(open, asked, win, nowMs);
+  // Rule 25: a Time off day is held end to end, and the live stop only counts
+  // under a clock (see _gdTimeOffHold). Last, so it overrides every answer
+  // above without any of them needing to know it exists.
+  const timeOff = _gdTimeOffDay(inp);
+  let outDwells = judged, outLegs = realLegs;
+  if (timeOff) {
+    const t = _gdTimeOffHold(judged, realLegs, inp, open, nowMs);
+    outDwells = t.dwells; outLegs = t.legs;
+    if (open && !t.openCounts) open.counts = false;
+  }
 
   return {
     day: inp.day || '',
-    dwells: judged.filter(d => d.minutes >= 1),
-    legs: realLegs,
+    dwells: outDwells.filter(d => d.minutes >= 1),
+    legs: outLegs,
+    timeOff,
     open,
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
@@ -2393,6 +2470,51 @@ function _gdClockSpans(inp) {
 function _gdUnderClock(spans, a, b) {
   return (spans || []).some(c => Math.min(b, c.b) - Math.max(a, c.a) >= 60000);
 }
+
+// ── RULE 25: TIME OFF HOLDS THE DAY (owner 2026-09-24) ────────────────────
+// "does calendar vacation stop mileage and addresses from counting?" It did
+// not. Time off (Settings, the calendar's block-out) only ever blocked
+// booking, and nothing in this file read it. Jack blocked 24 to 27 September
+// for a trip, drove 275 miles, and the evening at the rental read as three
+// hours of time on his rail. Owner: "calendar should block off auto mileage
+// too."
+//
+// A day inside a Time off block is judged as a question from end to end:
+// every drive is held (out of every money total, pendingPurpose), every visit
+// is held, and a stop at the yard or the home office writes nothing, because
+// neither has a held form and a vacation is not a shift at your own place.
+// The one thing that still counts is the one thing that always outranks the
+// geometry: a manual clock. Somebody who punches in on a day off is telling
+// you, in their own words, that this stretch is work.
+//
+// Held, never dropped, for everything that has an answer to give: the owner's
+// standing rule is that data does not silently go away, and a genuine call-out
+// on a day off is one tap from counting.
+//
+// `inp.timeOff` is the account's own blocks, [{start, end}] as Central dates,
+// exactly as Settings writes them (getTimeOffDays, js/settings.js).
+function _gdTimeOffDay(inp) {
+  const day = String((inp && inp.day) || '');
+  const ok = v => /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (!ok(day)) return false;
+  return (Array.isArray(inp && inp.timeOff) ? inp.timeOff : []).some(b => {
+    if (!b || typeof b !== 'object') return false;
+    const s = String(b.start || ''), e = String(b.end || b.start || '');
+    return ok(s) && ok(e) && s <= day && day <= e;
+  });
+}
+function _gdTimeOffHold(dwells, legs, inp, open, nowMs) {
+  const spans = _gdClockSpans(inp);
+  const under = (a, b) => _gdUnderClock(spans, Number(a), Number(b));
+  const heldLegs = (legs || []).map(l => (!l || l.held === true || under(l.startTs, l.endTs))
+    ? l : Object.assign({}, l, { held: true, timeOff: true }));
+  const heldDwells = (dwells || []).filter(d => d && (under(d.startTs, d.endTs)
+    || (d.kind !== 'shop' && d.kind !== 'office')))
+    .map(d => (d.held === true || under(d.startTs, d.endTs)) ? d : Object.assign({}, d, { held: true, timeOff: true }));
+  const openCounts = !!open && under(Number(open.startTs || open.sinceTs), Number(nowMs));
+  return { dwells: heldDwells, legs: heldLegs, openCounts };
+}
+
 function _gdHeldVisits(dwells, inp, dayStart) {
   const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
     .map(c => c && { a: Number(c.start), b: Number(c.end) })

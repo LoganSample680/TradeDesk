@@ -350,6 +350,49 @@ test.describe('geofence ingest contract', () => {
     expect(own).not.toMatch(/for (all|insert|update|delete)/i);
   });
 
+  // ── HOW A FLIP REACHED US IS KEPT (owner 2026-09-23) ──────────────────
+  // "I want to see on time shit within 10 seconds 100% of the time."
+  //
+  // A late flip is either the phone not KNOWING yet or the phone knowing and
+  // not SENDING, and the plugin says which on every row: deliveredAtMs from
+  // the live stream, hist from the backfill. ingest-geo dropped both, so all
+  // lateness looked alike. The function is lifted out of the real server file
+  // and run, type annotations stripped, so the test is the code that ships.
+  const motionDetail = () => {
+    const src = SERVER();
+    const i = src.indexOf('function motionDetail(');
+    const j = src.indexOf('\n}\n', i);
+    return src.slice(i, j + 2)
+      .replace('(e: any): Record<string, unknown> | null', '(e)')
+      .replace('const out: Record<string, unknown> = {}', 'const out = {}');
+  };
+
+  test('ingest keeps whether a flip was live or recovered, and when it was handed over', async () => {
+    const r = await page.evaluate((code) => {
+      const f = new Function(code + '; return motionDetail;')();
+      return {
+        live: f({ type: 'motion', deliveredAtMs: 1790172067123.4, prevKind: 'still', seq: 42 }),
+        hist: f({ type: 'motion', hist: true, seq: 7 }),
+        bare: f({ type: 'motion' }),
+        junk: [null, undefined, {}, { hist: 'yes' }, { deliveredAtMs: 'x' }, { deliveredAtMs: -5 },
+               { deliveredAtMs: NaN }, { seq: 0 }, { seq: -1 }, { prevKind: '' }].map(e => f(e || {})),
+        long: f({ prevKind: 'x'.repeat(200) }),
+      };
+    }, motionDetail());
+    expect(r.live).toEqual({ deliveredAtMs: 1790172067123, prevKind: 'still', seq: 42 });
+    expect(r.hist).toEqual({ hist: true, seq: 7 });
+    expect(r.bare, 'nothing to keep is a null detail, as before').toBe(null);
+    for (const j of r.junk) expect(j, 'junk never becomes a detail').toBe(null);
+    expect(r.long.prevKind.length).toBe(16);
+  });
+
+  test('only motion rows take the motion detail; every other row is unchanged', () => {
+    const src = SERVER();
+    expect(src).toMatch(/e\.type === "radio"\s*\n\s*\? radioDetail\(e\)\s*\n\s*: e\.type === "motion"\s*\n\s*\? motionDetail\(e\)/);
+    // The stale-age rule for positioned rows is exactly where it was.
+    expect(src).toMatch(/typeof e\.staleMs === "number" \|\| e\.blind === true/);
+  });
+
   test('no console errors', async () => {
     await assertNoErrors(page);
   });

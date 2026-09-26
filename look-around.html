@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Look Around</title>
+<!--
+  Apple Look Around, in its own page (owner 2026-09-23: "can we pull apples
+  street photo?").
+
+  Why a page of its own and not a div in the app: Look Around lives only in
+  MapKit's modular bundle (mapkit.core.js + the "look-around" library). The
+  app loads the full bundle, which cannot load that library at all (probed
+  2026-09-23: mapkit.LookAroundPreview throws "available after loading the
+  following library: look-around" and the full bundle has no loader). Moving
+  the whole app to the modular bundle would change how every other map in
+  it (mileage, the day map, the measuring tool) boots. A frame keeps Look
+  Around entirely to itself, and the maps that already work never notice.
+
+  The token is the app's own, read from the parent window, so there is still
+  exactly one copy of it (js/mileage.js). No token means an origin MapKit
+  would refuse (localhost, tests), so the page says "none" and loads nothing.
+
+  Talks to the parent with postMessage only:
+    {type:'td-sv', id, state:'ready'|'none'}
+-->
+<style>
+html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+#v{position:absolute;inset:0}
+</style>
+</head><body>
+<div id="v"></div>
+<script>
+(function(){
+  var q=new URLSearchParams(location.search);
+  var id=q.get('id')||'';
+  var lat=parseFloat(q.get('lat')),lon=parseFloat(q.get('lon'));
+  var full=q.get('mode')==='full';
+  var said=false;
+  function say(state){
+    if(said&&state!=='ready')return;
+    said=true;
+    try{ parent.postMessage({type:'td-sv',id:id,state:state},location.origin); }catch(e){}
+  }
+  var token='';
+  try{ token=(parent&&typeof parent._tdMapkitToken==='function')?parent._tdMapkitToken():''; }catch(e){}
+  if(!token||!isFinite(lat)||!isFinite(lon)){ say('none'); return; }
+  window.__tdLaInit=function(){
+    try{
+      var here=new mapkit.Coordinate(lat,lon);
+      var opts={showsPointsOfInterest:false};
+      var view=full
+        ?new mapkit.LookAround(document.getElementById('v'),here,Object.assign(opts,{showsCloseControl:false,showsDialogControl:false,isNavigationEnabled:true}))
+        :new mapkit.LookAroundPreview(document.getElementById('v'),here,Object.assign(opts,{openDialog:false,isNavigationEnabled:false,isScrollEnabled:false,isZoomEnabled:false}));
+      var RS=mapkit.LookAround.ReadyStates||{};
+      var check=function(){
+        var s=view.readyState;
+        if(s===RS.Complete||s==='complete')say('ready');
+        else if(s===RS.Error||s==='error')say('none');
+        else return false;
+        return true;
+      };
+      try{view.addEventListener('readystatechange',check);}catch(e){}
+      try{view.addEventListener('error',function(){say('none');});}catch(e){}
+      // Events are the fast path; this is the guarantee, because an answer
+      // that never comes would leave the card waiting on nothing.
+      var n=0,t=setInterval(function(){ if(check()||++n>40){clearInterval(t); if(!said)say('none');} },250);
+    }catch(e){ say('none'); }
+  };
+  var s=document.createElement('script');
+  s.src='https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.core.js';
+  s.crossOrigin='anonymous';
+  s.dataset.callback='__tdLaInit';
+  s.dataset.libraries='look-around';
+  s.dataset.token=token;
+  s.onerror=function(){say('none');};
+  document.head.appendChild(s);
+})();
+</script>
+</body></html>

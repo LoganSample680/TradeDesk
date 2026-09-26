@@ -61,6 +61,11 @@ test.describe('the hub content hash ignores the clock', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // A background cloud load can land after boot and replace the arrays,
+    // taking this fixture with it: the snapshot then comes back null and has
+    // no generatedAt to find (WebKit, shard 3, 2026-09-25). Same parking the
+    // time log and photo specs use.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
     await page.evaluate(() => {
       clients.push({ id: 96100, name: 'Hash Client', phone: '3165550111', addr: '9 Hash St' });
       bids.push({ id: 961000, client_id: 96100, amount: 1200, status: 'Sent', type: 'Interior' });

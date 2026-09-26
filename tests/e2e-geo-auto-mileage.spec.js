@@ -2777,7 +2777,8 @@ test.describe('Automatic mileage from drive legs', () => {
             timerArmed,
             parkedCalls: parked.length,
             region: parked[0] && parked[0].regions && parked[0].regions[0],
-            expectRadius: _geoFenceFt() * 0.3048 + 60,
+            expectRadius: Math.min(_geoFenceFt() * 0.3048 + 60, _GEO_PARK_REGION_M),
+            jsRadius: _geoParkRadiusM, fenceRadius: _geoFenceFt() * 0.3048 + 60,
             removedId: removed[0] && removed[0].id,
             watcherCleared: _geoNativeWatcherId,
             parkOn: _geoParkModeOn,
@@ -2796,7 +2797,13 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.region && r.region.id).toBe('fence');
       expect(r.region.lat).toBeCloseTo(SHOP.lat, 4);
       expect(r.region.lng).toBeCloseTo(SHOP.lon, 4);
-      expect(r.region.radius, 'the region is the fence plus coarse-hardware slack').toBeCloseTo(r.expectRadius, 2);
+      // WAS: the iOS region was the fence plus coarse-hardware slack (243 m).
+      // Since 2026-09-23 the kerb region is what wakes a parked phone (the wake
+      // stream is retired), so iOS gets the tighter _GEO_PARK_REGION_M, while
+      // the JS exit test keeps judging on the fence plus slack.
+      expect(r.region.radius, 'iOS wakes on the tight kerb region').toBeCloseTo(r.expectRadius, 2);
+      expect(r.region.radius).toBe(100);
+      expect(r.jsRadius, 'the JS park radius is still the fence plus slack').toBeCloseTo(r.fenceRadius, 2);
       expect(r.removedId, 'the continuous GPS watcher is removed, the blue arrow goes away').toBe('w-1');
       expect(r.watcherCleared).toBe(null);
       expect(r.parkOn).toBe(true);
