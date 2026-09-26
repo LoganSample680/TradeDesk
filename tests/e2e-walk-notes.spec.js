@@ -274,5 +274,63 @@ test.describe('walk notes', () => {
     expect(await page.evaluate(() => ({ row: !!document.getElementById('sup-add'), add: [...document.querySelectorAll('#tm-sup-wrap button')].some(b => /Add a part/.test(b.textContent)) }))).toEqual({ row: false, add: true });
   });
 
+  // ── SAY THE PARTS (owner, 2026-09-26: "Anyway to bulk add materials where we
+  // can talk them into Tim?") ────────────────────────────────────────────────
+  test('a spoken parts list comes apart into rows: counts, units and sizes told apart', async () => {
+    const r = await page.evaluate(() => {
+      const f = t => _supParseSpoken(t).map(i => i.qty + ' ' + i.unit + ' ' + i.desc);
+      return {
+        a: f('three three quarter ball valves, twenty feet of two inch PVC, a condensate pump and two boxes of half inch sharkbite couplings'),
+        b: f('I need a Navien NPE-240A, one sediment trap and ten feet of three quarter pex'),
+        c: f('okay grab two rolls of teflon tape, a tube of pipe dope, four half inch copper elbows, then a thermal expansion tank'),
+        d: f('inch and a half abs p-trap and two 90s'),
+        e: f('twenty two feet of half inch pex'),
+        g: f('a couple of 40 gallon water heater pans and a dozen quarter inch compression ferrules'),
+        none: f('um'),
+      };
+    });
+    expect(r.a).toEqual(['3 ea 3/4in ball valve', '20 ft 2in PVC', '1 ea Condensate pump', '2 box 1/2in SharkBite coupling']);
+    expect(r.b).toEqual(['1 ea Navien NPE-240A', '1 ea Sediment trap', '10 ft 3/4in PEX']);
+    expect(r.c).toEqual(['2 roll Teflon tape', '1 tube Pipe dope', '4 ea 1/2in copper elbow', '1 ea Thermal expansion tank']);
+    expect(r.d).toEqual(['1 ea 1-1/2in ABS p-trap', '2 ea 90s']);
+    expect(r.e).toEqual(['22 ft 1/2in PEX']);
+    expect(r.g).toEqual(['2 ea 40 gallon water heater pan', '12 ea 1/4in compression ferrule']);
+    expect(r.none).toEqual([]);
+  });
+
+  test('Say the parts: Tim listens, and on stop every part is a row on the list', async () => {
+    await openTM(99911, null);
+    const said = 'three three quarter ball valves, twenty feet of two inch PVC and a condensate pump';
+    const r = await page.evaluate(async (said) => {
+      window._voiceCapable = () => true;
+      window._voiceStart = async () => true; window._voiceStop = async () => said;
+      _geiScopeChips = ['Set a tankless']; _renderScopeChips('tm-scope-wrap'); _tmRenderMatList();
+      const row = [...document.querySelectorAll('#tm-sup-wrap button')].find(b => /Say the parts/.test(b.textContent));
+      row.click();
+      await new Promise(res => setTimeout(res, 150));
+      const listening = !!document.getElementById('_tim-listen');
+      await _timTalkStop();
+      await new Promise(res => setTimeout(res, 150));
+      return { listening, items: _supData().items.map(i => i.qty + ' ' + i.unit + ' ' + i.desc), rows: document.querySelectorAll('#tm-sup-wrap .sup-row').length };
+    }, said);
+    expect(r.listening).toBe(true);
+    expect(r.items).toEqual(['3 ea 3/4in ball valve', '20 ft 2in PVC', '1 ea Condensate pump']);
+    expect(r.rows).toBe(3);
+  });
+
+  test('leaving mid-list (Save, Back) keeps the parts already said', async () => {
+    await openTM(99912, null);
+    const r = await page.evaluate(async () => {
+      window._voiceCapable = () => true;
+      window._voiceStart = async () => true; window._voiceStop = async () => 'two rolls of teflon tape';
+      _geiScopeChips = ['Set a tankless']; _renderScopeChips('tm-scope-wrap'); _tmRenderMatList();
+      _supTalk();
+      await new Promise(res => setTimeout(res, 100));
+      await _timTalkStop(true);
+      return _supData().items.map(i => i.qty + ' ' + i.unit + ' ' + i.desc);
+    });
+    expect(r).toEqual(['2 roll Teflon tape']);
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'walk notes'); });
 });

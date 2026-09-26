@@ -1626,6 +1626,9 @@ function _timTalkStop(silent){
     const said=String(text||_timHeard||'').trim();
     const el=document.getElementById(_timTalkTarget);
     if(el&&said)el.value=said;
+    // The parts list takes what was said even when he leaves mid-list (Save,
+    // Back): a list half said is still a list (2026-09-26).
+    if(_timTalkTarget==='sup-say'){if(said&&typeof _supFromSpeech==='function')_supFromSpeech(said);return;}
     if(silent||!said)return;
     // Dictating a site note fills the field and stops. It is an answer to a
     // question Tim asked, not a new instruction, so reading it back as a job

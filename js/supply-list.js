@@ -88,6 +88,75 @@ function _supParseLine(raw){
   return {qty,unit,desc,cost:0,on:true};
 }
 
+// ── SAY THE PARTS (owner, 2026-09-26: "Anyway to bulk add materials where we
+// can talk them into Tim?") ─────────────────────────────────────────────────
+//
+// He rattles the list off the way he would to the counter: "three three
+// quarter ball valves, twenty feet of two inch PVC, a condensate pump and two
+// boxes of half inch sharkbite couplings". Each part comes out as its own row
+// with its count and unit. The hard part is that the same words are counts in
+// one place and sizes in the next: "three" is a count, "three quarter" is a
+// size, "twenty feet" is a count and a unit, "two inch" is a size. So sizes
+// are read first and set aside, and only then is the leading number a count.
+// No model, no network: plain rules, like the quote reader.
+const _SUP_NUMW={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90,hundred:100,couple:2,pair:2,dozen:12};
+const _SUP_UNITW={foot:'ft',feet:'ft',ft:'ft',each:'ea',ea:'ea',box:'box',boxes:'box',roll:'roll',rolls:'roll',bag:'bag',bags:'bag',stick:'stick',sticks:'stick',length:'stick',lengths:'stick',gallon:'gal',gallons:'gal',tube:'tube',tubes:'tube',piece:'pc',pieces:'pc',coil:'coil',coils:'coil',case:'cs',cases:'cs',pack:'pk',packs:'pk',bundle:'bdl',bundles:'bdl',sheet:'sheet',sheets:'sheet',pair:'pr',pairs:'pr',set:'set',sets:'set',lb:'lb',lbs:'lb',pound:'lb',pounds:'lb'};
+// Spoken sizes, longest first, into how the counter writes them.
+const _SUP_SIZES=[
+  [/\binch and a quarter\b/g,'1-1/4in'],[/\binch and a half\b/g,'1-1/2in'],
+  [/\b(one and a quarter|one and quarter|1 and a quarter) inch(es)?\b/g,'1-1/4in'],
+  [/\b(one and a half|one and half|1 and a half) inch(es)?\b/g,'1-1/2in'],
+  [/\b(three quarters?|three-quarters?|3 quarters?)( of an)?( inch(es)?)?\b/g,'3/4in'],
+  [/\b(half|a half|one half)( of an| an)? inch(es)?\b/g,'1/2in'],[/\bhalf-inch\b/g,'1/2in'],
+  [/\b(quarter|a quarter|one quarter)( of an| an)? inch(es)?\b/g,'1/4in'],
+  [/\b(one|two|three|four|five|six|eight|ten|twelve|1|2|3|4|5|6|8|10|12)[\s-]inch(es)?\b/g,(m,n)=>((_SUP_NUMW[n]||n)+'in')],
+  [/\b(\d+(?:\/\d+)?)\s*(inch|inches|in|\")(?=\s|$)/g,'$1in'],
+];
+function _supSizes(t){
+  let out=String(t||'');
+  _SUP_SIZES.forEach(([re,to])=>{out=out.replace(new RegExp(re.source,'gi'),typeof to==='function'?((...a)=>to(a[0],String(a[1]||'').toLowerCase())):to);});
+  return out;
+}
+function _supSpokenPiece(raw){
+  // His words as spoken, capitals and all ("Navien NPE-240A"); only the
+  // matching is done in lower case.
+  let t=String(raw||'').trim();
+  for(let k=0;k<3;k++)t=t.replace(/^(ok(ay)?|so|um+|uh+|and|also|plus|then|i need|we need|we'?ll need|i'?ll need|get me|grab|pick up|we got|gonna need|going to need|need|we want|i want)\b[\s,]*/i,'');
+  let qty=null,rest=t.trim();
+  let m=rest.match(/^(\d+(?:\.\d+)?)(?![\/\d]|in\b|-)\s+(.*)$/i);
+  if(m){qty=parseFloat(m[1]);rest=m[2];}
+  else{
+    const w=rest.split(/\s+/);
+    // "a couple of", "a pair of", "a dozen": the word after the "a" is the count.
+    if(/^(a|an)$/i.test(w[0])&&/^(couple|pair|dozen)$/i.test(w[1]||''))w.shift();
+    let n=0,used=0;
+    for(let i=0;i<w.length&&i<3;i++){
+      const v=_SUP_NUMW[w[i].toLowerCase()];if(v==null)break;
+      if(v===100&&n>0){n*=100;}else n+=v;
+      used=i+1;
+      if(/^(a|an|couple|pair|dozen)$/i.test(w[i]))break;
+    }
+    if(used){qty=n;rest=w.slice(used).join(' ').replace(/^of\s+/i,'');}
+  }
+  let unit='ea';
+  m=rest.match(/^([A-Za-z]+)\s+(?:of\s+)?(.*)$/);
+  if(m&&_SUP_UNITW[m[1].toLowerCase()]&&m[2]){unit=_SUP_UNITW[m[1].toLowerCase()];rest=m[2];}
+  rest=rest.replace(/^(of|a|an|the)\s+/i,'').trim();
+  if(!rest||rest.replace(/[^a-z0-9]/gi,'').length<2)return null;
+  // "ball valves" -> "ball valve": the counter reads the count, not the plural.
+  rest=rest.replace(/\b([a-z]{2,}[^s\s])s\b(?!.*\b[a-z]{2,}[^s\s]s\b)/,'$1');
+  rest=rest.replace(/\b(pvc|cpvc|pex|abs|csst|npt|fip|mip|gfci|afci|emt)\b/gi,x=>x.toUpperCase());
+  rest=rest.replace(/\bshark ?bite\b/gi,'SharkBite');
+  return {qty:qty&&qty>0?qty:1,unit,desc:rest.charAt(0).toUpperCase()+rest.slice(1),cost:0,on:true};
+}
+function _supParseSpoken(text){
+  // Sizes first, over the whole sentence, so "inch AND a half" is a size and
+  // never a place to cut the list.
+  const s=_supSizes(String(text||'').replace(/\s+/g,' ').trim());
+  if(!s)return [];
+  const parts=s.split(/\s*[,;.]\s+|\s*[,;]\s*|\s+(?:and then|then|plus|also)\s+|\s+and\s+(?=(?:\d|a |an |one |two |three |four |five |six |seven |eight |nine |ten |twelve |twenty |thirty |fifty |a couple|a pair|a dozen|some ))/i);
+  return parts.map(_supSpokenPiece).filter(Boolean);
+}
 // ── The host line ───────────────────────────────────────────────────────────
 function _supMode(){
   if(typeof _geiIsTM!=='undefined'&&_geiIsTM)return 'tm';
@@ -174,6 +243,11 @@ function _supCardIosHTML(){
     '<div class="ios-group">'+
       rows+
       _supAddRowHtml()+
+      // Talk the whole list in, on a phone that can dictate (2026-09-26).
+      ((typeof _voiceCapable==='function'&&_voiceCapable())
+        ?'<button type="button" class="ios-row ios-link sup-addpart" onclick="_supTalk()"><span class="sup-plus sup-mic" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg></span>Say the parts</button>'+
+         '<textarea id="sup-say" hidden aria-hidden="true"></textarea>'
+        :'')+
       '<label class="ios-row"><span class="ios-lbl">Markup</span>'+
         '<span class="ios-val"><input id="sup-markup" type="number" inputmode="decimal" min="0" max="100" step="1" value="'+(d?_supClampMarkup(d.markup):0)+'" oninput="_supSetMarkup(this.value)">%</span></label>'+
       (priced
@@ -248,6 +322,21 @@ function _supAddBlur(){
     if(el&&String(el.value||'').trim())return;
     if(_supAdding){_supAdding=false;_supRerender();}
   },180);
+}
+// Tim's listening sheet, pointed at the parts list. What he says lands as
+// rows when he taps stop; the list is where he checks it (swipe to delete).
+function _supTalk(){
+  const el=document.getElementById('sup-say');if(el)el.value='';
+  if(typeof _timTalkToggle==='function')_timTalkToggle('sup-say');
+}
+function _supFromSpeech(text){
+  const items=_supParseSpoken(text);
+  if(!items.length){if(typeof showToast==='function')showToast('I did not catch a part in that','🔧',2400);return 0;}
+  const h=_supHost(true);
+  h._supply.items=(h._supply.items||[]).concat(items);
+  _supSync();
+  if(typeof showToast==='function')showToast(items.length+' part'+(items.length>1?'s':'')+' added','✅',2200);
+  return items.length;
 }
 function _supCardHTML(opts){
   const bare=!!(opts&&opts.bare);
