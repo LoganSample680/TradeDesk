@@ -217,23 +217,35 @@ function qiOpenJob(bidId){
   const b=(bids||[]).find(x=>String(x.id)===String(bidId));
   if(b&&typeof openFinalInvoice==='function')openFinalInvoice(b.id);
 }
-// What the customer will get, before anything is saved or sent.
-function qiSeeIt(){
-  if(!_qi)return;
+// THE INVOICE DOCUMENT, built from the proposal's own shell (js/generic-
+// estimate.js: _propBrand, _propDoc, _propCover, _propSection, _propSignoff),
+// so the customer gets the same letterhead, colour and page on the bill as on
+// the proposal. Only the body is the invoice's: the lines and what is due.
+function _qiDocHtml(num){
+  if(!_qi)return '';
   const c=getClientById(_qi.cid)||{};
   const lines=_qiLines().filter(l=>Number(l.amount)>0);
-  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='qi-see';
-  ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML=
-    '<div style="font-size:13px;font-weight:700;color:var(--text3)">'+escHtml((typeof S!=='undefined'&&S.bname)||'')+'</div>'+
-    '<div style="font-size:22px;font-weight:800;margin:2px 0 2px">Invoice</div>'+
-    '<div style="font-size:14px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+(c.addr?'<br>'+escHtml(c.addr):'')+'</div>'+
-    (lines.length?lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border2);font-size:15px"><span>'+escHtml(l.desc)+'</span><span style="white-space:nowrap">'+_qiMoney(l.amount)+'</span></div>').join('')
-      :'<div style="font-size:14px;color:var(--text3);padding:10px 0">No lines with a price yet.</div>')+
-    '<div style="display:flex;justify-content:space-between;padding:12px 0 16px;font-size:18px;font-weight:800"><span>Total</span><span>'+_qiMoney(_qiTotal())+'</span></div>'+
-    '<button type="button" class="btn btn-p btn-full" onclick="document.getElementById(\'qi-see\').remove()">Looks good</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
+  const total=_qiTotal();
+  const pb=_propBrand();_propTheme(pb.a,pb.rgb);
+  const bname=(typeof S!=='undefined'&&S.bname)||'';
+  const td='padding:13px 18px;border-top:1px solid #eef1f5;font-size:15px;line-height:1.4;color:#0b1220';
+  const rows=lines.map(l=>`<tr><td style="${td}">${escHtml(l.desc)}</td><td style="${td};text-align:right;white-space:nowrap">${_qiMoney(l.amount)}</td></tr>`).join('');
+  const table=`<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef">`+
+    `<table style="width:100%;border-collapse:collapse"><tbody>${rows}</tbody>`+
+    `<tfoot><tr><td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:17px;font-weight:800">Total due</td>`+
+    `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${_qiMoney(total)}</td></tr></tfoot></table></div>`;
+  return _propDoc(
+    _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
+      label:'Invoice',num:num||'Draft',date:todayKey(),name:escHtml(c.name||''),addr:escHtml(c.addr||''),phone:escHtml(c.phone||''),
+      project:escHtml(_qiMoney(total))+' due',until:null,forLabel:'Billed to'})+
+    _propSection('Work performed','',table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
+    _propSignoff(bname,'Thank you for choosing'));
+}
+// What the customer will get, before anything is saved or sent: the same
+// full-screen preview a proposal opens in.
+function qiSeeIt(){
+  if(!_qi)return;
+  if(typeof _showProposalPreviewOverlay==='function')_showProposalPreviewOverlay(_qiDocHtml());
 }
 function _qiSave(){
   if(!_qi)return null;

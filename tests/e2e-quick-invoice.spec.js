@@ -172,21 +172,22 @@ test.describe('Quick invoice', () => {
     expect(t).not.toContain('Bill that one from the job');
   });
 
-  test('See it shows the lines and total before anything is saved', async ({ page }) => {
+  test('See it opens the invoice in the proposal\'s own letterhead, before anything is saved', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(() => {
       const n = bids.length;
       openQuickInvoice(901);
       qiSeeIt();
-      const box = document.getElementById('qi-see');
-      return { text: box && box.textContent, saved: bids.length !== n };
+      const ov = document.getElementById('_prop-preview-ov');
+      return { text: ov && ov.textContent, cover: !!(ov && ov.querySelector('.prop-cover')), saved: bids.length !== n };
     });
+    expect(r.cover, 'the same cover the proposal opens on').toBe(true);
+    expect(r.text).toContain('Billed to');
     expect(r.text).toContain('Jack Sample: 6h 30m on site');
+    expect(r.text).toContain('Total due');
     expect(r.text).toContain('$1,307.50');
-    expect(r.text).toContain('Looks good');
+    expect(r.text).not.toContain('Valid until');
     expect(r.saved).toBe(false);
-    await page.click('#qi-see button');
-    expect(await page.locator('#qi-see').count()).toBe(0);
   });
 
   test('Pay now saves the invoice and opens the pay panel on it', async ({ page }) => {
