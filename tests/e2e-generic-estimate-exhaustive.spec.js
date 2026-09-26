@@ -3843,6 +3843,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
     const reset = () => page.evaluate(() => {
       S.priceBook = {};
       _geiTrade = 'plumbing';
+      // The add sheet writes to whichever estimate is open (js/materials.js),
+      // so these BYO sheet tests say which one that is.
+      _geiIsTM = false; _geiIsFreeForm = true;
       _byoItems = [];
       window.__confirms = [];
       window.zConfirm = (m, yes, opts) => { window.__confirms.push({ m, opts }); window.__lastYes = yes; };

@@ -664,13 +664,13 @@ test.describe('supply list: on a T&M estimate', () => {
       _supApplyReview();
       const lines = _geiLines.filter(l => l._supply);
       const rows = document.querySelectorAll('#tm-mat-list .byo-row').length;
-      return { hasCard, n: lines.length, total: lines[0] && lines[0].total, rows, bare: document.getElementById('sup-card').dataset.bare };
+      return { hasCard, n: lines.length, total: lines[0] && lines[0].total, rows, inMat: !!document.querySelector('#mat-card #sup-card') };
     }, Q_14TH);
     expect(r.hasCard).toBe(true);
     expect(r.n).toBe(1);
     expect(r.total).toBeCloseTo(315.72, 2);
     expect(r.rows).toBe(0);
-    expect(r.bare).toBe('1');
+    expect(r.inMat, 'drawn inside the shared Materials card').toBe(true);
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
