@@ -382,7 +382,7 @@ async function _geiLookupClientTaxRate(){
   if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();if(_geiIsFreeForm)_byoUpdateRail();return;}
   if(typeof lookupSalesTaxRate==='function'){
     const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
-    // Only use DB-sourced rates (db_zip or db_state), never show hardcoded base rate
+    // Only use DB-sourced rates (db_zip, db_county or db_state), never show hardcoded base rate
     _geiClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
     calcGeiTotal();
     if(_geiIsFreeForm)_byoUpdateRail();
@@ -1752,8 +1752,8 @@ const _PKG_MIN_BIDS=3;      // below this there is no "usually", only a last tim
 const _PKG_SHARE=0.5;       // in at least half his bids to count as usual
 function _pkgBidLines(b){
   const out=[];
-  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
-  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
+  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&!it._supply&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
+  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&!l._supply&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
   return out;
 }
 // His own bids for this trade, newest first, drafts and empties excluded: a
@@ -1860,10 +1860,10 @@ let _attachSkipped=[];      // "not this time", for this estimate only
 function _attachCurrent(){
   const out=new Map();
   if(typeof _byoItems!=='undefined'&&Array.isArray(_byoItems))_byoItems.forEach(it=>{
-    if(!it||it._rrp||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
+    if(!it||it._rrp||it._supply||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
   });
   if(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))_geiLines.forEach(l=>{
-    if(!l||l._tmLabor||l._rrp||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
+    if(!l||l._tmLabor||l._rrp||l._supply||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
   });
   return out;
 }
@@ -2008,7 +2008,9 @@ function _byoRenderSections(){
   const allExtra=[..._byoCustomSections,...extraFromItems.filter(s=>!_byoCustomSections.includes(s))];
   const sections=[..._defSecs,...new Set(allExtra)];
   const secHtml=sections.map(sec=>{
-    const rows=_byoItems.filter(it=>it.section===sec);
+    // The supply house line is drawn by its own card (js/supply-list.js), not
+    // as a row: the card is where its list, markup and quote live.
+    const rows=_byoItems.filter(it=>it.section===sec&&!it._supply);
     const isCustom=!_defSecs.includes(sec);
     const rowHtml=rows.length?rows.map(it=>{
       const idx=_byoItems.indexOf(it);
@@ -2046,7 +2048,7 @@ function _byoRenderSections(){
   // The attach card goes directly under the work and ABOVE "+ Add section":
   // it is about the lines that are already on the estimate, and putting a
   // rarely-used structural control between them buried it three cards down.
-  wrap.innerHTML=_pkgCardHTML()+secHtml+_attachCardHTML()+addSecBtn+tcCard;
+  wrap.innerHTML=_pkgCardHTML()+secHtml+(typeof _supCardHTML==='function'?_supCardHTML():'')+_attachCardHTML()+addSecBtn+tcCard;
 }
 function _byoToggle(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
@@ -2640,7 +2642,12 @@ function _byoUpdateRail(){
   _geiRefreshAutoTitle('byo');
   const selected=_byoItems.filter(it=>it.on);
   const sub=selected.reduce((s,it)=>s+it.price,0);
-  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false}));
+  _geiLines=selected.map(it=>{
+    const l={desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false};
+    // Supply house materials already taxed at the counter are not taxed again.
+    if(it._supply){l._supply=true;if(it._taxPaid)l._taxPaid=true;}
+    return l;
+  });
 
   // Sales tax
   let salesTax=0;
@@ -2654,7 +2661,7 @@ function _byoUpdateRail(){
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>{
         const sec=(l._byoSection||'').toLowerCase();
-        const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+        const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
         return {desc:l.desc,total:l.total,lineType};
       })});
     salesTax=_stResult.taxAmount||0;
@@ -3568,15 +3575,16 @@ function _tmInputChange(){
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
-  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor);
+  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor&&!x.l._supply);
+  const sup=(typeof _supCardHTML==='function')?_supCardHTML({bare:true}):'';
   if(!mats.length){
-    el.innerHTML='<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
+    el.innerHTML=sup+'<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
     return;
   }
   // Same card as BYO (§7.3): a T&M job forgets the isolation valves exactly the
   // same way a fixed-price one does, and one renderer is what keeps the two
   // from drifting apart again.
-  el.innerHTML=mats.map(({l,i})=>{
+  el.innerHTML=sup+mats.map(({l,i})=>{
     const rawTotal=l.total||((l.qty||0)*(l.rate||0));
     return _geiItemRowHtml({
       label:l.desc||'Untitled',notes:l.notes||'',price:rawTotal||0,
@@ -4816,7 +4824,7 @@ function calcGeiTotal(){
     const _liItems=_geiLines.map(l=>{
       if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
       const sec=(l._byoSection||'').toLowerCase();
-      const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+      const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
       return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType};
     });
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,

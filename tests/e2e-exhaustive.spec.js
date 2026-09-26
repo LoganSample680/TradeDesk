@@ -21674,7 +21674,7 @@ test.describe('sales-tax.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       // Supabase shim returns null → falls to hardcoded
-      expect(['hardcoded', 'db_zip', 'db_state']).toContain(r.source);
+      expect(['hardcoded', 'db_zip', 'db_county', 'db_state']).toContain(r.source);
     });
 
     // ── lowercase state auto-uppercased ────────────────────────────────────
