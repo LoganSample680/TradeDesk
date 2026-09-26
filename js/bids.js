@@ -804,7 +804,9 @@ function printInvoice(bidId){
 <table>
   <thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
   <tbody>
-    <tr><td>${escHtml(b.type||'Professional painting services')}<br><span style="font-size:11px;color:#666">${escHtml(b.addr||'')}</span></td><td class="amt">${fmt(b.amount)}</td></tr>
+    ${b.kind==='quick_invoice'&&Array.isArray(b.lineItems)&&b.lineItems.length
+      ?b.lineItems.map(li=>`<tr><td>${escHtml(li.desc||'')}</td><td class="amt">${fmt(li.amount)}</td></tr>`).join('')
+      :`<tr><td>${escHtml(b.type||'Professional painting services')}<br><span style="font-size:11px;color:#666">${escHtml(b.addr||'')}</span></td><td class="amt">${fmt(b.amount)}</td></tr>`}
   </tbody>
 </table>
 
@@ -1122,7 +1124,7 @@ async function _sendPaidInvoice(bidId){
   const first=(c.name||'').split(' ')[0]||'there';
   const body=paid
     ?'Hi '+first+', thanks again! Here is your paid invoice for '+fmt(bid.amount)+': '+url
-    :'Hi '+first+', here is your updated invoice: '+url;
+    :(bid.kind==='quick_invoice'?'Hi '+first+', here is your invoice for '+fmt(bid.amount)+': '+url:'Hi '+first+', here is your updated invoice: '+url);
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=

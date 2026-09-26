@@ -1153,6 +1153,8 @@ function quickAction(type){
         options.push({label:c.name,sub:(c.addr||'').split(',')[0]||'New lead',clientId:c.id,icon:'🆕'});
     });
     showQuickPicker('Start Proposal','Which client?',options,'estimate',true);
+  } else if(type==='invoice'){
+    if(typeof openQuickInvoicePicker==='function')openQuickInvoicePicker();
   } else if(type==='schedule'){
     _scheduleTypeChooser();
   } else if(type==='complete'){
@@ -1282,7 +1284,7 @@ function markJobCompleteFromDash(jobId,triggerBtn){
   markJobDone(jobId);
 }
 
-function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
+function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel){
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   const box=document.createElement('div');
@@ -1294,7 +1296,7 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
   if(suggestions.length){
     suggestHtml='<div style="margin-bottom:12px">'+
       '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">'+
-        (suggestions[0]?'Today / Recent':'Suggestions')+
+        escHtml(sugLabel||(suggestions[0]?'Today / Recent':'Suggestions'))+
       '</div>'+
       suggestions.map((s,i)=>
         '<button data-idx="'+i+'" data-action="'+actionType+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
@@ -1403,6 +1405,8 @@ function executeQuickAction(actionType,clientId,bidId,jobId){
     const hasWon=bids.some(b=>b.client_id===clientId&&b.status==='Closed Won');
     const purpose=hasWon?'Job site':hasEst?'Proposal':'Proposal';
     openLogTripModal({clientId,toAddress:c?c.addr:'',purpose,clientName:c?c.name:''});
+  } else if(actionType==='invoice'){
+    if(typeof openQuickInvoice==='function')openQuickInvoice(clientId);
   } else if(actionType==='expense'){
     showQuickExpenseModal(clientId,bidId);
   } else if(actionType==='estimate'){

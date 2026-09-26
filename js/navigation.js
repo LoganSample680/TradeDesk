@@ -9,7 +9,7 @@ function goPg(id){
   // Redirect employees away from restricted pages
   if(_isEmployee){
     const _empBlocked=['pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist',
-      'pg-dispatch','pg-licensing','pg-contracts','pg-client-hub','pg-money','pg-wh-list'];
+      'pg-dispatch','pg-licensing','pg-contracts','pg-client-hub','pg-money','pg-wh-list','pg-qi'];
     if(_empBlocked.includes(id))id='pg-dash';
     else if(id==='pg-leads'&&!_employeeRecord?.permissions?.leads)id='pg-dash';
   }
