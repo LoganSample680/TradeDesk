@@ -2965,3 +2965,116 @@ test.describe('tim: time off', () => {
     assertNoErrors(page, 'tim.js time off');
   });
 });
+
+// ── A lead in one breath (owner 2026-09-25: "go on autopilot and navigate
+// pages correctly for entering leads") ────────────────────────────────────
+test.describe('tim: leads', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; window._byoAutosave = () => {};
+      window.getActiveTrade = () => 'plumbing'; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const lead = (t) => page.evaluate((s) => timLead(s), t);
+
+  test('the whole sentence comes apart into the right boxes', async () => {
+    const r = await lead('New lead Mike Jones, 412 Oak St, Topeka, KS 66604, 316-555-1234, water heater is leaking, found us on Google');
+    expect(r).toEqual({ name: 'Mike Jones', phone: '3165551234', email: '', addr: '412 Oak St, Topeka, KS 66604',
+      source: 'Google / online', ref: '', job: 'water heater is leaking' });
+  });
+
+  test('email, referral and an address with no city', async () => {
+    const r = await lead("new customer Sarah O'Neil at 1200 SW Wanamaker Rd wants a panel upgrade, sarah@gmail.com, referred by Bob Smith");
+    expect(r).toMatchObject({ name: "Sarah O'Neil", email: 'sarah@gmail.com', addr: '1200 SW Wanamaker Rd',
+      source: 'Referral', ref: 'Bob Smith', job: 'a panel upgrade' });
+  });
+
+  test('the ways a phone number gets said', async () => {
+    const r = await page.evaluate(() => ['316-555-1234', '(316) 555-1234', '316 555 1234', '316.555.1234', '+1 316 555 1234']
+      .map(p => timLead('new lead Al Green ' + p).phone));
+    expect(r.every(p => p === '3165551234')).toBe(true);
+  });
+
+  test('the job picks one line, the look-alikes decided by what he said', async () => {
+    const r = await page.evaluate(() => ['water heater is leaking', '50 gallon water heater', 'electric water heater', 'tankless install', 'a toilet replaced', 'nothing we know']
+      .map(j => { const p = timLeadJob(j, 'plumbing', [], TRADE_JOBS.plumbing); return p ? p.desc : null; }));
+    expect(r).toEqual(['Water heater (40gal gas)', 'Water heater (50gal gas)', 'Water heater (electric)', 'Tankless WH (gas)', 'Toilet replacement', null]);
+  });
+
+  test('his own price book wins the job and its words', async () => {
+    const r = await page.evaluate(() => timLeadJob('water heater leaking', 'plumbing',
+      [{ desc: 'Water heater replacement', rate: 1650, notes: 'My words', n: 4 }], TRADE_JOBS.plumbing));
+    expect(r).toEqual({ desc: 'Water heater replacement', rate: 1650, notes: 'My words' });
+  });
+
+  test('Tim says what he is about to do before he does it', async () => {
+    const say = await page.evaluate(() => timSay(timParse('New lead Mike Jones, 412 Oak St, 316-555-1234, water heater is leaking',
+      { clients: [], book: [], catalog: TRADE_JOBS.plumbing, trade: 'plumbing' })));
+    expect(say).toBe('Add lead Mike Jones (412 Oak St, (316) 555-1234), then start a Water heater (40gal gas) proposal');
+  });
+
+  test('saying it saves the customer with every field and opens the proposal with the job and its scope on it', async () => {
+    const r = await page.evaluate(() => {
+      const before = clients.length;
+      timRun('New lead Mike Jones, 412 Oak St, Topeka, KS 66604, 316-555-1234, water heater is leaking, found us on Google');
+      const c = clients.find(x => x.name === 'Mike Jones');
+      const line = (_byoItems || []).find(x => /water heater/i.test(x.label));
+      return { added: clients.length - before, phone: c && c.phone, addr: c && c.addr, source: c && c.source,
+        notes: c && c.notes, onEstimate: !!line, scope: line ? line.notes : '', client: _geiClientId === (c && c.id),
+        // Autopilot lands in the builder, past the setup step.
+        building: _geiStep === 2 };
+    });
+    expect(r.added).toBe(1);
+    expect(r).toMatchObject({ phone: '3165551234', addr: '412 Oak St, Topeka, KS 66604', source: 'Google / online',
+      notes: 'Water heater is leaking', onEstimate: true, client: true, building: true });
+    expect(r.scope).toMatch(/water heater/i);
+  });
+
+  test('a phone he already has is the same customer, not a duplicate', async () => {
+    const r = await page.evaluate(() => {
+      const before = clients.length;
+      timRun('new lead Michael Jones 316-555-1234');
+      return clients.length - before;
+    });
+    expect(r).toBe(0);
+  });
+
+  test('a lead with no job opens the customer, not an estimate', async () => {
+    const r = await page.evaluate(() => {
+      const keep = window.openClientDetail; let opened = null;
+      window.openClientDetail = (id) => { opened = id; };
+      try { timRun('new client named Ann Marie Cole, 55 W 10th Street, (316) 555-2222');
+        const c = clients.find(x => x.name === 'Ann Marie Cole'); return { opened, id: c && c.id, phone: c && c.phone };
+      } finally { window.openClientDetail = keep; }
+    });
+    expect(r.opened).toBe(r.id);
+    expect(r.phone).toBe('3165552222');
+  });
+
+  test('"new lead" with no name falls back to the name box, and other sentences are untouched', async () => {
+    const r = await page.evaluate(() => ({
+      noName: timParse('new lead', { clients: [] }).kind,
+      nav: timParse('open my leads', { clients: [] }).kind,
+      books: timParse('show me my books for last year', { clients: [] }).kind,
+    }));
+    expect(r.noName).not.toBe('lead');
+    expect(r.nav).toBe('nav');
+    expect(r.books).toBe('nav');
+  });
+
+  test('junk in, nothing thrown', async () => {
+    const ok = await page.evaluate(() => {
+      try { [null, undefined, '', 5, 'new lead', 'new lead 123', 'new lead ,,,'].forEach(s => { timLead(s); timLeadJob(s, s, s, s); });
+        return true; } catch (e) { return String(e.message); }
+    });
+    expect(ok).toBe(true);
+  });
+
+  test('no console errors, tim leads', async () => { assertNoErrors(page, 'tim.js leads'); });
+});

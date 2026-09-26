@@ -263,7 +263,7 @@ function _pcObTx(mode,fn){
 }
 // What the row needs to be rebuilt if the phone loses it: where it is filed,
 // what it is, where and when it was taken. Never the bytes (those are the
-// entry's own blob) and never a url (it has none yet).
+// entry's own buf) and never a url (it has none yet).
 const _PC_OB_META=['id','type','caption','client_id','client_name','bid_id','bid_name','job_id','job_name','addr','addrM',
   'lat','lon','accM','by','uploadedAt','stamped','imported','shotPx'];
 function _pcRowMeta(row){const m={};_PC_OB_META.forEach(k=>{if(row&&row[k]!==undefined)m[k]=row[k];});return m;}
@@ -271,10 +271,24 @@ function _pcAcct(){try{return (typeof _supaUser!=='undefined'&&_supaUser&&_supaU
 async function _pcOutboxPut(row,file){
   try{
     if(!row||!file)return false;
-    const ok=await _pcObTx('readwrite',st=>st.put({id:String(row.id),blob:file,name:file.name||'photo.jpg',
+    // The bytes go in as an ArrayBuffer, not the File: WebKit's IndexedDB
+    // refuses to store a Blob in some builds, and a refused put is a photo
+    // that silently never reaches the outbox.
+    const buf=await file.arrayBuffer();
+    const ok=await _pcObTx('readwrite',st=>st.put({id:String(row.id),buf,size:buf.byteLength,name:file.name||'photo.jpg',
       mime:file.type||'image/jpeg',acct:_pcAcct(),meta:_pcRowMeta(row),ts:Date.now()}));
     return !!ok;
   }catch(_e){return false;}
+}
+// The photo back out of an outbox entry, as a File the uploader can name.
+function _pcObFile(rec){
+  try{
+    if(!rec)return null;
+    const type=rec.mime||'image/jpeg';
+    const src=rec.buf?[rec.buf]:(rec.blob?[rec.blob]:null);
+    if(!src)return null;
+    try{return new File(src,rec.name||'photo.jpg',{type});}catch(_e){return new Blob(src,{type});}
+  }catch(_e){return null;}
 }
 function _pcOutboxDel(id){try{return _pcObTx('readwrite',st=>st.delete(String(id)));}catch(_e){return Promise.resolve(null);}}
 async function _pcOutboxAll(){
@@ -282,14 +296,22 @@ async function _pcOutboxAll(){
 }
 // Filing a photo after it was taken moves it in the outbox too, so a photo
 // the phone has to rebuild from the outbox still lands where it was filed.
-async function _pcOutboxTouch(row){
-  try{
-    if(!row)return false;
-    const cur=await _pcObTx('readonly',st=>st.get(String(row.id)));
-    if(!cur||cur===true)return false;
-    cur.meta=_pcRowMeta(row);
-    return !!(await _pcObTx('readwrite',st=>st.put(cur)));
-  }catch(_e){return false;}
+// Touches run one after another, and a flush waits for them, so a photo
+// filed a moment before signal returns never goes up under its old filing.
+let _pcTouching=Promise.resolve();
+function _pcOutboxTouch(row){
+  if(!row)return Promise.resolve(false);
+  const meta=_pcRowMeta(row),id=String(row.id);
+  const run=_pcTouching.then(async()=>{
+    try{
+      const cur=await _pcObTx('readonly',st=>st.get(id));
+      if(!cur||cur===true)return false;
+      cur.meta=meta;
+      return !!(await _pcObTx('readwrite',st=>st.put(cur)));
+    }catch(_e){return false;}
+  });
+  _pcTouching=run.catch(()=>false);
+  return run;
 }
 // A display copy small enough for localStorage: 1024px, the size the album and
 // the viewer show before the stored full-resolution copy exists.
@@ -309,6 +331,7 @@ async function _pcPreviewDataUrl(file){
 // wiped localStorage) while it is still waiting in the outbox, so it shows in
 // the album and the tray even before there is signal to send it.
 async function _pcOutboxRestore(){
+  await _pcTouching;
   const recs=await _pcOutboxAll();
   let n=0;
   const me=_pcAcct();
@@ -318,7 +341,9 @@ async function _pcOutboxRestore(){
     if(_pcSaving.has(String(rec.id)))continue;
     if(photos.some(p=>p&&String(p.id)===String(rec.id)))continue;
     const row=Object.assign({url:'',storagePath:'',thumbUrl:'',thumbPath:'',fullPath:''},rec.meta,{id:rec.meta.id!=null?rec.meta.id:rec.id});
-    row.data=await _pcPreviewDataUrl(rec.blob);
+    const f=_pcObFile(rec);
+    if(!f)continue;
+    row.data=await _pcPreviewDataUrl(f);
     row.outboxWait=true;
     photos.push(row);n++;
   }
@@ -344,8 +369,8 @@ function tdPhotoFlush(){
         const row=photos.find(p=>p&&String(p.id)===String(rec.id));
         if(!row)continue;
         if(row.storagePath&&row.url){_pcOutboxDel(rec.id);continue;}
-        let f=rec.blob;
-        try{if(f&&!f.name&&typeof File==='function')f=new File([f],rec.name||'photo.jpg',{type:rec.mime||f.type||'image/jpeg'});}catch(_e){}
+        const f=_pcObFile(rec);
+        if(!f)continue;
         if(await _pcUploadRow(row,f))sent++;
       }
       const left=(await _pcOutboxAll()).filter(r=>r&&(!r.acct||r.acct===_supaUser.id)).length;

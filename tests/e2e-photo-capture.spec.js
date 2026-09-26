@@ -4642,7 +4642,7 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
       }
       const box = await _pcOutboxAll();
       let stored = null; try { stored = JSON.parse(localStorage.getItem('zp3_photos') || '[]'); } catch (e) {}
-      return { sizes, box: box.map(b => b.blob.size), rows: photos.length, maxData: Math.max(...photos.map(p => (p.data || '').length)),
+      return { sizes, box: box.map(b => b.size), rows: photos.length, maxData: Math.max(...photos.map(p => (p.data || '').length)),
         lsIds: (stored || []).filter(p => p.outboxWait).length, pending: photos.every(p => tdPhotoWaiting(p)),
         older: photos.filter(p => p.pendingUpload).length };
     });

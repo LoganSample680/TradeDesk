@@ -2058,6 +2058,15 @@ preference.
 
 - ~~**Tim owns no trade knowledge and must not grow any.**~~ Reversed by the
   owner on 2026-09-19, see §18.3. Everything else in this section stands.
+- **Tim knows the trade, as data, in one place (owner 2026-09-25, reversing
+  the 2026-09-17 line "Tim owns no trade knowledge", alongside §18.3): "Tim should know trade
+  knowledge ... filling in the gaps contractors miss."** It lives in
+  `js/trade-knowledge.js`: per job, the professional scope text and the
+  commonly missed items. Tim, the spoken estimate and the estimate builder's
+  "Usually goes with this" card all read that one table; nobody grows a private
+  copy. Still no model and no network. Missed items are OFFERED, never added
+  silently, and PRICES STAY HIS: the library's rate is a starting point and the
+  price book wins the moment he has priced the item.
 - **Every sentence Tim could not place gets logged.** That miss list is the
   vocabulary roadmap, written by real contractors instead of guessed. It is how
   he gets smarter without a model.

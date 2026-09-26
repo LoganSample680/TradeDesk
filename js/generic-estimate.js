@@ -700,7 +700,9 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     _geiScanId=seed.scanId||null;
     if(Array.isArray(seed.lines)&&seed.lines.length){
       _geiPendingSeedLines=seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Interior'}));
-      if(typeof showToast==='function')showToast(_geiPendingSeedLines.length+' measured line'+(_geiPendingSeedLines.length>1?'s':'')+' loaded from the scan','📐');
+      // A seed that is not a scan says what it is (Tim, a spoken estimate):
+      // "loaded from the scan" on a job nobody scanned reads as a bug.
+      if(typeof showToast==='function')showToast(seed.say||(_geiPendingSeedLines.length+' measured line'+(_geiPendingSeedLines.length>1?'s':'')+' loaded from the scan'),seed.say?'✅':'📐');
     }else{
     // Billing: room total = measured wall footage x the contractor's per-sq-ft
     // rate (Settings). Rate unset = rooms load with the quantity measured and
@@ -2757,6 +2759,21 @@ function _attachCurrent(){
 function _attachSuggestions(trade){
   const cur=_attachCurrent();
   if(!cur.size)return [];
+  const learned=_attachLearned(cur,trade);
+  // ── AND WHAT THE TRADE KNOWS GOES WITH IT (owner 2026-09-25) ───────────
+  // "filling in the gaps contractors miss." His own history comes first,
+  // because it is his; the trade library (js/trade-knowledge.js) fills in
+  // behind it, so a contractor with no bids yet still hears that a water
+  // heater wants an expansion tank. Same card, same Add, same "not this
+  // time", because it is the same question (7.3).
+  const lib=(typeof tkMissedFor==='function')
+    ?tkMissedFor(cur,trade||(typeof _pbTrade==='function'?_pbTrade():''),_attachSkipped)
+      .filter(x=>!learned.some(l=>l.key===x.key||_pbKey(l.line.label)===_pbKey(x.line.label)))
+    :[];
+  return learned.concat(lib).slice(0,_ATTACH_MAX);
+}
+const _ATTACH_MAX=6;
+function _attachLearned(cur,trade){
   const hist=_pkgHistory(trade).slice(0,_ATTACH_SCAN);
   if(hist.length<_ATTACH_MIN)return [];
   // One key->line map per past bid, built once. Everything below is set math
@@ -2856,7 +2873,9 @@ function _attachCardHTML(){
     '<div style="display:flex;align-items:center;gap:8px;padding:10px 0'+(i?';border-top:1px solid var(--border)':'')+'">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text);overflow-wrap:anywhere">'+escHtml(s.line.label)+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow-wrap:anywhere">with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow-wrap:anywhere">'+(s.lib
+          ?escHtml(s.why||('Often left off '+s.anchorLabel))
+          :'with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of)+'</div>'+
       '</div>'+
       '<button onclick="_attachAdd('+escHtml(JSON.stringify(s.key))+')" class="btn btn-sm btn-p" style="flex-shrink:0;font-size:12px;padding:8px 14px">Add</button>'+
       '<button onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
