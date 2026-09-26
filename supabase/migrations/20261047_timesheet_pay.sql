@@ -26,7 +26,7 @@ begin
   update td_timesheets
      set pay_rate = case when coalesce(p_pay_rate, 0) > 0 then round(p_pay_rate, 2) else null end,
          updated_at = now()
-   where employee_user_id = auth.uid() and week_start = p_week_start;
+   where employee_user_id::text = auth.uid()::text and week_start = p_week_start;
 end $$;
 
 grant execute on function timesheet_set_pay(date, numeric) to authenticated;
