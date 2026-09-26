@@ -234,5 +234,45 @@ test.describe('walk notes', () => {
     expect(r).toEqual({ grab: true, clock: true, stop: 'Done talking', stopRed: 'rgb(255, 59, 48)' });
   });
 
+  // ── ADDING A PART (owner, 2026-09-26: "Parts needs to be a intuitive add") ──
+  test('Add a part: the stepper is the count, return adds it and opens the next row', async () => {
+    await openTM(99909, null);
+    await page.evaluate(() => { _geiScopeChips = ['Set a tankless']; _renderScopeChips('tm-scope-wrap'); });
+    await page.locator('#tm-sup-wrap button', { hasText: 'Add a part' }).click();
+    await page.waitForTimeout(120);
+    expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('sup-add');
+    await page.locator('#tm-sup-wrap button[aria-label="One more"]').click();
+    await page.locator('#tm-sup-wrap button[aria-label="One more"]').click();
+    await page.locator('#sup-add').fill('3/4 ball valve');
+    await page.locator('#sup-add').press('Enter');
+    // Typed the old way, the words carry the count and the unit.
+    await page.locator('#sup-add').fill('20 ft 2in PVC');
+    await page.locator('#sup-add').press('Enter');
+    await page.waitForTimeout(120);
+    const r = await page.evaluate(() => ({ items: _supData().items.map(i => i.qty + ' ' + i.unit + ' ' + i.desc), open: !!document.getElementById('sup-add'), qty: document.getElementById('sup-new-qty').textContent, focus: document.activeElement && document.activeElement.id }));
+    expect(r.items).toEqual(['3 ea 3/4 ball valve', '20 ft 2in PVC']);
+    expect(r.open).toBe(true);
+    expect(r.qty).toBe('1');
+    expect(r.focus).toBe('sup-add');
+  });
+
+  test('a pasted list goes in whole, and an empty row closes when he leaves it', async () => {
+    await openTM(99910, null);
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { _geiScopeChips = ['Set a tankless']; _renderScopeChips('tm-scope-wrap'); _supStartAdd(); });
+    await page.waitForTimeout(150);
+    await page.evaluate(() => {
+      const el = document.getElementById('sup-add');
+      const ev = new ClipboardEvent('paste', { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+      ev.clipboardData.setData('text/plain', '2 ea 1/2 shark bite coupling\n1 condensate pump\n10 ft 3/4 pex');
+      el.dispatchEvent(ev);
+    });
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => _supData().items.map(i => i.qty + ' ' + i.unit + ' ' + i.desc))).toEqual(['2 ea 1/2 shark bite coupling', '1 ea condensate pump', '10 ft 3/4 pex']);
+    await page.evaluate(() => { document.getElementById('sup-add').blur(); document.body.focus(); });
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => ({ row: !!document.getElementById('sup-add'), add: [...document.querySelectorAll('#tm-sup-wrap button')].some(b => /Add a part/.test(b.textContent)) }))).toEqual({ row: false, add: true });
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'walk notes'); });
 });

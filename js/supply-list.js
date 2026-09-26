@@ -173,8 +173,7 @@ function _supCardIosHTML(){
     '<div class="ios-h"><span>Supply house</span>'+(d&&d.vendor?'<span class="s">'+escHtml(d.vendor)+'</span>':'')+'</div>'+
     '<div class="ios-group">'+
       rows+
-      '<div class="ios-row sup-add-row"><textarea id="sup-add" class="ios-say" rows="2" placeholder="3 ea 3/4 ball valve&#10;20 ft 2in PVC"></textarea></div>'+
-      '<button type="button" class="ios-row ios-link" onclick="_supAddFromBox()">Add to list</button>'+
+      _supAddRowHtml()+
       '<label class="ios-row"><span class="ios-lbl">Markup</span>'+
         '<span class="ios-val"><input id="sup-markup" type="number" inputmode="decimal" min="0" max="100" step="1" value="'+(d?_supClampMarkup(d.markup):0)+'" oninput="_supSetMarkup(this.value)">%</span></label>'+
       (priced
@@ -187,6 +186,68 @@ function _supCardIosHTML(){
     '<div class="ios-foot">'+escHtml(foot)+'</div>'+
     '<input type="file" id="sup-quote-file" accept="application/pdf,image/*" style="display:none" onchange="_supQuoteChosen(this)">'+
   '</div>';
+}
+// ADDING A PART, THE REMINDERS WAY (owner, 2026-09-26: "Parts needs to be a
+// intuitive add"). A grey box that wanted "3 ea 3/4 ball valve" typed in a
+// shape nobody told him about was not it. Now: "Add a part" with a blue plus,
+// tap it and a row opens with the cursor in it and a quantity stepper; type
+// the part, press return, it is on the list and the next empty row is ready,
+// so a whole list goes in without leaving the keyboard. "3 ea 3/4 ball valve"
+// typed the old way still reads its count and unit, and a pasted list (one
+// part per line) goes in whole.
+let _supAdding=false,_supNewQty=1;
+function _supAddRowHtml(){
+  if(!_supAdding)return '<button type="button" class="ios-row ios-link sup-addpart" onclick="_supStartAdd()"><span class="sup-plus" aria-hidden="true">+</span>Add a part</button>';
+  return '<div class="ios-row sup-new">'+
+    '<span class="ios-step"><button type="button" aria-label="One fewer" onmousedown="event.preventDefault()" onclick="_supQtyStep(-1)">\u2212</button><span id="sup-new-qty">'+_supNewQty+'</span><button type="button" aria-label="One more" onmousedown="event.preventDefault()" onclick="_supQtyStep(1)">+</button></span>'+
+    '<input id="sup-add" class="sup-new-in" type="text" placeholder="Part, e.g. 3/4 ball valve" autocomplete="off" autocapitalize="sentences" enterkeyhint="next" '+
+      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();_supAddOne();}" onpaste="_supPasteList(event)" onblur="_supAddBlur()">'+
+  '</div>';
+}
+function _supRerender(){
+  if(_supMode()==='byo'&&typeof _byoRenderSections==='function')_byoRenderSections();
+  else if(typeof _tmRenderMatList==='function')_tmRenderMatList();
+}
+function _supFocusNew(){setTimeout(()=>{const el=document.getElementById('sup-add');if(el){try{el.focus({preventScroll:false});}catch(_e){el.focus();}}},30);}
+function _supStartAdd(){_supAdding=true;_supNewQty=1;_supRerender();_supFocusNew();}
+function _supQtyStep(d){
+  _supNewQty=Math.max(1,Math.min(999,(_supNewQty||1)+d));
+  const q=document.getElementById('sup-new-qty');if(q)q.textContent=_supNewQty;
+  _supFocusNew();
+}
+function _supAddOne(){
+  const el=document.getElementById('sup-add');
+  const text=el?String(el.value||'').trim():'';
+  if(!text){_supAdding=false;_supRerender();return;}
+  const it=_supParseLine(text);if(!it)return;
+  // The stepper is the count unless he typed one in the words.
+  if(!/^\d+(\.\d+)?\s+\S/.test(text)||/^\d+\/\d/.test(text))it.qty=_supNewQty;
+  const h=_supHost(true);
+  h._supply.items=(h._supply.items||[]).concat([it]);
+  _supNewQty=1;_supAdding=true;
+  _supSync();
+  _supFocusNew();
+}
+// A list pasted from a text or an email: one part per line, all of it.
+function _supPasteList(ev){
+  const t=(ev.clipboardData||window.clipboardData)?.getData('text')||'';
+  if(!/\n/.test(t))return;
+  ev.preventDefault();
+  const lines=t.split(/\r?\n/).map(_supParseLine).filter(Boolean);
+  if(!lines.length)return;
+  const h=_supHost(true);
+  h._supply.items=(h._supply.items||[]).concat(lines);
+  _supSync();_supFocusNew();
+}
+// Leaving the empty row closes it, the way a blank reminder disappears.
+function _supAddBlur(){
+  setTimeout(()=>{
+    const a=document.activeElement;
+    if(a&&a.closest&&a.closest('.sup-new'))return;
+    const el=document.getElementById('sup-add');
+    if(el&&String(el.value||'').trim())return;
+    if(_supAdding){_supAdding=false;_supRerender();}
+  },180);
 }
 function _supCardHTML(opts){
   const bare=!!(opts&&opts.bare);

@@ -671,7 +671,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_geiWalk=[];_geiNotes=[];_geiFound=[];_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_geiWalk=[];_geiNotes=[];_geiFound=[];if(typeof _supAdding!=='undefined')_supAdding=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
