@@ -15,6 +15,7 @@
 import XCTest
 import Capacitor
 import UIKit
+import MessageUI
 @testable import TdDoc
 
 final class TdDocPluginTests: XCTestCase {
@@ -171,5 +172,60 @@ final class TdDocPluginTests: XCTestCase {
                                           onSuccess: { _ in e.fulfill() }, onError: { _ in e.fulfill() }))
         }
         wait(for: exps, timeout: 60)
+    }
+
+    // ── composeEmail ────────────────────────────────────────────────────────
+    func mailCall(_ options: [String: Any], onSuccess: @escaping ([String: Any]?) -> Void = { _ in },
+                  onError: @escaping (String) -> Void = { _ in }) -> CAPPluginCall {
+        CAPPluginCall(callbackId: "mail-\(UUID().uuidString)", methodName: "composeEmail", options: options,
+                      success: { r, _ in onSuccess(r?.data) }, error: { e in onError(e?.message ?? "") })
+    }
+
+    func testComposeWithoutRecipientRejects() {
+        let done = expectation(description: "rejected")
+        plugin.composeEmail(mailCall([:], onSuccess: { _ in XCTFail("should reject") }, onError: { _ in done.fulfill() }))
+        wait(for: [done], timeout: 5)
+        let done2 = expectation(description: "rejected empty")
+        plugin.composeEmail(mailCall(["to": ""], onSuccess: { _ in XCTFail("should reject") }, onError: { _ in done2.fulfill() }))
+        wait(for: [done2], timeout: 5)
+    }
+
+    func testComposeWithBadAttachmentRejects() {
+        let done = expectation(description: "rejected")
+        plugin.composeEmail(mailCall(["to": "a@b.co", "attachmentBase64": "%%%"],
+                                     onSuccess: { _ in XCTFail("should reject") }, onError: { _ in done.fulfill() }))
+        wait(for: [done], timeout: 5)
+    }
+
+    // The simulator has no Mail account, which is exactly the Gmail-only
+    // contractor's phone: it must answer "unavailable", never hang or crash.
+    func testComposeWithNoMailAccountSaysUnavailable() throws {
+        if MFMailComposeViewController.canSendMail() { throw XCTSkip("this device has a Mail account") }
+        let done = expectation(description: "resolved")
+        let pdf = makePDF(pages: 1).base64EncodedString()
+        plugin.composeEmail(mailCall(["to": "quotes@supply.example", "subject": "Quote request", "body": "Hi",
+                                      "attachmentBase64": pdf, "filename": "Materials.pdf"], onSuccess: { r in
+            XCTAssertEqual(r?["result"] as? String, "unavailable")
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 5)
+    }
+
+    func testComposeCalledManyTimesAlwaysAnswers() throws {
+        if MFMailComposeViewController.canSendMail() { throw XCTSkip("would present real composers") }
+        var exps: [XCTestExpectation] = []
+        for i in 0..<8 {
+            let e = expectation(description: "mail \(i)")
+            exps.append(e)
+            plugin.composeEmail(mailCall(["to": "a@b.co"], onSuccess: { _ in e.fulfill() }, onError: { _ in e.fulfill() }))
+        }
+        wait(for: exps, timeout: 10)
+    }
+
+    func testMailResultNames() {
+        XCTAssertEqual(TdDocPlugin.mailResultName(.sent), "sent")
+        XCTAssertEqual(TdDocPlugin.mailResultName(.saved), "saved")
+        XCTAssertEqual(TdDocPlugin.mailResultName(.cancelled), "cancelled")
+        XCTAssertEqual(TdDocPlugin.mailResultName(.failed), "failed")
     }
 }

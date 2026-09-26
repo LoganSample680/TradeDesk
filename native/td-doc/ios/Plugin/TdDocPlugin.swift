@@ -5,6 +5,7 @@ import UIKit
 import VisionKit
 #endif
 import Vision
+import MessageUI
 
 // TradeDesk receipt scanner, the native half.
 //
@@ -35,10 +36,12 @@ public class TdDocPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "scanDocument", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "recognizeText", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "recognizeText", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "composeEmail", returnType: CAPPluginReturnPromise)
     ]
 
     private var pending: CAPPluginCall?
+    private var pendingMail: CAPPluginCall?
 
     // ── On-device text recognition (owner 2026-08-11) ────────────────────────
     // Reads a scanned page with Apple's Vision OCR: under a second, free, and
@@ -173,6 +176,56 @@ public class TdDocPlugin: CAPPlugin, CAPBridgedPlugin {
         return ctx.makeImage()
     }
 
+    // ── Email from HIS mail app (owner 2026-09-26) ──────────────────────────
+    // "Don't want to use my Resend thing, want it to open up the contractor's
+    // own email app and send from there with the quote attached." Apple's
+    // mail composer, prefilled: to, subject, body, one attachment. It sends
+    // from his own account, lands in his own Sent folder, and the supply
+    // house replies to him. Raw capability only: what goes in the email is
+    // decided in JS (js/supply-list.js).
+    //
+    // Resolves {result: "sent" | "saved" | "cancelled" | "failed" | "unavailable"}.
+    // "unavailable" means Apple Mail has no account on this phone (a Gmail- or
+    // Outlook-only user); JS then offers the share sheet, where those apps are.
+    @objc func composeEmail(_ call: CAPPluginCall) {
+        guard let to = call.getString("to"), !to.isEmpty else { call.reject("no recipient"); return }
+        var attachment: Data? = nil
+        if let b64 = call.getString("attachmentBase64") {
+            guard let d = Data(base64Encoded: b64, options: .ignoreUnknownCharacters), !d.isEmpty else {
+                call.reject("bad attachment"); return
+            }
+            attachment = d
+        }
+        DispatchQueue.main.async {
+            guard MFMailComposeViewController.canSendMail() else {
+                call.resolve(["result": "unavailable"]); return
+            }
+            if self.pendingMail != nil { call.reject("a mail is already open"); return }
+            let vc = MFMailComposeViewController()
+            vc.mailComposeDelegate = self
+            vc.setToRecipients([to])
+            vc.setSubject(call.getString("subject") ?? "")
+            vc.setMessageBody(call.getString("body") ?? "", isHTML: false)
+            if let data = attachment {
+                vc.addAttachmentData(data, mimeType: call.getString("mime") ?? "application/pdf",
+                                     fileName: call.getString("filename") ?? "Materials.pdf")
+            }
+            call.keepAlive = true
+            self.pendingMail = call
+            self.bridge?.viewController?.present(vc, animated: true)
+        }
+    }
+
+    static func mailResultName(_ r: MFMailComposeResult) -> String {
+        switch r {
+        case .sent: return "sent"
+        case .saved: return "saved"
+        case .cancelled: return "cancelled"
+        case .failed: return "failed"
+        @unknown default: return "failed"
+        }
+    }
+
     @objc func isAvailable(_ call: CAPPluginCall) {
         #if canImport(VisionKit)
         if #available(iOS 13.0, *) {
@@ -253,3 +306,15 @@ extension TdDocPlugin: VNDocumentCameraViewControllerDelegate {
     }
 }
 #endif
+
+extension TdDocPlugin: MFMailComposeViewControllerDelegate {
+    public func mailComposeController(_ controller: MFMailComposeViewController,
+                                      didFinishWith result: MFMailComposeResult, error: Error?) {
+        controller.dismiss(animated: true) { [weak self] in
+            guard let self = self, let call = self.pendingMail else { return }
+            self.pendingMail = nil
+            call.resolve(["result": TdDocPlugin.mailResultName(result)])
+            self.bridge?.releaseCall(call)
+        }
+    }
+}

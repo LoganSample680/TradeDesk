@@ -375,44 +375,89 @@ test.describe('supply list: on a BYO estimate', () => {
     expect(r).toEqual({ n: 11, markup: 20 });
   });
 
-  test('send: the PDF goes to the server with the job reference, the house is remembered', async () => {
+  test('send: opens HIS mail app addressed, with the PDF attached, and remembers the house', async () => {
     const r = await page.evaluate(async () => {
-      const orig = window.fetch; const origTok = _supAuthToken;
-      let sent = null;
-      window._supAuthToken = async () => 'tok';
-      _supAuthToken = window._supAuthToken;
-      window.fetch = async (url, opts) => { if (String(url).includes('send-supply-list')) { sent = JSON.parse(opts.body); return new Response('{"ok":true}', { status: 200 }); } return orig(url, opts); };
+      const orig = _supReader; const origFetch = window.fetch; let args = null; let fetched = false;
+      window.fetch = async (...a) => { fetched = true; return origFetch(...a); };
+      _supReader = () => ({ composeEmail: async (a) => { args = a; return { result: 'sent' }; } });
       try {
         _supOpenSend();
         document.getElementById('sup-send-name').value = 'Neenan Co. Topeka';
         document.getElementById('sup-send-email').value = 'quotes@neenan.example';
         const ok = await _supSend();
-        return { ok, to: sent && sent.to, ref: sent && sent.reference, pdf: sent && sent.pdfBase64.slice(0, 7), n: sent && sent.itemCount,
-          house: (S.supplyHouses || [])[0], modal: !!document.getElementById('_sup-send') };
-      } finally { window.fetch = orig; _supAuthToken = origTok; }
+        const d = _byoItems.find(x => x._supply)._supply;
+        return { ok, fetched, to: args && args.to, subject: args && args.subject, body: args && args.body,
+          pdf: args && args.attachmentBase64.slice(0, 7), filename: args && args.filename, mime: args && args.mime,
+          house: (S.supplyHouses || [])[0], modal: !!document.getElementById('_sup-send'), sentRef: d.sentRef, sentAt: !!d.sentAt };
+      } finally { _supReader = orig; window.fetch = origFetch; }
     });
     expect(r.ok).toBe(true);
+    expect(r.fetched).toBe(false);          // nothing goes through our servers
     expect(r.to).toBe('quotes@neenan.example');
-    expect(r.ref).toMatch(/STEINHOFF/);
+    expect(r.subject).toMatch(/STEINHOFF/);
+    expect(r.body).toMatch(/customer order number/);
     expect(r.pdf).toBe('JVBERi0');
-    expect(r.n).toBe(11);
+    expect(r.filename).toMatch(/^Materials .*\.pdf$/);
+    expect(r.mime).toBe('application/pdf');
     expect(r.house).toEqual({ name: 'Neenan Co. Topeka', email: 'quotes@neenan.example' });
     expect(r.modal).toBe(false);
+    expect(r.sentRef).toMatch(/STEINHOFF/);
+    expect(r.sentAt).toBe(true);
   });
 
-  test('send refuses a bad email and does not call the server', async () => {
+  test('send: cancelling in the mail app changes nothing', async () => {
     const r = await page.evaluate(async () => {
-      const orig = window.fetch; let called = false;
-      window.fetch = async (u, o) => { if (String(u).includes('send-supply-list')) called = true; return orig(u, o); };
+      const orig = _supReader;
+      const d = _byoItems.find(x => x._supply)._supply; const before = d.sentAt;
+      _supReader = () => ({ composeEmail: async () => ({ result: 'cancelled' }) });
+      try {
+        _supOpenSend();
+        document.getElementById('sup-send-email').value = 'other@supply.example';
+        const ok = await _supSend();
+        const still = !!document.getElementById('_sup-send');
+        document.getElementById('_sup-send')?.remove();
+        return { ok, still, same: d.sentAt === before, first: (S.supplyHouses || [])[0].email };
+      } finally { _supReader = orig; }
+    });
+    expect(r).toEqual({ ok: false, still: true, same: true, first: 'quotes@neenan.example' });
+  });
+
+  test('send: no Apple Mail account falls back to the share sheet with the PDF', async () => {
+    const r = await page.evaluate(async () => {
+      const orig = _supReader; const os = navigator.share, oc = navigator.canShare;
+      let shared = null;
+      _supReader = () => ({ composeEmail: async () => ({ result: 'unavailable' }) });
+      Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true });
+      Object.defineProperty(navigator, 'share', { value: async (x) => { shared = x; }, configurable: true });
+      try {
+        _supOpenSend();
+        document.getElementById('sup-send-email').value = 'quotes@neenan.example';
+        const ok = await _supSend();
+        return { ok, file: shared && shared.files && shared.files[0].name, type: shared && shared.files[0].type };
+      } finally {
+        _supReader = orig;
+        Object.defineProperty(navigator, 'share', { value: os, configurable: true });
+        Object.defineProperty(navigator, 'canShare', { value: oc, configurable: true });
+      }
+    });
+    expect(r.ok).toBe(true);
+    expect(r.file).toMatch(/\.pdf$/);
+    expect(r.type).toBe('application/pdf');
+  });
+
+  test('send refuses a bad email and opens nothing', async () => {
+    const r = await page.evaluate(async () => {
+      const orig = _supReader; let opened = false;
+      _supReader = () => ({ composeEmail: async () => { opened = true; return { result: 'sent' }; } });
       try {
         _supOpenSend();
         document.getElementById('sup-send-email').value = 'not-an-email';
         const ok = await _supSend();
         document.getElementById('_sup-send')?.remove();
-        return { ok, called };
-      } finally { window.fetch = orig; }
+        return { ok, opened };
+      } finally { _supReader = orig; }
     });
-    expect(r).toEqual({ ok: false, called: false });
+    expect(r).toEqual({ ok: false, opened: false });
   });
 
   test('import: the file goes to the phone reader, the rows are rebuilt, the review opens', async () => {
@@ -608,17 +653,21 @@ test.describe('supply list: on a T&M estimate', () => {
   test('no console errors', async () => { await assertNoErrors(page); });
 });
 
-test.describe('supply list: the email sender', () => {
+test.describe('supply list: nothing goes through our servers', () => {
   const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
-  test('sender: authenticated, PDF-only attachment, replies go to the contractor', () => {
-    const src = read('supabase/functions/send-supply-list/index.ts');
-    expect(src).toMatch(/auth\/v1\/user/);
-    expect(src).toMatch(/startsWith\('JVBERi0'\)/);
-    expect(src).toMatch(/reply_to: replyTo/);
+  // §7.1: both server paths are gone, not merely unused. The quote is read on
+  // the phone (no AI) and the list is sent from his own mail app (no Resend).
+  test('the AI quote reader and the Resend sender are deleted', () => {
+    for (const fn of ['read-supplier-quote', 'send-supply-list']) {
+      expect(fs.existsSync(path.join(__dirname, '..', 'supabase', 'functions', fn))).toBe(false);
+    }
+    const src = read('js/supply-list.js');
+    expect(src).not.toMatch(/functions\/v1\//);
+    expect(src).not.toMatch(/fetch\(/);
   });
-  // §7.1: the AI quote reader is gone, not merely unused (owner: no AI OCR).
-  test('the AI quote reader is deleted', () => {
-    expect(fs.existsSync(path.join(__dirname, '..', 'supabase', 'functions', 'read-supplier-quote'))).toBe(false);
-    expect(read('js/supply-list.js')).not.toMatch(/read-supplier-quote|functions\/v1\/read/);
+  test('the native plugin composes mail with Apple\'s composer', () => {
+    const sw = read('native/td-doc/ios/Plugin/TdDocPlugin.swift');
+    expect(sw).toMatch(/MFMailComposeViewController/);
+    expect(sw).toMatch(/name: "composeEmail"/);
   });
 });

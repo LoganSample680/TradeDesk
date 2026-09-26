@@ -5,8 +5,8 @@
 // TradeDesk to scan, attach, read and fill out the materials price."
 //
 //   1. Type the list      qty, unit, what it is. No prices; the supply house has them.
-//   2. Send it            one tap: a PDF with the business name and a job
-//                         reference in it, emailed to the saved supply house.
+//   2. Send it            a PDF with the business name and a job reference,
+//                         in HIS email app, addressed to the saved supply house.
 //   3. Load their quote   the PDF they email back (a scan, not text: Neenan's
 //                         come as images). Read ON THE PHONE by Apple's text
 //                         reader (TdDoc.recognizeText), no AI and no network
@@ -339,13 +339,6 @@ function _supBlobToB64(blob){
     r.onerror=()=>rej(r.error||new Error('read failed'));
     r.readAsDataURL(blob);
   });
-}
-async function _supAuthToken(){
-  if(typeof _supa==='undefined'||!_supa)return null;
-  try{
-    const{data}=await _supa.auth.getSession();
-    return data&&data.session?data.session.access_token:null;
-  }catch(_e){return null;}
 }
 function _supReader(){
   return (typeof _rcptNativePlugin==='function')?_rcptNativePlugin():null;
@@ -724,15 +717,40 @@ function _supOpenSend(){
     '<div class="f" style="margin:12px 0 8px"><label>Supply house</label><input id="sup-send-name" type="text" value="'+escHtml(d.vendor||last.name||'')+'" placeholder="e.g. Neenan Co. Topeka"></div>'+
     '<div class="f" style="margin-bottom:8px"><label>Their email</label><input id="sup-send-email" type="email" inputmode="email" value="'+escHtml(d.vendorEmail||last.email||'')+'" placeholder="quotes@supplyhouse.com"></div>'+
     '<div class="f" style="margin-bottom:12px"><label>Job reference on the quote</label><input id="sup-send-ref" type="text" value="'+escHtml(_supReference())+'"></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">They get a PDF of your '+d.items.length+' item'+(d.items.length===1?'':'s')+' and reply to your email with their quote.</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Opens your email with the list of '+d.items.length+' item'+(d.items.length===1?'':'s')+' attached. It sends from your account, so they reply to you.</div>'+
     '<div style="display:flex;gap:10px">'+
       '<button class="btn" style="flex:1" onclick="document.getElementById(\'_sup-send\')?.remove()">Cancel</button>'+
-      '<button class="btn btn-p" style="flex:2" id="sup-send-go" onclick="_supSend()">Send</button>'+
+      '<button class="btn btn-p" style="flex:2" id="sup-send-go" onclick="_supSend()">Open in my email</button>'+
     '</div>'+
   '</div>';
   document.body.appendChild(ov);
 }
+// Sent from HIS mail app, not ours (owner 2026-09-26): "open up the
+// contractor's own email app and send from there with the quote attached."
+//   1. Apple Mail's composer (TdDoc.composeEmail), prefilled: their address,
+//      the subject, a short note and the PDF. It sends from his account and
+//      the supply house replies to him.
+//   2. No Mail account on the phone (Gmail or Outlook only): the share sheet
+//      with the PDF, where those apps are. The share sheet cannot prefill a
+//      recipient, so their address is copied first to paste.
+//   3. A computer: the PDF downloads and his mail program opens addressed,
+//      with a note to attach it. A mailto link cannot carry a file.
 let _supSending=false;
+function _supEmailParts(name,ref,count){
+  const biz=(typeof getBusinessName==='function')?getBusinessName():((typeof S!=='undefined'&&S&&S.bname)||'');
+  const subject='Quote request: '+(ref||'materials')+(biz?' ('+biz+')':'');
+  const body='Hi'+(name?' '+name:'')+',\n\n'+
+    'Please quote the '+count+' item'+(count===1?'':'s')+' on the attached list.\n\n'+
+    'Job reference: '+(ref||'see attached')+'\n'+
+    'Please put this on your quote as the customer order number.\n\n'+
+    'Thank you,\n'+(biz||'');
+  const filename='Materials '+String(ref||'list').replace(/[^A-Za-z0-9 ._-]/g,'').slice(0,50).trim()+'.pdf';
+  return {subject,body,filename,biz};
+}
+function _supB64(bytes){
+  let bin='';for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
 async function _supSend(){
   if(_supSending)return false;
   const d=_supData();if(!d)return false;
@@ -745,28 +763,17 @@ async function _supSend(){
     return false;
   }
   _supSending=true;
-  const btn=document.getElementById('sup-send-go');
-  if(btn){btn.disabled=true;btn.textContent='Sending...';}
   try{
-    const biz=(typeof getBusinessName==='function')?getBusinessName():((S&&S.bname)||'');
-    const replyTo=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||(S&&S.bemail)||'';
-    const addr=String((document.getElementById('gei-addr')||{}).value||'').trim();
+    const parts=_supEmailParts(name,ref,d.items.length);
+    const contact=[(typeof S!=='undefined'&&S&&S.bphone)||'',(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||((typeof S!=='undefined'&&S&&S.bemail)||'')].filter(Boolean);
     const pdf=_supPdfBytes({
-      business:biz,businessLine:[S&&S.bphone,replyTo].filter(Boolean).join('  ·  '),
+      business:parts.biz,businessLine:contact.join('  ·  '),
       date:(typeof todayKey==='function')?todayKey():new Date().toISOString().slice(0,10),
-      to:name,reference:ref,shipTo:addr,contact:replyTo,
+      to:name,reference:ref,shipTo:String((document.getElementById('gei-addr')||{}).value||'').trim(),contact:contact.join('  ·  '),
       items:d.items.map(it=>({qty:it.qty,unit:it.unit,desc:it.desc})),
     });
-    let bin='';for(let i=0;i<pdf.length;i++)bin+=String.fromCharCode(pdf[i]);
-    const token=await _supAuthToken();
-    if(!token)throw new Error('signed out');
-    const base=(typeof SUPA_URL!=='undefined'&&SUPA_URL)?SUPA_URL:'';
-    const res=await fetch(base+'/functions/v1/send-supply-list',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
-      body:JSON.stringify({to:email,supplierName:name,businessName:biz,replyTo,reference:ref,itemCount:d.items.length,pdfBase64:btoa(bin)}),
-    });
-    if(!res.ok)throw new Error('send '+res.status);
+    const how=await _supDeliver(email,parts,pdf);
+    if(how==='cancelled')return false;
     // Remember the house so the next list is one tap.
     if(typeof S!=='undefined'&&S){
       const list=_supHouses().filter(h=>h&&String(h.email).toLowerCase()!==email.toLowerCase());
@@ -777,15 +784,44 @@ async function _supSend(){
     d.vendor=name||d.vendor;d.vendorEmail=email;d.sentAt=new Date().toISOString();d.sentRef=ref;
     document.getElementById('_sup-send')?.remove();
     _supSync();
-    if(typeof showToast==='function')showToast('Sent to '+(name||email),'✓');
+    if(typeof showToast==='function'){
+      if(how==='download')showToast('PDF saved. Attach it to the email that opened','📎');
+      else showToast(how==='saved'?'Saved to your drafts':'Sent from your email','✓');
+    }
     return true;
   }catch(_e){
-    if(btn){btn.disabled=false;btn.textContent='Send';}
-    if(typeof zAlert==='function')zAlert('Could not send the list right now. Check your signal and try again.',{title:'Not sent'});
+    if(typeof zAlert==='function')zAlert('Could not open your email. Try again, or send the list from your email yourself.',{title:'Not sent'});
     return false;
   }finally{
     _supSending=false;
   }
+}
+// Returns 'sent' | 'saved' | 'shared' | 'download' | 'cancelled'.
+async function _supDeliver(email,parts,pdf){
+  const P=_supReader();
+  if(P&&typeof P.composeEmail==='function'){
+    const r=await P.composeEmail({to:email,subject:parts.subject,body:parts.body,
+      attachmentBase64:_supB64(pdf),filename:parts.filename,mime:'application/pdf'});
+    const res=r&&r.result;
+    if(res==='sent'||res==='saved')return res;
+    if(res==='cancelled')return 'cancelled';
+    if(res==='failed')throw new Error('mail failed');
+    // 'unavailable': no Apple Mail account, fall through to the share sheet.
+  }
+  let file=null;
+  try{file=new File([pdf],parts.filename,{type:'application/pdf'});}catch(_e){}
+  if(file&&navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{if(navigator.clipboard)await navigator.clipboard.writeText(email);}catch(_e){}
+    if(typeof showToast==='function')showToast('Their email is copied, paste it in','📋');
+    try{await navigator.share({files:[file],title:parts.subject,text:parts.body});}
+    catch(e){if(e&&e.name==='AbortError')return 'cancelled';throw e;}
+    return 'shared';
+  }
+  const url=URL.createObjectURL(new Blob([pdf],{type:'application/pdf'}));
+  const a=document.createElement('a');a.href=url;a.download=parts.filename;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  location.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(parts.subject)+'&body='+encodeURIComponent(parts.body+'\n\n(List attached)');
+  return 'download';
 }
 
 // ── From the share sheet ────────────────────────────────────────────────────
