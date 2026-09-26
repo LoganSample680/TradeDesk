@@ -18,6 +18,10 @@ function goPg(id){
   // so boot-time goPg('pg-dash') calls can never wipe the marker before
   // _maybeResumeActiveEstimate reads it.
   if(id!=='pg-est-generic'&&document.querySelector('.pg.active')?.id==='pg-est-generic'&&typeof _geiClearActive==='function')_geiClearActive();
+  // Leaving a page turns Tim's mic off. Nothing else would: the listening
+  // panel is fixed to the screen, so it followed him to the next page with
+  // the mic still open (owner, 2026-09-26).
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'&&document.querySelector('.pg.active')?.id!==id){try{_timTalkStop(true);}catch(_e){}}
   // Preserve currentClientId across navigation, only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)
