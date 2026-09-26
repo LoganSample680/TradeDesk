@@ -618,7 +618,7 @@ function _supApplyReview(){
 // "customer order number", which is how the quote comes back tagged.
 function _supPdfEsc(s){
   return String(s==null?'':s)
-    .replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,'-')
+    .replace(/[\u2018\u2019]/g,"'").replace(/[\u201C\u201D]/g,'"').replace(/[\u2013\u2014]/g,'-')
     .replace(/[^\x20-\x7E]/g,'?')
     .replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
 }
@@ -768,7 +768,7 @@ async function _supSend(){
     const contact=[(typeof S!=='undefined'&&S&&S.bphone)||'',(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||((typeof S!=='undefined'&&S&&S.bemail)||'')].filter(Boolean);
     const pdf=_supPdfBytes({
       business:parts.biz,businessLine:contact.join('  ·  '),
-      date:(typeof todayKey==='function')?todayKey():new Date().toISOString().slice(0,10),
+      date:(typeof todayKey==='function')?todayKey():'',
       to:name,reference:ref,shipTo:String((document.getElementById('gei-addr')||{}).value||'').trim(),contact:contact.join('  ·  '),
       items:d.items.map(it=>({qty:it.qty,unit:it.unit,desc:it.desc})),
     });
