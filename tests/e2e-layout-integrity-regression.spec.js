@@ -244,7 +244,8 @@ test.describe('layout integrity, mobile', () => {
       goGeiStep(2);
       _geiIsFreeForm = true;
       const longNote = Array(20).fill('Long wrapped note line here').join(' ');
-      _byoItems = [{ id: 1, section: 'Materials', label: 'test', notes: longNote, price: 1232134, on: true }];
+      // A Work item: Materials rows have no tick box (the shared card, js/materials.js).
+      _byoItems = [{ id: 1, section: 'Work', label: 'test', notes: longNote, price: 1232134, on: true }];
       _byoRenderSections();
       const row = document.querySelector('.byo-row');
       if (!row) return { missing: true };

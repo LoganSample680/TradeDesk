@@ -135,30 +135,36 @@ test.describe('the description the client reads', () => {
     expect(r.labor, 'the crew rate is not a thing he sells').toBe(false);
   });
 
-  test('the T&M material modal teaches the book too', async () => {
+  test('the T&M material sheet teaches the book too', async () => {
     const notes = await page.evaluate(() => {
+      const wasTM = _geiIsTM, wasFF = _geiIsFreeForm;
+      _geiIsTM = true; _geiIsFreeForm = false;
       _geiLines = [];
-      _tmAddMatCat();
-      document.getElementById('tcm-name').value = 'Drop cloths and masking';
-      document.getElementById('tcm-cost').value = '85';
-      document.getElementById('tcm-notes').value = 'Canvas on every floor, plastic on the fixtures';
-      _tmMatCatSave(-1);
+      _matAdd();
+      document.getElementById('_bya-label').value = 'Drop cloths and masking';
+      document.getElementById('_bya-price').value = '85';
+      document.getElementById('_bya-notes').value = 'Canvas on every floor, plastic on the fixtures';
+      _byaConfirm('Materials');
       const e = _pbFind('Drop cloths and masking', _pbTrade());
-      document.getElementById('_tm-mat-modal')?.remove();
+      document.getElementById('_byo-add-modal')?.remove();
+      _geiIsTM = wasTM; _geiIsFreeForm = wasFF;
       return e && e.notes;
     });
     expect(notes).toContain('Canvas on every floor');
   });
 
-  test('the T&M modal calls it a Description the client reads', async () => {
+  test('the T&M material sheet calls it a Description the client reads', async () => {
     const t = await page.evaluate(() => {
-      _tmAddMatCat();
-      const s = document.getElementById('_tm-mat-modal').textContent;
-      document.getElementById('_tm-mat-modal')?.remove();
+      const wasTM = _geiIsTM;
+      _geiIsTM = true;
+      _matAdd();
+      const s = document.getElementById('_byo-add-modal').textContent;
+      document.getElementById('_byo-add-modal')?.remove();
+      _geiIsTM = wasTM;
       return s;
     });
     expect(t).toContain('what it consists of');
-    expect(t).toContain('The client reads this');
+    expect(t).toContain('the client sees this');
     expect(t).not.toContain('(optional)');
   });
 

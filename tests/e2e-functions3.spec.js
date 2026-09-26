@@ -8753,56 +8753,11 @@ test.describe('Tax, legal, and template functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmEditMatCat: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmEditMatCat !== 'function') return { skip: true };
-      try { _tmEditMatCat(0); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('_tmMatCatModal: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmMatCatModal !== 'function') return { skip: true };
-      try { _tmMatCatModal(0); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('_tmMatCatModal: regression: field order matches BYO\'s Add item modal (Name, Cost, Notes, not Name, Notes, Cost)', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmMatCatModal !== 'function') return { skip: true };
-      _tmMatCatModal(-1);
-      const modal = document.getElementById('_tm-mat-modal');
-      const fields = [...modal.querySelectorAll('input#tcm-name, input#tcm-cost, textarea#tcm-notes')].map(el => el.id);
-      const notesIsTextarea = modal.querySelector('#tcm-notes')?.tagName === 'TEXTAREA';
-      modal.remove();
-      return { skip: false, fields, notesIsTextarea };
-    });
-    if (!result.skip) {
-      expect(result.fields).toEqual(['tcm-name', 'tcm-cost', 'tcm-notes']);
-      expect(result.notesIsTextarea, 'notes should be a resizable textarea, matching BYO\'s Add item modal').toBe(true);
-    }
-  });
-
-  test('_tmMatCatSave: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmMatCatSave !== 'function') return { skip: true };
-      try { _tmMatCatSave(0); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('_tmDelMatCat: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmDelMatCat !== 'function') return { skip: true };
-      try { _tmDelMatCat(999); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
+  // Deleted with the T&M-only material modal: T&M materials now use the
+  // shared Materials card and sheet (js/materials.js), §7.1.
+  test('the T&M-only material category functions are gone', async () => {
+    const r = await page.evaluate(() => ['_tmEditMatCat', '_tmMatCatModal', '_tmMatCatSave', '_tmDelMatCat', '_tmAddMatCat'].filter(n => typeof window[n] === 'function'));
+    expect(r).toEqual([]);
   });
 
   test('_tmPreviewClient: calls without throwing', async () => {
