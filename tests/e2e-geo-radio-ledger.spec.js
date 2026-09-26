@@ -69,11 +69,17 @@ test.describe('the radio ledger', () => {
       expect((c.burstFix || [])[0] && c.burstFix[0].reason).toBe('push-ping burst');
     });
 
-    test('the shift heartbeat says shift start; parking at home says so too', async () => {
+    // Off the clock the beat is a bare tick ('shift start'); inside working
+    // hours it holds the keep-awake and says so (owner 2026-09-26, the mix).
+    test('the shift heartbeat names itself; parking at home says so too', async () => {
       const c = await askedWith(`
-        const keep = _placeIsLikelyHome; _placeIsLikelyHome = (p) => !!(p && p.lat === 39.9);
-        try { _geoHeartbeatSync(null); _geoHeartbeatSync({ lat: 39.9, lng: -94.9 }); } finally { _placeIsLikelyHome = keep; }`);
+        const keep = _placeIsLikelyHome, keepAw = _geoKeepAwakeMs; _placeIsLikelyHome = (p) => !!(p && p.lat === 39.9);
+        _geoKeepAwakeMs = () => 0; _geoHbArmedAtMs = 0;
+        try { _geoHeartbeatSync(null); _geoHeartbeatSync({ lat: 39.9, lng: -94.9 });
+              _geoKeepAwakeMs = () => 3600000; _geoHeartbeatSync(null); }
+        finally { _placeIsLikelyHome = keep; _geoKeepAwakeMs = keepAw; _geoHbArmedAtMs = 0; _geoHbKeepAwake = null; }`);
       expect((c.startHeartbeat || [])[0] && c.startHeartbeat[0].reason).toBe('shift start');
+      expect((c.startHeartbeat || [])[1] && c.startHeartbeat[1].reason).toBe('shift keep-awake');
       expect((c.stopHeartbeat || [])[0] && c.stopHeartbeat[0].reason).toBe('parked at home');
     });
 

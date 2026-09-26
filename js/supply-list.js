@@ -143,9 +143,9 @@ function _supSync(){
 }
 
 // ── The card ─────────────────────────────────────────────────────────────────
-// bare: T&M draws it inside its own Materials card, so no second card chrome.
-function _supCardHTML(opts){
-  const bare=!!(opts&&opts.bare);
+// Drawn inside the shared Materials card (js/materials.js), on T&M and BYO
+// alike, so it carries no card chrome of its own.
+function _supCardHTML(){
   const d=_supData();
   const items=(d&&d.items)||[];
   const priced=_supPriced(d);
@@ -167,11 +167,11 @@ function _supCardHTML(opts){
       ?'Tax was charged on this quote, so no sales tax is added on these again.'
       :'No tax on this quote, so sales tax goes on the client price, markup included.')
     :'';
-  return '<div class="'+(bare?'sup-card sup-bare':'card card-pad-0 sup-card')+'" id="sup-card" data-bare="'+(bare?1:0)+'" style="margin-bottom:12px">'+
+  return '<div class="sup-card sup-bare" id="sup-card">'+
     '<div class="card-hd"><div class="card-hd-title">'+svgIcon('🧾',{size:14})+' Supply house materials</div>'+
       (d&&d.vendor?'<div style="font-size:11px;color:var(--text3)">'+escHtml(d.vendor)+'</div>':'')+
     '</div>'+
-    '<div style="padding:'+(bare?'4px 0 12px':'4px 14px 12px')+'">'+
+    '<div style="padding:4px 0 12px">'+
       (rows?'<div class="sup-list">'+rows+'</div>':'<div style="padding:10px 0;font-size:12px;color:var(--text-3)">Type what you need, one item per line. Prices come from their quote.</div>')+
       '<textarea id="sup-add" rows="2" placeholder="3 ea 3/4 ball valve&#10;20 ft 2in PVC" style="width:100%;margin-top:8px;padding:9px 11px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box"></textarea>'+
       '<button type="button" class="btn btn-sm" style="margin-top:6px" onclick="_supAddFromBox()">+ Add to list</button>'+

@@ -188,8 +188,8 @@ test.describe('week bars: markup', () => {
       return { titles: segs.map(s => s.getAttribute('title')),
                heights: segs.map(s => Math.round(s.getBoundingClientRect().height)) };
     });
-    // Rendered top to bottom, so On site is LAST: it is the base of the stack.
-    expect(r.titles[r.titles.length - 1]).toContain('On site');
+    // Rendered top to bottom, so Job site is LAST: it is the base of the stack.
+    expect(r.titles[r.titles.length - 1]).toContain('Job site');
     expect(r.titles.join(' ')).toContain('Driving');
     expect(r.titles.join(' ')).toContain('Shop');
     // A six-minute load on a ten-hour day is still drawn.
@@ -514,7 +514,7 @@ test.describe('week bars: sharing a week as text', () => {
     expect(t).toContain('Thu 8/27: 9h 54m');
     expect(t).toContain('Total: 39h 27m');
     // The split, from the same fold the bars and the card use.
-    expect(t).toContain('On site 33h 46m');
+    expect(t).toContain('Job site 33h 46m');
     expect(t).toContain('Driving 2h 51m');
   });
 
