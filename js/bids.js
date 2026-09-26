@@ -206,6 +206,42 @@ function cleanRoomName(room){
   for(const t of types){if(raw.endsWith(' '+t))return raw.slice(0,-(t.length+1)).trim();}
   return raw;
 }
+// Fold a bid's Tim-built supply lines into the supply list's own sections.
+//
+// The count is written the way the counter sells it, which is `timLineFigures`'
+// job and not this file's: 28 squares of shingle leaves here as 84 bundles with
+// "28 squares at 3 bundles" underneath, because 28 squares is not a thing that
+// can be put on a truck.
+//
+// Tolerant on purpose. A bid saved before Tim existed has no timSupply, a bid
+// synced from an older client may have junk in it, and neither may take the
+// supply list down on a man standing at a counter.
+function _timSupplyInto(sections,b){
+  try{
+    const rows=(b&&Array.isArray(b.timSupply))?b.timSupply:[];
+    if(!rows.length||typeof TIM_SUPPLY_SECTIONS==='undefined')return;
+    TIM_SUPPLY_SECTIONS.forEach(sec=>{
+      const mine=rows.filter(r=>r&&r.section===sec.id&&r.label);
+      if(!mine.length)return;
+      const items=mine.map(r=>{
+        const f=(typeof timLineFigures==='function')?timLineFigures(r):{qtyLabel:String(r.qty||1),packNote:null};
+        const sp=String(f.qtyLabel||'').indexOf(' ');
+        return {
+          label:r.label,
+          qty:sp>0?f.qtyLabel.slice(0,sp):f.qtyLabel,
+          unit:sp>0?f.qtyLabel.slice(sp+1):'',
+          cat:sec.id,
+          note:r.detail||'',
+          detail:f.packNote||'',
+        };
+      });
+      const have=sections.find(s=>s.id===sec.id);
+      if(have){have.items=have.items.concat(items);return;}
+      sections.push({id:sec.id,label:escHtml(sec.label),color:sec.color,bg:sec.bg,items});
+    });
+  }catch(_e){}
+}
+
 // Alias called by post-job debrief after saving hours
 function showSupplyList(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -360,7 +396,19 @@ function showSupplyList(bidId){
     {id:'prep',label:svgIcon('🔧',{size:11})+' Prep supplies',color:'#854F0B',bg:'#FFF7ED',items:scopeItems.filter(i=>i.cat==='prep')},
     {id:'tools',label:svgIcon('🪣',{size:11})+' Tools & protection',color:'#2d6a4f',bg:'#F0FBF4',items:[...coreItems,...scopeItems].filter(i=>i.cat==='tools')},
     {id:'rental',label:svgIcon('🏗',{size:11})+' Rentals',color:'#5B21B6',bg:'#F5F3FF',items:scopeItems.filter(i=>i.cat==='rental')},
-  ].filter(s=>s.items.length>0);
+  ];
+  // WHAT TIM TOOK OFF THE JOB GOES ON THE SAME LIST.
+  //
+  // This screen is built out of painting surfaces, which is right for a painter
+  // and empty for the electrician who told Tim "two rolls of 12-2 and a two
+  // hundred amp panel". Those items are already on the bid, and they belong
+  // here rather than on a second checklist for the same job with different
+  // buttons (7.3). The four painting categories keep their ids, so a painter's
+  // items merge into the sections he already knows and a rough-in adds the
+  // trade heads it needs underneath.
+  _timSupplyInto(sections,b);
+  const shown=sections.filter(s=>s.items.length>0);
+  sections.length=0;shown.forEach(s=>sections.push(s));
 
   // ── Build modal ────────────────────────────────────────────
   const c=getClientById(b.client_id);
@@ -822,6 +870,13 @@ function daysSince(dateStr){if(!dateStr)return 0;const d=parseD(dateStr);if(isNa
   return Math.round((parseD(todayKey()).getTime()-d.getTime())/86400000);}
 function payStatus(bid){
   const paid=getBidPaid(bid.id),total=bid.amount||0,balance=total-paid;
+  // A T&M rate sheet has no total to be paid in full against (openPayPanel).
+  if(!total&&bid.isTM&&bid.tmRateOnly){
+    const dep=Number(bid.deposit)||0;
+    if(dep>0&&paid<dep-0.01)return{label:'Up front due: '+fmt(dep-paid),cls:'bdg-pending',color:'var(--amber)'};
+    if(dep>0)return{label:'Up front paid',cls:'bdg-deposit',color:'var(--blue)'};
+    return{label:'Billed as worked',cls:'bdg-deposit',color:'var(--blue)'};
+  }
   if(!total)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
   if(paid<=0)return{label:'Unpaid',cls:'bdg-pending',color:'var(--amber)'};
   if(balance<=0.01)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
@@ -840,15 +895,23 @@ function openPayPanel(bidId, autoType){
   // autoType: 'deposit' from estimate builder, 'final' from job completion
   activePayBidId=bidId;
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
-  const balance=getBidBalance(bid);
-  const total=bid.amount||0;
+  // A T&M RATE SHEET HAS NO PRICE, so amount is 0 and the balance is 0, and
+  // the one thing it may ask for at signing, the flat figure up front, had no
+  // way in: the panel called it paid in full and hid Send link. What is owed
+  // on a rate sheet before the first bill is that figure, less what is paid
+  // (2026-09-23). The bills after it come off the clock, not from here.
+  const _rateSheet=!!(bid.isTM&&bid.tmRateOnly);
+  const _rsOwed=_rateSheet?Math.max(0,(Number(bid.deposit)||0)-getBidPaid(bidId)):0;
+  const balance=_rateSheet?_rsOwed:getBidBalance(bid);
+  const total=_rateSheet?(Number(bid.deposit)||0):(bid.amount||0);
   // The deposit THIS CONTRACT calls for, not a hardcoded 25%. A bid that set its own
   // deposit (50% up front, a flat $2,000, a state-capped figure) must offer that number,
   // otherwise the panel silently records the wrong amount.
   const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
   const depositPct=total>0?Math.round(depositDue/total*100):25;
   const rawPaid=getBidPaid(bidId);
-  const overpaidAmt=Math.round((rawPaid-total)*100)/100;
+  // Nothing is "overpaid" on a rate sheet: bills off the clock follow.
+  const overpaidAmt=_rateSheet?0:Math.round((rawPaid-total)*100)/100;
   const _payClient=getClientById(bid.client_id);
   const _hubUrl=_payClient?.clientToken&&_supaUser
     ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_effectiveUid()+'&c='+_payClient.id)
@@ -1771,8 +1834,7 @@ function riskBadge(cid){
 function getCountyForBid(bid){
   const c=getClientById(bid.client_id);
   const addr=(bid.addr||c?.addr||'').toUpperCase();
-  const stateM=addr.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
-  const stateCode=stateM?stateM[1]:(S.state||'KS');
+  const stateCode=(typeof stateFromAddr==='function'?stateFromAddr(addr):null)||S.state||'KS';
   let county=null;
   for(const city of Object.keys(KS_CITY_COUNTY)){if(addr.includes(city)){county=KS_CITY_COUNTY[city];break;}}
   if(!county)county='your county';

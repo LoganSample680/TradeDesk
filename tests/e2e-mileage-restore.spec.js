@@ -100,7 +100,8 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
       // whatever test happened to be running (webkit shard 3, 2026-08-26).
       // Resolves benignly, because the point is not to explode. Nothing here
       // asserts on writes; rec.updates is what the write assertions read.
-      upsert: () => Promise.resolve({ data: null, error: null }),
+      upsert: () => { const ok = () => Promise.resolve({ data: null, error: null });   // supaSaveToCloud chains .select('updated_at').single() (js/cloud.js)
+        const u = { select: () => u, single: ok, maybeSingle: ok, then: (res, rej) => ok().then(res, rej) }; return u; },
       insert: () => Promise.resolve({ data: null, error: null }),
       delete: () => { const d = { eq: () => d, in: () => d, is: () => d,
         then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return d; },
@@ -313,7 +314,8 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
       // whatever test happened to be running (webkit shard 3, 2026-08-26).
       // Resolves benignly, because the point is not to explode. Nothing here
       // asserts on writes; rec.updates is what the write assertions read.
-      upsert: () => Promise.resolve({ data: null, error: null }),
+      upsert: () => { const ok = () => Promise.resolve({ data: null, error: null });   // supaSaveToCloud chains .select('updated_at').single() (js/cloud.js)
+        const u = { select: () => u, single: ok, maybeSingle: ok, then: (res, rej) => ok().then(res, rej) }; return u; },
       insert: () => Promise.resolve({ data: null, error: null }),
       delete: () => { const d = { eq: () => d, in: () => d, is: () => d,
         then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return d; },
@@ -454,7 +456,8 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
       // whatever test happened to be running (webkit shard 3, 2026-08-26).
       // Resolves benignly, because the point is not to explode. Nothing here
       // asserts on writes; rec.updates is what the write assertions read.
-      upsert: () => Promise.resolve({ data: null, error: null }),
+      upsert: () => { const ok = () => Promise.resolve({ data: null, error: null });   // supaSaveToCloud chains .select('updated_at').single() (js/cloud.js)
+        const u = { select: () => u, single: ok, maybeSingle: ok, then: (res, rej) => ok().then(res, rej) }; return u; },
       insert: () => Promise.resolve({ data: null, error: null }),
       delete: () => { const d = { eq: () => d, in: () => d, is: () => d,
         then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return d; },
@@ -519,7 +522,8 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
       // whatever test happened to be running (webkit shard 3, 2026-08-26).
       // Resolves benignly, because the point is not to explode. Nothing here
       // asserts on writes; rec.updates is what the write assertions read.
-      upsert: () => Promise.resolve({ data: null, error: null }),
+      upsert: () => { const ok = () => Promise.resolve({ data: null, error: null });   // supaSaveToCloud chains .select('updated_at').single() (js/cloud.js)
+        const u = { select: () => u, single: ok, maybeSingle: ok, then: (res, rej) => ok().then(res, rej) }; return u; },
       insert: () => Promise.resolve({ data: null, error: null }),
       delete: () => { const d = { eq: () => d, in: () => d, is: () => d,
         then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return d; },

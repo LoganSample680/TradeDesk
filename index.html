@@ -174,6 +174,20 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
   --c-deep:#2C0707;--c-deep-soft:#FFB8AE;
   --c-gray:#544D44;--c-gray-soft:#EEE7D8;--c-gray-edge:#CFC4AC;
   --text-cream:#F5EFE2;--text-cream-2:rgba(245,239,226,.62);--text-cream-3:rgba(245,239,226,.42);
+  /* Tim's two metals, and they are his alone. Gold is the field the portrait
+     sits on, lifted off the mark itself so the halo that pulses behind him is
+     the same gold as the coin it comes off: a brighter ring around a duller
+     disc read as a rendering fault. Hat yellow is the one place a figure is
+     allowed to shout, the badge and the number on the dock pill. Neither is a
+     status colour and neither goes anywhere else. The brass pair and the paper
+     disc that used to live here died with the drawn mark, which had to build a
+     disc to stand on; the portrait brings its own. */
+  /* Hat yellow is still the badge and the pill figure, which are a COUNT and a
+     FIGURE and are allowed to shout. The gold that used to fill Tim's tab is
+     gone with the gold disc his portrait was printed on: the tab is a surface
+     now and the mark takes its colour from it, which is what the owner was
+     asking for when he said he was not in love with the yellow. */
+  --hat:#F2A81C;
   --r-xs:4px;--r-sm:6px;--r-md:10px;--r-lg:12px;--r-xl:16px;--r-pill:999px;--r-mark:9px;
   --shadow-card:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--line);
   --shadow-hover:0 3px 12px rgba(27,22,18,.08),0 0 0 1px var(--line);
@@ -288,6 +302,25 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 #app{padding-left:var(--nav-w);min-height:100vh}
 #supa-status{left:var(--nav-w);transition:opacity .25s cubic-bezier(.22,1,.36,1);opacity:0}
 .drive-banner{left:var(--nav-w)}
+/* THERE IS NO TIM LANE, and the attempt is worth recording so nobody spends
+   the afternoon on it again.
+   Tim sits at the right edge and content scrolled under him, so --tim-lane
+   reserved a strip of right-hand page padding for him to stand in. It was
+   measured against the BYO item row in e2e-layout-integrity-regression, which
+   is that suite's deliberate worst case (seven-figure price, every action
+   button): on Chromium the row holds a four-letter title on one line up to
+   22px of lane and wraps at 24, so the lane was set to 20.
+   WebKit wraps it to THREE lines at 20. The row's label is
+   overflow-wrap:anywhere, so once it is squeezed past a word's width it breaks
+   inside the word, and WebKit squeezes it sooner. The engine that matters most
+   here is the one the iOS shell runs, and it had no 20px to give: the number
+   was measured on the engine that was convenient rather than the one that
+   ships.
+   Widening the row to make room would be rebuilding a guarded component to
+   suit a 36px tab, on an engine this container cannot run. So the page keeps
+   its width and Tim is an overlay, like every floating control in every app on
+   that phone. What he is NOT allowed to do is sit on a control's tappable
+   centre, and e2e-tim.spec.js measures that on six pages instead. */
 .pg{display:none;padding:24px 28px 32px;max-width:1320px}
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
 #pg-dash.active{animation:td-dash-enter .8s cubic-bezier(.16,1,.3,1) both}
@@ -299,13 +332,15 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 /* Gentle fade-up (owner: "smoother, fade in more"): mostly opacity with a small
    14px rise, NO scale (scaling large cards blurs text mid-flight → the "choppy"
    look). Ease-out-cubic decelerates softly instead of the abrupt expo snap. */
-@keyframes td-card-cascade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+/* Owner-approved 2026-09-24: the page WATERFALLS DOWN, each card drops 16px into
+   place with a whisper of spring. Still no scale (it blurs text mid-flight). */
+@keyframes td-card-cascade{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
 /* Cards cascade RIGHT AFTER the boot overlay lifts, and BEHIND any boot popup
    (owner: a blank white backdrop behind a popup looks odd), so the dashboard
    fills in under the popup's scrim. Delays are assigned in JS (_armBootCascade)
    over VISIBLE cards only, inline animation-delay wins, so no fixed nth-child
    holes. Backwards `both` fill keeps each card invisible until its turn. */
-#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .62s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
+#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .62s cubic-bezier(.3,1.22,.55,1) both;will-change:opacity,transform}
 @media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
 /* pg-cal enters at the standard .2s now. Its old 5s slow fade existed only to
    hide the grid holding for the async weather fetch; the grid paints instantly
@@ -318,12 +353,290 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 @media(max-width:767px){#clock-banner{left:0}}
 
 /* ── Mobile chrome ── */
-#mobile-tabbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--ink);border-top:1px solid var(--ink-line);padding-bottom:env(safe-area-inset-bottom,0px);flex-wrap:nowrap;overflow:hidden}
+/* overflow was hidden on the bar itself. It is visible now so Tim can stand
+   proud of the top edge, and the clipping it was there for moved onto .mtb,
+   which is the thing that actually had something to clip (a long label). */
+/* One number each, because three things have to agree about them: the notch
+   cut out of the bar, the bubble sitting in it, and the arc tracing it. They
+   live on :root rather than on the bar because the bubble is no longer inside
+   the bar and cannot inherit from it. */
+/* 50%, and it is exact at every width rather than close at one of them.
+   Owner: "he needs to be dead center on all devices, looks awful the way it is
+   now." He was at 41.667%, which is slot 3 of 6, which is where a row with an
+   EVEN number of slots puts the third one. No arrangement of an even row has a
+   middle, and uneven tab widths cannot fake it: solving for it comes out at
+   zero-width tabs. So the row lost a slot. Three tabs, Tim's seat, More: five,
+   with two flex items either side of the seat, which is what makes his centre
+   land on the bar's centre whatever the seat is worth in pixels. */
+:root{--tim-seat:50%;--mtb-h:56px;--tim-seat-w:64px}
+#mobile-tabbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--ink);border-top:1px solid var(--ink-line);padding-bottom:env(safe-area-inset-bottom,0px);flex-wrap:nowrap;overflow:visible;}
+/* The seat itself: width only, nothing drawn, nothing tappable.
+   A FIXED width, not flex:1, and Tim is set to the same --tim-seat-w. flex:1
+   shares the free space but the tabs' own labels set their min-content width,
+   so the seat settled at 61.7px of a 65px share and Tim, sized at a clean
+   sixth of the viewport, hung a pixel over Leads and two over Clients. A real
+   15.3 overlap, found by measuring and invisible to the eye. One number that
+   both of them read is the only way they cannot drift apart. */
+#mtb-tim-slot{flex:0 0 var(--tim-seat-w);min-width:0;pointer-events:none}
 @media(max-width:767px){#mobile-tabbar{display:flex}}
-.mtb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--text-cream-2);cursor:pointer;padding:8px 2px 10px;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.01em;-webkit-tap-highlight-color:transparent;position:relative;min-height:56px;transition:color .15s}
+.mtb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--text-cream-2);cursor:pointer;padding:8px 2px 10px;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.01em;-webkit-tap-highlight-color:transparent;position:relative;min-height:var(--mtb-h);transition:color .15s;overflow:hidden}
 .mtb.active{color:var(--text-cream)}
 .mtb svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .mtb-dot{position:absolute;top:7px;right:calc(50% - 16px);width:8px;height:8px;background:var(--denim);border-radius:50%;border:2px solid var(--ink)}
+/* ── Tim, set into the bar ──────────────────────────────────────────────────
+   Owner, 2026-09-21, twice. First: "kinda diggin tim raised off the bar in the
+   center but instead of a circle he can be a more rounded rectangle, if theres
+   insights to see then we get the raised red notification". Then, looking at
+   that: "I want Tim more engraved into the bar, like gently popping out".
+   The first pass answered the shape and missed the material. He was a denim
+   chip with a heavy ink outline and a drop shadow, floating clear above the
+   bar, and the outline is what gave it away: an object with its own edge
+   drawn all the way round is an object sitting ON something, not part of it.
+   Two pieces now, and the sentence has two halves:
+   ENGRAVED INTO THE BAR is #mtb-tim itself, which is no longer a button shape
+   at all. It is the bar's own ink, with the bar's own hairline (--ink-line,
+   the same value as #mobile-tabbar's border-top) traced up and over its
+   shoulders and no border along the bottom. So the bar's top EDGE rises here
+   rather than something being stuck to it, and it is opaque, so the hairline
+   running across the rest of the bar stops at the swell and picks up again on
+   the far side. There is no drop shadow, because material does not cast one
+   onto itself.
+   GENTLY POPPING OUT is #mtb-tim-mark, the denim key seated in that swell with
+   six pixels of ink framing it on every side. It carries the bevel: a light
+   inset top edge and a dark inset bottom edge, which is what reads as raised,
+   and a short contact shadow where it meets its setting.
+   Still a rounded rectangle and still wider than tall, which is the part the
+   owner liked: a circle is the FAB every app ships and it reads as "compose".
+   Still --denim, the app's own accent and already the colour of .mtb-dot. Ten
+   rounds of restyling failed on gold because gold was invented for him.
+   bottom:100% still puts the whole assembly ABOVE the bar's padding box, so it
+   takes not one pixel off the tap target of the tab underneath (rule 15.3). It
+   covers the 1px border line at its own base, which is the point. */
+/* ── Tim, built INTO the bar ────────────────────────────────────────────────
+   Owner, 2026-09-21, on the version that cut a hole: "more pronounced and no
+   white uglyness around the outside at the bottom, want Tim built into the nav
+   bar, a lot of dead space under him that could be filled up."
+   The white was the hole. A mask cuts the bar away and whatever is behind it
+   shows through, so every pixel of clearance around him was a pixel of page,
+   and on a light screen that is a bright rim. There is no mask now and nothing
+   is cut: a disc of the bar's OWN INK rises above its top edge with him seated
+   in it, painted over the bar rather than out of it, so the clearance around
+   him is bar instead of background and there is nothing left to be ugly.
+   And the dead space under him is where the word goes. Every other slot in
+   this row is a glyph with a word under it; he was the only one without, and
+   the gap he left was exactly the size of the thing he was missing. */
+#mtb-tim{
+  display:none;position:fixed;left:var(--tim-seat);transform:translateX(-50%);
+  /* The same 10px of bottom padding .mtb uses, so his word sits on the same
+     line as Home, Leads, Clients, Jobs and More rather than near it. */
+  bottom:calc(10px + env(safe-area-inset-bottom,0px));
+  /* His seat's width, less two pixels. Set exactly equal he lands 0.09px
+     outside it, because --tim-seat is a percentage and the tabs either side
+     round to whole pixels at some widths and not others. Sub-pixel, invisible,
+     and still a tab losing a sliver to him under 15.3. Two pixels of slack
+     costs nothing and cannot round the wrong way. */
+  width:calc(var(--tim-seat-w) - 2px);box-sizing:border-box;
+  flex-direction:column;align-items:center;gap:3px;
+  background:none;border:0;padding:0;margin:0;
+  font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  z-index:1001}
+@media(max-width:767px){#mtb-tim:not([hidden]){display:flex}}
+/* ── The orb ────────────────────────────────────────────────────────────────
+   Owner, 2026-09-21: "no black background around the top but make tims face a
+   bit bigger, make him kinda glass morph into the bar and give shade around
+   the top."
+   The black was the ring. Painting a disc of the bar's own ink around him
+   killed the white, which is what it was for, but above the bar's edge that
+   ink has nothing to be continuous WITH: it is just a black collar sitting on
+   the page. Two different jobs were being done by one shape, and only the half
+   below the edge was doing its job.
+   So the collar goes and the two jobs are split:
+   GLASS does the blending. He is translucent with the backdrop blurred behind
+   him, so his lower half samples the bar's ink and his upper half samples the
+   page, and he shades from one into the other by himself. That is the morph:
+   nothing is drawn between him and the bar, he simply becomes it. It also puts
+   the bar's own top hairline BEHIND him rather than stopping at him, which is
+   what glass does to a line.
+   SHADE does the separation. A soft radial fall-off instead of a hard rim, so
+   he sits on the page without a collar drawn round him. It is shadow, not
+   paint: there is no edge to it anywhere. */
+#mtb-tim-orb{
+  position:relative;width:60px;height:60px;border-radius:50%;
+  /* Denim, but let go of about a quarter of it so the backdrop reads through.
+     Darker at the bottom than the top, which is the direction the light comes
+     from everywhere else in this app. */
+  /* Deep denim rather than denim: --denim-deep at the foot, --denim at the
+     head, and both held at a high enough alpha that the backdrop tints him
+     without lifting him. The first pass let go of nearly half of it and his
+     top half went pale over a white dashboard, which is glass but is not him.
+     Glass you can see through is the effect; glass you can see the page
+     through more than the man is the effect eating the subject. */
+  background:linear-gradient(180deg,rgba(45,93,168,.90),rgba(20,48,98,.84));
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  backdrop-filter:blur(18px) saturate(150%);
+  /* The rim is LIGHT, not ink. A pale edge is what tells the eye a thing is
+     glass; a dark one tells it the thing is a hole. */
+  border:1px solid rgba(255,255,255,.24);
+  display:flex;align-items:center;justify-content:center;
+  /* The shade is SHADOW, not a painted halo. A radial gradient was tried and
+     it reads as a grey smudge on a light page, because a gradient has a
+     falloff you can see the end of; a blurred shadow has no edge anywhere in
+     it by construction. One spread all round for the shade, one cast downward
+     so he sits on something. */
+  box-shadow:0 0 22px 2px rgba(0,0,0,.24),
+             0 8px 18px rgba(0,0,0,.24),
+             inset 0 1px 0 rgba(255,255,255,.30),
+             inset 0 -3px 8px rgba(0,0,0,.26);
+  transition:transform .13s cubic-bezier(.22,1,.36,1),box-shadow .13s}
+#mtb-tim:active #mtb-tim-orb{transform:scale(.94);
+  box-shadow:0 0 12px 1px rgba(0,0,0,.18),
+             0 2px 6px rgba(0,0,0,.20),
+             inset 0 1px 0 rgba(255,255,255,.20),
+             inset 0 -2px 5px rgba(0,0,0,.18)}
+/* The word. Exactly the .mtb label: same size, same weight, same tracking, same
+   cream, so the row reads as six of one thing rather than five and a guest. */
+#mtb-tim-word{
+  font-size:10px;font-weight:700;letter-spacing:.01em;line-height:1;
+  color:var(--text-cream-2);transition:color .15s}
+#mtb-tim:active #mtb-tim-word{color:var(--text-cream)}
+#mtb-tim[hidden]{display:none}
+/* THE SWELL. The bar's own ink, its own hairline traced up and over the rise
+   and no border along the bottom, so what is drawn is the bar's top EDGE
+   lifting rather than an object stuck on top of it. Opaque, so the hairline
+   running across the rest of the bar stops at the rise and picks up again on
+   the far side. No drop shadow: material does not cast one onto itself.
+   The radius is past half the width so it clamps to an ellipse and the curve
+   never stops. A smaller radius leaves a flat run between two rounded corners,
+   which reads as a plinth somebody set down there. */
+/* AND THE KEY POPPING OUT OF IT. The half that was missing: the key used to
+   sit wholly INSIDE the swell, so the swell was the outermost shape and
+   nothing popped out of anything. It breaches the rise now, two thirds of its
+   height clear of it and the bottom third set into it.
+   The bevel is what reads as raised, and it is only two lines: a light inset
+   edge along the top, a dark one along the bottom. Plus a short contact shadow
+   where it meets its setting, which is the only shadow in the assembly. */
+#mtb-tim-mark{display:flex;align-items:center;justify-content:center}
+/* The key presses down into its setting and the setting does not move: the
+   swell is part of the bar, and the bar does not flinch when you touch it. */
+/* The mark is ink line art on transparency and this is a denim field, so one
+   colour in, cream out. 24px: bigger than the 22px of the tab icons beside
+   him, because he has a whole key to himself and a face at icon size stops
+   being a face, and small enough to leave the key a margin to be a key. */
+/* The figure carries its own shadow now. The glass samples whatever page is
+   behind him, and that is not a fixed colour: on a white dashboard his top
+   half goes pale and a white mark on pale blue starts to disappear. A one
+   pixel shadow costs nothing and holds him against any backdrop the glass
+   picks up. */
+#mtb-tim-mark img{width:36px;height:36px;display:block;
+  filter:invert(1) drop-shadow(0 1px 1.5px rgba(0,0,0,.45))}
+@media (prefers-reduced-motion:reduce){#mtb-tim-mark{transition:none}}
+/* The raised red. Deliberately NOT var(--red): that token flips with the theme
+   (#B22A20 light, #FF7070 dark) and this badge sits on the same ink bar in
+   both, so a token would be dimmer in light mode for no reason. One literal
+   that reads on ink, ringed in the bar's own colour so it cuts out of the
+   squircle the way a real notification does.
+   It carries the COUNT, from one up. The floating dock had a pill next to it
+   that spoke the top finding aloud, so a badge reading "1" there was the app
+   counting out loud and the badge only started at two. There is no pill on a
+   raised key, so one finding has nothing else saying it, and "1" is the whole
+   of what he can say without being tapped. */
+#mtb-tim-dot{position:absolute;top:-2px;right:-4px;z-index:2;min-width:20px;height:20px;
+  padding:0 5px;box-sizing:border-box;border-radius:10px;
+  background:#E5483B;border:2.5px solid var(--ink);color:#fff;
+  font-family:inherit;font-size:11px;font-weight:800;line-height:1;
+  font-variant-numeric:tabular-nums;
+  display:flex;align-items:center;justify-content:center;pointer-events:none}
+#mtb-tim-dot[hidden]{display:none}
+/* The i that teaches the key, once. It is NOT red: red is "there is money
+   sitting somewhere", and an introduction that borrows the alarm colour spends
+   it on nothing. Cream, the bar's own foreground, so it reads as a label on
+   the control rather than a warning about it. Retired for good the first time
+   he is opened (td_tim_met), because an introduction that repeats is clutter
+   with a reason attached. */
+#mtb-tim-dot.hint{background:var(--text-cream);color:var(--ink);font-size:11.5px;
+  font-weight:800;font-style:italic;padding:0 4px}
+/* ── AND THE PART THAT ACTUALLY GETS HIM TAPPED ─────────────────────────────
+   Owner, 2026-09-21, after five rounds of shape: "Does it scream click me
+   though... I want people to use this thing."
+   It did not, and no amount of shape was going to make it. A silent key with a
+   face on it says nothing about what it is for, and a badge reading "2" says
+   only that a number exists. The thing that ever got the old floating dock
+   tapped was the PILL beside it, which spoke the top finding out loud with the
+   dollar figure on the front of it, and that was deleted in the move to the bar
+   for a layout reason rather than a product one. This is it back.
+   "$1,240  Dana still owes on the last one" is a reason to touch something.
+   "Tim" is a name, and a name is not a reason.
+   IT RETIRES BY ITSELF, which is the whole of why it is allowed to exist. The
+   retirement is a CSS animation ending in visibility:hidden, so it leaves
+   hit-testing without any JS timer touching a style property (8.5) and without
+   anything to leak if the page is torn down mid-flight.
+   It is a transient overlay, the same category as .toast, not persistent
+   chrome: it speaks, it goes, and what is left is the badge. That is what makes
+   it an invitation rather than a nag, and it is also why 15.3 is satisfied the
+   way the toast satisfies it rather than by geometry.
+   The bar's own ink and hairline again, so it is the bar talking. It carries a
+   shadow where the socket does not, because this one really IS floating over
+   the page, and saying so is more honest than pretending it grew there. */
+#mtb-tim-say{
+  position:absolute;bottom:calc(100% + 9px);left:50%;transform:translateX(-50%);
+  /* width:max-content first, THEN the clamp. Without it the flex box sizes to
+     its MIN-content the moment wrapping is allowed, and the bubble collapses
+     to the width of the longest single word rather than growing to the
+     sentence and wrapping only if it has to. max-width is a ceiling, never a
+     width. */
+  width:max-content;max-width:min(344px,calc(100vw - 22px));box-sizing:border-box;
+  display:flex;align-items:baseline;gap:7px;
+  padding:8px 13px;border-radius:15px;
+  background:var(--ink);border:1px solid var(--ink-line);
+  box-shadow:0 5px 20px rgba(0,0,0,.34);
+  font-family:inherit;font-size:12.5px;line-height:1.3;
+  color:var(--text-cream-2);
+  opacity:0;visibility:hidden;
+  animation:tim-say 7.2s cubic-bezier(.22,1,.36,1) forwards}
+#mtb-tim-say[hidden]{display:none}
+/* The figure first and in the cream the bar uses for an active tab, because the
+   number is the reason and the sentence is the explanation. */
+#mtb-tim-say b{color:var(--text-cream);font-weight:800;font-variant-numeric:tabular-nums;
+  flex-shrink:0}
+/* Two lines, then it gives up. One line was clipping "Rick Delaney has been
+   waiting 68 days" to "...has been waiting", which throws away the half of the
+   sentence that makes it urgent: the money is in the figure, and the AGE is
+   the reason to move on it today. A second line costs nothing, and the clamp
+   is still there so a freak name cannot grow the bubble off the screen. */
+#mtb-tim-say i{font-style:normal;min-width:0;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden}
+/* The tail, so it is clearly HIS and not a toast that happened to land there. */
+#mtb-tim-say::after{
+  content:'';position:absolute;bottom:-4px;left:50%;width:9px;height:9px;
+  transform:translateX(-50%) rotate(45deg);
+  background:var(--ink);border-right:1px solid var(--ink-line);
+  border-bottom:1px solid var(--ink-line);border-radius:0 0 2px 0}
+@keyframes tim-say{
+  0%       {opacity:0;visibility:visible;transform:translateX(-50%) translateY(7px) scale(.97)}
+  7%,86%   {opacity:1;visibility:visible;transform:translateX(-50%) translateY(0) scale(1)}
+  100%     {opacity:0;visibility:hidden;transform:translateX(-50%) translateY(-4px) scale(.99)}
+}
+/* ONE rise, once, when he has something new. Not a loop: a control that moves
+   forever is a control a man learns to stop seeing, and that is worse than one
+   that never moved, because it burned the attention to get there. */
+@keyframes tim-notice{
+  0%,100%{transform:translateY(0)}
+  35%    {transform:translateY(-4px)}
+  70%    {transform:translateY(0.5px)}
+}
+#mtb-tim.noticed #mtb-tim-mark{animation:tim-notice .62s cubic-bezier(.22,1,.36,1) .12s both}
+@media (prefers-reduced-motion:reduce){
+  /* Asked the OS to stop moving things: he still SAYS it, he just does not fly
+     in or bounce to say it. The sentence is the point; the motion was only ever
+     how it arrived. */
+  #mtb-tim-say{animation:tim-say-still 7.2s steps(1,end) forwards}
+  #mtb-tim.noticed #mtb-tim-mark{animation:none}
+}
+@keyframes tim-say-still{
+  0%,86%{opacity:1;visibility:visible}
+  100%  {opacity:0;visibility:hidden}
+}
 /* More popup, sits above the More button, no swipe needed */
 #mtb-more-popup{display:none;position:fixed;inset:0;z-index:1999}
 #mtb-more-menu{position:absolute;bottom:calc(58px + env(safe-area-inset-bottom,0px));right:6px;background:var(--ink);border-radius:14px;overflow:hidden;box-shadow:0 -4px 32px rgba(0,0,0,.5);min-width:192px;animation:fadeup .15s ease}
@@ -334,6 +647,242 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .mmi:active{background:var(--ink-line)}
 .mmi svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;opacity:.7}
 .mmi.active-pg{color:var(--text-cream)}.mmi.active-pg svg{opacity:1}
+
+/* ── His thread ─────────────────────────────────────────────────────────────
+   Owner, 2026-09-21: "does the thread look like a message thread with 3 dot
+   typing when he's responding".
+   It did not. It was a centred transcript, which records what happened without
+   looking like anything a man has used before. This is the shape every phone
+   already teaches: what YOU said on the right in the app's blue, what HE said
+   on the left with his face next to it, and the corner nearest the speaker
+   squared off so the two sides read at a glance without needing a label.
+   The bubbles cap at 74% so there is always visible gutter on the far side;
+   a bubble that reaches both edges stops reading as a side. */
+.tim-msg{display:flex;align-items:flex-end;gap:7px;padding:4px 14px}
+.tim-msg.me{justify-content:flex-end}
+.tim-msg .tim-b{max-width:74%;padding:8px 12px;border-radius:16px;font-size:13.5px;
+  line-height:1.42;word-wrap:break-word;overflow-wrap:anywhere}
+.tim-msg.me .tim-b{background:var(--blue);color:#fff;border-bottom-right-radius:5px}
+.tim-msg.him .tim-b{background:var(--bg2);color:var(--text);
+  box-shadow:0 0 0 1px var(--border);border-bottom-left-radius:5px}
+/* A sentence he could not place is the one thing in here that is not an
+   answer, so it does not get to look like one. Same red the rest of the app
+   uses for a problem, on the same bubble, because it is still him talking. */
+.tim-msg.him.miss .tim-b{color:var(--c-red,#B22A20);background:var(--c-red-soft,#FAD6CF);
+  box-shadow:0 0 0 1px var(--c-red-edge,#EAB1A4)}
+.tim-msg .tim-av{width:22px;height:22px;flex-shrink:0;border-radius:var(--r-pill);overflow:hidden;
+  display:block;background:var(--bg2);box-shadow:0 0 0 1px var(--line)}
+.tim-msg .tim-av img{width:22px;height:22px;display:block}
+/* The mark is ink line art on transparency, so on the dark card the avatar
+   would be ink on ink. One colour in, the cream the rest of the dark UI uses
+   out, which is exact rather than approximate. */
+body.dark .tim-msg .tim-av img{filter:invert(1)}
+/* Typing. Three dots, and the middle of the lift is what reads as a person:
+   all three at once is a loading spinner, staggered is somebody thinking. */
+.tim-dots{display:inline-flex;align-items:center;gap:4px;height:15px}
+.tim-dots i{width:6px;height:6px;border-radius:var(--r-pill);background:var(--text3);
+  animation:tim-typing 1.15s ease-in-out infinite}
+.tim-dots i:nth-child(2){animation-delay:.16s}
+.tim-dots i:nth-child(3){animation-delay:.32s}
+@keyframes tim-typing{
+  0%,62%,100%{opacity:.28;transform:translateY(0)}
+  31%        {opacity:1;transform:translateY(-3px)}
+}
+/* ── Tim at the point of the work ───────────────────────────────────────────
+   One row, full width, under the page header. It reads as a suggestion the
+   page is making rather than as a control on a toolbar, which is why it is a
+   soft card rather than a button with a fill: a filled button up here would
+   compete with the page's own primary action, and the page's own action is
+   what the man came for. */
+.tim-atwork{
+  display:flex;align-items:center;gap:11px;width:100%;box-sizing:border-box;
+  margin:0 0 12px;padding:11px 13px;border:0;border-radius:var(--r-md);
+  background:var(--bg2);box-shadow:inset 0 0 0 1px var(--border);
+  font-family:inherit;text-align:left;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:background .12s,transform .12s}
+.tim-atwork[hidden]{display:none}
+.tim-atwork:active{transform:scale(.995);background:var(--bg3,var(--bg2))}
+.tim-atwork-mark{width:26px;height:26px;flex-shrink:0;display:flex;
+  align-items:center;justify-content:center}
+.tim-atwork-mark img{width:26px;height:26px;display:block}
+body.dark .tim-atwork-mark img{filter:invert(1)}
+.tim-atwork-say{flex:1;min-width:0}
+.tim-atwork-say b{display:block;font-size:13px;font-weight:700;color:var(--text);
+  line-height:1.3}
+.tim-atwork-say i{display:block;font-style:normal;font-size:11.5px;color:var(--text3);
+  margin-top:2px;line-height:1.35}
+.tim-atwork svg{width:16px;height:16px;flex-shrink:0;stroke:var(--text3);
+  stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-reduced-motion:reduce){.tim-atwork{transition:none}}
+
+/* ── The first move, already loaded ─────────────────────────────────────────
+   Three things he can really answer, as things to touch rather than a sentence
+   describing them. Sized and coloured like the secondary buttons the rest of
+   the app uses rather than as anything new: a chip that looks like a novelty
+   reads as a demo, and a man does not tap a demo twice. */
+.tim-chip{
+  border:0;border-radius:var(--r-pill);padding:9px 14px;
+  background:var(--bg2);box-shadow:inset 0 0 0 1px var(--border);
+  color:var(--text);font-family:inherit;font-size:12.5px;font-weight:600;
+  line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:transform .12s,background .12s}
+.tim-chip:active{transform:scale(.96);background:var(--bg3,var(--bg2))}
+@media (prefers-reduced-motion:reduce){.tim-chip{transition:none}}
+
+/* ── An answer, IN the thread ───────────────────────────────────────────────
+   Owner, 2026-09-21: "why did the mileage question go to a section where I
+   couldn't continue the convo".
+   Because it did. Every answer called _timShowAsk, which swapped the whole
+   sheet for a card with a headline, a button and NO INPUT BOX. Asking him a
+   question he could actually answer was the one thing that ended the
+   conversation, and asking one he could not was the only way to keep talking.
+   So the answer comes back as a bubble like everything else he says: the
+   figure at headline size, the working under it, and the buttons that were on
+   the card. The full rows view is still there behind Details for a man who
+   wants to see where the number came from, and closing it drops him back in
+   the thread with the box still under his thumb.
+   Wider than a plain bubble (86% vs 74%) because a tabular number plus its
+   working does not wrap gracefully at 74%, and squarer at the top so it reads
+   as a card he was handed rather than a sentence. */
+.tim-msg.him.ans .tim-b{max-width:88%;padding:11px 13px}
+.tim-ans{display:block}
+.tim-ans b{display:block;font-size:19px;font-weight:700;letter-spacing:-.35px;
+  line-height:1.24;color:var(--text);font-variant-numeric:tabular-nums}
+.tim-ans i{display:block;font-style:normal;font-size:12.5px;line-height:1.46;
+  color:var(--text2);margin-top:5px}
+.tim-ans-do{display:flex;gap:7px;margin-top:11px}
+.tim-ans-do button{flex:1;min-width:0;height:34px;border:0;border-radius:10px;
+  background:var(--blue);color:#fff;font-family:inherit;font-size:12.5px;
+  font-weight:700;cursor:pointer;padding:0 9px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;-webkit-tap-highlight-color:transparent;
+  transition:transform .12s,opacity .12s}
+/* Details is the secondary: two filled buttons in a 300px bubble is a bubble
+   with no answer in it, the same reason the mic is outlined next to the send. */
+.tim-ans-do button.alt{flex:0 0 auto;background:transparent;color:var(--text2);
+  box-shadow:inset 0 0 0 1px var(--border)}
+.tim-ans-do button:active{transform:scale(.97);opacity:.88}
+@media (prefers-reduced-motion:reduce){.tim-ans-do button{transition:none}}
+/* ── The mic AND the send, both there, always ───────────────────────────────
+   These swapped at first, on the iMessage precedent. The owner sent back a
+   screenshot of the Claude app he was typing that message in: a mic and a send
+   arrow, side by side, both present. So does ChatGPT, so does WhatsApp. The
+   swap is the messaging-app pattern, not the assistant one, and "iOS does it
+   this way" was drawn from one app.
+   Both, then. The objection the swap answered was that a send button on an
+   empty box is a dead control, and that is still true, so the arrow DIMS and
+   stops taking taps until there is something to send. Present, so the thumb
+   knows where it will be; inert, so it never fires on nothing.
+   This was :placeholder-shown, chosen so it would track what is really in the
+   box with no event to miss. Elegant, and wrong on the platform that matters:
+   WebKit does not re-evaluate that pseudo-class when the value is written from
+   script, and every interesting write here IS from script (the send clears the
+   box, dictation fills it, a chip fills it). On an iPhone, the only place the
+   mic exists at all, the arrow stayed lit and tappable over an empty box after
+   every send. Caught by [webkit] "the moment there is text, the arrow takes
+   over": the mic's fill stayed ink after the value changed.
+   So the row carries data-empty and the stylesheet reads it. An attribute
+   change invalidates reliably everywhere, it is one source of truth rather
+   than two that can disagree, and 8.5 still holds: an attribute is not a style
+   property, and _timSetSaid makes every programmatic write fire input, so the
+   dictation result, the paste, the autofill and the undo all still land.
+   Two filled buttons side by side on a 390px row is a row with no answer in
+   it, so exactly one of these is ever filled, and WHICH one depends on whether
+   there is anything in the box. */
+#_tim-send{display:flex;align-items:center;justify-content:center;
+  transition:opacity .15s,transform .15s}
+#_tim-send[data-empty="1"]{opacity:.32;pointer-events:none}
+#_tim-send:active{transform:scale(.94);opacity:.9}
+
+/* ── A SECTION THAT IS ANSWERED SAYS ONE LINE ────────────────────────────────
+   Owner, 2026-09-22: "its overwhelming even to me", and then, on whether this
+   should be a wizard: a wizard trades taps for hand holding, and the taps are
+   the expensive part. Same day proposals close at about twice the rate of
+   follow ups, so the thing being optimised is seconds from seeing the job to
+   pressing send, standing on a driveway with the homeowner watching. A wizard
+   also hides the document at the exact moment he turns the phone around.
+   So: one screen that starts nearly empty and grows only as he answers. A card
+   he has filled in folds to its label and its figure; the one he has not is
+   open and waiting. Driven by an attribute, because that is what invalidates
+   reliably (see the mic), and no JS touches a style property.
+   display:none on the children rather than height, per 8.5. */
+.tm-fold{display:flex;align-items:center;gap:10px;width:100%;padding:13px 15px;border:0;
+  background:none;font-family:inherit;cursor:pointer;text-align:left}
+.tm-fold-l{font-size:13.5px;font-weight:700;color:var(--text2);min-width:0}
+/* WRAPS, never ellipsis. With nowrap the hidden-rate line truncated to "not
+   on the pro..." and the one word that mattered was the one that got cut.
+   These values are figures and short counts, so wrapping costs a second line
+   only in the rare case that needs it, and an ellipsis on a contract term is
+   worse than a tall row. */
+.tm-fold-v{flex:1;min-width:0;text-align:right;font-size:13.5px;font-weight:800;color:var(--text);
+  font-variant-numeric:tabular-nums;line-height:1.35}
+.tm-fold-c{flex-shrink:0;color:var(--text3);display:flex}
+.card[data-fold="1"]{padding:0}
+.card[data-fold="1"] > *:not(.tm-fold){display:none}
+.card[data-fold="0"] > .tm-fold{display:none}
+
+/* The listening panel when there is no sheet to sit in: dictating the scope
+   happens on the estimate page. Fixed to the bottom so the Done button is
+   where the thumb already is, above the tab bar so it is not half covered.
+   Above the T&M and BYO bottom bar too (z-index 1002): at 70 the bar sat on
+   the lower half of the panel and hid Done talking (owner, 2026-09-26). */
+#_tim-listen-host{position:fixed;left:0;right:0;bottom:0;z-index:1010}
+/* !important: the panel carries margin-bottom:-28px inline for when it sits
+   in Tim's sheet, and inline beats this rule, so on its own the panel hung
+   28px off the bottom of the screen. */
+#_tim-listen-host #_tim-listen{margin:0!important}
+
+/* ── Talking is the easy way in ─────────────────────────────────────────────
+   Owner, 2026-09-22: "I really want people to use Tim to speak it since speak
+   is easier then typing."
+   On an EMPTY box the arrow above is already dimmed and inert, so the row had
+   no primary at all and the one thing he could actually do, talk, was the
+   quietest control on it. Empty, the mic is the filled ink key. The moment
+   there is text the arrow takes over and the mic drops back to an outline, so
+   there is never more than one filled button and never a dead one.
+   Driven off the row's data-empty like the arrow, and off the same single
+   answer, so the two can never disagree about which one is the primary. */
+#_tim-mic{background:var(--bg2);box-shadow:0 0 0 1px var(--border);
+  transition:background .15s,box-shadow .15s,transform .15s}
+#_tim-mic svg{stroke:var(--text2);transition:stroke .15s}
+#_tim-mic[data-empty="1"]{background:var(--ink);box-shadow:none}
+#_tim-mic[data-empty="1"] svg{stroke:var(--text-cream,#fff)}
+#_tim-mic:active{transform:scale(.94)}
+
+/* ── The send ───────────────────────────────────────────────────────────────
+   Owner, 2026-09-21: "do they have that crisp iOS send shutter where it flows".
+   They did not: the thread is redrawn with innerHTML, so a new bubble simply
+   existed, with no more ceremony than a table row.
+   The bubble comes UP off the box it was typed in, overshoots by a hair and
+   settles. transform-origin is the corner nearest its own speaker, so it grows
+   out of the side it belongs to rather than out of the middle of the sheet:
+   that is the whole reason the iOS one reads as "sent" instead of "appeared".
+   ONLY the newest bubble carries .in. innerHTML replaces every node on every
+   draw, so an entrance on the class alone would replay the entire history each
+   time anybody said anything. */
+@keyframes tim-send{
+  0%  {opacity:0;transform:translateY(12px) scale(.90)}
+  55% {opacity:1;transform:translateY(-2px) scale(1.015)}
+  100%{opacity:1;transform:translateY(0) scale(1)}
+}
+.tim-msg.in .tim-b{animation:tim-send .32s cubic-bezier(.22,1,.36,1) both}
+.tim-msg.me.in .tim-b{transform-origin:100% 100%}
+.tim-msg.him.in .tim-b{transform-origin:0 100%}
+/* His avatar fades rather than springing: two things springing out of one
+   corner reads as a glitch, not a message. */
+@keyframes tim-av-in{from{opacity:0}to{opacity:1}}
+.tim-msg.him.in .tim-av{animation:tim-av-in .32s ease both}
+@media (prefers-reduced-motion:reduce){
+  /* Still three dots, so the state is still legible. They just hold still, and
+     js/tim.js skips the delay entirely so the reply is there immediately. */
+  .tim-dots i{animation:none;opacity:.55}
+  .tim-msg.in .tim-b,.tim-msg.him.in .tim-av{animation:none}
+}
+/* The waveform: 44 hairline bars mirrored about a centre line. Owner rejected
+   the chunky random blocks, and rejected holding the mic at all, so the bars
+   only ever say "still listening" and never ask for a thumb. */
+.tim-wave{display:flex;align-items:center;justify-content:space-between;height:32px;gap:2px}
+.tim-wave span{width:2px;border-radius:1px;background:var(--hat);flex:none}
+.tim-wave span.edge{background:rgba(242,168,28,.28)}
 
 /* ── Top bar ── */
 .tbar{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;gap:14px;flex-wrap:wrap}
@@ -417,6 +966,16 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    .td-boot-skel shimmer card (js/dashboard.js _dashApplySkeletons), removed in
    one swap when the sync settles. Non-destructive: the real markup stays. */
 #pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
+/* The boot shimmer is ONE light band sweeping the whole screen on a diagonal
+   (owner-approved 2026-09-24), not each bar flickering on its own. The gradient
+   is anchored to the page: _dashApplySkeletons sets --sx (the bar's page x plus a
+   share of its y) and a delay that phase-locks every bar to one clock. The
+   td-skel-sweep and td-data-in keyframes live in js/brand-look.js (shared with
+   the client hub). */
+#pg-dash .td-boot-skel .td-skel{background:linear-gradient(90deg,var(--border) 0,var(--border) 40%,var(--bg) 50%,var(--border) 60%,var(--border) 100%);background-size:900px 100%;animation:td-skel-sweep 1.3s linear infinite}
+/* Data lands: each card's real content comes into focus where its shimmer was. */
+#pg-dash .td-data-in>*{animation:td-data-in .3s cubic-bezier(.22,1,.36,1) both}
+@media (prefers-reduced-motion:reduce){#pg-dash .td-boot-skel .td-skel{animation:none}#pg-dash .td-data-in>*{animation:none}}
 /* ── The Dispatch crew map (js/day-map.js) ──────────────────────────────────
    Owner 2026-09-05: "like Life360 but better." Dark, full-bleed, with the crew
    sheet floating over it. Deliberately a single dark world rather than a
@@ -948,6 +1507,256 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .detail-actions .btn{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);color:var(--text-cream);height:34px;padding:0 14px;font-size:12px;box-shadow:none;white-space:nowrap;flex-shrink:0}
 .detail-actions .btn:hover{background:rgba(255,255,255,.18)}
 .detail-actions .btn-p{background:var(--denim);border-color:transparent}
+/* ═══ TIME & MATERIALS, iOS GROUPED ════════════════════════════════════════
+   Owner, 2026-09-23: "is it premium like a true iOS app?" It was a web form: six
+   button styles, a box inside a box inside a box, a column of ✕ buttons and
+   three rows of chrome before the first field. This is the inset-grouped list
+   iOS itself uses in Settings, Health and Wallet: one tint, flat groups on a
+   grey page, hairline separators inset from the left, section labels OUTSIDE
+   the group, and footnotes under it. Scoped to the T&M page; every colour is an
+   existing token, so the in-app dark mode (body.dark) flips it for free. */
+:is(#gei-tm-page,#gei-byo-page){background:var(--bg2);--ios-tint:var(--blue);--ios-grp:var(--bg-card);--ios-sep:var(--line-2);--ios-2:var(--text3);--ios-law:#8A4E00}
+body.dark :is(#gei-tm-page,#gei-byo-page){--ios-law:#F0B84A}
+:is(#gei-tm-page,#gei-byo-page) .ios-nav{display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:4px 4px 0}
+:is(#gei-tm-page,#gei-byo-page) .ios-navbtn{border:0;background:none;color:var(--ios-tint);font-family:inherit;font-size:17px;font-weight:400;padding:10px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;-webkit-tap-highlight-color:transparent}
+:is(#gei-tm-page,#gei-byo-page) .ios-navbtn.bold{font-weight:600}
+:is(#gei-tm-page,#gei-byo-page) .ios-nav{position:relative}
+:is(#gei-tm-page,#gei-byo-page) .ios-navtitle{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:17px;font-weight:600;color:var(--text);white-space:nowrap;pointer-events:none}
+/* Dark: the ghost Add is words, not a blue disc with blue words on it; and
+   Tim's ink figure turns white on his dark card. */
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-pill.ghost{background:none}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-tim-h img{filter:invert(1)}
+:is(#gei-tm-page,#gei-byo-page) .ios-navbtn svg{width:12px;height:20px}
+:is(#gei-tm-page,#gei-byo-page) .ios-large{padding:0 20px 18px}
+:is(#gei-tm-page,#gei-byo-page) .ios-title{display:flex;align-items:center;gap:6px;font-family:var(--font-display);font-size:30px;font-weight:800;letter-spacing:-.7px;line-height:1.12;color:var(--text);margin:0;border:0;background:none;padding:0;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+/* ── BUILD YOUR OWN LINES (2026-09-23) ── */
+#gei-byo-page .ios-check{position:relative;flex-shrink:0;width:44px;height:44px;margin:-8px 0 -8px -12px;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;padding:0}
+#gei-byo-page .ios-check::before{content:"";position:absolute;width:24px;height:24px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--ios-2)}
+#gei-byo-page .ios-check.on::before{background:var(--ios-tint);border-color:var(--ios-tint)}
+#gei-byo-page .ios-check svg{position:relative;width:14px;height:14px;z-index:1}
+#gei-byo-page .ios-check:disabled{cursor:default}
+#gei-byo-page .byo-line.off .ios-lbl,#gei-byo-page .byo-line.off .ios-fact{opacity:.45}
+#gei-byo-page .ios-row.byo-line{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;align-items:start}
+#gei-byo-page .byo-line .byo-title{font-size:17px;line-height:22px;overflow-wrap:anywhere;min-width:0}
+#gei-byo-page .byo-line .ios-fact{line-height:22px;text-align:right}
+#gei-byo-page .byo-line .ios-check{margin:-11px 0 -11px -12px;align-self:start}
+#gei-byo-page .byo-line .byo-note{grid-column:2/4;font-size:14px;line-height:1.35;color:var(--ios-2);margin-top:2px;overflow-wrap:anywhere;min-width:0}
+#gei-byo-page .byo-line.off .byo-title,#gei-byo-page .byo-line.off .byo-note{opacity:.45}
+#gei-byo-page .ios-fact{flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:500;color:var(--text)}
+#gei-byo-page .ios-fact.ask{color:var(--ios-tint);font-weight:600}
+#gei-byo-page .byo-total .ios-fact{font-size:24px;font-weight:700;letter-spacing:-.4px}
+#gei-byo-page .ios-val input#byo-dep-in{width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-rename{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-8px 0 -8px -6px;color:var(--ios-tint);flex-shrink:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-rename svg{width:20px;height:20px}
+:is(#gei-tm-page,#gei-byo-page) .ios-sub{font-size:15px;color:var(--ios-2);margin-top:5px;line-height:1.4}
+:is(#gei-tm-page,#gei-byo-page) .ios-sub b{color:var(--text);font-weight:600}
+:is(#gei-tm-page,#gei-byo-page) .ios-sub button{border:0;background:none;padding:0 0 0 4px;color:var(--ios-tint);font:inherit;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-sec{margin:0 0 28px}
+/* Section titles at iOS's "increased prominence": the size of a row, bold, in
+   the text colour, as written. The small grey capitals they replace are how
+   iOS labels a settings list, and on a page he has to work down, the owner
+   read straight past them: "titles themselves aren't pronounced" (2026-09-23). */
+:is(#gei-tm-page,#gei-byo-page) .ios-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:19px;font-weight:700;letter-spacing:-.2px;color:var(--text);padding:0 4px 10px}
+:is(#gei-tm-page,#gei-byo-page) .ios-h button{border:0;background:none;padding:0;font-family:inherit;font-size:15px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--ios-tint);cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-group{background:var(--ios-grp);border-radius:12px;overflow:hidden}
+:is(#gei-tm-page,#gei-byo-page) .ios-row{position:relative;display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;min-height:50px;padding:11px 16px;margin:0;border:0;background:var(--ios-grp);font-family:inherit;font-size:17px;line-height:1.3;color:var(--text);text-align:left;-webkit-tap-highlight-color:transparent}
+:is(#gei-tm-page,#gei-byo-page) .ios-row::after{content:"";position:absolute;left:16px;right:0;bottom:0;height:1px;background:var(--ios-sep);transform:scaleY(.5);transform-origin:bottom;pointer-events:none}
+:is(#gei-tm-page,#gei-byo-page) .ios-row.nosep::after,:is(#gei-tm-page,#gei-byo-page) .ios-group>.ios-row:last-child::after,:is(#gei-tm-page,#gei-byo-page) .ios-group>div:last-child>.ios-row:last-child::after,:is(#gei-tm-page,#gei-byo-page) .ios-group>div:last-child>div:last-child>.ios-row:last-child::after{display:none}
+:is(#gei-tm-page,#gei-byo-page) button.ios-row{cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-num{width:18px;flex-shrink:0;font-size:15px;color:var(--ios-2);font-variant-numeric:tabular-nums}
+:is(#gei-tm-page,#gei-byo-page) .ios-lbl{flex:1;min-width:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-lbl small{display:block;font-size:14px;color:var(--ios-2);margin-top:2px;line-height:1.35}
+:is(#gei-tm-page,#gei-byo-page) .ios-val{display:flex;align-items:center;gap:1px;flex-shrink:0;color:var(--ios-2);font-size:17px}
+:is(#gei-tm-page,#gei-byo-page) .ios-val input{min-width:2ch;max-width:140px;border:0!important;background:none!important;box-shadow:none!important;outline:none;text-align:right;font-family:inherit;font-size:17px;color:var(--text);width:108px;padding:0!important;height:auto!important;min-height:0!important;border-radius:0!important}
+:is(#gei-tm-page,#gei-byo-page) .ios-val input::placeholder{color:var(--ios-2);opacity:.6}
+:is(#gei-tm-page,#gei-byo-page) .ios-val input[readonly]{color:var(--ios-2)}
+:is(#gei-tm-page,#gei-byo-page) .ios-chev{flex-shrink:0;color:var(--ios-2);opacity:.55;font-size:22px;line-height:1;margin-right:-4px}
+:is(#gei-tm-page,#gei-byo-page) .ios-link{color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-textbtn{flex-shrink:0;border:0;background:none;padding:6px 2px 6px 10px;font-family:inherit;font-size:17px;font-weight:600;color:var(--ios-tint);cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-foot{font-size:13px;color:var(--ios-2);padding:8px 16px 0;line-height:1.45}
+:is(#gei-tm-page,#gei-byo-page) .ios-foot.law{color:var(--ios-law)}
+:is(#gei-tm-page,#gei-byo-page) .ios-step{display:flex;align-items:center;flex-shrink:0;background:var(--bg2);border-radius:9px;overflow:hidden}
+:is(#gei-tm-page,#gei-byo-page) .ios-step button{width:44px;height:32px;border:0;background:none;color:var(--text);font-size:20px;font-family:inherit;cursor:pointer;line-height:1}
+:is(#gei-tm-page,#gei-byo-page) .ios-step button+span,:is(#gei-tm-page,#gei-byo-page) .ios-step span+button{border-left:1px solid var(--ios-sep)}
+:is(#gei-tm-page,#gei-byo-page) .ios-step span{min-width:34px;text-align:center;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch{appearance:none;-webkit-appearance:none;flex-shrink:0;position:relative;width:51px;height:31px;margin:0;border-radius:31px;background:var(--line-2);cursor:pointer;transition:background-color .2s ease}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch::before{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.16);transition:transform .2s ease}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch:checked{background:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch:checked::before{transform:translateX(20px)}
+:is(#gei-tm-page,#gei-byo-page) .ios-switch:disabled{opacity:.5;cursor:default}
+:is(#gei-tm-page,#gei-byo-page) .ios-seg{display:flex;flex-shrink:0;background:var(--bg2);border-radius:9px;padding:2px}
+:is(#gei-tm-page,#gei-byo-page) .ios-seg button{border:0;background:none;border-radius:7px;padding:6px 10px;font-family:inherit;font-size:13px;font-weight:500;color:var(--text);cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-seg button.on{background:var(--ios-grp);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:52px;border-radius:14px;border:0;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn+.ios-btn{margin-top:10px}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn-fill{background:var(--ios-tint);color:#fff}
+/* White on the light dark-mode blue measures under 3:1; the filled button takes a deeper blue there. */
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-btn-fill{background:#2C74C9}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn-tint{background:var(--blue-lt);color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-btn:active,:is(#gei-tm-page,#gei-byo-page) button.ios-row:active{opacity:.7}
+:is(#gei-tm-page,#gei-byo-page) .ios-links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;margin-top:14px}
+:is(#gei-tm-page,#gei-byo-page) .ios-links button{border:0;background:none;padding:6px 0;font-family:inherit;font-size:15px;color:var(--ios-tint);cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-say{display:block;width:100%;box-sizing:border-box;min-height:96px;padding:14px 16px;border:0!important;outline:none;background:none!important;box-shadow:none!important;resize:none;font-family:inherit;font-size:17px;line-height:1.4;color:var(--text)}
+:is(#gei-tm-page,#gei-byo-page) .ios-say::placeholder{color:var(--ios-2);opacity:.7}
+:is(#gei-tm-page,#gei-byo-page) .ios-dot{flex-shrink:0;align-self:flex-start;margin-top:8px;width:9px;height:9px;border-radius:50%;background:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-row.law .ios-dot{background:var(--ios-law)}
+:is(#gei-tm-page,#gei-byo-page) .ios-dot.done{background:var(--c-green,#117841);margin-top:0;align-self:center}
+:is(#gei-tm-page,#gei-byo-page) .ios-tag{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ios-tint);margin-left:4px}
+:is(#gei-tm-page,#gei-byo-page) .ios-row.law .ios-tag,:is(#gei-tm-page,#gei-byo-page) .ios-tag.req{color:var(--ios-law)}
+:is(#gei-tm-page,#gei-byo-page) .ios-tag.opt{color:var(--ios-2)}
+/* ── THUMBS (2026-09-23) ─────────────────────────────────────────────────
+   Earl: 58, thick thumbs, reading glasses in the truck. Every control on this
+   page is at least 44 by 44, which is Apple's own floor, measured by
+   tests/e2e-tm-angry-contractor.spec.js. Segments and pills keep their look;
+   they just stop being 27px tall targets inside a 50px row. */
+:is(#gei-tm-page,#gei-byo-page) .ios-navbtn{min-height:44px;min-width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-sub button{min-height:44px;margin:-12px 0;padding-top:0;padding-bottom:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead button.s{min-height:44px;min-width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-pill{min-height:44px;min-width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-textbtn{min-height:44px;min-width:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-step button{height:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-seg button{min-height:44px;min-width:44px;padding:6px 12px}
+:is(#gei-tm-page,#gei-byo-page) .ios-links button{min-height:44px}
+:is(#gei-tm-page,#gei-byo-page) .ios-h button{min-height:44px;min-width:44px}
+.toast .tm-undo{min-height:44px;min-width:60px;border:0;background:none;color:var(--blue);font:inherit;font-weight:700;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-lbl b{font-weight:600}
+:is(#gei-tm-page,#gei-byo-page) .ios-foot b{color:var(--text);font-weight:600}
+/* Swipe to delete, and Edit for anyone who does not swipe. The row slides over
+   a red Delete; Edit shows a red minus on every row instead. */
+:is(#gei-tm-page,#gei-byo-page) .ios-swipe{position:relative;overflow:hidden}
+:is(#gei-tm-page,#gei-byo-page) .ios-swipe>.ios-row{z-index:1;touch-action:pan-y;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+:is(#gei-tm-page,#gei-byo-page) .ios-swipe.dragging>.ios-row{transition:none}
+:is(#gei-tm-page,#gei-byo-page) .ios-del{position:absolute;top:0;right:0;bottom:0;z-index:0;width:88px;border:0;background:#FF3B30;color:#fff;font-family:inherit;font-size:15px;font-weight:500;line-height:1.2;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-minus{flex-shrink:0;width:22px;height:22px;border-radius:50%;border:0;background:#FF3B30;color:#fff;font-size:17px;font-weight:700;line-height:22px;padding:0;cursor:pointer}
+/* The page itself: the grey ground iOS groups sit on, and room at the bottom
+   so the last button clears the tab bar and Tim. */
+:is(#gei-tm-page,#gei-byo-page) .ios-note>button{min-height:50px}
+:is(#gei-tm-page,#gei-byo-page) .ios-note>button>span>span:first-child{font-size:17px!important;font-weight:400!important}
+:is(#gei-tm-page,#gei-byo-page) .ios-note>button>span>span:last-child{font-size:14px!important;color:var(--ios-2)!important}
+:is(#gei-tm-page,#gei-byo-page) #tm-rail-money{background:var(--ios-grp);border-radius:12px;padding:14px 16px 6px;margin-bottom:24px}
+:is(#gei-tm-page,#gei-byo-page) #tm-rail-money:empty{display:none}
+/* ── TWO STEPS AND A BAR (2026-09-23) ─────────────────────────────────────
+   "Does it look like something a pro UX designer would ship? I don't think
+   so." It did not: four sizes of bold heading, a rule and a card and a tinted
+   card, the app's own bar over the page's bar, and Send 2,400px down. Now:
+   one large title, two step headings in one style (a number that becomes a
+   green check), plain groups under them, and the button pinned to the bottom. */
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead{display:flex;align-items:center;gap:10px;margin:40px 4px 12px}
+:is(#gei-tm-page,#gei-byo-page) #tm-step-1{margin-top:8px}
+:is(#gei-tm-page,#gei-byo-page) #tm-nte-sub:empty{display:none}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead .n{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--ios-2);color:var(--ios-2);font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .n{background:var(--ios-tint);border-color:var(--ios-tint);color:#fff}
+/* Dark: the tint is a light blue there, and white on it read at 2.8:1. The
+   step being worked on is now common (How it bills waits for his check), so
+   its number has to read. Dark ink on the light tint. */
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .n{color:#0b1220}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .n{background:var(--c-green,#117841);border-color:var(--c-green,#117841);color:#fff}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead .n svg{width:14px;height:14px}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead .t{flex:1;min-width:0;font-size:22px;font-weight:700;letter-spacing:-.3px;line-height:1.15;color:var(--text)}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead button.s{border:0;background:none;padding:6px 0 6px 12px;font-family:inherit;font-size:17px;font-weight:400;color:var(--ios-tint)!important;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead .s{flex-shrink:0;max-width:55%;text-align:right;font-size:15px;color:var(--ios-2);line-height:1.3}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .s{color:var(--c-green,#117841)}
+:is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .s{color:var(--ios-tint)}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .s{color:var(--green)}
+:is(#gei-tm-page,#gei-byo-page) .ios-links.left{justify-content:flex-start;padding:0 16px;margin-top:4px}
+/* Tim's finds are a list of step names. The reason opens on a tap. */
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl small{display:none}
+/* The No beside Tim's Add, and Skip under a question with a box (2026-09-26). */
+:is(#gei-tm-page,#gei-byo-page) .ios-no{flex:0 0 auto;border:0;background:none;color:var(--text2);font:inherit;font-size:15px;font-weight:600;padding:8px 10px;cursor:pointer;min-height:44px;min-width:48px}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-skip{padding-top:0;min-height:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-skip .ios-no{padding-left:0;font-size:14px}
+/* Where the bar sends him: lit for a moment so he sees what he is checking. */
+@keyframes tmGuide{0%{box-shadow:0 0 0 0 rgba(37,99,235,.0)}20%{box-shadow:0 0 0 4px rgba(37,99,235,.35)}100%{box-shadow:0 0 0 4px rgba(37,99,235,.18)}}
+:is(#gei-tm-page,#gei-byo-page) .tm-guide{border-radius:14px;animation:tmGuide 1.2s ease-out forwards}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-swipe.why .ios-lbl small{display:block}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl{cursor:pointer}
+/* The stepper shows the count; "solo" under it said it again. */
+:is(#gei-tm-page,#gei-byo-page) #tm-i-crew-label{display:none}
+/* THE BAR. Phone only: on a desktop the rail beside the page holds the
+   buttons, as it always has. Frosted, over the page, clear of the home bar. */
+:is(#tm-dock,#byo-dock){display:none}
+@media(max-width:767px){
+  :is(#tm-dock,#byo-dock){position:fixed;left:0;right:0;bottom:0;z-index:1002;display:flex;align-items:center;gap:10px;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));
+    background:color-mix(in srgb,var(--bg2) 82%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
+    border-top:.5px solid var(--line-2)}
+  :is(#tm-dock,#byo-dock) .ios-btn{flex:1;min-width:0;margin:0;height:50px}
+  :is(#tm-dock,#byo-dock) .ios-btn-tint{flex:0 0 auto;width:auto;padding:0 20px}
+  /* Tim as he is on the tab bar: the denim orb, the figure in white. The
+     ink figure on a white disc vanished on the dark bar. */
+  :is(#tm-dock,#byo-dock) .tm-dock-tim{flex:0 0 auto;width:50px;height:50px;border-radius:50%;border:1px solid rgba(255,255,255,.24);padding:0;
+    background:linear-gradient(180deg,rgba(45,93,168,.95),rgba(20,48,98,.92));
+    box-shadow:0 2px 6px rgba(15,23,42,.22);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  :is(#tm-dock,#byo-dock) .tm-dock-tim img{filter:invert(1)}
+  :is(#tm-dock,#byo-dock) .tm-dock-tim:active{transform:scale(.94)}
+  :is(#gei-tm-page,#gei-byo-page) #tm-actions-wrap .ios-links{margin-top:0}
+  /* The bar carries Send and Sign; the page's foot keeps the three links. */
+  #tm-actions-wrap .ios-btn{display:none}
+  #byo-actions-wrap .ios-btn{display:none}
+  /* On a phone the rail's figures are in The price group (_byoRenderPrice);
+     the rail keeps its fields in the page so every id still resolves. */
+  #gei-byo-page .summary-rail .summary-card>*:not(#byo-actions-wrap){display:none!important}
+  #gei-byo-page .summary-rail .summary-card{background:none;box-shadow:none;border:0;padding:0}
+  :is(#gei-tm-page,#gei-byo-page){padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  /* Anything the page scrolls to (a focused field, a button brought into
+     view) stops above the bar instead of sliding under it. */
+  html:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])){scroll-padding-bottom:calc(96px + env(safe-area-inset-bottom,0px));scroll-padding-top:56px}
+  /* FULL SCREEN WHILE HE WORKS. The app's black bar sat over the page's own
+     Back and Save, and the tab bar and Tim's orb floated over the form. An
+     editor on an iPhone has one bar at the top and its own at the bottom.
+     :has() rather than a class a script must remember to take off: the moment
+     the T&M page is not the one showing, the app's bars are back. */
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) :is(#mobile-topbar,#mobile-tabbar,#mtb-tim){display:none!important}
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) #app{padding-top:0;padding-bottom:0}
+  /* No enter animation here: a transform animation, even finished and held,
+     makes the page the box a fixed bar is pinned to, and the bar rode 1,000px
+     down the page instead of sitting on the screen's bottom edge. The ground
+     is the page's grey edge to edge, or a lighter strip shows down the side. */
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) #pg-est-generic{padding-top:0;animation:none}
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])){background:var(--bg2)}
+  /* A toast sat on top of Send (Earl, 2026-09-23). On this page it rises
+     above the bar, and its close is a thumb-sized target. */
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))!important;left:16px;right:16px;max-width:none}
+  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page):not([style*="none"])) .toast-close{min-width:44px;min-height:44px;margin:-10px -12px -10px 0}
+  /* The nav bar stays put while the page scrolls under it. The wrap is
+     display:contents so the bar's sticky range is the whole page. */
+  :is(#gei-tm-page,#gei-byo-page) #tm-topbar-wrap{display:contents}
+  /* 94%, not 82%: the large title scrolls up under this bar, and at 82% the
+     customer's name read through it on top of "Time & Materials". */
+  :is(#gei-tm-page,#gei-byo-page) .ios-nav{position:sticky;top:0;z-index:20;margin:0 -16px;padding:env(safe-area-inset-top,0px) 8px 0;
+    background:color-mix(in srgb,var(--bg2) 94%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+  :is(#gei-tm-page,#gei-byo-page) .ios-large{padding:2px 4px 6px}
+  /* One line under the name: what it is and where. It ends in … rather than
+     breaking "412 Bell / St" across two lines. */
+  :is(#gei-tm-page,#gei-byo-page) .ios-sub{display:flex;align-items:baseline;white-space:nowrap}
+  :is(#gei-tm-page,#gei-byo-page) .ios-sub .txt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  :is(#gei-tm-page,#gei-byo-page) .ios-sub button{flex-shrink:0;padding-left:8px}
+  :is(#tm-dock,#byo-dock) .ios-btn+.ios-btn{margin-top:0}
+}
+/* Groups lift off the page a little in light mode, so a white list on a pale
+   grey page reads as a thing and not as a lighter patch of the same thing. */
+:is(#gei-tm-page,#gei-byo-page) .ios-group{box-shadow:0 1px 2px rgba(20,24,31,.06),0 0 0 .5px rgba(20,24,31,.06)}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-group{box-shadow:none}
+/* ── TIM'S CARD ────────────────────────────────────────────────────────────
+   What Tim thinks was left out must never look like what is IN the job. It
+   was the same white rows under a grey label, one list running into the next.
+   Now it is Tim's own tinted card, with his mark, and a filled Add on each. */
+:is(#gei-tm-page,#gei-byo-page) .ios-tim{background:var(--blue-lt)!important;box-shadow:none!important}
+/* Tim's question: the answer field sits on its own row under the question, full width, 16px so iOS does not zoom. */
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-row{gap:10px;padding-top:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-in{flex:1;min-width:0;min-height:44px;box-sizing:border-box;padding:0 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;font-size:16px}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-in:focus{outline:none;border-color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-row{background:var(--blue-lt)}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-row::after{background:var(--ios-tint);opacity:.22}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim-h{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
+:is(#gei-tm-page,#gei-byo-page) .ios-tim-h .who{flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-pill{flex-shrink:0;border:0;border-radius:999px;background:var(--ios-tint);color:#fff;font-family:inherit;font-size:15px;font-weight:600;padding:7px 15px;cursor:pointer}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-pill{background:#2C74C9}
+:is(#gei-tm-page,#gei-byo-page) .ios-pill.ghost{background:none;color:var(--ios-tint);padding:7px 4px}
+:is(#gei-tm-page,#gei-byo-page) .split-est{padding-bottom:120px}
+:is(#gei-tm-page,#gei-byo-page) .summary-card{background:none;box-shadow:none;border:0;padding:0}
+:is(#gei-tm-page,#gei-byo-page) #tm-blk-mat.card,:is(#gei-tm-page,#gei-byo-page) #tm-blk-excl .card{border-radius:12px;box-shadow:none;border:0}
+
 /* ── Estimate type chooser ── */
 .chooser-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .chooser-card{background:var(--bg-card);border-radius:14px;border:1.5px solid var(--border);padding:24px 22px 20px;cursor:pointer;text-align:left;font-family:inherit;color:var(--text);transition:transform .12s,box-shadow .15s,border-color .15s;display:flex;flex-direction:column;gap:6px;position:relative;overflow:hidden}
@@ -972,6 +1781,19 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .chooser-amber .chooser-card-cta{color:var(--amber)}
 .chooser-green .chooser-card-cta{color:var(--green)}
 @media(max-width:560px){.chooser-grid{grid-template-columns:1fr}}
+/* ON A PHONE, ALL THREE FIT. Each card was ~320px tall with four bullets and a
+   Start link, so Time & Materials sat below the fold and he had to scroll past
+   two sales pitches to reach the one he came for. A phone card is the icon, the
+   name and one line; the bullets stay on the wider layout where there is room. */
+@media(max-width:560px){
+  .chooser-grid{gap:10px}
+  .chooser-card{display:grid;grid-template-columns:44px minmax(0,1fr);column-gap:14px;row-gap:2px;padding:14px 16px;align-items:center}
+  .chooser-card-eyebrow{grid-column:2;grid-row:1}
+  .chooser-card-icon{grid-column:1;grid-row:1/span 3;margin:0;align-self:center}
+  .chooser-card-title{grid-column:2;font-size:19px}
+  .chooser-card-sub{grid-column:2;margin:0;font-size:12.5px;line-height:1.35}
+  .chooser-card-bullets,.chooser-card-cta{display:none}
+}
 
 /* ── Kanban ── */
 .kanban{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px}
@@ -1284,49 +2106,12 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
    instruction, so it's actionable on a phone with no keyboard (owner report,
    2026-08-19: the old text-only "press Ctrl+Shift+R" toast is a dead end on mobile). */
 .toast-update-btn{background:var(--green,#0E6B39);color:#fff;border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;flex-shrink:0;-webkit-tap-highlight-color:transparent}
-/* Boot exit: the overlay LIFTS AWAY, gentle zoom + blur dissolve, not a flat fade.
-   Paired with the card waterfall underneath, the whole reveal reads as one motion. */
-#supa-boot-overlay.td-fadeout{opacity:0;transform:scale(1.05);filter:blur(10px);transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1)}
-/* ── Boot screen (redesigned, owner request 2026-07-04) ──
-   Shared by the static overlay AND the JS rebuilder, one look, two entry points.
-   White-label paths untouched: brand color still overrides the background inline,
-   a custom logo replaces the mark+name block entirely. */
+/* Boot screen (owner-approved design 2026-09-24). The look lives in ONE place,
+   tdBootFill (js/brand-look.js), shared with the "updating" screen and the client
+   hub. Exit: the logo fades out first (.bt-in, .42s), then the screen itself goes
+   (.3s, starting .3s in), so the dashboard is never seen through a half-faded logo. */
 #supa-boot-overlay{overflow:hidden}
-/* Ambient glow: a huge soft radial light that slowly drifts and swells behind the
-   mark: the "alive" feeling. Brand-tinted inline on white-label boots. */
-.sbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:sbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
-@keyframes sbo-drift{from{transform:translate(-56%,-52%) scale(1)}to{transform:translate(-44%,-46%) scale(1.14)}}
-.sbo-center{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:0 24px;position:relative}
-.sbo-mark{position:relative;width:64px;height:64px;border-radius:16px;background:var(--grad-mark);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.4);animation:td-logoin .5s cubic-bezier(.22,1,.36,1) both,sbo-breathe 2.8s ease-in-out .6s infinite}
-.sbo-mark svg{width:32px;height:32px;stroke:#FFF1E6;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-/* Halo ring: pulses outward from the mark every 2.2s: the heartbeat. */
-.sbo-mark::after{content:'';position:absolute;inset:-7px;border-radius:20px;border:1.5px solid rgba(148,185,235,.55);opacity:0;animation:sbo-halo 2.2s cubic-bezier(.22,1,.36,1) 1.1s infinite}
-@keyframes sbo-halo{0%{opacity:.8;transform:scale(1)}70%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
-/* Monogram: white-label boots without a logo get the owner's initial in the tile,
-   their app, their letter, not our wrench. */
-.sbo-monogram{font-family:Geist,sans-serif;font-weight:900;font-size:30px;color:#FFF1E6;letter-spacing:-1px}
-/* Logo frame: uploaded artwork of any shape/background sits in a soft light card
-   with the same premium shadow language, the DESIGN carries logos that would
-   otherwise clash with the dark screen. */
-.sbo-logo-frame{background:rgba(255,255,255,.97);border-radius:22px;padding:16px 24px;max-width:78vw;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 50px rgba(0,0,0,.5);animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both}
-.sbo-logo-frame img{max-height:96px;max-width:100%;object-fit:contain;display:block}
-/* Wordmark sheen: a light sweep across the name every 2.6s. */
-.sbo-wordmark{text-align:center;background:linear-gradient(100deg,#fff 42%,#a9c8f2 50%,#fff 58%);background-size:230% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:sbo-textsheen 2.6s ease-in-out 1s infinite}
-/* Business name: auto-shrinks so long multi-word names stay balanced + centered
-   (the "ZJ's Painting & Special Coatings" left-align/overflow bug). Block so the
-   wrapped lines center as a group; clamp scales 44px→28px by viewport width. */
-.sbo-bizname{display:block;text-align:center;max-width:88vw;line-height:1.05;font-size:clamp(28px,7.4vw,44px)!important;letter-spacing:-1.4px!important}
-@keyframes sbo-textsheen{0%{background-position:125% 0}100%{background-position:-125% 0}}
-@keyframes sbo-breathe{0%,100%{box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.35);transform:scale(1)}50%{box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 16px 48px rgba(92,143,212,.55);transform:scale(1.045)}}
-.sbo-tag{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.4);animation:sbo-fadeup .6s .3s cubic-bezier(.22,1,.36,1) both}
-@keyframes sbo-fadeup{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-.sbo-foot{width:100%;padding:0 0 44px;display:flex;flex-direction:column;gap:13px}
-.sbo-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:99px;margin:0 40px;overflow:hidden}
-.sbo-bar{height:100%;background:linear-gradient(90deg,#2D5DA8,#5C8FD4);border-radius:99px;box-shadow:0 0 12px rgba(92,143,212,.55);animation:td-bar 5s cubic-bezier(.4,0,.2,1) forwards}
-.sbo-sheen{position:absolute;inset:0;background:linear-gradient(100deg,transparent 32%,rgba(255,255,255,.32) 50%,transparent 68%);transform:translateX(-100%);animation:sbo-sheen 1.7s ease-in-out .5s infinite}
-@keyframes sbo-sheen{to{transform:translateX(100%)}}
-.sbo-hint{text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,.35);letter-spacing:.02em;animation:sbo-fadeup .5s .55s cubic-bezier(.22,1,.36,1) both}
-@media (prefers-reduced-motion:reduce){.sbo-mark,.sbo-mark::after,.sbo-sheen,.sbo-glow,.sbo-wordmark{animation:none}}
+#supa-boot-overlay.td-fadeout{opacity:0;transition:opacity .3s ease .3s}
 
 /* ── Dark mode ── */
 body.dark{
@@ -1675,6 +2460,13 @@ body.dark .cal-cell.other{background:var(--cream)}
 .sup-actions{display:flex;gap:8px;margin-top:12px}
 .sup-actions .btn{flex:1 1 0;min-width:0;white-space:normal;line-height:1.2}
 .sup-bare .card-hd{padding:0 0 6px}
+/* On the T&M and BYO iPhone screens (2026-09-26 merge) every control a thumb
+   lands on is 44px, the rule Earl's tests hold the rest of those screens to. */
+:is(#gei-tm-page,#gei-byo-page) .sup-row{align-items:center}
+:is(#gei-tm-page,#gei-byo-page) .sup-del{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+:is(#gei-tm-page,#gei-byo-page) .sup-cost{min-height:44px;min-width:44px;padding:0 6px}
+:is(#gei-tm-page,#gei-byo-page) #sup-markup{min-height:44px;box-sizing:border-box}
+:is(#gei-tm-page,#gei-byo-page) .att-skip{min-width:44px;min-height:44px}
 .byo-check.on{background:var(--denim);border-color:var(--denim);color:#fff}
 .byo-label{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
 .byo-meta{font-size:10px;color:var(--text-3);margin-top:5px;margin-left:32px;font-weight:600;letter-spacing:.04em;overflow-wrap:anywhere}
@@ -2063,24 +2855,9 @@ body.dark .cal-cell.other{background:var(--cream)}
 
 </head>
 <body>
-<!-- Full boot screen, visible before any JS runs. td-logoin/td-bar are defined in <style> above. -->
-<div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">
-  <div class="sbo-glow" id="_sbo_glow"></div>
-  <div class="sbo-center">
-    <div class="sbo-mark" id="_sbo_mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
-    <div id="_sbo_name" style="animation:td-logoin .4s ease both;display:flex;align-items:baseline">
-      <span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span><span id="_sbo_pro" style="font-size:11px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:3px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.06em;margin-left:8px;vertical-align:6px">Pro</span>
-    </div>
-    <div class="sbo-tag" id="_sbo_tag">Built for the trades</div>
-  </div>
-  <div class="sbo-foot">
-    <div id="_sbo_track" class="sbo-track">
-      <div id="_sbo_bar" class="sbo-bar"></div>
-      <div class="sbo-sheen"></div>
-    </div>
-    <div class="sbo-hint" id="_sbo_hint">Creating your dashboard…</div>
-  </div>
-</div>
+<!-- Boot screen: filled by tdBootFill (js/brand-look.js) before any other JS runs. -->
+<script src="js/brand-look.js"></script>
+<div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:#1B1612"></div>
 <script>
 // Runs before any other JS, applies contractor white-label or TradeDesk defaults.
 (function(){
@@ -2091,91 +2868,10 @@ body.dark .cal-cell.other{background:var(--cream)}
     var ov=document.getElementById('supa-boot-overlay');if(!ov)return;
     // Rewrite theme-color meta to brand color before paint
     if(s.brandColor){var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute('content',s.brandColor);}
-    // Brand color: TINT the dark boot design, never a flat color wall (owner:
-    // "white label colors are ugly as hell and carrying over"). The charcoal
-    // gradient stays; the brand hue drives the ambient glow, corner wash, bar,
-    // and the monogram tile, so a white-label boot looks DESIGNED for that
-    // business, not recolored.
-    var r=45,g=93,b=168,lr=115,lg=163,lb=238,hasBrand=false;
-    if(s.brandColor){
-      hasBrand=true;
-      var hex=s.brandColor.replace('#','');
-      r=parseInt(hex.substr(0,2),16)||0;g=parseInt(hex.substr(2,2),16)||0;b=parseInt(hex.substr(4,2),16)||0;
-      lr=Math.min(255,r+70);lg=Math.min(255,g+70);lb=Math.min(255,b+70);
-      ov.style.background='radial-gradient(120% 80% at 0% 100%,rgba('+r+','+g+','+b+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-      var glow=document.getElementById('_sbo_glow');
-      if(glow)glow.style.background='radial-gradient(closest-side,rgba('+r+','+g+','+b+',.30),transparent 65%)';
-      var bar=document.getElementById('_sbo_bar');
-      if(bar){bar.style.background='linear-gradient(90deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';bar.style.boxShadow='0 0 12px rgba('+r+','+g+','+b+',.55)';}
-    }
-    // White-label identity: logoData > bname > default TradeDesk.
-    //  • logo → shown solo (their artwork carries the screen), tagline becomes
-    //    the quiet "Powered by TradeDesk".
-    //  • bname → the glowing tile shows THEIR INITIAL (brand-tinted monogram)
-    //    and their name gets the same shimmer as the TradeDesk wordmark, the
-    //    boot looks purpose-built for that business, not white-out branding.
-    var nameEl=document.getElementById('_sbo_name');
-    var _mk=document.getElementById('_sbo_mark'),_tg=document.getElementById('_sbo_tag');
-    var esc=function(t){return t.replace(/[<>&"]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
-    if(s.logoData&&nameEl){
-      // FRAMED logo: any artwork (odd shapes, white backgrounds) sits in the light
-      // card and inherits the premium look, with the business name shimmering
-      // beneath when set. No more raw 260px image floating on a dark screen.
-      var frame=document.createElement('div');frame.className='sbo-logo-frame';
-      var img=new Image();img.src=s.logoData;frame.appendChild(img);
-      if(s.bname){
-        nameEl.innerHTML='<span class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(s.bname)+'</span>';
-        nameEl.parentNode.insertBefore(frame,nameEl);
-      }else nameEl.replaceWith(frame);
-      if(_mk)_mk.style.display='none';
-      if(_tg)_tg.textContent='Powered by TradeDesk';
-      // AUTO BRAND TINT: no brand color set → sample the logo's dominant color
-      // (skipping near-white/near-black) and tint the glow + bar to match. The
-      // boot then looks art-directed around THEIR logo with zero setup.
-      if(!hasBrand){
-        img.onload=function(){try{
-          var c=document.createElement('canvas');c.width=24;c.height=24;
-          var x=c.getContext('2d');x.drawImage(img,0,0,24,24);
-          var d=x.getImageData(0,0,24,24).data,R=0,G=0,B=0,n=0;
-          for(var p=0;p<d.length;p+=4){
-            if(d[p+3]<80)continue;
-            var rr=d[p],gg=d[p+1],bb=d[p+2];
-            var mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
-            if(mx>235&&mn>215)continue;
-            if(mx<28)continue;
-            R+=rr;G+=gg;B+=bb;n++;
-          }
-          if(n>20){
-            R=Math.round(R/n);G=Math.round(G/n);B=Math.round(B/n);
-            var gl=document.getElementById('_sbo_glow');
-            if(gl)gl.style.background='radial-gradient(closest-side,rgba('+R+','+G+','+B+',.30),transparent 65%)';
-            var b2=document.getElementById('_sbo_bar');
-            if(b2){b2.style.background='linear-gradient(90deg,rgb('+R+','+G+','+B+'),rgb('+Math.min(255,R+70)+','+Math.min(255,G+70)+','+Math.min(255,B+70)+'))';b2.style.boxShadow='0 0 12px rgba('+R+','+G+','+B+',.55)';}
-          }
-        }catch(e){}};
-      }
-    }else if(s.bname&&nameEl){
-      nameEl.innerHTML='<span class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(s.bname)+'</span>';
-      if(_mk){
-        _mk.innerHTML='<span class="sbo-monogram">'+esc((s.bname.trim()[0]||'').toUpperCase())+'</span>';
-        if(hasBrand){_mk.style.background='linear-gradient(135deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';_mk.style.boxShadow='0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+r+','+g+','+b+',.4)';}
-      }
-      if(_tg)_tg.textContent='Powered by TradeDesk';
-    }
-    // Staged status line, reads like real load stages (advances, then HOLDS on
-    // "Almost ready…" instead of looping, so it feels intentional, not a fake
-    // spinner caption). Paced to track the progress bar filling.
-    var hint=document.getElementById('_sbo_hint');
-    if(hint){
-      var msgs=['Creating your dashboard…','Syncing your leads…','Loading your team…','Crunching the numbers…','Almost ready…'];
-      var hi=0;hint.style.transition='opacity .3s';
-      var hiv=setInterval(function(){
-        if(!hint.isConnected){clearInterval(hiv);return;}
-        if(hi>=msgs.length-1){clearInterval(hiv);return;} // stop on the last stage
-        hint.style.opacity='0';
-        setTimeout(function(){hi++;hint.textContent=msgs[hi];hint.style.opacity='1';},280);
-      },720);
-    }
+    // Logo on its own background, else the business name, else TradeDesk.
+    // "Powered by TradeDesk" follows the Settings switch (S.poweredBy).
+    if(typeof tdBootFill==='function')tdBootFill(ov,{logo:s.logoData||localStorage.getItem('zp3_logo')||'',name:s.bname||'',brand:s.brandColor||'',
+      powered:s.poweredBy!==false,cacheKey:'zp3_boot_look'});
   }catch(e){}
   window._earlyBootDone=true;
 })();
@@ -2674,64 +3370,72 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="split-est">
       <div>
-        <!-- Property access notes (crew only, never on the proposal): sits directly under the address -->
-        <!-- Scope of work chips -->
+        <!-- ── THREE STEPS (2026-09-23) ──────────────────────────────────────
+             Owner: "it all looks like it runs together ... easy to read, easy
+             for a person to complete and easy for Tim to handle." So the page
+             is three numbered steps, each with a heading that says where it
+             stands, and Tim can point at a step by its number (data-tim-step).
+             Headings are drawn by _tmRenderSteps. -->
+        <div class="ios-stephead" id="tm-step-1" data-tim-step="1"></div>
+        <!-- The job: what he says, Tim's steps, what Tim noticed. -->
+        <div id="tm-scopecard-wrap"></div>
+        <!-- For the crew, last in step 1: it is about the job, not the price. -->
         <div id="tm-sitenote-wrap"></div>
-        <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
 
-        <!-- ── WHAT THIS PROPOSAL CARRIES ────────────────────────────────────
-             Owner 2026-09-17: "just get the scope signed, no deposit no payment
-             upfront if they want it to work that way ... but those should only
-             be required in the states that require it."
+        <div class="ios-stephead" id="tm-step-2" data-tim-step="2"></div>
+        <!-- A step whose field is switched off, and the state's law. Rendered
+             by _tmRenderAddRow. -->
+        <div id="tm-add-row"></div>
 
-             So the page is the scope and Send. Everything else is a layer he
-             adds, and a state adds for him only where the law says it must.
-             Measured before this change: 2,509px tall on a phone, 35 live
-             controls, and the biggest block on it (612px, a quarter of the
-             page) was the optional exclusions list while scope of work, the
-             only part that is ever required, got 149px. -->
-        <div id="tm-add-row" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
-
-        <!-- Rates & crew -->
-        <div class="card" id="tm-blk-rate" style="display:none">
-          <div class="row-bw" style="margin-bottom:10px">
-            <div class="td-h3">Rates &amp; crew</div>
-          </div>
-          <div class="fg fg2">
-            <div class="f">
-              <label>Hourly rate · $/hr</label>
-              <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
-            </div>
-            <div class="f">
-              <label>Crew size</label>
-              <div style="display:flex;align-items:stretch;border:1.5px solid var(--border2);border-radius:var(--r);overflow:hidden;height:42px;background:var(--bg)">
-                <button onclick="_tmCrewStep(-1)" type="button" style="width:42px;border:none;border-right:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-size:22px;color:var(--text2);font-family:inherit;flex-shrink:0;display:flex;align-items:center;justify-content:center">−</button>
-                <span id="tm-i-crew-count" style="flex:1;text-align:center;font-size:18px;font-weight:800;color:var(--text);display:flex;align-items:center;justify-content:center">1</span>
-                <button onclick="_tmCrewStep(1)" type="button" style="width:42px;border:none;border-left:1px solid var(--border2);background:var(--blue);cursor:pointer;font-size:22px;color:#fff;font-family:inherit;flex-shrink:0;display:flex;align-items:center;justify-content:center">+</button>
+        <!-- ── BILLING ─────────────────────────────────────────────────────────
+             One group, native rows, the figure typed straight into the row it
+             belongs to (2026-09-23). Every id the logic reads is kept. -->
+        <div class="ios-sec" id="tm-sec-bill">
+          <div class="ios-group">
+            <div id="tm-blk-rate" style="display:none">
+              <label class="ios-row"><span class="ios-lbl" id="tm-lbl-rate">Hourly rate</span>
+                <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmTouchedRate();_tmInputChange()"></span></label>
+              <div class="ios-row"><span class="ios-lbl">People on site<small id="tm-i-crew-label">solo</small></span>
+                <span class="ios-step"><button onclick="_tmCrewStep(-1)" type="button" aria-label="One fewer">−</button><span id="tm-i-crew-count">1</span><button onclick="_tmCrewStep(1)" type="button" aria-label="One more">+</button></span></div>
+              <label class="ios-row" id="tm-days-f"><span class="ios-lbl" id="tm-lbl-days">Days, estimated</span>
+                <span class="ios-val"><input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+              <!-- Whether the customer reads the rate: a switch row, rendered by
+                   _tmApplyLayers because in some states it is not his to decide. -->
+              <div id="tm-hide-rate-wrap"></div>
+              <!-- Kept for the figures _tmInputChange writes; never shown. -->
+              <div id="tm-stat-grid" style="display:none">
+                <span id="tm-stat-day"></span><span id="tm-stat-day-s"></span>
+                <span id="tm-stat-labor-tile"><span id="tm-stat-labor"></span><span id="tm-stat-labor-s"></span></span>
+                <span id="tm-stat-days-tile"><span id="tm-stat-days"></span></span>
               </div>
             </div>
-            <div class="f" id="tm-days-f">
-              <label>Estimated days</label>
-              <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
+            <div id="tm-blk-nte" style="display:none">
+              <label class="ios-row"><span class="ios-lbl" id="tm-nte-head">The most it can cost</span>
+                <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-nte" placeholder="Optional" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+              <!-- HIDDEN, NOT DELETED. "What happens at cap" was saved and printed
+                   nowhere; one of its options told him he could bill past a ceiling
+                   that in nine states is the law. Kept so an old draft keeps its value. -->
+              <div style="display:none">
+                <select id="tm-i-cap-action" onchange="_tmCapAction=this.value;_byoAutosave()">
+                  <option>Stop &amp; get re-approval</option>
+                  <option>Continue at agreed rate</option>
+                  <option>Switch to fixed-price quote</option>
+                </select>
+              </div>
             </div>
+            <!-- UP FRONT (2026-09-23). None, or a flat figure he names. Never a
+                 percent: a T&M job has no price to take one of. Measured against
+                 the ceiling and the state's limit by _tmDepositState. -->
+            <div class="ios-row" id="tm-dep-row"><span class="ios-lbl">Up front</span>
+              <span class="ios-seg" id="tm-dep-seg"><button type="button" data-v="0" onclick="_tmDepMode(0)">None</button><button type="button" data-v="1" onclick="_tmDepMode(1)">Amount</button></span></div>
+            <label class="ios-row" id="tm-dep-amt-row" style="display:none"><span class="ios-lbl">Due before work starts<small id="tm-dep-note"></small></span>
+              <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-dep-flat" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+            <!-- How often it bills: its own row, it is on every T&M contract. -->
+            <div id="tm-cad-main"></div>
+            <!-- More options: a row that opens switch rows. _tmRenderMore. -->
+            <div id="tm-more-row"></div>
           </div>
-          <div id="tm-stat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
-            <div class="stat-tile">
-              <div class="stat-l">Day rate</div>
-              <div class="stat-v" id="tm-stat-day">$0</div>
-              <div class="stat-s" id="tm-stat-day-s">enter rate &amp; crew</div>
-            </div>
-            <div class="stat-tile" id="tm-stat-labor-tile">
-              <div class="stat-l">Est. labor total</div>
-              <div class="stat-v" id="tm-stat-labor">$0</div>
-              <div class="stat-s" id="tm-stat-labor-s">-</div>
-            </div>
-            <div class="stat-tile" id="tm-stat-days-tile">
-              <div class="stat-l">Total hours</div>
-              <div class="stat-v" id="tm-stat-days">0</div>
-              <div class="stat-s">at 8hr days</div>
-            </div>
-          </div>
+          <div class="ios-foot" id="tm-nte-sub"></div>
         </div>
 
         <!-- Materials: the same card BYO draws (js/materials.js). -->
@@ -2740,24 +3444,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <!-- Same rule as BYO: exclusions come after the work. -->
         <div id="tm-blk-excl" style="display:none"><div id="tm-excl-wrap"></div></div>
 
-        <!-- NTE cap -->
-        <div class="card" id="tm-blk-nte" style="display:none">
-          <div class="td-h3" id="tm-nte-head" style="margin-bottom:10px">The most it can cost them (optional)</div>
-          <div class="fg fg2">
-            <div class="f">
-              <label>Cap amount</label>
-              <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-nte" placeholder="e.g. 12,000" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
-            </div>
-            <div class="f">
-              <label>What happens at cap</label>
-              <select id="tm-i-cap-action" onchange="_tmCapAction=this.value;_byoAutosave()">
-                <option>Stop &amp; get re-approval</option>
-                <option>Continue at agreed rate</option>
-                <option>Switch to fixed-price quote</option>
-              </select>
-            </div>
-          </div>
-        </div>
+
       </div>
 
       <!-- Summary rail -->
@@ -2788,23 +3475,25 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div class="summary-row"><span>Day rate</span><span id="tm-rail-rate-day">$0</span></div>
             <div class="summary-row"><span>Materials</span><span id="tm-rail-rate-mat">at cost</span></div>
           </div>
-          <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
+          <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>The most it can cost</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
           <!-- Crew labor cost, only rendered when the contractor has employees -->
           <div id="tm-labor-cost-wrap" style="display:none"></div>
+          <!-- THE MONEY AS THREE ROWS OF FIGURES: you bill, it costs you, you
+               keep. The gauge below still owns the band arithmetic; this states
+               the same three numbers in the order a contractor asks for them,
+               with one thin bar and one line of guidance. Owner 2026-09-19:
+               "im lost in 2a and dont know what any of this means", and the fix
+               was to stop naming the concepts (margin, burdened, mobilization)
+               and just say the numbers. -->
+          <div id="tm-money-rows"></div>
           <div id="tm-gauge-wrap"></div>
           <div class="summary-divider"></div>
           <div id="tm-deposit-wrap"></div>
           <!-- A PERCENT OF NOTHING IS NOTHING. With no estimated total there is
                nothing to take 25% of, so a rate sheet asks for its mobilization
                money as a flat figure he names. Blank means none. -->
-          <div id="tm-deposit-flat-wrap" style="display:none">
-            <div class="summary-row" style="align-items:center">
-              <span style="font-size:14px;font-weight:600">Mobilization deposit</span>
-              <div class="input-prefix" style="width:118px"><span>$</span><input type="text" inputmode="decimal" id="tm-i-dep-flat" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
-            </div>
-            <div class="summary-row" style="color:var(--text-3)"><span>Balance</span><span>billed as you go</span></div>
-          </div>
+          <!-- The flat deposit moved into How it bills as "Up front" (2026-09-23). -->
           <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px" id="tm-cad-head">Billing cadence</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap" id="tm-cad-row">
@@ -2817,27 +3506,39 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
     </div>
+    <!-- Step 3 is this bar: Tim, and the one next thing, then Send. On a
+         phone only; _tmRenderDock. -->
+    <div id="tm-dock" data-tim-step="3"></div>
   </div>
 
   <!-- Build Your Own (line-item) single-page layout (matches EstimateBYO.jsx): shown when _geiIsFreeForm=true -->
   <div id="gei-byo-page" style="display:none">
     <div class="tbar" id="byo-topbar-wrap"></div>
 
+    <!-- BUILD YOUR OWN, the same editor as T&M (2026-09-23). Owner: "what
+         about the BYO design, the true custom estimate" then "go for it".
+         1 The work: say it or type it, Tim breaks it into priced lines.
+         2 The price: the total, your cost and profit (never on the proposal),
+         the deposit. Then the bar: the next thing, then Sign here / Send it. -->
     <div class="split-est">
       <div>
-        <!-- Property access notes (crew only, never on the proposal): sits directly under the address -->
-        <div id="byo-sitenote-wrap"></div>
-        <!-- Scope of work chips -->
-        <div class="card card-pad-0" style="margin-bottom:12px" id="byo-scopecard-wrap"></div>
+        <div class="ios-stephead" id="byo-step-1" data-tim-step="1"></div>
+        <!-- Type it or Talk to Tim, until there are lines (_byoRenderSay). A
+             draft with legacy scope chips still gets its remove-only card. -->
+        <div id="byo-scopecard-wrap"></div>
         <div id="byo-sections"></div>
-        <!-- EXCLUSIONS SIT BELOW THE WORK. Naming what a job does not cover is
-             something he does once there IS a job on the page, and the preset
-             list is tall: above the sections it pushed the actual estimate
-             ~1,200px down a phone screen, which is the opposite of getting a
-             proposal out in five minutes. The site note above keeps its
-             placement, which was chosen deliberately to sit by the address. -->
-        <div id="byo-excl-wrap"></div>
+        <div id="byo-sitenote-wrap"></div>
 
+        <div class="ios-stephead" id="byo-step-2" data-tim-step="2"></div>
+        <!-- The price: rows drawn by _byoRenderPrice; the rail's own fields
+             (deposit, cost, profit) are moved in here so each keeps its id. -->
+        <div class="ios-sec" id="byo-price-sec">
+          <div class="ios-group" id="byo-price-group"></div>
+          <div class="ios-foot" id="byo-price-foot"></div>
+        </div>
+        <!-- EXCLUSIONS SIT BELOW THE WORK. Naming what a job does not cover is
+             something he does once there IS a job on the page. -->
+        <div id="byo-excl-wrap" style="display:none"></div>
       </div>
 
       <div class="summary-rail">
@@ -2855,6 +3556,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
     </div>
+    <div id="byo-dock" data-tim-step="3"></div>
   </div>
 
   <!-- Step 1: Job Info -->
@@ -3333,6 +4035,22 @@ body.dark .cal-cell.other{background:var(--cream)}
          page that needs a person: the hours nobody has accounted for. -->
     <div class="tbar-sub">Every hour your phone recorded, sorted into driving, on site, shop and loading. Anything it could not place is flagged for you to answer.</div>
   </div>
+  <!-- ── Tim, at the point of the work ──────────────────────────────────────
+       The bar is his global door. This is a door at the work, and the two do
+       different jobs. Housecall Pro puts "Write it for me" inline wherever you
+       are composing rather than behind one assistant button, and ServiceTitan's
+       2026 trades survey has 59% of contractors using AI that is built into
+       software they already have, against 42% for general-purpose tools.
+       The test a strip like this has to pass is that it does something THIS
+       SCREEN CANNOT. This page shows the hours; it cannot group them by job site, name who was on each one and hand back a block of text to paste into a bill.
+       Hidden until timDockRender says otherwise, same wall as the rest of him:
+       everything Tim can name is money or a contract, and crew get neither. -->
+  <button type="button" class="tim-atwork" hidden
+    onclick="_timAskFrom('what do I invoice for last week')">
+    <span class="tim-atwork-mark" aria-hidden="true"></span>
+    <span class="tim-atwork-say"><b>Turn last week into an invoice worksheet</b><i>By job site, with the address and who was on it</i></span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+  </button>
   <div id="tl-scope-toggle" class="tl-scope-toggle" style="display:none"></div>
   <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Year</div>
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
@@ -3910,8 +4628,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl">
             <div id="boot-preview-wrap" style="border-radius:12px;overflow:hidden;height:90px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px" aria-label="Boot screen preview">
               <div id="boot-preview-bg" style="position:absolute;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)"></div>
-              <div id="boot-preview-logo" style="position:relative;display:flex;align-items:baseline;gap:0"><span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:20px;color:#fff;letter-spacing:-1px">TradeDesk</span><span id="boot-preview-pro" style="font-size:7px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;margin-left:5px;vertical-align:3px">Pro</span></div>
-              <div style="position:relative;width:80px;height:2px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden"><div id="boot-preview-bar" style="width:60%;height:100%;background:#2D5DA8;border-radius:2px"></div></div>
+              <div id="boot-preview-logo" style="position:relative;display:flex;align-items:baseline;gap:0"><span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:20px;color:#fff;letter-spacing:-1px">TradeDesk</span></div>
             </div>
             <div style="font-size:11px;color:var(--blue);text-align:center;margin-top:6px">Live preview · what your clients see when their hub loads</div>
           </div>
@@ -4550,6 +5267,22 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ Manual invoice</button>
     </div>
   </div>
+  <!-- ── Tim, at the point of the work ──────────────────────────────────────
+       The bar is his global door. This is a door at the work, and the two do
+       different jobs. Housecall Pro puts "Write it for me" inline wherever you
+       are composing rather than behind one assistant button, and ServiceTitan's
+       2026 trades survey has 59% of contractors using AI that is built into
+       software they already have, against 42% for general-purpose tools.
+       The test a strip like this has to pass is that it does something THIS
+       SCREEN CANNOT. This page shows what has been billed and not paid. It cannot show the other hole, which is work already done that nobody has billed at all.
+       Hidden until timDockRender says otherwise, same wall as the rest of him:
+       everything Tim can name is money or a contract, and crew get neither. -->
+  <button type="button" class="tim-atwork" hidden
+    onclick="_timAskFrom('what do I invoice for last week')">
+    <span class="tim-atwork-mark" aria-hidden="true"></span>
+    <span class="tim-atwork-say"><b>What have I worked and not billed</b><i>Last week's hours, by customer and address</i></span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+  </button>
   <div id="money-summary" style="margin-bottom:12px"></div>
   <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
     <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All owed</button>
@@ -4767,10 +5500,13 @@ body.dark .cal-cell.other{background:var(--cream)}
       <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
       Leads
     </button>
-    <button class="mtb" id="mtb-clients" data-tab="clients" onclick="goPg('pg-clients')">
-      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-      Clients
-    </button>
+    <!-- Tim's seat. Owner sketched it 2026-09-21: the bar rounded around a
+         bubble, him "splitting the difference between leads and clients".
+         It is a SPACER, not a control: it reserves the slot so the notch has
+         somewhere to be cut and nothing of anybody's tap target is spent on
+         it. Inside #mtb-inner so it sits between two tabs, and held at index 2
+         by _applyTabOrder however the four tabs are dragged around it. -->
+    <span id="mtb-tim-slot" aria-hidden="true"></span>
     <button class="mtb" id="mtb-jobs" data-tab="jobs" onclick="goPg('pg-jobs')">
       <span id="mtb-jobs-dot" class="mtb-dot" style="display:none"></span>
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
@@ -4782,11 +5518,44 @@ body.dark .cal-cell.other{background:var(--cream)}
     More
   </button>
 </div>
+<!-- Tim, 2026-09-21. OUTSIDE #mobile-tabbar, and that is not tidiness either.
+     The bar carries a mask to cut the notch, and a mask has NO COVERAGE outside
+     its element's border box: as a child of the bar he was simply deleted above
+     its top edge, which is where half of him lives. The arc that traces the
+     notch went the same way, for the same reason, so it rides on him now.
+     He is fixed to the same --tim-seat the notch is cut at, so the two cannot
+     drift apart, and he is not in #mtb-inner so no saved tab order can move
+     him. His seat in the row is held by #mtb-tim-slot, which takes no taps, so
+     the notch costs nothing off anybody's target (15.3). -->
+<button id="mtb-tim" onclick="openTim()" aria-label="Tim" hidden>
+  <!-- His voice. Empty and hidden until the nudge engine can name a dollar, a
+       percentage or a law, and it retires itself seven seconds later. Inside
+       the button so that tapping the words opens him: a man reaching for a
+       sentence that just told him he is owed $1,240 is reaching for the
+       $1,240, and handing that tap to whatever list is behind it would be the
+       worst possible answer to it. -->
+  <span id="mtb-tim-say" hidden></span>
+  <span id="mtb-tim-orb">
+    <span id="mtb-tim-dot" hidden></span>
+    <span id="mtb-tim-mark"></span>
+  </span>
+  <span id="mtb-tim-word">Tim</span>
+</button>
 <!-- ── More popup (tap-to-open, no swipe needed) ── -->
 <div id="mtb-more-popup" onclick="closeMobileMore()">
   <div id="mtb-more-menu" onclick="event.stopPropagation()">
     <button class="mmi" id="mmi-tim" onclick="closeMobileMore();openTim()">
       <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 015.4-5.4z"/><path d="M14.7 6.3L18 3l3 3-3.3 3.3"/></svg>Tim
+    </button>
+    <!-- Clients left the bottom bar so Tim could be dead centre: centring needs
+         an ODD number of slots and the bar had six. It is the cheapest seat to
+         give up of the four, because Leads and Jobs both carry live badges and
+         Home is where the app opens, and because the search in the top bar
+         already reaches any customer by name in one tap. Put it back and Tim
+         goes off-centre again; there is no arrangement of an even row that
+         puts him in the middle. -->
+    <button class="mmi" id="mmi-clients" onclick="mobileNavTo('pg-clients')">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Clients
     </button>
     <button class="mmi" id="mmi-proposals" onclick="mobileNavTo('pg-proposals')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Proposals
@@ -4892,7 +5661,23 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/voice.js"></script>
 <script src="js/trade-knowledge.js"></script>
 <script src="js/estimate-speak.js"></script>
+<!-- What Tim knows, and when he is allowed to say it. Both load before tim.js,
+     which is the only one of the three that touches the screen. -->
+<script src="js/tim-knowledge.js"></script>
+<script src="js/tim-nudge.js"></script>
 <script src="js/tim.js"></script>
+<!-- Reads the proposals already sent as a price book. Loads after tim.js
+     because it opens tim.js's sheet. -->
+<script src="js/tim-book.js"></script>
+<!-- What he was told and what he made of it, on this phone only. Loads last of
+     the four because it reports on the other three: it asks whether each of
+     them is present, which is only a true answer once they have all had their
+     chance to load. -->
+<script src="js/tim-log.js"></script>
+<!-- Answering questions about the owner's own books, off the arrays js/data.js
+     already holds in memory. After tim.js because it opens tim.js's sheet, and
+     after tim-log.js because it borrows its word splitter. -->
+<script src="js/tim-ask.js"></script>
 <script src="js/equipment.js"></script>
 <script src="js/wh-board.js"></script>
 <script src="js/share-inbox.js"></script>
@@ -4995,72 +5780,14 @@ if(supaEnabled()){
   // Show loading overlay, don't render local data, wait for cloud
   (function showLoadingScreen(){
     if(window._earlyBootDone)return;
-    const logo=S.logoData||'';
-    const bname=S.bname||'';
-    const brandColor=S.brandColor||'';
-    // Brand color TINTS the dark boot design (never a flat color wall), same
-    // treatment as the early-boot script: charcoal gradient base, brand hue in
-    // the corner glow + progress bar. Default stays the denim design.
-    let bg,barFg,barGlow;
-    const barBg='rgba(255,255,255,0.08)';
-    let _sboR=45,_sboG=93,_sboB=168,_sboLR=115,_sboLG=163,_sboLB=238;
-    if(brandColor){
-      const hex=brandColor.replace('#','');
-      _sboR=parseInt(hex.substr(0,2),16)||0;_sboG=parseInt(hex.substr(2,2),16)||0;_sboB=parseInt(hex.substr(4,2),16)||0;
-      _sboLR=Math.min(255,_sboR+70);_sboLG=Math.min(255,_sboG+70);_sboLB=Math.min(255,_sboB+70);
-      bg='radial-gradient(120% 80% at 0% 100%,rgba('+_sboR+','+_sboG+','+_sboB+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-      barFg='linear-gradient(90deg,rgb('+_sboR+','+_sboG+','+_sboB+'),rgb('+_sboLR+','+_sboLG+','+_sboLB+'))';
-      barGlow='0 0 12px rgba('+_sboR+','+_sboG+','+_sboB+',.55)';
-    }else{
-      bg='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-      barFg='linear-gradient(90deg,#2D5DA8,#5C8FD4)';
-      barGlow='0 0 12px rgba(92,143,212,.55)';
-    }
-    const proCapsule='<span style="font-size:11px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:3px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.06em;margin-left:8px;vertical-align:6px">Pro</span>';
-    const esc=t=>t.replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-    // White-label identity, same rules as the static overlay:
-    //  logo → framed in a light card (any artwork inherits the premium framing),
-    //         business name shimmers beneath it, tag = "Powered by TradeDesk".
-    //  bname → brand-tinted monogram tile + shimmering name + "Powered by TradeDesk".
-    //  default → TradeDesk mark + wordmark + "Built for the trades".
-    const wordmark=t=>'<div style="animation:td-logoin .4s ease both"><span class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(t)+'</span></div>';
-    const logoBlock=logo
-      ?'<div class="sbo-logo-frame"><img src="'+logo+'"></div>'+(bname?wordmark(bname):'')
-      :bname
-        ?wordmark(bname)
-        :'<div style="animation:td-logoin .4s ease both;display:flex;align-items:baseline"><span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span>'+proCapsule+'</div>';
+    // Same screen as the early-boot script, built by the same function.
     const ov=document.getElementById('supa-boot-overlay')||document.createElement('div');
     ov.id='supa-boot-overlay';
-    ov.style.cssText='position:fixed;inset:0;z-index:9998;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0';
-    const glowBlock='<div class="sbo-glow" id="_sbo_glow"'+(brandColor?' style="background:radial-gradient(closest-side,rgba('+_sboR+','+_sboG+','+_sboB+',.30),transparent 65%)"':'')+'></div>';
-    const markBlock=logo?'':(bname
-      ?'<div class="sbo-mark"'+(brandColor?' style="background:linear-gradient(135deg,rgb('+_sboR+','+_sboG+','+_sboB+'),rgb('+_sboLR+','+_sboLG+','+_sboLB+'));box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+_sboR+','+_sboG+','+_sboB+',.4)"':'')+'><span class="sbo-monogram">'+esc((bname.trim()[0]||'').toUpperCase())+'</span></div>'
-      :'<div class="sbo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>');
-    const tagBlock='<div class="sbo-tag">'+((logo||bname)?'Powered by TradeDesk':'Built for the trades')+'</div>';
-    ov.innerHTML=
-      glowBlock+
-      '<div class="sbo-center">'+markBlock+logoBlock+tagBlock+'</div>'+
-      '<div class="sbo-foot">'+
-        '<div class="sbo-track" style="background:'+barBg+'">'+
-          '<div class="sbo-bar" style="background:'+barFg+';box-shadow:'+barGlow+';animation-duration:2.8s"></div>'+
-          '<div class="sbo-sheen"></div>'+
-        '</div>'+
-        '<div class="sbo-hint" id="_sbo_hint2">Creating your dashboard…</div>'+
-      '</div>';
+    ov.style.cssText='position:fixed;inset:0;z-index:9998';
+    if(typeof tdBootFill==='function')tdBootFill(ov,{logo:S.logoData||'',name:S.bname||'',brand:S.brandColor||'',
+      powered:S.poweredBy!==false,cacheKey:'zp3_boot_look'});
     if(!ov.parentNode)document.body.appendChild(ov);
     window._sboT0=Date.now(); // min-stage-time clock (see _removeBootOverlay)
-    // Staged status line (advances then HOLDS on "Almost ready…", not a loop).
-    const _h2=document.getElementById('_sbo_hint2');
-    if(_h2){
-      const _m2=['Creating your dashboard…','Syncing your leads…','Loading your team…','Crunching the numbers…','Almost ready…'];
-      let _i2=0;_h2.style.transition='opacity .3s';
-      const _iv2=setInterval(()=>{
-        if(!_h2.isConnected){clearInterval(_iv2);return;}
-        if(_i2>=_m2.length-1){clearInterval(_iv2);return;}
-        _h2.style.opacity='0';
-        setTimeout(()=>{_i2++;_h2.textContent=_m2[_i2];_h2.style.opacity='1';},280);
-      },720);
-    }
   })();
   // Supabase script is async, may not be ready when inline JS finishes.
   // One-shot guard: the original tag's load event, the retry loop below, and
