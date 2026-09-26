@@ -1034,8 +1034,17 @@ function _pcFolderPaint(){
             visits.length+(visits.length===1?' visit':' visits')+(c?' \u00b7 '+escHtml(c.name||''):'')+'</div>'+
         '</div>'+
       '</div>'+
-      (stages.length>1?'<div class="pc-fold-chips">'+chip('all','All',all.length)+
-        stages.map(x=>chip(x[0],x[1],count(x[0]))).join('')+'</div>':'')+
+      (sel
+        // Picking, not filtering: each stage chip adds every photo of that
+        // stage to the selection (owner 2026-09-24: "select all befores and
+        // all afters"), and lights up while all of them are in.
+        ?(stages.length?'<div class="pc-fold-chips pc-pick-chips">'+stages.map(x=>{
+            const ids=all.filter(p=>p.type===x[0]).map(p=>String(p.id));
+            const on=ids.length&&ids.every(id=>sel.some(y=>String(y)===id));
+            return '<button type="button" class="fb'+(on?' active':'')+'" onclick="tdSelStageAll(\''+x[0]+'\')">All '+x[1]+' '+ids.length+'</button>';
+          }).join('')+'</div>':'')
+        :(stages.length>1?'<div class="pc-fold-chips">'+chip('all','All',all.length)+
+          stages.map(x=>chip(x[0],x[1],count(x[0]))).join('')+'</div>':''))+
       (pair&&!sel?'<div class="pc-fold-ba">'+
         '<div class="pc-fold-ba-hd"><div style="flex:1;min-width:0">'+
           '<div class="pc-fold-ba-lbl">Before &amp; After</div>'+
@@ -1848,8 +1857,16 @@ function tdCellTap(id){
 function _pcSelBarHTML(){
   const k=_pcRev&&_pcRev.sel?_pcRev.sel.length:0;
   const b=(fn,ic,label,cls)=>'<button type="button" class="pc-tb'+(cls?' '+cls:'')+'"'+(k?'':' disabled')+' onclick="'+fn+'">'+_pcIcon(ic)+'<span>'+label+'</span></button>';
+  // Text is first: a link to the picked photos, sent from his own phone
+  // (js/photo-gallery.js tdSelText). Share stays for sending the files.
+  const _c=(_pcFolder&&_pcFolder.clientId!=null&&typeof clients!=='undefined')?clients.find(x=>x.id===_pcFolder.clientId):null;
+  const _first=_c&&_c.phone?String(_c.name||'').split(' ')[0]:'';
   return '<div class="pc-selbar pc-glass">'+
-    b('tdSelShare()','share','Share')+b('tdSelMove()','folder','Move')+b('tdSelStage()','tag','Stage')+b('tdSelDelete()','trash','Delete','danger')+
+    b('tdSelText()','message','Text')+b('tdSelShare()','share','Share')+b('tdSelMove()','folder','Move')+b('tdSelStage()','tag','Stage')+b('tdSelDelete()','trash','Delete','danger')+
+    '<div class="pc-menu pc-stage-menu pc-glass" id="pc-text-menu">'+
+      (_first?'<button type="button" class="pc-side" onclick="tdSelText(\'client\')">Text '+escHtml(_first)+'</button>':'')+
+      '<button type="button" class="pc-side" onclick="tdSelText(\'other\')">'+(_first?'Text someone else':'Choose who to text')+'</button>'+
+    '</div>'+
     '<div class="pc-menu pc-stage-menu pc-glass" id="pc-stage-menu">'+
       ['before','progress','after'].map(t=>'<button type="button" class="pc-side" onclick="tdSelStage(\''+t+'\')"><span class="st-'+t+'">●</span> '+_pcStageWord(t)+'</button>').join('')+
     '</div>'+
@@ -2445,6 +2462,7 @@ const _PC_ICONS={
   back:'<path d="M14.5 5.5L8 12l6.5 6.5"/>',
   more:'<circle cx="6" cy="12" r="1.5" class="f"/><circle cx="12" cy="12" r="1.5" class="f"/><circle cx="18" cy="12" r="1.5" class="f"/>',
   share:'<path d="M12 15V3.5M8 7l4-4 4 4M6.5 10.5H6a2 2 0 00-2 2V19a2 2 0 002 2h12a2 2 0 002-2v-6.5a2 2 0 00-2-2h-.5"/>',
+  message:'<path d="M21 11.5a8.4 8.4 0 01-12.2 7.5L3 21l2-5.3A8.5 8.5 0 1121 11.5z"/>',
   pen:'<path d="M4.5 19.5l3.8-.9L19 7.9a1.9 1.9 0 000-2.7l-.2-.2a1.9 1.9 0 00-2.7 0L5.4 15.7z"/>',
   info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r=".7" class="f"/>',
   trash:'<path d="M4.5 6.5h15M9.5 6.5V4.8c0-.7.6-1.3 1.3-1.3h2.4c.7 0 1.3.6 1.3 1.3v1.7M6.5 6.5l.9 12.6c.1 1 .9 1.9 2 1.9h5.2c1.1 0 1.9-.9 2-1.9l.9-12.6"/>',

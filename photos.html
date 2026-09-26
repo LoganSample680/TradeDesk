@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Photos</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<!-- The photos a contractor texted (owner 2026-09-24). Opened from the link
+     tdSelText sends (js/photo-gallery.js). Anon, no app, no login. It shows
+     exactly the photos picked when the link was made, grouped Before,
+     Progress, After, and a tap opens one full screen. -->
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--bg:#F4F5F7;--bg2:#FFFFFF;--text:#161A1F;--text3:#636C7B;--line:#E2E5EB;--blue:#2D5DA8;
+  --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif}
+body{font-family:var(--font-ui);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+.ps-wrap{max-width:720px;margin:0 auto;padding:0 16px calc(32px + env(safe-area-inset-bottom,0px))}
+.ps-biz{height:52px;margin:0 -16px 14px;background:var(--bg2);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 16px;font-size:15px;font-weight:800;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ps-addr{font-size:22px;font-weight:800;letter-spacing:-.02em;overflow-wrap:anywhere}
+.ps-sub{font-size:13px;color:var(--text3);margin:4px 0 6px}
+.ps-stage{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:16px 2px 8px}
+.ps-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+@media(min-width:560px){.ps-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.ps-cell{aspect-ratio:1;border:none;padding:0;border-radius:6px;background:#DDE1E7 center/cover no-repeat;cursor:pointer}
+.ps-msg{padding:48px 12px;text-align:center;color:var(--text3);font-size:15px}
+.ps-skel{height:120px;border-radius:10px;margin-top:14px;background:linear-gradient(90deg,#E6E9EE 25%,#F2F4F7 50%,#E6E9EE 75%);background-size:200% 100%;animation:ps-sh 1.2s ease infinite}
+@keyframes ps-sh{from{background-position:200% 0}to{background-position:-200% 0}}
+.ps-view{position:fixed;inset:0;z-index:10;background:#000;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .18s ease}
+.ps-view.on{opacity:1}
+.ps-view img{max-width:100%;max-height:100%;object-fit:contain}
+.ps-x{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;border:none;border-radius:18px;padding:8px 14px;font-size:14px;font-weight:700;background:rgba(255,255,255,.18);color:#fff;font-family:inherit}
+.ps-cap{position:absolute;left:0;right:0;bottom:calc(16px + env(safe-area-inset-bottom,0px));text-align:center;color:#fff;font-size:13px;padding:0 16px}
+</style>
+</head>
+<body>
+<div class="ps-wrap">
+  <div class="ps-biz" id="ps-biz"></div>
+  <div id="ps-body"><div class="ps-skel"></div><div class="ps-skel"></div></div>
+</div>
+<script src="js/photos-public.js"></script>
+</body>
+</html>
