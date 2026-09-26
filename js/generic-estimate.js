@@ -5990,7 +5990,10 @@ function _geiGoTimAsks(){
   const card=document.querySelector((_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim');
   _geiGuideTo(card);
   // A question with a box (the unit) gets the cursor, so he can just type.
-  setTimeout(()=>{const f=card&&card.querySelector('.ios-ask-in');if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
+  // Look the box up when the timer fires: the card can re-render in between,
+  // and focusing the old, detached one lands the cursor nowhere.
+  const sel=(_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim .ios-ask-in';
+  setTimeout(()=>{const f=document.querySelector(sel);if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
 }
 // The T&M names, kept for Tim and the tests that call them.
 function _tmRateChecked(){return _geiNumsChecked();}
