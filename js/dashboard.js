@@ -165,6 +165,10 @@ function _renderDashSetupTodo(){
       sub:'Drives log themselves once TradeDesk knows your places. A qualifying home office makes the first drive of the day deductible.',cta:'Add places'},
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
+    // Venmo (owner 2026-09-26): skippable, a business that doesn't take Venmo
+    // says so and it's gone. Per business, like everything on S.
+    {id:'venmo',done:!!(typeof _venmoUser==='function'&&_venmoUser()),icon:'💵',title:'Add your Venmo',
+      sub:'Invoices get a Pay with Venmo link with the amount already in. Don\'t take Venmo? Skip it.',cta:'Add'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
       sub:'Proposals that look like a real company, not a text message.',cta:'Add logo'},
     {id:'team',done:false,icon:'👥',title:'Add your crew',
@@ -1013,6 +1017,7 @@ function _setupTodoGo(id){
     return;
   }
   if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
+  if(id==='venmo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');setTimeout(()=>{const f=document.getElementById('set-venmo');if(f){f.scrollIntoView({block:'center'});f.focus();}},200);},160);return;}
   if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
   if(id==='team'){_setupTeamChooser();return;}
   if(id==='qrcode'){if(typeof goPg==='function')goPg('pg-qr-leads');setTimeout(()=>{document.getElementById('qr-new-label')?.focus();},160);return;}
