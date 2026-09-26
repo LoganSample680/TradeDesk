@@ -19,5 +19,14 @@
       "mcp__Supabase__apply_migration",
       "mcp__Supabase__deploy_edge_function"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/session-branch-check.sh", "timeout": 30 }
+        ]
+      }
+    ]
   }
 }

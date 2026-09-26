@@ -175,6 +175,21 @@ if [ -n "$BASE" ] && [ "${UAT_ROLL_ALLOW_DROP:-0}" != "1" ]; then
   fi
 fi
 
+# ── TWO FILES, ONE MIGRATION VERSION (2026-09-26) ──────────────────────────
+# uat is where two sessions' migrations first meet, and no PR check runs on
+# it, so this is the first place a shared version number can be seen. Two
+# files with one version fail the second deploy with a unique violation
+# (20261038 was taken twice on uat the day this was added). Stop before the
+# push and name them; renaming one is the fix.
+DUPES="$(ls supabase/migrations/*.sql 2>/dev/null | xargs -n1 basename | sed 's/_.*//' | sort | uniq -d)"
+if [ -n "$DUPES" ]; then
+  echo "" >&2
+  echo "uat-roll: STOPPED. Two migrations share a version number:" >&2
+  for v in $DUPES; do ls supabase/migrations/${v}_*.sql | sed 's/^/    /' >&2; done
+  echo "  Nothing was pushed. Give the one from this branch the next free number." >&2
+  restore; exit 1
+fi
+
 # The deploy commit must NOT carry the skip token, or Cloudflare skips the
 # build and uat silently stays on the old code (CLAUDE.md 14.1).
 git commit -q --allow-empty -m "UAT deploy"
