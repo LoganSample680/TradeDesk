@@ -3411,7 +3411,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }, ROWS());
       expect(words[0]).toContain('Loading time');
       expect(words[1]).toContain('Drive time');
-      expect(words[2]).toContain('On site');
+      expect(words[2]).toContain('Job site');
       expect(words[3]).toContain('Unaccounted');
     });
 
@@ -3763,7 +3763,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.dots, 'every legend entry carries its colour as a dot').toBe(r.legend.length);
       expect(r.legend.join(' ')).toContain('Loading');
       expect(r.legend.join(' ')).toContain('Driving');
-      expect(r.legend.join(' ')).toContain('On site');
+      expect(r.legend.join(' ')).toContain('Job site');
     });
 
     test('loading is its own bucket, carved out of supply/other, in ONE aggregator', async () => {
@@ -4504,7 +4504,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // geofenced kind, or an address.
       expect(out.html).not.toContain('Unsaved address');
       const i = out.html.indexOf('Manual time');
-      expect(out.html.slice(i, i + 300)).not.toContain('On site');
+      expect(out.html.slice(i, i + 300)).not.toContain('Job site');
     });
 
     // ── The punch list of 2026-09-04 ──────────────────────────────────────
