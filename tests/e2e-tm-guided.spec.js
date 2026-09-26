@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * The T&M bar holds his hand to Send.
+ * The T&M and Build Your Own bars hold his hand to Send.
  *
  * Owner, 2026-09-26: "even I would race to get the proposal done, there was a
  * ton of shit I would've missed if my hand wasn't held, rate, how much my
@@ -101,6 +101,67 @@ test.describe('the bar walks him to Send', () => {
     await page.evaluate(() => { _geiScopeMissed.length = 0; _tmRenderSteps(); });
     expect(await bar(), 'a different proposal is checked on its own').toEqual(['Check your rate']);
     expect(await page.evaluate((id) => { _geiEditBidId = id; return _tmRateChecked(); }, bidA)).toBe(true);
+  });
+
+  // ── BUILD YOUR OWN, SAME WALK (owner, 2026-09-26: "BYO should carry over as
+  // much as possible with shared code") ──────────────────────────────────────
+  // One Tim step, one card with a No on every row, one "check the figures"
+  // step. BYO has no hourly rate: what it fills in for him is the deposit, and
+  // the Yes says the total and the deposit. Tim comes before the prices, since
+  // a step he adds is a line that needs one.
+  const openByo = (id) => page.evaluate((id) => {
+    document.querySelectorAll('.zmodal-overlay,#_style-pick-ov').forEach(e => e.remove());
+    clients.length = 0; bids.length = 0;
+    clients.push({ id, name: 'John Doe', addr: '2950 SW McClure Rd, Topeka, KS 66614' });
+    currentClientId = id; _activeTrade = 'plumbing';
+    S.priceBook = S.priceBook || {}; S.priceBook.plumbing = [];
+    openGenericEstimate(getClientById(id), null, null, { mode: 'byo' });
+    _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
+    document.getElementById('byo-say').value = 'Pull the old water heater, run new pex to the manifold and set a tankless';
+  }, id);
+  const byoBar = () => page.evaluate(() => [...document.querySelectorAll('#byo-dock .ios-btn')].map(b => b.textContent.trim()));
+  const byoTap = async () => { await page.waitForTimeout(750); await page.locator('#byo-dock-go').click(); await page.waitForTimeout(400); };
+
+  test('BYO: build, what Tim caught, his questions, the prices, the total and deposit, then Send', async () => {
+    await openByo(99410);
+    await page.waitForTimeout(400);
+    await byoTap();
+    expect((await byoBar())[0]).toMatch(/^Tim caught \d+ things you left out$/);
+    await page.locator('#gei-byo-page button', { hasText: /^Add all/ }).first().click();
+    await page.waitForTimeout(300);
+    expect(await byoBar()).toEqual(['Tim has 2 questions']);
+    await byoTap();
+    expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('tim-ask-detail-model');
+    // The same card as T&M: a No beside every Add.
+    const noes = await page.evaluate(() => [...document.querySelectorAll('#gei-byo-page .ios-tim .ios-no')].map(b => b.textContent.trim()));
+    expect(noes).toEqual(['No', 'Skip this']);
+    await page.locator('#gei-byo-page .ios-tim .ios-no', { hasText: /^No$/ }).first().click();
+    // Scoped to this screen: the T&M page above still holds its own hidden
+    // copy of the box, which is the bug _timMissAskEl fixes.
+    await page.fill('#gei-byo-page #tim-ask-detail-model', 'Navien NPE-240A');
+    await page.locator('#gei-byo-page .ios-tim .ios-ask-row .ios-pill').click();
+    await page.waitForTimeout(300);
+    expect(await byoBar()).toEqual(['Price every line']);
+    await page.evaluate(() => { _byoItems.forEach(it => { if (!(Number(it.price) > 0)) { it.price = 350; it.rate = 350; } }); _byoRenderSections(); _byoUpdateRail(); });
+    expect(await byoBar()).toEqual(['Check the price']);
+    expect(await page.evaluate(() => document.getElementById('byo-step-2').getAttribute('data-state')), 'not ticked while unchecked').toBe('now');
+    await byoTap();
+    expect((await byoBar())[0]).toMatch(/^Yes: \$[\d,]+, 25% deposit$/);
+    await byoTap();
+    expect(await byoBar()).toEqual(['Sign here', 'Send it']);
+    expect(await page.evaluate(() => document.getElementById('byo-step-2').getAttribute('data-state'))).toBe('done');
+  });
+
+  test('BYO: changing the deposit is checking it', async () => {
+    await openByo(99411);
+    await page.waitForTimeout(400);
+    await byoTap();
+    await page.evaluate(() => { _byoMissed.length = 0; _byoItems.forEach(it => { it.price = 350; it.rate = 350; }); _byoRenderSections(); _byoUpdateRail(); });
+    expect(await byoBar()).toEqual(['Check the price']);
+    await page.locator('#byo-dep-in').fill('30');
+    await page.locator('#byo-dep-in').dispatchEvent('input');
+    await page.waitForTimeout(200);
+    expect(await byoBar()).toEqual(['Sign here', 'Send it']);
   });
 
   test('no console errors', async () => { assertNoErrors(page, 'tm guided'); });

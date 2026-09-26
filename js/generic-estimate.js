@@ -728,7 +728,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   }
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
-  _tmChecking=false;
+  _geiChecking=false;
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
   //
@@ -1810,7 +1810,7 @@ function _byoShowPage(){
   _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
   _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
-  _byoSayOpen=false;_byoMissed=[];
+  _byoSayOpen=false;_byoMissed=[];_geiChecking=false;
   _byoRenderSections();
   _byoUpdateRail(); // also renders the auto crew-labor cost line
   _renderScopeChips('byo-scope-wrap');
@@ -2078,39 +2078,7 @@ function _geiScopeBuild(containerId){
 // Tim guessed becomes a fact until the contractor accepts it.
 function _geiScopeMissedHtml(){
   if(!_geiScopeMissed.length)return '';
-  if(_geiIsTM){
-    // TIM'S OWN CARD (2026-09-23). The same white rows under a grey label made
-    // what Tim thinks was forgotten look like part of the job. Tinted, his mark
-    // on it, and a filled Add, so "in the job" and "Tim's idea" never blur.
-    const n=_timMissTakeable(_geiScopeMissed).length;
-    const ed=_tmScopeEditing;
-    return '<div class="ios-sec">'+
-      '<div class="ios-group ios-tim">'+
-        '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
-          '<span class="who">You did not say</span>'+
-          (n>1?'<button type="button" class="ios-pill" onclick="_geiScopeTakeAllMissed()">Add all '+n+'</button>':'')+
-        '</div>'+
-        _geiScopeMissed.map(im=>{
-          const id=escHtml(JSON.stringify(String(im.id||'')));
-          if(im.ask)return _timMissAskRow(im,'_geiScopeTakeMissed','_geiScopeDropMissed');
-          return '<div class="ios-swipe" data-kind="missed">'+
-            '<div class="ios-row">'+
-              (ed?'<button type="button" class="ios-minus" aria-label="Not needed" onclick="_geiScopeDropMissed('+id+')">−</button>':'')+
-              // The reason is a tap on the words away. Four paragraphs in a
-              // row was a manual; the step names alone read like a list.
-              '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
-              // A visible No beside every Add (2026-09-26): the bar now walks
-              // him to these, and turning one down has to be one tap too. It
-              // was only a swipe or Edit before.
-              '<button type="button" class="ios-no" onclick="_geiScopeDropMissed('+id+')">No</button>'+
-              '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_geiScopeTakeMissed('+id+')">Add</button>'+
-            '</div>'+
-            '<button type="button" class="ios-del" tabindex="-1" onclick="_geiScopeDropMissed('+id+')">Not needed</button>'+
-          '</div>';
-        }).join('')+
-      '</div>'+
-    '</div>';
-  }
+  if(_geiIsTM)return _timMissCardHtml(_geiScopeMissed,'_geiScopeTakeMissed','_geiScopeDropMissed','_geiScopeTakeAllMissed',_tmScopeEditing);
   const rows=_geiScopeMissed.filter(im=>!im.ask).map(im=>
     '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
@@ -2197,12 +2165,20 @@ function _geiScopePlace(text,stage,last){
 // A missed item with `ask` is a question (the unit's make and model): the
 // answer goes into his own install line, never a line of its own. One with
 // `optIn` (the permit) is his call, so Add all leaves it for him to tap.
+// The box on the screen he is on. T&M and Build Your Own both draw Tim's card,
+// so after a T&M a hidden copy of "Name the unit" stays on the T&M page with
+// the same id, and a plain getElementById read that empty one and said "Type
+// the make and model first" to a man who just had (2026-09-26).
+function _timMissAskEl(id){
+  const sel='[id="tim-ask-'+String(id).replace(/"/g,'')+'"]';
+  return document.querySelector((_geiIsTM?'#gei-tm-page ':'#gei-byo-page ')+sel)||document.querySelector(sel);
+}
 function _timMissAskVal(id){
-  const el=document.getElementById('tim-ask-'+String(id));
+  const el=_timMissAskEl(id);
   return el?String(el.value||'').trim():'';
 }
 function _timMissAskNeed(id){
-  const el=document.getElementById('tim-ask-'+String(id));
+  const el=_timMissAskEl(id);
   if(el){try{el.focus();}catch(_e){}}
   if(typeof showToast==='function')showToast('Type the make and model first');
 }
@@ -2221,6 +2197,36 @@ function _timMissLearn(im,yes){
 }
 // The question row: what Tim wants to know, why, and the field for the answer
 // with its own Add. Enter adds too, the way the keyboard's Done key should.
+// TIM'S CARD, ONE FOR BOTH SCREENS (2026-09-26). T&M and Build Your Own drew
+// the same card from two copies, and only T&M's got the No. Tinted, his mark
+// on it, a filled Add, and a visible No beside every Add: the bar walks him to
+// this card, so turning one down has to be one tap too, not a swipe.
+function _timMissCardHtml(list,take,drop,takeAll,ed){
+  const n=_timMissTakeable(list).length;
+  return '<div class="ios-sec">'+
+    '<div class="ios-group ios-tim">'+
+      '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
+        '<span class="who">You did not say</span>'+
+        (n>1?'<button type="button" class="ios-pill" onclick="'+takeAll+'()">Add all '+n+'</button>':'')+
+      '</div>'+
+      list.map(im=>{
+        const id=escHtml(JSON.stringify(String(im.id||'')));
+        if(im.ask)return _timMissAskRow(im,take,drop);
+        return '<div class="ios-swipe" data-kind="missed">'+
+          '<div class="ios-row">'+
+            (ed?'<button type="button" class="ios-minus" aria-label="Not needed" onclick="'+drop+'('+id+')">−</button>':'')+
+            // The reason is a tap on the words away. Four paragraphs in a
+            // row was a manual; the step names alone read like a list.
+            '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
+            '<button type="button" class="ios-no" onclick="'+drop+'('+id+')">No</button>'+
+            '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="'+take+'('+id+')">Add</button>'+
+          '</div>'+
+          '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
+        '</div>';
+      }).join('')+
+    '</div>'+
+  '</div>';
+}
 function _timMissAskRow(im,take,drop){
   const id=escHtml(JSON.stringify(String(im.id||'')));
   const fid='tim-ask-'+escHtml(String(im.id||''));
@@ -2965,19 +2971,7 @@ function _byoDropMissed(id){
 }
 function _byoMissedHtml(){
   if(!_byoMissed.length)return '';
-  const n=_timMissTakeable(_byoMissed).length;
-  return '<div class="ios-sec"><div class="ios-group ios-tim">'+
-    '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+'<span class="who">You did not say</span>'+
-      (n>1?'<button type="button" class="ios-pill" onclick="_byoTakeAllMissed()">Add all '+n+'</button>':'')+'</div>'+
-    _byoMissed.map(im=>{
-      const id=escHtml(JSON.stringify(String(im.id||'')));
-      if(im.ask)return _timMissAskRow(im,'_byoTakeMissed','_byoDropMissed');
-      return '<div class="ios-swipe" data-kind="missed"><div class="ios-row">'+
-        '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
-        '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_byoTakeMissed('+id+')">Add</button></div>'+
-        '<button type="button" class="ios-del" tabindex="-1" onclick="_byoDropMissed('+id+')">Not needed</button></div>';
-    }).join('')+
-  '</div></div>';
+  return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false);
 }
 function _byoMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 function _byoRenderSections(){
@@ -3067,7 +3061,8 @@ function _byoRenderSteps(){
   };
   const one=st.n>0, two=one&&!st.unpriced.length&&st.total>0;
   head('byo-step-1',1,'The work',one?'done':'now',one?(st.n+' line'+(st.n>1?'s':'')):'');
-  head('byo-step-2',2,'The price',two?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
+  // Not ticked until he has looked at the total and the deposit.
+  head('byo-step-2',2,'The price',two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
   _byoRenderPrice(st);
   _byoRenderDock(st);
 }
@@ -3131,6 +3126,7 @@ function _byoCostInput(el){
   _byoUpdateRail();_byoAutosave();
 }
 function _byoDepInput(el){
+  _geiNumsTouched();
   const v=String(el.value||'').replace(/[^0-9.]/g,'');
   const pct=document.getElementById('byo-deposit-pct');if(!pct)return;
   pct.value=v===''?'0':String(Math.max(0,Math.min(100,parseFloat(v)||0)));
@@ -3138,10 +3134,15 @@ function _byoDepInput(el){
 }
 function _byoDockNext(st){
   if(!st.n)return {label:'Build the lines',fn:'_byoDockBuild()'};
+  // Tim before the prices: a step he adds is a line that needs a price, so
+  // pricing first would send him back to pricing (2026-09-26, shared walk).
+  const tim=_geiTimStep(_byoMissed);
+  if(tim)return tim;
   if(st.unpriced.length){const i=_byoItems.indexOf(st.unpriced[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
   const D=_byoDepositState(st.total);
   if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
-  return null;
+  return _geiNumsStep({has:st.total>0,check:'Check the price',target:'byo-price-group',
+    yes:'Yes: '+_byoMoney(st.total)+', '+D.pct+'% deposit'});
 }
 function _byoDockBuild(){
   const el=document.getElementById('byo-say');
@@ -4788,12 +4789,6 @@ function _tmCrewStep(delta){
   if(lbl)lbl.textContent=_tmCrewCount===1?'solo':_tmCrewCount===2?'me + helper':'crew';
   _tmInputChange();
 }
-// Changing the rate or the people is looking at them: no Yes needed after.
-function _tmTouchedRate(){
-  const k=String(_geiEditBidId||'');
-  _tmChecked[k]=true;_tmChecking=false;
-  try{localStorage.setItem('td_tm_rate_ok_'+k,'1');}catch(_e){}
-}
 function _tmInputChange(){
   _tmRatePerMan=_moneyVal('tm-i-rate');
   // Crew count driven by stepper; read stepper display, not a select
@@ -5899,51 +5894,80 @@ function _tmDockNext(st,rule,all){
   // the people, confirmed in one tap that says the numbers out loud.
   // Steps he left out are things Tim caught; the permit and the unit are
   // questions only he can answer. The bar says which it is.
-  const miss=_geiScopeMissed||[];
+  // Shared with Build Your Own (_geiTimStep, _geiNumsStep below).
+  const tim=_geiTimStep(_geiScopeMissed);
+  if(tim)return tim;
+  const r=Number(_tmRatePerMan)||0,c=_tmCrewCount||1;
+  return _geiNumsStep({has:_tmLayers.has('rate'),check:'Check your rate',target:'tm-blk-rate',
+    yes:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person')});
+}
+// ── THE WALK TO SEND, SHARED BY T&M AND BUILD YOUR OWN (2026-09-26) ──────
+//
+// Owner: "BYO should carry over as much as possible with shared code". Both
+// bars run the same two steps before Send, from the same functions:
+//  1. What Tim caught, then Tim's questions (the permit, the unit), each
+//     answered or turned down on his card.
+//  2. The figures filled in for him, looked at once: T&M's rate and people,
+//     BYO's total and deposit. The first tap takes him there and lights them;
+//     the bar then says the numbers out loud as a Yes.
+// Confirmed once per proposal, remembered by bid; changing a figure counts.
+function _geiTimStep(miss){
+  miss=miss||[];
   const caught=miss.filter(im=>!im.ask&&!im.optIn).length,asks=miss.length-caught;
-  if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':'')+' you left out',fn:'_tmGoTimAsks()'};
-  if(asks)return {label:asks>1?('Tim has '+asks+' questions'):'Tim has a question',fn:'_tmGoTimAsks()'};
-  if(_tmLayers.has('rate')&&!_tmRateChecked()){
-    if(_tmChecking){
-      const r=Number(_tmRatePerMan)||0,c=_tmCrewCount||1;
-      return {label:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person'),fn:'_tmMarkRateChecked()'};
-    }
-    return {label:'Check your rate',fn:'_tmCheckRate()'};
-  }
+  if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':'')+' you left out',fn:'_geiGoTimAsks()'};
+  if(asks)return {label:asks>1?('Tim has '+asks+' questions'):'Tim has a question',fn:'_geiGoTimAsks()'};
   return null;
 }
-// The rate and people are confirmed once per proposal: typed, stepped, or the
-// Yes on the bar. Remembered by bid, so reopening a draft does not ask again.
-let _tmChecked={},_tmChecking=false;
-function _tmRateChecked(){
+let _geiNumsOk={},_geiChecking=false;
+function _geiNumsChecked(){
   const k=String(_geiEditBidId||'');
-  if(_tmChecked[k])return true;
-  try{return localStorage.getItem('td_tm_rate_ok_'+k)==='1';}catch(_e){return false;}
+  if(_geiNumsOk[k])return true;
+  try{return localStorage.getItem('td_nums_ok_'+k)==='1';}catch(_e){return false;}
 }
-function _tmMarkRateChecked(){
+// Changing a figure is looking at it: no Yes needed after. No repaint here,
+// the input's own handler repaints.
+function _geiNumsTouched(){
   const k=String(_geiEditBidId||'');
-  _tmChecked[k]=true;_tmChecking=false;
-  try{localStorage.setItem('td_tm_rate_ok_'+k,'1');}catch(_e){}
-  document.getElementById('tm-blk-rate')?.classList.remove('tm-guide');
-  if(typeof _tmRenderSteps==='function')_tmRenderSteps();
+  _geiNumsOk[k]=true;_geiChecking=false;
+  try{localStorage.setItem('td_nums_ok_'+k,'1');}catch(_e){}
+}
+function _geiNumsMark(){
+  _geiNumsTouched();
+  document.querySelectorAll('.tm-guide').forEach(e=>e.classList.remove('tm-guide'));
+  _geiRepaint();
+}
+function _geiNumsStep(o){
+  if(!o.has||_geiNumsChecked())return null;
+  if(_geiChecking)return {label:o.yes,fn:'_geiNumsMark()'};
+  return {label:o.check,fn:'_geiNumsGo(\''+o.target+'\')'};
+}
+function _geiNumsGo(id){
+  _geiChecking=true;
+  _geiGuideTo(document.getElementById(id));
+  _geiRepaint();
+}
+function _geiRepaint(){
+  if(_geiIsTM){if(typeof _tmRenderSteps==='function')_tmRenderSteps();}
+  else if(typeof _byoRenderSteps==='function')_byoRenderSteps();
 }
 // Scroll to the thing and light it, so he sees WHAT he is saying yes to.
-function _tmGuideTo(el,cls){
+function _geiGuideTo(el){
   if(!el)return;
   try{el.scrollIntoView({block:'center',behavior:'smooth'});}catch(_e){}
   el.classList.remove('tm-guide');void el.offsetWidth;el.classList.add('tm-guide');
 }
-function _tmCheckRate(){
-  _tmChecking=true;
-  _tmGuideTo(document.getElementById('tm-blk-rate'));
-  if(typeof _tmRenderSteps==='function')_tmRenderSteps();
-}
-function _tmGoTimAsks(){
-  const card=document.querySelector('#gei-tm-page .ios-tim');
-  _tmGuideTo(card);
+function _geiGoTimAsks(){
+  const card=document.querySelector((_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim');
+  _geiGuideTo(card);
   // A question with a box (the unit) gets the cursor, so he can just type.
   setTimeout(()=>{const f=card&&card.querySelector('.ios-ask-in');if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
 }
+// The T&M names, kept for Tim and the tests that call them.
+function _tmRateChecked(){return _geiNumsChecked();}
+function _tmMarkRateChecked(){_geiNumsMark();}
+function _tmTouchedRate(){_geiNumsTouched();}
+function _tmCheckRate(){_geiNumsGo('tm-blk-rate');}
+function _tmGoTimAsks(){_geiGoTimAsks();}
 function _tmDockBuild(){
   const el=document.getElementById('gei-scope-say');
   if(el&&String(el.value||'').trim()){_geiScopeBuild('tm-scope-wrap');return;}
